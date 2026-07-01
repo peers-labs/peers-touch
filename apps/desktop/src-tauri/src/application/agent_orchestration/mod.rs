@@ -1,8 +1,10 @@
 use crate::application::agents as application_agents;
 use crate::contracts::{
     AgentCollaborationCancelInput, AgentCollaborationCancelTaskInput,
-    AgentCollaborationCreateInput, AgentCollaborationGetInput, AgentCollaborationListEventsInput,
-    AgentCollaborationListInput, AgentCollaborationSubmitNodeResultInput,
+    AgentCollaborationClaimExecutorInput, AgentCollaborationCreateInput,
+    AgentCollaborationGetInput, AgentCollaborationHeartbeatLeaseInput,
+    AgentCollaborationListEventsInput, AgentCollaborationListInput,
+    AgentCollaborationReleaseLeaseInput, AgentCollaborationSubmitNodeResultInput,
     AgentCollaborationSubscribeInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
@@ -317,11 +319,20 @@ pub fn agent_collaboration_submit_node_result(
 ) -> AppResult<StubPayload> {
     let task_id = input.task_id.trim();
     let node_id = input.node_id.trim();
+    let lease_id = input.lease_id.as_deref().unwrap_or_default().trim();
+    let executor_id = input.executor_id.as_deref().unwrap_or_default().trim();
     if task_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "task_id is required", None);
     }
     if node_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "node_id is required", None);
+    }
+    if lease_id.is_empty() || executor_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "lease_id and executor_id are required",
+            None,
+        );
     }
     let body = json!({
         "taskId": task_id,
@@ -330,6 +341,8 @@ pub fn agent_collaboration_submit_node_result(
             "result_summary": input.result_summary.trim(),
             "status": input.status.unwrap_or_else(|| "completed".to_string()),
             "turn_id": input.turn_id.unwrap_or_default(),
+            "lease_id": lease_id,
+            "executor_id": executor_id,
             "source": "desktop.executor"
         }
     });
@@ -342,6 +355,94 @@ pub fn agent_collaboration_submit_node_result(
     ) {
         Ok(result) => success_payload("agent_collaboration_submit_node_result", result),
         Err(err) => err.into_app_result("Failed to submit collaboration node result"),
+    }
+}
+
+pub fn agent_collaboration_claim_executor_task(
+    input: AgentCollaborationClaimExecutorInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let executor_id = input.executor_id.trim();
+    if executor_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "executor_id is required", None);
+    }
+    let body = json!({
+        "executorId": executor_id,
+        "leaseTtlMs": input.lease_ttl_ms.unwrap_or(0),
+        "taskId": input.task_id.unwrap_or_default(),
+        "agentId": input.agent_id.unwrap_or_default(),
+        "nodeId": input.node_id.unwrap_or_default(),
+        "capabilities": input.capabilities.unwrap_or_default(),
+    });
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/collaboration/executor/claim",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_collaboration_claim_executor_task", result),
+        Err(err) => err.into_app_result("Failed to claim desktop executor task"),
+    }
+}
+
+pub fn agent_collaboration_heartbeat_executor_lease(
+    input: AgentCollaborationHeartbeatLeaseInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let lease_id = input.lease_id.trim();
+    let executor_id = input.executor_id.trim();
+    if lease_id.is_empty() || executor_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "lease_id and executor_id are required",
+            None,
+        );
+    }
+    let body = json!({
+        "leaseId": lease_id,
+        "executorId": executor_id,
+        "leaseTtlMs": input.lease_ttl_ms.unwrap_or(0),
+    });
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/collaboration/executor/heartbeat",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_collaboration_heartbeat_executor_lease", result),
+        Err(err) => err.into_app_result("Failed to heartbeat desktop executor lease"),
+    }
+}
+
+pub fn agent_collaboration_release_executor_lease(
+    input: AgentCollaborationReleaseLeaseInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let lease_id = input.lease_id.trim();
+    let executor_id = input.executor_id.trim();
+    if lease_id.is_empty() || executor_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "lease_id and executor_id are required",
+            None,
+        );
+    }
+    let body = json!({
+        "leaseId": lease_id,
+        "executorId": executor_id,
+        "status": input.status.unwrap_or_else(|| "released".to_string()),
+    });
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/collaboration/executor/release",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_collaboration_release_executor_lease", result),
+        Err(err) => err.into_app_result("Failed to release desktop executor lease"),
     }
 }
 
