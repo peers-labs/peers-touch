@@ -362,6 +362,15 @@ type collaborationNodeRunResult struct {
 	Cancelled bool
 }
 
+type goalKeeperVerdict struct {
+	Verdict        model.AcceptanceVerdict
+	Reason         string
+	EvidenceRef    string
+	JudgeID        string
+	CompletedNodes int
+	TotalNodes     int
+}
+
 func buildCollaborationTaskNodes(
 	taskID string,
 	description string,
@@ -603,12 +612,19 @@ func (s *OrchestrationService) finishExecutedTask(
 		s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskFailed)
 		return task, nodes
 	}
+	finalSummary := ""
 	if summary, turnID, failed := s.synthesizeTaskResult(ctx, db, actorID, task, nodes); strings.TrimSpace(summary) != "" {
+		finalSummary = strings.TrimSpace(summary)
 		s.updateTaskMeta(ctx, db, task, map[string]string{
-			"final_summary":           summary,
+			"final_summary":           finalSummary,
 			"final_synthesis_turn_id": turnID,
 		})
 	} else if failed {
+		hasFailure = true
+	}
+	verdict := evaluateGoalKeeperVerdict(task, nodes, finalSummary, hasFailure)
+	s.updateTaskMeta(ctx, db, task, goalKeeperVerdictMeta(verdict))
+	if verdict.Verdict == model.AcceptanceVerdict_ACCEPTANCE_VERDICT_REJECTED {
 		hasFailure = true
 	}
 	taskStatus := model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED
@@ -713,6 +729,15 @@ func synthesisNode(nodes []persistence.CollaborationTaskNode) *persistence.Colla
 	return nil
 }
 
+func synthesisNodeByRole(nodes []persistence.CollaborationTaskNode) *persistence.CollaborationTaskNode {
+	for index := range nodes {
+		if isSynthesisNode(&nodes[index]) {
+			return &nodes[index]
+		}
+	}
+	return nil
+}
+
 func (s *OrchestrationService) updateTaskMeta(ctx context.Context, db *gorm.DB, task *persistence.CollaborationTask, updates map[string]string) {
 	if task == nil || len(updates) == 0 {
 		return
@@ -731,6 +756,85 @@ func (s *OrchestrationService) updateTaskMeta(ctx context.Context, db *gorm.DB, 
 	if err := db.WithContext(ctx).Model(&persistence.CollaborationTask{}).Where("id = ?", task.ID).Update("meta_json", task.MetaJSON).Error; err != nil {
 		logger.Warnf(ctx, "failed to update collaboration task meta: task_id=%s err=%v", task.ID, err)
 	}
+}
+
+func evaluateGoalKeeperVerdict(task *persistence.CollaborationTask, nodes []persistence.CollaborationTaskNode, finalSummary string, hasFailure bool) goalKeeperVerdict {
+	completed, failed, skipped, total := normalNodeStatusCounts(nodes)
+	judgeID := ""
+	if synthNode := synthesisNodeByRole(nodes); synthNode != nil {
+		judgeID = synthNode.AgentID
+	} else if completedNode := firstCompletedNode(nodes); completedNode != nil {
+		judgeID = completedNode.AgentID
+	}
+	verdict := goalKeeperVerdict{
+		Verdict:        model.AcceptanceVerdict_ACCEPTANCE_VERDICT_ACCEPTED,
+		Reason:         "All normal collaboration nodes completed and final synthesis is available.",
+		EvidenceRef:    fmt.Sprintf("task:%s#final_summary", strings.TrimSpace(task.ID)),
+		JudgeID:        judgeID,
+		CompletedNodes: completed,
+		TotalNodes:     total,
+	}
+	if total == 0 {
+		verdict.Verdict = model.AcceptanceVerdict_ACCEPTANCE_VERDICT_REJECTED
+		verdict.Reason = "No collaboration nodes were available for acceptance."
+		return verdict
+	}
+	if strings.TrimSpace(finalSummary) == "" {
+		verdict.Verdict = model.AcceptanceVerdict_ACCEPTANCE_VERDICT_REJECTED
+		verdict.Reason = "Final synthesis summary is missing."
+		return verdict
+	}
+	if hasFailure || failed > 0 || skipped > 0 || completed < total {
+		verdict.Verdict = model.AcceptanceVerdict_ACCEPTANCE_VERDICT_REJECTED
+		verdict.Reason = fmt.Sprintf("GoalKeeper rejected: completed=%d total=%d failed=%d skipped=%d.", completed, total, failed, skipped)
+		verdict.EvidenceRef = fmt.Sprintf("task:%s#nodes", strings.TrimSpace(task.ID))
+		return verdict
+	}
+	return verdict
+}
+
+func goalKeeperVerdictMeta(verdict goalKeeperVerdict) map[string]string {
+	return map[string]string{
+		"acceptance_verdict":         acceptanceVerdictMetaValue(verdict.Verdict),
+		"acceptance_level":           "L1",
+		"acceptance_reason":          verdict.Reason,
+		"acceptance_evidence_ref":    verdict.EvidenceRef,
+		"acceptance_judge_id":        verdict.JudgeID,
+		"acceptance_completed_nodes": fmt.Sprintf("%d", verdict.CompletedNodes),
+		"acceptance_total_nodes":     fmt.Sprintf("%d", verdict.TotalNodes),
+	}
+}
+
+func acceptanceVerdictMetaValue(verdict model.AcceptanceVerdict) string {
+	switch verdict {
+	case model.AcceptanceVerdict_ACCEPTANCE_VERDICT_ACCEPTED:
+		return "accepted"
+	case model.AcceptanceVerdict_ACCEPTANCE_VERDICT_REJECTED:
+		return "rejected"
+	case model.AcceptanceVerdict_ACCEPTANCE_VERDICT_PENDING:
+		return "pending"
+	default:
+		return "unspecified"
+	}
+}
+
+func normalNodeStatusCounts(nodes []persistence.CollaborationTaskNode) (completed int, failed int, skipped int, total int) {
+	for index := range nodes {
+		node := &nodes[index]
+		if isSynthesisNode(node) {
+			continue
+		}
+		total++
+		switch node.Status {
+		case int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED):
+			completed++
+		case int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED):
+			failed++
+		case int32(model.TaskNodeStatus_TASK_NODE_STATUS_SKIPPED):
+			skipped++
+		}
+	}
+	return completed, failed, skipped, total
 }
 
 func isParallelCollaborationEngine(engine model.CollaborationEngineType) bool {
