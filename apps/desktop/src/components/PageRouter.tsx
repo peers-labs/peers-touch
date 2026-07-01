@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useChatStore } from '../store/chat';
 import { useAgentStore } from '../store/agent';
-import { ChatPage } from '../pages/ChatPage';
+import { AgentChatPage } from '../pages/AgentChatPage';
 import { NotesPage } from '../pages/NotesPage';
+import { AgentCanvasPage } from '../pages/AgentCanvasPage';
 import { AgentProfilePage } from '../pages/AgentProfilePage';
 import { getModule } from '../modules/registry';
 import { getPage } from '../kernel/page';
@@ -73,10 +74,10 @@ export function PageRouter({ page, router, navigation }: PageRouterProps) {
 
   return (
     <>
-      {/* Keep-alive: ChatPage (AI agent) — preserves conversation context */}
+      {/* Keep-alive: AgentChatPage — preserves conversation context */}
       {(mounted.has('agent') || page === 'agent') && (
         <div style={{ display: page === 'agent' ? 'contents' : 'none' }}>
-          <ChatPage
+          <AgentChatPage
             onNavigateSettings={() => navigation.navigateToSettings('providers')}
             onNavigateApplets={() => navigation.navigateToSettings('applets')}
             onNavigateSkills={() => navigation.navigateToSettings('skills')}
@@ -85,6 +86,7 @@ export function PageRouter({ page, router, navigation }: PageRouterProps) {
               window.history.pushState(null, '', `#/agent-profile/${agentName}`);
               navigation.navigateTo('agent-profile');
             }}
+            onNavigateAgentCanvas={() => navigation.navigateTo('agent-orchestration')}
             onNavigatePages={(docId) => {
               if (docId) {
                 window.history.pushState(null, '', `#/notes/${docId}`);
@@ -131,6 +133,10 @@ function EphemeralPage({ page, router, navigation }: Pick<PageRouterProps, 'page
           onNavigateApplets={() => navigation.navigateToSettings('applets')}
         />
       );
+
+    case 'agent-orchestration': {
+      return <AgentCanvasPage onBack={() => navigation.navigateTo('agent')} />;
+    }
 
     default: {
       const mod = getModule(page);
