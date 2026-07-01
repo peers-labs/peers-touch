@@ -127,15 +127,7 @@ fn create_station_agent_from_local(
     let provider_id = value_string(local_agent, &["provider", "providerId"]).unwrap_or_default();
     let model_name = value_string(local_agent, &["model", "modelName"]).unwrap_or_default();
     let effort = value_string(local_agent, &["effort"]).unwrap_or_else(|| "medium".to_string());
-    let config_json = json!({
-        "systemPrompt": value_string(local_agent, &["systemPrompt"]).unwrap_or_default(),
-        "soulMd": value_string(local_agent, &["soulMd"]).unwrap_or_default(),
-        "agentsMd": value_string(local_agent, &["agentsMd"]).unwrap_or_default(),
-        "rootfsPath": value_string(local_agent, &["rootfsPath"]).unwrap_or_default(),
-        "workspaceMode": value_string(local_agent, &["workspaceMode"]).unwrap_or_default(),
-        "runtimeBackend": value_string(local_agent, &["runtimeBackend"]).unwrap_or_default(),
-    })
-    .to_string();
+    let config_json = station_agent_config_from_local(local_agent).to_string();
 
     let result = station_client::request_json(
         Method::POST,
@@ -153,6 +145,32 @@ fn create_station_agent_from_local(
         })),
     )?;
     Ok(result.get("agent").cloned().unwrap_or(result))
+}
+
+fn station_agent_config_from_local(local_agent: &Value) -> Value {
+    let cli_command = value_string(local_agent, &["cliCommand", "cli_command"]).unwrap_or_default();
+    let runtime_kind = if cli_command.is_empty() {
+        value_string(local_agent, &["runtimeKind", "runtime_kind"]).unwrap_or_default()
+    } else {
+        "cli".to_string()
+    };
+    let executor_kind = if cli_command.is_empty() {
+        "station_hosted"
+    } else {
+        "desktop_device"
+    };
+    json!({
+        "systemPrompt": value_string(local_agent, &["systemPrompt"]).unwrap_or_default(),
+        "soulMd": value_string(local_agent, &["soulMd"]).unwrap_or_default(),
+        "agentsMd": value_string(local_agent, &["agentsMd"]).unwrap_or_default(),
+        "rootfsPath": value_string(local_agent, &["rootfsPath"]).unwrap_or_default(),
+        "workspaceMode": value_string(local_agent, &["workspaceMode"]).unwrap_or_default(),
+        "runtimeBackend": value_string(local_agent, &["runtimeBackend"]).unwrap_or_default(),
+        "runtimeKind": runtime_kind,
+        "executorKind": executor_kind,
+        "cliCommand": cli_command,
+        "cli_command": cli_command,
+    })
 }
 
 fn station_agent_id_exists(station_agents: &[Value], id: &str) -> bool {
@@ -199,6 +217,24 @@ pub fn agent_collaboration_create(
         Ok(ids) => ids,
         Err(result) => return result,
     };
+    let station_judge_agent_id = input
+        .judge_agent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .and_then(|judge_id| {
+            input
+                .agent_ids
+                .iter()
+                .position(|id| id.trim() == judge_id)
+                .and_then(|index| station_agent_ids.get(index).cloned())
+                .or_else(|| {
+                    resolve_station_agent_ids(&[judge_id.to_string()], token, local_actor_id)
+                        .ok()
+                        .and_then(|ids| ids.into_iter().next())
+                })
+        })
+        .unwrap_or_default();
     let body = json!({
         "title": input.title,
         "description": input.description,
@@ -210,6 +246,8 @@ pub fn agent_collaboration_create(
         "meta": {
             "agent_ids": serde_json::to_string(&station_agent_ids).unwrap_or_default(),
             "desktop_agent_ids": serde_json::to_string(&input.agent_ids).unwrap_or_default(),
+            "judge_agent_id": station_judge_agent_id,
+            "desktop_judge_agent_id": input.judge_agent_id.unwrap_or_default(),
             "source": "desktop.agent_canvas"
         }
     });
@@ -465,5 +503,41 @@ fn emit_collaboration_event(
         },
     ) {
         tracing::warn!(error = %error, "Failed to emit Agent collaboration event");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn station_agent_config_marks_cli_agent_as_desktop_executor() {
+        let config = station_agent_config_from_local(&json!({
+            "systemPrompt": "You are a CLI agent.",
+            "provider": "trae-cli",
+            "model": "trae-cli",
+            "cliCommand": "traecli exec --skip-git-repo-check -",
+            "runtimeBackend": "host"
+        }));
+
+        assert_eq!(config["runtimeKind"], "cli");
+        assert_eq!(config["executorKind"], "desktop_device");
+        assert_eq!(config["cliCommand"], "traecli exec --skip-git-repo-check -");
+        assert_eq!(
+            config["cli_command"],
+            "traecli exec --skip-git-repo-check -"
+        );
+    }
+
+    #[test]
+    fn station_agent_config_defaults_to_station_hosted_without_cli_command() {
+        let config = station_agent_config_from_local(&json!({
+            "systemPrompt": "You are a hosted agent.",
+            "provider": "openai",
+            "model": "gpt-4.1"
+        }));
+
+        assert_eq!(config["executorKind"], "station_hosted");
+        assert_eq!(config["cliCommand"], "");
     }
 }
