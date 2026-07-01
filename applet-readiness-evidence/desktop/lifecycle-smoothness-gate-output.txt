@@ -1,0 +1,12 @@
+PASS Applet Desktop lifecycle smoothness gate
+Evidence: applet-readiness-evidence/desktop/lifecycle-smoothness-gate/lifecycle-smoothness-gate.json
+Markdown: applet-readiness-evidence/desktop/lifecycle-smoothness-gate/lifecycle-smoothness-gate.md
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.8 [39m[90m/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop[39m
+
+ [32m✓[39m src/runtimes/appletsRuntime.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/kernel/pageRuntimeLease.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 23:27:41
+[2m   Duration [22m 153ms[2m (transform 77ms, setup 0ms, import 88ms, tests 24ms, environment 0ms)[22m
