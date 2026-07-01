@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 )
@@ -113,6 +114,43 @@ func TestReadyCollaborationNodesRespectsPrerequisites(t *testing.T) {
 	contexts := collaborationContextsForPrerequisites(&nodes[1], nodes)
 	if len(contexts) != 1 || contexts[0].Summary != "Root complete." {
 		t.Fatalf("expected prerequisite context to include completed root summary, got %#v", contexts)
+	}
+}
+
+func TestAgentExecutorKindDetectsDesktopCliRuntime(t *testing.T) {
+	tests := []struct {
+		name   string
+		config string
+		want   model.ExecutorKind
+	}{
+		{
+			name:   "explicit desktop executor",
+			config: `{"executorKind":"desktop_device"}`,
+			want:   model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE,
+		},
+		{
+			name:   "cli command implies desktop executor",
+			config: `{"cliCommand":"traecli exec --skip-git-repo-check -"}`,
+			want:   model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE,
+		},
+		{
+			name:   "cli runtime implies desktop executor",
+			config: `{"runtimeKind":"cli"}`,
+			want:   model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE,
+		},
+		{
+			name:   "hosted default",
+			config: `{"runtimeKind":"hosted"}`,
+			want:   model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := &domain.Agent{AgentID: "agent-1", ConfigJSON: tt.config}
+			if got := agentExecutorKind(agent); got != tt.want {
+				t.Fatalf("expected executor kind %v, got %v", tt.want, got)
+			}
+		})
 	}
 }
 

@@ -567,6 +567,12 @@ func (s *OrchestrationService) runCollaborationNode(
 		s.publishNodeEvent(ctx, task, node, domain.EventTypeCollaborationNodeFailed, "", summary)
 		return collaborationNodeRunResult{Summary: summary, Failed: true}
 	}
+	if agentExecutorKind(agent) == model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE {
+		summary := desktopExecutorRequiredSummary(agent)
+		s.updateNode(ctx, db, node, model.TaskNodeStatus_TASK_NODE_STATUS_FAILED, summary)
+		s.publishNodeEvent(ctx, task, node, domain.EventTypeCollaborationNodeFailed, "", summary)
+		return collaborationNodeRunResult{Summary: summary, Failed: true}
+	}
 
 	if err := s.ensureNodeConversation(ctx, db, actorID, task, node, agent); err != nil {
 		summary := fmt.Sprintf("failed to create node conversation: %v", err)
@@ -667,6 +673,15 @@ func (s *OrchestrationService) synthesizeTaskResult(
 		logger.Warnf(ctx, "failed to load synthesis agent: task_id=%s agent_id=%s err=%v", task.ID, synthNode.AgentID, err)
 		if isSynthesisNode(synthNode) {
 			summary := fmt.Sprintf("failed to load synthesis agent: %v", err)
+			s.updateNode(ctx, db, synthNode, model.TaskNodeStatus_TASK_NODE_STATUS_FAILED, summary)
+			s.publishNodeEvent(ctx, task, synthNode, domain.EventTypeCollaborationNodeFailed, "", summary)
+			return "", "", true
+		}
+		return "", "", false
+	}
+	if agentExecutorKind(agent) == model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE {
+		summary := desktopExecutorRequiredSummary(agent)
+		if isSynthesisNode(synthNode) {
 			s.updateNode(ctx, db, synthNode, model.TaskNodeStatus_TASK_NODE_STATUS_FAILED, summary)
 			s.publishNodeEvent(ctx, task, synthNode, domain.EventTypeCollaborationNodeFailed, "", summary)
 			return "", "", true
@@ -1118,6 +1133,37 @@ func agentRuntimeConfig(agent *domain.Agent) (string, string) {
 	}
 	workspaceRoot := firstConfigString(config, "rootfsPath", "rootfs_path", "workspaceRoot", "workspace_root")
 	return strings.Join(parts, "\n\n"), workspaceRoot
+}
+
+func agentExecutorKind(agent *domain.Agent) model.ExecutorKind {
+	if agent == nil {
+		return model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED
+	}
+	var config map[string]interface{}
+	_ = json.Unmarshal([]byte(agent.ConfigJSON), &config)
+	executorKind := strings.ToLower(firstConfigString(config, "executorKind", "executor_kind"))
+	switch executorKind {
+	case "desktop_device", strings.ToLower(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE.String()):
+		return model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE
+	case "station_hosted", strings.ToLower(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED.String()):
+		return model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED
+	}
+	runtimeKind := strings.ToLower(firstConfigString(config, "runtimeKind", "runtime_kind", "protocol"))
+	if runtimeKind == "cli" || firstConfigString(config, "cliCommand", "cli_command") != "" {
+		return model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE
+	}
+	return model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED
+}
+
+func desktopExecutorRequiredSummary(agent *domain.Agent) string {
+	agentID := ""
+	if agent != nil {
+		agentID = strings.TrimSpace(agent.AgentID)
+	}
+	if agentID == "" {
+		agentID = "unknown"
+	}
+	return fmt.Sprintf("Desktop device executor required for CLI agent %s; Station hosted orchestration cannot run local CLI commands yet.", agentID)
 }
 
 func firstConfigString(config map[string]interface{}, keys ...string) string {
