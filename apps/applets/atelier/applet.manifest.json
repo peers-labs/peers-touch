@@ -1,0 +1,69 @@
+{
+  "id": "peers.atelier",
+  "name": "Atelier",
+  "description": "Personal Agent workbench powered by the peers-touch orchestration layer.",
+  "author": "Peers Touch",
+  "version": "0.1.0",
+  "icon": "assets/icon.png",
+  "minPlatformVersion": "0.1.0",
+  "targets": [
+    "desktop",
+    "web"
+  ],
+  "entries": {
+    "lynx": "main.lynx.bundle"
+  },
+  "load": {
+    "desktop": {
+      "type": "lynx-web",
+      "entry": "main.lynx.bundle"
+    },
+    "web": {
+      "type": "lynx-web",
+      "entry": "main.lynx.bundle"
+    }
+  },
+  "bridge": {
+    "protocol": "peers-touch.applet.bridge",
+    "version": "1.0.0"
+  },
+  "permissions": [
+    "app.getContext",
+    "app.getLaunchOptions",
+    "lifecycle.reportReady",
+    "events.subscribe",
+    "events.unsubscribe",
+    "events.poll",
+    "telemetry.track",
+    "telemetry.reportError",
+    "atelier.workspace.load",
+    "atelier.project.createFromGoal",
+    "atelier.message.send",
+    "atelier.escalation.resolve",
+    "atelier.task.setStatus",
+    "atelier.task.purge",
+    "atelier.events.subscribe"
+  ],
+  "capabilities": [
+    "atelier"
+  ],
+  "services": [],
+  "serviceDependencies": {
+    "station-agent-subserver": {
+      "kind": "station-subserver",
+      "required": true
+    }
+  },
+  "skills": [],
+  "platformPermissions": [
+    "events:applet",
+    "telemetry:track",
+    "agent:atelier-projection"
+  ],
+  "integrity": {
+    "algorithm": "sha256",
+    "files": {
+      "main.lynx.bundle": "sha256:pending-atelier-bundle"
+    }
+  }
+}

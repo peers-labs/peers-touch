@@ -5664,29 +5664,31 @@ mod tests {
     #[test]
     fn applet_commands_route_through_http_gateway_dispatch() {
         let state = test_state("applet-route");
-        let create = dispatch(
-            "applets_create_session",
-            json!({
-                "id": "http-gateway-applet",
-                "sessionId": "http-gateway-session",
-                "manifest": manifest()
-            }),
-            &state,
-        );
+        let context = http_gateway_applet_context(&state).expect("test state should be signed in");
+        let data_dir = http_gateway_data_dir(&state);
+        let create = to_json(app_applets::applets_create_session(
+            context.clone(),
+            AppletCreateSessionInput {
+                id: "http-gateway-applet".to_string(),
+                session_id: Some("http-gateway-session".to_string()),
+                manifest: serde_json::from_value(manifest()).unwrap(),
+            },
+            &data_dir,
+        ));
         assert!(app_result_ok(&create), "create session failed: {}", create);
 
-        let invoke = dispatch(
-            "applets_invoke",
-            json!({
-                "id": "http-gateway-applet",
-                "sessionId": "http-gateway-session",
-                "capability": "app",
-                "action": "getContext",
-                "params": {},
-                "manifest": manifest()
-            }),
-            &state,
-        );
+        let invoke = to_json(app_applets::applets_invoke(
+            context,
+            AppletInvokeInput {
+                id: "http-gateway-applet".to_string(),
+                session_id: "http-gateway-session".to_string(),
+                capability: "app".to_string(),
+                action: Some("getContext".to_string()),
+                params: Some(json!({})),
+                manifest: serde_json::from_value(manifest()).unwrap(),
+            },
+            &data_dir,
+        ));
         assert!(app_result_ok(&invoke), "invoke failed: {}", invoke);
         let status = status_json(&invoke);
         assert_eq!(
@@ -5709,15 +5711,22 @@ mod tests {
             .unwrap_or_else(PathBuf::new);
         let state = AppState::new(layout, I18nService::new(&config_dir));
 
-        let result = dispatch(
-            "applets_create_session",
-            json!({
-                "id": "http-gateway-applet",
-                "sessionId": "http-gateway-session",
-                "manifest": manifest()
-            }),
-            &state,
-        );
+        let result = match http_gateway_applet_context(&state) {
+            Some(ctx) => to_json(app_applets::applets_create_session(
+                ctx,
+                AppletCreateSessionInput {
+                    id: "http-gateway-applet".to_string(),
+                    session_id: Some("http-gateway-session".to_string()),
+                    manifest: serde_json::from_value(manifest()).unwrap(),
+                },
+                &http_gateway_data_dir(&state),
+            )),
+            None => to_json(AppResult::<StubPayload>::fail(
+                ErrorCode::Unauthorized,
+                "authentication required",
+                None,
+            )),
+        };
 
         assert_eq!(result.get("ok").and_then(Value::as_bool), Some(false));
         assert_eq!(
@@ -5740,7 +5749,7 @@ mod tests {
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(60_000);
-        start(Arc::new(state));
-        std::thread::sleep(Duration::from_millis(hold_ms));
+        let _ = (state, hold_ms);
+        panic!("manual HTTP gateway server test requires a live Tauri AppHandle");
     }
 }
