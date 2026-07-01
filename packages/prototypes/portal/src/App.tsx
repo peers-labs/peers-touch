@@ -428,7 +428,7 @@ const styles: Record<string, CSSProperties> = {
   previewBody: {
     height: 720,
     minHeight: 0,
-    overflow: 'hidden',
+    overflow: 'auto',
   },
   previewPlaceholder: {
     height: '100%',

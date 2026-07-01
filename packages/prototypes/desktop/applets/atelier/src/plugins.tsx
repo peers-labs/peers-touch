@@ -57,14 +57,15 @@ function TaskRow({ t, host }: { t: Task; host: TaskHost }) {
         style={{
           display: 'flex',
           alignItems: 'center',
-          padding: '7px 8px',
+          height: 26,
+          padding: '0 6px',
           borderRadius: 6,
           backgroundColor: selected ? C.primaryWash2 : 'transparent',
           cursor: 'pointer',
         }}
       >
         <span
-          style={{ flex: 1, fontSize: 13, color: t.status === 'active' ? C.text : C.textTertiary }}
+          style={{ flex: 1, fontSize: 12, color: t.status === 'active' ? C.text : C.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
         >
           {t.title}
         </span>
@@ -75,9 +76,9 @@ function TaskRow({ t, host }: { t: Task; host: TaskHost }) {
             e.stopPropagation();
             setMenuOpen((v) => !v);
           }}
-          style={{ fontSize: 14, color: C.textQuaternary, cursor: 'pointer' }}
+          style={{ fontSize: 13, color: selected ? C.textSecondary : C.textQuaternary, cursor: 'pointer' }}
         >
-          ⋯
+          {selected ? '▦' : '⋯'}
         </span>
       </div>
       {menuOpen ? (
@@ -152,17 +153,14 @@ function ProjectGroup({ name, tasks, host }: { name: string; tasks: Task[]; host
   return (
     <div style={{ marginBottom: 4 }}>
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '4px 6px',
-        }}
+        style={{ display: 'flex', alignItems: 'center', height: 26, padding: '0 4px' }}
       >
-        <span onClick={() => setOpen((v) => !v)} style={{ fontSize: 12, color: C.textQuaternary, marginRight: 4, cursor: 'pointer' }}>
-          {open ? '▾' : '▸'}
+        <span style={{ fontSize: 13, color: C.textTertiary, marginRight: 5 }}>▱</span>
+        <span onClick={() => setOpen((v) => !v)} style={{ fontSize: 11, color: C.textTertiary, marginRight: 4, cursor: 'pointer' }}>
+          {open ? '⌄' : '›'}
         </span>
-        <span style={{ flex: 1, fontSize: 12, fontWeight: 'bold', color: C.textTertiary }}>{name}</span>
-        <span onClick={host.newTask} style={{ fontSize: 14, color: C.textQuaternary, cursor: 'pointer' }}>+</span>
+        <span style={{ flex: 1, fontSize: 12, color: C.textSecondary }}>{name}</span>
+        <span onClick={host.newTask} style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: C.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: C.textTertiary, cursor: 'pointer' }}>+</span>
       </div>
       {open ? tasks.map((t) => <TaskRow key={t.id} t={t} host={host} />) : null}
     </div>
