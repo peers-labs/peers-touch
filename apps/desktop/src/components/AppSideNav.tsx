@@ -310,7 +310,7 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
         }
       />
 
-      {(page === 'agent' || page === 'agent-profile') && (
+      {page === 'agent-profile' && (
         <DraggablePanel
           placement="left"
           defaultSize={{ width: 260 }}

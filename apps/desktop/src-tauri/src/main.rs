@@ -23,12 +23,11 @@ pub mod peers_touch {
 }
 
 use interface::tauri_commands::{
-    account, actor, admin, agent_growth, agent_scheduler, agent_turn, agents, applets, auth,
-    channels, chat, cron, crypto, desktop_capture, federation, friend_chat, frontend_log,
-    group_chat, host_events,
-    i18n, ice, key_exchange, mcp, memory, model_config, models, notebook, notification, oauth2,
-    oss, presence, profile, provider, realtime, search, settings, skills, skills_market, social,
-    station, system, tools, tts,
+    account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
+    applets, auth, channels, chat, cron, crypto, desktop_capture, federation, friend_chat,
+    frontend_log, group_chat, host_events, i18n, ice, key_exchange, mcp, memory, model_config,
+    models, notebook, notification, oauth2, oss, presence, profile, provider, realtime, search,
+    settings, skills, skills_market, social, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -222,6 +221,12 @@ fn main() {
             agent_turn::agent_turn_trace_get,
             agent_turn::agent_resolve_local_tool_request,
             agent_turn::agent_decide_tool_approval,
+            agent_orchestration::agent_collaboration_create,
+            agent_orchestration::agent_collaboration_get,
+            agent_orchestration::agent_collaboration_list,
+            agent_orchestration::agent_collaboration_subscribe,
+            agent_orchestration::agent_collaboration_cancel_stream,
+            agent_orchestration::agent_collaboration_cancel_task,
             agents::agent_workspace_info,
             agents::agent_workspace_clean,
             tools::tools_list,

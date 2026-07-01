@@ -48,7 +48,7 @@ providers:
   - id: anthropic
     name: Anthropic
     description: Claude models from Anthropic
-    enabled: false
+    enabled: true
     builtin: true
     show_checker: true
     protocol: anthropic
@@ -65,7 +65,7 @@ providers:
   - id: google
     name: Google
     description: Gemini models from Google
-    enabled: false
+    enabled: true
     builtin: true
     show_checker: true
     protocol: gemini
@@ -82,7 +82,7 @@ providers:
   - id: deepseek
     name: DeepSeek
     description: DeepSeek models
-    enabled: false
+    enabled: true
     builtin: true
     show_checker: true
     protocol: openai-compatible
@@ -99,7 +99,7 @@ providers:
   - id: ollama
     name: Ollama
     description: Run open-source models locally
-    enabled: false
+    enabled: true
     builtin: true
     show_checker: true
     protocol: ollama
@@ -213,6 +213,26 @@ providers:
         type: chat
         enabled: true
         context_window: 128000
+  - id: cursor-cli
+    name: Cursor CLI
+    description: Local Cursor Agent CLI adapter running in the Agent workspace
+    enabled: false
+    builtin: true
+    show_checker: false
+    show_api_key: false
+    protocol: cli
+    discovery: static
+    home_url: https://cursor.com
+    api_key_url: ""
+    default_base_url: ""
+    runtime_kind: cli
+    cli_command: cursor-agent --print --output-format text --trust
+    models:
+      - id: cursor-cli
+        display_name: Cursor Agent
+        type: chat
+        enabled: true
+        context_window: 200000
   - id: claude-cli
     name: Claude CLI
     description: Local Claude CLI adapter running in the Agent workspace
@@ -246,7 +266,7 @@ providers:
     api_key_url: ""
     default_base_url: ""
     runtime_kind: cli
-    cli_command: trae -p
+    cli_command: traecli exec --skip-git-repo-check -
     models:
       - id: trae-cli
         display_name: TRAE CLI

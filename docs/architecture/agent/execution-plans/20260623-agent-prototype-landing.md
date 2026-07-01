@@ -6,13 +6,13 @@
 > **Updated**: 2026-06-25
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `apps/desktop/`, `apps/desktop/src-tauri/`, `apps/station/app/subserver/agent/`, `model/domain/agent/`
-> **Prototype**: `packages/prototypes/desktop/src/AgentAdmin.tsx` + `Settings.tsx`
+> **Prototype**: `packages/prototypes/desktop/shell/src/AgentChatPage.tsx` + `packages/prototypes/desktop/shell/src/AgentProfilePage.tsx` + `packages/prototypes/agent-canvas/src/AgentCanvasPage.tsx` + `Settings.tsx`
 
 ---
 
 ## 1. 目的
 
-将 Agent 原型（AgentAdmin 编辑面 + Settings 管理面）落地为真实可用的产品功能。
+将 Agent 原型（Agent Chat / Agent Profile / Agent Canvas + Settings 管理面）落地为真实可用的产品功能。
 
 原型验证了产品形态，本计划定义：从原型到真实产品，每一项要做什么、做在哪里、依赖什么、怎么验证。
 
@@ -162,7 +162,7 @@ D-1~D-9 / E-1~E-4 / F-1~F-2 (Desktop Web UI)
 
 ## 6. 验收标准
 
-1. AgentAdmin 原型中每一项可交互功能，在真实产品中均可操作且数据持久化。
+1. Agent Chat / Agent Profile / Agent Canvas 原型中每一项可交互功能，在真实产品中均可操作且数据持久化。
 2. Settings 原型中 4 个 section（Agent 管理/Providers/Skills/MCP）在真实产品中功能完整。
 3. `pnpm run check && pnpm run build` 通过。
 4. `go test ./...` 通过。
@@ -186,7 +186,7 @@ D-1~D-9 / E-1~E-4 / F-1~F-2 (Desktop Web UI)
 
 - 上游蓝图：[Agent LobeHub Blueprint](../agent-lobehub-blueprint.md)
 - 总执行计划：[20260616-agent-lobehub-rebuild.md](./20260616-agent-lobehub-rebuild.md)
-- 原型源码：`packages/prototypes/desktop/src/AgentAdmin.tsx`, `packages/prototypes/desktop/src/Settings.tsx`
+- 原型源码：`packages/prototypes/desktop/shell/src/AgentChatPage.tsx`, `packages/prototypes/desktop/shell/src/AgentProfilePage.tsx`, `packages/prototypes/agent-canvas/src/AgentCanvasPage.tsx`, `packages/prototypes/desktop/shell/src/Settings.tsx`
 - 原型规范：`docs/global/architecture-document-standard.md` §5.8
 
 ---

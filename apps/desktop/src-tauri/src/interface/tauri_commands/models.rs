@@ -161,6 +161,9 @@ mod tests {
                 logo: "".to_string(),
                 key_vaults: "{\"api_key\":\"k\"}".to_string(),
                 config_json: "{\"base_url\":\"https://api.openai.com/v1\"}".to_string(),
+                runtime_kind: None,
+                cli_command: None,
+                protocol: None,
             },
         );
         assert!(create_result.ok);

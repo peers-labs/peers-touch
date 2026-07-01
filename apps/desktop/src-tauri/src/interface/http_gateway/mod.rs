@@ -23,6 +23,7 @@ use crate::state::AppState;
 // -------------------------------------------------------------------------
 use crate::application::account as app_account;
 use crate::application::admin as app_admin;
+use crate::application::agent_orchestration as app_agent_orchestration;
 use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
 use crate::application::applets as app_applets;
@@ -548,6 +549,10 @@ fn http_gateway_bearer_token(state: &AppState) -> Option<String> {
         .ok()
         .and_then(|g| g.token.clone())
         .filter(|t| !t.trim().is_empty())
+}
+
+fn unauthorized_error() -> AppResult<StubPayload> {
+    AppResult::fail(ErrorCode::Unauthorized, "authentication required", None)
 }
 
 fn http_gateway_admin_context(state: &AppState) -> Option<crate::domain::admin::AccessContext> {
@@ -1925,6 +1930,58 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => return e,
             };
             to_json(app_agent_turn::agent_resolve_local_tool_request(input))
+        }
+        "agent_collaboration_create" => {
+            let input = match parse_args::<AgentCollaborationCreateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_create(
+                input, &token,
+            ))
+        }
+        "agent_collaboration_get" => {
+            let input = match parse_args::<AgentCollaborationGetInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_get(
+                input, &token,
+            ))
+        }
+        "agent_collaboration_list" => {
+            let input = match parse_args::<AgentCollaborationListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_list(
+                input, &token,
+            ))
+        }
+        "agent_collaboration_cancel_task" => {
+            let input = match parse_args::<AgentCollaborationCancelTaskInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_cancel_task(
+                input, &token,
+            ))
         }
 
         // =================================================================

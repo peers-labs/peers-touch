@@ -20,6 +20,7 @@ import {
   Undo2,
   Upload,
   Loader2,
+  Settings2,
 } from 'lucide-react';
 import { theme, Modal, Popover } from 'antd';
 import { Dropdown, Input, toast } from '@lobehub/ui';
@@ -38,6 +39,7 @@ interface AgentSidebarProps {
   onNavigateChat?: () => void;
   onNavigateMarketplace?: () => void;
   onAgentChanged?: (agentName: string) => void;
+  hideAgentPicker?: boolean;
 }
 
 function groupTopicsByDate(sessions: AgentTopic[], t: (key: string) => string): { key: string; label: string; items: AgentTopic[] }[] {
@@ -94,7 +96,7 @@ function groupTopicsByDate(sessions: AgentTopic[], t: (key: string) => string): 
   }));
 }
 
-export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, onNavigateChat, onNavigateMarketplace, onAgentChanged }: AgentSidebarProps) {
+export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, onNavigateChat, onNavigateMarketplace, onAgentChanged, hideAgentPicker = false }: AgentSidebarProps) {
   const { t } = useTranslation('agent');
   const {
     agents,
@@ -306,24 +308,28 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
 
   return (
     <Flexbox height="100%" style={{ background: token.colorBgContainer }}>
-      <AgentPicker
-        agents={agents}
-        selectedAgent={selectedAgent}
-        defaultAgent={defaultAgent}
-        searchText={searchText}
-        onSearchChange={setSearchText}
-        onSelect={handleSwitchAgent}
-        onSetDefault={handleSetDefaultAgent}
-        onTogglePin={handleToggleAgentPin}
-        onToggleFavorite={handleToggleAgentFavorite}
-        onCreate={onCreateAgent}
-        onClone={handleCloneAgent}
-        onExport={handleExportAgentPackage}
-        onImportClick={() => importInputRef.current?.click()}
-        onNavigateMarketplace={onNavigateMarketplace}
-        token={token}
-        t={t}
-      />
+      {hideAgentPicker ? (
+        <AgentContextCard agent={currentAgent} token={token} t={t} />
+      ) : (
+        <AgentPicker
+          agents={agents}
+          selectedAgent={selectedAgent}
+          defaultAgent={defaultAgent}
+          searchText={searchText}
+          onSearchChange={setSearchText}
+          onSelect={handleSwitchAgent}
+          onSetDefault={handleSetDefaultAgent}
+          onTogglePin={handleToggleAgentPin}
+          onToggleFavorite={handleToggleAgentFavorite}
+          onCreate={onCreateAgent}
+          onClone={handleCloneAgent}
+          onExport={handleExportAgentPackage}
+          onImportClick={() => importInputRef.current?.click()}
+          onNavigateMarketplace={onNavigateMarketplace}
+          token={token}
+          t={t}
+        />
+      )}
       <input
         ref={importInputRef}
         type="file"
@@ -337,7 +343,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       />
 
       {/* Nav Actions */}
-      <Flexbox style={{ padding: '8px', flexShrink: 0, borderBottom: `1px solid ${token.colorBorderSecondary}` }} gap={1}>
+      <Flexbox style={{ padding: '8px', flexShrink: 0, borderBottom: `1px solid ${token.colorBorderSecondary}` }} gap={2}>
         <NavItem
           icon={<MessageSquarePlus size={16} />}
           label={t('agent.sidebar.startNewTopic')}
@@ -383,10 +389,12 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
           <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextSecondary }}>
             {t('agent.sidebar.topic')} {totalTopics > 0 ? totalTopics : ''}
           </span>
-          {loadingTopics && (
+          {loadingTopics ? (
             <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
               {t('agent.sidebar.topicSyncing')}
             </span>
+          ) : (
+            <Settings2 size={13} color={token.colorTextTertiary} />
           )}
         </Flexbox>
 
@@ -426,6 +434,50 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
           ))
         )}
       </Flexbox>
+    </Flexbox>
+  );
+}
+
+function AgentContextCard({
+  agent,
+  token,
+  t,
+}: {
+  agent?: Agent;
+  token: any;
+  t: (key: string, options?: Record<string, any>) => string;
+}) {
+  if (!agent) {
+    return (
+      <div style={{ padding: 10, borderBottom: `1px solid ${token.colorBorderSecondary}`, color: token.colorTextTertiary, fontSize: 12 }}>
+        {t('agent.sidebar.noAgentsYet')}
+      </div>
+    );
+  }
+  return (
+    <Flexbox
+      horizontal
+      align="center"
+      gap={10}
+      style={{
+        margin: 10,
+        padding: 10,
+        borderRadius: 14,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorFillQuaternary,
+        flexShrink: 0,
+      }}
+    >
+      <Avatar avatar={agent.avatar || '🤖'} shape="square" size={44} />
+      <Flexbox flex={1} style={{ minWidth: 0 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {agent.title || agent.name}
+        </span>
+        <span style={{ fontSize: 11, color: token.colorTextTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {agent.description || t('agent.canvas.agentFallback')}
+        </span>
+      </Flexbox>
+      <Sparkles size={14} color={token.colorWarning} />
     </Flexbox>
   );
 }

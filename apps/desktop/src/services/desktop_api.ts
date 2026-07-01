@@ -80,6 +80,11 @@ import type {
   GetTurnTraceResponse,
   ListTurnTracesResponse,
 } from '../gen/proto/domain/agent/agent_pb';
+import type {
+  CollaborationTask,
+  GetCollaborationTaskResponse,
+  ListCollaborationTasksResponse,
+} from '../gen/proto/domain/agent/orchestration_pb';
 export {
   FederationVisibility,
   FederationVisibilityRequestSchema,
@@ -961,6 +966,43 @@ export interface AgentListResult {
   defaultAgent?: string;
 }
 
+export interface AgentCollaborationCreateInput {
+  title: string;
+  description: string;
+  engine_type: number;
+  agent_ids: string[];
+  workspace_id?: string;
+  budget_tokens?: number;
+  budget_money?: number;
+  budget_time_ms?: number;
+}
+
+export interface AgentCollaborationGetInput {
+  task_id: string;
+}
+
+export interface AgentCollaborationListInput {
+  status?: number;
+  page?: number;
+  page_size?: number;
+}
+
+export interface AgentCollaborationSubscribeInput {
+  stream_id?: string;
+  agent_id: string;
+}
+
+export interface AgentCollaborationCancelTaskInput {
+  task_id: string;
+}
+
+export interface AgentCollaborationStreamPayload {
+  streamId: string;
+  agentId: string;
+  event: string;
+  data: Record<string, any>;
+}
+
 export function parseAgentChatConfig(agent: Agent): AgentChatConfig {
   if (!agent.chatConfig) return {};
   try { return JSON.parse(agent.chatConfig); } catch { return {}; }
@@ -1062,6 +1104,9 @@ export interface ProviderListItem {
   builtin: boolean;
   has_api_key: boolean;
   runtime_kind: 'cli' | 'direct';
+  cli_command?: string;
+  show_api_key?: boolean;
+  show_checker?: boolean;
 }
 
 export interface ModelItem {
@@ -3372,6 +3417,42 @@ export const api = {
       },
     ),
 
+  createAgentCollaborationTask: (input: AgentCollaborationCreateInput) =>
+    invokeRustDataFromStatus<AgentCollaborationCreateInput, { task?: CollaborationTask }>(
+      'agent_collaboration_create',
+      input,
+    ),
+
+  getAgentCollaborationTask: (taskId: string) =>
+    invokeRustDataFromStatus<AgentCollaborationGetInput, GetCollaborationTaskResponse>(
+      'agent_collaboration_get',
+      { task_id: taskId },
+    ),
+
+  listAgentCollaborationTasks: (input?: AgentCollaborationListInput) =>
+    invokeRustDataFromStatus<AgentCollaborationListInput, ListCollaborationTasksResponse>(
+      'agent_collaboration_list',
+      input || {},
+    ),
+
+  startAgentCollaborationStream: (input: AgentCollaborationSubscribeInput) =>
+    invokeRustDataFromStatus<AgentCollaborationSubscribeInput, { stream_id: string }>(
+      'agent_collaboration_subscribe',
+      input,
+    ),
+
+  cancelAgentCollaborationStream: (streamId: string) =>
+    invokeRustDataFromStatus<{ stream_id: string }, { stream_id: string }>(
+      'agent_collaboration_cancel_stream',
+      { stream_id: streamId },
+    ),
+
+  cancelAgentCollaborationTask: (taskId: string) =>
+    invokeRustDataFromStatus<AgentCollaborationCancelTaskInput, { task?: CollaborationTask }>(
+      'agent_collaboration_cancel_task',
+      { task_id: taskId },
+    ),
+
   listTools: () =>
     invokeRustDataFromStatus<void, { tools: ToolInfo[] }>('tools_list').then((r) => r.tools),
 
@@ -5270,7 +5351,8 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
   const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
   const runtimeKind = String(cfg.runtime_kind || cfg.runtimeKind || cfg.runtime || '').trim().toLowerCase();
-  const hasCliCommand = Boolean(String(cfg.cli_command || cfg.cliCommand || '').trim());
+  const cliCommand = String(cfg.cli_command || cfg.cliCommand || '').trim();
+  const hasCliCommand = Boolean(cliCommand);
   return {
     id: item.id,
     name: item.name || '',
@@ -5280,6 +5362,9 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     builtin: Boolean(item.builtin),
     has_api_key: Boolean(keyVaults.api_key || keyVaults.key || ''),
     runtime_kind: runtimeKind === 'cli' || hasCliCommand ? 'cli' : 'direct',
+    cli_command: cliCommand || undefined,
+    show_api_key: Boolean(item.show_api_key ?? true),
+    show_checker: Boolean(item.show_checker ?? true),
   };
 }
 
@@ -5318,7 +5403,7 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     api_key: keyVaults.api_key || '',
     base_url: cfg.base_url || '',
     default_base_url: cfg.default_base_url || cfg.base_url || '',
-    show_checker: true,
+    show_checker: Boolean(item.show_checker ?? true),
     check_model: checkModel,
     models: models.length > 0
       ? models
@@ -5490,6 +5575,57 @@ export function streamAgentTurn(
       controller.signal.addEventListener('abort', () => {
         api.cancelAgentTurnStream(streamId).catch((error) => {
           log.warn('api', 'streamAgentTurn cancel failed', { error: String(error) });
+        });
+        unlisten?.();
+      }, { once: true });
+    } catch (err: unknown) {
+      unlisten?.();
+      onError(err instanceof Error ? err : new Error(String(err)));
+    }
+  })();
+  return controller;
+}
+
+export function streamAgentCollaborationEvents(
+  agentId: string,
+  onEvent: (payload: AgentCollaborationStreamPayload) => void,
+  onError: (err: Error) => void,
+): AbortController {
+  const controller = new AbortController();
+  (async () => {
+    let unlisten: (() => void) | undefined;
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      const streamId = `agent-collaboration-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      unlisten = await listen<AgentCollaborationStreamPayload>('agent:collaboration-event', (tauriEvent) => {
+        const payload = tauriEvent.payload;
+        if (payload.streamId !== streamId) return;
+        if (controller.signal.aborted) {
+          unlisten?.();
+          return;
+        }
+        if (payload.event === 'error') {
+          onError(new Error(String(payload.data?.error || 'agent.canvas.streamFailed')));
+          return;
+        }
+        onEvent(payload);
+      });
+
+      const result = await api.startAgentCollaborationStream({ stream_id: streamId, agent_id: agentId });
+      if (result?.stream_id !== streamId) {
+        unlisten();
+        throw new Error('agent.canvas.streamIdMismatch');
+      }
+      if (controller.signal.aborted) {
+        api.cancelAgentCollaborationStream(streamId).catch((error) => {
+          log.warn('api', 'streamAgentCollaborationEvents cancel failed', { error: String(error) });
+        });
+        unlisten();
+        return;
+      }
+      controller.signal.addEventListener('abort', () => {
+        api.cancelAgentCollaborationStream(streamId).catch((error) => {
+          log.warn('api', 'streamAgentCollaborationEvents cancel failed', { error: String(error) });
         });
         unlisten?.();
       }, { once: true });

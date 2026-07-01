@@ -1161,6 +1161,46 @@ pub struct AgentTurnTraceGetInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationCreateInput {
+    pub title: String,
+    pub description: String,
+    pub engine_type: i32,
+    pub agent_ids: Vec<String>,
+    pub workspace_id: Option<String>,
+    pub budget_tokens: Option<f64>,
+    pub budget_money: Option<f64>,
+    pub budget_time_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationGetInput {
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationListInput {
+    pub status: Option<i32>,
+    pub page: Option<i32>,
+    pub page_size: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationSubscribeInput {
+    pub stream_id: Option<String>,
+    pub agent_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationCancelInput {
+    pub stream_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationCancelTaskInput {
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentLocalToolRequestInput {
     pub source: String,
     pub server_name: Option<String>,

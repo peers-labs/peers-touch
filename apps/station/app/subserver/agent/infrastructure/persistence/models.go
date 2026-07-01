@@ -34,5 +34,7 @@ func AllModels() []interface{} {
 		&AgentVoiceConfig{},
 		&AgentToolProfile{},
 		&AgentOfflineOp{},
+		&CollaborationTask{},
+		&CollaborationTaskNode{},
 	}
 }
