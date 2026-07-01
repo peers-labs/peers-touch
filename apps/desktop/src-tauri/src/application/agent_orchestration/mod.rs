@@ -199,6 +199,24 @@ pub fn agent_collaboration_create(
         Ok(ids) => ids,
         Err(result) => return result,
     };
+    let station_judge_agent_id = input
+        .judge_agent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .and_then(|judge_id| {
+            input
+                .agent_ids
+                .iter()
+                .position(|id| id.trim() == judge_id)
+                .and_then(|index| station_agent_ids.get(index).cloned())
+                .or_else(|| {
+                    resolve_station_agent_ids(&[judge_id.to_string()], token, local_actor_id)
+                        .ok()
+                        .and_then(|ids| ids.into_iter().next())
+                })
+        })
+        .unwrap_or_default();
     let body = json!({
         "title": input.title,
         "description": input.description,
@@ -210,6 +228,8 @@ pub fn agent_collaboration_create(
         "meta": {
             "agent_ids": serde_json::to_string(&station_agent_ids).unwrap_or_default(),
             "desktop_agent_ids": serde_json::to_string(&input.agent_ids).unwrap_or_default(),
+            "judge_agent_id": station_judge_agent_id,
+            "desktop_judge_agent_id": input.judge_agent_id.unwrap_or_default(),
             "source": "desktop.agent_canvas"
         }
     });
