@@ -17,6 +17,7 @@ import { ensureLynxWebRuntime } from './lynx-web-runtime'
 import { api } from '../services/desktop_api'
 import AppletManager from './AppletManager'
 import { log } from '../utils/logger'
+import type { LynxDebugEvent, LynxDebugLevel } from './LynxDebugPanel'
 
 // ── Capability routing ──
 
@@ -135,6 +136,7 @@ export class LynxHostElement extends HTMLElement {
   private visibilityListenersInstalled = false
   private eventPollTimer: PollTimer | null = null
   private mountSequence = 0
+  private mountStartedAt = 0
   private pendingEventSubscribers: Array<(event: Record<string, unknown>) => void> = []
   private queuedEvents: Array<Record<string, unknown>> = []
   navigationHandler?: (request: AppletHostNavigationRequest) => void
@@ -170,6 +172,7 @@ export class LynxHostElement extends HTMLElement {
   connectedCallback(): void {
     this.destroyed = false
     this.activeSessionId = this.getAttribute('session-id') || ''
+    this.emitDebug('host.connected', { url: this.url })
     // Styling: fill container
     this.style.display = 'block'
     this.style.width = '100%'
@@ -183,6 +186,7 @@ export class LynxHostElement extends HTMLElement {
   }
 
   disconnectedCallback(): void {
+    this.emitDebug('host.disconnected')
     this.destroyed = true
     this.removeProductVisibilityListeners()
     this.destroyLynxView()
@@ -196,6 +200,7 @@ export class LynxHostElement extends HTMLElement {
     }
 
     if ((name === 'url' || name === 'session-id') && this.url && this.sessionId && this.isConnected) {
+      this.emitDebug('host.attribute.changed', { name })
       this.mountLynxView(this.url)
     }
   }
@@ -204,25 +209,34 @@ export class LynxHostElement extends HTMLElement {
 
   private async mountLynxView(bundleUrl: string): Promise<void> {
     const sequence = ++this.mountSequence
+    this.mountStartedAt = performance.now()
+    this.emitDebug('lynx.mount.start', { bundleUrl, sequence })
     this.destroyLynxView()
     this.readyEventSent = false
     this.visibleEventSent = false
 
     try {
+      this.emitDebug('lynx.runtime.ensure.start')
       await ensureLynxWebRuntime()
+      this.emitDebug('lynx.runtime.ensure.done')
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       log.error('lynx-host', 'Failed to load Lynx Web runtime', { appletId: this.appletId, error: message })
+      this.emitDebug('lynx.runtime.ensure.error', { error: message }, 'error')
       this.dispatchEvent(new CustomEvent('error', { detail: { appletId: this.appletId, message } }))
       return
     }
 
-    if (!this.isConnected || sequence !== this.mountSequence) return
+    if (!this.isConnected || sequence !== this.mountSequence) {
+      this.emitDebug('lynx.mount.cancelled', { sequence }, 'warn')
+      return
+    }
     this.destroyed = false
 
     const view = document.createElement('lynx-view') as LynxViewElement
     view.style.width = '100%'
     view.style.height = '100%'
+    view.style.display = 'block'
 
     // Pass applet metadata as globalProps so the applet SDK can read them
     view.globalProps = {
@@ -238,7 +252,9 @@ export class LynxHostElement extends HTMLElement {
 
     this.lynxView = view
     this.appendChild(view)
+    this.emitDebug('lynx.view.appended', { sequence })
     view.url = bundleUrl
+    this.emitDebug('lynx.bundle.url.assigned', { bundleUrl })
     this.startGatewayEventPolling()
 
     log.info('lynx-host', `Mounted lynx-view for applet: ${this.appletId}`)
@@ -246,6 +262,9 @@ export class LynxHostElement extends HTMLElement {
   }
 
   private destroyLynxView(): void {
+    if (this.lynxView) {
+      this.emitDebug('lynx.view.destroy')
+    }
     this.stopGatewayEventPolling()
     this.pendingEventSubscribers = []
     this.queuedEvents = []
@@ -270,6 +289,7 @@ export class LynxHostElement extends HTMLElement {
     const manifest = AppletManager.getInstance().getAppletInfo(this.appletId)
     if (!manifest?.permissions?.includes('events.poll')) return
 
+    this.emitDebug('events.poll.start')
     this.eventPollTimer = setInterval(() => {
       void this.pollGatewayEvents()
     }, GATEWAY_EVENT_POLL_INTERVAL_MS)
@@ -309,12 +329,14 @@ export class LynxHostElement extends HTMLElement {
         if (!event || typeof event !== 'object' || Array.isArray(event)) continue
         const envelope = event as { topic?: unknown; payload?: unknown }
         if (typeof envelope.topic === 'string') {
+          this.emitDebug('events.poll.deliver', { topic: envelope.topic }, 'debug')
           this.sendEvent(envelope.topic, envelope.payload)
         }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       log.warn('lynx-host', 'Failed to poll applet gateway events', { appletId: this.appletId, error: message })
+      this.emitDebug('events.poll.error', { error: message }, 'warn')
     }
   }
 
@@ -336,6 +358,7 @@ export class LynxHostElement extends HTMLElement {
   ): Promise<Record<string, unknown>> {
     const appletId = this.appletId
     const requestId = this.resolveRequestId(data)
+    const bridgeStartedAt = performance.now()
 
     if (this.destroyed) {
       return this.createBridgeResponse({
@@ -368,6 +391,7 @@ export class LynxHostElement extends HTMLElement {
     // Parse the capability call
     const { method, params } = this.parseNativeModulesPayload(data)
     if (!method || typeof method !== 'string') {
+      this.emitDebug('bridge.invoke.invalid', { requestId }, 'warn')
       return this.createBridgeResponse({
         requestId,
         ok: false,
@@ -377,11 +401,18 @@ export class LynxHostElement extends HTMLElement {
 
     // Local handler: events.subscribe — SDK long-polls for host→applet events
     if (method === 'events.subscribe') {
+      this.emitDebug('bridge.invoke.events.subscribe', { requestId }, 'debug')
       return this.handleEventSubscribe(requestId)
     }
 
     try {
       const routed = parseMethod(method, params)
+      this.emitDebug('bridge.invoke.start', {
+        requestId,
+        method,
+        capability: routed.capability,
+        action: routed.action,
+      }, 'debug')
       const manifest = AppletManager.getInstance().getAppletInfo(appletId)
       if (!manifest) {
         return this.createBridgeResponse({
@@ -405,6 +436,11 @@ export class LynxHostElement extends HTMLElement {
       })
       const bridgeResult = await this.dispatchGatewaySideEffects(result)
       this.dispatchLifecycleSideEffects(method)
+      this.emitDebug('bridge.invoke.done', {
+        requestId,
+        method,
+        elapsedMs: Math.round(performance.now() - bridgeStartedAt),
+      }, 'debug')
       return this.createBridgeResponse({
         requestId,
         ok: true,
@@ -413,6 +449,11 @@ export class LynxHostElement extends HTMLElement {
     } catch (error) {
       const appletError = this.normalizeBridgeError(error)
       log.error('lynx-host', `Bridge call failed: ${method}`, { appletId, error: appletError.message })
+      this.emitDebug('bridge.invoke.error', {
+        requestId,
+        method,
+        error: appletError.message,
+      }, 'error')
       return this.createBridgeResponse({
         requestId,
         ok: false,
@@ -476,6 +517,7 @@ export class LynxHostElement extends HTMLElement {
       if (!event || typeof event !== 'object') continue
       const envelope = event as { topic?: unknown; payload?: unknown }
       if (typeof envelope.topic === 'string') {
+        this.emitDebug('gateway.sideEffect.event', { topic: envelope.topic }, 'debug')
         this.sendEvent(envelope.topic, envelope.payload)
       }
     }
@@ -501,6 +543,7 @@ export class LynxHostElement extends HTMLElement {
     if (method !== 'lifecycle.reportReady') return
 
     if (!this.readyEventSent) {
+      this.emitDebug('lifecycle.ready', { method })
       this.sendEvent('ready', { sessionId: this.sessionId, state: 'active' })
       this.dispatchEvent(new CustomEvent('ready', { detail: { appletId: this.appletId, sessionId: this.sessionId } }))
       this.readyEventSent = true
@@ -552,12 +595,14 @@ export class LynxHostElement extends HTMLElement {
 
   private pauseForProductVisibility(reason: string): void {
     if (!this.lynxView || !this.visibleEventSent || this.pausedEventSent) return
+    this.emitDebug('lifecycle.pause', { reason }, 'debug')
     this.sendEvent('pause', { sessionId: this.sessionId, reason })
     this.pausedEventSent = true
   }
 
   private resumeForProductVisibility(reason: string): void {
     if (!this.lynxView || !this.visibleEventSent || !this.pausedEventSent) return
+    this.emitDebug('lifecycle.resume', { reason }, 'debug')
     this.sendEvent('resume', { sessionId: this.sessionId, reason })
     this.pausedEventSent = false
   }
@@ -572,6 +617,7 @@ export class LynxHostElement extends HTMLElement {
     if (!action) return undefined
 
     if (record.type === 'navigation') {
+      this.emitDebug('host.command.navigation', { action }, 'debug')
       const request = { action, params }
       if (this.navigationHandler) {
         this.navigationHandler(request)
@@ -586,6 +632,7 @@ export class LynxHostElement extends HTMLElement {
     }
 
     if (record.type === 'ui') {
+      this.emitDebug('host.command.ui', { action }, 'debug')
       const request = {
         action,
         params,
@@ -604,6 +651,7 @@ export class LynxHostElement extends HTMLElement {
     }
 
     if (record.type === 'device') {
+      this.emitDebug('host.command.device', { action }, 'debug')
       const request = {
         action,
         params,
@@ -649,6 +697,7 @@ export class LynxHostElement extends HTMLElement {
    */
   sendEvent(topic: string, payload?: unknown): void {
     if (!this.lynxView) return
+    this.emitDebug('host.event.send', { topic }, 'debug')
     const eventPayload: LynxGlobalEventPayload = {
       protocol: APPLET_BRIDGE_PROTOCOL,
       appletId: this.appletId,
@@ -671,5 +720,23 @@ export class LynxHostElement extends HTMLElement {
     // Also send via sendGlobalEvent for forward-compatibility if web-core
     // ever implements GlobalEventEmitter in the future
     this.lynxView.sendGlobalEvent('applet.event', [eventPayload] as unknown as LynxSendGlobalEventPayload)
+  }
+
+  private emitDebug(stage: string, data?: Record<string, unknown>, level: LynxDebugLevel = 'info'): void {
+    if (!import.meta.env.DEV) return
+    const event: LynxDebugEvent = {
+      appletId: this.appletId,
+      data,
+      elapsedMs: this.mountStartedAt > 0 ? performance.now() - this.mountStartedAt : undefined,
+      level,
+      sessionId: this.sessionId,
+      stage,
+      timestamp: Date.now(),
+    }
+    this.dispatchEvent(new CustomEvent<LynxDebugEvent>('applet-debug', {
+      detail: event,
+      bubbles: true,
+      composed: true,
+    }))
   }
 }

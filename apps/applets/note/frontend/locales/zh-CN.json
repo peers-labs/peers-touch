@@ -1,4 +1,5 @@
 {
+  "note.badge.officialApplet": "PEERS TOUCH 小程序",
   "note.action.clearSearch": "清除搜索",
   "note.action.cancelEdit": "取消编辑",
   "note.action.create": "创建",
@@ -12,6 +13,8 @@
   "note.action.search": "搜索",
   "note.detail.identifier": "笔记 ID",
   "note.detail.deletedAt": "删除时间",
+  "note.detail.serviceBacked": "通过 Note 服务同步",
+  "note.detail.updatedAt": "更新时间",
   "note.editor.contentLabel": "内容",
   "note.editor.contentPlaceholder": "输入笔记内容",
   "note.editor.createDetail": "使用用户输入内容创建笔记",
@@ -33,6 +36,8 @@
   "note.error.permissionDenied": "你没有权限执行这个笔记操作",
   "note.error.searchQueryRequired": "请输入搜索关键词",
   "note.error.timeout": "笔记服务超时，请重试",
+  "note.list.items": "条笔记",
+  "note.preview.empty": "空笔记",
   "note.search.placeholder": "搜索笔记",
   "note.section.notes": "笔记",
   "note.section.deleted": "已删除笔记",

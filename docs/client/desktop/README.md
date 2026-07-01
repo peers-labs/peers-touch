@@ -26,6 +26,7 @@ Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关
 - [applet-launcher-ux-contract.md](./applet-launcher-ux-contract.md)
 - [provider-model-target-architecture.md](./provider-model-target-architecture.md)
 - [execution-plans/global-context-kernel-migration.md](./execution-plans/global-context-kernel-migration.md)
+- [execution-plans/20260701-page-runtime-lifecycle-contract.md](./execution-plans/20260701-page-runtime-lifecycle-contract.md)
 
 ## 跨端 Chat 体验
 
