@@ -97,9 +97,12 @@ fn claim_and_execute(session: &WorkerSession) -> Result<(), String> {
     if !bool_field(&claim, "claimed") {
         return Ok(());
     }
-    let task = object_field(&claim, "task").ok_or_else(|| "claim response missing task".to_string())?;
-    let node = object_field(&claim, "node").ok_or_else(|| "claim response missing node".to_string())?;
-    let lease = object_field(&claim, "lease").ok_or_else(|| "claim response missing lease".to_string())?;
+    let task =
+        object_field(&claim, "task").ok_or_else(|| "claim response missing task".to_string())?;
+    let node =
+        object_field(&claim, "node").ok_or_else(|| "claim response missing node".to_string())?;
+    let lease =
+        object_field(&claim, "lease").ok_or_else(|| "claim response missing lease".to_string())?;
     let task_id = string_field(task, &["taskId", "task_id"])?;
     let node_id = string_field(node, &["nodeId", "node_id"])?;
     let station_agent_id = string_field(node, &["agentId", "agent_id"])?;
@@ -112,8 +115,9 @@ fn claim_and_execute(session: &WorkerSession) -> Result<(), String> {
         &session.token,
     );
     let detail = payload_json(detail).unwrap_or_else(|_| claim.clone());
-    let local_agent_id = resolve_local_agent_id(task, &station_agent_id)
-        .ok_or_else(|| format!("local agent mapping not found for station agent {station_agent_id}"));
+    let local_agent_id = resolve_local_agent_id(task, &station_agent_id).ok_or_else(|| {
+        format!("local agent mapping not found for station agent {station_agent_id}")
+    });
     let local_agent_id = match local_agent_id {
         Ok(value) => value,
         Err(error) => {
@@ -185,8 +189,11 @@ fn claim_and_execute(session: &WorkerSession) -> Result<(), String> {
 
     match payload_json(turn) {
         Ok(turn_json) => {
-            let summary = extract_turn_summary(&turn_json)
-                .unwrap_or_else(|| "Desktop executor completed without returning a text summary.".to_string());
+            let summary = extract_turn_summary(&turn_json).unwrap_or_else(|| {
+                "Desktop executor completed without returning a text summary.".to_string()
+            });
+            let turn_id = extract_turn_id(&turn_json).unwrap_or_default();
+            renew_lease_before_submit(&session.token, &lease_id, &executor_id);
             submit_worker_result(
                 session,
                 &task_id,
@@ -195,10 +202,11 @@ fn claim_and_execute(session: &WorkerSession) -> Result<(), String> {
                 &executor_id,
                 "completed",
                 &summary,
-                "",
+                &turn_id,
             )?;
         }
         Err(error) => {
+            renew_lease_before_submit(&session.token, &lease_id, &executor_id);
             submit_worker_result(
                 session,
                 &task_id,
@@ -226,16 +234,41 @@ fn start_heartbeat(
             if stop.load(Ordering::SeqCst) {
                 break;
             }
-            let _ = app_orchestration::agent_collaboration_heartbeat_executor_lease(
-                AgentCollaborationHeartbeatLeaseInput {
-                    lease_id: lease_id.clone(),
-                    executor_id: executor_id.clone(),
-                    lease_ttl_ms: Some(WORKER_LEASE_TTL_MS),
-                },
-                &token,
-            );
+            if let Err(error) = heartbeat_once(&token, &lease_id, &executor_id) {
+                tracing::warn!(
+                    lease_id = %lease_id,
+                    executor_id = %executor_id,
+                    error = %error,
+                    "desktop executor lease heartbeat failed"
+                );
+            }
         }
     })
+}
+
+fn renew_lease_before_submit(token: &str, lease_id: &str, executor_id: &str) {
+    if let Err(error) = heartbeat_once(token, lease_id, executor_id) {
+        tracing::warn!(
+            lease_id = %lease_id,
+            executor_id = %executor_id,
+            error = %error,
+            "desktop executor final lease heartbeat failed before result submit"
+        );
+    }
+}
+
+fn heartbeat_once(token: &str, lease_id: &str, executor_id: &str) -> Result<(), String> {
+    payload_json(
+        app_orchestration::agent_collaboration_heartbeat_executor_lease(
+            AgentCollaborationHeartbeatLeaseInput {
+                lease_id: lease_id.to_string(),
+                executor_id: executor_id.to_string(),
+                lease_ttl_ms: Some(WORKER_LEASE_TTL_MS),
+            },
+            token,
+        ),
+    )
+    .map(|_| ())
 }
 
 fn submit_worker_result(
@@ -298,14 +331,17 @@ fn payload_json(result: AppResult<StubPayload>) -> Result<Value, String> {
             .map(|error| error.message)
             .unwrap_or_else(|| "operation failed".to_string()));
     }
-    let payload = result.data.ok_or_else(|| "operation returned no data".to_string())?;
+    let payload = result
+        .data
+        .ok_or_else(|| "operation returned no data".to_string())?;
     serde_json::from_str(&payload.status).map_err(|error| format!("invalid payload JSON: {error}"))
 }
 
 fn resolve_local_agent_id(task: &Value, station_agent_id: &str) -> Option<String> {
     let meta = task.get("meta")?.as_object()?;
     let station_ids = parse_string_list(meta.get("agent_ids")?.as_str().unwrap_or_default());
-    let desktop_ids = parse_string_list(meta.get("desktop_agent_ids")?.as_str().unwrap_or_default());
+    let desktop_ids =
+        parse_string_list(meta.get("desktop_agent_ids")?.as_str().unwrap_or_default());
     station_ids
         .iter()
         .position(|id| id == station_agent_id)
@@ -336,7 +372,9 @@ fn worker_prompt(detail: &Value, node: &Value) -> String {
         .map(|nodes| {
             nodes
                 .iter()
-                .filter(|candidate| value_string(candidate, &["role"]).to_lowercase() != "synthesizer")
+                .filter(|candidate| {
+                    value_string(candidate, &["role"]).to_lowercase() != "synthesizer"
+                })
                 .enumerate()
                 .map(|(index, candidate)| {
                     format!(
@@ -357,7 +395,23 @@ fn worker_prompt(detail: &Value, node: &Value) -> String {
 }
 
 fn extract_turn_summary(value: &Value) -> Option<String> {
-    for key in ["result", "content", "text", "final_response", "finalResponse"] {
+    for key in [
+        "result",
+        "content",
+        "text",
+        "final_response",
+        "finalResponse",
+    ] {
+        let value = value.get(key).and_then(Value::as_str).map(str::trim);
+        if let Some(value) = value.filter(|value| !value.is_empty()) {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+fn extract_turn_id(value: &Value) -> Option<String> {
+    for key in ["turnId", "turn_id", "id"] {
         let value = value.get(key).and_then(Value::as_str).map(str::trim);
         if let Some(value) = value.filter(|value| !value.is_empty()) {
             return Some(value.to_string());

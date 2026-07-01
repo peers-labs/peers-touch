@@ -2134,7 +2134,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, app_handle: &AppHandle) ->
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_orchestration::agent_collaboration_heartbeat_executor_lease(input, &token))
+            to_json(
+                app_agent_orchestration::agent_collaboration_heartbeat_executor_lease(
+                    input, &token,
+                ),
+            )
         }
         "agent_collaboration_release_executor_lease" => {
             let input = match parse_args::<AgentCollaborationReleaseLeaseInput>(args) {
@@ -2145,7 +2149,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, app_handle: &AppHandle) ->
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_orchestration::agent_collaboration_release_executor_lease(input, &token))
+            to_json(
+                app_agent_orchestration::agent_collaboration_release_executor_lease(input, &token),
+            )
         }
 
         // =================================================================
