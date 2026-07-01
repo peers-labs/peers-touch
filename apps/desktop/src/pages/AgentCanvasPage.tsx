@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Tag } from '@lobehub/ui';
-import { Empty, Input, theme } from 'antd';
+import { Empty, Input, Select, theme } from 'antd';
 import {
   Activity,
   ArrowLeft,
@@ -114,6 +114,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
   const [prompt, setPrompt] = useState('');
   const [runState, setRunState] = useState<CanvasRunState>('idle');
   const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [judgeAgentId, setJudgeAgentId] = useState('');
   const [taskId, setTaskId] = useState('');
   const [finalSummary, setFinalSummary] = useState('');
   const [runError, setRunError] = useState('');
@@ -133,9 +134,24 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
   }, []);
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+  const selectedJudgeAgentId = judgeAgentId || nodes[0]?.agent.id || '';
   const engineLabel = useMemo(() => inferEngine(prompt, nodes, t), [nodes, prompt, t]);
   const canRun = nodes.length > 0 && prompt.trim().length > 0;
   const isRunning = runState === 'running';
+  const judgeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return nodes
+      .filter((node) => node.role !== 'synthesizer')
+      .filter((node) => {
+        if (seen.has(node.agent.id)) return false;
+        seen.add(node.agent.id);
+        return true;
+      })
+      .map((node) => ({
+        label: node.agent.title || node.agent.name,
+        value: node.agent.id,
+      }));
+  }, [nodes]);
   const visibleAgents = useMemo(() => {
     const query = agentSearch.trim().toLowerCase();
     if (!query) return agents;
@@ -253,6 +269,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
     setNodes((current) => {
       const next = current.filter((node) => node.id !== nodeId);
       setRunState(next.length > 0 && prompt.trim() ? 'matched' : 'idle');
+      setJudgeAgentId((currentJudge) => (next.some((node) => node.agent.id === currentJudge) ? currentJudge : ''));
       return next;
     });
     setSelectedNodeId((current) => (current === nodeId ? '' : current));
@@ -263,6 +280,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
     const runSeq = runSeqRef.current + 1;
     runSeqRef.current = runSeq;
     const agentById = new Map([...agents, ...nodes.map((node) => node.agent)].map((agent) => [agent.id, agent]));
+    const runJudgeAgentId = selectedJudgeAgentId;
     streamControllersRef.current.forEach((controller) => controller.abort());
     streamControllersRef.current = [];
     const startTaskStreams = (nextTaskId: string) => {
@@ -335,6 +353,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
       description: prompt.trim(),
       engine_type: inferEngineType(prompt),
       agent_ids: nodes.map((node) => node.agent.id),
+      judge_agent_id: runJudgeAgentId,
     }).then(async (created) => {
       const createdTaskId = fieldString(created.task, 'taskId', 'task_id');
       if (!createdTaskId) throw new Error(t('agent.canvas.errorNoTask'));
@@ -391,7 +410,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
       setRunError(error instanceof Error ? error.message : String(error));
       setNodes((current) => current.map((node) => ({ ...node, status: 'failed' })));
     });
-  }, [agents, canRun, nodes, prompt, t]);
+  }, [agents, canRun, nodes, prompt, selectedJudgeAgentId, t]);
 
   const resetCanvas = useCallback(() => {
     runSeqRef.current += 1;
@@ -400,6 +419,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
     setNodes([]);
     setPrompt('');
     setSelectedNodeId('');
+    setJudgeAgentId('');
     setTaskId('');
     setFinalSummary('');
     setRunError('');
@@ -811,6 +831,23 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
                 <InfoRow icon={<Layers3 size={14} />} label={t('agent.canvas.matchedEngine')} value={engineLabel} />
                 <InfoRow icon={<Bot size={14} />} label={t('agent.canvas.nodeCount')} value={String(nodes.length)} />
                 <InfoRow icon={<CircleStop size={14} />} label={t('agent.canvas.runState')} value={t(`agent.canvas.status.${runState}`)} />
+              </Flexbox>
+              <Flexbox gap={6} style={{ marginTop: 12 }}>
+                <span style={{ fontSize: 12, fontWeight: 750, color: token.colorTextSecondary }}>
+                  {t('agent.canvas.judgeAgent')}
+                </span>
+                <Select
+                  size="small"
+                  value={selectedJudgeAgentId || undefined}
+                  placeholder={t('agent.canvas.judgeAgentPlaceholder')}
+                  disabled={isRunning || judgeOptions.length === 0}
+                  options={judgeOptions}
+                  onChange={(value) => setJudgeAgentId(value)}
+                  style={{ width: '100%' }}
+                />
+                <span style={{ fontSize: 11, lineHeight: 1.45, color: token.colorTextTertiary }}>
+                  {t('agent.canvas.judgeAgentHint')}
+                </span>
               </Flexbox>
               <Flexbox horizontal gap={8} style={{ marginTop: 12 }}>
                 {runState === 'running' && (
