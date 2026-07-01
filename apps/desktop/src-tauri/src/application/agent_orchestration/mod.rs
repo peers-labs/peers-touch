@@ -142,7 +142,7 @@ fn create_station_agent_from_local(
             "providerId": provider_id,
             "modelName": model_name,
             "effort": effort,
-            "configJson": config_json,
+            "config_json": config_json,
         })),
     )?;
     Ok(result.get("agent").cloned().unwrap_or(result))
