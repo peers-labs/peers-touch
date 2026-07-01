@@ -2,7 +2,8 @@ use crate::application::agents as application_agents;
 use crate::contracts::{
     AgentCollaborationCancelInput, AgentCollaborationCancelTaskInput,
     AgentCollaborationCreateInput, AgentCollaborationGetInput, AgentCollaborationListEventsInput,
-    AgentCollaborationListInput, AgentCollaborationSubscribeInput, StubPayload,
+    AgentCollaborationListInput, AgentCollaborationSubmitNodeResultInput,
+    AgentCollaborationSubscribeInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -307,6 +308,40 @@ pub fn agent_collaboration_cancel_task(
     ) {
         Ok(result) => success_payload("agent_collaboration_cancel_task", result),
         Err(err) => err.into_app_result("Failed to cancel collaboration task"),
+    }
+}
+
+pub fn agent_collaboration_submit_node_result(
+    input: AgentCollaborationSubmitNodeResultInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let task_id = input.task_id.trim();
+    let node_id = input.node_id.trim();
+    if task_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "task_id is required", None);
+    }
+    if node_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "node_id is required", None);
+    }
+    let body = json!({
+        "taskId": task_id,
+        "meta": {
+            "node_id": node_id,
+            "result_summary": input.result_summary.trim(),
+            "status": input.status.unwrap_or_else(|| "completed".to_string()),
+            "turn_id": input.turn_id.unwrap_or_default(),
+            "source": "desktop.executor"
+        }
+    });
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/collaboration/node/submit-result",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_collaboration_submit_node_result", result),
+        Err(err) => err.into_app_result("Failed to submit collaboration node result"),
     }
 }
 
