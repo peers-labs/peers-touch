@@ -1,13 +1,13 @@
 import { create } from 'zustand';
 import { log } from '../utils/logger';
-import { resolveI18nValue } from '../i18n/index';
+import i18n, { resolveI18nValue } from '../i18n/index';
 import {
   api,
+  streamAgentCollaborationEvents,
   type Message,
   type MessageAttachment,
   type Session,
   type StreamEvent,
-  type NotebookDocument,
   type ChatAttachmentInput,
   type AgentExecuteTurnKnowledgeResource,
 } from '../services/desktop_api';
@@ -218,9 +218,6 @@ interface ChatState {
   isStreaming: boolean;
   abortController: AbortController | null;
 
-  showPortal: boolean;
-  portalDocuments: NotebookDocument[];
-  portalLoading: boolean;
 
   wideScreen: boolean;
 
@@ -243,11 +240,6 @@ interface ChatState {
   syncMessages: () => Promise<void>;
   saveCurrentTopic: () => Promise<void>;
 
-  togglePortal: () => void;
-  loadDocuments: () => Promise<void>;
-  createDocument: (title: string, content: string) => Promise<void>;
-  deleteDocument: (id: string) => Promise<void>;
-  saveMessageToNotebook: (message: ChatMessage) => Promise<void>;
 
   setWideScreen: (wide: boolean) => void;
   loadPreferences: () => Promise<void>;
@@ -256,6 +248,13 @@ interface ChatState {
 let messageCounter = 0;
 function tempId() {
   return `temp-${Date.now()}-${messageCounter++}`;
+}
+
+function presentChatRuntimeError(message: string): string {
+  if (/unknown command|agent_execute_turn_stream|chat_completion_stream|Failed to execute agent turn|no credentials|credential|provider/i.test(message)) {
+    return i18n.t("chat.runtime.unavailable", { ns: "chat", defaultValue: "The selected runtime is not ready. Check model credentials and try again." });
+  }
+  return message;
 }
 
 export function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
@@ -515,6 +514,61 @@ function reconcileTopicsAfterTurn(sessionKey: string): void {
   });
 }
 
+// Per chat root task cursor for the durable Station event outbox. The Station-hosted
+// chat task (surface=CHAT) is the authoritative lifecycle owner; after a local turn
+// stream ends we replay its outbox by cursor so projection state reconciles from
+// Station rather than the transient desktop stream.
+const chatTaskEventSeq: Record<string, number> = {};
+
+function reconcileChatTaskOutbox(
+  taskId: string,
+  agentId: string,
+  sessionKey: string,
+  syncMessages: () => Promise<void>,
+): void {
+  if (!taskId || !agentId) {
+    void syncMessages();
+    reconcileTopicsAfterTurn(sessionKey);
+    return;
+  }
+  const afterEventSeq = chatTaskEventSeq[taskId] || 0;
+  let controller: AbortController | null = null;
+  let settled = false;
+  const settle = () => {
+    if (settled) return;
+    settled = true;
+    controller?.abort();
+    void syncMessages();
+    reconcileTopicsAfterTurn(sessionKey);
+  };
+  controller = streamAgentCollaborationEvents(
+    agentId,
+    (payload) => {
+      if (!payload.event.startsWith('agent.collaboration.')) return;
+      const metadata = (payload.data?.metadata || {}) as Record<string, unknown>;
+      const eventSeq = Number(metadata.event_seq || 0);
+      if (Number.isFinite(eventSeq) && eventSeq > (chatTaskEventSeq[taskId] || 0)) {
+        chatTaskEventSeq[taskId] = eventSeq;
+      }
+      if (
+        payload.event === 'agent.collaboration.node.completed'
+        || payload.event === 'agent.collaboration.node.failed'
+        || payload.event === 'agent.collaboration.task.completed'
+        || payload.event === 'agent.collaboration.task.failed'
+        || payload.event === 'agent.collaboration.task.cancelled'
+      ) {
+        settle();
+      }
+    },
+    () => {
+      // Outbox stream may be unavailable (e.g. http gateway dev mode); fall back to a
+      // direct sync so the projection still settles from persisted messages.
+      settle();
+    },
+    { taskId, afterEventSeq },
+  );
+}
+
 function findRegenerationPrompt(messages: ChatMessage[], messageId: string): {
   userMsg: ChatMessage;
   msgIndex: number;
@@ -558,9 +612,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStreaming: false,
   abortController: null,
 
-  showPortal: false,
-  portalDocuments: [],
-  portalLoading: false,
 
   wideScreen: false,
 
@@ -627,10 +678,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       currentSessionKey: key,
       messages: [],
-      portalDocuments: [],
     });
     try {
       const msgs = await api.getMessages(key);
+      if (get().currentSessionKey !== key) return;
       const raw: ChatMessage[] = msgs.map((m: Message) => {
         const msg: ChatMessage = {
           id: m.id,
@@ -678,11 +729,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         chatMessages.push(m);
       }
+      if (get().currentSessionKey !== key) return;
       set({ messages: chatMessages });
     } catch {
-      set({ messages: [] });
+      if (get().currentSessionKey === key) set({ messages: [] });
     }
-    if (get().showPortal) get().loadDocuments();
   },
 
   newSession: () => {
@@ -847,6 +898,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
 
     const assistantId = assistantMsg.id;
+    let capturedTaskId = '';
 
     const controller = agentService.streamTurn(
       buildAgentTurnInput(
@@ -859,6 +911,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         runtimeConfig,
       ),
       (event: StreamEvent) => {
+        if (event.data?.task_id) capturedTaskId = event.data.task_id;
         set((state) => {
           const msgs = [...state.messages];
           const idx = msgs.findIndex((m) => m.id === assistantId);
@@ -870,22 +923,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       () => {
         log.info('chat', 'Stream complete');
         set({ isStreaming: false, abortController: null });
-        get().syncMessages();
         get().loadSessions();
-        reconcileTopicsAfterTurn(currentSessionKey);
+        reconcileChatTaskOutbox(capturedTaskId, agentName, currentSessionKey, () => get().syncMessages());
       },
       (err: Error) => {
         log.error('chat', 'Send message failed', { error: err.message });
         set((state) => {
           const msgs = state.messages.map((m) =>
             m.id === assistantId
-              ? { ...m, error: err.message, loading: false }
+              ? { ...m, error: presentChatRuntimeError(err.message), loading: false }
               : m,
           );
           return { messages: msgs, isStreaming: false, abortController: null };
         });
-        get().syncMessages();
-        get().loadSessions();
         reconcileTopicsAfterTurn(currentSessionKey);
       },
     );
@@ -926,6 +976,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
 
     const assistantId = assistantMsg.id;
+    let capturedTaskId = '';
 
     const controller = agentService.streamTurn(
       buildAgentTurnInput(
@@ -938,6 +989,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         runtimeConfig,
       ),
       (event: StreamEvent) => {
+        if (event.data?.task_id) capturedTaskId = event.data.task_id;
         set((state) => {
           const msgs = [...state.messages];
           const idx = msgs.findIndex((m) => m.id === assistantId);
@@ -948,17 +1000,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       () => {
         set({ isStreaming: false, abortController: null });
-        get().syncMessages();
         get().loadSessions();
-        reconcileTopicsAfterTurn(currentSessionKey);
+        reconcileChatTaskOutbox(capturedTaskId, agentName, currentSessionKey, () => get().syncMessages());
       },
       (err: Error) => {
         set((state) => ({
-          messages: state.messages.map((m) => m.id === assistantId ? { ...m, error: err.message, loading: false } : m),
+          messages: state.messages.map((m) => m.id === assistantId ? { ...m, error: presentChatRuntimeError(err.message), loading: false } : m),
           isStreaming: false, abortController: null,
         }));
-        get().syncMessages();
-        get().loadSessions();
         reconcileTopicsAfterTurn(currentSessionKey);
       },
     );
@@ -999,6 +1048,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
 
     const assistantId = assistantMsg.id;
+    let capturedTaskId = '';
 
     const controller = agentService.streamTurn(
       buildAgentTurnInput(
@@ -1011,6 +1061,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         runtimeConfig,
       ),
       (event: StreamEvent) => {
+        if (event.data?.task_id) capturedTaskId = event.data.task_id;
         set((state) => {
           const msgs = [...state.messages];
           const idx = msgs.findIndex((m) => m.id === assistantId);
@@ -1021,18 +1072,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       () => {
         set({ isStreaming: false, abortController: null });
-        get().syncMessages();
         get().loadSessions();
-        reconcileTopicsAfterTurn(currentSessionKey);
+        reconcileChatTaskOutbox(capturedTaskId, agentName, currentSessionKey, () => get().syncMessages());
       },
       (err: Error) => {
         set((state) => ({
-          messages: state.messages.map((m) => m.id === assistantId ? { ...m, error: err.message, loading: false } : m),
+          messages: state.messages.map((m) => m.id === assistantId ? { ...m, error: presentChatRuntimeError(err.message), loading: false } : m),
           isStreaming: false,
           abortController: null,
         }));
-        get().syncMessages();
-        get().loadSessions();
         reconcileTopicsAfterTurn(currentSessionKey);
       },
     );
@@ -1173,65 +1221,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  togglePortal: () => {
-    const next = !get().showPortal;
-    set({ showPortal: next });
-    if (next) get().loadDocuments();
-  },
-
-  loadDocuments: async () => {
-    const { currentSessionKey } = get();
-    set({ portalLoading: true });
-    try {
-      const docs = await api.listDocuments(currentSessionKey);
-      set({ portalDocuments: docs, portalLoading: false });
-    } catch {
-      set({ portalDocuments: [], portalLoading: false });
-    }
-  },
-
-  createDocument: async (title: string, content: string) => {
-    const { currentSessionKey } = get();
-    try {
-      await api.createDocument(currentSessionKey, title, content);
-      get().loadDocuments();
-    } catch (e) {
-      log.error('chat', 'Failed to create document', e);
-    }
-  },
-
-  deleteDocument: async (id: string) => {
-    try {
-      await api.deleteDocument(id);
-      set((s) => ({ portalDocuments: s.portalDocuments.filter((d) => d.id !== id) }));
-    } catch (e) {
-      log.error('chat', 'Failed to delete document', e);
-    }
-  },
-
-  saveMessageToNotebook: async (message: ChatMessage) => {
-    const { currentSessionKey } = get();
-    const title = message.content.split('\n')[0].replace(/^#+\s*/, '').slice(0, 80) || 'Saved from chat';
-    let content = message.content;
-    if (message.toolCalls && message.toolCalls.length > 0) {
-      const toolText = message.toolCalls
-        .map((tc) => {
-          let s = `\n---\n**Tool: ${tc.name}**`;
-          if (tc.args) s += `\nArguments: \`${tc.args}\``;
-          if (tc.result) s += `\nResult:\n${tc.result}`;
-          return s;
-        })
-        .join('\n');
-      content = toolText + '\n\n' + content;
-    }
-    try {
-      await api.createDocument(currentSessionKey, title, content, 'note');
-      set({ showPortal: true });
-      get().loadDocuments();
-    } catch (e) {
-      log.error('chat', 'Failed to save to notebook', e);
-    }
-  },
 
   setWideScreen: (wide: boolean) => {
     set({ wideScreen: wide });

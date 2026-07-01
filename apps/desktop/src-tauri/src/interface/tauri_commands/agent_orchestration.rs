@@ -2,8 +2,8 @@ use crate::application::agent_orchestration as application_agent_orchestration;
 use crate::application::session_resolver;
 use crate::contracts::{
     AgentCollaborationCancelInput, AgentCollaborationCancelTaskInput,
-    AgentCollaborationCreateInput, AgentCollaborationGetInput, AgentCollaborationListInput,
-    AgentCollaborationSubscribeInput, StubPayload,
+    AgentCollaborationCreateInput, AgentCollaborationGetInput, AgentCollaborationListEventsInput,
+    AgentCollaborationListInput, AgentCollaborationSubscribeInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
@@ -20,7 +20,9 @@ pub fn agent_collaboration_create(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_orchestration::agent_collaboration_create(input, &token)
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    application_agent_orchestration::agent_collaboration_create(input, &token, &actor_id)
 }
 
 #[tauri::command]
@@ -47,6 +49,19 @@ pub fn agent_collaboration_list(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     application_agent_orchestration::agent_collaboration_list(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_collaboration_list_events(
+    input: AgentCollaborationListEventsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_orchestration::agent_collaboration_list_events(input, &token)
 }
 
 #[tauri::command]

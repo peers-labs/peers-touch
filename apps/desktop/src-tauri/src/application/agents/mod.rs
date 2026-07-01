@@ -299,12 +299,6 @@ fn normalize_agent_value(mut data: Value) -> Value {
     obj.entry("cliCommand".to_string())
         .or_insert_with(|| json!(""));
     obj.entry("tags".to_string()).or_insert_with(|| json!(""));
-    obj.entry("toolsProfile".to_string())
-        .or_insert_with(|| json!(""));
-    obj.entry("toolsAllow".to_string())
-        .or_insert_with(|| json!(""));
-    obj.entry("toolsDeny".to_string())
-        .or_insert_with(|| json!(""));
     obj.entry("pinned".to_string())
         .or_insert_with(|| json!(false));
     obj.entry("favorite".to_string())
@@ -315,9 +309,6 @@ fn normalize_agent_value(mut data: Value) -> Value {
         .or_insert_with(|| json!(""));
     obj.entry("openingQuestions".to_string())
         .or_insert_with(|| json!(""));
-    obj.entry("chatConfig".to_string())
-        .or_insert_with(|| json!(""));
-    obj.entry("params".to_string()).or_insert_with(|| json!(""));
     obj.entry("knowledgeResources".to_string())
         .or_insert_with(|| json!(""));
     obj.entry("isDefault".to_string())
@@ -452,13 +443,6 @@ fn unique_agent_name(store: &AgentStore, requested: &str) -> String {
     format!("{base} {}", now_rfc3339())
 }
 
-fn parse_json_object_field(data: &Value, field: &str) -> Value {
-    data.get(field)
-        .and_then(Value::as_str)
-        .and_then(|value| serde_json::from_str::<Value>(value).ok())
-        .unwrap_or_else(|| json!({}))
-}
-
 fn sanitize_chat_config_for_export(
     chat_config: &mut Value,
     include_local_paths: bool,
@@ -524,7 +508,7 @@ fn sanitize_knowledge_resources_for_export(
 fn sanitize_agent_for_export(
     record: &AgentRecord,
     include_local_paths: bool,
-) -> (Value, Value, Value, Vec<String>) {
+) -> (Value, Value, Vec<String>) {
     let mut data = record.data.clone();
     let mut redactions = Vec::new();
     sanitize_knowledge_resources_for_export(&mut data, include_local_paths, &mut redactions);
@@ -538,25 +522,24 @@ fn sanitize_agent_for_export(
     sanitize_chat_config_for_export(&mut chat_config, include_local_paths, &mut redactions);
     redact_secret_like_values(&mut data, "agent", &mut redactions);
     redact_secret_like_values(&mut chat_config, "chatBehavior", &mut redactions);
-    let mut params = parse_json_object_field(&data, "params");
-    redact_secret_like_values(&mut params, "providerPreset.params", &mut redactions);
 
     if let Some(obj) = data.as_object_mut() {
         obj.insert("chatConfig".to_string(), json!(chat_config.to_string()));
-        let params_json = serde_json::to_string(&params).unwrap_or_else(|_| "{}".to_string());
-        obj.insert("params".to_string(), json!(params_json));
+        obj.remove("params");
+        obj.remove("toolsAllow");
+        obj.remove("toolsDeny");
+        obj.remove("toolsProfile");
         obj.insert("isDefault".to_string(), json!(false));
         obj.remove("pinned");
         obj.remove("favorite");
         obj.remove("sortOrder");
     }
 
-    (data, chat_config, params, redactions)
+    (data, chat_config, redactions)
 }
 
 fn package_agent_data(record: &AgentRecord, include_local_paths: bool) -> Value {
-    let (data, chat_config, params, redactions) =
-        sanitize_agent_for_export(record, include_local_paths);
+    let (data, chat_config, redactions) = sanitize_agent_for_export(record, include_local_paths);
     json!({
         "schemaVersion": AGENT_PACKAGE_SCHEMA,
         "exportedAt": now_rfc3339(),
@@ -574,8 +557,7 @@ fn package_agent_data(record: &AgentRecord, include_local_paths: bool) -> Value 
         "agent": data,
         "providerPreset": {
             "provider": data.get("provider").cloned().unwrap_or_else(|| json!("")),
-            "model": data.get("model").cloned().unwrap_or_else(|| json!("")),
-            "params": params
+            "model": data.get("model").cloned().unwrap_or_else(|| json!(""))
         },
         "bindings": {
             "mcpServers": chat_config.get("mcpServers").cloned().unwrap_or_else(|| json!([])),
@@ -765,6 +747,12 @@ pub fn agents_update(actor_id: &str, input: AgentUpdateInput) -> AppResult<StubP
         let mut data = store.agents[index].data.clone();
         if let (Some(base), Some(update)) = (data.as_object_mut(), input.data.as_object()) {
             for (key, value) in update {
+                if matches!(
+                    key.as_str(),
+                    "chatConfig" | "params" | "toolsAllow" | "toolsDeny" | "toolsProfile"
+                ) {
+                    continue;
+                }
                 base.insert(key.to_string(), value.clone());
             }
         }
@@ -1327,8 +1315,7 @@ mod tests {
                         "model": "gpt-4.1",
                         "openingMessage": "Ready",
                         "openingQuestions": "Review code\nWrite tests",
-                        "chatConfig": "{\"mcpServers\":[\"local\"],\"tools\":[\"local_file_read\"],\"skills\":[\"skill-a\"],\"enableStreaming\":true}",
-                        "params": "{\"temperature\":0.2}"
+                        "chatConfig": "{\"mcpServers\":[\"local\"],\"tools\":[\"local_file_read\"],\"skills\":[\"skill-a\"],\"enableStreaming\":true}"
                     }),
                 },
             );
@@ -1396,7 +1383,6 @@ mod tests {
                         "provider": "openai",
                         "model": "gpt-4.1",
                         "chatConfig": "{\"workspace\":{\"root\":\"/tmp/private-workspace\",\"policy\":\"workspace-only\"},\"mcpServers\":[\"local\"],\"api_key\":\"sk-secret\"}",
-                        "params": "{\"temperature\":0.2,\"private_key\":\"pem-secret\"}",
                         "knowledgeResources": "[{\"id\":\"local-file\",\"type\":\"folder\",\"title\":\"Local\",\"source\":\"/tmp/private-workspace\",\"policy\":\"always\",\"status\":\"bound\"},{\"id\":\"public-url\",\"type\":\"url\",\"title\":\"Docs\",\"source\":\"https://example.test/docs\",\"policy\":\"auto\",\"status\":\"bound\"}]"
                     }),
                 },
@@ -1421,7 +1407,6 @@ mod tests {
             let package = exported_json.get("package").expect("package");
             let package_text = package.to_string();
             assert!(!package_text.contains("sk-secret"));
-            assert!(!package_text.contains("pem-secret"));
             assert!(!package_text.contains("/tmp/private-workspace"));
             assert_eq!(
                 package["source"]["sharePolicy"]["includeLocalPaths"].as_bool(),
