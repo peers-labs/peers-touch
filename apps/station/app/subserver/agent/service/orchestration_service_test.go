@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -30,6 +31,88 @@ func TestCollaborationEngineExecutionMode(t *testing.T) {
 		if isParallelCollaborationEngine(engine) {
 			t.Fatalf("expected %v to use sequential execution", engine)
 		}
+	}
+}
+
+func TestBuildCollaborationTaskNodesPlansParallelFanOut(t *testing.T) {
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	nodes := buildCollaborationTaskNodes(
+		"task-1",
+		"Ship the orchestration DAG.",
+		model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_EXPERT_MESH,
+		[]string{"agent-a", "agent-b", "agent-c"},
+		"agent-judge",
+		now,
+	)
+
+	if len(nodes) != 4 {
+		t.Fatalf("expected 3 agent nodes plus synthesis, got %d", len(nodes))
+	}
+	for index := 0; index < 3; index++ {
+		if nodes[index].PrerequisiteNodeIDs != "" {
+			t.Fatalf("expected parallel node %d to have no prerequisites, got %q", index, nodes[index].PrerequisiteNodeIDs)
+		}
+	}
+	synth := nodes[3]
+	if synth.Role != collaborationRoleSynthesizer {
+		t.Fatalf("expected synthesis node, got role %q", synth.Role)
+	}
+	prerequisites := parseMetaList(synth.PrerequisiteNodeIDs)
+	if len(prerequisites) != 3 {
+		t.Fatalf("expected synthesis to depend on all normal nodes, got %#v", prerequisites)
+	}
+}
+
+func TestBuildCollaborationTaskNodesPlansSequentialChain(t *testing.T) {
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	nodes := buildCollaborationTaskNodes(
+		"task-1",
+		"Ship the orchestration DAG.",
+		model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_HIERARCHY,
+		[]string{"agent-a", "agent-b", "agent-c"},
+		"agent-judge",
+		now,
+	)
+
+	if len(nodes) != 4 {
+		t.Fatalf("expected 3 agent nodes plus synthesis, got %d", len(nodes))
+	}
+	if nodes[0].PrerequisiteNodeIDs != "" {
+		t.Fatalf("expected first sequential node to have no prerequisites, got %q", nodes[0].PrerequisiteNodeIDs)
+	}
+	if got := nodes[1].PrerequisiteNodeIDs; got != nodes[0].ID {
+		t.Fatalf("expected second node to depend on first node %q, got %q", nodes[0].ID, got)
+	}
+	if got := nodes[2].PrerequisiteNodeIDs; got != nodes[1].ID {
+		t.Fatalf("expected third node to depend on second node %q, got %q", nodes[1].ID, got)
+	}
+	if prerequisites := parseMetaList(nodes[3].PrerequisiteNodeIDs); len(prerequisites) != 3 {
+		t.Fatalf("expected synthesis to depend on all normal nodes, got %#v", prerequisites)
+	}
+}
+
+func TestReadyCollaborationNodesRespectsPrerequisites(t *testing.T) {
+	nodes := []persistence.CollaborationTaskNode{
+		{ID: "node-a", AgentID: "agent-a", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING)},
+		{ID: "node-b", AgentID: "agent-b", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING), PrerequisiteNodeIDs: "node-a"},
+		{ID: "node-c", AgentID: "agent-c", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING), PrerequisiteNodeIDs: "missing-node"},
+		{ID: "node-s", AgentID: "agent-j", Role: collaborationRoleSynthesizer, Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING), PrerequisiteNodeIDs: "node-a,node-b"},
+	}
+
+	ready := readyCollaborationNodes(nodes)
+	if len(ready) != 1 || ready[0] != 0 {
+		t.Fatalf("expected only the root node to be ready, got %#v", ready)
+	}
+
+	nodes[0].Status = int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED)
+	nodes[0].ResultSummary = "Root complete."
+	ready = readyCollaborationNodes(nodes)
+	if len(ready) != 1 || ready[0] != 1 {
+		t.Fatalf("expected dependent node to be ready after prerequisite completion, got %#v", ready)
+	}
+	contexts := collaborationContextsForPrerequisites(&nodes[1], nodes)
+	if len(contexts) != 1 || contexts[0].Summary != "Root complete." {
+		t.Fatalf("expected prerequisite context to include completed root summary, got %#v", contexts)
 	}
 }
 
@@ -91,6 +174,12 @@ func TestCollaborationSynthesisPromptUsesNodeResults(t *testing.T) {
 			Status:        int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED),
 			ResultSummary: "Payment regression risk needs mitigation.",
 		},
+		{
+			AgentID:       "agent-product",
+			Role:          collaborationRoleSynthesizer,
+			Status:        int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+			ResultSummary: "This pending synthesis result must not be included.",
+		},
 	}
 
 	prompt := collaborationSynthesisPrompt(task, nodes)
@@ -108,5 +197,45 @@ func TestCollaborationSynthesisPromptUsesNodeResults(t *testing.T) {
 		if !strings.Contains(prompt, value) {
 			t.Fatalf("expected synthesis prompt to contain %q, got:\n%s", value, prompt)
 		}
+	}
+	if strings.Contains(prompt, "This pending synthesis result must not be included.") {
+		t.Fatalf("expected synthesis prompt to exclude synthesis node output, got:\n%s", prompt)
+	}
+}
+
+func TestSelectSynthesizerAgentID(t *testing.T) {
+	if got := selectSynthesizerAgentID(map[string]string{"judge_agent_id": " agent-judge "}, []string{"agent-lead"}); got != "agent-judge" {
+		t.Fatalf("expected explicit judge agent, got %q", got)
+	}
+	if got := selectSynthesizerAgentID(map[string]string{}, []string{"agent-lead", "agent-risk"}); got != "agent-lead" {
+		t.Fatalf("expected first agent fallback, got %q", got)
+	}
+}
+
+func TestSynthesisNodeDetection(t *testing.T) {
+	nodes := []persistence.CollaborationTaskNode{
+		{AgentID: "agent-lead", Role: "lead", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED)},
+		{AgentID: "agent-judge", Role: collaborationRoleSynthesizer, Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING)},
+	}
+	if got := synthesisNode(nodes); got == nil || got.AgentID != "agent-judge" {
+		t.Fatalf("expected pending synthesis node, got %#v", got)
+	}
+}
+
+func TestTaskTimeBudgetExceeded(t *testing.T) {
+	startedAt := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	task := &persistence.CollaborationTask{
+		StartedAt:    startedAt,
+		BudgetTimeMs: 1000,
+	}
+
+	if taskTimeBudgetExceeded(task, startedAt.Add(999*time.Millisecond)) {
+		t.Fatal("expected budget to remain open before the limit")
+	}
+	if !taskTimeBudgetExceeded(task, startedAt.Add(time.Second)) {
+		t.Fatal("expected budget to be exceeded at the limit")
+	}
+	if got := taskElapsedMs(task, startedAt.Add(1500*time.Millisecond)); got != 1500 {
+		t.Fatalf("expected elapsed 1500ms, got %d", got)
 	}
 }
