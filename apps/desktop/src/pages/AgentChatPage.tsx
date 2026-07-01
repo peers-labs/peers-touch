@@ -19,7 +19,7 @@ type AgentChatPageProps = ComponentProps<typeof ChatPage> & {
 export function AgentChatPage(props: AgentChatPageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const { agents, selectedAgent, setSelectedAgent, setAgentSurface, getAgentSurface, agentRosterOpen, setAgentRosterOpen } = useAgentStore();
+  const { agents, selectedAgent, setSelectedAgent, setAgentSurface, agentRosterOpen, setAgentRosterOpen } = useAgentStore();
   const agentListOpen = agentRosterOpen;
   const setAgentListOpen = setAgentRosterOpen;
   const [agentSearch, setAgentSearch] = useState('');
@@ -35,13 +35,8 @@ export function AgentChatPage(props: AgentChatPageProps) {
   const otherAgents = filteredAgents.filter((agent) => !agent.pinned);
 
   const handleSelectAgent = useCallback((agent: Agent) => {
-    if (getAgentSurface(agent.name) === 'profile') {
-      props.onNavigateAgentProfile?.(agent.name);
-      return;
-    }
-
     void openAgentChatSession(agent, { reason: 'chat-roster-switch', draftTitle: t('agent.sidebar.newTopic') });
-  }, [getAgentSurface, props.onNavigateAgentProfile, t]);
+  }, [t]);
 
   const handleCreateAgent = useCallback(async () => {
     const suffix = Date.now().toString(36);
