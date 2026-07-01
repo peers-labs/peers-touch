@@ -44,9 +44,9 @@ Do not use this playbook for small bug fixes, local copy changes, or narrow comp
    - Coding convention: `docs/global/coding-guide/`
    - Historical research: `docs/context/`
 
-2. **Promote working notes** — If `.trae/documents/` contains useful investigation or a draft plan, convert the durable decisions into `docs/`.
-   - `.trae/documents/` may keep the working draft.
-   - It must not be the only record of the large requirement.
+2. **Promote working notes** — If temporary notes contain useful investigation or a draft plan, convert the durable decisions into `docs/`.
+   - Temporary drafts may stay in private or local workspaces.
+   - They must not be the only record of the large requirement.
 
 3. **Write the design document** — The design must define scope, background, target architecture, domain responsibilities, capability requirements, and related documents.
    - Use `docs/global/architecture-document-standard.md` for metadata and structure when creating architecture documents.
@@ -66,7 +66,7 @@ Do not use this playbook for small bug fixes, local copy changes, or narrow comp
 
 - [ ] `rg -n "<new-doc-name>|<capability-name>" docs/README.md docs/architecture docs/client docs/station` finds the formal document.
 - [ ] The nearest directory `README.md` links to the new design or plan.
-- [ ] `.trae/documents/` is not the only place containing the durable design.
+- [ ] Private or local working notes are not the only place containing the durable design.
 - [ ] The final response lists the formal docs paths.
 
 ## Crosswalks
