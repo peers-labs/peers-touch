@@ -978,6 +978,14 @@ export interface AgentCollaborationCancelTaskInput {
   task_id: string;
 }
 
+export interface AgentCollaborationSubmitNodeResultInput {
+  task_id: string;
+  node_id: string;
+  result_summary: string;
+  status?: 'completed' | 'failed';
+  turn_id?: string;
+}
+
 export interface AgentCollaborationStreamPayload {
   streamId: string;
   agentId: string;
@@ -3433,6 +3441,12 @@ export const api = {
     invokeRustDataFromStatus<AgentCollaborationCancelTaskInput, { task?: CollaborationTask }>(
       'agent_collaboration_cancel_task',
       { task_id: taskId },
+    ),
+
+  submitAgentCollaborationNodeResult: (input: AgentCollaborationSubmitNodeResultInput) =>
+    invokeRustDataFromStatus<AgentCollaborationSubmitNodeResultInput, { task?: CollaborationTask }>(
+      'agent_collaboration_submit_node_result',
+      input,
     ),
 
   listTools: () =>
