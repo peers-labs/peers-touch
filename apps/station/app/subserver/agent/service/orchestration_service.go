@@ -407,7 +407,7 @@ func (s *OrchestrationService) executeTaskNodesSequential(
 		}
 	}
 
-	return s.finishExecutedTask(ctx, db, task, nodes, hasFailure)
+	return s.finishExecutedTask(ctx, db, actorID, task, nodes, hasFailure)
 }
 
 func (s *OrchestrationService) executeTaskNodesParallel(
@@ -459,7 +459,7 @@ func (s *OrchestrationService) executeTaskNodesParallel(
 		s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskCancelled)
 		return task, nodes
 	}
-	return s.finishExecutedTask(ctx, db, task, nodes, hasFailure)
+	return s.finishExecutedTask(ctx, db, actorID, task, nodes, hasFailure)
 }
 
 func (s *OrchestrationService) runCollaborationNode(
@@ -516,6 +516,7 @@ func (s *OrchestrationService) runCollaborationNode(
 func (s *OrchestrationService) finishExecutedTask(
 	ctx context.Context,
 	db *gorm.DB,
+	actorID string,
 	task *persistence.CollaborationTask,
 	nodes []persistence.CollaborationTaskNode,
 	hasFailure bool,
@@ -523,6 +524,12 @@ func (s *OrchestrationService) finishExecutedTask(
 	if s.isTaskCancelled(ctx, db, task) {
 		s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskCancelled)
 		return task, nodes
+	}
+	if summary, turnID := s.synthesizeTaskResult(ctx, db, actorID, task, nodes); strings.TrimSpace(summary) != "" {
+		s.updateTaskMeta(ctx, db, task, map[string]string{
+			"final_summary":           summary,
+			"final_synthesis_turn_id": turnID,
+		})
 	}
 	taskStatus := model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED
 	taskEvent := domain.EventTypeCollaborationTaskCompleted
@@ -533,6 +540,73 @@ func (s *OrchestrationService) finishExecutedTask(
 	s.updateTaskStatus(ctx, db, task, taskStatus)
 	s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), taskEvent)
 	return task, nodes
+}
+
+func (s *OrchestrationService) synthesizeTaskResult(
+	ctx context.Context,
+	db *gorm.DB,
+	actorID string,
+	task *persistence.CollaborationTask,
+	nodes []persistence.CollaborationTaskNode,
+) (string, string) {
+	if s.turnService == nil || s.agentService == nil || task == nil {
+		return "", ""
+	}
+	synthNode := firstCompletedNode(nodes)
+	if synthNode == nil {
+		return "", ""
+	}
+	if s.isTaskCancelled(ctx, db, task) {
+		return "", ""
+	}
+	agent, err := s.agentService.GetAgent(ctx, actorID, synthNode.AgentID)
+	if err != nil {
+		logger.Warnf(ctx, "failed to load synthesis agent: task_id=%s agent_id=%s err=%v", task.ID, synthNode.AgentID, err)
+		return "", ""
+	}
+	if err := s.ensureNodeConversation(ctx, db, actorID, task, synthNode, agent); err != nil {
+		logger.Warnf(ctx, "failed to ensure synthesis conversation: task_id=%s node_id=%s err=%v", task.ID, synthNode.ID, err)
+		return "", ""
+	}
+	turn, err := s.turnService.ExecuteTurn(ctx, s.turnConfigForNode(task, synthNode, agent), collaborationSynthesisPrompt(task, nodes))
+	if err != nil {
+		logger.Warnf(ctx, "collaboration synthesis turn failed: task_id=%s node_id=%s err=%v", task.ID, synthNode.ID, err)
+		return "", ""
+	}
+	summary := strings.TrimSpace(turn.FinalResponse)
+	if summary == "" {
+		return "", strings.TrimSpace(turn.TurnID)
+	}
+	return summary, strings.TrimSpace(turn.TurnID)
+}
+
+func firstCompletedNode(nodes []persistence.CollaborationTaskNode) *persistence.CollaborationTaskNode {
+	for index := range nodes {
+		if nodes[index].Status == int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED) && strings.TrimSpace(nodes[index].ResultSummary) != "" {
+			return &nodes[index]
+		}
+	}
+	return nil
+}
+
+func (s *OrchestrationService) updateTaskMeta(ctx context.Context, db *gorm.DB, task *persistence.CollaborationTask, updates map[string]string) {
+	if task == nil || len(updates) == 0 {
+		return
+	}
+	meta := map[string]string{}
+	_ = json.Unmarshal([]byte(task.MetaJSON), &meta)
+	for key, value := range updates {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		meta[key] = value
+	}
+	metaJSON, _ := json.Marshal(meta)
+	task.MetaJSON = string(metaJSON)
+	if err := db.WithContext(ctx).Model(&persistence.CollaborationTask{}).Where("id = ?", task.ID).Update("meta_json", task.MetaJSON).Error; err != nil {
+		logger.Warnf(ctx, "failed to update collaboration task meta: task_id=%s err=%v", task.ID, err)
+	}
 }
 
 func isParallelCollaborationEngine(engine model.CollaborationEngineType) bool {
@@ -737,6 +811,26 @@ func collaborationNodePrompt(task *persistence.CollaborationTask, node *persiste
 		"%s\n\nPrevious collaboration results:\n%s\n\nUse these prior results as context. Build on useful findings, call out disagreements, and avoid repeating completed work.",
 		prompt,
 		strings.Join(contextLines, "\n"),
+	))
+}
+
+func collaborationSynthesisPrompt(task *persistence.CollaborationTask, nodes []persistence.CollaborationTaskNode) string {
+	var lines []string
+	for _, node := range nodes {
+		summary := strings.TrimSpace(node.ResultSummary)
+		if summary == "" {
+			continue
+		}
+		status := model.TaskNodeStatus(node.Status).String()
+		lines = append(lines, fmt.Sprintf("- Agent %s (%s, %s): %s", node.AgentID, node.Role, status, summary))
+	}
+	if len(lines) == 0 {
+		lines = append(lines, "- No node produced a usable summary.")
+	}
+	return strings.TrimSpace(fmt.Sprintf(
+		"Collaboration goal:\n%s\n\nAgent node results:\n%s\n\nProduce the final collaboration result. Include: 1) final answer, 2) key contributions, 3) risks or disagreements, 4) concrete next steps. Be concise and do not invent results that are not supported by the node outputs.",
+		task.Description,
+		strings.Join(lines, "\n"),
 	))
 }
 
