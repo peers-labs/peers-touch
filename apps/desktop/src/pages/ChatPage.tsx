@@ -161,7 +161,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
         style={{
           minWidth: 0,
           overflow: 'hidden',
-          background: `radial-gradient(circle at top right, ${token.colorInfoBg} 0, transparent 32%), ${token.colorBgLayout}`,
+          background: token.colorBgContainer,
         }}
       >
         <AgentChatHeader
@@ -513,34 +513,32 @@ function AgentChatHeader({
   const hasTools = Boolean(agent.toolsProfile && agent.toolsProfile !== 'none') || (chatConfig.tools?.length ?? 0) > 0 || (chatConfig.skills?.length ?? 0) > 0 || (chatConfig.mcpServers?.length ?? 0) > 0;
 
   return (
-    <Flexbox style={{ flexShrink: 0, padding: '16px 28px 0' }}>
+    <Flexbox style={{ flexShrink: 0 }}>
       <Flexbox
         horizontal
         align="center"
         justify="space-between"
-        gap={16}
+        gap={12}
         style={{
           width: '100%',
-          minHeight: 64,
-          padding: '14px 16px',
-          borderRadius: 18,
+          minHeight: 60,
+          padding: '10px 18px',
           background: token.colorBgContainer,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          boxShadow: '0 18px 60px rgba(15, 23, 42, 0.07)',
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
         }}
       >
-        <Flexbox horizontal align="center" gap={13} style={{ minWidth: 0 }}>
+        <Flexbox horizontal align="center" gap={10} style={{ minWidth: 0 }}>
           <div
             style={{
-              width: 42,
-              height: 42,
-              borderRadius: 13,
+              width: 38,
+              height: 38,
+              borderRadius: 12,
               background: 'linear-gradient(135deg, #6366f1, #8b5cf6 52%, #ec4899)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 23,
-              boxShadow: '0 12px 30px rgba(99, 102, 241, 0.22)',
+              fontSize: 21,
+              boxShadow: '0 10px 24px rgba(99, 102, 241, 0.18)',
               flexShrink: 0,
             }}
           >
@@ -548,11 +546,11 @@ function AgentChatHeader({
           </div>
 
           <Flexbox gap={4} style={{ minWidth: 0 }}>
-            <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
+            <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flexWrap: 'wrap' }}>
               <strong style={{ fontSize: 16, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {title}
               </strong>
-              <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
+              <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <ModelIcon model={modelId} size={12} />
                 {modelName}
               </Tag>
@@ -564,6 +562,16 @@ function AgentChatHeader({
                   {t('chat.agentHeader.effort', { effort })}
                 </Tag>
               )}
+              {hasTools && (
+                <Tag color="success" style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
+                  {t('chat.agentHeader.toolsEnabled')}
+                </Tag>
+              )}
+              {webSearchEnabled && (
+                <Tag color="blue" style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
+                  {t('chat.header.webSearch')}
+                </Tag>
+              )}
             </Flexbox>
             <span style={{ color: token.colorTextSecondary, fontSize: 12, lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {description}
@@ -571,17 +579,7 @@ function AgentChatHeader({
           </Flexbox>
         </Flexbox>
 
-        <Flexbox horizontal align="center" gap={6} style={{ flexShrink: 0 }}>
-          {hasTools && (
-            <Tag color="success" style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
-              {t('chat.agentHeader.toolsEnabled')}
-            </Tag>
-          )}
-          {webSearchEnabled && (
-            <Tag color="blue" style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
-              {t('chat.header.webSearch')}
-            </Tag>
-          )}
+        <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
           <ActionIcon icon={UserRoundCog} size="small" title={t('chat.agentHeader.openProfile')} onClick={onOpenProfile} />
           <ActionIcon icon={FilePen} size="small" active={notebookOpen} title={t('chat.header.notebook')} onClick={onOpenNotebook} />
           <ActionIcon icon={Share2} size="small" title={t('chat.header.share')} onClick={() => {}} />
@@ -648,23 +646,17 @@ function WelcomeScreen({
     ];
 
   return (
-    <Flexbox
-      flex={1}
-      align="center"
-      justify="center"
-      gap={20}
-      style={{ padding: '32px 24px 18px', width: '100%' }}
-    >
+    <Flexbox flex={1} align="center" justify="center" gap={18} style={{ padding: '28px 24px 18px', width: '100%' }}>
       <Flexbox
         align="center"
         gap={14}
         style={{
           width: 'min(420px, 100%)',
           padding: '24px 32px 22px',
-          borderRadius: 24,
+          borderRadius: 22,
           background: token.colorBgContainer,
           border: `1px solid ${token.colorBorderSecondary}`,
-          boxShadow: '0 28px 90px rgba(15, 23, 42, 0.08)',
+          boxShadow: '0 22px 70px rgba(15, 23, 42, 0.07)',
           textAlign: 'center',
         }}
       >
@@ -764,8 +756,8 @@ function QuickAction({
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        padding: '8px 16px',
-        borderRadius: 20,
+        padding: '8px 14px',
+        borderRadius: 12,
         border: `1px solid ${token.colorBorderSecondary}`,
         background: token.colorBgContainer,
         color: token.colorText,

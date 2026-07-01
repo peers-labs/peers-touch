@@ -549,11 +549,18 @@ fn execute_cli_turn_stream(
 }
 
 fn run_cli_command(input: &AgentExecuteTurnInput, command_line: &str) -> Result<String, String> {
-    let parts = normalize_cli_command(command_line)?;
-    let Some((program, args)) = parts.split_first() else {
+    let mut parts = normalize_cli_command(command_line)?;
+    if parts.is_empty() {
         return Err("CLI command is empty".to_string());
     };
+    let program = parts.remove(0);
+    let mut args = parts;
     let prompt = build_cli_prompt(input);
+    let adapter_name = cli_adapter_name(&program);
+    let prompt_delivery = cli_prompt_delivery(adapter_name);
+    if matches!(prompt_delivery, CliPromptDelivery::Argument) {
+        args.push(prompt.clone());
+    }
     let workspace_root = input
         .workspace_root
         .as_deref()
@@ -568,10 +575,10 @@ fn run_cli_command(input: &AgentExecuteTurnInput, command_line: &str) -> Result<
     }
 
     let mut command = if input.runtime_backend.as_deref() == Some("proot") {
-        build_proot_command(input, &workspace_root, program, args)?
+        build_proot_command(input, &workspace_root, &program, &args)?
     } else {
-        let mut command = Command::new(program);
-        command.args(args).current_dir(&workspace_root);
+        let mut command = Command::new(&program);
+        command.args(&args).current_dir(&workspace_root);
         command
     };
     command
@@ -589,7 +596,7 @@ fn run_cli_command(input: &AgentExecuteTurnInput, command_line: &str) -> Result<
             "PEERS_TOUCH_EFFORT",
             input.effort.as_deref().unwrap_or("medium"),
         )
-        .env("PEERS_TOUCH_CLI_ADAPTER", cli_adapter_name(program))
+        .env("PEERS_TOUCH_CLI_ADAPTER", adapter_name)
         .env("PEERS_TOUCH_AGENT_WORKSPACE", &workspace_root);
     if let Some(allowed_roots) = input.allowed_roots.as_ref() {
         if !allowed_roots.is_empty() {
@@ -599,7 +606,10 @@ fn run_cli_command(input: &AgentExecuteTurnInput, command_line: &str) -> Result<
     let mut child = command
         .spawn()
         .map_err(|error| format!("failed to start CLI provider: {error}"))?;
-    if let Some(stdin) = child.stdin.as_mut() {
+    if matches!(prompt_delivery, CliPromptDelivery::Stdin) {
+        let Some(stdin) = child.stdin.as_mut() else {
+            return Err("failed to open CLI provider stdin".to_string());
+        };
         stdin
             .write_all(prompt.as_bytes())
             .map_err(|error| format!("failed to write prompt to CLI provider: {error}"))?;
@@ -636,9 +646,26 @@ fn normalize_cli_command(command_line: &str) -> Result<Vec<String>, String> {
         .to_ascii_lowercase();
     match executable_name.as_str() {
         "codex" => split_command_line("codex exec --skip-git-repo-check -"),
+        "cursor" | "cursor-agent" => {
+            split_command_line("cursor-agent --print --output-format text --trust")
+        }
         "claude" => split_command_line("claude -p"),
-        "trae" => split_command_line("trae -p"),
+        "trae" | "traecli" | "traex" => split_command_line("traecli exec --skip-git-repo-check -"),
+        "trae-agent" => split_command_line("trae-agent --print -"),
         _ => Ok(parts),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CliPromptDelivery {
+    Stdin,
+    Argument,
+}
+
+fn cli_prompt_delivery(adapter_name: &str) -> CliPromptDelivery {
+    match adapter_name {
+        "cursor" => CliPromptDelivery::Argument,
+        _ => CliPromptDelivery::Stdin,
     }
 }
 
@@ -650,8 +677,9 @@ fn cli_adapter_name(program: &str) -> &'static str {
         .to_ascii_lowercase();
     match executable_name.as_str() {
         "codex" => "codex",
+        "cursor" | "cursor-agent" => "cursor",
         "claude" => "claude",
-        "trae" => "trae",
+        "trae" | "traecli" | "traex" | "trae-agent" => "trae",
         _ => "custom",
     }
 }
@@ -1305,6 +1333,31 @@ mod tests {
     }
 
     #[test]
+    fn normalize_cli_command_expands_cursor_adapter() {
+        let parts = normalize_cli_command("cursor-agent").expect("cursor adapter should normalize");
+
+        assert_eq!(
+            parts,
+            vec![
+                "cursor-agent",
+                "--print",
+                "--output-format",
+                "text",
+                "--trust"
+            ]
+        );
+        assert_eq!(cli_prompt_delivery("cursor"), CliPromptDelivery::Argument);
+    }
+
+    #[test]
+    fn normalize_cli_command_expands_trae_adapter() {
+        let parts = normalize_cli_command("traecli").expect("trae adapter should normalize");
+
+        assert_eq!(parts, vec!["traecli", "exec", "--skip-git-repo-check", "-"]);
+        assert_eq!(cli_prompt_delivery("trae"), CliPromptDelivery::Stdin);
+    }
+
+    #[test]
     fn normalize_cli_command_keeps_custom_command_args() {
         let parts = normalize_cli_command("codex exec --model gpt-5 -")
             .expect("custom command should parse");
@@ -1315,7 +1368,194 @@ mod tests {
     #[test]
     fn cli_adapter_name_detects_known_program() {
         assert_eq!(cli_adapter_name("/usr/local/bin/claude"), "claude");
+        assert_eq!(
+            cli_adapter_name("/Users/bytedance/.local/bin/cursor-agent"),
+            "cursor"
+        );
+        assert_eq!(cli_adapter_name("traecli"), "trae");
         assert_eq!(cli_adapter_name("custom-agent"), "custom");
+    }
+
+    #[test]
+    fn run_cli_command_delivers_cursor_prompt_as_argument() {
+        let test_root = std::env::temp_dir().join(format!(
+            "peers-touch-cli-provider-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&test_root).expect("test root should be created");
+        let fake_cursor = test_root.join("cursor-agent");
+        std::fs::write(
+            &fake_cursor,
+            "#!/bin/sh\nlast=''\nfor arg do last=\"$arg\"; done\nprintf '%s\\n' \"$PEERS_TOUCH_CLI_ADAPTER\"\nprintf '%s\\n' \"$#\"\nprintf '%s' \"$last\"\n",
+        )
+        .expect("fake cursor should be written");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&fake_cursor)
+                .expect("fake cursor metadata should exist")
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&fake_cursor, permissions)
+                .expect("fake cursor should be executable");
+        }
+
+        let input = AgentExecuteTurnInput {
+            stream_id: None,
+            conversation_id: "conversation-1".to_string(),
+            agent_id: "agent-1".to_string(),
+            user_input: "reply with PT_CURSOR_OK".to_string(),
+            attachments: None,
+            provider: Some("cursor-cli".to_string()),
+            model: Some("cursor-cli".to_string()),
+            cli_command: None,
+            workspace_mode: None,
+            runtime_backend: None,
+            rootfs_path: None,
+            allowed_roots: None,
+            identity: None,
+            agent_config_prompt: None,
+            effort: None,
+            platform: None,
+            workspace_root: Some(test_root.to_string_lossy().to_string()),
+            context_window_size: None,
+            max_retries: None,
+            knowledge_resources: None,
+        };
+
+        let output = run_cli_command(
+            &input,
+            &format!(
+                "{} --print --output-format text --trust",
+                fake_cursor.to_string_lossy()
+            ),
+        )
+        .expect("fake cursor command should run");
+
+        assert!(output.contains("cursor"));
+        assert!(output.contains("reply with PT_CURSOR_OK"));
+    }
+
+    #[test]
+    fn agent_execute_turn_routes_cli_provider_to_desktop_runner() {
+        let test_root = std::env::temp_dir().join(format!(
+            "peers-touch-agent-turn-cli-test-{}",
+            std::process::id()
+        ));
+        let agent_home = test_root.join("agent-home");
+        std::fs::create_dir_all(&test_root).expect("test root should be created");
+        let fake_cli = test_root.join("fake-cli");
+        std::fs::write(
+            &fake_cli,
+            "#!/bin/sh\nprompt=$(cat)\nprintf 'owner=%s\\nprovider=%s\\n%s' \"$PEERS_TOUCH_CLI_ADAPTER\" \"$PEERS_TOUCH_PROVIDER\" \"$prompt\"\n",
+        )
+        .expect("fake cli should be written");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&fake_cli)
+                .expect("fake cli metadata should exist")
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&fake_cli, permissions)
+                .expect("fake cli should be executable");
+        }
+
+        let previous_agent_home = std::env::var("PEERS_TOUCH_AGENT_HOME").ok();
+        std::env::set_var("PEERS_TOUCH_AGENT_HOME", &agent_home);
+        let result = agent_execute_turn(
+            AgentExecuteTurnInput {
+                stream_id: None,
+                conversation_id: "conversation-cli".to_string(),
+                agent_id: "agent-cli".to_string(),
+                user_input: "reply with PT_AGENT_TURN_CLI_OK".to_string(),
+                attachments: None,
+                provider: Some("custom-cli".to_string()),
+                model: Some("fake-cli".to_string()),
+                cli_command: Some(fake_cli.to_string_lossy().to_string()),
+                workspace_mode: None,
+                runtime_backend: None,
+                rootfs_path: None,
+                allowed_roots: None,
+                identity: None,
+                agent_config_prompt: None,
+                effort: None,
+                platform: None,
+                workspace_root: None,
+                context_window_size: None,
+                max_retries: None,
+                knowledge_resources: None,
+            },
+            "unused-token",
+        );
+        if let Some(value) = previous_agent_home {
+            std::env::set_var("PEERS_TOUCH_AGENT_HOME", value);
+        } else {
+            std::env::remove_var("PEERS_TOUCH_AGENT_HOME");
+        }
+
+        assert!(result.ok);
+        let payload = result.data.expect("payload should exist");
+        let status: Value = serde_json::from_str(&payload.status).expect("status should be json");
+        assert_eq!(status["executionOwner"], "desktop-rust");
+        assert_eq!(status["provider"], "custom-cli");
+        assert!(status["result"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("reply with PT_AGENT_TURN_CLI_OK"));
+    }
+
+    /// Opt-in real CLI end-to-end check against a locally logged-in `traecli`.
+    ///
+    /// This test spends real model tokens, so it stays inert during normal runs and only
+    /// executes when `PEERS_TOUCH_CLI_E2E=1` is set. It drives the production runner
+    /// (`agent_execute_turn` -> `run_cli_command`) through the same `traecli exec` command
+    /// template used by the `trae-cli` provider, proving the full
+    /// `Agent turn -> Desktop Rust CLI runner -> real traecli -> model reply` closure.
+    #[test]
+    fn agent_execute_turn_runs_real_traecli_when_opted_in() {
+        if std::env::var("PEERS_TOUCH_CLI_E2E").as_deref() != Ok("1") {
+            eprintln!("skipping real traecli E2E: set PEERS_TOUCH_CLI_E2E=1 to enable");
+            return;
+        }
+
+        let result = agent_execute_turn(
+            AgentExecuteTurnInput {
+                stream_id: None,
+                conversation_id: "conversation-traecli-e2e".to_string(),
+                agent_id: "agent-traecli-e2e".to_string(),
+                user_input: "Reply with exactly this token and nothing else: PT_TRAE_E2E_OK"
+                    .to_string(),
+                attachments: None,
+                provider: Some("trae-cli".to_string()),
+                model: Some("trae-cli".to_string()),
+                cli_command: Some("traecli exec --skip-git-repo-check -".to_string()),
+                workspace_mode: None,
+                runtime_backend: None,
+                rootfs_path: None,
+                allowed_roots: None,
+                identity: None,
+                agent_config_prompt: None,
+                effort: None,
+                platform: None,
+                workspace_root: None,
+                context_window_size: None,
+                max_retries: None,
+                knowledge_resources: None,
+            },
+            "unused-token",
+        );
+
+        assert!(result.ok, "traecli turn should succeed: {:?}", result.error);
+        let payload = result.data.expect("payload should exist");
+        let status: Value = serde_json::from_str(&payload.status).expect("status should be json");
+        assert_eq!(status["executionOwner"], "desktop-rust");
+        assert_eq!(status["provider"], "trae-cli");
+        let output = status["result"].as_str().unwrap_or_default();
+        assert!(
+            output.contains("PT_TRAE_E2E_OK"),
+            "expected model reply to contain PT_TRAE_E2E_OK, got: {output}"
+        );
     }
 
     #[test]
