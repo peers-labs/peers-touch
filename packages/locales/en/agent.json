@@ -48,6 +48,8 @@
   "agent.canvas.taskId": "Task ID",
   "agent.canvas.nodeId": "Node ID",
   "agent.canvas.turnId": "Turn ID",
+  "agent.canvas.agentIndex": "Agent {{index}}",
+  "agent.canvas.synthesizer": "Synthesizer",
   "agent.canvas.none": "None",
   "agent.canvas.removeNode": "Remove node",
   "agent.canvas.resultSummary": "Result summary",
