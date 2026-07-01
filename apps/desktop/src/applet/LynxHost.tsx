@@ -6,6 +6,7 @@ import type {
   AppletHostUiRequest,
   LynxHostElement as LynxHostElementType,
 } from './lynx-host-element'
+import type { LynxDebugEvent } from './LynxDebugPanel'
 
 interface LynxHostProps {
   appletId: string
@@ -15,6 +16,7 @@ interface LynxHostProps {
   onLoad?: () => void
   onReady?: () => void
   onError?: (error: Error) => void
+  onDebugEvent?: (event: LynxDebugEvent) => void
   onNavigationRequest?: (request: AppletHostNavigationRequest) => void
   onUiRequest?: (request: AppletHostUiRequest) => unknown | Promise<unknown>
   onDeviceRequest?: (request: AppletHostDeviceRequest) => unknown | Promise<unknown>
@@ -32,6 +34,7 @@ const LynxHost: React.FC<LynxHostProps> = ({
   onLoad,
   onReady,
   onError,
+  onDebugEvent,
   onNavigationRequest,
   onUiRequest,
   onDeviceRequest,
@@ -68,6 +71,10 @@ const LynxHost: React.FC<LynxHostProps> = ({
       const detail = (event as CustomEvent<AppletHostDeviceRequest>).detail
       if (detail) void onDeviceRequest?.(detail)
     }
+    const handleDebug = (event: Event) => {
+      const detail = (event as CustomEvent<LynxDebugEvent>).detail
+      if (detail) onDebugEvent?.(detail)
+    }
 
     host.addEventListener('load', handleLoad)
     host.addEventListener('ready', handleReady)
@@ -75,6 +82,7 @@ const LynxHost: React.FC<LynxHostProps> = ({
     host.addEventListener('applet-navigation', handleNavigation)
     host.addEventListener('applet-ui', handleUi)
     host.addEventListener('applet-device', handleDevice)
+    host.addEventListener('applet-debug', handleDebug)
     return () => {
       if (host.navigationHandler === onNavigationRequest) {
         host.navigationHandler = undefined
@@ -91,8 +99,9 @@ const LynxHost: React.FC<LynxHostProps> = ({
       host.removeEventListener('applet-navigation', handleNavigation)
       host.removeEventListener('applet-ui', handleUi)
       host.removeEventListener('applet-device', handleDevice)
+      host.removeEventListener('applet-debug', handleDebug)
     }
-  }, [appletId, sessionId, url, onLoad, onReady, onError, onNavigationRequest, onUiRequest, onDeviceRequest, t])
+  }, [appletId, sessionId, url, onLoad, onReady, onError, onDebugEvent, onNavigationRequest, onUiRequest, onDeviceRequest, t])
 
   return createElement('lynx-host', { ref: hostRef, style })
 }

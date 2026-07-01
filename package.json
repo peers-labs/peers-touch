@@ -26,6 +26,7 @@
     "applet:desktop-product-shell-gate": "pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-desktop-product-host-gate.mjs --shell-route",
     "applet:desktop-product-shell-real-gateway-gate": "pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-desktop-product-host-gate.mjs --shell-route --real-http-gateway",
     "applet:desktop-product-window-gate": "node tooling/scripts/applet-desktop-product-window-gate.mjs",
+    "applet:desktop-lifecycle-smoothness-gate": "node tooling/scripts/applet-desktop-lifecycle-smoothness-gate.mjs",
     "applet:web-host-runtime-gate": "pnpm --filter @peers-touch/applet-contract run build && pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-web-host-runtime-gate.mjs",
     "applet:production-web-host-gate": "pnpm --filter @peers-touch/applet-contract run build && pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-production-web-host-gate.mjs",
     "applet:mobile-native-manifest-gate": "pnpm --filter @peers-touch/applet-contract run build && pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-mobile-native-manifest-gate.mjs",

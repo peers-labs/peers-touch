@@ -65,7 +65,17 @@ The goal is to catch "functionally correct but visually assembled" UI before it 
 - [ ] Contrast is sufficient for text, metadata, and states.
 - [ ] Icon-only actions have accessible labels.
 
-## 9. Social Methodology Gate
+## 9. Frontend Tree And Alive
+
+- [ ] The changed surface has a defined component tree layer in `frontend-component-tree.md`.
+- [ ] The surface has an Alive / lazy / LRU / non-alive decision in `frontend-component-tree-registry.md` when it is a page, primary tab, provider section, applet runtime, overlay, or large list.
+- [ ] Primary tab navigation changes visible route before data, schema, bundle, or runtime loading.
+- [ ] Settings/provider UI mounts only the selected provider schema; CLI provider fields are not forced through a generic cloud-provider form.
+- [ ] Hidden alive trees use narrow store selectors and do not re-render on unrelated runtime/store updates.
+- [ ] Large feeds, messages, rosters, logs, and grids are virtualized or incrementally rendered.
+- [ ] Long-task, remount, or route-to-visible risk is measured or explicitly marked as unproven.
+
+## 10. Social Methodology Gate
 
 When validating Social UI, include at least one incomplete or partially implemented capability.
 
@@ -77,12 +87,15 @@ Required checks:
 - [ ] Comment/reaction/follow states expose loading and rollback.
 - [ ] Feed/detail/thread surfaces stay visually continuous.
 
-## 10. AI Agent Output Contract
+## 11. AI Agent Output Contract
 
 When reporting UI work, include:
 
 - Files changed.
 - Contract files read.
+- Frontend tree layer and Alive category when UI lifetime is affected.
+- Registry row updated or reason it was not required.
 - UI states verified.
+- Performance evidence checked or explicitly unproven.
 - Known gaps.
 - Whether the change follows common UI Identity, module UI Identity, or both.

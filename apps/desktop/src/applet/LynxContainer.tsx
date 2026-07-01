@@ -5,6 +5,7 @@ import { RefreshCw, RotateCcw } from 'lucide-react'
 import AppletManager from './AppletManager'
 import LynxHost from './LynxHost'
 import type { AppletHostDeviceRequest, AppletHostNavigationRequest, AppletHostUiRequest } from './lynx-host-element'
+import { createLynxDebugEvent, type LynxDebugEvent } from './LynxDebugPanel'
 import type { AppletInfo } from './types'
 
 interface LynxContainerProps {
@@ -13,6 +14,7 @@ interface LynxContainerProps {
   height?: number | string
   onLoad?: (readySource: string) => void
   onError?: (error: Error) => void
+  onDebugEvent?: (event: LynxDebugEvent) => void
   onNavigationRequest?: (request: AppletHostNavigationRequest) => void
   onUiRequest?: (request: AppletHostUiRequest) => unknown | Promise<unknown>
   onDeviceRequest?: (request: AppletHostDeviceRequest) => unknown | Promise<unknown>
@@ -24,8 +26,9 @@ const APPLET_HOST_RENDER_FALLBACK_MS = 2500
 const { Text } = Typography
 
 /**
- * High-level container that loads an applet by ID and renders it via <lynx-host>.
- * Resolves the bundle URL from the platform-specific load config in the manifest.
+ * Renders an applet session owned by the applets runtime via <lynx-host>.
+ * The container consumes the current manager session; it does not load or
+ * unload applet runtime resources.
  */
 const LynxContainer: React.FC<LynxContainerProps> = ({
   appletId,
@@ -33,6 +36,7 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
   height = '600px',
   onLoad,
   onError,
+  onDebugEvent,
   onNavigationRequest,
   onUiRequest,
   onDeviceRequest,
@@ -50,6 +54,15 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
   const loadNotifiedRef = useRef(false)
   const appletManager = AppletManager.getInstance()
 
+  const reportDebug = useCallback((stage: string, options?: {
+    data?: Record<string, unknown>
+    level?: LynxDebugEvent['level']
+    sessionId?: string
+  }) => {
+    if (!import.meta.env.DEV) return
+    onDebugEvent?.(createLynxDebugEvent(appletId, stage, options))
+  }, [appletId, onDebugEvent])
+
   const notifyLoaded = useCallback((readySource: string) => {
     if (loadNotifiedRef.current) return
     loadNotifiedRef.current = true
@@ -57,44 +70,48 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
   }, [onLoad])
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true)
-        setReady(false)
-        setTimedOut(false)
-        setError(null)
-        loadNotifiedRef.current = false
+    try {
+      setLoading(true)
+      setReady(false)
+      setTimedOut(false)
+      setError(null)
+      loadNotifiedRef.current = false
+      reportDebug('container.resolve.start', { data: { retryKey } })
 
-        const info = appletManager.getAppletInfo(appletId)
-        if (!info) {
-          throw new Error(t('applet.runtime.registryNotFound', { id: appletId }))
-        }
-        if (!info.load.desktop) {
-          throw new Error(t('applet.runtime.noDesktopLoad', { id: appletId }))
-        }
-
-        await appletManager.loadApplet(appletId)
-        const createdSessionId = appletManager.getSessionId(appletId)
-        if (!createdSessionId) {
-          throw new Error(t('applet.runtime.sessionCreateFailed', { id: appletId }))
-        }
-        setAppletInfo(info)
-        setSessionId(createdSessionId)
-        setLoading(false)
-      } catch (err) {
-        const loadError = err instanceof Error ? err : new Error(t('applet.runtime.loadFailedFallback'))
-        setError(loadError)
-        onError?.(loadError)
-        setLoading(false)
+      const info = appletManager.getAppletInfo(appletId)
+      if (!info) {
+        throw new Error(t('applet.runtime.registryNotFound', { id: appletId }))
       }
+      if (!info.load.desktop) {
+        throw new Error(t('applet.runtime.noDesktopLoad', { id: appletId }))
+      }
+
+      const currentSessionId = appletManager.getSessionId(appletId)
+      if (!currentSessionId) {
+        throw new Error(t('applet.runtime.sessionCreateFailed', { id: appletId }))
+      }
+      reportDebug('container.session.resolved', {
+        data: {
+          entry: info.load.desktop.entry,
+          path: info.path,
+        },
+        sessionId: currentSessionId,
+      })
+      setAppletInfo(info)
+      setSessionId(currentSessionId)
+      setLoading(false)
+    } catch (err) {
+      const loadError = err instanceof Error ? err : new Error(t('applet.runtime.loadFailedFallback'))
+      reportDebug('container.resolve.error', { data: { error: loadError.message }, level: 'error' })
+      setError(loadError)
+      onError?.(loadError)
+      setLoading(false)
     }
 
-    load()
     return () => {
-      void appletManager.unloadApplet(appletId)
       setSessionId(null)
     }
-  }, [appletId, appletManager, onError, retryKey, t])
+  }, [appletId, appletManager, onError, reportDebug, retryKey, t])
 
   useEffect(() => {
     if (loading || error || ready || !sessionId) return undefined
@@ -102,21 +119,32 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
     const timer = window.setTimeout(() => {
       setReady(true)
       setTimedOut(false)
+      reportDebug('container.hostRenderFallback.ready', { sessionId })
       notifyLoaded('host-render-fallback')
     }, APPLET_HOST_RENDER_FALLBACK_MS)
 
     return () => window.clearTimeout(timer)
-  }, [error, loading, notifyLoaded, ready, sessionId])
+  }, [error, loading, notifyLoaded, ready, reportDebug, sessionId])
 
   useEffect(() => {
     if (loading || error || ready || !sessionId) return undefined
 
     const timer = window.setTimeout(() => {
       setTimedOut(true)
+      reportDebug('container.ready.timeout', { level: 'warn', sessionId })
     }, APPLET_READY_TIMEOUT_MS)
 
     return () => window.clearTimeout(timer)
-  }, [error, loading, ready, sessionId])
+  }, [error, loading, ready, reportDebug, sessionId])
+
+  useEffect(() => {
+    const desktopLoad = appletInfo?.load.desktop
+    if (!desktopLoad || !sessionId) return
+    reportDebug('container.bundle.resolved', {
+      data: { bundleUrl: `${appletInfo.path}/${desktopLoad.entry}` },
+      sessionId,
+    })
+  }, [appletInfo, reportDebug, sessionId])
 
   const retry = () => {
     setRetryKey((current) => current + 1)
@@ -190,6 +218,7 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
       style={{
         width,
         height,
+        minHeight: 0,
         position: 'relative',
         border: `1px solid ${token.colorBorderSecondary}`,
         borderRadius: 18,
@@ -226,12 +255,15 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
         onReady={() => {
           setReady(true)
           setTimedOut(false)
+          reportDebug('container.ready.received', { sessionId })
           notifyLoaded('lifecycle.reportReady')
         }}
         onError={(hostError) => {
+          reportDebug('container.host.error', { data: { error: hostError.message }, level: 'error', sessionId })
           setError(hostError)
           onError?.(hostError)
         }}
+        onDebugEvent={onDebugEvent}
         onNavigationRequest={onNavigationRequest}
         onUiRequest={onUiRequest}
         onDeviceRequest={onDeviceRequest}

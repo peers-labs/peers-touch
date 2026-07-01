@@ -78,6 +78,13 @@
       "tier": "ci-cheap",
       "description": "Run Desktop TypeScript checks."
     },
+    "applet-desktop-lifecycle-smoothness": {
+      "command": "pnpm applet:desktop-lifecycle-smoothness-gate",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate Desktop applet runtime page lease smoothness for A-to-B switching, explicit close back to launcher, LRU eviction, and launcher wakeup refresh."
+    },
     "federation-three-node-e2e": {
       "command": "make testnet-p5-federation-e2e",
       "timeout_seconds": 1200,
@@ -133,6 +140,13 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Validate the Chat managed domain profile against service, realtime, Desktop surface, registry, gate, and latest evidence contracts."
+    },
+    "applet-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain applet --require-proven",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the Applet managed domain profile against Desktop lifecycle smoothness capability, registry, gate, and latest evidence contracts."
     }
   }
 }

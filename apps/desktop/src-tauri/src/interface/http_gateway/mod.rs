@@ -67,6 +67,34 @@ use ulid::Ulid;
 const DEFAULT_PORT: u16 = 3030;
 const POOL_SIZE: usize = 8;
 
+#[derive(Clone)]
+enum GatewayRuntime {
+    Tauri { app_handle: AppHandle },
+    Headless,
+}
+
+impl GatewayRuntime {
+    fn tauri(app_handle: AppHandle) -> Self {
+        Self::Tauri { app_handle }
+    }
+
+    #[cfg(test)]
+    fn headless() -> Self {
+        Self::Headless
+    }
+
+    fn app_handle(&self, command: &'static str) -> Result<AppHandle, Value> {
+        match self {
+            Self::Tauri { app_handle } => Ok(app_handle.clone()),
+            Self::Headless => Err(to_json(AppResult::<StubPayload>::fail(
+                ErrorCode::InvalidArgument,
+                format!("{command} requires a Tauri AppHandle"),
+                None,
+            ))),
+        }
+    }
+}
+
 fn resolve_bind_addr() -> String {
     let port = std::env::var("PT_GATEWAY_PORT")
         .ok()
@@ -81,6 +109,10 @@ fn resolve_bind_addr() -> String {
 /// (default 3030) and dispatches incoming POST requests to the same
 /// application-layer functions used by tauri_commands.
 pub fn start(state: Arc<AppState>, app_handle: AppHandle) {
+    start_with_runtime(state, GatewayRuntime::tauri(app_handle));
+}
+
+fn start_with_runtime(state: Arc<AppState>, runtime: GatewayRuntime) {
     std::thread::Builder::new()
         .name("http-gateway".into())
         .spawn(move || {
@@ -109,9 +141,9 @@ pub fn start(state: Arc<AppState>, app_handle: AppHandle) {
                 };
 
                 let state = Arc::clone(&state);
-                let app_handle = app_handle.clone();
+                let runtime = runtime.clone();
                 pool.execute(move || {
-                    handle_request(request, &state, &app_handle);
+                    handle_request(request, &state, &runtime);
                 });
             }
         })
@@ -122,7 +154,7 @@ pub fn start(state: Arc<AppState>, app_handle: AppHandle) {
 // Request handling
 // -------------------------------------------------------------------------
 
-fn handle_request(mut request: tiny_http::Request, state: &AppState, app_handle: &AppHandle) {
+fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &GatewayRuntime) {
     // CORS preflight
     if *request.method() == tiny_http::Method::Options {
         let response = tiny_http::Response::empty(200)
@@ -213,7 +245,7 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, app_handle:
         None => raw_args,
     };
 
-    let result = dispatch(cmd, args, state, app_handle);
+    let result = dispatch(cmd, args, state, runtime);
 
     let response_body = result.to_string();
     let response = tiny_http::Response::from_string(response_body)
@@ -673,7 +705,7 @@ fn filter_incremental_messages(
 ///
 /// This function mirrors the full invoke_handler list from main.rs,
 /// calling the same application-layer functions that tauri_commands use.
-fn dispatch(cmd: &str, args: Value, state: &AppState, app_handle: &AppHandle) -> Value {
+fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) -> Value {
     match cmd {
         // =================================================================
         // Meta
@@ -1986,7 +2018,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, app_handle: &AppHandle) ->
                 .unwrap_or_else(|| format!("agent-turn-{}", Ulid::new()));
             let cancel_flag = app_agent_turn::register_agent_turn_stream(&stream_id);
             let stream_id_for_task = stream_id.clone();
-            let app_for_task = app_handle.clone();
+            let app_for_task = match runtime.app_handle("agent_execute_turn_stream") {
+                Ok(app_handle) => app_handle,
+                Err(error) => return error,
+            };
             tauri::async_runtime::spawn_blocking(move || {
                 app_agent_turn::agent_execute_turn_stream(
                     app_for_task,
@@ -5664,6 +5699,7 @@ mod tests {
     #[test]
     fn applet_commands_route_through_http_gateway_dispatch() {
         let state = test_state("applet-route");
+        let runtime = GatewayRuntime::headless();
         let create = dispatch(
             "applets_create_session",
             json!({
@@ -5672,6 +5708,7 @@ mod tests {
                 "manifest": manifest()
             }),
             &state,
+            &runtime,
         );
         assert!(app_result_ok(&create), "create session failed: {}", create);
 
@@ -5686,6 +5723,7 @@ mod tests {
                 "manifest": manifest()
             }),
             &state,
+            &runtime,
         );
         assert!(app_result_ok(&invoke), "invoke failed: {}", invoke);
         let status = status_json(&invoke);
@@ -5708,6 +5746,7 @@ mod tests {
             .cloned()
             .unwrap_or_else(PathBuf::new);
         let state = AppState::new(layout, I18nService::new(&config_dir));
+        let runtime = GatewayRuntime::headless();
 
         let result = dispatch(
             "applets_create_session",
@@ -5717,6 +5756,7 @@ mod tests {
                 "manifest": manifest()
             }),
             &state,
+            &runtime,
         );
 
         assert_eq!(result.get("ok").and_then(Value::as_bool), Some(false));
@@ -5740,7 +5780,7 @@ mod tests {
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(60_000);
-        start(Arc::new(state));
+        start_with_runtime(Arc::new(state), GatewayRuntime::headless());
         std::thread::sleep(Duration::from_millis(hold_ms));
     }
 }

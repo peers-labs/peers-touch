@@ -104,6 +104,8 @@ interface RuntimeDescriptor {
   teardown(): void;                 // reverse install (idempotent)
   bootstrap(actorId: string | null): Promise<void>;
   reconcile?(reason: string): Promise<void>;
+  acquirePage?(pageId: string, reason: 'activate' | 'prewarm'): void | Promise<void>;
+  releasePage?(pageId: string, reason: 'explicit-close' | 'evict' | 'unmount'): void | Promise<void>;
 }
 ```
 
@@ -111,6 +113,8 @@ interface RuntimeDescriptor {
 - `install` runs once at boot. `bootstrap` runs once per `(actorId, runtime)` pair; the registry guards against duplicate concurrent bootstraps via per-runtime sequence numbers.
 - `app`-scope runtimes (search, settings, social, moments) do not depend on the active actor at install time; their data either is identity-independent, is itself the source of truth for the active actor, or observes authenticated actor edges through its own bridge logic.
 - `session`-scope runtimes are created by registering a descriptor with `scope: 'session'`; the BootPipeline calls their `bootstrap`/`teardown` on the authenticated-actor edge.
+- `acquirePage` / `releasePage` are optional page-resource lease hooks for dynamic runtime instances. They do not replace `install/bootstrap/reconcile`; they only let the owning runtime acquire or release page-scoped resources when PageHost proves a page needs them.
+- Ordinary page switches do not trigger `releasePage`. `keepAlive:{lru}` means the page is hidden but cached; resources are released only for explicit close, LRU eviction, or true unmount.
 - Runtime entries live in `apps/desktop/src/runtimes/*Runtime.ts` and are registered through `services/appRuntime.ts → registerKernelRuntimes`.
 
 ### 6.2 Page Contract
@@ -150,6 +154,14 @@ interface PageDescriptor {
 
 Each phase is observable via `kernel/boot.ts → markPhaseStart/End` (logged through the unified `log.info('boot', ...)` channel) so cold-start cost is measurable in dev console.
 
+PageHost also owns page-resource lease dispatch:
+
+- `activate`: active registered page needs runtime resources.
+- `prewarm`: idle-prewarmed page needs runtime resources.
+- `explicit-close`: page requested resource release without waiting for LRU eviction.
+- `evict`: `keepAlive:{lru}` dropped a cached dynamic page.
+- `unmount`: `keepAlive:'none'` page left active state and unmounted.
+
 ### 6.4 Page-local Prefetch
 
 `apps/desktop/src/kernel/usePrefetch.ts`
@@ -170,8 +182,9 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 | `chat` | `pages/SocialChatPage.descriptor.tsx` | `social` | migrated |
 | `settings` | `pages/SettingsPage.descriptor.tsx` | `settings` | migrated |
 | `applets` | `pages/AppletsPage.descriptor.tsx` | `applets` | migrated |
-| `applet:*` | `pages/AppletRuntimePage.descriptor.tsx` | `applets` | migrated dynamic route |
+| `applet:*` | `pages/AppletRuntimePage.descriptor.tsx` | `applets` | migrated dynamic route; `appletsRuntime` owns `acquirePage/releasePage` session lease |
 | `moments` | `pages/moments/MomentsApp.descriptor.tsx` | `moments` | migrated |
-| `agent`, `notes`, `agent-profile` | — | — | legacy `PageRouter` fallback |
+| `agent` | `pages/AgentChatPage.descriptor.tsx` | `agentCapability`, `agentTopic`, `social` | migrated (`preload: idle`, `keepAlive: forever`) |
+| `notes`, `agent-profile`, `agent-orchestration` | — | — | legacy `PageRouter` fallback |
 
 New pages that fit the contract should ship as descriptors from day one. Adding a page to the legacy `PageRouter` requires an explicit reason in the PR description.

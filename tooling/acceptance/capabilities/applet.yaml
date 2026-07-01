@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "applet-desktop-lifecycle-smoothness",
+      "domain": "applet",
+      "direction": "acceptance_validates_product",
+      "features": ["applet-desktop-lifecycle-smoothness"],
+      "required_gates": [
+        "applet-desktop-lifecycle-smoothness"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/kernel/pageRuntimeLease.ts",
+        "apps/desktop/src/pages/AppletRuntimePage.tsx",
+        "apps/desktop/src/pages/AppletsPage.tsx",
+        "apps/desktop/src/runtimes/appletsRuntime.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "docs/client/desktop/runtime-projections.md",
+          "docs/client/common/ui-identity/frontend-component-tree-registry.md",
+          "applet-readiness-evidence/desktop/make-desktop-lifecycle-e2e.md",
+          "tooling/acceptance/features/applet-desktop-lifecycle-smoothness.yaml",
+          "tooling/acceptance/gates.yaml"
+        ],
+        "proven_by": [
+          "applet-desktop-lifecycle-smoothness"
+        ],
+        "proven_scope": [
+          "A-to-B applet runtime lease switch does not unload hidden LRU applet A",
+          "explicit close returns to launcher before runtime release work",
+          "`make desktop` development app shell shows two installed applet launch targets and completes A-to-B-to-close-to-wakeup lifecycle evidence",
+          "launcher refresh and wakeup preserve existing content instead of fullscreen loading"
+        ],
+        "unproven_scope": [
+          "cross-platform mobile applet lifecycle smoothness"
+        ]
+      }
+    }
+  ]
+}
