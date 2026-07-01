@@ -19,6 +19,8 @@
   "provider.detail.apiProxyUrl": "API 代理地址",
   "provider.detail.apiProxyUrlDesc": "须包含 http(s)://",
   "provider.detail.apiProxyUrlPlaceholder": "https://your-proxy-url.com/v1",
+  "provider.detail.cliCommand": "CLI 命令",
+  "provider.detail.cliCommandDesc": "通过 Desktop Rust 在本地 Agent Workspace 中执行。Station 只保存配置，不执行本地 CLI 命令。",
   "provider.detail.connectivityCheck": "连通性检测",
   "provider.detail.connectivityCheckDesc": "检测 API 密钥和代理地址是否正确填写",
   "provider.detail.enterModelId": "输入或选择模型 ID",
