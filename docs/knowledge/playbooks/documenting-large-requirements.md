@@ -5,7 +5,6 @@ status: active
 owns:
   - AGENTS.md
   - docs/
-  - .trae/documents/
 referenced-by:
   - AGENTS.md
 related:
