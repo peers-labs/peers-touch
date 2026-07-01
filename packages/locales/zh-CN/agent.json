@@ -48,6 +48,8 @@
   "agent.canvas.taskId": "任务 ID",
   "agent.canvas.nodeId": "节点 ID",
   "agent.canvas.turnId": "Turn ID",
+  "agent.canvas.agentIndex": "Agent {{index}}",
+  "agent.canvas.synthesizer": "综合节点",
   "agent.canvas.none": "无",
   "agent.canvas.removeNode": "移除节点",
   "agent.canvas.resultSummary": "结果摘要",
