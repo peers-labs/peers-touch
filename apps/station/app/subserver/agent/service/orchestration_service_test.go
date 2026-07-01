@@ -34,6 +34,88 @@ func TestCollaborationEngineExecutionMode(t *testing.T) {
 	}
 }
 
+func TestBuildCollaborationTaskNodesPlansParallelFanOut(t *testing.T) {
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	nodes := buildCollaborationTaskNodes(
+		"task-1",
+		"Ship the orchestration DAG.",
+		model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_EXPERT_MESH,
+		[]string{"agent-a", "agent-b", "agent-c"},
+		"agent-judge",
+		now,
+	)
+
+	if len(nodes) != 4 {
+		t.Fatalf("expected 3 agent nodes plus synthesis, got %d", len(nodes))
+	}
+	for index := 0; index < 3; index++ {
+		if nodes[index].PrerequisiteNodeIDs != "" {
+			t.Fatalf("expected parallel node %d to have no prerequisites, got %q", index, nodes[index].PrerequisiteNodeIDs)
+		}
+	}
+	synth := nodes[3]
+	if synth.Role != collaborationRoleSynthesizer {
+		t.Fatalf("expected synthesis node, got role %q", synth.Role)
+	}
+	prerequisites := parseMetaList(synth.PrerequisiteNodeIDs)
+	if len(prerequisites) != 3 {
+		t.Fatalf("expected synthesis to depend on all normal nodes, got %#v", prerequisites)
+	}
+}
+
+func TestBuildCollaborationTaskNodesPlansSequentialChain(t *testing.T) {
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	nodes := buildCollaborationTaskNodes(
+		"task-1",
+		"Ship the orchestration DAG.",
+		model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_HIERARCHY,
+		[]string{"agent-a", "agent-b", "agent-c"},
+		"agent-judge",
+		now,
+	)
+
+	if len(nodes) != 4 {
+		t.Fatalf("expected 3 agent nodes plus synthesis, got %d", len(nodes))
+	}
+	if nodes[0].PrerequisiteNodeIDs != "" {
+		t.Fatalf("expected first sequential node to have no prerequisites, got %q", nodes[0].PrerequisiteNodeIDs)
+	}
+	if got := nodes[1].PrerequisiteNodeIDs; got != nodes[0].ID {
+		t.Fatalf("expected second node to depend on first node %q, got %q", nodes[0].ID, got)
+	}
+	if got := nodes[2].PrerequisiteNodeIDs; got != nodes[1].ID {
+		t.Fatalf("expected third node to depend on second node %q, got %q", nodes[1].ID, got)
+	}
+	if prerequisites := parseMetaList(nodes[3].PrerequisiteNodeIDs); len(prerequisites) != 3 {
+		t.Fatalf("expected synthesis to depend on all normal nodes, got %#v", prerequisites)
+	}
+}
+
+func TestReadyCollaborationNodesRespectsPrerequisites(t *testing.T) {
+	nodes := []persistence.CollaborationTaskNode{
+		{ID: "node-a", AgentID: "agent-a", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING)},
+		{ID: "node-b", AgentID: "agent-b", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING), PrerequisiteNodeIDs: "node-a"},
+		{ID: "node-c", AgentID: "agent-c", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING), PrerequisiteNodeIDs: "missing-node"},
+		{ID: "node-s", AgentID: "agent-j", Role: collaborationRoleSynthesizer, Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING), PrerequisiteNodeIDs: "node-a,node-b"},
+	}
+
+	ready := readyCollaborationNodes(nodes)
+	if len(ready) != 1 || ready[0] != 0 {
+		t.Fatalf("expected only the root node to be ready, got %#v", ready)
+	}
+
+	nodes[0].Status = int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED)
+	nodes[0].ResultSummary = "Root complete."
+	ready = readyCollaborationNodes(nodes)
+	if len(ready) != 1 || ready[0] != 1 {
+		t.Fatalf("expected dependent node to be ready after prerequisite completion, got %#v", ready)
+	}
+	contexts := collaborationContextsForPrerequisites(&nodes[1], nodes)
+	if len(contexts) != 1 || contexts[0].Summary != "Root complete." {
+		t.Fatalf("expected prerequisite context to include completed root summary, got %#v", contexts)
+	}
+}
+
 func TestCollaborationNodePromptIncludesPriorResults(t *testing.T) {
 	task := &persistence.CollaborationTask{
 		Description: "Ship the orchestration kernel.",
