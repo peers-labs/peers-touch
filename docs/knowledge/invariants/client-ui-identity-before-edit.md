@@ -5,7 +5,6 @@ status: active
 owns:
   - apps/desktop/src/pages/
   - apps/desktop/src/components/
-  - apps/desktop/src/styles/
   - apps/desktop/src/App.tsx
   - apps/mobile/src/
   - packages/prototypes/
@@ -47,7 +46,7 @@ The invariant makes UI Identity part of path-based read-before-edit behavior. Wh
 ## How to verify
 
 - `rg "ui-identity" AGENTS.md docs/.agent docs/client docs/knowledge` — must show agent entry, client docs, and knowledge cross-links.
-- `rg "apps/desktop/src/pages/|apps/desktop/src/components/|apps/mobile/src/|packages/prototypes/" docs/knowledge/invariants/client-ui-identity-before-edit.md` — must show UI code and prototype paths covered by `owns:`.
+- `rg "apps/desktop/src/pages/|apps/desktop/src/components/|apps/mobile/src/|packages/prototypes/" docs/knowledge/invariants/client-ui-identity-before-edit.md` — must show existing UI code and prototype paths covered by `owns:`.
 - For a Social UI change, the implementation report must cite `docs/client/common/ui-identity/modules/social/README.md` or `docs/client/common/ui-identity/modules/social/desktop.md`.
 - For any new client UI module, a module contract must be added or an existing module contract must be cited as intentionally reused.
 
