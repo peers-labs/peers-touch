@@ -361,6 +361,42 @@ message UpdateCollaborationTaskResponse {
   CollaborationTask task = 1;
 }
 
+message ClaimDesktopExecutorTaskRequest {
+  string executor_id = 1;
+  int64 lease_ttl_ms = 2;
+  optional string task_id = 3;
+  optional string agent_id = 4;
+  repeated string capabilities = 5;
+  optional string node_id = 6;
+}
+
+message ClaimDesktopExecutorTaskResponse {
+  CollaborationTask task = 1;
+  TaskNode node = 2;
+  ExecutorLease lease = 3;
+  bool claimed = 4;
+}
+
+message HeartbeatExecutorLeaseRequest {
+  string lease_id = 1;
+  string executor_id = 2;
+  int64 lease_ttl_ms = 3;
+}
+
+message HeartbeatExecutorLeaseResponse {
+  ExecutorLease lease = 1;
+}
+
+message ReleaseExecutorLeaseRequest {
+  string lease_id = 1;
+  string executor_id = 2;
+  string status = 3;
+}
+
+message ReleaseExecutorLeaseResponse {
+  ExecutorLease lease = 1;
+}
+
 message DeleteCollaborationTaskRequest {
   string task_id = 1;
 }

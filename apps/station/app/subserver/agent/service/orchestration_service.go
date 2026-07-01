@@ -28,7 +28,14 @@ type OrchestrationService struct {
 	recoveryOnce sync.Once
 }
 
-const collaborationRoleSynthesizer = "synthesizer"
+const (
+	collaborationRoleSynthesizer = "synthesizer"
+	executorLeaseStatusActive    = "active"
+	executorLeaseStatusReleased  = "released"
+	executorLeaseStatusExpired   = "expired"
+	defaultExecutorLeaseTTL      = 45 * time.Second
+	maxExecutorLeaseTTL          = 5 * time.Minute
+)
 
 func NewOrchestrationService(agentService *AgentService, turnService *TurnService, toolRegistry *ToolRegistryService) *OrchestrationService {
 	return &OrchestrationService{
@@ -334,9 +341,14 @@ func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context
 	nodeID := strings.TrimSpace(meta["node_id"])
 	resultSummary := strings.TrimSpace(meta["result_summary"])
 	turnID := strings.TrimSpace(meta["turn_id"])
+	leaseID := strings.TrimSpace(meta["lease_id"])
+	executorID := strings.TrimSpace(meta["executor_id"])
 	resultStatus := strings.ToLower(strings.TrimSpace(meta["status"]))
 	if actorID == "" || taskID == "" || nodeID == "" {
 		return nil, nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id, task_id and meta.node_id are required", nil)
+	}
+	if leaseID == "" || executorID == "" {
+		return nil, nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "meta.lease_id and meta.executor_id are required", nil)
 	}
 	if resultSummary == "" {
 		resultSummary = "Desktop executor completed without a final response."
@@ -354,6 +366,7 @@ func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context
 
 	var task persistence.CollaborationTask
 	var node persistence.CollaborationTaskNode
+	var lease persistence.ExecutorLease
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id = ? AND goal_owner_id = ?", taskID, actorID).First(&task).Error; err != nil {
 			return err
@@ -375,6 +388,25 @@ func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context
 			return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "collaboration node is not owned by a desktop executor", nil)
 		}
 		now := time.Now()
+		if err := tx.Where(
+			"lease_id = ? AND task_id = ? AND step_id = ? AND executor_id = ?",
+			leaseID,
+			task.ID,
+			node.ID,
+			executorID,
+		).First(&lease).Error; err != nil {
+			return err
+		}
+		if lease.Status != executorLeaseStatusActive {
+			return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "executor lease is not active", nil)
+		}
+		if !lease.ExpiresAt.After(now) {
+			_ = tx.Model(&persistence.ExecutorLease{}).Where("lease_id = ?", lease.LeaseID).Updates(map[string]interface{}{
+				"status":       executorLeaseStatusExpired,
+				"heartbeat_at": now,
+			}).Error
+			return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "executor lease expired", nil)
+		}
 		node.Status = int32(nodeStatus)
 		node.ResultSummary = resultSummary
 		node.EndedAt = now
@@ -383,7 +415,15 @@ func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context
 			"result_summary": node.ResultSummary,
 			"ended_at":       now,
 		}
-		return tx.Model(&persistence.CollaborationTaskNode{}).Where("id = ?", node.ID).Updates(updates).Error
+		if err := tx.Model(&persistence.CollaborationTaskNode{}).Where("id = ?", node.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		lease.Status = executorLeaseStatusReleased
+		lease.HeartbeatAt = now
+		return tx.Model(&persistence.ExecutorLease{}).Where("lease_id = ?", lease.LeaseID).Updates(map[string]interface{}{
+			"status":       executorLeaseStatusReleased,
+			"heartbeat_at": now,
+		}).Error
 	}); err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "collaboration task or node not found", err)
@@ -395,8 +435,10 @@ func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context
 		"desktop_executor_state": "submitted_node_result",
 		"desktop_executor_node":  node.ID,
 		"desktop_executor_agent": node.AgentID,
+		"desktop_executor_lease": lease.LeaseID,
 	})
 	s.publishNodeEvent(ctx, &task, &node, eventType, turnID, resultSummary)
+	s.publishExecutorLeaseEvent(ctx, &task, &node, &lease, domain.EventTypeCollaborationExecutorReleased, resultStatus)
 
 	var nodes []persistence.CollaborationTaskNode
 	if err := db.WithContext(ctx).Where("task_id = ?", task.ID).Order("started_at ASC").Find(&nodes).Error; err != nil {
@@ -404,6 +446,194 @@ func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context
 	}
 	s.startTaskExecution(actorID, task, nodes, "desktop-node-result")
 	return taskRecordToProto(&task), nodeRecordsToProto(nodes), nil
+}
+
+func (s *OrchestrationService) ClaimDesktopExecutorTask(ctx context.Context, actorID string, req *model.ClaimDesktopExecutorTaskRequest) (*model.ClaimDesktopExecutorTaskResponse, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	actorID = strings.TrimSpace(actorID)
+	executorID := strings.TrimSpace(req.GetExecutorId())
+	if actorID == "" || executorID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id and executor_id are required", nil)
+	}
+	ttl := normalizeExecutorLeaseTTL(req.GetLeaseTtlMs())
+	taskFilter := strings.TrimSpace(req.GetTaskId())
+	agentFilter := strings.TrimSpace(req.GetAgentId())
+	nodeFilter := strings.TrimSpace(req.GetNodeId())
+	now := time.Now()
+
+	var claimedTask persistence.CollaborationTask
+	var claimedNode persistence.CollaborationTaskNode
+	var claimedLease persistence.ExecutorLease
+	claimed := false
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var tasks []persistence.CollaborationTask
+		query := tx.Where("goal_owner_id = ? AND status = ?", actorID, int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING))
+		if taskFilter != "" {
+			query = query.Where("id = ?", taskFilter)
+		}
+		if err := query.Order("created_at ASC").Find(&tasks).Error; err != nil {
+			return err
+		}
+		for taskIndex := range tasks {
+			task := tasks[taskIndex]
+			var nodes []persistence.CollaborationTaskNode
+			nodeQuery := tx.Where("task_id = ? AND status = ?", task.ID, int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING))
+			if agentFilter != "" {
+				nodeQuery = nodeQuery.Where("agent_id = ?", agentFilter)
+			}
+			if nodeFilter != "" {
+				nodeQuery = nodeQuery.Where("id = ?", nodeFilter)
+			}
+			if err := nodeQuery.Order("started_at ASC").Find(&nodes).Error; err != nil {
+				return err
+			}
+			for nodeIndex := range nodes {
+				node := nodes[nodeIndex]
+				agent, err := s.agentService.GetAgent(ctx, actorID, node.AgentID)
+				if err != nil {
+					return err
+				}
+				if agentExecutorKind(agent) != model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE {
+					continue
+				}
+				lease, ok, err := s.claimNodeLeaseTx(tx, &task, &node, executorID, ttl, now)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					continue
+				}
+				claimedTask = task
+				claimedNode = node
+				claimedLease = lease
+				claimed = true
+				return nil
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if !claimed {
+		return &model.ClaimDesktopExecutorTaskResponse{Claimed: false}, nil
+	}
+	s.updateTaskMeta(ctx, db, &claimedTask, map[string]string{
+		"desktop_executor_state": "leased_node",
+		"desktop_executor_node":  claimedNode.ID,
+		"desktop_executor_agent": claimedNode.AgentID,
+		"desktop_executor_lease": claimedLease.LeaseID,
+	})
+	s.publishExecutorLeaseEvent(ctx, &claimedTask, &claimedNode, &claimedLease, domain.EventTypeCollaborationExecutorLeased, "claimed")
+	return &model.ClaimDesktopExecutorTaskResponse{
+		Task:    taskRecordToProto(&claimedTask),
+		Node:    nodeRecordToProto(&claimedNode),
+		Lease:   leaseRecordToProto(&claimedLease),
+		Claimed: true,
+	}, nil
+}
+
+func (s *OrchestrationService) HeartbeatExecutorLease(ctx context.Context, actorID string, req *model.HeartbeatExecutorLeaseRequest) (*model.ExecutorLease, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	actorID = strings.TrimSpace(actorID)
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	executorID := strings.TrimSpace(req.GetExecutorId())
+	if actorID == "" || leaseID == "" || executorID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id, lease_id and executor_id are required", nil)
+	}
+	ttl := normalizeExecutorLeaseTTL(req.GetLeaseTtlMs())
+	now := time.Now()
+	var lease persistence.ExecutorLease
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("lease_id = ? AND executor_id = ?", leaseID, executorID).First(&lease).Error; err != nil {
+			return err
+		}
+		var task persistence.CollaborationTask
+		if err := tx.Where("id = ? AND goal_owner_id = ?", lease.TaskID, actorID).First(&task).Error; err != nil {
+			return err
+		}
+		if lease.Status != executorLeaseStatusActive {
+			return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "executor lease is not active", nil)
+		}
+		if !lease.ExpiresAt.After(now) {
+			lease.Status = executorLeaseStatusExpired
+			lease.HeartbeatAt = now
+			_ = tx.Model(&persistence.ExecutorLease{}).Where("lease_id = ?", lease.LeaseID).Updates(map[string]interface{}{
+				"status":       executorLeaseStatusExpired,
+				"heartbeat_at": now,
+			}).Error
+			return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "executor lease expired", nil)
+		}
+		lease.HeartbeatAt = now
+		lease.ExpiresAt = now.Add(ttl)
+		return tx.Model(&persistence.ExecutorLease{}).Where("lease_id = ?", lease.LeaseID).Updates(map[string]interface{}{
+			"heartbeat_at": lease.HeartbeatAt,
+			"expires_at":   lease.ExpiresAt,
+		}).Error
+	}); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "executor lease not found", err)
+		}
+		return nil, err
+	}
+	return leaseRecordToProto(&lease), nil
+}
+
+func (s *OrchestrationService) ReleaseExecutorLease(ctx context.Context, actorID string, req *model.ReleaseExecutorLeaseRequest) (*model.ExecutorLease, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	actorID = strings.TrimSpace(actorID)
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	executorID := strings.TrimSpace(req.GetExecutorId())
+	reason := strings.TrimSpace(req.GetStatus())
+	if reason == "" {
+		reason = executorLeaseStatusReleased
+	}
+	if actorID == "" || leaseID == "" || executorID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id, lease_id and executor_id are required", nil)
+	}
+	now := time.Now()
+	var task persistence.CollaborationTask
+	var node persistence.CollaborationTaskNode
+	var lease persistence.ExecutorLease
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("lease_id = ? AND executor_id = ?", leaseID, executorID).First(&lease).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("id = ? AND goal_owner_id = ?", lease.TaskID, actorID).First(&task).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("id = ? AND task_id = ?", lease.StepID, lease.TaskID).First(&node).Error; err != nil {
+			return err
+		}
+		if lease.Status == executorLeaseStatusActive {
+			status := executorLeaseStatusReleased
+			if !lease.ExpiresAt.After(now) {
+				status = executorLeaseStatusExpired
+			}
+			lease.Status = status
+			lease.HeartbeatAt = now
+			return tx.Model(&persistence.ExecutorLease{}).Where("lease_id = ?", lease.LeaseID).Updates(map[string]interface{}{
+				"status":       status,
+				"heartbeat_at": now,
+			}).Error
+		}
+		return nil
+	}); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "executor lease not found", err)
+		}
+		return nil, err
+	}
+	s.publishExecutorLeaseEvent(ctx, &task, &node, &lease, domain.EventTypeCollaborationExecutorReleased, reason)
+	return leaseRecordToProto(&lease), nil
 }
 
 func (s *OrchestrationService) getDB(ctx context.Context) (*gorm.DB, error) {
@@ -701,6 +931,61 @@ func (s *OrchestrationService) runCollaborationNode(
 	s.updateNode(ctx, db, node, model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED, summary)
 	s.publishNodeEvent(ctx, task, node, domain.EventTypeCollaborationNodeCompleted, turn.TurnID, summary)
 	return collaborationNodeRunResult{Summary: summary}
+}
+
+func (s *OrchestrationService) claimNodeLeaseTx(
+	tx *gorm.DB,
+	task *persistence.CollaborationTask,
+	node *persistence.CollaborationTaskNode,
+	executorID string,
+	ttl time.Duration,
+	now time.Time,
+) (persistence.ExecutorLease, bool, error) {
+	var activeLeases []persistence.ExecutorLease
+	if err := tx.Where("task_id = ? AND step_id = ? AND status = ?", task.ID, node.ID, executorLeaseStatusActive).
+		Order("acquired_at ASC").
+		Find(&activeLeases).Error; err != nil {
+		return persistence.ExecutorLease{}, false, err
+	}
+	for index := range activeLeases {
+		lease := activeLeases[index]
+		if !lease.ExpiresAt.After(now) {
+			if err := tx.Model(&persistence.ExecutorLease{}).Where("lease_id = ?", lease.LeaseID).Updates(map[string]interface{}{
+				"status":       executorLeaseStatusExpired,
+				"heartbeat_at": now,
+			}).Error; err != nil {
+				return persistence.ExecutorLease{}, false, err
+			}
+			continue
+		}
+		if lease.ExecutorID != executorID {
+			return persistence.ExecutorLease{}, false, nil
+		}
+		lease.HeartbeatAt = now
+		lease.ExpiresAt = now.Add(ttl)
+		if err := tx.Model(&persistence.ExecutorLease{}).Where("lease_id = ?", lease.LeaseID).Updates(map[string]interface{}{
+			"heartbeat_at": lease.HeartbeatAt,
+			"expires_at":   lease.ExpiresAt,
+		}).Error; err != nil {
+			return persistence.ExecutorLease{}, false, err
+		}
+		return lease, true, nil
+	}
+	lease := persistence.ExecutorLease{
+		LeaseID:      generateID("lease"),
+		TaskID:       task.ID,
+		StepID:       node.ID,
+		ExecutorID:   executorID,
+		ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE),
+		Status:       executorLeaseStatusActive,
+		AcquiredAt:   now,
+		HeartbeatAt:  now,
+		ExpiresAt:    now.Add(ttl),
+	}
+	if err := tx.Create(&lease).Error; err != nil {
+		return persistence.ExecutorLease{}, false, err
+	}
+	return lease, true, nil
 }
 
 func (s *OrchestrationService) finishExecutedTask(
@@ -1434,6 +1719,25 @@ func (s *OrchestrationService) publishNodeEvent(ctx context.Context, task *persi
 	s.publishEvent(ctx, node.AgentID, string(eventType), payload, task.ID, node.ID)
 }
 
+func (s *OrchestrationService) publishExecutorLeaseEvent(ctx context.Context, task *persistence.CollaborationTask, node *persistence.CollaborationTaskNode, lease *persistence.ExecutorLease, eventType domain.EventType, reason string) {
+	if task == nil || node == nil || lease == nil {
+		return
+	}
+	payload := map[string]interface{}{
+		"task_id":       task.ID,
+		"node_id":       node.ID,
+		"agent_id":      node.AgentID,
+		"lease_id":      lease.LeaseID,
+		"executor_id":   lease.ExecutorID,
+		"executor_kind": lease.ExecutorKind,
+		"lease_status":  lease.Status,
+	}
+	if strings.TrimSpace(reason) != "" {
+		payload["reason"] = reason
+	}
+	s.publishEvent(ctx, node.AgentID, string(eventType), payload, task.ID, node.ID)
+}
+
 func (s *OrchestrationService) publishEvent(ctx context.Context, agentID, eventType string, payload interface{}, taskID, nodeID string) {
 	writer := s.eventWriter
 	if writer == nil {
@@ -1474,11 +1778,26 @@ func taskEventTypeForDomainEvent(eventType string) model.TaskEventType {
 		return model.TaskEventType_TASK_EVENT_TYPE_STEP_COMPLETED
 	case domain.EventTypeCollaborationNodeFailed:
 		return model.TaskEventType_TASK_EVENT_TYPE_STEP_FAILED
+	case domain.EventTypeCollaborationExecutorLeased:
+		return model.TaskEventType_TASK_EVENT_TYPE_EXECUTOR_LEASED
+	case domain.EventTypeCollaborationExecutorReleased:
+		return model.TaskEventType_TASK_EVENT_TYPE_EXECUTOR_RELEASED
 	case domain.EventTypeAgentTurnStarted, domain.EventTypeAgentTurnCompleted, domain.EventTypeAgentTurnFailed:
 		return model.TaskEventType_TASK_EVENT_TYPE_TURN_EVENT
 	default:
 		return model.TaskEventType_TASK_EVENT_TYPE_UNSPECIFIED
 	}
+}
+
+func normalizeExecutorLeaseTTL(ttlMs int64) time.Duration {
+	if ttlMs <= 0 {
+		return defaultExecutorLeaseTTL
+	}
+	ttl := time.Duration(ttlMs) * time.Millisecond
+	if ttl > maxExecutorLeaseTTL {
+		return maxExecutorLeaseTTL
+	}
+	return ttl
 }
 
 func normalizeEngineType(engine model.CollaborationEngineType) model.CollaborationEngineType {
@@ -1576,19 +1895,43 @@ func taskRecordToProto(record *persistence.CollaborationTask) *model.Collaborati
 func nodeRecordsToProto(records []persistence.CollaborationTaskNode) []*model.TaskNode {
 	nodes := make([]*model.TaskNode, 0, len(records))
 	for i := range records {
-		nodes = append(nodes, &model.TaskNode{
-			NodeId:              records[i].ID,
-			TaskId:              records[i].TaskID,
-			ParentNodeId:        records[i].ParentNodeID,
-			AgentId:             records[i].AgentID,
-			Role:                records[i].Role,
-			Description:         records[i].Description,
-			Status:              model.TaskNodeStatus(records[i].Status),
-			PrerequisiteNodeIds: parseMetaList(records[i].PrerequisiteNodeIDs),
-			ResultSummary:       records[i].ResultSummary,
-			StartedAt:           timestamppb.New(records[i].StartedAt),
-			EndedAt:             timestamppb.New(records[i].EndedAt),
-		})
+		nodes = append(nodes, nodeRecordToProto(&records[i]))
 	}
 	return nodes
+}
+
+func nodeRecordToProto(record *persistence.CollaborationTaskNode) *model.TaskNode {
+	if record == nil {
+		return nil
+	}
+	return &model.TaskNode{
+		NodeId:              record.ID,
+		TaskId:              record.TaskID,
+		ParentNodeId:        record.ParentNodeID,
+		AgentId:             record.AgentID,
+		Role:                record.Role,
+		Description:         record.Description,
+		Status:              model.TaskNodeStatus(record.Status),
+		PrerequisiteNodeIds: parseMetaList(record.PrerequisiteNodeIDs),
+		ResultSummary:       record.ResultSummary,
+		StartedAt:           timestamppb.New(record.StartedAt),
+		EndedAt:             timestamppb.New(record.EndedAt),
+	}
+}
+
+func leaseRecordToProto(record *persistence.ExecutorLease) *model.ExecutorLease {
+	if record == nil {
+		return nil
+	}
+	return &model.ExecutorLease{
+		LeaseId:      record.LeaseID,
+		TaskId:       record.TaskID,
+		StepId:       record.StepID,
+		ExecutorId:   record.ExecutorID,
+		ExecutorKind: model.ExecutorKind(record.ExecutorKind),
+		Status:       record.Status,
+		AcquiredAt:   timestamppb.New(record.AcquiredAt),
+		HeartbeatAt:  timestamppb.New(record.HeartbeatAt),
+		ExpiresAt:    timestamppb.New(record.ExpiresAt),
+	}
 }

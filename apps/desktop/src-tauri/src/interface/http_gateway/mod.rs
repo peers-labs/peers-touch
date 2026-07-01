@@ -2114,6 +2114,39 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, app_handle: &AppHandle) ->
             };
             to_json(app_agent_orchestration::agent_collaboration_submit_node_result(input, &token))
         }
+        "agent_collaboration_claim_executor_task" => {
+            let input = match parse_args::<AgentCollaborationClaimExecutorInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_claim_executor_task(input, &token))
+        }
+        "agent_collaboration_heartbeat_executor_lease" => {
+            let input = match parse_args::<AgentCollaborationHeartbeatLeaseInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_heartbeat_executor_lease(input, &token))
+        }
+        "agent_collaboration_release_executor_lease" => {
+            let input = match parse_args::<AgentCollaborationReleaseLeaseInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_release_executor_lease(input, &token))
+        }
 
         // =================================================================
         // Tools (no state)
