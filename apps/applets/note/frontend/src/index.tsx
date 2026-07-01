@@ -12,6 +12,14 @@ export async function bootstrapOfficialApplet() {
   });
 }
 
-void bootstrapOfficialApplet();
-
 root.render(<NoteAppletPage />);
+
+setTimeout(() => {
+  void bootstrapOfficialApplet().catch((error) => {
+    sdk.telemetry.reportError({
+      code: 'NOTE_BOOTSTRAP_FAILED',
+      message: error instanceof Error ? error.message : 'Note applet bootstrap failed',
+      details: { source: 'note.bootstrap' },
+    }).catch(() => undefined);
+  });
+}, 0);
