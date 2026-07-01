@@ -194,7 +194,12 @@ pub fn memory_search(input: MemorySearchInput, token: &str) -> AppResult<StubPay
     }
     let req = agent::SearchMemoriesRequest {
         query: input.query,
-        layers: input.layers.unwrap_or_default().into_iter().map(|s| str_to_memory_layer(&s)).collect(),
+        layers: input
+            .layers
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| str_to_memory_layer(&s))
+            .collect(),
         limit: input.limit.unwrap_or(10) as i32,
         agent_id: input.agent_id.unwrap_or_default(),
         since: input.since.unwrap_or_default(),
