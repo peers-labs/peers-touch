@@ -91,6 +91,8 @@
   "agent.canvas.failed": "Orchestration run failed",
   "agent.canvas.cancelled": "Orchestration run cancelled",
   "agent.canvas.errorNoTask": "The runtime did not return a collaboration task",
+  "agent.canvas.desktopExecutorCompleted": "Desktop executor completed without returning a text summary.",
+  "agent.canvas.desktopExecutorFailed": "Desktop executor execution failed.",
   "agent.canvas.engine.review": "Review gate",
   "agent.canvas.engine.delivery": "Design to implementation",
   "agent.canvas.engine.synthesis": "Synthesis",
