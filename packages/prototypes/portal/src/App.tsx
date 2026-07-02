@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType, type CSSProperties } from 'react';
+import { useEffect, useState, type ComponentType, type CSSProperties, type KeyboardEvent } from 'react';
 import { Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
 import { WORKTREE_TARGETS } from './registry/worktrees';
@@ -30,10 +30,25 @@ function normalizeSite(value: unknown): PrototypeSite {
 
 export function PrototypePortal() {
   const [targetId, setTargetId] = useState(WORKTREE_TARGETS[0]?.id ?? 'current');
+  const [selectedPrototypeId, setSelectedPrototypeId] = useState<string | null>(null);
   const meta = SITE_META[site];
   const visible = LOCAL_PROTOTYPES.filter((prototype) => prototype.site === site);
+  const entryPrototypes = visible.filter(isEntryPrototype);
   const target = WORKTREE_TARGETS.find((item) => item.id === targetId) ?? WORKTREE_TARGETS[0];
   const localTarget = target.id === 'current';
+  const selectedPrototype =
+    entryPrototypes.find((prototype) => prototype.id === selectedPrototypeId) ?? entryPrototypes[0] ?? null;
+
+  useEffect(() => {
+    if (entryPrototypes.length === 0) {
+      setSelectedPrototypeId(null);
+      return;
+    }
+
+    if (!selectedPrototypeId || !entryPrototypes.some((prototype) => prototype.id === selectedPrototypeId)) {
+      setSelectedPrototypeId(entryPrototypes[0].id);
+    }
+  }, [entryPrototypes, selectedPrototypeId]);
 
   return (
     <div style={styles.page}>
@@ -85,8 +100,15 @@ export function PrototypePortal() {
 
           {localTarget ? (
             <div style={styles.grid}>
-              {visible.length > 0 ? (
-                visible.map((prototype) => <PrototypeCard key={prototype.id} prototype={prototype} />)
+              {entryPrototypes.length > 0 ? (
+                entryPrototypes.map((prototype) => (
+                  <PrototypeCard
+                    key={prototype.id}
+                    prototype={prototype}
+                    selected={prototype.id === selectedPrototype?.id}
+                    onSelect={() => setSelectedPrototypeId(prototype.id)}
+                  />
+                ))
               ) : (
                 <div style={styles.empty}>
                   <strong>No prototypes registered for {site} yet.</strong>
@@ -99,7 +121,7 @@ export function PrototypePortal() {
           )}
 
           {localTarget ? (
-            visible[0] ? <PrototypePreview prototype={visible[0]} /> : null
+            selectedPrototype ? <PrototypePreview prototype={selectedPrototype} /> : null
           ) : (
             <RemoteWorktreePreview target={target} site={site} />
           )}
@@ -107,6 +129,12 @@ export function PrototypePortal() {
       </main>
     </div>
   );
+}
+
+function isEntryPrototype(prototype: PrototypeManifest): boolean {
+  if (prototype.site !== 'desktop') return true;
+  if (prototype.kind === 'applet') return false;
+  return prototype.kind === 'shell' || prototype.module !== 'applet-runtime';
 }
 
 function RemoteTargetCard({ target, site }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
@@ -201,9 +229,30 @@ function PrototypePreview({ prototype }: { prototype: PrototypeManifest }) {
   );
 }
 
-function PrototypeCard({ prototype }: { prototype: PrototypeManifest }) {
+function PrototypeCard({
+  prototype,
+  selected,
+  onSelect,
+}: {
+  prototype: PrototypeManifest;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    onSelect();
+  };
+
   return (
-    <article style={styles.card}>
+    <article
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={onSelect}
+      onKeyDown={handleKeyDown}
+      style={{ ...styles.card, ...(selected ? styles.cardSelected : null) }}
+    >
       <div style={styles.cardTop}>
         <span style={styles.cardTitle}>{prototype.title}</span>
         <span style={styles.status}>{prototype.status}</span>
@@ -347,6 +396,12 @@ const styles: Record<string, CSSProperties> = {
     border: '1px solid #e5e7eb',
     borderRadius: 14,
     padding: 14,
+    cursor: 'pointer',
+    outline: 'none',
+  },
+  cardSelected: {
+    border: '1px solid #6366f1',
+    boxShadow: '0 10px 28px rgba(99, 102, 241, 0.12)',
   },
   cardTop: {
     display: 'flex',

@@ -12,6 +12,11 @@
 // install / bootstrap each runtime.
 
 import { log } from '../utils/logger';
+import {
+  recordRuntimeBootstrap,
+  recordRuntimeInstall,
+  recordRuntimePageLease,
+} from './frontendRuntimeProfiler';
 
 export type RuntimeScope = 'app' | 'session';
 export type RuntimePageAcquireReason = 'activate' | 'prewarm';
@@ -89,7 +94,9 @@ export function installRuntime(id: string): void {
   try {
     rec.desc.install();
     rec.installed = true;
-    log.info('runtime', `${id}:install`, { ms: Math.round(nowMs() - t0) });
+    const ms = nowMs() - t0;
+    log.info('runtime', `${id}:install`, { ms: Math.round(ms) });
+    recordRuntimeInstall(id, ms);
   } catch (err) {
     log.error('runtime', `${id}:install failed`, err);
   }
@@ -125,7 +132,9 @@ export async function bootstrapRuntime(id: string, actorId: string | null): Prom
     await rec.desc.bootstrap(actorId);
     if (sequence !== rec.bootstrapSequence) return;
     rec.bootstrappedActorId = actorId ?? null;
-    log.info('runtime', `${id}:bootstrap`, { ms: Math.round(nowMs() - t0), actorId });
+    const ms = nowMs() - t0;
+    log.info('runtime', `${id}:bootstrap`, { ms: Math.round(ms), actorId });
+    recordRuntimeBootstrap(id, ms, actorId);
   } catch (err) {
     log.error('runtime', `${id}:bootstrap failed`, err);
   }
@@ -149,7 +158,9 @@ export function acquireRuntimePage(id: string, pageId: string, reason: RuntimePa
   const t0 = nowMs();
   Promise.resolve(rec.desc.acquirePage(pageId, reason))
     .then(() => {
-      log.info('runtime', `${id}:page-acquire`, { pageId, reason, ms: Math.round(nowMs() - t0) });
+      const ms = nowMs() - t0;
+      log.info('runtime', `${id}:page-acquire`, { pageId, reason, ms: Math.round(ms) });
+      recordRuntimePageLease(id, pageId, reason, ms, 'acquire');
     })
     .catch((err) => {
       log.warn('runtime', `${id}:page-acquire failed`, { pageId, reason, err });
@@ -162,7 +173,9 @@ export function releaseRuntimePage(id: string, pageId: string, reason: RuntimePa
   const t0 = nowMs();
   Promise.resolve(rec.desc.releasePage(pageId, reason))
     .then(() => {
-      log.info('runtime', `${id}:page-release`, { pageId, reason, ms: Math.round(nowMs() - t0) });
+      const ms = nowMs() - t0;
+      log.info('runtime', `${id}:page-release`, { pageId, reason, ms: Math.round(ms) });
+      recordRuntimePageLease(id, pageId, reason, ms, 'release');
     })
     .catch((err) => {
       log.warn('runtime', `${id}:page-release failed`, { pageId, reason, err });

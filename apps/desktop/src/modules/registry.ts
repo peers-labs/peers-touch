@@ -10,6 +10,7 @@
  */
 import type React from 'react';
 import type { LucideIcon } from 'lucide-react';
+import type { SectionHostPolicy } from '../kernel/section';
 
 export interface SidebarEntry {
   position: 'top' | 'bottom';
@@ -20,6 +21,7 @@ export interface SidebarEntry {
 export interface SettingsEntry {
   order: number;
   label?: string;
+  sectionHostPolicy?: SectionHostPolicy;
   tooltip?: string;
 }
 

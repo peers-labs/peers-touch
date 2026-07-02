@@ -25,6 +25,7 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
   const navigation = useNavigation(router);
   const appletPins = useAppletPins();
   const setChatSurfaceVisible = useNavigationBadgeStore((s) => s.setChatSurfaceVisible);
+  const standaloneApplet = isStandaloneAppletShell() && router.page.startsWith('applet:');
 
   useEffect(() => {
     markPhaseStart('firstPaint');
@@ -58,14 +59,14 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
   return (
     <PageContextProvider value={{ router, navigation, appletPins }}>
       <GlobalLayout
-        sideNav={
+        sideNav={standaloneApplet ? null : (
           <AppSideNav
             page={router.page}
             router={router}
             navigation={navigation}
             appletPins={appletPins}
           />
-        }
+        )}
       >
         <PageHost
           page={router.page}
@@ -81,4 +82,9 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
       </GlobalLayout>
     </PageContextProvider>
   );
+}
+
+function isStandaloneAppletShell(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('appletStandalone') === '1';
 }

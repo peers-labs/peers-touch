@@ -35,6 +35,25 @@ function registerKernelRuntimes(): void {
 }
 
 let installed = false;
+let deferredInstalled = false;
+let deferredInstallInFlight: Promise<void> | null = null;
+
+const DEFERRED_APP_RUNTIME_IDS = [
+  socialRuntime.id,
+  searchRuntime.id,
+  settingsRuntime.id,
+  federationRuntime.id,
+  momentsRuntime.id,
+  agentCapabilityRuntime.id,
+  agentTopicRuntime.id,
+];
+
+function yieldToRenderer(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve();
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
 
 export function installAppRuntime(): void {
   if (installed) return;
@@ -44,31 +63,9 @@ export function installAppRuntime(): void {
 
   installIdentityChangedBridge();
   installNavigationBadgeProjection();
-  installRuntime(socialRuntime.id);
-  // App-scope bootstrap (no-op here, but keeps lifecycle log lines
-  // consistent with the BootPipeline contract).
-  void bootstrapRuntime(socialRuntime.id, null);
-
-  installRuntime(searchRuntime.id);
-  void bootstrapRuntime(searchRuntime.id, null);
-
-  installRuntime(settingsRuntime.id);
-  void bootstrapRuntime(settingsRuntime.id, null);
-
-  installRuntime(federationRuntime.id);
-  void bootstrapRuntime(federationRuntime.id, null);
 
   installRuntime(appletsRuntime.id);
   void bootstrapRuntime(appletsRuntime.id, null);
-
-  installRuntime(momentsRuntime.id);
-  void bootstrapRuntime(momentsRuntime.id, null);
-
-  installRuntime(agentCapabilityRuntime.id);
-  void bootstrapRuntime(agentCapabilityRuntime.id, null);
-
-  installRuntime(agentTopicRuntime.id);
-  void bootstrapRuntime(agentTopicRuntime.id, null);
 
   installMediaRuntime();
 
@@ -76,12 +73,37 @@ export function installAppRuntime(): void {
   void installEventStreamBridge();
   void installSessionKickBridge();
 
-  log.info('appRuntime', 'runtime installed');
+  log.info('appRuntime', 'early runtime installed');
+}
+
+export function installDeferredAppRuntimeProjections(): Promise<void> {
+  if (deferredInstalled) return Promise.resolve();
+  if (deferredInstallInFlight) return deferredInstallInFlight;
+
+  installAppRuntime();
+
+  deferredInstallInFlight = (async () => {
+    const installedRuntimes: string[] = [];
+    for (const runtimeId of DEFERRED_APP_RUNTIME_IDS) {
+      installRuntime(runtimeId);
+      await bootstrapRuntime(runtimeId, null);
+      installedRuntimes.push(runtimeId);
+      await yieldToRenderer();
+    }
+    deferredInstalled = true;
+    log.info('appRuntime', 'deferred projections installed', { installed: installedRuntimes });
+  })().finally(() => {
+    deferredInstallInFlight = null;
+  });
+
+  return deferredInstallInFlight;
 }
 
 export function teardownAppRuntime(): void {
   if (!installed) return;
   installed = false;
+  deferredInstalled = false;
+  deferredInstallInFlight = null;
 
   teardownRuntime(socialRuntime.id);
   teardownRuntime(searchRuntime.id);
