@@ -17,14 +17,18 @@
  * antd + CSS) you open in the browser. It only shows what the end product
  * looks like; the web artifact preview is a real embedded <iframe>.
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { C, ROLE_COLOR } from './theme';
-import { MOCK, COLLAB_INPUTS } from './mock';
+import { COLLAB_INPUTS } from './mock';
 import type { Block, TodoItem, TaskHost, TaskStatus, TaskContext, Artifact } from './types';
+import type { AtelierRuntime, AtelierRuntimeSnapshot } from './runtime';
+import { createMockAtelierRuntime } from './runtime';
 import { UserBubble, AgentBubble, NegoRow, DecisionCard, ArtifactCard, DiffCard } from './blocks';
 import { EngineTrace } from './engineTrace';
 import { ArtifactsTray, PreviewPanel } from './preview';
 import { PLUGINS, DEFAULT_PLUGIN_ID } from './plugins';
+import { PanelToggleButton } from '../../../shared/PanelToggleButton';
+import { PromptComposer } from '../../../shared/PromptComposer';
 
 // CLI agents (trae-cli / claude-code) are wrapped as model-style calls,
 // so they sit in the same picker as the hosted models.
@@ -57,6 +61,8 @@ const AGENT_FLOWS: { id: string; name: string; sub: string; batch: 1 | 2 }[] = [
   { id: 'swarm', name: 'Swarm 蜂群', sub: '海量同构并行 · 结果归约 + 多数', batch: 2 },
   { id: 'hierarchy', name: 'Hierarchy 层级（edict）', sub: '长流程强秩序 · 上级签字下令', batch: 2 },
 ];
+
+const DEFAULT_RUNTIME = createMockAtelierRuntime();
 
 /** The nine Agent peers collaborating in the workspace (footer cluster). */
 const PEERS: { role: string; label: string }[] = [
@@ -140,7 +146,7 @@ function Picker({
   return (
     <div style={{ position: 'relative' }}>
       <div onClick={() => setOpen((v) => !v)} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-        <span style={{ fontSize: 12, color: C.textSecondary, marginRight: 3 }}>{label}</span>
+        {label ? <span style={{ fontSize: 12, color: C.textSecondary, marginRight: 3 }}>{label}</span> : null}
         <span style={{ fontSize: 11, color: C.textTertiary }}>▾</span>
       </div>
       {open ? (
@@ -207,8 +213,8 @@ function RunPicker({
         style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
       >
         <span style={{ fontSize: 12, marginRight: 4 }}>{runKind === 'agents' ? '👥' : '⚡'}</span>
-        <span style={{ fontSize: 12, color: C.textSecondary, marginRight: 3 }}>{activeLabel}</span>
-        <span style={{ fontSize: 11, color: C.textTertiary }}>▾</span>
+        <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13, color: C.textSecondary, marginRight: 4, whiteSpace: 'nowrap' }}>{activeLabel}</span>
+        <span style={{ fontSize: 13, color: C.textTertiary }}>▾</span>
       </div>
       {open ? (
         <div
@@ -293,24 +299,44 @@ function RunPicker({
   );
 }
 
-export function AtelierPage() {
-  const [state, setState] = useState(MOCK);
-  const [selected, setSelected] = useState(state.selectedTaskId);
+export function AtelierPage({ runtime = DEFAULT_RUNTIME }: { runtime?: AtelierRuntime } = {}) {
+  const initialSnapshot = runtime.getSnapshot();
+  const [state, setState] = useState(initialSnapshot.state);
+  const [selected, setSelected] = useState(initialSnapshot.selectedTaskId);
   const [pluginId, setPluginId] = useState(DEFAULT_PLUGIN_ID);
   const [draft, setDraft] = useState('');
-  const [mode, setMode] = useState<'work' | 'code'>('work');
+  const [mode, setMode] = useState<'work' | 'code' | 'design'>('work');
   const [runKind, setRunKind] = useState<RunKind>('agents');
   const [flowId, setFlowId] = useState(AGENT_FLOWS[0].id);
   const [railOpen, setRailOpen] = useState(true);
   const [railRightOpen, setRailRightOpen] = useState(true);
   const [preview, setPreview] = useState<Artifact | null>(null);
 
+  const applySnapshot = useCallback((snapshot: AtelierRuntimeSnapshot) => {
+    setState(snapshot.state);
+    setSelected(snapshot.selectedTaskId);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const unsubscribe = runtime.subscribe?.((snapshot) => {
+      if (mounted) applySnapshot(snapshot);
+    });
+    void runtime.loadWorkspace().then((snapshot) => {
+      if (mounted) applySnapshot(snapshot);
+    });
+    return () => {
+      mounted = false;
+      unsubscribe?.();
+    };
+  }, [applySnapshot, runtime]);
+
   const stream = state.stream[selected] ?? [];
   const todos = state.todos[selected];
   const ctx = state.context[selected];
   const artifacts = state.artifacts[selected] ?? [];
   const selectedTask = state.tasks.find((t) => t.id === selected);
-  const hasRightPanel = (todos && todos.length > 0) || !!ctx;
+  const hasRightPanel = true;
 
   // selecting a task drops any open preview from the previous task
   const selectTask = (id: string) => {
@@ -327,36 +353,33 @@ export function AtelierPage() {
       selectedId: selected,
       select: (id) => selectTask(id),
       setStatus: (id, status: TaskStatus) =>
-        setState((s) => ({
-          ...s,
-          tasks: s.tasks.map((t) => (t.id === id ? { ...t, status, running: status === 'active' ? t.running : false } : t)),
-        })),
-      purge: (id) => setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) })),
+        void runtime.setTaskStatus({ taskId: id, status }).then(applySnapshot),
+      purge: (id) => void runtime.purgeTask(id).then(applySnapshot),
       newTask: () => {
-        const id = `t-${Date.now()}`;
-        const project = selectedTask?.project ?? 'peers-touch';
-        setState((s) => ({
-          ...s,
-          tasks: [{ id, project, title: '新任务', status: 'active' }, ...s.tasks],
-          stream: { ...s.stream, [id]: [] },
-        }));
-        setSelected(id);
         setPreview(null);
+        void runtime.createProjectFromGoal({
+          goal: '新任务',
+          project: selectedTask?.project ?? 'peers-touch',
+          run: { kind: runKind, model: state.model, flowId },
+        }).then(applySnapshot);
       },
     }),
-    [state.tasks, selected, selectedTask],
+    [applySnapshot, flowId, runKind, runtime, selected, selectedTask, state.model, state.tasks],
   );
 
   const choose = (blockId: string, opt: string) => {
-    setState((s) => ({
-      ...s,
-      stream: {
-        ...s.stream,
-        [selected]: (s.stream[selected] ?? []).map((b) =>
-          b.kind === 'decision' && b.id === blockId ? { ...b, chosen: opt } : b,
-        ),
-      },
-    }));
+    void runtime.resolveDecision({ taskId: selected, blockId, choice: opt }).then(applySnapshot);
+  };
+
+  const sendDraft = () => {
+    const text = draft.trim();
+    if (!text || !selected) return;
+    setDraft('');
+    void runtime.sendMessage({
+      taskId: selected,
+      text,
+      run: { kind: runKind, model: state.model, flowId },
+    }).then(applySnapshot);
   };
 
   const renderBlock = (b: Block) => {
@@ -382,30 +405,38 @@ export function AtelierPage() {
   };
 
   const budgetPct = Math.round((state.budgetSpent / state.budgetCap) * 100);
+  const contentMax = preview
+    ? 760
+    : !railOpen && !railRightOpen
+      ? 1040
+      : !railOpen || !railRightOpen
+        ? 920
+        : 760;
 
   return (
-    <div style={{ height: '100%', display: 'flex', backgroundColor: C.bg, color: C.text, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <div style={{ height: '100%', minHeight: 0, display: 'flex', overflow: 'hidden', backgroundColor: C.bg, color: C.text, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       {/* ── Left rail ── */}
       {railOpen ? (
         <div
           style={{
-            width: 256,
+            width: 'min(212px, 28%)',
             display: 'flex',
             flexDirection: 'column',
+            flexShrink: 0,
+            minHeight: 0,
+            boxSizing: 'border-box',
             backgroundColor: C.fillQuaternary,
             borderRight: `1px solid ${C.border}`,
-            padding: '14px 10px',
+            padding: '10px 8px 8px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', padding: '0 4px 12px' }}>
-            <span style={{ fontWeight: 'bold', fontSize: 15, marginRight: 8 }}>Atelier</span>
-            <span style={{ flex: 1, fontSize: 11, color: C.textTertiary }}>多 Agent 协作工作台</span>
-            <span onClick={() => setRailOpen(false)} style={{ fontSize: 14, color: C.textQuaternary, cursor: 'pointer' }}>⟨</span>
+          <div style={{ height: 28, display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+            <PanelToggleButton side="left" open={railOpen} title="折叠左栏" onClick={() => setRailOpen(false)} />
           </div>
 
           {/* Work / Code mode toggle */}
-          <div style={{ display: 'flex', padding: 3, backgroundColor: C.primaryWash3, borderRadius: 9, marginBottom: 12 }}>
-            {(['work', 'code'] as const).map((m) => (
+          <div style={{ display: 'flex', padding: 2, backgroundColor: C.fillSecondary, borderRadius: 8, marginBottom: 10 }}>
+            {(['work', 'code', 'design'] as const).map((m) => (
               <div
                 key={m}
                 onClick={() => setMode(m)}
@@ -415,13 +446,14 @@ export function AtelierPage() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '5px 0',
-                  borderRadius: 7,
+                  borderRadius: 6,
                   backgroundColor: mode === m ? C.bg : 'transparent',
                   cursor: 'pointer',
+                  boxShadow: mode === m ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
                 }}
               >
                 <span style={{ fontSize: 12, fontWeight: 'bold', color: mode === m ? C.primary : C.textTertiary }}>
-                  {m === 'work' ? 'Work' : 'Code'}
+                  {m === 'work' ? 'Work' : m === 'code' ? '</> Code' : 'Design'}
                 </span>
               </div>
             ))}
@@ -442,103 +474,64 @@ export function AtelierPage() {
           </div>
 
           {/* task list header + plugin switcher */}
-          <div style={{ display: 'flex', alignItems: 'center', padding: '0 8px 6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '10px 4px 6px' }}>
             <span style={{ flex: 1, fontSize: 12, fontWeight: 'bold', color: C.textTertiary }}>Your Task List</span>
+            <span style={{ fontSize: 13, color: C.textTertiary, marginRight: 8, cursor: 'pointer' }}>⌁</span>
+            <span style={{ fontSize: 13, color: C.textTertiary, marginRight: 8, cursor: 'pointer' }}>≡</span>
             <Picker
-              label={plugin.name}
+              label=""
               options={PLUGINS.map((p) => ({ key: p.id, title: p.ready ? p.name : `${p.name}（计划中）`, sub: p.tagline }))}
               onPick={(key) => setPluginId(key)}
             />
           </div>
 
-          <div style={{ flex: 1, overflow: 'auto' }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
             {plugin.render(host)}
           </div>
 
-          {/* peers footer — the Agent peers collaborating in this workspace */}
-          <div style={{ display: 'flex', alignItems: 'center', padding: '10px 6px 0', borderTop: `1px solid ${C.borderSoft}`, marginTop: 8 }}>
-            <div style={{ display: 'flex', marginRight: 8 }}>
-              {PEERS.map((p, i) => (
-                <div
-                  key={p.label}
-                  title={p.role}
-                  style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: 12,
-                    backgroundColor: ROLE_COLOR[p.role],
-                    border: `2px solid ${C.fillQuaternary}`,
-                    marginLeft: i === 0 ? 0 : -8,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <span style={{ color: C.white, fontSize: 11, fontWeight: 'bold' }}>{p.label}</span>
-                </div>
-              ))}
-            </div>
-            <span style={{ flex: 1, fontSize: 12, color: C.textSecondary }}>9 个 Agent peer 协作中</span>
-          </div>
+        </div>
+      ) : null}
+
+      {!railOpen ? (
+        <div
+          title="展开左栏"
+          style={{
+            width: 32,
+            flexShrink: 0,
+            minHeight: 0,
+            backgroundColor: C.bg,
+            borderRight: `1px solid ${C.border}`,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '12px 0',
+            boxSizing: 'border-box',
+          }}
+        >
+          <PanelToggleButton side="left" open={railOpen} title="展开左栏" onClick={() => setRailOpen(true)} />
         </div>
       ) : null}
 
       {/* ── Centre: conversation ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
         {/* top bar */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 24px', borderBottom: `1px solid ${C.border}` }}>
-          {!railOpen ? (
-            <span onClick={() => setRailOpen(true)} style={{ fontSize: 16, color: C.textTertiary, marginRight: 12, cursor: 'pointer' }}>⟩</span>
-          ) : null}
-          <span style={{ fontWeight: 'bold', marginRight: 12 }}>{selectedTask?.title}</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: C.primaryWash, borderRadius: 6, padding: '2px 8px', marginRight: 12, fontSize: 12, color: C.textTertiary }}>
-            🗂 {selectedTask?.project}
-          </span>
-          {selectedTask?.branch ? (
-            <span style={{ fontSize: 12, color: C.textTertiary, marginRight: 12 }}>⎇ {selectedTask.branch}</span>
-          ) : null}
-          {runKind === 'agents' ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 12 }}>
-              <span style={{ display: 'flex', marginRight: 6 }}>
-                {PEERS.slice(0, 4).map((p, i) => (
-                  <span
-                    key={p.label}
-                    title={p.role}
-                    style={{
-                      width: 18,
-                      height: 18,
-                      borderRadius: 9,
-                      backgroundColor: ROLE_COLOR[p.role],
-                      border: `1.5px solid ${C.bg}`,
-                      marginLeft: i === 0 ? 0 : -6,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <span style={{ color: C.white, fontSize: 9, fontWeight: 'bold' }}>{p.label}</span>
-                  </span>
-                ))}
-              </span>
-              <span style={{ fontSize: 12, color: C.textTertiary }}>
-                {AGENT_FLOWS.find((f) => f.id === flowId)?.name} · 多 Agent 协作中
-              </span>
-            </span>
-          ) : (
-            <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 12, fontSize: 12, color: C.textTertiary }}>
-              ⚡ 直连 {state.model}
-            </span>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', height: 40, flexShrink: 0, padding: '0 18px', borderBottom: `1px solid ${C.border}` }}>
+          <span style={{ fontWeight: 'bold', fontSize: 13, marginRight: 8 }}>{selectedTask?.title}</span>
+          <span style={{ fontSize: 12, color: C.textQuaternary, marginRight: 4 }}>▻</span>
+          <span style={{ fontSize: 12, color: C.textTertiary, marginRight: 4 }}>{selectedTask?.project}</span>
+          <span style={{ fontSize: 12, color: C.textQuaternary }}>· 11:18</span>
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 12, color: C.primary, marginRight: 12, cursor: 'pointer' }}>↗ Open in IDE</span>
-          <span style={{ fontSize: 12, color: C.textTertiary, marginRight: 6 }}>预算</span>
-          <Bar pct={budgetPct} danger={budgetPct > 80} width={90} />
-          <span style={{ fontSize: 12, marginLeft: 8 }}>${state.budgetSpent}/${state.budgetCap}</span>
+          <span style={{ height: 28, display: 'inline-flex', alignItems: 'center', border: `1px solid ${C.border}`, borderRadius: 8, padding: '0 10px', fontSize: 12, color: C.textSecondary, marginRight: 10 }}>
+            Open in <span style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: '#10b981', marginLeft: 6 }} />
+            <span style={{ marginLeft: 8, color: C.textTertiary }}>⌄</span>
+          </span>
+          <span style={{ fontSize: 16, color: C.textTertiary, marginRight: 16 }}>□</span>
+          <span style={{ fontSize: 16, color: C.textTertiary }}>☰</span>
         </div>
 
         {/* stream */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '8px 24px 0' }}>
-          <div style={{ maxWidth: 760 }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '18px 24px 0' }}>
+          <div style={{ width: `min(${contentMax}px, 100%)`, margin: '0 auto' }}>
             {stream.length === 0 ? (
               <div style={{ color: C.textQuaternary, fontSize: 13, textAlign: 'center', marginTop: 80 }}>
                 交给 Atelier 一个目标，它会拆解、协商、推进。
@@ -549,105 +542,79 @@ export function AtelierPage() {
         </div>
 
         {/* composer */}
-        <div style={{ padding: '12px 24px 20px', borderTop: `1px solid ${C.border}` }}>
-          <ArtifactsTray artifacts={artifacts} openId={preview?.id} onOpen={(a) => setPreview(a)} />
-          <div
-            style={{
-              maxWidth: 760,
-              border: `1px solid ${C.border}`,
-              borderRadius: 14,
-              padding: 10,
-              backgroundColor: C.bg,
-            }}
-          >
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder={runKind === 'agents'
-                ? `交给 ${AGENT_FLOWS.find((f) => f.id === flowId)?.name}：描述目标，多 Agent 协作流会协商、拆解、推进`
-                : `直接交给 ${state.model}：描述需求，单模型/CLI 直答，不走协商`}
-              style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', fontSize: 14, padding: '2px 4px', height: 24, backgroundColor: 'transparent' }}
-            />
-            <div style={{ display: 'flex', alignItems: 'center', marginTop: 6 }}>
-              <span style={{ fontSize: 15, color: C.textTertiary, marginRight: 10 }}>/</span>
-              <span style={{ fontSize: 15, color: C.textTertiary }}>＋</span>
-              <div style={{ flex: 1 }} />
-              {/* one merged dropdown: tab "直接模型" picks a model/CLI, tab "Agents" picks a collaboration flow */}
-              <div style={{ marginRight: 10 }}>
+        <div style={{ flexShrink: 0, padding: '12px 24px 12px' }}>
+          <ArtifactsTray artifacts={artifacts} openId={preview?.id} maxWidth={contentMax} onOpen={(a) => setPreview(a)} />
+          <PromptComposer
+            value={draft}
+            onChange={setDraft}
+            maxWidth={contentMax}
+            density="compact"
+            placeholder="Help you write code, debugs, optimize performance and other development work, deliver production-ready code."
+            modelNode={
+              <>
                 <RunPicker
                   runKind={runKind}
                   model={state.model}
                   flowId={flowId}
-                  onPickModel={(m) => { setRunKind('model'); setState((s) => ({ ...s, model: m })); }}
+                  onPickModel={(m) => {
+                    setRunKind('model');
+                    void runtime.setModel(m).then(applySnapshot);
+                  }}
                   onPickFlow={(id) => { setRunKind('agents'); setFlowId(id); }}
                 />
-              </div>
-              <div style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: C.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                <span style={{ color: C.white, fontSize: 15 }}>↑</span>
-              </div>
-            </div>
-          </div>
+              </>
+            }
+            onSend={sendDraft}
+            sendDisabled={!draft.trim()}
+          />
         </div>
       </div>
 
       {/* ── Right panel: preview (when an artifact is open) or Todo + Context ── */}
       {preview ? (
-        <div style={{ width: 460, display: 'flex', backgroundColor: C.bg, borderLeft: `1px solid ${C.border}`, overflow: 'hidden' }}>
+        <div style={{ width: 460, flexShrink: 0, minHeight: 0, display: 'flex', backgroundColor: C.bg, borderLeft: `1px solid ${C.border}`, overflow: 'hidden' }}>
           <PreviewPanel artifact={preview} onClose={() => setPreview(null)} />
         </div>
       ) : hasRightPanel ? (
         railRightOpen ? (
           <div
-            style={{ width: 272, overflow: 'auto', backgroundColor: C.bg, borderLeft: `1px solid ${C.border}`, padding: '16px 18px' }}
+            style={{ width: 'min(226px, 30%)', flexShrink: 0, minHeight: 0, boxSizing: 'border-box', overflow: 'auto', backgroundColor: C.bg, borderLeft: `1px solid ${C.border}`, padding: '14px 16px' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 4 }}>
-              <span
-                onClick={() => setRailRightOpen(false)}
-                title="折叠面板"
-                style={{ fontSize: 14, color: C.textQuaternary, cursor: 'pointer' }}
-              >
-                ⟩
-              </span>
+              <PanelToggleButton side="right" open={railRightOpen} title="折叠右栏" onClick={() => setRailRightOpen(false)} />
             </div>
-            {todos && todos.length > 0 ? (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-                  <span style={{ fontSize: 15, marginRight: 6 }}>☑</span>
-                  <span style={{ fontWeight: 'bold' }}>Todo</span>
-                </div>
-                {todos.map((t) => <TodoRow key={t.id} t={t} />)}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ fontWeight: 'bold', fontSize: 13 }}>Todo</span>
               </div>
-            ) : null}
+              {todos && todos.length > 0 ? (
+                <>{todos.map((t) => <TodoRow key={t.id} t={t} />)}</>
+              ) : (
+                <div style={{ height: 126, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderBottom: `1px solid ${C.border}`, color: C.textQuaternary, textAlign: 'center' }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>☷</div>
+                  <div style={{ fontSize: 13, fontWeight: 'bold', color: C.textTertiary }}>No todos yet</div>
+                  <div style={{ fontSize: 12, lineHeight: '18px', maxWidth: 170 }}>Progress for complex tasks will appear here</div>
+                </div>
+              )}
+            </div>
             {ctx ? <ContextPanel ctx={ctx} /> : null}
           </div>
         ) : (
           <div
-            onClick={() => setRailRightOpen(true)}
             title="展开 Todo + Context"
             style={{
-              width: 40,
-              backgroundColor: C.fillQuaternary,
+              width: 32,
+              flexShrink: 0,
+              minHeight: 0,
+              backgroundColor: C.bg,
               borderLeft: `1px solid ${C.border}`,
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              padding: '14px 0',
-              cursor: 'pointer',
-              gap: 12,
+              padding: '12px 0',
             }}
           >
-            <span style={{ fontSize: 14, color: C.textTertiary }}>⟨</span>
-            <span style={{ fontSize: 15 }}>☑</span>
-            <span
-              style={{
-                writingMode: 'vertical-rl',
-                fontSize: 12,
-                color: C.textTertiary,
-                letterSpacing: 1,
-              }}
-            >
-              Todo + Context
-            </span>
+            <PanelToggleButton side="right" open={railRightOpen} title="展开右栏" onClick={() => setRailRightOpen(true)} />
           </div>
         )
       ) : null}

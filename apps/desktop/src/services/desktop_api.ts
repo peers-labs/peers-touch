@@ -2713,12 +2713,18 @@ export interface AppletProductWindowLaunchContext {
   name?: string;
   email?: string;
   loginMethod?: string;
-  mode?: 'product-shell';
+  mode?: 'product-shell' | 'lifecycle-smoothness';
+  secondaryAppletId?: string;
+  startPage?: string;
 }
 
 export interface AppletProductWindowRenderedInput {
   appletId: string;
   readySource?: 'lifecycle.reportReady' | 'host-render-fallback' | string;
+}
+
+export interface AppletProductWindowLifecycleInput {
+  evidence: Record<string, unknown>;
 }
 
 export interface SkillImportAddressInput {
@@ -3832,6 +3838,12 @@ export const api = {
   appletsProductWindowReportRendered: (input: AppletProductWindowRenderedInput) =>
     invokeRustDataFromStatus<AppletProductWindowRenderedInput, { recorded: boolean; path?: string; reason?: string }>(
       'applets_product_window_report_rendered',
+      input,
+    ),
+
+  appletsProductWindowReportLifecycle: (input: AppletProductWindowLifecycleInput) =>
+    invokeRustDataFromStatus<AppletProductWindowLifecycleInput, { recorded: boolean; path?: string; reason?: string }>(
+      'applets_product_window_report_lifecycle',
       input,
     ),
 
