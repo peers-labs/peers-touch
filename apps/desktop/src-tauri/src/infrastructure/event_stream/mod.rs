@@ -137,7 +137,7 @@ pub fn is_running(actor_id: &str) -> bool {
 // ---------------------------------------------------------------------
 
 fn cursor_path(actor_id: &str) -> Option<PathBuf> {
-    let scope = storage::resolve_user_scope(Some(actor_id));
+    let scope = crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id));
     let name = format!("{scope}.txt");
     storage::app_file_path(
         "desktop",

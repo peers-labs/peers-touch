@@ -5,6 +5,7 @@ pub mod event_stream;
 pub mod i18n;
 pub mod identity_event;
 pub mod local_chat_store;
+pub mod local_scope;
 pub mod logger;
 pub mod oss_cache;
 pub mod p2p;
