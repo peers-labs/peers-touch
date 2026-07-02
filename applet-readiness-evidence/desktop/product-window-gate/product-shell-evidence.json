@@ -1,9 +1,0 @@
-{
-  "appletId": "big-a",
-  "event": "applet.product.rendered",
-  "launchMode": "product-window-certification",
-  "ok": true,
-  "productShell": true,
-  "readySource": "host-render-fallback",
-  "recordedAt": 1782385249327
-}

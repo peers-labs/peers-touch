@@ -90,7 +90,6 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
   const applets = useAppletsStore((state) => state.applets);
   const loading = useAppletsStore((state) => state.loading);
   const stationUnavailable = useAppletsStore((state) => state.stationUnavailable);
-  const loadApplet = useAppletsStore((state) => state.loadApplet);
   const importAppletDirectory = useAppletsStore((state) => state.importAppletDirectory);
 
   const [query, setQuery] = useState('');
@@ -112,14 +111,9 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
     [applets],
   );
 
-  const handleOpen = useCallback(async (id: string) => {
-    try {
-      await loadApplet(id);
-      onNavigate?.(`applet:${id}`);
-    } catch (error) {
-      toast.error(errorMessage(error, t('applet.toast.failedToActivate'), t));
-    }
-  }, [loadApplet, onNavigate, t]);
+  const handleOpen = useCallback((id: string) => {
+    onNavigate?.(`applet:${id}`);
+  }, [onNavigate]);
 
   const handleImport = useCallback(async () => {
     setImportMenuOpen(false);
@@ -142,7 +136,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [importMenuOpen]);
 
-  if (loading) {
+  if (loading && applets.length === 0) {
     return (
       <Flexbox align="center" justify="center" style={{ height: '100%', background: token.colorBgLayout }}>
         <Spin size="large" />

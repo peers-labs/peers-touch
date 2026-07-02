@@ -1,11 +1,12 @@
 const appletId = 'peers.note';
 const bundleEntry = "main.lynx.bundle";
-const manifest = {"id":"peers.note","name":"Note","version":"0.1.0","description":"Note official applet","author":"Peers Touch","icon":"assets/icon.png","minPlatformVersion":"0.1.0","targets":["desktop","android","ios","web"],"entries":{"lynx":"main.lynx.bundle"},"load":{"desktop":{"type":"lynx-web","entry":"main.lynx.bundle"},"android":{"type":"lynx-native","entry":"main.lynx.bundle"},"ios":{"type":"lynx-native","entry":"main.lynx.bundle"},"web":{"type":"lynx-web","entry":"main.lynx.bundle"}},"bridge":{"protocol":"peers-touch.applet.bridge","version":"1.0.0"},"permissions":["app.getContext","app.getLaunchOptions","lifecycle.reportReady","network.request","storage.get","storage.set","storage.remove","ui.showToast","ui.showLoading","ui.hideLoading","ui.showModal","navigation.navigateTo","navigation.back","events.emit","events.subscribe","events.unsubscribe","telemetry.track","telemetry.reportError"],"capabilities":[],"services":[{"id":"note","kind":"http","binding":"station-resolved","allowedMethods":["GET","POST","PATCH","DELETE"],"allowedPaths":["/v1/notes","/v1/notes/*","/v1/notes:search"],"publicPathPrefix":"/v1","stationPathPrefix":"/applets/note/v1","streaming":false}],"skills":[],"integrity":{"algorithm":"sha256","files":{"main.lynx.bundle":"sha256:5db53c2b2513a03f60ed031b7ee25d3c50a107f475259c0af55a03712e12381a"}}};
+const manifest = {"id":"peers.note","name":"Note","version":"0.1.0","description":"Note official applet","author":"Peers Touch","icon":"assets/icon.png","minPlatformVersion":"0.1.0","targets":["desktop","android","ios","web"],"entries":{"lynx":"main.lynx.bundle"},"load":{"desktop":{"type":"lynx-web","entry":"main.lynx.bundle"},"android":{"type":"lynx-native","entry":"main.lynx.bundle"},"ios":{"type":"lynx-native","entry":"main.lynx.bundle"},"web":{"type":"lynx-web","entry":"main.lynx.bundle"}},"bridge":{"protocol":"peers-touch.applet.bridge","version":"1.0.0"},"permissions":["app.getContext","app.getLaunchOptions","lifecycle.reportReady","network.request","storage.get","storage.set","storage.remove","ui.showToast","ui.showLoading","ui.hideLoading","ui.showModal","navigation.navigateTo","navigation.back","events.emit","events.subscribe","events.unsubscribe","telemetry.track","telemetry.reportError"],"capabilities":[],"services":[{"id":"note","kind":"http","binding":"station-resolved","allowedMethods":["GET","POST","PATCH","DELETE"],"allowedPaths":["/v1/notes","/v1/notes/*","/v1/notes:search"],"publicPathPrefix":"/v1","stationPathPrefix":"/applets/note/v1","streaming":false}],"skills":[],"integrity":{"algorithm":"sha256","files":{"main.lynx.bundle":"sha256:441379abd90e2caaa0ab080f7ef599681c2555043e043646e903f666095bb5d6"}}};
 const status = document.getElementById('status');
 const mount = document.getElementById('mount');
 const invocations = [];
 const hostEvents = [];
 const networkRequests = [];
+const storage = new Map();
 let activeSessionId = '';
 let mountedHost = null;
 
@@ -32,6 +33,14 @@ function responseFor(method, params) {
       return {};
     case 'lifecycle.reportReady':
     case 'telemetry.track':
+      return { ok: true };
+    case 'storage.get':
+      return { value: storage.has(params?.key) ? storage.get(params.key) : null };
+    case 'storage.set':
+      storage.set(params?.key, params?.value ?? null);
+      return { ok: true };
+    case 'storage.remove':
+      storage.delete(params?.key);
       return { ok: true };
     case 'network.request': {
       networkRequests.push(params ?? {});
