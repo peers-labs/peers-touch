@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Blocks, Pin, PinOff, X } from 'lucide-react';
+import { Blocks } from 'lucide-react';
 import { Empty, Modal, Spin, message, theme } from 'antd';
-import { Button, Tag } from '@lobehub/ui';
+import { Button } from '@lobehub/ui';
 import { PageHeader } from '../components/PageHeader';
+import { AppletContainerShell } from '../applet/AppletContainerShell';
 import LynxContainer from '../applet/LynxContainer';
 import { LynxDebugPanel, createLynxDebugEvent, type LynxDebugEvent } from '../applet/LynxDebugPanel';
 import { useAppletsStore } from '../store/applets';
 import { requestPageRuntimeRelease } from '../kernel/pageRuntimeLease';
+import { markRouteVisible } from '../kernel/frontendRuntimeProfiler';
 import { usePageContext } from '../kernel/usePageContext';
 import { api } from '../services/desktop_api';
 import { log } from '../utils/logger';
@@ -28,6 +30,8 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
   const pageId = `applet:${appletId}`;
   const [navigationTitle, setNavigationTitle] = useState<string | null>(null);
   const [debugEvents, setDebugEvents] = useState<LynxDebugEvent[]>([]);
+  const [immersive, setImmersive] = useState(() => isStandaloneAppletShell());
+  const [controlsVisible, setControlsVisible] = useState(true);
   const loading = useAppletsStore((state) => state.loading);
   const applets = useAppletsStore((state) => state.applets);
   const catalogApplets = useAppletsStore((state) => state.catalogApplets);
@@ -48,9 +52,37 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
   );
 
   const handleClose = useCallback(() => {
+    if (isStandaloneAppletShell()) {
+      void closeStandaloneAppletWindow().then((closed) => {
+        if (!closed) {
+          navigation.navigateTo('applets');
+          requestPageRuntimeRelease(pageId, 'explicit-close');
+        }
+      });
+      return;
+    }
     navigation.navigateTo('applets');
     requestPageRuntimeRelease(pageId, 'explicit-close');
   }, [navigation, pageId]);
+
+  const handleOpenStandalone = useCallback(() => {
+    void openStandaloneAppletWindow(appletId, navigationTitle || applet?.name || appletId).catch((error) => {
+      log.warn('applets', 'Failed to open standalone applet window', {
+        appletId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, [applet?.name, appletId, navigationTitle]);
+
+  const handleEnterImmersive = useCallback(() => {
+    setImmersive(true);
+    setControlsVisible(true);
+  }, []);
+
+  const handleExitImmersive = useCallback(() => {
+    setImmersive(false);
+    setControlsVisible(true);
+  }, []);
 
   const appendDebugEvent = useCallback((event: LynxDebugEvent) => {
     if (!import.meta.env.DEV) return;
@@ -164,6 +196,7 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
 
   const handleAppletLoaded = useCallback((readySource: string) => {
     recordDebugStage('product.rendered.report', { data: { readySource } });
+    markRouteVisible(pageId, { readySource, surface: 'applet-runtime' });
     api.appletsProductWindowReportRendered({ appletId, readySource }).catch((error) => {
       log.warn('applets', 'Failed to record product-window render evidence', {
         appletId,
@@ -171,7 +204,7 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
         error: error instanceof Error ? error.message : String(error),
       });
     });
-  }, [appletId, recordDebugStage]);
+  }, [appletId, pageId, recordDebugStage]);
 
   if (loading && !runtimeApplet) {
     return (
@@ -212,60 +245,107 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
 
   const showPreparing = Boolean(runtimeApplet && appletStatus !== 'active');
 
-  return (
-    <Flexbox data-applet-runtime={appletId} style={{ height: '100%', position: 'relative' }}>
-      <PageHeader
-        title={navigationTitle || applet?.name || appletId}
-        subtitle={applet?.description || ''}
-        icon={<Blocks size={20} />}
-        actions={(
-          <Flexbox horizontal align="center" gap={8}>
-            {applet?.version && <Tag>v{applet.version}</Tag>}
-            {onPin && (
-              <Button
-                size="small"
-                onClick={onPin}
-                icon={pinned ? <PinOff size={14} /> : <Pin size={14} />}
-              >
-                {pinned ? t('applet.runtime.unpin') : t('applet.runtime.pin')}
-              </Button>
-            )}
-            <Button
-              size="small"
-              onClick={handleClose}
-              icon={<X size={14} />}
-            >
-              {t('applet.runtime.close')}
-            </Button>
-          </Flexbox>
-        )}
-      />
-      <Flexbox style={{ flex: 1, minHeight: 0, padding: 16, background: token.colorBgLayout }}>
-        {runtimeErrorKey ? (
-          <Flexbox align="center" justify="center" style={{ height: '100%' }}>
-            <Empty description={t(runtimeErrorKey)} />
-          </Flexbox>
-        ) : showPreparing ? (
-          <Flexbox align="center" gap={12} justify="center" style={{ height: '100%' }}>
-            <Spin size="large" />
-            <span style={{ color: token.colorTextSecondary }}>{t('applet.runtime.preparing')}</span>
-          </Flexbox>
-        ) : (
-          <LynxContainer
-            appletId={appletId}
-            height="100%"
-            onLoad={handleAppletLoaded}
-            onDebugEvent={appendDebugEvent}
-            onBack={handleClose}
-            onNavigationRequest={handleNavigationRequest}
-            onUiRequest={handleUiRequest}
-            onDeviceRequest={handleDeviceRequest}
-          />
-        )}
-      </Flexbox>
-      <LynxDebugPanel appletId={appletId} events={debugEvents} onClear={() => setDebugEvents([])} />
+  const runtimeContent = runtimeErrorKey ? (
+    <Flexbox align="center" justify="center" style={{ height: '100%' }}>
+      <Empty description={t(runtimeErrorKey)} />
     </Flexbox>
+  ) : showPreparing ? (
+    <Flexbox align="center" gap={12} justify="center" style={{ height: '100%' }}>
+      <Spin size="large" />
+      <span style={{ color: token.colorTextSecondary }}>{t('applet.runtime.preparing')}</span>
+    </Flexbox>
+  ) : (
+    <LynxContainer
+      appletId={appletId}
+      height="100%"
+      onLoad={handleAppletLoaded}
+      onDebugEvent={appendDebugEvent}
+      onBack={handleClose}
+      onNavigationRequest={handleNavigationRequest}
+      onUiRequest={handleUiRequest}
+      onDeviceRequest={handleDeviceRequest}
+    />
   );
+
+  return (
+    <AppletContainerShell
+      appletId={appletId}
+      appletName={navigationTitle || applet?.name || appletId}
+      controlsVisible={controlsVisible}
+      debugEvents={debugEvents}
+      immersive={immersive}
+      pinned={pinned}
+      runtimeContent={runtimeContent}
+      subtitle={applet?.description || t('applet.runtime.shellHint')}
+      version={applet?.version}
+      onClearDebugEvents={() => setDebugEvents([])}
+      onClose={handleClose}
+      onEnterImmersive={handleEnterImmersive}
+      onExitImmersive={handleExitImmersive}
+      onHideControls={() => setControlsVisible(false)}
+      onOpenStandalone={handleOpenStandalone}
+      onPin={onPin}
+      onShowControls={() => setControlsVisible(true)}
+    />
+  );
+}
+
+function isStandaloneAppletShell(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('appletStandalone') === '1';
+}
+
+function standaloneAppletUrl(appletId: string): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set('appletStandalone', '1');
+  url.hash = `#/applet:${appletId}`;
+  return url.toString();
+}
+
+function standaloneAppletWindowLabel(appletId: string): string {
+  return `applet_${appletId.replace(/[^a-zA-Z0-9-/:_]/g, '_')}`;
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+async function openStandaloneAppletWindow(appletId: string, title: string): Promise<void> {
+  const url = standaloneAppletUrl(appletId);
+  const label = standaloneAppletWindowLabel(appletId);
+
+  if (isTauriRuntime()) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const existing = await WebviewWindow.getByLabel(label);
+    if (existing) {
+      await existing.setFocus();
+      return;
+    }
+    new WebviewWindow(label, {
+      center: true,
+      focus: true,
+      height: 820,
+      minHeight: 640,
+      minWidth: 360,
+      resizable: true,
+      title,
+      url,
+      width: 430,
+    });
+    return;
+  }
+
+  window.open(url, label, 'popup=yes,width=430,height=820,resizable=yes');
+}
+
+async function closeStandaloneAppletWindow(): Promise<boolean> {
+  if (isTauriRuntime()) {
+    const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    await getCurrentWebviewWindow().close();
+    return true;
+  }
+  window.close();
+  return window.closed;
 }
 
 function showStatusWarning(status: string | undefined, loading: boolean): boolean {
