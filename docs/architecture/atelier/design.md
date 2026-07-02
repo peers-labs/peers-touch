@@ -7,6 +7,8 @@
 
 ---
 
+> **Boundary update (2026-07-02)**: 本文保留早期 Atelier 机制设计语言（如 Atelier Core、Workflow、Provider/Gate/Artifact）。当前 peers-touch 落地边界已调整为：Atelier 是 Desktop applet / personal workbench / projection surface；多 Agent 编排、Provider 调度、Gate 执行、Artifact 生产、Trace/Checkpoint/Resume 和事务性状态落地属于 Station subserver 与 `architecture/agent/`。阅读本文时，应把 “Atelier Core / Workflow” 理解为后端 orchestration 能力在 Atelier 工作台中的投影需求，而不是 applet 内自建引擎。
+
 ## 1. 核心原则（不可妥协的不变量）
 
 整个系统所有模块、所有演进阶段都必须满足。设计冲突时以不变量优先。
