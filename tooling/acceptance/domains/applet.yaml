@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "id": "applet",
+  "description": "Applet is a managed product domain for Desktop applet runtime, host, package, and lifecycle paths. It validates runtime lease ownership, visible launcher/runtime behavior, and package-level gates without claiming full cross-platform applet readiness.",
+  "capabilities": [
+    "acceptance-framework-self-consistency",
+    "applet-desktop-lifecycle-smoothness"
+  ],
+  "validation_gate_id": "applet-domain-validation",
+  "report": "tooling/acceptance/reports/applet-validation.json"
+}

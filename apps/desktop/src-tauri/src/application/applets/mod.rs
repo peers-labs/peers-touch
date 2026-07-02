@@ -10,11 +10,14 @@ use crate::domain::applets::{
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
+use reqwest::blocking::Client;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -1047,6 +1050,7 @@ fn dispatch_applet_capability(
             context, applet_id, session_id, manifest, action, params, data_dir,
         ),
         "agent" => handle_agent(context, applet_id, session_id, request_id, action, params),
+        "atelier" => handle_atelier(context, applet_id, session_id, action, params),
         "ai" => handle_ai(request_id, action, params),
         "telemetry" => handle_telemetry(applet_id, session_id, action, params),
         other => Err(format!("Unsupported applet capability: {}", other)),
@@ -1525,7 +1529,10 @@ fn is_valid_event_topic(topic: &str) -> bool {
 }
 
 fn is_gateway_event_topic(topic: &str) -> bool {
-    matches!(topic, "task.event" | "skill.stream" | "agent.stream")
+    matches!(
+        topic,
+        "task.event" | "skill.stream" | "agent.stream" | "atelier.projection.event"
+    )
 }
 
 fn is_custom_event_topic(topic: &str) -> bool {
@@ -3254,6 +3261,405 @@ fn handle_agent(
             ))
         }
         other => Err(format!("Unsupported agent action: {}", other)),
+    }
+}
+
+fn handle_atelier(
+    context: &AccessContext,
+    applet_id: &str,
+    session_id: &str,
+    action: Option<&str>,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    match action.ok_or_else(|| "atelier capability requires an action".to_string())? {
+        "workspace.load" | "workspaceLoad" | "loadWorkspace" => station_client::request_json(
+            Method::POST,
+            "/sub-agent/agent/atelier/workspace/load",
+            &context.token,
+            None,
+            Some(params.unwrap_or_else(|| json!({}))),
+        )
+        .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "project.createFromGoal" | "project.create_from_goal" | "createProjectFromGoal" => {
+            station_client::request_json(
+                Method::POST,
+                "/sub-agent/agent/atelier/project/create-from-goal",
+                &context.token,
+                None,
+                Some(params.unwrap_or_else(|| json!({}))),
+            )
+            .map_err(|error| format!("atelier gateway request failed: {}", error))
+        }
+        "message.send" | "messageSend" => station_client::request_json(
+            Method::POST,
+            "/sub-agent/agent/atelier/message/send",
+            &context.token,
+            None,
+            Some(params.unwrap_or_else(|| json!({}))),
+        )
+        .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "escalation.resolve" | "escalationResolve" => station_client::request_json(
+            Method::POST,
+            "/sub-agent/agent/atelier/escalation/resolve",
+            &context.token,
+            None,
+            Some(params.unwrap_or_else(|| json!({}))),
+        )
+        .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "task.setStatus" | "task.set_status" | "setTaskStatus" => station_client::request_json(
+            Method::POST,
+            "/sub-agent/agent/atelier/task/set-status",
+            &context.token,
+            None,
+            Some(params.unwrap_or_else(|| json!({}))),
+        )
+        .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "task.purge" | "purgeTask" => station_client::request_json(
+            Method::POST,
+            "/sub-agent/agent/atelier/task/purge",
+            &context.token,
+            None,
+            Some(params.unwrap_or_else(|| json!({}))),
+        )
+        .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "events.subscribe" | "eventsSubscribe" => {
+            let params = params.unwrap_or_else(|| json!({}));
+            let agent_id = params
+                .get("agentId")
+                .or_else(|| params.get("agent_id"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "atelier.events.subscribe requires params.agentId".to_string())?
+                .to_string();
+            let task_id = params
+                .get("taskId")
+                .or_else(|| params.get("task_id"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            let after_event_seq = params
+                .get("afterEventSeq")
+                .or_else(|| params.get("after_event_seq"))
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            start_atelier_projection_event_stream(
+                applet_id.to_string(),
+                session_id.to_string(),
+                agent_id.clone(),
+                task_id,
+                after_event_seq,
+                context.token.clone(),
+            );
+            Ok(json!({ "ok": true, "agentId": agent_id, "topic": "atelier.projection.event" }))
+        }
+        other => Err(format!("Unsupported atelier action: {}", other)),
+    }
+}
+
+fn start_atelier_projection_event_stream(
+    applet_id: String,
+    session_id: String,
+    agent_id: String,
+    task_id: Option<String>,
+    after_event_seq: i64,
+    token: String,
+) {
+    std::thread::spawn(move || {
+        if let Err(error) = stream_atelier_projection_events(
+            &applet_id,
+            &session_id,
+            &agent_id,
+            task_id.as_deref(),
+            after_event_seq,
+            &token,
+        ) {
+            tracing::warn!(error = %error, applet_id = %applet_id, "Atelier projection event stream failed");
+        }
+    });
+}
+
+fn stream_atelier_projection_events(
+    applet_id: &str,
+    session_id: &str,
+    agent_id: &str,
+    task_id: Option<&str>,
+    after_event_seq: i64,
+    token: &str,
+) -> Result<(), String> {
+    let url = format!(
+        "{}{}",
+        station_client::station_base_url(),
+        "/sub-agent/agent/events/subscribe"
+    );
+    let client = Client::builder()
+        .build()
+        .map_err(|error| format!("failed to create Station Atelier event client: {error}"))?;
+    let mut body = json!({
+        "agent_id": agent_id,
+        "after_event_seq": after_event_seq.max(0),
+    });
+    if let Some(task_id) = task_id.map(str::trim).filter(|value| !value.is_empty()) {
+        body["task_id"] = json!(task_id);
+    }
+    let mut response = client
+        .post(url)
+        .header(CONTENT_TYPE, "application/json")
+        .header(AUTHORIZATION, format!("Bearer {}", token.trim()))
+        .header("Accept", "text/event-stream")
+        .json(&body)
+        .send()
+        .map_err(|error| format!("Station Atelier event stream request failed: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Station Atelier event stream returned HTTP {}",
+            response.status()
+        ));
+    }
+
+    let mut bytes = [0_u8; 4096];
+    let mut buffer = String::new();
+    loop {
+        let read = response
+            .read(&mut bytes)
+            .map_err(|error| format!("failed to read Station Atelier event stream: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        buffer.push_str(&String::from_utf8_lossy(&bytes[..read]));
+        while let Some(frame_end) = buffer.find("\n\n") {
+            let frame = buffer[..frame_end].to_string();
+            buffer = buffer[frame_end + 2..].to_string();
+            if let Some((_event, data)) = parse_atelier_sse_frame(&frame) {
+                if let Some(projected) = station_event_to_atelier_projection_event(data) {
+                    enqueue_gateway_events(
+                        applet_id,
+                        session_id,
+                        vec![json!({ "topic": "atelier.projection.event", "payload": projected })],
+                    )?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_atelier_sse_frame(frame: &str) -> Option<(String, Value)> {
+    let mut event = "message".to_string();
+    let mut data_lines = Vec::new();
+    for line in frame.lines() {
+        let line = line.trim_end_matches('\r');
+        if let Some(value) = line.strip_prefix("event:") {
+            event = value.trim().to_string();
+        } else if let Some(value) = line.strip_prefix("data:") {
+            data_lines.push(value.trim_start().to_string());
+        }
+    }
+    if data_lines.is_empty() {
+        return None;
+    }
+    let data = data_lines.join("\n");
+    let parsed = serde_json::from_str::<Value>(&data).unwrap_or_else(|_| json!({ "raw": data }));
+    Some((event, parsed))
+}
+
+fn station_event_to_atelier_projection_event(data: Value) -> Option<Value> {
+    let event_id = data
+        .get("event_id")
+        .or_else(|| data.get("eventId"))
+        .and_then(Value::as_str)?
+        .to_string();
+    let metadata = data.get("metadata").and_then(Value::as_object);
+    let task_id = metadata
+        .and_then(|meta| meta.get("task_id").or_else(|| meta.get("taskId")))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if task_id.is_empty() {
+        return None;
+    }
+    let seq = metadata
+        .and_then(|meta| meta.get("event_seq").or_else(|| meta.get("eventSeq")))
+        .and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_str().and_then(|raw| raw.parse::<i64>().ok()))
+        })
+        .unwrap_or(0);
+    let payload = data.get("payload").cloned().unwrap_or_else(|| json!({}));
+    let text = atelier_projection_event_text(&data, &payload);
+    let block_kind = payload
+        .get("block_kind")
+        .or_else(|| payload.get("blockKind"))
+        .and_then(Value::as_str)
+        .unwrap_or("agent");
+    if block_kind == "decision_resolved" {
+        let block_id = payload
+            .get("block_id")
+            .or_else(|| payload.get("blockId"))
+            .and_then(Value::as_str)?;
+        let choice = payload.get("choice").and_then(Value::as_str)?;
+        return Some(json!({
+            "id": event_id,
+            "seq": seq,
+            "taskId": task_id,
+            "receivedAt": now_timestamp(),
+            "patch": {
+                "kind": "decision.resolved",
+                "taskId": task_id,
+                "blockId": block_id,
+                "choice": choice
+            }
+        }));
+    }
+    if block_kind == "artifact" {
+        let artifact_id = payload
+            .get("artifact_id")
+            .or_else(|| payload.get("artifactId"))
+            .and_then(Value::as_str)
+            .unwrap_or(&event_id);
+        let name = payload
+            .get("name")
+            .or_else(|| payload.get("title"))
+            .and_then(Value::as_str)
+            .unwrap_or("artifact");
+        let kind = payload
+            .get("kind")
+            .or_else(|| payload.get("file_kind"))
+            .or_else(|| payload.get("fileKind"))
+            .and_then(Value::as_str)
+            .unwrap_or("markdown");
+        return Some(json!({
+            "id": event_id,
+            "seq": seq,
+            "taskId": task_id,
+            "receivedAt": now_timestamp(),
+            "patch": {
+                "kind": "artifact.upsert",
+                "taskId": task_id,
+                "artifact": {
+                    "id": artifact_id,
+                    "name": name,
+                    "kind": normalize_atelier_artifact_kind(kind),
+                    "meta": payload.get("meta").or_else(|| payload.get("produced_by")).and_then(Value::as_str).unwrap_or("Artifact"),
+                    "markdown": payload.get("markdown").and_then(Value::as_str),
+                    "url": payload.get("url").and_then(Value::as_str),
+                    "paths": payload.get("paths").cloned().unwrap_or_else(|| json!([])),
+                    "src": payload.get("src").and_then(Value::as_str),
+                    "size": payload.get("size").and_then(Value::as_str)
+                }
+            }
+        }));
+    }
+    if block_kind == "gate_result" {
+        let gate_id = payload
+            .get("gate_id")
+            .or_else(|| payload.get("gateId"))
+            .and_then(Value::as_str)
+            .unwrap_or(&event_id);
+        return Some(json!({
+            "id": event_id,
+            "seq": seq,
+            "taskId": task_id,
+            "receivedAt": now_timestamp(),
+            "patch": {
+                "kind": "gate.upsert",
+                "taskId": task_id,
+                "gate": {
+                    "id": gate_id,
+                    "name": payload.get("name").and_then(Value::as_str).unwrap_or("Gate"),
+                    "status": normalize_atelier_gate_status(payload.get("status").and_then(Value::as_str).unwrap_or("pending")),
+                    "summary": payload
+                        .get("summary")
+                        .or_else(|| payload.get("result_summary"))
+                        .or_else(|| payload.get("resultSummary"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("Gate result updated"),
+                    "checks": payload.get("checks").cloned().unwrap_or_else(|| json!([])),
+                    "artifactIds": payload
+                        .get("artifact_ids")
+                        .or_else(|| payload.get("artifactIds"))
+                        .cloned()
+                        .unwrap_or_else(|| json!([])),
+                    "at": now_timestamp()
+                }
+            }
+        }));
+    }
+    let block = if block_kind == "user" {
+        json!({
+            "kind": "user",
+            "id": event_id,
+            "text": text,
+            "at": now_timestamp(),
+            "meta": payload
+        })
+    } else {
+        json!({
+            "kind": "agent",
+            "id": event_id,
+            "text": text,
+            "at": now_timestamp(),
+            "done": true,
+            "meta": payload
+        })
+    };
+    Some(json!({
+        "id": event_id,
+        "seq": seq,
+        "taskId": task_id,
+        "receivedAt": now_timestamp(),
+        "patch": {
+            "kind": "stream.append",
+            "taskId": task_id,
+            "blocks": [block]
+        }
+    }))
+}
+
+fn normalize_atelier_artifact_kind(kind: &str) -> &str {
+    match kind {
+        "web" | "image" | "diff" => kind,
+        _ => "markdown",
+    }
+}
+
+fn normalize_atelier_gate_status(status: &str) -> &str {
+    match status {
+        "running" | "passed" | "failed" | "blocked" => status,
+        _ => "pending",
+    }
+}
+
+fn atelier_projection_event_text(data: &Value, payload: &Value) -> String {
+    if let Some(summary) = payload
+        .get("text")
+        .or_else(|| payload.get("message"))
+        .or_else(|| payload.get("content"))
+        .or_else(|| payload.get("result_summary"))
+        .or_else(|| payload.get("resultSummary"))
+        .or_else(|| payload.get("title"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return summary.to_string();
+    }
+    match data
+        .get("event_type")
+        .or_else(|| data.get("eventType"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+    {
+        "agent.collaboration.task.created" => "已创建协作任务".to_string(),
+        "agent.collaboration.node.running" => "Agent 节点开始执行".to_string(),
+        "agent.collaboration.node.completed" => "Agent 节点已完成执行".to_string(),
+        "agent.collaboration.node.failed" => "Agent 节点执行失败".to_string(),
+        "agent.collaboration.task.completed" => "协作任务已完成".to_string(),
+        "agent.collaboration.task.failed" => "协作任务失败".to_string(),
+        "agent.collaboration.task.cancelled" => "协作任务已取消".to_string(),
+        _ => "收到协作编排事件".to_string(),
     }
 }
 
@@ -5923,6 +6329,104 @@ mod tests {
             applet_error_code(&after_restart).as_deref(),
             Some("INVALID_SESSION")
         );
+    }
+
+    #[test]
+    fn authorizes_atelier_projection_subscription_from_manifest_permission() {
+        let data_dir = temp_data_dir("atelier-events-allow");
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-atelier-events-allow",
+                "atelier",
+                "events.subscribe",
+                Some(json!({ "agentId": "agent-test", "afterEventSeq": 0 })),
+                manifest(vec!["atelier.events.subscribe"]),
+            ),
+            &data_dir,
+        );
+
+        assert!(result.ok);
+        let payload: Value = serde_json::from_str(&result.data.unwrap().status).unwrap();
+        assert_eq!(
+            payload.get("topic").and_then(Value::as_str),
+            Some("atelier.projection.event")
+        );
+    }
+
+    #[test]
+    fn denies_atelier_projection_subscription_without_manifest_permission() {
+        let data_dir = temp_data_dir("atelier-events-deny");
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-atelier-events-deny",
+                "atelier",
+                "events.subscribe",
+                Some(json!({ "agentId": "agent-test" })),
+                manifest(vec!["events.subscribe"]),
+            ),
+            &data_dir,
+        );
+
+        assert!(!result.ok);
+        assert_eq!(
+            applet_error_code(&result).as_deref(),
+            Some("PERMISSION_DENIED")
+        );
+    }
+
+    #[test]
+    fn maps_station_artifact_event_to_atelier_projection_patch() {
+        let projected = station_event_to_atelier_projection_event(json!({
+            "event_id": "evt_artifact_1",
+            "metadata": {
+                "task_id": "collab_1",
+                "event_seq": 12
+            },
+            "payload": {
+                "block_kind": "artifact",
+                "artifact_id": "art_1",
+                "name": "report.md",
+                "kind": "markdown",
+                "markdown": "# Report"
+            }
+        }))
+        .expect("expected artifact event to project");
+
+        assert_eq!(projected["patch"]["kind"], "artifact.upsert");
+        assert_eq!(projected["patch"]["taskId"], "collab_1");
+        assert_eq!(projected["patch"]["artifact"]["id"], "art_1");
+        assert_eq!(projected["patch"]["artifact"]["markdown"], "# Report");
+    }
+
+    #[test]
+    fn maps_station_gate_event_to_atelier_projection_patch() {
+        let projected = station_event_to_atelier_projection_event(json!({
+            "event_id": "evt_gate_1",
+            "metadata": {
+                "task_id": "collab_1",
+                "event_seq": 13
+            },
+            "payload": {
+                "block_kind": "gate_result",
+                "gate_id": "gate_1",
+                "name": "Verification Gate",
+                "status": "passed",
+                "summary": "All checks passed",
+                "artifactIds": ["art_1"],
+                "checks": [
+                    { "name": "unit", "status": "passed" }
+                ]
+            }
+        }))
+        .expect("expected gate event to project");
+
+        assert_eq!(projected["patch"]["kind"], "gate.upsert");
+        assert_eq!(projected["patch"]["taskId"], "collab_1");
+        assert_eq!(projected["patch"]["gate"]["id"], "gate_1");
+        assert_eq!(projected["patch"]["gate"]["status"], "passed");
+        assert_eq!(projected["patch"]["gate"]["artifactIds"][0], "art_1");
     }
 
     #[test]

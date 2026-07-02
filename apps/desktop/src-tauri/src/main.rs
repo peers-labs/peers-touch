@@ -311,6 +311,7 @@ fn main() {
             applets::applets_action,
             applets::applets_product_window_launch_context,
             applets::applets_product_window_report_rendered,
+            applets::applets_product_window_report_lifecycle,
             applets::applets_readiness_probe_context,
             applets::applets_pick_import_directory,
             applets::applets_create_session,

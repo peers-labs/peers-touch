@@ -27,11 +27,11 @@
     },
     {
       "id": "applet",
-      "status": "planned",
-      "profile": "",
-      "capabilities": "",
-      "coverage": "not_onboarded",
-      "notes": "Needs applet SDK/runtime capability contracts and package-level acceptance gates."
+      "status": "active",
+      "profile": "tooling/acceptance/domains/applet.yaml",
+      "capabilities": "tooling/acceptance/capabilities/applet.yaml",
+      "coverage": "managed_domain",
+      "notes": "Managed domain for applet Desktop lifecycle smoothness and runtime gates. Current proven coverage includes runtime lease smoothness; `make desktop` A-to-B-to-close-to-wakeup lifecycle evidence is required before production-ready claims. Cross-platform mobile remains out of scope."
     },
     {
       "id": "station-dashboard",

@@ -191,13 +191,15 @@
 - 产品验收框架：`architecture/acceptance-framework/README.md`
 - Human 联邦社交活动层：`architecture/federated-social-activity/README.md`
 - Agent LobeHub 蓝本重构：`architecture/agent/agent-lobehub-blueprint.md`
-- Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/atelier/README.md`（文档集，入口 `README.md`）
+- Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/atelier/README.md`（文档集，入口 `README.md`；Station projection endpoints 已登记为 `/sub-agent/agent/atelier/workspace/load`、`/sub-agent/agent/atelier/project/create-from-goal`、`/sub-agent/agent/atelier/message/send`、`/sub-agent/agent/atelier/escalation/resolve`、`/sub-agent/agent/atelier/task/set-status`、`/sub-agent/agent/atelier/task/purge`，Desktop applet capabilities / contract permissions 已登记为 `atelier.workspace.load`、`atelier.project.createFromGoal`、`atelier.message.send`、`atelier.escalation.resolve`、`atelier.task.setStatus`、`atelier.task.purge`、`atelier.events.subscribe`，projection event topic 为 `atelier.projection.event`；Artifact/Gate projection mapper 已支持 `artifact.upsert` / `gate.upsert`，真实生产与端到端验证后置；prototype 入口已通过 `runtimeBootstrap` 在 Lynx / Web Host 中走 applet-sdk bridge，在 standalone / unavailable 中回退 mock；runtime manifest 草案位于 `apps/applets/atelier/applet.manifest.json`，真实 bundle integrity 待正式 applet 化补齐）
 - 原型统一入口（Prototype Portal + 统一登记 + 确认门）：`architecture/prototypes/README.md`
 
 ### 4.2 平台层真源
 
 - 客户端 UX 方法论：`client/common/ux-design-methodology.md`
 - 客户端 UI Identity：`client/common/ui-identity/README.md`
+- 客户端前端组件树 / Alive 标准：`client/common/ui-identity/frontend-component-tree.md`
+- 客户端前端组件树 Alive 登记表：`client/common/ui-identity/frontend-component-tree-registry.md`
 - 表单控件 UX 契约：`client/common/form-control-ux-contract.md`
 - Desktop 平台总纲：`client/desktop/base.md`
 - Desktop 登录态状态机：`client/desktop/identity-lifecycle.md`

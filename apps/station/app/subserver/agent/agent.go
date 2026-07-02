@@ -181,6 +181,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	dogfoodHandlers := handler.NewDogfoodHandlers(dogfoodSvc)
 	schedulerHandlers := handler.NewSchedulerHandlers(schedulerSvc)
 	orchestrationHandlers := handler.NewOrchestrationHandlers(orchestrationSvc)
+	atelierProjectionHandlers := handler.NewAtelierProjectionHandlers(service.NewAtelierProjectionService(orchestrationSvc))
 
 	growthHandlers := handler.NewGrowthHandlers(growthMetricsSvc, memorySvc, skillSvc, diagnosticSvc)
 
@@ -207,6 +208,12 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-collaboration-executor-claim", "/agent/collaboration/executor/claim", server.POST, orchestrationHandlers.HandleClaimDesktopExecutorTask, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-executor-heartbeat", "/agent/collaboration/executor/heartbeat", server.POST, orchestrationHandlers.HandleHeartbeatExecutorLease, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-executor-release", "/agent/collaboration/executor/release", server.POST, orchestrationHandlers.HandleReleaseExecutorLease, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-atelier-workspace-load", "/agent/atelier/workspace/load", server.POST, atelierProjectionHandlers.HandleLoadWorkspace, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-atelier-project-create-from-goal", "/agent/atelier/project/create-from-goal", server.POST, atelierProjectionHandlers.HandleCreateProjectFromGoal, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-atelier-message-send", "/agent/atelier/message/send", server.POST, atelierProjectionHandlers.HandleSendMessage, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-atelier-escalation-resolve", "/agent/atelier/escalation/resolve", server.POST, atelierProjectionHandlers.HandleResolveDecision, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-atelier-task-set-status", "/agent/atelier/task/set-status", server.POST, atelierProjectionHandlers.HandleSetTaskStatus, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-atelier-task-purge", "/agent/atelier/task/purge", server.POST, atelierProjectionHandlers.HandlePurgeTask, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-events-subscribe", "/agent/events/subscribe", server.POST, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
 
 		// POST: protobuf body carries ListMemoriesRequest (GET + empty body leaves agent_id unset).

@@ -29,7 +29,11 @@ type LynxGlobalScope = typeof globalThis & {
 declare const NativeModules: LynxNativeModules | undefined;
 declare const lynx: LynxRuntime | undefined;
 
-const BRIDGE_READY_TIMEOUT_MS = 1000;
+// Lynx Web can evaluate the applet bundle before the host bridge module is
+// fully published to the background thread, especially on the first runtime
+// mount. Keep this as SDK-level readiness tolerance instead of applet-local
+// retries so official and third-party applets observe the same contract.
+const BRIDGE_READY_TIMEOUT_MS = 5000;
 const BRIDGE_READY_POLL_MS = 10;
 
 export class LynxBridgeAdapter implements BridgeAdapter {
@@ -76,10 +80,14 @@ export class LynxBridgeAdapter implements BridgeAdapter {
     const poll = async (): Promise<void> => {
       while (this.subscriptionActive) {
         try {
+          // Events travel through the same canonical bridge envelope as
+          // invoke() (`{ ok: true, result: <event> }`); decode via the shared
+          // unwrapResult path so subscribe never reads the raw envelope.
           const result = await this.callBridge({ method: 'events.subscribe', params: {} });
           if (!this.subscriptionActive) break;
-          if (result && typeof result === 'object' && !Array.isArray(result)) {
-            const envelope = result as { topic?: unknown; event?: unknown; payload?: unknown };
+          const event = this.unwrapResult(result);
+          if (event && typeof event === 'object' && !Array.isArray(event)) {
+            const envelope = event as { topic?: unknown; event?: unknown; payload?: unknown };
             const topic = typeof envelope.topic === 'string'
               ? envelope.topic
               : typeof envelope.event === 'string' ? envelope.event : undefined;
