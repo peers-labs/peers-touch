@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
 import { AgentCanvasPage } from '@peers-touch/prototype-agent-canvas';
+import { AppletWorkspacePage } from '../../features/applet-workspace/src/AppletWorkspacePrototype';
 import { AgentChatPage } from './AgentChatPage';
 import { AgentProfilePage } from './AgentProfilePage';
 import { SettingsPage } from './Settings';
@@ -631,7 +632,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   } else if (pages && pages[page]) {
     body = pages[page]!();
   } else if (page === 'applets') {
-    body = <AppletsCenter onOpen={(id) => navigate(`applet:${id}`)} />;
+    body = <AppletWorkspacePage />;
   } else if (page === 'agent') {
     body = (
       <AgentChatPage
@@ -650,7 +651,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   }
 
   return (
-    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', backgroundColor: T.bg }}>
+    <div style={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', backgroundColor: T.bg }}>
       <SideNav
         page={page}
         onNavigate={navigate}

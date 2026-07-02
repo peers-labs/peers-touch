@@ -12,9 +12,11 @@ import SharePage from './pages/SharePage';
 import './modules';
 import './index.css';
 import { markPhaseEnd, markPhaseStart } from './kernel/boot';
+import { installFrontendRuntimeProfiler } from './kernel/frontendRuntimeProfiler';
 
 // Register custom elements early — before any React component attempts to render <lynx-host>.
 registerAppletElements();
+installFrontendRuntimeProfiler();
 
 // ── Browser Dev Gateway ──
 // When running outside Tauri WebView (e.g. Chrome), patch

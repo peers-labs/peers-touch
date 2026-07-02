@@ -9,6 +9,7 @@
     "mono:build": "pnpm -r --if-present run build",
     "desktop:dev": "pnpm --filter @peers-touch/app-desktop run dev",
     "desktop:build": "pnpm --filter @peers-touch/app-desktop run build",
+    "frontend-runtime:registry-gate": "bash tooling/scripts/check-frontend-runtime-registry.sh",
     "mobile:check": "pnpm --filter @peers-touch/app-mobile run check",
     "mobile:dev": "pnpm --filter @peers-touch/app-mobile run dev",
     "mobile:dev:ios": "pnpm --filter @peers-touch/app-mobile run tauri:ios:dev",
