@@ -1,59 +1,56 @@
-import type { PrototypeSite, PrototypeWorktreeTarget } from './types';
+import type { PrototypeWorktreeTarget } from './types';
 
-const CURRENT_TARGET: PrototypeWorktreeTarget = {
-  id: 'current',
-  label: 'Current Worktree',
+/**
+ * The worktree this portal instance is itself serving. Injected by
+ * `make run-prototype` via env. Always available for immediate render; the
+ * live switcher list is discovered at runtime from the dev-server registry.
+ */
+export const SELF_TARGET: PrototypeWorktreeTarget = {
+  id: 'self',
+  label: import.meta.env.VITE_PROTOTYPE_BRANCH ?? 'current',
   branch: import.meta.env.VITE_PROTOTYPE_BRANCH ?? 'current',
   worktreePath: import.meta.env.VITE_PROTOTYPE_WORKTREE_PATH ?? 'current',
+  self: true,
   sites: {},
 };
 
-export const WORKTREE_TARGETS: PrototypeWorktreeTarget[] = [
-  CURRENT_TARGET,
-  ...parseWorktreeTargets(import.meta.env.VITE_PROTOTYPE_WORKTREES),
-];
+type DiscoveryEntry = {
+  ref: string;
+  branch: string;
+  worktreePath: string;
+  portalUrl: string;
+  self: boolean;
+};
 
-function parseWorktreeTargets(raw: unknown): PrototypeWorktreeTarget[] {
-  if (typeof raw !== 'string' || raw.trim().length === 0) {
-    return [];
-  }
-
+/**
+ * Ask the dev server which worktrees have a portal running right now. Only
+ * live portals are switchable; each is previewed via iframe (never imported).
+ * Returns the self target alone when discovery is unavailable (e.g. build
+ * preview), so the switcher degrades to a single, honest entry.
+ */
+export async function discoverWorktreeTargets(): Promise<PrototypeWorktreeTarget[]> {
   try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
+    const response = await fetch('/__prototype/worktrees', { headers: { accept: 'application/json' } });
+    if (!response.ok) {
+      return [SELF_TARGET];
     }
-    return parsed.filter(isWorktreeTarget);
+    const entries = (await response.json()) as DiscoveryEntry[];
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return [SELF_TARGET];
+    }
+    return entries.map((entry) =>
+      entry.self
+        ? { ...SELF_TARGET, id: entry.ref }
+        : {
+            id: entry.ref,
+            label: entry.branch,
+            branch: entry.branch,
+            worktreePath: entry.worktreePath,
+            portalUrl: entry.portalUrl,
+            sites: {},
+          },
+    );
   } catch {
-    return [];
+    return [SELF_TARGET];
   }
 }
-
-function isWorktreeTarget(value: unknown): value is PrototypeWorktreeTarget {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as Partial<PrototypeWorktreeTarget>;
-  return (
-    typeof candidate.id === 'string' &&
-    candidate.id !== 'current' &&
-    typeof candidate.label === 'string' &&
-    typeof candidate.branch === 'string' &&
-    typeof candidate.worktreePath === 'string' &&
-    isSiteMap(candidate.sites)
-  );
-}
-
-function isSiteMap(value: unknown): value is Partial<Record<PrototypeSite, string>> {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as Partial<Record<PrototypeSite, unknown>>;
-  return ['desktop', 'mobile', 'dashboard'].every((site) => {
-    const url = candidate[site as PrototypeSite];
-    return url === undefined || typeof url === 'string';
-  });
-}
-
