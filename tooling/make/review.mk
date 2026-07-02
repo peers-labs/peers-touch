@@ -1,6 +1,6 @@
 # ─── Code Review Framework ─────────────────────────────────────
 
-.PHONY: review review-route review-hard-rules review-knowledge review-skill-check quality-evidence review-submit
+.PHONY: review review-route review-hard-rules review-frontend-runtime-registry review-knowledge review-skill-check quality-evidence review-submit
 
 REVIEW_RANGE ?= HEAD
 REVIEW_BASE ?= origin/master
@@ -13,6 +13,9 @@ review-route:
 
 review-hard-rules:
 	tooling/scripts/review/hard-rules.sh --range "$(REVIEW_RANGE)"
+
+review-frontend-runtime-registry:
+	bash tooling/scripts/check-frontend-runtime-registry.sh --range "$(REVIEW_RANGE)"
 
 review-knowledge:
 	tooling/scripts/review/knowledge-match.sh --range "$(REVIEW_RANGE)" --strict
