@@ -16,7 +16,6 @@ use tauri::AppHandle;
 
 use crate::contracts::*;
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::storage::resolve_user_scope;
 use crate::state::AppState;
 
 // -------------------------------------------------------------------------
@@ -441,7 +440,7 @@ fn actor_id_from_state(state: &AppState) -> Option<String> {
 
 fn user_scope_from_state(state: &AppState) -> String {
     let actor_id = actor_id_from_state(state);
-    resolve_user_scope(actor_id.as_deref())
+    crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref())
 }
 
 fn resolve_scope(state: &AppState) -> Result<Option<String>, Value> {

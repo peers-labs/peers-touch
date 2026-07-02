@@ -321,7 +321,7 @@ impl PresenceSupervisor {
         // store so the conversation list and message panel reflect the
         // catch-up. Failures are logged and continued — the goal is
         // best-effort drain, not transactional consistency.
-        let user_scope = crate::infrastructure::storage::resolve_user_scope(Some(actor_id));
+        let user_scope = crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id));
         for sid in &sessions {
             if let Err(e) = chat_storage::sync_friend_from_station(token, &user_scope, sid, 50, 1) {
                 tracing::warn!(

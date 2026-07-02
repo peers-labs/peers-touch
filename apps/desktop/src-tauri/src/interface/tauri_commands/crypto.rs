@@ -15,7 +15,6 @@ use crate::domain::crypto::sender_keys::{
 use crate::domain::crypto::{self, CryptoSession, EncryptedMessage, X3DHBundle};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::local_chat_store;
-use crate::infrastructure::storage::resolve_user_scope;
 use crate::model::chat as model_chat;
 use crate::state::AppState;
 use ed25519_dalek::Signer;
@@ -27,7 +26,7 @@ fn actor_id_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Opt
 
 fn user_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> String {
     let actor_id = actor_id_from_state(state, window);
-    resolve_user_scope(actor_id.as_deref())
+    crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref())
 }
 
 fn now_ms() -> i64 {
@@ -163,7 +162,10 @@ pub fn crypto_generate_identity(
             );
         }
     };
-    let kp = match crypto::get_or_create_identity(actor_id.as_str()) {
+    let identity_key_ref =
+        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+            .identity_key_ref();
+    let kp = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
         Ok(k) => k,
         Err(reason) => {
             return AppResult::fail(
@@ -199,7 +201,10 @@ pub fn crypto_get_fingerprint(
             );
         }
     };
-    let kp = match crypto::load_identity_key(actor_id.as_str()) {
+    let identity_key_ref =
+        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+            .identity_key_ref();
+    let kp = match crypto::load_identity_key(identity_key_ref.as_str()) {
         Ok(Some(k)) => k,
         Ok(None) => {
             return AppResult::fail(ErrorCode::NotFound, "No crypto identity found", None);
@@ -245,7 +250,10 @@ pub fn crypto_get_key_bundle(
         }
     };
     let user_scope = user_scope_from_state(&state, &window);
-    let ik = match crypto::get_or_create_identity(actor_id.as_str()) {
+    let identity_key_ref =
+        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+            .identity_key_ref();
+    let ik = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
         Ok(k) => k,
         Err(reason) => {
             return AppResult::fail(
@@ -368,7 +376,10 @@ pub fn crypto_init_session(
         }
     };
     let user_scope = user_scope_from_state(&state, &window);
-    let ik = match crypto::get_or_create_identity(actor_id.as_str()) {
+    let identity_key_ref =
+        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+            .identity_key_ref();
+    let ik = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
         Ok(k) => k,
         Err(reason) => {
             return AppResult::fail(
@@ -1211,7 +1222,10 @@ fn local_identity_x25519(
             ));
         }
     };
-    let ik = match crypto::load_identity_key(actor_id.as_str()) {
+    let identity_key_ref =
+        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+            .identity_key_ref();
+    let ik = match crypto::load_identity_key(identity_key_ref.as_str()) {
         Ok(Some(k)) => k,
         Ok(None) => {
             return Err(AppResult::fail(

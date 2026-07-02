@@ -1,8 +1,8 @@
 # Atelier — 原型
 
 > **Status**: draft
-> **Version**: v0.3
-> **Created**: 2026-06-21 | **Updated**: 2026-06-22
+> **Version**: v0.4
+> **Created**: 2026-06-21 | **Updated**: 2026-07-02
 > **落地目标**: Applet（终态跑在 Lynx 上，运行在 peers-touch Desktop 容器内）；**原型本身只是 React + LobeUI 的 web 展示**，不绑运行时
 > **总账状态**: drafting（见 [原型总账](../../prototypes/README.md)）
 > **Owner**: Peers-Touch Agent Team
@@ -26,7 +26,7 @@ pnpm install        # 首次，monorepo 根装也可
 pnpm dev            # Vite，浏览器打开 localhost
 ```
 
-技术栈：React + Vite + `@lobehub/ui`(LobeUI) 优先 → antd 兜底 + `react-layout-kit` + `lucide-react` + `@peers-touch/applet-sdk` + CSS。当前入口已具备 **environment runtime bootstrap**：运行在 Lynx / Web Host applet 容器内时，UI 使用 applet-sdk bridge 调 `atelier.*` 真接口；普通浏览器 / Vite 独立预览时自动回退 mock runtime，不依赖 Station。
+技术栈：React + Vite + `@lobehub/ui`(LobeUI) 优先 → antd 兜底 + `react-layout-kit` + `lucide-react` + `@peers-touch/applet-sdk` + CSS。当前入口已具备 **environment runtime bootstrap**：运行在 Lynx / Web Host applet 容器内时，UI 使用 applet-sdk bridge 调 `atelier.*` 真接口；普通浏览器 / Vite 独立预览时自动回退 mock runtime，不依赖 Station。Host 模式不应把 mock seed 当作真实首屏数据；真实 snapshot 返回前只能展示空壳 / loading / error 状态。
 
 ## 形态定调：对话优先（SOLO 式），不是团队项目管理
 
@@ -75,6 +75,18 @@ Atelier 的灵魂（多 Agent 协商）不另开团队协作面板，而是**内
 - Desktop applet gateway 已开放最小 `atelier` capability：`sdk.invoke('atelier.workspace.load', payload)`、`sdk.invoke('atelier.project.createFromGoal', payload)`、`sdk.invoke('atelier.message.send', payload)`、`sdk.invoke('atelier.escalation.resolve', payload)`、`sdk.invoke('atelier.task.setStatus', payload)`、`sdk.invoke('atelier.task.purge', payload)` 和 `sdk.invoke('atelier.events.subscribe', payload)`。
 - Projection 增量事件 topic 为 `atelier.projection.event`，Desktop gateway 会把 Station `/agent/events/subscribe` SSE 转成 `AtelierProjectionEvent` 并放入 applet event outbox。
 
+### Projection 契约纪律
+
+当前 projection 仍是联调草案，不是生产稳定协议。为避免 TS / Rust / Go 三边手写结构漂移，后续每次改 projection 字段或 patch kind 必须同步检查：
+
+- TypeScript：`packages/prototypes/desktop/applets/atelier/src/projection.ts`
+- Rust Desktop gateway：`apps/desktop/src-tauri/src/application/applets/mod.rs` 中 `station_event_to_atelier_projection_event`
+- Go Station projection：`apps/station/app/subserver/agent/service/atelier_projection.go`
+- Manifest / capability：`apps/applets/atelier/applet.manifest.json` 与 `packages/applet-contract/src/capability.ts`
+- Docs：本文的 Runtime method 与联调约定
+
+在没有 proto / JSON Schema 统一源之前，不能把 `atelier-projection/v0` 宣称为稳定协议；只能宣称“当前三端手写契约已按本轮改动对齐”。下一步应补一个 schema-first 或 contract-test-first 的源头，至少覆盖 snapshot required fields、patch union、event id/seq、snake_case / camelCase 兼容和 capability method 列表。
+
 ### Runtime method 草案
 
 | Method | 用途 |
@@ -108,7 +120,7 @@ export const runtime = createBridgeAtelierRuntime({
 联调约定：
 
 - 命令：`sdk.invoke(method, payload)`，其中 `method` 使用上表的 `atelier.*` 点分方法名。
-- 启动：Host adapter 为 `lynx` / `web-host` 时走 bridge；`standalone` / `unavailable` 时走 mock，保证 prototype 可以继续独立设计评审。
+- 启动：Host adapter 为 `lynx` / `web-host` 时走 bridge；`standalone` / `unavailable` 时走 mock，保证 prototype 可以继续独立设计评审。Host 模式的初始 snapshot 必须是空 projection，不允许展示 mock 任务后再被真实数据覆盖。
 - 权限：`@peers-touch/applet-contract` 已登记 `atelier.*` capability methods；运行时 manifest 草案位于 `apps/applets/atelier/applet.manifest.json`。
 - 订阅：如需自动连接 Station SSE，可通过 URL 参数 `agentId`、可选 `taskId` / `afterEventSeq`，或在页面注入 `window.__ATELIER_PROJECTION_STREAM__`，由 `runtimeBootstrap` 传给 `createAppletSdkAtelierBridge()`。
 - 返回：每个命令先返回完整 `AtelierProjectionSnapshot`，保证 UI 能从任意一次操作恢复一致状态。
@@ -121,7 +133,19 @@ export const runtime = createBridgeAtelierRuntime({
 - `atelier.escalation.resolve` 会写入 Station `agent_task_events`，并标记为 `block_kind=decision_resolved`；snapshot replay 和 `atelier.projection.event` 都会还原为 `decision.resolved` patch。当前只完成选择回写，真实 interrupt/resume 状态机仍待接入。
 - `atelier.task.setStatus` 会更新 `CollaborationTask.MetaJSON.atelier_status`，支持 `active / archived / deleted`；`atelier.task.purge` 仅允许删除状态任务，执行后清理 task、nodes、events。
 - 当前已落地：`atelier.events.subscribe`，要求 payload 显式传 `agentId`，可选 `taskId` / `afterEventSeq`；订阅后通过 `events.poll` 读取 `atelier.projection.event`。
-- 仍待落地：真实 interrupt/resume、真实 Artifact/Gate 生产、workspace/task 默认订阅策略和 Host 端到端联调。
+- 当前不足：Desktop gateway 目前按订阅启动 Station SSE reader，并把事件写入 applet outbox；还没有 session-level subscription registry、Station stream cancel、重复订阅合并、断线重连 / backoff、last-seq cursor 持久化。`events.unsubscribe` 只能退订 applet topic，不能证明 Station SSE 已被取消。
+- 仍待落地：真实 interrupt/resume、真实 Artifact/Gate 生产、workspace/task 默认订阅策略、projection schema 统一源、Station SSE 生命周期管理和 Host 端到端联调。
+
+### 下一步落地顺序
+
+按“先静态可验证，后真实联调”的顺序推进：
+
+1. Projection contract guard：建立 schema 或 contract test，固定 `atelier-projection/v0` 的 snapshot、patch union、event id/seq 和 method 列表，防止 TS / Rust / Go 漂移。
+2. Desktop subscription lifecycle：为 `atelier.events.subscribe` 增加 session-level registry、重复订阅合并、取消、断线重连 / backoff 和 last-seq cursor。
+3. Station replay model：从 raw event page replay 升级为 materialized projection / checkpoint / cursor replay，保证长任务、Artifact、Gate、Decision 可恢复。
+4. Orchestration resume：让 `atelier.message.send` 和 `atelier.escalation.resolve` 不只是写 event，而是真正推进或恢复 Agent orchestration runtime。
+5. Artifact / Gate production：由 orchestration 层真实产出 `block_kind=artifact` / `block_kind=gate_result`，Atelier 只消费 projection。
+6. Official applet bundle：生成真实 `main.lynx.bundle`、写入 manifest integrity，并跑 Desktop Host + Station + applet 端到端验证。
 
 ## 对应设计
 
@@ -151,5 +175,7 @@ export const runtime = createBridgeAtelierRuntime({
 - 协商行展开为列表式，未做角色头像/连线的可视化编排。
 - 决策卡点选已通过 `AtelierRuntime.resolveDecision` 驱动 projection 更新，但未真正续接后续状态机。
 - 富输入框的斜杠命令 / 图片 / 模型选择器为静态外壳；文本发送已进入 mock runtime，未接真实流式回复。
-- 真实联调需要新增 Station / applet-sdk backed runtime，并把 projection snapshot 接到真实 orchestration event。
+- 真实联调需要把 Station / applet-sdk backed runtime 跑通到真实 Desktop Host，并把 projection snapshot 接到真实 orchestration event。
+- 长任务 replay 仍不健全：当前 Station snapshot 按每个 task 加载有限 event page，不能证明长任务完整恢复；后续需要 materialized projection、checkpoint 或 cursor-based replay。
+- 正式 applet bundle 未闭合：`apps/applets/atelier/applet.manifest.json` 仍有 `main.lynx.bundle` integrity 占位，未生成可发布 bundle hash。
 - 移动端单栏收敛未单独适配（当前布局在窄屏可用但未精修）。

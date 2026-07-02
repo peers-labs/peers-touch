@@ -64,11 +64,7 @@ relay-restart:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh relay
 
 desktop:
-	@if [[ "$(firstword $(MAKECMDGOALS))" == "run-prototype" ]]; then \
-		:; \
-	else \
-		/bin/bash $(LOCAL_DEV_SCRIPTS)/desktop-dev.sh app; \
-	fi
+	@/bin/bash $(LOCAL_DEV_SCRIPTS)/desktop-dev.sh app
 
 desktop-stop:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh desktop
@@ -86,11 +82,7 @@ desktop-web-restart:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh desktop-web
 
 mobile:
-	@if [[ "$(firstword $(MAKECMDGOALS))" == "run-prototype" ]]; then \
-		:; \
-	else \
-		/bin/bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh; \
-	fi
+	@/bin/bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh
 
 mobile-stop:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh mobile
