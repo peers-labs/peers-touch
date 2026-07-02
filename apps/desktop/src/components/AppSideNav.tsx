@@ -57,8 +57,10 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
   const appletManager = AppletManager.getInstance();
   const { t } = useTranslation('layout');
   const { token } = theme.useToken();
-  const { agents, selectedAgent, setAgentSurface } = useAgentStore();
-  const { newSession } = useChatStore();
+  const agents = useAgentStore((state) => state.agents);
+  const selectedAgent = useAgentStore((state) => state.selectedAgent);
+  const setAgentSurface = useAgentStore((state) => state.setAgentSurface);
+  const newSession = useChatStore((state) => state.newSession);
   const installedApplets = useAppletsStore((state) => state.applets);
   const installedAppletById = useMemo(
     () => new Map(installedApplets.map((info) => [info.manifest.id, info.manifest])),
