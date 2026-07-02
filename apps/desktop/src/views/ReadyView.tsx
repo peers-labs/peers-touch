@@ -35,6 +35,19 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
     return () => window.cancelAnimationFrame(handle);
   }, []);
 
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    let cancelled = false;
+    void import('../applet/useProductWindowLifecycleE2E').then(({ startProductWindowLifecycleE2E }) => {
+      if (cancelled) return;
+      cleanup = startProductWindowLifecycleE2E(navigation);
+    });
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [navigation]);
+
   // Track chat surface visibility regardless of whether chat is rendered
   // by the kernel host or the legacy router fallback. The badge store
   // uses this to suppress unread bumps for the active conversation.
