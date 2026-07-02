@@ -1,8 +1,8 @@
 # Applet Runtime Architecture — 运行时架构
 
 > **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-06-06 | **Updated**: 2026-06-06
+> **Version**: v2.0
+> **Created**: 2026-06-06 | **Updated**: 2026-07-02
 > **Owner**: Architecture Team
 > **Module**: `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`
 
@@ -64,7 +64,8 @@ CapabilityGateway
 
 | Environment | Container | UI Runtime | Bridge | Gateway owner | 状态 |
 |-------------|-----------|------------|--------|---------------|------|
-| Desktop | Tauri Webview 内 `<lynx-host>` | Lynx for Web `<lynx-view>` | NativeModules → Tauri command | Desktop Rust | 主线 |
+| Desktop (长期目标) | Rust Host + Native Window | Native Lynx Engine (embedded) | NativeModules → Rust Applet Kernel | Desktop Rust | 目标主线 (unproven, spike required) |
+| Desktop (过渡) | Tauri Webview 内 `<lynx-host>` | Lynx for Web `<lynx-view>` | NativeModules → Tauri command | Desktop Rust | 当前 production |
 | Android | Tauri mobile native plugin route | Native LynxView | NativeModule Kotlin | Android native / Station client | 主线 |
 | iOS | Tauri mobile native plugin route | Native LynxView | NativeModule Swift | iOS native / Station client | 主线 |
 | HarmonyOS | reserved native plugin route | Lynx Harmony adapter if available | ArkTS NativeModule | Harmony native / Station client | 预留 |
@@ -99,7 +100,9 @@ Host route opens applet
 
 ---
 
-## 5. Desktop Runtime
+## 5. Desktop Runtime (过渡: Tauri WebView + Lynx for Web)
+
+> **注意**：本节描述的是当前过渡实现。长期目标是 Rust Shell + Native Lynx Engine，详见 §5b 和 [`applet-lifecycle-architecture.md`](./applet-lifecycle-architecture.md) §7。
 
 ```text
 AppletRuntimePage
