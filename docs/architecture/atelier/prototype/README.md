@@ -26,7 +26,7 @@ pnpm install        # 首次，monorepo 根装也可
 pnpm dev            # Vite，浏览器打开 localhost
 ```
 
-技术栈：React + Vite + `@lobehub/ui`(LobeUI) 优先 → antd 兜底 + `react-layout-kit` + `lucide-react` + CSS，纯前端、mock 数据驱动。浏览器直接可看，不需要任何运行时容器。
+技术栈：React + Vite + `@lobehub/ui`(LobeUI) 优先 → antd 兜底 + `react-layout-kit` + `lucide-react` + `@peers-touch/applet-sdk` + CSS。当前入口已具备 **environment runtime bootstrap**：运行在 Lynx / Web Host applet 容器内时，UI 使用 applet-sdk bridge 调 `atelier.*` 真接口；普通浏览器 / Vite 独立预览时自动回退 mock runtime，不依赖 Station。
 
 ## 形态定调：对话优先（SOLO 式），不是团队项目管理
 
@@ -51,12 +51,77 @@ Atelier 的灵魂（多 Agent 协商）不另开团队协作面板，而是**内
 
 以 SOLO 为外壳人体工学的基准线，在其上叠 Atelier 独有的协商 / 决策 / 预算灵魂：
 
-- **左栏**：顶部 Work / Code 双模式 toggle（视觉态）+ New task / Skills / Automation 入口 + "Your Task List"（筛选图标 + plugin 切换器）+ 项目文件夹分组 + 底部用户 footer（头像 + 用户名）；标题行可一键收起侧栏。
+- **左栏**：顶部 Work / Code / Design 模式 toggle（视觉态）+ New task / Skills / Automation 入口 + "Your Task List"（筛选图标 + plugin 切换器）+ 项目文件夹分组；标题行可一键收起侧栏。
 - **顶栏**：（侧栏收起时显展开按钮）任务标题 + 项目 chip + git 分支（`Task.branch`）+ 打开文件夹 / 终端 / 大纲图标 + Open in IDE + 预算条。
 - **对话流**：轻 markdown（`` `code` `` / **粗体** / 列表）、完成回复带 Completed + 反馈条（赞/踩/复制/重新生成）、"N files changed +X -Y" diff 卡（可展开文件列表）、图片附件 chip、Artifact 卡。
 - **Artifacts 托盘 + 产物预览面板**：composer 上方一排 Artifacts 卡片（markdown / web / image / diff，按 kind 配紫色图标）；点卡片在右侧打开**产物预览面板**——markdown 轻渲染、**web 产物用真实 `<iframe>` 内嵌浏览器**（地址栏 + 刷新 + 可折叠 Console Logs 面板按 level 染色）、image 图片预览、diff 文件清单。
 - **右栏（三元切换）**：打开产物时为产物预览面板（宽 460）；否则为 Todo + Context（token 用量条 + Files/Other 标签的触达文件）。
-- **富输入框**：斜杠命令 / 图片附件 / 模型选择器（openrouter-3o…）/ 语音 / 发送。
+- **富输入框**：斜杠命令 / 图片附件 / 模型选择器（openrouter-3o…）/ 发送。语音输入暂不展示。
+
+## Runtime / Projection 接入骨架
+
+原型已从“Page 直接改 mock state”收敛到一个可联调边界：
+
+- `src/runtime.ts` 定义 `AtelierRuntime`，这是 UI 和未来真实后端之间的唯一边界。
+- `src/projection.ts` 定义 projection snapshot / patch / method 名称，作为联调数据契约草案。
+- `src/bridgeRuntime.ts` 定义 bridge-backed runtime，后续可以接 Station、Tauri command 或 applet-sdk。
+- `src/appletBridge.ts` 定义 applet-sdk / Web Host 适配器，把 `sdk.invoke('atelier.*')` 和 host event 转成 `AtelierRuntimeBridge`。
+- `src/runtimeBootstrap.ts` 定义入口 runtime 选择：`sdk.runtime === 'lynx' | 'web-host'` 时创建 bridge runtime；`standalone / unavailable` 时回退 `createMockAtelierRuntime()`。
+- `createMockAtelierRuntime()` 仍使用 `src/mock.ts` seed 数据，但所有状态变更都通过 runtime 方法发生。
+- `src/Page.tsx` 只消费 `AtelierRuntimeSnapshot`，新增任务、发送消息、决策选择、归档 / 删除、模型切换都调用 runtime；如果 runtime 提供 `subscribe`，Page 会订阅 projection 更新。
+- 真实联调时，`src/main.tsx` 会通过 `createAtelierRuntimeForEnvironment()` 自动装配 `createBridgeAtelierRuntime()` + `createAppletSdkAtelierBridge(sdk)`，对接已登记的 `atelier.*` runtime methods。
+- UI 期望拿到的是 projection snapshot：`TaskList`、`StreamBlock[]`、`TodoProjection`、`ContextProjection`、`ArtifactProjection`、`GateProjection`；不要让 applet 直接解析裸 orchestration event。
+- Station 已有第一批真源接口：`POST /sub-agent/agent/atelier/workspace/load` 和 `POST /sub-agent/agent/atelier/project/create-from-goal`。
+- Desktop applet gateway 已开放最小 `atelier` capability：`sdk.invoke('atelier.workspace.load', payload)`、`sdk.invoke('atelier.project.createFromGoal', payload)`、`sdk.invoke('atelier.message.send', payload)`、`sdk.invoke('atelier.escalation.resolve', payload)`、`sdk.invoke('atelier.task.setStatus', payload)`、`sdk.invoke('atelier.task.purge', payload)` 和 `sdk.invoke('atelier.events.subscribe', payload)`。
+- Projection 增量事件 topic 为 `atelier.projection.event`，Desktop gateway 会把 Station `/agent/events/subscribe` SSE 转成 `AtelierProjectionEvent` 并放入 applet event outbox。
+
+### Runtime method 草案
+
+| Method | 用途 |
+|--------|------|
+| `atelier.workspace.load` | 加载当前 workspace projection snapshot |
+| `atelier.project.createFromGoal` | 从用户目标创建 Atelier project / task |
+| `atelier.message.send` | 向当前 task 追加用户输入 |
+| `atelier.escalation.resolve` | 回写决策卡选择 |
+| `atelier.task.setStatus` | 更新左栏收纳态：active / archived / deleted |
+| `atelier.task.purge` | 彻底删除回收站任务 |
+
+`AtelierRuntime.setModel()` 只更新 composer 本地偏好，不走 Host / Station capability。
+
+### applet-sdk 接入草案
+
+真实 applet 侧不直接 import Desktop `api` 或 Tauri `invoke`，而是把 applet-sdk 的 `sdk` 适配成 `AtelierRuntimeBridge`。当前 `src/main.tsx` 已使用 `src/runtimeBootstrap.ts` 做环境切换，等价于：
+
+```ts
+import { sdk } from '@peers-touch/applet-sdk';
+import { MOCK } from './mock';
+import { createAppletSdkAtelierBridge } from './appletBridge';
+import { createBridgeAtelierRuntime } from './bridgeRuntime';
+import { toProjectionSnapshot } from './projection';
+
+export const runtime = createBridgeAtelierRuntime({
+  bridge: createAppletSdkAtelierBridge(sdk),
+  initialSnapshot: toProjectionSnapshot(MOCK),
+});
+```
+
+联调约定：
+
+- 命令：`sdk.invoke(method, payload)`，其中 `method` 使用上表的 `atelier.*` 点分方法名。
+- 启动：Host adapter 为 `lynx` / `web-host` 时走 bridge；`standalone` / `unavailable` 时走 mock，保证 prototype 可以继续独立设计评审。
+- 权限：`@peers-touch/applet-contract` 已登记 `atelier.*` capability methods；运行时 manifest 草案位于 `apps/applets/atelier/applet.manifest.json`。
+- 订阅：如需自动连接 Station SSE，可通过 URL 参数 `agentId`、可选 `taskId` / `afterEventSeq`，或在页面注入 `window.__ATELIER_PROJECTION_STREAM__`，由 `runtimeBootstrap` 传给 `createAppletSdkAtelierBridge()`。
+- 返回：每个命令先返回完整 `AtelierProjectionSnapshot`，保证 UI 能从任意一次操作恢复一致状态。
+- 增量：host 通过 `atelier.projection.event` 推送 `AtelierProjectionEvent`，其中 `patch` 使用 `AtelierProjectionPatch`；bridge runtime 会按 event `id` / `seq` 幂等消费，并在 `stream.append` 时按 block `id` 去重，抵御 SSE 重连回放 / outbox 重投。
+- 真源：Station / agent orchestration 负责把底层 collaboration task、run、event、artifact、gate、decision 转成 projection；Atelier applet 只消费 projection。
+- Artifact / Gate：`block_kind=artifact` 会投影为 `artifact.upsert` 并在 snapshot replay 时还原到 Artifacts 托盘；`block_kind=gate_result` 会投影为 `gate.upsert` 并在 snapshot replay 时还原到 `workspace.gates`。当前完成的是 projection 契约、Station mapper、Desktop SSE mapper 和单测，真实 Artifact/Gate 生产由 orchestration 层后续接入。
+- 当前已落地：`atelier.workspace.load`、`atelier.project.createFromGoal`、`atelier.message.send`、`atelier.escalation.resolve`、`atelier.task.setStatus`、`atelier.task.purge`。创建项目要求 payload 显式传 `agentIds` 或 `run.agentIds`，Atelier 不从 `flowId` 猜 Agent。
+- 模型选择：`AtelierRuntime.setModel()` 在 mock / bridge runtime 内本地更新 snapshot，不调用 Desktop gateway；后续如需跨设备保存偏好，应单独设计 settings capability，而不是伪造 orchestration 接口。
+- `atelier.message.send` 会写入 Station `agent_task_events`，并标记为 `block_kind=user`；snapshot replay 和 `atelier.projection.event` 都会还原为用户消息块。
+- `atelier.escalation.resolve` 会写入 Station `agent_task_events`，并标记为 `block_kind=decision_resolved`；snapshot replay 和 `atelier.projection.event` 都会还原为 `decision.resolved` patch。当前只完成选择回写，真实 interrupt/resume 状态机仍待接入。
+- `atelier.task.setStatus` 会更新 `CollaborationTask.MetaJSON.atelier_status`，支持 `active / archived / deleted`；`atelier.task.purge` 仅允许删除状态任务，执行后清理 task、nodes、events。
+- 当前已落地：`atelier.events.subscribe`，要求 payload 显式传 `agentId`，可选 `taskId` / `afterEventSeq`；订阅后通过 `events.poll` 读取 `atelier.projection.event`。
+- 仍待落地：真实 interrupt/resume、真实 Artifact/Gate 生产、workspace/task 默认订阅策略和 Host 端到端联调。
 
 ## 对应设计
 
@@ -64,7 +129,7 @@ Atelier 的灵魂（多 Agent 协商）不另开团队协作面板，而是**内
 
 | 原型区域 | 对应设计 | 落地模块 |
 |---------|---------|---------|
-| 左栏：Work/Code 双模式 toggle + New task / Skills / Automation + 管理方式 plugin 切换器（含筛选图标）+ 项目文件夹分组任务列表（进行中带 spinner / 分支图标）+ 用户 footer + 侧栏收起 | §1.2 | M11 / M12 |
+| 左栏：Work/Code/Design 模式 toggle + New task / Skills / Automation + 管理方式 plugin 切换器（含筛选图标）+ 项目文件夹分组任务列表（进行中带 spinner / 分支图标）+ 侧栏收起 | §1.2 | M11 / M12 |
 | 顶栏：（可展开侧栏）任务标题 + 项目 chip + git 分支 + 打开文件夹/终端/大纲图标 + Open in IDE + 预算条（成本熔断可见） | §1.5 | M7 |
 | 对话流：用户气泡（含图片附件 chip）+ Atelier 复述目标卡（轻 markdown + 含 L0/L1/L2 验收口径）+ Completed + 反馈条 | §1.3 ① | M5 / M6 / M13 |
 | 对话流内联「协商行」：折叠一行 / 展开看角色·带证据反对·折中·共识；无证据反对降级为疑虑 | §1.4 / §2 | M1 / M2 / M3 |
@@ -72,18 +137,19 @@ Atelier 的灵魂（多 Agent 协商）不另开团队协作面板，而是**内
 | 对话流「diff 卡 / 产物卡」：N files changed +X -Y 可展开文件列表 / 文件名回链到哪步哪个 Agent | §1.4 | M8 / M9 |
 | Artifacts 托盘 + 右侧产物预览面板：markdown 渲染 / web 真 iframe 内嵌浏览器（地址栏 + Console Logs）/ image / diff | §1.4 / §1.3 ④ | M14 / M8 |
 | 右栏：Todo + Context（token 用量条 + Files/Other 触达文件），与产物预览面板三元切换，仅复杂任务出现 | §1.3 | M5 / M8 |
-| 底部富输入框：斜杠命令 / 图片 / 模型选择器 / 语音 / 发送 | §1.1 | M13 |
+| 底部富输入框：斜杠命令 / 图片 / 模型选择器 / 发送 | §1.1 | M13 |
 
-数据由 `src/mock.ts` 假数据驱动（标准 §5.8 允许）；这是纯前端展示原型，不接真实后端。
+数据默认由 `src/mock.ts` seed 驱动，但 UI 已通过 `src/runtime.ts` 的 `AtelierRuntime` 访问 projection snapshot。当前还不接真实后端，下一步联调只替换 runtime 实现。
 
-源码结构（React + LobeUI/antd DOM 组件）：`src/types.ts`（对话流 block 模型 + `Artifact`/`ConsoleLog` 产物模型 + `TaskHost`/`TaskPlugin` 接口）、`src/theme.ts`（调色板 `C` + 角色色 `ROLE_COLOR` + 立场色 `STANCE`）、`src/mock.ts`（多项目任务含生命周期 + 各任务对话流：协商/决策/diff/产物/图片附件 + 各任务 artifacts：markdown/web/image/diff）、`src/blocks.tsx`（各类 block 渲染：用户气泡含图片 chip / Atelier 含反馈条 / 协商行 / 决策卡 / 产物卡 / diff 卡 + 轻 markdown 内联）、`src/preview.tsx`（Artifacts 托盘 + 产物预览面板：轻 markdown 渲染 / web 真 iframe 内嵌浏览器含地址栏与 Console Logs / image / diff）、`src/plugins.tsx`（管理 plugin：默认 folders 项目分组 + 简单平铺 + 看板/DAG 占位）、`src/Page.tsx`（壳：Work/Code toggle + 左栏导航含折叠/筛选/footer + plugin 加载 + 顶栏含文件夹/终端/大纲图标 + 对话流 + Artifacts 托盘 + 富输入框 + 右栏 Todo/Context 与产物预览三元切换）、`src/main.tsx`（Vite 入口）。构建配置：`vite.config.ts` / `index.html` / `tsconfig.json`。
+源码结构（React + LobeUI/antd DOM 组件）：`src/types.ts`（对话流 block 模型 + `Artifact`/`ConsoleLog` 产物模型 + `TaskHost`/`TaskPlugin` 接口）、`src/runtime.ts`（Atelier projection runtime 契约 + mock-backed 默认实现）、`src/theme.ts`（调色板 `C` + 角色色 `ROLE_COLOR` + 立场色 `STANCE`）、`src/mock.ts`（多项目任务含生命周期 + 各任务对话流：协商/决策/diff/产物/图片附件 + 各任务 artifacts：markdown/web/image/diff）、`src/blocks.tsx`（各类 block 渲染：用户气泡含图片 chip / Atelier 含反馈条 / 协商行 / 决策卡 / 产物卡 / diff 卡 + 轻 markdown 内联）、`src/preview.tsx`（Artifacts 托盘 + 产物预览面板：轻 markdown 渲染 / web 真 iframe 内嵌浏览器含地址栏与 Console Logs / image / diff）、`src/plugins.tsx`（管理 plugin：默认 folders 项目分组 + 简单平铺 + 看板/DAG 占位）、`src/Page.tsx`（壳：Work/Code/Design toggle + 左栏导航含折叠/筛选 + plugin 加载 + 顶栏含 Open in 与工具图标 + 对话流 + Artifacts 托盘 + 富输入框 + 右栏 Todo/Context 与产物预览三元切换）、`src/main.tsx`（Vite 入口）。构建配置：`vite.config.ts` / `index.html` / `tsconfig.json`。
 
 ## 已知差异 / 待补
 
 - 管理 plugin 默认「项目文件夹分组」+ 可选「简单平铺」可用；看板 / DAG 为切换器占位，未实现 `render`。
-- Work/Code 双模式 toggle、侧栏折叠/展开、顶栏文件夹/终端/大纲图标、用户 footer 已做**视觉态**（Work/Code 不切真实 IDE 模式、终端/大纲图标未接真实面板）。
+- Work/Code/Design 模式 toggle、侧栏折叠/展开、顶栏工具图标已做**视觉态**（Work/Code 不切真实 IDE 模式、工具图标未接真实面板）。
 - 产物预览面板：web 产物为**真实 `<iframe>` 内嵌浏览器**（加载 URL，可改地址 / 刷新），Console Logs 为 mock 日志流（未接真实运行时日志）。
 - 协商行展开为列表式，未做角色头像/连线的可视化编排。
-- 决策卡点选已驱动本地状态（显示「已选择，Agent 继续推进」），但未真正续接后续对话与状态机。
-- 富输入框的斜杠命令 / 图片 / 模型选择器 / 语音为静态外壳，未接真实发送 / 流式回复。
+- 决策卡点选已通过 `AtelierRuntime.resolveDecision` 驱动 projection 更新，但未真正续接后续状态机。
+- 富输入框的斜杠命令 / 图片 / 模型选择器为静态外壳；文本发送已进入 mock runtime，未接真实流式回复。
+- 真实联调需要新增 Station / applet-sdk backed runtime，并把 projection snapshot 接到真实 orchestration event。
 - 移动端单栏收敛未单独适配（当前布局在窄屏可用但未精修）。

@@ -31,6 +31,9 @@ const PRODUCT_WINDOW_E2E_PROVIDER_BASE_URL_ENV: &str =
     "PEERS_APPLET_PRODUCT_WINDOW_E2E_PROVIDER_BASE_URL";
 const PRODUCT_WINDOW_E2E_PRODUCT_APP_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E_PRODUCT_APP";
 const PRODUCT_WINDOW_E2E_EVIDENCE_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E_EVIDENCE";
+const PRODUCT_WINDOW_E2E_LIFECYCLE_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E_LIFECYCLE";
+const PRODUCT_WINDOW_E2E_SECONDARY_APPLET_ID_ENV: &str =
+    "PEERS_APPLET_PRODUCT_WINDOW_E2E_SECONDARY_APPLET_ID";
 const PRODUCT_WINDOW_E2E_LOGIN_METHOD: &str = "product-window-certification";
 
 #[derive(Debug, Deserialize)]
@@ -38,6 +41,12 @@ const PRODUCT_WINDOW_E2E_LOGIN_METHOD: &str = "product-window-certification";
 pub struct AppletProductWindowRenderedInput {
     pub applet_id: String,
     pub ready_source: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppletProductWindowLifecycleInput {
+    pub evidence: serde_json::Value,
 }
 
 fn product_window_e2e_enabled() -> bool {
@@ -48,6 +57,12 @@ fn product_window_e2e_enabled() -> bool {
 
 fn product_window_e2e_product_app_enabled() -> bool {
     std::env::var(PRODUCT_WINDOW_E2E_PRODUCT_APP_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn product_window_e2e_lifecycle_enabled() -> bool {
+    std::env::var(PRODUCT_WINDOW_E2E_LIFECYCLE_ENV)
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
 }
@@ -205,6 +220,9 @@ pub fn applets_product_window_launch_context(
         .unwrap_or_else(|_| "applet-product-window-e2e-actor".to_string());
     let token = std::env::var(PRODUCT_WINDOW_E2E_TOKEN_ENV)
         .unwrap_or_else(|_| format!("applet-product-window-e2e-token:{}", actor_id));
+    let lifecycle_enabled = product_window_e2e_lifecycle_enabled();
+    let secondary_applet_id = std::env::var(PRODUCT_WINDOW_E2E_SECONDARY_APPLET_ID_ENV)
+        .unwrap_or_else(|_| "peers.note".to_string());
 
     if applet_id.trim().is_empty() || actor_id.trim().is_empty() || token.trim().is_empty() {
         return AppResult::fail(
@@ -226,7 +244,9 @@ pub fn applets_product_window_launch_context(
             "name": "Applet Product Window Certification",
             "email": "",
             "loginMethod": PRODUCT_WINDOW_E2E_LOGIN_METHOD,
-            "mode": "product-shell"
+            "mode": if lifecycle_enabled { "lifecycle-smoothness" } else { "product-shell" },
+            "secondaryAppletId": secondary_applet_id,
+            "startPage": if lifecycle_enabled { "applets" } else { "" }
         }),
     )
 }
@@ -318,6 +338,77 @@ pub fn applets_product_window_report_rendered(
 
     status_payload(
         "applets_product_window_report_rendered",
+        json!({ "recorded": true, "path": output_path.to_string_lossy() }),
+    )
+}
+
+#[tauri::command]
+pub fn applets_product_window_report_lifecycle(
+    input: AppletProductWindowLifecycleInput,
+) -> AppResult<StubPayload> {
+    if !product_window_e2e_enabled() || !product_window_e2e_lifecycle_enabled() {
+        return status_payload(
+            "applets_product_window_report_lifecycle",
+            json!({ "recorded": false, "reason": "product_window_lifecycle_e2e_disabled" }),
+        );
+    }
+
+    let output_path = match std::env::var(PRODUCT_WINDOW_E2E_EVIDENCE_ENV) {
+        Ok(path) if !path.trim().is_empty() => PathBuf::from(path),
+        _ => {
+            return status_payload(
+                "applets_product_window_report_lifecycle",
+                json!({ "recorded": false, "reason": "evidence_path_missing" }),
+            );
+        }
+    };
+    if let Some(parent) = output_path.parent() {
+        if let Err(error) = fs::create_dir_all(parent) {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "failed to create product-window lifecycle evidence directory",
+                Some(json!({ "reason": error.to_string() })),
+            );
+        }
+    }
+
+    let applet_id = std::env::var(PRODUCT_WINDOW_E2E_APPLET_ID_ENV)
+        .unwrap_or_else(|_| "generic-complex-applet".to_string());
+    let secondary_applet_id = std::env::var(PRODUCT_WINDOW_E2E_SECONDARY_APPLET_ID_ENV)
+        .unwrap_or_else(|_| "peers.note".to_string());
+    let evidence = json!({
+        "ok": true,
+        "appletId": applet_id,
+        "secondaryAppletId": secondary_applet_id,
+        "launchMode": "product-window-certification",
+        "productShell": true,
+        "event": "applet.lifecycle.smoothness.completed",
+        "recordedAt": product_window_timestamp_millis(),
+        "detail": input.evidence,
+    });
+    let bytes = match serde_json::to_vec_pretty(&evidence) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "failed to serialize product-window lifecycle evidence",
+                Some(json!({ "reason": error.to_string() })),
+            );
+        }
+    };
+    if let Err(error) = fs::write(&output_path, bytes) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "failed to write product-window lifecycle evidence",
+            Some(json!({
+                "path": output_path.to_string_lossy(),
+                "reason": error.to_string()
+            })),
+        );
+    }
+
+    status_payload(
+        "applets_product_window_report_lifecycle",
         json!({ "recorded": true, "path": output_path.to_string_lossy() }),
     )
 }
