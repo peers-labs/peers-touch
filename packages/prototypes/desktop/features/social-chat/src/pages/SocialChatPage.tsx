@@ -20,6 +20,8 @@ export function SocialChatPage() {
     markAsRead,
     hideConversation,
     deleteConversation,
+    clearConversationHistory,
+    restoreConversationHistory,
     renameGroup,
     removeGroupMember,
     toggleMemberMute,
@@ -43,6 +45,7 @@ export function SocialChatPage() {
         conversation={activeConversation}
         messages={messages}
         onToggleDetail={toggleDetail}
+        onRestoreHistory={restoreConversationHistory}
       />
       {showDetail && activeConversation && (
         <DetailPanel
@@ -51,6 +54,8 @@ export function SocialChatPage() {
           groupMembers={groupMembers}
           onClose={toggleDetail}
           onDeleteConversation={deleteConversation}
+          onClearHistory={clearConversationHistory}
+          onRestoreHistory={restoreConversationHistory}
           onRemoveMember={removeGroupMember}
           onRenameGroup={renameGroup}
           onSetMemberRole={setMemberRole}
