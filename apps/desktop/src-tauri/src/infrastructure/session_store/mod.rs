@@ -1,4 +1,4 @@
-//! On-disk per-actor session blobs under `auth/sessions/`.
+//! On-disk per-local-account session blobs under `auth/sessions/`.
 //!
 //! This replaces the legacy single-file `auth/session.json` and
 //! `auth/station_session.json` so concurrent processes do not clobber each
@@ -22,7 +22,7 @@ pub enum SessionSource {
     OauthBridge,
 }
 
-/// A persisted session record written to `auth/sessions/{actor_id}.json`.
+/// A persisted session record written to `auth/sessions/{account_id}.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PersistedSession {
     pub actor_id: String,
@@ -69,9 +69,9 @@ fn sessions_dir() -> Result<PathBuf, SessionStoreError> {
         .map_err(SessionStoreError::from)
 }
 
-/// Returns the on-disk path for a given `actor_id` (filename is sanitized).
-fn session_file_path(actor_id: &str) -> Result<PathBuf, SessionStoreError> {
-    let file_name = format!("{}.json", storage::resolve_user_scope(Some(actor_id)));
+/// Returns the on-disk path for a given local account id.
+fn session_file_path(account_id: &str) -> Result<PathBuf, SessionStoreError> {
+    let file_name = format!("{}.json", storage::resolve_user_scope(Some(account_id)));
     storage::app_file_path(
         "desktop",
         StorageKind::Data,
@@ -80,12 +80,20 @@ fn session_file_path(actor_id: &str) -> Result<PathBuf, SessionStoreError> {
     .map_err(SessionStoreError::from)
 }
 
-/// Persists a token for `actor_id`, replacing any previous blob for that actor.
-pub fn save(actor_id: &str, token: &str, source: SessionSource) -> Result<(), SessionStoreError> {
+/// Persists a token for `account_id`, replacing any previous blob for that account.
+pub fn save(
+    account_id: &str,
+    actor_id: &str,
+    token: &str,
+    source: SessionSource,
+) -> Result<(), SessionStoreError> {
+    if account_id.trim().is_empty() {
+        return Err(SessionStoreError::Serde("account_id is empty".to_string()));
+    }
     if actor_id.trim().is_empty() {
         return Err(SessionStoreError::Serde("actor_id is empty".to_string()));
     }
-    let path = session_file_path(actor_id)?;
+    let path = session_file_path(account_id)?;
     let payload = PersistedSession {
         actor_id: actor_id.to_string(),
         token: token.to_string(),
@@ -97,22 +105,22 @@ pub fn save(actor_id: &str, token: &str, source: SessionSource) -> Result<(), Se
     storage::write_string_atomic(&path, &json).map_err(SessionStoreError::from)
 }
 
-/// Loads the persisted session for `actor_id`, if present and valid JSON.
-pub fn load(actor_id: &str) -> Option<PersistedSession> {
-    if actor_id.trim().is_empty() {
+/// Loads the persisted session for `account_id`, if present and valid JSON.
+pub fn load(account_id: &str) -> Option<PersistedSession> {
+    if account_id.trim().is_empty() {
         return None;
     }
-    let path = session_file_path(actor_id).ok()?;
+    let path = session_file_path(account_id).ok()?;
     let raw = fs::read_to_string(path).ok()?;
     serde_json::from_str(&raw).ok()
 }
 
-/// Deletes the persisted session file for `actor_id`, if it exists.
-pub fn delete(actor_id: &str) -> Result<(), SessionStoreError> {
-    if actor_id.trim().is_empty() {
+/// Deletes the persisted session file for `account_id`, if it exists.
+pub fn delete(account_id: &str) -> Result<(), SessionStoreError> {
+    if account_id.trim().is_empty() {
         return Ok(());
     }
-    let path = session_file_path(actor_id)?;
+    let path = session_file_path(account_id)?;
     if path.exists() {
         fs::remove_file(&path).map_err(|e| SessionStoreError::Io(e.to_string()))?;
     }
@@ -167,7 +175,11 @@ pub fn migrate_legacy() -> Result<usize, SessionStoreError> {
             Ok(raw) => match serde_json::from_str::<LegacyPasswordSession>(&raw) {
                 Ok(v) => {
                     if !v.actor_id.is_empty() && !v.token.is_empty() {
-                        save(&v.actor_id, &v.token, SessionSource::Password)?;
+                        let account_id =
+                            crate::infrastructure::local_scope::account_id_for_password_actor(
+                                &v.actor_id,
+                            );
+                        save(&account_id, &v.actor_id, &v.token, SessionSource::Password)?;
                         migrated += 1;
                         if let Err(e) = fs::remove_file(&legacy_password) {
                             tracing::warn!(path = %legacy_password.display(), error = %e, "session_store: failed to remove legacy session.json");
@@ -212,7 +224,11 @@ pub fn migrate_legacy() -> Result<usize, SessionStoreError> {
                     Some((actor_id, token))
                 }) {
                     Some((actor_id, token)) => {
-                        save(&actor_id, &token, SessionSource::OauthBridge)?;
+                        let account_id =
+                            crate::infrastructure::local_scope::account_id_for_password_actor(
+                                &actor_id,
+                            );
+                        save(&account_id, &actor_id, &token, SessionSource::OauthBridge)?;
                         migrated += 1;
                         if let Err(e) = fs::remove_file(&legacy_station) {
                             tracing::warn!(path = %legacy_station.display(), error = %e, "session_store: failed to remove legacy station_session.json");
@@ -260,23 +276,36 @@ mod tests {
     #[test]
     fn save_load_delete_round_trip() {
         with_temp_storage_root(|| {
+            let account_id = "station:scope:password:actor-save-load-1";
             let aid = "actor-save-load-1";
-            save(aid, "tok-abc", SessionSource::Password).expect("save");
-            let s = load(aid).expect("load");
+            save(account_id, aid, "tok-abc", SessionSource::Password).expect("save");
+            let s = load(account_id).expect("load");
             assert_eq!(s.actor_id, aid);
             assert_eq!(s.token, "tok-abc");
             assert_eq!(s.source, SessionSource::Password);
 
-            delete(aid).expect("delete");
-            assert!(load(aid).is_none());
+            delete(account_id).expect("delete");
+            assert!(load(account_id).is_none());
         });
     }
 
     #[test]
     fn list_actor_ids_aggregates_files() {
         with_temp_storage_root(|| {
-            save("a-1", "t1", SessionSource::Password).unwrap();
-            save("b-2", "t2", SessionSource::OauthBridge).unwrap();
+            save(
+                "station:scope:password:a-1",
+                "a-1",
+                "t1",
+                SessionSource::Password,
+            )
+            .unwrap();
+            save(
+                "station:scope:oauth:b-2",
+                "b-2",
+                "t2",
+                SessionSource::OauthBridge,
+            )
+            .unwrap();
             let mut ids = list_actor_ids();
             ids.sort();
             assert_eq!(ids, vec!["a-1".to_string(), "b-2".to_string()]);
@@ -295,7 +324,9 @@ mod tests {
             let n = migrate_legacy().expect("migrate");
             assert_eq!(n, 1);
             assert!(!legacy.exists());
-            let p = load("legacy-a").expect("loaded");
+            let account_id =
+                crate::infrastructure::local_scope::account_id_for_password_actor("legacy-a");
+            let p = load(&account_id).expect("loaded");
             assert_eq!(p.token, "legacy-tok");
             assert_eq!(p.source, SessionSource::Password);
         });
