@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType, type CSSProperties } from 'react';
+import { useEffect, useState, type ComponentType, type CSSProperties, type ReactElement } from 'react';
 import { Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
 import { WORKTREE_TARGETS } from './registry/worktrees';
@@ -6,7 +6,7 @@ import type { PrototypeManifest, PrototypeSite, PrototypeWorktreeTarget } from '
 
 const DEFAULT_SITE: PrototypeSite = normalizeSite(import.meta.env.VITE_PROTOTYPE_SITE);
 
-const SITE_META: Record<PrototypeSite, { title: string; subtitle: string; icon: JSX.Element }> = {
+const SITE_META: Record<PrototypeSite, { title: string; subtitle: string; icon: ReactElement }> = {
   desktop: {
     title: 'Desktop Prototypes',
     subtitle: 'Desktop App / desktop-web / applet container experiences',
@@ -36,6 +36,7 @@ export function PrototypePortal() {
   const target = WORKTREE_TARGETS.find((item) => item.id === targetId) ?? WORKTREE_TARGETS[0];
   const servingTarget = WORKTREE_TARGETS[0];
   const localTarget = target.id === 'current';
+  const canSwitchWorktree = WORKTREE_TARGETS.length > 1;
 
   return (
     <div style={styles.page}>
@@ -44,7 +45,17 @@ export function PrototypePortal() {
         <div style={styles.headerControls}>
           <label style={styles.targetPicker}>
             <span>Worktree</span>
-            <select value={target.id} onChange={(event) => setTargetId(event.target.value)} style={styles.select}>
+            <select
+              value={target.id}
+              onChange={(event) => setTargetId(event.target.value)}
+              style={{ ...styles.select, ...(canSwitchWorktree ? null : styles.selectDisabled) }}
+              disabled={!canSwitchWorktree}
+              title={
+                canSwitchWorktree
+                  ? 'Switch prototype worktree / branch'
+                  : 'Only the current worktree is registered. Inject others via VITE_PROTOTYPE_WORKTREES to switch.'
+              }
+            >
               {WORKTREE_TARGETS.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.label} / {item.branch}
@@ -114,12 +125,11 @@ export function PrototypePortal() {
 
 function CurrentWorktreeBadge({ target }: { target: PrototypeWorktreeTarget }) {
   return (
-    <div style={styles.worktreeBadge}>
-      <div style={styles.worktreeBadgeTitle}>Serving worktree</div>
-      <div style={styles.worktreeBadgeBranch}>{target.branch}</div>
-      <div style={styles.worktreeBadgePath} title={target.worktreePath}>
-        {compactPath(target.worktreePath)}
-      </div>
+    <div style={styles.worktreeBadge} title={target.worktreePath}>
+      <span style={styles.worktreeDot} />
+      <span style={styles.worktreeBadgeLabel}>Serving</span>
+      <span style={styles.worktreeBadgeBranch}>{target.branch}</span>
+      <span style={styles.worktreeBadgePath}>{compactPath(target.worktreePath)}</span>
     </div>
   );
 }
@@ -284,6 +294,11 @@ const styles: Record<string, CSSProperties> = {
     padding: '0 8px',
     fontSize: 12,
   },
+  selectDisabled: {
+    background: '#f1f5f9',
+    color: '#94a3b8',
+    cursor: 'not-allowed',
+  },
   main: {
     display: 'flex',
     minHeight: 'calc(100vh - 56px)',
@@ -349,34 +364,44 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: 'monospace',
   },
   worktreeBadge: {
-    display: 'grid',
-    gap: 4,
-    minWidth: 280,
-    padding: '10px 12px',
-    borderRadius: 12,
-    background: '#f8fafc',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    maxWidth: 360,
+    padding: '5px 12px',
+    borderRadius: 999,
+    background: '#f1f5f9',
     border: '1px solid #e2e8f0',
-    textAlign: 'right',
+    fontSize: 12,
+    color: '#475569',
   },
-  worktreeBadgeTitle: {
-    color: '#64748b',
+  worktreeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: '50%',
+    background: '#22c55e',
+    flex: 'none',
+  },
+  worktreeBadgeLabel: {
+    color: '#94a3b8',
     fontSize: 11,
-    fontWeight: 700,
+    fontWeight: 600,
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
   },
   worktreeBadgeBranch: {
     color: '#1e293b',
-    fontSize: 13,
-    fontWeight: 800,
+    fontSize: 12,
+    fontWeight: 700,
   },
   worktreeBadgePath: {
-    color: '#475569',
+    color: '#94a3b8',
     fontFamily: 'monospace',
     fontSize: 11,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
+    minWidth: 0,
   },
   grid: {
     display: 'grid',
