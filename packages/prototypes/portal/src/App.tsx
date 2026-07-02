@@ -1,7 +1,7 @@
 import { useEffect, useState, type ComponentType, type CSSProperties, type ReactElement } from 'react';
 import { Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
-import { WORKTREE_TARGETS } from './registry/worktrees';
+import { SELF_TARGET, discoverWorktreeTargets } from './registry/worktrees';
 import type { PrototypeManifest, PrototypeSite, PrototypeWorktreeTarget } from './registry/types';
 
 const DEFAULT_SITE: PrototypeSite = normalizeSite(import.meta.env.VITE_PROTOTYPE_SITE);
@@ -30,40 +30,54 @@ function normalizeSite(value: unknown): PrototypeSite {
 
 export function PrototypePortal() {
   const [site, setSite] = useState<PrototypeSite>(DEFAULT_SITE);
-  const [targetId, setTargetId] = useState(WORKTREE_TARGETS[0]?.id ?? 'current');
+  const [targets, setTargets] = useState<PrototypeWorktreeTarget[]>([SELF_TARGET]);
+  const [targetId, setTargetId] = useState(SELF_TARGET.id);
   const meta = SITE_META[site];
   const visible = LOCAL_PROTOTYPES.filter((prototype) => prototype.site === site);
-  const target = WORKTREE_TARGETS.find((item) => item.id === targetId) ?? WORKTREE_TARGETS[0];
-  const servingTarget = WORKTREE_TARGETS[0];
-  const localTarget = target.id === 'current';
-  const canSwitchWorktree = WORKTREE_TARGETS.length > 1;
+
+  useEffect(() => {
+    let cancelled = false;
+    discoverWorktreeTargets().then((discovered) => {
+      if (cancelled) {
+        return;
+      }
+      setTargets(discovered);
+      setTargetId((current) => (discovered.some((item) => item.id === current) ? current : discovered[0].id));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selfTarget = targets.find((item) => item.self) ?? targets[0];
+  const target = targets.find((item) => item.id === targetId) ?? selfTarget;
+  const localTarget = target.id === selfTarget.id;
+  const canSwitch = targets.length > 1;
 
   return (
     <div style={styles.page}>
       <header style={styles.header}>
         <div style={styles.brand}>Peers Touch Prototype Portal</div>
         <div style={styles.headerControls}>
-          <label style={styles.targetPicker}>
-            <span>Worktree</span>
-            <select
-              value={target.id}
-              onChange={(event) => setTargetId(event.target.value)}
-              style={{ ...styles.select, ...(canSwitchWorktree ? null : styles.selectDisabled) }}
-              disabled={!canSwitchWorktree}
-              title={
-                canSwitchWorktree
-                  ? 'Switch prototype worktree / branch'
-                  : 'Only the current worktree is registered. Inject others via VITE_PROTOTYPE_WORKTREES to switch.'
-              }
-            >
-              {WORKTREE_TARGETS.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label} / {item.branch}
-                </option>
-              ))}
-            </select>
-          </label>
-          <CurrentWorktreeBadge target={servingTarget} />
+          <select
+            aria-label="Worktree"
+            value={target.id}
+            onChange={(event) => setTargetId(event.target.value)}
+            style={{ ...styles.select, ...(canSwitch ? null : styles.selectDisabled) }}
+            disabled={!canSwitch}
+            title={
+              canSwitch
+                ? 'Switch to another running prototype worktree'
+                : 'No other prototype portal is running. Start one from another worktree with `make run-prototype`.'
+            }
+          >
+            {targets.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.branch}
+              </option>
+            ))}
+          </select>
+          <ServingBadge target={selfTarget} live={localTarget} />
         </div>
       </header>
 
@@ -123,52 +137,48 @@ export function PrototypePortal() {
   );
 }
 
-function CurrentWorktreeBadge({ target }: { target: PrototypeWorktreeTarget }) {
+function ServingBadge({ target, live }: { target: PrototypeWorktreeTarget; live: boolean }) {
   return (
     <div style={styles.worktreeBadge} title={target.worktreePath}>
-      <span style={styles.worktreeDot} />
-      <span style={styles.worktreeBadgeLabel}>Serving</span>
-      <span style={styles.worktreeBadgeBranch}>{target.branch}</span>
+      <span style={{ ...styles.worktreeDot, ...(live ? null : styles.worktreeDotIdle) }} />
       <span style={styles.worktreeBadgePath}>{compactPath(target.worktreePath)}</span>
     </div>
   );
 }
 
 function RemoteTargetCard({ target, site }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
-  const url = target.sites[site];
-
   return (
     <article style={styles.remoteCard}>
       <div style={styles.cardTop}>
-        <span style={styles.cardTitle}>{target.label}</span>
-        <span style={styles.status}>remote</span>
+        <span style={styles.cardTitle}>{target.branch}</span>
+        <span style={styles.status}>live portal</span>
       </div>
       <p style={styles.cardText}>
-        Branch `{target.branch}` is rendered from its own running prototype service. Portal uses iframe preview for remote worktrees and never imports their source.
+        This worktree runs its own prototype portal. It is shown via iframe preview; the portal never imports another worktree&apos;s source.
       </p>
       <div style={styles.targetMeta}>
         <span>worktree: {target.worktreePath}</span>
-        <span>{site}: {url ?? 'not configured'}</span>
+        <span>portal: {target.portalUrl ?? 'unknown'}</span>
       </div>
     </article>
   );
 }
 
-function RemoteWorktreePreview({ target, site }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
-  const url = target.sites[site];
+function RemoteWorktreePreview({ target }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
+  const url = target.portalUrl;
 
   return (
     <div style={styles.preview}>
       <div style={styles.previewHeader}>
-        <span>Remote Preview</span>
-        <span style={styles.previewMeta}>{target.label} / {target.branch}</span>
+        <span>Worktree Preview</span>
+        <span style={styles.previewMeta}>{target.branch}</span>
       </div>
       <div style={styles.previewBody}>
         {url ? (
-          <iframe title={`${target.label} ${site}`} src={url} style={styles.iframe} />
+          <iframe title={`${target.branch} portal`} src={url} style={styles.iframe} />
         ) : (
           <div style={styles.previewPlaceholder}>
-            No remote URL configured for {site}. Add it to VITE_PROTOTYPE_WORKTREES.
+            This worktree portal is no longer reachable. Restart it with `make run-prototype`.
           </div>
         )}
       </div>
@@ -277,22 +287,15 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     gap: 10,
   },
-  targetPicker: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 8,
-    color: '#64748b',
-    fontSize: 12,
-    fontWeight: 600,
-  },
   select: {
     height: 30,
     borderRadius: 8,
     border: '1px solid #cbd5e1',
     background: '#ffffff',
     color: '#334155',
-    padding: '0 8px',
+    padding: '0 10px',
     fontSize: 12,
+    fontWeight: 600,
   },
   selectDisabled: {
     background: '#f1f5f9',
@@ -367,13 +370,13 @@ const styles: Record<string, CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 8,
-    maxWidth: 360,
-    padding: '5px 12px',
+    height: 30,
+    maxWidth: 320,
+    padding: '0 12px',
     borderRadius: 999,
     background: '#f1f5f9',
     border: '1px solid #e2e8f0',
-    fontSize: 12,
-    color: '#475569',
+    boxSizing: 'border-box',
   },
   worktreeDot: {
     width: 7,
@@ -382,20 +385,11 @@ const styles: Record<string, CSSProperties> = {
     background: '#22c55e',
     flex: 'none',
   },
-  worktreeBadgeLabel: {
-    color: '#94a3b8',
-    fontSize: 11,
-    fontWeight: 600,
-    textTransform: 'uppercase',
-    letterSpacing: '0.04em',
-  },
-  worktreeBadgeBranch: {
-    color: '#1e293b',
-    fontSize: 12,
-    fontWeight: 700,
+  worktreeDotIdle: {
+    background: '#cbd5e1',
   },
   worktreeBadgePath: {
-    color: '#94a3b8',
+    color: '#64748b',
     fontFamily: 'monospace',
     fontSize: 11,
     overflow: 'hidden',
