@@ -126,7 +126,7 @@ fn actor_id_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Opt
 
 fn user_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> String {
     let actor_id = actor_id_from_state(state, window);
-    crate::infrastructure::storage::resolve_user_scope(actor_id.as_deref())
+    crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref())
 }
 
 fn request_json(
