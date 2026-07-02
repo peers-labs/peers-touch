@@ -29,6 +29,7 @@ export interface MockConversation {
   unread: number;
   muted: boolean;
   pinned: boolean;
+  historyClearedAt?: number;
   online?: boolean;
   memberCount?: number;
 }
@@ -94,6 +95,7 @@ export const CONVERSATIONS: MockConversation[] = [
     unread: 8,
     muted: true,
     pinned: false,
+    historyClearedAt: Date.now() - 3_600_000,
     memberCount: 4,
   },
   {
@@ -118,6 +120,7 @@ export const CONVERSATIONS: MockConversation[] = [
     unread: 0,
     muted: false,
     pinned: false,
+    historyClearedAt: Date.now() - 25 * 3_600_000,
     memberCount: 7,
   },
   {

@@ -357,7 +357,7 @@ fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthS
         return error;
     }
 
-    let account_id = crate::infrastructure::auth_identity::upsert_password(
+    let account_id = match crate::infrastructure::auth_identity::upsert_password(
         &actor_id,
         &name,
         &email_str,
@@ -366,8 +366,16 @@ fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthS
         } else {
             Some(avatar.as_str())
         },
-    )
-    .unwrap_or_else(|_| format!("password:{}", actor_id));
+    ) {
+        Ok(account_id) => account_id,
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to persist account identity: {reason}"),
+                None,
+            )
+        }
+    };
     if let Err(error) =
         persist_session_if_unprotected(&account_id, &session, SessionSource::Password)
     {
@@ -409,10 +417,10 @@ pub fn auth_logout(state: &AppState) -> AppResult<AuthSessionPayload> {
     }
 
     let bound_actor = state.session.lock().ok().and_then(|g| g.actor_id.clone());
-    if let Some(ref aid) = bound_actor {
-        session_vault::purge_raw_session_for_actor(aid);
-    } else if let Some(ref acc) = active_account_id {
+    if let Some(ref acc) = active_account_id {
         session_vault::purge_raw_session_for_account(acc);
+    } else if let Some(ref aid) = bound_actor {
+        session_vault::purge_raw_session_for_actor(aid);
     }
 
     if let Err(error) = clear_session(state) {
@@ -452,41 +460,24 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
             );
         }
 
-        let active_actor = active_account
-            .as_deref()
-            .map(session_vault::actor_id_from_account_id)
-            .filter(|id| !id.is_empty());
-
-        if let Some(ref active) = active_actor {
+        if let Some(blob) = match load_raw_session_for_account(&active_account) {
+            Ok(blob) => blob,
+            Err(error) => return error,
+        } {
             if let Some(ref mem) = snapshot.actor_id {
-                if mem != active {
+                if mem != &blob.actor_id {
                     tracing::warn!(
                         in_memory = %mem,
-                        active_actor = %active,
-                        "auth_restore_session: ignoring per-account disk session; active account does not match in-memory binding"
+                        persisted_actor = %blob.actor_id,
+                        "auth_restore_session: replacing stale in-memory actor binding with active account session"
                     );
-                } else if let Some(blob) =
-                    match load_raw_session_for_account(&active_account, active) {
-                        Ok(blob) => blob,
-                        Err(error) => return error,
-                    }
-                {
-                    snapshot = SessionState {
-                        actor_id: Some(blob.actor_id),
-                        token: Some(blob.token),
-                    };
-                    loaded_from_persistent_store = true;
                 }
-            } else if let Some(blob) = match load_raw_session_for_account(&active_account, active) {
-                Ok(blob) => blob,
-                Err(error) => return error,
-            } {
-                snapshot = SessionState {
-                    actor_id: Some(blob.actor_id),
-                    token: Some(blob.token),
-                };
-                loaded_from_persistent_store = true;
             }
+            snapshot = SessionState {
+                actor_id: Some(blob.actor_id),
+                token: Some(blob.token),
+            };
+            loaded_from_persistent_store = true;
         }
     }
 
@@ -534,7 +525,9 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
     if let Err(error) = write_session(state, &session) {
         return error;
     }
-    let account_id = session_vault::active_account_id().unwrap_or_else(|| session.actor_id.clone());
+    let account_id = session_vault::active_account_id().unwrap_or_else(|| {
+        crate::infrastructure::local_scope::account_id_for_password_actor(&session.actor_id)
+    });
     if let Err(error) =
         persist_session_if_unprotected(&account_id, &session, SessionSource::Password)
     {
@@ -599,7 +592,9 @@ pub fn auth_validate_token(
     if let Err(error) = write_session(state, &session) {
         return error;
     }
-    let account_id = session_vault::active_account_id().unwrap_or_else(|| session.actor_id.clone());
+    let account_id = session_vault::active_account_id().unwrap_or_else(|| {
+        crate::infrastructure::local_scope::account_id_for_password_actor(&session.actor_id)
+    });
     if let Err(error) =
         persist_session_if_unprotected(&account_id, &session, SessionSource::Password)
     {
@@ -670,7 +665,6 @@ fn session_vault_to_app(e: SessionVaultError) -> AppResult<AuthSessionPayload> {
 
 fn load_raw_session_for_account(
     active_account: &Option<String>,
-    active_actor: &str,
 ) -> Result<Option<PersistedSession>, AppResult<AuthSessionPayload>> {
     let Some(account_id) = active_account.as_deref() else {
         return Ok(None);
@@ -685,7 +679,7 @@ fn load_raw_session_for_account(
                 other => session_vault_to_app(other),
             },
         )?;
-    Ok(blob.filter(|blob| blob.actor_id == active_actor))
+    Ok(blob)
 }
 
 fn map_domain_error(error: AuthDomainError) -> AppResult<AuthSessionPayload> {
@@ -713,10 +707,8 @@ fn unauthorized(
 ///
 /// For non-PIN accounts, only ONE session is active at a time. When a new
 /// account logs in, the previous non-PIN account's `has_session` is cleared so
-/// the account picker matches reality. Raw tokens are also stored per-actor in
-/// `infrastructure::session_store`, keyed by `actor_id`, so a multi-actor
-/// scenario (foreground PIN account, background OAuth account) doesn't trample
-/// the legacy shared `session.json`.
+/// the account picker matches reality. Raw tokens are stored per local account
+/// scope, so different Stations never share the same restorable token slot.
 ///
 /// PIN handling: keep existing PIN protection intact even when the encrypted
 /// session blob was cleared after token expiry. The post-login UI can ask for
@@ -756,12 +748,7 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         );
     }
 
-    let active_actor = active_account
-        .as_deref()
-        .map(session_vault::actor_id_from_account_id)
-        .filter(|id| !id.is_empty());
-
-    let Some(active) = active_actor else {
+    let Some(account_id) = active_account.clone() else {
         return AppResult::fail(
             ErrorCode::NotFound,
             "No station session found to restore",
@@ -769,9 +756,8 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         );
     };
 
-    let account_id = active_account.as_deref().unwrap_or(&active);
     let blob = match session_vault::load_raw_session_for_account(
-        account_id,
+        &account_id,
         Some(SessionSource::OauthBridge),
     ) {
         Ok(Some(b)) => b,
@@ -791,14 +777,6 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         Err(error) => return session_vault_to_app(error),
     };
 
-    if blob.actor_id != active {
-        tracing::warn!(
-            blob_actor = %blob.actor_id,
-            active = %active,
-            "ensure_station_session: session blob actor does not match active account; using blob"
-        );
-    }
-
     let actor_id = blob.actor_id;
     let token = blob.token;
     if let Err(error) = verify_session_with_station(&token) {
@@ -809,7 +787,9 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
     if let Err(error) = write_session(state, &session) {
         return error;
     }
-    let account_id = session_vault::active_account_id().unwrap_or_else(|| session.actor_id.clone());
+    let account_id = session_vault::active_account_id().unwrap_or_else(|| {
+        crate::infrastructure::local_scope::account_id_for_password_actor(&session.actor_id)
+    });
     if let Err(error) =
         persist_session_if_unprotected(&account_id, &session, SessionSource::OauthBridge)
     {
