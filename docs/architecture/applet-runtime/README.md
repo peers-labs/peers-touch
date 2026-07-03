@@ -1,8 +1,8 @@
 # Applet Runtime Architecture
 
 > **Status**: draft
-> **Version**: v1.4
-> **Created**: 2026-05-19 | **Updated**: 2026-06-23
+> **Version**: v1.5
+> **Created**: 2026-05-19 | **Updated**: 2026-07-02
 > **Owner**: Architecture Team
 > **Module**: `apps/applets/`, `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applet-contract/`
 
@@ -121,6 +121,7 @@ AI 不得只读 `execution-plans/2026-06-06-applet-runtime-formalization.md` 后
 | 文档 | 说明 |
 |------|------|
 | [design.md](./design.md) | 总体架构、核心原则、端侧分工、调用链 |
+| [applet-lifecycle-architecture.md](./applet-lifecycle-architecture.md) | **跨端生命周期与保活架构**：状态机、事件映射、LRU/TTL/内存压力策略；Desktop = Tauri WebView + Lynx for Web，Mobile = 原生 LynxView，保活归 Kernel，含 spike 验证矩阵 |
 | [sdk-architecture.md](./sdk-architecture.md) | SDK 分层、接口面、复杂 applet 首批能力 |
 | [runtime-architecture.md](./runtime-architecture.md) | Desktop、Mobile、HarmonyOS 预留、Web 的运行时容器、生命周期和 Bridge 架构 |
 | [service-architecture.md](./service-architecture.md) | Host Gateway、Station applet store、权限、审计、分发、治理服务架构 |
@@ -133,6 +134,7 @@ AI 不得只读 `execution-plans/2026-06-06-applet-runtime-formalization.md` 后
 
 | 文档 | 说明 |
 |------|------|
+| [execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md](./execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md) | **Applet Runtime & Lifecycle 构建计划**：Desktop = Tauri WebView + Lynx for Web，Mobile = 原生 LynxView，保活归 Kernel；含 spike 验证、协议冻结、Applet Kernel、Desktop/Mobile adapter、hardening、旧运行时收敛 |
 | [execution-plans/2026-06-23-applet-capability-completion-plan.md](./execution-plans/2026-06-23-applet-capability-completion-plan.md) | **当前唯一任务级执行源**：完成 Applet 能力，覆盖 Note 产品化、Station Store、Applet Box、Gateway hardening、第三方认证、Web/Mobile parity、release audit |
 | [execution-plans/note-official-applet-progress.md](./execution-plans/note-official-applet-progress.md) | 历史进度输入：记录 Note 官方 applet 已完成证据和遗留缺口，后续执行必须映射到新完成计划 |
 | [execution-plans/complex-applet-progress.md](./execution-plans/complex-applet-progress.md) | 历史进度输入：记录 complex applet candidate 证据和 release blocker，后续执行必须映射到新完成计划 |

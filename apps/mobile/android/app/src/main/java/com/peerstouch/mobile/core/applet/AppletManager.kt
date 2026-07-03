@@ -1,5 +1,13 @@
 package com.peerstouch.mobile.core.applet
 
+import android.content.ComponentCallbacks2
+import com.peerstouch.mobile.core.applet.kernel.AppletInstanceRegistry
+import com.peerstouch.mobile.core.applet.kernel.AppletKernel
+import com.peerstouch.mobile.core.applet.kernel.AppletLifecycleOrchestrator
+import com.peerstouch.mobile.core.applet.kernel.AppletResourcePolicy
+import com.peerstouch.mobile.core.applet.kernel.AppletResourceScheduler
+import com.peerstouch.mobile.core.applet.kernel.AppletSurfaceController
+import com.peerstouch.mobile.core.applet.kernel.MemoryPressureLevel
 import com.peerstouch.mobile.core.lynx.bridge.BridgeDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,13 +19,31 @@ data class AppletDiagnostic(
 
 class AppletManager constructor(
     private val appletBundleStorage: AppletBundleStorage,
-    private val bridgeDispatcher: BridgeDispatcher
+    private val bridgeDispatcher: BridgeDispatcher,
+    surfaceController: AppletSurfaceController
 ) {
     private val platformVersion = "0.1.0"
 
     private val applets = mutableMapOf<String, AppletInfo>()
     private val sessions = mutableMapOf<String, AppletBridgeSession>()
     private val rejectedDiagnostics = mutableMapOf<String, List<String>>()
+    private val registry = AppletInstanceRegistry()
+    private val kernel = AppletKernel(
+        registry = registry,
+        orchestrator = AppletLifecycleOrchestrator(
+            registry = registry,
+            surfaceController = surfaceController,
+            sessionLifecycleDispatcher = { appletId, event, resumeTarget ->
+                sessions[appletId]?.dispatchLifecycle(event, resumeTarget)
+                notifyStateChange()
+            },
+            sessionDestroyer = { appletId ->
+                destroySessionOnly(appletId)
+                notifyStateChange()
+            }
+        ),
+        scheduler = AppletResourceScheduler(registry, AppletResourcePolicy.MOBILE)
+    )
 
     private val _sessionsState = MutableStateFlow<Map<String, AppletBridgeSession>>(emptyMap())
     val sessionsState: StateFlow<Map<String, AppletBridgeSession>> = _sessionsState.asStateFlow()
@@ -68,25 +94,81 @@ class AppletManager constructor(
         }
 
         val existing = sessions[id]
-        if (existing != null && existing.state != AppletState.UNLOADED && existing.state != AppletState.ERROR) {
+        if (existing != null && existing.state != AppletState.DESTROYED) {
+            val target = kernel.recordForApplet(id)
+            when (existing.state) {
+                AppletState.HIDDEN_WARM -> target?.let { kernel.dispatchApplet(id, AppletLifecycleEvent.SHOW, "load-visible") }
+                AppletState.PAUSED -> target?.let { kernel.dispatchApplet(id, AppletLifecycleEvent.RESUME, "load-resume") }
+                AppletState.SUSPENDED -> target?.let { kernel.dispatchApplet(id, AppletLifecycleEvent.RESTORE, "load-restore") }
+                else -> Unit
+            }
             return existing
         }
 
         val session = AppletBridgeSession(info.manifest, bridgeDispatcher)
-        session.transition(AppletState.LOADING)
-        session.transition(AppletState.READY)
-
+        session.dispatchLifecycle(AppletLifecycleEvent.LAUNCH)
         sessions[id] = session
+        val target = kernel.registerMaterializing(
+            manifest = info.manifest,
+            instanceId = id,
+            sessionId = session.sessionId
+        )
+        kernel.dispatch(target, AppletLifecycleEvent.READY, "load-ready")
         notifyStateChange()
 
         return session
     }
 
     fun unloadApplet(id: String) {
+        kernel.dispatchApplet(id, AppletLifecycleEvent.DESTROY, "explicit-unload")
+    }
+
+    fun hideApplet(id: String) {
         val session = sessions[id] ?: return
-        session.transition(AppletState.UNLOADED)
-        sessions.remove(id)
-        notifyStateChange()
+        if (session.state == AppletState.VISIBLE) {
+            kernel.dispatchApplet(id, AppletLifecycleEvent.HIDE, "surface-hidden")
+        }
+    }
+
+    fun showApplet(id: String) {
+        val session = sessions[id] ?: return
+        when (session.state) {
+            AppletState.HIDDEN_WARM -> kernel.dispatchApplet(id, AppletLifecycleEvent.SHOW, "surface-visible")
+            AppletState.PAUSED -> kernel.dispatchApplet(id, AppletLifecycleEvent.RESUME, "surface-visible")
+            AppletState.SUSPENDED -> kernel.dispatchApplet(id, AppletLifecycleEvent.RESTORE, "surface-visible")
+            else -> Unit
+        }
+    }
+
+    fun pauseApplet(id: String) {
+        val session = sessions[id] ?: return
+        if (session.state == AppletState.VISIBLE || session.state == AppletState.HIDDEN_WARM) {
+            kernel.dispatchApplet(id, AppletLifecycleEvent.PAUSE, "app-background")
+        }
+    }
+
+    fun resumeApplet(id: String) {
+        val session = sessions[id] ?: return
+        if (session.state == AppletState.PAUSED) {
+            kernel.dispatchApplet(id, AppletLifecycleEvent.RESUME, "app-foreground")
+        }
+    }
+
+    fun runResourceSweep() {
+        kernel.sweep()
+    }
+
+    fun handleMemoryPressure(level: MemoryPressureLevel) {
+        kernel.handleMemoryPressure(level)
+    }
+
+    fun handleTrimMemory(level: Int) {
+        val pressure = when {
+            level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> MemoryPressureLevel.CRITICAL
+            level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE -> MemoryPressureLevel.MODERATE
+            else -> MemoryPressureLevel.LOW
+        }
+        handleMemoryPressure(pressure)
     }
 
     fun getApplet(id: String): AppletBridgeSession? = sessions[id]
@@ -95,7 +177,7 @@ class AppletManager constructor(
 
     fun getLoadedApplets(): List<AppletBridgeSession> {
         return sessions.values.filter {
-            it.state != AppletState.UNLOADED && it.state != AppletState.ERROR
+            it.state != AppletState.DESTROYED
         }
     }
 
@@ -108,9 +190,15 @@ class AppletManager constructor(
     }
 
     fun clear() {
-        sessions.values.forEach { it.transition(AppletState.UNLOADED) }
+        kernel.clear()
         sessions.clear()
         notifyStateChange()
+    }
+
+    private fun destroySessionOnly(id: String) {
+        val session = sessions[id] ?: return
+        session.destroy()
+        sessions.remove(id)
     }
 
     private fun notifyStateChange() {

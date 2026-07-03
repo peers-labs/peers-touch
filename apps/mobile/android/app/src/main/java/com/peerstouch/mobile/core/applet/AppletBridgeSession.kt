@@ -15,20 +15,26 @@ class AppletBridgeSession(
     val loadedAt: Long = System.currentTimeMillis()
     val sessionId: String = "android:${manifest.id}:$loadedAt"
 
-    var state: AppletState = AppletState.REGISTERED
+    var state: AppletState = AppletState.COLD
         private set
 
     private val grantedPermissions: Set<String> = manifest.permissions.toSet()
 
-    fun transition(to: AppletState) {
-        state = to
+    fun dispatchLifecycle(event: AppletLifecycleEvent, resumeTarget: AppletState = AppletState.VISIBLE) {
+        state = state.nextState(event, resumeTarget)
+    }
+
+    fun destroy() {
+        if (state != AppletState.DESTROYED && state != AppletState.COLD) {
+            dispatchLifecycle(AppletLifecycleEvent.DESTROY)
+        }
     }
 
     suspend fun dispatch(module: String, method: String, params: Map<String, Any?>): BridgeResult {
-        if (state == AppletState.UNLOADED) {
+        if (state == AppletState.DESTROYED) {
             return BridgeResult.Error(
                 "INVALID_SESSION",
-                "BridgeSession for applet ${manifest.id} is unloaded"
+                "BridgeSession for applet ${manifest.id} is destroyed"
             )
         }
         val api = "$module.$method"
@@ -42,10 +48,10 @@ class AppletBridgeSession(
     }
 
     suspend fun dispatch(api: String, params: Map<String, Any?>): BridgeResult {
-        if (state == AppletState.UNLOADED) {
+        if (state == AppletState.DESTROYED) {
             return BridgeResult.Error(
                 "INVALID_SESSION",
-                "BridgeSession for applet ${manifest.id} is unloaded"
+                "BridgeSession for applet ${manifest.id} is destroyed"
             )
         }
         val components = api.split(".", limit = 2)
