@@ -24,6 +24,7 @@ Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关
 ## 相关子主题
 
 - [applet-launcher-ux-contract.md](./applet-launcher-ux-contract.md)
+- [applet-runtime-lifecycle.md](./applet-runtime-lifecycle.md) — Desktop applet 运行时生命周期落地（Kernel 单一权威、lease/active-page/pause 事件流、单一 unload 路径、定时器与阈值）
 - [provider-model-target-architecture.md](./provider-model-target-architecture.md)
 - [execution-plans/global-context-kernel-migration.md](./execution-plans/global-context-kernel-migration.md)
 - [execution-plans/20260701-page-runtime-lifecycle-contract.md](./execution-plans/20260701-page-runtime-lifecycle-contract.md)

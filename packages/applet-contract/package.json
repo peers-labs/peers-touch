@@ -14,7 +14,8 @@
     "build": "tsc",
     "schema": "pnpm run build && node ../../tooling/scripts/applet-contract-schema.mjs",
     "dev": "tsc --watch",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "pnpm run build && node tests/lifecycle.test.mjs"
   },
   "publishConfig": {
     "access": "public"
