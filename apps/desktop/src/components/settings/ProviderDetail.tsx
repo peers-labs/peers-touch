@@ -3,13 +3,13 @@ import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import {
   Switch, Typography, theme, message,
-  Spin, Divider, Modal, Form, Slider, Checkbox, AutoComplete, Select, Tabs,
+  Spin, Divider, Modal, Form, Slider, Checkbox, AutoComplete, Select,
 } from 'antd';
 import { Input, Button, Tag, Avatar, Tooltip, InputPassword } from '@lobehub/ui';
 import {
   CheckCircle2, Settings2, ExternalLink, Lock, Trash2, Plus,
   Brain, X, RefreshCw, Wrench, Eye, Sparkles, Pencil,
-  MessageSquare, Image, Zap, Mic, AudioLines, Grid3X3, Globe, Video, Search,
+  Image, Globe, Video, Search,
 } from 'lucide-react';
 import { useProviderStore } from '../../store/provider';
 import { ProviderIcon } from './ProviderIcon';
@@ -108,7 +108,6 @@ export function ProviderDetail() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
   const [fetching, setFetching] = useState(false);
-  const [modelTypeTab, setModelTypeTab] = useState<string>('all');
   const [modelSearchKeyword, setModelSearchKeyword] = useState('');
   const [editModel, setEditModel] = useState<{ id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean } | null>(null);
   const { token } = theme.useToken();
@@ -166,25 +165,14 @@ export function ProviderDetail() {
   );
 
   const allModels = detail?.models || [];
-  const modelTypeCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: allModels.length };
-    for (const m of allModels) {
-      const t = (m.type || 'chat').toLowerCase();
-      counts[t] = (counts[t] || 0) + 1;
-    }
-    return counts;
-  }, [allModels]);
   const filteredModels = useMemo(() => {
-    let list = modelTypeTab === 'all' ? allModels : allModels.filter((m) => (m.type || 'chat').toLowerCase() === modelTypeTab);
     const kw = modelSearchKeyword.trim().toLowerCase();
-    if (kw) {
-      list = list.filter((m) =>
-        (m.id || '').toLowerCase().includes(kw) ||
-        (m.display_name || '').toLowerCase().includes(kw),
-      );
-    }
-    return list;
-  }, [allModels, modelTypeTab, modelSearchKeyword]);
+    if (!kw) return allModels;
+    return allModels.filter((m) =>
+      (m.id || '').toLowerCase().includes(kw) ||
+      (m.display_name || '').toLowerCase().includes(kw),
+    );
+  }, [allModels, modelSearchKeyword]);
 
   if (loading && !detail) {
     return (
@@ -596,7 +584,6 @@ export function ProviderDetail() {
         </Flexbox>
 
         {allModels.length > 0 && (
-          <>
           <Input
             size="small"
             placeholder={t('provider.model.searchModels')}
@@ -606,22 +593,6 @@ export function ProviderDetail() {
             allowClear
             style={{ marginBottom: 8, maxWidth: 240, fontSize: 12 }}
           />
-          <Tabs
-            size="small"
-            activeKey={modelTypeTab}
-            onChange={setModelTypeTab}
-            style={{ flexShrink: 0 }}
-            items={[
-              { key: 'all', label: <span><Grid3X3 size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.all', { count: modelTypeCounts.all })}</span> },
-              { key: 'chat', label: <span><MessageSquare size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.chat', { count: modelTypeCounts.chat ?? 0 })}</span> },
-              { key: 'image', label: <span><Image size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.image', { count: modelTypeCounts.image ?? 0 })}</span> },
-              { key: 'video', label: <span><Video size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.video', { count: modelTypeCounts.video ?? 0 })}</span> },
-              { key: 'embedding', label: <span><Zap size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.embedding', { count: modelTypeCounts.embedding ?? 0 })}</span> },
-              { key: 'stt', label: <span><Mic size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.asr', { count: modelTypeCounts.stt ?? 0 })}</span> },
-              { key: 'tts', label: <span><AudioLines size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.tts', { count: modelTypeCounts.tts ?? 0 })}</span> },
-            ]}
-          />
-          </>
         )}
 
         <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
