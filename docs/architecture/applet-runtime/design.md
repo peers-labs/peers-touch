@@ -4,7 +4,7 @@
 > **Version**: v1.3
 > **Created**: 2026-05-19 | **Updated**: 2026-07-02
 > **Owner**: Architecture Team
-> **Module**: `apps/desktop/src/applet/`, `apps/mobile/android/...core/applet/`, `apps/mobile/ios/.../Core/Applet/`, `packages/applet-sdk/`, `packages/applet-contract/`
+> **Module**: `apps/desktop/src/applet/`, `apps/mobile/src-tauri/` native plugin targets, `packages/applet-sdk/`, `packages/applet-contract/`
 
 ---
 
@@ -375,8 +375,8 @@ Capability Gateway → permission check → execute → return result
 # Desktop full check
 cd apps/desktop && pnpm run check && pnpm run build
 
-# Android
-cd apps/mobile/android && ./gradlew build
+# Mobile Tauri
+pnpm mobile:check
 
 # SDK
 cd packages/applet-sdk && npx tsc --noEmit
