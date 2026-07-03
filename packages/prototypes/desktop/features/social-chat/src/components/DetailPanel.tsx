@@ -19,11 +19,15 @@ import {
   Volume2,
   UserCog,
   Upload,
+  Clock3,
+  RotateCcw,
+  AlertTriangle,
   Search,
+  UserPlus,
 } from 'lucide-react';
 import { T } from '../theme';
 import { Avatar } from './Avatar';
-import { USERS, type MockConversation, type MockGroupMember, type MockGroupRole } from '../mock';
+import { USERS, type MockConversation, type MockGroupMember, type MockGroupRole, type MockUser } from '../mock';
 
 interface DetailPanelProps {
   conversation: MockConversation;
@@ -32,6 +36,7 @@ interface DetailPanelProps {
   onClose: () => void;
   onDeleteConversation: (conversationId: string) => void;
   onClearHistory: (conversationId: string) => void;
+  onRestoreHistory: (conversationId: string) => void;
   onRemoveMember: (conversationId: string, userId: string) => void;
   onRenameGroup: (conversationId: string, name: string) => void;
   onSetMemberRole: (conversationId: string, userId: string, role: MockGroupRole) => void;
@@ -154,6 +159,16 @@ function permissionSummary(role: MockGroupRole) {
   return 'Member can view group info, set personal chat background, and leave the group. Member cannot edit group profile or manage other members.';
 }
 
+const HISTORY_RESTORE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function formatRemaining(ms: number) {
+  const totalMinutes = Math.max(1, Math.ceil(ms / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 function ConfirmSheet({
   title,
   body,
@@ -242,6 +257,7 @@ export function DetailPanel({
   onClose,
   onDeleteConversation,
   onClearHistory,
+  onRestoreHistory,
   onRemoveMember,
   onRenameGroup,
   onSetMemberRole,
@@ -262,6 +278,8 @@ export function DetailPanel({
   }>(null);
   const [backgroundFileName, setBackgroundFileName] = useState('');
   const [avatarFileName, setAvatarFileName] = useState('');
+  const [now, setNow] = useState(Date.now());
+  const [memberSearch, setMemberSearch] = useState('');
 
   useEffect(() => {
     setMuted(conversation.muted);
@@ -272,6 +290,8 @@ export function DetailPanel({
     setConfirmAction(null);
     setBackgroundFileName('');
     setAvatarFileName('');
+    setNow(Date.now());
+    setMemberSearch('');
   }, [conversation.id, conversation.muted, conversation.name, conversation.pinned]);
 
   const isGroup = conversation.type === 'group';
@@ -281,12 +301,34 @@ export function DetailPanel({
   const isAdmin = currentRole === 'admin';
   const canManageMembers = isOwner || isAdmin;
   const canEditGroupProfile = isOwner || isAdmin;
+  const historyClearedAt = conversation.historyClearedAt ?? 0;
+  const historyRestoreExpiresAt = historyClearedAt + HISTORY_RESTORE_WINDOW_MS;
+  const canRestoreHistory = historyClearedAt > 0 && now < historyRestoreExpiresAt;
+  const historyRestoreExpired = historyClearedAt > 0 && !canRestoreHistory;
+  const historyRestoreRemaining = canRestoreHistory
+    ? formatRemaining(historyRestoreExpiresAt - now)
+    : '';
   const members = useMemo(
     () => groupMembers
       .map((member) => ({ member, user: USERS[member.userId] }))
-      .filter((entry) => Boolean(entry.user)),
+      .filter((entry): entry is { member: MockGroupMember; user: MockUser } => Boolean(entry.user)),
     [groupMembers],
   );
+  const filteredMembers = useMemo(() => {
+    const query = memberSearch.trim().toLowerCase();
+    if (!query) return members;
+    return members.filter(({ member, user }) =>
+      user.name.toLowerCase().includes(query)
+      || member.userId.toLowerCase().includes(query)
+      || member.role.toLowerCase().includes(query),
+    );
+  }, [memberSearch, members]);
+
+  useEffect(() => {
+    if (!canRestoreHistory) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [canRestoreHistory, historyRestoreExpiresAt]);
 
   const canManageTarget = (target: MockGroupMember) => {
     if (target.userId === currentUserId) return false;
@@ -532,6 +574,9 @@ export function DetailPanel({
                 {/* Add member button */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48 }}>
                   <div
+                    onClick={() => {
+                      if (canManageMembers) setMemberManagerOpen(true);
+                    }}
                     style={{
                       width: 36, height: 36, borderRadius: T.radiusFull,
                       border: `1.5px dashed ${canManageMembers ? T.textQuaternary : T.border}`,
@@ -618,19 +663,71 @@ export function DetailPanel({
         )}
 
         {/* === Danger Section === */}
-        <DetailSection>
-          <DetailActionRow
-            icon={<Trash2 size={18} />}
-            label="Clear history"
-            danger
-            onClick={() => requestConfirm({
-              title: 'Clear visible history?',
-              body: 'This prototype hides visible messages in the current conversation. It does not represent deleting peer-side messages.',
-              confirmLabel: 'Clear',
-              danger: true,
-              run: () => onClearHistory(conversation.id),
-            })}
-          />
+        <DetailSection title="Danger zone">
+          <div style={{ padding: T.space4, borderBottom: `1px solid ${T.borderSubtle}` }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: T.space3 }}>
+              <span style={{ display: 'flex', color: historyClearedAt ? T.warning : T.textDanger, marginTop: 2 }}>
+                {historyClearedAt ? <Clock3 size={18} /> : <Trash2 size={18} />}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: T.fontBase, fontWeight: 700, color: T.text }}>
+                  {historyClearedAt ? 'History hidden on this device' : 'Clear visible history'}
+                </div>
+                <div style={{ fontSize: T.fontSm, color: T.textSecondary, lineHeight: 1.5, marginTop: T.space1 }}>
+                  {canRestoreHistory
+                    ? `You can restore this conversation for ${historyRestoreRemaining}. After 24h the restore action is hidden.`
+                    : historyRestoreExpired
+                      ? 'The 24h restore window has ended. The restore action is now hidden.'
+                      : 'Hides messages before this moment for you. Peer devices keep their own history. You can restore for 24h.'}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: T.space2, marginTop: T.space3 }}>
+              <button
+                onClick={() => requestConfirm({
+                  title: 'Clear visible history?',
+                  body: 'Messages before this moment will be hidden from your local conversation view. You can restore within 24 hours; after that the restore button disappears.',
+                  confirmLabel: 'Clear history',
+                  danger: true,
+                  run: () => onClearHistory(conversation.id),
+                })}
+                style={historyActionButtonStyle(true)}
+              >
+                <Trash2 size={13} />
+                Clear
+              </button>
+              {canRestoreHistory && (
+                <button
+                  onClick={() => requestConfirm({
+                    title: 'Restore hidden history?',
+                    body: `This will show hidden messages again. Restore window remaining: ${historyRestoreRemaining}.`,
+                    confirmLabel: 'Restore',
+                    run: () => onRestoreHistory(conversation.id),
+                  })}
+                  style={historyActionButtonStyle()}
+                >
+                  <RotateCcw size={13} />
+                  Restore
+                </button>
+              )}
+              {historyRestoreExpired && (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: T.space1,
+                    height: 30,
+                    color: T.textTertiary,
+                    fontSize: T.fontXs,
+                    fontWeight: 700,
+                  }}
+                >
+                  <AlertTriangle size={13} />
+                  Restore expired
+                </span>
+              )}
+            </div>
+          </div>
           {isGroup ? (
             <DetailActionRow
               icon={isOwner ? <Trash2 size={18} /> : <LogOut size={18} />}
@@ -651,7 +748,13 @@ export function DetailPanel({
               icon={<Trash2 size={18} />}
               label="Delete conversation"
               danger
-              onClick={() => {}}
+              onClick={() => requestConfirm({
+                title: 'Delete this conversation?',
+                body: 'The conversation will be removed from the list. Use Clear history when you only want to hide messages temporarily.',
+                confirmLabel: 'Delete',
+                danger: true,
+                run: () => onDeleteConversation(conversation.id),
+              })}
             />
           )}
         </DetailSection>
@@ -683,23 +786,115 @@ export function DetailPanel({
                 {roleLabel(currentRole)} permissions · {members.length} members
               </div>
             </div>
-            <button
-              onClick={() => setMemberManagerOpen(false)}
-              style={{
-                width: 28,
-                height: 28,
-                border: 'none',
-                borderRadius: T.radiusMd,
-                background: 'transparent',
-                cursor: 'pointer',
-                color: T.textSecondary,
-              }}
-            >
-              <X size={18} />
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: T.space2 }}>
+              {canManageMembers && (
+                <button
+                  onClick={() => requestConfirm({
+                    title: 'Invite members?',
+                    body: 'Production should open a contact picker, then show selected people and role impact before sending invites.',
+                    confirmLabel: 'Open picker',
+                    run: () => {},
+                  })}
+                  style={managerButtonStyle()}
+                >
+                  <UserPlus size={13} />
+                  Invite
+                </button>
+              )}
+              <button
+                onClick={() => setMemberManagerOpen(false)}
+                style={{
+                  width: 28,
+                  height: 28,
+                  border: 'none',
+                  borderRadius: T.radiusMd,
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  color: T.textSecondary,
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
           <div style={{ padding: T.space4, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: T.space2 }}>
-            {members.map(({ member, user }) => {
+            <div
+              style={{
+                border: `1px solid ${T.borderSubtle}`,
+                borderRadius: T.radiusLg,
+                background: T.bgSubtle,
+                padding: T.space3,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: T.space2, marginBottom: T.space2 }}>
+                <span
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: T.radiusFull,
+                    background: canManageMembers ? 'rgba(107,91,214,0.12)' : T.bgMuted,
+                    color: roleColor(currentRole),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  {isOwner ? <Crown size={13} /> : isAdmin ? <ShieldCheck size={13} /> : <Users size={13} />}
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: T.fontSm, fontWeight: 800, color: T.text }}>
+                    {canManageMembers ? 'Management mode' : 'View-only mode'}
+                  </div>
+                  <div style={{ fontSize: T.fontXs, color: T.textSecondary, lineHeight: 1.45 }}>
+                    {permissionSummary(currentRole)}
+                  </div>
+                </div>
+              </div>
+              <div
+                style={{
+                  height: 34,
+                  borderRadius: T.radiusMd,
+                  background: T.bg,
+                  border: `1px solid ${T.border}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: T.space2,
+                  padding: `0 ${T.space3}px`,
+                  color: T.textTertiary,
+                }}
+              >
+                <Search size={14} />
+                <input
+                  value={memberSearch}
+                  onChange={(e) => setMemberSearch(e.target.value)}
+                  placeholder="Search members, roles, or ids"
+                  style={{
+                    flex: 1,
+                    border: 'none',
+                    background: 'transparent',
+                    outline: 'none',
+                    color: T.text,
+                    fontSize: T.fontSm,
+                  }}
+                />
+              </div>
+            </div>
+            {filteredMembers.length === 0 && (
+              <div
+                style={{
+                  border: `1px dashed ${T.border}`,
+                  borderRadius: T.radiusLg,
+                  padding: T.space5,
+                  color: T.textTertiary,
+                  textAlign: 'center',
+                  fontSize: T.fontSm,
+                }}
+              >
+                No members match "{memberSearch}".
+              </div>
+            )}
+            {filteredMembers.map(({ member, user }) => {
               const targetManageable = canManageTarget(member);
               return (
                 <div
@@ -823,5 +1018,22 @@ function managerButtonStyle(danger?: boolean): React.CSSProperties {
     padding: `0 ${T.space2}px`,
     fontSize: T.fontXs,
     fontWeight: 700,
+  };
+}
+
+function historyActionButtonStyle(danger?: boolean): React.CSSProperties {
+  return {
+    height: 30,
+    border: `1px solid ${danger ? 'rgba(229,62,62,0.22)' : T.border}`,
+    borderRadius: T.radiusMd,
+    background: danger ? T.dangerBg : T.bg,
+    color: danger ? T.textDanger : T.text,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: T.space1,
+    padding: `0 ${T.space3}px`,
+    fontSize: T.fontXs,
+    fontWeight: 800,
   };
 }

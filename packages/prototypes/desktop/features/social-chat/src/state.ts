@@ -62,18 +62,16 @@ export function useChatState() {
     if (activeId === id) setActiveId(null);
   }, [activeId]);
 
-  const clearHistory = useCallback((id: string) => {
-    setMessagesByConversation((prev) => ({
-      ...prev,
-      [id]: [{
-        id: `system-cleared-${Date.now()}`,
-        senderId: 'system',
-        content: 'Visible history was cleared in this prototype. Peer-side messages are not deleted.',
-        timestamp: Date.now(),
-        type: 'system',
-      }],
-    }));
-    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, lastMessage: 'History cleared', unread: 0 } : c)));
+  const clearConversationHistory = useCallback((id: string) => {
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, historyClearedAt: Date.now() } : c)),
+    );
+  }, []);
+
+  const restoreConversationHistory = useCallback((id: string) => {
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, historyClearedAt: undefined } : c)),
+    );
   }, []);
 
   const sendMessage = useCallback((id: string, content: string) => {
@@ -167,7 +165,8 @@ export function useChatState() {
     markAsRead,
     hideConversation,
     deleteConversation,
-    clearHistory,
+    clearConversationHistory,
+    restoreConversationHistory,
     sendMessage,
     renameGroup,
     removeGroupMember,

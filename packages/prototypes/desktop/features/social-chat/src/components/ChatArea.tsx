@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertCircle,
   Check,
   CheckCheck,
+  Clock3,
   FileText,
   Image as ImageIcon,
   Lock,
   MoreHorizontal,
   Paperclip,
   Phone,
+  RotateCcw,
   Search,
   Send,
   ShieldCheck,
@@ -24,8 +26,11 @@ interface ChatAreaProps {
   messages: MockMessage[];
   onToggleDetail: () => void;
   onSendMessage: (conversationId: string, content: string) => void;
+  onRestoreHistory: (conversationId: string) => void;
   compact?: boolean;
 }
+
+const HISTORY_RESTORE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function formatMessageTime(timestamp: number): string {
   const d = new Date(timestamp);
@@ -183,8 +188,44 @@ function trustColor(tone: MockConversation['trustTone']) {
   return T.primary;
 }
 
-export function ChatArea({ conversation, messages, onToggleDetail, onSendMessage, compact = false }: ChatAreaProps) {
+function formatRemaining(ms: number) {
+  const totalMinutes = Math.max(1, Math.ceil(ms / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+export function ChatArea({
+  conversation,
+  messages,
+  onToggleDetail,
+  onSendMessage,
+  onRestoreHistory,
+  compact = false,
+}: ChatAreaProps) {
   const [inputValue, setInputValue] = useState('');
+  const [now, setNow] = useState(Date.now());
+  const historyClearedAt = conversation?.historyClearedAt ?? 0;
+  const historyRestoreExpiresAt = historyClearedAt + HISTORY_RESTORE_WINDOW_MS;
+  const canRestoreHistory = historyClearedAt > 0 && now < historyRestoreExpiresAt;
+  const historyRestoreExpired = historyClearedAt > 0 && !canRestoreHistory;
+  const historyRestoreRemaining = canRestoreHistory
+    ? formatRemaining(historyRestoreExpiresAt - now)
+    : '';
+  const visibleMessages = historyClearedAt > 0
+    ? messages.filter((message) => message.timestamp > historyClearedAt)
+    : messages;
+
+  useEffect(() => {
+    setNow(Date.now());
+  }, [conversation?.id, conversation?.historyClearedAt]);
+
+  useEffect(() => {
+    if (!canRestoreHistory) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [canRestoreHistory, historyRestoreExpiresAt]);
 
   if (!conversation) {
     return (
@@ -314,7 +355,75 @@ export function ChatArea({ conversation, messages, onToggleDetail, onSendMessage
             Prototype path: list / conversation / details / action surface
           </span>
         </div>}
-        {messages.map((msg) => (
+        {historyClearedAt > 0 && (
+          <div
+            style={{
+              alignSelf: 'center',
+              maxWidth: 420,
+              border: `1px solid ${T.borderSubtle}`,
+              borderRadius: T.radiusLg,
+              background: T.bgSubtle,
+              padding: `${T.space3}px ${T.space4}px`,
+              display: 'flex',
+              gap: T.space3,
+              color: T.textSecondary,
+              fontSize: T.fontSm,
+              lineHeight: 1.5,
+            }}
+          >
+            <Clock3 size={18} style={{ flexShrink: 0, color: canRestoreHistory ? T.warning : T.textTertiary }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ color: T.text, fontWeight: 700, marginBottom: 2 }}>
+                History hidden on this device
+              </div>
+              <div>
+                {canRestoreHistory
+                  ? `Messages before this point are hidden. Restore is available for ${historyRestoreRemaining}.`
+                  : historyRestoreExpired
+                    ? 'The 24h restore window has ended. New messages will appear here.'
+                    : 'Messages before this point are hidden.'}
+              </div>
+              {canRestoreHistory && (
+                <button
+                  onClick={() => onRestoreHistory(conversation.id)}
+                  style={{
+                    marginTop: T.space2,
+                    height: 28,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: T.radiusMd,
+                    background: T.bg,
+                    color: T.text,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: T.space1,
+                    padding: `0 ${T.space2}px`,
+                    cursor: 'pointer',
+                    fontSize: T.fontXs,
+                    fontWeight: 800,
+                  }}
+                >
+                  <RotateCcw size={13} />
+                  Restore history
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {visibleMessages.length === 0 && (
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: T.textTertiary,
+              fontSize: T.fontBase,
+            }}
+          >
+            {historyClearedAt > 0 ? 'No visible messages after clearing history.' : 'No messages yet.'}
+          </div>
+        )}
+        {visibleMessages.map((msg) => (
           <MessageBubble key={msg.id} message={msg} isOwn={msg.senderId === 'user-self'} compact={compact} />
         ))}
       </div>

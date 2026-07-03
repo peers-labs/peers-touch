@@ -32,6 +32,7 @@ export interface MockConversation {
   unread: number;
   muted: boolean;
   pinned: boolean;
+  historyClearedAt?: number;
   online?: boolean;
   memberCount?: number;
   trustLabel: string;
@@ -113,6 +114,7 @@ export const CONVERSATIONS: MockConversation[] = [
     unread: 8,
     muted: true,
     pinned: false,
+    historyClearedAt: Date.now() - 3_600_000,
     memberCount: 4,
     trustLabel: 'Admin controls limited',
     trustTone: 'local',
@@ -146,6 +148,7 @@ export const CONVERSATIONS: MockConversation[] = [
     unread: 0,
     muted: false,
     pinned: false,
+    historyClearedAt: Date.now() - 25 * 3_600_000,
     memberCount: 7,
     trustLabel: 'Member view only',
     trustTone: 'remote',

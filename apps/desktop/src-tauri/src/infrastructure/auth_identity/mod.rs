@@ -1,5 +1,6 @@
 use crate::domain::pin_lock::{self, EncryptedSession, PinProtection};
 use crate::infrastructure::avatar_cache;
+use crate::infrastructure::local_scope;
 use crate::infrastructure::storage::{self, StorageKind};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -79,7 +80,10 @@ pub fn upsert_oauth(
     profile_url: Option<&str>,
 ) -> Result<String, String> {
     let mut state = read_state()?;
-    let account_id = format!("{provider}:{provider_user_id}");
+    let station_scope = local_scope::active_station_scope();
+    let provider_scope = storage::resolve_user_scope(Some(provider));
+    let provider_user_scope = storage::resolve_user_scope(Some(provider_user_id));
+    let account_id = format!("station:{station_scope}:{provider_scope}:{provider_user_scope}");
     let now = unix_to_rfc3339(chrono_like_now_unix());
     if let Some(existing) = state.accounts.iter_mut().find(|item| item.id == account_id) {
         existing.name = name.to_string();
@@ -136,7 +140,7 @@ fn unix_to_rfc3339(sec: i64) -> String {
 
 /// Persist a password-login identity into `identities.json`, mirroring what
 /// `upsert_oauth` does for OAuth providers.  Sets the account as active and
-/// returns the canonical `account_id` (`password:<actor_id>`).
+/// returns the canonical station-scoped `account_id`.
 pub fn upsert_password(
     actor_id: &str,
     name: &str,
@@ -144,7 +148,7 @@ pub fn upsert_password(
     avatar_url: Option<&str>,
 ) -> Result<String, String> {
     let mut state = read_state()?;
-    let account_id = format!("password:{}", actor_id);
+    let account_id = local_scope::account_id_for_password_actor(actor_id);
     let now = unix_to_rfc3339(chrono_like_now_unix());
     if let Some(existing) = state.accounts.iter_mut().find(|item| item.id == account_id) {
         if !name.is_empty() {
@@ -180,25 +184,21 @@ pub fn upsert_password(
 }
 
 /// Look up an account profile by `actor_id`.
-/// Search order: password account (`password:<actor_id>`) → active account → first account.
+/// Search order: station-scoped password account → active matching account.
 pub fn find_profile_by_actor_id(actor_id: &str) -> Option<AccountIdentity> {
     let state = read_state().ok()?;
-    // First try password account
-    if let Some(acc) = state
-        .accounts
-        .iter()
-        .find(|a| a.id == format!("password:{}", actor_id))
-    {
+    let password_account_id = local_scope::account_id_for_password_actor(actor_id);
+    if let Some(acc) = state.accounts.iter().find(|a| a.id == password_account_id) {
         return Some(acc.clone());
     }
-    // Then try active account
     if let Some(active_id) = &state.active_account_id {
         if let Some(acc) = state.accounts.iter().find(|a| &a.id == active_id) {
-            return Some(acc.clone());
+            if acc.provider_user_id == actor_id {
+                return Some(acc.clone());
+            }
         }
     }
-    // Fallback to first account
-    state.accounts.first().cloned()
+    None
 }
 
 /// Resolve the canonical `account_id` (e.g. `password:123`, `github:456`) for a
@@ -207,14 +207,18 @@ pub fn find_profile_by_actor_id(actor_id: &str) -> Option<AccountIdentity> {
 /// `active_account_id` pointer.
 ///
 /// Search order:
-/// 1. The currently-active account, if its `provider_user_id` matches.
-/// 2. Any account whose `provider_user_id` matches.
-/// 3. `None` if no record holds this actor.
+/// 1. The station-scoped password account.
+/// 2. The currently-active account, if its `provider_user_id` matches.
+/// 3. `None` if no active-station record holds this actor.
 pub fn find_account_id_by_actor_id(actor_id: &str) -> Option<String> {
     if actor_id.trim().is_empty() {
         return None;
     }
     let state = read_state().ok()?;
+    let password_account_id = local_scope::account_id_for_password_actor(actor_id);
+    if state.accounts.iter().any(|a| a.id == password_account_id) {
+        return Some(password_account_id);
+    }
 
     if let Some(active_id) = state.active_account_id.as_deref() {
         if let Some(acc) = state.accounts.iter().find(|a| a.id == active_id) {
@@ -223,12 +227,7 @@ pub fn find_account_id_by_actor_id(actor_id: &str) -> Option<String> {
             }
         }
     }
-
-    state
-        .accounts
-        .iter()
-        .find(|a| a.provider_user_id == actor_id)
-        .map(|a| a.id.clone())
+    None
 }
 
 /// Update the avatar URL for the currently active account identity.

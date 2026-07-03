@@ -7,6 +7,8 @@
 
 ---
 
+> **Boundary update (2026-07-02)**: 本文仍沿用早期“机制 / Provider / 状态机”映射语言。当前边界是：Atelier applet 只拥有 UI、projection runtime、task organizer plugin 和 human-in-loop 回写；所有多 Agent 编排、Provider 调度、Gate 执行、Artifact 生产、Trace/Checkpoint/Resume 均由 Station / Agent orchestration 提供真源。表格中的“底层动作 / Provider / 状态转移”应理解为 applet 需要消费或触发的后端 projection/capability，而不是 applet 内部实现。
+
 ## 0. 这份文档回答什么
 
 > 「可运行原型里**每一个用户能看见、能点的元素**，点下去底层到底发生了什么？读写哪个数据契约？引起哪个状态转移？走哪个接口 / Provider？现在缺什么？」
