@@ -4,6 +4,9 @@
 > **Version**: v0.1
 > **Created**: 2026-06-22 | **Updated**: 2026-06-24
 > **Owner**: Architecture Team
+> **Current command note**: the parameterized command in the original plan has
+> been superseded. Use `make run-prototype`; switch desktop / mobile / dashboard
+> inside Prototype Portal.
 
 ---
 
@@ -204,7 +207,7 @@ type PrototypeWorktreeTarget = {
 
 配置方式：
 
-- 当前 worktree 由 `make run-prototype <site>` 自动注入 `VITE_PROTOTYPE_BRANCH` 与 `VITE_PROTOTYPE_WORKTREE_PATH`。
+- 当前 worktree 由 `make run-prototype` 自动注入 `VITE_PROTOTYPE_BRANCH` 与 `VITE_PROTOTYPE_WORKTREE_PATH`。
 - 外部 worktree 通过 `VITE_PROTOTYPE_WORKTREES` 注入 JSON 数组。
 - Portal 顶栏提供 Worktree/Branch selector；选择 `current` 时使用当前 worktree 的 manifest 直接 render，选择外部 target 时使用对应 `sites[site]` URL 的 iframe。
 
@@ -239,9 +242,7 @@ Preview
 新增或调整：
 
 ```bash
-make run-prototype desktop
-make run-prototype mobile
-make run-prototype dashboard
+make run-prototype
 ```
 
 只通过 Makefile 启动原型服务。用户和 Agent 不直接运行原型工程的原生命令。
@@ -255,7 +256,7 @@ make prototypes-worktree
 
 ### 6.2 原生命令约束
 
-`pnpm dev`、Vite dev server 等原生命令只允许作为 Makefile 内部实现细节。正式入口统一是 `make run-prototype <desktop|mobile|dashboard>`，避免不同 Agent/开发者绕开统一端口、registry、worktree 检测和启动约束。
+`pnpm dev`、Vite dev server 等原生命令只允许作为 Makefile 内部实现细节。正式入口统一是 `make run-prototype`，并在 Prototype Portal 内切换 `desktop` / `mobile` / `dashboard`，避免不同 Agent/开发者绕开统一端口、registry、worktree 检测和启动约束。
 
 ---
 
@@ -277,8 +278,8 @@ make prototypes-worktree
 
 | Skill | 变更 |
 |-------|------|
-| `prototype-design` | 先找 Prototype Portal 和 `packages/prototypes/README.md`，再找模块入口；新原型必须提供 manifest |
-| `plan-and-document` | 无需改主流程，但示例可补充 prototype portal 场景 |
+| `pt-prototype-design` | 先找 Prototype Portal 和 `packages/prototypes/README.md`，再找模块入口；新原型必须提供 manifest |
+| `pt-plan-and-document` | 无需改主流程，但示例可补充 prototype portal 场景 |
 
 ---
 
@@ -307,9 +308,8 @@ make prototypes-worktree
 
 验收：
 
-- `make run-prototype desktop` 可启动 desktop 原型站点。
-- `make run-prototype mobile` 可启动 mobile 原型站点（可为空态）。
-- `make run-prototype dashboard` 可启动 dashboard 原型站点（可为空态）。
+- `make run-prototype` 可启动统一 Prototype Portal。
+- Portal 内可切换 desktop / mobile / dashboard 原型站点（站点可为空态）。
 - 浏览器可看到站点导航和原型列表。
 
 ### Phase 3: 现有原型接入 manifest
@@ -356,7 +356,7 @@ make prototypes-worktree
 
 目标：
 
-- 更新 `prototype-design` skill。
+- 更新 `pt-prototype-design` skill。
 - 更新 `make skills` 后确保 IDE 能加载新版 skill。
 - 更新原型总账和模块入口的反链。
 
@@ -381,9 +381,8 @@ make prototypes-worktree
 
 ## 10. 验证方式
 
-- `make run-prototype desktop` 可启动 desktop 原型站点。
-- `make run-prototype mobile` 可启动 mobile 原型站点。
-- `make run-prototype dashboard` 可启动 dashboard 原型站点。
+- `make run-prototype` 可启动统一 Prototype Portal。
+- Portal 内 desktop / mobile / dashboard 三站点切换正常。
 - Portal 能列出当前 worktree 的 manifest 原型。
 - 三站点切换正常。
 - 至少一个原型可以预览。
@@ -397,8 +396,8 @@ make prototypes-worktree
 | Phase | 状态 | 备注 |
 |-------|------|------|
 | Phase 1 | done | 执行计划、总账入口、工作区 README 已补齐 |
-| Phase 2 | done | 最小 Portal 已可通过 `make run-prototype desktop/mobile/dashboard` 运行 |
+| Phase 2 | done | 最小 Portal 已可通过 `make run-prototype` 运行，并在 Portal 内切换站点 |
 | Phase 3 | done | `desktop`、`atelier`、`call`、`social-chat` 已接入 manifest，Portal 已自动发现 |
 | Phase 4 | done | `mobile-chat` 与 `station-dashboard` 已补齐，Portal Live Preview 已基于 manifest 渲染当前站点默认原型 |
 | Phase 5 | done | 已支持 worktree registry、Worktree/Branch selector、远端 iframe preview；外部 target 通过 `VITE_PROTOTYPE_WORKTREES` 注入 |
-| Phase 6 | done | prototype-design skill 已同步 worktree registry 规则，各入口文档已更新 |
+| Phase 6 | done | pt-prototype-design skill 已同步 worktree registry 规则，各入口文档已更新 |
