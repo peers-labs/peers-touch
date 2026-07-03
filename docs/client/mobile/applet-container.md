@@ -308,15 +308,16 @@ Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿�
 - Bridge response/event envelope 序列化/反序列化使用平台 JSON 能力，错误码必须使用 canonical applet error code。
 - Bridge 消息通过 Lynx SDK 的 `evaluateJavascript` 从宿主推送到 Applet。
 - 宿主侧维护 `Map<String, AppletBridgeSession>` 管理各 Applet 的 Bridge 会话。
-- `AppletBridgeSessionContractTest` 必须覆盖 canonical manifest 解析、`network.request` service 声明约束、完整 capability method 权限校验、canonical error code、unloaded-session rejection；`applet-mobile-native-manifest-gate` 在检测到 Android SDK 时执行该 JVM 单测。
-- `AppletContainerView` 加载前必须扫描本地 applet bundle，并把 `load.android.entry` 解析为 app sandbox 中的实际 bundle URL，而不是只把相对 entry 传给 Lynx。
-- `pnpm applet:android-lynx-runtime-e2e` 是 Android runtime release evidence 入口；它必须通过 `adb` 在真实 emulator/device 中安装 APK、staging applet 包、用 intent extra 启动 applet route，并且只有在 `AppletBridgeNativeModule` 观察到 SDK `storage.set/get` canonical response marker 后才能写出 release evidence。
+- Android runtime release evidence 入口必须在 Tauri Android native plugin 落地后重建；旧 `apps/mobile/android` standalone APK 已删除，不能再作为验收宿主。
+- Tauri plugin 宿主加载前必须扫描本地 applet bundle，并把 `load.android.entry` 解析为 app sandbox 中的实际 bundle URL，而不是只把相对 entry 传给 Lynx。
+- 最终 Android E2E 必须通过 Tauri Mobile app/plugin 在真实 emulator/device 中打开 applet route，并且只有在 `AppletBridgeNativeModule` 观察到 SDK canonical marker 后才能写出 release evidence。
 
 ### 7.4 iOS 实现要点
 - Bridge response/event envelope 序列化/反序列化使用 `Codable` / dictionary bridge，错误码必须使用 canonical applet error code。
 - Bridge 消息通过 Lynx SDK 的 JS 执行接口从宿主推送到 Applet。
 - 宿主侧维护 `[String: AppletBridgeSession]` 字典管理各 Applet 的 Bridge 会话。
-- `pnpm applet:ios-lynx-runtime-e2e` 是 iOS runtime release evidence 入口；它必须使用 native Lynx bundle，不能使用 `environments.web` Rspeedy 产物，并且只有在 Simulator 中观察到 SDK `storage.set/get` canonical response marker 后才能写出 release evidence。
+- iOS runtime release evidence 入口必须在 Tauri iOS native plugin 落地后重建；旧 `apps/mobile/ios/PeersTouch` standalone App 已删除，不能再作为验收宿主。
+- 最终 iOS E2E 必须通过 Tauri Mobile app/plugin 在 Simulator/device 中打开 applet route，并且只有在 `AppletBridgeNativeModule` 观察到 SDK canonical marker 后才能写出 release evidence。
 
 ---
 
