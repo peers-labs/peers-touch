@@ -4,7 +4,7 @@
 // `TypedHandler` protobuf mode requires `proto.Message` request types. Keep JSON until the
 // subserver handler and proto definitions are aligned with the desktop contract.
 // TODO(agent): align `agent.proto` + Station `HandleExecuteTurn` with the full turn payload, then use `request_proto`.
-use crate::application::{agent_workspace, mcp, tools};
+use crate::application::{agent_workspace, chat, mcp, tools};
 use crate::contracts::{
     AgentExecuteTurnInput, AgentLocalToolRequestInput, AgentToolApprovalDecisionInput,
     AgentTurnTraceGetInput, AgentTurnTraceListInput, McpExecuteToolInput, StubPayload,
@@ -130,13 +130,17 @@ struct AgentTurnStreamEventPayload {
     data: Value,
 }
 
-pub fn agent_execute_turn(mut input: AgentExecuteTurnInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_execute_turn(
+    mut input: AgentExecuteTurnInput,
+    token: &str,
+    actor_id: &str,
+) -> AppResult<StubPayload> {
     if let Err(error) = apply_resolved_agent_workspace(&mut input) {
         return AppResult::fail(ErrorCode::InternalError, error, None);
     }
     let cli_command = input.cli_command.clone().unwrap_or_default();
     if !cli_command.trim().is_empty() {
-        return execute_cli_turn(input);
+        return execute_cli_turn(input, actor_id);
     }
 
     tracing::info!(
@@ -251,6 +255,7 @@ pub fn agent_execute_turn_stream(
     stream_id: String,
     mut input: AgentExecuteTurnInput,
     token: String,
+    actor_id: String,
     cancel_flag: Arc<AtomicBool>,
 ) {
     if let Err(error) = apply_resolved_agent_workspace(&mut input) {
@@ -272,7 +277,7 @@ pub fn agent_execute_turn_stream(
         .filter(|value| !value.is_empty())
         .is_some()
     {
-        execute_cli_turn_stream(&app, &stream_id, input, &cancel_flag);
+        execute_cli_turn_stream(&app, &stream_id, input, &actor_id, &cancel_flag);
         return;
     }
     let agent_allowed_roots = input.allowed_roots.clone();
@@ -462,7 +467,7 @@ fn apply_resolved_agent_workspace(input: &mut AgentExecuteTurnInput) -> Result<(
     Ok(())
 }
 
-fn execute_cli_turn(input: AgentExecuteTurnInput) -> AppResult<StubPayload> {
+fn execute_cli_turn(input: AgentExecuteTurnInput, actor_id: &str) -> AppResult<StubPayload> {
     let command_line = input.cli_command.clone().unwrap_or_default();
     tracing::info!(
         command = "agent_execute_turn",
@@ -472,15 +477,41 @@ fn execute_cli_turn(input: AgentExecuteTurnInput) -> AppResult<StubPayload> {
         "Executing agent turn via local CLI provider"
     );
     match run_cli_command(&input, &command_line) {
-        Ok(output) => success_payload(
-            "agent_execute_turn",
-            json!({
-                "result": output,
-                "provider": input.provider.unwrap_or_else(|| "cli".to_string()),
-                "model": input.model.unwrap_or_else(|| "cli".to_string()),
-                "executionOwner": "desktop-rust"
-            }),
-        ),
+        Ok(output) => {
+            let provider = input.provider.clone().unwrap_or_else(|| "cli".to_string());
+            let model = input.model.clone().unwrap_or_else(|| "cli".to_string());
+            let persisted = chat::record_agent_turn_messages(
+                actor_id,
+                &input.conversation_id,
+                &input.agent_id,
+                &input.user_input,
+                &output,
+                Some(&model),
+            );
+            if !persisted.ok {
+                let message = persisted
+                    .error
+                    .as_ref()
+                    .map(|error| error.message.clone())
+                    .unwrap_or_else(|| "failed to persist CLI turn messages".to_string());
+                tracing::error!(
+                    command = "agent_execute_turn",
+                    conversation_id = %input.conversation_id,
+                    error = %message,
+                    "CLI provider turn succeeded but message persistence failed"
+                );
+                return AppResult::fail(ErrorCode::InternalError, message, None);
+            }
+            success_payload(
+                "agent_execute_turn",
+                json!({
+                    "result": output,
+                    "provider": provider,
+                    "model": model,
+                    "executionOwner": "desktop-rust"
+                }),
+            )
+        }
         Err(error) => {
             tracing::error!(command = "agent_execute_turn", error = %error, "CLI provider turn failed");
             AppResult::fail(ErrorCode::InternalError, error, None)
@@ -492,6 +523,7 @@ fn execute_cli_turn_stream(
     app: &AppHandle,
     stream_id: &str,
     input: AgentExecuteTurnInput,
+    actor_id: &str,
     cancel_flag: &AtomicBool,
 ) {
     if cancel_flag.load(Ordering::SeqCst) {
@@ -512,6 +544,37 @@ fn execute_cli_turn_stream(
     let command_line = input.cli_command.clone().unwrap_or_default();
     match run_cli_command(&input, &command_line) {
         Ok(output) => {
+            let persisted = chat::record_agent_turn_messages(
+                actor_id,
+                &input.conversation_id,
+                &input.agent_id,
+                &input.user_input,
+                &output,
+                Some(&model),
+            );
+            if !persisted.ok {
+                let message = persisted
+                    .error
+                    .as_ref()
+                    .map(|error| error.message.clone())
+                    .unwrap_or_else(|| "failed to persist CLI turn messages".to_string());
+                tracing::error!(
+                    command = "agent_execute_turn_stream",
+                    conversation_id = %input.conversation_id,
+                    error = %message,
+                    "CLI provider stream succeeded but message persistence failed"
+                );
+                emit_turn_stream_event(
+                    app,
+                    stream_id,
+                    "error",
+                    json!({
+                        "type": "error",
+                        "error": message
+                    }),
+                );
+                return;
+            }
             if cancel_flag.load(Ordering::SeqCst) {
                 return;
             }
