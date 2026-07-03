@@ -1998,7 +1998,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_execute_turn(input, &token))
+            to_json(app_agent_turn::agent_execute_turn(input, &token, ""))
         }
         "agent_execute_turn_stream" => {
             let input = match parse_args::<AgentExecuteTurnInput>(args) {
@@ -2028,6 +2028,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     stream_id_for_task.clone(),
                     input,
                     token,
+                    "".to_string(),
                     cancel_flag,
                 );
                 app_agent_turn::unregister_agent_turn_stream(&stream_id_for_task);
