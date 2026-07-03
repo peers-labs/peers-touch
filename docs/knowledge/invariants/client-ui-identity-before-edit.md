@@ -43,7 +43,7 @@ Peers Touch UI is not allowed to drift into assembled component-library defaults
 
 Those local choices break product identity. They also make later UX review depend on a human remembering to remind the agent.
 
-The invariant makes UI Identity part of path-based read-before-edit behavior. When known UI paths are edited, the guardrail should be loaded automatically; when the task is screenshot/design-oriented, agents must manually apply the same rule even before choosing files.
+The invariant makes UI Identity part of path-based pt-read-before-edit behavior. When known UI paths are edited, the guardrail should be loaded automatically; when the task is screenshot/design-oriented, agents must manually apply the same rule even before choosing files.
 
 ## How to verify
 

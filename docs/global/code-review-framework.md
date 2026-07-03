@@ -25,7 +25,7 @@ git diff range
   -> hard-rules.sh
   -> skill-check.sh when review skill or upstream rules changed
   -> platform verification commands
-  -> AI review using tooling/skills/github-review/SKILL.md
+  -> AI review using tooling/skills/pt-github-review/SKILL.md
   -> human owner review
   -> knowledge / skill growth proposal when needed
 ```
@@ -106,10 +106,10 @@ The review report must list the profile-driven commands that were run or explici
 
 ## 8. Review Skill Freshness
 
-`tooling/skills/github-review/SKILL.md` is fresh only when all of the following hold:
+`tooling/skills/pt-github-review/SKILL.md` is fresh only when all of the following hold:
 
 - it declares trigger conditions, scope detection, severity, hard rules, platform profiles, knowledge lookup, output format, and anti-patterns;
-- `tooling/skills/github-review/FRESHNESS.md` records the upstream rule files it claims to cover and their current hash;
+- `tooling/skills/pt-github-review/FRESHNESS.md` records the upstream rule files it claims to cover and their current hash;
 - `skill-check.sh` passes;
 - every golden fixture in `tooling/review-fixtures/` has an expected finding and is represented by the skill's rules;
 - upstream rule changes force either a skill update or a conscious freshness hash update in the same PR.

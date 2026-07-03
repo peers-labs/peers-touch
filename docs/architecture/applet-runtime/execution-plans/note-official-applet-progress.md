@@ -23,8 +23,8 @@ T7 Evidence and Gates: partial
 
 ## Completed
 
-- Added the `official-applet-development` skill under `tooling/skills/`.
-- Registered `official-applet-development` in `AGENTS.md`.
+- Added the `pt-official-applet-development` skill under `tooling/skills/`.
+- Registered `pt-official-applet-development` in `AGENTS.md`.
 - Added official applet architecture contract and scaffold contract.
 - Added root scripts:
   - `pnpm applet:create-official`

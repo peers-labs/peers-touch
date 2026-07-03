@@ -4,9 +4,9 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-skill_file="tooling/skills/github-review/SKILL.md"
-pr_skill_file="tooling/skills/github-pr/SKILL.md"
-freshness_file="tooling/skills/github-review/FRESHNESS.md"
+skill_file="tooling/skills/pt-github-review/SKILL.md"
+pr_skill_file="tooling/skills/pt-github-pr/SKILL.md"
+freshness_file="tooling/skills/pt-github-review/FRESHNESS.md"
 fixtures_dir="tooling/review-fixtures"
 pr_template=".github/PULL_REQUEST_TEMPLATE.md"
 submit_pipeline="tooling/scripts/review/submit-pipeline.sh"

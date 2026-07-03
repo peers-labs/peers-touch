@@ -24,7 +24,7 @@
 ## 怎么跑
 
 ```bash
-make run-prototype desktop
+make run-prototype
 ```
 
 Prototype Portal 会自动发现 `applet-lifecycle` manifest。

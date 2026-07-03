@@ -2,7 +2,7 @@
 kind: invariant | pitfall | playbook   # pick exactly one — delete the others
 title: <one-line, human-readable; 60 chars max>
 status: active                          # or: deprecated | superseded-by:<relative-path>
-owns:                                   # repo paths this knowledge governs (machine-read by read-before-edit skill)
+owns:                                   # repo paths this knowledge governs (machine-read by pt-read-before-edit skill)
   - PLACEHOLDER/path/to/file.ext        # replace with real repo-relative path
   - PLACEHOLDER/path/to/dir/
 referenced-by:                          # other knowledge files that link here

@@ -499,8 +499,8 @@ Flexbox`，与 chat 视觉完全一致。
 | **P2 — Desktop Frontend** | `pages/moments/*` + `components/moments/*` + `store/moments.ts` + `modules/moments`。`AudienceSelector` 与 chat groups store 打通。i18n 命名空间 `'moments'`。 | `pnpm run check && pnpm run test && pnpm run build` 通过；E2E：能创建 4 种 audience 帖子并正确显示在合适 feed |
 | **P3 — Notifications & Polishing** | `POST_MENTIONED / COMMENT_REPLIED` 接入 `notification.Bridge`；`LinkPreview` 服务端抓取 + 镜像 OSS；性能调优（multi-source cursor merge）。 | 跨 actor mention 出现在 NotificationBell；HOME timeline 多源合并稳定有序 |
 
-每个 Phase 一个 PR，遵循 `github-pr` skill。所有 commit 走
-`github-commit` skill。
+每个 Phase 一个 PR，遵循 `pt-github-pr` skill。所有 commit 走
+`pt-github-commit` skill。
 
 ## 14. Open work / 后续扩展
 

@@ -1,4 +1,4 @@
 scenario: review misses a recurring judgment category that is not script-detectable
 expected_growth_decision: skill_update
-expected_asset: tooling/skills/github-review/SKILL.md
+expected_asset: tooling/skills/pt-github-review/SKILL.md
 proof: repeatable judgment gaps must update the review skill so future agents inherit the behavior
