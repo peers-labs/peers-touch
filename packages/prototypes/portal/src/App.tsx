@@ -31,11 +31,16 @@ function normalizeSite(value: unknown): PrototypeSite {
 export function PrototypePortal() {
   const [site, setSite] = useState<PrototypeSite>(DEFAULT_SITE);
   const [targetId, setTargetId] = useState(WORKTREE_TARGETS[0]?.id ?? 'current');
+  const [selectedPrototypeId, setSelectedPrototypeId] = useState<string | null>(null);
   const meta = SITE_META[site];
   const visible = LOCAL_PROTOTYPES.filter((prototype) => prototype.site === site);
   const target = WORKTREE_TARGETS.find((item) => item.id === targetId) ?? WORKTREE_TARGETS[0];
   const servingTarget = WORKTREE_TARGETS[0];
   const localTarget = target.id === 'current';
+  const selectedPrototype =
+    visible.find((prototype) => prototype.id === selectedPrototypeId) ??
+    visible.find((prototype) => prototype.status === 'pending-review' && prototype.kind !== 'shell') ??
+    visible[0];
 
   return (
     <div style={styles.page}>
@@ -89,7 +94,14 @@ export function PrototypePortal() {
           {localTarget ? (
             <div style={styles.grid}>
               {visible.length > 0 ? (
-                visible.map((prototype) => <PrototypeCard key={prototype.id} prototype={prototype} />)
+                visible.map((prototype) => (
+                  <PrototypeCard
+                    key={prototype.id}
+                    prototype={prototype}
+                    selected={prototype.id === selectedPrototype?.id}
+                    onSelect={() => setSelectedPrototypeId(prototype.id)}
+                  />
+                ))
               ) : (
                 <div style={styles.empty}>
                   <strong>No prototypes registered for {site} yet.</strong>
@@ -102,7 +114,7 @@ export function PrototypePortal() {
           )}
 
           {localTarget ? (
-            visible[0] ? <PrototypePreview prototype={visible[0]} /> : null
+            selectedPrototype ? <PrototypePreview prototype={selectedPrototype} /> : null
           ) : (
             <RemoteWorktreePreview target={target} site={site} />
           )}
@@ -216,9 +228,28 @@ function PrototypePreview({ prototype }: { prototype: PrototypeManifest }) {
   );
 }
 
-function PrototypeCard({ prototype }: { prototype: PrototypeManifest }) {
+function PrototypeCard({
+  prototype,
+  selected,
+  onSelect,
+}: {
+  prototype: PrototypeManifest;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   return (
-    <article style={styles.card}>
+    <article
+      style={{ ...styles.card, ...(selected ? styles.cardSelected : null) }}
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+    >
       <div style={styles.cardTop}>
         <span style={styles.cardTitle}>{prototype.title}</span>
         <span style={styles.status}>{prototype.status}</span>
@@ -389,6 +420,12 @@ const styles: Record<string, CSSProperties> = {
     border: '1px solid #e5e7eb',
     borderRadius: 14,
     padding: 14,
+    cursor: 'pointer',
+    outline: 'none',
+  },
+  cardSelected: {
+    border: '1px solid #7c6ee6',
+    boxShadow: '0 0 0 3px rgba(124, 110, 230, 0.12)',
   },
   cardTop: {
     display: 'flex',

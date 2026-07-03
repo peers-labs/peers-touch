@@ -147,6 +147,122 @@ fn parse_config_field(raw: &str, key: &str) -> Option<String> {
         })
 }
 
+/// The seeded model ids of a provider, used as a fallback when a CLI provider
+/// cannot enumerate its models dynamically.
+fn cli_preset_model_ids(provider: &provider_state::ProviderRecord) -> Vec<String> {
+    provider
+        .models
+        .iter()
+        .map(|model| model.id.clone())
+        .collect()
+}
+
+/// Splits a whitespace-separated CLI command line into program + arguments.
+/// Model-listing commands are simple invocations (e.g. `cursor-agent --list-models`)
+/// and do not require shell quoting.
+fn split_models_command(command_line: &str) -> Vec<String> {
+    command_line
+        .split_whitespace()
+        .map(ToString::to_string)
+        .collect()
+}
+
+/// Executes a CLI provider's model-listing command and parses model ids from its
+/// stdout. Supports both a JSON catalog (e.g. TRAE `debug models`) and a plain
+/// line-based listing (e.g. Cursor `--list-models`).
+fn run_cli_models_command(command_line: &str) -> Result<Vec<String>, String> {
+    let parts = split_models_command(command_line);
+    let Some((program, args)) = parts.split_first() else {
+        return Err("models command is empty".to_string());
+    };
+    let output = std::process::Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|error| format!("failed to run models command: {error}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let code = output
+            .status
+            .code()
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "signal".to_string());
+        return Err(format!(
+            "models command exited with status {code}: {stderr}"
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_cli_models_output(&stdout))
+}
+
+/// Parses model ids out of a CLI model-listing command's stdout.
+///
+/// TRAE emits a JSON object `{ "models": [{ "slug": "..." }, ...] }`, while Cursor
+/// emits plain `id - Display Name` lines. JSON is preferred when the output parses
+/// cleanly; otherwise each line's leading identifier token is used.
+fn parse_cli_models_output(stdout: &str) -> Vec<String> {
+    let mut models = Vec::new();
+    let mut push = |id: &str| {
+        let id = id.trim();
+        if !id.is_empty() && !models.iter().any(|existing| existing == id) {
+            models.push(id.to_string());
+        }
+    };
+
+    if let Some(entries) = parse_json_model_catalog(stdout) {
+        for id in entries {
+            push(&id);
+        }
+        return models;
+    }
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        // Take the leading token before an optional " - Display Name" suffix.
+        let id = line
+            .split_once(" - ")
+            .map(|(id, _)| id)
+            .unwrap_or(line)
+            .trim();
+        // Skip header/separator lines that are not valid model identifiers.
+        if id.is_empty() || id.contains(char::is_whitespace) || id.contains(':') {
+            continue;
+        }
+        push(id);
+    }
+    models
+}
+
+/// Extracts model identifiers from a JSON model catalog. Returns `None` when the
+/// output is not JSON or does not contain a recognizable model array.
+fn parse_json_model_catalog(stdout: &str) -> Option<Vec<String>> {
+    let value = serde_json::from_str::<serde_json::Value>(stdout.trim()).ok()?;
+    let array = value
+        .get("models")
+        .or_else(|| value.get("data"))
+        .and_then(serde_json::Value::as_array)
+        .or_else(|| value.as_array())?;
+    let ids = array
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .get("slug")
+                .or_else(|| entry.get("id"))
+                .or_else(|| entry.get("name"))
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string)
+        })
+        .collect::<Vec<_>>();
+    if ids.is_empty() {
+        None
+    } else {
+        Some(ids)
+    }
+}
+
 pub fn model_add(scope: Option<&str>, input: ProviderModelAddInput) -> AppResult<StubPayload> {
     let provider_id = input.provider_id.trim();
     if provider_id.is_empty() {
@@ -319,6 +435,33 @@ pub fn model_fetch_remote(
         input_base_url
     };
     let protocol = parse_config_field(&provider.config_json, "protocol");
+    // CLI runtime providers do not expose an HTTP endpoint. Route them through the
+    // provider's own model-listing command when available, otherwise fall back to
+    // the statically seeded model presets so the UI never shows "base_url is required".
+    if parse_config_field(&provider.config_json, "runtime_kind").as_deref() == Some("cli") {
+        let models_command = parse_config_field(&provider.config_json, "models_command")
+            .filter(|value| !value.trim().is_empty());
+        if let Some(command_line) = models_command {
+            return match run_cli_models_command(&command_line) {
+                Ok(models) if !models.is_empty() => success_payload(
+                    "model_fetch_remote",
+                    json!({ "ok": true, "models": models }),
+                ),
+                Ok(_) => success_payload(
+                    "model_fetch_remote",
+                    json!({ "ok": true, "models": cli_preset_model_ids(&provider) }),
+                ),
+                Err(err) => success_payload(
+                    "model_fetch_remote",
+                    json!({ "ok": false, "error": err, "models": [] }),
+                ),
+            };
+        }
+        return success_payload(
+            "model_fetch_remote",
+            json!({ "ok": true, "models": cli_preset_model_ids(&provider) }),
+        );
+    }
     if base_url.trim().is_empty() {
         return success_payload(
             "model_fetch_remote",
@@ -542,5 +685,82 @@ mod tests {
         let status = parse_status(&payload);
         assert_eq!(status["ok"], false);
         assert_eq!(status["error"], "base_url is required");
+    }
+
+    #[test]
+    fn parse_cli_models_output_should_read_trae_json_catalog() {
+        let stdout = r#"{"models":[
+            {"slug":"GPT-5.5","config_name":"gpt","model_provider_id":"trae"},
+            {"slug":"Gemini-3.1-Pro-Preview","config_name":"gemini"},
+            {"slug":"DeepSeek-V4-Pro"}
+        ]}"#;
+        let models = parse_cli_models_output(stdout);
+        assert_eq!(
+            models,
+            vec![
+                "GPT-5.5".to_string(),
+                "Gemini-3.1-Pro-Preview".to_string(),
+                "DeepSeek-V4-Pro".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_cli_models_output_should_read_cursor_line_listing() {
+        let stdout = "auto - Auto\ngpt-5 - GPT 5\nclaude-4-sonnet - Claude 4 Sonnet\n";
+        let models = parse_cli_models_output(stdout);
+        assert_eq!(
+            models,
+            vec![
+                "auto".to_string(),
+                "gpt-5".to_string(),
+                "claude-4-sonnet".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_cli_models_output_should_dedupe_ids() {
+        let stdout = "{\"models\":[{\"slug\":\"a\"},{\"slug\":\"a\"},{\"slug\":\"b\"}]}";
+        let models = parse_cli_models_output(stdout);
+        assert_eq!(models, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    /// End-to-end check against a locally installed TRAE CLI. Ignored by default
+    /// because it depends on the `traecli` binary being present on the host.
+    /// Run with: `cargo test --lib run_cli_models_command_should_enumerate_trae_models -- --ignored`
+    #[test]
+    #[ignore]
+    fn run_cli_models_command_should_enumerate_trae_models() {
+        let models =
+            run_cli_models_command("traecli debug models").expect("traecli should list models");
+        assert!(
+            !models.is_empty(),
+            "expected at least one model from traecli"
+        );
+        assert!(
+            models.iter().all(|id| !id.trim().is_empty()),
+            "model ids must not be blank"
+        );
+    }
+
+    /// End-to-end check against a locally installed Cursor CLI. Ignored by default
+    /// because it depends on the `cursor-agent` binary being present on the host.
+    /// Run with: `cargo test --lib run_cli_models_command_should_enumerate_cursor_models -- --ignored`
+    #[test]
+    #[ignore]
+    fn run_cli_models_command_should_enumerate_cursor_models() {
+        let models = run_cli_models_command("cursor-agent --list-models")
+            .expect("cursor-agent should list models");
+        assert!(
+            !models.is_empty(),
+            "expected at least one model from cursor-agent"
+        );
+        assert!(
+            models
+                .iter()
+                .all(|id| !id.trim().is_empty() && !id.contains(char::is_whitespace)),
+            "model ids must be blank-free single tokens"
+        );
     }
 }

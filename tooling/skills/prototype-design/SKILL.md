@@ -201,6 +201,7 @@ Prototype Portal 支持 worktree / branch 切换：
 
 - [ ] 源码在 `packages/prototypes/<site>/<area>/<id>/`，物理目录没有把 applet / feature 放成一级站点
 - [ ] `make run-prototype desktop/mobile/dashboard` 能跑，浏览器能打开
+- [ ] Prototype Portal 的 Live Preview 已选中并渲染目标原型：右上角标题必须是目标 prototype title，正文不能是 `Desktop Shell` / kernel placeholder / “原型未细化”占位页
 - [ ] `docs/architecture/<module>/prototype/README.md` 已创建/更新
 - [ ] `docs/architecture/prototypes/README.md` 总账已登记
 - [ ] 原型区域能对回设计文档编号
