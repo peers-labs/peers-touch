@@ -8,6 +8,7 @@ import com.peerstouch.mobile.core.lynx.bridge.MANIFEST_SERVICES_PARAM
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -32,6 +33,25 @@ class AppletBridgeSessionContractTest {
         override suspend fun handle(method: String, params: Map<String, Any?>): Any? {
             error("boom")
         }
+    }
+
+    @Test
+    fun lifecycleStateRejectsInvalidShowFromVisible() {
+        val visible = AppletState.COLD
+            .nextState(AppletLifecycleEvent.LAUNCH)
+            .nextState(AppletLifecycleEvent.READY)
+
+        assertEquals(AppletState.VISIBLE, visible)
+        assertFailsWith<IllegalArgumentException> {
+            visible.nextState(AppletLifecycleEvent.SHOW)
+        }
+
+        val restored = visible
+            .nextState(AppletLifecycleEvent.HIDE)
+            .nextState(AppletLifecycleEvent.SUSPEND)
+            .nextState(AppletLifecycleEvent.RESTORE)
+
+        assertEquals(AppletState.VISIBLE, restored)
     }
 
     @Test
@@ -147,11 +167,14 @@ class AppletBridgeSessionContractTest {
         )
         assertEquals("INVALID_PARAMS", malformed.code)
 
-        session.transition(AppletState.UNLOADED)
-        val unloaded = assertIs<BridgeResult.Error>(
+        session.dispatchLifecycle(AppletLifecycleEvent.LAUNCH)
+        session.dispatchLifecycle(AppletLifecycleEvent.READY)
+        session.destroy()
+        val destroyed = assertIs<BridgeResult.Error>(
             session.dispatch("storage.get", emptyMap())
         )
-        assertEquals("INVALID_SESSION", unloaded.code)
+        assertEquals("INVALID_SESSION", destroyed.code)
+        assertEquals(AppletState.DESTROYED, session.state)
     }
 
     private fun canonicalManifestRaw(): Map<String, Any?> = mapOf(

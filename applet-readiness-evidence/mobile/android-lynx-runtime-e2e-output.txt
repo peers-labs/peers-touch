@@ -3,7 +3,9 @@ Device: emulator-5554
 APK: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
 Applet package: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/applet-readiness-evidence/package/android-lynx-runtime-e2e-applet
 Staged applet: run-as com.peerstouch.mobile:files/applet_bundles/android-lynx-runtime-e2e-applet
+Process launch to marker ms: 1226
+Applet cold start latency ms: 88
 Observed real Lynx applet SDK storage.set and storage.get calls through AppletBridgeNativeModule.
-storage.set marker: {"protocol":"peers-touch.applet.bridge","kind":"response","appletId":"android-lynx-runtime-e2e-applet","sessionId":"android:android-lynx-runtime-e2e-applet:1781104160191","requestId":"android-1781104160281","ok":true,"result":null}
-storage.get marker: {"protocol":"peers-touch.applet.bridge","kind":"response","appletId":"android-lynx-runtime-e2e-applet","sessionId":"android:android-lynx-runtime-e2e-applet:1781104160191","requestId":"android-1781104160283","ok":true,"result":"ok"}
+storage.set marker: {"protocol":"peers-touch.applet.bridge","kind":"response","appletId":"android-lynx-runtime-e2e-applet","sessionId":"android:android-lynx-runtime-e2e-applet:1783069320947","requestId":"android-1783069321035","ok":true,"result":null}
+storage.get marker: {"protocol":"peers-touch.applet.bridge","kind":"response","appletId":"android-lynx-runtime-e2e-applet","sessionId":"android:android-lynx-runtime-e2e-applet:1783069320947","requestId":"android-1783069321041","ok":true,"result":"ok"}
 Gradle build evidence: mobile/android-lynx-runtime-e2e-gradle-output.txt

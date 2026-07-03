@@ -13,6 +13,7 @@ final class Container: @unchecked Sendable {
     let bridgeDispatcher: BridgeDispatcher
     let appletManager: AppletManager
     let appletBundleStorage: AppletBundleStorage
+    let appletSurfaceCache: AppletSurfaceCache
 
     private init() {
         let preferenceStore = PreferenceStore()
@@ -40,6 +41,8 @@ final class Container: @unchecked Sendable {
             bundleStorage: appletBundleStorage,
             bridgeDispatcher: bridgeDispatcher
         )
+        let appletSurfaceCache = AppletSurfaceCache()
+        appletManager.registerSurfaceHooks(appletSurfaceCache)
 
         self.apiClient = apiClient
         self.appDatabase = appDatabase
@@ -50,5 +53,6 @@ final class Container: @unchecked Sendable {
         self.bridgeDispatcher = bridgeDispatcher
         self.appletManager = appletManager
         self.appletBundleStorage = appletBundleStorage
+        self.appletSurfaceCache = appletSurfaceCache
     }
 }

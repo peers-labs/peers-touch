@@ -6,8 +6,8 @@ PASS iOS Xcode project target includes AppletManifest, bundle storage, manager, 
 PASS iOS AppletContainerView uses AppletManager.loadApplet(id:) and AppletLynxViewRepresentable uses LynxViewFactory instead of a placeholder UIView.
 PASS iOS LynxViewFactory registers AppletBridgeNativeModule as the per-session bridge module instead of loading a bare LynxView.
 PASS iOS AppletBridgeNativeModule exposes NativeModules.bridge.invoke and returns canonical peers-touch.applet.bridge response envelopes.
-PASS iOS AppletBridgeSession and BridgeDispatcher enforce full-method permission, canonical errors, unloaded-session rejection, and response envelopes at runtime.
-PASS iOS Xcode workspace build succeeded. Evidence: mobile/ios-xcode-build-output.txt.
+PASS iOS AppletBridgeSession and BridgeDispatcher enforce full-method permission, canonical errors, destroyed-session rejection, and response envelopes at runtime.
+SKIP iOS Xcode workspace build: iOS Simulator environment is unavailable; see applet-readiness-evidence/mobile/ios-xcode-build-output.txt. Source and executable Swift harness assertions remain active; this is not iOS Lynx runtime E2E.
 PASS Android manifest parser source models canonical targets/load/services/integrity constraints for the same manifest shape.
 PASS Android applet container scans local bundles, resolves sandbox bundle URLs, loads sandbox file bundles via Lynx byte-array render, exposes an intent-gated runtime E2E launch path, and records canonical bridge markers without claiming runtime E2E evidence.
 PASS Android JVM AppletBridgeSessionContractTest executed with SDK at /opt/homebrew/share/android-commandlinetools. Evidence: mobile/android-jvm-contract-test-output.txt.

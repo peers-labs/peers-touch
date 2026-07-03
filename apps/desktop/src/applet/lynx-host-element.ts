@@ -133,7 +133,6 @@ export class LynxHostElement extends HTMLElement {
   private readyEventSent = false
   private visibleEventSent = false
   private pausedEventSent = false
-  private visibilityListenersInstalled = false
   private eventPollTimer: PollTimer | null = null
   private mountSequence = 0
   private mountStartedAt = 0
@@ -182,14 +181,16 @@ export class LynxHostElement extends HTMLElement {
     if (this.url && this.sessionId) {
       this.mountLynxView(this.url)
     }
-    this.installProductVisibilityListeners()
   }
 
   disconnectedCallback(): void {
     this.emitDebug('host.disconnected')
     this.destroyed = true
-    this.removeProductVisibilityListeners()
-    this.destroyLynxView()
+    // Kernel-single-authority (§6.1): the host never self-destroys the capability
+    // session. It only releases its own render resources; session teardown and
+    // registry removal flow through the Orchestrator's `destroy` command
+    // (SurfaceManager.destroy → surfaceDestroy).
+    this.teardownLynxView()
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
@@ -211,7 +212,7 @@ export class LynxHostElement extends HTMLElement {
     const sequence = ++this.mountSequence
     this.mountStartedAt = performance.now()
     this.emitDebug('lynx.mount.start', { bundleUrl, sequence })
-    this.destroyLynxView()
+    this.teardownLynxView()
     this.readyEventSent = false
     this.visibleEventSent = false
 
@@ -261,7 +262,14 @@ export class LynxHostElement extends HTMLElement {
     this.dispatchEvent(new CustomEvent('load', { detail: { appletId: this.appletId } }))
   }
 
-  private destroyLynxView(): void {
+  /**
+   * Release only the render resources of this host (the `<lynx-view>` child and
+   * event polling). Does NOT destroy the capability session — under
+   * Kernel-single-authority (§6.1) session teardown flows exclusively through the
+   * Orchestrator's `destroy` command. Emits a local `hide` so the applet SDK can
+   * pause work, but never `destroy`.
+   */
+  private teardownLynxView(): void {
     if (this.lynxView) {
       this.emitDebug('lynx.view.destroy')
     }
@@ -271,17 +279,53 @@ export class LynxHostElement extends HTMLElement {
     if (!this.lynxView) return
 
     if (this.visibleEventSent) {
-      if (this.pausedEventSent) {
-        this.pausedEventSent = false
-      }
-      this.sendEvent('hide', { sessionId: this.sessionId, reason: 'host-unmount' })
+      this.pausedEventSent = false
+      this.sendEvent('hide', { sessionId: this.sessionId, reason: 'host-detach' })
       this.visibleEventSent = false
     }
-    this.sendEvent('destroy', { sessionId: this.sessionId })
-    void AppletManager.getInstance().unloadApplet(this.appletId)
-    this.destroyed = true
     this.lynxView.remove()
     this.lynxView = null
+  }
+
+  // ── Imperative surface control (driven by SurfaceManager) ──
+
+  /** Detach render resources for a `suspend` (kernel command `detach`). */
+  surfaceDetach(): void {
+    this.emitDebug('surface.detach')
+    this.teardownLynxView()
+  }
+
+  /** Re-mount the `<lynx-view>` after a detach when the kernel shows again. */
+  surfaceRemount(): void {
+    if (this.lynxView || !this.url || !this.sessionId) return
+    this.emitDebug('surface.remount')
+    void this.mountLynxView(this.url)
+  }
+
+  /** Fully reclaim on the Orchestrator's `destroy`; session teardown is not ours. */
+  surfaceDestroy(): void {
+    this.emitDebug('surface.destroy')
+    this.destroyed = true
+    if (this.lynxView && this.visibleEventSent) {
+      this.sendEvent('destroy', { sessionId: this.sessionId })
+    }
+    this.teardownLynxView()
+  }
+
+  /** Freeze applet timers/rAF on a kernel-accepted `pause` (§6.3). */
+  surfacePause(): void {
+    if (!this.lynxView || !this.visibleEventSent || this.pausedEventSent) return
+    this.emitDebug('surface.pause')
+    this.sendEvent('pause', { sessionId: this.sessionId, reason: 'kernel-pause' })
+    this.pausedEventSent = true
+  }
+
+  /** Resume applet timers/rAF on a kernel-accepted `resume` (§6.3). */
+  surfaceResume(): void {
+    if (!this.lynxView || !this.visibleEventSent || !this.pausedEventSent) return
+    this.emitDebug('surface.resume')
+    this.sendEvent('resume', { sessionId: this.sessionId, reason: 'kernel-resume' })
+    this.pausedEventSent = false
   }
 
   private startGatewayEventPolling(): void {
@@ -552,59 +596,9 @@ export class LynxHostElement extends HTMLElement {
       this.sendEvent('show', { sessionId: this.sessionId, reason: 'host-visible' })
       this.visibleEventSent = true
     }
-    this.syncProductVisibility()
-  }
-
-  private readonly handleDocumentVisibilityChange = (): void => {
-    this.syncProductVisibility()
-  }
-
-  private readonly handleWindowBlur = (): void => {
-    this.pauseForProductVisibility('window-blur')
-  }
-
-  private readonly handleWindowFocus = (): void => {
-    this.resumeForProductVisibility('window-focus')
-  }
-
-  private installProductVisibilityListeners(): void {
-    if (this.visibilityListenersInstalled) return
-    this.visibilityListenersInstalled = true
-    globalThis.document?.addEventListener?.('visibilitychange', this.handleDocumentVisibilityChange)
-    globalThis.window?.addEventListener?.('blur', this.handleWindowBlur)
-    globalThis.window?.addEventListener?.('focus', this.handleWindowFocus)
-  }
-
-  private removeProductVisibilityListeners(): void {
-    if (!this.visibilityListenersInstalled) return
-    this.visibilityListenersInstalled = false
-    globalThis.document?.removeEventListener?.('visibilitychange', this.handleDocumentVisibilityChange)
-    globalThis.window?.removeEventListener?.('blur', this.handleWindowBlur)
-    globalThis.window?.removeEventListener?.('focus', this.handleWindowFocus)
-  }
-
-  private syncProductVisibility(): void {
-    const documentState = globalThis.document as Document | undefined
-    const hidden = documentState?.hidden === true || documentState?.visibilityState === 'hidden'
-    if (hidden) {
-      this.pauseForProductVisibility('document-hidden')
-      return
-    }
-    this.resumeForProductVisibility('document-visible')
-  }
-
-  private pauseForProductVisibility(reason: string): void {
-    if (!this.lynxView || !this.visibleEventSent || this.pausedEventSent) return
-    this.emitDebug('lifecycle.pause', { reason }, 'debug')
-    this.sendEvent('pause', { sessionId: this.sessionId, reason })
-    this.pausedEventSent = true
-  }
-
-  private resumeForProductVisibility(reason: string): void {
-    if (!this.lynxView || !this.visibleEventSent || !this.pausedEventSent) return
-    this.emitDebug('lifecycle.resume', { reason }, 'debug')
-    this.sendEvent('resume', { sessionId: this.sessionId, reason })
-    this.pausedEventSent = false
+    // Kernel-single-authority (§6.1/§6.3): document/window visibility no longer
+    // drives applet pause/resume here. The Orchestrator-accepted pause/resume
+    // transitions are injected imperatively via surfacePause()/surfaceResume().
   }
 
   private async dispatchHostCommand(command: unknown): Promise<unknown> {
