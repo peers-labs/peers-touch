@@ -1,4 +1,4 @@
-import { Pin, BellOff, Eye, EyeOff, Trash2, CheckCheck, Volume2, VolumeX } from 'lucide-react';
+import { Pin, BellOff, EyeOff, Trash2, CheckCheck, Volume2, VolumeX, Clock3 } from 'lucide-react';
 import { T } from '../theme';
 import { Avatar } from './Avatar';
 import { ContextMenu } from './ContextMenu';
@@ -203,16 +203,17 @@ export function SessionList({
                     <span
                       style={{
                         fontSize: T.fontSm,
-                        color: T.textTertiary,
+                        color: conv.historyClearedAt ? T.warning : T.textTertiary,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                         flex: 1,
                       }}
                     >
-                      {conv.lastMessage}
+                      {conv.historyClearedAt ? 'History hidden on this device' : conv.lastMessage}
                     </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: T.space1, marginLeft: T.space2, flexShrink: 0 }}>
+                      {conv.historyClearedAt && <Clock3 size={12} color={T.warning} />}
                       {conv.muted && <BellOff size={12} color={T.textQuaternary} />}
                       {!compact && conv.pinned && <Pin size={12} color={T.textQuaternary} />}
                       {conv.unread > 0 && (

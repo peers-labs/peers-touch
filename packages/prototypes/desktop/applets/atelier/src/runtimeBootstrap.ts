@@ -1,10 +1,10 @@
 import { sdk } from '@peers-touch/applet-sdk';
 import type { AtelierRuntime } from './runtime';
 import { createMockAtelierRuntime } from './runtime';
-import { MOCK } from './mock';
 import { createAppletSdkAtelierBridge, type CreateAppletSdkAtelierBridgeOptions } from './appletBridge';
 import { createBridgeAtelierRuntime } from './bridgeRuntime';
 import { toProjectionSnapshot } from './projection';
+import type { AtelierState } from './types';
 
 declare global {
   interface Window {
@@ -28,8 +28,23 @@ export function createAtelierRuntimeForEnvironment(): AtelierRuntime {
     bridge: createAppletSdkAtelierBridge(sdk, {
       projectionStream: readProjectionStreamConfig(),
     }),
-    initialSnapshot: toProjectionSnapshot(MOCK),
+    initialSnapshot: toProjectionSnapshot(emptyHostState()),
   });
+}
+
+function emptyHostState(): AtelierState {
+  return {
+    budgetSpent: 0,
+    budgetCap: 1,
+    model: 'openrouter-3o',
+    tasks: [],
+    selectedTaskId: '',
+    stream: {},
+    todos: {},
+    context: {},
+    artifacts: {},
+    gates: {},
+  };
 }
 
 function readProjectionStreamConfig(): CreateAppletSdkAtelierBridgeOptions['projectionStream'] {
