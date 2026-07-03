@@ -1,8 +1,8 @@
 import { useEffect, useState, type ComponentType, type CSSProperties, type ReactElement } from 'react';
 import { Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
-import { CURRENT_WORKTREE } from './registry/worktrees';
-import type { PrototypeManifest, PrototypeSite } from './registry/types';
+import { WORKTREE_TARGETS } from './registry/worktrees';
+import type { PrototypeManifest, PrototypeSite, PrototypeWorktreeTarget } from './registry/types';
 
 const DEFAULT_SITE: PrototypeSite = normalizeSite(import.meta.env.VITE_PROTOTYPE_SITE);
 
@@ -30,19 +30,34 @@ function normalizeSite(value: unknown): PrototypeSite {
 
 export function PrototypePortal() {
   const [site, setSite] = useState<PrototypeSite>(DEFAULT_SITE);
+  const [targetId, setTargetId] = useState(WORKTREE_TARGETS[0]?.id ?? 'current');
+  const [selectedPrototypeId, setSelectedPrototypeId] = useState<string | null>(null);
   const meta = SITE_META[site];
   const visible = LOCAL_PROTOTYPES.filter((prototype) => prototype.site === site);
+  const target = WORKTREE_TARGETS.find((item) => item.id === targetId) ?? WORKTREE_TARGETS[0];
+  const servingTarget = WORKTREE_TARGETS[0];
+  const localTarget = target.id === 'current';
+  const selectedPrototype =
+    visible.find((prototype) => prototype.id === selectedPrototypeId) ??
+    visible.find((prototype) => prototype.status === 'pending-review' && prototype.kind !== 'shell') ??
+    visible[0];
 
   return (
     <div style={styles.page}>
       <header style={styles.header}>
         <div style={styles.brand}>Peers Touch Prototype Portal</div>
         <div style={styles.headerControls}>
-          <span style={styles.branchChip}>{CURRENT_WORKTREE.branch}</span>
-          <div style={styles.worktreeBadge} title={CURRENT_WORKTREE.worktreePath}>
-            <span style={styles.worktreeDot} />
-            <span style={styles.worktreeBadgePath}>{compactPath(CURRENT_WORKTREE.worktreePath)}</span>
-          </div>
+          <label style={styles.targetPicker}>
+            <span>Worktree</span>
+            <select value={target.id} onChange={(event) => setTargetId(event.target.value)} style={styles.select}>
+              {WORKTREE_TARGETS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label} / {item.branch}
+                </option>
+              ))}
+            </select>
+          </label>
+          <CurrentWorktreeBadge target={servingTarget} />
         </div>
       </header>
 
@@ -76,20 +91,89 @@ export function PrototypePortal() {
             <div style={styles.command}>make run-prototype</div>
           </div>
 
-          <div style={styles.grid}>
-            {visible.length > 0 ? (
-              visible.map((prototype) => <PrototypeCard key={prototype.id} prototype={prototype} />)
-            ) : (
-              <div style={styles.empty}>
-                <strong>No prototypes registered for {site} yet.</strong>
-                <span>Add a prototype manifest under packages/prototypes/&lt;id&gt;/ and keep it under the correct first-level site.</span>
-              </div>
-            )}
-          </div>
+          {localTarget ? (
+            <div style={styles.grid}>
+              {visible.length > 0 ? (
+                visible.map((prototype) => (
+                  <PrototypeCard
+                    key={prototype.id}
+                    prototype={prototype}
+                    selected={prototype.id === selectedPrototype?.id}
+                    onSelect={() => setSelectedPrototypeId(prototype.id)}
+                  />
+                ))
+              ) : (
+                <div style={styles.empty}>
+                  <strong>No prototypes registered for {site} yet.</strong>
+                  <span>Add a prototype manifest under packages/prototypes/&lt;id&gt;/ and keep it under the correct first-level site.</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <RemoteTargetCard target={target} site={site} />
+          )}
 
-          {visible[0] ? <PrototypePreview prototype={visible[0]} /> : null}
+          {localTarget ? (
+            selectedPrototype ? <PrototypePreview prototype={selectedPrototype} /> : null
+          ) : (
+            <RemoteWorktreePreview target={target} site={site} />
+          )}
         </section>
       </main>
+    </div>
+  );
+}
+
+function CurrentWorktreeBadge({ target }: { target: PrototypeWorktreeTarget }) {
+  return (
+    <div style={styles.worktreeBadge}>
+      <div style={styles.worktreeBadgeTitle}>Serving worktree</div>
+      <div style={styles.worktreeBadgeBranch}>{target.branch}</div>
+      <div style={styles.worktreeBadgePath} title={target.worktreePath}>
+        {compactPath(target.worktreePath)}
+      </div>
+    </div>
+  );
+}
+
+function RemoteTargetCard({ target, site }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
+  const url = target.sites[site];
+
+  return (
+    <article style={styles.remoteCard}>
+      <div style={styles.cardTop}>
+        <span style={styles.cardTitle}>{target.label}</span>
+        <span style={styles.status}>remote</span>
+      </div>
+      <p style={styles.cardText}>
+        Branch `{target.branch}` is rendered from its own running prototype service. Portal uses iframe preview for remote worktrees and never imports their source.
+      </p>
+      <div style={styles.targetMeta}>
+        <span>worktree: {target.worktreePath}</span>
+        <span>{site}: {url ?? 'not configured'}</span>
+      </div>
+    </article>
+  );
+}
+
+function RemoteWorktreePreview({ target, site }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
+  const url = target.sites[site];
+
+  return (
+    <div style={styles.preview}>
+      <div style={styles.previewHeader}>
+        <span>Remote Preview</span>
+        <span style={styles.previewMeta}>{target.label} / {target.branch}</span>
+      </div>
+      <div style={styles.previewBody}>
+        {url ? (
+          <iframe title={`${target.label} ${site}`} src={url} style={styles.iframe} />
+        ) : (
+          <div style={styles.previewPlaceholder}>
+            No remote URL configured for {site}. Add it to VITE_PROTOTYPE_WORKTREES.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -144,9 +228,28 @@ function PrototypePreview({ prototype }: { prototype: PrototypeManifest }) {
   );
 }
 
-function PrototypeCard({ prototype }: { prototype: PrototypeManifest }) {
+function PrototypeCard({
+  prototype,
+  selected,
+  onSelect,
+}: {
+  prototype: PrototypeManifest;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   return (
-    <article style={styles.card}>
+    <article
+      style={{ ...styles.card, ...(selected ? styles.cardSelected : null) }}
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+    >
       <div style={styles.cardTop}>
         <span style={styles.cardTitle}>{prototype.title}</span>
         <span style={styles.status}>{prototype.status}</span>
@@ -195,18 +298,22 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     gap: 10,
   },
-  branchChip: {
+  targetPicker: {
     display: 'inline-flex',
     alignItems: 'center',
-    height: 30,
-    padding: '0 12px',
-    borderRadius: 8,
-    background: '#eef2ff',
-    border: '1px solid #c7d2fe',
-    color: '#3730a3',
+    gap: 8,
+    color: '#64748b',
     fontSize: 12,
-    fontWeight: 700,
-    boxSizing: 'border-box',
+    fontWeight: 600,
+  },
+  select: {
+    height: 30,
+    borderRadius: 8,
+    border: '1px solid #cbd5e1',
+    background: '#ffffff',
+    color: '#334155',
+    padding: '0 8px',
+    fontSize: 12,
   },
   main: {
     display: 'flex',
@@ -273,26 +380,29 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: 'monospace',
   },
   worktreeBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 8,
-    height: 30,
-    maxWidth: 320,
-    padding: '0 12px',
-    borderRadius: 999,
-    background: '#f1f5f9',
+    display: 'grid',
+    gap: 4,
+    minWidth: 280,
+    padding: '10px 12px',
+    borderRadius: 12,
+    background: '#f8fafc',
     border: '1px solid #e2e8f0',
-    boxSizing: 'border-box',
+    textAlign: 'right',
   },
-  worktreeDot: {
-    width: 7,
-    height: 7,
-    borderRadius: '50%',
-    background: '#22c55e',
-    flex: 'none',
+  worktreeBadgeTitle: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  },
+  worktreeBadgeBranch: {
+    color: '#1e293b',
+    fontSize: 13,
+    fontWeight: 800,
   },
   worktreeBadgePath: {
-    color: '#64748b',
+    color: '#475569',
     fontFamily: 'monospace',
     fontSize: 11,
     overflow: 'hidden',
@@ -311,6 +421,12 @@ const styles: Record<string, CSSProperties> = {
     border: '1px solid #e5e7eb',
     borderRadius: 14,
     padding: 14,
+    cursor: 'pointer',
+    outline: 'none',
+  },
+  cardSelected: {
+    border: '1px solid #7c6ee6',
+    boxShadow: '0 0 0 3px rgba(124, 110, 230, 0.12)',
   },
   cardTop: {
     display: 'flex',
@@ -354,6 +470,20 @@ const styles: Record<string, CSSProperties> = {
     color: '#475569',
     fontSize: 13,
   },
+  remoteCard: {
+    background: '#ffffff',
+    border: '1px solid #dbeafe',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  targetMeta: {
+    display: 'grid',
+    gap: 4,
+    color: '#475569',
+    fontSize: 11,
+    fontFamily: 'monospace',
+  },
   preview: {
     background: '#ffffff',
     border: '1px solid #e5e7eb',
@@ -387,5 +517,12 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: 'center',
     color: '#64748b',
     fontSize: 13,
+  },
+  iframe: {
+    width: '100%',
+    height: '100%',
+    border: 0,
+    display: 'block',
+    background: '#ffffff',
   },
 };
