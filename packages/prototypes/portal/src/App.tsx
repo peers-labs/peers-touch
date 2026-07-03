@@ -1,12 +1,12 @@
-import { useEffect, useState, type ComponentType, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useState, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react';
 import { Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
 import { WORKTREE_TARGETS } from './registry/worktrees';
 import type { PrototypeManifest, PrototypeSite, PrototypeWorktreeTarget } from './registry/types';
 
-const site = normalizeSite(import.meta.env.VITE_PROTOTYPE_SITE);
+const DEFAULT_SITE: PrototypeSite = normalizeSite(import.meta.env.VITE_PROTOTYPE_SITE);
 
-const SITE_META: Record<PrototypeSite, { title: string; subtitle: string; icon: JSX.Element }> = {
+const SITE_META: Record<PrototypeSite, { title: string; subtitle: string; icon: ReactElement }> = {
   desktop: {
     title: 'Desktop Prototypes',
     subtitle: 'Desktop App / desktop-web / applet container experiences',
@@ -29,15 +29,20 @@ function normalizeSite(value: unknown): PrototypeSite {
 }
 
 export function PrototypePortal() {
+  const [site, setSite] = useState<PrototypeSite>(DEFAULT_SITE);
   const [targetId, setTargetId] = useState(WORKTREE_TARGETS[0]?.id ?? 'current');
   const [selectedPrototypeId, setSelectedPrototypeId] = useState<string | null>(null);
   const meta = SITE_META[site];
   const visible = LOCAL_PROTOTYPES.filter((prototype) => prototype.site === site);
   const entryPrototypes = visible.filter(isEntryPrototype);
   const target = WORKTREE_TARGETS.find((item) => item.id === targetId) ?? WORKTREE_TARGETS[0];
+  const servingTarget = WORKTREE_TARGETS[0];
   const localTarget = target.id === 'current';
   const selectedPrototype =
-    entryPrototypes.find((prototype) => prototype.id === selectedPrototypeId) ?? entryPrototypes[0] ?? null;
+    entryPrototypes.find((prototype) => prototype.id === selectedPrototypeId) ??
+    entryPrototypes.find((prototype) => prototype.status === 'pending-review' && prototype.kind !== 'shell') ??
+    entryPrototypes[0] ??
+    null;
 
   useEffect(() => {
     if (entryPrototypes.length === 0) {
@@ -65,10 +70,7 @@ export function PrototypePortal() {
               ))}
             </select>
           </label>
-          <div style={styles.sitePill}>
-            {meta.icon}
-            <span>{site}</span>
-          </div>
+          <CurrentWorktreeBadge target={servingTarget} />
         </div>
       </header>
 
@@ -78,7 +80,11 @@ export function PrototypePortal() {
             const item = SITE_META[key];
             const active = key === site;
             return (
-              <div key={key} style={{ ...styles.siteItem, ...(active ? styles.siteItemActive : null) }}>
+              <div
+                key={key}
+                style={{ ...styles.siteItem, ...(active ? styles.siteItemActive : null), cursor: 'pointer' }}
+                onClick={() => setSite(key)}
+              >
                 {item.icon}
                 <div>
                   <div style={styles.siteTitle}>{key}</div>
@@ -95,7 +101,7 @@ export function PrototypePortal() {
               <h1 style={styles.h1}>{meta.title}</h1>
               <p style={styles.p}>{meta.subtitle}</p>
             </div>
-            <div style={styles.command}>make run-prototype {site}</div>
+            <div style={styles.command}>make run-prototype</div>
           </div>
 
           {localTarget ? (
@@ -135,6 +141,18 @@ function isEntryPrototype(prototype: PrototypeManifest): boolean {
   if (prototype.site !== 'desktop') return true;
   if (prototype.kind === 'applet') return false;
   return prototype.kind === 'shell' || prototype.module !== 'applet-runtime';
+}
+
+function CurrentWorktreeBadge({ target }: { target: PrototypeWorktreeTarget }) {
+  return (
+    <div style={styles.worktreeBadge}>
+      <div style={styles.worktreeBadgeTitle}>Serving worktree</div>
+      <div style={styles.worktreeBadgeBranch}>{target.branch}</div>
+      <div style={styles.worktreeBadgePath} title={target.worktreePath}>
+        {compactPath(target.worktreePath)}
+      </div>
+    </div>
+  );
 }
 
 function RemoteTargetCard({ target, site }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
@@ -268,6 +286,14 @@ function PrototypeCard({
   );
 }
 
+function compactPath(path: string): string {
+  const parts = path.split('/').filter(Boolean);
+  if (parts.length <= 4) {
+    return path;
+  }
+  return `.../${parts.slice(-4).join('/')}`;
+}
+
 const styles: Record<string, CSSProperties> = {
   page: {
     minHeight: '100vh',
@@ -309,17 +335,6 @@ const styles: Record<string, CSSProperties> = {
     color: '#334155',
     padding: '0 8px',
     fontSize: 12,
-  },
-  sitePill: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '6px 10px',
-    borderRadius: 999,
-    background: '#eef2ff',
-    color: '#3730a3',
-    fontSize: 12,
-    fontWeight: 600,
   },
   main: {
     display: 'flex',
@@ -385,6 +400,37 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 12,
     fontFamily: 'monospace',
   },
+  worktreeBadge: {
+    display: 'grid',
+    gap: 4,
+    minWidth: 280,
+    padding: '10px 12px',
+    borderRadius: 12,
+    background: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    textAlign: 'right',
+  },
+  worktreeBadgeTitle: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  },
+  worktreeBadgeBranch: {
+    color: '#1e293b',
+    fontSize: 13,
+    fontWeight: 800,
+  },
+  worktreeBadgePath: {
+    color: '#475569',
+    fontFamily: 'monospace',
+    fontSize: 11,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    minWidth: 0,
+  },
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
@@ -400,8 +446,8 @@ const styles: Record<string, CSSProperties> = {
     outline: 'none',
   },
   cardSelected: {
-    border: '1px solid #6366f1',
-    boxShadow: '0 10px 28px rgba(99, 102, 241, 0.12)',
+    border: '1px solid #7c6ee6',
+    boxShadow: '0 0 0 3px rgba(124, 110, 230, 0.12)',
   },
   cardTop: {
     display: 'flex',
@@ -483,7 +529,7 @@ const styles: Record<string, CSSProperties> = {
   previewBody: {
     height: 720,
     minHeight: 0,
-    overflow: 'hidden',
+    overflow: 'auto',
   },
   previewPlaceholder: {
     height: '100%',

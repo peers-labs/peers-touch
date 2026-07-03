@@ -38,7 +38,10 @@ export const T = {
   headerHeight: 56,
   sideNavWidth: 56,
   sessionListWidth: 320,
+  sessionListCompactWidth: 248,
   detailPanelWidth: 320,
+  chatReadableMinWidth: 420,
+  chatSplitMinWidth: 760,
 
   // Spacing scale (4px base)
   space1: 4,
