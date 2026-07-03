@@ -24,6 +24,7 @@ description: "规划落盘与计划追踪。当用户要求把讨论结果转为
 
 | 你要做什么 | 先读什么 |
 |-----------|---------|
+| Architecture design methodology | `tooling/skills/architecture-design-methodology/SKILL.md` |
 | 写架构设计文档 | `docs/global/architecture-document-standard.md`（文件集/命名/元数据/结构） |
 | 判断文档该放哪一层 | `docs/README.md` §3-4（三层真源体系 + 按问题找位置） |
 | 大需求文档化流程 | `docs/knowledge/playbooks/documenting-large-requirements.md` |
@@ -178,9 +179,10 @@ docs/architecture/<module>/
 
 | 场景 | 用哪个 skill |
 |------|-------------|
-| 架构落地/领域拆解 | `architecture-execution-methodology` |
+| Architecture design / system boundaries / ownership / contracts | `architecture-design-methodology` |
+| Architecture landing / domain decomposition / migration planning | `architecture-execution-methodology` |
 | 完整开发周期（code→PR） | `dev-workflow` |
 | 创建/修改原型 | `prototype-design` |
 | 本 skill | 讨论→正式文档落盘→计划追踪 |
 
-本 skill 是"文档落盘入口"——告诉你去哪找规范、在哪写、怎么写、怎么追踪。具体架构拆解方法论交给 `architecture-execution-methodology`。
+本 skill 是"文档落盘入口"——告诉你去哪找规范、在哪写、怎么写、怎么追踪。Use `architecture-design-methodology` for architecture design; use `architecture-execution-methodology` for architecture landing and execution decomposition.

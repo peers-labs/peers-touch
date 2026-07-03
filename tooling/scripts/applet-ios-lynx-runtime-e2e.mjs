@@ -18,9 +18,18 @@ const workDir = path.resolve('.local/applet-ios-lynx-runtime-e2e');
 const packageDir = path.join(evidenceRoot, 'package/ios-lynx-runtime-e2e-applet');
 const appletId = 'ios-lynx-runtime-e2e-applet';
 const bundleId = 'com.peerstouch.mobile';
+const args = new Set(process.argv.slice(2));
+const isDeviceMode = args.has('--device');
+const explicitDevice = process.env.IOS_DEVICE_UDID || valueAfter('--device-id');
+const developmentTeam = process.env.IOS_DEVELOPMENT_TEAM || valueAfter('--team');
 
 mkdirSync(evidenceDir, { recursive: true });
 mkdirSync(workDir, { recursive: true });
+
+function valueAfter(flag) {
+  const index = process.argv.indexOf(flag);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
 
 function childProcessEnv(overrides = {}) {
   const env = { ...process.env, ...overrides };
@@ -49,6 +58,13 @@ function run(command, args, options = {}) {
     ].filter(Boolean).join('\n'));
   }
   return result;
+}
+
+function runCapture(command, args, outputName, options = {}) {
+  const result = run(command, args, { ...options, allowFailure: true });
+  const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
+  writeFileSync(path.join(evidenceDir, outputName), output);
+  return { result, output };
 }
 
 function writeEvidence(content) {
@@ -92,8 +108,15 @@ function RuntimeE2EApplet() {
   }, []);
 
   return (
-    <view style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <text>{state}</text>
+    <view style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a', padding: 24 }}>
+      <view style={{ backgroundColor: state === 'pass' ? '#16a34a' : '#f59e0b', borderRadius: 18, paddingTop: 24, paddingBottom: 24, paddingLeft: 28, paddingRight: 28 }}>
+        <text style={{ color: '#ffffff', fontSize: 30, fontWeight: 'bold', textAlign: 'center' }}>
+          iOS Lynx Runtime E2E
+        </text>
+        <text style={{ color: '#dcfce7', fontSize: 22, marginTop: 12, textAlign: 'center' }}>
+          {state === 'pass' ? 'PASS storage bridge' : state}
+        </text>
+      </view>
     </view>
   );
 }
@@ -187,10 +210,33 @@ function bootedSimulator() {
   throw new Error('No available iOS simulator found for applet runtime E2E.');
 }
 
-function buildAndInstallApp(simulator) {
+function physicalDevice() {
+  if (explicitDevice) {
+    return { udid: explicitDevice, name: explicitDevice };
+  }
+
+  const result = run('xcrun', ['devicectl', 'list', 'devices']);
+  for (const line of result.stdout.split('\n')) {
+    if (!line.includes('available') || !line.includes('iPhone')) continue;
+    const columns = line.split(/\s{2,}/).map((part) => part.trim()).filter(Boolean);
+    const identifier = columns.find((part) => /^[0-9A-F-]{36}$/i.test(part));
+    if (identifier) {
+      return { udid: identifier, name: columns[0] ?? identifier };
+    }
+  }
+
+  throw new Error([
+    'No available paired iPhone found for physical iOS runtime E2E.',
+    'Unlock the iPhone, keep it connected, and accept any Trust/Developer Mode prompts.',
+  ].join('\n'));
+}
+
+function buildAndInstallApp(target) {
   const derivedDataPath = path.join(workDir, 'DerivedData');
   rmSync(derivedDataPath, { recursive: true, force: true });
-  const build = run('xcodebuild', [
+  const sdk = isDeviceMode ? 'iphoneos' : 'iphonesimulator';
+  const productDir = isDeviceMode ? 'Debug-iphoneos' : 'Debug-iphonesimulator';
+  const buildArgs = [
     '-workspace',
     path.resolve('apps/mobile/ios/PeersTouch.xcworkspace'),
     '-scheme',
@@ -198,27 +244,67 @@ function buildAndInstallApp(simulator) {
     '-configuration',
     'Debug',
     '-sdk',
-    'iphonesimulator',
+    sdk,
     '-destination',
-    `id=${simulator.udid}`,
+    `id=${target.udid}`,
     '-derivedDataPath',
     derivedDataPath,
-    'build',
-  ]);
+  ];
+  if (isDeviceMode) {
+    buildArgs.push('-allowProvisioningUpdates');
+    if (developmentTeam) {
+      buildArgs.push(`DEVELOPMENT_TEAM=${developmentTeam}`);
+    }
+  }
+  buildArgs.push('build');
+  const build = run('xcodebuild', buildArgs);
 
   const rawBuildOutput = [build.stdout, build.stderr].filter(Boolean).join('\n');
   writeFileSync(path.join(evidenceDir, 'ios-lynx-runtime-e2e-xcodebuild-output.txt'), rawBuildOutput);
 
-  const appPath = path.join(derivedDataPath, 'Build/Products/Debug-iphonesimulator/PeersTouch.app');
+  const appPath = path.join(derivedDataPath, `Build/Products/${productDir}/PeersTouch.app`);
   if (!existsSync(appPath)) {
     throw new Error(`Built iOS app was not found: ${appPath}`);
   }
-run('xcrun', ['simctl', 'install', simulator.udid, appPath]);
+  if (isDeviceMode) {
+    run('xcrun', ['devicectl', 'device', 'install', 'app', '--device', target.udid, appPath], { maxBuffer: 50 * 1024 * 1024 });
+  } else {
+    run('xcrun', ['simctl', 'install', target.udid, appPath]);
+  }
   return appPath;
 }
 
-function stageApplet(simulator) {
-  const container = run('xcrun', ['simctl', 'get_app_container', simulator.udid, bundleId, 'data']).stdout.trim();
+function stageApplet(target) {
+  if (isDeviceMode) {
+    const localRuntimeRoot = path.join(workDir, 'device-runtime-markers');
+    rmSync(localRuntimeRoot, { recursive: true, force: true });
+    const remoteAppletParent = 'Library/Application Support/PeersTouch/Applets';
+    const remoteRuntimeRoot = 'Library/Application Support/PeersTouch/AppletRuntimeE2E';
+    run('xcrun', [
+      'devicectl',
+      'device',
+      'copy',
+      'to',
+      '--device',
+      target.udid,
+      '--source',
+      packageDir,
+      '--destination',
+      remoteAppletParent,
+      '--domain-type',
+      'appDataContainer',
+      '--domain-identifier',
+      bundleId,
+    ], { maxBuffer: 50 * 1024 * 1024 });
+    return {
+      container: `appDataContainer:${bundleId}`,
+      appletRoot: `${remoteAppletParent}/${appletId}`,
+      runtimeRoot: localRuntimeRoot,
+      remoteRuntimeRoot,
+    };
+  }
+
+  const container = run('xcrun', ['simctl', 'get_app_container', target.udid, bundleId, 'data']).stdout.trim();
   const appletRoot = path.join(container, 'Library/Application Support/PeersTouch/Applets', appletId);
   const runtimeRoot = path.join(container, 'Library/Application Support/PeersTouch/AppletRuntimeE2E');
   rmSync(appletRoot, { recursive: true, force: true });
@@ -226,6 +312,27 @@ function stageApplet(simulator) {
   mkdirSync(path.dirname(appletRoot), { recursive: true });
   cpSync(packageDir, appletRoot, { recursive: true });
   return { container, appletRoot, runtimeRoot };
+}
+
+function pullDeviceRuntimeMarkers(target, staged) {
+  rmSync(staged.runtimeRoot, { recursive: true, force: true });
+  mkdirSync(staged.runtimeRoot, { recursive: true });
+  run('xcrun', [
+    'devicectl',
+    'device',
+    'copy',
+    'from',
+    '--device',
+    target.udid,
+    '--source',
+    staged.remoteRuntimeRoot,
+    '--destination',
+    staged.runtimeRoot,
+    '--domain-type',
+    'appDataContainer',
+    '--domain-identifier',
+    bundleId,
+  ], { maxBuffer: 50 * 1024 * 1024 });
 }
 
 function waitForMarker(runtimeRoot) {
@@ -244,24 +351,104 @@ function waitForMarker(runtimeRoot) {
   throw new Error(`Timed out waiting for iOS Lynx runtime markers in ${runtimeRoot}`);
 }
 
+function waitForPhysicalMarker(target, staged) {
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    try {
+      pullDeviceRuntimeMarkers(target, staged);
+      const marker = waitForMarker(staged.runtimeRoot);
+      return marker;
+    } catch {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+    }
+  }
+  throw new Error(`Timed out waiting for iOS device Lynx runtime markers in ${staged.remoteRuntimeRoot}`);
+}
+
+function captureDeviceEvidence(target) {
+  runCapture('xcrun', [
+    'devicectl',
+    'device',
+    'info',
+    'details',
+    '--device',
+    target.udid,
+  ], 'ios-device-details.txt');
+  runCapture('xcrun', [
+    'devicectl',
+    'device',
+    'info',
+    'displays',
+    '--device',
+    target.udid,
+  ], 'ios-device-displays.txt');
+}
+
+function captureSimulatorScreenshot(target) {
+  const screenshotPath = path.join(evidenceDir, 'ios-simulator-runtime-e2e-screenshot.png');
+  run('xcrun', ['simctl', 'io', target.udid, 'screenshot', screenshotPath]);
+  return screenshotPath;
+}
+
+function timestampFromSessionId(sessionId) {
+  const match = String(sessionId).match(/:(\d+)$/);
+  return match ? Number(match[1]) : undefined;
+}
+
+function timestampFromRequestId(requestId) {
+  const match = String(requestId).match(/-(\d+)$/);
+  return match ? Number(match[1]) : undefined;
+}
+
 createRuntimeApplet();
-const simulator = bootedSimulator();
-const appPath = buildAndInstallApp(simulator);
-const staged = stageApplet(simulator);
-run('xcrun', ['simctl', 'terminate', simulator.udid, bundleId], { stdio: 'pipe', allowFailure: true });
-run('xcrun', [
-  'simctl',
-  'launch',
-  '--terminate-running-process',
-  simulator.udid,
-  bundleId,
-], {
-  env: {
-    SIMCTL_CHILD_PEERS_APPLET_IOS_RUNTIME_E2E: '1',
-    SIMCTL_CHILD_PEERS_APPLET_IOS_RUNTIME_E2E_APPLET_ID: appletId,
-  },
-});
-const markers = waitForMarker(staged.runtimeRoot);
+const target = isDeviceMode ? physicalDevice() : bootedSimulator();
+const appPath = buildAndInstallApp(target);
+const staged = stageApplet(target);
+if (isDeviceMode) {
+  captureDeviceEvidence(target);
+} else {
+  run('xcrun', ['simctl', 'terminate', target.udid, bundleId], { stdio: 'pipe', allowFailure: true });
+}
+const launchStartedAt = Date.now();
+if (isDeviceMode) {
+  run('xcrun', [
+    'devicectl',
+    'device',
+    'process',
+    'launch',
+    '--device',
+    target.udid,
+    '--terminate-existing',
+    '--environment-variables',
+    JSON.stringify({
+      PEERS_APPLET_IOS_RUNTIME_E2E: '1',
+      PEERS_APPLET_IOS_RUNTIME_E2E_APPLET_ID: appletId,
+    }),
+    bundleId,
+  ], { maxBuffer: 50 * 1024 * 1024 });
+} else {
+  run('xcrun', [
+    'simctl',
+    'launch',
+    '--terminate-running-process',
+    target.udid,
+    bundleId,
+  ], {
+    env: {
+      SIMCTL_CHILD_PEERS_APPLET_IOS_RUNTIME_E2E: '1',
+      SIMCTL_CHILD_PEERS_APPLET_IOS_RUNTIME_E2E_APPLET_ID: appletId,
+    },
+  });
+}
+const markers = isDeviceMode ? waitForPhysicalMarker(target, staged) : waitForMarker(staged.runtimeRoot);
+if (!isDeviceMode) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+}
+const processLaunchToMarkerMs = Date.now() - launchStartedAt;
+const sessionStartedAt = timestampFromSessionId(markers.set.sessionId);
+const firstMarkerAt = timestampFromRequestId(markers.set.requestId);
+const appletColdStartLatencyMs =
+  sessionStartedAt !== undefined && firstMarkerAt !== undefined ? firstMarkerAt - sessionStartedAt : undefined;
 
 for (const marker of [markers.set, markers.get]) {
   if (marker.protocol !== 'peers-touch.applet.bridge') {
@@ -275,16 +462,25 @@ for (const marker of [markers.set, markers.get]) {
   }
 }
 
+const simulatorScreenshotPath = isDeviceMode ? undefined : captureSimulatorScreenshot(target);
+
 writeEvidence([
   'PASS iOS Lynx runtime E2E',
-  `Simulator: ${simulator.name} (${simulator.udid})`,
+  `Target kind: ${isDeviceMode ? 'physical-device' : 'simulator'}`,
+  `${isDeviceMode ? 'Device' : 'Simulator'}: ${target.name} (${target.udid})`,
   `App: ${appPath}`,
   `Applet package: ${packageDir}`,
   `Staged applet: ${staged.appletRoot}`,
+  `Process launch to marker ms: ${processLaunchToMarkerMs}`,
+  `Applet cold start latency ms: ${appletColdStartLatencyMs ?? 'unknown'}`,
   'Observed real Lynx applet SDK storage.set and storage.get calls through AppletBridgeNativeModule.',
   `storage.set marker: ${JSON.stringify(markers.set)}`,
   `storage.get marker: ${JSON.stringify(markers.get)}`,
   'Xcode build evidence: mobile/ios-lynx-runtime-e2e-xcodebuild-output.txt',
+  simulatorScreenshotPath ? `UI screenshot evidence: ${path.relative(evidenceRoot, simulatorScreenshotPath)}` : '',
+  isDeviceMode ? 'Device details evidence: mobile/ios-device-details.txt' : '',
+  isDeviceMode ? 'Device display evidence: mobile/ios-device-displays.txt' : '',
+  isDeviceMode ? 'UI screenshot evidence: NOT_AVAILABLE via current devicectl; use Xcode Devices screenshot/recording or a dedicated XCTest screenshot runner.' : '',
 ].join('\n'));
 
 process.stdout.write('PASS iOS Lynx runtime E2E\n');

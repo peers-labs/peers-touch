@@ -4,14 +4,17 @@ struct AppletContainerView: View {
     let appletId: String
     @StateObject private var viewModel: AppletContainerViewModel
     private let lynxViewFactory: LynxViewFactory
+    private let surfaceCache: AppletSurfaceCache
 
     init(
         appletId: String,
         appletManager: AppletManager = Container.shared.appletManager,
-        lynxViewFactory: LynxViewFactory = Container.shared.lynxViewFactory
+        lynxViewFactory: LynxViewFactory = Container.shared.lynxViewFactory,
+        surfaceCache: AppletSurfaceCache = Container.shared.appletSurfaceCache
     ) {
         self.appletId = appletId
         self.lynxViewFactory = lynxViewFactory
+        self.surfaceCache = surfaceCache
         _viewModel = StateObject(wrappedValue: AppletContainerViewModel(
             appletId: appletId,
             appletManager: appletManager
@@ -28,7 +31,8 @@ struct AppletContainerView: View {
                     AppletLynxViewRepresentable(
                         bundleURL: bundleURL.appendingPathComponent(loadConfig.entry),
                         session: session,
-                        lynxViewFactory: lynxViewFactory
+                        lynxViewFactory: lynxViewFactory,
+                        surfaceCache: surfaceCache
                     )
                 } else {
                     errorView("No iOS load config for applet \(appletId)")
@@ -38,7 +42,7 @@ struct AppletContainerView: View {
             }
         }
         .onAppear { viewModel.load() }
-        .onDisappear { viewModel.unload() }
+        .onDisappear { viewModel.hide() }
     }
 
     private func errorView(_ message: String) -> some View {
@@ -79,14 +83,13 @@ final class AppletContainerViewModel: ObservableObject {
                 state = .error("Applet \(appletId) bundle URL not found")
                 return
             }
-            session.transition(to: .running)
             state = .running(session, bundleURL)
         } catch {
             state = .error("Applet \(appletId) not found")
         }
     }
 
-    func unload() {
-        appletManager.unloadApplet(appletId)
+    func hide() {
+        appletManager.hideApplet(appletId)
     }
 }

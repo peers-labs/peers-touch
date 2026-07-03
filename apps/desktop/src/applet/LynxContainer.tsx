@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Collapse, Spin, Typography, theme } from 'antd'
 import { RefreshCw, RotateCcw } from 'lucide-react'
-import AppletManager from './AppletManager'
-import LynxHost from './LynxHost'
+import { getDesktopAppletAdapter } from './kernel/desktopKernel'
+import type { SurfaceHandlers } from './kernel/SurfaceManager'
 import type { AppletHostDeviceRequest, AppletHostNavigationRequest, AppletHostUiRequest } from './lynx-host-element'
 import { createLynxDebugEvent, type LynxDebugEvent } from './LynxDebugPanel'
-import type { AppletInfo } from './types'
 
 interface LynxContainerProps {
   appletId: string
@@ -23,12 +22,20 @@ interface LynxContainerProps {
 
 const APPLET_READY_TIMEOUT_MS = 8000
 const APPLET_HOST_RENDER_FALLBACK_MS = 2500
+const APPLET_PAGE_PREFIX = 'applet:'
 const { Text } = Typography
 
 /**
- * Renders an applet session owned by the applets runtime via <lynx-host>.
- * The container consumes the current manager session; it does not load or
- * unload applet runtime resources.
+ * Renders an applet surface owned by the Applet Kernel.
+ *
+ * Under Kernel-single-authority (§6.1) the `<lynx-host>` element is created and
+ * driven imperatively by the {@link SurfaceManager} in response to Kernel surface
+ * commands — NOT by React. This container therefore only:
+ *   1. Publishes a DOM slot + the page's handler bundle through `bindSlot`, so the
+ *      SurfaceManager can attach the host and forward navigation/ui/device/debug
+ *      events plus ready/load/error signals.
+ *   2. Reflects surface readiness (loading overlay → visible) for the user.
+ * It never loads, unloads, mounts, or destroys runtime resources.
  */
 const LynxContainer: React.FC<LynxContainerProps> = ({
   appletId,
@@ -44,15 +51,13 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
 }) => {
   const { t } = useTranslation('applet')
   const { token } = theme.useToken()
-  const [loading, setLoading] = useState(true)
   const [ready, setReady] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
   const [error, setError] = useState<Error | null>(null)
-  const [appletInfo, setAppletInfo] = useState<AppletInfo | null>(null)
-  const [sessionId, setSessionId] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  const slotRef = useRef<HTMLDivElement | null>(null)
   const loadNotifiedRef = useRef(false)
-  const appletManager = AppletManager.getInstance()
+  const pageId = `${APPLET_PAGE_PREFIX}${appletId}`
 
   const reportDebug = useCallback((stage: string, options?: {
     data?: Record<string, unknown>
@@ -69,114 +74,81 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
     onLoad?.(readySource)
   }, [onLoad])
 
-  useEffect(() => {
-    try {
-      setLoading(true)
-      setReady(false)
+  // The handler bundle the SurfaceManager wires to the host. Recreated when the
+  // page callbacks change; `bindSlot` refreshes the live handlers on the record.
+  const handlers = useMemo<SurfaceHandlers>(() => ({
+    onReady: () => {
+      setReady(true)
       setTimedOut(false)
-      setError(null)
-      loadNotifiedRef.current = false
-      reportDebug('container.resolve.start', { data: { retryKey } })
+      reportDebug('container.ready.received')
+      notifyLoaded('lifecycle.reportReady')
+    },
+    onError: (hostError) => {
+      reportDebug('container.host.error', { data: { error: hostError.message }, level: 'error' })
+      setError(hostError)
+      onError?.(hostError)
+    },
+    onDebugEvent,
+    navigationHandler: onNavigationRequest,
+    uiHandler: onUiRequest,
+    deviceHandler: onDeviceRequest,
+  }), [notifyLoaded, onDebugEvent, onDeviceRequest, onError, onNavigationRequest, onUiRequest, reportDebug])
 
-      const info = appletManager.getAppletInfo(appletId)
-      if (!info) {
-        throw new Error(t('applet.runtime.registryNotFound', { id: appletId }))
-      }
-      if (!info.load.desktop) {
-        throw new Error(t('applet.runtime.noDesktopLoad', { id: appletId }))
-      }
+  // Publish the slot + handlers to the SurfaceManager for this instance. Because
+  // the applet page frame is keepAlive:'forever', this binding outlives hide/
+  // detach; the SurfaceManager (re)attaches the host into the slot on show.
+  useEffect(() => {
+    const slot = slotRef.current
+    if (!slot) return undefined
+    setReady(false)
+    setTimedOut(false)
+    setError(null)
+    loadNotifiedRef.current = false
+    reportDebug('container.slot.bind', { data: { retryKey } })
 
-      const currentSessionId = appletManager.getSessionId(appletId)
-      if (!currentSessionId) {
-        throw new Error(t('applet.runtime.sessionCreateFailed', { id: appletId }))
-      }
-      reportDebug('container.session.resolved', {
-        data: {
-          entry: info.load.desktop.entry,
-          path: info.path,
-        },
-        sessionId: currentSessionId,
-      })
-      setAppletInfo(info)
-      setSessionId(currentSessionId)
-      setLoading(false)
-    } catch (err) {
-      const loadError = err instanceof Error ? err : new Error(t('applet.runtime.loadFailedFallback'))
-      reportDebug('container.resolve.error', { data: { error: loadError.message }, level: 'error' })
-      setError(loadError)
-      onError?.(loadError)
-      setLoading(false)
-    }
+    const adapter = getDesktopAppletAdapter()
+    const target = { appletId, instanceId: pageId }
+    adapter.surfaces.bindSlot(target, slot, handlers)
 
     return () => {
-      setSessionId(null)
+      adapter.surfaces.unbindSlot(target)
     }
-  }, [appletId, appletManager, onError, reportDebug, retryKey, t])
+  }, [appletId, handlers, pageId, reportDebug, retryKey])
 
   useEffect(() => {
-    if (loading || error || ready || !sessionId) return undefined
-
+    if (error || ready) return undefined
     const timer = window.setTimeout(() => {
       setReady(true)
       setTimedOut(false)
-      reportDebug('container.hostRenderFallback.ready', { sessionId })
+      reportDebug('container.hostRenderFallback.ready')
       notifyLoaded('host-render-fallback')
     }, APPLET_HOST_RENDER_FALLBACK_MS)
-
     return () => window.clearTimeout(timer)
-  }, [error, loading, notifyLoaded, ready, reportDebug, sessionId])
+  }, [error, notifyLoaded, ready, reportDebug])
 
   useEffect(() => {
-    if (loading || error || ready || !sessionId) return undefined
-
+    if (error || ready) return undefined
     const timer = window.setTimeout(() => {
       setTimedOut(true)
-      reportDebug('container.ready.timeout', { level: 'warn', sessionId })
+      reportDebug('container.ready.timeout', { level: 'warn' })
     }, APPLET_READY_TIMEOUT_MS)
-
     return () => window.clearTimeout(timer)
-  }, [error, loading, ready, reportDebug, sessionId])
-
-  useEffect(() => {
-    const desktopLoad = appletInfo?.load.desktop
-    if (!desktopLoad || !sessionId) return
-    reportDebug('container.bundle.resolved', {
-      data: { bundleUrl: `${appletInfo.path}/${desktopLoad.entry}` },
-      sessionId,
-    })
-  }, [appletInfo, reportDebug, sessionId])
+  }, [error, ready, reportDebug])
 
   const retry = () => {
     setRetryKey((current) => current + 1)
+    const adapter = getDesktopAppletAdapter()
+    void adapter.applySurfaceCommand('show', { appletId, instanceId: pageId })
   }
 
-  if (loading) {
-    return (
-      <div
-        style={{
-          width,
-          height,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: `1px solid ${token.colorBorderSecondary}`,
-          borderRadius: 18,
-          background: token.colorBgContainer,
-        }}
-      >
-        <Spin size="large" description={t('applet.runtime.loading')} />
-      </div>
-    )
-  }
-
-  if (error || !appletInfo || !sessionId) {
+  if (error) {
     return (
       <AppletDisplayFallback
         width={width}
         height={height}
         title={t('applet.runtime.unableToDisplay')}
         description={t('applet.runtime.loadFailedDescription')}
-        detail={error?.message || t('applet.runtime.unknownError')}
+        detail={error.message || t('applet.runtime.unknownError')}
         onRetry={retry}
         onBack={onBack}
       />
@@ -196,22 +168,6 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
       />
     )
   }
-
-  const desktopLoad = appletInfo.load.desktop
-  if (!desktopLoad) {
-    return (
-      <AppletDisplayFallback
-        width={width}
-        height={height}
-        title={t('applet.runtime.unsupportedPlatform')}
-        description={t('applet.runtime.noDesktopLoad', { id: appletId })}
-        onRetry={retry}
-        onBack={onBack}
-      />
-    )
-  }
-
-  const bundleUrl = `${appletInfo.path}/${desktopLoad.entry}`
 
   return (
     <div
@@ -241,32 +197,14 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
           <Spin size="large" description={t('applet.runtime.loading')} />
         </div>
       )}
-      <LynxHost
-        key={retryKey}
-        appletId={appletId}
-        sessionId={sessionId}
-        url={bundleUrl}
+      <div
+        ref={slotRef}
         style={{
           width: '100%',
           height: '100%',
           opacity: ready ? 1 : 0,
           transition: 'opacity 0.2s ease',
         }}
-        onReady={() => {
-          setReady(true)
-          setTimedOut(false)
-          reportDebug('container.ready.received', { sessionId })
-          notifyLoaded('lifecycle.reportReady')
-        }}
-        onError={(hostError) => {
-          reportDebug('container.host.error', { data: { error: hostError.message }, level: 'error', sessionId })
-          setError(hostError)
-          onError?.(hostError)
-        }}
-        onDebugEvent={onDebugEvent}
-        onNavigationRequest={onNavigationRequest}
-        onUiRequest={onUiRequest}
-        onDeviceRequest={onDeviceRequest}
       />
     </div>
   )

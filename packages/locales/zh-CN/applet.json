@@ -134,17 +134,5 @@
   "applet.runtime.debug.noEvents": "暂无事件",
   "applet.runtime.debug.expand": "展开",
   "applet.runtime.debug.collapse": "收起",
-  "applet.runtime.debug.clear": "清空",
-
-  "applet.example.title": "应用运行时示例",
-  "applet.example.alertTitle": "应用运行时",
-  "applet.example.alertDesc": "此页面演示如何从本地 applets-dist 目录加载和运行应用。",
-  "applet.example.description": "应用运行时允许你在桌面客户端中运行轻量级应用，由 Lynx 跨平台渲染引擎驱动。应用从本地 applets-dist 目录加载。",
-  "applet.example.scan": "扫描应用",
-  "applet.example.closeApplet": "关闭应用",
-  "applet.example.available": "可用应用（{{count}}）",
-  "applet.example.open": "打开",
-  "applet.example.author": "作者：{{author}}",
-  "applet.example.loaded.title": "应用已加载",
-  "applet.example.loaded.desc": "应用已成功加载，你可以在下方进行交互。"
+  "applet.runtime.debug.clear": "清空"
 }

@@ -15,8 +15,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.peerstouch.mobile.core.applet.AppletManager
 import com.peerstouch.mobile.core.applet.AppletState
-import com.peerstouch.mobile.core.lynx.LynxViewFactory
-import java.io.File
+import com.peerstouch.mobile.core.applet.kernel.AppletSurfaceCache
 
 sealed class AppletContainerState {
     data object Loading : AppletContainerState()
@@ -28,7 +27,7 @@ sealed class AppletContainerState {
 fun AppletContainerView(
     appletId: String,
     appletManager: AppletManager = hiltViewModel<AppletContainerViewModel>().appletManager,
-    lynxViewFactory: LynxViewFactory = hiltViewModel<AppletContainerViewModel>().lynxViewFactory
+    appletSurfaceCache: AppletSurfaceCache = hiltViewModel<AppletContainerViewModel>().appletSurfaceCache
 ) {
     val context = LocalContext.current
     var containerState by remember { mutableStateOf<AppletContainerState>(AppletContainerState.Loading) }
@@ -37,7 +36,7 @@ fun AppletContainerView(
         try {
             appletManager.scanLocalApplets()
             val session = appletManager.loadApplet(appletId)
-            if (session.state == AppletState.READY || session.state == AppletState.RUNNING) {
+            if (session.state == AppletState.VISIBLE) {
                 containerState = AppletContainerState.Running
             } else {
                 containerState = AppletContainerState.Error("Applet is in ${session.state} state")
@@ -49,7 +48,7 @@ fun AppletContainerView(
 
     DisposableEffect(appletId) {
         onDispose {
-            appletManager.unloadApplet(appletId)
+            appletManager.hideApplet(appletId)
         }
     }
 
@@ -61,12 +60,14 @@ fun AppletContainerView(
                 if (session != null) {
                     val loadConfig = session.manifest.load.android
                         ?: throw IllegalStateException("Applet ${session.manifest.id} has no android load config")
-                    val bundleUrl = appletManager.getAppletInfo(appletId)
-                        ?.let { File(it.path, loadConfig.entry).toURI().toString() }
-                        ?: loadConfig.entry
                     AndroidView(
                         factory = { ctx ->
-                            lynxViewFactory.create(ctx, bundleUrl, session)
+                            check(loadConfig.entry.isNotBlank()) { "Applet ${session.manifest.id} has blank android entry" }
+                            appletManager.showApplet(appletId)
+                            appletSurfaceCache.getOrCreate(ctx, appletId, appletManager)
+                        },
+                        update = {
+                            appletManager.showApplet(appletId)
                         },
                         modifier = Modifier.fillMaxSize()
                     )

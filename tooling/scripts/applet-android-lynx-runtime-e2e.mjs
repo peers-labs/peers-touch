@@ -313,11 +313,22 @@ function waitForMarkers(deviceId) {
   throw new Error('Timed out waiting for Android Lynx runtime markers.');
 }
 
+function timestampFromSessionId(sessionId) {
+  const match = String(sessionId).match(/:(\d+)$/);
+  return match ? Number(match[1]) : undefined;
+}
+
+function timestampFromRequestId(requestId) {
+  const match = String(requestId).match(/-(\d+)$/);
+  return match ? Number(match[1]) : undefined;
+}
+
 createRuntimeApplet();
 const deviceId = bootedAndroidDevice();
 const apkPath = buildAndInstallApp(deviceId);
 const stagedApplet = stageApplet(deviceId);
 adbForDevice(deviceId, ['shell', 'am', 'force-stop', applicationId], { allowFailure: true });
+const launchStartedAt = Date.now();
 adbForDevice(deviceId, [
   'shell',
   'am',
@@ -332,6 +343,11 @@ adbForDevice(deviceId, [
   appletId,
 ]);
 const markers = waitForMarkers(deviceId);
+const processLaunchToMarkerMs = Date.now() - launchStartedAt;
+const sessionStartedAt = timestampFromSessionId(markers.set.sessionId);
+const firstMarkerAt = timestampFromRequestId(markers.set.requestId);
+const appletColdStartLatencyMs =
+  sessionStartedAt !== undefined && firstMarkerAt !== undefined ? firstMarkerAt - sessionStartedAt : undefined;
 
 for (const marker of [markers.set, markers.get]) {
   if (marker.protocol !== 'peers-touch.applet.bridge') {
@@ -351,6 +367,8 @@ writeEvidence([
   `APK: ${apkPath}`,
   `Applet package: ${packageDir}`,
   `Staged applet: ${stagedApplet}`,
+  `Process launch to marker ms: ${processLaunchToMarkerMs}`,
+  `Applet cold start latency ms: ${appletColdStartLatencyMs ?? 'unknown'}`,
   'Observed real Lynx applet SDK storage.set and storage.get calls through AppletBridgeNativeModule.',
   `storage.set marker: ${JSON.stringify(markers.set)}`,
   `storage.get marker: ${JSON.stringify(markers.get)}`,
