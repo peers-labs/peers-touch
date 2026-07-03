@@ -7,20 +7,22 @@
 
 ---
 
+> **Boundary update (2026-07-02)**: 本文是早期功能拆解，仍使用“多 Agent 协商引擎 / Atelier 新建”等说法。当前落地纪律是：Atelier applet 不自建协作引擎；M1-M10 中涉及编排、共识、Provider、Gate、Artifact 生产、Trace、Checkpoint、Resume 的能力归 Station / Agent orchestration，Atelier 负责 applet 视图、projection runtime、human-in-loop 交互和 capability 回写。
+
 ## 0. 这份文档回答什么
 
 > 「Atelier 这个个人 Agent 工作台，用户拿到的是什么样子？有哪些功能模块、每个怎么做？」
 
 ### 0.1 一条主轴：多 Agent 协商引擎
 
-Atelier 的灵魂**不是**「又一个任务调度客户端」，而是 **多 Agent 协商协作引擎**——一群分工明确的 Agent（六引擎 + 九角色 + 共识收敛）把一个大目标协商拆解、并行推进、带证据验收、安全升级，直到完成或必要时升级给人。所有功能模块都围绕这条主轴展开。
+Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **Station / Agent orchestration 的多 Agent 协商协作过程** 变成个人可理解、可干预、可验收的工作台投影。一群分工明确的 Agent（六引擎 + 九角色 + 共识收敛）如何拆解、并行推进、带证据验收、安全升级，属于后端 orchestration 真源；Atelier applet 负责把这些状态投影到对话流、任务列表、决策卡、Artifact/Gate 视图里。
 
 ### 0.2 三类能力，划清边界
 
 | 类别 | 含义 | 处理方式 |
 |------|------|---------|
 | **A. 框架既有，复用** | 三端联动、跨端同步、定时任务调度——peers-touch 框架天然具备 | **复用，不为 Atelier 重建基础能力** |
-| **B. Atelier 新建** | 多 Agent 协商引擎、协作共识、可判定验收、安全硬闸、长项目持续推进、记忆自进化 | **Atelier 的主体功能模块**，本文档重点 |
+| **B. Station / Agent orchestration 新建，Atelier 投影** | 多 Agent 协商引擎、协作共识、可判定验收、安全硬闸、长项目持续推进、记忆自进化 | **后端真源 + Atelier 工作台投影**，本文档从用户功能视角描述 |
 | **C. 不做** | 云端智能体（Cloud Agent） | **明确不做**；执行走本地/沙箱 |
 
 ### 0.3 Atelier 本身是一个 Applet（落地前提）
@@ -33,7 +35,7 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是 **多 A
 - **权限 Manifest 声明、默认拒绝**：Atelier 要在 Manifest 里声明它用到的能力（含调 Agent/协作引擎/Provider 的能力），Host 按 applet id + session + method 强校验。
 - **遵循 applet-contract**：Atelier 作为一个复杂 applet 打包分发，符合 [complex-applet-acceptance](../../applet-runtime/complex-applet-acceptance.md)（skills / agent-AI / streaming / tasks / service-binding / audit）的门槛。
 
-> 含义：本文档里所有「Atelier 新建」的模块（M1–M10）是 **applet 内的业务逻辑 + 视图**；所有「框架复用」的模块（M11–M14）是 **通过 SDK/Gateway 调宿主能力**。Atelier 不在 applet 边界外另开后门。
+> 含义：本文档里 M1–M10 涉及的编排 / 共识 / Gate / Artifact / Resume 能力是 **Station / Agent orchestration 后端真源 + Atelier applet 投影与交互**；M11–M14 是 **通过 SDK/Gateway 调宿主能力**。Atelier 不在 applet 内另建平行编排引擎，也不在 applet 边界外另开后门。
 
 ---
 

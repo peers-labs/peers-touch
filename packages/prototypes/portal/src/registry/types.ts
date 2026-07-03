@@ -31,6 +31,5 @@ export type PrototypeWorktreeTarget = {
   label: string;
   branch: string;
   worktreePath: string;
-  portalUrl?: string;
   sites: Partial<Record<PrototypeSite, string>>;
 };
