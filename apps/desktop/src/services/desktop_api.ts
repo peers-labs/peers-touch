@@ -81,7 +81,9 @@ import type {
   ListTurnTracesResponse,
 } from '../gen/proto/domain/agent/agent_pb';
 import type {
+  ClaimDesktopExecutorTaskResponse,
   CollaborationTask,
+  ExecutorLease,
   GetCollaborationTaskResponse,
   ListCollaborationTasksResponse,
   ListTaskEventsResponse,
@@ -976,6 +978,37 @@ export interface AgentCollaborationSubscribeInput {
 
 export interface AgentCollaborationCancelTaskInput {
   task_id: string;
+}
+
+export interface AgentCollaborationSubmitNodeResultInput {
+  task_id: string;
+  node_id: string;
+  result_summary: string;
+  status?: 'completed' | 'failed';
+  turn_id?: string;
+  lease_id?: string;
+  executor_id?: string;
+}
+
+export interface AgentCollaborationClaimExecutorInput {
+  executor_id: string;
+  lease_ttl_ms?: number;
+  task_id?: string;
+  agent_id?: string;
+  node_id?: string;
+  capabilities?: string[];
+}
+
+export interface AgentCollaborationHeartbeatLeaseInput {
+  lease_id: string;
+  executor_id: string;
+  lease_ttl_ms?: number;
+}
+
+export interface AgentCollaborationReleaseLeaseInput {
+  lease_id: string;
+  executor_id: string;
+  status?: string;
 }
 
 export interface AgentCollaborationStreamPayload {
@@ -3439,6 +3472,30 @@ export const api = {
     invokeRustDataFromStatus<AgentCollaborationCancelTaskInput, { task?: CollaborationTask }>(
       'agent_collaboration_cancel_task',
       { task_id: taskId },
+    ),
+
+  submitAgentCollaborationNodeResult: (input: AgentCollaborationSubmitNodeResultInput) =>
+    invokeRustDataFromStatus<AgentCollaborationSubmitNodeResultInput, { task?: CollaborationTask }>(
+      'agent_collaboration_submit_node_result',
+      input,
+    ),
+
+  claimAgentCollaborationExecutorTask: (input: AgentCollaborationClaimExecutorInput) =>
+    invokeRustDataFromStatus<AgentCollaborationClaimExecutorInput, ClaimDesktopExecutorTaskResponse>(
+      'agent_collaboration_claim_executor_task',
+      input,
+    ),
+
+  heartbeatAgentCollaborationExecutorLease: (input: AgentCollaborationHeartbeatLeaseInput) =>
+    invokeRustDataFromStatus<AgentCollaborationHeartbeatLeaseInput, { lease?: ExecutorLease }>(
+      'agent_collaboration_heartbeat_executor_lease',
+      input,
+    ),
+
+  releaseAgentCollaborationExecutorLease: (input: AgentCollaborationReleaseLeaseInput) =>
+    invokeRustDataFromStatus<AgentCollaborationReleaseLeaseInput, { lease?: ExecutorLease }>(
+      'agent_collaboration_release_executor_lease',
+      input,
     ),
 
   listTools: () =>

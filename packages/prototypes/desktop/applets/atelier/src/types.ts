@@ -159,6 +159,17 @@ export interface Artifact {
   size?: string;
 }
 
+/** Gate / verification result projected from the orchestration layer. */
+export interface GateResult {
+  id: string;
+  name: string;
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'blocked';
+  summary: string;
+  checks: { name: string; status: 'passed' | 'failed' | 'pending'; detail?: string }[];
+  artifactIds?: string[];
+  at?: string;
+}
+
 /** One line in the web preview's Console Logs panel. */
 export interface ConsoleLog {
   level: 'log' | 'info' | 'warn' | 'error';
@@ -201,6 +212,8 @@ export interface AtelierState {
   context: Record<string, TaskContext>;
   /** produced artifacts per task, shown in the Artifacts tray */
   artifacts: Record<string, Artifact[]>;
+  /** gate / verification results per task, projected separately from artifacts */
+  gates: Record<string, GateResult[]>;
 }
 
 /* ── Task-management plugin contract ── */

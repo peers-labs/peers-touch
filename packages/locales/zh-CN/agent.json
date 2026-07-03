@@ -91,6 +91,8 @@
   "agent.canvas.failed": "编排运行失败",
   "agent.canvas.cancelled": "编排运行已取消",
   "agent.canvas.errorNoTask": "运行服务未返回协作任务",
+  "agent.canvas.desktopExecutorCompleted": "Desktop executor 已完成，但未返回文本摘要。",
+  "agent.canvas.desktopExecutorFailed": "Desktop executor 执行失败。",
   "agent.canvas.engine.review": "评审协作",
   "agent.canvas.engine.delivery": "设计到实现",
   "agent.canvas.engine.synthesis": "综合归纳",

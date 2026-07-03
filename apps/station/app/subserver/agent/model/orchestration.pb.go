@@ -2994,6 +2994,366 @@ func (x *UpdateCollaborationTaskResponse) GetTask() *CollaborationTask {
 	return nil
 }
 
+type ClaimDesktopExecutorTaskRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ExecutorId    string                 `protobuf:"bytes,1,opt,name=executor_id,json=executorId,proto3" json:"executor_id,omitempty"`
+	LeaseTtlMs    int64                  `protobuf:"varint,2,opt,name=lease_ttl_ms,json=leaseTtlMs,proto3" json:"lease_ttl_ms,omitempty"`
+	TaskId        *string                `protobuf:"bytes,3,opt,name=task_id,json=taskId,proto3,oneof" json:"task_id,omitempty"`
+	AgentId       *string                `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3,oneof" json:"agent_id,omitempty"`
+	Capabilities  []string               `protobuf:"bytes,5,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	NodeId        *string                `protobuf:"bytes,6,opt,name=node_id,json=nodeId,proto3,oneof" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaimDesktopExecutorTaskRequest) Reset() {
+	*x = ClaimDesktopExecutorTaskRequest{}
+	mi := &file_domain_agent_orchestration_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimDesktopExecutorTaskRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimDesktopExecutorTaskRequest) ProtoMessage() {}
+
+func (x *ClaimDesktopExecutorTaskRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_orchestration_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimDesktopExecutorTaskRequest.ProtoReflect.Descriptor instead.
+func (*ClaimDesktopExecutorTaskRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ClaimDesktopExecutorTaskRequest) GetExecutorId() string {
+	if x != nil {
+		return x.ExecutorId
+	}
+	return ""
+}
+
+func (x *ClaimDesktopExecutorTaskRequest) GetLeaseTtlMs() int64 {
+	if x != nil {
+		return x.LeaseTtlMs
+	}
+	return 0
+}
+
+func (x *ClaimDesktopExecutorTaskRequest) GetTaskId() string {
+	if x != nil && x.TaskId != nil {
+		return *x.TaskId
+	}
+	return ""
+}
+
+func (x *ClaimDesktopExecutorTaskRequest) GetAgentId() string {
+	if x != nil && x.AgentId != nil {
+		return *x.AgentId
+	}
+	return ""
+}
+
+func (x *ClaimDesktopExecutorTaskRequest) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *ClaimDesktopExecutorTaskRequest) GetNodeId() string {
+	if x != nil && x.NodeId != nil {
+		return *x.NodeId
+	}
+	return ""
+}
+
+type ClaimDesktopExecutorTaskResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Task          *CollaborationTask     `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	Node          *TaskNode              `protobuf:"bytes,2,opt,name=node,proto3" json:"node,omitempty"`
+	Lease         *ExecutorLease         `protobuf:"bytes,3,opt,name=lease,proto3" json:"lease,omitempty"`
+	Claimed       bool                   `protobuf:"varint,4,opt,name=claimed,proto3" json:"claimed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaimDesktopExecutorTaskResponse) Reset() {
+	*x = ClaimDesktopExecutorTaskResponse{}
+	mi := &file_domain_agent_orchestration_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimDesktopExecutorTaskResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimDesktopExecutorTaskResponse) ProtoMessage() {}
+
+func (x *ClaimDesktopExecutorTaskResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_orchestration_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimDesktopExecutorTaskResponse.ProtoReflect.Descriptor instead.
+func (*ClaimDesktopExecutorTaskResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ClaimDesktopExecutorTaskResponse) GetTask() *CollaborationTask {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
+func (x *ClaimDesktopExecutorTaskResponse) GetNode() *TaskNode {
+	if x != nil {
+		return x.Node
+	}
+	return nil
+}
+
+func (x *ClaimDesktopExecutorTaskResponse) GetLease() *ExecutorLease {
+	if x != nil {
+		return x.Lease
+	}
+	return nil
+}
+
+func (x *ClaimDesktopExecutorTaskResponse) GetClaimed() bool {
+	if x != nil {
+		return x.Claimed
+	}
+	return false
+}
+
+type HeartbeatExecutorLeaseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LeaseId       string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	ExecutorId    string                 `protobuf:"bytes,2,opt,name=executor_id,json=executorId,proto3" json:"executor_id,omitempty"`
+	LeaseTtlMs    int64                  `protobuf:"varint,3,opt,name=lease_ttl_ms,json=leaseTtlMs,proto3" json:"lease_ttl_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HeartbeatExecutorLeaseRequest) Reset() {
+	*x = HeartbeatExecutorLeaseRequest{}
+	mi := &file_domain_agent_orchestration_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeartbeatExecutorLeaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeartbeatExecutorLeaseRequest) ProtoMessage() {}
+
+func (x *HeartbeatExecutorLeaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_orchestration_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeartbeatExecutorLeaseRequest.ProtoReflect.Descriptor instead.
+func (*HeartbeatExecutorLeaseRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *HeartbeatExecutorLeaseRequest) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *HeartbeatExecutorLeaseRequest) GetExecutorId() string {
+	if x != nil {
+		return x.ExecutorId
+	}
+	return ""
+}
+
+func (x *HeartbeatExecutorLeaseRequest) GetLeaseTtlMs() int64 {
+	if x != nil {
+		return x.LeaseTtlMs
+	}
+	return 0
+}
+
+type HeartbeatExecutorLeaseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Lease         *ExecutorLease         `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HeartbeatExecutorLeaseResponse) Reset() {
+	*x = HeartbeatExecutorLeaseResponse{}
+	mi := &file_domain_agent_orchestration_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeartbeatExecutorLeaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeartbeatExecutorLeaseResponse) ProtoMessage() {}
+
+func (x *HeartbeatExecutorLeaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_orchestration_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeartbeatExecutorLeaseResponse.ProtoReflect.Descriptor instead.
+func (*HeartbeatExecutorLeaseResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *HeartbeatExecutorLeaseResponse) GetLease() *ExecutorLease {
+	if x != nil {
+		return x.Lease
+	}
+	return nil
+}
+
+type ReleaseExecutorLeaseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LeaseId       string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	ExecutorId    string                 `protobuf:"bytes,2,opt,name=executor_id,json=executorId,proto3" json:"executor_id,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReleaseExecutorLeaseRequest) Reset() {
+	*x = ReleaseExecutorLeaseRequest{}
+	mi := &file_domain_agent_orchestration_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReleaseExecutorLeaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReleaseExecutorLeaseRequest) ProtoMessage() {}
+
+func (x *ReleaseExecutorLeaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_orchestration_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReleaseExecutorLeaseRequest.ProtoReflect.Descriptor instead.
+func (*ReleaseExecutorLeaseRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ReleaseExecutorLeaseRequest) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *ReleaseExecutorLeaseRequest) GetExecutorId() string {
+	if x != nil {
+		return x.ExecutorId
+	}
+	return ""
+}
+
+func (x *ReleaseExecutorLeaseRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type ReleaseExecutorLeaseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Lease         *ExecutorLease         `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReleaseExecutorLeaseResponse) Reset() {
+	*x = ReleaseExecutorLeaseResponse{}
+	mi := &file_domain_agent_orchestration_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReleaseExecutorLeaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReleaseExecutorLeaseResponse) ProtoMessage() {}
+
+func (x *ReleaseExecutorLeaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_orchestration_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReleaseExecutorLeaseResponse.ProtoReflect.Descriptor instead.
+func (*ReleaseExecutorLeaseResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ReleaseExecutorLeaseResponse) GetLease() *ExecutorLease {
+	if x != nil {
+		return x.Lease
+	}
+	return nil
+}
+
 type DeleteCollaborationTaskRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
@@ -3003,7 +3363,7 @@ type DeleteCollaborationTaskRequest struct {
 
 func (x *DeleteCollaborationTaskRequest) Reset() {
 	*x = DeleteCollaborationTaskRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[25]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3015,7 +3375,7 @@ func (x *DeleteCollaborationTaskRequest) String() string {
 func (*DeleteCollaborationTaskRequest) ProtoMessage() {}
 
 func (x *DeleteCollaborationTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[25]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3028,7 +3388,7 @@ func (x *DeleteCollaborationTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCollaborationTaskRequest.ProtoReflect.Descriptor instead.
 func (*DeleteCollaborationTaskRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{25}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *DeleteCollaborationTaskRequest) GetTaskId() string {
@@ -3047,7 +3407,7 @@ type DeleteCollaborationTaskResponse struct {
 
 func (x *DeleteCollaborationTaskResponse) Reset() {
 	*x = DeleteCollaborationTaskResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[26]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3059,7 +3419,7 @@ func (x *DeleteCollaborationTaskResponse) String() string {
 func (*DeleteCollaborationTaskResponse) ProtoMessage() {}
 
 func (x *DeleteCollaborationTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[26]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3072,7 +3432,7 @@ func (x *DeleteCollaborationTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCollaborationTaskResponse.ProtoReflect.Descriptor instead.
 func (*DeleteCollaborationTaskResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{26}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DeleteCollaborationTaskResponse) GetSuccess() bool {
@@ -3095,7 +3455,7 @@ type SubmitVoteRequest struct {
 
 func (x *SubmitVoteRequest) Reset() {
 	*x = SubmitVoteRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[27]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3107,7 +3467,7 @@ func (x *SubmitVoteRequest) String() string {
 func (*SubmitVoteRequest) ProtoMessage() {}
 
 func (x *SubmitVoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[27]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3120,7 +3480,7 @@ func (x *SubmitVoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitVoteRequest.ProtoReflect.Descriptor instead.
 func (*SubmitVoteRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{27}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *SubmitVoteRequest) GetTaskId() string {
@@ -3167,7 +3527,7 @@ type SubmitVoteResponse struct {
 
 func (x *SubmitVoteResponse) Reset() {
 	*x = SubmitVoteResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[28]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3179,7 +3539,7 @@ func (x *SubmitVoteResponse) String() string {
 func (*SubmitVoteResponse) ProtoMessage() {}
 
 func (x *SubmitVoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[28]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3192,7 +3552,7 @@ func (x *SubmitVoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitVoteResponse.ProtoReflect.Descriptor instead.
 func (*SubmitVoteResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{28}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *SubmitVoteResponse) GetVote() *Vote {
@@ -3212,7 +3572,7 @@ type ListVotesRequest struct {
 
 func (x *ListVotesRequest) Reset() {
 	*x = ListVotesRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[29]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3224,7 +3584,7 @@ func (x *ListVotesRequest) String() string {
 func (*ListVotesRequest) ProtoMessage() {}
 
 func (x *ListVotesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[29]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3237,7 +3597,7 @@ func (x *ListVotesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVotesRequest.ProtoReflect.Descriptor instead.
 func (*ListVotesRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{29}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ListVotesRequest) GetTaskId() string {
@@ -3263,7 +3623,7 @@ type ListVotesResponse struct {
 
 func (x *ListVotesResponse) Reset() {
 	*x = ListVotesResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[30]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3275,7 +3635,7 @@ func (x *ListVotesResponse) String() string {
 func (*ListVotesResponse) ProtoMessage() {}
 
 func (x *ListVotesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[30]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3288,7 +3648,7 @@ func (x *ListVotesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVotesResponse.ProtoReflect.Descriptor instead.
 func (*ListVotesResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{30}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ListVotesResponse) GetVotes() []*Vote {
@@ -3307,7 +3667,7 @@ type GetAcceptanceVerdictRequest struct {
 
 func (x *GetAcceptanceVerdictRequest) Reset() {
 	*x = GetAcceptanceVerdictRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[31]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3319,7 +3679,7 @@ func (x *GetAcceptanceVerdictRequest) String() string {
 func (*GetAcceptanceVerdictRequest) ProtoMessage() {}
 
 func (x *GetAcceptanceVerdictRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[31]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3332,7 +3692,7 @@ func (x *GetAcceptanceVerdictRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAcceptanceVerdictRequest.ProtoReflect.Descriptor instead.
 func (*GetAcceptanceVerdictRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{31}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *GetAcceptanceVerdictRequest) GetTaskId() string {
@@ -3351,7 +3711,7 @@ type GetAcceptanceVerdictResponse struct {
 
 func (x *GetAcceptanceVerdictResponse) Reset() {
 	*x = GetAcceptanceVerdictResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[32]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3363,7 +3723,7 @@ func (x *GetAcceptanceVerdictResponse) String() string {
 func (*GetAcceptanceVerdictResponse) ProtoMessage() {}
 
 func (x *GetAcceptanceVerdictResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[32]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3376,7 +3736,7 @@ func (x *GetAcceptanceVerdictResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAcceptanceVerdictResponse.ProtoReflect.Descriptor instead.
 func (*GetAcceptanceVerdictResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{32}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *GetAcceptanceVerdictResponse) GetVerdict() *AcceptanceVerdictResult {
@@ -3397,7 +3757,7 @@ type SubmitAcceptanceVerdictRequest struct {
 
 func (x *SubmitAcceptanceVerdictRequest) Reset() {
 	*x = SubmitAcceptanceVerdictRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[33]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3409,7 +3769,7 @@ func (x *SubmitAcceptanceVerdictRequest) String() string {
 func (*SubmitAcceptanceVerdictRequest) ProtoMessage() {}
 
 func (x *SubmitAcceptanceVerdictRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[33]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3422,7 +3782,7 @@ func (x *SubmitAcceptanceVerdictRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitAcceptanceVerdictRequest.ProtoReflect.Descriptor instead.
 func (*SubmitAcceptanceVerdictRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{33}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *SubmitAcceptanceVerdictRequest) GetTaskId() string {
@@ -3455,7 +3815,7 @@ type SubmitAcceptanceVerdictResponse struct {
 
 func (x *SubmitAcceptanceVerdictResponse) Reset() {
 	*x = SubmitAcceptanceVerdictResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[34]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3467,7 +3827,7 @@ func (x *SubmitAcceptanceVerdictResponse) String() string {
 func (*SubmitAcceptanceVerdictResponse) ProtoMessage() {}
 
 func (x *SubmitAcceptanceVerdictResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[34]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3480,7 +3840,7 @@ func (x *SubmitAcceptanceVerdictResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitAcceptanceVerdictResponse.ProtoReflect.Descriptor instead.
 func (*SubmitAcceptanceVerdictResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{34}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SubmitAcceptanceVerdictResponse) GetVerdict() *AcceptanceVerdictResult {
@@ -3499,7 +3859,7 @@ type GetBudgetRequest struct {
 
 func (x *GetBudgetRequest) Reset() {
 	*x = GetBudgetRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[35]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3511,7 +3871,7 @@ func (x *GetBudgetRequest) String() string {
 func (*GetBudgetRequest) ProtoMessage() {}
 
 func (x *GetBudgetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[35]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3524,7 +3884,7 @@ func (x *GetBudgetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBudgetRequest.ProtoReflect.Descriptor instead.
 func (*GetBudgetRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{35}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *GetBudgetRequest) GetTaskId() string {
@@ -3543,7 +3903,7 @@ type GetBudgetResponse struct {
 
 func (x *GetBudgetResponse) Reset() {
 	*x = GetBudgetResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[36]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3555,7 +3915,7 @@ func (x *GetBudgetResponse) String() string {
 func (*GetBudgetResponse) ProtoMessage() {}
 
 func (x *GetBudgetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[36]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3568,7 +3928,7 @@ func (x *GetBudgetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBudgetResponse.ProtoReflect.Descriptor instead.
 func (*GetBudgetResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{36}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *GetBudgetResponse) GetBudget() *Budget {
@@ -3587,7 +3947,7 @@ type ResumeTaskRequest struct {
 
 func (x *ResumeTaskRequest) Reset() {
 	*x = ResumeTaskRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[37]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3599,7 +3959,7 @@ func (x *ResumeTaskRequest) String() string {
 func (*ResumeTaskRequest) ProtoMessage() {}
 
 func (x *ResumeTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[37]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3612,7 +3972,7 @@ func (x *ResumeTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeTaskRequest.ProtoReflect.Descriptor instead.
 func (*ResumeTaskRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{37}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ResumeTaskRequest) GetTaskId() string {
@@ -3631,7 +3991,7 @@ type ResumeTaskResponse struct {
 
 func (x *ResumeTaskResponse) Reset() {
 	*x = ResumeTaskResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[38]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3643,7 +4003,7 @@ func (x *ResumeTaskResponse) String() string {
 func (*ResumeTaskResponse) ProtoMessage() {}
 
 func (x *ResumeTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[38]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3656,7 +4016,7 @@ func (x *ResumeTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeTaskResponse.ProtoReflect.Descriptor instead.
 func (*ResumeTaskResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{38}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ResumeTaskResponse) GetTask() *CollaborationTask {
@@ -3921,7 +4281,41 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\f_descriptionB\t\n" +
 	"\a_status\"d\n" +
 	"\x1fUpdateCollaborationTaskResponse\x12A\n" +
-	"\x04task\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.CollaborationTaskR\x04task\"9\n" +
+	"\x04task\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.CollaborationTaskR\x04task\"\x89\x02\n" +
+	"\x1fClaimDesktopExecutorTaskRequest\x12\x1f\n" +
+	"\vexecutor_id\x18\x01 \x01(\tR\n" +
+	"executorId\x12 \n" +
+	"\flease_ttl_ms\x18\x02 \x01(\x03R\n" +
+	"leaseTtlMs\x12\x1c\n" +
+	"\atask_id\x18\x03 \x01(\tH\x00R\x06taskId\x88\x01\x01\x12\x1e\n" +
+	"\bagent_id\x18\x04 \x01(\tH\x01R\aagentId\x88\x01\x01\x12\"\n" +
+	"\fcapabilities\x18\x05 \x03(\tR\fcapabilities\x12\x1c\n" +
+	"\anode_id\x18\x06 \x01(\tH\x02R\x06nodeId\x88\x01\x01B\n" +
+	"\n" +
+	"\b_task_idB\v\n" +
+	"\t_agent_idB\n" +
+	"\n" +
+	"\b_node_id\"\xfa\x01\n" +
+	" ClaimDesktopExecutorTaskResponse\x12A\n" +
+	"\x04task\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.CollaborationTaskR\x04task\x128\n" +
+	"\x04node\x18\x02 \x01(\v2$.peers_touch.model.agent.v1.TaskNodeR\x04node\x12?\n" +
+	"\x05lease\x18\x03 \x01(\v2).peers_touch.model.agent.v1.ExecutorLeaseR\x05lease\x12\x18\n" +
+	"\aclaimed\x18\x04 \x01(\bR\aclaimed\"}\n" +
+	"\x1dHeartbeatExecutorLeaseRequest\x12\x19\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x1f\n" +
+	"\vexecutor_id\x18\x02 \x01(\tR\n" +
+	"executorId\x12 \n" +
+	"\flease_ttl_ms\x18\x03 \x01(\x03R\n" +
+	"leaseTtlMs\"a\n" +
+	"\x1eHeartbeatExecutorLeaseResponse\x12?\n" +
+	"\x05lease\x18\x01 \x01(\v2).peers_touch.model.agent.v1.ExecutorLeaseR\x05lease\"q\n" +
+	"\x1bReleaseExecutorLeaseRequest\x12\x19\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x1f\n" +
+	"\vexecutor_id\x18\x02 \x01(\tR\n" +
+	"executorId\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\"_\n" +
+	"\x1cReleaseExecutorLeaseResponse\x12?\n" +
+	"\x05lease\x18\x01 \x01(\v2).peers_touch.model.agent.v1.ExecutorLeaseR\x05lease\"9\n" +
 	"\x1eDeleteCollaborationTaskRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\";\n" +
 	"\x1fDeleteCollaborationTaskResponse\x12\x18\n" +
@@ -4061,132 +4455,143 @@ func file_domain_agent_orchestration_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_agent_orchestration_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
-var file_domain_agent_orchestration_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_domain_agent_orchestration_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_domain_agent_orchestration_proto_goTypes = []any{
-	(CollaborationEngineType)(0),            // 0: peers_touch.model.agent.v1.CollaborationEngineType
-	(CollaborationTaskStatus)(0),            // 1: peers_touch.model.agent.v1.CollaborationTaskStatus
-	(TaskNodeStatus)(0),                     // 2: peers_touch.model.agent.v1.TaskNodeStatus
-	(VoteType)(0),                           // 3: peers_touch.model.agent.v1.VoteType
-	(AcceptanceLevel)(0),                    // 4: peers_touch.model.agent.v1.AcceptanceLevel
-	(AcceptanceVerdict)(0),                  // 5: peers_touch.model.agent.v1.AcceptanceVerdict
-	(CircuitBreakerState)(0),                // 6: peers_touch.model.agent.v1.CircuitBreakerState
-	(TaskSurface)(0),                        // 7: peers_touch.model.agent.v1.TaskSurface
-	(ExecutorKind)(0),                       // 8: peers_touch.model.agent.v1.ExecutorKind
-	(TaskEventType)(0),                      // 9: peers_touch.model.agent.v1.TaskEventType
-	(ArtifactKind)(0),                       // 10: peers_touch.model.agent.v1.ArtifactKind
-	(InterruptStatus)(0),                    // 11: peers_touch.model.agent.v1.InterruptStatus
-	(*CollaborationTask)(nil),               // 12: peers_touch.model.agent.v1.CollaborationTask
-	(*TaskNode)(nil),                        // 13: peers_touch.model.agent.v1.TaskNode
-	(*TaskRun)(nil),                         // 14: peers_touch.model.agent.v1.TaskRun
-	(*ExecutionStep)(nil),                   // 15: peers_touch.model.agent.v1.ExecutionStep
-	(*TaskEvent)(nil),                       // 16: peers_touch.model.agent.v1.TaskEvent
-	(*TaskArtifact)(nil),                    // 17: peers_touch.model.agent.v1.TaskArtifact
-	(*TaskCheckpoint)(nil),                  // 18: peers_touch.model.agent.v1.TaskCheckpoint
-	(*ExecutorLease)(nil),                   // 19: peers_touch.model.agent.v1.ExecutorLease
-	(*InterruptRequest)(nil),                // 20: peers_touch.model.agent.v1.InterruptRequest
-	(*ListTaskEventsRequest)(nil),           // 21: peers_touch.model.agent.v1.ListTaskEventsRequest
-	(*ListTaskEventsResponse)(nil),          // 22: peers_touch.model.agent.v1.ListTaskEventsResponse
-	(*Vote)(nil),                            // 23: peers_touch.model.agent.v1.Vote
-	(*EvidenceRef)(nil),                     // 24: peers_touch.model.agent.v1.EvidenceRef
-	(*AcceptanceCriteria)(nil),              // 25: peers_touch.model.agent.v1.AcceptanceCriteria
-	(*AcceptanceVerdictResult)(nil),         // 26: peers_touch.model.agent.v1.AcceptanceVerdictResult
-	(*Budget)(nil),                          // 27: peers_touch.model.agent.v1.Budget
-	(*CircuitBreakerStatus)(nil),            // 28: peers_touch.model.agent.v1.CircuitBreakerStatus
-	(*CreateCollaborationTaskRequest)(nil),  // 29: peers_touch.model.agent.v1.CreateCollaborationTaskRequest
-	(*CreateCollaborationTaskResponse)(nil), // 30: peers_touch.model.agent.v1.CreateCollaborationTaskResponse
-	(*GetCollaborationTaskRequest)(nil),     // 31: peers_touch.model.agent.v1.GetCollaborationTaskRequest
-	(*GetCollaborationTaskResponse)(nil),    // 32: peers_touch.model.agent.v1.GetCollaborationTaskResponse
-	(*ListCollaborationTasksRequest)(nil),   // 33: peers_touch.model.agent.v1.ListCollaborationTasksRequest
-	(*ListCollaborationTasksResponse)(nil),  // 34: peers_touch.model.agent.v1.ListCollaborationTasksResponse
-	(*UpdateCollaborationTaskRequest)(nil),  // 35: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest
-	(*UpdateCollaborationTaskResponse)(nil), // 36: peers_touch.model.agent.v1.UpdateCollaborationTaskResponse
-	(*DeleteCollaborationTaskRequest)(nil),  // 37: peers_touch.model.agent.v1.DeleteCollaborationTaskRequest
-	(*DeleteCollaborationTaskResponse)(nil), // 38: peers_touch.model.agent.v1.DeleteCollaborationTaskResponse
-	(*SubmitVoteRequest)(nil),               // 39: peers_touch.model.agent.v1.SubmitVoteRequest
-	(*SubmitVoteResponse)(nil),              // 40: peers_touch.model.agent.v1.SubmitVoteResponse
-	(*ListVotesRequest)(nil),                // 41: peers_touch.model.agent.v1.ListVotesRequest
-	(*ListVotesResponse)(nil),               // 42: peers_touch.model.agent.v1.ListVotesResponse
-	(*GetAcceptanceVerdictRequest)(nil),     // 43: peers_touch.model.agent.v1.GetAcceptanceVerdictRequest
-	(*GetAcceptanceVerdictResponse)(nil),    // 44: peers_touch.model.agent.v1.GetAcceptanceVerdictResponse
-	(*SubmitAcceptanceVerdictRequest)(nil),  // 45: peers_touch.model.agent.v1.SubmitAcceptanceVerdictRequest
-	(*SubmitAcceptanceVerdictResponse)(nil), // 46: peers_touch.model.agent.v1.SubmitAcceptanceVerdictResponse
-	(*GetBudgetRequest)(nil),                // 47: peers_touch.model.agent.v1.GetBudgetRequest
-	(*GetBudgetResponse)(nil),               // 48: peers_touch.model.agent.v1.GetBudgetResponse
-	(*ResumeTaskRequest)(nil),               // 49: peers_touch.model.agent.v1.ResumeTaskRequest
-	(*ResumeTaskResponse)(nil),              // 50: peers_touch.model.agent.v1.ResumeTaskResponse
-	nil,                                     // 51: peers_touch.model.agent.v1.CollaborationTask.MetaEntry
-	nil,                                     // 52: peers_touch.model.agent.v1.TaskRun.MetaEntry
-	nil,                                     // 53: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.MetaEntry
-	nil,                                     // 54: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.MetaEntry
-	(*timestamppb.Timestamp)(nil),           // 55: google.protobuf.Timestamp
+	(CollaborationEngineType)(0),             // 0: peers_touch.model.agent.v1.CollaborationEngineType
+	(CollaborationTaskStatus)(0),             // 1: peers_touch.model.agent.v1.CollaborationTaskStatus
+	(TaskNodeStatus)(0),                      // 2: peers_touch.model.agent.v1.TaskNodeStatus
+	(VoteType)(0),                            // 3: peers_touch.model.agent.v1.VoteType
+	(AcceptanceLevel)(0),                     // 4: peers_touch.model.agent.v1.AcceptanceLevel
+	(AcceptanceVerdict)(0),                   // 5: peers_touch.model.agent.v1.AcceptanceVerdict
+	(CircuitBreakerState)(0),                 // 6: peers_touch.model.agent.v1.CircuitBreakerState
+	(TaskSurface)(0),                         // 7: peers_touch.model.agent.v1.TaskSurface
+	(ExecutorKind)(0),                        // 8: peers_touch.model.agent.v1.ExecutorKind
+	(TaskEventType)(0),                       // 9: peers_touch.model.agent.v1.TaskEventType
+	(ArtifactKind)(0),                        // 10: peers_touch.model.agent.v1.ArtifactKind
+	(InterruptStatus)(0),                     // 11: peers_touch.model.agent.v1.InterruptStatus
+	(*CollaborationTask)(nil),                // 12: peers_touch.model.agent.v1.CollaborationTask
+	(*TaskNode)(nil),                         // 13: peers_touch.model.agent.v1.TaskNode
+	(*TaskRun)(nil),                          // 14: peers_touch.model.agent.v1.TaskRun
+	(*ExecutionStep)(nil),                    // 15: peers_touch.model.agent.v1.ExecutionStep
+	(*TaskEvent)(nil),                        // 16: peers_touch.model.agent.v1.TaskEvent
+	(*TaskArtifact)(nil),                     // 17: peers_touch.model.agent.v1.TaskArtifact
+	(*TaskCheckpoint)(nil),                   // 18: peers_touch.model.agent.v1.TaskCheckpoint
+	(*ExecutorLease)(nil),                    // 19: peers_touch.model.agent.v1.ExecutorLease
+	(*InterruptRequest)(nil),                 // 20: peers_touch.model.agent.v1.InterruptRequest
+	(*ListTaskEventsRequest)(nil),            // 21: peers_touch.model.agent.v1.ListTaskEventsRequest
+	(*ListTaskEventsResponse)(nil),           // 22: peers_touch.model.agent.v1.ListTaskEventsResponse
+	(*Vote)(nil),                             // 23: peers_touch.model.agent.v1.Vote
+	(*EvidenceRef)(nil),                      // 24: peers_touch.model.agent.v1.EvidenceRef
+	(*AcceptanceCriteria)(nil),               // 25: peers_touch.model.agent.v1.AcceptanceCriteria
+	(*AcceptanceVerdictResult)(nil),          // 26: peers_touch.model.agent.v1.AcceptanceVerdictResult
+	(*Budget)(nil),                           // 27: peers_touch.model.agent.v1.Budget
+	(*CircuitBreakerStatus)(nil),             // 28: peers_touch.model.agent.v1.CircuitBreakerStatus
+	(*CreateCollaborationTaskRequest)(nil),   // 29: peers_touch.model.agent.v1.CreateCollaborationTaskRequest
+	(*CreateCollaborationTaskResponse)(nil),  // 30: peers_touch.model.agent.v1.CreateCollaborationTaskResponse
+	(*GetCollaborationTaskRequest)(nil),      // 31: peers_touch.model.agent.v1.GetCollaborationTaskRequest
+	(*GetCollaborationTaskResponse)(nil),     // 32: peers_touch.model.agent.v1.GetCollaborationTaskResponse
+	(*ListCollaborationTasksRequest)(nil),    // 33: peers_touch.model.agent.v1.ListCollaborationTasksRequest
+	(*ListCollaborationTasksResponse)(nil),   // 34: peers_touch.model.agent.v1.ListCollaborationTasksResponse
+	(*UpdateCollaborationTaskRequest)(nil),   // 35: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest
+	(*UpdateCollaborationTaskResponse)(nil),  // 36: peers_touch.model.agent.v1.UpdateCollaborationTaskResponse
+	(*ClaimDesktopExecutorTaskRequest)(nil),  // 37: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskRequest
+	(*ClaimDesktopExecutorTaskResponse)(nil), // 38: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse
+	(*HeartbeatExecutorLeaseRequest)(nil),    // 39: peers_touch.model.agent.v1.HeartbeatExecutorLeaseRequest
+	(*HeartbeatExecutorLeaseResponse)(nil),   // 40: peers_touch.model.agent.v1.HeartbeatExecutorLeaseResponse
+	(*ReleaseExecutorLeaseRequest)(nil),      // 41: peers_touch.model.agent.v1.ReleaseExecutorLeaseRequest
+	(*ReleaseExecutorLeaseResponse)(nil),     // 42: peers_touch.model.agent.v1.ReleaseExecutorLeaseResponse
+	(*DeleteCollaborationTaskRequest)(nil),   // 43: peers_touch.model.agent.v1.DeleteCollaborationTaskRequest
+	(*DeleteCollaborationTaskResponse)(nil),  // 44: peers_touch.model.agent.v1.DeleteCollaborationTaskResponse
+	(*SubmitVoteRequest)(nil),                // 45: peers_touch.model.agent.v1.SubmitVoteRequest
+	(*SubmitVoteResponse)(nil),               // 46: peers_touch.model.agent.v1.SubmitVoteResponse
+	(*ListVotesRequest)(nil),                 // 47: peers_touch.model.agent.v1.ListVotesRequest
+	(*ListVotesResponse)(nil),                // 48: peers_touch.model.agent.v1.ListVotesResponse
+	(*GetAcceptanceVerdictRequest)(nil),      // 49: peers_touch.model.agent.v1.GetAcceptanceVerdictRequest
+	(*GetAcceptanceVerdictResponse)(nil),     // 50: peers_touch.model.agent.v1.GetAcceptanceVerdictResponse
+	(*SubmitAcceptanceVerdictRequest)(nil),   // 51: peers_touch.model.agent.v1.SubmitAcceptanceVerdictRequest
+	(*SubmitAcceptanceVerdictResponse)(nil),  // 52: peers_touch.model.agent.v1.SubmitAcceptanceVerdictResponse
+	(*GetBudgetRequest)(nil),                 // 53: peers_touch.model.agent.v1.GetBudgetRequest
+	(*GetBudgetResponse)(nil),                // 54: peers_touch.model.agent.v1.GetBudgetResponse
+	(*ResumeTaskRequest)(nil),                // 55: peers_touch.model.agent.v1.ResumeTaskRequest
+	(*ResumeTaskResponse)(nil),               // 56: peers_touch.model.agent.v1.ResumeTaskResponse
+	nil,                                      // 57: peers_touch.model.agent.v1.CollaborationTask.MetaEntry
+	nil,                                      // 58: peers_touch.model.agent.v1.TaskRun.MetaEntry
+	nil,                                      // 59: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.MetaEntry
+	nil,                                      // 60: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.MetaEntry
+	(*timestamppb.Timestamp)(nil),            // 61: google.protobuf.Timestamp
 }
 var file_domain_agent_orchestration_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.agent.v1.CollaborationTask.engine_type:type_name -> peers_touch.model.agent.v1.CollaborationEngineType
 	1,  // 1: peers_touch.model.agent.v1.CollaborationTask.status:type_name -> peers_touch.model.agent.v1.CollaborationTaskStatus
-	55, // 2: peers_touch.model.agent.v1.CollaborationTask.created_at:type_name -> google.protobuf.Timestamp
-	55, // 3: peers_touch.model.agent.v1.CollaborationTask.started_at:type_name -> google.protobuf.Timestamp
-	55, // 4: peers_touch.model.agent.v1.CollaborationTask.ended_at:type_name -> google.protobuf.Timestamp
-	51, // 5: peers_touch.model.agent.v1.CollaborationTask.meta:type_name -> peers_touch.model.agent.v1.CollaborationTask.MetaEntry
+	61, // 2: peers_touch.model.agent.v1.CollaborationTask.created_at:type_name -> google.protobuf.Timestamp
+	61, // 3: peers_touch.model.agent.v1.CollaborationTask.started_at:type_name -> google.protobuf.Timestamp
+	61, // 4: peers_touch.model.agent.v1.CollaborationTask.ended_at:type_name -> google.protobuf.Timestamp
+	57, // 5: peers_touch.model.agent.v1.CollaborationTask.meta:type_name -> peers_touch.model.agent.v1.CollaborationTask.MetaEntry
 	2,  // 6: peers_touch.model.agent.v1.TaskNode.status:type_name -> peers_touch.model.agent.v1.TaskNodeStatus
-	55, // 7: peers_touch.model.agent.v1.TaskNode.started_at:type_name -> google.protobuf.Timestamp
-	55, // 8: peers_touch.model.agent.v1.TaskNode.ended_at:type_name -> google.protobuf.Timestamp
+	61, // 7: peers_touch.model.agent.v1.TaskNode.started_at:type_name -> google.protobuf.Timestamp
+	61, // 8: peers_touch.model.agent.v1.TaskNode.ended_at:type_name -> google.protobuf.Timestamp
 	7,  // 9: peers_touch.model.agent.v1.TaskRun.surface:type_name -> peers_touch.model.agent.v1.TaskSurface
 	1,  // 10: peers_touch.model.agent.v1.TaskRun.status:type_name -> peers_touch.model.agent.v1.CollaborationTaskStatus
-	52, // 11: peers_touch.model.agent.v1.TaskRun.meta:type_name -> peers_touch.model.agent.v1.TaskRun.MetaEntry
-	55, // 12: peers_touch.model.agent.v1.TaskRun.created_at:type_name -> google.protobuf.Timestamp
-	55, // 13: peers_touch.model.agent.v1.TaskRun.started_at:type_name -> google.protobuf.Timestamp
-	55, // 14: peers_touch.model.agent.v1.TaskRun.updated_at:type_name -> google.protobuf.Timestamp
-	55, // 15: peers_touch.model.agent.v1.TaskRun.ended_at:type_name -> google.protobuf.Timestamp
+	58, // 11: peers_touch.model.agent.v1.TaskRun.meta:type_name -> peers_touch.model.agent.v1.TaskRun.MetaEntry
+	61, // 12: peers_touch.model.agent.v1.TaskRun.created_at:type_name -> google.protobuf.Timestamp
+	61, // 13: peers_touch.model.agent.v1.TaskRun.started_at:type_name -> google.protobuf.Timestamp
+	61, // 14: peers_touch.model.agent.v1.TaskRun.updated_at:type_name -> google.protobuf.Timestamp
+	61, // 15: peers_touch.model.agent.v1.TaskRun.ended_at:type_name -> google.protobuf.Timestamp
 	2,  // 16: peers_touch.model.agent.v1.ExecutionStep.status:type_name -> peers_touch.model.agent.v1.TaskNodeStatus
 	8,  // 17: peers_touch.model.agent.v1.ExecutionStep.eligible_executors:type_name -> peers_touch.model.agent.v1.ExecutorKind
-	55, // 18: peers_touch.model.agent.v1.ExecutionStep.started_at:type_name -> google.protobuf.Timestamp
-	55, // 19: peers_touch.model.agent.v1.ExecutionStep.ended_at:type_name -> google.protobuf.Timestamp
+	61, // 18: peers_touch.model.agent.v1.ExecutionStep.started_at:type_name -> google.protobuf.Timestamp
+	61, // 19: peers_touch.model.agent.v1.ExecutionStep.ended_at:type_name -> google.protobuf.Timestamp
 	9,  // 20: peers_touch.model.agent.v1.TaskEvent.type:type_name -> peers_touch.model.agent.v1.TaskEventType
-	55, // 21: peers_touch.model.agent.v1.TaskEvent.created_at:type_name -> google.protobuf.Timestamp
+	61, // 21: peers_touch.model.agent.v1.TaskEvent.created_at:type_name -> google.protobuf.Timestamp
 	10, // 22: peers_touch.model.agent.v1.TaskArtifact.kind:type_name -> peers_touch.model.agent.v1.ArtifactKind
-	55, // 23: peers_touch.model.agent.v1.TaskArtifact.created_at:type_name -> google.protobuf.Timestamp
-	55, // 24: peers_touch.model.agent.v1.TaskCheckpoint.created_at:type_name -> google.protobuf.Timestamp
+	61, // 23: peers_touch.model.agent.v1.TaskArtifact.created_at:type_name -> google.protobuf.Timestamp
+	61, // 24: peers_touch.model.agent.v1.TaskCheckpoint.created_at:type_name -> google.protobuf.Timestamp
 	8,  // 25: peers_touch.model.agent.v1.ExecutorLease.executor_kind:type_name -> peers_touch.model.agent.v1.ExecutorKind
-	55, // 26: peers_touch.model.agent.v1.ExecutorLease.acquired_at:type_name -> google.protobuf.Timestamp
-	55, // 27: peers_touch.model.agent.v1.ExecutorLease.heartbeat_at:type_name -> google.protobuf.Timestamp
-	55, // 28: peers_touch.model.agent.v1.ExecutorLease.expires_at:type_name -> google.protobuf.Timestamp
+	61, // 26: peers_touch.model.agent.v1.ExecutorLease.acquired_at:type_name -> google.protobuf.Timestamp
+	61, // 27: peers_touch.model.agent.v1.ExecutorLease.heartbeat_at:type_name -> google.protobuf.Timestamp
+	61, // 28: peers_touch.model.agent.v1.ExecutorLease.expires_at:type_name -> google.protobuf.Timestamp
 	11, // 29: peers_touch.model.agent.v1.InterruptRequest.status:type_name -> peers_touch.model.agent.v1.InterruptStatus
-	55, // 30: peers_touch.model.agent.v1.InterruptRequest.created_at:type_name -> google.protobuf.Timestamp
-	55, // 31: peers_touch.model.agent.v1.InterruptRequest.resolved_at:type_name -> google.protobuf.Timestamp
+	61, // 30: peers_touch.model.agent.v1.InterruptRequest.created_at:type_name -> google.protobuf.Timestamp
+	61, // 31: peers_touch.model.agent.v1.InterruptRequest.resolved_at:type_name -> google.protobuf.Timestamp
 	16, // 32: peers_touch.model.agent.v1.ListTaskEventsResponse.events:type_name -> peers_touch.model.agent.v1.TaskEvent
 	3,  // 33: peers_touch.model.agent.v1.Vote.vote_type:type_name -> peers_touch.model.agent.v1.VoteType
-	55, // 34: peers_touch.model.agent.v1.Vote.voted_at:type_name -> google.protobuf.Timestamp
+	61, // 34: peers_touch.model.agent.v1.Vote.voted_at:type_name -> google.protobuf.Timestamp
 	4,  // 35: peers_touch.model.agent.v1.AcceptanceCriteria.level:type_name -> peers_touch.model.agent.v1.AcceptanceLevel
 	4,  // 36: peers_touch.model.agent.v1.AcceptanceVerdictResult.level:type_name -> peers_touch.model.agent.v1.AcceptanceLevel
 	5,  // 37: peers_touch.model.agent.v1.AcceptanceVerdictResult.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdict
-	55, // 38: peers_touch.model.agent.v1.AcceptanceVerdictResult.decided_at:type_name -> google.protobuf.Timestamp
-	55, // 39: peers_touch.model.agent.v1.Budget.updated_at:type_name -> google.protobuf.Timestamp
+	61, // 38: peers_touch.model.agent.v1.AcceptanceVerdictResult.decided_at:type_name -> google.protobuf.Timestamp
+	61, // 39: peers_touch.model.agent.v1.Budget.updated_at:type_name -> google.protobuf.Timestamp
 	6,  // 40: peers_touch.model.agent.v1.CircuitBreakerStatus.state:type_name -> peers_touch.model.agent.v1.CircuitBreakerState
-	55, // 41: peers_touch.model.agent.v1.CircuitBreakerStatus.last_failure_at:type_name -> google.protobuf.Timestamp
-	55, // 42: peers_touch.model.agent.v1.CircuitBreakerStatus.last_reset_at:type_name -> google.protobuf.Timestamp
+	61, // 41: peers_touch.model.agent.v1.CircuitBreakerStatus.last_failure_at:type_name -> google.protobuf.Timestamp
+	61, // 42: peers_touch.model.agent.v1.CircuitBreakerStatus.last_reset_at:type_name -> google.protobuf.Timestamp
 	0,  // 43: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.engine_type:type_name -> peers_touch.model.agent.v1.CollaborationEngineType
-	53, // 44: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.meta:type_name -> peers_touch.model.agent.v1.CreateCollaborationTaskRequest.MetaEntry
+	59, // 44: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.meta:type_name -> peers_touch.model.agent.v1.CreateCollaborationTaskRequest.MetaEntry
 	12, // 45: peers_touch.model.agent.v1.CreateCollaborationTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
 	12, // 46: peers_touch.model.agent.v1.GetCollaborationTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
 	13, // 47: peers_touch.model.agent.v1.GetCollaborationTaskResponse.nodes:type_name -> peers_touch.model.agent.v1.TaskNode
 	1,  // 48: peers_touch.model.agent.v1.ListCollaborationTasksRequest.status:type_name -> peers_touch.model.agent.v1.CollaborationTaskStatus
 	12, // 49: peers_touch.model.agent.v1.ListCollaborationTasksResponse.tasks:type_name -> peers_touch.model.agent.v1.CollaborationTask
 	1,  // 50: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.status:type_name -> peers_touch.model.agent.v1.CollaborationTaskStatus
-	54, // 51: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.meta:type_name -> peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.MetaEntry
+	60, // 51: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.meta:type_name -> peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.MetaEntry
 	12, // 52: peers_touch.model.agent.v1.UpdateCollaborationTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
-	3,  // 53: peers_touch.model.agent.v1.SubmitVoteRequest.vote_type:type_name -> peers_touch.model.agent.v1.VoteType
-	23, // 54: peers_touch.model.agent.v1.SubmitVoteResponse.vote:type_name -> peers_touch.model.agent.v1.Vote
-	23, // 55: peers_touch.model.agent.v1.ListVotesResponse.votes:type_name -> peers_touch.model.agent.v1.Vote
-	26, // 56: peers_touch.model.agent.v1.GetAcceptanceVerdictResponse.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdictResult
-	5,  // 57: peers_touch.model.agent.v1.SubmitAcceptanceVerdictRequest.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdict
-	26, // 58: peers_touch.model.agent.v1.SubmitAcceptanceVerdictResponse.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdictResult
-	27, // 59: peers_touch.model.agent.v1.GetBudgetResponse.budget:type_name -> peers_touch.model.agent.v1.Budget
-	12, // 60: peers_touch.model.agent.v1.ResumeTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
-	61, // [61:61] is the sub-list for method output_type
-	61, // [61:61] is the sub-list for method input_type
-	61, // [61:61] is the sub-list for extension type_name
-	61, // [61:61] is the sub-list for extension extendee
-	0,  // [0:61] is the sub-list for field type_name
+	12, // 53: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
+	13, // 54: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse.node:type_name -> peers_touch.model.agent.v1.TaskNode
+	19, // 55: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse.lease:type_name -> peers_touch.model.agent.v1.ExecutorLease
+	19, // 56: peers_touch.model.agent.v1.HeartbeatExecutorLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ExecutorLease
+	19, // 57: peers_touch.model.agent.v1.ReleaseExecutorLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ExecutorLease
+	3,  // 58: peers_touch.model.agent.v1.SubmitVoteRequest.vote_type:type_name -> peers_touch.model.agent.v1.VoteType
+	23, // 59: peers_touch.model.agent.v1.SubmitVoteResponse.vote:type_name -> peers_touch.model.agent.v1.Vote
+	23, // 60: peers_touch.model.agent.v1.ListVotesResponse.votes:type_name -> peers_touch.model.agent.v1.Vote
+	26, // 61: peers_touch.model.agent.v1.GetAcceptanceVerdictResponse.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdictResult
+	5,  // 62: peers_touch.model.agent.v1.SubmitAcceptanceVerdictRequest.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdict
+	26, // 63: peers_touch.model.agent.v1.SubmitAcceptanceVerdictResponse.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdictResult
+	27, // 64: peers_touch.model.agent.v1.GetBudgetResponse.budget:type_name -> peers_touch.model.agent.v1.Budget
+	12, // 65: peers_touch.model.agent.v1.ResumeTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
+	66, // [66:66] is the sub-list for method output_type
+	66, // [66:66] is the sub-list for method input_type
+	66, // [66:66] is the sub-list for extension type_name
+	66, // [66:66] is the sub-list for extension extendee
+	0,  // [0:66] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_orchestration_proto_init() }
@@ -4196,15 +4601,16 @@ func file_domain_agent_orchestration_proto_init() {
 	}
 	file_domain_agent_orchestration_proto_msgTypes[17].OneofWrappers = []any{}
 	file_domain_agent_orchestration_proto_msgTypes[23].OneofWrappers = []any{}
-	file_domain_agent_orchestration_proto_msgTypes[27].OneofWrappers = []any{}
-	file_domain_agent_orchestration_proto_msgTypes[29].OneofWrappers = []any{}
+	file_domain_agent_orchestration_proto_msgTypes[25].OneofWrappers = []any{}
+	file_domain_agent_orchestration_proto_msgTypes[33].OneofWrappers = []any{}
+	file_domain_agent_orchestration_proto_msgTypes[35].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_orchestration_proto_rawDesc), len(file_domain_agent_orchestration_proto_rawDesc)),
 			NumEnums:      12,
-			NumMessages:   43,
+			NumMessages:   49,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

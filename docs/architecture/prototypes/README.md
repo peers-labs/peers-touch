@@ -58,7 +58,7 @@
 | desktop | `applet-lifecycle` | Desktop Applet Box 极简 launcher 原型，不是一级模块 | `packages/prototypes/desktop/features/applet-lifecycle/` | Desktop Applet Box 安装包导入、展示、打开、运行、通知、退出、卸载；原型为 React web 展示 | applet-runtime/official-applet-architecture-contract + applet-launcher-ux-contract | landed | [prototype/README.md](../applet-runtime/prototype/README.md) |
 | desktop | `applet-workspace` | Desktop Applet 多实例容器原型，不是一级模块 | `packages/prototypes/desktop/features/applet-workspace/` | Desktop Applet Workspace：固定 Home tab、多实例小程序 tabs、Pin to System、detach、immersive；原型为 React web 展示 | applet-runtime/browser-like-workspace + applet-launcher-ux-contract + frontend-runtime/AppletContainerShell | drafting | [prototype/README.md](../applet-runtime/prototype/README.md) |
 | desktop | `call` | Desktop Chat/通话能力原型，不是一级模块 | `packages/prototypes/desktop/features/call/` | Desktop 好友聊天通话（apps/desktop，CallSurface）；原型为 React web 展示 | voice-video-calls | confirmed | [prototype/README.md](../realtime/prototype/README.md)（历史路径，归属 desktop） |
-| desktop | `social-chat` | Desktop Chat 能力原型，不是一级模块 | `packages/prototypes/desktop/features/social-chat/` | Desktop 社交聊天体验；原型为 React web 展示 | social-runtime | drafting | — |
+| desktop | `social-chat` | Desktop Chat 能力原型，不是一级模块 | `packages/prototypes/desktop/features/social-chat/` | Desktop 私聊 / 群聊体验；原型为 React web 展示 | client/chat + social-runtime | pending-review | [prototype/README.md](../social/prototype/README.md) |
 | mobile | `mobile-chat` | Mobile 一级站点会话体验基准 | `packages/prototypes/mobile/chat/` | Mobile Chat / 跨设备会话体验；原型为 React web 展示 | client/mobile + client/chat | drafting | [base.md](../../client/mobile/base.md) |
 | dashboard | `station-dashboard` | Station Dashboard 一级站点运维台体验基准 | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard / 管理台 / 运维台体验；原型为 React web 展示 | station/base | drafting | [base.md](../../station/base.md) |
 
@@ -95,5 +95,5 @@ drafting → pending-review → confirmed → landed
 | 维度 | 约定 |
 |------|------|
 | 技术栈 | React + Vite + `@lobehub/ui` 优先 → antd 兜底 + `react-layout-kit` + `lucide-react` + CSS |
-| 运行 | 统一使用 `make run-prototype desktop/mobile/dashboard`；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
+| 运行 | 统一使用 `make run-prototype`；在 Prototype Portal 内切换 desktop / mobile / dashboard；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
 | 落地 | 由对应工程参照原型按其运行时重新实现（如 Applet 用 Lynx），原型本身不要求能直接搬成产物 |

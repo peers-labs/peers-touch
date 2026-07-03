@@ -27,16 +27,18 @@ export function ArtifactsTray({
   artifacts,
   openId,
   onOpen,
+  maxWidth = 760,
 }: {
   artifacts: Artifact[];
   openId?: string;
   onOpen: (a: Artifact) => void;
+  maxWidth?: number | string;
 }) {
   if (artifacts.length === 0) return null;
   return (
-    <div style={{ maxWidth: 760, marginBottom: 10 }}>
-      <div style={{ fontSize: 12, fontWeight: 'bold', color: C.textTertiary, marginBottom: 8 }}>Artifacts</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+    <div style={{ width: typeof maxWidth === 'number' ? `min(${maxWidth}px, 100%)` : maxWidth, margin: '0 auto 10px' }}>
+      <div style={{ fontSize: 13, fontWeight: 'bold', color: C.text, marginBottom: 8 }}>Artifacts</div>
+      <div style={{ display: 'grid', gap: 8 }}>
         {artifacts.map((a) => {
           const active = a.id === openId;
           return (
@@ -46,21 +48,22 @@ export function ArtifactsTray({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                padding: '10px 12px',
-                minWidth: 200,
-                marginRight: 10,
-                marginBottom: 10,
+                minHeight: 38,
+                padding: '8px 12px',
                 border: `1px solid ${active ? C.primary : C.border}`,
                 backgroundColor: active ? C.primaryWash : C.bg,
                 borderRadius: 10,
                 cursor: 'pointer',
               }}
             >
-              <span style={{ fontSize: 18, color: C.primary, marginRight: 10 }}>{KIND_GLYPH[a.kind]}</span>
+              <span style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: C.fillSecondary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, color: C.primary, marginRight: 10 }}>{KIND_GLYPH[a.kind]}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{a.name}</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</div>
                 <div style={{ fontSize: 11, color: C.textTertiary }}>{a.meta}</div>
               </div>
+              {a.kind === 'diff' ? <span style={{ fontSize: 12, color: C.success, marginRight: 10 }}>+73</span> : null}
+              {a.kind === 'diff' ? <span style={{ fontSize: 12, color: C.error, marginRight: 12 }}>-11</span> : null}
+              <span style={{ fontSize: 15, color: C.textTertiary }}>↗</span>
             </div>
           );
         })}

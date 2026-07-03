@@ -2,8 +2,11 @@ use crate::application::agent_orchestration as application_agent_orchestration;
 use crate::application::session_resolver;
 use crate::contracts::{
     AgentCollaborationCancelInput, AgentCollaborationCancelTaskInput,
-    AgentCollaborationCreateInput, AgentCollaborationGetInput, AgentCollaborationListEventsInput,
-    AgentCollaborationListInput, AgentCollaborationSubscribeInput, StubPayload,
+    AgentCollaborationClaimExecutorInput, AgentCollaborationCreateInput,
+    AgentCollaborationGetInput, AgentCollaborationHeartbeatLeaseInput,
+    AgentCollaborationListEventsInput, AgentCollaborationListInput,
+    AgentCollaborationReleaseLeaseInput, AgentCollaborationSubmitNodeResultInput,
+    AgentCollaborationSubscribeInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
@@ -121,4 +124,56 @@ pub fn agent_collaboration_cancel_task(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     application_agent_orchestration::agent_collaboration_cancel_task(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_collaboration_submit_node_result(
+    input: AgentCollaborationSubmitNodeResultInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_orchestration::agent_collaboration_submit_node_result(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_collaboration_claim_executor_task(
+    input: AgentCollaborationClaimExecutorInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_orchestration::agent_collaboration_claim_executor_task(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_collaboration_heartbeat_executor_lease(
+    input: AgentCollaborationHeartbeatLeaseInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_orchestration::agent_collaboration_heartbeat_executor_lease(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_collaboration_release_executor_lease(
+    input: AgentCollaborationReleaseLeaseInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_orchestration::agent_collaboration_release_executor_lease(input, &token)
 }

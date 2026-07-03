@@ -29,9 +29,9 @@ function finish(report) {
 const checks = [
   {
     name: 'skill-file',
-    path: 'tooling/skills/official-applet-development/SKILL.md',
+    path: 'tooling/skills/pt-official-applet-development/SKILL.md',
     terms: [
-      'name: official-applet-development',
+      'name: pt-official-applet-development',
       'apps/applets',
       'official applet scaffolding',
       'service binding',
@@ -42,7 +42,7 @@ const checks = [
     name: 'agents-registration',
     path: 'AGENTS.md',
     terms: [
-      'official-applet-development',
+      'pt-official-applet-development',
       'apps/applets',
       'applet architecture contract',
     ],
@@ -51,7 +51,7 @@ const checks = [
     name: 'runtime-readme-link',
     path: 'docs/architecture/applet-runtime/README.md',
     terms: [
-      'official-applet-development',
+      'pt-official-applet-development',
       'apps/applets',
     ],
   },
@@ -59,7 +59,7 @@ const checks = [
     name: 'contract-link',
     path: 'docs/architecture/applet-runtime/official-applet-architecture-contract.md',
     terms: [
-      'official-applet-development',
+      'pt-official-applet-development',
       'MUST be used',
     ],
   },

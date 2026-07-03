@@ -304,6 +304,8 @@
   "chat.social.detail.seeAll": "See all",
   "chat.social.detail.showLess": "Show less",
   "chat.social.detail.addMember": "Add Member",
+  "chat.social.detail.manageMembers": "Manage members",
+  "chat.social.detail.unknownMember": "Unknown member",
   "chat.social.detail.addMemberDesc": "Select friends and invite them to this group chat.",
   "chat.social.detail.addMemberPlaceholder": "Select friends to invite",
   "chat.social.detail.addMemberSuccess": "Group invite sent",

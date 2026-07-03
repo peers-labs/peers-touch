@@ -67,7 +67,7 @@ help:
 	@echo "  make acceptance-run            Run planned acceptance gates"
 	@echo "  make acceptance-run-ci         Run planned ci-structure and ci-cheap gates"
 	@echo "  make acceptance-report         Render latest acceptance report"
-	@echo "  make run-prototype desktop|mobile|dashboard  Start prototype portal/site"
+	@echo "  make run-prototype             Start prototype portal (one per worktree)"
 	@echo ""
 	@echo "More:"
 	@echo "  make help-docker               Docker deployment commands"

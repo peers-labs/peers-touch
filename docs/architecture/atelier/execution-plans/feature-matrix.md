@@ -7,6 +7,8 @@
 
 ---
 
+> **Boundary update (2026-07-02)**: 本表保留早期功能域名称（如 Atelier Core、Provider、Gate）。当前执行口径是：这些域中的事务状态、编排、Provider、Gate、Artifact、Trace/Resume 属于 Station / Agent orchestration；Atelier applet 只承担 projection surface、runtime bridge、task organizer 和 human-in-loop capability 回写。后续重排功能点时，应把表中 F-CO/F-PR/F-GT/F-CL 拆到 Agent / Station 功能域，Atelier 只保留工作台投影域。
+
 ## 0. 怎么用这张表
 
 - 这是全部功能点的**单一清单**，每条有稳定编号（F-XX-NN），后续讨论/排期/落地都引用编号。

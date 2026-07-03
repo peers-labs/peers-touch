@@ -1,4 +1,4 @@
-import { Pin, BellOff, Eye, EyeOff, Trash2, CheckCheck, Volume2, VolumeX } from 'lucide-react';
+import { Pin, BellOff, EyeOff, Trash2, CheckCheck, Volume2, VolumeX, Clock3 } from 'lucide-react';
 import { T } from '../theme';
 import { Avatar } from './Avatar';
 import { ContextMenu } from './ContextMenu';
@@ -13,6 +13,8 @@ interface SessionListProps {
   onMarkAsRead: (id: string) => void;
   onHide: (id: string) => void;
   onDelete: (id: string) => void;
+  compact?: boolean;
+  fill?: boolean;
 }
 
 function formatTime(timestamp: number): string {
@@ -34,11 +36,13 @@ export function SessionList({
   onMarkAsRead,
   onHide,
   onDelete,
+  compact = false,
+  fill = false,
 }: SessionListProps) {
   return (
     <div
       style={{
-        width: T.sessionListWidth,
+        width: fill ? '100%' : compact ? T.sessionListCompactWidth : T.sessionListWidth,
         height: '100%',
         borderRight: `1px solid ${T.border}`,
         display: 'flex',
@@ -59,7 +63,7 @@ export function SessionList({
           flexShrink: 0,
         }}
       >
-        <span style={{ fontSize: T.fontHeading, fontWeight: 600, color: T.text }}>Messages</span>
+        <span style={{ fontSize: compact ? T.fontXl : T.fontHeading, fontWeight: 600, color: T.text }}>Messages</span>
         <button
           style={{
             width: 28,
@@ -157,8 +161,8 @@ export function SessionList({
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: T.space3,
-                  padding: `${T.space3}px ${T.space4}px`,
+                  gap: compact ? T.space2 : T.space3,
+                  padding: compact ? `${T.space3}px ${T.space3}px` : `${T.space3}px ${T.space4}px`,
                   cursor: 'pointer',
                   background: isActive ? T.bgHover : conv.pinned ? T.bgSubtle : 'transparent',
                   transition: 'background 0.15s',
@@ -199,18 +203,19 @@ export function SessionList({
                     <span
                       style={{
                         fontSize: T.fontSm,
-                        color: T.textTertiary,
+                        color: conv.historyClearedAt ? T.warning : T.textTertiary,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                         flex: 1,
                       }}
                     >
-                      {conv.lastMessage}
+                      {conv.historyClearedAt ? 'History hidden on this device' : conv.lastMessage}
                     </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: T.space1, marginLeft: T.space2, flexShrink: 0 }}>
+                      {conv.historyClearedAt && <Clock3 size={12} color={T.warning} />}
                       {conv.muted && <BellOff size={12} color={T.textQuaternary} />}
-                      {conv.pinned && <Pin size={12} color={T.textQuaternary} />}
+                      {!compact && conv.pinned && <Pin size={12} color={T.textQuaternary} />}
                       {conv.unread > 0 && (
                         <div
                           style={{
