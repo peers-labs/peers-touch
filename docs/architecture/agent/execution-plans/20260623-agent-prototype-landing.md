@@ -547,3 +547,7 @@ UI 文案从“会话隔离”改为“Agent 工作空间 / 访问范围 / 执�
 - `cd apps/desktop/src-tauri && cargo check`
 - `cd apps/desktop && pnpm run check`
 - e2e：`make station` + `make desktop-web`，Chat 发消息后中断 Station/刷新页面，重连可见 task 终态并可继续；不再出现重复回复或重复扣费。
+
+### 10.6 Actor 隔离环境平面
+
+Actor 隔离环境平面为每个 `actor#type=user` 提供长期 sandbox lifecycle、workspace 和 credential 隔离。正式设计见 [`actor-isolated-environment.md`](../../runtime/actor-isolated-environment.md)，执行计划见 [`20260703-actor-isolated-environment.md`](../../runtime/execution-plans/20260703-actor-isolated-environment.md)。
