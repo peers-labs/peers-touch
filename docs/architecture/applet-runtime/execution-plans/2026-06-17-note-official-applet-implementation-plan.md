@@ -355,5 +355,5 @@ NOT_IMPLEMENTED
 - denied service permission fails with typed error.
 - stopped service fails with typed error and UI feedback.
 - forbidden scans prove no raw backend and no legacy Desktop notebook path.
-- skill discovery gate proves `official-applet-development` exists under `tooling/skills/`, is registered in `AGENTS.md`, is referenced from the applet-runtime architecture docs, and describes official applet/scaffold/service-binding trigger scenarios.
+- skill discovery gate proves `pt-official-applet-development` exists under `tooling/skills/`, is registered in `AGENTS.md`, is referenced from the applet-runtime architecture docs, and describes official applet/scaffold/service-binding trigger scenarios.
 - progress docs do not overstate readiness.

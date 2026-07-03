@@ -1,34 +1,33 @@
-# ─── Prototype Portal / Sites ────────────────────────────────────
+# ─── Prototype Portal ─────────────────────────────────────────────
 
 .PHONY: run-prototype
 
-PROTOTYPE_SITE_ARG := $(or $(SITE),$(word 2,$(MAKECMDGOALS)))
-
 run-prototype:
-	@site="$(PROTOTYPE_SITE_ARG)"; \
-	if [ -z "$$site" ]; then \
-	  echo "Usage: make run-prototype <desktop|mobile|dashboard>"; \
-	  echo "       make run-prototype SITE=desktop"; \
-	  exit 1; \
-	fi; \
-	branch="$$(git branch --show-current 2>/dev/null || echo current)"; \
-	worktree="$$(pwd)"; \
-	case "$$site" in \
-	  desktop) \
-	    echo "Starting prototype site: desktop"; \
-	    VITE_PROTOTYPE_SITE=desktop VITE_PROTOTYPE_PORT=3200 VITE_PROTOTYPE_BRANCH="$$branch" VITE_PROTOTYPE_WORKTREE_PATH="$$worktree" pnpm --filter @peers-touch/prototype-portal run dev -- --port 3200; \
-	    ;; \
-	  mobile) \
-	    echo "Starting prototype site: mobile"; \
-	    VITE_PROTOTYPE_SITE=mobile VITE_PROTOTYPE_PORT=3201 VITE_PROTOTYPE_BRANCH="$$branch" VITE_PROTOTYPE_WORKTREE_PATH="$$worktree" pnpm --filter @peers-touch/prototype-portal run dev -- --port 3201; \
-	    ;; \
-	  dashboard) \
-	    echo "Starting prototype site: dashboard"; \
-	    VITE_PROTOTYPE_SITE=dashboard VITE_PROTOTYPE_PORT=3202 VITE_PROTOTYPE_BRANCH="$$branch" VITE_PROTOTYPE_WORKTREE_PATH="$$worktree" pnpm --filter @peers-touch/prototype-portal run dev -- --port 3202; \
-	    ;; \
-	  *) \
-	    echo "Unknown prototype site: $$site"; \
-	    echo "Usage: make run-prototype <desktop|mobile|dashboard>"; \
+	@branch="$$(git branch --show-current 2>/dev/null || echo current)"; \
+	worktree="$$(git rev-parse --show-toplevel 2>/dev/null || pwd)"; \
+	lock_hash="$$(printf "%s" "$$worktree" | shasum -a 256 | awk '{print $$1}')"; \
+	lock_dir="$${TMPDIR:-/tmp}/peers-touch-run-prototype-$$lock_hash.lock"; \
+	if mkdir "$$lock_dir" 2>/dev/null; then \
+	  printf "%s\n" "$$$$" > "$$lock_dir/pid"; \
+	  printf "%s\n" "$$worktree" > "$$lock_dir/worktree"; \
+	  trap 'rm -rf "$$lock_dir"' EXIT INT TERM; \
+	else \
+	  existing_pid="$$(cat "$$lock_dir/pid" 2>/dev/null || true)"; \
+	  if [ -n "$$existing_pid" ] && kill -0 "$$existing_pid" 2>/dev/null; then \
+	    echo "run-prototype is already running for this worktree."; \
+	    echo "worktree: $$worktree"; \
+	    echo "pid: $$existing_pid"; \
+	    echo "Stop that process before starting another prototype from the same worktree."; \
 	    exit 1; \
-	    ;; \
-	esac
+	  fi; \
+	  echo "Removing stale run-prototype lock for $$worktree"; \
+	  rm -rf "$$lock_dir"; \
+	  mkdir "$$lock_dir"; \
+	  printf "%s\n" "$$$$" > "$$lock_dir/pid"; \
+	  printf "%s\n" "$$worktree" > "$$lock_dir/worktree"; \
+	  trap 'rm -rf "$$lock_dir"' EXIT INT TERM; \
+	fi; \
+	echo "Starting Peers Touch Prototype Portal"; \
+	echo "  branch:   $$branch"; \
+	echo "  worktree: $$worktree"; \
+	VITE_PROTOTYPE_BRANCH="$$branch" VITE_PROTOTYPE_WORKTREE_PATH="$$worktree" pnpm --filter @peers-touch/prototype-portal run dev -- --port 3200
