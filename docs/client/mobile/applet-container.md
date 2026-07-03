@@ -324,21 +324,26 @@ Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿�
 
 ### 8.1 生命周期状态机
 
+> **唯一真源**：跨端七态状态机冻结在 `packages/applet-contract/src/lifecycle.ts:22-29`（状态 union）与 `:113-124`（`TRANSITION_RULES`）。Mobile **不重新定义状态**，本节仅镜像契约。历史的 `discovered/validated/loading/active/invalid` 命名已废弃（Manifest 扫描/校验属于 catalog 层，不是实例生命周期态）。参照架构真源 [`applet-lifecycle-architecture.md §3`](../../architecture/applet-runtime/applet-lifecycle-architecture.md) 与落地子计划 [`execution-plans/2026-07-03-applet-kernel-mobile-native-buildout.md §5.3`](./execution-plans/2026-07-03-applet-kernel-mobile-native-buildout.md)。
+
 ```text
-  discovered → validated → loading → active → paused → destroyed
-                  ↓                    ↓
-               invalid              error
+  cold → materializing → visible ⇄ hidden-warm → suspended → destroyed
+                            │  ▲        │  ▲          ▲
+                          pause│      pause│        restore│
+                            ▼  │resume    ▼  │suspend      │
+                          paused ─────────────────────────┘
 ```
 
-状态说明：
-- `discovered`：AppletManager 扫描到 Applet 元数据（来自本地缓存或 Station 同步）。
-- `validated`：Manifest 校验通过。
-- `loading`：LynxView 创建中，Bundle 加载中。
-- `active`：Applet 运行中，LynxView 可见。
-- `paused`：Applet 对应页面不可见，JS 引擎暂停。
-- `destroyed`：Applet 被卸载或页面被销毁，资源已释放。
-- `invalid`：Manifest 校验失败。
-- `error`：运行时错误（Bundle 加载失败、JS 异常等）。
+状态说明（`lifecycle.ts:22-29`）：
+- `cold`：尚未实例化，再次打开即冷启动。
+- `materializing`：`launch`（`cold → materializing`）后，Bundle 拉取 + capability session 建立中。
+- `visible`：`ready`（`materializing → visible`）后 LynxView 可见运行。冷启首帧直接 `applySurfaceCommand('show')` 挂载，**不 dispatch `show`**（`show` 合法源不含 `visible`，见 §5.3 子计划）。
+- `hidden-warm`：`hide`（`visible → hidden-warm`）后 LynxView 保活（保留实例，切回不重载）。
+- `paused`：`pause`（源 `visible | hidden-warm`）后 timer/rAF 冻结（App 后台 / 系统 idle）；`resume` 回到 `visible` 或 `hidden-warm`。
+- `suspended`：`suspend`（源 `hidden-warm | paused`）后释放渲染资源、保留最小状态，`restore` 快速恢复。
+- `destroyed`：`destroy`（任意非 `cold`/`destroyed` 态可达）后完全回收，再次打开是冷启。
+
+`error` 与 `memory-pressure` 是**喂给 Kernel 的信号**，会被解析为 `destroy`/`suspend` 转换，不是独立目标态（`lifecycle.ts:44-58`）。合法转换校验以 `isValidTransition`（`lifecycle.ts:147`）为准，非法转换一律拒绝。
 
 ### 8.2 AppletManager 职责
 
@@ -353,10 +358,15 @@ Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿�
 卸载：
 - 发送 `destroy` 事件 → 等待 Applet 清理（500ms 超时） → 销毁 LynxView → 清理缓存文件。
 
-### 8.3 多实例管理
-- 同一个 Applet ID 同一时间只允许一个活跃实例（与 Desktop 行为一致）。
-- 不同 Applet 可以同时运行多个实例，但受内存上限约束（建议最多 5 个并发 Applet）。
-- 内存压力下，优先销毁 `paused` 状态的 Applet。
+### 8.3 多实例与资源策略
+
+> 资源策略以契约为准：`MOBILE_RESOURCE_POLICY`（`packages/applet-kernel/src/policy.ts:25-31`），回收决策由 `ResourceScheduler`（`resource-scheduler.ts`）统一裁决，AppletManager/容器不自行淘汰。
+
+- 同一个 Applet ID 同一时间只允许一个活跃实例（`instanceId` 维度，与 Desktop 行为一致）。
+- LRU 保活上限 `lruSize = 3`（Mobile 比 Desktop 的 4 更紧，唯一差异）；超出时最旧 `hidden-warm` 实例被 `suspend`。
+- `suspended` 上限 `maxSuspended = 8`，超出时最旧 `suspended` 被 `destroy`。
+- TTL：`hidden-warm` 30min → `suspended`；`suspended` 120min → `destroyed`；`paused` 15min → `suspended`。
+- 内存压力（`resource-scheduler.ts:128-158`）：`moderate` 销毁最旧 `suspended`；`critical` 销毁所有非 `visible` 实例。
 
 ---
 

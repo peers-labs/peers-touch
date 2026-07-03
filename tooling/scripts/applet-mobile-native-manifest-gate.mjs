@@ -166,6 +166,15 @@ function runIosXcodeBuild() {
   const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
   write(outputRelativePath, output);
   if (result.status !== 0) {
+    if (
+      output.includes('CoreSimulator is out of date') ||
+      output.includes('Supported platforms for the buildables in the current scheme is empty')
+    ) {
+      return {
+        ran: false,
+        reason: `iOS Simulator environment is unavailable; see applet-readiness-evidence/${outputRelativePath}`,
+      };
+    }
     throw new Error([
       'iOS Xcode workspace build failed.',
       `Evidence: applet-readiness-evidence/${outputRelativePath}`,
@@ -260,7 +269,19 @@ const androidAppletContainerSource = readFileSync(
   'utf8',
 );
 assert.match(androidAppletContainerSource, /appletManager\.scanLocalApplets\(\)/);
-assert.match(androidAppletContainerSource, /File\(it\.path, loadConfig\.entry\)\.toURI\(\)\.toString\(\)/);
+assert.match(androidAppletContainerSource, /appletSurfaceCache\.getOrCreate\(ctx, appletId, appletManager\)/);
+assert.match(androidAppletContainerSource, /appletManager\.showApplet\(appletId\)/);
+assert.match(androidAppletContainerSource, /appletManager\.hideApplet\(appletId\)/);
+
+const androidSurfaceCacheSource = readFileSync(
+  'apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/applet/kernel/AppletSurfaceCache.kt',
+  'utf8',
+);
+assert.match(androidSurfaceCacheSource, /File\(it\.path, loadConfig\.entry\)\.toURI\(\)\.toString\(\)/);
+assert.match(androidSurfaceCacheSource, /lynxViewFactory\.create\(context, bundleUrl, session\)/);
+assert.match(androidSurfaceCacheSource, /SurfaceCommand\.HIDE/);
+assert.match(androidSurfaceCacheSource, /SurfaceCommand\.DETACH/);
+assert.match(androidSurfaceCacheSource, /SurfaceCommand\.DESTROY/);
 
 const androidLynxViewFactorySource = readFileSync(
   'apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/lynx/LynxViewFactory.kt',
@@ -493,13 +514,15 @@ Task {
         fail("bridge response error did not preserve canonical code")
     }
 
-    session.transition(to: .unloaded)
+    try session.dispatchLifecycle(.launch)
+    try session.dispatchLifecycle(.ready)
+    session.destroy()
     do {
         _ = try await session.dispatch(method: "storage.get", params: [:])
-        fail("unloaded session should throw")
+        fail("destroyed session should throw")
     } catch AppletError.bridgeFailed {
     } catch {
-        fail("unloaded session returned unexpected error: \\(error)")
+        fail("destroyed session returned unexpected error: \\(error)")
     }
 
     semaphore.signal()
@@ -533,7 +556,7 @@ write('mobile/native-manifest-gate-output.txt', [
   'PASS iOS AppletContainerView uses AppletManager.loadApplet(id:) and AppletLynxViewRepresentable uses LynxViewFactory instead of a placeholder UIView.',
   'PASS iOS LynxViewFactory registers AppletBridgeNativeModule as the per-session bridge module instead of loading a bare LynxView.',
   'PASS iOS AppletBridgeNativeModule exposes NativeModules.bridge.invoke and returns canonical peers-touch.applet.bridge response envelopes.',
-  'PASS iOS AppletBridgeSession and BridgeDispatcher enforce full-method permission, canonical errors, unloaded-session rejection, and response envelopes at runtime.',
+  'PASS iOS AppletBridgeSession and BridgeDispatcher enforce full-method permission, canonical errors, destroyed-session rejection, and response envelopes at runtime.',
   iosXcodeBuild.ran
     ? `PASS iOS Xcode workspace build succeeded. Evidence: ${iosXcodeBuild.output}.`
     : `SKIP iOS Xcode workspace build: ${iosXcodeBuild.reason}. Source and executable Swift harness assertions remain active; this is not iOS Lynx runtime E2E.`,

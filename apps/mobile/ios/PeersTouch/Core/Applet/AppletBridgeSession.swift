@@ -2,25 +2,44 @@ import Foundation
 
 final class AppletBridgeSession {
     let manifest: AppletManifest
+    let instanceId: String
     let sessionId: String
-    private(set) var state: AppletState = .registered
+    private(set) var state: AppletState = .cold
     private let bridgeDispatcher: BridgeDispatcher
     private let grantedPermissions: Set<String>
+    private var resumeTargetState: AppletState = .visible
 
-    init(manifest: AppletManifest, bridgeDispatcher: BridgeDispatcher) {
+    init(manifest: AppletManifest, instanceId: String, bridgeDispatcher: BridgeDispatcher) {
         self.manifest = manifest
+        self.instanceId = instanceId
         self.sessionId = "ios:\(manifest.id):\(Int(Date().timeIntervalSince1970 * 1000))"
         self.bridgeDispatcher = bridgeDispatcher
         self.grantedPermissions = Set(manifest.permissions)
     }
 
-    func transition(to newState: AppletState) {
-        state = newState
+    convenience init(manifest: AppletManifest, bridgeDispatcher: BridgeDispatcher) {
+        self.init(manifest: manifest, instanceId: "\(manifest.id):default", bridgeDispatcher: bridgeDispatcher)
+    }
+
+    func dispatchLifecycle(_ event: AppletLifecycleEvent, resumeTarget: AppletState = .visible) throws {
+        if event == .pause {
+            resumeTargetState = state
+        }
+        let target = event == .resume ? resumeTargetState : resumeTarget
+        state = try state.nextState(for: event, resumeTarget: resumeTarget)
+        if event == .resume {
+            state = target
+        }
+    }
+
+    func destroy() {
+        guard state != .destroyed, state != .cold else { return }
+        try? dispatchLifecycle(.destroy)
     }
 
     func dispatch(method: String, params: [String: Any]) async throws -> BridgeResult {
-        guard state != .unloaded else {
-            throw AppletError.bridgeFailed("Session for \(manifest.id) is unloaded")
+        guard state != .destroyed else {
+            throw AppletError.bridgeFailed("Session for \(manifest.id) is destroyed")
         }
 
         // Keep permission checks aligned with canonical method names such as storage.get.

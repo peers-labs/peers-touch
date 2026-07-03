@@ -3,6 +3,7 @@ package com.peerstouch.mobile.di
 import android.content.Context
 import com.peerstouch.mobile.core.applet.AppletBundleStorage
 import com.peerstouch.mobile.core.applet.AppletManager
+import com.peerstouch.mobile.core.applet.kernel.AppletSurfaceCache
 import com.peerstouch.mobile.core.lynx.LynxEngineManager
 import com.peerstouch.mobile.core.lynx.LynxViewFactory
 import com.peerstouch.mobile.core.lynx.bridge.BridgeDispatcher
@@ -35,6 +36,12 @@ object AppletModule {
     @Singleton
     fun provideLynxViewFactory(lynxEngineManager: LynxEngineManager): LynxViewFactory {
         return LynxViewFactory(lynxEngineManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAppletSurfaceCache(lynxViewFactory: LynxViewFactory): AppletSurfaceCache {
+        return AppletSurfaceCache(lynxViewFactory)
     }
 
     @Provides
@@ -89,8 +96,9 @@ object AppletModule {
     @Singleton
     fun provideAppletManager(
         appletBundleStorage: AppletBundleStorage,
-        bridgeDispatcher: BridgeDispatcher
+        bridgeDispatcher: BridgeDispatcher,
+        appletSurfaceCache: AppletSurfaceCache
     ): AppletManager {
-        return AppletManager(appletBundleStorage, bridgeDispatcher)
+        return AppletManager(appletBundleStorage, bridgeDispatcher, appletSurfaceCache)
     }
 }
