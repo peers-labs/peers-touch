@@ -9,6 +9,10 @@ import Mistral from '@lobehub/icons/es/Mistral';
 import Groq from '@lobehub/icons/es/Groq';
 import Together from '@lobehub/icons/es/Together';
 import Cohere from '@lobehub/icons/es/Cohere';
+import Codex from '@lobehub/icons/es/Codex';
+import ClaudeCode from '@lobehub/icons/es/ClaudeCode';
+import Cursor from '@lobehub/icons/es/Cursor';
+import Trae from '@lobehub/icons/es/Trae';
 import { theme } from 'antd';
 
 type IconComponent = React.ComponentType<{ size?: number | string; style?: React.CSSProperties }>;
@@ -26,6 +30,11 @@ const ICON_MAP: Record<string, IconComponent> = {
   groq: Groq,
   together: Together.Color,
   cohere: Cohere.Color,
+  // CLI providers reuse their official brand marks.
+  'codex-cli': Codex,
+  'claude-cli': ClaudeCode.Color,
+  'cursor-cli': Cursor,
+  'trae-cli': Trae.Color,
 };
 
 interface Props {

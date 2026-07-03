@@ -39,6 +39,14 @@ interface CanvasNode {
   resultSummary?: string;
 }
 
+interface DesktopExecutorNodeResult {
+  status: 'completed' | 'failed';
+  resultSummary: string;
+  turnId: string;
+  leaseId: string;
+  executorId: string;
+}
+
 interface AgentCanvasPageProps {
   onBack: () => void;
   onCreateAgent: (agentName: string) => void;
@@ -121,6 +129,76 @@ function taskMetaString(task: unknown, key: string) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function extractDesktopExecutorSummary(result: Record<string, unknown> | undefined) {
+  if (!result) return '';
+  const responseMessage = recordValue(result.response_message || result.responseMessage);
+  const turn = recordValue(result.turn);
+  const trace = recordValue(result.trace);
+  return (
+    stringValue(responseMessage.content) ||
+    stringValue(responseMessage.text) ||
+    stringValue(result.content) ||
+    stringValue(result.text) ||
+    stringValue(result.final_response) ||
+    stringValue(result.finalResponse) ||
+    stringValue(turn.final_response) ||
+    stringValue(turn.finalResponse) ||
+    stringValue(trace.final_response) ||
+    stringValue(trace.finalResponse)
+  );
+}
+
+function extractDesktopExecutorTurnId(result: Record<string, unknown> | undefined) {
+  if (!result) return '';
+  const turn = recordValue(result.turn);
+  const trace = recordValue(result.trace);
+  return (
+    stringValue(result.turn_id) ||
+    stringValue(result.turnId) ||
+    stringValue(turn.turn_id) ||
+    stringValue(turn.turnId) ||
+    stringValue(trace.turn_id) ||
+    stringValue(trace.turnId)
+  );
+}
+
+function desktopExecutorPrompt(
+  persisted: unknown,
+  detail: { nodes: unknown[] },
+  fallbackPrompt: string,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
+  const role = fieldString(persisted, 'role').toLowerCase();
+  if (role !== 'synthesizer') return fallbackPrompt.trim();
+  const description = fieldString(persisted, 'description') || t('agent.canvas.synthesizer');
+  const outputs = detail.nodes
+    .filter((node) => fieldString(node, 'role').toLowerCase() !== 'synthesizer')
+    .map((node, index) => {
+      const summary = fieldString(node, 'resultSummary', 'result_summary') || t('agent.canvas.resultRuntimeUnavailable');
+      const agentId = fieldString(node, 'agentId', 'agent_id') || t('agent.canvas.agentIndex', { index: index + 1 });
+      return `${index + 1}. ${agentId}: ${summary}`;
+    });
+  return [
+    description,
+    '',
+    'Task:',
+    fallbackPrompt.trim(),
+    '',
+    'Node outputs:',
+    outputs.join('\n') || t('agent.canvas.resultNoNodes'),
+  ].join('\n');
+}
+
 export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
@@ -141,6 +219,9 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
   const streamControllersRef = useRef<AbortController[]>([]);
   const taskEventSeqRef = useRef<Record<string, number>>({});
   const runSeqRef = useRef(0);
+  const desktopExecutorNodeIdsRef = useRef<Set<string>>(new Set());
+  const desktopExecutorInFlightRef = useRef<Set<string>>(new Set());
+  const desktopExecutorResultCacheRef = useRef<Map<string, DesktopExecutorNodeResult>>(new Map());
 
   useEffect(() => {
     loadAgents();
@@ -305,6 +386,9 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
     if (!canRun) return;
     const runSeq = runSeqRef.current + 1;
     runSeqRef.current = runSeq;
+    desktopExecutorNodeIdsRef.current.clear();
+    desktopExecutorInFlightRef.current.clear();
+    desktopExecutorResultCacheRef.current.clear();
     const agentById = new Map([...agents, ...nodes.map((node) => node.agent)].map((agent) => [agent.id, agent]));
     const runJudgeAgentId = selectedJudgeAgentId;
     streamControllersRef.current.forEach((controller) => controller.abort());
@@ -388,6 +472,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
       setTaskId(createdTaskId);
       taskEventSeqRef.current[createdTaskId] = taskEventSeqRef.current[createdTaskId] || 0;
       startTaskStreams(createdTaskId);
+      const desktopExecutorId = `desktop-canvas-${createdTaskId}-${runSeq}`;
 
       const applyTaskDetail = (detail: Awaited<ReturnType<typeof api.getAgentCollaborationTask>>) => {
         const taskStatus = detail.task?.status;
@@ -424,11 +509,145 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
         return nextRunState;
       };
 
+      const executeDesktopNodes = (
+        detail: Awaited<ReturnType<typeof api.getAgentCollaborationTask>>,
+        schedulePoll: (delayMs?: number) => void,
+      ) => {
+        detail.nodes.forEach((persisted, index) => {
+          const nodeId = fieldString(persisted, 'nodeId', 'node_id');
+          if (!nodeId || nodeStatusToRunState(persisted.status) !== 'running') return;
+          if (desktopExecutorInFlightRef.current.has(nodeId)) return;
+
+          const submitCachedResult = async (cached: DesktopExecutorNodeResult) => {
+            desktopExecutorInFlightRef.current.add(nodeId);
+            let submitted = false;
+            try {
+              await api.submitAgentCollaborationNodeResult({
+                task_id: createdTaskId,
+                node_id: nodeId,
+                result_summary: cached.resultSummary,
+                status: cached.status,
+                turn_id: cached.turnId,
+                lease_id: cached.leaseId,
+                executor_id: cached.executorId,
+              });
+              submitted = true;
+              desktopExecutorResultCacheRef.current.delete(nodeId);
+            } catch (error) {
+              if (runSeqRef.current !== runSeq) return;
+              setRunError((current) => current || (error instanceof Error ? error.message : String(error)));
+            } finally {
+              desktopExecutorInFlightRef.current.delete(nodeId);
+              if (runSeqRef.current === runSeq) schedulePoll(submitted ? 0 : 1500);
+            }
+          };
+
+          const cachedResult = desktopExecutorResultCacheRef.current.get(nodeId);
+          if (cachedResult) {
+            void submitCachedResult(cachedResult);
+            return;
+          }
+
+          if (desktopExecutorNodeIdsRef.current.has(nodeId)) return;
+
+          const stationAgentId = fieldString(persisted, 'agentId', 'agent_id');
+          const agent = agentById.get(stationAgentId) || nodes[index]?.agent;
+          const cliCommand = agent?.cliCommand?.trim();
+          if (!agent || !cliCommand) return;
+
+          desktopExecutorInFlightRef.current.add(nodeId);
+          setNodes((current) => current.map((node) => (
+            node.id === nodeId ? { ...node, status: 'running' } : node
+          )));
+
+          void (async () => {
+            let status: 'completed' | 'failed' = 'completed';
+            let resultSummary = t('agent.canvas.desktopExecutorCompleted');
+            let turnId = '';
+            let leaseId = '';
+            let heartbeatTimer: number | undefined;
+            try {
+              const claim = await api.claimAgentCollaborationExecutorTask({
+                executor_id: desktopExecutorId,
+                lease_ttl_ms: 300000,
+                task_id: createdTaskId,
+                agent_id: stationAgentId,
+                node_id: nodeId,
+                capabilities: ['cli'],
+              });
+              if (runSeqRef.current !== runSeq) return;
+              if (!claim.claimed) {
+                desktopExecutorInFlightRef.current.delete(nodeId);
+                schedulePoll(1500);
+                return;
+              }
+              const claimedNodeId = fieldString(claim.node, 'nodeId', 'node_id');
+              if (claimedNodeId && claimedNodeId !== nodeId) {
+                throw new Error(`claimed unexpected node ${claimedNodeId}`);
+              }
+              leaseId = fieldString(claim.lease, 'leaseId', 'lease_id');
+              if (!leaseId) {
+                throw new Error('desktop executor lease is missing');
+              }
+              desktopExecutorNodeIdsRef.current.add(nodeId);
+              heartbeatTimer = window.setInterval(() => {
+                void api.heartbeatAgentCollaborationExecutorLease({
+                  lease_id: leaseId,
+                  executor_id: desktopExecutorId,
+                  lease_ttl_ms: 300000,
+                }).catch(() => undefined);
+              }, 15000);
+              const result = await api.executeAgentTurnOnce({
+                conversation_id: `${createdTaskId}:${nodeId}`,
+                agent_id: agent.id,
+                user_input: desktopExecutorPrompt(persisted, detail, prompt, t),
+                provider: agent.provider,
+                model: agent.model,
+                cli_command: cliCommand,
+                workspace_mode: agent.workspaceMode,
+                runtime_backend: agent.runtimeBackend,
+                rootfs_path: agent.rootfsPath,
+                effort: agent.effort,
+                platform: 'desktop',
+              });
+              if (runSeqRef.current !== runSeq) return;
+              resultSummary = extractDesktopExecutorSummary(result) || t('agent.canvas.desktopExecutorCompleted');
+              turnId = extractDesktopExecutorTurnId(result);
+            } catch (error) {
+              if (runSeqRef.current !== runSeq) return;
+              if (!leaseId) {
+                desktopExecutorInFlightRef.current.delete(nodeId);
+                const message = error instanceof Error ? error.message : String(error);
+                setRunError((current) => current || message);
+                schedulePoll(1500);
+                return;
+              }
+              status = 'failed';
+              const message = error instanceof Error ? error.message : String(error);
+              resultSummary = message || t('agent.canvas.desktopExecutorFailed');
+            } finally {
+              if (heartbeatTimer !== undefined) {
+                window.clearInterval(heartbeatTimer);
+              }
+            }
+            if (runSeqRef.current !== runSeq) return;
+            const executorResult = { resultSummary, status, turnId, leaseId, executorId: desktopExecutorId };
+            desktopExecutorResultCacheRef.current.set(nodeId, executorResult);
+            await submitCachedResult(executorResult);
+          })();
+        });
+      };
+
       const pollTask = async (attempt = 0): Promise<void> => {
         const detail = await api.getAgentCollaborationTask(createdTaskId);
         if (runSeqRef.current !== runSeq) return;
         const nextRunState = applyTaskDetail(detail);
-        if (nextRunState === 'running' && attempt < 120) {
+        executeDesktopNodes(detail, (delayMs = 0) => {
+          window.setTimeout(() => {
+            void pollTask(attempt + 1);
+          }, delayMs);
+        });
+        if (nextRunState === 'running' && (attempt < 120 || desktopExecutorInFlightRef.current.size > 0)) {
           window.setTimeout(() => {
             void pollTask(attempt + 1);
           }, 1500);
@@ -447,6 +666,9 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
     runSeqRef.current += 1;
     streamControllersRef.current.forEach((controller) => controller.abort());
     streamControllersRef.current = [];
+    desktopExecutorNodeIdsRef.current.clear();
+    desktopExecutorInFlightRef.current.clear();
+    desktopExecutorResultCacheRef.current.clear();
     setNodes([]);
     setPrompt('');
     setSelectedNodeId('');
@@ -465,6 +687,9 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
     const currentTaskId = taskId;
     streamControllersRef.current.forEach((controller) => controller.abort());
     streamControllersRef.current = [];
+    desktopExecutorNodeIdsRef.current.clear();
+    desktopExecutorInFlightRef.current.clear();
+    desktopExecutorResultCacheRef.current.clear();
     if (currentTaskId) {
       void api.cancelAgentCollaborationTask(currentTaskId).catch((error) => {
         setRunError(error instanceof Error ? error.message : String(error));
