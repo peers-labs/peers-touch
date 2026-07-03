@@ -1,23 +1,20 @@
 # Applet Lifecycle Architecture — 小程序生命周期与保活架构
 
 > **Status**: draft
-> **Version**: v1.0
+> **Version**: v2.0
 > **Created**: 2026-07-02 | **Updated**: 2026-07-02
 > **Owner**: Architecture Team
 > **Module**: Applet Kernel (cross-platform), Desktop Shell, Mobile Shell, `packages/applet-sdk/`
 
 ---
 
-## 1. 升级目标
+## 1. 目标
 
-**问题**：当前小程序保活依赖 Desktop PageHost `display:none` + React mount/unmount + LRU page count，缺少：
-- 跨端统一的生命周期状态机
-- 小程序维度（非页面维度）的保活/回收策略
-- Host 到 Lynx 的 `show/hide/pause/resume/suspend/destroy` 完整事件链
-- 长期不用时基于 TTL/内存压力的分级回收
-- 与 Native Lynx Runtime 对齐的生命周期模型
+定义跨 Desktop、Android、iOS 的小程序运行时生命周期管理架构。
 
-**目标**：定义跨 Desktop、Android、iOS 的小程序运行时生命周期管理架构，不依赖 WebView DOM 语义。
+- **保活/回收是 Applet Kernel 的职责，与底层渲染 runtime 无关。** 状态机、LRU/TTL/内存压力策略在所有平台一致。
+- Desktop 使用 **Tauri WebView + Lynx for Web** 承载 Lynx surface；Mobile 使用原生 `LynxView`。
+- 两端共用同一份 `main.lynx.bundle`，共用同一套生命周期语义。
 
 **非目标**：
 - 不定义具体 Applet 的业务状态持久化策略
@@ -30,19 +27,33 @@
 
 1. **Applet Kernel 管生命周期，Shell 管 surface**
    - Applet Kernel 是跨端内核，负责 session、permission、lifecycle orchestration、resource scheduling。
-   - Host Shell（Desktop/Mobile）只负责 window/surface 编排和系统事件翻译，不做生命周期决策。
+   - Host Shell（Desktop/Mobile）只负责 surface 编排和系统事件翻译，不做生命周期决策。
+   - **保活不依赖具体渲染技术**：无论 Desktop 的 WebView Lynx surface 还是 Mobile 的原生 LynxView，Kernel 都通过统一的 `show/hide/detach/destroy` 语义控制。
 
-2. **Native Lynx Runtime first**
-   - 长期目标：Desktop 和 Mobile 都使用 Native Lynx surface，不依赖 WebView DOM。
-   - WebView Lynx for Web 作为过渡 adapter，不是长期主线。
+2. **Desktop = Tauri WebView + Lynx for Web**
+   - Desktop 用系统 WebView 承载 Lynx for Web runtime（`<lynx-view>`），复用与 Mobile 相同的 Lynx bundle。
+   - 这是长期主线，不是过渡方案。理由见 §2.1。
+   - Native FFI 直接嵌入 Lynx C/C++ engine 是远期观察项，不是当前路线。
 
 3. **切换不重载，长期回收**
    - 短期切换（tab 切换、页面导航）保留 Lynx surface、JS context、session。
    - 长期不用（超过 TTL/LRU/内存压力）分级回收，最终销毁。
+   - 保活的本质是 Kernel 保留实例 + Shell 控制可见性（`display`/`detach`），不是每次都重建。
 
 4. **验证先行**
    - 任何架构层假设必须通过 spike gate 验证后才能正式确认。
    - 未验证的路径标记为 `unproven`，不得作为下游实施依据。
+
+### 2.1 为什么 Desktop 选 WebView + Lynx for Web，而不是自研 native runtime
+
+| 维度 | Tauri WebView + Lynx for Web（选定） | 自研 Rust FFI 嵌入 Lynx engine（否决） |
+|------|-------------------------------------|----------------------------------------|
+| 官方支持 | Lynx for Web 是官方 GA runtime | 官方无 Desktop native FFI 集成文档 |
+| 成本 | 复用现有 Tauri WebView 栈，与 Mobile 共用 bundle | 需自研 C/C++ FFI、surface、输入、IME、多实例，成本极高 |
+| 风险 | 低，可增量落地 | 高，地基假设未经验证 |
+| Lynx 官方 Desktop 参照 | — | Lynxtron 本身是 **Electron X（Electron fork）+ Lynx**，即官方 Desktop 也走 Chromium/WebView 血统，未走纯 native FFI；且非 GA（2026 H1 才逐步开源） |
+
+结论：官方旗舰 Desktop 方案（Lynxtron）本质是 Electron/Chromium + Lynx，我们更没有理由自研一个比它还底层的 native 嵌入。Desktop 用 WebView 承载 Lynx 是被官方路线印证的稳妥长期方向。保活能力完全由 Kernel 提供，不因 WebView 而受损。
 
 ---
 
@@ -120,29 +131,19 @@
 
 ## 4. 事件映射标准
 
-### Desktop (长期: Native Lynx)
+### Desktop (Tauri WebView + Lynx for Web)
 
 | 平台事件 | 生命周期事件 | 说明 |
 |---------|------------|------|
-| 用户点击打开小程序 | launch | cold start |
+| 用户点击打开小程序 | launch | cold start，创建 `<lynx-view>` host |
 | Lynx surface ready + SDK reportReady | ready → show | 首次可见 |
-| 用户切到其他 tab/page | hide | 保留 surface |
-| 用户切回 | show | instant 恢复 |
-| 窗口 minimize/失焦 | pause | 暂停 timer |
-| 窗口 restore/获焦 | resume | 恢复 |
-| 闲置超过 suspend TTL | suspend | 释放 GPU，保留状态 |
-| 用户切回 suspended applet | restore → show | 恢复 surface |
-| 用户点关闭 / LRU 淘汰 / 内存压力 / 版本升级 | destroy | 完全回收 |
-
-### Desktop (过渡: WebView + Lynx for Web)
-
-| 平台事件 | 生命周期事件 | 说明 |
-|---------|------------|------|
-| PageHost active → applet page | launch/show | PageHost display:block |
-| PageHost active → other page | hide | PageHost display:none |
-| window blur / document hidden | pause | WebView 可能节流 |
-| window focus / document visible | resume | |
-| LRU evict / explicit close | destroy | 卸载 `<lynx-host>` |
+| 用户切到其他 tab/page | hide | 保留 host，切走的容器 `display:none` / detach |
+| 用户切回 | show | instant 恢复，不重建 host |
+| 窗口 minimize / 失焦 / document hidden | pause | 暂停 timer/rAF（WebView 可能自行节流，Kernel 统一发 pause） |
+| 窗口 restore / 获焦 / document visible | resume | 恢复 |
+| 闲置超过 suspend TTL | suspend | 卸载 host 保留最小状态，或释放重资源 |
+| 用户切回 suspended applet | restore → show | 重新 attach host |
+| 用户点关闭 / LRU 淘汰 / 内存压力 / 版本升级 | destroy | 完全回收 `<lynx-view>` host |
 
 ### Mobile (Android/iOS: Native Lynx)
 
@@ -234,9 +235,10 @@ TTL 可按设备等级动态调整：低端设备缩短，高端设备延长。
 │Desktop Adapter│     │Android Adapter│     │ iOS Adapter  │
 │              │     │              │     │              │
 │ window focus │     │ Activity     │     │ UIScene      │
-│ surface mgmt │     │ onTrimMemory │     │ didEnter     │
-│ display/hide │     │ LynxView mgmt│     │ Background   │
-│ memory mon   │     │ memory mon   │     │ LynxView mgmt│
+│ WebView vis  │     │ onTrimMemory │     │ didEnter     │
+│ lynx-view    │     │ LynxView mgmt│     │ Background   │
+│ show/hide    │     │ memory mon   │     │ LynxView mgmt│
+│ memory mon   │     │              │     │              │
 └──────────────┘     └──────────────┘     └──────────────┘
 ```
 
@@ -253,66 +255,70 @@ TTL 可按设备等级动态调整：低端设备缩短，高端设备延长。
 
 ---
 
-## 7. Desktop 长期目标：Rust Shell + Native Lynx
+## 7. Desktop：Tauri WebView + Lynx for Web
 
 ### 架构
 
 ```text
 ┌─────────────────────────────────────────────────┐
-│           Desktop Rust Host Process              │
+│           Desktop App (Tauri)                    │
 │                                                  │
 │  ┌────────────────────────────────────────────┐ │
-│  │           Applet Kernel (Rust)              │ │
+│  │        Applet Kernel (TS, in WebView)       │ │
 │  │  lifecycle / session / resource / trace     │ │
+│  │  ── bridge ──▶ Rust Capability Gateway      │ │
 │  └──────────────────┬─────────────────────────┘ │
 │                     │                            │
 │  ┌──────────────────┼─────────────────────────┐ │
-│  │  Native Window / Surface Manager            │ │
+│  │  Surface Manager (DOM host container)       │ │
 │  │                                             │ │
 │  │  ┌───────────────────────────────────┐      │ │
-│  │  │  Lynx Native Engine (embedded)    │      │ │
+│  │  │  <lynx-view> (Lynx for Web)       │      │ │
 │  │  │  - JS Context                     │      │ │
-│  │  │  - Layout / Render                │      │ │
+│  │  │  - Layout / Render (in WebView)   │      │ │
 │  │  │  - NativeModules → Applet Kernel  │      │ │
 │  │  └───────────────────────────────────┘      │ │
 │  │                                             │ │
-│  │  ┌───────────────────────────────────┐      │ │
-│  │  │  Input / IME / Accessibility      │      │ │
-│  │  └───────────────────────────────────┘      │ │
+│  │  show/hide = display / attach-detach        │ │
 │  └─────────────────────────────────────────────┘ │
 │                                                  │
 │  ┌────────────────────────────────────────────┐ │
-│  │  Admin Shell (Tauri WebView, optional)     │ │
-│  │  settings / dev tools / permission UI      │ │
+│  │  Rust Host (Tauri): Capability Gateway,     │ │
+│  │  permission, audit, local storage, network  │ │
 │  └────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────┘
 ```
 
-### 优势
+### 为什么保活成立
 
-- 不依赖 WebView `display:none` 语义做保活
-- 不受浏览器 timer throttle、rAF pause 影响
-- Lynx engine 生命周期直接由 Rust Host 控制
-- surface 隐藏/显示是 native window 操作，不是 DOM 操作
-- 内存可精确监控（Lynx engine heap + native allocation）
-- crash 不影响其他 applet 或 Host UI
+保活是 Kernel + Surface Manager 的能力，WebView 不构成障碍：
+
+- **切换不重载**：切走的 applet host 保留 DOM 实例（`display:none` 或 detach），Lynx JS context 与 session 不销毁，切回 instant `show`。
+- **timer/rAF 节流**：WebView 后台可能自行节流，Kernel 统一在 `pause` 事件里冻结 applet 侧 timer，不依赖浏览器行为，语义与 Mobile 一致。
+- **长期回收**：TTL/LRU/内存压力触发 `suspend`（卸载 host 保留最小状态）→ `destroy`（移除 `<lynx-view>` host，释放 JS context 与 session）。
+- **内存监控**：通过 JS heap（`performance.memory` best-effort）+ Rust 侧进程 RSS 估算，喂给 ResourceScheduler。
 
 ### 关键假设（必须 spike 验证）
 
 | 假设 | 验证方式 | 判定标准 | 状态 |
 |------|---------|---------|------|
-| Lynx engine 可作为 native library 嵌入 Rust 进程 | spike: Rust FFI 调用 Lynx C/C++ API 创建 engine 实例 | 能创建、加载 bundle、接收 bridge 调用 | **unproven** |
-| Native Lynx surface 可在 macOS/Windows/Linux native window 中渲染 | spike: 创建 native window，attach Lynx render surface | 正确渲染 hello-world Lynx bundle | **unproven** |
-| 多个 Lynx engine 实例可在同进程共存 | spike: 同时运行 2+ applet engine | 互不干扰，独立 JS context | **unproven** |
-| Lynx engine 可暂停/恢复 JS execution | spike: 调用 pause/resume API 或等效机制 | timer/rAF 暂停，恢复后继续 | **unproven** |
-| 输入事件（键盘/鼠标/IME）可正确路由到 Lynx surface | spike: 在 native window 中交互 Lynx UI | 正确响应输入、弹出 IME | **unproven** |
-| Bridge NativeModule 可从 Lynx JS 调用回 Rust Host | spike: hello-world applet invoke storage.get | 完整 roundtrip 成功 | **unproven** |
+| Lynx for Web 可在 Tauri 系统 WebView 中稳定运行 | spike: 在 Tauri WebView 加载 `<lynx-view>` + hello-world bundle | 正确渲染、可交互 | **unproven** |
+| Worker / custom protocol / asset URL / CSP 在 WKWebView & WebView2 兼容 | spike: 三平台加载真实 bundle | 无 CSP/Worker/asset 阻塞 | **unproven** |
+| host `display:none` / detach 保活后切回不丢状态 | spike: A→B→A 切换 | UI/scroll/input draft 保留 | **unproven** |
+| 多个 `<lynx-view>` host 共存互不干扰 | spike: 同时挂载 2+ applet | 独立 JS context，无串扰 | **unproven** |
+| Kernel `pause` 能冻结 WebView 后台的 applet timer/rAF | spike: 后台计时行为 | pause 后停止，resume 后继续 | **unproven** |
+| NativeModules Bridge → Rust Capability Gateway roundtrip | spike: hello-world invoke storage.get | 完整 roundtrip 成功 | **unproven** |
 
-**Gate**: 以上 6 项全部验证通过后，Desktop Native Lynx 路线正式确认；否则保留 WebView adapter 作为 production 路径，并评估阻塞项的解决成本。
+**Gate**: 以上 6 项通过后正式进入实施。若 Lynx for Web 在某平台 WebView 出现不可接受兼容问题，按 `design.md §9` 的降级决策树处理（Shadow DOM 隔离 + dynamic import，仍不引入 iframe）。
+
+### 远期观察项（不是当前路线）
+
+- **Native FFI 嵌入 Lynx engine**：官方无 Desktop native 集成文档，暂不投入。
+- **Lynxtron（Electron X + Lynx）**：Lynx 官方 Desktop 方案，本质是 Electron fork，2026 H1 才逐步开源、非 GA。待其成熟且开源可用后，可评估是否作为 Desktop Shell 的替代宿主——但届时 SDK / 协议 / 生命周期契约不变，只换容器。
 
 ---
 
-## 8. Mobile 长期目标：Native Lynx Container
+## 8. Mobile：Native Lynx Container
 
 ### 架构
 
@@ -373,48 +379,17 @@ TTL 可按设备等级动态调整：低端设备缩短，高端设备延长。
 
 ---
 
-## 9. WebView 过渡 Adapter（当前状态）
+## 9. 端侧渲染 runtime 汇总
 
-当前 Desktop 仍运行在 `Tauri WebView + Lynx for Web` 模式。在 Native Lynx spike 验证通过前，这是 production 路径。
+生命周期状态机、LRU/TTL/内存压力策略在所有平台一致；差异只在 surface 承载技术：
 
-### 当前保活机制
+| 平台 | Surface 承载 | show/hide 机制 | Bridge |
+|------|-------------|---------------|--------|
+| Desktop | Tauri WebView 内的 `<lynx-view>`（Lynx for Web） | DOM `display` / attach-detach | NativeModules → Rust Capability Gateway |
+| Android | 原生 `LynxView` | view hierarchy attach/detach | NativeModule (Kotlin) → BridgeDispatcher |
+| iOS | 原生 `LynxView` | superview add/remove | NativeModule (Swift) → BridgeDispatcher |
 
-```text
-PageHost (React)
-  → mounted pages Map
-  → active page: display:block
-  → hidden pages: display:none (保留 DOM tree)
-  → LRU: recentRef 记录访问顺序，超过上限卸载
-
-appletsRuntime
-  → acquirePage: loadApplet (创建 session + mount <lynx-host>)
-  → releasePage: unloadApplet (destroy session + unmount)
-
-LynxHostElement
-  → connectedCallback: mount <lynx-view>
-  → disconnectedCallback: destroyLynxView
-  → 不感知 PageHost display:none
-```
-
-### 当前缺口（过渡期也需修复）
-
-| 问题 | 影响 | 修复优先级 |
-|------|------|-----------|
-| 页面切走不发 `hide/show` | 小程序无法暂停轮询/动画 | P0 |
-| LRU 混合 applet 和 primary page | 可能误删 forever page | P1 |
-| 显式关闭不从 mounted 删除 | 旧 LynxHost 残留 DOM | P1 |
-| 无 TTL/内存压力策略 | 长期不用不回收 | P2 |
-| hidden-warm 无 GPU 释放 | WebView 无法精确控制 | 受限于 WebView |
-
-### 过渡期修复计划
-
-即使 Native Lynx 是长期目标，过渡期也要让 WebView adapter 达到基本可用：
-
-1. `LynxHostElement` 新增 `visible` property → 发 `show/hide`
-2. `PageHost` active 变化时通知对应 `LynxHostElement.visible`
-3. `AppletLRUCache` 独立于 primary page LRU
-4. `PageHost.closePage()` 显式删除 mounted entry
-5. 添加基础 TTL（hidden 30min → unload）
+不引入 iframe 作为 applet 隔离边界；隔离依赖 package integrity、Capability Gateway、CSP、trusted host injection 和可审计 session。
 
 ---
 
@@ -503,11 +478,13 @@ interface AppletLifecycleEvent {
 
 ## 13. 实施顺序
 
+详见 [`execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md`](./execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md)。
+
 ```text
 Phase 0: Spike (验证)
-  → Desktop Native Lynx 6 项 spike gate
-  → Mobile LynxView 暂停/内存压力验证
-  → 产出 spike report，决定是否确认长期路线
+  → Desktop: Lynx for Web in Tauri WebView 6 项 spike gate
+  → Mobile: LynxView 暂停/内存压力验证
+  → 产出 spike report
 
 Phase 1: Contract Lock (协议冻结)
   → 冻结 AppletLifecycleState / AppletLifecycleEvent 协议
@@ -520,7 +497,7 @@ Phase 2: Kernel Implementation
   → 实现 Resource Scheduler (LRU + TTL + memory pressure)
 
 Phase 3: Platform Adapter
-  → Desktop: Native Lynx adapter (如 spike 通过) 或 WebView adapter 升级
+  → Desktop: Tauri WebView + Lynx for Web surface 管理
   → Android: LynxView lifecycle adapter
   → iOS: LynxView lifecycle adapter
 
@@ -530,10 +507,9 @@ Phase 4: Integration & Hardening
   → crash recovery
   → 版本升级/权限撤销
 
-Phase 5: WebView Sunset (如 Native Lynx 确认)
-  → Desktop WebView adapter 降为 dev-only
-  → 移除 PageHost display:none 保活依赖
-  → 正式切换 production 路径
+Phase 5: 收敛旧 applet 页面运行时
+  → 统一 applet host 到新 Kernel + Surface Manager
+  → 移除临时/重复的保活逻辑
 ```
 
 ---
@@ -542,8 +518,8 @@ Phase 5: WebView Sunset (如 Native Lynx 确认)
 
 | 风险 | 影响 | 缓解 |
 |------|------|------|
-| Lynx Desktop native embedding 不可行 | 长期路线受阻 | 保留 WebView adapter 为 fallback production 路径 |
-| Lynx engine 不支持多实例 | 无法同时保活多个 applet | 评估进程隔离或时分复用 |
-| 内存监控不精确 | TTL/压力策略失效 | 用 JS heap snapshot + native RSS 估算 |
+| Lynx for Web 在某平台 WebView 兼容问题（Worker/CSP/asset） | Desktop 渲染受阻 | 按 `design.md §9` 降级决策树：Shadow DOM 隔离 + dynamic import，不引入 iframe |
+| WebView 后台节流干扰 timer/rAF 语义 | pause/resume 行为不一致 | Kernel 统一发 pause/resume 事件冻结 applet 侧 timer，不依赖浏览器行为 |
+| 内存监控不精确 | TTL/压力策略失效 | 用 JS heap（`performance.memory`）+ Rust 进程 RSS 估算 |
 | Mobile LynxView detach 后状态丢失 | hidden-warm 不成立 | 验证 offscreen 保留 vs snapshot/restore |
 | 跨端事件时序不一致 | SDK handler 行为不一致 | contract test 覆盖事件顺序 |

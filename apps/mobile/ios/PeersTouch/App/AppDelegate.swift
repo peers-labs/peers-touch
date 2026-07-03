@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        Container.shared.appletManager.startSweepTimer()
         return true
     }
 
@@ -20,5 +21,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
+    }
+
+    func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
+        Container.shared.appletManager.handleMemoryPressure(.critical)
     }
 }

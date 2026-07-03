@@ -170,17 +170,11 @@ assert.match(androidManifestParser, /integrity\.files must include entries\.lynx
 const androidManager = readFileSync('apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/applet/AppletManager.kt', 'utf8');
 assert.match(androidManager, /"android" !in manifest\.targets/);
 
-const iosDispatcher = readFileSync('apps/mobile/ios/PeersTouch/Core/Applet/Bridge/BridgeDispatcher.swift', 'utf8');
+const iosDispatcher = readFileSync('apps/mobile/ios/PeersTouch/Core/Lynx/Bridge/BridgeDispatcher.swift', 'utf8');
 assert.doesNotMatch(iosDispatcher, /BRIDGE_/);
 assert.match(iosDispatcher, /CAPABILITY_NOT_FOUND/);
 assert.match(iosDispatcher, /INVALID_PARAMS/);
 assert.match(iosDispatcher, /CAPABILITY_FAILED/);
-
-const iosLegacyLynxDispatcher = readFileSync('apps/mobile/ios/PeersTouch/Core/Lynx/Bridge/BridgeDispatcher.swift', 'utf8');
-assert.doesNotMatch(iosLegacyLynxDispatcher, /BRIDGE_/);
-assert.match(iosLegacyLynxDispatcher, /CAPABILITY_NOT_FOUND/);
-assert.match(iosLegacyLynxDispatcher, /INVALID_PARAMS/);
-assert.match(iosLegacyLynxDispatcher, /CAPABILITY_FAILED/);
 
 const iosSession = readFileSync('apps/mobile/ios/PeersTouch/Core/Applet/AppletBridgeSession.swift', 'utf8');
 assert.match(iosSession, /makeBridgeResponse/);
@@ -209,3 +203,4 @@ write('parity/mobile-web-bridge-output.txt', [
 ].join('\n'));
 
 process.stdout.write('PASS applet mobile/web parity gate\n');
+process.exit(0);
