@@ -186,6 +186,7 @@
 - Applet / 小程序运行时架构：`architecture/applet-runtime/README.md`
 - A2A 协议集成：`architecture/agent/a2a/`（文档集，入口 `README.md`）
 - Agent Canvas 编排架构：`architecture/agent/agent-canvas-orchestration.md`
+- Actor 隔离环境平面：`architecture/runtime/actor-isolated-environment.md`
 - Federation 虚拟网络与治理账本：`architecture/federation/README.md`
 - 质量保证闭环：`architecture/quality-framework/README.md`
 - 产品验收框架：`architecture/acceptance-framework/README.md`
