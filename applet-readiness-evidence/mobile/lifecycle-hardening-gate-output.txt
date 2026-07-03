@@ -1,9 +1,0 @@
-PASS applet lifecycle hardening source/runtime gate
-Android applet cold start latency ms: 88
-iOS applet cold start latency ms: 46
-PASS multi-instance LRU source test coverage: Android AppletKernelPolicyTest
-PASS long-background TTL source test coverage: Android AppletKernelPolicyTest + iOS scheduler constants
-PASS memory pressure coverage: Android source test + iOS scheduler implementation
-PASS runtime E2E evidence: Android/iOS real Lynx applet SDK bridge markers observed
-PASS surface cache evidence: Android View cache and iOS UIView cache implement show/hide/detach/destroy
-NOT_IMPLEMENTED hot restore latency runtime measurement (<80ms): requires dedicated A→B→A switch benchmark runner
