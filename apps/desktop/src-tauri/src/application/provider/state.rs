@@ -164,6 +164,8 @@ struct ProviderPreset {
     #[serde(default)]
     cli_command: String,
     #[serde(default)]
+    models_command: String,
+    #[serde(default)]
     api_key: String,
     models: Vec<ModelPreset>,
 }
@@ -232,6 +234,10 @@ impl ProviderStore {
                 if !preset.cli_command.trim().is_empty() {
                     config_json["cli_command"] =
                         serde_json::Value::String(preset.cli_command.trim().to_string());
+                }
+                if !preset.models_command.trim().is_empty() {
+                    config_json["models_command"] =
+                        serde_json::Value::String(preset.models_command.trim().to_string());
                 }
                 let config_json = config_json.to_string();
                 let key_vaults = if preset.api_key.is_empty() {
