@@ -18,11 +18,12 @@ export interface ChatState {
 export function useChatState() {
   const [conversations, setConversations] = useState(CONVERSATIONS);
   const [groupMembers, setGroupMembers] = useState(GROUP_MEMBERS);
+  const [messagesByConversation, setMessagesByConversation] = useState(MESSAGES);
   const [activeId, setActiveId] = useState<string | null>('conv-1');
   const [showDetail, setShowDetail] = useState(false);
 
   const activeConversation = conversations.find((c) => c.id === activeId) ?? null;
-  const messages = activeId ? MESSAGES[activeId] ?? [] : [];
+  const messages = activeId ? messagesByConversation[activeId] ?? [] : [];
   const activeGroupMembers = activeId ? groupMembers[activeId] ?? [] : [];
 
   const selectConversation = useCallback((id: string) => {
@@ -60,6 +61,43 @@ export function useChatState() {
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (activeId === id) setActiveId(null);
   }, [activeId]);
+
+  const clearHistory = useCallback((id: string) => {
+    setMessagesByConversation((prev) => ({
+      ...prev,
+      [id]: [{
+        id: `system-cleared-${Date.now()}`,
+        senderId: 'system',
+        content: 'Visible history was cleared in this prototype. Peer-side messages are not deleted.',
+        timestamp: Date.now(),
+        type: 'system',
+      }],
+    }));
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, lastMessage: 'History cleared', unread: 0 } : c)));
+  }, []);
+
+  const sendMessage = useCallback((id: string, content: string) => {
+    const text = content.trim();
+    if (!text) return;
+    const nextMessage = {
+      id: `draft-${Date.now()}`,
+      senderId: CURRENT_USER.id,
+      content: text,
+      timestamp: Date.now(),
+      type: 'text' as const,
+      status: 'sent' as const,
+    };
+    setMessagesByConversation((prev) => ({
+      ...prev,
+      [id]: [...(prev[id] ?? []), nextMessage],
+    }));
+    setConversations((prev) => prev.map((c) => (c.id === id ? {
+      ...c,
+      lastMessage: text,
+      lastMessageTime: nextMessage.timestamp,
+      unread: 0,
+    } : c)));
+  }, []);
 
   const renameGroup = useCallback((id: string, name: string) => {
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
@@ -129,6 +167,8 @@ export function useChatState() {
     markAsRead,
     hideConversation,
     deleteConversation,
+    clearHistory,
+    sendMessage,
     renameGroup,
     removeGroupMember,
     toggleMemberMute,
