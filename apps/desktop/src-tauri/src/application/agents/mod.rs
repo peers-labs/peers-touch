@@ -228,7 +228,7 @@ fn persist_error(error: impl std::fmt::Display) -> AppResult<StubPayload> {
 }
 
 fn agent_store_path(actor_id: &str) -> Result<PathBuf, String> {
-    let scope = storage::resolve_user_scope(Some(actor_id));
+    let scope = crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id));
     storage::app_file_path(
         "desktop",
         StorageKind::Data,

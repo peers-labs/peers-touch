@@ -16,7 +16,6 @@ use tauri::AppHandle;
 
 use crate::contracts::*;
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::storage::resolve_user_scope;
 use crate::state::AppState;
 
 // -------------------------------------------------------------------------
@@ -441,7 +440,7 @@ fn actor_id_from_state(state: &AppState) -> Option<String> {
 
 fn user_scope_from_state(state: &AppState) -> String {
     let actor_id = actor_id_from_state(state);
-    resolve_user_scope(actor_id.as_deref())
+    crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref())
 }
 
 fn resolve_scope(state: &AppState) -> Result<Option<String>, Value> {
@@ -1998,7 +1997,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_execute_turn(input, &token))
+            to_json(app_agent_turn::agent_execute_turn(input, &token, ""))
         }
         "agent_execute_turn_stream" => {
             let input = match parse_args::<AgentExecuteTurnInput>(args) {
@@ -2028,6 +2027,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     stream_id_for_task.clone(),
                     input,
                     token,
+                    "".to_string(),
                     cancel_flag,
                 );
                 app_agent_turn::unregister_agent_turn_stream(&stream_id_for_task);
@@ -2137,6 +2137,56 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_agent_orchestration::agent_collaboration_cancel_task(
                 input, &token,
             ))
+        }
+        "agent_collaboration_submit_node_result" => {
+            let input = match parse_args::<AgentCollaborationSubmitNodeResultInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_submit_node_result(input, &token))
+        }
+        "agent_collaboration_claim_executor_task" => {
+            let input = match parse_args::<AgentCollaborationClaimExecutorInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_claim_executor_task(input, &token))
+        }
+        "agent_collaboration_heartbeat_executor_lease" => {
+            let input = match parse_args::<AgentCollaborationHeartbeatLeaseInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(
+                app_agent_orchestration::agent_collaboration_heartbeat_executor_lease(
+                    input, &token,
+                ),
+            )
+        }
+        "agent_collaboration_release_executor_lease" => {
+            let input = match parse_args::<AgentCollaborationReleaseLeaseInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(
+                app_agent_orchestration::agent_collaboration_release_executor_lease(input, &token),
+            )
         }
 
         // =================================================================
@@ -5570,8 +5620,7 @@ mod tests {
     use crate::infrastructure::storage::{StorageKind, StorageLayout};
     use std::collections::HashMap;
     use std::path::PathBuf;
-    use std::sync::Arc;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_layout(name: &str) -> StorageLayout {
         let stamp = SystemTime::now()
@@ -5780,7 +5829,7 @@ mod tests {
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(60_000);
-        start_with_runtime(Arc::new(state), GatewayRuntime::headless());
-        std::thread::sleep(Duration::from_millis(hold_ms));
+        let _ = (state, hold_ms);
+        panic!("manual HTTP gateway server test requires a live Tauri AppHandle");
     }
 }
