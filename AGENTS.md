@@ -78,7 +78,7 @@ When reading or updating docs, follow the constraint direction below:
      - `playbooks/` — the standard operating procedure for recurring task classes.
      - `glossary.md` — project-specific terminology.
    - Each `invariants/` / `pitfalls/` / `playbooks/` file carries YAML frontmatter with an `owns:` list of repo paths it governs.
-   - Agents MUST consult this layer before editing any path that appears in an `owns:` entry. The `read-before-edit` skill (§13) automates the lookup; AGENTS that do not load the skill must perform the same procedure manually.
+   - Agents MUST consult this layer before editing any path that appears in an `owns:` entry. The `pt-read-before-edit` skill (§13) automates the lookup; AGENTS that do not load the skill must perform the same procedure manually.
    - Knowledge files are PR'd through the same review process as code. Entries are append-only — superseded knowledge is marked `status: superseded-by:<path>`, never deleted.
    - Entry doc: [`docs/knowledge/README.md`](docs/knowledge/README.md). Frontmatter template: [`docs/knowledge/_TEMPLATE.md`](docs/knowledge/_TEMPLATE.md).
 
@@ -129,7 +129,7 @@ Example:
 
 1. **Rationality over minimalism** — Architectural soundness is the goal, not minimum change.
 2. **Run scripts first** — Prefer `tooling/scripts/` (`dev-desktop-app.sh`, `dev-desktop-web.sh`, `pt.sh`, etc.).
-3. **Architecture methodology** — For architecture landing / migration / domain decomposition, **MUST** use `architecture-execution-methodology` skill: `Domain Responsibility → Execution Closure → Dependency Order → Verifiable Delivery`.
+3. **Architecture methodology** — For architecture landing / migration / domain decomposition, **MUST** use `pt-architecture-execution-methodology` skill: `Domain Responsibility → Execution Closure → Dependency Order → Verifiable Delivery`.
 4. **Runtime projection first** — For Desktop bugs involving chat, contacts, notifications, badges, realtime, or store freshness, first identify the owning runtime and its projection contract. Do not patch stale state only with page/component refreshes; read `docs/client/desktop/runtime-projections.md`.
 5. **Page / Runtime / Boot contracts** — When adding or refactoring a Desktop page, projection owner, or startup step, conform to the Page / Runtime / Boot kernel contracts in `docs/client/desktop/runtime-projections.md §6`. Pages are pure renderers (no mount-time fetches); long-lived projections live in `RuntimeDescriptor`s; one-shot section data uses `kernel/usePrefetch`; startup is observable through `kernel/boot.ts` phases.
 6. **Desktop debug uses Make** — During investigation, lifecycle debugging, browser/app E2E, applet runtime debugging, or acceptance triage, start Desktop through `make desktop` (or `make desktop-web` only when the task explicitly needs the browser shell). Do **not** switch to hard packaged `.app` / `tauri build` / release bundle flows unless the user explicitly asks for packaging, release validation, installer validation, or a package-only acceptance gate. See `docs/knowledge/playbooks/desktop-debug-runtime.md`.
@@ -302,19 +302,26 @@ Current project skills:
 
 | Skill | Purpose |
 |-------|---------|
-| `dev-workflow` | Drive a complete development task from planning to PR |
-| `dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
-| `architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
-| `execution-plan-guardian` | Keep execution, continuation, merge, and readiness reports tied to plan sources, scope boundaries, gates, and evidence |
-| `official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
-| `desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
-| `read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |
-| `small-fix-discipline` | Behavioral discipline for "small" fixes: locate the governing spec, fix at the right architectural layer instead of patching the symptom, keep changes surgical, and self-grade before claiming done |
-| `quality-check` | Produce review-ready evidence from review profiles, acceptance, knowledge, deterministic gates, and test coverage |
-| `github-commit` | Conventional commit message generation with AI traceability |
-| `github-pr` | PR creation with templates, labels, and issue linking |
-| `github-release` | Semantic versioning, changelog generation, GitHub Release creation |
-| `github-review` | Structured PR code review and comment submission |
+| `pt-dev-workflow` | Drive a complete development task from planning to PR |
+| `pt-dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
+| `pt-architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
+| `pt-execution-plan-guardian` | Keep execution, continuation, merge, and readiness reports tied to plan sources, scope boundaries, gates, and evidence |
+| `pt-official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
+| `pt-desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
+| `pt-read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |
+| `pt-quality-check` | Produce review-ready evidence from review profiles, acceptance, knowledge, deterministic gates, and test coverage |
+| `pt-github-commit` | Conventional commit message generation with AI traceability |
+| `pt-github-pr` | PR creation with templates, labels, and issue linking |
+| `pt-github-release` | Semantic versioning, changelog generation, GitHub Release creation |
+| `pt-github-review` | Structured PR code review and comment submission |
+| `pt-local-dev-env` | Select and activate local development environment profiles |
+| `pt-plan-and-document` | Route architecture, planning, and documentation work to the right project docs and workflows |
+| `pt-prototype-design` | Create, modify, and review executable UI / UX prototypes under the project prototype system |
+| `pt-prototype-sync-guardian` | Keep product implementation and prototypes aligned when visible behavior changes |
+| `pt-completion-auditor` | Audit Peers-Touch work for completion, architecture, code quality, safety, evidence, and overclaim risk |
+| `pt-frontend-component-tree-review` | Review frontend component tree structure, boundaries, and UI implementation quality |
+| `pt-small-fix-discipline` | Govern small fixes so agents locate the governing spec, fix the correct architectural layer, keep changes surgical, and self-grade before claiming done |
+| `pt-skill-author` | Govern creation, naming, cleanup, and verification of Peers-Touch `pt-*` project skills |
 
 ### 13.2 IDE Sync (Read by Agents on Startup)
 
@@ -338,11 +345,12 @@ This keeps `tooling/skills/` as the single git-tracked truth and prevents skill 
 
 ### 13.4 Adding a New Skill
 
-1. Create `tooling/skills/<skill-name>/SKILL.md` with `name` + `description` frontmatter.
-2. If the skill has supporting templates / schemas / examples, co-locate them in the same directory.
-3. Add the skill to the table in §13.1.
-4. If the skill enforces rules tied to a specific source-of-truth doc (e.g. `desktop-runtime-projections` ↔ `docs/client/desktop/runtime-projections.md`), reverse-link both ways.
-5. Do **not** also add the same content under `.cursor/rules/` etc. — the agent will sync it on startup per §13.2.
+1. Use `pt-skill-author` after the generic skill creator.
+2. Create `tooling/skills/pt-<skill-name>/SKILL.md` with matching `name: "pt-<skill-name>"` + `description` frontmatter.
+3. If the skill has supporting templates / schemas / examples, co-locate them in the same directory.
+4. Add the skill to the table in §13.1.
+5. If the skill enforces rules tied to a specific source-of-truth doc (e.g. `pt-desktop-runtime-projections` ↔ `docs/client/desktop/runtime-projections.md`), reverse-link both ways.
+6. Do **not** also add the same content under `.cursor/rules/` etc. — the agent will sync it on startup per §13.2.
 
 ---
 

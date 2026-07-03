@@ -192,7 +192,7 @@ def evidence_gaps(evidence: dict[str, Any]) -> list[dict[str, str]]:
             {
                 "kind": f"unproven-product-scope:{index}",
                 "impact": scope,
-                "next_evidence": "Decide in github-review whether this is blocking, acceptable follow-up, or needs owner waiver.",
+                "next_evidence": "Decide in pt-github-review whether this is blocking, acceptable follow-up, or needs owner waiver.",
             }
         )
 
@@ -220,7 +220,7 @@ def render_markdown(evidence: dict[str, Any]) -> str:
         "# Quality Evidence",
         "",
         f"- Range: `{evidence['range']}`",
-        f"- Ready for github-review: {'yes' if evidence['ready_for_github_review'] else 'no'}",
+        f"- Ready for pt-github-review: {'yes' if evidence['ready_for_github_review'] else 'no'}",
         "",
         "## Changed Paths",
         "",

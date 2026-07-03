@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType, type CSSProperties } from 'react';
+import { useEffect, useState, type ComponentType, type CSSProperties, type ReactElement } from 'react';
 import { Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
 import { WORKTREE_TARGETS } from './registry/worktrees';
@@ -6,7 +6,7 @@ import type { PrototypeManifest, PrototypeSite, PrototypeWorktreeTarget } from '
 
 const DEFAULT_SITE: PrototypeSite = normalizeSite(import.meta.env.VITE_PROTOTYPE_SITE);
 
-const SITE_META: Record<PrototypeSite, { title: string; subtitle: string; icon: JSX.Element }> = {
+const SITE_META: Record<PrototypeSite, { title: string; subtitle: string; icon: ReactElement }> = {
   desktop: {
     title: 'Desktop Prototypes',
     subtitle: 'Desktop App / desktop-web / applet container experiences',
@@ -408,6 +408,7 @@ const styles: Record<string, CSSProperties> = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
+    minWidth: 0,
   },
   grid: {
     display: 'grid',

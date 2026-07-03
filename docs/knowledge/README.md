@@ -89,7 +89,7 @@ detected: YYYY-MM-DD
 
 The `owns:` field is **machine-readable** and load-bearing:
 
-- `tooling/skills/read-before-edit/` greps every `owns:` entry across this directory before any Edit tool fires. Files matching one or more `owns:` paths cause the corresponding knowledge file to be loaded into the agent's context as a reviewer's voice.
+- `tooling/skills/pt-read-before-edit/` greps every `owns:` entry across this directory before any Edit tool fires. Files matching one or more `owns:` paths cause the corresponding knowledge file to be loaded into the agent's context as a reviewer's voice.
 - A knowledge file with no `owns:` is allowed (e.g. cross-cutting glossary) but will never auto-trigger; humans must reference it explicitly.
 
 Non-knowledge files (`README.md`, `_TEMPLATE.md`, `glossary.md`) are exempt.

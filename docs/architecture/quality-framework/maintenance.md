@@ -42,7 +42,7 @@ Files:
 
 - `tooling/scripts/review/hard-rules.sh`
 - `tooling/review-fixtures/<case>/expected.yml`
-- `tooling/skills/github-review/SKILL.md`
+- `tooling/skills/pt-github-review/SKILL.md`
 
 Required behavior:
 
@@ -104,12 +104,12 @@ make quality-evidence REVIEW_RANGE=<range>
 
 Files:
 
-- `tooling/skills/github-review/SKILL.md`
-- `tooling/skills/quality-check/SKILL.md`
-- `tooling/skills/github-pr/SKILL.md`
-- `tooling/skills/dev-workflow/SKILL.md`
-- `tooling/skills/github-review/FRESHNESS.md`
-- `tooling/skills/github-review/PROOF.md`
+- `tooling/skills/pt-github-review/SKILL.md`
+- `tooling/skills/pt-quality-check/SKILL.md`
+- `tooling/skills/pt-github-pr/SKILL.md`
+- `tooling/skills/pt-dev-workflow/SKILL.md`
+- `tooling/skills/pt-github-review/FRESHNESS.md`
+- `tooling/skills/pt-github-review/PROOF.md`
 
 Rules:
 
@@ -152,7 +152,7 @@ tooling/scripts/review/skill-check.sh
 ## 8. Updating Freshness Hash
 
 `tooling/scripts/review/skill-check.sh` recomputes the upstream docs hash from
-`tooling/skills/github-review/FRESHNESS.md`.
+`tooling/skills/pt-github-review/FRESHNESS.md`.
 
 Only update the hash after reviewing whether the docs change requires:
 
