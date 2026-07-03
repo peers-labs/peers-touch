@@ -23,7 +23,8 @@ export function SocialChatPage() {
     markAsRead,
     hideConversation,
     deleteConversation,
-    clearHistory,
+    clearConversationHistory,
+    restoreConversationHistory,
     sendMessage,
     renameGroup,
     removeGroupMember,
@@ -75,6 +76,7 @@ export function SocialChatPage() {
         messages={messages}
         onToggleDetail={toggleDetail}
         onSendMessage={sendMessage}
+        onRestoreHistory={restoreConversationHistory}
         compact={compact}
       />
       )}
@@ -85,7 +87,8 @@ export function SocialChatPage() {
           groupMembers={groupMembers}
           onClose={toggleDetail}
           onDeleteConversation={deleteConversation}
-          onClearHistory={clearHistory}
+          onClearHistory={clearConversationHistory}
+          onRestoreHistory={restoreConversationHistory}
           onRemoveMember={removeGroupMember}
           onRenameGroup={renameGroup}
           onSetMemberRole={setMemberRole}

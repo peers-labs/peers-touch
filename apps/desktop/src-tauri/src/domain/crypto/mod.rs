@@ -408,21 +408,21 @@ impl CryptoSession {
 
 const CRYPTO_SERVICE: &str = "peers-touch.desktop.crypto";
 
-fn identity_entry(actor_id: &str) -> Result<Entry, String> {
-    let user = format!("identity-key:{actor_id}");
+fn identity_entry(identity_key_ref: &str) -> Result<Entry, String> {
+    let user = format!("identity-key:{identity_key_ref}");
     Entry::new(CRYPTO_SERVICE, user.as_str()).map_err(|e| e.to_string())
 }
 
-pub fn store_identity_key(actor_id: &str, seed: &[u8; 32]) -> Result<(), String> {
+pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(), String> {
     let hex_seed: String = seed.iter().map(|b| format!("{b:02x}")).collect();
-    let entry = identity_entry(actor_id)?;
+    let entry = identity_entry(identity_key_ref)?;
     entry
         .set_password(hex_seed.as_str())
         .map_err(|e| e.to_string())
 }
 
-pub fn load_identity_key(actor_id: &str) -> Result<Option<IdentityKeyPair>, String> {
-    let entry = identity_entry(actor_id)?;
+pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPair>, String> {
+    let entry = identity_entry(identity_key_ref)?;
     let pw = match entry.get_password() {
         Ok(p) => p,
         Err(keyring::Error::NoEntry) => return Ok(None),
@@ -444,13 +444,13 @@ pub fn load_identity_key(actor_id: &str) -> Result<Option<IdentityKeyPair>, Stri
     }))
 }
 
-pub fn get_or_create_identity(actor_id: &str) -> Result<IdentityKeyPair, String> {
-    if let Some(kp) = load_identity_key(actor_id)? {
+pub fn get_or_create_identity(identity_key_ref: &str) -> Result<IdentityKeyPair, String> {
+    if let Some(kp) = load_identity_key(identity_key_ref)? {
         return Ok(kp);
     }
     let kp = generate_identity_keypair();
     let seed = kp.signing_key.to_bytes();
-    store_identity_key(actor_id, &seed)?;
+    store_identity_key(identity_key_ref, &seed)?;
     Ok(kp)
 }
 

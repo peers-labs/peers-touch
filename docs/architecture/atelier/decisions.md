@@ -7,6 +7,8 @@
 
 ---
 
+> **Boundary update (2026-07-02)**: 本文的 Decision 仍有效的是“决策与执行分离、证据化共识、预算/权限门禁、可恢复”等原则；其中 “Atelier Core” 是早期命名。当前落地中，确定性事务、Provider/Gate/Artifact、Trace/Resume 属于 Station / Agent orchestration，Atelier applet 只负责展示 projection 并通过 Host capability 回写用户选择。
+
 ## 决策索引
 
 | ID | 决策 | 状态 |
