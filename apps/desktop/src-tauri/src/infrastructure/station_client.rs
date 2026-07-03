@@ -169,6 +169,16 @@ pub(crate) fn station_base_url() -> String {
     }
 }
 
+pub(crate) fn active_station_peer_id() -> Option<String> {
+    let reg = STATION_REGISTRY.get()?;
+    let active = reg.active_url();
+    reg.list()
+        .into_iter()
+        .find(|entry| entry.url.trim_end_matches('/') == active.trim_end_matches('/'))
+        .and_then(|entry| entry.peer_id)
+        .filter(|peer_id| !peer_id.trim().is_empty())
+}
+
 fn build_client() -> Result<Client, StationClientError> {
     Client::builder()
         .timeout(std::time::Duration::from_secs(15))

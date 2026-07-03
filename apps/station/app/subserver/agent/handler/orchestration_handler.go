@@ -54,3 +54,31 @@ func (h *OrchestrationHandlers) HandleCancelCollaborationTask(ctx context.Contex
 	}
 	return &model.UpdateCollaborationTaskResponse{Task: task}, nil
 }
+
+func (h *OrchestrationHandlers) HandleSubmitCollaborationNodeResult(ctx context.Context, req *model.UpdateCollaborationTaskRequest) (*model.UpdateCollaborationTaskResponse, error) {
+	task, _, err := h.orchestrationService.SubmitCollaborationNodeResult(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.UpdateCollaborationTaskResponse{Task: task}, nil
+}
+
+func (h *OrchestrationHandlers) HandleClaimDesktopExecutorTask(ctx context.Context, req *model.ClaimDesktopExecutorTaskRequest) (*model.ClaimDesktopExecutorTaskResponse, error) {
+	return h.orchestrationService.ClaimDesktopExecutorTask(ctx, subjectActorID(ctx), req)
+}
+
+func (h *OrchestrationHandlers) HandleHeartbeatExecutorLease(ctx context.Context, req *model.HeartbeatExecutorLeaseRequest) (*model.HeartbeatExecutorLeaseResponse, error) {
+	lease, err := h.orchestrationService.HeartbeatExecutorLease(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.HeartbeatExecutorLeaseResponse{Lease: lease}, nil
+}
+
+func (h *OrchestrationHandlers) HandleReleaseExecutorLease(ctx context.Context, req *model.ReleaseExecutorLeaseRequest) (*model.ReleaseExecutorLeaseResponse, error) {
+	lease, err := h.orchestrationService.ReleaseExecutorLease(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.ReleaseExecutorLeaseResponse{Lease: lease}, nil
+}

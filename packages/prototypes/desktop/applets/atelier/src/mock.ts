@@ -208,12 +208,7 @@ export const MOCK: AtelierState = {
   },
 
   todos: {
-    't-data': [
-      { id: 'td1', text: '选型对比 3 家', status: 'done' },
-      { id: 'td2', text: '定降级策略（等你拍板）', status: 'running' },
-      { id: 'td3', text: '写适配层', status: 'todo' },
-      { id: 'td4', text: '冒烟 + 契约测试', status: 'todo' },
-    ],
+    't-data': [],
   },
 
   context: {
@@ -323,6 +318,23 @@ export const MOCK: AtelierState = {
           '编译通过、基准回归 **无退化（-0.3%）**。',
           '剩一条 L2 主观项「是否值得长期维护」待签字。',
         ].join('\n'),
+      },
+    ],
+  },
+
+  gates: {
+    't-arch': [
+      {
+        id: 'gate-arch-regression',
+        name: 'Regression Gate',
+        status: 'passed',
+        summary: '编译通过，基准回归无退化。',
+        checks: [
+          { name: 'TypeScript build', status: 'passed' },
+          { name: 'Benchmark delta', status: 'passed', detail: '-0.3%' },
+        ],
+        artifactIds: ['art-arch'],
+        at: '16:42',
       },
     ],
   },

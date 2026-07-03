@@ -57,17 +57,15 @@ packages/prototypes/
 统一入口：
 
 ```bash
-make run-prototype desktop
-make run-prototype mobile
-make run-prototype dashboard
+make run-prototype
 ```
 
-禁止把 `pnpm dev` / Vite 原生命令作为对用户或 Agent 的正式运行方式。原生命令只允许作为 Makefile 内部实现细节。
+Prototype Portal 内部提供 `desktop` / `mobile` / `dashboard` 站点切换。禁止把 `pnpm dev` / Vite 原生命令作为对用户或 Agent 的正式运行方式。原生命令只允许作为 Makefile 内部实现细节。
 
 跨 worktree / branch 预览：
 
-- 当前 worktree 信息由 `make run-prototype <site>` 自动注入 Portal。
-- 外部 worktree 需要自行启动对应原型服务，然后通过 `VITE_PROTOTYPE_WORKTREES` 注入 registry。
+- 当前 worktree 信息由 `make run-prototype` 自动注入 Portal。
+- 外部 worktree 需要自行启动自己的 Prototype Portal，然后通过 `VITE_PROTOTYPE_WORKTREES` 注入 registry。
 - Portal 选择外部 worktree 时只使用 iframe 展示对应 URL，不直接 import 其他 worktree 的源码。
 
 `VITE_PROTOTYPE_WORKTREES` 示例：

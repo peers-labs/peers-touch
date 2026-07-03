@@ -208,7 +208,7 @@ Growth decisions are restricted to these stable categories:
 | `review_fixture` | `tooling/review-fixtures/**` |
 | `acceptance_contract` | `tooling/acceptance/features/**` or `capabilities/**` |
 | `acceptance_gate` | `tooling/acceptance/gates.yaml` or `tooling/acceptance/gates/**` |
-| `skill_update` | `tooling/skills/github-review/SKILL.md` or `quality-check/SKILL.md` |
+| `skill_update` | `tooling/skills/pt-github-review/SKILL.md` or `pt-quality-check/SKILL.md` |
 | `ci_tooling_update` | `.github/workflows/**`, `tooling/make/**`, or `tooling/scripts/**` |
 | `no_growth_needed` | explicit review note explaining why the lesson is one-off |
 
@@ -221,7 +221,7 @@ After every accepted finding or escaped defect, classify the missing guard:
 | repeated task procedure | `docs/knowledge/playbooks/**` |
 | missing product evidence | acceptance feature / capability / gate |
 | hard-rule gap | review fixture and rule update |
-| review behavior gap | `github-review` or `quality-check` skill update |
+| review behavior gap | `pt-github-review` or `pt-quality-check` skill update |
 
 The quality system improves only when review conclusions feed back into
 knowledge, gates, fixtures, skills, and CI/tooling.
@@ -233,7 +233,7 @@ engineering-testable properties:
 
 | Property | Proof |
 |---|---|
-| Every review protocol includes growth evaluation | `github-review` requires `Review Learning Check` and `Framework Growth Opportunities` |
+| Every review protocol includes growth evaluation | `pt-github-review` requires `Review Learning Check` and `Framework Growth Opportunities` |
 | Growth decisions have durable repository targets | decision categories map to concrete repo paths |
 | The growth protocol cannot be silently removed | `skill-check.sh` requires the sections and decision categories |
 | Learned behavior is reusable by future agents | knowledge, skills, fixtures, gates, and CI live in the repo |

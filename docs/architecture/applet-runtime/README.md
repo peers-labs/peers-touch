@@ -85,7 +85,7 @@ README
 
 ## 5. AI Read Order
 
-When creating, modifying, implementing, or validating official applets under `apps/applets/`, AI agents must use the project skill [`official-applet-development`](../../../tooling/skills/official-applet-development/SKILL.md) before editing.
+When creating, modifying, implementing, or validating official applets under `apps/applets/`, AI agents must use the project skill [`pt-official-applet-development`](../../../tooling/skills/pt-official-applet-development/SKILL.md) before editing.
 
 AI 执行复杂 applet 开发任务时必须按这个顺序读：
 
