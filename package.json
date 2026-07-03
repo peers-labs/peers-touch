@@ -30,11 +30,6 @@
     "applet:desktop-lifecycle-smoothness-gate": "node tooling/scripts/applet-desktop-lifecycle-smoothness-gate.mjs",
     "applet:web-host-runtime-gate": "pnpm --filter @peers-touch/applet-contract run build && pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-web-host-runtime-gate.mjs",
     "applet:production-web-host-gate": "pnpm --filter @peers-touch/applet-contract run build && pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-production-web-host-gate.mjs",
-    "applet:mobile-native-manifest-gate": "pnpm --filter @peers-touch/applet-contract run build && pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-mobile-native-manifest-gate.mjs",
-    "applet:ios-lynx-runtime-e2e": "node tooling/scripts/applet-ios-lynx-runtime-e2e.mjs",
-    "applet:ios-lynx-runtime-device-e2e": "node tooling/scripts/applet-ios-lynx-runtime-e2e.mjs --device",
-    "applet:android-lynx-runtime-e2e": "node tooling/scripts/applet-android-lynx-runtime-e2e.mjs",
-    "applet:lifecycle-hardening-gate": "node tooling/scripts/applet-lifecycle-hardening-gate.mjs",
     "applet:desktop-http-gateway-gate": "node tooling/scripts/applet-desktop-http-gateway-gate.mjs",
     "applet:publish": "node tooling/scripts/applet-store-cli.mjs publish",
     "applet:install": "node tooling/scripts/applet-store-cli.mjs install",
@@ -48,7 +43,6 @@
     "applet:l3-release-audit": "node tooling/scripts/applet-l3-release-audit.mjs",
     "applet:product-capability-service-gate": "node tooling/scripts/applet-product-capability-service-gate.mjs",
     "applet:platform-check-gate": "node tooling/scripts/applet-platform-check-gate.mjs",
-    "applet:parity-gate": "pnpm --filter @peers-touch/applet-contract run build && pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-parity-gate.mjs",
     "applet:developer-flow-gate": "pnpm --filter @peers-touch/applet-contract run build && pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-developer-flow-gate.mjs",
     "applet:sdk-adapter-test": "pnpm --filter @peers-touch/applet-contract run build && pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-sdk-adapter-test.mjs",
     "applet:forbidden-producer-scan": "node tooling/scripts/applet-forbidden-producer-scan.mjs",
@@ -62,7 +56,6 @@
     "applet:note-desktop-live-smoke": "pnpm applets:build && node tooling/scripts/applet-note-desktop-live-smoke.mjs",
     "applet:note-real-product-gate": "node tooling/scripts/applet-note-real-product-gate.mjs",
     "applet:note-reload-persistence-gate": "node tooling/scripts/applet-note-reload-persistence-gate.mjs",
-    "applet:note-mobile-contract-gate": "node tooling/scripts/applet-note-mobile-contract-gate.mjs",
     "prepare": "husky"
   },
   "devDependencies": {
