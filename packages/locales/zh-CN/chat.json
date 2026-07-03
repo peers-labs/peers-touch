@@ -304,6 +304,8 @@
   "chat.social.detail.seeAll": "查看全部",
   "chat.social.detail.showLess": "收起",
   "chat.social.detail.addMember": "添加成员",
+  "chat.social.detail.manageMembers": "管理成员",
+  "chat.social.detail.unknownMember": "未知成员",
   "chat.social.detail.addMemberDesc": "选择好友并邀请加入当前群聊。",
   "chat.social.detail.addMemberPlaceholder": "选择要邀请的好友",
   "chat.social.detail.addMemberSuccess": "已发送群聊邀请",

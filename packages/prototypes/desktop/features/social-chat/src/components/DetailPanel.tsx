@@ -19,6 +19,7 @@ import {
   Volume2,
   UserCog,
   Upload,
+  Search,
 } from 'lucide-react';
 import { T } from '../theme';
 import { Avatar } from './Avatar';
@@ -30,6 +31,7 @@ interface DetailPanelProps {
   groupMembers: MockGroupMember[];
   onClose: () => void;
   onDeleteConversation: (conversationId: string) => void;
+  onClearHistory: (conversationId: string) => void;
   onRemoveMember: (conversationId: string, userId: string) => void;
   onRenameGroup: (conversationId: string, name: string) => void;
   onSetMemberRole: (conversationId: string, userId: string, role: MockGroupRole) => void;
@@ -239,6 +241,7 @@ export function DetailPanel({
   groupMembers,
   onClose,
   onDeleteConversation,
+  onClearHistory,
   onRemoveMember,
   onRenameGroup,
   onSetMemberRole,
@@ -323,6 +326,8 @@ export function DetailPanel({
         background: T.bg,
         flexShrink: 0,
         position: 'relative',
+        minWidth: 0,
+        overflowX: 'hidden',
       }}
     >
       {/* Header — SAME height as chat area header */}
@@ -353,7 +358,7 @@ export function DetailPanel({
       </div>
 
       {/* Scrollable content */}
-      <div style={{ flex: 1, overflow: 'auto', paddingTop: T.space5 }}>
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: T.space5 }}>
         {/* === Identity Section === */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: T.space6, padding: `0 ${T.space4}px` }}>
           {/* Avatar with edit overlay */}
@@ -437,6 +442,26 @@ export function DetailPanel({
             <span style={{ fontSize: T.fontSm, color: T.success, marginTop: T.space1 }}>Online</span>
           )}
         </div>
+
+        {!isGroup && (
+          <DetailSection title="Private chat">
+            <div style={{ padding: T.space4, display: 'flex', flexDirection: 'column', gap: T.space3 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: T.space3 }}>
+                <ShieldCheck size={18} color={conversation.trustTone === 'attention' ? T.warning : T.success} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: T.fontBase, fontWeight: 700, color: T.text }}>{conversation.trustLabel}</div>
+                  <div style={{ fontSize: T.fontSm, color: T.textSecondary, lineHeight: 1.5 }}>
+                    Safety details are shown only for direct chats where identity verification changes trust.
+                  </div>
+                </div>
+              </div>
+              <button style={managerButtonStyle()}>
+                <Shield size={13} />
+                {conversation.trustTone === 'attention' ? 'Verify identity' : 'View safety number'}
+              </button>
+            </div>
+          </DetailSection>
+        )}
 
         {/* === Members Section (group only) === */}
         {isGroup && (
@@ -563,9 +588,14 @@ export function DetailPanel({
           />
           <DetailActionRow
             icon={<Image size={18} />}
-            label={backgroundFileName ? `Background: ${backgroundFileName}` : 'Upload local chat background'}
+            label={backgroundFileName ? `Background: ${backgroundFileName}` : `Chat background · ${conversation.background ?? 'Default'}`}
             trailing={<Upload size={16} />}
             onClick={() => document.getElementById('prototype-background-upload')?.click()}
+          />
+          <DetailActionRow
+            icon={<Search size={18} />}
+            label="Search messages"
+            trailing={<ChevronRight size={16} />}
           />
           <input
             id="prototype-background-upload"
@@ -577,13 +607,15 @@ export function DetailPanel({
         </DetailSection>
 
         {/* === Security Section === */}
-        <DetailSection title="Security">
-          <DetailActionRow
-            icon={<Shield size={18} />}
-            label="Encryption"
-            trailing={<span style={{ fontSize: T.fontSm, color: T.success }}>Active</span>}
-          />
-        </DetailSection>
+        {!isGroup && (
+          <DetailSection title="Security">
+            <DetailActionRow
+              icon={<Shield size={18} />}
+              label="End-to-end encrypted"
+              trailing={<span style={{ fontSize: T.fontSm, color: T.success }}>Active</span>}
+            />
+          </DetailSection>
+        )}
 
         {/* === Danger Section === */}
         <DetailSection>
@@ -591,7 +623,13 @@ export function DetailPanel({
             icon={<Trash2 size={18} />}
             label="Clear history"
             danger
-            onClick={() => {}}
+            onClick={() => requestConfirm({
+              title: 'Clear visible history?',
+              body: 'This prototype hides visible messages in the current conversation. It does not represent deleting peer-side messages.',
+              confirmLabel: 'Clear',
+              danger: true,
+              run: () => onClearHistory(conversation.id),
+            })}
           />
           {isGroup ? (
             <DetailActionRow
