@@ -1,8 +1,8 @@
 import { useEffect, useState, type ComponentType, type CSSProperties, type ReactElement } from 'react';
 import { Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
-import { SELF_TARGET, discoverWorktreeTargets } from './registry/worktrees';
-import type { PrototypeManifest, PrototypeSite, PrototypeWorktreeTarget } from './registry/types';
+import { CURRENT_WORKTREE } from './registry/worktrees';
+import type { PrototypeManifest, PrototypeSite } from './registry/types';
 
 const DEFAULT_SITE: PrototypeSite = normalizeSite(import.meta.env.VITE_PROTOTYPE_SITE);
 
@@ -30,54 +30,19 @@ function normalizeSite(value: unknown): PrototypeSite {
 
 export function PrototypePortal() {
   const [site, setSite] = useState<PrototypeSite>(DEFAULT_SITE);
-  const [targets, setTargets] = useState<PrototypeWorktreeTarget[]>([SELF_TARGET]);
-  const [targetId, setTargetId] = useState(SELF_TARGET.id);
   const meta = SITE_META[site];
   const visible = LOCAL_PROTOTYPES.filter((prototype) => prototype.site === site);
-
-  useEffect(() => {
-    let cancelled = false;
-    discoverWorktreeTargets().then((discovered) => {
-      if (cancelled) {
-        return;
-      }
-      setTargets(discovered);
-      setTargetId((current) => (discovered.some((item) => item.id === current) ? current : discovered[0].id));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const selfTarget = targets.find((item) => item.self) ?? targets[0];
-  const target = targets.find((item) => item.id === targetId) ?? selfTarget;
-  const localTarget = target.id === selfTarget.id;
-  const canSwitch = targets.length > 1;
 
   return (
     <div style={styles.page}>
       <header style={styles.header}>
         <div style={styles.brand}>Peers Touch Prototype Portal</div>
         <div style={styles.headerControls}>
-          <select
-            aria-label="Worktree"
-            value={target.id}
-            onChange={(event) => setTargetId(event.target.value)}
-            style={{ ...styles.select, ...(canSwitch ? null : styles.selectDisabled) }}
-            disabled={!canSwitch}
-            title={
-              canSwitch
-                ? 'Switch to another running prototype worktree'
-                : 'No other prototype portal is running. Start one from another worktree with `make run-prototype`.'
-            }
-          >
-            {targets.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.branch}
-              </option>
-            ))}
-          </select>
-          <ServingBadge target={selfTarget} live={localTarget} />
+          <span style={styles.branchChip}>{CURRENT_WORKTREE.branch}</span>
+          <div style={styles.worktreeBadge} title={CURRENT_WORKTREE.worktreePath}>
+            <span style={styles.worktreeDot} />
+            <span style={styles.worktreeBadgePath}>{compactPath(CURRENT_WORKTREE.worktreePath)}</span>
+          </div>
         </div>
       </header>
 
@@ -111,77 +76,20 @@ export function PrototypePortal() {
             <div style={styles.command}>make run-prototype</div>
           </div>
 
-          {localTarget ? (
-            <div style={styles.grid}>
-              {visible.length > 0 ? (
-                visible.map((prototype) => <PrototypeCard key={prototype.id} prototype={prototype} />)
-              ) : (
-                <div style={styles.empty}>
-                  <strong>No prototypes registered for {site} yet.</strong>
-                  <span>Add a prototype manifest under packages/prototypes/&lt;id&gt;/ and keep it under the correct first-level site.</span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <RemoteTargetCard target={target} site={site} />
-          )}
+          <div style={styles.grid}>
+            {visible.length > 0 ? (
+              visible.map((prototype) => <PrototypeCard key={prototype.id} prototype={prototype} />)
+            ) : (
+              <div style={styles.empty}>
+                <strong>No prototypes registered for {site} yet.</strong>
+                <span>Add a prototype manifest under packages/prototypes/&lt;id&gt;/ and keep it under the correct first-level site.</span>
+              </div>
+            )}
+          </div>
 
-          {localTarget ? (
-            visible[0] ? <PrototypePreview prototype={visible[0]} /> : null
-          ) : (
-            <RemoteWorktreePreview target={target} site={site} />
-          )}
+          {visible[0] ? <PrototypePreview prototype={visible[0]} /> : null}
         </section>
       </main>
-    </div>
-  );
-}
-
-function ServingBadge({ target, live }: { target: PrototypeWorktreeTarget; live: boolean }) {
-  return (
-    <div style={styles.worktreeBadge} title={target.worktreePath}>
-      <span style={{ ...styles.worktreeDot, ...(live ? null : styles.worktreeDotIdle) }} />
-      <span style={styles.worktreeBadgePath}>{compactPath(target.worktreePath)}</span>
-    </div>
-  );
-}
-
-function RemoteTargetCard({ target, site }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
-  return (
-    <article style={styles.remoteCard}>
-      <div style={styles.cardTop}>
-        <span style={styles.cardTitle}>{target.branch}</span>
-        <span style={styles.status}>live portal</span>
-      </div>
-      <p style={styles.cardText}>
-        This worktree runs its own prototype portal. It is shown via iframe preview; the portal never imports another worktree&apos;s source.
-      </p>
-      <div style={styles.targetMeta}>
-        <span>worktree: {target.worktreePath}</span>
-        <span>portal: {target.portalUrl ?? 'unknown'}</span>
-      </div>
-    </article>
-  );
-}
-
-function RemoteWorktreePreview({ target }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
-  const url = target.portalUrl;
-
-  return (
-    <div style={styles.preview}>
-      <div style={styles.previewHeader}>
-        <span>Worktree Preview</span>
-        <span style={styles.previewMeta}>{target.branch}</span>
-      </div>
-      <div style={styles.previewBody}>
-        {url ? (
-          <iframe title={`${target.branch} portal`} src={url} style={styles.iframe} />
-        ) : (
-          <div style={styles.previewPlaceholder}>
-            This worktree portal is no longer reachable. Restart it with `make run-prototype`.
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -287,20 +195,18 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     gap: 10,
   },
-  select: {
+  branchChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
     height: 30,
+    padding: '0 12px',
     borderRadius: 8,
-    border: '1px solid #cbd5e1',
-    background: '#ffffff',
-    color: '#334155',
-    padding: '0 10px',
+    background: '#eef2ff',
+    border: '1px solid #c7d2fe',
+    color: '#3730a3',
     fontSize: 12,
-    fontWeight: 600,
-  },
-  selectDisabled: {
-    background: '#f1f5f9',
-    color: '#94a3b8',
-    cursor: 'not-allowed',
+    fontWeight: 700,
+    boxSizing: 'border-box',
   },
   main: {
     display: 'flex',
@@ -385,9 +291,6 @@ const styles: Record<string, CSSProperties> = {
     background: '#22c55e',
     flex: 'none',
   },
-  worktreeDotIdle: {
-    background: '#cbd5e1',
-  },
   worktreeBadgePath: {
     color: '#64748b',
     fontFamily: 'monospace',
@@ -451,20 +354,6 @@ const styles: Record<string, CSSProperties> = {
     color: '#475569',
     fontSize: 13,
   },
-  remoteCard: {
-    background: '#ffffff',
-    border: '1px solid #dbeafe',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 16,
-  },
-  targetMeta: {
-    display: 'grid',
-    gap: 4,
-    color: '#475569',
-    fontSize: 11,
-    fontFamily: 'monospace',
-  },
   preview: {
     background: '#ffffff',
     border: '1px solid #e5e7eb',
@@ -498,12 +387,5 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: 'center',
     color: '#64748b',
     fontSize: 13,
-  },
-  iframe: {
-    width: '100%',
-    height: '100%',
-    border: 0,
-    display: 'block',
-    background: '#ffffff',
   },
 };
