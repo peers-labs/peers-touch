@@ -9,6 +9,7 @@ domain.
 |---|---|
 | `moments.md` | Existing Moments architecture: Audience, Circle, typed reactions, comments, media, and public/private storage separation. |
 | `wechat-grade-moments-runtime-architecture.md` | Runtime-first upgrade target for WeChat-grade trusted relationship Moments. Defines Station truth, Desktop runtime projections, delivery inbox, projection sync, and interaction visibility boundaries. |
+| `prototype/README.md` | Desktop Social Chat private/group chat prototype entry, run instructions, confirmation status, and review scope. |
 | `execution-plans/2026-05-09-wechat-grade-moments-runtime.md` | Phased implementation plan for the runtime-first Moments upgrade. |
 
 ## Source Hierarchy

@@ -75,6 +75,12 @@ const RECENT_MEDIA_LIMIT = 6;
 const RECENT_FILE_LIMIT = 4;
 type GroupMemberLike = Pick<GroupMember, 'actorDid' | 'nickname' | 'role' | 'muted'>;
 
+interface GroupMemberDisplay extends GroupMemberLike {
+  displayName: string;
+  subtitle?: string;
+  avatar?: string;
+}
+
 function getInitial(name: string): string {
   if (!name) return '?';
   return name.charAt(0).toUpperCase();
@@ -125,32 +131,79 @@ function getCurrentConversationAttachments(messages: SocialMessage[]): DetailAtt
   return items.sort((a, b) => b.timestampMs - a.timestampMs);
 }
 
-function MemberItem({ member, action, lockedReason }: { member: GroupMemberLike; action?: ReactNode; lockedReason?: string }) {
+function MemberAvatar({ member, size = 32 }: { member: GroupMemberDisplay; size?: number }) {
+  const { token } = theme.useToken();
+  return (
+    <Flexbox
+      align="center"
+      justify="center"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.round(size * 0.32),
+        background: token.colorFillSecondary,
+        color: token.colorTextSecondary,
+        fontSize: Math.max(12, Math.round(size * 0.36)),
+        fontWeight: 700,
+        flexShrink: 0,
+        overflow: 'hidden',
+      }}
+    >
+      {member.avatar ? (
+        <img
+          src={member.avatar}
+          alt={member.displayName}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      ) : (
+        getInitial(member.displayName)
+      )}
+    </Flexbox>
+  );
+}
+
+function MemberPreviewCard({ member }: { member: GroupMemberDisplay }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const name = member.nickname || member.actorDid.slice(0, 16);
   const role = Number(member.role ?? GroupRole.MEMBER);
   return (
-    <Flexbox horizontal align="center" gap={10} style={{ padding: '6px 0' }}>
-      <Flexbox
-        align="center"
-        justify="center"
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 16,
-          background: token.colorFillSecondary,
-          color: token.colorTextSecondary,
-          fontSize: 13,
-          fontWeight: 600,
-          flexShrink: 0,
-        }}
-      >
-        {getInitial(name)}
-      </Flexbox>
+    <Flexbox align="center" gap={6} style={{ width: 64, minWidth: 0 }}>
+      <MemberAvatar member={member} size={42} />
+      <Text ellipsis style={{ width: '100%', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>
+        {member.displayName}
+      </Text>
+      {role >= GroupRole.ADMIN || member.muted ? (
+        <Text
+          ellipsis
+          style={{
+            width: '100%',
+            textAlign: 'center',
+            fontSize: 10,
+            color: role >= GroupRole.OWNER ? token.colorWarning : role >= GroupRole.ADMIN ? token.colorPrimary : token.colorTextTertiary,
+          }}
+        >
+          {member.muted ? t('chat.social.detail.memberMuted') : groupRoleLabel(role, t)}
+        </Text>
+      ) : null}
+    </Flexbox>
+  );
+}
+
+function MemberItem({ member, action, lockedReason }: { member: GroupMemberDisplay; action?: ReactNode; lockedReason?: string }) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const role = Number(member.role ?? GroupRole.MEMBER);
+  return (
+    <Flexbox horizontal align="center" gap={10} style={{ padding: '8px 0', minWidth: 0 }}>
+      <MemberAvatar member={member} />
       <Flexbox gap={3} style={{ flex: 1, minWidth: 0 }}>
-        <Text ellipsis style={{ fontSize: 13 }}>{name}</Text>
-        <Flexbox horizontal gap={4} align="center">
+        <Text ellipsis style={{ fontSize: 13, fontWeight: 600 }}>{member.displayName}</Text>
+        <Flexbox horizontal gap={4} align="center" style={{ minWidth: 0, flexWrap: 'wrap' }}>
+          {member.subtitle ? (
+            <Text type="secondary" ellipsis style={{ fontSize: 11, maxWidth: 120 }}>
+              {member.subtitle}
+            </Text>
+          ) : null}
           <Tag
             bordered={false}
             color={role >= GroupRole.OWNER ? 'gold' : role >= GroupRole.ADMIN ? 'blue' : 'default'}
@@ -170,7 +223,11 @@ function MemberItem({ member, action, lockedReason }: { member: GroupMemberLike;
           <Lock size={13} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
         </Tooltip>
       ) : null}
-      {action}
+      {action ? (
+        <Flexbox horizontal gap={4} style={{ justifyContent: 'flex-end', flexWrap: 'wrap', maxWidth: 188 }}>
+          {action}
+        </Flexbox>
+      ) : null}
     </Flexbox>
   );
 }
@@ -178,7 +235,7 @@ function MemberItem({ member, action, lockedReason }: { member: GroupMemberLike;
 function DetailSection({ title, children, gap = 8 }: { title?: string; children: ReactNode; gap?: number }) {
   const { token } = theme.useToken();
   return (
-    <Flexbox gap={gap} style={{ padding: '0 16px', marginBottom: 12 }}>
+    <Flexbox gap={gap} style={{ padding: '0 16px', marginBottom: 12, minWidth: 0 }}>
       {title && (
         <Text style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: token.colorTextTertiary }}>
           {title}
@@ -191,6 +248,8 @@ function DetailSection({ title, children, gap = 8 }: { title?: string; children:
           borderRadius: 12,
           background: token.colorFillQuaternary,
           border: `1px solid ${token.colorBorderSecondary}`,
+          minWidth: 0,
+          overflow: 'hidden',
         }}
       >
         {children}
@@ -465,6 +524,31 @@ function getFriendPeerAvatar(session: FriendChatSession | undefined, currentUser
   return session.participantBAvatar || session.participantAAvatar || '';
 }
 
+function getFriendPeerDisplayProfile(
+  session: FriendChatSession,
+  currentUserDid: string | null,
+): { did: string; name: string; avatar: string } | null {
+  if (currentUserDid && session.participantADid === currentUserDid) {
+    return {
+      did: session.participantBDid || '',
+      name: session.participantBDisplayName?.trim() || '',
+      avatar: session.participantBAvatar || '',
+    };
+  }
+  if (currentUserDid && session.participantBDid === currentUserDid) {
+    return {
+      did: session.participantADid || '',
+      name: session.participantADisplayName?.trim() || '',
+      avatar: session.participantAAvatar || '',
+    };
+  }
+  return {
+    did: session.participantBDid || session.participantADid || '',
+    name: session.participantBDisplayName?.trim() || session.participantADisplayName?.trim() || '',
+    avatar: session.participantBAvatar || session.participantAAvatar || '',
+  };
+}
+
 export function ChatDetailPanel() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -478,6 +562,7 @@ export function ChatDetailPanel() {
   const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
   const ownFingerprint = useSocialChatStore((s) => s.ownFingerprint);
   const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
+  const currentUserProfile = useSocialChatStore((s) => s.currentUserProfile);
   const peerOnline = useSocialChatStore((s) => s.peerOnline);
   const peerProfiles = useSocialChatStore((s) => s.peerProfiles);
   const loadPeerProfile = useSocialChatStore((s) => s.loadPeerProfile);
@@ -495,6 +580,7 @@ export function ChatDetailPanel() {
 
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [showAllMembers, setShowAllMembers] = useState(false);
+  const [memberManagerOpen, setMemberManagerOpen] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteDids, setInviteDids] = useState<string[]>([]);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
@@ -510,16 +596,54 @@ export function ChatDetailPanel() {
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
   const myGroupMember = currentUserDid ? members.find((member) => member.actorDid === currentUserDid) : undefined;
   const myGroupNickname = myGroupMember?.nickname?.trim() || '';
-  const displayMembers: GroupMemberLike[] = members.length > 0
-    ? members
-    : activeGroup?.ownerDid
-      ? [{
-          actorDid: activeGroup.ownerDid,
-          nickname: '',
-          role: GroupRole.OWNER,
-          muted: false,
-        }]
-      : [];
+  const memberProfiles = useMemo(() => {
+    const profiles = new Map<string, { name: string; avatar: string }>();
+    if (currentUserDid) {
+      profiles.set(currentUserDid, {
+        name: currentUserProfile?.displayName?.trim() || currentUserProfile?.username?.trim() || '',
+        avatar: currentUserProfile?.avatar || '',
+      });
+    }
+    sessions.forEach((session) => {
+      const peerProfile = getFriendPeerDisplayProfile(session, currentUserDid);
+      if (peerProfile?.did && peerProfile.name) {
+        profiles.set(peerProfile.did, { name: peerProfile.name, avatar: peerProfile.avatar });
+      }
+    });
+    return profiles;
+  }, [currentUserDid, currentUserProfile, sessions]);
+  const displayMembers: GroupMemberDisplay[] = useMemo(() => {
+    const sourceMembers: GroupMemberLike[] = members.length > 0
+      ? members
+      : activeGroup?.ownerDid
+        ? [{
+            actorDid: activeGroup.ownerDid,
+            nickname: '',
+            role: GroupRole.OWNER,
+            muted: false,
+          }]
+        : [];
+    return sourceMembers.map((member) => {
+      const nickname = member.nickname?.trim() || '';
+      const profile = memberProfiles.get(member.actorDid);
+      const profileName = profile?.name?.trim() || '';
+      const displayName = nickname || profileName || t('chat.social.detail.unknownMember');
+      return {
+        ...member,
+        displayName,
+        subtitle: nickname && profileName && nickname !== profileName ? profileName : undefined,
+        avatar: profile?.avatar || '',
+      };
+    });
+  }, [activeGroup?.ownerDid, memberProfiles, members, t]);
+  const memberDisplayByDid = useMemo(
+    () => new Map(displayMembers.map((member) => [member.actorDid, member])),
+    [displayMembers],
+  );
+  const getMemberDisplayName = (member: GroupMember): string =>
+    memberDisplayByDid.get(member.actorDid)?.displayName
+    || member.nickname?.trim()
+    || t('chat.social.detail.unknownMember');
   const memberDidSet = useMemo(() => new Set(members.map((member) => member.actorDid)), [members]);
   const inviteCandidates = useMemo(
     () => sessions
@@ -783,7 +907,7 @@ export function ChatDetailPanel() {
 
   const confirmRemoveGroupMember = (member: GroupMember) => {
     if (!activeUlid || !member.actorDid) return;
-    const memberName = member.nickname || member.actorDid;
+    const memberName = getMemberDisplayName(member);
     Modal.confirm({
       title: t('chat.social.detail.removeMemberConfirmTitle'),
       content: t('chat.social.detail.removeMemberConfirmBody', { name: memberName }),
@@ -818,7 +942,7 @@ export function ChatDetailPanel() {
   };
 
   const confirmUpdateGroupMemberRole = (member: GroupMember, role: number) => {
-    const memberName = member.nickname || member.actorDid;
+    const memberName = getMemberDisplayName(member);
     Modal.confirm({
       title: role === GroupRole.ADMIN ? t('chat.social.detail.promoteAdminConfirmTitle') : t('chat.social.detail.demoteAdminConfirmTitle'),
       content: role === GroupRole.ADMIN
@@ -836,7 +960,7 @@ export function ChatDetailPanel() {
 
   const confirmTransferGroupOwnership = (member: GroupMember) => {
     if (!activeUlid || !member.actorDid) return;
-    const memberName = member.nickname || member.actorDid;
+    const memberName = getMemberDisplayName(member);
     Modal.confirm({
       title: t('chat.social.detail.transferOwnerConfirmTitle'),
       content: t('chat.social.detail.transferOwnerConfirmBody', { name: memberName }),
@@ -962,6 +1086,7 @@ export function ChatDetailPanel() {
 
   useEffect(() => {
     setShowAllMembers(false);
+    setMemberManagerOpen(false);
     setInviteModalOpen(false);
     setInviteDids([]);
     setEditingName(false);
@@ -999,11 +1124,15 @@ export function ChatDetailPanel() {
     <Flexbox
       style={{
         width: 320,
+        maxWidth: '100%',
+        minWidth: 0,
         height: '100%',
         background: token.colorBgContainer,
         overflow: 'hidden',
+        overflowX: 'hidden',
         display: 'flex',
         flexDirection: 'column',
+        flexShrink: 0,
       }}
     >
       {/* Header */}
@@ -1031,7 +1160,7 @@ export function ChatDetailPanel() {
       </Flexbox>
 
       {/* Scrollable content */}
-      <Flexbox style={{ flex: 1, overflow: 'auto' }}>
+      <Flexbox style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
         {/* Identity section */}
         {isGroup ? (
           <Flexbox align="center" gap={12} style={{ padding: '20px 16px 12px' }}>
@@ -1169,66 +1298,17 @@ export function ChatDetailPanel() {
         {isGroup && (
           <DetailSection title={t('chat.social.detail.membersLabel')}>
             {displayMembers.length > 0 ? (
-              (showAllMembers ? displayMembers : displayMembers.slice(0, 6)).map((m) => {
-                const memberRole = Number(m.role ?? GroupRole.MEMBER);
-                const targetIsSelf = m.actorDid === currentUserDid;
-                const controlState = getGroupMemberControlState({
-                  canManageGroupMembers,
-                  isSelf: targetIsSelf,
-                  membersLoaded: members.length > 0,
-                  myGroupRole,
-                  targetRole: memberRole,
-                });
-                const managedMember = members.find((member) => member.actorDid === m.actorDid);
-                const lockedReason = controlState.lockedReasonKey ? t(controlState.lockedReasonKey) : undefined;
-                return (
-                  <MemberItem
-                    key={m.actorDid}
-                    member={m}
-                    lockedReason={lockedReason}
-                    action={controlState.canManageTarget && managedMember ? (
-                      <Flexbox horizontal gap={4}>
-                        {myGroupRole === GroupRole.OWNER ? (
-                          <>
-                            <Button
-                              type="text"
-                              size="small"
-                              onClick={() => confirmUpdateGroupMemberRole(
-                                managedMember,
-                                memberRole === GroupRole.ADMIN ? GroupRole.MEMBER : GroupRole.ADMIN,
-                              )}
-                            >
-                              {memberRole === GroupRole.ADMIN
-                                ? t('chat.social.detail.demoteAdmin')
-                                : t('chat.social.detail.promoteAdmin')}
-                            </Button>
-                            <Button type="text" size="small" onClick={() => confirmTransferGroupOwnership(managedMember)}>
-                              {t('chat.social.detail.transferOwner')}
-                            </Button>
-                          </>
-                        ) : null}
-                        <Button type="text" size="small" onClick={() => toggleGroupMemberMuted(managedMember)}>
-                          {m.muted ? t('chat.social.detail.unmuteMember') : t('chat.social.detail.muteMember')}
-                        </Button>
-                        <Button
-                          type="text"
-                          size="small"
-                          danger
-                          onClick={() => confirmRemoveGroupMember(managedMember)}
-                        >
-                          {t('chat.social.detail.removeMember')}
-                        </Button>
-                      </Flexbox>
-                    ) : undefined}
-                  />
-                );
-              })
+              <Flexbox horizontal gap={10} style={{ flexWrap: 'wrap', minWidth: 0 }}>
+                {(showAllMembers ? displayMembers : displayMembers.slice(0, 8)).map((member) => (
+                  <MemberPreviewCard key={member.actorDid} member={member} />
+                ))}
+              </Flexbox>
             ) : (
               <Text type="secondary" style={{ fontSize: 12 }}>
                 {t('chat.social.detail.membersLoading')}
               </Text>
             )}
-            <Flexbox horizontal align="center" justify="space-between" style={{ marginTop: 4 }}>
+            <Flexbox horizontal align="center" justify="space-between" gap={8} style={{ marginTop: 4, minWidth: 0, flexWrap: 'wrap' }}>
               <Button
                 type="dashed"
                 icon={<UserPlus size={14} />}
@@ -1238,16 +1318,27 @@ export function ChatDetailPanel() {
               >
                 {t('chat.social.detail.addMember')}
               </Button>
-              {displayMembers.length > 6 && (
+              <Flexbox horizontal gap={8} style={{ marginLeft: 'auto', flexWrap: 'wrap' }}>
+                {displayMembers.length > 8 && (
+                  <Button
+                    type="link"
+                    size="small"
+                    style={{ fontSize: 12, padding: 0 }}
+                    onClick={() => setShowAllMembers((v) => !v)}
+                  >
+                    {showAllMembers ? t('chat.social.detail.showLess') : t('chat.social.detail.seeAll')}
+                  </Button>
+                )}
                 <Button
                   type="link"
                   size="small"
                   style={{ fontSize: 12, padding: 0 }}
-                  onClick={() => setShowAllMembers((v) => !v)}
+                  disabled={members.length === 0}
+                  onClick={() => setMemberManagerOpen(true)}
                 >
-                  {showAllMembers ? t('chat.social.detail.showLess') : t('chat.social.detail.seeAll')}
+                  {t('chat.social.detail.manageMembers')}
                 </Button>
-              )}
+              </Flexbox>
             </Flexbox>
           </DetailSection>
         )}
@@ -1367,7 +1458,7 @@ export function ChatDetailPanel() {
         </DetailSection>
 
         {/* Security section */}
-        {encryptionEnabled && (
+        {encryptionEnabled && !isGroup && (
           <DetailSection title={t('chat.social.encryption.title')}>
             <Flexbox horizontal align="center" gap={6}>
               <Lock size={14} style={{ color: token.colorSuccess }} />
@@ -1476,6 +1567,72 @@ export function ChatDetailPanel() {
         {/* Spacer for scroll padding */}
         <div style={{ height: 16 }} />
       </Flexbox>
+
+      {/* Member management modal */}
+      <Modal
+        title={t('chat.social.detail.manageMembers')}
+        open={memberManagerOpen}
+        footer={null}
+        width={520}
+        onCancel={() => setMemberManagerOpen(false)}
+      >
+        <Flexbox gap={10} style={{ maxHeight: 'min(520px, 70vh)', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4 }}>
+          {displayMembers.map((member) => {
+            const memberRole = Number(member.role ?? GroupRole.MEMBER);
+            const targetIsSelf = member.actorDid === currentUserDid;
+            const controlState = getGroupMemberControlState({
+              canManageGroupMembers,
+              isSelf: targetIsSelf,
+              membersLoaded: members.length > 0,
+              myGroupRole,
+              targetRole: memberRole,
+            });
+            const managedMember = members.find((groupMember) => groupMember.actorDid === member.actorDid);
+            const lockedReason = controlState.lockedReasonKey ? t(controlState.lockedReasonKey) : undefined;
+            return (
+              <MemberItem
+                key={member.actorDid}
+                member={member}
+                lockedReason={lockedReason}
+                action={controlState.canManageTarget && managedMember ? (
+                  <>
+                    {myGroupRole === GroupRole.OWNER ? (
+                      <>
+                        <Button
+                          type="text"
+                          size="small"
+                          onClick={() => confirmUpdateGroupMemberRole(
+                            managedMember,
+                            memberRole === GroupRole.ADMIN ? GroupRole.MEMBER : GroupRole.ADMIN,
+                          )}
+                        >
+                          {memberRole === GroupRole.ADMIN
+                            ? t('chat.social.detail.demoteAdmin')
+                            : t('chat.social.detail.promoteAdmin')}
+                        </Button>
+                        <Button type="text" size="small" onClick={() => confirmTransferGroupOwnership(managedMember)}>
+                          {t('chat.social.detail.transferOwner')}
+                        </Button>
+                      </>
+                    ) : null}
+                    <Button type="text" size="small" onClick={() => toggleGroupMemberMuted(managedMember)}>
+                      {member.muted ? t('chat.social.detail.unmuteMember') : t('chat.social.detail.muteMember')}
+                    </Button>
+                    <Button
+                      type="text"
+                      size="small"
+                      danger
+                      onClick={() => confirmRemoveGroupMember(managedMember)}
+                    >
+                      {t('chat.social.detail.removeMember')}
+                    </Button>
+                  </>
+                ) : undefined}
+              />
+            );
+          })}
+        </Flexbox>
+      </Modal>
 
       {/* Invite modal */}
       <Modal
