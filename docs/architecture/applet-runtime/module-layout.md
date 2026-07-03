@@ -159,43 +159,28 @@ domain/applets/
 
 ## 3. Mobile 模块
 
-### 3.1 Android
+Mobile 主线是 Tauri v2 Mobile。旧 `apps/mobile/android/` 与 `apps/mobile/ios/`
+standalone 原生 App 已删除；Android/iOS 原生代码只能落在 Tauri native plugin
+目标中，不能重新形成第二个 App 壳。
 
 目标结构：
 
 ```text
-apps/mobile/android/
-└── feature/applet/
-    ├── AppletContainerView.kt        # Compose wrapper
-    ├── LynxViewFactory.kt            # LynxView creation
-    ├── AppletBridgeModule.kt         # NativeModule bridge
-    ├── AppletCapabilityGateway.kt    # permission + dispatch
-    ├── AppletManifestValidator.kt
-    └── AppletLifecycleController.kt
+apps/mobile/src/                 # shared Mobile product shell
+apps/mobile/src-tauri/
+├── src/                         # Rust capability kernel / commands
+└── gen/
+    ├── apple/                   # Tauri iOS generated project
+    └── android/                 # Tauri Android generated project (to be generated)
 ```
 
-职责：
+Plugin 职责：
 
-- 初始化 Lynx Android 环境。
-- 创建并销毁 LynxView。
+- 初始化平台 Lynx runtime。
+- 创建、show/hide/detach/destroy LynxView。
 - 注入 NativeModule bridge。
 - 执行 Mobile 本地 capability。
-- 与 Station / local cache 协作。
-
-### 3.2 iOS
-
-目标结构：
-
-```text
-apps/mobile/ios/
-└── Features/Applet/
-    ├── AppletContainerView.swift       # SwiftUI wrapper
-    ├── LynxViewFactory.swift           # LynxView creation
-    ├── AppletBridgeModule.swift        # NativeModule bridge
-    ├── AppletCapabilityGateway.swift   # permission + dispatch
-    ├── AppletManifestValidator.swift
-    └── AppletLifecycleController.swift
-```
+- 将 Activity/Scene lifecycle、memory pressure、native route 事件翻译给 Applet Kernel。
 
 职责与 Android 对齐，平台差异只存在于 LynxView 接入方式和设备能力适配。
 

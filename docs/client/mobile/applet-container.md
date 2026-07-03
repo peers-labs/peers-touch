@@ -421,6 +421,6 @@ Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿�
 - `@peers-touch/applet-sdk` 在 Mobile 端的 API 行为与 Desktop/Web Host 的 canonical contract 一致。
 - Canonical bridge response/event envelope 在双端均可正确序列化与处理，错误码不回退到平台私有 `BRIDGE_*`。
 - Manifest 校验逻辑与 Desktop/Web Host 行为一致（相同的合法/非法 manifest 得到相同的校验结果）。
-- Native manifest/bridge session 行为必须有可执行 gate：iOS 通过 Swift harness，Android 通过 SDK 环境下的 JVM contract test；没有 Android SDK 的本地 run 只能记录 SKIP，不能当作 Android runtime E2E。
-- Release 级 native runtime evidence 必须来自 `applet-ios-lynx-runtime-e2e` / `applet-android-lynx-runtime-e2e` 的真 simulator/emulator/device marker，不得用 source parity scan 或 JVM/Swift harness 代替。
+- Native manifest/bridge/session 行为必须在 Tauri native plugin 物理落点重建可执行 gate；旧 standalone Swift/JVM harness 已作废，不能当作 Mobile readiness。
+- Release 级 native runtime evidence 必须来自 Tauri Mobile app/plugin 的真 simulator/emulator/device marker，不得用旧 standalone app、source parity scan 或平台 harness 代替。
 - 同一个 Applet Bundle（`targets` 包含 `desktop`、`android`、`ios`）可以在 Android、iOS、Desktop 三端无修改运行。
