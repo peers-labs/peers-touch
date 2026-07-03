@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { T } from '../theme';
 import { SessionList } from '../components/SessionList';
 import { ChatArea } from '../components/ChatArea';
@@ -5,6 +6,8 @@ import { DetailPanel } from '../components/DetailPanel';
 import { useChatState } from '../state';
 
 export function SocialChatPage() {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [rootWidth, setRootWidth] = useState(0);
   const {
     conversations,
     activeId,
@@ -20,6 +23,8 @@ export function SocialChatPage() {
     markAsRead,
     hideConversation,
     deleteConversation,
+    clearHistory,
+    sendMessage,
     renameGroup,
     removeGroupMember,
     toggleMemberMute,
@@ -27,11 +32,25 @@ export function SocialChatPage() {
     transferOwnership,
   } = useChatState();
 
+  useEffect(() => {
+    if (!rootRef.current) return undefined;
+    const update = () => setRootWidth(rootRef.current?.clientWidth ?? 0);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(rootRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const compact = rootWidth > 0 && rootWidth < T.sessionListWidth + T.chatReadableMinWidth;
+  const listOnly = rootWidth > 0 && rootWidth < T.chatSplitMinWidth;
+
   return (
-    <div style={{ display: 'flex', width: '100%', height: '100%', background: T.bg }}>
+    <div ref={rootRef} style={{ display: 'flex', width: '100%', height: '100%', minWidth: 0, overflow: 'hidden', background: T.bg }}>
       <SessionList
         conversations={conversations}
         activeId={activeId}
+        compact={compact}
+        fill={listOnly}
         onSelect={selectConversation}
         onTogglePin={togglePin}
         onToggleMute={toggleMute}
@@ -39,18 +58,34 @@ export function SocialChatPage() {
         onHide={hideConversation}
         onDelete={deleteConversation}
       />
+      {listOnly && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 0,
+            overflow: 'hidden',
+          }}
+        />
+      )}
+      {!listOnly && (
       <ChatArea
         conversation={activeConversation}
         messages={messages}
         onToggleDetail={toggleDetail}
+        onSendMessage={sendMessage}
+        compact={compact}
       />
-      {showDetail && activeConversation && (
+      )}
+      {!compact && showDetail && activeConversation && (
         <DetailPanel
           conversation={activeConversation}
           currentUserId={currentUserId}
           groupMembers={groupMembers}
           onClose={toggleDetail}
           onDeleteConversation={deleteConversation}
+          onClearHistory={clearHistory}
           onRemoveMember={removeGroupMember}
           onRenameGroup={renameGroup}
           onSetMemberRole={setMemberRole}
