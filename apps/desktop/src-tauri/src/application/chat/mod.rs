@@ -283,6 +283,80 @@ pub fn chat_send_message(actor_id: &str, input: ChatSendMessageInput) -> AppResu
     })
 }
 
+pub fn record_agent_turn_messages(
+    actor_id: &str,
+    conversation_id: &str,
+    agent_id: &str,
+    user_content: &str,
+    assistant_content: &str,
+    model: Option<&str>,
+) -> AppResult<StubPayload> {
+    let conversation_id = match chat::normalize_conversation_id(conversation_id) {
+        Ok(value) => value,
+        Err(message) => return invalid_argument(message),
+    };
+    let agent_id = {
+        let trimmed = agent_id.trim();
+        if trimmed.is_empty() {
+            chat::extract_agent_id(&conversation_id)
+        } else {
+            trimmed.to_string()
+        }
+    };
+    let user_message_id = chat::next_message_id(None);
+    let assistant_message_id = chat::next_message_id(None);
+    let user_timestamp_ms = chat::now_ms();
+    let assistant_timestamp_ms = chat::now_ms();
+
+    with_chat_app_result(actor_id, |store| {
+        {
+            let conversation =
+                store.ensure_conversation(&conversation_id, &agent_id, assistant_timestamp_ms);
+            conversation.last_message_id = Some(assistant_message_id.clone());
+            conversation.last_timestamp_ms = assistant_timestamp_ms;
+            if let Some(model) = model.map(str::trim).filter(|value| !value.is_empty()) {
+                conversation.model = Some(model.to_string());
+            }
+        }
+
+        let messages = store.messages.entry(conversation_id.clone()).or_default();
+        messages.push(Message {
+            id: user_message_id.clone(),
+            conversation_id: conversation_id.clone(),
+            content: user_content.to_string(),
+            role: "user".to_string(),
+            read: true,
+            via: DeliveryVia::Relay,
+            retry_count: 0,
+            timestamp_ms: user_timestamp_ms,
+        });
+        messages.push(Message {
+            id: assistant_message_id.clone(),
+            conversation_id: conversation_id.clone(),
+            content: assistant_content.to_string(),
+            role: "assistant".to_string(),
+            read: true,
+            via: DeliveryVia::Relay,
+            retry_count: 0,
+            timestamp_ms: assistant_timestamp_ms,
+        });
+
+        realtime::publish_chat_event(
+            "agent_turn_messages_recorded",
+            &conversation_id,
+            Some(&assistant_message_id),
+        );
+        success_payload(
+            "agent_turn_messages_recorded",
+            json!({
+                "conversationId": conversation_id,
+                "userMessageId": user_message_id,
+                "assistantMessageId": assistant_message_id
+            }),
+        )
+    })
+}
+
 pub fn chat_mark_read(actor_id: &str, input: ChatMarkReadInput) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,

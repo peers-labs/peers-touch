@@ -183,6 +183,7 @@ fn claim_and_execute(session: &WorkerSession) -> Result<(), String> {
             knowledge_resources: None,
         },
         &session.token,
+        &session.actor_id,
     );
     stop_heartbeat.store(true, Ordering::SeqCst);
     let _ = heartbeat_handle.join();

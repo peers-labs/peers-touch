@@ -309,6 +309,7 @@ Current project skills:
 | `official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
 | `desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
 | `read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |
+| `small-fix-discipline` | Behavioral discipline for "small" fixes: locate the governing spec, fix at the right architectural layer instead of patching the symptom, keep changes surgical, and self-grade before claiming done |
 | `quality-check` | Produce review-ready evidence from review profiles, acceptance, knowledge, deterministic gates, and test coverage |
 | `github-commit` | Conventional commit message generation with AI traceability |
 | `github-pr` | PR creation with templates, labels, and issue linking |
