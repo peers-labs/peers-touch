@@ -16,7 +16,7 @@ This contract defines the required architecture for official applets under `apps
 
 Operational skill:
 
-- [`official-applet-development`](../../../tooling/skills/official-applet-development/SKILL.md) MUST be used when creating, modifying, implementing, or validating official applets.
+- [`pt-official-applet-development`](../../../tooling/skills/pt-official-applet-development/SKILL.md) MUST be used when creating, modifying, implementing, or validating official applets.
 
 ## 2. Core Rule
 
