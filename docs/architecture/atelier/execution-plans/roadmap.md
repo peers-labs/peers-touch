@@ -169,4 +169,4 @@
 
 - 本路线是 [design.md §9](../design.md) 抽象阶段划分的**可执行展开**——design 讲「是什么」，本文件讲「一块块怎么搭、搭完什么样」。
 - 每块积木用到的数据契约见 [data-model.md](../data-model.md)；关键取舍见 [decisions.md](../decisions.md)。
-- 真正动代码前，按 AGENTS.md §4.3 套用 `architecture-execution-methodology`（域职责 → 执行闭环 → 依赖顺序 → 可验证交付）逐块落地。
+- 真正动代码前，按 AGENTS.md §4.3 套用 `pt-architecture-execution-methodology`（域职责 → 执行闭环 → 依赖顺序 → 可验证交付）逐块落地。

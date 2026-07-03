@@ -94,5 +94,5 @@ drafting → pending-review → confirmed → landed
 | 维度 | 约定 |
 |------|------|
 | 技术栈 | React + Vite + `@lobehub/ui` 优先 → antd 兜底 + `react-layout-kit` + `lucide-react` + CSS |
-| 运行 | 统一使用 `make run-prototype desktop/mobile/dashboard`；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
+| 运行 | 统一使用 `make run-prototype`；在 Prototype Portal 内切换 desktop / mobile / dashboard；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
 | 落地 | 由对应工程参照原型按其运行时重新实现（如 Applet 用 Lynx），原型本身不要求能直接搬成产物 |
