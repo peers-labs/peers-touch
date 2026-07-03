@@ -208,8 +208,8 @@ providers:
     runtime_kind: cli
     cli_command: codex exec --skip-git-repo-check -
     models:
-      - id: codex-cli
-        display_name: Codex CLI
+      - id: gpt-5-codex
+        display_name: GPT-5 Codex
         type: chat
         enabled: true
         context_window: 128000
@@ -227,9 +227,10 @@ providers:
     default_base_url: ""
     runtime_kind: cli
     cli_command: cursor-agent --print --output-format text --trust
+    models_command: cursor-agent --list-models
     models:
-      - id: cursor-cli
-        display_name: Cursor Agent
+      - id: auto
+        display_name: Auto
         type: chat
         enabled: true
         context_window: 200000
@@ -248,10 +249,20 @@ providers:
     runtime_kind: cli
     cli_command: claude -p
     models:
-      - id: claude-cli
-        display_name: Claude CLI
+      - id: sonnet
+        display_name: Claude Sonnet
         type: chat
         enabled: true
+        context_window: 200000
+      - id: opus
+        display_name: Claude Opus
+        type: chat
+        enabled: false
+        context_window: 200000
+      - id: haiku
+        display_name: Claude Haiku
+        type: chat
+        enabled: false
         context_window: 200000
   - id: trae-cli
     name: TRAE CLI
@@ -267,9 +278,10 @@ providers:
     default_base_url: ""
     runtime_kind: cli
     cli_command: traecli exec --skip-git-repo-check -
+    models_command: traecli debug models
     models:
-      - id: trae-cli
-        display_name: TRAE CLI
+      - id: GPT-5.5
+        display_name: GPT-5.5
         type: chat
         enabled: true
         context_window: 128000
