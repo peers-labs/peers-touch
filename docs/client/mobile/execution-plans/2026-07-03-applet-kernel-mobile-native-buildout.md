@@ -29,39 +29,36 @@
 
 > **裁决（2026-07-03）**：Mobile Kernel 与 LynxView 集成采用 **Tauri native plugin 承载**。Android Kotlin / iOS Swift 只作为 native plugin 实现层，不作为独立主 UI 主线。该选择对齐 `docs/.agent/mobile.md §3` 与 `applet-container.md §3`，也消除 standalone 原生 App 成为第二跨端真源的风险。
 
-**冲突事实**：
+**冲突事实（已处理）**：
 
-- 现状：`apps/mobile/android` 与 `apps/mobile/ios` 是**独立的原生 App 工程**（Android 有 Hilt/Compose 主 UI，iOS 有 SwiftUI 主 UI；见 §4）。
+- 历史现状：`apps/mobile/android` 与 `apps/mobile/ios` 曾是**独立的原生 App 工程**（Android Hilt/Compose 主 UI，iOS SwiftUI 主 UI），会与 Tauri Mobile 主线形成第二真源。
 - 契约：`docs/.agent/mobile.md` §3 与 `applet-container.md` §3 规定 Mobile 主线是 **Tauri v2 Mobile**（共享 Web UI + Rust capability kernel + Android/iOS **native plugin** 层），Android Kotlin / iOS Swift 只作为 native plugin 实现层，不是主 UI 主线。
+- 用户裁决（2026-07-04）：旧 standalone Android/iOS 壳不再保留；`apps/mobile/android` 与 `apps/mobile/ios` 已删除，后续不得作为 E2E 宿主或迁移地基声明。
 
-即：现状的 standalone 原生 App 代码只能作为可迁移地基，最终物理落点必须收敛到 Tauri native plugin 层。
+即：Mobile applet runtime 必须在 Tauri native plugin 物理落点重建；不得继续维护 standalone 原生 App 作为并行宿主。
 
 | 选项 | 描述 | 影响 / 代价 |
 |------|------|-------------|
-| **A. Tauri native plugin 承载（已选）** | Mobile Kernel 与 LynxView 集成落在 Tauri v2 Mobile 的 Android/iOS native plugin 层，`LynxView` 由插件 view / native route 暴露给 mobile-web（`applet-container.md §3.1/§3.2`） | 需要先完成/对齐 Tauri Mobile 主线迁移（见 `execution-plans/20260531-tauri-mobile-mainline-migration.md`）；现有 `core/applet`、`core/lynx` 代码需从 standalone App 迁入 plugin；生命周期事件源变为 Tauri 插件桥接的 Activity/Scene 回调 |
-| **B. Standalone 原生 App 承载（沿用现状代码）** | Mobile Kernel 落在现有 `apps/mobile/android`、`apps/mobile/ios` 原生工程内，直接复用现有 `AppletManager`/`LynxViewFactory` 等 | 与 `docs/.agent/mobile.md` §3 / `applet-container.md §3` 的 Tauri 主线契约冲突，需上层重新裁决主线归属；可能形成第二个跨端主线，违反 mobile.md「Mobile 不自成跨端真源」约束 |
+| **A. Tauri native plugin 承载（已选）** | Mobile Kernel 与 LynxView 集成落在 Tauri v2 Mobile 的 Android/iOS native plugin 层，`LynxView` 由插件 view / native route 暴露给 mobile-web（`applet-container.md §3.1/§3.2`） | 需要在 Tauri iOS/Android 生成工程与 native plugin 中重建 applet runtime；生命周期事件源为 Tauri 插件桥接的 Activity/Scene 回调 |
+| **B. Standalone 原生 App 承载（已删除）** | Mobile Kernel 落在独立 Android/iOS 原生 App 内 | 已裁决删除；不得再作为产品主线、E2E 宿主或 readiness 证据来源 |
 
-**门禁更新**：§6 原生落地可以启动，但必须以 Tauri native plugin 为目标形态；当前 standalone 原生工程内的 `core/applet`、`core/lynx` 仅作为迁移地基和语义验证场，不得被声明为最终主线。
+**门禁更新**：§6 原生落地必须以 Tauri native plugin 为目标形态；旧 standalone runtime smoke 证据全部作废，新的 release evidence 必须来自 Tauri Mobile 宿主。
 
 ---
 
-## 3. 当前 Mobile 地基（已有资产）
+## 3. 当前 Mobile 地基（Tauri 真源）
 
-以下为可复用地基（已核验存在）：
+旧 standalone 原生资产已按用户裁决删除；当前可声明为 Mobile 真源的地基只有：
 
-| 资产 | Android 路径 | iOS 路径 |
-|------|-------------|---------|
-| Lynx 引擎管理 / View 工厂 | `core/lynx/LynxEngineManager.kt`、`core/lynx/LynxViewFactory.kt` | `Core/Lynx/LynxEngineManager.swift`、`Core/Lynx/LynxViewFactory.swift` |
-| Applet Manager（`appletId` 键单例） | `core/applet/AppletManager.kt` | `Core/Applet/AppletManager.swift` |
-| Canonical Bridge Dispatcher | `core/lynx/bridge/BridgeDispatcher.kt` | `Core/Lynx/Bridge/BridgeDispatcher.swift` |
-| 6 个 capability 模块（Device/Network/Notification/Storage/System/UI） | `core/lynx/bridge/{Device,Network,Notification,Storage,System,UI}BridgeModule.kt` | `Core/Lynx/Bridge/{Device,Network,Notification,Storage,System,UI}BridgeModule.swift` |
-| Applet Bridge Native Module（注入 JS） | `core/lynx/bridge/AppletBridgeNativeModule.kt` | `Core/Lynx/Bridge/AppletBridgeNativeModule.swift` |
-| 会话 + 权限校验 | `core/applet/AppletBridgeSession.kt` | `Core/Applet/AppletBridgeSession.swift` |
-| Bundle 存储 | `core/applet/AppletBundleStorage.kt` | `Core/Applet/AppletBundleStorage.swift` |
-| 容器 View | `core/applet/ui/AppletContainerView.kt` | `Core/Applet/UI/{AppletContainerView,AppletLynxViewRepresentable}.swift` |
-| E2E marker | `core/applet/AppletRuntimeE2E.kt` | （E2E 入口见 `applet-container.md §7.4`） |
+| 资产 | 路径 | 状态 |
+|------|------|------|
+| Mobile Web 产品壳 | `apps/mobile/src` | ✅ 真源，包含 Station 选择 / access gate / shell |
+| Tauri Rust 能力层 | `apps/mobile/src-tauri/src` | ✅ 真源，包含 station / secure storage / native event 等 commands |
+| Tauri iOS 生成工程 | `apps/mobile/src-tauri/gen/apple` | ✅ 已存在 |
+| Tauri Android 生成工程 | `apps/mobile/src-tauri/gen/android` | ❌ 未生成 / 未落地 |
+| Applet native plugin runtime | Tauri Android/iOS native plugin 层 | ❌ 待重建 |
 
-**结论**：Mobile 已具备「渲染 + Bridge + capability + session + bundle」全套地基，缺的是 **Kernel 层与保活语义**（§4）。
+**结论**：Mobile 当前不再具备可声明的 native Lynx/Applet runtime 实现；后续必须在 Tauri native plugin 中重建「渲染 + Bridge + capability + session + bundle + Kernel/保活」。
 
 ---
 
@@ -71,14 +68,11 @@
 
 1. **Kernel 五模块**：无 instance-registry / lifecycle-orchestrator / resource-scheduler / session-manager / permission-manager 的原生对等实现（须按 `packages/applet-kernel/src/ports.ts` 端口语义在原生侧重建）。
 2. **Lifecycle Adapter**：无 Activity/Scene → Kernel 事件的翻译层。
-3. **LynxView detach/reattach 缓存（保活）**：当前是「切换即销毁」，与保活语义相反：
-   - Android：`core/applet/ui/AppletContainerView.kt` 的 `DisposableEffect.onDispose` 直接 `appletManager.unloadApplet(appletId)`（切走即卸载）。
-   - iOS：`Core/Applet/UI/AppletLynxViewRepresentable.swift` 的 `makeUIView` 每次重建 `LynxView`；`AppletContainerView.swift` 的 `.onDisappear` 直接 `viewModel.unload()`。
-   - 目标应为 Desktop `SurfaceManager` 的 `hide`（保活）/`detach`（保留缓存实例）语义（见 §6）。
+3. **LynxView detach/reattach 缓存（保活）**：Tauri plugin 物理落点尚未实现；目标应为 Desktop `SurfaceManager` 的 `hide`（保活）/`detach`（保留缓存实例）语义（见 §6）。
 4. **Memory Pressure handler**：无 `onTrimMemory` / `didReceiveMemoryWarning` → Kernel 的接线。
 5. **后台 pause / timer 冻结**：无 App 后台 → `pause` → LynxView timer/rAF 冻结的链路。
-6. **`instanceId` 维度**：现有 `AppletManager` 仅以 `appletId` 为键（`AppletManager.kt` `applets`/`sessions` 均为 `Map<String, ...>`），无 `instanceId` 生命周期维度。
-7. **状态机不对齐契约**：现有 `core/applet/AppletState.kt` 为 `REGISTERED / LOADING / READY / RUNNING / SUSPENDED / ERROR / UNLOADED`，**与契约的 `cold / materializing / visible / hidden-warm / paused / suspended / destroyed`（`packages/applet-contract/src/lifecycle.ts:22-29`）不一致**。iOS `AppletBridgeSession` 亦使用 `.running` 等非契约态。
+6. **`instanceId` 维度**：Tauri native plugin 侧尚未建立 instance registry。
+7. **状态机对齐**：Tauri native plugin 侧尚未实现契约七态（`cold / materializing / visible / hidden-warm / paused / suspended / destroyed`）。
 
 ---
 
@@ -172,22 +166,22 @@ Orchestrator 是**状态唯一写入者**（对齐 `packages/applet-kernel/src/l
 
 ## 6. 分平台任务拆解
 
-> §2 已裁决为 Tauri native plugin 承载；以下任务可以进入编码，但当前 standalone 原生工程仅作为迁移地基和语义验证场，不得被声明为最终主线。
+> §2 已裁决为 Tauri native plugin 承载；旧 standalone 原生工程已删除，以下任务必须在 Tauri native plugin 物理落点重建，不得引用旧宿主证据。
 
 | 任务 | Android（Kotlin） | iOS（Swift） |
 |------|-------------------|--------------|
-| 状态机对齐契约 | ✅ 已将 `AppletState.kt` 替换为七态 + 转换校验；`AppletBridgeSession` 使用 `dispatchLifecycle` | ✅ 已将 `AppletBridgeSession` 状态替换为七态 + 转换校验 |
-| Instance Registry | ✅ `AppletInstanceRegistry` 已按 `instanceId` 记录 state/timestamps/memory estimate | ✅ `AppletInstanceRegistry` 已按 `instanceId` 记录 state/timestamps/memory estimate |
-| Lifecycle Orchestrator | ✅ `AppletLifecycleOrchestrator` 已成为状态写入入口，并在 destroy/error 路径清理 session/registry/surface | ✅ `AppletManager` 内置 orchestrator 等价路径，状态写入收口到 `dispatchLifecycle` / scheduler 事件 |
-| Resource Scheduler | ✅ `AppletResourceScheduler` 已实现 LRU(3)、TTL、suspended overflow、moderate/critical memory pressure 决策 | ✅ `AppletResourceScheduler` 已实现 LRU(3)、TTL、suspended overflow、moderate/critical memory pressure 决策 |
-| Session Manager + Backend | 🔄 `AppletManager` 仍是 session owner，Kernel 通过 session destroyer 反查清理；独立 SessionBackend 接口未拆出 | 🔄 `AppletManager` 仍是 session owner，Kernel 通过 manager 内部路径清理；独立 SessionBackend 接口未拆出 |
-| Permission Manager + AuditSink | 🔄 权限仍复用 `AppletBridgeSession`；独立 PermissionManager/AuditSink 未拆出 | 🔄 权限仍复用 `AppletBridgeSession`；独立 PermissionManager/AuditSink 未拆出 |
-| PlatformAdapter | 🔄 surface 路由已接入；真实 Activity/Fragment `onTrimMemory` 自动接线仍 pending | 🔄 `didReceiveMemoryWarning` 与 scene pause/resume 已接入；Tauri native plugin 物理落点仍 pending |
-| Lifecycle Adapter | 🔄 Manager 暴露 `pause/resume/trim/sweep` 入口；真实 Fragment/Activity 自动接线仍 pending | ✅ App/Scene hooks 已接入 `pause/resume/sweep/memory` |
-| SurfaceManager（保活） | ✅ `AppletSurfaceCache` 已实现真实 LynxView cache + show/hide/detach/destroy；容器切走改为 `hideApplet` | ✅ `AppletSurfaceCache` 已实现 UIView cache + show/hide/detach/destroy；容器切走改为 `hideApplet` |
-| Memory Pressure | 🔄 `handleTrimMemory` 入口与 scheduler 策略已实现；真实 Activity 回调接线仍 pending | ✅ `didReceiveMemoryWarning` → scheduler memory pressure 已接入 |
-| 后台 pause/timer 冻结 | 🔄 `pauseApplet/resumeApplet` 入口已实现；真实 `ON_STOP/ON_START` 自动接线与 Lynx timer freeze 仍 pending | 🔄 scene background/active 已接入 pause/resume；Lynx timer/rAF 原生冻结仍 pending |
-| 周期 sweep 定时器 | 🔄 `runResourceSweep` 已实现；真实 coroutine/Handler 周期接线仍 pending | ✅ `Timer` 周期 sweep 已接入 |
+| 状态机对齐契约 | ❌ 待在 Tauri Android plugin 实现七态 + 转换校验 | ❌ 待在 Tauri iOS plugin 实现七态 + 转换校验 |
+| Instance Registry | ❌ 待实现 | ❌ 待实现 |
+| Lifecycle Orchestrator | ❌ 待实现 | ❌ 待实现 |
+| Resource Scheduler | ❌ 待实现 LRU(3)、TTL、memory pressure 决策 | ❌ 待实现 LRU(3)、TTL、memory pressure 决策 |
+| Session Manager + Backend | ❌ 待实现 | ❌ 待实现 |
+| Permission Manager + AuditSink | ❌ 待实现 | ❌ 待实现 |
+| PlatformAdapter | ❌ 待接入 Activity/Fragment / `onTrimMemory` | ❌ 待接入 Scene / memory warning |
+| Lifecycle Adapter | ❌ 待接入真实 Tauri route/plugin 生命周期 | ❌ 待接入真实 Tauri route/plugin 生命周期 |
+| SurfaceManager（保活） | ❌ 待实现 LynxView cache + show/hide/detach/destroy | ❌ 待实现 UIView cache + show/hide/detach/destroy |
+| Memory Pressure | ❌ 待实现 | ❌ 待实现 |
+| 后台 pause/timer 冻结 | ❌ 待实现 | ❌ 待实现 |
+| 周期 sweep 定时器 | ❌ 待实现 | ❌ 待实现 |
 
 ---
 
@@ -197,7 +191,7 @@ Orchestrator 是**状态唯一写入者**（对齐 `packages/applet-kernel/src/l
 |--------|------|
 | **iOS 双 Bridge 目录残留** | ✅ **已收敛（2026-07-03）**：保留 Xcode Sources 与运行调用链实际使用的 `Core/Lynx/Bridge/`（`BridgeDispatcher` + 6 capability 模块 + `AppletBridgeNativeModule`），删除未进工程、会与现用全局 Swift 类型冲突的 `Core/Applet/Bridge/` 旁路实现（`BridgeDispatcher` / `BridgeModule` / `System` / `Storage` / `Network` / `Config` 模块）。Android 侧无此残留（仅 `core/lynx/bridge/`）。 |
 | **状态机命名不一致** | ✅ **已收敛（2026-07-03）**：`applet-container.md §8.1` 原 `discovered/validated/loading/active/invalid` 六态图 + §8.3「最多 5 个并发 / 优先销毁 paused」已重写为契约七态（`lifecycle.ts:22-29`）与 `MOBILE_RESOURCE_POLICY`（`policy.ts:25-31`，LRU=3 + suspended-first 内存压力）。真源仍是 `applet-lifecycle-architecture.md §3` / `lifecycle.ts`。 |
-| **standalone vs plugin 宿主形态** | ✅ **已收敛（2026-07-03）**：见 §2 Host Decision，已选择 Tauri native plugin 承载；standalone 原生工程仅作为迁移地基。 |
+| **standalone vs plugin 宿主形态** | ✅ **已收敛（2026-07-04）**：见 §2 Host Decision，已选择 Tauri native plugin 承载；旧 standalone Android/iOS 工程已删除，不再作为迁移地基或验收宿主。 |
 
 ---
 
@@ -218,14 +212,14 @@ Orchestrator 是**状态唯一写入者**（对齐 `packages/applet-kernel/src/l
 - **低内存回收最旧**：`onTrimMemory(MODERATE)` / `didReceiveMemoryWarning` → 销毁最旧 `suspended`（`critical` 时销毁所有非 `visible`）。
 - **事件顺序与 Desktop 平价**：同一 applet bundle 在 Android/iOS/Desktop 的生命周期事件序列通过跨端 contract test（对齐父计划 §8「事件一致性」）。
 - **保活成立**：切走 applet 后 LynxView 实例保留（`hide`/`detach`），切回 instant，不重建。
-- Native runtime evidence 走真机/模拟器 marker（`applet-ios-lynx-runtime-e2e` / `applet-android-lynx-runtime-e2e`，见 `applet-container.md §11`），不得用 source parity scan 代替。
+- Native runtime evidence 必须走 Tauri Mobile native plugin 宿主的真机/模拟器 marker；旧 standalone `applet-ios-lynx-runtime-e2e` / `applet-android-lynx-runtime-e2e` 已删除，不得恢复为验收入口。
 
-### 8.3 当前证据状态（2026-07-03）
+### 8.3 当前证据状态（2026-07-04）
 
-- ✅ Android/iOS Lynx runtime E2E：`pnpm applet:android-lynx-runtime-e2e`、`pnpm applet:ios-lynx-runtime-e2e` 均通过，真实 SDK bridge marker 已观测。
-- ✅ Cold start latency（bundle cached applet session → first bridge marker）：Android 88ms，iOS 59ms，均 < 800ms（`applet-readiness-evidence/mobile/lifecycle-hardening-gate-output.txt`）。
-- ✅ LRU / TTL / memory pressure / surface cache：`pnpm applet:lifecycle-hardening-gate` 通过，覆盖 Android source test、iOS scheduler constants、Android/iOS surface cache。
-- ⚠️ Hot restore latency（hidden-warm → visible <80ms）：尚无专用 A→B→A switch benchmark runner，当前只具备 surface cache source evidence，不声明 runtime latency 完成。
+- ❌ Android/iOS Lynx runtime E2E：旧 standalone 宿主证据已作废并删除；Tauri native plugin 版本尚未重建。
+- ❌ Cold start latency：旧 standalone marker latency 已作废；Tauri Mobile 宿主尚无有效证据。
+- ❌ LRU / TTL / memory pressure / surface cache：旧 standalone source/runtime gate 已删除；Tauri native plugin 尚无有效证据。
+- ❌ Hot restore latency（hidden-warm → visible <80ms）：尚无专用 A→B→A switch benchmark runner。
 
 ---
 
@@ -233,9 +227,9 @@ Orchestrator 是**状态唯一写入者**（对齐 `packages/applet-kernel/src/l
 
 | 风险 | 概率 | 缓解 |
 |------|------|------|
-| **Tauri native plugin 物理落点未完成** | 高 | 已裁决宿主形态；后续需把 standalone 地基迁入/接入 Tauri native plugin，而不是声明 standalone 为最终主线 |
+| **Tauri native plugin 物理落点未完成** | 高 | 已裁决宿主形态并删除 standalone 壳；后续只能在 Tauri native plugin 中重建 runtime 与 E2E |
 | 原生重实现与 TS 契约漂移 | 中 | 跨端 contract test 覆盖事件顺序与非法转换；以 `lifecycle.ts` 为唯一真源逐条比对 |
-| iOS 双 Bridge 目录导致注入歧义 | 中 | 先收敛到单一 BridgeDispatcher 再接 Kernel（§7） |
+| 误用旧 standalone 证据 | 中 | 旧目录、旧 runtime E2E 脚本与误导性 evidence 已删除；新增 gate 必须检查 Tauri bundle id / Tauri app route |
 | LynxView detach 后状态丢失，hidden-warm 不成立 | 中 | 验证 offscreen 保留 vs snapshot/restore（`applet-lifecycle-architecture.md §14`） |
 | 后台节流干扰 timer 语义 | 中 | Kernel 统一下发 pause/resume 冻结 applet 侧 timer，不依赖系统节流行为 |
 | 内存估算不精确 | 低 | best-effort 平台 API + 保守 LRU/TTL 兜底 |
@@ -246,8 +240,8 @@ Orchestrator 是**状态唯一写入者**（对齐 `packages/applet-kernel/src/l
 
 | 阶段 | 状态 | 备注 |
 |------|------|------|
-| §2 Host Decision 裁决 | ✅ done | 已选择 Tauri native plugin 承载；standalone 原生工程仅作为迁移地基 |
+| §2 Host Decision 裁决 | ✅ done | 已选择 Tauri native plugin 承载；standalone 原生工程已删除 |
 | §3–§5 契约蓝图冻结 | ✅ done | 与宿主形态无关；本文已冻结 PlatformAdapter、Kernel deps、七态状态机、Mobile 策略、SessionBackend/AuditSink、事件流镜像表 |
-| §6 分平台落地 | 🔄 partial | Android/iOS 原生 Kernel 与 SurfaceManager 源码基础已落地；独立 Backend/Audit、Android 真实宿主回调、Tauri plugin 物理落点、hot restore benchmark 仍待落地 |
-| §7 收敛项 | ✅ done | 状态机命名不一致、iOS 双 Bridge、standalone vs plugin 宿主形态均已收敛 |
-| §8 验收 | 🔄 partial | Android/iOS runtime E2E、cold-start、LRU/TTL/memory/surface hardening gate 已通过；hot restore latency 专用 benchmark 仍 pending |
+| §6 分平台落地 | ❌ pending | 旧 standalone 实现已删除；Tauri native plugin runtime 待重建 |
+| §7 收敛项 | ✅ done | 状态机命名不一致、standalone vs plugin 宿主形态已收敛；旧 iOS 双 Bridge 随旧壳删除不再适用 |
+| §8 验收 | ❌ pending | 旧 standalone runtime E2E 与 hardening gate 已作废；Tauri native plugin 验收待重建 |
