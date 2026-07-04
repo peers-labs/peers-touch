@@ -251,7 +251,7 @@ func TestSendMessageByActorRequiresMembership(t *testing.T) {
 	})
 	service := NewService(repo)
 
-	if _, err := service.SendMessageByActor("stranger", "group-1", 1, "", "", "", nil, []byte("ciphertext")); err != ErrNotMember {
+	if _, err := service.SendMessageByActor("stranger", "group-1", 1, "", "", "", nil, []byte("ciphertext"), 1); err != ErrNotMember {
 		t.Fatalf("expected non-member send to be denied, got %v", err)
 	}
 }
@@ -262,7 +262,7 @@ func TestSendMessageByActorRejectsMutedMember(t *testing.T) {
 	})
 	service := NewService(repo)
 
-	if _, err := service.SendMessageByActor("member", "group-1", 1, "", "", "", nil, []byte("ciphertext")); err != ErrMemberMuted {
+	if _, err := service.SendMessageByActor("member", "group-1", 1, "", "", "", nil, []byte("ciphertext"), 1); err != ErrMemberMuted {
 		t.Fatalf("expected muted member send to be denied, got %v", err)
 	}
 }
@@ -278,8 +278,23 @@ func TestSendMessageByActorAllowsExpiredMute(t *testing.T) {
 	})
 	service := NewService(repo)
 
-	if _, err := service.SendMessageByActor("member", "group-1", 1, "", "", "", nil, []byte("ciphertext")); err != nil {
+	if _, err := service.SendMessageByActor("member", "group-1", 1, "", "", "", nil, []byte("ciphertext"), 1); err != nil {
 		t.Fatalf("expected expired mute send to succeed, got %v", err)
+	}
+}
+
+func TestSendMessageByActorRejectsStaleMembershipEpoch(t *testing.T) {
+	repo := newFakeRepo(map[string]domain.Member{
+		"member": {ActorDID: "member", Role: domain.GroupRoleMember},
+	})
+	repo.group.MembershipEpoch = 2
+	service := NewService(repo)
+
+	if _, err := service.SendMessageByActor("member", "group-1", 1, "", "", "", nil, []byte("ciphertext"), 1); err != ErrMembershipEpochStale {
+		t.Fatalf("expected stale membership epoch to be denied, got %v", err)
+	}
+	if _, err := service.SendMessageByActor("member", "group-1", 1, "", "", "", nil, []byte("ciphertext"), 2); err != nil {
+		t.Fatalf("expected current membership epoch to send, got %v", err)
 	}
 }
 
@@ -363,7 +378,7 @@ func TestDissolvedGroupRejectsWrites(t *testing.T) {
 	}
 	service := NewService(repo)
 
-	if _, err := service.SendMessageByActor("owner", "group-1", 1, "", "", "", nil, []byte("ciphertext")); err != ErrGroupDissolved {
+	if _, err := service.SendMessageByActor("owner", "group-1", 1, "", "", "", nil, []byte("ciphertext"), 1); err != ErrGroupDissolved {
 		t.Fatalf("expected dissolved send to be denied, got %v", err)
 	}
 	if _, err := service.InviteByActor("owner", "group-1", []string{"invitee"}); err != ErrGroupDissolved {
@@ -420,8 +435,9 @@ func newFakeRepo(members map[string]domain.Member) *fakeRepo {
 		members:     members,
 		invitations: make(map[string]domain.Invitation),
 		group: domain.Group{
-			ID:     "group-1",
-			Status: domain.GroupStatusActive,
+			ID:              "group-1",
+			Status:          domain.GroupStatusActive,
+			MembershipEpoch: 1,
 		},
 	}
 }
@@ -487,6 +503,7 @@ func (r *fakeRepo) AddMember(groupID, actorDID, inviterDID string) (*domain.Memb
 		JoinedAt:  time.Now(),
 	}
 	r.members[actorDID] = member
+	r.group.MembershipEpoch++
 	return &member, true
 }
 
@@ -513,6 +530,7 @@ func (r *fakeRepo) RemoveMember(groupID, actorDID string) bool {
 		return false
 	}
 	delete(r.members, actorDID)
+	r.group.MembershipEpoch++
 	return true
 }
 

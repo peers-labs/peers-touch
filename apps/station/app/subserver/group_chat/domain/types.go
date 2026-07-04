@@ -32,15 +32,16 @@ type Attachment struct {
 }
 
 type Group struct {
-	ID          string
-	Name        string
-	Description string
-	OwnerDID    string
-	MemberCount int32
-	Status      string
-	DissolvedAt time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID              string
+	Name            string
+	Description     string
+	OwnerDID        string
+	MemberCount     int32
+	Status          string
+	DissolvedAt     time.Time
+	MembershipEpoch int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type Message struct {
