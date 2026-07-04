@@ -18,6 +18,8 @@ type group struct {
 	Description string
 	OwnerDID    string
 	MemberCount int32
+	Status      string
+	DissolvedAt time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -122,6 +124,48 @@ const (
 	defaultInvitationTTL                = 7 * 24 * time.Hour
 )
 
+func groupStatus(status string) string {
+	if strings.TrimSpace(status) == "" {
+		return domain.GroupStatusActive
+	}
+	return status
+}
+
+func isGroupDissolved(status string) bool {
+	return groupStatus(status) == domain.GroupStatusDissolved
+}
+
+func groupFromModel(row groupModel) group {
+	return group{
+		ID:          row.ULID,
+		Name:        row.Name,
+		Description: row.Description,
+		OwnerDID:    row.OwnerDID,
+		MemberCount: row.MemberCount,
+		Status:      groupStatus(row.Status),
+		DissolvedAt: derefTime(row.DissolvedAt),
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
+	}
+}
+
+func groupToDomain(item *group) domain.Group {
+	if item == nil {
+		return domain.Group{}
+	}
+	return domain.Group{
+		ID:          item.ID,
+		Name:        item.Name,
+		Description: item.Description,
+		OwnerDID:    item.OwnerDID,
+		MemberCount: item.MemberCount,
+		Status:      groupStatus(item.Status),
+		DissolvedAt: item.DissolvedAt,
+		CreatedAt:   item.CreatedAt,
+		UpdatedAt:   item.UpdatedAt,
+	}
+}
+
 type service struct {
 	mu           sync.RWMutex
 	db           *gorm.DB
@@ -138,30 +182,15 @@ type service struct {
 
 func (s *service) CreateGroup(ownerDID, name, description string) domain.Group {
 	item := s.createGroup(ownerDID, name, description)
-	return domain.Group{
-		ID:          item.ID,
-		Name:        item.Name,
-		Description: item.Description,
-		OwnerDID:    item.OwnerDID,
-		MemberCount: item.MemberCount,
-		CreatedAt:   item.CreatedAt,
-		UpdatedAt:   item.UpdatedAt,
-	}
+	return groupToDomain(item)
 }
 
 func (s *service) ListGroups(actorDID string) []domain.Group {
 	items := s.listGroups(actorDID)
 	out := make([]domain.Group, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.Group{
-			ID:          item.ID,
-			Name:        item.Name,
-			Description: item.Description,
-			OwnerDID:    item.OwnerDID,
-			MemberCount: item.MemberCount,
-			CreatedAt:   item.CreatedAt,
-			UpdatedAt:   item.UpdatedAt,
-		})
+		copy := item
+		out = append(out, groupToDomain(&copy))
 	}
 	return out
 }
@@ -296,15 +325,8 @@ func (s *service) GetGroup(groupID string) (*domain.Group, bool) {
 	if !ok {
 		return nil, false
 	}
-	return &domain.Group{
-		ID:          item.ID,
-		Name:        item.Name,
-		Description: item.Description,
-		OwnerDID:    item.OwnerDID,
-		MemberCount: item.MemberCount,
-		CreatedAt:   item.CreatedAt,
-		UpdatedAt:   item.UpdatedAt,
-	}, true
+	next := groupToDomain(item)
+	return &next, true
 }
 
 func (s *service) GetMember(groupID, actorDID string) (*domain.Member, bool) {
@@ -340,15 +362,8 @@ func (s *service) TransferOwnership(groupID, currentOwnerDID, nextOwnerDID strin
 	if !ok {
 		return nil, false
 	}
-	return &domain.Group{
-		ID:          item.ID,
-		Name:        item.Name,
-		Description: item.Description,
-		OwnerDID:    item.OwnerDID,
-		MemberCount: item.MemberCount,
-		CreatedAt:   item.CreatedAt,
-		UpdatedAt:   item.UpdatedAt,
-	}, true
+	next := groupToDomain(item)
+	return &next, true
 }
 
 func (s *service) DissolveGroup(groupID string) bool {
@@ -360,15 +375,8 @@ func (s *service) UpdateGroup(groupID string, name, description *string, muted *
 	if !ok {
 		return nil, false
 	}
-	return &domain.Group{
-		ID:          item.ID,
-		Name:        item.Name,
-		Description: item.Description,
-		OwnerDID:    item.OwnerDID,
-		MemberCount: item.MemberCount,
-		CreatedAt:   item.CreatedAt,
-		UpdatedAt:   item.UpdatedAt,
-	}, true
+	next := groupToDomain(item)
+	return &next, true
 }
 
 func (s *service) ListMembers(groupID string, limit, offset int) ([]domain.Member, int) {
@@ -551,15 +559,8 @@ func (s *service) bootstrapFromDB() error {
 	}
 	s.groups = make(map[string]*group, len(groups))
 	for _, item := range groups {
-		g := &group{
-			ID:          item.ULID,
-			Name:        item.Name,
-			Description: item.Description,
-			OwnerDID:    item.OwnerDID,
-			MemberCount: item.MemberCount,
-			CreatedAt:   item.CreatedAt,
-			UpdatedAt:   item.UpdatedAt,
-		}
+		next := groupFromModel(item)
+		g := &next
 		s.groups[g.ID] = g
 	}
 	var members []memberModel
@@ -709,6 +710,7 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 			Description: description,
 			OwnerDID:    ownerDID,
 			MemberCount: 1,
+			Status:      domain.GroupStatusActive,
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
@@ -719,6 +721,7 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 				Description: item.Description,
 				OwnerDID:    item.OwnerDID,
 				MemberCount: item.MemberCount,
+				Status:      item.Status,
 				CreatedAt:   item.CreatedAt,
 				UpdatedAt:   item.UpdatedAt,
 			}).Error; err != nil {
@@ -755,6 +758,7 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 		Description: description,
 		OwnerDID:    ownerDID,
 		MemberCount: 1,
+		Status:      domain.GroupStatusActive,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -789,15 +793,7 @@ func (s *service) listGroups(actorDID string) []group {
 			Find(&rows).Error; err == nil {
 			out := make([]group, 0, len(rows))
 			for _, row := range rows {
-				out = append(out, group{
-					ID:          row.ULID,
-					Name:        row.Name,
-					Description: row.Description,
-					OwnerDID:    row.OwnerDID,
-					MemberCount: row.MemberCount,
-					CreatedAt:   row.CreatedAt,
-					UpdatedAt:   row.UpdatedAt,
-				})
+				out = append(out, groupFromModel(row))
 			}
 			return out
 		}
@@ -1559,15 +1555,8 @@ func (s *service) getGroup(groupID string) (*group, bool) {
 	if s.db != nil {
 		var row groupModel
 		if err := s.db.Where("ulid = ?", groupID).First(&row).Error; err == nil {
-			return &group{
-				ID:          row.ULID,
-				Name:        row.Name,
-				Description: row.Description,
-				OwnerDID:    row.OwnerDID,
-				MemberCount: row.MemberCount,
-				CreatedAt:   row.CreatedAt,
-				UpdatedAt:   row.UpdatedAt,
-			}, true
+			item := groupFromModel(row)
+			return &item, true
 		}
 	}
 	s.mu.RLock()
@@ -1918,33 +1907,28 @@ func (s *service) dissolveGroup(groupID string) bool {
 	if s.db != nil {
 		now := time.Now()
 		err := s.db.Transaction(func(tx *gorm.DB) error {
-			result := tx.Where("ulid = ?", groupID).Delete(&groupModel{})
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected == 0 {
-				return gorm.ErrRecordNotFound
-			}
-			var messageIDs []string
-			if err := tx.Model(&messageModel{}).Where("group_ulid = ?", groupID).Pluck("ulid", &messageIDs).Error; err != nil {
+			var row groupModel
+			if err := tx.Where("ulid = ?", groupID).First(&row).Error; err != nil {
 				return err
 			}
-			if len(messageIDs) > 0 {
-				if err := tx.Where("message_ulid IN ?", messageIDs).Delete(&MessageAttachmentModel{}).Error; err != nil {
+			if !isGroupDissolved(row.Status) {
+				if err := tx.Model(&groupModel{}).
+					Where("id = ?", row.ID).
+					Updates(map[string]interface{}{
+						"status":       domain.GroupStatusDissolved,
+						"dissolved_at": now,
+						"updated_at":   now,
+					}).Error; err != nil {
 					return err
 				}
 			}
-			for _, model := range []interface{}{
-				&messageModel{},
-				&memberModel{},
-				&groupThreadReadModel{},
-				&invitationModel{},
-				&settingModel{},
-				&offlineModel{},
-			} {
-				if err := tx.Where("group_ulid = ?", groupID).Delete(model).Error; err != nil {
-					return err
-				}
+			if err := tx.Model(&invitationModel{}).
+				Where("group_ulid = ? AND status = ?", groupID, groupInvitationStatusPending).
+				Updates(map[string]interface{}{
+					"status":     groupInvitationStatusExpired,
+					"updated_at": now,
+				}).Error; err != nil {
+				return err
 			}
 			return tx.Create(&outboxModel{
 				EventID:   fmt.Sprintf("gce-%d", now.UnixNano()),
@@ -1961,40 +1945,20 @@ func (s *service) dissolveGroup(groupID string) bool {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.groups[groupID] == nil {
+	item := s.groups[groupID]
+	if item == nil {
 		return false
 	}
-	delete(s.groups, groupID)
-	delete(s.members, groupID)
-	delete(s.messages, groupID)
-	delete(s.settings, groupID)
-	delete(s.unread, groupID)
-	for key, item := range s.messagesByID {
-		if item.GroupID == groupID {
-			delete(s.messagesByID, key)
-		}
+	now := time.Now()
+	if !isGroupDissolved(item.Status) {
+		item.Status = domain.GroupStatusDissolved
+		item.DissolvedAt = now
+		item.UpdatedAt = now
 	}
-	for key, item := range s.invitations {
-		if item.GroupID == groupID {
-			delete(s.invitations, key)
-		}
-	}
-	for key, item := range s.threadReads {
-		if item.GroupID == groupID {
-			delete(s.threadReads, key)
-		}
-	}
-	for receiver, items := range s.offline {
-		filtered := items[:0]
-		for _, item := range items {
-			if item.GroupID != groupID {
-				filtered = append(filtered, item)
-			}
-		}
-		if len(filtered) == 0 {
-			delete(s.offline, receiver)
-		} else {
-			s.offline[receiver] = filtered
+	for key, inv := range s.invitations {
+		if inv.GroupID == groupID && inv.Status == groupInvitationStatusPending {
+			inv.Status = groupInvitationStatusExpired
+			s.invitations[key] = inv
 		}
 	}
 	return true
