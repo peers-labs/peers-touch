@@ -2,6 +2,7 @@ package group_chat
 
 import (
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/group_chat/domain"
 	"gorm.io/driver/sqlite"
@@ -98,6 +99,55 @@ func TestCreateGroupProjectsOwnerMembershipRoleWithDB(t *testing.T) {
 	}
 	if members[0].ActorDID != "owner" || members[0].Role != domain.GroupRoleOwner {
 		t.Fatalf("expected listed db owner role, got %+v", members[0])
+	}
+}
+
+func TestInvitationAcceptanceWithDBRequiresPendingAndUnexpired(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:group_invitation_acceptance?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&invitationModel{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+	svc := &service{db: db}
+
+	inv := svc.CreateInvitation("group-1", "owner", "invitee")
+	if inv.ExpireAt.IsZero() || !inv.ExpireAt.After(inv.CreatedAt) {
+		t.Fatalf("expected invitation expiration after creation, got created=%v expire=%v", inv.CreatedAt, inv.ExpireAt)
+	}
+
+	groupID, ok := svc.AcceptInvitation(inv.ID, "invitee")
+	if !ok || groupID != "group-1" {
+		t.Fatalf("expected pending invitation acceptance, group=%s ok=%v", groupID, ok)
+	}
+	if _, ok := svc.AcceptInvitation(inv.ID, "invitee"); ok {
+		t.Fatal("expected accepted invitation to be single-use")
+	}
+
+	now := time.Now()
+	expired := invitationModel{
+		ULID:       "expired-invite",
+		GroupULID:  "group-1",
+		InviterDID: "owner",
+		InviteeDID: "late",
+		Status:     groupInvitationStatusPending,
+		ExpireAt:   now.Add(-time.Hour),
+		CreatedAt:  now.Add(-2 * time.Hour),
+		UpdatedAt:  now.Add(-2 * time.Hour),
+	}
+	if err := db.Create(&expired).Error; err != nil {
+		t.Fatalf("create expired invite: %v", err)
+	}
+	if _, ok := svc.AcceptInvitation("expired-invite", "late"); ok {
+		t.Fatal("expected expired invitation acceptance to fail")
+	}
+	var row invitationModel
+	if err := db.Where("ulid = ?", "expired-invite").First(&row).Error; err != nil {
+		t.Fatalf("read expired invite: %v", err)
+	}
+	if row.Status != groupInvitationStatusExpired {
+		t.Fatalf("expected expired invite status %d, got %d", groupInvitationStatusExpired, row.Status)
 	}
 }
 
