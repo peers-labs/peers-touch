@@ -76,6 +76,11 @@ import {
 } from './socialNormalizers';
 import { currentAuthenticatedActorId } from './session';
 
+const GROUP_DECRYPT_WAITING_KEY_PLACEHOLDER = '[Waiting for sender key…]';
+const GROUP_DECRYPT_BEFORE_JOIN_PLACEHOLDER = '[Message sent before you joined]';
+const GROUP_DECRYPT_NOT_ENTITLED_PLACEHOLDER = '[Not entitled to this group message]';
+const GROUP_DECRYPT_FAILED_PLACEHOLDER = '[Decrypt failed]';
+
 function hasAuthenticatedActor(): boolean {
   return Boolean(currentAuthenticatedActorId());
 }
@@ -815,6 +820,33 @@ function socialMessageSentAtMs(msg: SocialMessage): number {
   return timestamp ? timestampDate(timestamp).getTime() : 0;
 }
 
+export function resolveGroupMissingSkdmPlaceholder(
+  currentUserDid: string | null,
+  members: GroupMember[] | undefined,
+  message: GroupMessage,
+): string {
+  if (!currentUserDid || !Array.isArray(members)) return GROUP_DECRYPT_WAITING_KEY_PLACEHOLDER;
+
+  const selfMember = members.find((member) => member.actorDid === currentUserDid);
+  if (!selfMember) return GROUP_DECRYPT_NOT_ENTITLED_PLACEHOLDER;
+
+  const joinedAtMs = selfMember.joinedAt ? timestampDate(selfMember.joinedAt).getTime() : 0;
+  const sentAtMs = socialMessageSentAtMs(message);
+  if (joinedAtMs > 0 && sentAtMs > 0 && sentAtMs < joinedAtMs) {
+    return GROUP_DECRYPT_BEFORE_JOIN_PLACEHOLDER;
+  }
+  return GROUP_DECRYPT_WAITING_KEY_PLACEHOLDER;
+}
+
+function groupMissingSkdmPlaceholder(groupUlid: string, message: GroupMessage): string {
+  const state = useSocialChatStore.getState();
+  return resolveGroupMissingSkdmPlaceholder(
+    state.currentUserDid,
+    state.groupMembers[groupUlid],
+    message,
+  );
+}
+
 function isMessageInThread(msg: SocialMessage, rootUlid: string): boolean {
   return socialMessageExplicitThreadRootUlid(msg) === rootUlid;
 }
@@ -1020,10 +1052,10 @@ async function decodeGroupMessage(
     return result;
   } catch (error) {
     if (error instanceof MissingSkdmError) {
-      return { ...message, content: '[Waiting for sender key…]' } as GroupMessage;
+        return { ...message, content: groupMissingSkdmPlaceholder(groupUlid, message) } as GroupMessage;
     }
     log.warn('socialChat', logLabel, error);
-    return { ...message, content: '[Decrypt failed]' } as GroupMessage;
+      return { ...message, content: GROUP_DECRYPT_FAILED_PLACEHOLDER } as GroupMessage;
   }
 }
 
@@ -1104,7 +1136,13 @@ async function decodeFriendMessages(
 function isIndexableChatContent(message: SocialMessage): boolean {
   const content = message.content?.trim() ?? '';
   if (!content || (message as SocialMessage & { recalled?: boolean }).recalled) return false;
-  if (content === '[Encrypted Message]' || content === '[Waiting for sender key…]' || content === '[Decrypt failed]') {
+    if (
+      content === '[Encrypted Message]' ||
+      content === GROUP_DECRYPT_WAITING_KEY_PLACEHOLDER ||
+      content === GROUP_DECRYPT_BEFORE_JOIN_PLACEHOLDER ||
+      content === GROUP_DECRYPT_NOT_ENTITLED_PLACEHOLDER ||
+      content === GROUP_DECRYPT_FAILED_PLACEHOLDER
+    ) {
     return false;
   }
   return true;
@@ -1791,13 +1829,19 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       const threadRootUlid = explicitThreadRootUlid;
       const sendWithCurrentEpoch = async (currentMembers: GroupMember[]) => {
         const memberDids = currentMembers.map((m) => m.actorDid).filter((d): d is string => !!d);
-        await ensureSkdmDistributed(did, groupUlid, memberDids);
+        const group = get().groups.find((item) => item.ulid === groupUlid);
+        const observedMembershipEpoch = group?.membershipEpoch ?? 0n;
+        await ensureSkdmDistributed(did, groupUlid, memberDids, {
+          membershipEpoch: observedMembershipEpoch,
+          members: currentMembers.map((member) => ({
+            actorDid: member.actorDid,
+            actorHomeStationPeerId: member.actorHomeStationPeerId,
+          })),
+        });
         const encryptedPayloadB64 = await encryptBytesForGroup(
           groupUlid,
           createEncryptedChatPayloadBytes(content, attachments ?? [], type),
         );
-        const group = get().groups.find((item) => item.ulid === groupUlid);
-        const observedMembershipEpoch = group?.membershipEpoch ?? 0n;
         return api.groupChatSendMessage(
           groupUlid,
           '',
@@ -1908,7 +1952,10 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     // produced exclusively by loadMessages' MissingSkdm / generic
     // failure arm; any successfully-decrypted row has the real
     // plaintext in `content` already.
-    const PLACEHOLDERS = new Set(['[Waiting for sender key…]', '[Decrypt failed]']);
+      const PLACEHOLDERS = new Set([
+        GROUP_DECRYPT_WAITING_KEY_PLACEHOLDER,
+        GROUP_DECRYPT_FAILED_PLACEHOLDER,
+      ]);
     const rows = cached.filter((m) => {
       if (m.recalled) return false;
       if (!m.encryptedPayload || m.encryptedPayload.byteLength === 0) return false;
