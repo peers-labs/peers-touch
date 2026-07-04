@@ -109,6 +109,14 @@ Acceptance:
 - post-remove send cannot reuse old epoch;
 - local E2E proves current members still decrypt after rotation.
 
+Implementation progress:
+
+- 2026-07-04: Added proto contract fields for `Group.status`, `Group.dissolved_at`, `Group.membership_epoch`, and `SendGroupMessageRequest.observed_membership_epoch`.
+- 2026-07-04: Station `group_chat` persists `membership_epoch`, initializes new groups at epoch 1, increments epoch on member add/remove, and rejects sends whose observed epoch does not match current group truth.
+- 2026-07-04: Desktop sends the observed group epoch and retries once after `membership epoch stale` by refreshing group/member projections, rotating the local Sender Key, redistributing SKDM, and re-encrypting.
+- Verified by `./model/build.sh`, `make model-lint`, `cd apps/station && go test ./app/subserver/group_chat/...`, `pnpm --dir apps/desktop prebuild:check`, and `cd apps/desktop/src-tauri && cargo build`.
+- Still open in Phase B: live home-profile E2E proving post-rotation decrypt convergence across two Desktop users.
+
 ### Phase C: Foundation Federated Group Event Log
 
 Goal:
