@@ -81,6 +81,13 @@ Acceptance:
 - dissolved group keeps historical rows but rejects new writes;
 - no group plaintext is introduced.
 
+Implementation progress:
+
+- 2026-07-04: Station `group_chat` enforces invitation-backed joins, pending-only single-use invitation acceptance, and invitation expiry.
+- 2026-07-04: Station `group_chat` soft-archives dissolved groups with `status=dissolved` and `dissolved_at`, keeps group/member/message history readable, expires pending invitations, and rejects dissolved-group writes at the application boundary.
+- Verified by `cd apps/station && go test ./app/subserver/group_chat/...`.
+- Still outside Phase A: membership epoch and proto-level group status projection; those remain Phase B deliverables.
+
 ### Phase B: Membership Epoch Contract
 
 Goal:
@@ -279,4 +286,3 @@ Start with Phase A:
 2. Enforce invitation pending/single-use/expiry.
 3. Convert dissolve from hard delete to read-only archive.
 4. Add Station tests for the security and history contracts.
-

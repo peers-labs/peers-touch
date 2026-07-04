@@ -347,9 +347,66 @@ func TestDissolveGroupByActorRequiresOwner(t *testing.T) {
 	}
 }
 
+func TestDissolvedGroupRejectsWrites(t *testing.T) {
+	repo := newFakeRepo(map[string]domain.Member{
+		"owner":  {ActorDID: "owner", Role: domain.GroupRoleOwner},
+		"admin":  {ActorDID: "admin", Role: domain.GroupRoleAdmin},
+		"member": {ActorDID: "member", Role: domain.GroupRoleMember},
+	})
+	repo.group.Status = domain.GroupStatusDissolved
+	repo.invitations["invite-1"] = domain.Invitation{
+		ID:         "invite-1",
+		GroupID:    "group-1",
+		InviteeDID: "invitee",
+		Status:     1,
+		ExpireAt:   time.Now().Add(time.Hour),
+	}
+	service := NewService(repo)
+
+	if _, err := service.SendMessageByActor("owner", "group-1", 1, "", "", "", nil, []byte("ciphertext")); err != ErrGroupDissolved {
+		t.Fatalf("expected dissolved send to be denied, got %v", err)
+	}
+	if _, err := service.InviteByActor("owner", "group-1", []string{"invitee"}); err != ErrGroupDissolved {
+		t.Fatalf("expected dissolved invite to be denied, got %v", err)
+	}
+	if _, err := service.JoinByActor("invitee", "group-1", "invite-1"); err != ErrGroupDissolved {
+		t.Fatalf("expected dissolved join to be denied, got %v", err)
+	}
+	if got := repo.invitations["invite-1"].Status; got != 1 {
+		t.Fatalf("expected dissolved join not to consume invitation, got status %d", got)
+	}
+	name := "next"
+	if _, err := service.UpdateGroupByActor("owner", "group-1", &name, nil, nil); err != ErrGroupDissolved {
+		t.Fatalf("expected dissolved update to be denied, got %v", err)
+	}
+	if err := service.LeaveByActor("member", "group-1"); err != ErrGroupDissolved {
+		t.Fatalf("expected dissolved leave to be denied, got %v", err)
+	}
+	if _, err := service.TransferOwnershipByActor("owner", "group-1", "member"); err != ErrGroupDissolved {
+		t.Fatalf("expected dissolved transfer to be denied, got %v", err)
+	}
+	if err := service.RemoveMemberByActor("owner", "group-1", "member"); err != ErrGroupDissolved {
+		t.Fatalf("expected dissolved remove to be denied, got %v", err)
+	}
+	muted := true
+	if _, err := service.UpdateMemberByActor("owner", "group-1", "member", nil, &muted, nil); err != ErrGroupDissolved {
+		t.Fatalf("expected dissolved member update to be denied, got %v", err)
+	}
+	if _, err := service.RecallMessageByActor("owner", "group-1", "message-1"); err != ErrGroupDissolved {
+		t.Fatalf("expected dissolved recall to be denied, got %v", err)
+	}
+	if _, err := service.EditMessageByActor("owner", "group-1", "message-1", "new", nil); err != ErrGroupDissolved {
+		t.Fatalf("expected dissolved edit to be denied, got %v", err)
+	}
+	if _, err := service.DeleteMessageByActor("owner", "group-1", "message-1"); err != ErrGroupDissolved {
+		t.Fatalf("expected dissolved delete to be denied, got %v", err)
+	}
+}
+
 type fakeRepo struct {
 	members     map[string]domain.Member
 	invitations map[string]domain.Invitation
+	group       domain.Group
 	dissolved   bool
 }
 
@@ -359,7 +416,14 @@ func newFakeRepo(members map[string]domain.Member) *fakeRepo {
 		member.ActorDID = actorDID
 		members[actorDID] = member
 	}
-	return &fakeRepo{members: members, invitations: make(map[string]domain.Invitation)}
+	return &fakeRepo{
+		members:     members,
+		invitations: make(map[string]domain.Invitation),
+		group: domain.Group{
+			ID:     "group-1",
+			Status: domain.GroupStatusActive,
+		},
+	}
 }
 
 func (r *fakeRepo) CreateGroup(ownerDID, name, description string) domain.Group {
@@ -399,7 +463,11 @@ func (r *fakeRepo) MarkRead(actorDID, groupID string) (int64, int64) {
 }
 
 func (r *fakeRepo) GetGroup(groupID string) (*domain.Group, bool) {
-	return &domain.Group{ID: groupID}, true
+	if r.group.ID != groupID {
+		return nil, false
+	}
+	next := r.group
+	return &next, true
 }
 
 func (r *fakeRepo) GetMember(groupID, actorDID string) (*domain.Member, bool) {
@@ -467,6 +535,11 @@ func (r *fakeRepo) TransferOwnership(groupID, currentOwnerDID, nextOwnerDID stri
 }
 
 func (r *fakeRepo) DissolveGroup(groupID string) bool {
+	if r.group.ID != groupID {
+		return false
+	}
+	r.group.Status = domain.GroupStatusDissolved
+	r.group.DissolvedAt = time.Now()
 	r.dissolved = true
 	return true
 }

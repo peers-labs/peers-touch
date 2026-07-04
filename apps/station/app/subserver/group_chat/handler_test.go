@@ -82,7 +82,7 @@ func TestHandleTransferOwnershipUpdatesGroupAndRoles(t *testing.T) {
 	}
 }
 
-func TestHandleDissolveGroupRemovesState(t *testing.T) {
+func TestHandleDissolveGroupArchivesState(t *testing.T) {
 	sub := newTestSubServer()
 	group := sub.service.CreateGroup("owner", "Engineering", "")
 	if _, ok := sub.service.AddMember(group.ID, "member", "owner"); !ok {
@@ -99,11 +99,18 @@ func TestHandleDissolveGroupRemovesState(t *testing.T) {
 	if !resp.GetSuccess() {
 		t.Fatal("expected dissolve response success")
 	}
-	if _, ok := sub.service.GetGroup(group.ID); ok {
-		t.Fatal("expected group to be removed")
+	archived, ok := sub.service.GetGroup(group.ID)
+	if !ok {
+		t.Fatal("expected group to remain readable")
 	}
-	if _, ok := sub.service.GetMember(group.ID, "member"); ok {
-		t.Fatal("expected members to be removed")
+	if archived.Status != domain.GroupStatusDissolved || archived.DissolvedAt.IsZero() {
+		t.Fatalf("expected dissolved group archive status, got %+v", archived)
+	}
+	if _, ok := sub.service.GetMember(group.ID, "member"); !ok {
+		t.Fatal("expected members to remain readable")
+	}
+	if messages, err := sub.service.ListMessages(group.ID, "", 10); err != nil || len(messages) != 1 {
+		t.Fatalf("expected history to remain readable, got len=%d err=%v", len(messages), err)
 	}
 }
 

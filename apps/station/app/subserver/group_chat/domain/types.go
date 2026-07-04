@@ -8,6 +8,11 @@ const (
 	GroupRoleOwner  int32 = 3
 )
 
+const (
+	GroupStatusActive    = "active"
+	GroupStatusDissolved = "dissolved"
+)
+
 // Attachment references blob storage for a group message (e.g. image/file).
 //
 // Visibility echoes the OSS-side `oss_files.visibility` for the
@@ -32,6 +37,8 @@ type Group struct {
 	Description string
 	OwnerDID    string
 	MemberCount int32
+	Status      string
+	DissolvedAt time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }

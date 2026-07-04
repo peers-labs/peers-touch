@@ -172,7 +172,7 @@ func TestTransferOwnershipUpdatesOwnerAndRoles(t *testing.T) {
 	}
 }
 
-func TestDissolveGroupRemovesGroupState(t *testing.T) {
+func TestDissolveGroupMarksArchiveAndRetainsHistory(t *testing.T) {
 	svc := newTestService()
 	group := svc.CreateGroup("owner", "Engineering", "")
 	svc.SendMessage(group.ID, "owner", 1, "", "", "", nil, []byte("ciphertext"))
@@ -180,14 +180,56 @@ func TestDissolveGroupRemovesGroupState(t *testing.T) {
 	if !svc.DissolveGroup(group.ID) {
 		t.Fatal("expected dissolve group to succeed")
 	}
-	if _, ok := svc.GetGroup(group.ID); ok {
-		t.Fatal("expected group to be removed")
+	archived, ok := svc.GetGroup(group.ID)
+	if !ok {
+		t.Fatal("expected dissolved group to remain readable")
 	}
-	if _, ok := svc.GetMember(group.ID, "owner"); ok {
-		t.Fatal("expected members to be removed")
+	if archived.Status != domain.GroupStatusDissolved || archived.DissolvedAt.IsZero() {
+		t.Fatalf("expected dissolved group archive status, got %+v", archived)
 	}
-	if messages, err := svc.ListMessages(group.ID, "", 10); err != nil || len(messages) != 0 {
-		t.Fatalf("expected messages to be removed, got len=%d err=%v", len(messages), err)
+	if _, ok := svc.GetMember(group.ID, "owner"); !ok {
+		t.Fatal("expected members to remain readable")
+	}
+	if messages, err := svc.ListMessages(group.ID, "", 10); err != nil || len(messages) != 1 {
+		t.Fatalf("expected messages to remain readable, got len=%d err=%v", len(messages), err)
+	}
+}
+
+func TestDissolveGroupWithDBMarksArchiveAndRetainsHistory(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:dissolve_group_archive?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&groupModel{}, &memberModel{}, &messageModel{}, &MessageAttachmentModel{}, &invitationModel{}, &outboxModel{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+	svc := &service{db: db}
+	group := svc.CreateGroup("owner", "Engineering", "")
+	svc.SendMessage(group.ID, "owner", 1, "", "", "", nil, []byte("ciphertext"))
+	inv := svc.CreateInvitation(group.ID, "owner", "invitee")
+
+	if !svc.DissolveGroup(group.ID) {
+		t.Fatal("expected dissolve group to succeed")
+	}
+	archived, ok := svc.GetGroup(group.ID)
+	if !ok {
+		t.Fatal("expected dissolved group to remain readable")
+	}
+	if archived.Status != domain.GroupStatusDissolved || archived.DissolvedAt.IsZero() {
+		t.Fatalf("expected dissolved group archive status, got %+v", archived)
+	}
+	if _, ok := svc.GetMember(group.ID, "owner"); !ok {
+		t.Fatal("expected members to remain readable")
+	}
+	if messages, err := svc.ListMessages(group.ID, "", 10); err != nil || len(messages) != 1 {
+		t.Fatalf("expected messages to remain readable, got len=%d err=%v", len(messages), err)
+	}
+	var invRow invitationModel
+	if err := db.Where("ulid = ?", inv.ID).First(&invRow).Error; err != nil {
+		t.Fatalf("read invitation: %v", err)
+	}
+	if invRow.Status != groupInvitationStatusExpired {
+		t.Fatalf("expected pending invitation to expire on dissolve, got %d", invRow.Status)
 	}
 }
 

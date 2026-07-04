@@ -3,14 +3,16 @@ package group_chat
 import "time"
 
 type groupModel struct {
-	ID          uint      `gorm:"column:id;primaryKey"`
-	ULID        string    `gorm:"column:ulid;size:64;uniqueIndex"`
-	Name        string    `gorm:"column:name;size:255;index"`
-	Description string    `gorm:"column:description;type:text"`
-	OwnerDID    string    `gorm:"column:owner_did;size:255;index"`
-	MemberCount int32     `gorm:"column:member_count"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at"`
+	ID          uint       `gorm:"column:id;primaryKey"`
+	ULID        string     `gorm:"column:ulid;size:64;uniqueIndex"`
+	Name        string     `gorm:"column:name;size:255;index"`
+	Description string     `gorm:"column:description;type:text"`
+	OwnerDID    string     `gorm:"column:owner_did;size:255;index"`
+	MemberCount int32      `gorm:"column:member_count"`
+	Status      string     `gorm:"column:status;size:32;index;default:'active'"`
+	DissolvedAt *time.Time `gorm:"column:dissolved_at;index"`
+	CreatedAt   time.Time  `gorm:"column:created_at"`
+	UpdatedAt   time.Time  `gorm:"column:updated_at"`
 }
 
 func (groupModel) TableName() string { return "group_chat_groups" }
