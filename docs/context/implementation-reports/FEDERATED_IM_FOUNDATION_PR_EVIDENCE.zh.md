@@ -153,7 +153,7 @@ Boundary:
 | `chat-desktop-dom-message-visible` from standard acceptance plan | NOT RUN in this packaging pass | Requires local Desktop web/gateway runtime; earlier same-home group Sender Key DOM gate evidence exists separately |
 | `chat-desktop-gateway-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires Desktop HTTP gateway runtime |
 | `chat-live-realtime-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires fedp5/live realtime environment |
-| final PR range quality evidence | PASS | `make review-submit REVIEW_BASE=origin/master` passed after the Phase F delta; PR #39 checks for `pr-title`, `pr-description`, `commitlint`, `review-framework`, and `pr-build` passed on head `7a4bace8` |
+| final PR range quality evidence | PASS | `make review-submit REVIEW_BASE=origin/master` passed after the Phase F delta; PR #39 checks for `pr-title`, `pr-description`, `commitlint`, `review-framework`, and `pr-build` passed on the latest PR head at publication time |
 
 Live 3-Station prerequisite command:
 
