@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { fromBinary } from '@bufbuild/protobuf';
+import { fromBinary, fromJsonString } from '@bufbuild/protobuf';
 import type { Message as ProtoMessage } from '@bufbuild/protobuf';
 import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
@@ -431,8 +431,14 @@ export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
   schema: GenMessage<TMsg>,
   input?: TInput,
 ): Promise<TMsg> {
-  const response = await invokeRustCommand<TInput, number[]>(command, input);
+  const response = await invokeRustCommand<TInput, number[] | TauriStubPayload>(command, input);
   if (response.ok && response.data) {
+    if (!Array.isArray(response.data) && typeof response.data.status === 'string') {
+      return fromJsonString(schema, response.data.status, { ignoreUnknownFields: true });
+    }
+    if (!Array.isArray(response.data)) {
+      throw new Error(`${command} returned invalid proto payload`);
+    }
     const bytes = new Uint8Array(response.data);
     return fromBinary(schema, bytes);
   }

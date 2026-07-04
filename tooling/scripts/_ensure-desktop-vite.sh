@@ -25,6 +25,7 @@ vite_compute_fingerprint() {
   local gateway_port="$3"
   local profile="$4"
   local station_url="${PEERS_STATION_URL:-}"
+  local acceptance_harness="${VITE_ACCEPTANCE_HARNESS:-}"
 
   local files=()
   files+=("$desktop_dir/package.json")
@@ -56,6 +57,7 @@ vite_compute_fingerprint() {
     "web_port=${web_port}" \
     "gateway_port=${gateway_port}" \
     "station_url=${station_url}" \
+    "acceptance_harness=${acceptance_harness}" \
     "files=${file_hashes}" \
     | shasum -a 256 | awk '{print $1}'
 }
@@ -75,6 +77,7 @@ vite_meta_matches() {
   local desired_gateway_port="$4"
   local desired_profile="$5"
   local desired_station_url="${6:-}"
+  local desired_acceptance_harness="${7:-}"
 
   if [[ ! -f "$meta_file" ]]; then
     return 1
@@ -88,6 +91,7 @@ vite_meta_matches() {
   [[ "${VITE_GATEWAY_PORT:-}" == "$desired_gateway_port" ]] || return 1
   [[ "${VITE_PROFILE:-}" == "$desired_profile" ]] || return 1
   [[ "${VITE_STATION_URL:-}" == "$desired_station_url" ]] || return 1
+  [[ "${VITE_ACCEPTANCE_HARNESS:-}" == "$desired_acceptance_harness" ]] || return 1
   return 0
 }
 
@@ -127,7 +131,7 @@ ensure_desktop_vite_ready() {
   desired_fp="$(vite_compute_fingerprint "$desktop_dir" "$web_port" "$gateway_port" "$profile")"
 
   if vite_port_is_listening "$web_port"; then
-    if vite_is_healthy "$web_port" && vite_meta_matches "$VITE_META_FILE" "$desired_fp" "$web_port" "$gateway_port" "$profile" "${PEERS_STATION_URL:-}"; then
+    if vite_is_healthy "$web_port" && vite_meta_matches "$VITE_META_FILE" "$desired_fp" "$web_port" "$gateway_port" "$profile" "${PEERS_STATION_URL:-}" "${VITE_ACCEPTANCE_HARNESS:-}"; then
       echo "[INFO] Vite already running and reusable on $web_url"
       return 0
     else
@@ -137,7 +141,7 @@ ensure_desktop_vite_ready() {
   fi
 
   echo "[INFO] Starting Vite on :$web_port..."
-  (cd "$desktop_dir" && VITE_GATEWAY_PORT="$gateway_port" pnpm dev --port "$web_port") &
+  (cd "$desktop_dir" && VITE_GATEWAY_PORT="$gateway_port" VITE_ACCEPTANCE_HARNESS="${VITE_ACCEPTANCE_HARNESS:-}" pnpm dev --port "$web_port") &
   VITE_PID=$!
   echo "$VITE_PID" > "$VITE_PID_FILE"
   cat > "$VITE_META_FILE" <<EOF
@@ -146,6 +150,7 @@ VITE_PROFILE='${profile}'
 VITE_PORT='${web_port}'
 VITE_GATEWAY_PORT='${gateway_port}'
 VITE_STATION_URL='${PEERS_STATION_URL:-}'
+VITE_ACCEPTANCE_HARNESS='${VITE_ACCEPTANCE_HARNESS:-}'
 VITE_PID='${VITE_PID}'
 EOF
 

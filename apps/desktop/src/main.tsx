@@ -2,6 +2,7 @@ import { StrictMode, Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider } from '@lobehub/ui';
 import { I18nextProvider } from 'react-i18next';
+import type { i18n as I18nInstance } from 'i18next';
 import { log } from './utils/logger';
 import { initI18n } from './i18n';
 import { registerAppletElements } from './applet/register-elements';
@@ -33,10 +34,13 @@ if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) {
   (window as any).__PT_GATEWAY_BASE__ = GATEWAY;
   (window as any).__TAURI_INTERNALS__ = {
     invoke: async (cmd: string, args?: Record<string, unknown>) => {
+      const gatewayArgs = args && Object.keys(args).length === 1 && 'input' in args
+        ? args.input as Record<string, unknown>
+        : args ?? {};
       const res = await fetch(GATEWAY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cmd, args: args ?? {} }),
+        body: JSON.stringify({ cmd, args: gatewayArgs }),
       });
       if (!res.ok) throw new Error(`Gateway ${res.status}: ${await res.text()}`);
       return res.json();
@@ -51,6 +55,12 @@ if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) {
   };
 }
 
+if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
+  void import('./acceptance/chatAcceptanceHarness').then(({ installChatAcceptanceHarness }) => {
+    installChatAcceptanceHarness();
+  });
+}
+
 declare global {
   interface Window {
     __PT_BOOT_READY__?: () => void;
@@ -62,7 +72,7 @@ declare global {
 // Report: module script started executing
 window.__PT_BOOT_STATUS__?.('Initializing…');
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+class ErrorBoundary extends Component<{ children: ReactNode; i18n: I18nInstance }, { error: Error | null }> {
   state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) { return { error }; }
   componentDidCatch(error: Error) {
@@ -72,7 +82,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
     if (this.state.error) {
       return (
         <div style={{ padding: 40, color: '#c00', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-          <h2>App crashed</h2>
+          <h2>{this.props.i18n.t('layout.crash.title', { ns: 'layout' })}</h2>
           <p>{this.state.error.message}</p>
           <pre style={{ fontSize: 12 }}>{this.state.error.stack}</pre>
         </div>
@@ -100,7 +110,7 @@ async function bootstrap() {
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <ErrorBoundary>
+      <ErrorBoundary i18n={i18n}>
         <I18nextProvider i18n={i18n}>
           <ThemeProvider>
             {shareMatch ? <SharePage token={shareMatch[1]} /> : <App />}

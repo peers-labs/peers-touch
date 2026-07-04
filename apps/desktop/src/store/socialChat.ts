@@ -62,6 +62,9 @@ import {
   normalizeChatBackgroundId,
   visibleConversationUnread,
   type ConversationLocalState,
+  type DesktopIMConversationProjection,
+  type DesktopIMMessageProjection,
+  type DesktopIMSenderProfileProjection,
   type MessagePreview,
   type SocialMessage,
 } from './socialProjection';
@@ -608,6 +611,18 @@ interface SocialChatState {
   deleteGroupContact: (groupUlid: string) => Promise<void>;
 
   getUnifiedConversations: () => UnifiedConversation[];
+  getIMConversations: () => DesktopIMConversationProjection[];
+  getIMMessages: (kind: 'friend' | 'group', conversationUlid: string) => DesktopIMMessageProjection[];
+  getIMThreadMessages: (
+    kind: 'friend' | 'group',
+    conversationUlid: string,
+    rootUlid: string,
+  ) => DesktopIMMessageProjection[];
+  getIMSenderProfile: (
+    kind: 'friend' | 'group',
+    conversationUlid: string,
+    senderDid: string,
+  ) => DesktopIMSenderProfileProjection;
 
   searchMessages: (query: string, scope?: string, conversationId?: string) => Promise<void>;
   clearSearch: () => void;
@@ -764,6 +779,35 @@ function socialMessageReplyToUlid(msg: SocialMessage): string {
 
 function socialMessageExplicitThreadRootUlid(msg: SocialMessage): string {
   return (msg as SocialMessage & { threadRootUlid?: string }).threadRootUlid || '';
+}
+
+function socialMessageConversationId(kind: 'friend' | 'group', msg: SocialMessage): string {
+  if (kind === 'friend') {
+    return (msg as FriendChatMessage).sessionUlid || '';
+  }
+  return (msg as GroupMessage).groupUlid || '';
+}
+
+function projectIMMessage(kind: 'friend' | 'group', msg: SocialMessage): DesktopIMMessageProjection {
+  const conversationId = socialMessageConversationId(kind, msg);
+  const friendMsg = kind === 'friend' ? (msg as FriendChatMessage) : null;
+  return {
+    id: msg.ulid,
+    ulid: msg.ulid,
+    kind,
+    conversationId,
+    content: msg.content || '',
+    type: Number(msg.type ?? 1),
+    senderDid: msg.senderDid || '',
+    createdAt: msg.createdAt,
+    sentAt: msg.sentAt,
+    attachments: msg.attachments || [],
+    recalled: Boolean((msg as SocialMessage & { recalled?: boolean }).recalled),
+    replyToUlid: socialMessageReplyToUlid(msg) || undefined,
+    threadRootUlid: socialMessageExplicitThreadRootUlid(msg) || undefined,
+    editedAt: (msg as SocialMessage & { editedAt?: FriendChatMessage['editedAt'] }).editedAt,
+    status: friendMsg?.status,
+  };
 }
 
 function socialMessageSentAtMs(msg: SocialMessage): number {
@@ -988,9 +1032,21 @@ async function decodeGroupMessages(
   messages: GroupMessage[],
   logLabel: string,
 ): Promise<GroupMessage[]> {
-  // Concurrent decryption — each message is independent, no need to serialize.
-  // Cache hits resolve instantly (no IPC); cache misses go to Rust in parallel.
-  return Promise.all(messages.map((message) => decodeGroupMessage(groupUlid, message, logLabel)));
+  // Sender Keys are a ratcheting chain per (group, sender, sender_key_id).
+  // Decrypting a batch concurrently lets multiple IPC calls race the same
+  // chain cursor and can poison some rows as `[Decrypt failed]`. Walk the batch
+  // in timeline order, then restore the API/UI order for rendering.
+  const decodedByIndex = new Map<number, GroupMessage>();
+  const ordered = messages
+    .map((message, index) => ({ message, index }))
+    .sort((a, b) => {
+      const delta = socialMessageSentAtMs(a.message) - socialMessageSentAtMs(b.message);
+      return delta || a.index - b.index;
+    });
+  for (const item of ordered) {
+    decodedByIndex.set(item.index, await decodeGroupMessage(groupUlid, item.message, logLabel));
+  }
+  return messages.map((message, index) => decodedByIndex.get(index) ?? message);
 }
 
 async function decodeRealtimeGroupMessage(groupUlid: string, message: GroupMessage): Promise<GroupMessage> {
@@ -2509,6 +2565,89 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       if (stickyDelta !== 0) return stickyDelta;
       return b.lastActivity.getTime() - a.lastActivity.getTime();
     });
+  },
+
+  getIMConversations: () =>
+    get().getUnifiedConversations().map((conversation): DesktopIMConversationProjection => {
+      if (conversation.type === 'friend') {
+        const peer = conversation.friendSession
+          ? peerOfSession(conversation.friendSession, get().currentUserDid)
+          : null;
+        return {
+          id: conversation.ulid,
+          kind: 'friend',
+          title: conversation.name,
+          avatar: conversation.avatar,
+          lastActivity: conversation.lastActivity,
+          unread: conversation.unread,
+          preview: conversation.preview,
+          peerDid: peer?.did || undefined,
+        };
+      }
+      return {
+        id: conversation.ulid,
+        kind: 'group',
+        title: conversation.name,
+        avatar: conversation.avatar,
+        lastActivity: conversation.lastActivity,
+        unread: conversation.unread,
+        preview: conversation.preview,
+        memberCount: conversation.group?.memberCount,
+      };
+    }),
+
+  getIMMessages: (kind, conversationUlid) => {
+    const state = get();
+    return filterClearedMessages(
+      state.messages[conversationUlid] || [],
+      state.conversationLocalState,
+      kind,
+      conversationUlid,
+    )
+      .filter((message) => !socialMessageExplicitThreadRootUlid(message))
+      .map((message) => projectIMMessage(kind, message));
+  },
+
+  getIMThreadMessages: (kind, conversationUlid, rootUlid) =>
+    (get().threadMessages[socialThreadKey(kind, conversationUlid, rootUlid)] || [])
+      .map((message) => projectIMMessage(kind, message)),
+
+  getIMSenderProfile: (kind, conversationUlid, senderDid) => {
+    const state = get();
+    const self = Boolean(state.currentUserDid && senderDid === state.currentUserDid);
+    if (self) {
+      return {
+        id: senderDid,
+        name: state.currentUserProfile?.displayName
+          || state.currentUserProfile?.username
+          || senderDid,
+        avatar: state.currentUserProfile?.avatar || '',
+        isSelf: true,
+      };
+    }
+    if (kind === 'friend') {
+      const session = state.sessions.find((item) => item.ulid === conversationUlid);
+      const peer = session ? peerOfSession(session, state.currentUserDid) : null;
+      return {
+        id: senderDid,
+        name: peer?.name || senderDid,
+        avatar: peer?.avatar || '',
+        isSelf: false,
+      };
+    }
+    const member = state.groupMembers[conversationUlid]?.find((item) => item.actorDid === senderDid);
+    const profile = actorProfileFromSessions(
+      state.sessions,
+      state.currentUserDid,
+      senderDid,
+      state.currentUserProfile,
+    );
+    return {
+      id: senderDid,
+      name: member?.nickname || profile.name || senderDid,
+      avatar: profile.avatar || '',
+      isSelf: false,
+    };
   },
 
   searchMessages: async (query, scope, conversationId) => {
