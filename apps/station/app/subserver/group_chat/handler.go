@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -106,6 +108,11 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("gc-remove-member", "/group-chat/member/remove", server.POST, s.handleRemoveMember, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-update-member", "/group-chat/member/update", server.PUT, s.handleUpdateMember, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-message-send", "/group-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("gc-skdm-submit", "/group-chat/skdm/submit", server.POST, s.handleSubmitGroupSkdmEnvelope, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("gc-skdm-deliver", "/group-chat/skdm/deliver", server.POST, s.handleDeliverGroupSkdmEnvelope, logIDWrapper, s.federationSkdmWrapper),
+		server.NewTypedHandler("gc-proposal-accept", "/group-chat/proposal/accept", server.POST, s.handleAcceptProposal, logIDWrapper, s.federationProposalWrapper),
+		server.NewTypedHandler("gc-event-apply", "/group-chat/event/apply", server.POST, s.handleApplyGroupEvent, logIDWrapper, s.federationEventWrapper),
+		server.NewTypedHandler("gc-event-sync", "/group-chat/event/sync", server.POST, s.handleSyncGroupEvents, logIDWrapper, s.federationSyncWrapper),
 		server.NewTypedHandler("gc-messages", "/group-chat/messages", server.GET, s.handleGetMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-thread-messages", "/group-chat/thread/messages", server.GET, s.handleListThreadMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-thread-counts", "/group-chat/thread/counts", server.POST, s.handleThreadCounts, logIDWrapper, s.jwtWrapper),
@@ -288,6 +295,251 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendGroupMe
 	}, nil
 }
 
+func (s *subServer) handleAcceptProposal(ctx context.Context, req *chat.AcceptGroupProposalRequest) (*chat.AcceptGroupProposalResponse, error) {
+	if req.GetProposal() == nil {
+		return nil, server.BadRequest("proposal is required")
+	}
+	if err := validateFederationProposalClaims(ctx, req.GetProposal()); err != nil {
+		return nil, err
+	}
+	event, replay, err := s.appService.AcceptProposal(groupProposalFromProto(req.GetProposal()))
+	if err != nil {
+		if err == application_group_chat.ErrInvalidProposal {
+			return nil, server.BadRequest(err.Error())
+		}
+		if err == application_group_chat.ErrMembershipEpochStale || err == application_group_chat.ErrProposalConflict {
+			return nil, server.Conflict(err.Error())
+		}
+		if err == application_group_chat.ErrGroupDissolved {
+			return nil, server.Forbidden(err.Error())
+		}
+		if err == application_group_chat.ErrGroupNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to accept group proposal", err)
+	}
+	return &chat.AcceptGroupProposalResponse{
+		Event:            groupEventToProto(event),
+		IdempotentReplay: replay,
+	}, nil
+}
+
+func (s *subServer) handleSubmitGroupSkdmEnvelope(ctx context.Context, req *chat.SubmitGroupSkdmEnvelopeRequest) (*chat.SubmitGroupSkdmEnvelopeResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.GetEnvelope() == nil {
+		return nil, server.BadRequest("envelope is required")
+	}
+	envelope := groupSkdmEnvelopeFromProto(req.GetEnvelope())
+	if envelope.SenderDID != subject.ID {
+		return nil, server.Forbidden("sender_did does not match authenticated actor")
+	}
+	item, replay, err := s.appService.EnqueueGroupSkdmOutbox(envelope)
+	if err != nil {
+		switch err {
+		case application_group_chat.ErrInvalidSkdmEnvelope, application_group_chat.ErrMembershipEpochStale:
+			return nil, server.BadRequest(err.Error())
+		case application_group_chat.ErrGroupNotFound:
+			return nil, server.NotFound(err.Error())
+		case application_group_chat.ErrNotMember:
+			return nil, server.Forbidden(err.Error())
+		case application_group_chat.ErrProposalConflict:
+			return nil, server.Conflict(err.Error())
+		default:
+			return nil, server.InternalErrorWithCause("failed to enqueue group skdm envelope", err)
+		}
+	}
+	return &chat.SubmitGroupSkdmEnvelopeResponse{
+		OutboxUlid:       item.OutboxULID,
+		Status:           item.Status,
+		IdempotentReplay: replay,
+	}, nil
+}
+
+func (s *subServer) handleDeliverGroupSkdmEnvelope(ctx context.Context, req *chat.SubmitGroupSkdmEnvelopeRequest) (*chat.SubmitGroupSkdmEnvelopeResponse, error) {
+	if req.GetEnvelope() == nil {
+		return nil, server.BadRequest("envelope is required")
+	}
+	if err := validateFederationSkdmClaims(ctx, req.GetEnvelope()); err != nil {
+		return nil, err
+	}
+	envelope := groupSkdmEnvelopeFromProto(req.GetEnvelope())
+	item, replay, err := s.appService.EnqueueGroupSkdmOutbox(envelope)
+	if err != nil {
+		switch err {
+		case application_group_chat.ErrInvalidSkdmEnvelope, application_group_chat.ErrMembershipEpochStale:
+			return nil, server.BadRequest(err.Error())
+		case application_group_chat.ErrGroupNotFound:
+			return nil, server.NotFound(err.Error())
+		case application_group_chat.ErrNotMember:
+			return nil, server.Forbidden(err.Error())
+		case application_group_chat.ErrProposalConflict:
+			return nil, server.Conflict(err.Error())
+		default:
+			return nil, server.InternalErrorWithCause("failed to deliver group skdm envelope", err)
+		}
+	}
+	if !replay && publishGroupSkdmEnvelopeToBus(item) {
+		_ = s.service.MarkGroupSkdmOutboxDelivered(item.OutboxULID)
+		item.Status = skdmOutboxStatusDelivered
+	}
+	return &chat.SubmitGroupSkdmEnvelopeResponse{
+		OutboxUlid:       item.OutboxULID,
+		Status:           item.Status,
+		IdempotentReplay: replay,
+	}, nil
+}
+
+func validateFederationSkdmClaims(ctx context.Context, envelope *chat.GroupSkdmEnvelope) error {
+	claims := serverwrapper.GetVerifiedFederationClaims(ctx, nil)
+	if claims == nil {
+		return nil
+	}
+	if claims.Scope != groupChatSkdmDeliverScopeName {
+		return server.Unauthorized("invalid federation scope")
+	}
+	if strings.TrimSpace(claims.Issuer) == "" {
+		return server.Forbidden("federation issuer is required")
+	}
+	if claims.Subject != envelope.GetSenderDid() {
+		return server.Forbidden("federation subject does not match skdm sender")
+	}
+	if claims.Audience != envelope.GetRecipientHomeStationPeerId() {
+		return server.Forbidden("federation audience does not match recipient home station")
+	}
+	if v, ok := claims.Get(groupChatProposalClaimGroup); !ok || v != envelope.GetGroupUlid() {
+		return server.Forbidden("federation group claim does not match skdm envelope")
+	}
+	if v, ok := claims.Get(groupChatProposalClaimActor); !ok || v != envelope.GetSenderDid() {
+		return server.Forbidden("federation sender claim does not match skdm envelope")
+	}
+	if v, ok := claims.Get(groupChatSkdmClaimIdempotency); !ok || v != envelope.GetIdempotencyKey() {
+		return server.Forbidden("federation idempotency claim does not match skdm envelope")
+	}
+	if v, ok := claims.Get(groupChatSkdmClaimRecipient); !ok || v != envelope.GetRecipientDid() {
+		return server.Forbidden("federation recipient claim does not match skdm envelope")
+	}
+	if v, ok := claims.Get(groupChatSkdmClaimDevice); !ok || v != envelope.GetRecipientDeviceId() {
+		return server.Forbidden("federation recipient device claim does not match skdm envelope")
+	}
+	return nil
+}
+
+func validateFederationProposalClaims(ctx context.Context, proposal *chat.GroupProposal) error {
+	claims := serverwrapper.GetVerifiedFederationClaims(ctx, nil)
+	if claims == nil {
+		return nil
+	}
+	if claims.Scope != groupChatProposalScopeName {
+		return server.Unauthorized("invalid federation scope")
+	}
+	if claims.Subject != proposal.GetActor().GetActorDid() {
+		return server.Forbidden("federation subject does not match proposal actor")
+	}
+	if claims.Issuer != proposal.GetActor().GetHomeStationPeerId() {
+		return server.Forbidden("federation issuer does not match actor home station")
+	}
+	if v, ok := claims.Get(groupChatProposalClaimGroup); !ok || v != proposal.GetGroupUlid() {
+		return server.Forbidden("federation group claim does not match proposal")
+	}
+	if v, ok := claims.Get(groupChatProposalClaimProposal); !ok || v != proposal.GetProposalUlid() {
+		return server.Forbidden("federation proposal claim does not match proposal")
+	}
+	if v, ok := claims.Get(groupChatProposalClaimActor); !ok || v != proposal.GetActor().GetActorDid() {
+		return server.Forbidden("federation actor claim does not match proposal")
+	}
+	return nil
+}
+
+func (s *subServer) handleApplyGroupEvent(ctx context.Context, req *chat.ApplyGroupEventRequest) (*chat.ApplyGroupEventResponse, error) {
+	if req.GetEvent() == nil {
+		return nil, server.BadRequest("event is required")
+	}
+	if err := validateFederationEventClaims(ctx, req.GetEvent()); err != nil {
+		return nil, err
+	}
+	event := groupEventFromProto(req.GetEvent())
+	projection, err := s.appService.ApplyFederationEvent(event)
+	if err != nil {
+		if err == application_group_chat.ErrInvalidGroupEvent {
+			return nil, server.BadRequest(err.Error())
+		}
+		if err == application_group_chat.ErrFollowerReadOnly {
+			return nil, server.Conflict(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to apply group event", err)
+	}
+	publishGroupFederationEventToBus(event, collectGroupMemberDIDs(s, event.GroupID))
+	return followerProjectionToApplyResponse(projection), nil
+}
+
+func validateFederationEventClaims(ctx context.Context, event *chat.GroupEvent) error {
+	claims := serverwrapper.GetVerifiedFederationClaims(ctx, nil)
+	if claims == nil {
+		return nil
+	}
+	if claims.Scope != groupChatEventApplyScopeName {
+		return server.Unauthorized("invalid federation scope")
+	}
+	if claims.Issuer != event.GetAuthorityStationPeerId() {
+		return server.Forbidden("federation issuer does not match event authority")
+	}
+	if v, ok := claims.Get(groupChatProposalClaimGroup); !ok || v != event.GetGroupUlid() {
+		return server.Forbidden("federation group claim does not match event")
+	}
+	if v, ok := claims.Get(groupChatEventClaimEvent); !ok || v != event.GetEventUlid() {
+		return server.Forbidden("federation event claim does not match event")
+	}
+	if v, ok := claims.Get(groupChatEventClaimSeq); !ok || v != strconv.FormatInt(event.GetSeq(), 10) {
+		return server.Forbidden("federation seq claim does not match event")
+	}
+	return nil
+}
+
+func (s *subServer) handleSyncGroupEvents(ctx context.Context, req *chat.SyncGroupEventsRequest) (*chat.SyncGroupEventsResponse, error) {
+	if req.GetGroupUlid() == "" {
+		return nil, server.BadRequest("group_ulid is required")
+	}
+	if err := validateFederationEventSyncClaims(ctx, req); err != nil {
+		return nil, err
+	}
+	events, err := s.appService.ListAuthorityEventsAfter(req.GetGroupUlid(), req.GetAfterSeq(), int(req.GetLimit()))
+	if err != nil {
+		if err == application_group_chat.ErrInvalidGroupEvent {
+			return nil, server.BadRequest(err.Error())
+		}
+		if err == application_group_chat.ErrGroupNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to sync group events", err)
+	}
+	out := make([]*chat.GroupEvent, 0, len(events))
+	resp := &chat.SyncGroupEventsResponse{LastSeq: req.GetAfterSeq()}
+	for _, event := range events {
+		out = append(out, groupEventToProto(event))
+		resp.LastSeq = event.Seq
+		resp.LastEventHash = event.EventHash
+	}
+	resp.Events = out
+	return resp, nil
+}
+
+func validateFederationEventSyncClaims(ctx context.Context, req *chat.SyncGroupEventsRequest) error {
+	claims := serverwrapper.GetVerifiedFederationClaims(ctx, nil)
+	if claims == nil {
+		return nil
+	}
+	if claims.Scope != groupChatEventSyncScopeName {
+		return server.Unauthorized("invalid federation scope")
+	}
+	if v, ok := claims.Get(groupChatProposalClaimGroup); !ok || v != req.GetGroupUlid() {
+		return server.Forbidden("federation group claim does not match event sync request")
+	}
+	return nil
+}
+
 func (s *subServer) handleGetMessages(ctx context.Context, req *chat.GetGroupMessagesRequest) (*chat.GetGroupMessagesResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
@@ -309,11 +561,19 @@ func (s *subServer) handleGetMessages(ctx context.Context, req *chat.GetGroupMes
 	}
 	hasMore := len(items) > limit
 	if hasMore {
-		items = items[:limit]
+		if strings.HasPrefix(req.BeforeUlid, "since:") {
+			items = items[:limit]
+		} else {
+			items = items[1:]
+		}
 	}
 	nextCursor := ""
 	if hasMore && len(items) > 0 {
-		nextCursor = items[len(items)-1].ID
+		if strings.HasPrefix(req.BeforeUlid, "since:") {
+			nextCursor = items[len(items)-1].ID
+		} else {
+			nextCursor = items[0].ID
+		}
 	}
 	out := make([]*chat.GroupMessage, 0, len(items))
 	for _, item := range items {
@@ -952,6 +1212,74 @@ func publishGroupMembershipChange(groupUlid, actorDID string, kind realtime.Grou
 	}
 }
 
+func publishGroupFederationEventToBus(event group_chat_domain.GroupEvent, recipientDIDs []string) {
+	bus := events.GetBus()
+	if bus == nil || len(recipientDIDs) == 0 {
+		return
+	}
+	committedAt := event.CreatedAt
+	if committedAt.IsZero() {
+		committedAt = time.Now().UTC()
+	}
+	build := func() *realtime.StreamEvent {
+		return &realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_GroupFederationEvent{
+				GroupFederationEvent: &realtime.GroupFederationEvent{
+					GroupUlid:              event.GroupID,
+					EventUlid:              event.EventULID,
+					Seq:                    event.Seq,
+					EventType:              event.EventType,
+					AuthorityStationPeerId: event.AuthorityStationPeerID,
+					AuthorityEpoch:         event.AuthorityEpoch,
+					EventHash:              event.EventHash,
+					MessageUlid:            event.MessageID,
+					MembershipEpoch:        event.MembershipEpoch,
+					CommittedTsUnixMs:      committedAt.UnixMilli(),
+					ActorDid:               event.Actor.ActorDID,
+				},
+			},
+		}
+	}
+	for _, did := range recipientDIDs {
+		if did == "" {
+			continue
+		}
+		if _, err := bus.Publish(did, build()); err != nil {
+			logger.DefaultHelper.Warnf("group_chat: realtime federation event publish failed group=%s event=%s recipient=%s seq=%d: %v",
+				event.GroupID, event.EventULID, did, event.Seq, err)
+		}
+	}
+}
+
+func publishGroupSkdmEnvelopeToBus(item group_chat_domain.GroupSkdmEnvelope) bool {
+	bus := events.GetBus()
+	if bus == nil || item.RecipientDID == "" || item.RecipientDeviceID == "" || len(item.EncryptedPayload) == 0 {
+		return false
+	}
+	deliveredAt := time.Now().UTC().UnixMilli()
+	ev := &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_GroupSkdmEnvelopeDelivered{
+			GroupSkdmEnvelopeDelivered: &realtime.GroupSkdmEnvelopeDelivered{
+				GroupUlid:         item.GroupID,
+				MembershipEpoch:   item.MembershipEpoch,
+				SenderDid:         item.SenderDID,
+				SenderKeyId:       item.SenderKeyID,
+				RecipientDid:      item.RecipientDID,
+				RecipientDeviceId: item.RecipientDeviceID,
+				IdempotencyKey:    item.IdempotencyKey,
+				EncryptedPayload:  append([]byte(nil), item.EncryptedPayload...),
+				DeliveredTsUnixMs: deliveredAt,
+			},
+		},
+	}
+	if _, err := bus.PublishToDevice(item.RecipientDID, item.RecipientDeviceID, ev); err != nil {
+		logger.DefaultHelper.Warnf("group_chat: realtime skdm publish failed group=%s recipient=%s device=%s key=%s: %v",
+			item.GroupID, item.RecipientDID, item.RecipientDeviceID, item.IdempotencyKey, err)
+		return false
+	}
+	return true
+}
+
 func (s *subServer) handleSearchMessages(ctx context.Context, req *chat.SearchGroupMessagesRequest) (*chat.SearchGroupMessagesResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
@@ -1116,18 +1444,184 @@ func timestampOrNil(value time.Time) *timestamppb.Timestamp {
 	return timestamppb.New(value)
 }
 
+func federatedActorRefFromProto(in *chat.FederatedActorRef) group_chat_domain.FederatedActorRef {
+	if in == nil {
+		return group_chat_domain.FederatedActorRef{}
+	}
+	return group_chat_domain.FederatedActorRef{
+		ActorDID:               in.GetActorDid(),
+		HomeStationPeerID:      in.GetHomeStationPeerId(),
+		HomeStationDomain:      in.GetHomeStationDomain(),
+		FederatedHandle:        in.GetFederatedHandle(),
+		ActorIdentityPublicKey: append([]byte(nil), in.GetActorIdentityPublicKey()...),
+		ProfileVersion:         in.GetProfileVersion(),
+		FederationID:           in.GetFederationId(),
+	}
+}
+
+func federatedActorRefToProto(in group_chat_domain.FederatedActorRef) *chat.FederatedActorRef {
+	return &chat.FederatedActorRef{
+		ActorDid:               in.ActorDID,
+		HomeStationPeerId:      in.HomeStationPeerID,
+		HomeStationDomain:      in.HomeStationDomain,
+		FederatedHandle:        in.FederatedHandle,
+		ActorIdentityPublicKey: append([]byte(nil), in.ActorIdentityPublicKey...),
+		ProfileVersion:         in.ProfileVersion,
+		FederationId:           in.FederationID,
+	}
+}
+
+func groupProposalFromProto(in *chat.GroupProposal) group_chat_domain.GroupProposal {
+	if in == nil {
+		return group_chat_domain.GroupProposal{}
+	}
+	var createdAt time.Time
+	if in.GetCreatedAt() != nil {
+		createdAt = in.GetCreatedAt().AsTime()
+	}
+	return group_chat_domain.GroupProposal{
+		ProposalULID:            in.GetProposalUlid(),
+		GroupID:                 in.GetGroupUlid(),
+		Actor:                   federatedActorRefFromProto(in.GetActor()),
+		Command:                 int32(in.GetCommand()),
+		CommandPayload:          append([]byte(nil), in.GetCommandPayload()...),
+		ObservedMembershipEpoch: in.GetObservedMembershipEpoch(),
+		AuthorityStationPeerID:  in.GetAuthorityStationPeerId(),
+		AuthorityEpoch:          in.GetAuthorityEpoch(),
+		IdempotencyKey:          in.GetIdempotencyKey(),
+		SigningKeyID:            in.GetSigningKeyId(),
+		Signature:               append([]byte(nil), in.GetSignature()...),
+		CreatedAt:               createdAt,
+	}
+}
+
+func groupProposalToProto(in group_chat_domain.GroupProposal) *chat.GroupProposal {
+	return &chat.GroupProposal{
+		ProposalUlid:            in.ProposalULID,
+		GroupUlid:               in.GroupID,
+		Actor:                   federatedActorRefToProto(in.Actor),
+		Command:                 chat.GroupProposalCommand(in.Command),
+		CommandPayload:          append([]byte(nil), in.CommandPayload...),
+		ObservedMembershipEpoch: in.ObservedMembershipEpoch,
+		AuthorityStationPeerId:  in.AuthorityStationPeerID,
+		AuthorityEpoch:          in.AuthorityEpoch,
+		IdempotencyKey:          in.IdempotencyKey,
+		SigningKeyId:            in.SigningKeyID,
+		Signature:               append([]byte(nil), in.Signature...),
+		CreatedAt:               timestampOrNil(in.CreatedAt),
+	}
+}
+
+func groupSkdmEnvelopeFromProto(in *chat.GroupSkdmEnvelope) group_chat_domain.GroupSkdmEnvelope {
+	if in == nil {
+		return group_chat_domain.GroupSkdmEnvelope{}
+	}
+	createdAt := time.Time{}
+	if in.GetCreatedAt() != nil {
+		createdAt = in.GetCreatedAt().AsTime()
+	}
+	return group_chat_domain.GroupSkdmEnvelope{
+		GroupID:                    in.GetGroupUlid(),
+		MembershipEpoch:            in.GetMembershipEpoch(),
+		SenderDID:                  in.GetSenderDid(),
+		SenderKeyID:                in.GetSenderKeyId(),
+		RecipientDID:               in.GetRecipientDid(),
+		RecipientDeviceID:          in.GetRecipientDeviceId(),
+		RecipientHomeStationPeerID: in.GetRecipientHomeStationPeerId(),
+		EncryptedPayload:           append([]byte(nil), in.GetEncryptedPayload()...),
+		IdempotencyKey:             in.GetIdempotencyKey(),
+		CreatedAt:                  createdAt,
+	}
+}
+
+func groupSkdmEnvelopeToProto(in group_chat_domain.GroupSkdmEnvelope) *chat.GroupSkdmEnvelope {
+	out := &chat.GroupSkdmEnvelope{
+		GroupUlid:                  in.GroupID,
+		MembershipEpoch:            in.MembershipEpoch,
+		SenderDid:                  in.SenderDID,
+		SenderKeyId:                in.SenderKeyID,
+		RecipientDid:               in.RecipientDID,
+		RecipientDeviceId:          in.RecipientDeviceID,
+		RecipientHomeStationPeerId: in.RecipientHomeStationPeerID,
+		EncryptedPayload:           append([]byte(nil), in.EncryptedPayload...),
+		IdempotencyKey:             in.IdempotencyKey,
+	}
+	if !in.CreatedAt.IsZero() {
+		out.CreatedAt = timestamppb.New(in.CreatedAt)
+	}
+	return out
+}
+
+func groupEventToProto(in group_chat_domain.GroupEvent) *chat.GroupEvent {
+	return &chat.GroupEvent{
+		EventUlid:              in.EventULID,
+		GroupUlid:              in.GroupID,
+		Seq:                    in.Seq,
+		PrevHash:               in.PrevHash,
+		EventHash:              in.EventHash,
+		EventType:              in.EventType,
+		Actor:                  federatedActorRefToProto(in.Actor),
+		MessageUlid:            in.MessageID,
+		MembershipEpoch:        groupMembershipEpoch(in.MembershipEpoch),
+		AuthorityStationPeerId: in.AuthorityStationPeerID,
+		AuthorityEpoch:         in.AuthorityEpoch,
+		ProposalUlid:           in.ProposalULID,
+		IdempotencyKey:         in.IdempotencyKey,
+		EventPayload:           append([]byte(nil), in.EventPayload...),
+		CreatedAt:              timestampOrNil(in.CreatedAt),
+	}
+}
+
+func groupEventFromProto(in *chat.GroupEvent) group_chat_domain.GroupEvent {
+	if in == nil {
+		return group_chat_domain.GroupEvent{}
+	}
+	var createdAt time.Time
+	if in.GetCreatedAt() != nil {
+		createdAt = in.GetCreatedAt().AsTime()
+	}
+	return group_chat_domain.GroupEvent{
+		EventULID:              in.GetEventUlid(),
+		GroupID:                in.GetGroupUlid(),
+		Seq:                    in.GetSeq(),
+		PrevHash:               in.GetPrevHash(),
+		EventHash:              in.GetEventHash(),
+		EventType:              in.GetEventType(),
+		Actor:                  federatedActorRefFromProto(in.GetActor()),
+		MessageID:              in.GetMessageUlid(),
+		MembershipEpoch:        groupMembershipEpoch(in.GetMembershipEpoch()),
+		AuthorityStationPeerID: in.GetAuthorityStationPeerId(),
+		AuthorityEpoch:         in.GetAuthorityEpoch(),
+		ProposalULID:           in.GetProposalUlid(),
+		IdempotencyKey:         in.GetIdempotencyKey(),
+		EventPayload:           append([]byte(nil), in.GetEventPayload()...),
+		CreatedAt:              createdAt,
+	}
+}
+
+func followerProjectionToApplyResponse(in group_chat_domain.FollowerProjection) *chat.ApplyGroupEventResponse {
+	return &chat.ApplyGroupEventResponse{
+		LastAcceptedSeq:  in.LastSeq,
+		LastEventHash:    in.LastEventHash,
+		Status:           in.Status,
+		ProtectionReason: in.ProtectionReason,
+	}
+}
+
 func toProtoMember(item *member) *chat.GroupMember {
 	if item == nil {
 		return nil
 	}
 	out := &chat.GroupMember{
-		GroupUlid: item.GroupID,
-		ActorDid:  item.ActorDID,
-		Role:      chat.GroupRole(item.Role),
-		Nickname:  item.Nickname,
-		Muted:     item.Muted,
-		JoinedAt:  timestamppb.New(item.JoinedAt),
-		InvitedBy: item.InvitedBy,
+		GroupUlid:              item.GroupID,
+		ActorDid:               item.ActorDID,
+		Role:                   chat.GroupRole(item.Role),
+		Nickname:               item.Nickname,
+		Muted:                  item.Muted,
+		JoinedAt:               timestamppb.New(item.JoinedAt),
+		InvitedBy:              item.InvitedBy,
+		ActorHomeStationPeerId: item.Actor.HomeStationPeerID,
+		ActorHomeStationDomain: item.Actor.HomeStationDomain,
 	}
 	if !item.MutedUntil.IsZero() {
 		out.MutedUntil = timestamppb.New(item.MutedUntil)
@@ -1332,13 +1826,15 @@ func toProtoMemberFromDomain(item *group_chat_domain.Member) *chat.GroupMember {
 		return nil
 	}
 	out := &chat.GroupMember{
-		GroupUlid: item.GroupID,
-		ActorDid:  item.ActorDID,
-		Role:      chat.GroupRole(item.Role),
-		Nickname:  item.Nickname,
-		Muted:     item.Muted,
-		JoinedAt:  timestamppb.New(item.JoinedAt),
-		InvitedBy: item.InvitedBy,
+		GroupUlid:              item.GroupID,
+		ActorDid:               item.ActorDID,
+		Role:                   chat.GroupRole(item.Role),
+		Nickname:               item.Nickname,
+		Muted:                  item.Muted,
+		JoinedAt:               timestamppb.New(item.JoinedAt),
+		InvitedBy:              item.InvitedBy,
+		ActorHomeStationPeerId: item.Actor.HomeStationPeerID,
+		ActorHomeStationDomain: item.Actor.HomeStationDomain,
 	}
 	if !item.MutedUntil.IsZero() {
 		out.MutedUntil = timestamppb.New(item.MutedUntil)

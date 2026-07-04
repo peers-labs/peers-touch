@@ -5333,7 +5333,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     "mention_all": input.mention_all.unwrap_or(false),
                     "attachments": input.attachments.unwrap_or_default(),
                     "encrypted_payload": input.encrypted_payload.unwrap_or_default(),
-					"observed_membership_epoch": input.observed_membership_epoch.unwrap_or_default(),
+                    "observed_membership_epoch": input.observed_membership_epoch.unwrap_or_default(),
                 })),
             ) {
                 Ok(d) => d,
@@ -5342,6 +5342,38 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let user_scope = user_scope_from_state(state);
             let _ = chat_storage::ingest_group_messages(&user_scope, &data);
             to_json(to_stub("group_chat_send_message", data))
+        }
+        "group_chat_submit_skdm_envelope" => {
+            let input = match parse_args::<GroupSkdmSubmitInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            match station_request_json(
+                Method::POST,
+                "/group-chat/skdm/submit",
+                &token,
+                None,
+                Some(json!({
+                    "envelope": {
+                        "group_ulid": input.group_ulid,
+                        "membership_epoch": input.membership_epoch,
+                        "sender_did": input.sender_did,
+                        "sender_key_id": input.sender_key_id,
+                        "recipient_did": input.recipient_did,
+                        "recipient_device_id": input.recipient_device_id,
+                        "recipient_home_station_peer_id": input.recipient_home_station_peer_id,
+                        "encrypted_payload": input.encrypted_payload,
+                        "idempotency_key": input.idempotency_key.unwrap_or_default(),
+                    },
+                })),
+            ) {
+                Ok(data) => to_json(to_stub("group_chat_submit_skdm_envelope", data)),
+                Err(e) => e,
+            }
         }
         "group_chat_unread_count" => {
             let input = match parse_args::<GroupChatUnreadInput>(args) {

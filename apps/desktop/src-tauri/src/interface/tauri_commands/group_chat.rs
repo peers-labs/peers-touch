@@ -7,9 +7,9 @@ use crate::contracts::{
     GroupChatMarkReadInput, GroupChatSendInput, GroupChatSyncInput, GroupChatThreadCountsInput,
     GroupChatThreadInput, GroupChatThreadReadInput, GroupChatUnreadInput, GroupInviteInput,
     GroupJoinInput, GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
-    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupTransferOwnershipInput, GroupUlidInput,
-    GroupUpdateInput, GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput,
-    StubPayload,
+    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupSkdmSubmitInput,
+    GroupTransferOwnershipInput, GroupUlidInput, GroupUpdateInput, GroupUpdateMemberInput,
+    GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -356,7 +356,7 @@ pub fn group_chat_send_message(
         mention_all: input.mention_all.unwrap_or(false),
         encrypted_payload,
         thread_root_ulid: input.thread_root_ulid.unwrap_or_default(),
-		observed_membership_epoch: input.observed_membership_epoch.unwrap_or_default(),
+        observed_membership_epoch: input.observed_membership_epoch.unwrap_or_default(),
     };
 
     let resp = match station_client::request_proto::<
@@ -371,6 +371,63 @@ pub fn group_chat_send_message(
     ) {
         Ok(r) => r,
         Err(e) => return e.into_app_result("station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn group_chat_submit_skdm_envelope(
+    input: GroupSkdmSubmitInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    let encrypted_payload = match B64.decode(input.encrypted_payload.trim().as_bytes()) {
+        Ok(bytes) if !bytes.is_empty() => bytes,
+        Ok(_) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "encrypted_payload is required for SKDM submit",
+                None,
+            );
+        }
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("Invalid encrypted_payload: {}", e),
+                None,
+            );
+        }
+    };
+    let req = model::chat::SubmitGroupSkdmEnvelopeRequest {
+        envelope: Some(model::chat::GroupSkdmEnvelope {
+            group_ulid: input.group_ulid,
+            membership_epoch: input.membership_epoch,
+            sender_did: input.sender_did,
+            sender_key_id: input.sender_key_id,
+            recipient_did: input.recipient_did,
+            recipient_device_id: input.recipient_device_id,
+            recipient_home_station_peer_id: input.recipient_home_station_peer_id,
+            encrypted_payload,
+            idempotency_key: input.idempotency_key.unwrap_or_default(),
+            created_at: None,
+        }),
+    };
+    let resp = match station_client::request_proto::<
+        model::chat::SubmitGroupSkdmEnvelopeRequest,
+        model::chat::SubmitGroupSkdmEnvelopeResponse,
+    >(
+        Method::POST,
+        "/group-chat/skdm/submit",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
