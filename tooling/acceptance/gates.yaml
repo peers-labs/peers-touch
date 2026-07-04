@@ -92,6 +92,13 @@
       "tier": "ci-cheap",
       "description": "Run the relay-mediated 3-Station federated group proposal pressure harness: 100 actors, 10 active senders, 1000 message proposals, and 2000 follower event deliveries."
     },
+    "chat-federated-browser-prereq": {
+      "command": "python3 tooling/acceptance/gates/chat/federated_browser_prereq.py",
+      "timeout_seconds": 120,
+      "environment": "home-station",
+      "tier": "env-evidence",
+      "description": "Validate live deployed federated browser prerequisites: distinct authority/follower Stations, healthy Relay, discoverable Station peer IDs, and optional Desktop gateway Station binding."
+    },
     "desktop-check": {
       "command": "cd apps/desktop && pnpm run check",
       "timeout_seconds": 600,
