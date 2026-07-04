@@ -102,6 +102,7 @@ type Invitation struct {
 	InviterDID string
 	InviteeDID string
 	Status     int32
+	ExpireAt   time.Time
 	CreatedAt  time.Time
 }
 
