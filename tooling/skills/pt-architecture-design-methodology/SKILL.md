@@ -1,5 +1,5 @@
 ---
-name: "architecture-design-methodology"
+name: "pt-architecture-design-methodology"
 description: "Guides source-backed architecture design. Invoke when defining system boundaries, ownership, contracts, topology, or design decisions."
 ---
 
@@ -25,7 +25,7 @@ This skill does not answer:
 - How to write coding style rules.
 - How to invent a domain-specific architecture without reading that domain's sources.
 
-For architecture landing, migration, dependency ordering, and verifiable delivery, use `architecture-execution-methodology` after this skill.
+For architecture landing, migration, dependency ordering, and verifiable delivery, use `pt-architecture-execution-methodology` after this skill.
 
 ## Source Basis
 
@@ -247,11 +247,11 @@ When writing files, follow `docs/global/architecture-document-standard.md` and k
 
 Use this skill before:
 
-- `architecture-execution-methodology`, when the user wants a landing plan after the design is accepted.
-- `plan-and-document`, when the design must be written into formal repository docs.
-- `prototype-design`, when architecture needs a runnable UI or interaction prototype.
+- `pt-architecture-execution-methodology`, when the user wants a landing plan after the design is accepted.
+- `pt-plan-and-document`, when the design must be written into formal repository docs.
+- `pt-prototype-design`, when architecture needs a runnable UI or interaction prototype.
 
-Use `architecture-execution-methodology` instead of this skill when:
+Use `pt-architecture-execution-methodology` instead of this skill when:
 
 - The architecture is already decided.
 - The task is to split implementation work.
