@@ -11,7 +11,11 @@ import {
   installEventStreamBridge,
   teardownEventStreamBridge,
 } from './eventStream';
-import type { RealtimeGroupMembershipChangeKind } from '../kernel/events/types';
+import type {
+  RealtimeGroupFederationEventPayload,
+  RealtimeGroupMembershipChangeKind,
+  RealtimeGroupSkdmEnvelopeDeliveredPayload,
+} from '../kernel/events/types';
 
 type TauriEventHandler = (event: { payload: unknown }) => void;
 
@@ -96,6 +100,80 @@ describe('event stream group membership decode', () => {
 
     expect(payloads).toEqual([expectedKind]);
   });
+
+  it('dispatches group federation events', async () => {
+    let realtimeHandler: TauriEventHandler = () => {
+      throw new Error('realtime:event handler was not installed');
+    };
+    listenMock.mockImplementation(async (eventName: string, handler: TauriEventHandler) => {
+      if (eventName === 'realtime:event') realtimeHandler = handler;
+      return () => undefined;
+    });
+    const payloads: RealtimeGroupFederationEventPayload[] = [];
+    const unsubscribe = eventBus.subscribe(EVENT.REALTIME_GROUP_FEDERATION_EVENT, (payload) => {
+      payloads.push(payload);
+    });
+
+    await installEventStreamBridge();
+    realtimeHandler({
+      payload: {
+        event_id: 'stream-event-1',
+        data_b64: groupFederationFrameBase64(),
+      },
+    });
+    unsubscribe();
+
+    expect(payloads).toEqual([
+      expect.objectContaining({
+        eventId: 'stream-event-1',
+        groupUlid: 'group-1',
+        groupEventUlid: 'group-event-2',
+        seq: 2,
+        eventType: 'group.proposal.accepted',
+        authorityStationPeerId: 'station-a',
+        eventHash: 'hash-2',
+        messageUlid: 'message-1',
+        actorDid: 'did:peer:bob',
+      }),
+    ]);
+  });
+
+  it('dispatches group SKDM envelope delivery events', async () => {
+    let realtimeHandler: TauriEventHandler = () => {
+      throw new Error('realtime:event handler was not installed');
+    };
+    listenMock.mockImplementation(async (eventName: string, handler: TauriEventHandler) => {
+      if (eventName === 'realtime:event') realtimeHandler = handler;
+      return () => undefined;
+    });
+    const payloads: RealtimeGroupSkdmEnvelopeDeliveredPayload[] = [];
+    const unsubscribe = eventBus.subscribe(EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED, (payload) => {
+      payloads.push(payload);
+    });
+
+    await installEventStreamBridge();
+    realtimeHandler({
+      payload: {
+        event_id: 'stream-event-1',
+        data_b64: groupSkdmEnvelopeDeliveredFrameBase64(),
+      },
+    });
+    unsubscribe();
+
+    expect(payloads).toEqual([
+      expect.objectContaining({
+        eventId: 'stream-event-1',
+        groupUlid: 'group-1',
+        membershipEpoch: 3,
+        senderDid: 'did:peer:alice',
+        senderKeyId: 7,
+        recipientDid: 'did:peer:bob',
+        recipientDeviceId: 'bob-device-1',
+        idempotencyKey: 'skdm-1',
+        encryptedPayloadB64: Buffer.from('sealed-skdm').toString('base64'),
+      }),
+    ]);
+  });
 });
 
 function groupMembershipFrameBase64(kind: GroupMembershipChange_Kind): string {
@@ -109,6 +187,50 @@ function groupMembershipFrameBase64(kind: GroupMembershipChange_Kind): string {
         actorDid: 'did:peer:member-1',
         kind,
         changedTsUnixMs: 123n,
+      },
+    },
+  });
+  return Buffer.from(toBinary(StreamEventSchema, event)).toString('base64');
+}
+
+function groupFederationFrameBase64(): string {
+  const event = create(StreamEventSchema, {
+    eventId: 'stream-event-1',
+    kind: {
+      case: 'groupFederationEvent',
+      value: {
+        groupUlid: 'group-1',
+        eventUlid: 'group-event-2',
+        seq: 2n,
+        eventType: 'group.proposal.accepted',
+        authorityStationPeerId: 'station-a',
+        authorityEpoch: 1n,
+        eventHash: 'hash-2',
+        messageUlid: 'message-1',
+        membershipEpoch: 1n,
+        committedTsUnixMs: 123n,
+        actorDid: 'did:peer:bob',
+      },
+    },
+  });
+  return Buffer.from(toBinary(StreamEventSchema, event)).toString('base64');
+}
+
+function groupSkdmEnvelopeDeliveredFrameBase64(): string {
+  const event = create(StreamEventSchema, {
+    eventId: 'stream-event-1',
+    kind: {
+      case: 'groupSkdmEnvelopeDelivered',
+      value: {
+        groupUlid: 'group-1',
+        membershipEpoch: 3n,
+        senderDid: 'did:peer:alice',
+        senderKeyId: 7,
+        recipientDid: 'did:peer:bob',
+        recipientDeviceId: 'bob-device-1',
+        idempotencyKey: 'skdm-1',
+        encryptedPayload: new TextEncoder().encode('sealed-skdm'),
+        deliveredTsUnixMs: 123n,
       },
     },
   });

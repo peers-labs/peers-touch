@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/group_chat/domain"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
 )
 
 type Repository interface {
@@ -25,6 +27,11 @@ type Repository interface {
 	RemoveMember(groupID, actorDID string) bool
 	TransferOwnership(groupID, currentOwnerDID, nextOwnerDID string) (*domain.Group, bool)
 	DissolveGroup(groupID string) bool
+	AcceptProposal(proposal domain.GroupProposal) (domain.GroupEvent, bool, error)
+	EnqueueProposalOutbox(proposal domain.GroupProposal) (domain.GroupProposalOutboxItem, bool, error)
+	EnqueueGroupSkdmOutbox(envelope domain.GroupSkdmEnvelope) (domain.GroupSkdmEnvelope, bool, error)
+	ApplyFederationEvent(event domain.GroupEvent) (domain.FollowerProjection, error)
+	ListAuthorityEventsAfter(groupID string, afterSeq int64, limit int) ([]domain.GroupEvent, error)
 	UpdateGroup(groupID string, name, description *string, muted *bool) (*domain.Group, bool)
 	ListMembers(groupID string, limit, offset int) ([]domain.Member, int)
 	CreateInvitation(groupID, inviterDID, inviteeDID string) domain.Invitation
@@ -71,6 +78,11 @@ var (
 	ErrMutationWindowClosed = errors.New("mutation window closed")
 	ErrAlreadyRecalled      = errors.New("message already recalled")
 	ErrEmptyEdit            = errors.New("edit must include new_content or new_encrypted_payload")
+	ErrInvalidProposal      = errors.New("invalid group proposal")
+	ErrProposalConflict     = errors.New("group proposal conflict")
+	ErrInvalidGroupEvent    = errors.New("invalid group event")
+	ErrFollowerReadOnly     = errors.New("follower projection is read-only")
+	ErrInvalidSkdmEnvelope  = errors.New("invalid group skdm envelope")
 )
 
 // DefaultMutationWindow mirrors friend_chat's. Same default 5m
@@ -229,6 +241,131 @@ func (s *Service) TransferOwnership(groupID, currentOwnerDID, nextOwnerDID strin
 
 func (s *Service) DissolveGroup(groupID string) bool {
 	return s.repo.DissolveGroup(groupID)
+}
+
+func (s *Service) AcceptProposal(proposal domain.GroupProposal) (domain.GroupEvent, bool, error) {
+	if strings.TrimSpace(proposal.ProposalULID) == "" ||
+		strings.TrimSpace(proposal.GroupID) == "" ||
+		strings.TrimSpace(proposal.Actor.ActorDID) == "" ||
+		strings.TrimSpace(proposal.Actor.HomeStationPeerID) == "" ||
+		proposal.Command == 0 ||
+		strings.TrimSpace(proposal.SigningKeyID) == "" ||
+		len(proposal.Signature) == 0 {
+		return domain.GroupEvent{}, false, ErrInvalidProposal
+	}
+	if _, ok := s.repo.GetMember(proposal.GroupID, proposal.Actor.ActorDID); !ok {
+		return domain.GroupEvent{}, false, ErrNotMember
+	}
+	if err := s.ensureGroupWritable(proposal.GroupID); err != nil {
+		return domain.GroupEvent{}, false, err
+	}
+	if err := s.ensureMembershipEpochCurrent(proposal.GroupID, proposal.ObservedMembershipEpoch); err != nil {
+		return domain.GroupEvent{}, false, err
+	}
+	event, replay, err := s.repo.AcceptProposal(proposal)
+	if err != nil {
+		if strings.Contains(err.Error(), "idempotency conflict") {
+			return domain.GroupEvent{}, false, ErrProposalConflict
+		}
+		return domain.GroupEvent{}, false, err
+	}
+	return event, replay, nil
+}
+
+func (s *Service) EnqueueProposalOutbox(proposal domain.GroupProposal) (domain.GroupProposalOutboxItem, bool, error) {
+	if strings.TrimSpace(proposal.ProposalULID) == "" ||
+		strings.TrimSpace(proposal.GroupID) == "" ||
+		strings.TrimSpace(proposal.Actor.ActorDID) == "" ||
+		strings.TrimSpace(proposal.Actor.HomeStationPeerID) == "" ||
+		proposal.Command == 0 ||
+		strings.TrimSpace(proposal.AuthorityStationPeerID) == "" ||
+		strings.TrimSpace(proposal.SigningKeyID) == "" ||
+		len(proposal.Signature) == 0 {
+		return domain.GroupProposalOutboxItem{}, false, ErrInvalidProposal
+	}
+	item, replay, err := s.repo.EnqueueProposalOutbox(proposal)
+	if err != nil {
+		if strings.Contains(err.Error(), "idempotency conflict") {
+			return domain.GroupProposalOutboxItem{}, false, ErrProposalConflict
+		}
+		return domain.GroupProposalOutboxItem{}, false, err
+	}
+	return item, replay, nil
+}
+
+func (s *Service) ApplyFederationEvent(event domain.GroupEvent) (domain.FollowerProjection, error) {
+	if strings.TrimSpace(event.EventULID) == "" ||
+		strings.TrimSpace(event.GroupID) == "" ||
+		event.Seq <= 0 ||
+		strings.TrimSpace(event.EventHash) == "" ||
+		strings.TrimSpace(event.EventType) == "" ||
+		strings.TrimSpace(event.AuthorityStationPeerID) == "" {
+		return domain.FollowerProjection{}, ErrInvalidGroupEvent
+	}
+	projection, err := s.repo.ApplyFederationEvent(event)
+	if err != nil {
+		if strings.Contains(err.Error(), "follower projection fork protection") {
+			return projection, ErrFollowerReadOnly
+		}
+		return projection, err
+	}
+	return projection, nil
+}
+
+func (s *Service) EnqueueGroupSkdmOutbox(envelope domain.GroupSkdmEnvelope) (domain.GroupSkdmEnvelope, bool, error) {
+	if strings.TrimSpace(envelope.GroupID) == "" ||
+		strings.TrimSpace(envelope.SenderDID) == "" ||
+		envelope.SenderKeyID == 0 ||
+		strings.TrimSpace(envelope.RecipientDID) == "" ||
+		strings.TrimSpace(envelope.RecipientDeviceID) == "" ||
+		strings.TrimSpace(envelope.RecipientHomeStationPeerID) == "" ||
+		envelope.MembershipEpoch <= 0 ||
+		len(envelope.EncryptedPayload) == 0 {
+		return domain.GroupSkdmEnvelope{}, false, ErrInvalidSkdmEnvelope
+	}
+	if _, ok := s.repo.GetMember(envelope.GroupID, envelope.SenderDID); !ok {
+		return domain.GroupSkdmEnvelope{}, false, ErrNotMember
+	}
+	recipient, ok := s.repo.GetMember(envelope.GroupID, envelope.RecipientDID)
+	if !ok {
+		return domain.GroupSkdmEnvelope{}, false, ErrNotMember
+	}
+	if strings.TrimSpace(recipient.Actor.HomeStationPeerID) != "" &&
+		recipient.Actor.HomeStationPeerID != envelope.RecipientHomeStationPeerID {
+		return domain.GroupSkdmEnvelope{}, false, ErrInvalidSkdmEnvelope
+	}
+	if err := s.ensureMembershipEpochCurrent(envelope.GroupID, envelope.MembershipEpoch); err != nil {
+		return domain.GroupSkdmEnvelope{}, false, err
+	}
+	var raw chat.SenderKeyDistributionMessage
+	if err := proto.Unmarshal(envelope.EncryptedPayload, &raw); err == nil &&
+		raw.GetGroupUlid() == envelope.GroupID &&
+		raw.GetSenderDid() == envelope.SenderDID &&
+		raw.GetSenderKeyId() == envelope.SenderKeyID &&
+		len(raw.GetChainKey()) > 0 {
+		return domain.GroupSkdmEnvelope{}, false, ErrInvalidSkdmEnvelope
+	}
+	item, replay, err := s.repo.EnqueueGroupSkdmOutbox(envelope)
+	if err != nil {
+		if strings.Contains(err.Error(), "idempotency conflict") {
+			return domain.GroupSkdmEnvelope{}, false, ErrProposalConflict
+		}
+		return domain.GroupSkdmEnvelope{}, false, err
+	}
+	return item, replay, nil
+}
+
+func (s *Service) ListAuthorityEventsAfter(groupID string, afterSeq int64, limit int) ([]domain.GroupEvent, error) {
+	if strings.TrimSpace(groupID) == "" || afterSeq < 0 {
+		return nil, ErrInvalidGroupEvent
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	if _, ok := s.repo.GetGroup(groupID); !ok {
+		return nil, ErrGroupNotFound
+	}
+	return s.repo.ListAuthorityEventsAfter(groupID, afterSeq, limit)
 }
 
 func (s *Service) UpdateGroup(groupID string, name, description *string, muted *bool) (*domain.Group, bool) {
