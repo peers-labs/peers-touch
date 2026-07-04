@@ -68,8 +68,8 @@ The Client layer is where user-facing interaction happens.
 It includes:
 
 - `apps/desktop/`
-- `apps/mobile/android/`
-- `apps/mobile/ios/`
+- `apps/mobile/src/`
+- `apps/mobile/src-tauri/`
 
 The Client layer is responsible for:
 

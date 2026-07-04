@@ -22,7 +22,10 @@ export function registerAppletRuntimePage(): void {
     match: (pageId) => pageId.startsWith('applet:') && pageId.length > 'applet:'.length,
     factory: ({ pageId }) => <AppletRuntimeRoute pageId={pageId} />,
     preload: 'on-visit',
-    keepAlive: { lru: 4 },
+    // Kernel-single-authority (§6.1): the applet page frame stays resident; the
+    // AppletKernel.ResourceScheduler is the sole LRU/TTL/memory-pressure authority.
+    // No page-level LRU here — that would recreate the eliminated "double LRU".
+    keepAlive: 'forever',
     runtimes: ['applets'],
   });
 }

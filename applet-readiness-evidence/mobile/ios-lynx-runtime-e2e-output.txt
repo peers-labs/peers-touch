@@ -1,9 +1,0 @@
-PASS iOS Lynx runtime E2E
-Simulator: iPhone 17 Pro Max (1D01FBB4-23A9-4450-8AF9-DBA30C551411)
-App: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/.local/applet-ios-lynx-runtime-e2e/DerivedData/Build/Products/Debug-iphonesimulator/PeersTouch.app
-Applet package: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/applet-readiness-evidence/package/ios-lynx-runtime-e2e-applet
-Staged applet: /Users/bytedance/Library/Developer/CoreSimulator/Devices/1D01FBB4-23A9-4450-8AF9-DBA30C551411/data/Containers/Data/Application/99B3694C-FE0D-478B-89E1-5172B22BE82D/Library/Application Support/PeersTouch/Applets/ios-lynx-runtime-e2e-applet
-Observed real Lynx applet SDK storage.set and storage.get calls through AppletBridgeNativeModule.
-storage.set marker: {"requestId":"ios-1781104143720","appletId":"ios-lynx-runtime-e2e-applet","protocol":"peers-touch.applet.bridge","method":"storage.set","kind":"runtime-e2e","sessionId":"ios:ios-lynx-runtime-e2e-applet:1781104143645","ok":true}
-storage.get marker: {"requestId":"ios-1781104143724","appletId":"ios-lynx-runtime-e2e-applet","protocol":"peers-touch.applet.bridge","method":"storage.get","kind":"runtime-e2e","sessionId":"ios:ios-lynx-runtime-e2e-applet:1781104143645","ok":true}
-Xcode build evidence: mobile/ios-lynx-runtime-e2e-xcodebuild-output.txt
