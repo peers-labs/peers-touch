@@ -59,6 +59,7 @@ var (
 	ErrMemberNotFound       = errors.New("member not found")
 	ErrNotMember            = errors.New("not a member")
 	ErrPermissionDenied     = errors.New("permission denied")
+	ErrGroupDissolved       = errors.New("group is dissolved")
 	ErrInvalidInvitation    = errors.New("invalid invitation")
 	ErrOwnerCannotLeave     = errors.New("owner cannot leave group")
 	ErrCannotRemoveOwner    = errors.New("cannot remove owner")
@@ -97,6 +98,17 @@ func isMemberMuted(member *domain.Member, now time.Time) bool {
 	return member.Muted && member.MutedUntil.IsZero()
 }
 
+func (s *Service) ensureGroupWritable(groupID string) error {
+	group, ok := s.repo.GetGroup(groupID)
+	if !ok {
+		return ErrGroupNotFound
+	}
+	if group.Status == domain.GroupStatusDissolved {
+		return ErrGroupDissolved
+	}
+	return nil
+}
+
 func NewService(repo Repository) *Service {
 	return &Service{repo: repo, mutationWindow: DefaultMutationWindow}
 }
@@ -124,6 +136,9 @@ func (s *Service) SendMessageByActor(actorDID, groupID string, messageType int32
 	member, ok := s.repo.GetMember(groupID, actorDID)
 	if !ok {
 		return domain.Message{}, ErrNotMember
+	}
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return domain.Message{}, err
 	}
 	if isMemberMuted(member, time.Now()) {
 		return domain.Message{}, ErrMemberMuted
@@ -250,6 +265,9 @@ func (s *Service) UpdateGroupByActor(actorDID, groupID string, name, description
 	if !ok {
 		return nil, ErrNotMember
 	}
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return nil, err
+	}
 	if !canManageGroup(member.Role) {
 		return nil, ErrPermissionDenied
 	}
@@ -264,6 +282,9 @@ func (s *Service) InviteByActor(actorDID, groupID string, inviteeDIDs []string) 
 	if _, ok := s.repo.GetMember(groupID, actorDID); !ok {
 		return nil, ErrNotMember
 	}
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return nil, err
+	}
 	out := make([]domain.Invitation, 0, len(inviteeDIDs))
 	for _, invitee := range inviteeDIDs {
 		out = append(out, s.repo.CreateInvitation(groupID, actorDID, invitee))
@@ -272,6 +293,9 @@ func (s *Service) InviteByActor(actorDID, groupID string, inviteeDIDs []string) 
 }
 
 func (s *Service) JoinByActor(actorDID, groupID, invitationULID string) (*domain.Member, error) {
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(invitationULID) == "" {
 		return nil, ErrInvalidInvitation
 	}
@@ -287,6 +311,9 @@ func (s *Service) JoinByActor(actorDID, groupID, invitationULID string) (*domain
 }
 
 func (s *Service) LeaveByActor(actorDID, groupID string) error {
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return err
+	}
 	if member, ok := s.repo.GetMember(groupID, actorDID); ok && isOwner(member.Role) {
 		return ErrOwnerCannotLeave
 	}
@@ -300,6 +327,9 @@ func (s *Service) TransferOwnershipByActor(actorDID, groupID, nextOwnerDID strin
 	operator, ok := s.repo.GetMember(groupID, actorDID)
 	if !ok {
 		return nil, ErrNotMember
+	}
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return nil, err
 	}
 	if !isOwner(operator.Role) {
 		return nil, ErrPermissionDenied
@@ -340,6 +370,9 @@ func (s *Service) RemoveMemberByActor(actorDID, groupID, targetDID string) error
 	if !ok || !canManageGroup(member.Role) {
 		return ErrPermissionDenied
 	}
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return err
+	}
 	target, ok := s.repo.GetMember(groupID, targetDID)
 	if !ok {
 		return ErrMemberNotFound
@@ -360,6 +393,9 @@ func (s *Service) UpdateMemberByActor(actorDID, groupID, targetDID string, role 
 	operator, ok := s.repo.GetMember(groupID, actorDID)
 	if !ok {
 		return nil, ErrNotMember
+	}
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return nil, err
 	}
 	if !canManageGroup(operator.Role) {
 		return nil, ErrPermissionDenied
@@ -394,6 +430,9 @@ func (s *Service) RecallMessageByActor(actorDID, groupID, messageID string) (dom
 	if _, ok := s.repo.GetMember(groupID, actorDID); !ok {
 		return domain.MutationOutcome{}, ErrNotMember
 	}
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return domain.MutationOutcome{}, err
+	}
 	out, err := s.repo.RecallMessage(actorDID, groupID, messageID, s.mutationWindow)
 	if err != nil {
 		return domain.MutationOutcome{}, mapMutationError(err)
@@ -406,6 +445,9 @@ func (s *Service) RecallMessageByActor(actorDID, groupID, messageID string) (dom
 func (s *Service) EditMessageByActor(actorDID, groupID, messageID, newContent string, newCiphertext []byte) (domain.MutationOutcome, error) {
 	if _, ok := s.repo.GetMember(groupID, actorDID); !ok {
 		return domain.MutationOutcome{}, ErrNotMember
+	}
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return domain.MutationOutcome{}, err
 	}
 	if strings.TrimSpace(newContent) == "" && len(newCiphertext) == 0 {
 		return domain.MutationOutcome{}, ErrEmptyEdit
@@ -425,6 +467,9 @@ func (s *Service) DeleteMessageByActor(actorDID, groupID, messageID string) (dom
 	member, ok := s.repo.GetMember(groupID, actorDID)
 	if !ok {
 		return domain.MutationOutcome{}, ErrNotMember
+	}
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return domain.MutationOutcome{}, err
 	}
 	isAdmin := canManageGroup(member.Role)
 	out, err := s.repo.DeleteMessage(actorDID, groupID, messageID)
