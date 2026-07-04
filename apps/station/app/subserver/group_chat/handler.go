@@ -164,15 +164,7 @@ func (s *subServer) handleCreate(ctx context.Context, req *chat.CreateGroupReque
 		}
 	}
 	return &chat.CreateGroupResponse{
-		Group: &chat.Group{
-			Ulid:        item.ID,
-			Name:        item.Name,
-			Description: item.Description,
-			OwnerDid:    item.OwnerDID,
-			MemberCount: item.MemberCount,
-			CreatedAt:   timestamppb.New(item.CreatedAt),
-			UpdatedAt:   timestamppb.New(item.UpdatedAt),
-		},
+		Group: toProtoGroupFromDomain(&item),
 	}, nil
 }
 
@@ -202,15 +194,7 @@ func (s *subServer) handleList(ctx context.Context, req *chat.ListGroupsRequest)
 	}
 	out := make([]*chat.Group, 0, len(items))
 	for _, item := range items {
-		out = append(out, &chat.Group{
-			Ulid:        item.ID,
-			Name:        item.Name,
-			Description: item.Description,
-			OwnerDid:    item.OwnerDID,
-			MemberCount: item.MemberCount,
-			CreatedAt:   timestamppb.New(item.CreatedAt),
-			UpdatedAt:   timestamppb.New(item.UpdatedAt),
-		})
+		out = append(out, toProtoGroupFromDomain(&item))
 	}
 	return &chat.ListGroupsResponse{
 		Groups: out,
@@ -265,10 +249,13 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendGroupMe
 	// `content` column stays empty (and would be rejected if a future
 	// migration removed the column entirely, per the proto's
 	// `[deprecated = true]` annotation).
-	item, err := s.appService.SendMessageByActor(subject.ID, req.GroupUlid, msgType, "", req.ReplyToUlid, req.GetThreadRootUlid(), atts, req.GetEncryptedPayload())
+	item, err := s.appService.SendMessageByActor(subject.ID, req.GroupUlid, msgType, "", req.ReplyToUlid, req.GetThreadRootUlid(), atts, req.GetEncryptedPayload(), req.GetObservedMembershipEpoch())
 	if err != nil {
 		if err == application_group_chat.ErrNotMember || err == application_group_chat.ErrMemberMuted || err == application_group_chat.ErrGroupDissolved {
 			return nil, server.Forbidden(err.Error())
+		}
+		if err == application_group_chat.ErrMembershipEpochStale {
+			return nil, server.Conflict(err.Error())
 		}
 		return nil, server.InternalErrorWithCause("failed to send group message", err)
 	}
@@ -1100,14 +1087,33 @@ func toProtoGroup(item *group) *chat.Group {
 		return nil
 	}
 	return &chat.Group{
-		Ulid:        item.ID,
-		Name:        item.Name,
-		Description: item.Description,
-		OwnerDid:    item.OwnerDID,
-		MemberCount: item.MemberCount,
-		CreatedAt:   timestamppb.New(item.CreatedAt),
-		UpdatedAt:   timestamppb.New(item.UpdatedAt),
+		Ulid:            item.ID,
+		Name:            item.Name,
+		Description:     item.Description,
+		OwnerDid:        item.OwnerDID,
+		MemberCount:     item.MemberCount,
+		Status:          protoGroupStatus(item.Status),
+		DissolvedAt:     timestampOrNil(item.DissolvedAt),
+		MembershipEpoch: groupMembershipEpoch(item.MembershipEpoch),
+		CreatedAt:       timestamppb.New(item.CreatedAt),
+		UpdatedAt:       timestamppb.New(item.UpdatedAt),
 	}
+}
+
+func protoGroupStatus(status string) chat.GroupStatus {
+	switch status {
+	case group_chat_domain.GroupStatusDissolved:
+		return chat.GroupStatus_GROUP_STATUS_DISSOLVED
+	default:
+		return chat.GroupStatus_GROUP_STATUS_ACTIVE
+	}
+}
+
+func timestampOrNil(value time.Time) *timestamppb.Timestamp {
+	if value.IsZero() {
+		return nil
+	}
+	return timestamppb.New(value)
 }
 
 func toProtoMember(item *member) *chat.GroupMember {
@@ -1308,13 +1314,16 @@ func toProtoGroupFromDomain(item *group_chat_domain.Group) *chat.Group {
 		return nil
 	}
 	return &chat.Group{
-		Ulid:        item.ID,
-		Name:        item.Name,
-		Description: item.Description,
-		OwnerDid:    item.OwnerDID,
-		MemberCount: item.MemberCount,
-		CreatedAt:   timestamppb.New(item.CreatedAt),
-		UpdatedAt:   timestamppb.New(item.UpdatedAt),
+		Ulid:            item.ID,
+		Name:            item.Name,
+		Description:     item.Description,
+		OwnerDid:        item.OwnerDID,
+		MemberCount:     item.MemberCount,
+		Status:          protoGroupStatus(item.Status),
+		DissolvedAt:     timestampOrNil(item.DissolvedAt),
+		MembershipEpoch: groupMembershipEpoch(item.MembershipEpoch),
+		CreatedAt:       timestamppb.New(item.CreatedAt),
+		UpdatedAt:       timestamppb.New(item.UpdatedAt),
 	}
 }
 

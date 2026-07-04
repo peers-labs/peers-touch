@@ -5333,6 +5333,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     "mention_all": input.mention_all.unwrap_or(false),
                     "attachments": input.attachments.unwrap_or_default(),
                     "encrypted_payload": input.encrypted_payload.unwrap_or_default(),
+					"observed_membership_epoch": input.observed_membership_epoch.unwrap_or_default(),
                 })),
             ) {
                 Ok(d) => d,

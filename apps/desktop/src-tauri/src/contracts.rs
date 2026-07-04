@@ -357,6 +357,7 @@ pub struct GroupChatSendInput {
     pub attachments: Option<Vec<AttachmentInput>>,
     /// Optional base64 ciphertext envelope for E2E (group symmetric key); forwarded to Station JSON when set.
     pub encrypted_payload: Option<String>,
+	pub observed_membership_epoch: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

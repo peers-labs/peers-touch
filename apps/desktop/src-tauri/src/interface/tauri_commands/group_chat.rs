@@ -356,6 +356,7 @@ pub fn group_chat_send_message(
         mention_all: input.mention_all.unwrap_or(false),
         encrypted_payload,
         thread_root_ulid: input.thread_root_ulid.unwrap_or_default(),
+		observed_membership_epoch: input.observed_membership_epoch.unwrap_or_default(),
     };
 
     let resp = match station_client::request_proto::<

@@ -922,6 +922,7 @@ pub fn send_group_message(
         mentioned_dids: mentioned_dids.to_vec(),
         mention_all,
         encrypted_payload: Vec::new(),
+		observed_membership_epoch: 0,
     };
     let resp = station_client::request_proto::<
         model::chat::SendGroupMessageRequest,

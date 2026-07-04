@@ -60,6 +60,7 @@ var (
 	ErrNotMember            = errors.New("not a member")
 	ErrPermissionDenied     = errors.New("permission denied")
 	ErrGroupDissolved       = errors.New("group is dissolved")
+	ErrMembershipEpochStale = errors.New("membership epoch stale")
 	ErrInvalidInvitation    = errors.New("invalid invitation")
 	ErrOwnerCannotLeave     = errors.New("owner cannot leave group")
 	ErrCannotRemoveOwner    = errors.New("cannot remove owner")
@@ -109,6 +110,17 @@ func (s *Service) ensureGroupWritable(groupID string) error {
 	return nil
 }
 
+func (s *Service) ensureMembershipEpochCurrent(groupID string, observedEpoch int64) error {
+	group, ok := s.repo.GetGroup(groupID)
+	if !ok {
+		return ErrGroupNotFound
+	}
+	if observedEpoch != group.MembershipEpoch {
+		return ErrMembershipEpochStale
+	}
+	return nil
+}
+
 func NewService(repo Repository) *Service {
 	return &Service{repo: repo, mutationWindow: DefaultMutationWindow}
 }
@@ -132,12 +144,15 @@ func (s *Service) SendMessage(groupID, senderDID string, messageType int32, cont
 	return s.repo.SendMessage(groupID, senderDID, messageType, content, replyToID, threadRootID, attachments, encryptedPayload)
 }
 
-func (s *Service) SendMessageByActor(actorDID, groupID string, messageType int32, content, replyToID, threadRootID string, attachments []domain.Attachment, encryptedPayload []byte) (domain.Message, error) {
+func (s *Service) SendMessageByActor(actorDID, groupID string, messageType int32, content, replyToID, threadRootID string, attachments []domain.Attachment, encryptedPayload []byte, observedMembershipEpoch int64) (domain.Message, error) {
 	member, ok := s.repo.GetMember(groupID, actorDID)
 	if !ok {
 		return domain.Message{}, ErrNotMember
 	}
 	if err := s.ensureGroupWritable(groupID); err != nil {
+		return domain.Message{}, err
+	}
+	if err := s.ensureMembershipEpochCurrent(groupID, observedMembershipEpoch); err != nil {
 		return domain.Message{}, err
 	}
 	if isMemberMuted(member, time.Now()) {

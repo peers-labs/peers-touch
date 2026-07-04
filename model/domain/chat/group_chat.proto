@@ -24,6 +24,9 @@ message Group {
   map<string, string> settings = 11;        // 扩展设置
   google.protobuf.Timestamp created_at = 12;
   google.protobuf.Timestamp updated_at = 13;
+  GroupStatus status = 14;                  // 生命周期状态
+  google.protobuf.Timestamp dissolved_at = 15;
+  int64 membership_epoch = 16;              // 成员集版本；绑定 Sender Key 轮转与发送校验
 }
 
 // 群组类型
@@ -39,6 +42,12 @@ enum GroupVisibility {
   GROUP_VISIBILITY_UNSPECIFIED = 0;
   GROUP_VISIBILITY_PUBLIC = 1;     // 公开（可搜索加入）
   GROUP_VISIBILITY_PRIVATE = 2;    // 私密（需邀请）
+}
+
+enum GroupStatus {
+  GROUP_STATUS_UNSPECIFIED = 0;
+  GROUP_STATUS_ACTIVE = 1;
+  GROUP_STATUS_DISSOLVED = 2;
 }
 
 // ==================== 成员管理 ====================
@@ -417,6 +426,9 @@ message SendGroupMessageRequest {
   // Optional explicit thread root. If omitted and reply_to_ulid is
   // present, Station resolves it from the replied message.
   string thread_root_ulid = 9;
+  // Client-observed Group.membership_epoch. Station rejects stale sends
+  // so messages cannot be accepted under an outdated member/Sender Key set.
+  int64 observed_membership_epoch = 10;
 }
 
 message SendGroupMessageResponse {
