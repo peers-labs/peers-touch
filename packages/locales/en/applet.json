@@ -100,6 +100,12 @@
   "applet.runtime.source": "Source: /applets-dist/{{id}}",
   "applet.runtime.running": "Running",
   "applet.runtime.close": "Close",
+  "applet.runtime.openStandalone": "Open standalone",
+  "applet.runtime.fullscreen": "Fullscreen",
+  "applet.runtime.exitFullscreen": "Exit fullscreen",
+  "applet.runtime.hideControls": "Hide controls",
+  "applet.runtime.showControls": "Controls",
+  "applet.runtime.shellHint": "Run as a mini app, fullscreen in container, or open standalone.",
   "applet.runtime.loading": "Loading applet...",
   "applet.runtime.preparing": "Preparing applet...",
   "applet.runtime.loadFailed": "Failed to load applet",
@@ -128,17 +134,5 @@
   "applet.runtime.debug.noEvents": "No events yet",
   "applet.runtime.debug.expand": "Expand",
   "applet.runtime.debug.collapse": "Collapse",
-  "applet.runtime.debug.clear": "Clear",
-
-  "applet.example.title": "Applet Runtime Example",
-  "applet.example.alertTitle": "Applet Runtime",
-  "applet.example.alertDesc": "This page demonstrates how to load and run Applet from local applets-dist directory.",
-  "applet.example.description": "The Applet runtime allows you to run lightweight applications within the desktop client, powered by the Lynx cross-platform rendering engine. Applets are loaded from the local applets-dist directory.",
-  "applet.example.scan": "Scan Applets",
-  "applet.example.closeApplet": "Close Applet",
-  "applet.example.available": "Available Applets ({{count}})",
-  "applet.example.open": "Open",
-  "applet.example.author": "Author: {{author}}",
-  "applet.example.loaded.title": "Applet Loaded",
-  "applet.example.loaded.desc": "The applet has been loaded successfully. You can interact with it below."
+  "applet.runtime.debug.clear": "Clear"
 }

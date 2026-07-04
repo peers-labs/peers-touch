@@ -46,10 +46,6 @@ if [ -f "$IOS_PROJECT_DIR/project.yml" ]; then
   (cd "$IOS_PROJECT_DIR" && xcodegen generate >/dev/null)
 fi
 
-# Remove the pre-Tauri iOS app if it is installed; otherwise SpringBoard can
-# show and launch the stale PeersTouchMobile icon next to the current app.
-xcrun simctl uninstall booted com.peerstouch.mobile >/dev/null 2>&1 || true
-
 # Tauri installs to the named simulator. Keep that target booted so a shutdown
 # default device cannot tear down the dev server after a successful build.
 xcrun simctl boot "$DEVICE_NAME" >/dev/null 2>&1 || true

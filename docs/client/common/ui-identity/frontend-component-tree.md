@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-01 | **Updated**: 2026-07-01
+> **Created**: 2026-07-01 | **Updated**: 2026-07-02
 > **Owner**: Client Platform Team
 > **Module**: `docs/client/common/ui-identity/`
 
@@ -13,6 +13,8 @@
 This document defines the frontend component tree standard for Peers Touch client UI.
 
 It complements UI Identity by turning visual and interaction intent into an implementation tree that AI agents and engineers can inspect before writing UI code.
+
+Architecture source: `docs/architecture/frontend-runtime/README.md` owns the cross-client runtime model for scheduling, lifecycle, hidden-tree budget, Applet container behavior, and performance evidence. This document is the downstream UI tree standard that applies that architecture to client component trees.
 
 This standard exists because a UI can pass visual review and still feel slow when its tree is wrong:
 
@@ -47,16 +49,18 @@ Constraint direction:
 
 ```text
 Product / Architecture intent
-  -> UI Identity
-      -> Frontend Component Tree Standard
-          -> Platform contracts
-              -> Page descriptors / routes / stores / components
-                  -> Code
+  -> Frontend Runtime Architecture
+      -> UI Identity
+          -> Frontend Component Tree Standard
+              -> Platform contracts
+                  -> Page descriptors / routes / stores / components
+                      -> Code
 ```
 
 Rules:
 
 - UI Identity owns visual, spatial, interaction, and accessibility semantics.
+- Frontend Runtime Architecture owns cross-client scheduling, page/section/applet lifecycle, hidden-tree budget, and performance evidence.
 - Frontend tree standard owns component lifetime, mounting shape, render boundaries, and performance perception.
 - Platform contracts translate the common tree into Desktop or Mobile primitives.
 - Code must not create one-off page lifetime rules when a platform kernel has a page/runtime registry.

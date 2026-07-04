@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
 import { AgentCanvasPage } from '@peers-touch/prototype-agent-canvas';
+import { AppletWorkspacePage } from '../../features/applet-workspace/src/AppletWorkspacePrototype';
 import { AgentChatPage } from './AgentChatPage';
 import { AgentProfilePage } from './AgentProfilePage';
 import { SettingsPage } from './Settings';
@@ -631,7 +632,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   } else if (pages && pages[page]) {
     body = pages[page]!();
   } else if (page === 'applets') {
-    body = <AppletsCenter onOpen={(id) => navigate(`applet:${id}`)} />;
+    body = <AppletWorkspacePage />;
   } else if (page === 'agent') {
     body = (
       <AgentChatPage

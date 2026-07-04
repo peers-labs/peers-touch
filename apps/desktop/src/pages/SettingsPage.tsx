@@ -29,6 +29,9 @@ import { SettingsContainer, SettingsSection, SettingsItemCard, SettingsRow } fro
 import { FederationTab } from '../components/settings/FederationTab';
 import { ModelProviderSelect } from '../components/ModelProviderSelect';
 import { usePrefetch } from '../kernel/usePrefetch';
+import { markRouteRequested, markRouteVisible } from '../kernel/frontendRuntimeProfiler';
+import { SectionHost } from '../kernel/SectionHost';
+import type { SectionDescriptor, SectionHostPolicy } from '../kernel/section';
 import {
   DEFAULT_CHAT_SCREENSHOT_SHORTCUT,
   chatScreenshotShortcutFromKeyboardEvent,
@@ -55,11 +58,27 @@ function scrollAndHighlight(id: string) {
   });
 }
 
+function scheduleSettingsSurfaceVisible(surfaceId: string, surface: 'settings-group' | 'settings-section') {
+  let reported = false;
+  const report = () => {
+    if (reported) return;
+    reported = true;
+    markRouteVisible(surfaceId, { surface });
+  };
+  const frame = window.requestAnimationFrame(report);
+  const fallback = window.setTimeout(report, 120);
+  return () => {
+    window.cancelAnimationFrame(frame);
+    window.clearTimeout(fallback);
+  };
+}
+
 interface SectionDef {
   key: string;
   label: string;
   icon: LucideIcon;
   order: number;
+  policy?: SectionHostPolicy;
   render: (highlightId?: string) => React.ReactNode;
 }
 
@@ -79,6 +98,7 @@ function useSettingsSections(): SectionDef[] {
       label: t(`settings.module.${mod.id}`, { defaultValue: mod.settingsEntry?.label || mod.name }),
       icon: mod.icon,
       order: mod.settingsEntry!.order,
+      policy: mod.settingsEntry?.sectionHostPolicy,
       render: () => {
         const Panel = mod.settingsPanel!;
         return <Panel />;
@@ -101,6 +121,7 @@ function useSettingsSections(): SectionDef[] {
         label: t('settings.tab.statistics'),
         icon: BarChart3,
         order: 50,
+        policy: { cache: 'selected-only' },
         render: () => <StatisticsTab />,
       },
       {
@@ -122,6 +143,7 @@ function useSettingsSections(): SectionDef[] {
         label: t('settings.tab.tools'),
         icon: Wrench,
         order: 90,
+        policy: { cache: 'selected-only' },
         render: () => <ToolsTab />,
       },
       {
@@ -129,6 +151,7 @@ function useSettingsSections(): SectionDef[] {
         label: t('settings.tab.help'),
         icon: HelpCircle,
         order: 100,
+        policy: { cache: 'selected-only' },
         render: (hlId) => <HelpTab highlightId={hlId} />,
       },
     ];
@@ -204,9 +227,6 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
   const [activeGroup, setActiveGroup] = useState('general');
   const [activeSection, setActiveSection] = useState('account');
 
-  // Sections that have been mounted at least once — kept alive via display:none
-  const mountedSections = useRef(new Set<string>(['account']));
-
   const groupSections = useMemo(() => {
     const groupDef = groups.find((g) => g.key === activeGroup);
     if (!groupDef) return [];
@@ -216,6 +236,15 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
   }, [activeGroup, groups, sections]);
 
   const showSidebar = groupSections.length > 1;
+  const activeSectionVisible = groupSections.some((section) => section.key === activeSection);
+  const sectionDescriptors = useMemo<SectionDescriptor[]>(
+    () => sections.map((section) => ({
+      id: section.key,
+      policy: section.policy,
+      render: ({ highlightId: activeHighlightId }) => section.render(activeHighlightId),
+    })),
+    [sections],
+  );
 
   // Keep activeSection valid when switching groups
   useEffect(() => {
@@ -226,8 +255,16 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
     }
   }, [activeGroup, activeSection, groups]);
 
-  // Track mounted sections for keep-alive
-  mountedSections.current.add(activeSection);
+  useEffect(() => {
+    const surfaceId = `settings:group:${activeGroup}`;
+    return scheduleSettingsSurfaceVisible(surfaceId, 'settings-group');
+  }, [activeGroup]);
+
+  useEffect(() => {
+    if (!activeSectionVisible) return;
+    const surfaceId = `settings:section:${activeSection}`;
+    return scheduleSettingsSurfaceVisible(surfaceId, 'settings-section');
+  }, [activeSection, activeSectionVisible]);
 
   // Handle external navigation via activeTab prop
   useEffect(() => {
@@ -248,12 +285,18 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
   }, [activeTab, highlightId, onNavConsumed, groups]);
 
   const handleGroupChange = useCallback((groupKey: string) => {
+    if (groupKey === activeGroup) return;
+    const surfaceId = `settings:group:${groupKey}`;
+    markRouteRequested(surfaceId, { surface: 'settings-group' });
     setActiveGroup(groupKey);
-    const groupDef = groups.find((g) => g.key === groupKey);
-    if (groupDef) {
-      setActiveSection(groupDef.sectionKeys[0]);
-    }
-  }, [groups]);
+  }, [activeGroup]);
+
+  const handleSectionChange = useCallback((sectionKey: string) => {
+    if (sectionKey === activeSection) return;
+    const surfaceId = `settings:section:${sectionKey}`;
+    markRouteRequested(surfaceId, { surface: 'settings-section' });
+    setActiveSection(sectionKey);
+  }, [activeSection]);
 
   return (
     <Flexbox style={{ height: '100%', overflow: 'hidden' }}>
@@ -330,7 +373,7 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
                   role="button"
                   tabIndex={0}
                   data-section-key={section.key}
-                  onClick={() => setActiveSection(section.key)}
+                  onClick={() => handleSectionChange(section.key)}
                   style={{
                     padding: '8px 14px',
                     margin: '1px 8px',
@@ -357,7 +400,7 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
           </Flexbox>
         )}
 
-        {/* Section content — keep-alive: mount on first visit, hide with display:none */}
+        {/* SectionHost owns Settings section mount/cache policy. */}
         <div
           style={{
             flex: 1,
@@ -365,15 +408,13 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
             scrollBehavior: 'smooth',
           }}
         >
-          {sections.map((section) => {
-            if (!mountedSections.current.has(section.key)) return null;
-            const isActive = activeSection === section.key;
-            return (
-              <div key={section.key} style={{ display: isActive ? 'block' : 'none', height: '100%' }}>
-                {section.render(isActive ? highlightId : undefined)}
-              </div>
-            );
-          })}
+          <SectionHost
+            activeSectionId={activeSection}
+            descriptors={sectionDescriptors}
+            highlightId={activeSectionVisible ? highlightId : undefined}
+            initialMountedSectionIds={['account']}
+            surfacePrefix="settings:section-host"
+          />
         </div>
       </Flexbox>
     </Flexbox>

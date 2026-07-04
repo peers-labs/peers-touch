@@ -30,9 +30,6 @@ const config = {
   ],
   outputDirs: [
     path.join(__dirname, '../../apps/desktop/applets-dist'),
-    // 后续添加移动端目录
-    // path.join(__dirname, '../../apps/mobile/android/app/src/main/assets/applets'),
-    // path.join(__dirname, '../../apps/mobile/ios/App/Assets/applets'),
   ],
 }
 
