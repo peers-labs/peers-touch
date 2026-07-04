@@ -1,14 +1,25 @@
 package group_chat
 
 import (
+	"bytes"
 	"context"
 	"slices"
+	"strconv"
 	"testing"
+	"time"
 
+	events_subserver "github.com/peers-labs/peers-touch/station/app/subserver/events"
 	application_group_chat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/group_chat/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
+	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestHandleCreateAddsInitialMembersAndProjectsOwnerRole(t *testing.T) {
@@ -54,6 +65,54 @@ func TestHandleCreateAddsInitialMembersAndProjectsOwnerRole(t *testing.T) {
 	}
 	if slices.ContainsFunc(members, func(member domain.Member) bool { return member.ActorDID == "" }) {
 		t.Fatal("did not expect blank initial member")
+	}
+}
+
+func TestHandleGetMessagesNextCursorDoesNotRepeatPage(t *testing.T) {
+	sub := newTestSubServer()
+	group := sub.service.CreateGroup("owner", "Engineering", "")
+	for i := 0; i < 205; i++ {
+		sub.service.SendMessage(group.ID, "owner", 1, "", "", "", nil, []byte("ciphertext-"+strconv.Itoa(i)))
+	}
+
+	first, err := sub.handleGetMessages(subjectContext("owner"), &chat.GetGroupMessagesRequest{
+		GroupUlid: group.ID,
+		Limit:     100,
+	})
+	if err != nil {
+		t.Fatalf("first page returned error: %v", err)
+	}
+	if len(first.GetMessages()) != 100 || !first.GetHasMore() || first.GetNextCursor() == "" {
+		t.Fatalf("unexpected first page len=%d hasMore=%v cursor=%q", len(first.GetMessages()), first.GetHasMore(), first.GetNextCursor())
+	}
+	if first.GetNextCursor() != first.GetMessages()[0].GetUlid() {
+		t.Fatalf("expected next cursor to be oldest page item, cursor=%s oldest=%s newest=%s",
+			first.GetNextCursor(), first.GetMessages()[0].GetUlid(), first.GetMessages()[len(first.GetMessages())-1].GetUlid())
+	}
+
+	seen := map[string]struct{}{}
+	for _, msg := range first.GetMessages() {
+		seen[msg.GetUlid()] = struct{}{}
+	}
+	second, err := sub.handleGetMessages(subjectContext("owner"), &chat.GetGroupMessagesRequest{
+		GroupUlid:  group.ID,
+		Limit:      100,
+		BeforeUlid: first.GetNextCursor(),
+	})
+	if err != nil {
+		t.Fatalf("second page returned error: %v", err)
+	}
+	if len(second.GetMessages()) != 100 {
+		t.Fatalf("unexpected second page len=%d", len(second.GetMessages()))
+	}
+	for _, msg := range second.GetMessages() {
+		if _, duplicate := seen[msg.GetUlid()]; duplicate {
+			t.Fatalf("message %s repeated across pages", msg.GetUlid())
+		}
+		seen[msg.GetUlid()] = struct{}{}
+	}
+	if len(seen) != 200 {
+		t.Fatalf("expected 200 unique messages across first two pages, got %d", len(seen))
 	}
 }
 
@@ -137,6 +196,683 @@ func TestHandleUpdateMyNicknameUpdatesCurrentMember(t *testing.T) {
 	}
 }
 
+func TestHandleAcceptProposalRejectsUnsignedProposal(t *testing.T) {
+	sub := newTestSubServer()
+	group := sub.service.CreateGroup("owner", "Engineering", "")
+
+	if _, err := sub.handleAcceptProposal(subjectContext("owner"), &chat.AcceptGroupProposalRequest{
+		Proposal: &chat.GroupProposal{
+			ProposalUlid:            "proposal-1",
+			GroupUlid:               group.ID,
+			Actor:                   &chat.FederatedActorRef{ActorDid: "remote-actor"},
+			Command:                 chat.GroupProposalCommand_GROUP_PROPOSAL_COMMAND_MESSAGE_APPEND,
+			ObservedMembershipEpoch: group.MembershipEpoch,
+		},
+	}); err == nil {
+		t.Fatal("expected unsigned proposal to be rejected")
+	}
+}
+
+func TestHandleAcceptProposalReturnsCommittedEventAndReplay(t *testing.T) {
+	sub := newTestSubServer()
+	group := sub.service.CreateGroup("owner", "Engineering", "")
+	addFederatedMemberForTest(t, sub, group.ID, "remote-actor", "station-b")
+	req := &chat.AcceptGroupProposalRequest{
+		Proposal: &chat.GroupProposal{
+			ProposalUlid:            "proposal-1",
+			GroupUlid:               group.ID,
+			Actor:                   &chat.FederatedActorRef{ActorDid: "remote-actor", HomeStationPeerId: "station-b"},
+			Command:                 chat.GroupProposalCommand_GROUP_PROPOSAL_COMMAND_MESSAGE_APPEND,
+			CommandPayload:          []byte("opaque-command"),
+			ObservedMembershipEpoch: group.MembershipEpoch,
+			IdempotencyKey:          "proposal-1",
+			SigningKeyId:            "remote-actor#1",
+			Signature:               []byte("signature"),
+		},
+	}
+
+	resp, err := sub.handleAcceptProposal(subjectContext("owner"), req)
+	if err != nil {
+		t.Fatalf("handleAcceptProposal returned error: %v", err)
+	}
+	if resp.GetIdempotentReplay() {
+		t.Fatal("expected first acceptance not to be replay")
+	}
+	if resp.GetEvent().GetProposalUlid() != "proposal-1" || resp.GetEvent().GetActor().GetActorDid() != "remote-actor" {
+		t.Fatalf("unexpected event response: %+v", resp.GetEvent())
+	}
+	replay, err := sub.handleAcceptProposal(subjectContext("owner"), req)
+	if err != nil {
+		t.Fatalf("handleAcceptProposal replay returned error: %v", err)
+	}
+	if !replay.GetIdempotentReplay() || replay.GetEvent().GetEventUlid() != resp.GetEvent().GetEventUlid() {
+		t.Fatalf("expected idempotent replay of same event, first=%+v replay=%+v", resp.GetEvent(), replay.GetEvent())
+	}
+}
+
+func TestAcceptProposalRouteRequiresFederationTokenAndPinsPeer(t *testing.T) {
+	registerGroupChatFederationScope()
+	const (
+		localStation  = "station-a"
+		remoteStation = "station-b"
+		remoteActor   = "remote-actor"
+	)
+	sub := newTestSubServer()
+	peerKeys := authfed.NewInMemoryPeerKeyStore()
+	sub.federationProposalWrapper = serverwrapper.RequireFederationToken(
+		groupChatProposalScopeName,
+		peerKeys,
+		httpadapter.StaticAudience(localStation),
+	)
+	group := sub.service.CreateGroup("owner", "Engineering", "")
+	addFederatedMemberForTest(t, sub, group.ID, remoteActor, remoteStation)
+	req := &chat.AcceptGroupProposalRequest{
+		Proposal: &chat.GroupProposal{
+			ProposalUlid:            "proposal-1",
+			GroupUlid:               group.ID,
+			Actor:                   &chat.FederatedActorRef{ActorDid: remoteActor, HomeStationPeerId: remoteStation},
+			Command:                 chat.GroupProposalCommand_GROUP_PROPOSAL_COMMAND_MESSAGE_APPEND,
+			CommandPayload:          []byte("opaque-command"),
+			ObservedMembershipEpoch: group.MembershipEpoch,
+			IdempotencyKey:          "proposal-1",
+			SigningKeyId:            "remote-actor#1",
+			Signature:               []byte("signature"),
+		},
+	}
+	token := mintGroupChatProposalToken(t, remoteStation, localStation, remoteActor, group.ID, "proposal-1")
+
+	response := invokeGroupChatHandler(t, sub, "gc-proposal-accept", req, token)
+	if response.status != 200 {
+		t.Fatalf("expected 200, got %d body=%s", response.status, response.body.String())
+	}
+	var decoded chat.AcceptGroupProposalResponse
+	if err := protojson.Unmarshal(response.body.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, response.body.String())
+	}
+	if decoded.GetEvent().GetProposalUlid() != "proposal-1" || decoded.GetEvent().GetActor().GetActorDid() != remoteActor {
+		t.Fatalf("unexpected committed event: %+v", decoded.GetEvent())
+	}
+	peer, err := peerKeys.Get(context.Background(), remoteStation)
+	if err != nil {
+		t.Fatalf("read peer key: %v", err)
+	}
+	if peer == nil || peer.StationID != remoteStation {
+		t.Fatalf("expected TOFU peer key for %s, got %+v", remoteStation, peer)
+	}
+
+	response = invokeGroupChatHandler(t, sub, "gc-proposal-accept", req, token)
+	if response.status != 200 {
+		t.Fatalf("expected replay 200, got %d body=%s", response.status, response.body.String())
+	}
+	var replay chat.AcceptGroupProposalResponse
+	if err := protojson.Unmarshal(response.body.Bytes(), &replay); err != nil {
+		t.Fatalf("decode replay response: %v body=%s", err, response.body.String())
+	}
+	if !replay.GetIdempotentReplay() || replay.GetEvent().GetEventUlid() != decoded.GetEvent().GetEventUlid() {
+		t.Fatalf("expected idempotent replay of same event, first=%+v replay=%+v", decoded.GetEvent(), replay.GetEvent())
+	}
+}
+
+func TestAcceptProposalRouteRejectsFederationClaimMismatch(t *testing.T) {
+	registerGroupChatFederationScope()
+	const (
+		localStation  = "station-a"
+		remoteStation = "station-b"
+		remoteActor   = "remote-actor"
+	)
+	sub := newTestSubServer()
+	sub.federationProposalWrapper = serverwrapper.RequireFederationToken(
+		groupChatProposalScopeName,
+		authfed.NewInMemoryPeerKeyStore(),
+		httpadapter.StaticAudience(localStation),
+	)
+	group := sub.service.CreateGroup("owner", "Engineering", "")
+	req := &chat.AcceptGroupProposalRequest{
+		Proposal: &chat.GroupProposal{
+			ProposalUlid:            "proposal-1",
+			GroupUlid:               group.ID,
+			Actor:                   &chat.FederatedActorRef{ActorDid: remoteActor, HomeStationPeerId: remoteStation},
+			Command:                 chat.GroupProposalCommand_GROUP_PROPOSAL_COMMAND_MESSAGE_APPEND,
+			ObservedMembershipEpoch: group.MembershipEpoch,
+			IdempotencyKey:          "proposal-1",
+			SigningKeyId:            "remote-actor#1",
+			Signature:               []byte("signature"),
+		},
+	}
+	token := mintGroupChatProposalToken(t, remoteStation, localStation, remoteActor, group.ID, "other-proposal")
+
+	response := invokeGroupChatHandler(t, sub, "gc-proposal-accept", req, token)
+	if response.status != 403 {
+		t.Fatalf("expected claim mismatch 403, got %d body=%s", response.status, response.body.String())
+	}
+}
+
+func TestDispatchProposalOutboxSubmitsToAuthorityHandler(t *testing.T) {
+	registerGroupChatFederationScope()
+	const (
+		authorityStation = "station-a"
+		actorStation     = "station-b"
+		remoteActor      = "remote-actor"
+	)
+	authority := newTestSubServer()
+	authorityPeerKeys := authfed.NewInMemoryPeerKeyStore()
+	authority.federationProposalWrapper = serverwrapper.RequireFederationToken(
+		groupChatProposalScopeName,
+		authorityPeerKeys,
+		httpadapter.StaticAudience(authorityStation),
+	)
+	group := authority.service.CreateGroup("owner", "Engineering", "")
+	addFederatedMemberForTest(t, authority, group.ID, remoteActor, actorStation)
+
+	actor := newTestSubServer()
+	actor.proposalKeyCache = authfed.NewKeyCache(authfed.NewInMemoryKeyStore(), authfed.WithRecheckTTL(0))
+	actor.proposalTransport = localGroupProposalTransport{t: t, authority: authority}
+	proposal := domain.GroupProposal{
+		ProposalULID:            "proposal-1",
+		GroupID:                 group.ID,
+		Actor:                   domain.FederatedActorRef{ActorDID: remoteActor, HomeStationPeerID: actorStation},
+		Command:                 int32(chat.GroupProposalCommand_GROUP_PROPOSAL_COMMAND_MESSAGE_APPEND),
+		CommandPayload:          []byte("opaque-command"),
+		ObservedMembershipEpoch: group.MembershipEpoch,
+		AuthorityStationPeerID:  authorityStation,
+		AuthorityEpoch:          1,
+		IdempotencyKey:          "proposal-1",
+		SigningKeyID:            "remote-actor#1",
+		Signature:               []byte("signature"),
+		CreatedAt:               time.Now(),
+	}
+	if _, replay, err := actor.service.EnqueueProposalOutbox(proposal); err != nil || replay {
+		t.Fatalf("enqueue proposal outbox replay=%v err=%v", replay, err)
+	}
+
+	if dispatched := actor.dispatchProposalOutbox(context.Background(), 10); dispatched != 1 {
+		t.Fatalf("expected one dispatched proposal, got %d", dispatched)
+	}
+	item := actor.service.proposals["proposal-1"]
+	if item.Status != proposalOutboxStatusAccepted {
+		t.Fatalf("expected local outbox accepted, got %+v", item)
+	}
+	events := authority.service.groupEvents[group.ID]
+	if len(events) != 1 || events[0].ProposalULID != "proposal-1" || events[0].Actor.ActorDID != remoteActor {
+		t.Fatalf("expected authority committed proposal event, got %+v", events)
+	}
+	peer, err := authorityPeerKeys.Get(context.Background(), actorStation)
+	if err != nil {
+		t.Fatalf("read authority peer key: %v", err)
+	}
+	if peer == nil || peer.StationID != actorStation {
+		t.Fatalf("expected authority TOFU peer key for %s, got %+v", actorStation, peer)
+	}
+}
+
+func TestApplyGroupEventRouteAdvancesFollowerCursor(t *testing.T) {
+	registerGroupChatFederationScope()
+	const (
+		localStation     = "station-b"
+		authorityStation = "station-a"
+	)
+	sub := newTestSubServer()
+	sub.federationEventWrapper = serverwrapper.RequireFederationToken(
+		groupChatEventApplyScopeName,
+		authfed.NewInMemoryPeerKeyStore(),
+		httpadapter.StaticAudience(localStation),
+	)
+	event := &chat.GroupEvent{
+		EventUlid:              "event-1",
+		GroupUlid:              "group-1",
+		Seq:                    1,
+		PrevHash:               "",
+		EventHash:              "hash-1",
+		EventType:              "group.proposal.accepted",
+		AuthorityStationPeerId: authorityStation,
+		AuthorityEpoch:         1,
+		MembershipEpoch:        1,
+	}
+	token := mintGroupChatEventToken(t, authorityStation, localStation, event.GetGroupUlid(), event.GetEventUlid(), event.GetSeq())
+
+	response := invokeGroupChatHandler(t, sub, "gc-event-apply", &chat.ApplyGroupEventRequest{Event: event}, token)
+	if response.status != 200 {
+		t.Fatalf("expected 200, got %d body=%s", response.status, response.body.String())
+	}
+	var decoded chat.ApplyGroupEventResponse
+	if err := protojson.Unmarshal(response.body.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, response.body.String())
+	}
+	if decoded.GetLastAcceptedSeq() != 1 || decoded.GetLastEventHash() != "hash-1" || decoded.GetStatus() != "active" {
+		t.Fatalf("unexpected follower cursor response: %+v", &decoded)
+	}
+}
+
+func TestApplyGroupEventRouteIsIdempotentReplay(t *testing.T) {
+	registerGroupChatFederationScope()
+	const (
+		localStation     = "station-b"
+		authorityStation = "station-a"
+	)
+	sub := newTestSubServer()
+	sub.federationEventWrapper = serverwrapper.RequireFederationToken(
+		groupChatEventApplyScopeName,
+		authfed.NewInMemoryPeerKeyStore(),
+		httpadapter.StaticAudience(localStation),
+	)
+	event := &chat.GroupEvent{
+		EventUlid:              "event-1",
+		GroupUlid:              "group-1",
+		Seq:                    1,
+		PrevHash:               "",
+		EventHash:              "hash-1",
+		EventType:              "group.proposal.accepted",
+		AuthorityStationPeerId: authorityStation,
+		AuthorityEpoch:         1,
+		MembershipEpoch:        1,
+	}
+	token := mintGroupChatEventToken(t, authorityStation, localStation, event.GetGroupUlid(), event.GetEventUlid(), event.GetSeq())
+	for i := 0; i < 2; i++ {
+		response := invokeGroupChatHandler(t, sub, "gc-event-apply", &chat.ApplyGroupEventRequest{Event: event}, token)
+		if response.status != 200 {
+			t.Fatalf("expected replay attempt %d to return 200, got %d body=%s", i+1, response.status, response.body.String())
+		}
+		var decoded chat.ApplyGroupEventResponse
+		if err := protojson.Unmarshal(response.body.Bytes(), &decoded); err != nil {
+			t.Fatalf("decode replay response: %v body=%s", err, response.body.String())
+		}
+		if decoded.GetLastAcceptedSeq() != 1 || decoded.GetLastEventHash() != "hash-1" || decoded.GetStatus() != "active" {
+			t.Fatalf("unexpected replay cursor response: %+v", &decoded)
+		}
+	}
+}
+
+func TestApplyGroupEventRouteRejectsFederationClaimMismatch(t *testing.T) {
+	registerGroupChatFederationScope()
+	const (
+		localStation     = "station-b"
+		authorityStation = "station-a"
+	)
+	sub := newTestSubServer()
+	sub.federationEventWrapper = serverwrapper.RequireFederationToken(
+		groupChatEventApplyScopeName,
+		authfed.NewInMemoryPeerKeyStore(),
+		httpadapter.StaticAudience(localStation),
+	)
+	event := &chat.GroupEvent{
+		EventUlid:              "event-1",
+		GroupUlid:              "group-1",
+		Seq:                    1,
+		EventHash:              "hash-1",
+		EventType:              "group.proposal.accepted",
+		AuthorityStationPeerId: authorityStation,
+		AuthorityEpoch:         1,
+		MembershipEpoch:        1,
+	}
+	token := mintGroupChatEventToken(t, authorityStation, localStation, event.GetGroupUlid(), event.GetEventUlid(), 2)
+
+	response := invokeGroupChatHandler(t, sub, "gc-event-apply", &chat.ApplyGroupEventRequest{Event: event}, token)
+	if response.status != 403 {
+		t.Fatalf("expected claim mismatch 403, got %d body=%s", response.status, response.body.String())
+	}
+}
+
+func TestApplyGroupEventRoutePublishesFederationEventToLocalMembers(t *testing.T) {
+	registerGroupChatFederationScope()
+	eventsServer := events_subserver.NewEventsSubServer()
+	if err := eventsServer.Init(context.Background()); err != nil {
+		t.Fatalf("init events subserver: %v", err)
+	}
+	defer func() {
+		if err := eventsServer.Stop(context.Background()); err != nil {
+			t.Fatalf("stop events subserver: %v", err)
+		}
+	}()
+	bus := events_subserver.GetBus()
+	if bus == nil {
+		t.Fatal("expected realtime event bus")
+	}
+
+	const (
+		localStation     = "station-b"
+		authorityStation = "station-a"
+	)
+	sub := newTestSubServer()
+	sub.federationEventWrapper = serverwrapper.RequireFederationToken(
+		groupChatEventApplyScopeName,
+		authfed.NewInMemoryPeerKeyStore(),
+		httpadapter.StaticAudience(localStation),
+	)
+	group := sub.service.CreateGroup("owner", "Engineering", "")
+	if _, ok := sub.service.AddMember(group.ID, "carol", "owner"); !ok {
+		t.Fatal("expected add member to succeed")
+	}
+
+	streamCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	subscription, unsubscribe, err := bus.Subscribe(streamCtx, "carol", "desktop-1", "")
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	defer unsubscribe()
+
+	event := &chat.GroupEvent{
+		EventUlid:              "event-1",
+		GroupUlid:              group.ID,
+		Seq:                    1,
+		EventHash:              "hash-1",
+		EventType:              "group.proposal.accepted",
+		AuthorityStationPeerId: authorityStation,
+		AuthorityEpoch:         1,
+		MembershipEpoch:        group.MembershipEpoch,
+		MessageUlid:            "message-1",
+		Actor:                  &chat.FederatedActorRef{ActorDid: "did:peer:bob"},
+	}
+	token := mintGroupChatEventToken(t, authorityStation, localStation, group.ID, "event-1", 1)
+
+	response := invokeGroupChatHandler(t, sub, "gc-event-apply", &chat.ApplyGroupEventRequest{Event: event}, token)
+	if response.status != 200 {
+		t.Fatalf("expected 200, got %d body=%s", response.status, response.body.String())
+	}
+
+	got := waitRealtimeEvent(t, subscription.Events, 100*time.Millisecond)
+	federationEvent := got.GetGroupFederationEvent()
+	if federationEvent == nil {
+		t.Fatalf("expected group federation event, got %+v", got)
+	}
+	if federationEvent.GetGroupUlid() != group.ID ||
+		federationEvent.GetEventUlid() != "event-1" ||
+		federationEvent.GetSeq() != 1 ||
+		federationEvent.GetEventType() != "group.proposal.accepted" ||
+		federationEvent.GetAuthorityStationPeerId() != authorityStation ||
+		federationEvent.GetEventHash() != "hash-1" ||
+		federationEvent.GetMessageUlid() != "message-1" ||
+		federationEvent.GetActorDid() != "did:peer:bob" {
+		t.Fatalf("unexpected group federation event: %+v", federationEvent)
+	}
+}
+
+func TestSyncGroupEventsRouteReturnsEventsAfterCursor(t *testing.T) {
+	registerGroupChatFederationScope()
+	const (
+		authorityStation = "station-a"
+		followerStation  = "station-b"
+	)
+	sub := newTestSubServer()
+	sub.federationSyncWrapper = serverwrapper.RequireFederationToken(
+		groupChatEventSyncScopeName,
+		authfed.NewInMemoryPeerKeyStore(),
+		httpadapter.StaticAudience(authorityStation),
+	)
+	group := sub.service.CreateGroup("owner", "Engineering", "")
+	sub.service.groupEvents[group.ID] = []domain.GroupEvent{
+		{
+			EventULID:              "event-1",
+			GroupID:                group.ID,
+			Seq:                    1,
+			EventHash:              "hash-1",
+			EventType:              "group.created",
+			AuthorityStationPeerID: authorityStation,
+			AuthorityEpoch:         1,
+			MembershipEpoch:        group.MembershipEpoch,
+		},
+		{
+			EventULID:              "event-2",
+			GroupID:                group.ID,
+			Seq:                    2,
+			PrevHash:               "hash-1",
+			EventHash:              "hash-2",
+			EventType:              "group.member.joined",
+			AuthorityStationPeerID: authorityStation,
+			AuthorityEpoch:         1,
+			MembershipEpoch:        group.MembershipEpoch,
+		},
+		{
+			EventULID:              "event-3",
+			GroupID:                group.ID,
+			Seq:                    3,
+			PrevHash:               "hash-2",
+			EventHash:              "hash-3",
+			EventType:              "group.proposal.accepted",
+			AuthorityStationPeerID: authorityStation,
+			AuthorityEpoch:         1,
+			MembershipEpoch:        group.MembershipEpoch,
+		},
+	}
+	req := &chat.SyncGroupEventsRequest{GroupUlid: group.ID, AfterSeq: 1, Limit: 10}
+	token := mintGroupChatEventSyncToken(t, followerStation, authorityStation, group.ID)
+
+	response := invokeGroupChatHandler(t, sub, "gc-event-sync", req, token)
+	if response.status != 200 {
+		t.Fatalf("expected 200, got %d body=%s", response.status, response.body.String())
+	}
+	var decoded chat.SyncGroupEventsResponse
+	if err := protojson.Unmarshal(response.body.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, response.body.String())
+	}
+	if len(decoded.GetEvents()) != 2 || decoded.GetEvents()[0].GetSeq() != 2 || decoded.GetEvents()[1].GetSeq() != 3 {
+		t.Fatalf("expected events after seq 1, got %+v", decoded.GetEvents())
+	}
+	if decoded.GetLastSeq() != 3 || decoded.GetLastEventHash() != "hash-3" {
+		t.Fatalf("unexpected sync cursor: seq=%d hash=%s", decoded.GetLastSeq(), decoded.GetLastEventHash())
+	}
+}
+
+func TestSyncGroupEventsRouteRejectsFederationClaimMismatch(t *testing.T) {
+	registerGroupChatFederationScope()
+	const (
+		authorityStation = "station-a"
+		followerStation  = "station-b"
+	)
+	sub := newTestSubServer()
+	sub.federationSyncWrapper = serverwrapper.RequireFederationToken(
+		groupChatEventSyncScopeName,
+		authfed.NewInMemoryPeerKeyStore(),
+		httpadapter.StaticAudience(authorityStation),
+	)
+	group := sub.service.CreateGroup("owner", "Engineering", "")
+	token := mintGroupChatEventSyncToken(t, followerStation, authorityStation, "other-group")
+
+	response := invokeGroupChatHandler(t, sub, "gc-event-sync", &chat.SyncGroupEventsRequest{GroupUlid: group.ID, AfterSeq: 0, Limit: 10}, token)
+	if response.status != 403 {
+		t.Fatalf("expected claim mismatch 403, got %d body=%s", response.status, response.body.String())
+	}
+}
+
+func TestHandleSubmitGroupSkdmEnvelopeEnqueuesOpaqueEnvelope(t *testing.T) {
+	sub := newTestSubServer()
+	group := sub.service.CreateGroup("alice", "Engineering", "")
+	addFederatedMemberForTest(t, sub, group.ID, "bob", "station-b")
+	req := &chat.SubmitGroupSkdmEnvelopeRequest{
+		Envelope: &chat.GroupSkdmEnvelope{
+			GroupUlid:                  group.ID,
+			MembershipEpoch:            group.MembershipEpoch,
+			SenderDid:                  "alice",
+			SenderKeyId:                7,
+			RecipientDid:               "bob",
+			RecipientDeviceId:          "bob-device-1",
+			RecipientHomeStationPeerId: "station-b",
+			EncryptedPayload:           []byte("sealed-skdm-payload"),
+			IdempotencyKey:             "skdm-1",
+		},
+	}
+
+	resp, err := sub.handleSubmitGroupSkdmEnvelope(subjectContext("alice"), req)
+	if err != nil {
+		t.Fatalf("handleSubmitGroupSkdmEnvelope returned error: %v", err)
+	}
+	if resp.GetStatus() != skdmOutboxStatusPending || resp.GetIdempotentReplay() {
+		t.Fatalf("unexpected SKDM submit response: %+v", resp)
+	}
+	item := sub.service.skdmOutbox["skdm-1"]
+	if item.GroupID != group.ID || item.RecipientDID != "bob" || string(item.EncryptedPayload) != "sealed-skdm-payload" {
+		t.Fatalf("expected sealed SKDM envelope in outbox, got %+v", item)
+	}
+
+	replay, err := sub.handleSubmitGroupSkdmEnvelope(subjectContext("alice"), req)
+	if err != nil {
+		t.Fatalf("handleSubmitGroupSkdmEnvelope replay returned error: %v", err)
+	}
+	if !replay.GetIdempotentReplay() || replay.GetOutboxUlid() != resp.GetOutboxUlid() {
+		t.Fatalf("expected idempotent replay of same SKDM outbox row, first=%+v replay=%+v", resp, replay)
+	}
+}
+
+func TestSubmitGroupSkdmRouteEnqueuesPendingEnvelope(t *testing.T) {
+	sub := newTestSubServer()
+	provider := auth.NewJWTProvider("test-secret", time.Hour)
+	_, token, err := provider.Authenticate(context.Background(), auth.Credentials{SubjectID: "alice"})
+	if err != nil {
+		t.Fatalf("mint actor token: %v", err)
+	}
+	sub.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
+	group := sub.service.CreateGroup("alice", "Engineering", "")
+	addFederatedMemberForTest(t, sub, group.ID, "bob", "station-b")
+	req := &chat.SubmitGroupSkdmEnvelopeRequest{
+		Envelope: &chat.GroupSkdmEnvelope{
+			GroupUlid:                  group.ID,
+			MembershipEpoch:            group.MembershipEpoch,
+			SenderDid:                  "alice",
+			SenderKeyId:                7,
+			RecipientDid:               "bob",
+			RecipientDeviceId:          "bob-device-1",
+			RecipientHomeStationPeerId: "station-b",
+			EncryptedPayload:           []byte("sealed-skdm-payload"),
+			IdempotencyKey:             "skdm-route-1",
+		},
+	}
+
+	response := invokeGroupChatHandler(t, sub, "gc-skdm-submit", req, token.Value)
+	if response.status != 200 {
+		t.Fatalf("expected 200, got %d body=%s", response.status, response.body.String())
+	}
+	var decoded chat.SubmitGroupSkdmEnvelopeResponse
+	if err := protojson.Unmarshal(response.body.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, response.body.String())
+	}
+	if decoded.GetStatus() != skdmOutboxStatusPending || decoded.GetOutboxUlid() == "" || decoded.GetIdempotentReplay() {
+		t.Fatalf("unexpected SKDM route response: %+v", &decoded)
+	}
+
+	response = invokeGroupChatHandler(t, sub, "gc-skdm-submit", req, token.Value)
+	if response.status != 200 {
+		t.Fatalf("expected replay 200, got %d body=%s", response.status, response.body.String())
+	}
+	var replay chat.SubmitGroupSkdmEnvelopeResponse
+	if err := protojson.Unmarshal(response.body.Bytes(), &replay); err != nil {
+		t.Fatalf("decode replay response: %v body=%s", err, response.body.String())
+	}
+	if !replay.GetIdempotentReplay() || replay.GetOutboxUlid() != decoded.GetOutboxUlid() {
+		t.Fatalf("expected idempotent SKDM route replay, first=%+v replay=%+v", &decoded, &replay)
+	}
+}
+
+func TestDeliverGroupSkdmEnvelopePublishesToRecipientDevice(t *testing.T) {
+	eventsServer := events_subserver.NewEventsSubServer()
+	if err := eventsServer.Init(context.Background()); err != nil {
+		t.Fatalf("init events subserver: %v", err)
+	}
+	defer func() {
+		if err := eventsServer.Stop(context.Background()); err != nil {
+			t.Fatalf("stop events subserver: %v", err)
+		}
+	}()
+	bus := events_subserver.GetBus()
+	if bus == nil {
+		t.Fatal("expected realtime event bus")
+	}
+
+	sub := newTestSubServer()
+	group := sub.service.CreateGroup("alice", "Engineering", "")
+	addFederatedMemberForTest(t, sub, group.ID, "bob", "station-b")
+
+	streamCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	targetSub, unsubscribeTarget, err := bus.Subscribe(streamCtx, "bob", "bob-device-1", "")
+	if err != nil {
+		t.Fatalf("subscribe target: %v", err)
+	}
+	defer unsubscribeTarget()
+	otherSub, unsubscribeOther, err := bus.Subscribe(streamCtx, "bob", "bob-device-2", "")
+	if err != nil {
+		t.Fatalf("subscribe other: %v", err)
+	}
+	defer unsubscribeOther()
+
+	resp, err := sub.handleDeliverGroupSkdmEnvelope(context.Background(), &chat.SubmitGroupSkdmEnvelopeRequest{
+		Envelope: &chat.GroupSkdmEnvelope{
+			GroupUlid:                  group.ID,
+			MembershipEpoch:            group.MembershipEpoch,
+			SenderDid:                  "alice",
+			SenderKeyId:                7,
+			RecipientDid:               "bob",
+			RecipientDeviceId:          "bob-device-1",
+			RecipientHomeStationPeerId: "station-b",
+			EncryptedPayload:           []byte("sealed-skdm-payload"),
+			IdempotencyKey:             "skdm-deliver-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("deliver skdm: %v", err)
+	}
+	if resp.GetStatus() != skdmOutboxStatusDelivered {
+		t.Fatalf("expected delivered status, got %+v", resp)
+	}
+	if item := sub.service.skdmOutbox["skdm-deliver-1"]; item.Status != skdmOutboxStatusDelivered {
+		t.Fatalf("expected target outbox row delivered, got %+v", item)
+	}
+
+	got := waitRealtimeEvent(t, targetSub.Events, 100*time.Millisecond)
+	delivered := got.GetGroupSkdmEnvelopeDelivered()
+	if delivered == nil {
+		t.Fatalf("expected group skdm delivery event, got %+v", got)
+	}
+	if delivered.GetGroupUlid() != group.ID ||
+		delivered.GetMembershipEpoch() != group.MembershipEpoch ||
+		delivered.GetSenderDid() != "alice" ||
+		delivered.GetSenderKeyId() != 7 ||
+		delivered.GetRecipientDid() != "bob" ||
+		delivered.GetRecipientDeviceId() != "bob-device-1" ||
+		delivered.GetIdempotencyKey() != "skdm-deliver-1" ||
+		string(delivered.GetEncryptedPayload()) != "sealed-skdm-payload" {
+		t.Fatalf("unexpected skdm delivery event: %+v", delivered)
+	}
+	select {
+	case ev := <-otherSub.Events:
+		t.Fatalf("non-target device received SKDM event: %+v", ev)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestHandleSubmitGroupSkdmEnvelopeRejectsSenderSubjectMismatch(t *testing.T) {
+	sub := newTestSubServer()
+	group := sub.service.CreateGroup("alice", "Engineering", "")
+	addFederatedMemberForTest(t, sub, group.ID, "bob", "station-b")
+
+	_, err := sub.handleSubmitGroupSkdmEnvelope(subjectContext("mallory"), &chat.SubmitGroupSkdmEnvelopeRequest{
+		Envelope: &chat.GroupSkdmEnvelope{
+			GroupUlid:                  group.ID,
+			MembershipEpoch:            group.MembershipEpoch,
+			SenderDid:                  "alice",
+			SenderKeyId:                7,
+			RecipientDid:               "bob",
+			RecipientDeviceId:          "bob-device-1",
+			RecipientHomeStationPeerId: "station-b",
+			EncryptedPayload:           []byte("sealed-skdm-payload"),
+			IdempotencyKey:             "skdm-1",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected sender subject mismatch to be rejected")
+	}
+}
+
+func waitRealtimeEvent(t *testing.T, events <-chan *realtime.StreamEvent, timeout time.Duration) *realtime.StreamEvent {
+	t.Helper()
+	select {
+	case ev := <-events:
+		return ev
+	case <-time.After(timeout):
+		t.Fatal("timed out waiting for realtime event")
+	}
+	return nil
+}
+
 func newTestSubServer() *subServer {
 	svc := newTestService()
 	return &subServer{
@@ -145,6 +881,182 @@ func newTestSubServer() *subServer {
 	}
 }
 
+func addFederatedMemberForTest(t *testing.T, sub *subServer, groupID, actorDID, homeStationPeerID string) {
+	t.Helper()
+	if sub.service.members == nil {
+		sub.service.members = map[string]map[string]*member{}
+	}
+	if sub.service.members[groupID] == nil {
+		sub.service.members[groupID] = map[string]*member{}
+	}
+	sub.service.members[groupID][actorDID] = &member{
+		GroupID:  groupID,
+		ActorDID: actorDID,
+		Actor: domain.FederatedActorRef{
+			ActorDID:          actorDID,
+			HomeStationPeerID: homeStationPeerID,
+		},
+		Role:     domain.GroupRoleMember,
+		JoinedAt: time.Now(),
+	}
+}
+
 func subjectContext(actorDID string) context.Context {
 	return auth.WithSubject(context.Background(), &auth.Subject{ID: actorDID})
 }
+
+func mintGroupChatProposalToken(t *testing.T, issuer, audience, subject, groupID, proposalID string) string {
+	t.Helper()
+	cache := authfed.NewKeyCache(authfed.NewInMemoryKeyStore(), authfed.WithRecheckTTL(0))
+	if _, err := cache.Get(context.Background()); err != nil {
+		t.Fatalf("warm federation key cache: %v", err)
+	}
+	token, err := authfed.Mint(context.Background(), cache, authfed.MintRequest{
+		Scope:    groupChatProposalScopeName,
+		Issuer:   issuer,
+		Audience: audience,
+		Subject:  subject,
+		TTL:      30 * time.Second,
+		Custom: map[string]string{
+			groupChatProposalClaimGroup:    groupID,
+			groupChatProposalClaimProposal: proposalID,
+			groupChatProposalClaimActor:    subject,
+		},
+	})
+	if err != nil {
+		t.Fatalf("mint federation token: %v", err)
+	}
+	return token
+}
+
+func mintGroupChatEventToken(t *testing.T, issuer, audience, groupID, eventID string, seq int64) string {
+	t.Helper()
+	cache := authfed.NewKeyCache(authfed.NewInMemoryKeyStore(), authfed.WithRecheckTTL(0))
+	if _, err := cache.Get(context.Background()); err != nil {
+		t.Fatalf("warm federation key cache: %v", err)
+	}
+	token, err := authfed.Mint(context.Background(), cache, authfed.MintRequest{
+		Scope:    groupChatEventApplyScopeName,
+		Issuer:   issuer,
+		Audience: audience,
+		Subject:  issuer,
+		TTL:      30 * time.Second,
+		Custom: map[string]string{
+			groupChatProposalClaimGroup: groupID,
+			groupChatEventClaimEvent:    eventID,
+			groupChatEventClaimSeq:      strconv.FormatInt(seq, 10),
+		},
+	})
+	if err != nil {
+		t.Fatalf("mint federation event token: %v", err)
+	}
+	return token
+}
+
+func mintGroupChatEventSyncToken(t *testing.T, issuer, audience, groupID string) string {
+	t.Helper()
+	cache := authfed.NewKeyCache(authfed.NewInMemoryKeyStore(), authfed.WithRecheckTTL(0))
+	if _, err := cache.Get(context.Background()); err != nil {
+		t.Fatalf("warm federation key cache: %v", err)
+	}
+	token, err := authfed.Mint(context.Background(), cache, authfed.MintRequest{
+		Scope:    groupChatEventSyncScopeName,
+		Issuer:   issuer,
+		Audience: audience,
+		Subject:  issuer,
+		TTL:      30 * time.Second,
+		Custom: map[string]string{
+			groupChatProposalClaimGroup: groupID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("mint federation event sync token: %v", err)
+	}
+	return token
+}
+
+func invokeGroupChatHandler(t *testing.T, sub *subServer, name string, msg proto.Message, token string) *testResponse {
+	t.Helper()
+	var target server.Handler
+	for _, handler := range sub.Handlers() {
+		if handler.Name() == name {
+			target = handler
+			break
+		}
+	}
+	if target == nil {
+		t.Fatalf("handler %s not found", name)
+	}
+	body, err := protojson.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	endpoint := target.Handler()
+	wrappers := target.Wrappers()
+	for i := len(wrappers) - 1; i >= 0; i-- {
+		endpoint = wrappers[i](endpoint)
+	}
+	req := &testRequest{
+		method: server.POST,
+		path:   target.Path(),
+		body:   body,
+		header: map[string]string{
+			"Content-Type":  "application/json",
+			"Authorization": "Bearer " + token,
+		},
+	}
+	resp := &testResponse{header: map[string]string{}}
+	if err := endpoint(context.Background(), req, resp); err != nil {
+		t.Fatalf("invoke handler: %v", err)
+	}
+	return resp
+}
+
+type localGroupProposalTransport struct {
+	t         *testing.T
+	authority *subServer
+}
+
+func (tr localGroupProposalTransport) SubmitGroupProposal(ctx context.Context, authorityStationPeerID string, req *chat.AcceptGroupProposalRequest, token string) (*chat.AcceptGroupProposalResponse, error) {
+	_ = ctx
+	_ = authorityStationPeerID
+	response := invokeGroupChatHandler(tr.t, tr.authority, "gc-proposal-accept", req, token)
+	if response.status != 200 {
+		return nil, proposalDispatchError(response.status, response.body.String())
+	}
+	var decoded chat.AcceptGroupProposalResponse
+	if err := protojson.Unmarshal(response.body.Bytes(), &decoded); err != nil {
+		return nil, err
+	}
+	return &decoded, nil
+}
+
+type testRequest struct {
+	method server.Method
+	path   string
+	body   []byte
+	header map[string]string
+}
+
+func (r *testRequest) Context() context.Context  { return context.Background() }
+func (r *testRequest) Header() map[string]string { return r.header }
+func (r *testRequest) Method() server.Method     { return r.method }
+func (r *testRequest) Path() string              { return r.path }
+func (r *testRequest) Body() []byte              { return r.body }
+
+type testResponse struct {
+	header map[string]string
+	status int
+	body   bytes.Buffer
+}
+
+func (r *testResponse) Header() map[string]string { return r.header }
+func (r *testResponse) SetHeader(key, value string) {
+	if r.header == nil {
+		r.header = map[string]string{}
+	}
+	r.header[key] = value
+}
+func (r *testResponse) Write(data []byte) (int, error) { return r.body.Write(data) }
+func (r *testResponse) WriteHeader(status int)         { r.status = status }
+func (r *testResponse) Status() int                    { return r.status }
