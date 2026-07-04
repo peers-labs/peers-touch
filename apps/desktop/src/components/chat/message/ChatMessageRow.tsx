@@ -22,7 +22,7 @@ import {
 
 import { UserSquareAvatar } from '../../common/UserSquareAvatar';
 import type { CurrentUserProfile } from '../../../store/socialChat';
-import type { FriendChatMessage, FriendMessageStatus, FriendChatSession } from '../../../gen/proto/domain/chat/friend_chat_pb';
+import type { FriendMessageStatus, FriendChatSession } from '../../../gen/proto/domain/chat/friend_chat_pb';
 import { FriendMessageStatus as FMS } from '../../../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMember } from '../../../gen/proto/domain/chat/group_chat_pb';
 import { ChatMessageContent } from './ChatMessageContent';
@@ -694,8 +694,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
               </Text>
             </Tooltip>
           )}
-          {isOwn && isFriendMessage(message) && !isRecalled && (
-            <ReadReceipt status={(message as FriendChatMessage).status} />
+          {isOwn && isFriendMessage(message) && !isRecalled && message.status != null && (
+            <ReadReceipt status={message.status} />
           )}
         </Flexbox>
       </Flexbox>
