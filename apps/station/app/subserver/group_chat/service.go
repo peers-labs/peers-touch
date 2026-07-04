@@ -86,6 +86,7 @@ type invitation struct {
 	InviterDID string
 	InviteeDID string
 	Status     int32
+	ExpireAt   time.Time
 	CreatedAt  time.Time
 }
 
@@ -113,6 +114,13 @@ type threadRead struct {
 	LastReadID string
 	LastReadAt time.Time
 }
+
+const (
+	groupInvitationStatusPending  int32 = 1
+	groupInvitationStatusAccepted int32 = 2
+	groupInvitationStatusExpired  int32 = 4
+	defaultInvitationTTL                = 7 * 24 * time.Hour
+)
 
 type service struct {
 	mu           sync.RWMutex
@@ -380,6 +388,7 @@ func (s *service) CreateInvitation(groupID, inviterDID, inviteeDID string) domai
 		InviterDID: item.InviterDID,
 		InviteeDID: item.InviteeDID,
 		Status:     item.Status,
+		ExpireAt:   item.ExpireAt,
 		CreatedAt:  item.CreatedAt,
 	}
 }
@@ -603,6 +612,7 @@ func (s *service) bootstrapFromDB() error {
 			InviterDID: item.InviterDID,
 			InviteeDID: item.InviteeDID,
 			Status:     item.Status,
+			ExpireAt:   item.ExpireAt,
 			CreatedAt:  item.CreatedAt,
 		}
 	}
@@ -2029,12 +2039,14 @@ func (s *service) listMembers(groupID string, limit, offset int) ([]member, int)
 func (s *service) createInvitation(groupID, inviterDID, inviteeDID string) invitation {
 	if s.db != nil {
 		now := time.Now()
+		expireAt := now.Add(defaultInvitationTTL)
 		item := invitation{
 			ID:         fmt.Sprintf("gci-%d", now.UnixNano()),
 			GroupID:    groupID,
 			InviterDID: inviterDID,
 			InviteeDID: inviteeDID,
-			Status:     1,
+			Status:     groupInvitationStatusPending,
+			ExpireAt:   expireAt,
 			CreatedAt:  now,
 		}
 		_ = s.db.Create(&invitationModel{
@@ -2043,6 +2055,7 @@ func (s *service) createInvitation(groupID, inviterDID, inviteeDID string) invit
 			InviterDID: item.InviterDID,
 			InviteeDID: item.InviteeDID,
 			Status:     item.Status,
+			ExpireAt:   item.ExpireAt,
 			CreatedAt:  item.CreatedAt,
 			UpdatedAt:  item.CreatedAt,
 		}).Error
@@ -2054,12 +2067,14 @@ func (s *service) createInvitation(groupID, inviterDID, inviteeDID string) invit
 		s.invitations = make(map[string]*invitation)
 	}
 	now := time.Now()
+	expireAt := now.Add(defaultInvitationTTL)
 	item := invitation{
 		ID:         fmt.Sprintf("gci-%d", now.UnixNano()),
 		GroupID:    groupID,
 		InviterDID: inviterDID,
 		InviteeDID: inviteeDID,
-		Status:     1,
+		Status:     groupInvitationStatusPending,
+		ExpireAt:   expireAt,
 		CreatedAt:  now,
 	}
 	s.invitations[item.ID] = &item
@@ -2068,23 +2083,36 @@ func (s *service) createInvitation(groupID, inviterDID, inviteeDID string) invit
 
 func (s *service) acceptInvitation(invitationID, actorDID string) (string, bool) {
 	if s.db != nil {
+		now := time.Now()
 		var row invitationModel
-		if err := s.db.Where("ulid = ? AND invitee_did = ?", invitationID, actorDID).First(&row).Error; err != nil {
+		if err := s.db.Where("ulid = ? AND invitee_did = ? AND status = ?", invitationID, actorDID, groupInvitationStatusPending).First(&row).Error; err != nil {
+			return "", false
+		}
+		if !row.ExpireAt.IsZero() && !row.ExpireAt.After(now) {
+			_ = s.db.Model(&invitationModel{}).Where("id = ?", row.ID).Updates(map[string]interface{}{
+				"status":     groupInvitationStatusExpired,
+				"updated_at": now,
+			}).Error
 			return "", false
 		}
 		_ = s.db.Model(&invitationModel{}).Where("id = ?", row.ID).Updates(map[string]interface{}{
-			"status":     2,
-			"updated_at": time.Now(),
+			"status":     groupInvitationStatusAccepted,
+			"updated_at": now,
 		}).Error
 		return row.GroupULID, true
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	item := s.invitations[invitationID]
-	if item == nil || item.InviteeDID != actorDID {
+	if item == nil || item.InviteeDID != actorDID || item.Status != groupInvitationStatusPending {
 		return "", false
 	}
-	item.Status = 2
+	now := time.Now()
+	if !item.ExpireAt.IsZero() && !item.ExpireAt.After(now) {
+		item.Status = groupInvitationStatusExpired
+		return "", false
+	}
+	item.Status = groupInvitationStatusAccepted
 	return item.GroupID, true
 }
 
