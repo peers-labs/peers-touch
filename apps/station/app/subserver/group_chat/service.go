@@ -13,15 +13,16 @@ import (
 )
 
 type group struct {
-	ID          string
-	Name        string
-	Description string
-	OwnerDID    string
-	MemberCount int32
-	Status      string
-	DissolvedAt time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID              string
+	Name            string
+	Description     string
+	OwnerDID        string
+	MemberCount     int32
+	Status          string
+	DissolvedAt     time.Time
+	MembershipEpoch int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type message struct {
@@ -135,17 +136,25 @@ func isGroupDissolved(status string) bool {
 	return groupStatus(status) == domain.GroupStatusDissolved
 }
 
+func groupMembershipEpoch(epoch int64) int64 {
+	if epoch <= 0 {
+		return 1
+	}
+	return epoch
+}
+
 func groupFromModel(row groupModel) group {
 	return group{
-		ID:          row.ULID,
-		Name:        row.Name,
-		Description: row.Description,
-		OwnerDID:    row.OwnerDID,
-		MemberCount: row.MemberCount,
-		Status:      groupStatus(row.Status),
-		DissolvedAt: derefTime(row.DissolvedAt),
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
+		ID:              row.ULID,
+		Name:            row.Name,
+		Description:     row.Description,
+		OwnerDID:        row.OwnerDID,
+		MemberCount:     row.MemberCount,
+		Status:          groupStatus(row.Status),
+		DissolvedAt:     derefTime(row.DissolvedAt),
+		MembershipEpoch: groupMembershipEpoch(row.MembershipEpoch),
+		CreatedAt:       row.CreatedAt,
+		UpdatedAt:       row.UpdatedAt,
 	}
 }
 
@@ -154,15 +163,16 @@ func groupToDomain(item *group) domain.Group {
 		return domain.Group{}
 	}
 	return domain.Group{
-		ID:          item.ID,
-		Name:        item.Name,
-		Description: item.Description,
-		OwnerDID:    item.OwnerDID,
-		MemberCount: item.MemberCount,
-		Status:      groupStatus(item.Status),
-		DissolvedAt: item.DissolvedAt,
-		CreatedAt:   item.CreatedAt,
-		UpdatedAt:   item.UpdatedAt,
+		ID:              item.ID,
+		Name:            item.Name,
+		Description:     item.Description,
+		OwnerDID:        item.OwnerDID,
+		MemberCount:     item.MemberCount,
+		Status:          groupStatus(item.Status),
+		DissolvedAt:     item.DissolvedAt,
+		MembershipEpoch: groupMembershipEpoch(item.MembershipEpoch),
+		CreatedAt:       item.CreatedAt,
+		UpdatedAt:       item.UpdatedAt,
 	}
 }
 
@@ -705,25 +715,27 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 	if s.db != nil {
 		now := time.Now()
 		item := &group{
-			ID:          fmt.Sprintf("gcg-%d", now.UnixNano()),
-			Name:        name,
-			Description: description,
-			OwnerDID:    ownerDID,
-			MemberCount: 1,
-			Status:      domain.GroupStatusActive,
-			CreatedAt:   now,
-			UpdatedAt:   now,
+			ID:              fmt.Sprintf("gcg-%d", now.UnixNano()),
+			Name:            name,
+			Description:     description,
+			OwnerDID:        ownerDID,
+			MemberCount:     1,
+			Status:          domain.GroupStatusActive,
+			MembershipEpoch: 1,
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		}
 		_ = s.db.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Create(&groupModel{
-				ULID:        item.ID,
-				Name:        item.Name,
-				Description: item.Description,
-				OwnerDID:    item.OwnerDID,
-				MemberCount: item.MemberCount,
-				Status:      item.Status,
-				CreatedAt:   item.CreatedAt,
-				UpdatedAt:   item.UpdatedAt,
+				ULID:            item.ID,
+				Name:            item.Name,
+				Description:     item.Description,
+				OwnerDID:        item.OwnerDID,
+				MemberCount:     item.MemberCount,
+				Status:          item.Status,
+				MembershipEpoch: item.MembershipEpoch,
+				CreatedAt:       item.CreatedAt,
+				UpdatedAt:       item.UpdatedAt,
 			}).Error; err != nil {
 				return err
 			}
@@ -753,14 +765,15 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 	defer s.mu.Unlock()
 	now := time.Now()
 	item := &group{
-		ID:          fmt.Sprintf("gcg-%d", now.UnixNano()),
-		Name:        name,
-		Description: description,
-		OwnerDID:    ownerDID,
-		MemberCount: 1,
-		Status:      domain.GroupStatusActive,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:              fmt.Sprintf("gcg-%d", now.UnixNano()),
+		Name:            name,
+		Description:     description,
+		OwnerDID:        ownerDID,
+		MemberCount:     1,
+		Status:          domain.GroupStatusActive,
+		MembershipEpoch: 1,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	s.groups[item.ID] = item
 	s.messages[item.ID] = []message{}
@@ -1634,6 +1647,7 @@ func (s *service) addMember(groupID, actorDID, inviterDID string) (*member, bool
 			JoinedAt:  now,
 			InvitedBy: inviterDID,
 		}
+		added := false
 		err := s.db.Transaction(func(tx *gorm.DB) error {
 			var groupRow groupModel
 			if err := tx.Where("ulid = ?", groupID).First(&groupRow).Error; err != nil {
@@ -1657,15 +1671,20 @@ func (s *service) addMember(groupID, actorDID, inviterDID string) (*member, bool
 				}).Error; err != nil {
 					return err
 				}
+				added = true
 			}
 			var count int64
 			if err := tx.Model(&memberModel{}).Where("group_ulid = ?", groupID).Count(&count).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(&groupModel{}).Where("ulid = ?", groupID).Updates(map[string]interface{}{
+			updates := map[string]interface{}{
 				"member_count": int32(count),
 				"updated_at":   now,
-			}).Error; err != nil {
+			}
+			if added {
+				updates["membership_epoch"] = gorm.Expr("CASE WHEN membership_epoch <= 0 THEN 2 ELSE membership_epoch + 1 END")
+			}
+			if err := tx.Model(&groupModel{}).Where("ulid = ?", groupID).Updates(updates).Error; err != nil {
 				return err
 			}
 			return tx.Create(&outboxModel{
@@ -1699,8 +1718,12 @@ func (s *service) addMember(groupID, actorDID, inviterDID string) (*member, bool
 		JoinedAt:  now,
 		InvitedBy: inviterDID,
 	}
+	_, existed := s.members[groupID][actorDID]
 	s.members[groupID][actorDID] = item
 	s.groups[groupID].MemberCount = int32(len(s.members[groupID]))
+	if !existed {
+		s.groups[groupID].MembershipEpoch = groupMembershipEpoch(s.groups[groupID].MembershipEpoch) + 1
+	}
 	s.groups[groupID].UpdatedAt = now
 	if s.unread[groupID] == nil {
 		s.unread[groupID] = make(map[string]int64)
@@ -1790,8 +1813,9 @@ func (s *service) removeMember(groupID, actorDID string) bool {
 				return err
 			}
 			if err := tx.Model(&groupModel{}).Where("ulid = ?", groupID).Updates(map[string]interface{}{
-				"member_count": int32(count),
-				"updated_at":   now,
+				"member_count":     int32(count),
+				"membership_epoch": gorm.Expr("CASE WHEN membership_epoch <= 0 THEN 2 ELSE membership_epoch + 1 END"),
+				"updated_at":       now,
 			}).Error; err != nil {
 				return err
 			}
@@ -1821,6 +1845,7 @@ func (s *service) removeMember(groupID, actorDID string) bool {
 	delete(s.members[groupID], actorDID)
 	if s.groups[groupID] != nil {
 		s.groups[groupID].MemberCount = int32(len(s.members[groupID]))
+		s.groups[groupID].MembershipEpoch = groupMembershipEpoch(s.groups[groupID].MembershipEpoch) + 1
 		s.groups[groupID].UpdatedAt = time.Now()
 	}
 	return true
