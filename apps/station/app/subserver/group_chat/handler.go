@@ -267,7 +267,7 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendGroupMe
 	// `[deprecated = true]` annotation).
 	item, err := s.appService.SendMessageByActor(subject.ID, req.GroupUlid, msgType, "", req.ReplyToUlid, req.GetThreadRootUlid(), atts, req.GetEncryptedPayload())
 	if err != nil {
-		if err == application_group_chat.ErrNotMember || err == application_group_chat.ErrMemberMuted {
+		if err == application_group_chat.ErrNotMember || err == application_group_chat.ErrMemberMuted || err == application_group_chat.ErrGroupDissolved {
 			return nil, server.Forbidden(err.Error())
 		}
 		return nil, server.InternalErrorWithCause("failed to send group message", err)
@@ -488,7 +488,7 @@ func (s *subServer) handleUpdate(ctx context.Context, req *chat.UpdateGroupReque
 	}
 	groupItem, err := s.appService.UpdateGroupByActor(subject.ID, req.GroupUlid, req.Name, req.Description, req.Muted)
 	if err != nil {
-		if err == application_group_chat.ErrPermissionDenied || err == application_group_chat.ErrNotMember {
+		if err == application_group_chat.ErrPermissionDenied || err == application_group_chat.ErrNotMember || err == application_group_chat.ErrGroupDissolved {
 			return nil, server.Forbidden(err.Error())
 		}
 		if err == application_group_chat.ErrGroupNotFound {
@@ -509,7 +509,7 @@ func (s *subServer) handleInvite(ctx context.Context, req *chat.InviteToGroupReq
 	}
 	invitations, err := s.appService.InviteByActor(subject.ID, req.GroupUlid, req.InviteeDids)
 	if err != nil {
-		if err == application_group_chat.ErrNotMember {
+		if err == application_group_chat.ErrNotMember || err == application_group_chat.ErrGroupDissolved {
 			return nil, server.Forbidden(err.Error())
 		}
 		return nil, server.InternalError("invite failed")
@@ -542,6 +542,9 @@ func (s *subServer) handleJoin(ctx context.Context, req *chat.JoinGroupRequest) 
 		if err == application_group_chat.ErrInvalidInvitation {
 			return nil, server.BadRequest(err.Error())
 		}
+		if err == application_group_chat.ErrGroupDissolved {
+			return nil, server.Forbidden(err.Error())
+		}
 		if err == application_group_chat.ErrGroupNotFound {
 			return nil, server.NotFound(err.Error())
 		}
@@ -569,7 +572,7 @@ func (s *subServer) handleLeave(ctx context.Context, req *chat.LeaveGroupRequest
 		others = append(others, did)
 	}
 	if err := s.appService.LeaveByActor(subject.ID, req.GroupUlid); err != nil {
-		if err == application_group_chat.ErrOwnerCannotLeave {
+		if err == application_group_chat.ErrOwnerCannotLeave || err == application_group_chat.ErrGroupDissolved {
 			return nil, server.Forbidden(err.Error())
 		}
 		if err == application_group_chat.ErrNotMember {
@@ -591,7 +594,7 @@ func (s *subServer) handleTransferOwnership(ctx context.Context, req *chat.Trans
 	}
 	groupItem, err := s.appService.TransferOwnershipByActor(subject.ID, req.GroupUlid, req.NextOwnerDid)
 	if err != nil {
-		if err == application_group_chat.ErrPermissionDenied || err == application_group_chat.ErrInvalidOwnerTransfer {
+		if err == application_group_chat.ErrPermissionDenied || err == application_group_chat.ErrInvalidOwnerTransfer || err == application_group_chat.ErrGroupDissolved {
 			return nil, server.Forbidden(err.Error())
 		}
 		if err == application_group_chat.ErrNotMember || err == application_group_chat.ErrMemberNotFound || err == application_group_chat.ErrGroupNotFound {
@@ -661,7 +664,7 @@ func (s *subServer) handleRemoveMember(ctx context.Context, req *chat.RemoveMemb
 	}
 	recipients := collectGroupMemberDIDs(s, req.GroupUlid)
 	if err := s.appService.RemoveMemberByActor(subject.ID, req.GroupUlid, req.ActorDid); err != nil {
-		if err == application_group_chat.ErrPermissionDenied || err == application_group_chat.ErrCannotRemoveOwner {
+		if err == application_group_chat.ErrPermissionDenied || err == application_group_chat.ErrCannotRemoveOwner || err == application_group_chat.ErrGroupDissolved {
 			return nil, server.Forbidden(err.Error())
 		}
 		if err == application_group_chat.ErrMemberNotFound {
@@ -693,7 +696,7 @@ func (s *subServer) handleUpdateMember(ctx context.Context, req *chat.UpdateMemb
 	}
 	member, err := s.appService.UpdateMemberByActor(subject.ID, req.GroupUlid, req.ActorDid, role, req.Muted, mutedUntil)
 	if err != nil {
-		if err == application_group_chat.ErrPermissionDenied || err == application_group_chat.ErrCannotRemoveOwner {
+		if err == application_group_chat.ErrPermissionDenied || err == application_group_chat.ErrCannotRemoveOwner || err == application_group_chat.ErrGroupDissolved {
 			return nil, server.Forbidden(err.Error())
 		}
 		if err == application_group_chat.ErrInvalidRole {
@@ -773,6 +776,8 @@ func groupMutationErrorToHTTP(err error) error {
 		application_group_chat.ErrMessageNotFound:
 		return server.NotFound(err.Error())
 	case application_group_chat.ErrPermissionDenied:
+		return server.Forbidden(err.Error())
+	case application_group_chat.ErrGroupDissolved:
 		return server.Forbidden(err.Error())
 	case application_group_chat.ErrMutationWindowClosed:
 		return server.BadRequest("mutation window has closed for this message")
