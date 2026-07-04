@@ -1,10 +1,10 @@
 # Applet Runtime Architecture — 架构设计
 
 > **Status**: draft
-> **Version**: v1.2
-> **Created**: 2026-05-19 | **Updated**: 2026-06-06
+> **Version**: v1.3
+> **Created**: 2026-05-19 | **Updated**: 2026-07-02
 > **Owner**: Architecture Team
-> **Module**: `apps/desktop/src/applet/`, `apps/mobile/android/...core/applet/`, `apps/mobile/ios/.../Core/Applet/`, `packages/applet-sdk/`, `packages/applet-contract/`
+> **Module**: `apps/desktop/src/applet/`, `apps/mobile/src-tauri/` native plugin targets, `packages/applet-sdk/`, `packages/applet-contract/`
 
 ---
 
@@ -12,7 +12,10 @@
 
 1. **Lynx-first, not WebView-first**
    - Applet 的 UI 运行在 Lynx Runtime 中，而不是普通 Browser DOM 或 iframe 中。
-   - Desktop 通过 Lynx for Web 承载，Mobile 通过原生 LynxView 承载，Web 通过正式 Web Host 承载。
+   - **Desktop**：Tauri 系统 WebView 承载 Lynx for Web runtime（`<lynx-view>`），与 Mobile 共用同一份 Lynx bundle。渲染在 Lynx runtime 内，不是普通 React DOM，也不是 iframe。
+   - **Mobile**：Android/iOS 通过原生 LynxView 承载。
+   - **Web**：通过正式 Web Host 承载。
+   - 详见 [`runtime-architecture.md §5`](./runtime-architecture.md) 和 [`applet-lifecycle-architecture.md §7`](./applet-lifecycle-architecture.md)。
 
 2. **One source, one bundle, all platforms**
    - Applet 前端源码使用 ReactLynx 与 Lynx 元素。
@@ -51,8 +54,8 @@
                  ▼                ▼                      ▼
 ┌──────────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐
 │ Desktop Host              │ │ Android/iOS Host     │ │ Harmony Host         │ │ Web Host             │
-│ <lynx-host>→<lynx-view>  │ │ LynxView (native)    │ │ reserved Lynx adapter│ │ Lynx for Web / host  │
-│ Lynx for Web (@lynx-js)  │ │ BridgeNativeModule   │ │ ArkTS bridge         │ │ injected bridge      │
+│ Tauri WebView +          │ │ LynxView (native)    │ │ reserved Lynx adapter│ │ Lynx for Web / host  │
+│ Lynx for Web (lynx-view) │ │ BridgeNativeModule   │ │ ArkTS bridge         │ │ injected bridge      │
 └───────────────┬──────────┘ └──────────┬──────────┘ └──────────┬──────────┘ └──────────┬──────────┘
                 │ NativeModules bridge  │ NativeModules bridge  │ reserved             │ injected bridge
                 ▼                       ▼                       ▼                      ▼
@@ -82,7 +85,7 @@
 |---------|-------|------|----------|
 | Applet Source | Applet repo | UI、交互意图、业务应用层编排 | 直接依赖 DOM、直接访问 Host 敏感能力 |
 | Applet SDK | Platform contract | 暴露稳定跨端 API，封装 Bridge 差异 | 暴露平台私有实现细节 |
-| Desktop `<lynx-host>` | Desktop web | 创建 `<lynx-view>`，注入 Desktop bridge，处理错误/生命周期 | 创建 iframe 或自行绕过 Gateway |
+| Desktop `Tauri WebView + Lynx for Web` | Desktop runtime | 在系统 WebView 内挂载 `<lynx-view>`，管理 surface/lifecycle/session | 用 iframe / React mount-unmount 做保活 |
 | Desktop `desktop-rust` | Desktop runtime | Capability Gateway、权限、审计、本地存储、网络代理 | 把权限判断放回前端 |
 | Android Host | Mobile native | 创建 LynxView，注入 NativeModule，执行设备能力 | 让 Applet 直接调用 Android SDK |
 | iOS Host | Mobile native | 创建 LynxView，注入 NativeModule，执行设备能力 | 让 Applet 直接调用 iOS SDK |
@@ -94,23 +97,16 @@
 
 ## 4. Desktop 渲染链路
 
+> 详见 [`runtime-architecture.md §5`](./runtime-architecture.md)
+
 ```text
-AppletRuntimePage
-  → LynxHost React wrapper
-  → <lynx-host applet-id src>
-  → internally creates <lynx-view url="...main.lynx.bundle">
-  → injects nativeModulesMap / onNativeModulesCall
-  → api.appletInvoke(...)
-  → Tauri command applets_invoke
-  → Rust Capability Gateway
+Desktop App (Tauri)
+  → Applet Kernel (TS, in WebView)
+  → Surface Manager (DOM host container: show/hide/detach <lynx-view>)
+  → Lynx for Web runtime (load main.lynx.bundle, render in system WebView)
+  → Bridge Host Module (NativeModules → Kernel → Rust Capability Gateway)
+  → Rust Host (Tauri): permission / audit / storage / network
 ```
-
-Desktop 的 `<lynx-host>` 是 Peers-Touch 自定义宿主元素。它不是 iframe 容器，而是 Lynx for Web 的平台适配层：
-
-- 负责把 Manifest 的 `load.desktop.entry` 转成 `<lynx-view url>`。
-- 负责设置 `browserConfig`、`initData`、`globalProps`。
-- 负责接收 `<lynx-view>` 的 `error` 事件并上报诊断。
-- 负责把 Lynx NativeModules 调用转入 Tauri Gateway。
 
 ---
 
@@ -327,7 +323,7 @@ POC 验证 Lynx for Web in Tauri Webview
 
 | Platform | Container | Bridge 注入 | Capability Modules | 状态 |
 |----------|-----------|------------|-------------------|------|
-| **Desktop** | `<lynx-host>` → `<lynx-view>` | `onNativeModulesCall` → Tauri Gateway | storage, network, config, system (via Rust) | existing implementation, needs formal contract verification |
+| **Desktop** | Tauri WebView + Lynx for Web (`<lynx-view>`) | NativeModules → Rust Applet Kernel | lifecycle, storage, network, config, system (via Rust) | target architecture, spike required |
 | **Android** | `AppletContainerView` → `LynxView` | `AppletBridgeNativeModule` → `BridgeDispatcher` | storage, network, config, system, device, notification, UI | existing implementation, needs formal contract verification |
 | **iOS** | `AppletContainerView` → `LynxView` | `AppletBridgeNativeModule` → `BridgeDispatcher` | storage, network, config, system | existing implementation, needs formal contract verification |
 | **HarmonyOS** | reserved native plugin route | reserved | reserved | reserved, must reject until implemented |
@@ -379,8 +375,8 @@ Capability Gateway → permission check → execute → return result
 # Desktop full check
 cd apps/desktop && pnpm run check && pnpm run build
 
-# Android
-cd apps/mobile/android && ./gradlew build
+# Mobile Tauri
+pnpm mobile:check
 
 # SDK
 cd packages/applet-sdk && npx tsc --noEmit

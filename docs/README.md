@@ -177,6 +177,7 @@
 - Desktop 运行时关系：`architecture/runtime/desktop-runtime-architecture.md`
 - 统一 Handler 架构：`architecture/runtime/unified-handler-architecture.md`
 - 统一存储架构：`architecture/storage/unified-runtime-storage-architecture.md`
+- 大前端运行时架构：`architecture/frontend-runtime/README.md`
 - i18n 架构：`architecture/i18n/i18n-architecture.md`
 - 通知系统架构：`architecture/notification/notification-architecture.md`
 - 实时平面：`architecture/realtime/event-stream.md`

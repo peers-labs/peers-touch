@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-01 | **Updated**: 2026-07-01
+> **Created**: 2026-07-01 | **Updated**: 2026-07-02
 > **Owner**: Client Platform Team
 > **Module**: `docs/client/common/ui-identity/`
 
@@ -13,6 +13,8 @@
 This registry records which frontend surfaces are alive, which are not alive, and which are intentionally lazy, cached, or virtualized.
 
 It is the operational companion to `frontend-component-tree.md`.
+
+Architecture source: `docs/architecture/frontend-runtime/README.md` defines the upstream runtime lifecycle, budget, and evidence model. Registry rows should be interpretable as `RuntimeSurface` entries from `docs/architecture/frontend-runtime/data-model.md`.
 
 Use it to answer:
 
@@ -31,7 +33,7 @@ Each row records one user-visible surface or section.
 |-------|---------|
 | Feature / Surface | Product-facing name of the page, section, or runtime surface |
 | Platform | Desktop, Mobile, Web, Applet, or Cross-client. Platform-scoped section tables (§4–§7 Desktop, §8 Mobile, §9 Applet) inherit their platform from the section header and omit a per-row Platform column; add an explicit Platform value only for cross-client rows that do not live under a platform-scoped section. |
-| Owner Layer | Canonical tree owner: Shell, Navigation, PageHost, PageFrame, PageBoundary, SectionBoundary, OverlayHost, RuntimeProjection |
+| Owner Layer | Canonical tree owner: Shell, Navigation, PageHost, PageFrame, PageBoundary, SectionBoundary/SectionHost, OverlayHost, AppletContainerShell, RuntimeProjection |
 | Alive Category | Exactly one of the enum: `eager + forever`, `idle + forever`, `on-visit + lru`, `on-visit + none`, `lazy section`, or `virtualized content`. Add clarifying scope in parentheses (e.g. `virtualized content` inside alive page), but the leading token must be one enum value. |
 | Trigger | When the tree mounts or becomes active |
 | Cache Policy | Forever, LRU count, selected-only, none, or virtual window |
@@ -39,6 +41,8 @@ Each row records one user-visible surface or section.
 | Status | `alive`, `lazy`, `lru`, `not alive`, `needs audit`, or `deprecated` |
 | Evidence | Current proof or required verification |
 | Review Owner | Team or module owner responsible for changes |
+
+Budget fields are recorded inside `Evidence` until the registry grows explicit columns. A row that lacks runtime sampling must say `unproven`, `needs audit`, or list the exact missing proof instead of implying the surface is proven.
 
 ## 3. Alive Status Vocabulary
 
@@ -56,7 +60,7 @@ Each row records one user-visible surface or section.
 | Search primary module | PageHost | `eager + forever` | Ready shell mount | Forever | `search` runtime/store projection | alive | `pages/SearchPage.descriptor.tsx` registered, PageHost-owned (`runtime-projections.md §7`); hidden re-render cost not sampled | Client Platform |
 | Chat primary module | PageHost | `idle + forever` | First idle slot or first visit | Forever | `social` runtime/store projection | alive | `pages/SocialChatPage.descriptor.tsx` registered, PageHost-owned (`runtime-projections.md §7`); message-list virtualization not yet proven | Chat / Client Platform |
 | Agent primary module | PageHost | `idle + forever` | First idle slot or first visit | Forever | `agentCapability`, `agentTopic`, `social` runtimes | alive | `pages/AgentChatPage.descriptor.tsx` registered (`preload: idle`, `keepAlive: forever`, `runtime-projections.md §7`); canvas mount cost not sampled | Agent / Client Platform |
-| Settings primary module | PageHost | `idle + forever` | First idle slot or first visit | Forever for page shell; selected-only for heavy sections | `settings`, `federation`, provider/model stores | alive | `pages/SettingsPage.descriptor.tsx` registered, PageHost-owned; shell keeps `mountedSections` alive via `display:none` (`SettingsPage.tsx`); provider/section lifecycle still `needs audit` (§6) | Client Platform |
+| Settings primary module | PageHost / SectionHost | `idle + forever` | First idle slot or first visit | Forever for page shell; SectionHost policy for sections | `settings`, `federation`, provider/model stores | alive | `pages/SettingsPage.descriptor.tsx` registered, PageHost-owned; `kernel/SectionHost.tsx` owns section mount/cache; runtime sample recorded `settings:group:ai` route-to-visible ~189ms and `settings:section:logs/statistics` route-to-visible ~151–153ms | Client Platform |
 | Applets launcher | PageHost | `idle + forever` | First idle slot or first visit | Forever for launcher shell | `applets` runtime/store projection | alive | `pages/AppletsPage.descriptor.tsx` registered; applet runtime materializes only after navigating to `applet:<id>` (§5) | Applet Platform |
 | Moments / Social primary module | PageHost | `idle + forever` | First idle slot or first visit | Forever | `moments`, `social` runtime/store projection | alive | `pages/moments/MomentsApp.descriptor.tsx` registered; hidden feed selector/render cost not sampled (§12) | Social / Client Platform |
 
@@ -64,22 +68,22 @@ Each row records one user-visible surface or section.
 
 | Feature / Surface | Owner Layer | Alive Category | Trigger | Cache Policy | Runtime / Store Owner | Status | Evidence | Review Owner |
 |-------------------|-------------|----------------|---------|--------------|------------------------|--------|----------|--------------|
-| Applet runtime instance | PageHost / PageBoundary | `on-visit + lru` | Navigate to `applet:<id>` | LRU by applet id | `applets` runtime/store projection; applet host bridge | lru | PageHost dispatches page runtime lease events; `appletsRuntime.acquirePage/releasePage` owns materialize/load/unload; runtime page only renders preparing/error and explicit close intent; close release is deferred after navigation to protect the return-home click frame | Applet Platform |
+| Applet runtime instance | PageHost / AppletContainerShell | `on-visit + lru` | Navigate to `applet:<id>` | LRU by applet id; standalone window uses window lease | `applets` runtime/store projection; applet host bridge | lru | PageHost dispatches page runtime lease events; `appletsRuntime.acquirePage/releasePage` owns materialize/load/unload; `applet/AppletContainerShell.tsx` owns contained/immersive/standalone shell chrome; runtime sample confirmed `hello-lynx` contained shell, immersive mode, floating controls hide/show/exit, route-to-visible ~122ms, page-acquire ~792ms | Applet Platform |
 | Agent profile page | PageBoundary | `on-visit + none` unless promoted | Navigate to profile route | None by default | Agent/social projections | not alive | Promote only if profile switch jank or draft state proves need | Agent |
 | Agent orchestration/canvas | PageBoundary | `on-visit + none` unless promoted | Navigate to canvas route | None by default | Agent canvas/orchestration stores | needs audit | Heavy canvas should document mount, persistence, and memory policy before alive promotion | Agent |
 | Import/export flows | OverlayHost / PageBoundary | `on-visit + none` | Explicit user intent | None | Owning feature store | not alive | Must preserve draft or recovery externally if interrupted | Client Platform |
-| Command palette / transient search overlay | OverlayHost | `on-visit + none` or selected draft cache | Keyboard/command intent | None or explicit draft cache | Navigation/search projection | needs audit | Do not keep hidden full result trees alive without virtualization | Client Platform |
+| Command palette / transient search overlay | OverlayHost | `on-visit + none` or selected draft cache | Keyboard/command intent | None or explicit draft cache | Navigation/search projection | needs audit | Needs audit before alive promotion: do not keep hidden full result trees alive without virtualization | Client Platform |
 
 ## 6. Settings And Provider Section Registry
 
 | Feature / Surface | Owner Layer | Alive Category | Trigger | Cache Policy | Runtime / Store Owner | Status | Evidence | Review Owner |
 |-------------------|-------------|----------------|---------|--------------|------------------------|--------|----------|--------------|
-| Settings page shell | PageHost / PageBoundary | `idle + forever` | Idle prewarm or first settings visit | Forever | `settings` runtime/store projection | alive | `SettingsPage.tsx` keeps shell alive and mounts sections lazily via `mountedSections` + `display:none`; heavy sections below still need lifecycle proof | Client Platform |
-| Provider list | SectionBoundary | `lazy section` within alive Settings | Open provider settings area | Selected settings route/cache | Provider/model store projection | needs audit | List renders inside the `providers` section; verify model discovery does not run for every provider before claiming `lazy` | Client Platform |
+| Settings page shell | PageHost / PageBoundary / SectionHost | `idle + forever` | Idle prewarm or first settings visit | Forever shell; section policy delegated to `SectionHost` | `settings` runtime/store projection | alive | `SettingsPage.tsx` delegates section lifecycle to `kernel/SectionHost.tsx`; first-visit-cache preserves config drafts, selected-only unmounts diagnostics/read-only sections | Client Platform |
+| Provider list | SectionHost / SectionBoundary | `lazy section` within alive Settings | Open provider settings area | First-visit cache to preserve config draft | Provider/model store projection | needs audit | List renders inside the `providers` section through `SectionHost`; provider/model discovery behavior still needs separate audit before promoting selected provider editor rows | Client Platform |
 | Selected provider editor | SectionBoundary | `lazy section` | Select one provider | Selected-only; optional per-provider draft cache | Provider/model store projection | needs audit | `ProviderDetail.tsx` is a Tabs + Form panel; verify only the selected provider schema mounts and prior selections do not stay mounted | Client Platform |
 | CLI provider configuration | SectionBoundary | `lazy section` | Select CLI provider | Selected-only; optional draft cache | CLI provider config projection | needs audit | Target: render command, binary path, working directory, env, model, args, timeout, capabilities only for CLI providers — not yet implemented as a dedicated lazy schema | Client Platform |
 | Cloud/API provider configuration | SectionBoundary | `lazy section` | Select cloud/API provider | Selected-only; optional draft cache | Provider config projection | needs audit | Target: cloud/API form must not inherit CLI-only fields; current `ProviderDetail.tsx` uses one generic editor — needs split/audit | Client Platform |
-| Model discovery panel | SectionBoundary / RuntimeProjection | `lazy section` | Explicit refresh/discover intent or background projection | Request-scoped cache | Provider/model runtime | needs audit | Verify `fetchRemoteModels` only runs on explicit intent and not on Settings/provider mount before claiming `lazy` | Client Platform |
+| Model discovery panel | SectionBoundary / RuntimeProjection | `lazy section` | Explicit refresh/discover intent or background projection | Request-scoped cache | Provider/model runtime | needs audit | Needs audit: verify `fetchRemoteModels` only runs on explicit intent and not on Settings/provider mount before claiming `lazy` | Client Platform |
 | Advanced settings panels | SectionBoundary | `lazy section` | Expand advanced section | Selected section only | Owning settings store | needs audit | Target: defer heavy validation and schema compilation until the panel is visible — not yet verified | Client Platform |
 
 ## 7. Large Content Registry
@@ -89,7 +93,7 @@ Each row records one user-visible surface or section.
 | Chat message list | SectionBoundary | `virtualized content` inside alive page | Chat page active or prewarmed | Virtual window + scroll restoration | `social` runtime/store projection | needs audit | Large conversations must not render all messages | Chat |
 | Moments feed | SectionBoundary | `virtualized content` inside alive page | Moments page active or prewarmed | Virtual window or incremental list | `moments` runtime/store projection | needs audit | Feed hidden render cost must be checked when adding cards/actions | Social |
 | Contacts / roster list | SectionBoundary | `virtualized content` if large | Chat/Agent page active | Virtual window or filtered selector | `social`, agent projections | needs audit | Search/filter derivation should be selector-backed | Chat / Agent |
-| Logs, diagnostics, or debug output | SectionBoundary | `on-visit + none` or `virtualized content` | Explicit diagnostic intent | None or virtual window | Owning diagnostic store | needs audit | Never keep high-volume logs alive by default | Client Platform |
+| Logs, diagnostics, or debug output | SectionHost / SectionBoundary | `on-visit + none` or `virtualized content` | Explicit diagnostic intent | Selected-only unless virtualized | Owning diagnostic store | needs audit | `logs` settings module declares `sectionHostPolicy: selected-only`; runtime sample confirmed `logs` unmounts when switching back to `statistics`; high-volume log virtualization remains a separate audit | Client Platform |
 
 ## 8. Mobile Surface Registry
 
@@ -100,7 +104,7 @@ Mobile does not use the Desktop `PageHost` keep-alive model. `MobileShell.tsx` d
 | Mobile primary tab shell | NavigationShell | `on-visit + none` per tab | App ready; tab selected | None — only active tab mounted | `useSocialRuntime`, `social`/`group` stores | not alive | `MobileShell.tsx` uses `useState<TabId>` + `renderPage` switch (`chat`/`moments`/`contacts`/`settings`); inactive tabs fully unmount; runtime keeps projection fresh, not the tab tree | Mobile |
 | Mobile chat tab (list ↔ thread) | PageBoundary | `on-visit + none` within active chat tab | Open chat tab / select conversation | None; conversation identity in store | `social`, `group` store projection | not alive | `ChatPage.tsx` switches between conversation list and thread by `activeSessionUlid`/`activeGroupUlid` (store state), not a nav stack; back clears `selectSession(null)`/`selectGroup(null)`; whole tree unmounts on tab switch | Mobile / Chat |
 | Mobile conversation action sheet | OverlayHost | `on-visit + none` | Tap conversation actions | None | Chat action state | not alive | `ChatActionSheet` returns `null` when `!open`; bottom action sheet, not a right drawer (`ChatPage.tsx`) | Mobile / Chat |
-| Mobile tabbar | NavigationShell | `idle + forever` while in tab mode | App ready | Forever while shown | Social/group unread projection | alive | `MobileShell.tsx` renders `<nav className="mobile-tabbar">`; hidden when `activeTab === 'chat' && (activeSessionUlid || activeGroupUlid)` to give the thread full height | Mobile |
+| Mobile tabbar | NavigationShell | `idle + forever` while in tab mode | App ready | Forever while shown | Social/group unread projection | alive | `MobileShell.tsx` renders `<nav className="mobile-tabbar">`; hidden when `activeTab === 'chat' && (activeSessionUlid \|\| activeGroupUlid)` to give the thread full height | Mobile |
 
 ## 9. Applet Registry
 

@@ -339,136 +339,38 @@ function currentProductionWebHostFreshnessCheck() {
 }
 
 function currentMobileWebParityFreshnessCheck() {
-  const evidence = readEvidence('parity/mobile-web-bridge-output.txt');
-  const failures = [];
-  if (!evidence.content) {
-    failures.push('Missing evidence file: parity/mobile-web-bridge-output.txt');
-  }
-  const relevantInputs = [
-    'packages/applet-contract/package.json',
-    'packages/applet-contract/tsconfig.json',
-    'packages/applet-contract/src',
-    'packages/applet-sdk/package.json',
-    'packages/applet-sdk/tsconfig.json',
-    'packages/applet-sdk/src',
-    'apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/applet',
-    'apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/lynx',
-    'apps/mobile/ios/PeersTouch/Core/Applet',
-    'apps/mobile/ios/PeersTouch/Core/Lynx',
-    'tooling/scripts/applet-parity-gate.mjs',
-  ];
-  const newestInput = newestInputMtimeMs(relevantInputs, failures);
-  if (evidence.content && newestInput > statSync(evidence.absolutePath).mtimeMs + 1000) {
-    failures.push(`Mobile/Web parity evidence is older than relevant bridge inputs: evidence ${new Date(statSync(evidence.absolutePath).mtimeMs).toISOString()}, source newest ${new Date(newestInput).toISOString()}`);
-  }
   return {
-    name: 'Mobile and Web parity current source freshness',
-    status: failures.length === 0 ? 'PASS' : 'FAIL',
-    evidence: 'parity/mobile-web-bridge-output.txt',
-    detail:
-      failures.length === 0
-        ? 'Mobile/Web parity evidence is current relative to SDK and native bridge source inputs.'
-        : failures.join('; '),
+    name: 'Mobile native plugin parity evidence',
+    status: 'FAIL',
+    evidence: 'NOT_IMPLEMENTED',
+    detail: 'Old standalone Android/iOS parity gate was removed. Rebuild parity evidence against the Tauri Mobile native plugin host before claiming Mobile parity.',
   };
 }
 
 function currentMobileNativeManifestFreshnessCheck() {
-  const evidence = readEvidence('mobile/native-manifest-gate-output.txt');
-  const failures = [];
-  if (!evidence.content) {
-    failures.push('Missing evidence file: mobile/native-manifest-gate-output.txt');
-  }
-  const relevantInputs = [
-    'packages/applet-contract/package.json',
-    'packages/applet-contract/tsconfig.json',
-    'packages/applet-contract/src',
-    'packages/applet-sdk/package.json',
-    'packages/applet-sdk/tsconfig.json',
-    'packages/applet-sdk/src',
-    'apps/mobile/android/app/build.gradle.kts',
-    'apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/applet',
-    'apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/lynx',
-    'apps/mobile/android/app/src/test',
-    'apps/mobile/ios/PeersTouch.xcodeproj/project.pbxproj',
-    'apps/mobile/ios/PeersTouch/Core/Applet',
-    'apps/mobile/ios/PeersTouch/Core/Lynx',
-    'tooling/scripts/applet-mobile-native-manifest-gate.mjs',
-    'applet-readiness-evidence/package/mobile-native-certification-applet',
-  ];
-  const newestInput = newestInputMtimeMs(relevantInputs, failures);
-  if (evidence.content && newestInput > statSync(evidence.absolutePath).mtimeMs + 1000) {
-    failures.push(`Mobile native manifest evidence is older than relevant native inputs: evidence ${new Date(statSync(evidence.absolutePath).mtimeMs).toISOString()}, source newest ${new Date(newestInput).toISOString()}`);
-  }
   return {
-    name: 'Mobile native manifest current source freshness',
-    status: failures.length === 0 ? 'PASS' : 'FAIL',
-    evidence: 'mobile/native-manifest-gate-output.txt',
-    detail:
-      failures.length === 0
-        ? 'Mobile native manifest evidence is current relative to contract, SDK, native bridge, and generated package inputs.'
-        : failures.join('; '),
+    name: 'Mobile native manifest Tauri plugin evidence',
+    status: 'FAIL',
+    evidence: 'NOT_IMPLEMENTED',
+    detail: 'Old standalone mobile native manifest gate was removed. Rebuild this gate against the Tauri Mobile native plugin target.',
   };
 }
 
 function currentAndroidRuntimeE2eFreshnessCheck() {
-  const evidence = readEvidence('mobile/android-lynx-runtime-e2e-output.txt');
-  const failures = [];
-  if (!evidence.content) {
-    failures.push('Missing evidence file: mobile/android-lynx-runtime-e2e-output.txt');
-  }
-  const relevantInputs = [
-    'packages/applet-contract/src',
-    'packages/applet-sdk/src',
-    'apps/mobile/android/app/build.gradle.kts',
-    'apps/mobile/android/app/src/main/java/com/peerstouch/mobile/MainActivity.kt',
-    'apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/applet',
-    'apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/lynx',
-    'tooling/scripts/applet-android-lynx-runtime-e2e.mjs',
-    'applet-readiness-evidence/package/android-lynx-runtime-e2e-applet',
-  ];
-  const newestInput = newestInputMtimeMs(relevantInputs, failures);
-  if (evidence.content && newestInput > statSync(evidence.absolutePath).mtimeMs + 1000) {
-    failures.push(`Android Lynx runtime E2E evidence is older than relevant Android runtime inputs: evidence ${new Date(statSync(evidence.absolutePath).mtimeMs).toISOString()}, source newest ${new Date(newestInput).toISOString()}`);
-  }
   return {
-    name: 'Android Lynx runtime E2E current source freshness',
-    status: failures.length === 0 ? 'PASS' : 'FAIL',
-    evidence: 'mobile/android-lynx-runtime-e2e-output.txt',
-    detail:
-      failures.length === 0
-        ? 'Android Lynx runtime E2E evidence is current relative to SDK, native runtime, gate, and generated package inputs.'
-        : failures.join('; '),
+    name: 'Android Tauri plugin Lynx runtime E2E',
+    status: 'FAIL',
+    evidence: 'NOT_IMPLEMENTED',
+    detail: 'Old standalone Android Lynx runtime E2E was removed. Rebuild against Tauri Android app/plugin before claiming Android runtime readiness.',
   };
 }
 
 function currentIosRuntimeE2eFreshnessCheck() {
-  const evidence = readEvidence('mobile/ios-lynx-runtime-e2e-output.txt');
-  const failures = [];
-  if (!evidence.content) {
-    failures.push('Missing evidence file: mobile/ios-lynx-runtime-e2e-output.txt');
-  }
-  const relevantInputs = [
-    'packages/applet-contract/src',
-    'packages/applet-sdk/src',
-    'apps/mobile/ios/PeersTouch.xcodeproj/project.pbxproj',
-    'apps/mobile/ios/PeersTouch/App/PeersTouchApp.swift',
-    'apps/mobile/ios/PeersTouch/Core/Applet',
-    'apps/mobile/ios/PeersTouch/Core/Lynx',
-    'tooling/scripts/applet-ios-lynx-runtime-e2e.mjs',
-    'applet-readiness-evidence/package/ios-lynx-runtime-e2e-applet',
-  ];
-  const newestInput = newestInputMtimeMs(relevantInputs, failures);
-  if (evidence.content && newestInput > statSync(evidence.absolutePath).mtimeMs + 1000) {
-    failures.push(`iOS Lynx runtime E2E evidence is older than relevant iOS runtime inputs: evidence ${new Date(statSync(evidence.absolutePath).mtimeMs).toISOString()}, source newest ${new Date(newestInput).toISOString()}`);
-  }
   return {
-    name: 'iOS Lynx runtime E2E current source freshness',
-    status: failures.length === 0 ? 'PASS' : 'FAIL',
-    evidence: 'mobile/ios-lynx-runtime-e2e-output.txt',
-    detail:
-      failures.length === 0
-        ? 'iOS Lynx runtime E2E evidence is current relative to SDK, native runtime, gate, and generated package inputs.'
-        : failures.join('; '),
+    name: 'iOS Tauri plugin Lynx runtime E2E',
+    status: 'FAIL',
+    evidence: 'NOT_IMPLEMENTED',
+    detail: 'Old standalone iOS Lynx runtime E2E was removed. Rebuild against Tauri iOS app/plugin before claiming iOS runtime readiness.',
   };
 }
 
@@ -1137,41 +1039,9 @@ const candidateChecks = [
     ],
   }),
   currentSdkAdapterFreshnessCheck(),
-  evidenceCheck({
-    name: 'Mobile and Web parity gate',
-    path: 'parity/mobile-web-bridge-output.txt',
-    required: [/PASS SDK Lynx adapter/, /PASS Android and iOS permission checks/],
-  }),
   currentMobileWebParityFreshnessCheck(),
-  evidenceCheck({
-    name: 'Mobile native manifest source/iOS executable gate',
-    path: 'mobile/native-manifest-gate-output.txt',
-    required: [
-      /PASS iOS AppletManifest Swift model/,
-      /PASS iOS Xcode project target includes/,
-      /PASS iOS AppletBridgeSession and BridgeDispatcher/,
-      /(?:PASS|SKIP) iOS Xcode workspace build/,
-      /(?:PASS|SKIP) Android JVM AppletBridgeSessionContractTest/,
-    ],
-  }),
   currentMobileNativeManifestFreshnessCheck(),
-  evidenceCheck({
-    name: 'Android JVM native bridge contract executed in SDK environment',
-    path: 'mobile/native-manifest-gate-output.txt',
-    required: [/PASS Android JVM AppletBridgeSessionContractTest executed/],
-    forbidden: [/SKIP Android JVM AppletBridgeSessionContractTest/],
-  }),
-  evidenceCheck({
-    name: 'Android Lynx runtime E2E',
-    path: 'mobile/android-lynx-runtime-e2e-output.txt',
-    required: [/PASS Android Lynx runtime E2E/],
-  }),
   currentAndroidRuntimeE2eFreshnessCheck(),
-  evidenceCheck({
-    name: 'iOS Lynx runtime E2E',
-    path: 'mobile/ios-lynx-runtime-e2e-output.txt',
-    required: [/PASS iOS Lynx runtime E2E/],
-  }),
   currentIosRuntimeE2eFreshnessCheck(),
   evidenceCheck({
     name: 'Web Host runtime gate',
@@ -1225,7 +1095,7 @@ const lines = [
   '- release reviewedAt/acceptedAt fields must be canonical UTC ISO-8601 timestamps; reviewedAt must be at or after certificationOutput file mtime, and acceptedAt must be at or after thirdPartyAttestation.reviewedAt.',
   '',
   'Automated candidate evidence constraints:',
-  '- mobile/android-lynx-runtime-e2e-output.txt and mobile/ios-lynx-runtime-e2e-output.txt must come from native runtime E2E, not source parity scans.',
+  '- Mobile native runtime evidence must come from the Tauri Mobile native plugin host. Old standalone Android/iOS runtime E2E evidence is invalid.',
   '- web/production-web-host-runtime-output.txt must come from the Production Web Host shell gate, not only the adapter/runtime harness.',
   '- release/product-capability-service-gate-output.txt must prove product-backed task/skill executors where registry/timer-backed placeholders are not release-final.',
 ];

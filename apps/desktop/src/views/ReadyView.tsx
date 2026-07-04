@@ -6,6 +6,7 @@ import { PageRouter } from '../components/PageRouter';
 import { useHashRouter } from '../hooks/useHashRouter';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAppletPins } from '../hooks/useAppletPins';
+import { notifyActiveAppletPage } from '../runtimes/appletsRuntime';
 import { PageHost } from '../kernel/PageHost';
 import { PageContextProvider } from '../kernel/PageContext';
 import { markPhaseEnd, markPhaseStart } from '../kernel/boot';
@@ -25,6 +26,7 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
   const navigation = useNavigation(router);
   const appletPins = useAppletPins();
   const setChatSurfaceVisible = useNavigationBadgeStore((s) => s.setChatSurfaceVisible);
+  const standaloneApplet = isStandaloneAppletShell() && router.page.startsWith('applet:');
 
   useEffect(() => {
     markPhaseStart('firstPaint');
@@ -55,17 +57,26 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
     setChatSurfaceVisible(router.page === 'chat');
   }, [router.page, setChatSurfaceVisible]);
 
+  // Active-page bridge (§6.3): report the shown page to the applets runtime so
+  // the Applet Kernel can background the previous applet (hide → hidden-warm,
+  // kept alive) and foreground the entered one (show). Applet page frames are
+  // keepAlive:'forever', so PageHost never emits a release on switch — this is
+  // the sole driver of the applet hide/show visibility axis.
+  useEffect(() => {
+    notifyActiveAppletPage(router.page);
+  }, [router.page]);
+
   return (
     <PageContextProvider value={{ router, navigation, appletPins }}>
       <GlobalLayout
-        sideNav={
+        sideNav={standaloneApplet ? null : (
           <AppSideNav
             page={router.page}
             router={router}
             navigation={navigation}
             appletPins={appletPins}
           />
-        }
+        )}
       >
         <PageHost
           page={router.page}
@@ -81,4 +92,9 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
       </GlobalLayout>
     </PageContextProvider>
   );
+}
+
+function isStandaloneAppletShell(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('appletStandalone') === '1';
 }

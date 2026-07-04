@@ -308,15 +308,16 @@ Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿�
 - Bridge response/event envelope 序列化/反序列化使用平台 JSON 能力，错误码必须使用 canonical applet error code。
 - Bridge 消息通过 Lynx SDK 的 `evaluateJavascript` 从宿主推送到 Applet。
 - 宿主侧维护 `Map<String, AppletBridgeSession>` 管理各 Applet 的 Bridge 会话。
-- `AppletBridgeSessionContractTest` 必须覆盖 canonical manifest 解析、`network.request` service 声明约束、完整 capability method 权限校验、canonical error code、unloaded-session rejection；`applet-mobile-native-manifest-gate` 在检测到 Android SDK 时执行该 JVM 单测。
-- `AppletContainerView` 加载前必须扫描本地 applet bundle，并把 `load.android.entry` 解析为 app sandbox 中的实际 bundle URL，而不是只把相对 entry 传给 Lynx。
-- `pnpm applet:android-lynx-runtime-e2e` 是 Android runtime release evidence 入口；它必须通过 `adb` 在真实 emulator/device 中安装 APK、staging applet 包、用 intent extra 启动 applet route，并且只有在 `AppletBridgeNativeModule` 观察到 SDK `storage.set/get` canonical response marker 后才能写出 release evidence。
+- Android runtime release evidence 入口必须在 Tauri Android native plugin 落地后重建；旧 `apps/mobile/android` standalone APK 已删除，不能再作为验收宿主。
+- Tauri plugin 宿主加载前必须扫描本地 applet bundle，并把 `load.android.entry` 解析为 app sandbox 中的实际 bundle URL，而不是只把相对 entry 传给 Lynx。
+- 最终 Android E2E 必须通过 Tauri Mobile app/plugin 在真实 emulator/device 中打开 applet route，并且只有在 `AppletBridgeNativeModule` 观察到 SDK canonical marker 后才能写出 release evidence。
 
 ### 7.4 iOS 实现要点
 - Bridge response/event envelope 序列化/反序列化使用 `Codable` / dictionary bridge，错误码必须使用 canonical applet error code。
 - Bridge 消息通过 Lynx SDK 的 JS 执行接口从宿主推送到 Applet。
 - 宿主侧维护 `[String: AppletBridgeSession]` 字典管理各 Applet 的 Bridge 会话。
-- `pnpm applet:ios-lynx-runtime-e2e` 是 iOS runtime release evidence 入口；它必须使用 native Lynx bundle，不能使用 `environments.web` Rspeedy 产物，并且只有在 Simulator 中观察到 SDK `storage.set/get` canonical response marker 后才能写出 release evidence。
+- iOS runtime release evidence 入口必须在 Tauri iOS native plugin 落地后重建；旧 `apps/mobile/ios/PeersTouch` standalone App 已删除，不能再作为验收宿主。
+- 最终 iOS E2E 必须通过 Tauri Mobile app/plugin 在 Simulator/device 中打开 applet route，并且只有在 `AppletBridgeNativeModule` 观察到 SDK canonical marker 后才能写出 release evidence。
 
 ---
 
@@ -324,21 +325,26 @@ Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿�
 
 ### 8.1 生命周期状态机
 
+> **唯一真源**：跨端七态状态机冻结在 `packages/applet-contract/src/lifecycle.ts:22-29`（状态 union）与 `:113-124`（`TRANSITION_RULES`）。Mobile **不重新定义状态**，本节仅镜像契约。历史的 `discovered/validated/loading/active/invalid` 命名已废弃（Manifest 扫描/校验属于 catalog 层，不是实例生命周期态）。参照架构真源 [`applet-lifecycle-architecture.md §3`](../../architecture/applet-runtime/applet-lifecycle-architecture.md) 与落地子计划 [`execution-plans/2026-07-03-applet-kernel-mobile-native-buildout.md §5.3`](./execution-plans/2026-07-03-applet-kernel-mobile-native-buildout.md)。
+
 ```text
-  discovered → validated → loading → active → paused → destroyed
-                  ↓                    ↓
-               invalid              error
+  cold → materializing → visible ⇄ hidden-warm → suspended → destroyed
+                            │  ▲        │  ▲          ▲
+                          pause│      pause│        restore│
+                            ▼  │resume    ▼  │suspend      │
+                          paused ─────────────────────────┘
 ```
 
-状态说明：
-- `discovered`：AppletManager 扫描到 Applet 元数据（来自本地缓存或 Station 同步）。
-- `validated`：Manifest 校验通过。
-- `loading`：LynxView 创建中，Bundle 加载中。
-- `active`：Applet 运行中，LynxView 可见。
-- `paused`：Applet 对应页面不可见，JS 引擎暂停。
-- `destroyed`：Applet 被卸载或页面被销毁，资源已释放。
-- `invalid`：Manifest 校验失败。
-- `error`：运行时错误（Bundle 加载失败、JS 异常等）。
+状态说明（`lifecycle.ts:22-29`）：
+- `cold`：尚未实例化，再次打开即冷启动。
+- `materializing`：`launch`（`cold → materializing`）后，Bundle 拉取 + capability session 建立中。
+- `visible`：`ready`（`materializing → visible`）后 LynxView 可见运行。冷启首帧直接 `applySurfaceCommand('show')` 挂载，**不 dispatch `show`**（`show` 合法源不含 `visible`，见 §5.3 子计划）。
+- `hidden-warm`：`hide`（`visible → hidden-warm`）后 LynxView 保活（保留实例，切回不重载）。
+- `paused`：`pause`（源 `visible | hidden-warm`）后 timer/rAF 冻结（App 后台 / 系统 idle）；`resume` 回到 `visible` 或 `hidden-warm`。
+- `suspended`：`suspend`（源 `hidden-warm | paused`）后释放渲染资源、保留最小状态，`restore` 快速恢复。
+- `destroyed`：`destroy`（任意非 `cold`/`destroyed` 态可达）后完全回收，再次打开是冷启。
+
+`error` 与 `memory-pressure` 是**喂给 Kernel 的信号**，会被解析为 `destroy`/`suspend` 转换，不是独立目标态（`lifecycle.ts:44-58`）。合法转换校验以 `isValidTransition`（`lifecycle.ts:147`）为准，非法转换一律拒绝。
 
 ### 8.2 AppletManager 职责
 
@@ -353,10 +359,15 @@ Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿�
 卸载：
 - 发送 `destroy` 事件 → 等待 Applet 清理（500ms 超时） → 销毁 LynxView → 清理缓存文件。
 
-### 8.3 多实例管理
-- 同一个 Applet ID 同一时间只允许一个活跃实例（与 Desktop 行为一致）。
-- 不同 Applet 可以同时运行多个实例，但受内存上限约束（建议最多 5 个并发 Applet）。
-- 内存压力下，优先销毁 `paused` 状态的 Applet。
+### 8.3 多实例与资源策略
+
+> 资源策略以契约为准：`MOBILE_RESOURCE_POLICY`（`packages/applet-kernel/src/policy.ts:25-31`），回收决策由 `ResourceScheduler`（`resource-scheduler.ts`）统一裁决，AppletManager/容器不自行淘汰。
+
+- 同一个 Applet ID 同一时间只允许一个活跃实例（`instanceId` 维度，与 Desktop 行为一致）。
+- LRU 保活上限 `lruSize = 3`（Mobile 比 Desktop 的 4 更紧，唯一差异）；超出时最旧 `hidden-warm` 实例被 `suspend`。
+- `suspended` 上限 `maxSuspended = 8`，超出时最旧 `suspended` 被 `destroy`。
+- TTL：`hidden-warm` 30min → `suspended`；`suspended` 120min → `destroyed`；`paused` 15min → `suspended`。
+- 内存压力（`resource-scheduler.ts:128-158`）：`moderate` 销毁最旧 `suspended`；`critical` 销毁所有非 `visible` 实例。
 
 ---
 
@@ -410,6 +421,6 @@ Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿�
 - `@peers-touch/applet-sdk` 在 Mobile 端的 API 行为与 Desktop/Web Host 的 canonical contract 一致。
 - Canonical bridge response/event envelope 在双端均可正确序列化与处理，错误码不回退到平台私有 `BRIDGE_*`。
 - Manifest 校验逻辑与 Desktop/Web Host 行为一致（相同的合法/非法 manifest 得到相同的校验结果）。
-- Native manifest/bridge session 行为必须有可执行 gate：iOS 通过 Swift harness，Android 通过 SDK 环境下的 JVM contract test；没有 Android SDK 的本地 run 只能记录 SKIP，不能当作 Android runtime E2E。
-- Release 级 native runtime evidence 必须来自 `applet-ios-lynx-runtime-e2e` / `applet-android-lynx-runtime-e2e` 的真 simulator/emulator/device marker，不得用 source parity scan 或 JVM/Swift harness 代替。
+- Native manifest/bridge/session 行为必须在 Tauri native plugin 物理落点重建可执行 gate；旧 standalone Swift/JVM harness 已作废，不能当作 Mobile readiness。
+- Release 级 native runtime evidence 必须来自 Tauri Mobile app/plugin 的真 simulator/emulator/device marker，不得用旧 standalone app、source parity scan 或平台 harness 代替。
 - 同一个 Applet Bundle（`targets` 包含 `desktop`、`android`、`ios`）可以在 Android、iOS、Desktop 三端无修改运行。

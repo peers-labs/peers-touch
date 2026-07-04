@@ -45,6 +45,10 @@ echo "== Hard rules =="
 tooling/scripts/review/hard-rules.sh --range "$diff_range"
 
 echo
+echo "== Frontend runtime registry =="
+bash tooling/scripts/check-frontend-runtime-registry.sh --range "$diff_range"
+
+echo
 echo "== Knowledge match =="
 if [[ "$strict_knowledge" -eq 1 ]]; then
   tooling/scripts/review/knowledge-match.sh --range "$diff_range" --strict

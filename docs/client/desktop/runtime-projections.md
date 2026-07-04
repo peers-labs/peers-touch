@@ -8,6 +8,7 @@ This document is the Desktop platform source for how runtime components consume 
 
 Cross-end architecture source:
 
+- `docs/architecture/frontend-runtime/README.md` defines the cross-client frontend runtime model: scheduling lanes, page/section/applet lifecycle, hidden-tree budget, and performance evidence.
 - `docs/architecture/social-runtime/README.md` defines the Desktop/Mobile shared social runtime abstraction. This Desktop document refines that abstraction inside `desktop-web` kernel/runtime contracts.
 
 Read this before changing:

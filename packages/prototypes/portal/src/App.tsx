@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType, type CSSProperties, type ReactElement } from 'react';
+import { useEffect, useState, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react';
 import { Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
 import { WORKTREE_TARGETS } from './registry/worktrees';
@@ -34,13 +34,26 @@ export function PrototypePortal() {
   const [selectedPrototypeId, setSelectedPrototypeId] = useState<string | null>(null);
   const meta = SITE_META[site];
   const visible = LOCAL_PROTOTYPES.filter((prototype) => prototype.site === site);
+  const entryPrototypes = visible.filter(isEntryPrototype);
   const target = WORKTREE_TARGETS.find((item) => item.id === targetId) ?? WORKTREE_TARGETS[0];
   const servingTarget = WORKTREE_TARGETS[0];
   const localTarget = target.id === 'current';
   const selectedPrototype =
-    visible.find((prototype) => prototype.id === selectedPrototypeId) ??
-    visible.find((prototype) => prototype.status === 'pending-review' && prototype.kind !== 'shell') ??
-    visible[0];
+    entryPrototypes.find((prototype) => prototype.id === selectedPrototypeId) ??
+    entryPrototypes.find((prototype) => prototype.status === 'pending-review' && prototype.kind !== 'shell') ??
+    entryPrototypes[0] ??
+    null;
+
+  useEffect(() => {
+    if (entryPrototypes.length === 0) {
+      setSelectedPrototypeId(null);
+      return;
+    }
+
+    if (!selectedPrototypeId || !entryPrototypes.some((prototype) => prototype.id === selectedPrototypeId)) {
+      setSelectedPrototypeId(entryPrototypes[0].id);
+    }
+  }, [entryPrototypes, selectedPrototypeId]);
 
   return (
     <div style={styles.page}>
@@ -93,8 +106,8 @@ export function PrototypePortal() {
 
           {localTarget ? (
             <div style={styles.grid}>
-              {visible.length > 0 ? (
-                visible.map((prototype) => (
+              {entryPrototypes.length > 0 ? (
+                entryPrototypes.map((prototype) => (
                   <PrototypeCard
                     key={prototype.id}
                     prototype={prototype}
@@ -122,6 +135,12 @@ export function PrototypePortal() {
       </main>
     </div>
   );
+}
+
+function isEntryPrototype(prototype: PrototypeManifest): boolean {
+  if (prototype.site !== 'desktop') return true;
+  if (prototype.kind === 'applet') return false;
+  return prototype.kind === 'shell' || prototype.module !== 'applet-runtime';
 }
 
 function CurrentWorktreeBadge({ target }: { target: PrototypeWorktreeTarget }) {
@@ -237,18 +256,20 @@ function PrototypeCard({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    onSelect();
+  };
+
   return (
     <article
-      style={{ ...styles.card, ...(selected ? styles.cardSelected : null) }}
-      onClick={onSelect}
       role="button"
       tabIndex={0}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
+      aria-pressed={selected}
+      onClick={onSelect}
+      onKeyDown={handleKeyDown}
+      style={{ ...styles.card, ...(selected ? styles.cardSelected : null) }}
     >
       <div style={styles.cardTop}>
         <span style={styles.cardTitle}>{prototype.title}</span>

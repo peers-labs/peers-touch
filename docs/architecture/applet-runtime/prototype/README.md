@@ -13,6 +13,10 @@
 
 这是 Desktop 站点下的极简 Applet Box launcher 原型，不是某个具体 applet 的产品界面，也不是 Lynx / applet runtime 实现。
 
+`packages/prototypes/desktop/features/applet-workspace/`
+
+这是 Desktop 站点下的多实例 Applet Workspace 原型，用来验证“小程序像浏览器一样多开”的容器交互：固定 Home tab、运行实例 tabs、Pin to System、detach 到独立窗口、immersive 容器模式。它仍是 React web 原型，不碰 Lynx / applet runtime / SDK。
+
 ## 落地目标
 
 落到 Desktop Applet Box 的安装包导入、展示、打开、运行、通知、退出、卸载入口：
@@ -47,6 +51,14 @@ Prototype Portal 会自动发现 `applet-lifecycle` manifest。
 - `docs/client/common/ui-identity/README.md`
 - `docs/client/desktop/applet-launcher-ux-contract.md`
 
+`applet-workspace` 覆盖下一代 Desktop Applet 容器交互：
+
+- Home：作为固定 tab 承载小程序入口、最近运行、全部小程序、搜索和 Open。
+- Multi-open：顶部 tabs 承载不同小程序实例；重复点击默认 focus，显式 `New instance` 才多开。
+- Container modes：默认 contained，支持 immersive，支持 detach 到独立窗口并保留 tab 恢复路径。
+- System pin：`Pin to System` 只作为系统快捷启动入口状态，不等于 standalone window，也不污染 launcher grid。
+- Management boundary：版本、权限、诊断、卸载不进入 Home grid；后续归入 runtime detail / management flow。
+
 边界声明：
 
 - Page canvas：Applet Box 页面本身。
@@ -59,6 +71,8 @@ Prototype Portal 会自动发现 `applet-lifecycle` manifest。
 
 `landed`（已落地到 `apps/desktop/src/pages/AppletsPage.tsx`，参照原型按 Desktop 运行时与真实 applets store 重新实现）
 
+`applet-workspace`: `drafting`（新一代 browser-like applet container 交互原型，待 Owner 评审确认后才允许作为落地依据）
+
 ## 已知差异 / 待补
 
 - 暂不做商店；只表达从安装包导入。
@@ -67,3 +81,6 @@ Prototype Portal 会自动发现 `applet-lifecycle` manifest。
 - 当前无 applet 专属 UI Identity module；本原型复用 shared UI Identity 与 Desktop Applet Launcher UX Contract。
 - 运行快照中的 `退出`/关闭是 runtime surface 动作，已迁出 launcher，归入 `AppletRuntimePage`；launcher grid 仍不展示卸载、诊断、权限、版本等管理内容。
 - 落地全部文案接入 i18n locale key，移除高饱和 identity 渐变（改用低饱和 tint）。
+- `applet-workspace` 使用 mock applet 内容表达容器布局，不代表 applet 内部页面 UI。
+- `Pin to System` 在原型里只展示入口和状态；真实 macOS Dock/Launchpad、Windows Start/Desktop shortcut、Linux desktop entry 集成需要后续运行时设计与系统 API 验证。
+- `Detach` 在原型里只展示 tab 状态；真实实现需要产品窗口生命周期、focus、close、session restore 与 applet runtime lease 对齐。

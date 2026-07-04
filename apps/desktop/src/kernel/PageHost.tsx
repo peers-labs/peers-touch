@@ -28,12 +28,33 @@ import {
   type PageResolution,
 } from './page';
 import { acquirePageRuntimeLease, releasePageRuntimeLease } from './pageRuntimeLease';
+import {
+  markRouteRequested,
+  markRouteVisible,
+  recordHiddenSurfaceRender,
+  recordSurfaceRender,
+} from './frontendRuntimeProfiler';
 import { log } from '../utils/logger';
 
 interface PageHostProps {
   page: string;
   /** Rendered when `page` is not in the registry (legacy migration aid). */
   fallback: ReactElement | null;
+}
+
+function scheduleRouteVisible(pageId: string, data: Record<string, unknown>): () => void {
+  let reported = false;
+  const report = () => {
+    if (reported) return;
+    reported = true;
+    markRouteVisible(pageId, data);
+  };
+  const frame = window.requestAnimationFrame(report);
+  const fallback = window.setTimeout(report, 120);
+  return () => {
+    window.cancelAnimationFrame(frame);
+    window.clearTimeout(fallback);
+  };
 }
 
 function pickInitialMounted(activePage: string): Set<string> {
@@ -56,6 +77,22 @@ export function PageHost({ page, fallback }: PageHostProps): ReactElement {
   const [mounted, setMounted] = useState<Set<string>>(() => pickInitialMounted(page));
   const idlePrewarmStartedRef = useRef(false);
   const activePageIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    markRouteRequested(page, {
+      registered: isRegistered,
+      descriptorId: activeDescriptor?.id,
+    });
+  }, [activeDescriptor?.id, isRegistered, page]);
+
+  useEffect(() => {
+    if (isRegistered && activePageKey && !mounted.has(activePageKey)) return;
+    return scheduleRouteVisible(page, {
+      descriptorId: activeDescriptor?.id,
+      mounted: activePageKey ? mounted.has(activePageKey) : true,
+      registered: isRegistered,
+    });
+  }, [activeDescriptor?.id, activePageKey, isRegistered, mounted, page]);
 
   useEffect(() => {
     const previousPageId = activePageIdRef.current;
@@ -218,6 +255,12 @@ const RegisteredPageFrame = memo(function RegisteredPageFrame({
   isActive: boolean;
   mounted: boolean;
 }): ReactElement | null {
+  useEffect(() => {
+    if (mounted && !isActive) {
+      recordHiddenSurfaceRender(pageKey, { descriptorId: desc.id, pageId });
+    }
+  });
+
   if (desc.keepAlive === 'none') {
     if (!isActive) return null;
     return (
@@ -240,8 +283,12 @@ const RegisteredPageFrame = memo(function RegisteredPageFrame({
 });
 
 function renderFactory(desc: PageDescriptor, pageId: string): ReactElement | null {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   try {
-    return desc.factory({ pageId, descriptorId: desc.id });
+    const result = desc.factory({ pageId, descriptorId: desc.id });
+    const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    recordSurfaceRender(pageId, ms, { descriptorId: desc.id });
+    return result;
   } catch (err) {
     log.error('PageHost', `factory for ${desc.id} threw`, { pageId, err });
     return null;
