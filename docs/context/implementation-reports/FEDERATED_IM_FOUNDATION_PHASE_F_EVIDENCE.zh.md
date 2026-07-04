@@ -3,7 +3,7 @@
 **项目：** Peers Touch 联邦-Station IM
 **日期：** 2026-07-05
 **范围：** Foundation pressure and security evidence
-**状态：** 部分完成；live deployed 3-Station runtime 仍受环境配置阻塞
+**状态：** 部分完成；live deployed federation prerequisite 已通过，完整 Desktop/browser runtime pressure 仍未运行
 
 ## 1. 计划来源
 
@@ -27,7 +27,7 @@ Phase F 要求：
 | `chat-group-pressure-security` | home Station 群聊 100 actors / 10 senders / 1000 messages | PASS | `/tmp/peers-touch-chat-group-pressure-full/group_pressure_security_report.json` |
 | `chat-private-pressure-security` | home Station 私聊 100 actors / 50 sessions / 1000 messages | PASS | `/tmp/peers-touch-chat-private-pressure-full/private_pressure_security_report.json` |
 | `chat-federated-group-pressure` | relay-mediated 3-Station federation proposal/event path | PASS | `GOWORK=off go test ./subserver/group_chat -run TestRelayMediatedThreeStationProposalPressureAcceptance -count=1 -v` |
-| `federated_browser_prereq.py` | live deployed 3-Station browser/runtime prerequisite | FAIL | `CHAT_FEDERATION_FOLLOWER_STATION_URL is required` |
+| `chat-federated-browser-prereq` | live deployed federation browser/runtime prerequisite | PASS | `CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.37.246.80:18080 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py` |
 
 ## 3. Home Station 群聊压力与安全
 
