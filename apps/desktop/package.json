@@ -36,6 +36,7 @@
     "@lynx-js/web-core": "^0.21.0",
     "@lynx-js/web-elements": "^0.12.3",
     "@peers-touch/applet-contract": "workspace:*",
+    "@peers-touch/applet-kernel": "workspace:*",
     "@peers-touch/client-chat-core": "workspace:*",
     "@peers-touch/client-media-security": "workspace:*",
     "@peers-touch/client-storage": "workspace:*",
