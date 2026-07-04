@@ -221,8 +221,6 @@ export function ChatThreadPanel() {
     activeGroupUlid,
     sessions,
     groupMembers,
-    messages,
-    threadMessages,
     threadLoading,
     threadLoadingMore,
     threadError,
@@ -243,6 +241,8 @@ export function ChatThreadPanel() {
     recallFriendMessage,
     recallGroupMessage,
   } = useSocialChatStore();
+  const getIMMessages = useSocialChatStore((s) => s.getIMMessages);
+  const getIMThreadMessages = useSocialChatStore((s) => s.getIMThreadMessages);
   const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
@@ -252,15 +252,15 @@ export function ChatThreadPanel() {
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
   const currentMessages = useMemo(
-    () => (activeUlid ? messages[activeUlid] || [] : []),
-    [activeUlid, messages],
+    () => (activeUlid ? getIMMessages(activeKind, activeUlid) : []),
+    [activeKind, activeUlid, getIMMessages],
   );
   const threadKey = activeUlid && openThreadRootUlid
     ? socialThreadKey(activeKind, activeUlid, openThreadRootUlid)
     : '';
   const loadedThreadMessages = useMemo(
-    () => (threadKey ? threadMessages[threadKey] || [] : []),
-    [threadKey, threadMessages],
+    () => (activeUlid && openThreadRootUlid ? getIMThreadMessages(activeKind, activeUlid, openThreadRootUlid) : []),
+    [activeKind, activeUlid, getIMThreadMessages, openThreadRootUlid],
   );
   const loadingThread = threadKey ? threadLoading[threadKey] === true : false;
   const loadingMoreReplies = threadKey ? threadLoadingMore[threadKey] === true : false;
@@ -326,7 +326,7 @@ export function ChatThreadPanel() {
         );
       }
       await loadThreadMessages(activeUlid, rootMessage.ulid, activeKind);
-      const refreshedThread = useSocialChatStore.getState().threadMessages[threadKey] || [];
+      const refreshedThread = useSocialChatStore.getState().getIMThreadMessages(activeKind, activeUlid, rootMessage.ulid);
       const lastReadUlid = refreshedThread.length > 0
         ? refreshedThread[refreshedThread.length - 1].ulid
         : rootMessage.ulid;

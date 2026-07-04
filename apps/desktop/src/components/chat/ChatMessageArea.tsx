@@ -23,11 +23,9 @@ import { log } from '../../utils/logger';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError, type PresentedError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
-import type { FriendChatMessage } from '../../gen/proto/domain/chat/friend_chat_pb';
-import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import {
   isFriendMessage,
-  messageThreadRootUlid,
+  type ChatMessage,
   messageTimestampMs,
   replyPreviewForMessage,
 } from './message/chatMessageModel';
@@ -70,7 +68,7 @@ export function ChatMessageArea() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
-    activeTab, activeSessionUlid, activeGroupUlid, messages,
+    activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
     deleteMessage, recallFriendMessage, editFriendMessage,
     recallGroupMessage, editGroupMessage, openThread,
@@ -89,7 +87,8 @@ export function ChatMessageArea() {
   const peerOnline = useSocialChatStore((s) => s.peerOnline);
   const typingPeers = useSocialChatStore((s) => s.typingPeers);
   const threadCounts = useSocialChatStore((s) => s.threadCounts);
-  const threadMessages = useSocialChatStore((s) => s.threadMessages);
+  const getIMMessages = useSocialChatStore((s) => s.getIMMessages);
+  const getIMThreadMessages = useSocialChatStore((s) => s.getIMThreadMessages);
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
@@ -100,7 +99,7 @@ export function ChatMessageArea() {
   // instead of creating a new message. The banner above the input
   // shows the original content + a cancel handle.
   const [editingUlid, setEditingUlid] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<FriendChatMessage | GroupMessage | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
   const [composerError, setComposerError] = useState<PresentedError | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -109,8 +108,8 @@ export function ChatMessageArea() {
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
-  const currentMessages = activeUlid ? (messages[activeUlid] || []) : [];
-  const mainTimelineMessages = currentMessages.filter((message) => !messageThreadRootUlid(message));
+  const currentMessages = activeUlid ? getIMMessages(activeKind, activeUlid) : [];
+  const mainTimelineMessages = currentMessages;
   const activeLocalState = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`] : undefined;
   const activeBackground = activeLocalState?.background;
   const activeBackgroundImageUrl = useOssAttachmentUrl(activeLocalState?.backgroundImage || undefined);
@@ -467,7 +466,7 @@ export function ChatMessageArea() {
     }
   };
 
-  const handleRecall = async (msg: FriendChatMessage | GroupMessage) => {
+  const handleRecall = async (msg: ChatMessage) => {
     if (!activeUlid) return;
     try {
       if (isFriendMessage(msg)) {
@@ -481,7 +480,7 @@ export function ChatMessageArea() {
     }
   };
 
-  const confirmDeleteMessage = (target: FriendChatMessage | GroupMessage) => {
+  const confirmDeleteMessage = (target: ChatMessage) => {
     if (!activeUlid) return;
     setDeleteTarget(target);
   };
@@ -500,7 +499,7 @@ export function ChatMessageArea() {
     }
   };
 
-  const handleStartEdit = (msg: FriendChatMessage | GroupMessage) => {
+  const handleStartEdit = (msg: ChatMessage) => {
     // Only plaintext messages are editable today. An E2EE chat
     // would need a separate flow that re-encrypts under the active
     // ratchet key before issuing the RPC; we deliberately disable
@@ -525,11 +524,10 @@ export function ChatMessageArea() {
 
   const threadPreviewMessagesForRoot = (rootUlid: string) => {
     if (!activeUlid || !rootUlid) return [];
-    const key = socialThreadKey(activeKind, activeUlid, rootUlid);
     return collectChatThreadPreviewMessages({
       rootUlid,
       currentMessages,
-      loadedThreadMessages: threadMessages[key] || [],
+      loadedThreadMessages: getIMThreadMessages(activeKind, activeUlid, rootUlid),
       resolveTimestampMs: messageTimestampMs,
     });
   };

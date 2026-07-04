@@ -6,7 +6,7 @@ import { Badge, Empty, theme, Typography } from 'antd';
 import { BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff, Trash2 } from 'lucide-react';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useSocialChatStore } from '../../store/socialChat';
-import type { UnifiedConversation } from '../../store/socialChat';
+import type { DesktopIMConversationProjection } from '../../store/socialProjection';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError } from '../../services/errorPresenter';
 import { CreateGroupModal } from './CreateGroupModal';
@@ -41,6 +41,7 @@ export function ChatSessionList() {
     groupUnreadCounts,
     lastPreviews,
     currentUserDid,
+    messages,
     activeTab,
     activeSessionUlid,
     activeGroupUlid,
@@ -48,7 +49,7 @@ export function ChatSessionList() {
     setActiveTab,
     selectSession,
     selectGroup,
-    getUnifiedConversations,
+    getIMConversations,
     updateConversationLocalState,
     hideConversation,
     deleteGroupContact,
@@ -65,14 +66,23 @@ export function ChatSessionList() {
   // fetch twice in parallel and the spinner blocks longer than necessary.
 
   const conversations = useMemo(
-    () => getUnifiedConversations(),
-    [getUnifiedConversations, sessions, groups, groupUnreadCounts, lastPreviews, currentUserDid, conversationLocalState],
+    () => getIMConversations(),
+    [
+      getIMConversations,
+      sessions,
+      groups,
+      groupUnreadCounts,
+      lastPreviews,
+      currentUserDid,
+      conversationLocalState,
+      messages,
+    ],
   );
 
   const filteredItems = useMemo(() => {
     if (!searchText.trim()) return conversations;
     const q = searchText.toLowerCase();
-    return conversations.filter((c) => c.name.toLowerCase().includes(q));
+    return conversations.filter((c) => c.title.toLowerCase().includes(q));
   }, [conversations, searchText]);
 
   const plusMenuItems = [
@@ -90,18 +100,18 @@ export function ChatSessionList() {
     },
   ];
 
-  const handleSelect = (c: UnifiedConversation) => {
-    if (c.type === 'friend') {
-      selectSession(c.ulid);
+  const handleSelect = (c: DesktopIMConversationProjection) => {
+    if (c.kind === 'friend') {
+      selectSession(c.id);
       setActiveTab('friend');
     } else {
-      selectGroup(c.ulid);
+      selectGroup(c.id);
       setActiveTab('group');
     }
   };
 
-  const buildContextMenu = useCallback((c: UnifiedConversation) => {
-    const localState = conversationLocalState[`${c.type}:${c.ulid}`];
+  const buildContextMenu = useCallback((c: DesktopIMConversationProjection) => {
+    const localState = conversationLocalState[`${c.kind}:${c.id}`];
     const isPinned = Boolean(localState?.sticky);
     const isMuted = Boolean(localState?.muted);
 
@@ -140,7 +150,7 @@ export function ChatSessionList() {
         switch (key) {
           case 'pin':
             try {
-              await updateConversationLocalState(c.type, c.ulid, { sticky: !isPinned });
+              await updateConversationLocalState(c.kind, c.id, { sticky: !isPinned });
             } catch (error) {
               presentError(error, {
                 mapper: mapChatError,
@@ -150,7 +160,7 @@ export function ChatSessionList() {
             break;
           case 'mute':
             try {
-              await updateConversationLocalState(c.type, c.ulid, { muted: !isMuted });
+              await updateConversationLocalState(c.kind, c.id, { muted: !isMuted });
             } catch (error) {
               presentError(error, {
                 mapper: mapChatError,
@@ -161,7 +171,7 @@ export function ChatSessionList() {
           case 'markRead':
             // Mark-read clears unread badge; for friend chats this acks messages.
             try {
-              await updateConversationLocalState(c.type, c.ulid, { clearedAt: 0 });
+              await updateConversationLocalState(c.kind, c.id, { clearedAt: 0 });
             } catch (error) {
               presentError(error, {
                 mapper: mapChatError,
@@ -170,14 +180,14 @@ export function ChatSessionList() {
             }
             break;
           case 'hide':
-            await hideConversation(c.type, c.ulid, true);
+            await hideConversation(c.kind, c.id, true);
             break;
           case 'delete': {
             try {
-              if (c.type === 'group') {
-                await deleteGroupContact(c.ulid);
+              if (c.kind === 'group') {
+                await deleteGroupContact(c.id);
               } else {
-                await deleteFriendContact(c.ulid);
+                await deleteFriendContact(c.id);
               }
             } catch (error) {
               presentError(error, {
@@ -192,11 +202,11 @@ export function ChatSessionList() {
     };
   }, [conversationLocalState, t, updateConversationLocalState, hideConversation, deleteGroupContact, deleteFriendContact]);
 
-  const isRowActive = (c: UnifiedConversation) => {
-    if (c.type === 'friend') {
-      return activeTab === 'friend' && c.ulid === activeSessionUlid;
+  const isRowActive = (c: DesktopIMConversationProjection) => {
+    if (c.kind === 'friend') {
+      return activeTab === 'friend' && c.id === activeSessionUlid;
     }
-    return activeTab === 'group' && c.ulid === activeGroupUlid;
+    return activeTab === 'group' && c.id === activeGroupUlid;
   };
 
   return (
@@ -253,10 +263,10 @@ export function ChatSessionList() {
           ) : (
             filteredItems.map((c) => {
               const isActive = isRowActive(c);
-              const name = c.name || t('chat.social.sessionList.unknown');
+              const name = c.title || t('chat.social.sessionList.unknown');
               const timeStr = relativeTime(c.lastActivity, t);
               const unread = c.unread;
-              const localState = conversationLocalState[`${c.type}:${c.ulid}`];
+              const localState = conversationLocalState[`${c.kind}:${c.id}`];
 
               let subtitle = '';
               if (c.preview) {
@@ -273,7 +283,7 @@ export function ChatSessionList() {
                 } else {
                   text = p.content;
                 }
-                if (c.type === 'group' && p.senderDid) {
+                if (c.kind === 'group' && p.senderDid) {
                   const senderShort = p.senderDid.length > 12 ? p.senderDid.slice(0, 12) + '…' : p.senderDid;
                   subtitle = `${senderShort}: ${text}`;
                 } else {
@@ -282,7 +292,7 @@ export function ChatSessionList() {
               }
 
               return (
-                <Dropdown key={`${c.type}-${c.ulid}`} menu={buildContextMenu(c)} trigger={['contextMenu']}>
+                <Dropdown key={`${c.kind}-${c.id}`} menu={buildContextMenu(c)} trigger={['contextMenu']}>
                 <Flexbox
                   horizontal
                   align="center"
@@ -301,7 +311,7 @@ export function ChatSessionList() {
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
                     <Flexbox horizontal align="center" justify="space-between" gap={6}>
                       <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
-                        {c.type === 'group' && (
+                        {c.kind === 'group' && (
                           <Users size={12} style={{ color: token.colorTextSecondary, flexShrink: 0 }} aria-hidden />
                         )}
                         <Text strong ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>

@@ -16,12 +16,13 @@ import {
   peerOfSession,
   type CurrentUserProfile,
 } from '../../../store/socialChat';
-import type { FriendChatMessage, FriendChatSession } from '../../../gen/proto/domain/chat/friend_chat_pb';
-import type { GroupMember, GroupMessage } from '../../../gen/proto/domain/chat/group_chat_pb';
+import type { FriendChatSession } from '../../../gen/proto/domain/chat/friend_chat_pb';
+import type { GroupMember } from '../../../gen/proto/domain/chat/group_chat_pb';
+import type { DesktopIMMessageProjection } from '../../../store/socialProjection';
 import type { ChatAttachmentVisibilityHint } from '../AttachmentItem';
 
 export type ChatSurfaceKind = 'friend' | 'group';
-export type ChatMessage = FriendChatMessage | GroupMessage;
+export type ChatMessage = DesktopIMMessageProjection;
 
 export interface ChatSenderProfile {
   name: string;
@@ -40,8 +41,8 @@ export interface ResolveChatSenderOptions {
 
 export type ReplyPreviewLabels = ChatAttachmentPreviewLabels;
 
-export function isFriendMessage(message: ChatMessage): message is FriendChatMessage {
-  return 'sessionUlid' in message;
+export function isFriendMessage(message: ChatMessage): boolean {
+  return message.kind === 'friend';
 }
 
 export function isOwnMessage(message: ChatMessage, currentUserDid: string | null): boolean {
