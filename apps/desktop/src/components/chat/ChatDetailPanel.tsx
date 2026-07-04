@@ -31,20 +31,14 @@ import {
   X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl, useSocialChatStore } from '../../store/socialChat';
-import { CHAT_BACKGROUND_OPTIONS } from '../../store/socialProjection';
+import { CHAT_BACKGROUND_OPTIONS, type ChatAttachmentLike, type DesktopIMMessageProjection } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
-import type {
-  FriendChatMessage,
-  FriendChatSession,
-  FriendMessageAttachment,
-} from '../../gen/proto/domain/chat/friend_chat_pb';
+import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';
 import {
   GroupRole,
   type Group,
   type GroupMember,
-  type GroupMessage,
-  type GroupMessageAttachment,
 } from '../../gen/proto/domain/chat/group_chat_pb';
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
@@ -58,8 +52,8 @@ const { Text } = Typography;
 const DETAIL_HEADER_HEIGHT = 56;
 const HISTORY_RESTORE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-type SocialMessage = FriendChatMessage | GroupMessage;
-type DetailAttachment = FriendMessageAttachment | GroupMessageAttachment;
+type DetailMessage = DesktopIMMessageProjection;
+type DetailAttachment = ChatAttachmentLike;
 type DetailAttachmentKind = 'media' | 'file';
 
 interface DetailAttachmentItem {
@@ -92,7 +86,7 @@ function groupRoleLabel(role: number, t: (key: string) => string): string {
   return t('chat.social.detail.roleMember');
 }
 
-function getMessageTimestampMs(message: SocialMessage): number {
+function getMessageTimestampMs(message: DetailMessage): number {
   const ts = message.createdAt ?? message.sentAt;
   return ts ? timestampDate(ts).getTime() : 0;
 }
@@ -107,7 +101,7 @@ function formatHistoryRestoreRemaining(remainingMs: number, t: (key: string, opt
   return t('chat.social.detail.restoreHistoryRemainingMinutes', { minutes });
 }
 
-function getCurrentConversationAttachments(messages: SocialMessage[]): DetailAttachmentItem[] {
+function getCurrentConversationAttachments(messages: DetailMessage[]): DetailAttachmentItem[] {
   const items: DetailAttachmentItem[] = [];
   messages.forEach((message, messageIndex) => {
     if (message.recalled || !message.attachments || message.attachments.length === 0) return;
@@ -554,10 +548,11 @@ export function ChatDetailPanel() {
   const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
-    sessions, groups, groupMembers, messages,
+    sessions, groups, groupMembers,
     setShowDetail, loadSessions, loadGroupMembers, loadGroups, loadMessages,
     loadConversationPreviews, selectSession, selectGroup,
     conversationLocalState, updateConversationLocalState,
+    getIMMessages,
   } = useSocialChatStore();
   const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
   const ownFingerprint = useSocialChatStore((s) => s.ownFingerprint);
@@ -683,7 +678,7 @@ export function ChatDetailPanel() {
   const peerIsOnline = peerDid in peerOnline ? peerOnline[peerDid] : null;
   const localStateKey = activeUlid ? `${activeTab}:${activeUlid}` : '';
   const activeLocalState = localStateKey ? conversationLocalState[localStateKey] : undefined;
-  const activeMessages = activeUlid ? (messages[activeUlid] || []) : [];
+  const activeMessages = activeUlid ? getIMMessages(activeTab, activeUlid) : [];
   const clearHistoryClearedAt = Number(activeLocalState?.clearedAt || 0);
   const clearHistoryExpiresAt = clearHistoryClearedAt > 0
     ? clearHistoryClearedAt + HISTORY_RESTORE_WINDOW_MS

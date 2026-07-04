@@ -1302,11 +1302,11 @@ pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, Strin
 //     consumed-skipped-key delete in one SQLite transaction so a
 //     crash mid-write cannot leave the chain ahead of its keys.
 //
-//   * Send path     -> call `save_group_sender_chain` AFTER the
-//     ciphertext bytes have been handed to the network layer. If the
-//     network call fails the saved chain still advances, which is
-//     correct: AES-GCM key reuse would be catastrophic, so we'd
-//     rather drop one message than risk reusing a (key, nonce) pair.
+//   * Send path     -> save the advanced sender chain AND the just-used
+//     message key in one `apply_group_decrypt_outcome` transaction before
+//     returning ciphertext to the caller. The advanced chain prevents
+//     AES-GCM key reuse; the persisted sent key lets the sender decrypt
+//     their own history after a renderer reload drops the JS plaintext cache.
 //
 //   * Distribution -> `latest_local_sender_chain` returns the highest
 //     `sender_key_id` we own for `(group, sender)`. SKDM emission
@@ -1646,7 +1646,8 @@ pub fn apply_group_decrypt_outcome(
 mod sender_key_tests {
     use super::*;
     use crate::domain::crypto::sender_keys::{
-        consume_skdm, create_local_chain, decrypt, encrypt, snapshot_for_skdm,
+        consume_skdm, create_local_chain, current_message_key_snapshot, decrypt, encrypt,
+        snapshot_for_skdm,
     };
 
     fn unique_scope(tag: &str) -> String {
@@ -1724,6 +1725,37 @@ mod sender_key_tests {
         // m1 also decrypts.
         let out1 = decrypt(&recv_state2, &m1, &pre3).unwrap();
         assert_eq!(out1.plaintext, b"b");
+    }
+
+    #[test]
+    fn self_authored_message_key_survives_reload() {
+        let scope = unique_scope("self-history");
+
+        let mut local = create_local_chain("g-self", "did:peers:alice", 1);
+        save_group_sender_chain(&scope, &local).unwrap();
+
+        let sent_key = current_message_key_snapshot(&local);
+        let wire = encrypt(&mut local, b"self-authored").unwrap();
+        apply_group_decrypt_outcome(&scope, &local, &[sent_key], None).unwrap();
+
+        // Simulate a new renderer/webview: only the advanced chain and
+        // persisted skipped-key table remain. Counter 0 is now behind the
+        // chain, so decrypt must use the saved sent key.
+        let reloaded = load_group_sender_chain(&scope, "g-self", "did:peers:alice", 1)
+            .unwrap()
+            .expect("reloaded sender chain");
+        assert_eq!(reloaded.counter, 1);
+        let pre = load_group_skipped_keys(&scope, "g-self", "did:peers:alice", 1).unwrap();
+        assert!(pre.contains_key(&0));
+
+        let out = decrypt(&reloaded, &wire, &pre).unwrap();
+        assert_eq!(out.plaintext, b"self-authored");
+
+        // Self-authored history is not a network replay attempt. The command
+        // layer must leave the key available for future reloads.
+        apply_group_decrypt_outcome(&scope, &reloaded, &[], None).unwrap();
+        let pre_after = load_group_skipped_keys(&scope, "g-self", "did:peers:alice", 1).unwrap();
+        assert!(pre_after.contains_key(&0));
     }
 
     #[test]
