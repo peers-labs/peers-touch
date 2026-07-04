@@ -129,7 +129,7 @@ Example:
 
 1. **Rationality over minimalism** — Architectural soundness is the goal, not minimum change.
 2. **Run scripts first** — Prefer `tooling/scripts/` (`dev-desktop-app.sh`, `dev-desktop-web.sh`, `pt.sh`, etc.).
-3. **Architecture design methodology** — For architecture design / system boundaries / ownership / contracts / topology / design decisions, **MUST** use `architecture-design-methodology` skill before execution planning.
+3. **Architecture design methodology** — For architecture design / system boundaries / ownership / contracts / topology / design decisions, **MUST** use `pt-architecture-design-methodology` skill before execution planning.
 4. **Architecture execution methodology** — For architecture landing / migration / domain decomposition, **MUST** use `pt-architecture-execution-methodology` skill: `Domain Responsibility → Execution Closure → Dependency Order → Verifiable Delivery`.
 5. **Runtime projection first** — For Desktop bugs involving chat, contacts, notifications, badges, realtime, or store freshness, first identify the owning runtime and its projection contract. Do not patch stale state only with page/component refreshes; read `docs/client/desktop/runtime-projections.md`.
 6. **Page / Runtime / Boot contracts** — When adding or refactoring a Desktop page, projection owner, or startup step, conform to the Page / Runtime / Boot kernel contracts in `docs/client/desktop/runtime-projections.md §6`. Pages are pure renderers (no mount-time fetches); long-lived projections live in `RuntimeDescriptor`s; one-shot section data uses `kernel/usePrefetch`; startup is observable through `kernel/boot.ts` phases.
@@ -305,7 +305,7 @@ Current project skills:
 |-------|---------|
 | `pt-dev-workflow` | Drive a complete development task from planning to PR |
 | `pt-dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
-| `architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
+| `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
 | `pt-architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
 | `pt-execution-plan-guardian` | Keep execution, continuation, merge, and readiness reports tied to plan sources, scope boundaries, gates, and evidence |
 | `pt-official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
