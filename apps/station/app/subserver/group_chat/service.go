@@ -1,15 +1,22 @@
 package group_chat
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/group_chat/domain"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type group struct {
@@ -43,9 +50,31 @@ type message struct {
 	SentAt      time.Time
 }
 
+var (
+	groupChatIDMu           sync.Mutex
+	groupChatIDLastUnixNano int64
+	groupChatIDSeq          int64
+)
+
+func nextGroupChatID(prefix string, now time.Time) string {
+	groupChatIDMu.Lock()
+	defer groupChatIDMu.Unlock()
+
+	unixNano := now.UnixNano()
+	if unixNano <= groupChatIDLastUnixNano {
+		unixNano = groupChatIDLastUnixNano
+		groupChatIDSeq++
+	} else {
+		groupChatIDLastUnixNano = unixNano
+		groupChatIDSeq = 0
+	}
+	return fmt.Sprintf("%s-%d-%012d", prefix, unixNano, groupChatIDSeq)
+}
+
 type member struct {
 	GroupID    string
 	ActorDID   string
+	Actor      domain.FederatedActorRef
 	Role       int32
 	Nickname   string
 	Muted      bool
@@ -58,6 +87,7 @@ func memberFromModel(row memberModel) *member {
 	return &member{
 		GroupID:    row.GroupULID,
 		ActorDID:   row.ActorDID,
+		Actor:      federatedActorFromMemberModel(row),
 		Role:       row.Role,
 		Nickname:   row.Nickname,
 		Muted:      row.Muted,
@@ -74,6 +104,7 @@ func memberToDomain(item *member) *domain.Member {
 	return &domain.Member{
 		GroupID:    item.GroupID,
 		ActorDID:   item.ActorDID,
+		Actor:      memberActorRef(item),
 		Role:       item.Role,
 		Nickname:   item.Nickname,
 		Muted:      item.Muted,
@@ -81,6 +112,28 @@ func memberToDomain(item *member) *domain.Member {
 		JoinedAt:   item.JoinedAt,
 		InvitedBy:  item.InvitedBy,
 	}
+}
+
+func federatedActorFromMemberModel(row memberModel) domain.FederatedActorRef {
+	return domain.FederatedActorRef{
+		ActorDID:          row.ActorDID,
+		HomeStationPeerID: row.ActorHomeStationPeerID,
+		HomeStationDomain: row.ActorHomeStationDomain,
+		FederatedHandle:   row.ActorFederatedHandle,
+		ProfileVersion:    row.ActorProfileVersion,
+		FederationID:      row.ActorFederationID,
+	}
+}
+
+func memberActorRef(item *member) domain.FederatedActorRef {
+	if item == nil {
+		return domain.FederatedActorRef{}
+	}
+	actor := item.Actor
+	if strings.TrimSpace(actor.ActorDID) == "" {
+		actor.ActorDID = item.ActorDID
+	}
+	return actor
 }
 
 type invitation struct {
@@ -118,11 +171,39 @@ type threadRead struct {
 	LastReadAt time.Time
 }
 
+type proposalEventPayloadJSON struct {
+	ProposalULID         string `json:"proposal_ulid"`
+	Command              int32  `json:"command"`
+	CommandPayloadSHA256 string `json:"command_payload_sha256"`
+	ActorDID             string `json:"actor_did"`
+	HomeStationPeerID    string `json:"home_station_peer_id"`
+}
+
 const (
-	groupInvitationStatusPending  int32 = 1
-	groupInvitationStatusAccepted int32 = 2
-	groupInvitationStatusExpired  int32 = 4
-	defaultInvitationTTL                = 7 * 24 * time.Hour
+	groupInvitationStatusPending     int32 = 1
+	groupInvitationStatusAccepted    int32 = 2
+	groupInvitationStatusExpired     int32 = 4
+	defaultInvitationTTL                   = 7 * 24 * time.Hour
+	foundationAuthorityEpoch               = 1
+	foundationLocalAuthorityStation        = "local"
+	federationOutboxStatusPending          = "pending"
+	federationOutboxStatusApplied          = "applied"
+	federationOutboxStatusRetryWait        = "retry_wait"
+	proposalOutboxStatusPending            = "pending"
+	proposalOutboxStatusAccepted           = "accepted"
+	proposalOutboxStatusRetryWait          = "retry_wait"
+	skdmOutboxStatusPending                = "pending"
+	skdmOutboxStatusRetryWait              = "retry_wait"
+	skdmOutboxStatusDelivered              = "delivered"
+	followerProjectionStatusActive         = "active"
+	followerProjectionStatusDegraded       = "degraded"
+	followerProjectionStatusReadOnly       = "read_only"
+)
+
+var (
+	errAuthorityEventIdempotencyConflict = errors.New("authority event idempotency conflict")
+	errFollowerProjectionForkProtection  = errors.New("follower projection fork protection")
+	errProposalOutboxIdempotencyConflict = errors.New("proposal outbox idempotency conflict")
 )
 
 func groupStatus(status string) string {
@@ -141,6 +222,528 @@ func groupMembershipEpoch(epoch int64) int64 {
 		return 1
 	}
 	return epoch
+}
+
+func hashGroupAuthorityEvent(prevHash, groupID string, seq int64, eventType, actorDID, messageULID string, membershipEpoch int64, payload string) string {
+	h := sha256.Sum256([]byte(strings.Join([]string{
+		prevHash,
+		groupID,
+		strconv.FormatInt(seq, 10),
+		eventType,
+		actorDID,
+		messageULID,
+		strconv.FormatInt(groupMembershipEpoch(membershipEpoch), 10),
+		payload,
+	}, "\n")))
+	return hex.EncodeToString(h[:])
+}
+
+func authorityEventIdempotencyKey(groupID, eventType, actorDID, messageULID string, membershipEpoch int64, payload string) string {
+	h := sha256.Sum256([]byte(strings.Join([]string{
+		groupID,
+		eventType,
+		actorDID,
+		messageULID,
+		strconv.FormatInt(groupMembershipEpoch(membershipEpoch), 10),
+		payload,
+	}, "\n")))
+	return hex.EncodeToString(h[:])
+}
+
+func sha256HexBytes(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func proposalEventPayload(proposal domain.GroupProposal) (string, error) {
+	payload := proposalEventPayloadJSON{
+		ProposalULID:         proposal.ProposalULID,
+		Command:              proposal.Command,
+		CommandPayloadSHA256: sha256HexBytes(proposal.CommandPayload),
+		ActorDID:             proposal.Actor.ActorDID,
+		HomeStationPeerID:    proposal.Actor.HomeStationPeerID,
+	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func proposalOutboxPayload(proposal domain.GroupProposal) (string, error) {
+	out, err := json.Marshal(proposal)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func proposalOutboxPayloadToProposal(payload string) (domain.GroupProposal, error) {
+	var proposal domain.GroupProposal
+	if err := json.Unmarshal([]byte(payload), &proposal); err != nil {
+		return domain.GroupProposal{}, err
+	}
+	if strings.TrimSpace(proposal.ProposalULID) == "" {
+		return domain.GroupProposal{}, errors.New("proposal outbox payload missing proposal_ulid")
+	}
+	return proposal, nil
+}
+
+func groupEventModelToDomain(row groupEventModel, actor domain.FederatedActorRef) domain.GroupEvent {
+	return domain.GroupEvent{
+		EventULID:              row.EventULID,
+		GroupID:                row.GroupULID,
+		Seq:                    row.Seq,
+		PrevHash:               row.PrevHash,
+		EventHash:              row.EventHash,
+		EventType:              row.EventType,
+		Actor:                  actor,
+		MessageID:              row.MessageULID,
+		MembershipEpoch:        groupMembershipEpoch(row.MembershipEpoch),
+		AuthorityStationPeerID: row.AuthorityStationPeerID,
+		AuthorityEpoch:         row.AuthorityEpoch,
+		ProposalULID:           row.ProposalULID,
+		IdempotencyKey:         row.IdempotencyKey,
+		EventPayload:           []byte(row.Payload),
+		CreatedAt:              row.CreatedAt,
+	}
+}
+
+func federationOutboxPayloadToEvent(payload string) (domain.GroupEvent, error) {
+	var event domain.GroupEvent
+	if err := json.Unmarshal([]byte(payload), &event); err != nil {
+		return domain.GroupEvent{}, err
+	}
+	if strings.TrimSpace(event.EventULID) == "" {
+		return domain.GroupEvent{}, errors.New("federation outbox payload missing event_ulid")
+	}
+	return event, nil
+}
+
+func federationOutboxModelToDomain(row federationOutboxModel) domain.FederationOutboxItem {
+	item := domain.FederationOutboxItem{
+		EventULID:              row.EventULID,
+		GroupID:                row.GroupULID,
+		Seq:                    row.Seq,
+		TargetStationPeerID:    row.TargetStationPeerID,
+		AuthorityStationPeerID: row.AuthorityStationPeerID,
+		AuthorityEpoch:         row.AuthorityEpoch,
+		Status:                 row.Status,
+		AttemptCount:           row.AttemptCount,
+		NextAttemptAt:          derefTime(row.NextAttemptAt),
+		LastError:              row.LastError,
+		CreatedAt:              row.CreatedAt,
+		UpdatedAt:              row.UpdatedAt,
+	}
+	if event, err := federationOutboxPayloadToEvent(row.Payload); err == nil {
+		item.Event = event
+	}
+	return item
+}
+
+func groupProposalOutboxModelToDomain(row groupProposalOutboxModel, actor domain.FederatedActorRef) domain.GroupProposalOutboxItem {
+	item := domain.GroupProposalOutboxItem{
+		ProposalULID:            row.ProposalULID,
+		GroupID:                 row.GroupULID,
+		Actor:                   actor,
+		Command:                 row.Command,
+		AuthorityStationPeerID:  row.AuthorityStationPeerID,
+		AuthorityEpoch:          row.AuthorityEpoch,
+		ObservedMembershipEpoch: groupMembershipEpoch(row.ObservedMembershipEpoch),
+		IdempotencyKey:          row.IdempotencyKey,
+		Status:                  row.Status,
+		AttemptCount:            row.AttemptCount,
+		NextAttemptAt:           derefTime(row.NextAttemptAt),
+		LastError:               row.LastError,
+		CreatedAt:               row.CreatedAt,
+		UpdatedAt:               row.UpdatedAt,
+	}
+	if proposal, err := proposalOutboxPayloadToProposal(row.Payload); err == nil {
+		item.Proposal = proposal
+		item.Actor = proposal.Actor
+	}
+	return item
+}
+
+func groupSkdmOutboxModelToDomain(row groupSkdmOutboxModel) domain.GroupSkdmEnvelope {
+	return domain.GroupSkdmEnvelope{
+		OutboxULID:                 row.OutboxULID,
+		GroupID:                    row.GroupULID,
+		MembershipEpoch:            groupMembershipEpoch(row.MembershipEpoch),
+		SenderDID:                  row.SenderDID,
+		SenderKeyID:                row.SenderKeyID,
+		RecipientDID:               row.RecipientDID,
+		RecipientDeviceID:          row.RecipientDeviceID,
+		RecipientHomeStationPeerID: row.RecipientHomeStationPeerID,
+		EncryptedPayload:           append([]byte(nil), row.EncryptedPayload...),
+		IdempotencyKey:             row.IdempotencyKey,
+		Status:                     row.Status,
+		AttemptCount:               row.AttemptCount,
+		NextAttemptAt:              derefTime(row.NextAttemptAt),
+		LastError:                  row.LastError,
+		CreatedAt:                  row.CreatedAt,
+		UpdatedAt:                  row.UpdatedAt,
+	}
+}
+
+func followerProjectionModelToDomain(row groupFollowerProjectionModel) domain.FollowerProjection {
+	return domain.FollowerProjection{
+		GroupID:                row.GroupULID,
+		AuthorityStationPeerID: row.AuthorityStationPeerID,
+		AuthorityEpoch:         row.AuthorityEpoch,
+		LastSeq:                row.LastSeq,
+		LastEventHash:          row.LastEventHash,
+		Status:                 row.Status,
+		ProtectionReason:       row.ProtectionReason,
+	}
+}
+
+func enqueueFederationOutboxTx(tx *gorm.DB, now time.Time, event groupEventModel, targetStationPeerID string, actor domain.FederatedActorRef) error {
+	targetStationPeerID = strings.TrimSpace(targetStationPeerID)
+	if targetStationPeerID == "" || targetStationPeerID == event.AuthorityStationPeerID {
+		return nil
+	}
+	payload, err := json.Marshal(groupEventModelToDomain(event, actor))
+	if err != nil {
+		return err
+	}
+	row := &federationOutboxModel{
+		EventULID:              event.EventULID,
+		GroupULID:              event.GroupULID,
+		Seq:                    event.Seq,
+		TargetStationPeerID:    targetStationPeerID,
+		AuthorityStationPeerID: event.AuthorityStationPeerID,
+		AuthorityEpoch:         event.AuthorityEpoch,
+		Status:                 federationOutboxStatusPending,
+		AttemptCount:           0,
+		Payload:                string(payload),
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(row).Error
+}
+
+func syncMemberActorRefTx(tx *gorm.DB, now time.Time, groupID string, actor domain.FederatedActorRef) error {
+	actorDID := strings.TrimSpace(actor.ActorDID)
+	if actorDID == "" || strings.TrimSpace(actor.HomeStationPeerID) == "" {
+		return nil
+	}
+	return tx.Model(&memberModel{}).
+		Where("group_ulid = ? AND actor_did = ?", groupID, actorDID).
+		Updates(map[string]interface{}{
+			"actor_home_station_peer_id": actor.HomeStationPeerID,
+			"actor_home_station_domain":  actor.HomeStationDomain,
+			"actor_federated_handle":     actor.FederatedHandle,
+			"actor_profile_version":      actor.ProfileVersion,
+			"actor_federation_id":        actor.FederationID,
+			"updated_at":                 now,
+		}).Error
+}
+
+func upsertMemberActorRefTx(tx *gorm.DB, now time.Time, groupID string, actor domain.FederatedActorRef, role int32, nickname, invitedBy string) error {
+	actorDID := strings.TrimSpace(actor.ActorDID)
+	if actorDID == "" || strings.TrimSpace(actor.HomeStationPeerID) == "" {
+		return nil
+	}
+	updates := map[string]interface{}{
+		"actor_home_station_peer_id": actor.HomeStationPeerID,
+		"actor_home_station_domain":  actor.HomeStationDomain,
+		"actor_federated_handle":     actor.FederatedHandle,
+		"actor_profile_version":      actor.ProfileVersion,
+		"actor_federation_id":        actor.FederationID,
+		"updated_at":                 now,
+	}
+	if role != 0 {
+		updates["role"] = role
+	}
+	if strings.TrimSpace(nickname) != "" {
+		updates["nickname"] = nickname
+	}
+	if strings.TrimSpace(invitedBy) != "" {
+		updates["invited_by"] = invitedBy
+	}
+	result := tx.Model(&memberModel{}).
+		Where("group_ulid = ? AND actor_did = ?", groupID, actorDID).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+	if role == 0 {
+		role = domain.GroupRoleMember
+	}
+	return tx.Create(&memberModel{
+		GroupULID:              groupID,
+		ActorDID:               actorDID,
+		ActorHomeStationPeerID: actor.HomeStationPeerID,
+		ActorHomeStationDomain: actor.HomeStationDomain,
+		ActorFederatedHandle:   actor.FederatedHandle,
+		ActorProfileVersion:    actor.ProfileVersion,
+		ActorFederationID:      actor.FederationID,
+		Role:                   role,
+		Nickname:               nickname,
+		JoinedAt:               now,
+		InvitedBy:              invitedBy,
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}).Error
+}
+
+func syncProposalLifecycleActorRefsTx(tx *gorm.DB, now time.Time, proposal domain.GroupProposal) error {
+	switch chat.GroupProposalCommand(proposal.Command) {
+	case chat.GroupProposalCommand_GROUP_PROPOSAL_COMMAND_MEMBER_JOIN:
+		var payload chat.GroupMemberJoinCommandPayload
+		if err := proto.Unmarshal(proposal.CommandPayload, &payload); err != nil {
+			return err
+		}
+		member := federatedActorRefFromProto(payload.GetMember())
+		if strings.TrimSpace(member.ActorDID) == "" || strings.TrimSpace(member.HomeStationPeerID) == "" {
+			return errors.New("member join payload missing member ActorRef")
+		}
+		return upsertMemberActorRefTx(tx, now, proposal.GroupID, member, int32(payload.GetRole()), payload.GetNickname(), payload.GetInvitedByActorDid())
+	case chat.GroupProposalCommand_GROUP_PROPOSAL_COMMAND_MEMBER_REMOVE:
+		var payload chat.GroupMemberRemoveCommandPayload
+		if err := proto.Unmarshal(proposal.CommandPayload, &payload); err != nil {
+			return err
+		}
+		member := federatedActorRefFromProto(payload.GetMember())
+		if strings.TrimSpace(member.ActorDID) == "" || strings.TrimSpace(member.HomeStationPeerID) == "" {
+			return errors.New("member remove payload missing member ActorRef")
+		}
+		return syncMemberActorRefTx(tx, now, proposal.GroupID, member)
+	case chat.GroupProposalCommand_GROUP_PROPOSAL_COMMAND_OWNER_TRANSFER:
+		var payload chat.GroupOwnerTransferCommandPayload
+		if err := proto.Unmarshal(proposal.CommandPayload, &payload); err != nil {
+			return err
+		}
+		nextOwner := federatedActorRefFromProto(payload.GetNextOwner())
+		if strings.TrimSpace(nextOwner.ActorDID) == "" || strings.TrimSpace(nextOwner.HomeStationPeerID) == "" {
+			return errors.New("owner transfer payload missing next owner ActorRef")
+		}
+		return syncMemberActorRefTx(tx, now, proposal.GroupID, nextOwner)
+	default:
+		return nil
+	}
+}
+
+func federationFanoutTargetsTx(tx *gorm.DB, groupID, actorHomeStationPeerID, authorityStationPeerID string) ([]string, error) {
+	authorityStationPeerID = strings.TrimSpace(authorityStationPeerID)
+	seen := map[string]struct{}{}
+	add := func(stationID string) {
+		stationID = strings.TrimSpace(stationID)
+		if stationID == "" || stationID == authorityStationPeerID {
+			return
+		}
+		seen[stationID] = struct{}{}
+	}
+	add(actorHomeStationPeerID)
+
+	var rows []memberModel
+	if err := tx.Select("actor_home_station_peer_id").
+		Where("group_ulid = ? AND actor_home_station_peer_id <> ''", groupID).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		add(row.ActorHomeStationPeerID)
+	}
+
+	targets := make([]string, 0, len(seen))
+	for stationID := range seen {
+		targets = append(targets, stationID)
+	}
+	sort.Strings(targets)
+	return targets, nil
+}
+
+func appendAuthorityEventTx(tx *gorm.DB, now time.Time, groupID, eventType, actorDID, messageULID string, membershipEpoch int64, payload string) error {
+	_, _, err := appendAuthorityEventWithIdempotencyTx(
+		tx,
+		now,
+		groupID,
+		eventType,
+		actorDID,
+		messageULID,
+		membershipEpoch,
+		foundationLocalAuthorityStation,
+		foundationAuthorityEpoch,
+		"",
+		payload,
+		authorityEventIdempotencyKey(groupID, eventType, actorDID, messageULID, membershipEpoch, payload),
+	)
+	return err
+}
+
+func appendAuthorityEventWithIdempotencyTx(tx *gorm.DB, now time.Time, groupID, eventType, actorDID, messageULID string, membershipEpoch int64, authorityStationPeerID string, authorityEpoch int64, proposalULID, payload, idempotencyKey string) (*groupEventModel, bool, error) {
+	authorityStationPeerID = strings.TrimSpace(authorityStationPeerID)
+	if authorityStationPeerID == "" {
+		authorityStationPeerID = foundationLocalAuthorityStation
+	}
+	if authorityEpoch <= 0 {
+		authorityEpoch = foundationAuthorityEpoch
+	}
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if idempotencyKey == "" {
+		idempotencyKey = authorityEventIdempotencyKey(groupID, eventType, actorDID, messageULID, membershipEpoch, payload)
+	}
+	var existing groupEventModel
+	err := tx.Where("idempotency_key = ?", idempotencyKey).First(&existing).Error
+	if err == nil {
+		if existing.GroupULID == groupID &&
+			existing.EventType == eventType &&
+			existing.ActorDID == actorDID &&
+			existing.MessageULID == messageULID &&
+			groupMembershipEpoch(existing.MembershipEpoch) == groupMembershipEpoch(membershipEpoch) &&
+			existing.AuthorityStationPeerID == authorityStationPeerID &&
+			existing.AuthorityEpoch == authorityEpoch &&
+			existing.ProposalULID == proposalULID &&
+			existing.Payload == payload {
+			return &existing, true, nil
+		}
+		return nil, false, errAuthorityEventIdempotencyConflict
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, err
+	}
+
+	var last groupEventModel
+	err = tx.Where("group_ulid = ?", groupID).Order("seq DESC").First(&last).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, err
+	}
+	seq := int64(1)
+	prevHash := ""
+	if err == nil {
+		seq = last.Seq + 1
+		prevHash = last.EventHash
+	}
+	eventHash := hashGroupAuthorityEvent(prevHash, groupID, seq, eventType, actorDID, messageULID, groupMembershipEpoch(membershipEpoch), payload)
+	eventULID := fmt.Sprintf("gcfe-%d-%d", now.UnixNano(), seq)
+	row := &groupEventModel{
+		EventULID:              eventULID,
+		GroupULID:              groupID,
+		Seq:                    seq,
+		PrevHash:               prevHash,
+		EventHash:              eventHash,
+		EventType:              eventType,
+		ActorDID:               actorDID,
+		MessageULID:            messageULID,
+		MembershipEpoch:        groupMembershipEpoch(membershipEpoch),
+		AuthorityStationPeerID: authorityStationPeerID,
+		AuthorityEpoch:         authorityEpoch,
+		ProposalULID:           proposalULID,
+		IdempotencyKey:         idempotencyKey,
+		Payload:                payload,
+		CreatedAt:              now,
+	}
+	if err := tx.Create(row).Error; err != nil {
+		return nil, false, err
+	}
+	return row, false, nil
+}
+
+func applyFollowerEventTx(tx *gorm.DB, now time.Time, event groupEventModel) (groupFollowerProjectionModel, error) {
+	authorityPeerID := strings.TrimSpace(event.AuthorityStationPeerID)
+	if authorityPeerID == "" {
+		authorityPeerID = foundationLocalAuthorityStation
+	}
+	authorityEpoch := event.AuthorityEpoch
+	if authorityEpoch <= 0 {
+		authorityEpoch = foundationAuthorityEpoch
+	}
+	var projection groupFollowerProjectionModel
+	err := tx.Where("group_ulid = ? AND authority_station_peer_id = ?", event.GroupULID, authorityPeerID).First(&projection).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return groupFollowerProjectionModel{}, err
+	}
+	expectedSeq := int64(1)
+	expectedPrevHash := ""
+	if err == nil {
+		if event.Seq <= projection.LastSeq {
+			if event.Seq == projection.LastSeq && event.EventHash != "" && event.EventHash != projection.LastEventHash {
+				projection.Status = followerProjectionStatusReadOnly
+				projection.ProtectionReason = fmt.Sprintf("replay hash mismatch at seq=%d, expected hash=%s got hash=%s", event.Seq, projection.LastEventHash, event.EventHash)
+				projection.UpdatedAt = now
+				if saveErr := tx.Save(&projection).Error; saveErr != nil {
+					return projection, saveErr
+				}
+				return projection, errFollowerProjectionForkProtection
+			}
+			return projection, nil
+		}
+		expectedSeq = projection.LastSeq + 1
+		expectedPrevHash = projection.LastEventHash
+	}
+	if event.Seq != expectedSeq || event.PrevHash != expectedPrevHash {
+		reason := fmt.Sprintf("expected seq=%d prev_hash=%s, got seq=%d prev_hash=%s", expectedSeq, expectedPrevHash, event.Seq, event.PrevHash)
+		if err == nil {
+			if updateErr := tx.Model(&projection).Updates(map[string]any{
+				"authority_epoch":   authorityEpoch,
+				"status":            followerProjectionStatusReadOnly,
+				"protection_reason": reason,
+				"updated_at":        now,
+			}).Error; updateErr != nil {
+				return groupFollowerProjectionModel{}, updateErr
+			}
+			projection.AuthorityEpoch = authorityEpoch
+			projection.Status = followerProjectionStatusReadOnly
+			projection.ProtectionReason = reason
+			return projection, errFollowerProjectionForkProtection
+		}
+		projection = groupFollowerProjectionModel{
+			GroupULID:              event.GroupULID,
+			AuthorityStationPeerID: authorityPeerID,
+			AuthorityEpoch:         authorityEpoch,
+			LastSeq:                0,
+			LastEventHash:          "",
+			Status:                 followerProjectionStatusReadOnly,
+			ProtectionReason:       reason,
+			CreatedAt:              now,
+			UpdatedAt:              now,
+		}
+		if createErr := tx.Create(&projection).Error; createErr != nil {
+			return groupFollowerProjectionModel{}, createErr
+		}
+		return projection, errFollowerProjectionForkProtection
+	}
+	if err == nil && projection.Status == followerProjectionStatusReadOnly {
+		return projection, errFollowerProjectionForkProtection
+	}
+	if err == nil {
+		if updateErr := tx.Model(&projection).Updates(map[string]any{
+			"authority_epoch":   authorityEpoch,
+			"last_seq":          event.Seq,
+			"last_event_hash":   event.EventHash,
+			"status":            followerProjectionStatusActive,
+			"protection_reason": "",
+			"updated_at":        now,
+		}).Error; updateErr != nil {
+			return groupFollowerProjectionModel{}, updateErr
+		}
+		projection.AuthorityEpoch = authorityEpoch
+		projection.LastSeq = event.Seq
+		projection.LastEventHash = event.EventHash
+		projection.Status = followerProjectionStatusActive
+		projection.ProtectionReason = ""
+		return projection, nil
+	}
+	projection = groupFollowerProjectionModel{
+		GroupULID:              event.GroupULID,
+		AuthorityStationPeerID: authorityPeerID,
+		AuthorityEpoch:         authorityEpoch,
+		LastSeq:                event.Seq,
+		LastEventHash:          event.EventHash,
+		Status:                 followerProjectionStatusActive,
+		ProtectionReason:       "",
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+	if createErr := tx.Create(&projection).Error; createErr != nil {
+		return groupFollowerProjectionModel{}, createErr
+	}
+	return projection, nil
 }
 
 func groupFromModel(row groupModel) group {
@@ -188,6 +791,10 @@ type service struct {
 	offline      map[string][]offlineMessage
 	unread       map[string]map[string]int64
 	threadReads  map[string]threadRead
+	groupEvents  map[string][]domain.GroupEvent
+	followers    map[string]domain.FollowerProjection
+	proposals    map[string]domain.GroupProposalOutboxItem
+	skdmOutbox   map[string]domain.GroupSkdmEnvelope
 }
 
 func (s *service) CreateGroup(ownerDID, name, description string) domain.Group {
@@ -254,6 +861,813 @@ func (s *service) SendMessage(groupID, senderDID string, messageType int32, cont
 		EncryptedPayload: enc,
 		SentAt:           item.SentAt,
 	}
+}
+
+func (s *service) AcceptProposal(proposal domain.GroupProposal) (domain.GroupEvent, bool, error) {
+	payload, err := proposalEventPayload(proposal)
+	if err != nil {
+		return domain.GroupEvent{}, false, err
+	}
+	idempotencyKey := strings.TrimSpace(proposal.IdempotencyKey)
+	if idempotencyKey == "" {
+		idempotencyKey = proposal.ProposalULID
+	}
+	now := proposal.CreatedAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if s.db != nil {
+		var row *groupEventModel
+		var replay bool
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			var appendErr error
+			row, replay, appendErr = appendAuthorityEventWithIdempotencyTx(
+				tx,
+				now,
+				proposal.GroupID,
+				"group.proposal.accepted",
+				proposal.Actor.ActorDID,
+				"",
+				proposal.ObservedMembershipEpoch,
+				proposal.AuthorityStationPeerID,
+				proposal.AuthorityEpoch,
+				proposal.ProposalULID,
+				payload,
+				idempotencyKey,
+			)
+			if appendErr != nil {
+				return appendErr
+			}
+			if replay {
+				return nil
+			}
+			if err := syncMemberActorRefTx(tx, now, proposal.GroupID, proposal.Actor); err != nil {
+				return err
+			}
+			if err := syncProposalLifecycleActorRefsTx(tx, now, proposal); err != nil {
+				return err
+			}
+			targets, err := federationFanoutTargetsTx(tx, proposal.GroupID, proposal.Actor.HomeStationPeerID, row.AuthorityStationPeerID)
+			if err != nil {
+				return err
+			}
+			for _, target := range targets {
+				if err := enqueueFederationOutboxTx(tx, now, *row, target, proposal.Actor); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return domain.GroupEvent{}, false, err
+		}
+		return groupEventModelToDomain(*row, proposal.Actor), replay, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.groupEvents == nil {
+		s.groupEvents = map[string][]domain.GroupEvent{}
+	}
+	for _, existing := range s.groupEvents[proposal.GroupID] {
+		if existing.IdempotencyKey != idempotencyKey {
+			continue
+		}
+		if existing.ProposalULID == proposal.ProposalULID &&
+			existing.Actor.ActorDID == proposal.Actor.ActorDID &&
+			existing.MembershipEpoch == groupMembershipEpoch(proposal.ObservedMembershipEpoch) &&
+			string(existing.EventPayload) == payload {
+			return existing, true, nil
+		}
+		return domain.GroupEvent{}, false, errAuthorityEventIdempotencyConflict
+	}
+	events := s.groupEvents[proposal.GroupID]
+	seq := int64(len(events) + 1)
+	prevHash := ""
+	if len(events) > 0 {
+		prevHash = events[len(events)-1].EventHash
+	}
+	eventHash := hashGroupAuthorityEvent(prevHash, proposal.GroupID, seq, "group.proposal.accepted", proposal.Actor.ActorDID, "", proposal.ObservedMembershipEpoch, payload)
+	event := domain.GroupEvent{
+		EventULID:              fmt.Sprintf("gcfe-%d-%d", now.UnixNano(), seq),
+		GroupID:                proposal.GroupID,
+		Seq:                    seq,
+		PrevHash:               prevHash,
+		EventHash:              eventHash,
+		EventType:              "group.proposal.accepted",
+		Actor:                  proposal.Actor,
+		MembershipEpoch:        groupMembershipEpoch(proposal.ObservedMembershipEpoch),
+		AuthorityStationPeerID: foundationLocalAuthorityStation,
+		AuthorityEpoch:         foundationAuthorityEpoch,
+		ProposalULID:           proposal.ProposalULID,
+		IdempotencyKey:         idempotencyKey,
+		EventPayload:           []byte(payload),
+		CreatedAt:              now,
+	}
+	s.groupEvents[proposal.GroupID] = append(events, event)
+	return event, false, nil
+}
+
+func (s *service) ListAuthorityEventsAfter(groupID string, afterSeq int64, limit int) ([]domain.GroupEvent, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	if s.db != nil {
+		var rows []groupEventModel
+		if err := s.db.
+			Where("group_ulid = ? AND seq > ?", groupID, afterSeq).
+			Order("seq ASC").
+			Limit(limit).
+			Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		events := make([]domain.GroupEvent, 0, len(rows))
+		for _, row := range rows {
+			events = append(events, groupEventModelToDomain(row, domain.FederatedActorRef{ActorDID: row.ActorDID}))
+		}
+		return events, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := s.groupEvents[groupID]
+	events := make([]domain.GroupEvent, 0, min(limit, len(items)))
+	for _, event := range items {
+		if event.Seq <= afterSeq {
+			continue
+		}
+		events = append(events, event)
+		if len(events) >= limit {
+			break
+		}
+	}
+	return events, nil
+}
+
+func (s *service) ListFollowerProjections(limit int) ([]domain.FollowerProjection, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	if s.db != nil {
+		var rows []groupFollowerProjectionModel
+		if err := s.db.
+			Where("status IN ?", []string{followerProjectionStatusActive, followerProjectionStatusDegraded}).
+			Order("updated_at ASC, id ASC").
+			Limit(limit).
+			Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		out := make([]domain.FollowerProjection, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, followerProjectionModelToDomain(row))
+		}
+		return out, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.FollowerProjection, 0, min(limit, len(s.followers)))
+	for _, projection := range s.followers {
+		if projection.Status != followerProjectionStatusActive && projection.Status != followerProjectionStatusDegraded {
+			continue
+		}
+		out = append(out, projection)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (s *service) MarkFollowerProjectionDegraded(groupID, authorityStationPeerID, reason string) bool {
+	groupID = strings.TrimSpace(groupID)
+	authorityStationPeerID = strings.TrimSpace(authorityStationPeerID)
+	if authorityStationPeerID == "" {
+		authorityStationPeerID = foundationLocalAuthorityStation
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "authority sync unavailable"
+	}
+	now := time.Now()
+	if s.db != nil {
+		result := s.db.Model(&groupFollowerProjectionModel{}).
+			Where("group_ulid = ? AND authority_station_peer_id = ? AND status <> ?", groupID, authorityStationPeerID, followerProjectionStatusReadOnly).
+			Updates(map[string]any{
+				"status":            followerProjectionStatusDegraded,
+				"protection_reason": reason,
+				"updated_at":        now,
+			})
+		return result.Error == nil && result.RowsAffected > 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := groupID + "\x00" + authorityStationPeerID
+	projection, ok := s.followers[key]
+	if !ok || projection.Status == followerProjectionStatusReadOnly {
+		return false
+	}
+	projection.Status = followerProjectionStatusDegraded
+	projection.ProtectionReason = reason
+	s.followers[key] = projection
+	return true
+}
+
+func (s *service) MarkFollowerProjectionActive(groupID, authorityStationPeerID string) bool {
+	groupID = strings.TrimSpace(groupID)
+	authorityStationPeerID = strings.TrimSpace(authorityStationPeerID)
+	if authorityStationPeerID == "" {
+		authorityStationPeerID = foundationLocalAuthorityStation
+	}
+	now := time.Now()
+	if s.db != nil {
+		result := s.db.Model(&groupFollowerProjectionModel{}).
+			Where("group_ulid = ? AND authority_station_peer_id = ? AND status = ?", groupID, authorityStationPeerID, followerProjectionStatusDegraded).
+			Updates(map[string]any{
+				"status":            followerProjectionStatusActive,
+				"protection_reason": "",
+				"updated_at":        now,
+			})
+		return result.Error == nil && result.RowsAffected > 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := groupID + "\x00" + authorityStationPeerID
+	projection, ok := s.followers[key]
+	if !ok || projection.Status != followerProjectionStatusDegraded {
+		return false
+	}
+	projection.Status = followerProjectionStatusActive
+	projection.ProtectionReason = ""
+	s.followers[key] = projection
+	return true
+}
+
+func (s *service) EnqueueProposalOutbox(proposal domain.GroupProposal) (domain.GroupProposalOutboxItem, bool, error) {
+	payload, err := proposalOutboxPayload(proposal)
+	if err != nil {
+		return domain.GroupProposalOutboxItem{}, false, err
+	}
+	idempotencyKey := strings.TrimSpace(proposal.IdempotencyKey)
+	if idempotencyKey == "" {
+		idempotencyKey = proposal.ProposalULID
+	}
+	now := proposal.CreatedAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	authorityEpoch := proposal.AuthorityEpoch
+	if authorityEpoch <= 0 {
+		authorityEpoch = foundationAuthorityEpoch
+	}
+	if s.db != nil {
+		var existing groupProposalOutboxModel
+		err := s.db.Where("idempotency_key = ?", idempotencyKey).First(&existing).Error
+		if err == nil {
+			if existing.ProposalULID == proposal.ProposalULID &&
+				existing.GroupULID == proposal.GroupID &&
+				existing.ActorDID == proposal.Actor.ActorDID &&
+				existing.ActorHomeStationPeerID == proposal.Actor.HomeStationPeerID &&
+				existing.AuthorityStationPeerID == proposal.AuthorityStationPeerID &&
+				existing.AuthorityEpoch == authorityEpoch &&
+				groupMembershipEpoch(existing.ObservedMembershipEpoch) == groupMembershipEpoch(proposal.ObservedMembershipEpoch) &&
+				existing.Command == proposal.Command &&
+				existing.Payload == payload {
+				return groupProposalOutboxModelToDomain(existing, proposal.Actor), true, nil
+			}
+			return domain.GroupProposalOutboxItem{}, false, errProposalOutboxIdempotencyConflict
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.GroupProposalOutboxItem{}, false, err
+		}
+		row := groupProposalOutboxModel{
+			ProposalULID:            proposal.ProposalULID,
+			GroupULID:               proposal.GroupID,
+			ActorDID:                proposal.Actor.ActorDID,
+			ActorHomeStationPeerID:  proposal.Actor.HomeStationPeerID,
+			AuthorityStationPeerID:  proposal.AuthorityStationPeerID,
+			AuthorityEpoch:          authorityEpoch,
+			ObservedMembershipEpoch: groupMembershipEpoch(proposal.ObservedMembershipEpoch),
+			Command:                 proposal.Command,
+			IdempotencyKey:          idempotencyKey,
+			Status:                  proposalOutboxStatusPending,
+			Payload:                 payload,
+			CreatedAt:               now,
+			UpdatedAt:               now,
+		}
+		if err := s.db.Create(&row).Error; err != nil {
+			return domain.GroupProposalOutboxItem{}, false, err
+		}
+		item := groupProposalOutboxModelToDomain(row, proposal.Actor)
+		item.Proposal = proposal
+		return item, false, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.proposals == nil {
+		s.proposals = map[string]domain.GroupProposalOutboxItem{}
+	}
+	if existing, ok := s.proposals[idempotencyKey]; ok {
+		if existing.ProposalULID == proposal.ProposalULID &&
+			existing.GroupID == proposal.GroupID &&
+			existing.Actor.ActorDID == proposal.Actor.ActorDID &&
+			existing.Actor.HomeStationPeerID == proposal.Actor.HomeStationPeerID &&
+			existing.AuthorityStationPeerID == proposal.AuthorityStationPeerID &&
+			existing.AuthorityEpoch == authorityEpoch &&
+			existing.ObservedMembershipEpoch == groupMembershipEpoch(proposal.ObservedMembershipEpoch) &&
+			existing.Command == proposal.Command {
+			return existing, true, nil
+		}
+		return domain.GroupProposalOutboxItem{}, false, errProposalOutboxIdempotencyConflict
+	}
+	item := domain.GroupProposalOutboxItem{
+		ProposalULID:            proposal.ProposalULID,
+		GroupID:                 proposal.GroupID,
+		Proposal:                proposal,
+		Actor:                   proposal.Actor,
+		Command:                 proposal.Command,
+		AuthorityStationPeerID:  proposal.AuthorityStationPeerID,
+		AuthorityEpoch:          authorityEpoch,
+		ObservedMembershipEpoch: groupMembershipEpoch(proposal.ObservedMembershipEpoch),
+		IdempotencyKey:          idempotencyKey,
+		Status:                  proposalOutboxStatusPending,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+	}
+	s.proposals[idempotencyKey] = item
+	return item, false, nil
+}
+
+func (s *service) EnqueueGroupSkdmOutbox(envelope domain.GroupSkdmEnvelope) (domain.GroupSkdmEnvelope, bool, error) {
+	idempotencyKey := strings.TrimSpace(envelope.IdempotencyKey)
+	if idempotencyKey == "" {
+		idempotencyKey = strings.Join([]string{
+			envelope.GroupID,
+			envelope.SenderDID,
+			strconv.FormatUint(uint64(envelope.SenderKeyID), 10),
+			envelope.RecipientDID,
+			envelope.RecipientDeviceID,
+		}, ":")
+	}
+	now := envelope.CreatedAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if s.db != nil {
+		var existing groupSkdmOutboxModel
+		err := s.db.Where("idempotency_key = ?", idempotencyKey).First(&existing).Error
+		if err == nil {
+			if existing.GroupULID == envelope.GroupID &&
+				groupMembershipEpoch(existing.MembershipEpoch) == groupMembershipEpoch(envelope.MembershipEpoch) &&
+				existing.SenderDID == envelope.SenderDID &&
+				existing.SenderKeyID == envelope.SenderKeyID &&
+				existing.RecipientDID == envelope.RecipientDID &&
+				existing.RecipientDeviceID == envelope.RecipientDeviceID &&
+				existing.RecipientHomeStationPeerID == envelope.RecipientHomeStationPeerID &&
+				string(existing.EncryptedPayload) == string(envelope.EncryptedPayload) {
+				return groupSkdmOutboxModelToDomain(existing), true, nil
+			}
+			return domain.GroupSkdmEnvelope{}, false, errors.New("group skdm outbox idempotency conflict")
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.GroupSkdmEnvelope{}, false, err
+		}
+		row := groupSkdmOutboxModel{
+			OutboxULID:                 fmt.Sprintf("gcskdm-%d", now.UnixNano()),
+			GroupULID:                  envelope.GroupID,
+			MembershipEpoch:            groupMembershipEpoch(envelope.MembershipEpoch),
+			SenderDID:                  envelope.SenderDID,
+			SenderKeyID:                envelope.SenderKeyID,
+			RecipientDID:               envelope.RecipientDID,
+			RecipientDeviceID:          envelope.RecipientDeviceID,
+			RecipientHomeStationPeerID: envelope.RecipientHomeStationPeerID,
+			IdempotencyKey:             idempotencyKey,
+			Status:                     skdmOutboxStatusPending,
+			EncryptedPayload:           append([]byte(nil), envelope.EncryptedPayload...),
+			CreatedAt:                  now,
+			UpdatedAt:                  now,
+		}
+		if err := s.db.Create(&row).Error; err != nil {
+			return domain.GroupSkdmEnvelope{}, false, err
+		}
+		return groupSkdmOutboxModelToDomain(row), false, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.skdmOutbox == nil {
+		s.skdmOutbox = map[string]domain.GroupSkdmEnvelope{}
+	}
+	if existing, ok := s.skdmOutbox[idempotencyKey]; ok {
+		if existing.GroupID == envelope.GroupID &&
+			existing.MembershipEpoch == groupMembershipEpoch(envelope.MembershipEpoch) &&
+			existing.SenderDID == envelope.SenderDID &&
+			existing.SenderKeyID == envelope.SenderKeyID &&
+			existing.RecipientDID == envelope.RecipientDID &&
+			existing.RecipientDeviceID == envelope.RecipientDeviceID &&
+			existing.RecipientHomeStationPeerID == envelope.RecipientHomeStationPeerID &&
+			string(existing.EncryptedPayload) == string(envelope.EncryptedPayload) {
+			return existing, true, nil
+		}
+		return domain.GroupSkdmEnvelope{}, false, errors.New("group skdm outbox idempotency conflict")
+	}
+	envelope.OutboxULID = fmt.Sprintf("gcskdm-%d", now.UnixNano())
+	envelope.IdempotencyKey = idempotencyKey
+	envelope.Status = skdmOutboxStatusPending
+	envelope.MembershipEpoch = groupMembershipEpoch(envelope.MembershipEpoch)
+	envelope.CreatedAt = now
+	envelope.UpdatedAt = now
+	s.skdmOutbox[idempotencyKey] = envelope
+	return envelope, false, nil
+}
+
+func (s *service) ListPendingGroupSkdmOutbox(limit int, now time.Time) ([]domain.GroupSkdmEnvelope, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if s.db != nil {
+		var rows []groupSkdmOutboxModel
+		err := s.db.
+			Where("status = ? OR (status = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?))", skdmOutboxStatusPending, skdmOutboxStatusRetryWait, now).
+			Order("id ASC").
+			Limit(limit).
+			Find(&rows).Error
+		if err != nil {
+			return nil, err
+		}
+		items := make([]domain.GroupSkdmEnvelope, 0, len(rows))
+		for _, row := range rows {
+			items = append(items, groupSkdmOutboxModelToDomain(row))
+		}
+		return items, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items := make([]domain.GroupSkdmEnvelope, 0, limit)
+	for _, item := range s.skdmOutbox {
+		if item.Status != skdmOutboxStatusPending &&
+			!(item.Status == skdmOutboxStatusRetryWait && (item.NextAttemptAt.IsZero() || !item.NextAttemptAt.After(now))) {
+			continue
+		}
+		items = append(items, item)
+		if len(items) >= limit {
+			break
+		}
+	}
+	return items, nil
+}
+
+func (s *service) MarkGroupSkdmOutboxDelivered(outboxULID string) bool {
+	outboxULID = strings.TrimSpace(outboxULID)
+	if outboxULID == "" {
+		return false
+	}
+	now := time.Now()
+	if s.db != nil {
+		res := s.db.Model(&groupSkdmOutboxModel{}).
+			Where("outbox_ulid = ?", outboxULID).
+			Updates(map[string]interface{}{
+				"status":          skdmOutboxStatusDelivered,
+				"next_attempt_at": nil,
+				"last_error":      "",
+				"updated_at":      now,
+			})
+		return res.Error == nil && res.RowsAffected > 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, item := range s.skdmOutbox {
+		if item.OutboxULID != outboxULID {
+			continue
+		}
+		item.Status = skdmOutboxStatusDelivered
+		item.NextAttemptAt = time.Time{}
+		item.LastError = ""
+		item.UpdatedAt = now
+		s.skdmOutbox[key] = item
+		return true
+	}
+	return false
+}
+
+func (s *service) MarkGroupSkdmOutboxRetry(outboxULID, lastError string, nextAttemptAt time.Time) bool {
+	outboxULID = strings.TrimSpace(outboxULID)
+	if outboxULID == "" {
+		return false
+	}
+	now := time.Now()
+	if nextAttemptAt.IsZero() {
+		nextAttemptAt = now.Add(30 * time.Second)
+	}
+	if s.db != nil {
+		res := s.db.Model(&groupSkdmOutboxModel{}).
+			Where("outbox_ulid = ?", outboxULID).
+			Updates(map[string]interface{}{
+				"status":          skdmOutboxStatusRetryWait,
+				"attempt_count":   gorm.Expr("attempt_count + 1"),
+				"next_attempt_at": nextAttemptAt,
+				"last_error":      lastError,
+				"updated_at":      now,
+			})
+		return res.Error == nil && res.RowsAffected > 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, item := range s.skdmOutbox {
+		if item.OutboxULID != outboxULID {
+			continue
+		}
+		item.Status = skdmOutboxStatusRetryWait
+		item.AttemptCount++
+		item.NextAttemptAt = nextAttemptAt
+		item.LastError = lastError
+		item.UpdatedAt = now
+		s.skdmOutbox[key] = item
+		return true
+	}
+	return false
+}
+
+func (s *service) ListPendingProposalOutbox(limit int, now time.Time) ([]domain.GroupProposalOutboxItem, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if s.db != nil {
+		var rows []groupProposalOutboxModel
+		err := s.db.
+			Where("status = ? OR (status = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?))", proposalOutboxStatusPending, proposalOutboxStatusRetryWait, now).
+			Order("id ASC").
+			Limit(limit).
+			Find(&rows).Error
+		if err != nil {
+			return nil, err
+		}
+		items := make([]domain.GroupProposalOutboxItem, 0, len(rows))
+		for _, row := range rows {
+			proposal, err := proposalOutboxPayloadToProposal(row.Payload)
+			if err != nil {
+				return nil, err
+			}
+			item := groupProposalOutboxModelToDomain(row, proposal.Actor)
+			item.Proposal = proposal
+			items = append(items, item)
+		}
+		return items, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items := make([]domain.GroupProposalOutboxItem, 0, limit)
+	for _, item := range s.proposals {
+		if item.Status != proposalOutboxStatusPending &&
+			!(item.Status == proposalOutboxStatusRetryWait && (item.NextAttemptAt.IsZero() || !item.NextAttemptAt.After(now))) {
+			continue
+		}
+		items = append(items, item)
+		if len(items) >= limit {
+			break
+		}
+	}
+	return items, nil
+}
+
+func (s *service) ListPendingFederationOutbox(limit int, now time.Time) ([]domain.FederationOutboxItem, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if s.db == nil {
+		return nil, nil
+	}
+	var rows []federationOutboxModel
+	err := s.db.
+		Where("status = ? OR (status = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?))", federationOutboxStatusPending, federationOutboxStatusRetryWait, now).
+		Order("id ASC").
+		Limit(limit).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	items := make([]domain.FederationOutboxItem, 0, len(rows))
+	for _, row := range rows {
+		event, err := federationOutboxPayloadToEvent(row.Payload)
+		if err != nil {
+			return nil, err
+		}
+		item := federationOutboxModelToDomain(row)
+		item.Event = event
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (s *service) MarkProposalOutboxAccepted(proposalULID string) bool {
+	proposalULID = strings.TrimSpace(proposalULID)
+	if proposalULID == "" {
+		return false
+	}
+	now := time.Now()
+	if s.db != nil {
+		res := s.db.Model(&groupProposalOutboxModel{}).
+			Where("proposal_ulid = ?", proposalULID).
+			Updates(map[string]interface{}{
+				"status":          proposalOutboxStatusAccepted,
+				"next_attempt_at": nil,
+				"last_error":      "",
+				"updated_at":      now,
+			})
+		return res.Error == nil && res.RowsAffected > 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, item := range s.proposals {
+		if item.ProposalULID != proposalULID {
+			continue
+		}
+		item.Status = proposalOutboxStatusAccepted
+		item.NextAttemptAt = time.Time{}
+		item.LastError = ""
+		item.UpdatedAt = now
+		s.proposals[key] = item
+		return true
+	}
+	return false
+}
+
+func (s *service) MarkFederationOutboxApplied(eventULID, targetStationPeerID string) bool {
+	eventULID = strings.TrimSpace(eventULID)
+	targetStationPeerID = strings.TrimSpace(targetStationPeerID)
+	if eventULID == "" || targetStationPeerID == "" || s.db == nil {
+		return false
+	}
+	res := s.db.Model(&federationOutboxModel{}).
+		Where("event_ulid = ? AND target_station_peer_id = ?", eventULID, targetStationPeerID).
+		Updates(map[string]interface{}{
+			"status":          federationOutboxStatusApplied,
+			"next_attempt_at": nil,
+			"last_error":      "",
+			"updated_at":      time.Now(),
+		})
+	return res.Error == nil && res.RowsAffected > 0
+}
+
+func (s *service) MarkFederationOutboxRetry(eventULID, targetStationPeerID, lastError string, nextAttemptAt time.Time) bool {
+	eventULID = strings.TrimSpace(eventULID)
+	targetStationPeerID = strings.TrimSpace(targetStationPeerID)
+	if eventULID == "" || targetStationPeerID == "" || s.db == nil {
+		return false
+	}
+	now := time.Now()
+	if nextAttemptAt.IsZero() {
+		nextAttemptAt = now.Add(30 * time.Second)
+	}
+	res := s.db.Model(&federationOutboxModel{}).
+		Where("event_ulid = ? AND target_station_peer_id = ?", eventULID, targetStationPeerID).
+		Updates(map[string]interface{}{
+			"status":          federationOutboxStatusRetryWait,
+			"attempt_count":   gorm.Expr("attempt_count + 1"),
+			"next_attempt_at": nextAttemptAt,
+			"last_error":      lastError,
+			"updated_at":      now,
+		})
+	return res.Error == nil && res.RowsAffected > 0
+}
+
+func (s *service) MarkProposalOutboxRetry(proposalULID, lastError string, nextAttemptAt time.Time) bool {
+	proposalULID = strings.TrimSpace(proposalULID)
+	if proposalULID == "" {
+		return false
+	}
+	now := time.Now()
+	if nextAttemptAt.IsZero() {
+		nextAttemptAt = now.Add(30 * time.Second)
+	}
+	if s.db != nil {
+		res := s.db.Model(&groupProposalOutboxModel{}).
+			Where("proposal_ulid = ?", proposalULID).
+			Updates(map[string]interface{}{
+				"status":          proposalOutboxStatusRetryWait,
+				"attempt_count":   gorm.Expr("attempt_count + 1"),
+				"next_attempt_at": nextAttemptAt,
+				"last_error":      lastError,
+				"updated_at":      now,
+			})
+		return res.Error == nil && res.RowsAffected > 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, item := range s.proposals {
+		if item.ProposalULID != proposalULID {
+			continue
+		}
+		item.Status = proposalOutboxStatusRetryWait
+		item.AttemptCount++
+		item.NextAttemptAt = nextAttemptAt
+		item.LastError = lastError
+		item.UpdatedAt = now
+		s.proposals[key] = item
+		return true
+	}
+	return false
+}
+
+func (s *service) ApplyFederationEvent(event domain.GroupEvent) (domain.FollowerProjection, error) {
+	now := event.CreatedAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	row := groupEventModel{
+		EventULID:              event.EventULID,
+		GroupULID:              event.GroupID,
+		Seq:                    event.Seq,
+		PrevHash:               event.PrevHash,
+		EventHash:              event.EventHash,
+		EventType:              event.EventType,
+		ActorDID:               event.Actor.ActorDID,
+		MessageULID:            event.MessageID,
+		MembershipEpoch:        groupMembershipEpoch(event.MembershipEpoch),
+		AuthorityStationPeerID: event.AuthorityStationPeerID,
+		AuthorityEpoch:         event.AuthorityEpoch,
+		ProposalULID:           event.ProposalULID,
+		IdempotencyKey:         event.IdempotencyKey,
+		Payload:                string(event.EventPayload),
+		CreatedAt:              now,
+	}
+	if s.db != nil {
+		var projection groupFollowerProjectionModel
+		var applyErr error
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			projection, applyErr = applyFollowerEventTx(tx, now, row)
+			if errors.Is(applyErr, errFollowerProjectionForkProtection) {
+				return nil
+			}
+			return applyErr
+		})
+		if err != nil {
+			return followerProjectionModelToDomain(projection), err
+		}
+		return followerProjectionModelToDomain(projection), applyErr
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.followers == nil {
+		s.followers = map[string]domain.FollowerProjection{}
+	}
+	authorityPeerID := strings.TrimSpace(event.AuthorityStationPeerID)
+	if authorityPeerID == "" {
+		authorityPeerID = foundationLocalAuthorityStation
+	}
+	key := event.GroupID + "\x00" + authorityPeerID
+	projection := s.followers[key]
+	expectedSeq := int64(1)
+	expectedPrevHash := ""
+	if projection.GroupID != "" {
+		if event.Seq <= projection.LastSeq {
+			if event.Seq == projection.LastSeq && event.EventHash != "" && event.EventHash != projection.LastEventHash {
+				if projection.Status != followerProjectionStatusReadOnly {
+					projection.Status = followerProjectionStatusReadOnly
+					projection.ProtectionReason = fmt.Sprintf("replay hash mismatch at seq=%d, expected hash=%s got hash=%s", event.Seq, projection.LastEventHash, event.EventHash)
+				}
+				s.followers[key] = projection
+				return projection, errFollowerProjectionForkProtection
+			}
+			return projection, nil
+		}
+		expectedSeq = projection.LastSeq + 1
+		expectedPrevHash = projection.LastEventHash
+	}
+	if event.Seq != expectedSeq || event.PrevHash != expectedPrevHash || projection.Status == followerProjectionStatusReadOnly {
+		if projection.GroupID == "" {
+			projection.GroupID = event.GroupID
+			projection.AuthorityStationPeerID = authorityPeerID
+			projection.AuthorityEpoch = event.AuthorityEpoch
+		}
+		if projection.Status != followerProjectionStatusReadOnly {
+			projection.Status = followerProjectionStatusReadOnly
+			projection.ProtectionReason = fmt.Sprintf("expected seq=%d prev_hash=%s, got seq=%d prev_hash=%s", expectedSeq, expectedPrevHash, event.Seq, event.PrevHash)
+		}
+		s.followers[key] = projection
+		return projection, errFollowerProjectionForkProtection
+	}
+	projection = domain.FollowerProjection{
+		GroupID:                event.GroupID,
+		AuthorityStationPeerID: authorityPeerID,
+		AuthorityEpoch:         event.AuthorityEpoch,
+		LastSeq:                event.Seq,
+		LastEventHash:          event.EventHash,
+		Status:                 followerProjectionStatusActive,
+	}
+	s.followers[key] = projection
+	return projection, nil
 }
 
 func (s *service) ListMessages(groupID, beforeUlid string, limit int) ([]domain.Message, error) {
@@ -725,7 +2139,7 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 			CreatedAt:       now,
 			UpdatedAt:       now,
 		}
-		_ = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.db.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Create(&groupModel{
 				ULID:            item.ID,
 				Name:            item.Name,
@@ -749,6 +2163,9 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 			}).Error; err != nil {
 				return err
 			}
+			if err := appendAuthorityEventTx(tx, now, item.ID, "group.created", ownerDID, "", item.MembershipEpoch, fmt.Sprintf(`{"owner_did":"%s"}`, ownerDID)); err != nil {
+				return err
+			}
 			return tx.Create(&outboxModel{
 				EventID:   fmt.Sprintf("gce-%d", now.UnixNano()),
 				EventType: "group.created",
@@ -758,7 +2175,9 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 				CreatedAt: now,
 				UpdatedAt: now,
 			}).Error
-		})
+		}); err != nil {
+			return nil
+		}
 		return item
 	}
 	s.mu.Lock()
@@ -950,7 +2369,7 @@ func (s *service) appendMessage(groupID, senderDID string, messageType int32, co
 			return message{}
 		}
 		item := message{
-			ID:               fmt.Sprintf("gcm-%d", now.UnixNano()),
+			ID:               nextGroupChatID("gcm", now),
 			GroupID:          groupID,
 			SenderDID:        senderDID,
 			Type:             messageType,
@@ -963,7 +2382,11 @@ func (s *service) appendMessage(groupID, senderDID string, messageType int32, co
 		if len(attachments) > 0 {
 			item.Attachments = append([]domain.Attachment(nil), attachments...)
 		}
-		_ = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.db.Transaction(func(tx *gorm.DB) error {
+			var groupRow groupModel
+			if err := tx.Where("ulid = ?", groupID).First(&groupRow).Error; err != nil {
+				return err
+			}
 			if err := tx.Create(&messageModel{
 				ULID:             item.ID,
 				GroupULID:        groupID,
@@ -1003,7 +2426,7 @@ func (s *service) appendMessage(groupID, senderDID string, messageType int32, co
 					continue
 				}
 				if err := tx.Create(&offlineModel{
-					ULID:        fmt.Sprintf("gco-%d", time.Now().UnixNano()),
+					ULID:        nextGroupChatID("gco", time.Now()),
 					GroupULID:   groupID,
 					MessageULID: item.ID,
 					ReceiverID:  m.ActorDID,
@@ -1016,8 +2439,11 @@ func (s *service) appendMessage(groupID, senderDID string, messageType int32, co
 			if err := tx.Model(&groupModel{}).Where("ulid = ?", groupID).Update("updated_at", now).Error; err != nil {
 				return err
 			}
+			if err := appendAuthorityEventTx(tx, now, groupID, "group.message.appended", senderDID, item.ID, groupRow.MembershipEpoch, fmt.Sprintf(`{"message_ulid":"%s","sender_did":"%s"}`, item.ID, senderDID)); err != nil {
+				return err
+			}
 			return tx.Create(&outboxModel{
-				EventID:   fmt.Sprintf("gce-%d", time.Now().UnixNano()),
+				EventID:   nextGroupChatID("gce", time.Now()),
 				EventType: "group.message.appended",
 				TargetID:  groupID,
 				Payload:   fmt.Sprintf(`{"message_ulid":"%s","sender_did":"%s"}`, item.ID, senderDID),
@@ -1025,7 +2451,9 @@ func (s *service) appendMessage(groupID, senderDID string, messageType int32, co
 				CreatedAt: now,
 				UpdatedAt: now,
 			}).Error
-		})
+		}); err != nil {
+			return message{}
+		}
 		return item
 	}
 	s.mu.Lock()
@@ -1037,7 +2465,7 @@ func (s *service) appendMessage(groupID, senderDID string, messageType int32, co
 	}
 	resolvedThreadRootID := resolveGroupThreadRootIDInMemory(s.messagesByID, groupID, replyToID, threadRootID)
 	item := message{
-		ID:               fmt.Sprintf("gcm-%d", now.UnixNano()),
+		ID:               nextGroupChatID("gcm", now),
 		GroupID:          groupID,
 		SenderDID:        senderDID,
 		Type:             messageType,
@@ -1068,7 +2496,7 @@ func (s *service) appendMessage(groupID, senderDID string, messageType int32, co
 				s.offline[did] = make([]offlineMessage, 0)
 			}
 			s.offline[did] = append(s.offline[did], offlineMessage{
-				ID:         fmt.Sprintf("gco-%d", time.Now().UnixNano()),
+				ID:         nextGroupChatID("gco", time.Now()),
 				GroupID:    groupID,
 				MessageID:  item.ID,
 				ReceiverID: did,
@@ -1117,7 +2545,7 @@ func (s *service) listMessages(groupID, beforeUlid string, limit int) []message 
 		if beforeUlid != "" {
 			query = query.Where("ulid < ?", beforeUlid)
 		}
-		if err := query.Order("sent_at DESC").Limit(limit).Find(&rows).Error; err == nil {
+		if err := query.Order("ulid DESC").Limit(limit).Find(&rows).Error; err == nil {
 			out := make([]message, 0, len(rows))
 			for i := len(rows) - 1; i >= 0; i-- {
 				var enc []byte
@@ -1687,6 +3115,12 @@ func (s *service) addMember(groupID, actorDID, inviterDID string) (*member, bool
 			if err := tx.Model(&groupModel{}).Where("ulid = ?", groupID).Updates(updates).Error; err != nil {
 				return err
 			}
+			if added {
+				nextEpoch := groupMembershipEpoch(groupRow.MembershipEpoch) + 1
+				if err := appendAuthorityEventTx(tx, now, groupID, "group.member.joined", actorDID, "", nextEpoch, fmt.Sprintf(`{"actor_did":"%s","inviter_did":"%s"}`, actorDID, inviterDID)); err != nil {
+					return err
+				}
+			}
 			return tx.Create(&outboxModel{
 				EventID:   fmt.Sprintf("gce-%d", now.UnixNano()),
 				EventType: "group.member.joined",
@@ -1801,6 +3235,10 @@ func (s *service) removeMember(groupID, actorDID string) bool {
 	if s.db != nil {
 		now := time.Now()
 		err := s.db.Transaction(func(tx *gorm.DB) error {
+			var groupRow groupModel
+			if err := tx.Where("ulid = ?", groupID).First(&groupRow).Error; err != nil {
+				return err
+			}
 			result := tx.Where("group_ulid = ? AND actor_did = ?", groupID, actorDID).Delete(&memberModel{})
 			if result.Error != nil {
 				return result.Error
@@ -1817,6 +3255,10 @@ func (s *service) removeMember(groupID, actorDID string) bool {
 				"membership_epoch": gorm.Expr("CASE WHEN membership_epoch <= 0 THEN 2 ELSE membership_epoch + 1 END"),
 				"updated_at":       now,
 			}).Error; err != nil {
+				return err
+			}
+			nextEpoch := groupMembershipEpoch(groupRow.MembershipEpoch) + 1
+			if err := appendAuthorityEventTx(tx, now, groupID, "group.member.removed", actorDID, "", nextEpoch, fmt.Sprintf(`{"actor_did":"%s"}`, actorDID)); err != nil {
 				return err
 			}
 			return tx.Create(&outboxModel{
@@ -1886,6 +3328,9 @@ func (s *service) transferOwnership(groupID, currentOwnerDID, nextOwnerDID strin
 			}).Error; err != nil {
 				return err
 			}
+			if err := appendAuthorityEventTx(tx, now, groupID, "group.owner.transferred", currentOwnerDID, "", groupRow.MembershipEpoch, fmt.Sprintf(`{"from_did":"%s","to_did":"%s"}`, currentOwnerDID, nextOwnerDID)); err != nil {
+				return err
+			}
 			return tx.Create(&outboxModel{
 				EventID:   fmt.Sprintf("gce-%d", now.UnixNano()),
 				EventType: "group.owner.transferred",
@@ -1953,6 +3398,9 @@ func (s *service) dissolveGroup(groupID string) bool {
 					"status":     groupInvitationStatusExpired,
 					"updated_at": now,
 				}).Error; err != nil {
+				return err
+			}
+			if err := appendAuthorityEventTx(tx, now, groupID, "group.dissolved", row.OwnerDID, "", row.MembershipEpoch, `{}`); err != nil {
 				return err
 			}
 			return tx.Create(&outboxModel{

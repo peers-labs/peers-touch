@@ -62,6 +62,8 @@ message GroupMember {
   google.protobuf.Timestamp muted_until = 6; // 禁言截止时间
   google.protobuf.Timestamp joined_at = 7;
   string invited_by = 8;                     // 邀请人 DID
+  string actor_home_station_peer_id = 9;      // Actor Home Station peer id for federation routing
+  string actor_home_station_domain = 10;      // Actor Home Station display/domain hint
 }
 
 // 群角色
@@ -199,6 +201,33 @@ message SenderKeyDistributionMessage {
   bytes sender_sig_pub = 6;
 }
 
+// GroupSkdmEnvelope is the Station-visible routing wrapper for a sealed
+// SenderKeyDistributionMessage. `encrypted_payload` MUST already be protected
+// by the recipient's pairwise E2EE channel; Station stores and routes it
+// opaquely and MUST NOT contain raw SenderKeyDistributionMessage bytes.
+message GroupSkdmEnvelope {
+  string group_ulid = 1;
+  int64 membership_epoch = 2;
+  string sender_did = 3;
+  uint32 sender_key_id = 4;
+  string recipient_did = 5;
+  string recipient_device_id = 6;
+  string recipient_home_station_peer_id = 7;
+  bytes encrypted_payload = 8;
+  string idempotency_key = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message SubmitGroupSkdmEnvelopeRequest {
+  GroupSkdmEnvelope envelope = 1;
+}
+
+message SubmitGroupSkdmEnvelopeResponse {
+  string outbox_ulid = 1;
+  string status = 2;
+  bool idempotent_replay = 3;
+}
+
 // ChatEncryptedMessagePayload is the plaintext that goes into the
 // Sender-Keys cipher before it becomes GroupCiphertext.ciphertext.
 // It is a protobuf message by design: clients may decode it after
@@ -268,6 +297,75 @@ enum GroupInvitationStatus {
   GROUP_INVITATION_STATUS_ACCEPTED = 2;
   GROUP_INVITATION_STATUS_REJECTED = 3;
   GROUP_INVITATION_STATUS_EXPIRED = 4;
+}
+
+// ==================== 联邦群权威事件 ====================
+
+message FederatedActorRef {
+  string actor_did = 1;
+  string home_station_peer_id = 2;
+  string home_station_domain = 3;
+  string federated_handle = 4;
+  bytes actor_identity_public_key = 5;
+  int64 profile_version = 6;
+  string federation_id = 7;
+}
+
+enum GroupProposalCommand {
+  GROUP_PROPOSAL_COMMAND_UNSPECIFIED = 0;
+  GROUP_PROPOSAL_COMMAND_MESSAGE_APPEND = 1;
+  GROUP_PROPOSAL_COMMAND_MEMBER_JOIN = 2;
+  GROUP_PROPOSAL_COMMAND_MEMBER_REMOVE = 3;
+  GROUP_PROPOSAL_COMMAND_OWNER_TRANSFER = 4;
+  GROUP_PROPOSAL_COMMAND_DISSOLVE = 5;
+}
+
+message GroupProposal {
+  string proposal_ulid = 1;
+  string group_ulid = 2;
+  FederatedActorRef actor = 3;
+  GroupProposalCommand command = 4;
+  bytes command_payload = 5;                 // Opaque command bytes; message bodies remain E2EE payload refs.
+  int64 observed_membership_epoch = 6;
+  string authority_station_peer_id = 7;
+  int64 authority_epoch = 8;
+  string idempotency_key = 9;
+  string signing_key_id = 10;
+  bytes signature = 11;                      // Signature over canonical proposal bytes.
+  google.protobuf.Timestamp created_at = 12;
+}
+
+message GroupMemberJoinCommandPayload {
+  FederatedActorRef member = 1;
+  GroupRole role = 2;
+  string nickname = 3;
+  string invited_by_actor_did = 4;
+}
+
+message GroupMemberRemoveCommandPayload {
+  FederatedActorRef member = 1;
+}
+
+message GroupOwnerTransferCommandPayload {
+  FederatedActorRef next_owner = 1;
+}
+
+message GroupEvent {
+  string event_ulid = 1;
+  string group_ulid = 2;
+  int64 seq = 3;
+  string prev_hash = 4;
+  string event_hash = 5;
+  string event_type = 6;
+  FederatedActorRef actor = 7;
+  string message_ulid = 8;
+  int64 membership_epoch = 9;
+  string authority_station_peer_id = 10;
+  int64 authority_epoch = 11;
+  string proposal_ulid = 12;
+  string idempotency_key = 13;
+  bytes event_payload = 14;                  // Opaque committed metadata; no plaintext/Sender Key material.
+  google.protobuf.Timestamp created_at = 15;
 }
 
 // ==================== API 请求/响应 ====================
@@ -433,6 +531,43 @@ message SendGroupMessageRequest {
 
 message SendGroupMessageResponse {
   GroupMessage message = 1;
+}
+
+// Authority Station proposal acceptance. Foundation Profile records the
+// committed event and idempotency decision; cross-Station delivery is Phase D.
+message AcceptGroupProposalRequest {
+  GroupProposal proposal = 1;
+}
+
+message AcceptGroupProposalResponse {
+  GroupEvent event = 1;
+  bool idempotent_replay = 2;
+}
+
+// Follower Station applies committed authority events and advances its cursor.
+message ApplyGroupEventRequest {
+  GroupEvent event = 1;
+}
+
+message ApplyGroupEventResponse {
+  int64 last_accepted_seq = 1;
+  string last_event_hash = 2;
+  string status = 3;
+  string protection_reason = 4;
+}
+
+// Follower Station asks the authority Station for committed events after its
+// current cursor. Applying returned events still goes through ApplyGroupEvent.
+message SyncGroupEventsRequest {
+  string group_ulid = 1;
+  int64 after_seq = 2;
+  int32 limit = 3;
+}
+
+message SyncGroupEventsResponse {
+  repeated GroupEvent events = 1;
+  int64 last_seq = 2;
+  string last_event_hash = 3;
 }
 
 // 获取群消息

@@ -465,6 +465,7 @@ fn main() {
             group_chat::group_chat_thread_counts,
             group_chat::group_chat_thread_mark_read,
             group_chat::group_chat_send_message,
+            group_chat::group_chat_submit_skdm_envelope,
             group_chat::group_chat_unread_count,
             group_chat::group_chat_mark_read,
             group_chat::group_chat_create_group,

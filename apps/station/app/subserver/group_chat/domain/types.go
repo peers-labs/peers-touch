@@ -44,6 +44,112 @@ type Group struct {
 	UpdatedAt       time.Time
 }
 
+type FederatedActorRef struct {
+	ActorDID               string
+	HomeStationPeerID      string
+	HomeStationDomain      string
+	FederatedHandle        string
+	ActorIdentityPublicKey []byte
+	ProfileVersion         int64
+	FederationID           string
+}
+
+type GroupProposal struct {
+	ProposalULID            string
+	GroupID                 string
+	Actor                   FederatedActorRef
+	Command                 int32
+	CommandPayload          []byte
+	ObservedMembershipEpoch int64
+	AuthorityStationPeerID  string
+	AuthorityEpoch          int64
+	IdempotencyKey          string
+	SigningKeyID            string
+	Signature               []byte
+	CreatedAt               time.Time
+}
+
+type GroupProposalOutboxItem struct {
+	ProposalULID            string
+	GroupID                 string
+	Proposal                GroupProposal
+	Actor                   FederatedActorRef
+	Command                 int32
+	AuthorityStationPeerID  string
+	AuthorityEpoch          int64
+	ObservedMembershipEpoch int64
+	IdempotencyKey          string
+	Status                  string
+	AttemptCount            int
+	NextAttemptAt           time.Time
+	LastError               string
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+}
+
+type GroupEvent struct {
+	EventULID              string
+	GroupID                string
+	Seq                    int64
+	PrevHash               string
+	EventHash              string
+	EventType              string
+	Actor                  FederatedActorRef
+	MessageID              string
+	MembershipEpoch        int64
+	AuthorityStationPeerID string
+	AuthorityEpoch         int64
+	ProposalULID           string
+	IdempotencyKey         string
+	EventPayload           []byte
+	CreatedAt              time.Time
+}
+
+type FollowerProjection struct {
+	GroupID                string
+	AuthorityStationPeerID string
+	AuthorityEpoch         int64
+	LastSeq                int64
+	LastEventHash          string
+	Status                 string
+	ProtectionReason       string
+}
+
+type GroupSkdmEnvelope struct {
+	OutboxULID                 string
+	GroupID                    string
+	MembershipEpoch            int64
+	SenderDID                  string
+	SenderKeyID                uint32
+	RecipientDID               string
+	RecipientDeviceID          string
+	RecipientHomeStationPeerID string
+	EncryptedPayload           []byte
+	IdempotencyKey             string
+	Status                     string
+	AttemptCount               int
+	NextAttemptAt              time.Time
+	LastError                  string
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
+}
+
+type FederationOutboxItem struct {
+	EventULID              string
+	GroupID                string
+	Seq                    int64
+	TargetStationPeerID    string
+	AuthorityStationPeerID string
+	AuthorityEpoch         int64
+	Status                 string
+	AttemptCount           int
+	NextAttemptAt          time.Time
+	LastError              string
+	Event                  GroupEvent
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+}
+
 type Message struct {
 	ID               string
 	GroupID          string
@@ -96,6 +202,7 @@ type MutationOutcome struct {
 type Member struct {
 	GroupID    string
 	ActorDID   string
+	Actor      FederatedActorRef
 	Role       int32
 	Nickname   string
 	Muted      bool

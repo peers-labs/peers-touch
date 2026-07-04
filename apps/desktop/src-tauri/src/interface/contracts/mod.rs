@@ -867,7 +867,7 @@ pub struct GroupChatSendInput {
     pub mention_all: Option<bool>,
     pub attachments: Option<Vec<AttachmentInput>>,
     pub encrypted_payload: Option<String>,
-	pub observed_membership_epoch: Option<i64>,
+    pub observed_membership_epoch: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

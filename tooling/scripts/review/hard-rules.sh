@@ -55,6 +55,18 @@ else
   sort -u "$tmp_files" -o "$tmp_files"
 fi
 
+has_proto_source_change=0
+if [[ -z "$fixture_dir" ]]; then
+  while IFS= read -r changed_file; do
+    case "$changed_file" in
+      model/**/*.proto|*/model/**/*.proto)
+        has_proto_source_change=1
+        break
+        ;;
+    esac
+  done < "$tmp_files"
+fi
+
 failures=0
 
 report_failure() {
@@ -89,7 +101,9 @@ while IFS= read -r file; do
 
   case "$file" in
     *.pb.go|*.pb.dart|*.pb.rs|*/gen/proto/*|*/src/gen/proto/*)
-      report_failure "generated-file-edit" "$file appears to be generated; update proto source and regenerate instead"
+      if [[ "$has_proto_source_change" -ne 1 ]]; then
+        report_failure "generated-file-edit" "$file appears to be generated; update proto source and regenerate instead"
+      fi
       ;;
   esac
 

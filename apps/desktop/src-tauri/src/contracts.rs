@@ -357,7 +357,22 @@ pub struct GroupChatSendInput {
     pub attachments: Option<Vec<AttachmentInput>>,
     /// Optional base64 ciphertext envelope for E2E (group symmetric key); forwarded to Station JSON when set.
     pub encrypted_payload: Option<String>,
-	pub observed_membership_epoch: Option<i64>,
+    pub observed_membership_epoch: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupSkdmSubmitInput {
+    pub group_ulid: String,
+    pub membership_epoch: i64,
+    pub sender_did: String,
+    pub sender_key_id: u32,
+    pub recipient_did: String,
+    pub recipient_device_id: String,
+    pub recipient_home_station_peer_id: String,
+    /// Base64 of the already sealed SKDM carrier payload. Desktop must never
+    /// submit raw SenderKeyDistributionMessage bytes to Station.
+    pub encrypted_payload: String,
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

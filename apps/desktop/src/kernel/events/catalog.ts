@@ -18,6 +18,8 @@ export const EVENT = {
   REALTIME_TYPING_STATE: 'realtime.typing_state',
   REALTIME_MESSAGE_MUTATION: 'realtime.message_mutation',
   REALTIME_GROUP_MEMBERSHIP_CHANGE: 'realtime.group_membership_change',
+  REALTIME_GROUP_FEDERATION_EVENT: 'realtime.group_federation_event',
+    REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED: 'realtime.group_skdm_envelope_delivered',
   REALTIME_CONVERSATION_SETTINGS_CHANGED: 'realtime.conversation_settings_changed',
   MOMENT_CREATED: 'moment.created',
   MOMENT_DELETED: 'moment.deleted',

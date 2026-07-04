@@ -145,6 +145,34 @@ export interface RealtimeGroupMembershipChangePayload {
   changedTsUnixMs: number;
 }
 
+export interface RealtimeGroupFederationEventPayload {
+  eventId: string;
+  groupUlid: string;
+  groupEventUlid: string;
+  seq: number;
+  eventType: string;
+  authorityStationPeerId: string;
+  authorityEpoch: number;
+  eventHash: string;
+  messageUlid: string;
+  membershipEpoch: number;
+  committedTsUnixMs: number;
+  actorDid: string;
+}
+
+export interface RealtimeGroupSkdmEnvelopeDeliveredPayload {
+  eventId: string;
+  groupUlid: string;
+  membershipEpoch: number;
+  senderDid: string;
+  senderKeyId: number;
+  recipientDid: string;
+  recipientDeviceId: string;
+  idempotencyKey: string;
+  encryptedPayloadB64: string;
+  deliveredTsUnixMs: number;
+}
+
 export interface RealtimeConversationSettingsChangedPayload {
   eventId: string;
   conversationKind: 'friend' | 'group';
@@ -260,6 +288,8 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_TYPING_STATE]: RealtimeTypingStatePayload;
   [EVENT.REALTIME_MESSAGE_MUTATION]: RealtimeMessageMutationPayload;
   [EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE]: RealtimeGroupMembershipChangePayload;
+  [EVENT.REALTIME_GROUP_FEDERATION_EVENT]: RealtimeGroupFederationEventPayload;
+    [EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED]: RealtimeGroupSkdmEnvelopeDeliveredPayload;
   [EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED]: RealtimeConversationSettingsChangedPayload;
   [EVENT.MOMENT_CREATED]: MomentCreatedPayload;
   [EVENT.MOMENT_DELETED]: MomentDeletedPayload;

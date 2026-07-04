@@ -4,7 +4,7 @@
  * Bridges the four `crypto_group_*` Tauri commands to the rest of
  * the chat layer:
  *
- *   * `ensureSkdmDistributed(actorId, groupUlid, memberDids)`
+ *   * `ensureSkdmDistributed(actorId, groupUlid, memberDids, options)`
  *     -> mints (lazily) the local sender chain for this group and
  *        sends the SKDM bytes to every member who hasn't received
  *        them yet, sealed under the per-recipient signaling envelope
@@ -61,6 +61,8 @@
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { eventBus, EVENT } from '../../kernel/events';
+import { fromBinary } from '@bufbuild/protobuf';
+import { SenderKeyDistributionMessageSchema } from '../../gen/proto/domain/chat/group_chat_pb';
 import {
   readDesktopDomainValueSync,
   removeDesktopDomainValueSync,
@@ -77,6 +79,22 @@ export class MissingSkdmError extends Error {
 const SENT_KEY_PREFIX = 'groupSenderKeys:skdm-sent';
 const PENDING_KEY_PREFIX = 'groupSenderKeys:skdm-pending';
 export const FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION = 50;
+
+export interface GroupSkdmDistributionMember {
+  actorDid: string;
+  actorHomeStationPeerId?: string;
+}
+
+export interface GroupSkdmDistributionOptions {
+  membershipEpoch?: number | bigint;
+  members?: GroupSkdmDistributionMember[];
+}
+
+export interface InboundSkdmExpectation {
+  groupUlid?: string;
+  senderKeyId?: number;
+  recipientDeviceId?: string;
+}
 /**
  * Wire `kind` for the signaling envelope when carrying an SKDM.
  *
@@ -245,7 +263,12 @@ function skdmEnvelopeSession(senderDid: string): string {
  */
 async function dispatchSkdmToPeerIk(
   actorId: string,
+  groupUlid: string,
+  membershipEpoch: number | bigint | undefined,
+  senderKeyId: number,
   peerDid: string,
+  peerDeviceId: string,
+  peerHomeStationPeerId: string | undefined,
   peerIkPub: string,
   skdmBytesB64: string,
 ): Promise<boolean> {
@@ -262,6 +285,24 @@ async function dispatchSkdmToPeerIk(
       SKDM_ENVELOPE_KIND as never,
       skdmBytesB64,
     );
+
+    if (peerHomeStationPeerId && Number(membershipEpoch ?? 0) > 0) {
+      try {
+        await api.groupChatSubmitSkdmEnvelope({
+          groupUlid,
+          membershipEpoch: membershipEpoch ?? 0,
+          senderDid: actorId,
+          senderKeyId,
+          recipientDid: peerDid,
+          recipientDeviceId: peerDeviceId,
+          recipientHomeStationPeerId: peerHomeStationPeerId,
+          encryptedPayload: sealed.payload_b64,
+          idempotencyKey: `${groupUlid}:${actorId}:${senderKeyId}:${peerDid}:${peerDeviceId}`,
+        });
+      } catch (err) {
+        log.warn('groupSenderKeys', `Station SKDM submit failed for ${peerDid}/${peerDeviceId}`, err);
+      }
+    }
 
     const session = await api.friendChatCreateSession(peerDid);
     const sessionUlid = session?.session?.ulid ?? '';
@@ -316,10 +357,12 @@ export async function retrySkdmDistributionFor(actorId: string, peerDid: string)
       continue;
     }
 
-    let skdmBytesB64: string;
+      let skdmBytesB64: string;
+      let senderKeyId = 0;
     try {
       const r = await api.cryptoGroupSkEmitSkdm(groupUlid);
       skdmBytesB64 = r.skdm_b64;
+        senderKeyId = r.sender_key_id;
     } catch {
       continue;
     }
@@ -338,7 +381,19 @@ export async function retrySkdmDistributionFor(actorId: string, peerDid: string)
       const ik = String(bundle?.ik_pub ?? '').trim();
       if (!ik) continue;
 
-      const ok = await dispatchSkdmToPeerIk(actorId, peerDid, ik, skdmBytesB64);
+      const group = useSocialChatStore.getState().groups.find((item) => item.ulid === groupUlid);
+      const member = members.find((m) => m.actorDid === peerDid);
+      const ok = await dispatchSkdmToPeerIk(
+        actorId,
+        groupUlid,
+        group?.membershipEpoch,
+          senderKeyId,
+        peerDid,
+        deviceKey,
+        member?.actorHomeStationPeerId,
+        ik,
+        skdmBytesB64,
+      );
       if (ok) {
         sent.add(lk);
         pending.delete(lk);
@@ -361,6 +416,7 @@ export async function ensureSkdmDistributed(
   actorId: string,
   groupUlid: string,
   memberDids: string[],
+  options: GroupSkdmDistributionOptions = {},
 ): Promise<void> {
   if (!actorId || !groupUlid) return;
 
@@ -381,7 +437,10 @@ export async function ensureSkdmDistributed(
   const pending = loadPendingSet(actorId, groupUlid);
 
   const uniqueDids = [...new Set(memberDids.filter(Boolean))];
-  type Work = { ledgerKey: string; peerDid: string; ikPub: string };
+  const memberHomeByDid = new Map(
+    (options.members ?? []).map((m) => [m.actorDid, String(m.actorHomeStationPeerId ?? '').trim()]),
+  );
+  type Work = { ledgerKey: string; peerDid: string; deviceId: string; homeStationPeerId?: string; ikPub: string };
   const work: Work[] = [];
 
   for (const did of uniqueDids) {
@@ -399,7 +458,13 @@ export async function ensureSkdmDistributed(
       if (sent.has(lk)) continue;
       const ikPub = String(b.ik_pub ?? '').trim();
       if (!ikPub) continue;
-      work.push({ ledgerKey: lk, peerDid: did, ikPub });
+      work.push({
+        ledgerKey: lk,
+        peerDid: did,
+        deviceId: b.device_id,
+        homeStationPeerId: memberHomeByDid.get(did),
+        ikPub,
+      });
     }
   }
 
@@ -408,9 +473,11 @@ export async function ensureSkdmDistributed(
   // distribute the SKDM to. Without this, `encryptBytesForGroup` will throw
   // NotFound because no local chain has been minted.
   let skdmBytesB64: string;
+  let senderKeyId = 0;
   try {
     const r = await api.cryptoGroupSkEmitSkdm(groupUlid);
     skdmBytesB64 = r.skdm_b64;
+    senderKeyId = r.sender_key_id;
   } catch (err) {
     log.error('groupSenderKeys', 'cryptoGroupSkEmitSkdm failed', err);
     throw err;
@@ -421,7 +488,17 @@ export async function ensureSkdmDistributed(
   if (work.length === 0) return;
 
   for (const w of work) {
-    const ok = await dispatchSkdmToPeerIk(actorId, w.peerDid, w.ikPub, skdmBytesB64);
+    const ok = await dispatchSkdmToPeerIk(
+      actorId,
+      groupUlid,
+      options.membershipEpoch,
+      senderKeyId,
+      w.peerDid,
+      w.deviceId,
+      w.homeStationPeerId,
+      w.ikPub,
+      skdmBytesB64,
+    );
     if (ok) {
       sent.add(w.ledgerKey);
       pending.delete(w.ledgerKey);
@@ -536,6 +613,7 @@ export async function decryptBytesFromGroup(
 export async function handleInboundSkdm(
   senderDid: string,
   sealedB64: string,
+  expected?: InboundSkdmExpectation,
 ): Promise<void> {
   if (!senderDid || !sealedB64) {
     log.warn('groupSenderKeys', 'handleInboundSkdm: missing senderDid or sealedB64');
@@ -579,6 +657,25 @@ export async function handleInboundSkdm(
     log.warn('groupSenderKeys', 'inbound SKDM: no published IK opened this envelope');
     return;
   }
+    let skdm;
+    try {
+      skdm = fromBinary(SenderKeyDistributionMessageSchema, base64ToBytes(skdmB64));
+    } catch (err) {
+      log.warn('groupSenderKeys', 'inbound SKDM: opened payload is not a SenderKeyDistributionMessage', err);
+      return;
+    }
+    if (skdm.senderDid !== senderDid) {
+      log.warn('groupSenderKeys', `inbound SKDM sender mismatch envelope=${senderDid} inner=${skdm.senderDid}`);
+      return;
+    }
+    if (expected?.groupUlid && skdm.groupUlid !== expected.groupUlid) {
+      log.warn('groupSenderKeys', `inbound SKDM group mismatch envelope=${expected.groupUlid} inner=${skdm.groupUlid}`);
+      return;
+    }
+    if (expected?.senderKeyId && skdm.senderKeyId !== expected.senderKeyId) {
+      log.warn('groupSenderKeys', `inbound SKDM sender_key_id mismatch envelope=${expected.senderKeyId} inner=${skdm.senderKeyId}`);
+      return;
+    }
   try {
     const r = await api.cryptoGroupSkConsumeSkdm(senderDid, skdmB64);
     log.info(
