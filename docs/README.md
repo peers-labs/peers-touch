@@ -182,6 +182,7 @@
 - 通知系统架构：`architecture/notification/notification-architecture.md`
 - 实时平面：`architecture/realtime/event-stream.md`
 - 语音 / 视频通话架构：`architecture/realtime/voice-video-calls.md`
+- 联邦 IM 架构：`architecture/federated-im/README.md`（draft；定义跨 Station 群/私聊 IM 的 group authority、事件日志、Sender Key、离线恢复与家庭 Station 压测边界）
 - 双端社交 Runtime 架构：`architecture/social-runtime/README.md`
 - 群生命周期业务真源：`architecture/social-runtime/group-lifecycle.md`（draft；定义建群、加人、发消息、撤回/编辑/删除、退群、踢人、解散、历史可见性、Realtime 事件与 Sender Key 轮换边界）
 - 双端社交/聊天产品闭环执行计划：`architecture/social-runtime/execution-plans/20260604-social-chat-product-closure.md`

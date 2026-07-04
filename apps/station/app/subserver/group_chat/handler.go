@@ -522,6 +522,7 @@ func (s *subServer) handleInvite(ctx context.Context, req *chat.InviteToGroupReq
 			InviterDid: inv.InviterDID,
 			InviteeDid: inv.InviteeDID,
 			Status:     chat.GroupInvitationStatus(inv.Status),
+			ExpireAt:   timestamppb.New(inv.ExpireAt),
 			CreatedAt:  timestamppb.New(inv.CreatedAt),
 		})
 	}

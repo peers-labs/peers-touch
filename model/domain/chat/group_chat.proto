@@ -325,7 +325,7 @@ message InviteToGroupResponse {
 // 加入群组
 message JoinGroupRequest {
   string group_ulid = 1;
-  string invitation_ulid = 2;                // 可选，如果通过邀请加入
+  string invitation_ulid = 2;                // 私有群必填；公开群开放加入需单独产品策略
 }
 
 message JoinGroupResponse {

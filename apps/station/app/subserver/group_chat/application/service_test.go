@@ -182,6 +182,69 @@ func TestInviteByActorRequiresMembership(t *testing.T) {
 	}
 }
 
+func TestJoinByActorRequiresInvitation(t *testing.T) {
+	repo := newFakeRepo(map[string]domain.Member{
+		"owner": {ActorDID: "owner", Role: domain.GroupRoleOwner},
+	})
+	service := NewService(repo)
+
+	if _, err := service.JoinByActor("stranger", "group-1", ""); err != ErrInvalidInvitation {
+		t.Fatalf("expected missing invitation to be rejected, got %v", err)
+	}
+	if _, ok := repo.members["stranger"]; ok {
+		t.Fatal("expected stranger not to be added")
+	}
+}
+
+func TestJoinByActorAcceptsPendingInvitationOnce(t *testing.T) {
+	repo := newFakeRepo(map[string]domain.Member{
+		"owner": {ActorDID: "owner", Role: domain.GroupRoleOwner},
+	})
+	repo.invitations["invite-1"] = domain.Invitation{
+		ID:         "invite-1",
+		GroupID:    "group-1",
+		InviteeDID: "invitee",
+		Status:     1,
+		ExpireAt:   time.Now().Add(time.Hour),
+	}
+	service := NewService(repo)
+
+	member, err := service.JoinByActor("invitee", "group-1", "invite-1")
+	if err != nil {
+		t.Fatalf("expected invitee join to succeed: %v", err)
+	}
+	if member.ActorDID != "invitee" {
+		t.Fatalf("expected invitee membership, got %+v", member)
+	}
+	if _, err := service.JoinByActor("invitee", "group-1", "invite-1"); err != ErrInvalidInvitation {
+		t.Fatalf("expected accepted invitation to be single-use, got %v", err)
+	}
+}
+
+func TestJoinByActorRejectsExpiredInvitation(t *testing.T) {
+	repo := newFakeRepo(map[string]domain.Member{
+		"owner": {ActorDID: "owner", Role: domain.GroupRoleOwner},
+	})
+	repo.invitations["invite-1"] = domain.Invitation{
+		ID:         "invite-1",
+		GroupID:    "group-1",
+		InviteeDID: "invitee",
+		Status:     1,
+		ExpireAt:   time.Now().Add(-time.Hour),
+	}
+	service := NewService(repo)
+
+	if _, err := service.JoinByActor("invitee", "group-1", "invite-1"); err != ErrInvalidInvitation {
+		t.Fatalf("expected expired invitation to be rejected, got %v", err)
+	}
+	if got := repo.invitations["invite-1"].Status; got != 4 {
+		t.Fatalf("expected expired invitation status 4, got %d", got)
+	}
+	if _, ok := repo.members["invitee"]; ok {
+		t.Fatal("expected expired invitee not to be added")
+	}
+}
+
 func TestSendMessageByActorRequiresMembership(t *testing.T) {
 	repo := newFakeRepo(map[string]domain.Member{
 		"owner": {ActorDID: "owner", Role: domain.GroupRoleOwner},
@@ -285,8 +348,9 @@ func TestDissolveGroupByActorRequiresOwner(t *testing.T) {
 }
 
 type fakeRepo struct {
-	members   map[string]domain.Member
-	dissolved bool
+	members     map[string]domain.Member
+	invitations map[string]domain.Invitation
+	dissolved   bool
 }
 
 func newFakeRepo(members map[string]domain.Member) *fakeRepo {
@@ -295,7 +359,7 @@ func newFakeRepo(members map[string]domain.Member) *fakeRepo {
 		member.ActorDID = actorDID
 		members[actorDID] = member
 	}
-	return &fakeRepo{members: members}
+	return &fakeRepo{members: members, invitations: make(map[string]domain.Invitation)}
 }
 
 func (r *fakeRepo) CreateGroup(ownerDID, name, description string) domain.Group {
@@ -347,7 +411,15 @@ func (r *fakeRepo) GetMember(groupID, actorDID string) (*domain.Member, bool) {
 }
 
 func (r *fakeRepo) AddMember(groupID, actorDID, inviterDID string) (*domain.Member, bool) {
-	return nil, false
+	member := domain.Member{
+		GroupID:   groupID,
+		ActorDID:  actorDID,
+		Role:      domain.GroupRoleMember,
+		InvitedBy: inviterDID,
+		JoinedAt:  time.Now(),
+	}
+	r.members[actorDID] = member
+	return &member, true
 }
 
 func (r *fakeRepo) UpdateMember(groupID, actorDID string, role *int32, muted *bool, mutedUntil *time.Time) (*domain.Member, bool) {
@@ -408,11 +480,32 @@ func (r *fakeRepo) ListMembers(groupID string, limit, offset int) ([]domain.Memb
 }
 
 func (r *fakeRepo) CreateInvitation(groupID, inviterDID, inviteeDID string) domain.Invitation {
-	return domain.Invitation{}
+	invitation := domain.Invitation{
+		ID:         "invite-" + inviteeDID,
+		GroupID:    groupID,
+		InviterDID: inviterDID,
+		InviteeDID: inviteeDID,
+		Status:     1,
+		ExpireAt:   time.Now().Add(time.Hour),
+		CreatedAt:  time.Now(),
+	}
+	r.invitations[invitation.ID] = invitation
+	return invitation
 }
 
 func (r *fakeRepo) AcceptInvitation(invitationID, actorDID string) (string, bool) {
-	return "", false
+	invitation, ok := r.invitations[invitationID]
+	if !ok || invitation.InviteeDID != actorDID || invitation.Status != 1 {
+		return "", false
+	}
+	if !invitation.ExpireAt.IsZero() && !invitation.ExpireAt.After(time.Now()) {
+		invitation.Status = 4
+		r.invitations[invitationID] = invitation
+		return "", false
+	}
+	invitation.Status = 2
+	r.invitations[invitationID] = invitation
+	return invitation.GroupID, true
 }
 
 func (r *fakeRepo) RecallMessage(actorDID, groupID, messageULID string, recallWindow time.Duration) (domain.MutationOutcome, error) {

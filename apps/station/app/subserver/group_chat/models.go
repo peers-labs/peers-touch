@@ -116,6 +116,7 @@ type invitationModel struct {
 	InviterDID string    `gorm:"column:inviter_did;size:255;index"`
 	InviteeDID string    `gorm:"column:invitee_did;size:255;index"`
 	Status     int32     `gorm:"column:status"`
+	ExpireAt   time.Time `gorm:"column:expire_at;index"`
 	CreatedAt  time.Time `gorm:"column:created_at"`
 	UpdatedAt  time.Time `gorm:"column:updated_at"`
 }
