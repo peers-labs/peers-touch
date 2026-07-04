@@ -14,6 +14,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import './styles.css';
 
 type AppletState = 'installed' | 'running' | 'notice';
 

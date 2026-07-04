@@ -12,6 +12,7 @@ packages:
   - packages/ui/desktop
   - packages/applet-sdk
   - packages/applet-contract
+  - packages/applet-kernel
   - packages/applets/*
   - packages/prototypes/*
   - packages/prototypes/*/*

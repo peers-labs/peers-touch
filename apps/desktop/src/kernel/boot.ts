@@ -15,6 +15,7 @@
 //   steady            runtimes own their own reconciliation  (each runtime)
 
 import { log } from '../utils/logger';
+import { recordBootPhase } from './frontendRuntimeProfiler';
 import {
   bootstrapRuntime,
   installRuntime,
@@ -49,6 +50,7 @@ export function markPhaseStart(phase: BootPhase): void {
   const entry: PhaseEntry = { phase, startedAt: nowMs() };
   phases.push(entry);
   log.info('boot', `${phase}:start`);
+  recordBootPhase(phase, 'start');
   for (const l of listeners) {
     try {
       l(entry);
@@ -62,7 +64,9 @@ export function markPhaseEnd(phase: BootPhase, extra?: Record<string, unknown>):
   const entry = [...phases].reverse().find((p) => p.phase === phase && p.finishedAt === undefined);
   if (!entry) return;
   entry.finishedAt = nowMs();
-  log.info('boot', `${phase}:end`, { ms: Math.round(entry.finishedAt - entry.startedAt), ...extra });
+  const ms = entry.finishedAt - entry.startedAt;
+  log.info('boot', `${phase}:end`, { ms: Math.round(ms), ...extra });
+  recordBootPhase(phase, 'end', ms, extra);
   for (const l of listeners) {
     try {
       l(entry);
