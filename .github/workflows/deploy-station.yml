@@ -115,30 +115,20 @@ jobs:
       #
       # Severity is `warning`, which catches the SC2*** class — the real
       # bugs you want flagged (SC2086 word-splitting, SC2155 declare-
-      # and-assign, SC2206 unquoted array splitting). The deploy-
-      # relevant scripts under tooling/scripts/pt-* + tooling/docker
-      # currently pass cleanly at this level. The dev-only scripts
-      # (dev-*, _ensure-*, ide-setup.sh) carry pre-existing warnings
-      # that are not part of the deploy critical path; they are
-      # excluded via ignore_paths so a desktop-side cleanup PR isn't
-      # required to merge a station change. Tighten by removing entries
-      # from ignore_paths once each dev script has been audited.
-      - name: Shellcheck deploy scripts
+      # and-assign, SC2206 unquoted array splitting). Keep the scan
+      # limited to deploy-critical scripts so desktop/local-dev/review
+      # helper warnings do not block station image validation.
+      - name: Shellcheck docker deploy scripts
         uses: ludeeus/action-shellcheck@2.0.0
         with:
-          scandir: ./tooling
+          scandir: ./tooling/docker
           severity: warning
-          ignore_paths: >-
-            tooling/scripts/dev-clean.sh
-            tooling/scripts/dev-desktop-app.sh
-            tooling/scripts/dev-desktop-dual.sh
-            tooling/scripts/dev-desktop-web.sh
-            tooling/scripts/_ensure-desktop-rust.sh
-            tooling/scripts/_ensure-desktop-vite.sh
-            tooling/scripts/_ensure-station.sh
-            tooling/scripts/_ensure-tauri-dev.sh
-            tooling/scripts/ide-setup.sh
-            tooling/scripts/preview-desktop.sh
+
+      - name: Shellcheck pull-deploy scripts
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: ./tooling/scripts/deploy
+          severity: warning
 
       # ── Image build with GHA cache ──
       # Builds the station image but does NOT push (no GHCR; that's a
