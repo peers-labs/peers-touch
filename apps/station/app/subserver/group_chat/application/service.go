@@ -272,11 +272,12 @@ func (s *Service) InviteByActor(actorDID, groupID string, inviteeDIDs []string) 
 }
 
 func (s *Service) JoinByActor(actorDID, groupID, invitationULID string) (*domain.Member, error) {
-	if invitationULID != "" {
-		invGroupID, ok := s.repo.AcceptInvitation(invitationULID, actorDID)
-		if !ok || invGroupID != groupID {
-			return nil, ErrInvalidInvitation
-		}
+	if strings.TrimSpace(invitationULID) == "" {
+		return nil, ErrInvalidInvitation
+	}
+	invGroupID, ok := s.repo.AcceptInvitation(invitationULID, actorDID)
+	if !ok || invGroupID != groupID {
+		return nil, ErrInvalidInvitation
 	}
 	member, ok := s.repo.AddMember(groupID, actorDID, "")
 	if !ok {
