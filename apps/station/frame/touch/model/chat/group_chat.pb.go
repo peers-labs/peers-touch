@@ -126,6 +126,55 @@ func (GroupVisibility) EnumDescriptor() ([]byte, []int) {
 	return file_domain_chat_group_chat_proto_rawDescGZIP(), []int{1}
 }
 
+type GroupStatus int32
+
+const (
+	GroupStatus_GROUP_STATUS_UNSPECIFIED GroupStatus = 0
+	GroupStatus_GROUP_STATUS_ACTIVE      GroupStatus = 1
+	GroupStatus_GROUP_STATUS_DISSOLVED   GroupStatus = 2
+)
+
+// Enum value maps for GroupStatus.
+var (
+	GroupStatus_name = map[int32]string{
+		0: "GROUP_STATUS_UNSPECIFIED",
+		1: "GROUP_STATUS_ACTIVE",
+		2: "GROUP_STATUS_DISSOLVED",
+	}
+	GroupStatus_value = map[string]int32{
+		"GROUP_STATUS_UNSPECIFIED": 0,
+		"GROUP_STATUS_ACTIVE":      1,
+		"GROUP_STATUS_DISSOLVED":   2,
+	}
+)
+
+func (x GroupStatus) Enum() *GroupStatus {
+	p := new(GroupStatus)
+	*p = x
+	return p
+}
+
+func (x GroupStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GroupStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_chat_group_chat_proto_enumTypes[2].Descriptor()
+}
+
+func (GroupStatus) Type() protoreflect.EnumType {
+	return &file_domain_chat_group_chat_proto_enumTypes[2]
+}
+
+func (x GroupStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GroupStatus.Descriptor instead.
+func (GroupStatus) EnumDescriptor() ([]byte, []int) {
+	return file_domain_chat_group_chat_proto_rawDescGZIP(), []int{2}
+}
+
 // 群角色
 type GroupRole int32
 
@@ -163,11 +212,11 @@ func (x GroupRole) String() string {
 }
 
 func (GroupRole) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_group_chat_proto_enumTypes[2].Descriptor()
+	return file_domain_chat_group_chat_proto_enumTypes[3].Descriptor()
 }
 
 func (GroupRole) Type() protoreflect.EnumType {
-	return &file_domain_chat_group_chat_proto_enumTypes[2]
+	return &file_domain_chat_group_chat_proto_enumTypes[3]
 }
 
 func (x GroupRole) Number() protoreflect.EnumNumber {
@@ -176,7 +225,7 @@ func (x GroupRole) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GroupRole.Descriptor instead.
 func (GroupRole) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_group_chat_proto_rawDescGZIP(), []int{2}
+	return file_domain_chat_group_chat_proto_rawDescGZIP(), []int{3}
 }
 
 type GroupMessageType int32
@@ -224,11 +273,11 @@ func (x GroupMessageType) String() string {
 }
 
 func (GroupMessageType) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_group_chat_proto_enumTypes[3].Descriptor()
+	return file_domain_chat_group_chat_proto_enumTypes[4].Descriptor()
 }
 
 func (GroupMessageType) Type() protoreflect.EnumType {
-	return &file_domain_chat_group_chat_proto_enumTypes[3]
+	return &file_domain_chat_group_chat_proto_enumTypes[4]
 }
 
 func (x GroupMessageType) Number() protoreflect.EnumNumber {
@@ -237,7 +286,7 @@ func (x GroupMessageType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GroupMessageType.Descriptor instead.
 func (GroupMessageType) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_group_chat_proto_rawDescGZIP(), []int{3}
+	return file_domain_chat_group_chat_proto_rawDescGZIP(), []int{4}
 }
 
 type GroupInvitationStatus int32
@@ -279,11 +328,11 @@ func (x GroupInvitationStatus) String() string {
 }
 
 func (GroupInvitationStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_group_chat_proto_enumTypes[4].Descriptor()
+	return file_domain_chat_group_chat_proto_enumTypes[5].Descriptor()
 }
 
 func (GroupInvitationStatus) Type() protoreflect.EnumType {
-	return &file_domain_chat_group_chat_proto_enumTypes[4]
+	return &file_domain_chat_group_chat_proto_enumTypes[5]
 }
 
 func (x GroupInvitationStatus) Number() protoreflect.EnumNumber {
@@ -292,7 +341,7 @@ func (x GroupInvitationStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GroupInvitationStatus.Descriptor instead.
 func (GroupInvitationStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_group_chat_proto_rawDescGZIP(), []int{4}
+	return file_domain_chat_group_chat_proto_rawDescGZIP(), []int{5}
 }
 
 type GroupOfflineMessageStatus int32
@@ -331,11 +380,11 @@ func (x GroupOfflineMessageStatus) String() string {
 }
 
 func (GroupOfflineMessageStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_group_chat_proto_enumTypes[5].Descriptor()
+	return file_domain_chat_group_chat_proto_enumTypes[6].Descriptor()
 }
 
 func (GroupOfflineMessageStatus) Type() protoreflect.EnumType {
-	return &file_domain_chat_group_chat_proto_enumTypes[5]
+	return &file_domain_chat_group_chat_proto_enumTypes[6]
 }
 
 func (x GroupOfflineMessageStatus) Number() protoreflect.EnumNumber {
@@ -344,27 +393,30 @@ func (x GroupOfflineMessageStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GroupOfflineMessageStatus.Descriptor instead.
 func (GroupOfflineMessageStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_group_chat_proto_rawDescGZIP(), []int{5}
+	return file_domain_chat_group_chat_proto_rawDescGZIP(), []int{6}
 }
 
 // 群组
 type Group struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ulid          string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`                                                                                    // 群组唯一ID
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                                                                    // 群组名称
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`                                                                      // 群组描述
-	AvatarCid     string                 `protobuf:"bytes,4,opt,name=avatar_cid,json=avatarCid,proto3" json:"avatar_cid,omitempty"`                                                         // 群组头像（IPFS CID）
-	OwnerDid      string                 `protobuf:"bytes,5,opt,name=owner_did,json=ownerDid,proto3" json:"owner_did,omitempty"`                                                            // 群主 DID
-	Type          GroupType              `protobuf:"varint,6,opt,name=type,proto3,enum=peers_touch.model.chat.v1.GroupType" json:"type,omitempty"`                                          // 群组类型
-	Visibility    GroupVisibility        `protobuf:"varint,7,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibility" json:"visibility,omitempty"`                        // 可见性
-	MemberCount   int32                  `protobuf:"varint,8,opt,name=member_count,json=memberCount,proto3" json:"member_count,omitempty"`                                                  // 成员数量
-	MaxMembers    int32                  `protobuf:"varint,9,opt,name=max_members,json=maxMembers,proto3" json:"max_members,omitempty"`                                                     // 最大成员数（默认500）
-	Muted         bool                   `protobuf:"varint,10,opt,name=muted,proto3" json:"muted,omitempty"`                                                                                // 是否全员禁言
-	Settings      map[string]string      `protobuf:"bytes,11,rep,name=settings,proto3" json:"settings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // 扩展设置
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Ulid            string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`                                                                                    // 群组唯一ID
+	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                                                                    // 群组名称
+	Description     string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`                                                                      // 群组描述
+	AvatarCid       string                 `protobuf:"bytes,4,opt,name=avatar_cid,json=avatarCid,proto3" json:"avatar_cid,omitempty"`                                                         // 群组头像（IPFS CID）
+	OwnerDid        string                 `protobuf:"bytes,5,opt,name=owner_did,json=ownerDid,proto3" json:"owner_did,omitempty"`                                                            // 群主 DID
+	Type            GroupType              `protobuf:"varint,6,opt,name=type,proto3,enum=peers_touch.model.chat.v1.GroupType" json:"type,omitempty"`                                          // 群组类型
+	Visibility      GroupVisibility        `protobuf:"varint,7,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibility" json:"visibility,omitempty"`                        // 可见性
+	MemberCount     int32                  `protobuf:"varint,8,opt,name=member_count,json=memberCount,proto3" json:"member_count,omitempty"`                                                  // 成员数量
+	MaxMembers      int32                  `protobuf:"varint,9,opt,name=max_members,json=maxMembers,proto3" json:"max_members,omitempty"`                                                     // 最大成员数（默认500）
+	Muted           bool                   `protobuf:"varint,10,opt,name=muted,proto3" json:"muted,omitempty"`                                                                                // 是否全员禁言
+	Settings        map[string]string      `protobuf:"bytes,11,rep,name=settings,proto3" json:"settings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // 扩展设置
+	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt       *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Status          GroupStatus            `protobuf:"varint,14,opt,name=status,proto3,enum=peers_touch.model.chat.v1.GroupStatus" json:"status,omitempty"` // 生命周期状态
+	DissolvedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=dissolved_at,json=dissolvedAt,proto3" json:"dissolved_at,omitempty"`
+	MembershipEpoch int64                  `protobuf:"varint,16,opt,name=membership_epoch,json=membershipEpoch,proto3" json:"membership_epoch,omitempty"` // 成员集版本；绑定 Sender Key 轮转与发送校验
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Group) Reset() {
@@ -486,6 +538,27 @@ func (x *Group) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Group) GetStatus() GroupStatus {
+	if x != nil {
+		return x.Status
+	}
+	return GroupStatus_GROUP_STATUS_UNSPECIFIED
+}
+
+func (x *Group) GetDissolvedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DissolvedAt
+	}
+	return nil
+}
+
+func (x *Group) GetMembershipEpoch() int64 {
+	if x != nil {
+		return x.MembershipEpoch
+	}
+	return 0
 }
 
 // 群成员
@@ -1897,7 +1970,7 @@ func (x *InviteToGroupResponse) GetInvitations() []*GroupInvitation {
 type JoinGroupRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	GroupUlid      string                 `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	InvitationUlid string                 `protobuf:"bytes,2,opt,name=invitation_ulid,json=invitationUlid,proto3" json:"invitation_ulid,omitempty"` // 可选，如果通过邀请加入
+	InvitationUlid string                 `protobuf:"bytes,2,opt,name=invitation_ulid,json=invitationUlid,proto3" json:"invitation_ulid,omitempty"` // 私有群必填；公开群开放加入需单独产品策略
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2621,8 +2694,11 @@ type SendGroupMessageRequest struct {
 	// Optional explicit thread root. If omitted and reply_to_ulid is
 	// present, Station resolves it from the replied message.
 	ThreadRootUlid string `protobuf:"bytes,9,opt,name=thread_root_ulid,json=threadRootUlid,proto3" json:"thread_root_ulid,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Client-observed Group.membership_epoch. Station rejects stale sends
+	// so messages cannot be accepted under an outdated member/Sender Key set.
+	ObservedMembershipEpoch int64 `protobuf:"varint,10,opt,name=observed_membership_epoch,json=observedMembershipEpoch,proto3" json:"observed_membership_epoch,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *SendGroupMessageRequest) Reset() {
@@ -2717,6 +2793,13 @@ func (x *SendGroupMessageRequest) GetThreadRootUlid() string {
 		return x.ThreadRootUlid
 	}
 	return ""
+}
+
+func (x *SendGroupMessageRequest) GetObservedMembershipEpoch() int64 {
+	if x != nil {
+		return x.ObservedMembershipEpoch
+	}
+	return 0
 }
 
 type SendGroupMessageResponse struct {
@@ -4259,7 +4342,7 @@ var File_domain_chat_group_chat_proto protoreflect.FileDescriptor
 
 const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x1cdomain/chat/group_chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1adomain/common/common.proto\"\xec\x04\n" +
+	"\x1cdomain/chat/group_chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1adomain/common/common.proto\"\x96\x06\n" +
 	"\x05Group\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -4280,7 +4363,10 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x1a;\n" +
+	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12>\n" +
+	"\x06status\x18\x0e \x01(\x0e2&.peers_touch.model.chat.v1.GroupStatusR\x06status\x12=\n" +
+	"\fdissolved_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\vdissolvedAt\x12)\n" +
+	"\x10membership_epoch\x18\x10 \x01(\x03R\x0fmembershipEpoch\x1a;\n" +
 	"\rSettingsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xca\x02\n" +
@@ -4471,7 +4557,7 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x1b\n" +
 	"\tactor_did\x18\x02 \x01(\tR\bactorDid\"0\n" +
 	"\x14RemoveMemberResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xaf\x03\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xeb\x03\n" +
 	"\x17SendGroupMessageRequest\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12?\n" +
@@ -4483,7 +4569,9 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\vmention_all\x18\a \x01(\bR\n" +
 	"mentionAll\x12+\n" +
 	"\x11encrypted_payload\x18\b \x01(\fR\x10encryptedPayload\x12(\n" +
-	"\x10thread_root_ulid\x18\t \x01(\tR\x0ethreadRootUlid\"]\n" +
+	"\x10thread_root_ulid\x18\t \x01(\tR\x0ethreadRootUlid\x12:\n" +
+	"\x19observed_membership_epoch\x18\n" +
+	" \x01(\x03R\x17observedMembershipEpoch\"]\n" +
 	"\x18SendGroupMessageResponse\x12A\n" +
 	"\amessage\x18\x01 \x01(\v2'.peers_touch.model.chat.v1.GroupMessageR\amessage\"o\n" +
 	"\x17GetGroupMessagesRequest\x12\x1d\n" +
@@ -4613,7 +4701,11 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\x0fGroupVisibility\x12 \n" +
 	"\x1cGROUP_VISIBILITY_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17GROUP_VISIBILITY_PUBLIC\x10\x01\x12\x1c\n" +
-	"\x18GROUP_VISIBILITY_PRIVATE\x10\x02*j\n" +
+	"\x18GROUP_VISIBILITY_PRIVATE\x10\x02*`\n" +
+	"\vGroupStatus\x12\x1c\n" +
+	"\x18GROUP_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13GROUP_STATUS_ACTIVE\x10\x01\x12\x1a\n" +
+	"\x16GROUP_STATUS_DISSOLVED\x10\x02*j\n" +
 	"\tGroupRole\x12\x1a\n" +
 	"\x16GROUP_ROLE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11GROUP_ROLE_MEMBER\x10\x01\x12\x14\n" +
@@ -4652,133 +4744,136 @@ func file_domain_chat_group_chat_proto_rawDescGZIP() []byte {
 	return file_domain_chat_group_chat_proto_rawDescData
 }
 
-var file_domain_chat_group_chat_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_domain_chat_group_chat_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
 var file_domain_chat_group_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 62)
 var file_domain_chat_group_chat_proto_goTypes = []any{
 	(GroupType)(0),                         // 0: peers_touch.model.chat.v1.GroupType
 	(GroupVisibility)(0),                   // 1: peers_touch.model.chat.v1.GroupVisibility
-	(GroupRole)(0),                         // 2: peers_touch.model.chat.v1.GroupRole
-	(GroupMessageType)(0),                  // 3: peers_touch.model.chat.v1.GroupMessageType
-	(GroupInvitationStatus)(0),             // 4: peers_touch.model.chat.v1.GroupInvitationStatus
-	(GroupOfflineMessageStatus)(0),         // 5: peers_touch.model.chat.v1.GroupOfflineMessageStatus
-	(*Group)(nil),                          // 6: peers_touch.model.chat.v1.Group
-	(*GroupMember)(nil),                    // 7: peers_touch.model.chat.v1.GroupMember
-	(*GroupMessage)(nil),                   // 8: peers_touch.model.chat.v1.GroupMessage
-	(*GroupCiphertext)(nil),                // 9: peers_touch.model.chat.v1.GroupCiphertext
-	(*SenderKeyDistributionMessage)(nil),   // 10: peers_touch.model.chat.v1.SenderKeyDistributionMessage
-	(*ChatEncryptedMessagePayload)(nil),    // 11: peers_touch.model.chat.v1.ChatEncryptedMessagePayload
-	(*GroupMessageAttachment)(nil),         // 12: peers_touch.model.chat.v1.GroupMessageAttachment
-	(*GroupInvitation)(nil),                // 13: peers_touch.model.chat.v1.GroupInvitation
-	(*CreateGroupRequest)(nil),             // 14: peers_touch.model.chat.v1.CreateGroupRequest
-	(*CreateGroupResponse)(nil),            // 15: peers_touch.model.chat.v1.CreateGroupResponse
-	(*ListGroupsRequest)(nil),              // 16: peers_touch.model.chat.v1.ListGroupsRequest
-	(*ListGroupsResponse)(nil),             // 17: peers_touch.model.chat.v1.ListGroupsResponse
-	(*GetGroupRequest)(nil),                // 18: peers_touch.model.chat.v1.GetGroupRequest
-	(*GetGroupResponse)(nil),               // 19: peers_touch.model.chat.v1.GetGroupResponse
-	(*UpdateGroupRequest)(nil),             // 20: peers_touch.model.chat.v1.UpdateGroupRequest
-	(*UpdateGroupResponse)(nil),            // 21: peers_touch.model.chat.v1.UpdateGroupResponse
-	(*InviteToGroupRequest)(nil),           // 22: peers_touch.model.chat.v1.InviteToGroupRequest
-	(*InviteToGroupResponse)(nil),          // 23: peers_touch.model.chat.v1.InviteToGroupResponse
-	(*JoinGroupRequest)(nil),               // 24: peers_touch.model.chat.v1.JoinGroupRequest
-	(*JoinGroupResponse)(nil),              // 25: peers_touch.model.chat.v1.JoinGroupResponse
-	(*LeaveGroupRequest)(nil),              // 26: peers_touch.model.chat.v1.LeaveGroupRequest
-	(*LeaveGroupResponse)(nil),             // 27: peers_touch.model.chat.v1.LeaveGroupResponse
-	(*TransferGroupOwnershipRequest)(nil),  // 28: peers_touch.model.chat.v1.TransferGroupOwnershipRequest
-	(*TransferGroupOwnershipResponse)(nil), // 29: peers_touch.model.chat.v1.TransferGroupOwnershipResponse
-	(*DissolveGroupRequest)(nil),           // 30: peers_touch.model.chat.v1.DissolveGroupRequest
-	(*DissolveGroupResponse)(nil),          // 31: peers_touch.model.chat.v1.DissolveGroupResponse
-	(*GetGroupMembersRequest)(nil),         // 32: peers_touch.model.chat.v1.GetGroupMembersRequest
-	(*GetGroupMembersResponse)(nil),        // 33: peers_touch.model.chat.v1.GetGroupMembersResponse
-	(*UpdateMemberRequest)(nil),            // 34: peers_touch.model.chat.v1.UpdateMemberRequest
-	(*UpdateMemberResponse)(nil),           // 35: peers_touch.model.chat.v1.UpdateMemberResponse
-	(*RemoveMemberRequest)(nil),            // 36: peers_touch.model.chat.v1.RemoveMemberRequest
-	(*RemoveMemberResponse)(nil),           // 37: peers_touch.model.chat.v1.RemoveMemberResponse
-	(*SendGroupMessageRequest)(nil),        // 38: peers_touch.model.chat.v1.SendGroupMessageRequest
-	(*SendGroupMessageResponse)(nil),       // 39: peers_touch.model.chat.v1.SendGroupMessageResponse
-	(*GetGroupMessagesRequest)(nil),        // 40: peers_touch.model.chat.v1.GetGroupMessagesRequest
-	(*GetGroupMessagesResponse)(nil),       // 41: peers_touch.model.chat.v1.GetGroupMessagesResponse
-	(*RecallGroupMessageRequest)(nil),      // 42: peers_touch.model.chat.v1.RecallGroupMessageRequest
-	(*RecallGroupMessageResponse)(nil),     // 43: peers_touch.model.chat.v1.RecallGroupMessageResponse
-	(*GroupOfflineMessage)(nil),            // 44: peers_touch.model.chat.v1.GroupOfflineMessage
-	(*UpdateMyNicknameRequest)(nil),        // 45: peers_touch.model.chat.v1.UpdateMyNicknameRequest
-	(*UpdateMyNicknameResponse)(nil),       // 46: peers_touch.model.chat.v1.UpdateMyNicknameResponse
-	(*SearchGroupMessagesRequest)(nil),     // 47: peers_touch.model.chat.v1.SearchGroupMessagesRequest
-	(*SearchGroupMessagesResponse)(nil),    // 48: peers_touch.model.chat.v1.SearchGroupMessagesResponse
-	(*GetGroupSettingsRequest)(nil),        // 49: peers_touch.model.chat.v1.GetGroupSettingsRequest
-	(*GetGroupSettingsResponse)(nil),       // 50: peers_touch.model.chat.v1.GetGroupSettingsResponse
-	(*UpdateGroupSettingsRequest)(nil),     // 51: peers_touch.model.chat.v1.UpdateGroupSettingsRequest
-	(*UpdateGroupSettingsResponse)(nil),    // 52: peers_touch.model.chat.v1.UpdateGroupSettingsResponse
-	(*DeleteGroupMessageRequest)(nil),      // 53: peers_touch.model.chat.v1.DeleteGroupMessageRequest
-	(*DeleteGroupMessageResponse)(nil),     // 54: peers_touch.model.chat.v1.DeleteGroupMessageResponse
-	(*EditGroupMessageRequest)(nil),        // 55: peers_touch.model.chat.v1.EditGroupMessageRequest
-	(*EditGroupMessageResponse)(nil),       // 56: peers_touch.model.chat.v1.EditGroupMessageResponse
-	(*GetOfflineMessagesRequest)(nil),      // 57: peers_touch.model.chat.v1.GetOfflineMessagesRequest
-	(*GetOfflineMessagesResponse)(nil),     // 58: peers_touch.model.chat.v1.GetOfflineMessagesResponse
-	(*AckOfflineMessagesRequest)(nil),      // 59: peers_touch.model.chat.v1.AckOfflineMessagesRequest
-	(*AckOfflineMessagesResponse)(nil),     // 60: peers_touch.model.chat.v1.AckOfflineMessagesResponse
-	(*GetUnreadCountRequest)(nil),          // 61: peers_touch.model.chat.v1.GetUnreadCountRequest
-	(*GetUnreadCountResponse)(nil),         // 62: peers_touch.model.chat.v1.GetUnreadCountResponse
-	(*MarkGroupReadRequest)(nil),           // 63: peers_touch.model.chat.v1.MarkGroupReadRequest
-	(*MarkGroupReadResponse)(nil),          // 64: peers_touch.model.chat.v1.MarkGroupReadResponse
-	(*GetGroupStatsRequest)(nil),           // 65: peers_touch.model.chat.v1.GetGroupStatsRequest
-	(*GetGroupStatsResponse)(nil),          // 66: peers_touch.model.chat.v1.GetGroupStatsResponse
-	nil,                                    // 67: peers_touch.model.chat.v1.Group.SettingsEntry
-	(*timestamppb.Timestamp)(nil),          // 68: google.protobuf.Timestamp
-	(*types.EncryptedMediaDescriptor)(nil), // 69: peers_touch.model.common.v1.EncryptedMediaDescriptor
+	(GroupStatus)(0),                       // 2: peers_touch.model.chat.v1.GroupStatus
+	(GroupRole)(0),                         // 3: peers_touch.model.chat.v1.GroupRole
+	(GroupMessageType)(0),                  // 4: peers_touch.model.chat.v1.GroupMessageType
+	(GroupInvitationStatus)(0),             // 5: peers_touch.model.chat.v1.GroupInvitationStatus
+	(GroupOfflineMessageStatus)(0),         // 6: peers_touch.model.chat.v1.GroupOfflineMessageStatus
+	(*Group)(nil),                          // 7: peers_touch.model.chat.v1.Group
+	(*GroupMember)(nil),                    // 8: peers_touch.model.chat.v1.GroupMember
+	(*GroupMessage)(nil),                   // 9: peers_touch.model.chat.v1.GroupMessage
+	(*GroupCiphertext)(nil),                // 10: peers_touch.model.chat.v1.GroupCiphertext
+	(*SenderKeyDistributionMessage)(nil),   // 11: peers_touch.model.chat.v1.SenderKeyDistributionMessage
+	(*ChatEncryptedMessagePayload)(nil),    // 12: peers_touch.model.chat.v1.ChatEncryptedMessagePayload
+	(*GroupMessageAttachment)(nil),         // 13: peers_touch.model.chat.v1.GroupMessageAttachment
+	(*GroupInvitation)(nil),                // 14: peers_touch.model.chat.v1.GroupInvitation
+	(*CreateGroupRequest)(nil),             // 15: peers_touch.model.chat.v1.CreateGroupRequest
+	(*CreateGroupResponse)(nil),            // 16: peers_touch.model.chat.v1.CreateGroupResponse
+	(*ListGroupsRequest)(nil),              // 17: peers_touch.model.chat.v1.ListGroupsRequest
+	(*ListGroupsResponse)(nil),             // 18: peers_touch.model.chat.v1.ListGroupsResponse
+	(*GetGroupRequest)(nil),                // 19: peers_touch.model.chat.v1.GetGroupRequest
+	(*GetGroupResponse)(nil),               // 20: peers_touch.model.chat.v1.GetGroupResponse
+	(*UpdateGroupRequest)(nil),             // 21: peers_touch.model.chat.v1.UpdateGroupRequest
+	(*UpdateGroupResponse)(nil),            // 22: peers_touch.model.chat.v1.UpdateGroupResponse
+	(*InviteToGroupRequest)(nil),           // 23: peers_touch.model.chat.v1.InviteToGroupRequest
+	(*InviteToGroupResponse)(nil),          // 24: peers_touch.model.chat.v1.InviteToGroupResponse
+	(*JoinGroupRequest)(nil),               // 25: peers_touch.model.chat.v1.JoinGroupRequest
+	(*JoinGroupResponse)(nil),              // 26: peers_touch.model.chat.v1.JoinGroupResponse
+	(*LeaveGroupRequest)(nil),              // 27: peers_touch.model.chat.v1.LeaveGroupRequest
+	(*LeaveGroupResponse)(nil),             // 28: peers_touch.model.chat.v1.LeaveGroupResponse
+	(*TransferGroupOwnershipRequest)(nil),  // 29: peers_touch.model.chat.v1.TransferGroupOwnershipRequest
+	(*TransferGroupOwnershipResponse)(nil), // 30: peers_touch.model.chat.v1.TransferGroupOwnershipResponse
+	(*DissolveGroupRequest)(nil),           // 31: peers_touch.model.chat.v1.DissolveGroupRequest
+	(*DissolveGroupResponse)(nil),          // 32: peers_touch.model.chat.v1.DissolveGroupResponse
+	(*GetGroupMembersRequest)(nil),         // 33: peers_touch.model.chat.v1.GetGroupMembersRequest
+	(*GetGroupMembersResponse)(nil),        // 34: peers_touch.model.chat.v1.GetGroupMembersResponse
+	(*UpdateMemberRequest)(nil),            // 35: peers_touch.model.chat.v1.UpdateMemberRequest
+	(*UpdateMemberResponse)(nil),           // 36: peers_touch.model.chat.v1.UpdateMemberResponse
+	(*RemoveMemberRequest)(nil),            // 37: peers_touch.model.chat.v1.RemoveMemberRequest
+	(*RemoveMemberResponse)(nil),           // 38: peers_touch.model.chat.v1.RemoveMemberResponse
+	(*SendGroupMessageRequest)(nil),        // 39: peers_touch.model.chat.v1.SendGroupMessageRequest
+	(*SendGroupMessageResponse)(nil),       // 40: peers_touch.model.chat.v1.SendGroupMessageResponse
+	(*GetGroupMessagesRequest)(nil),        // 41: peers_touch.model.chat.v1.GetGroupMessagesRequest
+	(*GetGroupMessagesResponse)(nil),       // 42: peers_touch.model.chat.v1.GetGroupMessagesResponse
+	(*RecallGroupMessageRequest)(nil),      // 43: peers_touch.model.chat.v1.RecallGroupMessageRequest
+	(*RecallGroupMessageResponse)(nil),     // 44: peers_touch.model.chat.v1.RecallGroupMessageResponse
+	(*GroupOfflineMessage)(nil),            // 45: peers_touch.model.chat.v1.GroupOfflineMessage
+	(*UpdateMyNicknameRequest)(nil),        // 46: peers_touch.model.chat.v1.UpdateMyNicknameRequest
+	(*UpdateMyNicknameResponse)(nil),       // 47: peers_touch.model.chat.v1.UpdateMyNicknameResponse
+	(*SearchGroupMessagesRequest)(nil),     // 48: peers_touch.model.chat.v1.SearchGroupMessagesRequest
+	(*SearchGroupMessagesResponse)(nil),    // 49: peers_touch.model.chat.v1.SearchGroupMessagesResponse
+	(*GetGroupSettingsRequest)(nil),        // 50: peers_touch.model.chat.v1.GetGroupSettingsRequest
+	(*GetGroupSettingsResponse)(nil),       // 51: peers_touch.model.chat.v1.GetGroupSettingsResponse
+	(*UpdateGroupSettingsRequest)(nil),     // 52: peers_touch.model.chat.v1.UpdateGroupSettingsRequest
+	(*UpdateGroupSettingsResponse)(nil),    // 53: peers_touch.model.chat.v1.UpdateGroupSettingsResponse
+	(*DeleteGroupMessageRequest)(nil),      // 54: peers_touch.model.chat.v1.DeleteGroupMessageRequest
+	(*DeleteGroupMessageResponse)(nil),     // 55: peers_touch.model.chat.v1.DeleteGroupMessageResponse
+	(*EditGroupMessageRequest)(nil),        // 56: peers_touch.model.chat.v1.EditGroupMessageRequest
+	(*EditGroupMessageResponse)(nil),       // 57: peers_touch.model.chat.v1.EditGroupMessageResponse
+	(*GetOfflineMessagesRequest)(nil),      // 58: peers_touch.model.chat.v1.GetOfflineMessagesRequest
+	(*GetOfflineMessagesResponse)(nil),     // 59: peers_touch.model.chat.v1.GetOfflineMessagesResponse
+	(*AckOfflineMessagesRequest)(nil),      // 60: peers_touch.model.chat.v1.AckOfflineMessagesRequest
+	(*AckOfflineMessagesResponse)(nil),     // 61: peers_touch.model.chat.v1.AckOfflineMessagesResponse
+	(*GetUnreadCountRequest)(nil),          // 62: peers_touch.model.chat.v1.GetUnreadCountRequest
+	(*GetUnreadCountResponse)(nil),         // 63: peers_touch.model.chat.v1.GetUnreadCountResponse
+	(*MarkGroupReadRequest)(nil),           // 64: peers_touch.model.chat.v1.MarkGroupReadRequest
+	(*MarkGroupReadResponse)(nil),          // 65: peers_touch.model.chat.v1.MarkGroupReadResponse
+	(*GetGroupStatsRequest)(nil),           // 66: peers_touch.model.chat.v1.GetGroupStatsRequest
+	(*GetGroupStatsResponse)(nil),          // 67: peers_touch.model.chat.v1.GetGroupStatsResponse
+	nil,                                    // 68: peers_touch.model.chat.v1.Group.SettingsEntry
+	(*timestamppb.Timestamp)(nil),          // 69: google.protobuf.Timestamp
+	(*types.EncryptedMediaDescriptor)(nil), // 70: peers_touch.model.common.v1.EncryptedMediaDescriptor
 }
 var file_domain_chat_group_chat_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.chat.v1.Group.type:type_name -> peers_touch.model.chat.v1.GroupType
 	1,  // 1: peers_touch.model.chat.v1.Group.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibility
-	67, // 2: peers_touch.model.chat.v1.Group.settings:type_name -> peers_touch.model.chat.v1.Group.SettingsEntry
-	68, // 3: peers_touch.model.chat.v1.Group.created_at:type_name -> google.protobuf.Timestamp
-	68, // 4: peers_touch.model.chat.v1.Group.updated_at:type_name -> google.protobuf.Timestamp
-	2,  // 5: peers_touch.model.chat.v1.GroupMember.role:type_name -> peers_touch.model.chat.v1.GroupRole
-	68, // 6: peers_touch.model.chat.v1.GroupMember.muted_until:type_name -> google.protobuf.Timestamp
-	68, // 7: peers_touch.model.chat.v1.GroupMember.joined_at:type_name -> google.protobuf.Timestamp
-	3,  // 8: peers_touch.model.chat.v1.GroupMessage.type:type_name -> peers_touch.model.chat.v1.GroupMessageType
-	12, // 9: peers_touch.model.chat.v1.GroupMessage.attachments:type_name -> peers_touch.model.chat.v1.GroupMessageAttachment
-	68, // 10: peers_touch.model.chat.v1.GroupMessage.sent_at:type_name -> google.protobuf.Timestamp
-	68, // 11: peers_touch.model.chat.v1.GroupMessage.created_at:type_name -> google.protobuf.Timestamp
-	68, // 12: peers_touch.model.chat.v1.GroupMessage.updated_at:type_name -> google.protobuf.Timestamp
-	68, // 13: peers_touch.model.chat.v1.GroupMessage.edited_at:type_name -> google.protobuf.Timestamp
-	12, // 14: peers_touch.model.chat.v1.ChatEncryptedMessagePayload.attachments:type_name -> peers_touch.model.chat.v1.GroupMessageAttachment
-	3,  // 15: peers_touch.model.chat.v1.ChatEncryptedMessagePayload.message_type:type_name -> peers_touch.model.chat.v1.GroupMessageType
-	69, // 16: peers_touch.model.chat.v1.GroupMessageAttachment.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
-	4,  // 17: peers_touch.model.chat.v1.GroupInvitation.status:type_name -> peers_touch.model.chat.v1.GroupInvitationStatus
-	68, // 18: peers_touch.model.chat.v1.GroupInvitation.expire_at:type_name -> google.protobuf.Timestamp
-	68, // 19: peers_touch.model.chat.v1.GroupInvitation.created_at:type_name -> google.protobuf.Timestamp
-	0,  // 20: peers_touch.model.chat.v1.CreateGroupRequest.type:type_name -> peers_touch.model.chat.v1.GroupType
-	1,  // 21: peers_touch.model.chat.v1.CreateGroupRequest.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibility
-	6,  // 22: peers_touch.model.chat.v1.CreateGroupResponse.group:type_name -> peers_touch.model.chat.v1.Group
-	6,  // 23: peers_touch.model.chat.v1.ListGroupsResponse.groups:type_name -> peers_touch.model.chat.v1.Group
-	6,  // 24: peers_touch.model.chat.v1.GetGroupResponse.group:type_name -> peers_touch.model.chat.v1.Group
-	7,  // 25: peers_touch.model.chat.v1.GetGroupResponse.my_membership:type_name -> peers_touch.model.chat.v1.GroupMember
-	0,  // 26: peers_touch.model.chat.v1.UpdateGroupRequest.type:type_name -> peers_touch.model.chat.v1.GroupType
-	1,  // 27: peers_touch.model.chat.v1.UpdateGroupRequest.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibility
-	6,  // 28: peers_touch.model.chat.v1.UpdateGroupResponse.group:type_name -> peers_touch.model.chat.v1.Group
-	13, // 29: peers_touch.model.chat.v1.InviteToGroupResponse.invitations:type_name -> peers_touch.model.chat.v1.GroupInvitation
-	7,  // 30: peers_touch.model.chat.v1.JoinGroupResponse.membership:type_name -> peers_touch.model.chat.v1.GroupMember
-	6,  // 31: peers_touch.model.chat.v1.TransferGroupOwnershipResponse.group:type_name -> peers_touch.model.chat.v1.Group
-	7,  // 32: peers_touch.model.chat.v1.GetGroupMembersResponse.members:type_name -> peers_touch.model.chat.v1.GroupMember
-	2,  // 33: peers_touch.model.chat.v1.UpdateMemberRequest.role:type_name -> peers_touch.model.chat.v1.GroupRole
-	68, // 34: peers_touch.model.chat.v1.UpdateMemberRequest.muted_until:type_name -> google.protobuf.Timestamp
-	7,  // 35: peers_touch.model.chat.v1.UpdateMemberResponse.member:type_name -> peers_touch.model.chat.v1.GroupMember
-	3,  // 36: peers_touch.model.chat.v1.SendGroupMessageRequest.type:type_name -> peers_touch.model.chat.v1.GroupMessageType
-	12, // 37: peers_touch.model.chat.v1.SendGroupMessageRequest.attachments:type_name -> peers_touch.model.chat.v1.GroupMessageAttachment
-	8,  // 38: peers_touch.model.chat.v1.SendGroupMessageResponse.message:type_name -> peers_touch.model.chat.v1.GroupMessage
-	8,  // 39: peers_touch.model.chat.v1.GetGroupMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.GroupMessage
-	5,  // 40: peers_touch.model.chat.v1.GroupOfflineMessage.status:type_name -> peers_touch.model.chat.v1.GroupOfflineMessageStatus
-	68, // 41: peers_touch.model.chat.v1.GroupOfflineMessage.expire_at:type_name -> google.protobuf.Timestamp
-	68, // 42: peers_touch.model.chat.v1.GroupOfflineMessage.delivered_at:type_name -> google.protobuf.Timestamp
-	68, // 43: peers_touch.model.chat.v1.GroupOfflineMessage.created_at:type_name -> google.protobuf.Timestamp
-	7,  // 44: peers_touch.model.chat.v1.UpdateMyNicknameResponse.member:type_name -> peers_touch.model.chat.v1.GroupMember
-	8,  // 45: peers_touch.model.chat.v1.SearchGroupMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.GroupMessage
-	44, // 46: peers_touch.model.chat.v1.GetOfflineMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.GroupOfflineMessage
-	47, // [47:47] is the sub-list for method output_type
-	47, // [47:47] is the sub-list for method input_type
-	47, // [47:47] is the sub-list for extension type_name
-	47, // [47:47] is the sub-list for extension extendee
-	0,  // [0:47] is the sub-list for field type_name
+	68, // 2: peers_touch.model.chat.v1.Group.settings:type_name -> peers_touch.model.chat.v1.Group.SettingsEntry
+	69, // 3: peers_touch.model.chat.v1.Group.created_at:type_name -> google.protobuf.Timestamp
+	69, // 4: peers_touch.model.chat.v1.Group.updated_at:type_name -> google.protobuf.Timestamp
+	2,  // 5: peers_touch.model.chat.v1.Group.status:type_name -> peers_touch.model.chat.v1.GroupStatus
+	69, // 6: peers_touch.model.chat.v1.Group.dissolved_at:type_name -> google.protobuf.Timestamp
+	3,  // 7: peers_touch.model.chat.v1.GroupMember.role:type_name -> peers_touch.model.chat.v1.GroupRole
+	69, // 8: peers_touch.model.chat.v1.GroupMember.muted_until:type_name -> google.protobuf.Timestamp
+	69, // 9: peers_touch.model.chat.v1.GroupMember.joined_at:type_name -> google.protobuf.Timestamp
+	4,  // 10: peers_touch.model.chat.v1.GroupMessage.type:type_name -> peers_touch.model.chat.v1.GroupMessageType
+	13, // 11: peers_touch.model.chat.v1.GroupMessage.attachments:type_name -> peers_touch.model.chat.v1.GroupMessageAttachment
+	69, // 12: peers_touch.model.chat.v1.GroupMessage.sent_at:type_name -> google.protobuf.Timestamp
+	69, // 13: peers_touch.model.chat.v1.GroupMessage.created_at:type_name -> google.protobuf.Timestamp
+	69, // 14: peers_touch.model.chat.v1.GroupMessage.updated_at:type_name -> google.protobuf.Timestamp
+	69, // 15: peers_touch.model.chat.v1.GroupMessage.edited_at:type_name -> google.protobuf.Timestamp
+	13, // 16: peers_touch.model.chat.v1.ChatEncryptedMessagePayload.attachments:type_name -> peers_touch.model.chat.v1.GroupMessageAttachment
+	4,  // 17: peers_touch.model.chat.v1.ChatEncryptedMessagePayload.message_type:type_name -> peers_touch.model.chat.v1.GroupMessageType
+	70, // 18: peers_touch.model.chat.v1.GroupMessageAttachment.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
+	5,  // 19: peers_touch.model.chat.v1.GroupInvitation.status:type_name -> peers_touch.model.chat.v1.GroupInvitationStatus
+	69, // 20: peers_touch.model.chat.v1.GroupInvitation.expire_at:type_name -> google.protobuf.Timestamp
+	69, // 21: peers_touch.model.chat.v1.GroupInvitation.created_at:type_name -> google.protobuf.Timestamp
+	0,  // 22: peers_touch.model.chat.v1.CreateGroupRequest.type:type_name -> peers_touch.model.chat.v1.GroupType
+	1,  // 23: peers_touch.model.chat.v1.CreateGroupRequest.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibility
+	7,  // 24: peers_touch.model.chat.v1.CreateGroupResponse.group:type_name -> peers_touch.model.chat.v1.Group
+	7,  // 25: peers_touch.model.chat.v1.ListGroupsResponse.groups:type_name -> peers_touch.model.chat.v1.Group
+	7,  // 26: peers_touch.model.chat.v1.GetGroupResponse.group:type_name -> peers_touch.model.chat.v1.Group
+	8,  // 27: peers_touch.model.chat.v1.GetGroupResponse.my_membership:type_name -> peers_touch.model.chat.v1.GroupMember
+	0,  // 28: peers_touch.model.chat.v1.UpdateGroupRequest.type:type_name -> peers_touch.model.chat.v1.GroupType
+	1,  // 29: peers_touch.model.chat.v1.UpdateGroupRequest.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibility
+	7,  // 30: peers_touch.model.chat.v1.UpdateGroupResponse.group:type_name -> peers_touch.model.chat.v1.Group
+	14, // 31: peers_touch.model.chat.v1.InviteToGroupResponse.invitations:type_name -> peers_touch.model.chat.v1.GroupInvitation
+	8,  // 32: peers_touch.model.chat.v1.JoinGroupResponse.membership:type_name -> peers_touch.model.chat.v1.GroupMember
+	7,  // 33: peers_touch.model.chat.v1.TransferGroupOwnershipResponse.group:type_name -> peers_touch.model.chat.v1.Group
+	8,  // 34: peers_touch.model.chat.v1.GetGroupMembersResponse.members:type_name -> peers_touch.model.chat.v1.GroupMember
+	3,  // 35: peers_touch.model.chat.v1.UpdateMemberRequest.role:type_name -> peers_touch.model.chat.v1.GroupRole
+	69, // 36: peers_touch.model.chat.v1.UpdateMemberRequest.muted_until:type_name -> google.protobuf.Timestamp
+	8,  // 37: peers_touch.model.chat.v1.UpdateMemberResponse.member:type_name -> peers_touch.model.chat.v1.GroupMember
+	4,  // 38: peers_touch.model.chat.v1.SendGroupMessageRequest.type:type_name -> peers_touch.model.chat.v1.GroupMessageType
+	13, // 39: peers_touch.model.chat.v1.SendGroupMessageRequest.attachments:type_name -> peers_touch.model.chat.v1.GroupMessageAttachment
+	9,  // 40: peers_touch.model.chat.v1.SendGroupMessageResponse.message:type_name -> peers_touch.model.chat.v1.GroupMessage
+	9,  // 41: peers_touch.model.chat.v1.GetGroupMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.GroupMessage
+	6,  // 42: peers_touch.model.chat.v1.GroupOfflineMessage.status:type_name -> peers_touch.model.chat.v1.GroupOfflineMessageStatus
+	69, // 43: peers_touch.model.chat.v1.GroupOfflineMessage.expire_at:type_name -> google.protobuf.Timestamp
+	69, // 44: peers_touch.model.chat.v1.GroupOfflineMessage.delivered_at:type_name -> google.protobuf.Timestamp
+	69, // 45: peers_touch.model.chat.v1.GroupOfflineMessage.created_at:type_name -> google.protobuf.Timestamp
+	8,  // 46: peers_touch.model.chat.v1.UpdateMyNicknameResponse.member:type_name -> peers_touch.model.chat.v1.GroupMember
+	9,  // 47: peers_touch.model.chat.v1.SearchGroupMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.GroupMessage
+	45, // 48: peers_touch.model.chat.v1.GetOfflineMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.GroupOfflineMessage
+	49, // [49:49] is the sub-list for method output_type
+	49, // [49:49] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_group_chat_proto_init() }
@@ -4794,7 +4889,7 @@ func file_domain_chat_group_chat_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_group_chat_proto_rawDesc), len(file_domain_chat_group_chat_proto_rawDesc)),
-			NumEnums:      6,
+			NumEnums:      7,
 			NumMessages:   62,
 			NumExtensions: 0,
 			NumServices:   0,

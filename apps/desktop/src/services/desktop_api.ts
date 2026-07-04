@@ -4830,6 +4830,7 @@ export const api = {
     attachments?: ChatAttachmentInput[],
     encryptedPayload?: string,
     threadRootUlid?: string,
+    observedMembershipEpoch?: number | bigint,
   ) =>
     invokeRustProto('group_chat_send_message', SendGroupMessageResponseSchema, {
       group_ulid: groupUlid,
@@ -4843,6 +4844,7 @@ export const api = {
       ...(encryptedPayload != null && encryptedPayload !== ''
         ? { encrypted_payload: encryptedPayload }
         : {}),
+      observed_membership_epoch: Number(observedMembershipEpoch ?? 0),
     }),
 
   groupChatUnreadCount: (groupUlid?: string) =>

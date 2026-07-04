@@ -172,6 +172,69 @@ func TestTransferOwnershipUpdatesOwnerAndRoles(t *testing.T) {
 	}
 }
 
+func TestMembershipEpochBumpsOnMemberAddRemove(t *testing.T) {
+	svc := newTestService()
+	group := svc.CreateGroup("owner", "Engineering", "")
+	if group.MembershipEpoch != 1 {
+		t.Fatalf("expected initial membership epoch 1, got %d", group.MembershipEpoch)
+	}
+	if _, ok := svc.AddMember(group.ID, "member", "owner"); !ok {
+		t.Fatal("expected member add to succeed")
+	}
+	afterAdd, ok := svc.GetGroup(group.ID)
+	if !ok {
+		t.Fatal("expected group after add")
+	}
+	if afterAdd.MembershipEpoch != 2 {
+		t.Fatalf("expected epoch 2 after add, got %d", afterAdd.MembershipEpoch)
+	}
+	if !svc.RemoveMember(group.ID, "member") {
+		t.Fatal("expected member remove to succeed")
+	}
+	afterRemove, ok := svc.GetGroup(group.ID)
+	if !ok {
+		t.Fatal("expected group after remove")
+	}
+	if afterRemove.MembershipEpoch != 3 {
+		t.Fatalf("expected epoch 3 after remove, got %d", afterRemove.MembershipEpoch)
+	}
+}
+
+func TestMembershipEpochBumpsOnMemberAddRemoveWithDB(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:membership_epoch_add_remove?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&groupModel{}, &memberModel{}, &outboxModel{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+	svc := &service{db: db}
+	group := svc.CreateGroup("owner", "Engineering", "")
+	if group.MembershipEpoch != 1 {
+		t.Fatalf("expected initial membership epoch 1, got %d", group.MembershipEpoch)
+	}
+	if _, ok := svc.AddMember(group.ID, "member", "owner"); !ok {
+		t.Fatal("expected member add to succeed")
+	}
+	afterAdd, ok := svc.GetGroup(group.ID)
+	if !ok {
+		t.Fatal("expected group after add")
+	}
+	if afterAdd.MembershipEpoch != 2 {
+		t.Fatalf("expected epoch 2 after add, got %d", afterAdd.MembershipEpoch)
+	}
+	if !svc.RemoveMember(group.ID, "member") {
+		t.Fatal("expected member remove to succeed")
+	}
+	afterRemove, ok := svc.GetGroup(group.ID)
+	if !ok {
+		t.Fatal("expected group after remove")
+	}
+	if afterRemove.MembershipEpoch != 3 {
+		t.Fatalf("expected epoch 3 after remove, got %d", afterRemove.MembershipEpoch)
+	}
+}
+
 func TestDissolveGroupMarksArchiveAndRetainsHistory(t *testing.T) {
 	svc := newTestService()
 	group := svc.CreateGroup("owner", "Engineering", "")

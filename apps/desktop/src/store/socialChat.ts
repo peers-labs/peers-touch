@@ -1788,24 +1788,45 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
           members = [];
         }
       }
-      const memberDids = members.map((m) => m.actorDid).filter((d): d is string => !!d);
-      await ensureSkdmDistributed(did, groupUlid, memberDids);
-      const encryptedPayloadB64 = await encryptBytesForGroup(
-        groupUlid,
-        createEncryptedChatPayloadBytes(content, attachments ?? [], type),
-      );
       const threadRootUlid = explicitThreadRootUlid;
-      const sentResponse = await api.groupChatSendMessage(
-        groupUlid,
-        '',
-        type,
-        replyToUlid,
-        undefined,
-        undefined,
-        [],
-        encryptedPayloadB64,
-        threadRootUlid,
-      );
+      const sendWithCurrentEpoch = async (currentMembers: GroupMember[]) => {
+        const memberDids = currentMembers.map((m) => m.actorDid).filter((d): d is string => !!d);
+        await ensureSkdmDistributed(did, groupUlid, memberDids);
+        const encryptedPayloadB64 = await encryptBytesForGroup(
+          groupUlid,
+          createEncryptedChatPayloadBytes(content, attachments ?? [], type),
+        );
+        const group = get().groups.find((item) => item.ulid === groupUlid);
+        const observedMembershipEpoch = group?.membershipEpoch ?? 0n;
+        return api.groupChatSendMessage(
+          groupUlid,
+          '',
+          type,
+          replyToUlid,
+          undefined,
+          undefined,
+          [],
+          encryptedPayloadB64,
+          threadRootUlid,
+          observedMembershipEpoch,
+        );
+      };
+      let sentResponse;
+      try {
+        sentResponse = await sendWithCurrentEpoch(members);
+      } catch (error) {
+        if (!(error instanceof Error) || !/membership epoch stale/i.test(error.message)) {
+          throw error;
+        }
+        await get().loadGroups();
+        const refreshed = await api.groupChatGetMembers(groupUlid);
+        members = (refreshed?.members || []) as GroupMember[];
+        set((state) => ({
+          groupMembers: { ...state.groupMembers, [groupUlid]: members! },
+        }));
+        await rotateGroupSenderChain(did, groupUlid);
+        sentResponse = await sendWithCurrentEpoch(members);
+      }
       if (sentResponse.message?.ulid) {
         setDecryptCache(sentResponse.message.ulid, {
           content,
