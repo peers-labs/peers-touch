@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import os
 import sys
+import json
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -89,6 +90,25 @@ def request_json_or_empty(url: str) -> dict[str, Any]:
         raise GateError(f"{url} not reachable: {error}") from error
 
 
+def post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        raise GateError(f"{url} failed status={error.code} body={detail[:200]!r}") from error
+    except urllib.error.URLError as error:
+        raise GateError(f"{url} not reachable: {error}") from error
+
+
 def require_url(label: str, value: str) -> str:
     if not value:
         raise GateError(f"{label} is required")
@@ -133,10 +153,21 @@ def check_gateway(label: str, gateway_url: str, station_url: str) -> None:
     if not gateway_url:
         print(f"[SKIP] {label} gateway: not configured")
         return
-    body = request_json_or_empty(f"{gateway_url.rstrip('/')}/api/runtime/station")
-    actual = str(body.get("station_url") or body.get("stationUrl") or "").rstrip("/")
+    envelope = post_json(gateway_url.rstrip("/"), {"cmd": "station_list", "args": {}})
+    data = envelope.get("data") if isinstance(envelope.get("data"), dict) else {}
+    status = data.get("status")
+    if isinstance(status, str):
+        try:
+            status_data = json.loads(status)
+        except json.JSONDecodeError as error:
+            raise GateError(f"{label} gateway station_list status is not JSON: {status[:200]!r}") from error
+    else:
+        status_data = data if isinstance(data, dict) else {}
+    actual = str(status_data.get("active_url") or status_data.get("activeUrl") or "").rstrip("/")
     if actual and actual != station_url.rstrip("/"):
         raise GateError(f"{label} gateway points to {actual}, expected {station_url}")
+    if not actual:
+        raise GateError(f"{label} gateway station_list returned no active_url")
     print(f"[OK] {label} gateway: {gateway_url}")
 
 

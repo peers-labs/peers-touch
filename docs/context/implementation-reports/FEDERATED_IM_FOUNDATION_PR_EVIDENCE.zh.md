@@ -149,7 +149,7 @@ Boundary:
 
 | Scope | Status | Reason / Next Evidence |
 | --- | --- | --- |
-| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one follower Station, and home Relay; full Desktop browser/runtime pressure still requires authority/follower Desktop gateways bound to distinct Stations |
+| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one follower Station, home Relay, and dual Desktop gateways bound to distinct Stations; full Desktop browser/runtime pressure still requires cross-Station group join/projection, SKDM relay delivery, and browser decrypt evidence |
 | `chat-desktop-dom-message-visible` from standard acceptance plan | NOT RUN in this packaging pass | Requires local Desktop web/gateway runtime; earlier same-home group Sender Key DOM gate evidence exists separately |
 | `chat-desktop-gateway-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires Desktop HTTP gateway runtime |
 | `chat-live-realtime-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires fedp5/live realtime environment |
@@ -159,6 +159,8 @@ Live 3-Station prerequisite command:
 
 ```bash
 CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.37.246.80:18080 \
+CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
+CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py
 ```
 
@@ -170,6 +172,8 @@ Observed result:
 [OK] authority Station: http://10.0.0.10:18080/sub-oss/healthz
 [OK] follower Station: http://10.37.246.80:18080/sub-oss/healthz
 [OK] Relay: http://10.0.0.10:18081/sub-oss/healthz
+[OK] authority gateway: http://127.0.0.1:3131
+[OK] follower gateway: http://127.0.0.1:3132
 ```
 
 ## 7. Product Proven Scope
