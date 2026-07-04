@@ -14,6 +14,58 @@ import {
 import { FriendMessageStatus, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 
+export interface ChatAttachmentLike {
+  cid?: string;
+  filename?: string;
+  mimeType?: string;
+  size?: bigint | number;
+  thumbnailCid?: string;
+  visibility?: string;
+}
+
+export interface IMConversationProjection {
+  id: string;
+  kind: 'friend' | 'group';
+  title: string;
+  avatar: string;
+  lastActivity: Date;
+  unread: number;
+  preview?: MessagePreview;
+}
+
+export interface IMMessageProjection<TAttachment extends ChatAttachmentLike = ChatAttachmentLike> {
+  id: string;
+  kind: 'friend' | 'group';
+  conversationId: string;
+  content: string;
+  type: number;
+  senderDid: string;
+  createdAt?: FriendChatMessage['createdAt'];
+  sentAt?: FriendChatMessage['sentAt'];
+  attachments: TAttachment[];
+  recalled?: boolean;
+}
+
+export type DesktopIMConversationProjection = IMConversationProjection & {
+  peerDid?: string;
+  memberCount?: number;
+};
+
+export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike> & {
+  ulid: string;
+  replyToUlid?: string;
+  threadRootUlid?: string;
+  editedAt?: FriendChatMessage['editedAt'];
+  status?: FriendChatMessage['status'];
+};
+
+export interface DesktopIMSenderProfileProjection {
+  id: string;
+  name: string;
+  avatar: string;
+  isSelf: boolean;
+}
+
 export interface MessagePreview {
   content: string;
   type: number;

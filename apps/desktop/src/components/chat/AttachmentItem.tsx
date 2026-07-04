@@ -34,10 +34,11 @@ import { useDecryptedOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl'
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
 import type { FriendMessageAttachment } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessageAttachment } from '../../gen/proto/domain/chat/group_chat_pb';
+import type { ChatAttachmentLike } from '../../store/socialProjection';
 
 const { Text } = Typography;
 
-type Attachment = FriendMessageAttachment | GroupMessageAttachment;
+type Attachment = FriendMessageAttachment | GroupMessageAttachment | ChatAttachmentLike;
 
 export type ChatAttachmentVisibilityHint = 'public' | 'chat' | 'private';
 
