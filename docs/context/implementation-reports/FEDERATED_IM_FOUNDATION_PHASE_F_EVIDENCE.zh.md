@@ -3,7 +3,7 @@
 **项目：** Peers Touch 联邦-Station IM
 **日期：** 2026-07-05
 **范围：** Foundation pressure and security evidence
-**状态：** 部分完成；live deployed federation prerequisite 已通过，完整 Desktop/browser runtime pressure 仍未运行
+**状态：** 部分完成；live deployed federation prerequisite 与 dual Desktop gateway binding 已通过，完整 cross-Station Desktop/browser message pressure 仍未运行
 
 ## 1. 计划来源
 
@@ -27,7 +27,7 @@ Phase F 要求：
 | `chat-group-pressure-security` | home Station 群聊 100 actors / 10 senders / 1000 messages | PASS | `/tmp/peers-touch-chat-group-pressure-full/group_pressure_security_report.json` |
 | `chat-private-pressure-security` | home Station 私聊 100 actors / 50 sessions / 1000 messages | PASS | `/tmp/peers-touch-chat-private-pressure-full/private_pressure_security_report.json` |
 | `chat-federated-group-pressure` | relay-mediated 3-Station federation proposal/event path | PASS | `GOWORK=off go test ./subserver/group_chat -run TestRelayMediatedThreeStationProposalPressureAcceptance -count=1 -v` |
-| `chat-federated-browser-prereq` | live deployed federation browser/runtime prerequisite | PASS | `CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.37.246.80:18080 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py` |
+| `chat-federated-browser-prereq` | live deployed federation browser/runtime prerequisite | PASS | `CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.37.246.80:18080 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py` |
 
 ## 3. Home Station 群聊压力与安全
 
@@ -173,6 +173,8 @@ GOWORK=off go test ./subserver/group_chat -run TestRelayMediatedThreeStationProp
 
 ```bash
 CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.37.246.80:18080 \
+CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
+CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py
 ```
 
@@ -186,13 +188,16 @@ python3 tooling/acceptance/gates/chat/federated_browser_prereq.py
 [OK] authority Station: http://192.168.31.119:18080/sub-oss/healthz
 [OK] follower Station: http://10.37.246.80:18080/sub-oss/healthz
 [OK] Relay: http://192.168.31.119:18081/sub-oss/healthz
+[OK] authority gateway: http://127.0.0.1:3131
+[OK] follower gateway: http://127.0.0.1:3132
 ```
 
 结论：
 
 - deployed federation runtime prerequisite 已证明：home authority Station、one follower Station、home Relay 均健康，且 Station peer IDs 可从 live endpoints 发现；
-- 该证据仍不证明 Desktop browser decrypt 或 runtime pressure；
-- 下一步需要启动两个 Desktop gateway/browser runtime，分别绑定 authority/follower Station，再运行 cross-Station browser decrypt/pressure gate。
+- dual Desktop gateway/browser runtime prerequisite 已证明：authority gateway 绑定 home Station，follower gateway 绑定 one Station；browser agent 也确认 `3311/#/chat` 与 `3312/#/chat` 均可加载 Peers Touch Desktop 页面且无 fatal console error；
+- 该证据仍不证明 cross-Station group message decrypt 或 runtime pressure；
+- 下一步需要运行 cross-Station group join/projection、SKDM relay delivery、browser decrypt/pressure gate。
 
 ## 7. Gate Catalog
 
@@ -216,7 +221,7 @@ git diff --check
 
 未完成：
 
-- live deployed 3-Station browser/runtime pressure run；
+- live deployed 3-Station browser/runtime group message pressure run；
 - PR/release 阶段需要把本报告和对应 gate 输出纳入最终 reviewer evidence；
 - presence invariant scan 仍命中既有 generated/mobile online 债务，本次 Phase F 没有新增 chat-owned presence。
 
@@ -225,9 +230,9 @@ git diff --check
 - `CHAT_FEDERATION_AUTHORITY_STATION_URL`
 - `CHAT_FEDERATION_FOLLOWER_STATION_URL`
 - `CHAT_FEDERATION_RELAY_URL`
-- `CHAT_FEDERATION_RELAY_HEALTH_URL`
-- authority/follower peer IDs
-- 两个 Desktop gateway，分别绑定不同 Station
+- cross-Station group join/projection route
+- SKDM relay delivery into follower Desktop
+- browser runtime group decrypt pressure gate
 
 ## 9. 结论
 
@@ -235,10 +240,11 @@ git diff --check
 
 - home Station 100 人群聊压力与安全负例；
 - home Station 100 actor 私聊并发与安全负例；
-- relay-mediated 3-Station federation proposal/event protocol pressure。
+- relay-mediated 3-Station federation proposal/event protocol pressure；
+- live deployed federation prerequisite plus dual Desktop gateway binding。
 
 当前未证明：
 
-- 真实部署态 3-Station Relay/Desktop/browser runtime 压力与解密体验。
+- 真实部署态 3-Station group message pressure 与跨 Station browser decrypt 体验。
 
 因此 Phase F 可以作为 Foundation protocol and home-station pressure evidence 进入 PR/release review，但不能声明 live deployed 3-Station runtime 完成。
