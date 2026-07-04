@@ -167,29 +167,32 @@ GOWORK=off go test ./subserver/group_chat -run TestRelayMediatedThreeStationProp
 - 不证明真实部署态 Relay、三台独立 Station 进程、Desktop browser decrypt；
 - 不替代 Phase E 的 browser decrypt acceptance。
 
-## 6. Live Deployed 3-Station Runtime 阻塞
+## 6. Live Deployed Federation Runtime 前置
 
 命令：
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://192.168.31.119:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.37.246.80:18080 \
 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py
 ```
 
-结果：FAIL。
+结果：PASS。
 
-失败原因：
+关键输出：
 
 ```text
-federated browser prereq failed: CHAT_FEDERATION_FOLLOWER_STATION_URL is required
+[OK] authority Station peer id: discovered from http://192.168.31.119:18080/actor/federation/health
+[OK] follower Station peer id: discovered from http://10.37.246.80:18080/actor/federation/health
+[OK] authority Station: http://192.168.31.119:18080/sub-oss/healthz
+[OK] follower Station: http://10.37.246.80:18080/sub-oss/healthz
+[OK] Relay: http://192.168.31.119:18081/sub-oss/healthz
 ```
 
 结论：
 
-- 当前 `home` profile 只有 authority home Station 可用；
-- 缺 follower Station URL；
-- 之前环境检查还显示缺 Relay URL/health URL；
-- 因此 live deployed 3-Station browser/runtime pressure 不能被当前环境证明。
+- deployed federation runtime prerequisite 已证明：home authority Station、one follower Station、home Relay 均健康，且 Station peer IDs 可从 live endpoints 发现；
+- 该证据仍不证明 Desktop browser decrypt 或 runtime pressure；
+- 下一步需要启动两个 Desktop gateway/browser runtime，分别绑定 authority/follower Station，再运行 cross-Station browser decrypt/pressure gate。
 
 ## 7. Gate Catalog
 
@@ -198,6 +201,7 @@ federated browser prereq failed: CHAT_FEDERATION_FOLLOWER_STATION_URL is require
 - `chat-group-pressure-security`
 - `chat-private-pressure-security`
 - `chat-federated-group-pressure`
+- `chat-federated-browser-prereq`
 
 校验：
 
