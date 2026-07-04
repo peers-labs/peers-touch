@@ -6,7 +6,8 @@ runtime environment is ready to run a true multi-Station Desktop browser gate:
 
 - two distinct Station URLs are configured and healthy;
 - a Relay URL is configured and healthy;
-- authority/follower Station peer IDs are supplied for relay-forward routing;
+- authority/follower Station peer IDs are supplied or discoverable from the
+  live Station federation/bootstrap endpoints for relay-forward routing;
 - optional Desktop gateway URLs are reachable when supplied.
 
 It intentionally fails fast when the active profile is a single-Station profile
@@ -17,10 +18,10 @@ Environment:
   CHAT_FEDERATION_AUTHORITY_STATION_URL
   CHAT_FEDERATION_FOLLOWER_STATION_URL
   CHAT_FEDERATION_RELAY_URL
-  CHAT_FEDERATION_AUTHORITY_PEER_ID
-  CHAT_FEDERATION_FOLLOWER_PEER_ID
 
 Optional:
+  CHAT_FEDERATION_AUTHORITY_PEER_ID
+  CHAT_FEDERATION_FOLLOWER_PEER_ID
   CHAT_FEDERATION_AUTHORITY_STATION_HEALTH_URL
   CHAT_FEDERATION_FOLLOWER_STATION_HEALTH_URL
   CHAT_FEDERATION_RELAY_HEALTH_URL
@@ -102,6 +103,32 @@ def check_health(label: str, base_url: str, health_url: str = "") -> None:
     print(f"[OK] {label}: {url}")
 
 
+def extract_station_peer_id(body: dict[str, Any]) -> str:
+    data = body.get("data")
+    if isinstance(data, dict):
+        value = data.get("station_peer_id") or data.get("stationPeerId")
+        if value:
+            return str(value).strip()
+    value = body.get("station_peer_id") or body.get("stationPeerId") or body.get("peer_id") or body.get("peerId")
+    return str(value or "").strip()
+
+
+def discover_station_peer_id(label: str, base_url: str, explicit: str = "") -> str:
+    explicit = explicit.strip()
+    if explicit:
+        print(f"[OK] {label} peer id: supplied")
+        return explicit
+
+    for path in ("/actor/federation/health", "/sub-bootstrap/info"):
+        url = f"{base_url.rstrip('/')}{path}"
+        body = request_json_or_empty(url)
+        peer_id = extract_station_peer_id(body)
+        if peer_id:
+            print(f"[OK] {label} peer id: discovered from {url}")
+            return peer_id
+    raise GateError(f"{label} peer id is required or must be discoverable from Station health/bootstrap endpoints")
+
+
 def check_gateway(label: str, gateway_url: str, station_url: str) -> None:
     if not gateway_url:
         print(f"[SKIP] {label} gateway: not configured")
@@ -126,12 +153,16 @@ def main() -> int:
         "CHAT_FEDERATION_RELAY_URL",
         get_url("CHAT_FEDERATION_RELAY_URL", "PT_RELAY_URL"),
     )
-    authority_peer = env("CHAT_FEDERATION_AUTHORITY_PEER_ID")
-    follower_peer = env("CHAT_FEDERATION_FOLLOWER_PEER_ID")
-    if not authority_peer:
-        raise GateError("CHAT_FEDERATION_AUTHORITY_PEER_ID is required")
-    if not follower_peer:
-        raise GateError("CHAT_FEDERATION_FOLLOWER_PEER_ID is required")
+    authority_peer = discover_station_peer_id(
+        "authority Station",
+        authority_station,
+        env("CHAT_FEDERATION_AUTHORITY_PEER_ID"),
+    )
+    follower_peer = discover_station_peer_id(
+        "follower Station",
+        follower_station,
+        env("CHAT_FEDERATION_FOLLOWER_PEER_ID"),
+    )
     if authority_peer == follower_peer:
         raise GateError("authority and follower peer IDs must be distinct")
     if authority_station == follower_station:
