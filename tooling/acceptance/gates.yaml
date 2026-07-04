@@ -71,6 +71,27 @@
       "tier": "env-evidence",
       "description": "Run a real Desktop renderer DOM flow proving a Station-backed chat message is visible after Desktop gateway sync."
     },
+    "chat-group-pressure-security": {
+      "command": "python3 tooling/acceptance/gates/chat/group_pressure_security.py",
+      "timeout_seconds": 1800,
+      "environment": "home-station",
+      "tier": "env-evidence",
+      "description": "Run a parameterized Station group-chat pressure and security gate; set CHAT_GROUP_PRESSURE_ACTORS=100 and CHAT_GROUP_PRESSURE_MESSAGES=1000 for the Foundation full run."
+    },
+    "chat-private-pressure-security": {
+      "command": "python3 tooling/acceptance/gates/chat/private_pressure_security.py",
+      "timeout_seconds": 1800,
+      "environment": "home-station",
+      "tier": "env-evidence",
+      "description": "Run a parameterized Station private-chat pressure and security gate; set CHAT_PRIVATE_PRESSURE_ACTORS=100 and CHAT_PRIVATE_PRESSURE_MESSAGES=1000 for the Foundation full run."
+    },
+    "chat-federated-group-pressure": {
+      "command": "cd apps/station/app && GOWORK=off go test ./subserver/group_chat -run TestRelayMediatedThreeStationProposalPressureAcceptance -count=1 -v",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run the relay-mediated 3-Station federated group proposal pressure harness: 100 actors, 10 active senders, 1000 message proposals, and 2000 follower event deliveries."
+    },
     "desktop-check": {
       "command": "cd apps/desktop && pnpm run check",
       "timeout_seconds": 600,

@@ -9,7 +9,9 @@ import { EVENT, eventBus } from '../kernel/events';
 import type {
   GroupSkdmInstalledPayload,
   RealtimeConversationSettingsChangedPayload,
+  RealtimeGroupFederationEventPayload,
   RealtimeGroupMembershipChangePayload,
+  RealtimeGroupSkdmEnvelopeDeliveredPayload,
   RealtimeMessageMutationPayload,
   RealtimeMessageReceiptPayload,
   RealtimeMessageReceivedPayload,
@@ -17,7 +19,7 @@ import type {
   RealtimeResyncPayload,
   RealtimeTypingStatePayload,
 } from '../kernel/events/types';
-import { retrySkdmDistributionFor, rotateGroupSenderChain } from '../modules/identity/groupSenderKeys';
+import { handleInboundSkdm, retrySkdmDistributionFor, rotateGroupSenderChain } from '../modules/identity/groupSenderKeys';
 import { useMediaRuntimeStore } from './mediaRuntime';
 import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
 import { api, type NotificationData } from './desktop_api';
@@ -43,6 +45,7 @@ const SOCIAL_RECONCILE_INTERVAL_MS = 30_000;
 const EXTERNAL_HOST_RECONCILE_DEBOUNCE_MS = 1_000;
 const MAX_SEEN_REALTIME_MESSAGES = 500;
 const MAX_SEEN_SOCIAL_NOTIFICATIONS = 500;
+const MAX_SEEN_GROUP_FEDERATION_EVENTS = 500;
 
 let teardownBridge: (() => void) | null = null;
 let typingSweepTimer: number | null = null;
@@ -55,6 +58,7 @@ let realtimeStreamTransition: Promise<void> = Promise.resolve();
 let socialRefreshInFlight: Promise<void> | null = null;
 const seenRealtimeMessageKeys = new Set<string>();
 const seenSocialNotificationIds = new Set<string>();
+const seenGroupFederationEventKeys = new Set<string>();
 
 function runDetached(label: string, task: () => Promise<void>): void {
   void task().catch((error) => {
@@ -469,6 +473,26 @@ function onGroupSkdmInstalled(payload: GroupSkdmInstalledPayload): void {
     .catch((error) => log.warn('socialRealtime', 'redecryptGroupMessages failed', error));
 }
 
+function onGroupSkdmEnvelopeDelivered(payload: RealtimeGroupSkdmEnvelopeDeliveredPayload): void {
+  runDetached('group skdm envelope install', async () => {
+    const store = useSocialChatStore.getState();
+    if (store.currentUserDid && payload.recipientDid !== store.currentUserDid) return;
+
+    const localDevice = await api.accountGetDeviceId().catch((error) => {
+      log.warn('socialRealtime', 'accountGetDeviceId failed for SKDM envelope', error);
+      return null;
+    });
+    const localDeviceId = String(localDevice?.device_id ?? '').trim();
+    if (!localDeviceId || localDeviceId !== payload.recipientDeviceId) return;
+
+    await handleInboundSkdm(payload.senderDid, payload.encryptedPayloadB64, {
+      groupUlid: payload.groupUlid,
+      senderKeyId: payload.senderKeyId,
+      recipientDeviceId: payload.recipientDeviceId,
+    });
+  });
+}
+
 async function syncKnownConversations(): Promise<void> {
   const store = useSocialChatStore.getState();
   const sessions = store.sessions.slice();
@@ -510,6 +534,21 @@ function onResync(payload: RealtimeResyncPayload): void {
       refreshed.loadConversationPreviews(),
     ]);
     useMediaRuntimeStore.getState().prewarmMessages(refreshed.messages);
+  });
+}
+
+function onGroupFederationEvent(payload: RealtimeGroupFederationEventPayload): void {
+  if (!payload.groupUlid) return;
+  const eventKey = payload.groupEventUlid || `${payload.groupUlid}:${payload.seq}:${payload.eventHash}`;
+  if (!rememberBounded(seenGroupFederationEventKeys, eventKey, MAX_SEEN_GROUP_FEDERATION_EVENTS)) {
+    return;
+  }
+
+  const store = useSocialChatStore.getState();
+  const isActiveConversation = isVisibleConversation(store, payload.groupUlid, true);
+
+  runDetached('federated group event refresh', async () => {
+    await refreshGroupMessage(payload.groupUlid, isActiveConversation);
   });
 }
 
@@ -564,6 +603,8 @@ export function installSocialRealtimeBridge(): void {
     eventBus.subscribe(EVENT.REALTIME_TYPING_STATE, onTypingState),
     eventBus.subscribe(EVENT.REALTIME_MESSAGE_MUTATION, onMessageMutation),
     eventBus.subscribe(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, onGroupMembershipChange),
+    eventBus.subscribe(EVENT.REALTIME_GROUP_FEDERATION_EVENT, onGroupFederationEvent),
+    eventBus.subscribe(EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED, onGroupSkdmEnvelopeDelivered),
     eventBus.subscribe(EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED, onConversationSettingsChanged),
     eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, onPresenceFlip),
     eventBus.subscribe(EVENT.REALTIME_RESYNC, onResync),

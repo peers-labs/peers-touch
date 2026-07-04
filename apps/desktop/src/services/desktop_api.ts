@@ -61,6 +61,7 @@ import {
   GetOfflineMessagesResponseSchema,
   AckOfflineMessagesResponseSchema,
   GetGroupStatsResponseSchema,
+  SubmitGroupSkdmEnvelopeResponseSchema,
 } from '../gen/proto/domain/chat/group_chat_pb';
 export type {
   ActorList,
@@ -148,6 +149,7 @@ export type {
   GetOfflineMessagesResponse,
   AckOfflineMessagesResponse,
   GetGroupStatsResponse,
+  SubmitGroupSkdmEnvelopeResponse,
 } from '../gen/proto/domain/chat/group_chat_pb';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -4845,6 +4847,29 @@ export const api = {
         ? { encrypted_payload: encryptedPayload }
         : {}),
       observed_membership_epoch: Number(observedMembershipEpoch ?? 0),
+    }),
+
+  groupChatSubmitSkdmEnvelope: (input: {
+    groupUlid: string;
+    membershipEpoch: number | bigint;
+    senderDid: string;
+    senderKeyId: number;
+    recipientDid: string;
+    recipientDeviceId: string;
+    recipientHomeStationPeerId: string;
+    encryptedPayload: string;
+    idempotencyKey?: string;
+  }) =>
+    invokeRustProto('group_chat_submit_skdm_envelope', SubmitGroupSkdmEnvelopeResponseSchema, {
+      group_ulid: input.groupUlid,
+      membership_epoch: Number(input.membershipEpoch),
+      sender_did: input.senderDid,
+      sender_key_id: input.senderKeyId,
+      recipient_did: input.recipientDid,
+      recipient_device_id: input.recipientDeviceId,
+      recipient_home_station_peer_id: input.recipientHomeStationPeerId,
+      encrypted_payload: input.encryptedPayload,
+      idempotency_key: input.idempotencyKey,
     }),
 
   groupChatUnreadCount: (groupUlid?: string) =>
