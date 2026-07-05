@@ -18,8 +18,8 @@ type Conversation struct {
 	ParentID    *string         `gorm:"type:varchar(36);index:idx_conversations_parent_id"`
 	ConfigJSON  json.RawMessage `gorm:"type:jsonb;column:config_json"`
 	Meta        json.RawMessage `gorm:"type:jsonb"`
-	CreatedAt   time.Time       `gorm:"not null;default:now();index:idx_conversations_created_at"`
-	UpdatedAt   time.Time       `gorm:"not null;default:now()"`
+	CreatedAt   time.Time       `gorm:"not null;autoCreateTime;index:idx_conversations_created_at"`
+	UpdatedAt   time.Time       `gorm:"not null;autoUpdateTime"`
 
 	// Relations
 	Messages []AgentMessage `gorm:"foreignKey:ConversationID;references:ID"`
