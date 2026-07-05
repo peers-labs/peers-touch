@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly PEERS_STATION_URL?: string;
   readonly VITE_ACCEPTANCE_HARNESS?: string;
   readonly VITE_ENABLE_ADVANCED_OAUTH_CONNECTIONS?: string;
+  readonly VITE_ACCEPTANCE_HARNESS?: string;
 }
 
 interface ImportMeta {

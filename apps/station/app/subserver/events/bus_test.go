@@ -8,6 +8,9 @@ import (
 	"time"
 
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"google.golang.org/protobuf/proto"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 // counterIDGen returns ids "ev-0001", "ev-0002", ... so tests can
@@ -35,6 +38,20 @@ func newTestBus(t *testing.T, opts ...BusOption) EventBus {
 		}),
 	}
 	return NewEventBus(append(defaults, opts...)...)
+}
+
+func newTestDurableStore(t *testing.T) durableEventStore {
+	t.Helper()
+	dsn := fmt.Sprintf("file:%s-%d?mode=memory&cache=shared", t.Name(), time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newGormEventStore(db)
+	if err := store.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	return store
 }
 
 func msg(text string) *realtime.StreamEvent {
@@ -136,6 +153,177 @@ func TestSubscribe_ResyncWhenBufferEmpty(t *testing.T) {
 	got := drainN(t, sub, 1, 50*time.Millisecond)
 	if len(got) != 1 || got[0].GetResync() == nil {
 		t.Fatalf("expected Resync on empty-buffer cursor, got %#v", got)
+	}
+}
+
+func TestSubscribe_ReplaysFromDurableStoreAfterRestart(t *testing.T) {
+	store := newTestDurableStore(t)
+	bus1 := newTestBus(t, WithDurableStore(store))
+	id1, err := bus1.Publish("alice", msg("a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bus1.Publish("alice", msg("b")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bus1.Publish("alice", msg("c")); err != nil {
+		t.Fatal(err)
+	}
+	bus1.Close()
+
+	bus2 := newTestBus(t, WithDurableStore(store))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub, _, err := bus2.Subscribe(ctx, "alice", "dev-1", id1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := drainN(t, sub, 2, 50*time.Millisecond)
+	if len(got) != 2 {
+		t.Fatalf("got %d durable replay events, want 2", len(got))
+	}
+	if got[0].GetMessage().GetUlid() != "b" || got[1].GetMessage().GetUlid() != "c" {
+		t.Fatalf("durable replay order = %v", []string{got[0].GetMessage().GetUlid(), got[1].GetMessage().GetUlid()})
+	}
+}
+
+func TestSubscribe_DurableReplayCanExceedSubscriberQueue(t *testing.T) {
+	store := newTestDurableStore(t)
+	bus1 := newTestBus(t, WithSubscriberQueue(8), WithDurableStore(store))
+	cursor, err := bus1.Publish("alice", msg("cursor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 70; i++ {
+		if _, err := bus1.Publish("alice", msg(fmt.Sprintf("m-%02d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bus1.Close()
+
+	bus2 := newTestBus(t, WithSubscriberQueue(8), WithDurableStore(store))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub, _, err := bus2.Subscribe(ctx, "alice", "dev-1", cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := drainN(t, sub, 70, 50*time.Millisecond)
+	if len(got) != 70 {
+		t.Fatalf("got %d durable replay events, want 70", len(got))
+	}
+	if got[0].GetMessage().GetUlid() != "m-00" || got[69].GetMessage().GetUlid() != "m-69" {
+		t.Fatalf("durable replay bounds = %q..%q, want m-00..m-69",
+			got[0].GetMessage().GetUlid(),
+			got[69].GetMessage().GetUlid(),
+		)
+	}
+}
+
+func TestSubscribe_DurableReplayIsNotCappedByRingSize(t *testing.T) {
+	store := newTestDurableStore(t)
+	bus1 := newTestBus(t, WithRingBufferSize(2), WithDurableStore(store))
+	cursor, err := bus1.Publish("alice", msg("cursor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		if _, err := bus1.Publish("alice", msg(fmt.Sprintf("m-%02d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bus1.Close()
+
+	bus2 := newTestBus(t, WithRingBufferSize(2), WithDurableStore(store))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub, _, err := bus2.Subscribe(ctx, "alice", "dev-1", cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := drainN(t, sub, 5, 50*time.Millisecond)
+	if len(got) != 5 {
+		t.Fatalf("got %d durable replay events, want 5", len(got))
+	}
+	if got[0].GetMessage().GetUlid() != "m-00" || got[4].GetMessage().GetUlid() != "m-04" {
+		t.Fatalf("durable replay bounds = %q..%q, want m-00..m-04",
+			got[0].GetMessage().GetUlid(),
+			got[4].GetMessage().GetUlid(),
+		)
+	}
+}
+
+func TestSubscribe_DurableReplayDoesNotDuplicateConcurrentPublish(t *testing.T) {
+	store := newBlockingReplayStore()
+	bus := newTestBus(t, WithDurableStore(store))
+	cursor, err := bus.Publish("alice", msg("cursor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.blockNextPersist()
+
+	publishErr := make(chan error, 1)
+	go func() {
+		_, err := bus.Publish("alice", msg("new"))
+		publishErr <- err
+	}()
+
+	select {
+	case <-store.persisted:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("publish did not reach durable persist")
+	}
+
+	subscribeDone := make(chan *Subscription, 1)
+	subscribeErr := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		sub, _, err := bus.Subscribe(ctx, "alice", "dev-1", cursor)
+		if err != nil {
+			subscribeErr <- err
+			return
+		}
+		subscribeDone <- sub
+	}()
+
+	select {
+	case <-subscribeDone:
+		t.Fatal("subscriber replayed while publish held actor lock")
+	case err := <-subscribeErr:
+		t.Fatalf("subscribe failed: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	store.releasePersist()
+
+	select {
+	case err := <-publishErr:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("publish did not finish")
+	}
+
+	var sub *Subscription
+	select {
+	case sub = <-subscribeDone:
+	case err := <-subscribeErr:
+		t.Fatalf("subscribe failed: %v", err)
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("subscribe did not finish")
+	}
+
+	got := drainN(t, sub, 2, 50*time.Millisecond)
+	if len(got) != 1 {
+		t.Fatalf("got %d events, want exactly 1 replay and no duplicate live fan-out", len(got))
+	}
+	if got[0].GetMessage().GetUlid() != "new" {
+		t.Fatalf("got message %q, want new", got[0].GetMessage().GetUlid())
 	}
 }
 
@@ -344,4 +532,79 @@ func drainN(t *testing.T, sub *Subscription, n int, perEvent time.Duration) []*r
 		}
 	}
 	return out
+}
+
+type blockingReplayStore struct {
+	mu           sync.Mutex
+	events       map[string][]*realtime.StreamEvent
+	blockPersist bool
+	persisted    chan struct{}
+	release      chan struct{}
+}
+
+func newBlockingReplayStore() *blockingReplayStore {
+	return &blockingReplayStore{
+		events:    make(map[string][]*realtime.StreamEvent),
+		persisted: make(chan struct{}, 1),
+		release:   make(chan struct{}),
+	}
+}
+
+func (s *blockingReplayStore) blockNextPersist() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.blockPersist = true
+	s.persisted = make(chan struct{}, 1)
+	s.release = make(chan struct{})
+}
+
+func (s *blockingReplayStore) releasePersist() {
+	close(s.release)
+}
+
+func (s *blockingReplayStore) Persist(actorID string, ev *realtime.StreamEvent) error {
+	cloned := proto.Clone(ev).(*realtime.StreamEvent)
+
+	s.mu.Lock()
+	s.events[actorID] = append(s.events[actorID], cloned)
+	block := s.blockPersist
+	persisted := s.persisted
+	release := s.release
+	if block {
+		s.blockPersist = false
+	}
+	s.mu.Unlock()
+
+	if block {
+		persisted <- struct{}{}
+		<-release
+	}
+	return nil
+}
+
+func (s *blockingReplayStore) ReplayAfter(actorID, cursor string, limit int) ([]*realtime.StreamEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]*realtime.StreamEvent, 0)
+	for _, ev := range s.events[actorID] {
+		if ev.GetEventId() <= cursor {
+			continue
+		}
+		out = append(out, proto.Clone(ev).(*realtime.StreamEvent))
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (s *blockingReplayStore) NewestEventID(actorID string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events := s.events[actorID]
+	if len(events) == 0 {
+		return "", false, nil
+	}
+	return events[len(events)-1].GetEventId(), true, nil
 }

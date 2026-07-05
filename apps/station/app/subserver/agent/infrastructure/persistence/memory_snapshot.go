@@ -17,7 +17,7 @@ type MemorySnapshot struct {
 	TurnID    *string   `gorm:"type:varchar(36)"`
 	Trigger   string    `gorm:"not null;type:varchar(30)"` // mutation, flush, manual, rollback
 	Content   string    `gorm:"not null;type:text"`        // JSON array of all memories at this point
-	CreatedAt time.Time `gorm:"not null;default:now();index:idx_memory_snapshots_created"`
+	CreatedAt time.Time `gorm:"not null;autoCreateTime;index:idx_memory_snapshots_created"`
 }
 
 // TableName sets the table name.

@@ -12,7 +12,6 @@ import {
   RotateCcw,
   Trash2,
 } from 'lucide-react';
-import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
   chatMessageRowMaxWidth,
   chatVisualLayoutForSurface,
@@ -21,10 +20,9 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { UserSquareAvatar } from '../../common/UserSquareAvatar';
-import type { CurrentUserProfile } from '../../../store/socialChat';
-import type { FriendMessageStatus, FriendChatSession } from '../../../gen/proto/domain/chat/friend_chat_pb';
+import type { FriendMessageStatus } from '../../../gen/proto/domain/chat/friend_chat_pb';
 import { FriendMessageStatus as FMS } from '../../../gen/proto/domain/chat/friend_chat_pb';
-import type { GroupMember } from '../../../gen/proto/domain/chat/group_chat_pb';
+import type { DesktopIMSenderProfileProjection } from '../../../store/socialProjection';
 import { ChatMessageContent } from './ChatMessageContent';
 import {
   isEncryptedPlaceholder,
@@ -32,11 +30,10 @@ import {
   isOwnMessage,
   isRecalledMessage,
   isVisualMessageAttachment,
-  messageEditedAt,
+  messageEditedAtMs,
   messageReplyToUlid,
   messageThreadRootUlid,
   messageTimestampMs,
-  resolveChatSenderProfile,
   type ChatMessage,
   type ChatSurfaceKind,
 } from './chatMessageModel';
@@ -55,9 +52,12 @@ interface ChatMessageRowProps {
   activeConversationId: string;
   activeKind: ChatSurfaceKind;
   currentUserDid: string | null;
-  currentUserProfile: CurrentUserProfile | null;
   density?: 'regular' | 'compact';
-  groupMembers: Record<string, GroupMember[]>;
+  getSenderProfile: (
+    kind: ChatSurfaceKind,
+    conversationUlid: string,
+    senderId: string,
+  ) => DesktopIMSenderProfileProjection;
   highlighted: boolean;
   message: ChatMessage;
   messages: ChatMessage[];
@@ -66,7 +66,6 @@ interface ChatMessageRowProps {
   onOpenThread: (rootUlid: string) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
-  sessions: FriendChatSession[];
   showHoverActions?: boolean;
   showThreadSummary?: boolean;
   threadPreviewMessages: ChatMessage[];
@@ -75,9 +74,9 @@ interface ChatMessageRowProps {
   timelineGap: boolean;
 }
 
-function formatMsgTime(ts: Timestamp | undefined): string {
-  if (!ts) return '';
-  const d = timestampDate(ts);
+function formatMsgTime(sentAtMs: number): string {
+  if (sentAtMs <= 0) return '';
+  const d = new Date(sentAtMs);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
@@ -267,24 +266,24 @@ function ThreadReplyPreviewList({
   activeConversationId,
   activeKind,
   currentUserDid,
-  currentUserProfile,
-  groupMembers,
+  getSenderProfile,
   isOwnRoot,
   messages,
   onOpenThread,
-  sessions,
   totalCount,
   unreadCount,
 }: {
   activeConversationId: string;
   activeKind: ChatSurfaceKind;
   currentUserDid: string | null;
-  currentUserProfile: CurrentUserProfile | null;
-  groupMembers: Record<string, GroupMember[]>;
+  getSenderProfile: (
+    kind: ChatSurfaceKind,
+    conversationUlid: string,
+    senderId: string,
+  ) => DesktopIMSenderProfileProjection;
   isOwnRoot: boolean;
   messages: ChatMessage[];
   onOpenThread: () => void;
-  sessions: FriendChatSession[];
   totalCount: number;
   unreadCount: number;
 }) {
@@ -389,15 +388,7 @@ function ThreadReplyPreviewList({
                 </Text>
               )}
               {previewMessages.map((reply) => {
-                const profile = resolveChatSenderProfile({
-                  activeKind,
-                  activeConversationId,
-                  currentUserDid,
-                  currentUserProfile,
-                  groupMembers,
-                  sessions,
-                  message: reply,
-                });
+                const profile = getSenderProfile(activeKind, activeConversationId, reply.senderId);
                 const ownReply = isOwnMessage(reply, currentUserDid);
                 return (
                   <div
@@ -468,9 +459,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   activeConversationId,
   activeKind,
   currentUserDid,
-  currentUserProfile,
   density = 'regular',
-  groupMembers,
+  getSenderProfile,
   highlighted,
   message,
   messages,
@@ -479,7 +469,6 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   onOpenThread,
   onRecall,
   onReply,
-  sessions,
   showHoverActions = true,
   showThreadSummary = true,
   threadPreviewMessages,
@@ -491,21 +480,13 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const { t } = useTranslation('chat');
   const isOwn = isOwnMessage(message, currentUserDid);
   const isGroup = !isFriendMessage(message);
-  const senderProfile = resolveChatSenderProfile({
-    activeKind,
-    activeConversationId,
-    currentUserDid,
-    currentUserProfile,
-    groupMembers,
-    sessions,
-    message,
-  });
+  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderId);
   const senderName = senderProfile.name;
   const senderAvatar = senderProfile.avatar;
   const replyToUlid = messageReplyToUlid(message);
   const encryptedPlaceholder = isEncryptedPlaceholder(message);
   const isRecalled = isRecalledMessage(message);
-  const editedAt = messageEditedAt(message);
+  const editedAtMs = messageEditedAtMs(message);
   const attachments = message.attachments || [];
   const mediaOnlyMessage = !isRecalled
     && !encryptedPlaceholder
@@ -643,12 +624,10 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             activeConversationId={activeConversationId}
             activeKind={activeKind}
             currentUserDid={currentUserDid}
-            currentUserProfile={currentUserProfile}
-            groupMembers={groupMembers}
+            getSenderProfile={getSenderProfile}
             isOwnRoot={isOwn}
             messages={threadPreviewMessages}
             onOpenThread={() => onOpenThread(threadRootUlid)}
-            sessions={sessions}
             totalCount={threadReplyCount}
             unreadCount={threadUnreadCount}
           />
@@ -674,12 +653,12 @@ export const ChatMessageRow = memo(function ChatMessageRow({
               lineHeight: 1.2,
             }}
           >
-            {formatMsgTime(message.createdAt ?? message.sentAt)}
+            {formatMsgTime(message.sentAtMs)}
           </Text>
-          {editedAt && !isRecalled && (
+          {editedAtMs && !isRecalled && (
             <Tooltip title={
               t('chat.social.messageArea.editedAtTooltip', {
-                time: timestampDate(editedAt).toLocaleString(),
+                time: new Date(editedAtMs).toLocaleString(),
               })
             }>
               <Text
@@ -694,8 +673,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
               </Text>
             </Tooltip>
           )}
-          {isOwn && isFriendMessage(message) && !isRecalled && message.status != null && (
-            <ReadReceipt status={message.status} />
+          {isOwn && isFriendMessage(message) && !isRecalled && (
+            <ReadReceipt status={message.status as FriendMessageStatus} />
           )}
         </Flexbox>
       </Flexbox>
