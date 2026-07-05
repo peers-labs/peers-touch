@@ -209,6 +209,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		httpadapter.StaticAudience(s.localStationID),
 	)
 	s.service.db = rds
+	s.service.authorityStationPeerID = s.localStationID
 	if err := s.service.backfillThreadRootIDs(); err != nil {
 		return err
 	}
