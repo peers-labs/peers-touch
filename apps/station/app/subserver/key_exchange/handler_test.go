@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/libp2p/go-libp2p/core/peer"
 	kemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
@@ -77,6 +78,20 @@ func TestFetchFederatedKeyBundleUsesRelayAndPeerJWT(t *testing.T) {
 	}
 	if sawRequest.GetDid() != "bob" || sawRequest.GetDeviceId() != "bob-device-1" || sawRequest.GetHomeStationPeerId() != "" {
 		t.Fatalf("unexpected forwarded request: %+v", &sawRequest)
+	}
+}
+
+func TestCurrentLocalStationIDPrefersLateRuntimeIdentityOverInitFallback(t *testing.T) {
+	livePeerID, err := peer.Decode("12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6")
+	if err != nil {
+		t.Fatalf("decode peer id: %v", err)
+	}
+	nativefed.SetLocalStationPeerID(livePeerID)
+	defer nativefed.SetLocalStationPeerID("")
+
+	sub := &subServer{localStationID: keyExchangeFallbackLocalStation}
+	if got := sub.currentLocalStationID(); got != livePeerID.String() {
+		t.Fatalf("expected live station identity, got %q", got)
 	}
 }
 
