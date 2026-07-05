@@ -1022,6 +1022,98 @@ func TestApplyFederationEventWithDBIsIdempotentReplay(t *testing.T) {
 	}
 }
 
+func TestMaterializeFollowerProjectionWithDBIsUpsertOnlyAndOpaque(t *testing.T) {
+	db, openErr := gorm.Open(sqlite.Open("file:follower_projection_materialize?mode=memory&cache=shared"), &gorm.Config{})
+	if openErr != nil {
+		t.Fatalf("open sqlite: %v", openErr)
+	}
+	if migrateErr := db.AutoMigrate(&groupModel{}, &memberModel{}, &messageModel{}, &MessageAttachmentModel{}, &outboxModel{}, &groupEventModel{}); migrateErr != nil {
+		t.Fatalf("auto migrate: %v", migrateErr)
+	}
+	svc := &service{db: db}
+	group := domain.Group{
+		ID:              "group-1",
+		Name:            "Engineering",
+		OwnerDID:        "owner",
+		MemberCount:     2,
+		Status:          domain.GroupStatusActive,
+		MembershipEpoch: 1,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	members := []domain.Member{
+		{GroupID: group.ID, ActorDID: "owner", Role: domain.GroupRoleOwner, JoinedAt: time.Now()},
+		{
+			GroupID:  group.ID,
+			ActorDID: "bob",
+			Actor: domain.FederatedActorRef{
+				ActorDID:          "bob",
+				HomeStationPeerID: "station-b",
+				HomeStationDomain: "station-b.example",
+			},
+			Role:     domain.GroupRoleMember,
+			JoinedAt: time.Now(),
+		},
+	}
+	messages := []domain.Message{
+		{
+			ID:               "message-1",
+			GroupID:          group.ID,
+			SenderDID:        "owner",
+			Type:             int32(chat.GroupMessageType_GROUP_MESSAGE_TYPE_TEXT),
+			Content:          "plaintext must not persist",
+			EncryptedPayload: []byte("ciphertext"),
+			Attachments: []domain.Attachment{
+				{CID: "cid-1", Filename: "file.txt", MimeType: "text/plain", Size: 7, Visibility: "chat"},
+			},
+			SentAt: time.Now(),
+		},
+	}
+
+	if err := svc.MaterializeFollowerProjection(group, members, messages); err != nil {
+		t.Fatalf("materialize first projection: %v", err)
+	}
+	if err := svc.MaterializeFollowerProjection(group, members, messages); err != nil {
+		t.Fatalf("materialize replay projection: %v", err)
+	}
+	var groupCount, memberCount, messageCount, attachmentCount, outboxCount, eventCount int64
+	if err := db.Model(&groupModel{}).Count(&groupCount).Error; err != nil {
+		t.Fatalf("count groups: %v", err)
+	}
+	if err := db.Model(&memberModel{}).Count(&memberCount).Error; err != nil {
+		t.Fatalf("count members: %v", err)
+	}
+	if err := db.Model(&messageModel{}).Count(&messageCount).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if err := db.Model(&MessageAttachmentModel{}).Count(&attachmentCount).Error; err != nil {
+		t.Fatalf("count attachments: %v", err)
+	}
+	if err := db.Model(&outboxModel{}).Count(&outboxCount).Error; err != nil {
+		t.Fatalf("count outbox: %v", err)
+	}
+	if err := db.Model(&groupEventModel{}).Count(&eventCount).Error; err != nil {
+		t.Fatalf("count events: %v", err)
+	}
+	if groupCount != 1 || memberCount != 2 || messageCount != 1 || attachmentCount != 1 || outboxCount != 0 || eventCount != 0 {
+		t.Fatalf("unexpected materialized counts group=%d member=%d message=%d attachment=%d outbox=%d event=%d", groupCount, memberCount, messageCount, attachmentCount, outboxCount, eventCount)
+	}
+	var msgRow messageModel
+	if err := db.Where("ulid = ?", "message-1").First(&msgRow).Error; err != nil {
+		t.Fatalf("read message row: %v", err)
+	}
+	if msgRow.Content != "" || string(msgRow.EncryptedPayload) != "ciphertext" {
+		t.Fatalf("expected opaque encrypted message, content=%q payload=%q", msgRow.Content, string(msgRow.EncryptedPayload))
+	}
+	var bob memberModel
+	if err := db.Where("group_ulid = ? AND actor_did = ?", group.ID, "bob").First(&bob).Error; err != nil {
+		t.Fatalf("read bob member: %v", err)
+	}
+	if bob.ActorHomeStationPeerID != "station-b" || bob.ActorHomeStationDomain != "station-b.example" {
+		t.Fatalf("expected bob routing metadata, got %+v", bob)
+	}
+}
+
 func TestApplyFederationEventWithDBPersistsReadOnlyOnFork(t *testing.T) {
 	db, openErr := gorm.Open(sqlite.Open("file:apply_federation_event_fork?mode=memory&cache=shared"), &gorm.Config{})
 	if openErr != nil {

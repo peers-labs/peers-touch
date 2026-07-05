@@ -28,6 +28,7 @@ Phase F 要求：
 | `chat-private-pressure-security` | home Station 私聊 100 actors / 50 sessions / 1000 messages | PASS | `/tmp/peers-touch-chat-private-pressure-full/private_pressure_security_report.json` |
 | `chat-federated-group-pressure` | relay-mediated 3-Station federation proposal/event path | PASS | `GOWORK=off go test ./subserver/group_chat -run TestRelayMediatedThreeStationProposalPressureAcceptance -count=1 -v` |
 | `chat-federated-browser-prereq` | live deployed federation browser/runtime prerequisite | PASS | `CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.37.246.80:18080 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py` |
+| Federated key bundle lookup | cross-Station SKDM sealing prerequisite | PASS (code-level) | `cd apps/station/app && GOWORK=off go test ./subserver/key_exchange ./subserver/group_chat -count=1`; `pnpm --filter @peers-touch/app-desktop run check`; `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` |
 
 ## 3. Home Station 群聊压力与安全
 
@@ -196,8 +197,9 @@ python3 tooling/acceptance/gates/chat/federated_browser_prereq.py
 
 - deployed federation runtime prerequisite 已证明：home authority Station、one follower Station、home Relay 均健康，且 Station peer IDs 可从 live endpoints 发现；
 - dual Desktop gateway/browser runtime prerequisite 已证明：authority gateway 绑定 home Station，follower gateway 绑定 one Station；browser agent 也确认 `3311/#/chat` 与 `3312/#/chat` 均可加载 Peers Touch Desktop 页面且无 fatal console error；
+- cross-Station SKDM sealing prerequisite 已有代码级证据：Desktop 会从 group membership routing metadata 读取 remote member 的 `home_station_peer_id`，通过 `FetchKeyBundleRequest.home_station_peer_id` 请求 authority Station；authority Station 通过 home Relay 转发到 remote `/key-exchange/keys/bundle/federated-fetch`，并使用 `key-exchange-bundle-fetch` peer-JWT scope 绑定 actor DID 与可选 device id；
 - 该证据仍不证明 cross-Station group message decrypt 或 runtime pressure；
-- 下一步需要运行 cross-Station group join/projection、SKDM relay delivery、browser decrypt/pressure gate。
+- 下一步需要运行 cross-Station SKDM relay delivery 与 browser decrypt/pressure gate；authority projection sync、follower-side group/member/message materializer、federated key bundle lookup 已有代码级回归，但仍未替代真实 Desktop browser runtime 验证。
 
 ## 7. Gate Catalog
 
@@ -224,13 +226,14 @@ git diff --check
 - live deployed 3-Station browser/runtime group message pressure run；
 - PR/release 阶段需要把本报告和对应 gate 输出纳入最终 reviewer evidence；
 - presence invariant scan 仍命中既有 generated/mobile online 债务，本次 Phase F 没有新增 chat-owned presence。
+- live browser gate 还需要证明 remote follower Desktop 收到投影、接收 federated SKDM delivery，并在 DOM 中解密 post-join group message；当前 key bundle lookup 只证明 authority Desktop 具备为 remote follower 取 public bundle 并封装 SKDM 的前置能力。
 
 需要的环境输入：
 
 - `CHAT_FEDERATION_AUTHORITY_STATION_URL`
 - `CHAT_FEDERATION_FOLLOWER_STATION_URL`
 - `CHAT_FEDERATION_RELAY_URL`
-- cross-Station group join/projection route
+- live cross-Station group business-flow gate using the projection materialization path
 - SKDM relay delivery into follower Desktop
 - browser runtime group decrypt pressure gate
 
@@ -242,9 +245,10 @@ git diff --check
 - home Station 100 actor 私聊并发与安全负例；
 - relay-mediated 3-Station federation proposal/event protocol pressure；
 - live deployed federation prerequisite plus dual Desktop gateway binding。
+- authority-side projection sync、follower materializer、federated key bundle lookup 的代码级前置能力。
 
 当前未证明：
 
-- 真实部署态 3-Station group message pressure 与跨 Station browser decrypt 体验。
+- 真实部署态 3-Station group message pressure、SKDM relay delivery into follower Desktop、跨 Station browser decrypt 体验。
 
 因此 Phase F 可以作为 Foundation protocol and home-station pressure evidence 进入 PR/release review，但不能声明 live deployed 3-Station runtime 完成。

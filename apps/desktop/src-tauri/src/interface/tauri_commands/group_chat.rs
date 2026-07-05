@@ -3,13 +3,14 @@ use crate::application::session_resolver;
 use crate::contracts::{
     AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput,
     ChatScopeCursorSetInput, GroupAckOfflineInput, GroupChatCreateGroupInput, GroupChatEditInput,
-    GroupChatLeaveGroupInput, GroupChatListInput, GroupChatListMessagesInput,
-    GroupChatMarkReadInput, GroupChatSendInput, GroupChatSyncInput, GroupChatThreadCountsInput,
-    GroupChatThreadInput, GroupChatThreadReadInput, GroupChatUnreadInput, GroupInviteInput,
-    GroupJoinInput, GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
-    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupSkdmSubmitInput,
-    GroupTransferOwnershipInput, GroupUlidInput, GroupUpdateInput, GroupUpdateMemberInput,
-    GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
+    GroupChatFederatedActorInput, GroupChatLeaveGroupInput, GroupChatListInput,
+    GroupChatListMessagesInput, GroupChatMarkReadInput, GroupChatSendInput, GroupChatSyncInput,
+    GroupChatThreadCountsInput, GroupChatThreadInput, GroupChatThreadReadInput,
+    GroupChatUnreadInput, GroupInviteInput, GroupJoinInput, GroupMembersInput,
+    GroupMessageActionInput, GroupOfflineMessagesInput, GroupRemoveMemberInput,
+    GroupSearchMessagesInput, GroupSkdmSubmitInput, GroupTransferOwnershipInput, GroupUlidInput,
+    GroupUpdateInput, GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput,
+    StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -745,6 +746,12 @@ pub fn group_chat_create_group(
         name: input.name,
         description: input.description.unwrap_or_default(),
         initial_member_dids: input.member_dids.unwrap_or_default(),
+        initial_federated_members: input
+            .initial_federated_members
+            .unwrap_or_default()
+            .into_iter()
+            .map(group_chat_federated_actor_input_to_proto)
+            .collect(),
         ..Default::default()
     };
 
@@ -758,6 +765,20 @@ pub fn group_chat_create_group(
     };
 
     AppResult::success(resp.encode_to_vec())
+}
+
+fn group_chat_federated_actor_input_to_proto(
+    input: GroupChatFederatedActorInput,
+) -> model::chat::FederatedActorRef {
+    model::chat::FederatedActorRef {
+        actor_did: input.actor_did,
+        home_station_peer_id: input.home_station_peer_id,
+        home_station_domain: input.home_station_domain.unwrap_or_default(),
+        federated_handle: input.federated_handle.unwrap_or_default(),
+        actor_identity_public_key: input.actor_identity_public_key.unwrap_or_default(),
+        profile_version: input.profile_version.unwrap_or_default(),
+        federation_id: input.federation_id.unwrap_or_default(),
+    }
 }
 
 #[tauri::command]
