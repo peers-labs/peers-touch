@@ -97,7 +97,7 @@ func (s *subServer) handleFetchKeyBundle(ctx context.Context, req *kemodel.Fetch
 		return nil, server.BadRequest("did is required")
 	}
 	homeStationPeerID := strings.TrimSpace(req.GetHomeStationPeerId())
-	if homeStationPeerID != "" && homeStationPeerID != strings.TrimSpace(s.localStationID) {
+	if homeStationPeerID != "" && homeStationPeerID != strings.TrimSpace(s.currentLocalStationID()) {
 		resp, err := s.fetchFederatedKeyBundle(ctx, homeStationPeerID, req)
 		if err != nil {
 			return nil, err
@@ -232,7 +232,7 @@ func (s *subServer) mintFederatedFetchToken(ctx context.Context, targetStationPe
 	if s.keyCache == nil {
 		return "", errors.New("federation key cache is not configured")
 	}
-	issuer := strings.TrimSpace(s.localStationID)
+	issuer := strings.TrimSpace(s.currentLocalStationID())
 	if issuer == "" {
 		issuer = keyExchangeLocalFederationAudience()
 	}
