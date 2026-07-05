@@ -77,27 +77,28 @@ type AuthorityProjection struct {
 }
 
 var (
-	ErrGroupNotFound        = errors.New("group not found")
-	ErrMemberNotFound       = errors.New("member not found")
-	ErrNotMember            = errors.New("not a member")
-	ErrPermissionDenied     = errors.New("permission denied")
-	ErrGroupDissolved       = errors.New("group is dissolved")
-	ErrMembershipEpochStale = errors.New("membership epoch stale")
-	ErrInvalidInvitation    = errors.New("invalid invitation")
-	ErrOwnerCannotLeave     = errors.New("owner cannot leave group")
-	ErrCannotRemoveOwner    = errors.New("cannot remove owner")
-	ErrInvalidRole          = errors.New("invalid role")
-	ErrInvalidOwnerTransfer = errors.New("invalid owner transfer")
-	ErrMemberMuted          = errors.New("member is muted")
-	ErrMessageNotFound      = errors.New("message not found")
-	ErrMutationWindowClosed = errors.New("mutation window closed")
-	ErrAlreadyRecalled      = errors.New("message already recalled")
-	ErrEmptyEdit            = errors.New("edit must include new_content or new_encrypted_payload")
-	ErrInvalidProposal      = errors.New("invalid group proposal")
-	ErrProposalConflict     = errors.New("group proposal conflict")
-	ErrInvalidGroupEvent    = errors.New("invalid group event")
-	ErrFollowerReadOnly     = errors.New("follower projection is read-only")
-	ErrInvalidSkdmEnvelope  = errors.New("invalid group skdm envelope")
+	ErrGroupNotFound         = errors.New("group not found")
+	ErrMemberNotFound        = errors.New("member not found")
+	ErrNotMember             = errors.New("not a member")
+	ErrPermissionDenied      = errors.New("permission denied")
+	ErrGroupDissolved        = errors.New("group is dissolved")
+	ErrMembershipEpochStale  = errors.New("membership epoch stale")
+	ErrInvalidInvitation     = errors.New("invalid invitation")
+	ErrOwnerCannotLeave      = errors.New("owner cannot leave group")
+	ErrCannotRemoveOwner     = errors.New("cannot remove owner")
+	ErrInvalidRole           = errors.New("invalid role")
+	ErrInvalidOwnerTransfer  = errors.New("invalid owner transfer")
+	ErrMemberMuted           = errors.New("member is muted")
+	ErrMessageNotFound       = errors.New("message not found")
+	ErrMutationWindowClosed  = errors.New("mutation window closed")
+	ErrAlreadyRecalled       = errors.New("message already recalled")
+	ErrEmptyEdit             = errors.New("edit must include new_content or new_encrypted_payload")
+	ErrInvalidProposal       = errors.New("invalid group proposal")
+	ErrProposalConflict      = errors.New("group proposal conflict")
+	ErrInvalidGroupEvent     = errors.New("invalid group event")
+	ErrFollowerReadOnly      = errors.New("follower projection is read-only")
+	ErrInvalidSkdmEnvelope   = errors.New("invalid group skdm envelope")
+	ErrInvalidFederatedActor = errors.New("invalid federated actor")
 )
 
 // DefaultMutationWindow mirrors friend_chat's. Same default 5m
@@ -247,6 +248,27 @@ func (s *Service) AddFederatedMember(groupID string, actor domain.FederatedActor
 		return nil, false
 	}
 	return s.repo.AddFederatedMember(groupID, actor, inviterDID)
+}
+
+func (s *Service) AddFederatedMemberByActor(actorDID, groupID string, actor domain.FederatedActorRef) (*domain.Member, error) {
+	member, ok := s.repo.GetMember(groupID, actorDID)
+	if !ok {
+		return nil, ErrNotMember
+	}
+	if err := s.ensureGroupWritable(groupID); err != nil {
+		return nil, err
+	}
+	if !canManageGroup(member.Role) {
+		return nil, ErrPermissionDenied
+	}
+	if strings.TrimSpace(actor.ActorDID) == "" || strings.TrimSpace(actor.HomeStationPeerID) == "" {
+		return nil, ErrInvalidFederatedActor
+	}
+	added, ok := s.repo.AddFederatedMember(groupID, actor, actorDID)
+	if !ok || added == nil {
+		return nil, ErrGroupNotFound
+	}
+	return added, nil
 }
 
 func (s *Service) UpdateMember(groupID, actorDID string, role *int32, muted *bool, mutedUntil *time.Time) (*domain.Member, bool) {

@@ -1464,6 +1464,12 @@ pub struct GroupInviteInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupAddFederatedMemberInput {
+    pub group_ulid: String,
+    pub member: GroupChatFederatedActorInput,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupRemoveMemberInput {
     pub group_ulid: String,
     pub member_did: String,
