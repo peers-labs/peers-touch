@@ -1,3 +1,4 @@
+import { create, toBinary } from '@bufbuild/protobuf';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EVENT, eventBus } from '../kernel/events';
@@ -6,6 +7,7 @@ import {
   teardownSocialRealtimeBridge,
 } from './socialRealtime';
 import type { RealtimeGroupMembershipChangeKind } from '../kernel/events/types';
+import { FriendChatMessageSchema } from '../gen/proto/domain/chat/friend_chat_pb';
 
 class TestWindow extends EventTarget {
   setInterval = globalThis.setInterval.bind(globalThis);
@@ -27,7 +29,7 @@ class TestWindow extends EventTarget {
 }
 
 const mocks = vi.hoisted(() => ({
-    handleInboundSkdm: vi.fn(),
+  handleInboundSkdm: vi.fn(),
   rotateGroupSenderChain: vi.fn(),
   retrySkdmDistributionFor: vi.fn(),
   selectGroup: vi.fn(),
@@ -37,6 +39,11 @@ const mocks = vi.hoisted(() => ({
   loadConversationPreviews: vi.fn(),
   loadMessages: vi.fn(),
   markGroupRead: vi.fn(),
+  ingestRealtimeMessage: vi.fn(),
+  bumpChatUnread: vi.fn(),
+  clearChatUnread: vi.fn(),
+  friendChatAckMessages: vi.fn(),
+  friendChatSync: vi.fn(),
   groupChatSync: vi.fn(),
 }));
 
@@ -44,6 +51,7 @@ const originalWindow = globalThis.window;
 const originalCustomEvent = globalThis.CustomEvent;
 
 vi.mock('../modules/identity/groupSenderKeys', () => ({
+  FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION: 50,
   handleInboundSkdm: mocks.handleInboundSkdm,
   rotateGroupSenderChain: mocks.rotateGroupSenderChain,
   retrySkdmDistributionFor: mocks.retrySkdmDistributionFor,
@@ -61,6 +69,9 @@ vi.mock('../store/socialChat', () => ({
     getState: () => ({
       currentUserDid: 'did:peer:self',
       activeTab: 'group',
+      groups: [],
+      conversationLocalState: {},
+      messages: {},
       activeGroupUlid: 'group-1',
       selectGroup: mocks.selectGroup,
       loadGroups: mocks.loadGroups,
@@ -69,6 +80,11 @@ vi.mock('../store/socialChat', () => ({
       loadConversationPreviews: mocks.loadConversationPreviews,
       loadMessages: mocks.loadMessages,
       markGroupRead: mocks.markGroupRead,
+      ingestRealtimeMessage: mocks.ingestRealtimeMessage,
+      bumpChatUnread: mocks.bumpChatUnread,
+      clearChatUnread: mocks.clearChatUnread,
+      friendChatAckMessages: mocks.friendChatAckMessages,
+      friendChatSync: mocks.friendChatSync,
       sweepTypingPeers: vi.fn(),
     }),
   },
@@ -90,6 +106,8 @@ vi.mock('../store/navigationBadges', () => ({
     getState: () => ({
       chatSurfaceVisible: true,
       reconcileChatBadge: vi.fn(),
+      bumpChatUnread: mocks.bumpChatUnread,
+      clearChatUnread: mocks.clearChatUnread,
     }),
   },
 }));
@@ -111,7 +129,8 @@ vi.mock('./eventStream', () => ({
 vi.mock('./desktop_api', () => ({
   api: {
     accountGetDeviceId: vi.fn(() => Promise.resolve({ device_id: 'self-device-1' })),
-    friendChatSync: vi.fn(),
+    friendChatAckMessages: mocks.friendChatAckMessages,
+    friendChatSync: mocks.friendChatSync,
     groupChatSync: mocks.groupChatSync,
   },
 }));
@@ -131,6 +150,11 @@ describe('social realtime group membership side effects', () => {
     }
     vi.clearAllMocks();
     mocks.rotateGroupSenderChain.mockResolvedValue(undefined);
+    mocks.handleInboundSkdm.mockResolvedValue(undefined);
+    mocks.ingestRealtimeMessage.mockResolvedValue(undefined);
+    mocks.friendChatAckMessages.mockResolvedValue(undefined);
+    mocks.friendChatSync.mockResolvedValue(undefined);
+    mocks.groupChatSync.mockResolvedValue(undefined);
     mocks.loadGroups.mockResolvedValue(undefined);
     mocks.loadGroupUnreadCounts.mockResolvedValue(undefined);
     mocks.loadGroupMembers.mockResolvedValue(undefined);
@@ -246,6 +270,35 @@ describe('social realtime group membership side effects', () => {
       expect(mocks.loadGroupUnreadCounts).toHaveBeenCalled();
       expect(mocks.loadConversationPreviews).toHaveBeenCalled();
     });
+  });
+
+  it('consumes realtime friend SKDM before ack badge or visible message ingest', async () => {
+    const controlMessage = create(FriendChatMessageSchema, {
+      ulid: 'skdm-msg-1',
+      senderDid: 'did:peer:friend',
+      receiverDid: 'did:peer:self',
+      content: 'sender-key-payload',
+      type: 50,
+    });
+
+    eventBus.publish(EVENT.REALTIME_MESSAGE_RECEIVED, {
+      eventId: 'stream-event-skdm',
+      sessionUlid: 'session-1',
+      messageUlid: 'skdm-msg-1',
+      senderActorId: 'did:peer:friend',
+      recipientActorId: 'did:peer:self',
+      ciphertext: toBinary(FriendChatMessageSchema, controlMessage),
+      sentTsUnixMs: 123,
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.handleInboundSkdm).toHaveBeenCalledWith('did:peer:friend', 'sender-key-payload');
+    });
+    expect(mocks.friendChatAckMessages).not.toHaveBeenCalled();
+    expect(mocks.bumpChatUnread).not.toHaveBeenCalled();
+    expect(mocks.clearChatUnread).not.toHaveBeenCalled();
+    expect(mocks.ingestRealtimeMessage).not.toHaveBeenCalled();
+    expect(mocks.friendChatSync).not.toHaveBeenCalled();
   });
 });
 

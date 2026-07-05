@@ -453,16 +453,16 @@ export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
   schema: GenMessage<TMsg>,
   input?: TInput,
 ): Promise<TMsg> {
-  const response = await invokeRustCommand<TInput, number[] | TauriStubPayload>(command, input);
+  const response = await invokeRustCommand<TInput, number[] | Uint8Array | TauriStubPayload>(command, input);
   if (response.ok && response.data) {
-    if (!Array.isArray(response.data) && typeof response.data.status === 'string') {
+    if (Array.isArray(response.data) || response.data instanceof Uint8Array) {
+      const bytes = new Uint8Array(response.data);
+      return fromBinary(schema, bytes);
+    }
+    if (typeof response.data.status === 'string') {
       return fromJsonString(schema, response.data.status, { ignoreUnknownFields: true });
     }
-    if (!Array.isArray(response.data)) {
-      throw new Error(`${command} returned invalid proto payload`);
-    }
-    const bytes = new Uint8Array(response.data);
-    return fromBinary(schema, bytes);
+		throw new Error(`${command} returned invalid proto payload`);
   }
   if (response.error?.code === 'UNAUTHORIZED') {
     throw new AuthCommandException(response.error);

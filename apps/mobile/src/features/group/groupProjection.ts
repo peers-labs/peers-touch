@@ -3,8 +3,12 @@ import {
   applyChatDecryptedContentToList,
   applyChatMessageMutationToList,
   mergeChatMessages,
+  projectIMConversation,
+  projectIMMessage,
   type ChatAttachmentLike,
   type ChatMessageMutationInput,
+  type IMConversationProjection,
+  type IMMessageProjection,
 } from '@peers-touch/client-chat-core';
 
 import { GroupMessageAttachmentSchema, type ChatEncryptedMessagePayload, type Group, type GroupMessage, type GroupMessageAttachment } from '../../gen/proto/domain/chat/group_chat_pb';
@@ -35,6 +39,45 @@ export function projectGroupConversations(input: {
       lastMessage: input.messages[group.ulid]?.at(-1),
     }))
     .sort((a, b) => timestampMillis(b.group.updatedAt ?? b.group.createdAt) - timestampMillis(a.group.updatedAt ?? a.group.createdAt));
+}
+
+export function projectMobileGroupIMConversation(conversation: GroupConversation): IMConversationProjection {
+  return projectIMConversation({
+    kind: 'group',
+    id: conversation.group.ulid,
+    title: conversation.group.name || 'Group',
+    avatar: '',
+    lastActivityMs: timestampMillis(conversation.group.updatedAt ?? conversation.group.createdAt),
+    unread: conversation.unread,
+    preview: conversation.lastMessage
+      ? {
+        content: conversation.lastMessage.content || conversation.lastMessage.attachments?.[0]?.filename || '',
+        type: Number(conversation.lastMessage.type ?? 1),
+        senderId: conversation.lastMessage.senderDid ?? '',
+      }
+      : undefined,
+  });
+}
+
+export function projectMobileGroupIMMessage(
+  conversationId: string,
+  message: GroupMessage,
+): IMMessageProjection {
+  return projectIMMessage({
+    id: message.ulid ?? '',
+    conversationKind: 'group',
+    conversationId,
+    senderId: message.senderDid ?? '',
+    type: Number(message.type ?? 1),
+    content: message.content,
+    attachments: message.attachments ?? [],
+    sentAtMs: timestampMillis(message.sentAt ?? message.createdAt),
+    recalled: Boolean(message.recalled),
+    editedAtMs: message.editedAt ? timestampMillis(message.editedAt) : undefined,
+    replyToId: message.replyToUlid,
+    threadRootId: message.threadRootUlid,
+    encrypted: Boolean(message.encryptedPayload?.byteLength && !message.content),
+  });
 }
 
 export function mergeGroupMessages(messages: GroupMessage[], incoming: GroupMessage): GroupMessage[] {

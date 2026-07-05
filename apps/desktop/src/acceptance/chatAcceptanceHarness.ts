@@ -201,6 +201,8 @@ async function hydrateSocialForActiveActor(): Promise<void> {
 }
 
 export function installChatAcceptanceHarness(): void {
+  if (window.__PT_ACCEPTANCE__) return;
+
   window.__PT_ACCEPTANCE__ = {
     async loginWithPassword({ account, password }) {
       await identityRuntime.loginWithPassword(account, password);
@@ -270,9 +272,11 @@ export function installChatAcceptanceHarness(): void {
       await social.loadMessages(groupUlid, 'group');
       social.selectGroup(groupUlid);
       social.setActiveTab('group');
+      const messages = useSocialChatStore.getState().getIMMessages('group', groupUlid);
       return {
         groupUlid,
-        messageCount: useSocialChatStore.getState().getIMMessages('group', groupUlid).length,
+        messageUlid: messages[messages.length - 1]?.id ?? '',
+        messageCount: messages.length,
       };
     },
 

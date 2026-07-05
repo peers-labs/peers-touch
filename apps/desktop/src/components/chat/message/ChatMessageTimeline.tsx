@@ -7,9 +7,7 @@ import {
   countChatThreadReplies,
 } from '@peers-touch/client-chat-core';
 
-import type { CurrentUserProfile } from '../../../store/socialChat';
-import type { FriendChatSession } from '../../../gen/proto/domain/chat/friend_chat_pb';
-import type { GroupMember } from '../../../gen/proto/domain/chat/group_chat_pb';
+import type { DesktopIMSenderProfileProjection } from '../../../store/socialProjection';
 import {
   messageTimestampMs,
   type ChatMessage,
@@ -29,8 +27,11 @@ interface ChatMessageTimelineProps {
   activeConversationId: string;
   activeKind: ChatSurfaceKind;
   currentUserDid: string | null;
-  currentUserProfile: CurrentUserProfile | null;
-  groupMembers: Record<string, GroupMember[]>;
+  getSenderProfile: (
+    kind: ChatSurfaceKind,
+    conversationUlid: string,
+    senderDid: string,
+  ) => DesktopIMSenderProfileProjection;
   highlightedMessageUlid: string | null;
   messages: ChatMessage[];
   onDelete: (message: ChatMessage) => void;
@@ -39,7 +40,6 @@ interface ChatMessageTimelineProps {
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
   resolveThreadStats: (message: ChatMessage) => ChatThreadStats;
-  sessions: FriendChatSession[];
 }
 
 function formatDateSeparator(date: Date, locale: string): string {
@@ -93,8 +93,7 @@ export function ChatMessageTimeline({
   activeConversationId,
   activeKind,
   currentUserDid,
-  currentUserProfile,
-  groupMembers,
+  getSenderProfile,
   highlightedMessageUlid,
   messages,
   onDelete,
@@ -103,7 +102,6 @@ export function ChatMessageTimeline({
   onRecall,
   onReply,
   resolveThreadStats,
-  sessions,
 }: ChatMessageTimelineProps) {
   const surfaceItems = buildChatMessageSurfaceItems({
     messages,
@@ -127,8 +125,7 @@ export function ChatMessageTimeline({
               activeConversationId={activeConversationId}
               activeKind={activeKind}
               currentUserDid={currentUserDid}
-              currentUserProfile={currentUserProfile}
-              groupMembers={groupMembers}
+              getSenderProfile={getSenderProfile}
               highlighted={highlightedMessageUlid === message.ulid}
               message={message}
               messages={messages}
@@ -137,7 +134,6 @@ export function ChatMessageTimeline({
               onOpenThread={onOpenThread}
               onRecall={onRecall}
               onReply={onReply}
-              sessions={sessions}
               threadReplyCount={threadStats.replyCount}
               threadUnreadCount={threadStats.unreadCount}
               threadPreviewMessages={threadStats.previewMessages}

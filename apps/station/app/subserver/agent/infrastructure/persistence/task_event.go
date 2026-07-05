@@ -11,7 +11,7 @@ type TaskEvent struct {
 	EventSeq  int64     `gorm:"not null;uniqueIndex:idx_agent_task_events_task_seq"`
 	EventType int32     `gorm:"not null;type:integer;index:idx_agent_task_events_type"`
 	Payload   string    `gorm:"type:text"`
-	CreatedAt time.Time `gorm:"not null;default:now();index:idx_agent_task_events_created"`
+	CreatedAt time.Time `gorm:"not null;autoCreateTime;index:idx_agent_task_events_created"`
 }
 
 func (TaskEvent) TableName() string { return "agent_task_events" }

@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	events_subserver "github.com/peers-labs/peers-touch/station/app/subserver/events"
 	application_group_chat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/group_chat/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
@@ -646,19 +645,7 @@ func TestApplyGroupEventRouteRejectsFederationClaimMismatch(t *testing.T) {
 
 func TestApplyGroupEventRoutePublishesFederationEventToLocalMembers(t *testing.T) {
 	registerGroupChatFederationScope()
-	eventsServer := events_subserver.NewEventsSubServer()
-	if err := eventsServer.Init(context.Background()); err != nil {
-		t.Fatalf("init events subserver: %v", err)
-	}
-	defer func() {
-		if err := eventsServer.Stop(context.Background()); err != nil {
-			t.Fatalf("stop events subserver: %v", err)
-		}
-	}()
-	bus := events_subserver.GetBus()
-	if bus == nil {
-		t.Fatal("expected realtime event bus")
-	}
+	bus := startGroupChatEventsSubServer(t)
 
 	const (
 		localStation     = "station-b"
@@ -1001,19 +988,7 @@ func TestSubmitGroupSkdmRouteEnqueuesPendingEnvelope(t *testing.T) {
 }
 
 func TestDeliverGroupSkdmEnvelopePublishesToRecipientDevice(t *testing.T) {
-	eventsServer := events_subserver.NewEventsSubServer()
-	if err := eventsServer.Init(context.Background()); err != nil {
-		t.Fatalf("init events subserver: %v", err)
-	}
-	defer func() {
-		if err := eventsServer.Stop(context.Background()); err != nil {
-			t.Fatalf("stop events subserver: %v", err)
-		}
-	}()
-	bus := events_subserver.GetBus()
-	if bus == nil {
-		t.Fatal("expected realtime event bus")
-	}
+	bus := startGroupChatEventsSubServer(t)
 
 	sub := newTestSubServer()
 	group := sub.service.CreateGroup("alice", "Engineering", "")

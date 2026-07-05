@@ -18,7 +18,7 @@ type ExecutionStep struct {
 	Attempt           int32      `gorm:"not null;default:1"`
 	EligibleExecutors string     `gorm:"type:text"`
 	ResultSummary     string     `gorm:"type:text"`
-	StartedAt         time.Time  `gorm:"not null;default:now()"`
+	StartedAt         time.Time  `gorm:"not null;autoCreateTime"`
 	EndedAt           *time.Time `gorm:"type:timestamptz"`
 }
 

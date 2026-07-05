@@ -1559,7 +1559,7 @@ func (s *subServer) handleAckOfflineMessages(ctx context.Context, req *chat.AckO
 	if len(req.Ulids) == 0 {
 		return nil, server.BadRequest("ulids are required")
 	}
-	s.appService.AckOffline(req.Ulids)
+	s.appService.AckOffline(subject.ID, req.Ulids)
 	return &chat.AckOfflineMessagesResponse{Success: true}, nil
 }
 

@@ -21,6 +21,7 @@ import {
 } from '../services/desktop_api';
 import {
   EncryptedMessageSchema,
+  FriendMessageType,
   FriendMessageStatus,
   type FriendChatSession,
   type FriendChatMessage,
@@ -60,6 +61,8 @@ import {
   previewFromMessage,
   pruneTypingPeers,
   normalizeChatBackgroundId,
+  projectDesktopIMConversation,
+  projectDesktopIMMessages,
   visibleConversationUnread,
   type ConversationLocalState,
   type DesktopIMConversationProjection,
@@ -619,11 +622,7 @@ interface SocialChatState {
   getUnifiedConversations: () => UnifiedConversation[];
   getIMConversations: () => DesktopIMConversationProjection[];
   getIMMessages: (kind: 'friend' | 'group', conversationUlid: string) => DesktopIMMessageProjection[];
-  getIMThreadMessages: (
-    kind: 'friend' | 'group',
-    conversationUlid: string,
-    rootUlid: string,
-  ) => DesktopIMMessageProjection[];
+  getIMThreadMessages: (kind: 'friend' | 'group', conversationUlid: string, rootUlid: string) => DesktopIMMessageProjection[];
   getIMSenderProfile: (
     kind: 'friend' | 'group',
     conversationUlid: string,
@@ -756,6 +755,20 @@ export function groupAvatarRemoteUrl(group?: Pick<Group, 'avatarCid'> | null): s
   return '';
 }
 
+function normalizeGroupMember(raw: unknown): GroupMember {
+  const item = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    ...(item as unknown as GroupMember),
+    groupUlid: String(item.groupUlid ?? item.group_ulid ?? ''),
+    actorDid: String(item.actorDid ?? item.actor_did ?? ''),
+    invitedBy: String(item.invitedBy ?? item.invited_by ?? ''),
+  };
+}
+
+function normalizeGroupMembers(raw: unknown): GroupMember[] {
+  return Array.isArray(raw) ? raw.map(normalizeGroupMember) : [];
+}
+
 
 /** When profile has no id yet, infer own DID as the only participant common to all sessions (needs 2+ distinct peers). */
 function deriveCurrentUserDidFromSessions(sessions: FriendChatSession[]): string | null {
@@ -785,35 +798,6 @@ function socialMessageReplyToUlid(msg: SocialMessage): string {
 
 function socialMessageExplicitThreadRootUlid(msg: SocialMessage): string {
   return (msg as SocialMessage & { threadRootUlid?: string }).threadRootUlid || '';
-}
-
-function socialMessageConversationId(kind: 'friend' | 'group', msg: SocialMessage): string {
-  if (kind === 'friend') {
-    return (msg as FriendChatMessage).sessionUlid || '';
-  }
-  return (msg as GroupMessage).groupUlid || '';
-}
-
-function projectIMMessage(kind: 'friend' | 'group', msg: SocialMessage): DesktopIMMessageProjection {
-  const conversationId = socialMessageConversationId(kind, msg);
-  const friendMsg = kind === 'friend' ? (msg as FriendChatMessage) : null;
-  return {
-    id: msg.ulid,
-    ulid: msg.ulid,
-    kind,
-    conversationId,
-    content: msg.content || '',
-    type: Number(msg.type ?? 1),
-    senderDid: msg.senderDid || '',
-    createdAt: msg.createdAt,
-    sentAt: msg.sentAt,
-    attachments: msg.attachments || [],
-    recalled: Boolean((msg as SocialMessage & { recalled?: boolean }).recalled),
-    replyToUlid: socialMessageReplyToUlid(msg) || undefined,
-    threadRootUlid: socialMessageExplicitThreadRootUlid(msg) || undefined,
-    editedAt: (msg as SocialMessage & { editedAt?: FriendChatMessage['editedAt'] }).editedAt,
-    status: friendMsg?.status,
-  };
 }
 
 function socialMessageSentAtMs(msg: SocialMessage): number {
@@ -939,6 +923,63 @@ function numberFromUnknown(value: unknown): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
   return undefined;
+}
+
+function friendMessageTypeFromUnknown(value: unknown): number | undefined {
+  const numeric = numberFromUnknown(value);
+  if (numeric !== undefined) return numeric;
+  if (typeof value !== 'string') return undefined;
+  switch (value.trim()) {
+    case 'FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION':
+      return FriendMessageType.SENDER_KEY_DISTRIBUTION;
+    case 'FRIEND_MESSAGE_TYPE_TEXT':
+      return FriendMessageType.TEXT;
+    case 'FRIEND_MESSAGE_TYPE_IMAGE':
+      return FriendMessageType.IMAGE;
+    case 'FRIEND_MESSAGE_TYPE_FILE':
+      return FriendMessageType.FILE;
+    case 'FRIEND_MESSAGE_TYPE_AUDIO':
+      return FriendMessageType.AUDIO;
+    case 'FRIEND_MESSAGE_TYPE_VIDEO':
+      return FriendMessageType.VIDEO;
+    default:
+      return undefined;
+  }
+}
+
+function friendMessageTypeOf(message: FriendChatMessage): number | undefined {
+  const record = message as unknown as Record<string, unknown>;
+  return friendMessageTypeFromUnknown(record.type ?? record.messageType ?? record.message_type);
+}
+
+function friendMessageSenderDid(message: FriendChatMessage): string {
+  const record = message as unknown as Record<string, unknown>;
+  return stringFromRecord(record, 'senderDid', 'sender_did');
+}
+
+function friendMessageContent(message: FriendChatMessage): string {
+  const record = message as unknown as Record<string, unknown>;
+  return stringFromRecord(record, 'content');
+}
+
+function isSenderKeyDistributionMessage(message: FriendChatMessage): boolean {
+  return friendMessageTypeOf(message) === FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION;
+}
+
+function consumeInboundFriendControlMessages(messages: FriendChatMessage[], myDid?: string | null): FriendChatMessage[] {
+  for (const message of messages) {
+    if (!isSenderKeyDistributionMessage(message)) continue;
+    const senderDid = friendMessageSenderDid(message);
+    if (myDid && senderDid === myDid) continue;
+    const content = friendMessageContent(message);
+    if (!senderDid || !content) continue;
+    // Fire-and-forget: handleInboundSkdm logs its own errors and never
+    // rejects, so one malformed SKDM cannot poison friend message loading.
+    handleInboundSkdm(senderDid, content).catch((err) =>
+      log.warn('socialChat', 'handleInboundSkdm failed', err),
+    );
+  }
+  return messages.filter((message) => !isSenderKeyDistributionMessage(message));
 }
 
 function attachmentMetadataFromUnknown(value: unknown): SearchResultAttachment | null {
@@ -1511,20 +1552,10 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       if (activeTab === 'friend') {
         const fmsgs = msgs as FriendChatMessage[];
         const myDid = get().currentUserDid;
-        for (const m of fmsgs) {
-          if (m.type !== FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION) continue;
-          if (myDid && m.senderDid === myDid) continue; // ignore our own echo
-          if (!m.content) continue;
-          // Fire-and-forget: handleInboundSkdm logs its own errors and
-          // never rejects (so a single bad SKDM cannot poison the load).
-          handleInboundSkdm(m.senderDid, m.content).catch((err) =>
-            log.warn('socialChat', 'handleInboundSkdm failed', err),
-          );
-        }
         msgs = await decodeFriendMessages(
           ulid,
           friendPeerDid,
-          fmsgs.filter((m) => m.type !== FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION),
+          consumeInboundFriendControlMessages(fmsgs, myDid),
         );
       } else {
         // Group chat is stored remotely as Sender-Keys ciphertext.
@@ -1600,7 +1631,11 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         const peerDid = session && viewerDid
           ? (session.participantADid === viewerDid ? session.participantBDid : session.participantADid)
           : '';
-        pageMessages = await decodeFriendMessages(ulid, peerDid, pageMessages as FriendChatMessage[]);
+        pageMessages = await decodeFriendMessages(
+          ulid,
+          peerDid,
+          consumeInboundFriendControlMessages(pageMessages as FriendChatMessage[], viewerDid),
+        );
       } else {
         pageMessages = await decodeGroupMessages(ulid, pageMessages as GroupMessage[], 'older group decrypt failed');
       }
@@ -1662,7 +1697,11 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         const peerDid = session && viewerDid
           ? (session.participantADid === viewerDid ? session.participantBDid : session.participantADid)
           : '';
-        loaded = await decodeFriendMessages(ulid, peerDid, loaded as FriendChatMessage[]);
+        loaded = await decodeFriendMessages(
+          ulid,
+          peerDid,
+          consumeInboundFriendControlMessages(loaded as FriendChatMessage[], viewerDid),
+        );
       } else if (activeKind === 'group') {
         loaded = await decodeGroupMessages(ulid, loaded as GroupMessage[], 'thread group decrypt failed');
       }
@@ -1811,7 +1850,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       set((state) => ({
         lastPreviews: {
           ...state.lastPreviews,
-          [sessionUlid]: { content, type: type ?? 1, senderDid: did },
+					[sessionUlid]: { content, type: type ?? 1, senderId: did },
         },
       }));
     } catch (error) {
@@ -1848,7 +1887,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       if (!members || members.length === 0) {
         try {
           const data = await api.groupChatGetMembers(groupUlid);
-          members = (data?.members || []) as GroupMember[];
+          members = normalizeGroupMembers(data?.members);
           set((state) => ({
             groupMembers: { ...state.groupMembers, [groupUlid]: members! },
           }));
@@ -1918,7 +1957,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       set((state) => ({
         lastPreviews: {
           ...state.lastPreviews,
-          [groupUlid]: { content: previewContent, type: type ?? 1, senderDid: did },
+					[groupUlid]: { content: previewContent, type: type ?? 1, senderId: did },
         },
       }));
     } catch (error) {
@@ -1931,7 +1970,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     if (!hasAuthenticatedActor()) return;
     try {
       const data = await api.groupChatGetMembers(groupUlid);
-      const members = (data?.members || []) as GroupMember[];
+      const members = normalizeGroupMembers(data?.members);
 
       // Forced rotation on observed membership shrinkage. We diff
       // the freshly-fetched member list against the cached one; if
@@ -2357,15 +2396,17 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         api.friendChatListMessages(s.ulid, undefined, 20).then((data) => {
           const msgs = data?.messages;
           if (msgs && msgs.length > 0) {
+            const myDid = get().currentUserDid;
+            const friendMessages = consumeInboundFriendControlMessages(msgs as FriendChatMessage[], myDid);
             // Take last element — API may return ascending order
             const visibleMessages = filterClearedMessages(
-              msgs as FriendChatMessage[],
+              friendMessages,
               get().conversationLocalState,
               'friend',
               s.ulid,
             ).filter((message) => !socialMessageExplicitThreadRootUlid(message));
             const m = visibleMessages[visibleMessages.length - 1] as FriendChatMessage | undefined;
-            if (m) previews[s.ulid] = { content: m.content ?? '', type: Number(m.type ?? 1), senderDid: m.senderDid ?? '' };
+						if (m) previews[s.ulid] = { content: m.content ?? '', type: friendMessageTypeOf(m) ?? 1, senderId: friendMessageSenderDid(m) };
           }
         }).catch(() => {}),
       );
@@ -2383,7 +2424,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
               g.ulid,
             ).filter((message) => !socialMessageExplicitThreadRootUlid(message));
             const m = visibleMessages[visibleMessages.length - 1] as GroupMessage | undefined;
-            if (m) previews[g.ulid] = { content: m.content ?? '', type: Number(m.type ?? 1), senderDid: m.senderDid ?? '' };
+						if (m) previews[g.ulid] = { content: m.content ?? '', type: Number(m.type ?? 1), senderId: m.senderDid ?? '' };
           }
         }).catch(() => {}),
       );
@@ -2427,6 +2468,14 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
 
   ingestRealtimeMessage: async (kind, conversationUlid, message) => {
     if (!conversationUlid || !message.ulid) return;
+    if (kind === 'friend') {
+      const visibleFriendMessages = consumeInboundFriendControlMessages(
+        [message as FriendChatMessage],
+        get().currentUserDid,
+      );
+      if (visibleFriendMessages.length === 0) return;
+      message = visibleFriendMessages[0];
+    }
     const projectedMessage = kind === 'group'
       ? await decodeRealtimeGroupMessage(conversationUlid, message as GroupMessage)
       : message;
@@ -2668,86 +2717,125 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     });
   },
 
-  getIMConversations: () =>
-    get().getUnifiedConversations().map((conversation): DesktopIMConversationProjection => {
-      if (conversation.type === 'friend') {
-        const peer = conversation.friendSession
-          ? peerOfSession(conversation.friendSession, get().currentUserDid)
-          : null;
-        return {
-          id: conversation.ulid,
-          kind: 'friend',
-          title: conversation.name,
-          avatar: conversation.avatar,
-          lastActivity: conversation.lastActivity,
-          unread: conversation.unread,
-          preview: conversation.preview,
-          peerDid: peer?.did || undefined,
-        };
-      }
-      return {
-        id: conversation.ulid,
-        kind: 'group',
-        title: conversation.name,
-        avatar: conversation.avatar,
-        lastActivity: conversation.lastActivity,
-        unread: conversation.unread,
-        preview: conversation.preview,
-        memberCount: conversation.group?.memberCount,
-      };
-    }),
+  getIMConversations: () => {
+    const state = get();
+    const did = state.currentUserDid;
+    const out: DesktopIMConversationProjection[] = [];
+
+    for (const s of state.sessions) {
+      const localState = state.conversationLocalState[conversationKey('friend', s.ulid)];
+      if (localState?.hidden) continue;
+      const peer = peerOfSession(s, did);
+      const loadedMsgs = state.messages[s.ulid];
+      const loadedMainMsgs = loadedMsgs?.filter((message) => !socialMessageExplicitThreadRootUlid(message));
+      const friendPreview = loadedMainMsgs && loadedMainMsgs.length > 0
+        ? previewFromMessage(loadedMainMsgs[loadedMainMsgs.length - 1])
+        : state.lastPreviews[s.ulid];
+      out.push(projectDesktopIMConversation({
+        type: 'friend',
+        ulid: s.ulid,
+        name: peer.name || 'Friend',
+        avatar: peer.avatar || '',
+        peerDid: peer.did || '',
+        lastActivity: activityFromSession(s),
+        unread: friendUnreadForViewer(s, did),
+        muted: localState?.muted,
+        alertEnabled: localState?.alertEnabled,
+        hidden: localState?.hidden,
+        preview: friendPreview,
+      }));
+    }
+
+    for (const g of state.groups) {
+      const localState = state.conversationLocalState[conversationKey('group', g.ulid)];
+      if (localState?.hidden) continue;
+      const loadedGroupMsgs = state.messages[g.ulid];
+      const loadedMainGroupMsgs = loadedGroupMsgs?.filter((message) => !socialMessageExplicitThreadRootUlid(message));
+      const groupPreview = loadedMainGroupMsgs && loadedMainGroupMsgs.length > 0
+        ? previewFromMessage(loadedMainGroupMsgs[loadedMainGroupMsgs.length - 1])
+        : state.lastPreviews[g.ulid];
+      out.push(projectDesktopIMConversation({
+        type: 'group',
+        ulid: g.ulid,
+        name: g.name || 'Group',
+        avatar: groupAvatarRemoteUrl(g),
+        memberCount: Number(g.memberCount ?? 0),
+        lastActivity: activityFromGroup(g),
+        unread: state.groupUnreadCounts[g.ulid] ?? 0,
+        muted: localState?.muted,
+        alertEnabled: localState?.alertEnabled,
+        hidden: localState?.hidden,
+        preview: groupPreview,
+      }));
+    }
+
+    return out.sort((a, b) => {
+      const stickyDelta = Number(Boolean(state.conversationLocalState[conversationKey(b.kind, b.id)]?.sticky))
+        - Number(Boolean(state.conversationLocalState[conversationKey(a.kind, a.id)]?.sticky));
+      if (stickyDelta !== 0) return stickyDelta;
+      return b.lastActivityMs - a.lastActivityMs;
+    });
+  },
 
   getIMMessages: (kind, conversationUlid) => {
     const state = get();
-    return filterClearedMessages(
-      state.messages[conversationUlid] || [],
-      state.conversationLocalState,
+    return projectDesktopIMMessages(
       kind,
       conversationUlid,
-    )
-      .filter((message) => !socialMessageExplicitThreadRootUlid(message))
-      .map((message) => projectIMMessage(kind, message));
+      state.messages[conversationUlid] || [],
+    );
   },
 
-  getIMThreadMessages: (kind, conversationUlid, rootUlid) =>
-    (get().threadMessages[socialThreadKey(kind, conversationUlid, rootUlid)] || [])
-      .map((message) => projectIMMessage(kind, message)),
+  getIMThreadMessages: (kind, conversationUlid, rootUlid) => {
+    const state = get();
+    const key = socialThreadKey(kind, conversationUlid, rootUlid);
+    return projectDesktopIMMessages(
+      kind,
+      conversationUlid,
+      state.threadMessages[key] || [],
+    );
+  },
 
   getIMSenderProfile: (kind, conversationUlid, senderDid) => {
     const state = get();
-    const self = Boolean(state.currentUserDid && senderDid === state.currentUserDid);
-    if (self) {
+    const did = senderDid.trim();
+    const isSelf = Boolean(state.currentUserDid && did === state.currentUserDid);
+
+    if (isSelf) {
       return {
-        id: senderDid,
+        id: did,
         name: state.currentUserProfile?.displayName
           || state.currentUserProfile?.username
-          || senderDid,
+          || state.currentUserDid
+          || did,
         avatar: state.currentUserProfile?.avatar || '',
-        isSelf: true,
+        isSelf,
       };
     }
+
     if (kind === 'friend') {
       const session = state.sessions.find((item) => item.ulid === conversationUlid);
       const peer = session ? peerOfSession(session, state.currentUserDid) : null;
       return {
-        id: senderDid,
-        name: peer?.name || senderDid,
+        id: did || peer?.did || '',
+        name: peer?.name || did,
         avatar: peer?.avatar || '',
-        isSelf: false,
+        isSelf,
       };
     }
-    const member = state.groupMembers[conversationUlid]?.find((item) => item.actorDid === senderDid);
+
+    const member = state.groupMembers[conversationUlid]?.find((item) => item.actorDid === did);
     const profile = actorProfileFromSessions(
       state.sessions,
       state.currentUserDid,
-      senderDid,
+      did,
       state.currentUserProfile,
     );
     return {
-      id: senderDid,
-      name: member?.nickname || profile.name || senderDid,
+      id: did,
+      name: member?.nickname || profile.name || did,
       avatar: profile.avatar || '',
-      isSelf: false,
+      isSelf,
     };
   },
 

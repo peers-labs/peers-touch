@@ -4,9 +4,9 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
 import { Badge, Empty, theme, Typography } from 'antd';
 import { BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff, Trash2 } from 'lucide-react';
+import type { IMConversationProjection } from '@peers-touch/client-chat-core';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useSocialChatStore } from '../../store/socialChat';
-import type { DesktopIMConversationProjection } from '../../store/socialProjection';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError } from '../../services/errorPresenter';
 import { CreateGroupModal } from './CreateGroupModal';
@@ -100,7 +100,7 @@ export function ChatSessionList() {
     },
   ];
 
-  const handleSelect = (c: DesktopIMConversationProjection) => {
+  const handleSelect = (c: IMConversationProjection) => {
     if (c.kind === 'friend') {
       selectSession(c.id);
       setActiveTab('friend');
@@ -110,7 +110,7 @@ export function ChatSessionList() {
     }
   };
 
-  const buildContextMenu = useCallback((c: DesktopIMConversationProjection) => {
+  const buildContextMenu = useCallback((c: IMConversationProjection) => {
     const localState = conversationLocalState[`${c.kind}:${c.id}`];
     const isPinned = Boolean(localState?.sticky);
     const isMuted = Boolean(localState?.muted);
@@ -202,7 +202,7 @@ export function ChatSessionList() {
     };
   }, [conversationLocalState, t, updateConversationLocalState, hideConversation, deleteGroupContact, deleteFriendContact]);
 
-  const isRowActive = (c: DesktopIMConversationProjection) => {
+  const isRowActive = (c: IMConversationProjection) => {
     if (c.kind === 'friend') {
       return activeTab === 'friend' && c.id === activeSessionUlid;
     }
@@ -264,8 +264,8 @@ export function ChatSessionList() {
             filteredItems.map((c) => {
               const isActive = isRowActive(c);
               const name = c.title || t('chat.social.sessionList.unknown');
-              const timeStr = relativeTime(c.lastActivity, t);
-              const unread = c.unread;
+              const timeStr = relativeTime(new Date(c.lastActivityMs), t);
+              const unread = c.visibleUnread;
               const localState = conversationLocalState[`${c.kind}:${c.id}`];
 
               let subtitle = '';
@@ -283,8 +283,8 @@ export function ChatSessionList() {
                 } else {
                   text = p.content;
                 }
-                if (c.kind === 'group' && p.senderDid) {
-                  const senderShort = p.senderDid.length > 12 ? p.senderDid.slice(0, 12) + '…' : p.senderDid;
+                if (c.kind === 'group' && p.senderId) {
+                  const senderShort = p.senderId.length > 12 ? p.senderId.slice(0, 12) + '…' : p.senderId;
                   subtitle = `${senderShort}: ${text}`;
                 } else {
                   subtitle = text;

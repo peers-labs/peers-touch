@@ -475,365 +475,102 @@ fn now_unix_seconds_i32() -> i32 {
         .unwrap_or(0)
 }
 
-fn resolve_scope(state: &AppState) -> Result<Option<String>, Value> {
-    let guard = state.session.lock().map_err(|_| {
-        serde_json::to_value(AppResult::<StubPayload>::fail(
-            ErrorCode::InternalError,
-            "failed to access session state",
-            None,
-        ))
-        .unwrap_or(json!({"ok": false}))
-    })?;
-    let scope = guard.actor_id.clone().unwrap_or_default();
-    let scope = scope.trim();
-    if scope.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(scope.to_string()))
+fn sk_authed_scope_from_state(
+    state: &AppState,
+) -> Result<(String, String), AppResult<StubPayload>> {
+    let actor_id = match actor_id_from_state(state) {
+        Some(id) if !id.trim().is_empty() => id,
+        _ => {
+            return Err(AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Authentication required — please log in",
+                None,
+            ));
+        }
+    };
+    let scope =
+        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str()).user_scope();
+    Ok((actor_id, scope))
 }
 
-/// Convenience: serialize any AppResult<T: Serialize> to Value.
-fn to_json<T: serde::Serialize>(r: AppResult<T>) -> Value {
-    serde_json::to_value(r).unwrap_or(json!({"ok": false, "error": {"code": "INTERNAL_ERROR", "message": "serialization failed"}}))
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CryptoGroupUlidInput {
+    #[serde(alias = "group_ulid")]
+    group_ulid: Option<String>,
+    #[serde(alias = "group_ulid_b64")]
+    group_ulid_b64: Option<String>,
 }
 
-/// Deserialize args into T, returning a JSON error Value on failure.
-fn parse_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, Value> {
-    serde_json::from_value(args).map_err(|e| {
-        to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            format!("invalid args: {e}"),
-            None,
-        ))
-    })
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CryptoGroupConsumeSkdmInput {
+    #[serde(alias = "claimed_sender_did")]
+    claimed_sender_did: Option<String>,
+    #[serde(alias = "skdm_b64")]
+    skdm_b64: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct GatewayGroupUlidInput {
-    #[serde(alias = "groupUlid")]
-    group_ulid: String,
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CryptoGroupEncryptInput {
+    #[serde(alias = "group_ulid")]
+    group_ulid: Option<String>,
+    #[serde(alias = "plaintext_b64")]
+    plaintext_b64: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct GatewayConsumeSkdmInput {
-    #[serde(alias = "claimedSenderDid")]
-    claimed_sender_did: String,
-    #[serde(alias = "skdmB64")]
-    skdm_b64: String,
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CryptoGroupDecryptInput {
+    #[serde(alias = "group_ulid")]
+    group_ulid: Option<String>,
+    #[serde(alias = "encrypted_payload_b64")]
+    encrypted_payload_b64: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct GatewayGroupEncryptInput {
-    #[serde(alias = "groupUlid")]
-    group_ulid: String,
-    #[serde(alias = "plaintextB64")]
-    plaintext_b64: String,
-}
-
-#[derive(Deserialize)]
-struct GatewayGroupDecryptInput {
-    #[serde(alias = "groupUlid")]
-    group_ulid: String,
-    #[serde(alias = "encryptedPayloadB64")]
-    encrypted_payload_b64: String,
-}
-
-#[derive(Deserialize)]
-struct GatewaySignalingEnvelopeSealInput {
-    #[serde(alias = "peerIkPub")]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignalingEnvelopeSealInput {
+    #[serde(alias = "peer_ik_pub")]
     peer_ik_pub: String,
-    #[serde(alias = "sessionUlid")]
+    #[serde(alias = "session_ulid")]
     session_ulid: String,
     kind: String,
     plaintext: String,
 }
 
-#[derive(Deserialize)]
-struct GatewaySignalingEnvelopeOpenInput {
-    #[serde(alias = "senderIkPub")]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignalingEnvelopeOpenInput {
+    #[serde(alias = "sender_ik_pub")]
     sender_ik_pub: String,
-    #[serde(alias = "sessionUlid")]
+    #[serde(alias = "session_ulid")]
     session_ulid: String,
     kind: String,
-    #[serde(alias = "payloadB64")]
+    #[serde(alias = "payload_b64")]
     payload_b64: String,
 }
 
-fn sk_authed_scope_from_state(state: &AppState) -> Result<(String, String), Value> {
-    let actor_id = actor_id_from_state(state).unwrap_or_default();
-    if actor_id.trim().is_empty() {
-        return Err(to_json(unauthorized_error()));
-    }
-    Ok((
-        actor_id.clone(),
-        crate::infrastructure::local_scope::user_scope_for_actor(Some(&actor_id)),
-    ))
+fn input_group_ulid(input: &CryptoGroupUlidInput) -> String {
+    input
+        .group_ulid
+        .clone()
+        .or_else(|| input.group_ulid_b64.clone())
+        .unwrap_or_default()
 }
 
-fn local_identity_x25519(state: &AppState) -> Result<(StaticSecret, PublicKey), Value> {
-    let actor_id = match actor_id_from_state(state) {
-        Some(id) if !id.trim().is_empty() => id,
-        _ => return Err(to_json(unauthorized_error())),
-    };
-    let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
-            .identity_key_ref();
-    let ik = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
-        Ok(k) => k,
-        Err(reason) => {
-            return Err(to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Identity operation failed: {}", reason),
-                None,
-            )));
-        }
-    };
-    let kp = crypto::ed25519_to_x25519(&ik.signing_key);
-    Ok((kp.private, kp.public))
-}
-
-fn peer_x25519_pub_from_ed25519(label: &str, ed_pub_b64: &str) -> Result<PublicKey, Value> {
-    let raw = match B64.decode(ed_pub_b64.trim()) {
-        Ok(b) => b,
-        Err(e) => {
-            return Err(to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InvalidArgument,
-                format!("Invalid base64 for {}: {}", label, e),
-                None,
-            )));
-        }
-    };
-    if raw.len() != 32 {
-        return Err(to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            format!("{} must decode to 32 bytes, got {}", label, raw.len()),
-            None,
-        )));
+fn payload_to_proto_skdm(
+    payload: &SenderKeyDistributionPayload,
+) -> model_chat::SenderKeyDistributionMessage {
+    model_chat::SenderKeyDistributionMessage {
+        group_ulid: payload.group_ulid.clone(),
+        sender_did: payload.sender_did.clone(),
+        sender_key_id: payload.sender_key_id,
+        chain_key: payload.chain_key.to_vec(),
+        counter: payload.counter,
+        sender_sig_pub: payload.sender_sig_pub.to_vec(),
     }
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&raw);
-    let verifying = match ed25519_dalek::VerifyingKey::from_bytes(&bytes) {
-        Ok(v) => v,
-        Err(e) => {
-            return Err(to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InvalidArgument,
-                format!("{} is not a valid Ed25519 public key: {}", label, e),
-                None,
-            )));
-        }
-    };
-    crypto::ed25519_verifying_to_x25519_public(&verifying).map_err(|reason| {
-        to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            format!("{}: Ed25519 -> X25519 conversion failed: {}", label, reason),
-            None,
-        ))
-    })
-}
-
-fn dispatch_crypto_generate_identity(state: &AppState) -> Value {
-    let actor_id = match actor_id_from_state(state) {
-        Some(id) if !id.trim().is_empty() => id,
-        _ => return to_json(unauthorized_error()),
-    };
-    let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
-            .identity_key_ref();
-    let kp = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
-        Ok(k) => k,
-        Err(reason) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Identity operation failed: {}", reason),
-                None,
-            ));
-        }
-    };
-    let fp = crypto::identity_fingerprint_hex(&kp.verifying_key);
-    let public_key = hex::encode(kp.verifying_key.to_bytes());
-    to_json(to_stub(
-        "crypto_generate_identity",
-        json!({
-            "fingerprint": fp,
-            "public_key": public_key,
-        }),
-    ))
-}
-
-fn dispatch_crypto_get_key_bundle(state: &AppState) -> Value {
-    let actor_id = match actor_id_from_state(state) {
-        Some(id) if !id.trim().is_empty() => id,
-        _ => return to_json(unauthorized_error()),
-    };
-    let user_scope = user_scope_from_state(state);
-    let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
-            .identity_key_ref();
-    let ik = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
-        Ok(k) => k,
-        Err(reason) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Identity operation failed: {}", reason),
-                None,
-            ));
-        }
-    };
-
-    let spk_sk = StaticSecret::random_from_rng(OsRng);
-    let spk_pub = PublicKey::from(&spk_sk);
-    let spk_pub_bytes = spk_pub.to_bytes();
-    let spk_sig = ik.signing_key.sign(spk_pub_bytes.as_slice());
-    let spk_id = now_unix_seconds_i32();
-
-    if let Err(reason) = local_chat_store::crypto_store_signed_prekey(
-        user_scope.as_str(),
-        i64::from(spk_id),
-        spk_sk.to_bytes().as_slice(),
-    ) {
-        return to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InternalError,
-            format!("Failed to store signed pre-key: {}", reason),
-            None,
-        ));
-    }
-
-    let mut opk_privs: Vec<Vec<u8>> = Vec::new();
-    let mut opk_pubs: Vec<[u8; 32]> = Vec::new();
-    for _ in 0..20 {
-        let opk_sk = StaticSecret::random_from_rng(OsRng);
-        let pk = PublicKey::from(&opk_sk);
-        opk_pubs.push(pk.to_bytes());
-        opk_privs.push(opk_sk.to_bytes().to_vec());
-    }
-    let opk_ids = match local_chat_store::crypto_insert_opks(user_scope.as_str(), &opk_privs) {
-        Ok(ids) => ids,
-        Err(reason) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Failed to store one-time pre-keys: {}", reason),
-                None,
-            ));
-        }
-    };
-
-    to_json(to_stub(
-        "crypto_get_key_bundle",
-        json!({
-            "ik_pub": B64.encode(ik.verifying_key.to_bytes()),
-            "spk_id": spk_id,
-            "spk_pub": B64.encode(spk_pub_bytes),
-            "spk_sig": B64.encode(spk_sig.to_bytes()),
-            "opk_ids": opk_ids,
-            "opk_pubs": opk_pubs.iter().map(|b| B64.encode(b)).collect::<Vec<_>>(),
-        }),
-    ))
-}
-
-fn dispatch_signaling_envelope_seal(args: Value, state: &AppState) -> Value {
-    let input = match parse_args::<GatewaySignalingEnvelopeSealInput>(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if input.session_ulid.trim().is_empty() || input.kind.trim().is_empty() {
-        return to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            "session_ulid and kind are required",
-            None,
-        ));
-    }
-    let (self_priv, self_pub) = match local_identity_x25519(state) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let peer_pub = match peer_x25519_pub_from_ed25519("peer_ik_pub", &input.peer_ik_pub) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let sealed = match crypto::signaling_envelope::seal(
-        &self_priv,
-        &self_pub,
-        &peer_pub,
-        input.session_ulid.as_str(),
-        input.kind.as_str(),
-        input.plaintext.as_bytes(),
-    ) {
-        Ok(b) => b,
-        Err(reason) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Signaling envelope seal failed: {}", reason),
-                None,
-            ));
-        }
-    };
-    to_json(to_stub(
-        "signaling_envelope_seal",
-        json!({ "payload_b64": B64.encode(&sealed) }),
-    ))
-}
-
-fn dispatch_signaling_envelope_open(args: Value, state: &AppState) -> Value {
-    let input = match parse_args::<GatewaySignalingEnvelopeOpenInput>(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if input.session_ulid.trim().is_empty() || input.kind.trim().is_empty() {
-        return to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            "session_ulid and kind are required",
-            None,
-        ));
-    }
-    let (self_priv, _self_pub) = match local_identity_x25519(state) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let sender_pub = match peer_x25519_pub_from_ed25519("sender_ik_pub", &input.sender_ik_pub) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let sealed = match B64.decode(input.payload_b64.trim()) {
-        Ok(b) => b,
-        Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InvalidArgument,
-                format!("Invalid base64 for payload_b64: {}", e),
-                None,
-            ));
-        }
-    };
-    let plaintext = match crypto::signaling_envelope::open(
-        &self_priv,
-        &sender_pub,
-        input.session_ulid.as_str(),
-        input.kind.as_str(),
-        &sealed,
-    ) {
-        Ok(b) => b,
-        Err(reason) => {
-            tracing::warn!(reason = %reason, "signaling_envelope_open: AEAD failed");
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                "Signaling envelope failed to authenticate",
-                None,
-            ));
-        }
-    };
-    let text = match String::from_utf8(plaintext) {
-        Ok(s) => s,
-        Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Decrypted signaling plaintext is not valid UTF-8: {}", e),
-                None,
-            ));
-        }
-    };
-    to_json(to_stub(
-        "signaling_envelope_open",
-        json!({ "plaintext": text }),
-    ))
 }
 
 fn proto_skdm_to_payload(
@@ -866,19 +603,6 @@ fn proto_skdm_to_payload(
         counter: msg.counter,
         sender_sig_pub,
     })
-}
-
-fn payload_to_proto_skdm(
-    payload: &SenderKeyDistributionPayload,
-) -> model_chat::SenderKeyDistributionMessage {
-    model_chat::SenderKeyDistributionMessage {
-        group_ulid: payload.group_ulid.clone(),
-        sender_did: payload.sender_did.clone(),
-        sender_key_id: payload.sender_key_id,
-        chain_key: payload.chain_key.to_vec(),
-        counter: payload.counter,
-        sender_sig_pub: payload.sender_sig_pub.to_vec(),
-    }
 }
 
 fn wire_to_proto_ciphertext(w: &GroupCiphertextWire) -> model_chat::GroupCiphertext {
@@ -916,407 +640,109 @@ fn proto_ciphertext_to_wire(
     })
 }
 
-fn dispatch_crypto_group_sk_emit_skdm(args: Value, state: &AppState) -> Value {
-    let input = match parse_args::<GatewayGroupUlidInput>(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if input.group_ulid.trim().is_empty() {
-        return to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            "group_ulid is required",
-            None,
-        ));
-    }
-    let (actor_id, scope) = match sk_authed_scope_from_state(state) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let chain = match local_chat_store::latest_local_sender_chain(
-        scope.as_str(),
-        input.group_ulid.as_str(),
-        actor_id.as_str(),
-    ) {
-        Ok(Some(c)) => c,
-        Ok(None) => {
-            let fresh =
-                sender_keys::create_local_chain(input.group_ulid.as_str(), actor_id.as_str(), 1);
-            if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &fresh) {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InternalError,
-                    format!("Failed to persist new sender chain: {}", reason),
-                    None,
-                ));
-            }
-            fresh
-        }
-        Err(reason) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Failed to load sender chain: {}", reason),
+fn local_identity_x25519_from_state(
+    state: &AppState,
+) -> Result<(StaticSecret, PublicKey), AppResult<StubPayload>> {
+    let actor_id = match actor_id_from_state(state) {
+        Some(id) if !id.trim().is_empty() => id,
+        _ => {
+            return Err(AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Authentication required — please log in",
                 None,
             ));
         }
     };
-    let payload = sender_keys::snapshot_for_skdm(&chain);
-    let proto = payload_to_proto_skdm(&payload);
-    let mut buf = Vec::with_capacity(proto.encoded_len());
-    proto.encode(&mut buf).expect("prost SKDM encode");
-    to_json(to_stub(
-        "crypto_group_sk_emit_skdm",
-        json!({
-            "group_ulid": input.group_ulid,
-            "sender_did": actor_id,
-            "sender_key_id": chain.sender_key_id,
-            "skdm_b64": B64.encode(&buf),
-        }),
-    ))
-}
-
-fn dispatch_crypto_group_sk_rotate(args: Value, state: &AppState) -> Value {
-    let input = match parse_args::<GatewayGroupUlidInput>(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if input.group_ulid.trim().is_empty() {
-        return to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            "group_ulid is required",
-            None,
-        ));
-    }
-    let (actor_id, scope) = match sk_authed_scope_from_state(state) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let next_id = match local_chat_store::max_sender_key_id(
-        scope.as_str(),
-        input.group_ulid.as_str(),
-        actor_id.as_str(),
-    ) {
-        Ok(Some(v)) => v.checked_add(1).unwrap_or(1),
-        Ok(None) => 1,
+    let identity_key_ref =
+        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+            .identity_key_ref();
+    let ik = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
+        Ok(k) => k,
         Err(reason) => {
-            return to_json(AppResult::<StubPayload>::fail(
+            return Err(AppResult::fail(
                 ErrorCode::InternalError,
-                format!("Failed to query max sender_key_id: {}", reason),
+                format!("Identity operation failed: {}", reason),
                 None,
             ));
         }
     };
-    let fresh =
-        sender_keys::create_local_chain(input.group_ulid.as_str(), actor_id.as_str(), next_id);
-    if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &fresh) {
-        return to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InternalError,
-            format!("Failed to persist rotated chain: {}", reason),
-            None,
-        ));
-    }
-    to_json(to_stub(
-        "crypto_group_sk_rotate",
-        json!({
-            "group_ulid": input.group_ulid,
-            "sender_did": actor_id,
-            "sender_key_id": next_id,
-        }),
-    ))
+    let kp = crypto::ed25519_to_x25519(&ik.signing_key);
+    Ok((kp.private, kp.public))
 }
 
-fn dispatch_crypto_group_sk_consume_skdm(args: Value, state: &AppState) -> Value {
-    let input = match parse_args::<GatewayConsumeSkdmInput>(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if input.claimed_sender_did.trim().is_empty() {
-        return to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            "claimed_sender_did is required",
-            None,
-        ));
-    }
-    let (_actor_id, scope) = match sk_authed_scope_from_state(state) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let raw = match B64.decode(input.skdm_b64.trim()) {
+fn peer_x25519_pub_from_ed25519(
+    label: &str,
+    ed_pub_b64: &str,
+) -> Result<PublicKey, AppResult<StubPayload>> {
+    let raw = match B64.decode(ed_pub_b64.trim()) {
         Ok(b) => b,
         Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
+            return Err(AppResult::fail(
                 ErrorCode::InvalidArgument,
-                format!("Invalid base64 for skdm_b64: {}", e),
+                format!("Invalid base64 for {}: {}", label, e),
                 None,
             ));
         }
     };
-    let proto = match model_chat::SenderKeyDistributionMessage::decode(raw.as_slice()) {
-        Ok(p) => p,
-        Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InvalidArgument,
-                format!("SKDM proto decode failed: {}", e),
-                None,
-            ));
-        }
-    };
-    if proto.sender_did != input.claimed_sender_did {
-        return to_json(AppResult::<StubPayload>::fail(
+    if raw.len() != 32 {
+        return Err(AppResult::fail(
             ErrorCode::InvalidArgument,
-            "SKDM sender_did does not match the friend-chat envelope sender",
+            format!("{} must decode to 32 bytes, got {}", label, raw.len()),
             None,
         ));
     }
-    let payload = match proto_skdm_to_payload(&proto) {
-        Ok(p) => p,
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&raw);
+    let verifying = match ed25519_dalek::VerifyingKey::from_bytes(&bytes) {
+        Ok(v) => v,
         Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
+            return Err(AppResult::fail(
                 ErrorCode::InvalidArgument,
-                e,
-                None,
-            ))
-        }
-    };
-    let chain = match sender_keys::consume_skdm(&payload) {
-        Ok(c) => c,
-        Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InvalidArgument,
-                format!("SKDM consume failed: {}", e),
+                format!("{} is not a valid Ed25519 public key: {}", label, e),
                 None,
             ));
         }
     };
-    if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &chain) {
-        return to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InternalError,
-            format!("Failed to persist received sender chain: {}", reason),
+    crypto::ed25519_verifying_to_x25519_public(&verifying).map_err(|reason| {
+        AppResult::fail(
+            ErrorCode::InvalidArgument,
+            format!("{}: Ed25519 -> X25519 conversion failed: {}", label, reason),
             None,
-        ));
-    }
-    to_json(to_stub(
-        "crypto_group_sk_consume_skdm",
-        json!({
-            "group_ulid": chain.group_ulid,
-            "sender_did": chain.sender_did,
-            "sender_key_id": chain.sender_key_id,
-        }),
-    ))
+        )
+    })
 }
 
-fn dispatch_crypto_group_encrypt(args: Value, state: &AppState) -> Value {
-    let input = match parse_args::<GatewayGroupEncryptInput>(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if input.group_ulid.trim().is_empty() {
-        return to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            "group_ulid is required",
-            None,
-        ));
-    }
-    let (actor_id, scope) = match sk_authed_scope_from_state(state) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let plaintext = match B64.decode(input.plaintext_b64.trim()) {
-        Ok(b) => b,
-        Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InvalidArgument,
-                format!("Invalid base64 for plaintext_b64: {}", e),
-                None,
-            ));
-        }
-    };
-    let mut chain = match local_chat_store::latest_local_sender_chain(
-        scope.as_str(),
-        input.group_ulid.as_str(),
-        actor_id.as_str(),
-    ) {
-        Ok(Some(c)) => c,
-        Ok(None) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::NotFound,
-                "No local sender chain for group; emit SKDM first",
-                None,
-            ));
-        }
-        Err(reason) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Failed to load sender chain: {}", reason),
-                None,
-            ));
-        }
-    };
-    let sent_key = sender_keys::current_message_key_snapshot(&chain);
-    let wire = match sender_keys::encrypt(&mut chain, &plaintext) {
-        Ok(w) => w,
-        Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Sender-keys encrypt failed: {}", e),
-                None,
-            ));
-        }
-    };
-    if let Err(reason) =
-        local_chat_store::apply_group_decrypt_outcome(scope.as_str(), &chain, &[sent_key], None)
-    {
-        return to_json(AppResult::<StubPayload>::fail(
+fn resolve_scope(state: &AppState) -> Result<Option<String>, Value> {
+    let guard = state.session.lock().map_err(|_| {
+        serde_json::to_value(AppResult::<StubPayload>::fail(
             ErrorCode::InternalError,
-            format!(
-                "Failed to persist advanced chain and sent message key: {}",
-                reason
-            ),
+            "failed to access session state",
             None,
-        ));
+        ))
+        .unwrap_or(json!({"ok": false}))
+    })?;
+    let scope = guard.actor_id.clone().unwrap_or_default();
+    let scope = scope.trim();
+    if scope.is_empty() {
+        return Ok(None);
     }
-    let proto = wire_to_proto_ciphertext(&wire);
-    let mut buf = Vec::with_capacity(proto.encoded_len());
-    proto
-        .encode(&mut buf)
-        .expect("prost GroupCiphertext encode");
-    to_json(to_stub(
-        "crypto_group_encrypt",
-        json!({
-            "encrypted_payload_b64": B64.encode(&buf),
-            "sender_key_id": wire.sender_key_id,
-            "counter": wire.counter,
-        }),
-    ))
+    Ok(Some(scope.to_string()))
 }
 
-fn dispatch_crypto_group_decrypt(args: Value, state: &AppState) -> Value {
-    let input = match parse_args::<GatewayGroupDecryptInput>(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if input.group_ulid.trim().is_empty() {
-        return to_json(AppResult::<StubPayload>::fail(
+/// Convenience: serialize any AppResult<T: Serialize> to Value.
+fn to_json<T: serde::Serialize>(r: AppResult<T>) -> Value {
+    serde_json::to_value(r).unwrap_or(json!({"ok": false, "error": {"code": "INTERNAL_ERROR", "message": "serialization failed"}}))
+}
+
+/// Deserialize args into T, returning a JSON error Value on failure.
+fn parse_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, Value> {
+    serde_json::from_value(args).map_err(|e| {
+        to_json(AppResult::<StubPayload>::fail(
             ErrorCode::InvalidArgument,
-            "group_ulid is required",
+            format!("invalid args: {e}"),
             None,
-        ));
-    }
-    let (actor_id, scope) = match sk_authed_scope_from_state(state) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let raw = match B64.decode(input.encrypted_payload_b64.trim()) {
-        Ok(b) => b,
-        Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InvalidArgument,
-                format!("Invalid base64 for encrypted_payload_b64: {}", e),
-                None,
-            ));
-        }
-    };
-    let proto = match model_chat::GroupCiphertext::decode(raw.as_slice()) {
-        Ok(p) => p,
-        Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InvalidArgument,
-                format!("GroupCiphertext proto decode failed: {}", e),
-                None,
-            ));
-        }
-    };
-    let wire = match proto_ciphertext_to_wire(&proto) {
-        Ok(w) => w,
-        Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InvalidArgument,
-                e,
-                None,
-            ))
-        }
-    };
-    let chain = match local_chat_store::load_group_sender_chain(
-        scope.as_str(),
-        input.group_ulid.as_str(),
-        wire.sender_did.as_str(),
-        wire.sender_key_id,
-    ) {
-        Ok(Some(c)) => c,
-        Ok(None) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::NotFound,
-                "No sender chain for (group, sender, sender_key_id); SKDM not yet processed",
-                None,
-            ));
-        }
-        Err(reason) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Failed to load sender chain: {}", reason),
-                None,
-            ));
-        }
-    };
-    let pre_skipped = match local_chat_store::load_group_skipped_keys(
-        scope.as_str(),
-        input.group_ulid.as_str(),
-        wire.sender_did.as_str(),
-        wire.sender_key_id,
-    ) {
-        Ok(map) => map,
-        Err(reason) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Failed to load skipped keys: {}", reason),
-                None,
-            ));
-        }
-    };
-    let was_skipped = pre_skipped.contains_key(&wire.counter);
-    let outcome = match sender_keys::decrypt(&chain, &wire, &pre_skipped) {
-        Ok(o) => o,
-        Err(e) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                format!("Sender-keys decrypt failed: {}", e),
-                None,
-            ));
-        }
-    };
-    let advanced = SenderChainState {
-        group_ulid: chain.group_ulid.clone(),
-        sender_did: chain.sender_did.clone(),
-        sender_key_id: chain.sender_key_id,
-        chain_key: outcome.advanced_chain_key,
-        counter: outcome.advanced_counter,
-        signing_seed: chain.signing_seed,
-        verifying_key: chain.verifying_key,
-    };
-    let consumed = if was_skipped && wire.sender_did != actor_id {
-        Some(wire.counter)
-    } else {
-        None
-    };
-    if let Err(reason) = local_chat_store::apply_group_decrypt_outcome(
-        scope.as_str(),
-        &advanced,
-        &outcome.new_skipped,
-        consumed,
-    ) {
-        return to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InternalError,
-            format!("Failed to persist decrypt outcome: {}", reason),
-            None,
-        ));
-    }
-    to_json(to_stub(
-        "crypto_group_decrypt",
-        json!({
-            "plaintext_b64": B64.encode(&outcome.plaintext),
-            "sender_did": wire.sender_did,
-            "sender_key_id": wire.sender_key_id,
-            "counter": wire.counter,
-        }),
-    ))
+        ))
+    })
 }
 
 fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> Value {
@@ -1568,16 +994,625 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 }),
             ))
         }
+        "crypto_generate_identity" => {
+            let actor_id = match actor_id_from_state(state) {
+                Some(id) if !id.trim().is_empty() => id,
+                _ => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::Unauthorized,
+                        "Authentication required — please log in",
+                        None,
+                    ));
+                }
+            };
+            let identity_key_ref =
+                crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+                    .identity_key_ref();
+            let kp = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
+                Ok(k) => k,
+                Err(reason) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Identity operation failed: {}", reason),
+                        None,
+                    ));
+                }
+            };
+            to_json(to_stub(
+                "crypto_generate_identity",
+                json!({
+                    "fingerprint": crypto::identity_fingerprint_hex(&kp.verifying_key),
+                    "public_key": hex::encode(kp.verifying_key.to_bytes()),
+                }),
+            ))
+        }
+        "crypto_get_key_bundle" => {
+            let actor_id = match actor_id_from_state(state) {
+                Some(id) if !id.trim().is_empty() => id,
+                _ => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::Unauthorized,
+                        "Authentication required — please log in",
+                        None,
+                    ));
+                }
+            };
+            let user_scope = user_scope_from_state(state);
+            let identity_key_ref =
+                crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+                    .identity_key_ref();
+            let ik = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
+                Ok(k) => k,
+                Err(reason) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Identity operation failed: {}", reason),
+                        None,
+                    ));
+                }
+            };
 
-        "crypto_generate_identity" => dispatch_crypto_generate_identity(state),
-        "crypto_get_key_bundle" => dispatch_crypto_get_key_bundle(state),
-        "signaling_envelope_seal" => dispatch_signaling_envelope_seal(args, state),
-        "signaling_envelope_open" => dispatch_signaling_envelope_open(args, state),
-        "crypto_group_sk_emit_skdm" => dispatch_crypto_group_sk_emit_skdm(args, state),
-        "crypto_group_sk_consume_skdm" => dispatch_crypto_group_sk_consume_skdm(args, state),
-        "crypto_group_sk_rotate" => dispatch_crypto_group_sk_rotate(args, state),
-        "crypto_group_encrypt" => dispatch_crypto_group_encrypt(args, state),
-        "crypto_group_decrypt" => dispatch_crypto_group_decrypt(args, state),
+            let spk_sk = StaticSecret::random_from_rng(OsRng);
+            let spk_pub = PublicKey::from(&spk_sk);
+            let spk_pub_bytes = spk_pub.to_bytes();
+            let spk_sig = ik.signing_key.sign(spk_pub_bytes.as_slice());
+            let spk_id = now_unix_seconds_i32();
+
+            if let Err(reason) = local_chat_store::crypto_store_signed_prekey(
+                user_scope.as_str(),
+                i64::from(spk_id),
+                spk_sk.to_bytes().as_slice(),
+            ) {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to store signed pre-key: {}", reason),
+                    None,
+                ));
+            }
+
+            let mut opk_privs: Vec<Vec<u8>> = Vec::new();
+            let mut opk_pubs: Vec<[u8; 32]> = Vec::new();
+            for _ in 0..20 {
+                let opk_sk = StaticSecret::random_from_rng(OsRng);
+                let pk = PublicKey::from(&opk_sk);
+                opk_pubs.push(pk.to_bytes());
+                opk_privs.push(opk_sk.to_bytes().to_vec());
+            }
+            let opk_ids =
+                match local_chat_store::crypto_insert_opks(user_scope.as_str(), &opk_privs) {
+                    Ok(ids) => ids,
+                    Err(reason) => {
+                        return to_json(AppResult::<StubPayload>::fail(
+                            ErrorCode::InternalError,
+                            format!("Failed to store one-time pre-keys: {}", reason),
+                            None,
+                        ));
+                    }
+                };
+
+            to_json(to_stub(
+                "crypto_get_key_bundle",
+                json!({
+                    "ik_pub": B64.encode(ik.verifying_key.to_bytes()),
+                    "spk_id": spk_id,
+                    "spk_pub": B64.encode(spk_pub_bytes),
+                    "spk_sig": B64.encode(spk_sig.to_bytes()),
+                    "opk_ids": opk_ids,
+                    "opk_pubs": opk_pubs.iter().map(|b| B64.encode(b)).collect::<Vec<String>>(),
+                }),
+            ))
+        }
+        "signaling_envelope_seal" => {
+            let input = match parse_args::<SignalingEnvelopeSealInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.session_ulid.trim().is_empty() || input.kind.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "session_ulid and kind are required",
+                    None,
+                ));
+            }
+            let (self_priv, self_pub) = match local_identity_x25519_from_state(state) {
+                Ok(v) => v,
+                Err(e) => return to_json(e),
+            };
+            let peer_pub = match peer_x25519_pub_from_ed25519("peer_ik_pub", &input.peer_ik_pub) {
+                Ok(v) => v,
+                Err(e) => return to_json(e),
+            };
+            let sealed = match crypto::signaling_envelope::seal(
+                &self_priv,
+                &self_pub,
+                &peer_pub,
+                input.session_ulid.as_str(),
+                input.kind.as_str(),
+                input.plaintext.as_bytes(),
+            ) {
+                Ok(b) => b,
+                Err(reason) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Signaling envelope seal failed: {}", reason),
+                        None,
+                    ));
+                }
+            };
+            to_json(to_stub(
+                "signaling_envelope_seal",
+                json!({ "payload_b64": B64.encode(&sealed) }),
+            ))
+        }
+        "signaling_envelope_open" => {
+            let input = match parse_args::<SignalingEnvelopeOpenInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.session_ulid.trim().is_empty() || input.kind.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "session_ulid and kind are required",
+                    None,
+                ));
+            }
+            let (self_priv, _self_pub) = match local_identity_x25519_from_state(state) {
+                Ok(v) => v,
+                Err(e) => return to_json(e),
+            };
+            let sender_pub =
+                match peer_x25519_pub_from_ed25519("sender_ik_pub", &input.sender_ik_pub) {
+                    Ok(v) => v,
+                    Err(e) => return to_json(e),
+                };
+            let sealed = match B64.decode(input.payload_b64.trim()) {
+                Ok(b) => b,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("Invalid base64 for payload_b64: {}", e),
+                        None,
+                    ));
+                }
+            };
+            let plaintext = match crypto::signaling_envelope::open(
+                &self_priv,
+                &sender_pub,
+                input.session_ulid.as_str(),
+                input.kind.as_str(),
+                &sealed,
+            ) {
+                Ok(b) => b,
+                Err(reason) => {
+                    tracing::warn!(reason = %reason, "signaling_envelope_open: AEAD failed");
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        "Signaling envelope failed to authenticate",
+                        None,
+                    ));
+                }
+            };
+            let text = match String::from_utf8(plaintext) {
+                Ok(s) => s,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Decrypted signaling plaintext is not valid UTF-8: {}", e),
+                        None,
+                    ));
+                }
+            };
+            to_json(to_stub(
+                "signaling_envelope_open",
+                json!({ "plaintext": text }),
+            ))
+        }
+        "crypto_group_sk_emit_skdm" => {
+            let input = match parse_args::<CryptoGroupUlidInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let group_ulid = input_group_ulid(&input);
+            if group_ulid.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "group_ulid is required",
+                    None,
+                ));
+            }
+            let (actor_id, scope) = match sk_authed_scope_from_state(state) {
+                Ok(v) => v,
+                Err(e) => return to_json(e),
+            };
+            let chain = match local_chat_store::latest_local_sender_chain(
+                scope.as_str(),
+                group_ulid.as_str(),
+                actor_id.as_str(),
+            ) {
+                Ok(Some(c)) => c,
+                Ok(None) => {
+                    let fresh =
+                        sender_keys::create_local_chain(group_ulid.as_str(), actor_id.as_str(), 1);
+                    if let Err(reason) =
+                        local_chat_store::save_group_sender_chain(scope.as_str(), &fresh)
+                    {
+                        return to_json(AppResult::<StubPayload>::fail(
+                            ErrorCode::InternalError,
+                            format!("Failed to persist new sender chain: {}", reason),
+                            None,
+                        ));
+                    }
+                    fresh
+                }
+                Err(reason) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to load sender chain: {}", reason),
+                        None,
+                    ));
+                }
+            };
+            let proto = payload_to_proto_skdm(&sender_keys::snapshot_for_skdm(&chain));
+            let mut buf = Vec::with_capacity(proto.encoded_len());
+            proto.encode(&mut buf).expect("prost SKDM encode");
+            to_json(to_stub(
+                "crypto_group_sk_emit_skdm",
+                json!({
+                    "group_ulid": group_ulid,
+                    "sender_did": actor_id,
+                    "sender_key_id": chain.sender_key_id,
+                    "skdm_b64": B64.encode(&buf),
+                }),
+            ))
+        }
+        "crypto_group_sk_consume_skdm" => {
+            let input = match parse_args::<CryptoGroupConsumeSkdmInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let claimed_sender_did = input.claimed_sender_did.unwrap_or_default();
+            let skdm_b64 = input.skdm_b64.unwrap_or_default();
+            if claimed_sender_did.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "claimed_sender_did is required",
+                    None,
+                ));
+            }
+            let (_actor_id, scope) = match sk_authed_scope_from_state(state) {
+                Ok(v) => v,
+                Err(e) => return to_json(e),
+            };
+            let raw = match B64.decode(skdm_b64.trim()) {
+                Ok(b) => b,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("Invalid base64 for skdm_b64: {}", e),
+                        None,
+                    ));
+                }
+            };
+            let proto = match model_chat::SenderKeyDistributionMessage::decode(raw.as_slice()) {
+                Ok(p) => p,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("SKDM proto decode failed: {}", e),
+                        None,
+                    ));
+                }
+            };
+            let payload = match proto_skdm_to_payload(&proto) {
+                Ok(p) => p,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        e,
+                        None,
+                    ))
+                }
+            };
+            if payload.sender_did != claimed_sender_did {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Forbidden,
+                    "SKDM sender_did does not match claimed sender",
+                    None,
+                ));
+            }
+            let chain = match sender_keys::consume_skdm(&payload) {
+                Ok(c) => c,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("SKDM consume failed: {}", e),
+                        None,
+                    ));
+                }
+            };
+            if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &chain) {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to persist received sender chain: {}", reason),
+                    None,
+                ));
+            }
+            to_json(to_stub(
+                "crypto_group_sk_consume_skdm",
+                json!({
+                    "group_ulid": chain.group_ulid,
+                    "sender_did": chain.sender_did,
+                    "sender_key_id": chain.sender_key_id,
+                }),
+            ))
+        }
+        "crypto_group_encrypt" => {
+            let input = match parse_args::<CryptoGroupEncryptInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let group_ulid = input.group_ulid.unwrap_or_default();
+            let plaintext_b64 = input.plaintext_b64.unwrap_or_default();
+            if group_ulid.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "group_ulid is required",
+                    None,
+                ));
+            }
+            let (actor_id, scope) = match sk_authed_scope_from_state(state) {
+                Ok(v) => v,
+                Err(e) => return to_json(e),
+            };
+            let plaintext = match B64.decode(plaintext_b64.trim()) {
+                Ok(b) => b,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("Invalid base64 for plaintext_b64: {}", e),
+                        None,
+                    ));
+                }
+            };
+            let mut chain = match local_chat_store::latest_local_sender_chain(
+                scope.as_str(),
+                group_ulid.as_str(),
+                actor_id.as_str(),
+            ) {
+                Ok(Some(c)) => c,
+                Ok(None) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::NotFound,
+                        "No local sender chain for group; emit SKDM first",
+                        None,
+                    ));
+                }
+                Err(reason) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to load sender chain: {}", reason),
+                        None,
+                    ));
+                }
+            };
+            let sent_key = sender_keys::current_message_key_snapshot(&chain);
+            let wire = match sender_keys::encrypt(&mut chain, &plaintext) {
+                Ok(w) => w,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Sender-keys encrypt failed: {}", e),
+                        None,
+                    ));
+                }
+            };
+            if let Err(reason) = local_chat_store::apply_group_decrypt_outcome(
+                scope.as_str(),
+                &chain,
+                &[sent_key],
+                None,
+            ) {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!(
+                        "Failed to persist advanced chain and sent message key: {}",
+                        reason
+                    ),
+                    None,
+                ));
+            }
+            let proto = wire_to_proto_ciphertext(&wire);
+            let mut buf = Vec::with_capacity(proto.encoded_len());
+            proto
+                .encode(&mut buf)
+                .expect("prost GroupCiphertext encode");
+            to_json(to_stub(
+                "crypto_group_encrypt",
+                json!({
+                    "encrypted_payload_b64": B64.encode(&buf),
+                    "sender_key_id": wire.sender_key_id,
+                    "counter": wire.counter,
+                }),
+            ))
+        }
+        "crypto_group_decrypt" => {
+            let input = match parse_args::<CryptoGroupDecryptInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let group_ulid = input.group_ulid.unwrap_or_default();
+            let encrypted_payload_b64 = input.encrypted_payload_b64.unwrap_or_default();
+            if group_ulid.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "group_ulid is required",
+                    None,
+                ));
+            }
+            let (actor_id, scope) = match sk_authed_scope_from_state(state) {
+                Ok(v) => v,
+                Err(e) => return to_json(e),
+            };
+            let raw = match B64.decode(encrypted_payload_b64.trim()) {
+                Ok(b) => b,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("Invalid base64 for encrypted_payload_b64: {}", e),
+                        None,
+                    ));
+                }
+            };
+            let proto = match model_chat::GroupCiphertext::decode(raw.as_slice()) {
+                Ok(p) => p,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("GroupCiphertext proto decode failed: {}", e),
+                        None,
+                    ));
+                }
+            };
+            let wire = match proto_ciphertext_to_wire(&proto) {
+                Ok(w) => w,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        e,
+                        None,
+                    ))
+                }
+            };
+            let chain = match local_chat_store::load_group_sender_chain(
+                scope.as_str(),
+                group_ulid.as_str(),
+                wire.sender_did.as_str(),
+                wire.sender_key_id,
+            ) {
+                Ok(Some(c)) => c,
+                Ok(None) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::NotFound,
+                        "Missing sender key for group message",
+                        None,
+                    ));
+                }
+                Err(reason) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to load sender chain: {}", reason),
+                        None,
+                    ));
+                }
+            };
+            let pre_skipped = match local_chat_store::load_group_skipped_keys(
+                scope.as_str(),
+                group_ulid.as_str(),
+                wire.sender_did.as_str(),
+                wire.sender_key_id,
+            ) {
+                Ok(map) => map,
+                Err(reason) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to load skipped keys: {}", reason),
+                        None,
+                    ));
+                }
+            };
+            let was_skipped = pre_skipped.contains_key(&wire.counter);
+            let outcome = match sender_keys::decrypt(&chain, &wire, &pre_skipped) {
+                Ok(o) => o,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Sender-keys decrypt failed: {}", e),
+                        None,
+                    ));
+                }
+            };
+            let advanced = SenderChainState {
+                group_ulid: chain.group_ulid.clone(),
+                sender_did: chain.sender_did.clone(),
+                sender_key_id: chain.sender_key_id,
+                chain_key: outcome.advanced_chain_key,
+                counter: outcome.advanced_counter,
+                signing_seed: chain.signing_seed,
+                verifying_key: chain.verifying_key,
+            };
+            let consumed = if was_skipped && wire.sender_did != actor_id {
+                Some(wire.counter)
+            } else {
+                None
+            };
+            if let Err(reason) = local_chat_store::apply_group_decrypt_outcome(
+                scope.as_str(),
+                &advanced,
+                &outcome.new_skipped,
+                consumed,
+            ) {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to persist decrypt outcome: {}", reason),
+                    None,
+                ));
+            }
+            to_json(to_stub(
+                "crypto_group_decrypt",
+                json!({ "plaintext_b64": B64.encode(&outcome.plaintext) }),
+            ))
+        }
+
+        "crypto_group_sk_rotate" => {
+            let input = match parse_args::<CryptoGroupUlidInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let group_ulid = input_group_ulid(&input);
+            if group_ulid.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "group_ulid is required",
+                    None,
+                ));
+            }
+            let (actor_id, scope) = match sk_authed_scope_from_state(state) {
+                Ok(v) => v,
+                Err(e) => return to_json(e),
+            };
+            let next_id = match local_chat_store::max_sender_key_id(
+                scope.as_str(),
+                group_ulid.as_str(),
+                actor_id.as_str(),
+            ) {
+                Ok(Some(v)) => v.checked_add(1).unwrap_or(1),
+                Ok(None) => 1,
+                Err(reason) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to query max sender_key_id: {}", reason),
+                        None,
+                    ));
+                }
+            };
+            let fresh =
+                sender_keys::create_local_chain(group_ulid.as_str(), actor_id.as_str(), next_id);
+            if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &fresh) {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to persist rotated chain: {}", reason),
+                    None,
+                ));
+            }
+            to_json(to_stub(
+                "crypto_group_sk_rotate",
+                json!({
+                    "group_ulid": group_ulid,
+                    "sender_did": actor_id,
+                    "sender_key_id": next_id,
+                }),
+            ))
+        }
 
         // =================================================================
         // Frontend log (fire-and-forget, always succeeds)

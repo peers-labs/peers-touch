@@ -18,9 +18,9 @@ type TaskRun struct {
 	RootTurnID          string     `gorm:"type:varchar(36)"`
 	CurrentCheckpointID string     `gorm:"type:varchar(36)"`
 	MetaJSON            string     `gorm:"type:text"`
-	CreatedAt           time.Time  `gorm:"not null;default:now()"`
-	StartedAt           time.Time  `gorm:"not null;default:now()"`
-	UpdatedAt           time.Time  `gorm:"not null;default:now()"`
+	CreatedAt           time.Time  `gorm:"not null;autoCreateTime"`
+	StartedAt           time.Time  `gorm:"not null;autoCreateTime"`
+	UpdatedAt           time.Time  `gorm:"not null;autoUpdateTime"`
 	EndedAt             *time.Time `gorm:"type:timestamptz"`
 }
 

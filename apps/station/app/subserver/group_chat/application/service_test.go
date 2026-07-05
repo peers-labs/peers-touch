@@ -744,6 +744,20 @@ func (r *fakeRepo) AddMember(groupID, actorDID, inviterDID string) (*domain.Memb
 	return &member, true
 }
 
+func (r *fakeRepo) AddFederatedMember(groupID string, actor domain.FederatedActorRef, inviterDID string) (*domain.Member, bool) {
+	member := domain.Member{
+		GroupID:   groupID,
+		ActorDID:  actor.ActorDID,
+		Actor:     actor,
+		Role:      domain.GroupRoleMember,
+		InvitedBy: inviterDID,
+		JoinedAt:  time.Now(),
+	}
+	r.members[actor.ActorDID] = member
+	r.group.MembershipEpoch++
+	return &member, true
+}
+
 func (r *fakeRepo) UpdateMember(groupID, actorDID string, role *int32, muted *bool, mutedUntil *time.Time) (*domain.Member, bool) {
 	member, ok := r.members[actorDID]
 	if !ok {
@@ -869,6 +883,24 @@ func (r *fakeRepo) ListAuthorityEventsAfter(groupID string, afterSeq int64, limi
 	return events, nil
 }
 
+func (r *fakeRepo) GetAuthorityEventCursor(groupID string) (int64, string, error) {
+	var (
+		lastSeq  int64
+		lastHash string
+	)
+	for _, event := range r.authorityEvents {
+		if event.GroupID == groupID && event.Seq >= lastSeq {
+			lastSeq = event.Seq
+			lastHash = event.EventHash
+		}
+	}
+	return lastSeq, lastHash, nil
+}
+
+func (r *fakeRepo) MaterializeFollowerProjection(group domain.Group, members []domain.Member, messages []domain.Message) error {
+	return nil
+}
+
 func (r *fakeRepo) UpdateGroup(groupID string, name, description *string, muted *bool) (*domain.Group, bool) {
 	return &domain.Group{ID: groupID}, true
 }
@@ -937,7 +969,7 @@ func (r *fakeRepo) GetOfflineMessages(actorDID string, limit int) []domain.Offli
 	return nil
 }
 
-func (r *fakeRepo) AckOffline(ulids []string) {
+func (r *fakeRepo) AckOffline(actorDID string, ulids []string) {
 }
 
 func (r *fakeRepo) Stats() (int32, int32, int64, int32) {

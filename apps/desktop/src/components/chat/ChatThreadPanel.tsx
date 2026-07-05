@@ -16,9 +16,9 @@ import {
 
 import {
   useSocialChatStore,
-  peerOfSession,
   socialThreadKey,
 } from '../../store/socialChat';
+import type { DesktopIMSenderProfileProjection } from '../../store/socialProjection';
 import { log } from '../../utils/logger';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
@@ -31,7 +31,6 @@ import {
   messageTimestampDate,
   messageTimestampMs,
   replyPreviewForMessage,
-  resolveChatSenderProfile,
   type ChatMessage,
 } from './message/chatMessageModel';
 
@@ -56,8 +55,11 @@ interface ThreadMessageItemProps {
   activeConversationId: string;
   activeKind: 'friend' | 'group';
   currentUserDid: string | null;
-  currentUserProfile: ReturnType<typeof useSocialChatStore.getState>['currentUserProfile'];
-  groupMembers: ReturnType<typeof useSocialChatStore.getState>['groupMembers'];
+  getSenderProfile: (
+    kind: 'friend' | 'group',
+    conversationUlid: string,
+    senderId: string,
+  ) => DesktopIMSenderProfileProjection;
   message: ChatMessage;
   messages: ChatMessage[];
   onDelete?: (message: ChatMessage) => void;
@@ -65,15 +67,13 @@ interface ThreadMessageItemProps {
   onReply?: (message: ChatMessage) => void;
   root?: boolean;
   rootUlid: string;
-  sessions: ReturnType<typeof useSocialChatStore.getState>['sessions'];
 }
 
 function ThreadMessageItem({
   activeConversationId,
   activeKind,
   currentUserDid,
-  currentUserProfile,
-  groupMembers,
+  getSenderProfile,
   message,
   messages,
   onDelete,
@@ -81,19 +81,10 @@ function ThreadMessageItem({
   onReply,
   root = false,
   rootUlid,
-  sessions,
 }: ThreadMessageItemProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const senderProfile = resolveChatSenderProfile({
-    activeKind,
-    activeConversationId,
-    currentUserDid,
-    currentUserProfile,
-    groupMembers,
-    sessions,
-    message,
-  });
+  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderId);
   const isOwn = isOwnMessage(message, currentUserDid);
   const isRecalled = isRecalledMessage(message);
   const sentMs = messageTimestampMs(message);
@@ -219,15 +210,12 @@ export function ChatThreadPanel() {
     activeTab,
     activeSessionUlid,
     activeGroupUlid,
-    sessions,
-    groupMembers,
     threadLoading,
     threadLoadingMore,
     threadError,
     threadHasMore,
     threadNextCursor,
     currentUserDid,
-    currentUserProfile,
     openThreadRootUlid,
     closeThread,
     loadThreadMessages,
@@ -240,9 +228,11 @@ export function ChatThreadPanel() {
     deleteMessage,
     recallFriendMessage,
     recallGroupMessage,
+    getIMConversations,
+    getIMMessages,
+    getIMThreadMessages,
+    getIMSenderProfile,
   } = useSocialChatStore();
-  const getIMMessages = useSocialChatStore((s) => s.getIMMessages);
-  const getIMThreadMessages = useSocialChatStore((s) => s.getIMThreadMessages);
   const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
@@ -251,6 +241,9 @@ export function ChatThreadPanel() {
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
+  const activeConversation = activeUlid
+    ? getIMConversations().find((conversation) => conversation.kind === activeKind && conversation.id === activeUlid)
+    : undefined;
   const currentMessages = useMemo(
     () => (activeUlid ? getIMMessages(activeKind, activeUlid) : []),
     [activeKind, activeUlid, getIMMessages],
@@ -304,8 +297,7 @@ export function ChatThreadPanel() {
     try {
       const replyToUlid = chatThreadReplyTargetUlid(rootMessage, replyTarget);
       if (activeTab === 'friend') {
-        const session = sessions.find((s) => s.ulid === activeUlid);
-        const receiverDid = session ? peerOfSession(session, currentUserDid).did : '';
+        const receiverDid = activeConversation?.peerDid || '';
         await sendFriendMessage(
           activeUlid,
           receiverDid,
@@ -513,15 +505,13 @@ export function ChatThreadPanel() {
                 activeConversationId={activeUlid || ''}
                 activeKind={activeKind}
                 currentUserDid={currentUserDid}
-                currentUserProfile={currentUserProfile}
-                groupMembers={groupMembers}
+                getSenderProfile={getIMSenderProfile}
                 message={rootMessage}
                 messages={displayMessages}
                 onDelete={setDeleteTarget}
                 onRecall={handleRecall}
                 root
                 rootUlid={rootMessage.ulid}
-                sessions={sessions}
               />
             </Flexbox>
 
@@ -550,15 +540,13 @@ export function ChatThreadPanel() {
                     activeConversationId={activeUlid || ''}
                     activeKind={activeKind}
                     currentUserDid={currentUserDid}
-                    currentUserProfile={currentUserProfile}
-                    groupMembers={groupMembers}
+                    getSenderProfile={getIMSenderProfile}
                     message={reply}
                     messages={displayMessages}
                     onDelete={setDeleteTarget}
                     onRecall={handleRecall}
                     onReply={setReplyTarget}
                     rootUlid={rootMessage.ulid}
-                    sessions={sessions}
                   />
                 ))
               )}

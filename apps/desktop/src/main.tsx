@@ -19,6 +19,12 @@ import { installFrontendRuntimeProfiler } from './kernel/frontendRuntimeProfiler
 registerAppletElements();
 installFrontendRuntimeProfiler();
 
+if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
+  void import('./acceptance/chatAcceptanceHarness').then(({ installChatAcceptanceHarness }) => {
+    installChatAcceptanceHarness();
+  });
+}
+
 // ── Browser Dev Gateway ──
 // When running outside Tauri WebView (e.g. Chrome), patch
 // __TAURI_INTERNALS__ so that invoke() routes through the
@@ -82,7 +88,7 @@ class ErrorBoundary extends Component<{ children: ReactNode; i18n: I18nInstance 
     if (this.state.error) {
       return (
         <div style={{ padding: 40, color: '#c00', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-          <h2>{this.props.i18n.t('layout.crash.title', { ns: 'layout' })}</h2>
+            <h2>{this.props.i18n.t('desktop.errorBoundary.title', { ns: 'common' })}</h2>
           <p>{this.state.error.message}</p>
           <pre style={{ fontSize: 12 }}>{this.state.error.stack}</pre>
         </div>
@@ -96,7 +102,7 @@ async function bootstrap() {
   markPhaseStart('shell');
 
   window.__PT_BOOT_STATUS__?.('Loading language packs…');
-  const i18n = await initI18n();
+  const initializedI18n = await initI18n();
 
   window.__PT_BOOT_STATUS__?.('Rendering UI…');
   const path = window.location.pathname;
@@ -110,8 +116,8 @@ async function bootstrap() {
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <ErrorBoundary i18n={i18n}>
-        <I18nextProvider i18n={i18n}>
+        <ErrorBoundary i18n={initializedI18n}>
+          <I18nextProvider i18n={initializedI18n}>
           <ThemeProvider>
             {shareMatch ? <SharePage token={shareMatch[1]} /> : <App />}
           </ThemeProvider>

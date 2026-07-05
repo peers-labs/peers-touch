@@ -2,7 +2,10 @@ use crate::domain::storage::key_management::{
     KeyErrorCode, KeyMaterial, KeyProvider, KeyProviderError,
 };
 use keyring::Entry;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +117,27 @@ impl PlatformKeyProvider {
         }
     }
 
+    fn scoped_file_store_path(key_ref: &str) -> Option<PathBuf> {
+        let root = std::env::var("PEERS_STORAGE_ROOT").ok()?;
+        let root = root.trim();
+        if root.is_empty() {
+            return None;
+        }
+        let mut hasher = Sha256::new();
+        hasher.update(key_ref.as_bytes());
+        let digest = hasher.finalize();
+        let name: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        Some(
+            PathBuf::from(root)
+                .join("peers-touch")
+                .join("desktop")
+                .join("data")
+                .join("secure-store")
+                .join("storage-keys")
+                .join(format!("{name}.key")),
+        )
+    }
+
     fn classify_keyring_error(key_ref: &str, err: &keyring::Error) -> KeyProviderError {
         match err {
             keyring::Error::NoEntry => {
@@ -137,6 +161,18 @@ impl PlatformKeyProvider {
     }
 
     fn read_from_os_store(key_ref: &str) -> Result<Option<KeyMaterial>, KeyProviderError> {
+        if let Some(path) = Self::scoped_file_store_path(key_ref) {
+            match fs::read_to_string(path) {
+                Ok(payload) => return Ok(Self::decode_material(payload.trim())),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(e) => {
+                    return Err(KeyProviderError::io_failure(
+                        key_ref,
+                        format!("file keystore read failed: {e}"),
+                    ));
+                }
+            }
+        }
         let entry = Entry::new(
             Self::service_name(),
             Self::username_for_ref(key_ref).as_str(),
@@ -150,6 +186,19 @@ impl PlatformKeyProvider {
     }
 
     fn write_to_os_store(key_ref: &str, item: &KeyMaterial) -> Result<(), KeyProviderError> {
+        if let Some(path) = Self::scoped_file_store_path(key_ref) {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    KeyProviderError::io_failure(
+                        key_ref,
+                        format!("file keystore mkdir failed: {e}"),
+                    )
+                })?;
+            }
+            return fs::write(path, Self::encode_material(item)).map_err(|e| {
+                KeyProviderError::io_failure(key_ref, format!("file keystore write failed: {e}"))
+            });
+        }
         let entry = Entry::new(
             Self::service_name(),
             Self::username_for_ref(item.key_id.as_str()).as_str(),

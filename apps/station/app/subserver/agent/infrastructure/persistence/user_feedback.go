@@ -10,7 +10,7 @@ type UserFeedback struct {
 	ConversationID string    `gorm:"not null;type:varchar(36)"`
 	Signal         string    `gorm:"not null;type:varchar(10);check:signal in ('positive','negative')"` // positive=thumbs up, negative=thumbs down
 	Comment        *string   `gorm:"type:text"`
-	CreatedAt      time.Time `gorm:"not null;default:now()"`
+	CreatedAt      time.Time `gorm:"not null;autoCreateTime"`
 }
 
 func (UserFeedback) TableName() string { return "agent_user_feedback" }

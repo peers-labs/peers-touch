@@ -12,7 +12,7 @@ type DiagnosticReport struct {
 	GrowthVerdict string    `gorm:"not null;type:varchar(20)"`
 	SuspectedJSON string    `gorm:"type:text"` // JSON: [{item_type, item_id, item_content, negative_count, recommended_action}]
 	Summary       string    `gorm:"type:text"`
-	CreatedAt     time.Time `gorm:"not null;default:now();index:idx_diagnostic_created_at"`
+	CreatedAt     time.Time `gorm:"not null;autoCreateTime;index:idx_diagnostic_created_at"`
 }
 
 func (DiagnosticReport) TableName() string { return "agent_diagnostic_reports" }

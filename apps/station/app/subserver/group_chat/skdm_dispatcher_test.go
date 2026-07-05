@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	events_subserver "github.com/peers-labs/peers-touch/station/app/subserver/events"
 	"github.com/peers-labs/peers-touch/station/app/subserver/group_chat/domain"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
@@ -190,19 +189,7 @@ func TestDispatchGroupSkdmOutboxDeliversToTargetStation(t *testing.T) {
 
 func TestCrossStationSkdmAcceptanceEntitlementAndOpaqueDelivery(t *testing.T) {
 	registerGroupChatFederationScope()
-	eventsServer := events_subserver.NewEventsSubServer()
-	if err := eventsServer.Init(context.Background()); err != nil {
-		t.Fatalf("init events subserver: %v", err)
-	}
-	defer func() {
-		if err := eventsServer.Stop(context.Background()); err != nil {
-			t.Fatalf("stop events subserver: %v", err)
-		}
-	}()
-	bus := events_subserver.GetBus()
-	if bus == nil {
-		t.Fatal("expected realtime event bus")
-	}
+	bus := startGroupChatEventsSubServer(t)
 
 	const (
 		sourceStation = "station-a"

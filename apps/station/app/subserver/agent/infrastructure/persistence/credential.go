@@ -14,8 +14,8 @@ type Credential struct {
 	RequestCount  int        `gorm:"not null;default:0"`
 	ExhaustedAt   *time.Time `gorm:"type:timestamp"`
 	CooldownUntil *time.Time `gorm:"type:timestamp"`
-	CreatedAt     time.Time  `gorm:"not null;default:now()"`
-	UpdatedAt     time.Time  `gorm:"not null;default:now()"`
+	CreatedAt     time.Time  `gorm:"not null;autoCreateTime"`
+	UpdatedAt     time.Time  `gorm:"not null;autoUpdateTime"`
 }
 
 // TableName sets the table name.
