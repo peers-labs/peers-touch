@@ -98,7 +98,7 @@ describe('ensureSkdmDistributed (multi-device bundles)', () => {
 
     await ensureSkdmDistributed(actor, 'group-1', [actor]);
 
-    expect(mocks.keyExchangeFetchBundle).toHaveBeenCalledWith(actor);
+    expect(mocks.keyExchangeFetchBundle).toHaveBeenCalledWith(actor, undefined, undefined);
     expect(mocks.signalingEnvelopeSeal).toHaveBeenCalledTimes(1);
     expect(mocks.signalingEnvelopeSeal).toHaveBeenCalledWith(
       'ik-other',
@@ -161,7 +161,13 @@ describe('ensureSkdmDistributed (multi-device bundles)', () => {
     });
 
     it('installs only after opened SKDM metadata matches the delivery envelope', async () => {
-      await handleInboundSkdm('did:peer:alice', 'sealed', { groupUlid: 'group-1', senderKeyId: 7 });
+      await handleInboundSkdm('did:peer:alice', 'sealed', {
+        groupUlid: 'group-1',
+        senderKeyId: 7,
+        senderHomeStationPeerId: 'station-a',
+      });
+
+      expect(mocks.keyExchangeFetchBundle).toHaveBeenCalledWith('did:peer:alice', undefined, 'station-a');
 
       expect(mocks.cryptoGroupSkConsumeSkdm).toHaveBeenCalledWith(
         'did:peer:alice',
