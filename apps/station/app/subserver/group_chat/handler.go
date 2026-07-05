@@ -34,6 +34,27 @@ type groupThreadCountsRequest struct {
 	RootUlids []string `json:"root_ulids"`
 }
 
+type federatedActorRefRequest struct {
+	ActorDID               string `json:"actor_did"`
+	HomeStationPeerID      string `json:"home_station_peer_id"`
+	HomeStationDomain      string `json:"home_station_domain"`
+	FederatedHandle        string `json:"federated_handle"`
+	ActorIdentityPublicKey []byte `json:"actor_identity_public_key"`
+	ProfileVersion         int64  `json:"profile_version"`
+	FederationID           string `json:"federation_id"`
+}
+
+type addFederatedMemberRequest struct {
+	GroupUlid string                   `json:"group_ulid"`
+	Member    federatedActorRefRequest `json:"member"`
+}
+
+type addFederatedMemberResponse struct {
+	Success bool              `json:"success"`
+	Group   *chat.Group       `json:"group,omitempty"`
+	Member  *chat.GroupMember `json:"member,omitempty"`
+}
+
 type groupThreadReadRequest struct {
 	GroupUlid    string `json:"group_ulid"`
 	RootUlid     string `json:"root_ulid"`
@@ -105,6 +126,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("gc-transfer-ownership", "/group-chat/ownership/transfer", server.POST, s.handleTransferOwnership, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-dissolve", "/group-chat/dissolve", server.POST, s.handleDissolve, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-members", "/group-chat/members", server.GET, s.handleMembers, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("gc-add-federated-member", "/group-chat/member/federated-add", server.POST, s.handleAddFederatedMember, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-remove-member", "/group-chat/member/remove", server.POST, s.handleRemoveMember, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-update-member", "/group-chat/member/update", server.PUT, s.handleUpdateMember, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-message-send", "/group-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, s.jwtWrapper),
@@ -130,6 +152,18 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("gc-unread-count", "/group-chat/unread-count", server.GET, s.handleUnreadCount, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-mark-read", "/group-chat/mark-read", server.POST, s.handleMarkRead, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-stats", "/group-chat/stats", server.GET, s.handleStats, logIDWrapper, s.jwtWrapper),
+	}
+}
+
+func federatedActorRefFromRequest(ref federatedActorRefRequest) group_chat_domain.FederatedActorRef {
+	return group_chat_domain.FederatedActorRef{
+		ActorDID:               strings.TrimSpace(ref.ActorDID),
+		HomeStationPeerID:      strings.TrimSpace(ref.HomeStationPeerID),
+		HomeStationDomain:      strings.TrimSpace(ref.HomeStationDomain),
+		FederatedHandle:        strings.TrimSpace(ref.FederatedHandle),
+		ActorIdentityPublicKey: ref.ActorIdentityPublicKey,
+		ProfileVersion:         ref.ProfileVersion,
+		FederationID:           strings.TrimSpace(ref.FederationID),
 	}
 }
 
@@ -995,6 +1029,40 @@ func (s *subServer) handleMembers(ctx context.Context, req *chat.GetGroupMembers
 		out = append(out, toProtoMemberFromDomain(&copy))
 	}
 	return &chat.GetGroupMembersResponse{Members: out, Total: int32(total)}, nil
+}
+
+func (s *subServer) handleAddFederatedMember(ctx context.Context, req *addFederatedMemberRequest) (*addFederatedMemberResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if strings.TrimSpace(req.GroupUlid) == "" {
+		return nil, server.BadRequest("group_ulid is required")
+	}
+	actor := federatedActorRefFromRequest(req.Member)
+	member, err := s.appService.AddFederatedMemberByActor(subject.ID, req.GroupUlid, actor)
+	if err != nil {
+		if err == application_group_chat.ErrInvalidFederatedActor {
+			return nil, server.BadRequest(err.Error())
+		}
+		if err == application_group_chat.ErrNotMember ||
+			err == application_group_chat.ErrPermissionDenied ||
+			err == application_group_chat.ErrGroupDissolved {
+			return nil, server.Forbidden(err.Error())
+		}
+		if err == application_group_chat.ErrGroupNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		return nil, server.InternalError("add federated member failed")
+	}
+	groupItem, _ := s.appService.GetGroup(req.GroupUlid)
+	recipients := collectGroupMemberDIDs(s, req.GroupUlid)
+	publishGroupMembershipChange(req.GroupUlid, actor.ActorDID, realtime.GroupMembershipChange_KIND_ADDED, recipients)
+	return &addFederatedMemberResponse{
+		Success: true,
+		Group:   toProtoGroupFromDomain(groupItem),
+		Member:  toProtoMemberFromDomain(member),
+	}, nil
 }
 
 func (s *subServer) handleRemoveMember(ctx context.Context, req *chat.RemoveMemberRequest) (*chat.RemoveMemberResponse, error) {
