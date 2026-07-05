@@ -4,7 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Tag } from '@lobehub/ui';
 import { Collapse, Empty, Tabs, theme, Typography } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
-import { groupAvatarRemoteUrl, peerOfSession, useSocialChatStore } from '../../store/socialChat';
+import { useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { log } from '../../utils/logger';
 
@@ -16,13 +16,12 @@ export function ChatContactsPanel() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
-    sessions,
-    groups,
     friendRequests,
     currentUserDid,
     activeTab,
     activeSessionUlid,
     activeGroupUlid,
+    getIMConversations,
     selectSession,
     selectGroup,
     setActiveTab,
@@ -31,6 +30,9 @@ export function ChatContactsPanel() {
   } = useSocialChatStore();
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
+  const conversations = getIMConversations();
+  const groupConversations = conversations.filter((conversation) => conversation.kind === 'group');
+  const friendConversations = conversations.filter((conversation) => conversation.kind === 'friend');
 
   const receivedRequests = useMemo(() => {
     if (!currentUserDid) return [];
@@ -222,27 +224,27 @@ export function ChatContactsPanel() {
         <Flexbox horizontal align="center" gap={8}>
           <Users size={14} style={{ color: token.colorTextSecondary }} />
           <Text strong style={{ fontSize: 13 }}>
-            {t('chat.social.contacts.savedGroupsCount', { count: groups.length })}
+            {t('chat.social.contacts.savedGroupsCount', { count: groupConversations.length })}
           </Text>
         </Flexbox>
       ),
       children:
-        groups.length === 0 ? (
+        groupConversations.length === 0 ? (
           <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noGroups')} />
           </Flexbox>
         ) : (
           <Flexbox gap={3} style={rowListStyle}>
-            {groups.map((g) => {
-              const isSelected = activeTab === 'group' && g.ulid === activeGroupUlid;
+            {groupConversations.map((conversation) => {
+              const isSelected = activeTab === 'group' && conversation.id === activeGroupUlid;
               return (
                 <Flexbox
-                  key={g.ulid}
+                  key={conversation.id}
                   horizontal
                   align="center"
                   gap={9}
                   onClick={() => {
-                    selectGroup(g.ulid);
+                    selectGroup(conversation.id);
                     setActiveTab('group');
                   }}
                   style={{
@@ -257,16 +259,16 @@ export function ChatContactsPanel() {
                   }}
                 >
                   <UserSquareAvatar
-                    remoteUrl={groupAvatarRemoteUrl(g)}
-                    name={g.name || t('chat.social.sessionList.unnamedGroup')}
+                    remoteUrl={conversation.avatar}
+                    name={conversation.title || t('chat.social.sessionList.unnamedGroup')}
                     size={avatarSize}
                   />
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
                     <Text strong ellipsis style={{ fontSize: 13, color: isSelected ? token.colorPrimary : undefined }}>
-                      {g.name || t('chat.social.sessionList.unnamedGroup')}
+                      {conversation.title || t('chat.social.sessionList.unnamedGroup')}
                     </Text>
                     <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-                      {t('chat.social.detail.membersCount', { count: g.memberCount ?? 0 })}
+                      {t('chat.social.detail.membersCount', { count: conversation.memberCount ?? 0 })}
                     </Text>
                   </Flexbox>
                   <ChevronRight
@@ -288,29 +290,29 @@ export function ChatContactsPanel() {
         <Flexbox horizontal align="center" gap={8}>
           <Contact size={14} style={{ color: token.colorTextSecondary }} />
           <Text strong style={{ fontSize: 13 }}>
-            {t('chat.social.contacts.contactsCount', { count: sessions.length })}
+            {t('chat.social.contacts.contactsCount', { count: friendConversations.length })}
           </Text>
         </Flexbox>
       ),
       children:
-        sessions.length === 0 ? (
+        friendConversations.length === 0 ? (
           <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noFriends')} />
           </Flexbox>
         ) : (
           <Flexbox gap={3} style={rowListStyle}>
-            {sessions.map((s) => {
-              const peer = peerOfSession(s, currentUserDid);
-              const label = peer.name || t('chat.social.sessionList.unknown');
-              const isSelected = activeTab === 'friend' && s.ulid === activeSessionUlid;
+            {friendConversations.map((conversation) => {
+              const label = conversation.title || t('chat.social.sessionList.unknown');
+              const peerDid = conversation.peerDid || '';
+              const isSelected = activeTab === 'friend' && conversation.id === activeSessionUlid;
               return (
                 <Flexbox
-                  key={s.ulid}
+                  key={conversation.id}
                   horizontal
                   align="center"
                   gap={9}
                   onClick={() => {
-                    selectSession(s.ulid);
+                    selectSession(conversation.id);
                     setActiveTab('friend');
                   }}
                   style={{
@@ -324,14 +326,14 @@ export function ChatContactsPanel() {
                     e.currentTarget.style.background = isSelected ? token.colorPrimaryBg : 'transparent';
                   }}
                 >
-                  <UserSquareAvatar remoteUrl={peer.avatar} name={label} size={avatarSize} />
+                  <UserSquareAvatar remoteUrl={conversation.avatar} name={label} size={avatarSize} />
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
                     <Text strong ellipsis style={{ fontSize: 13, color: isSelected ? token.colorPrimary : undefined }}>
                       {label}
                     </Text>
-                    {peer.did ? (
+                    {peerDid ? (
                       <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-                        {peer.did}
+                        {peerDid}
                       </Text>
                     ) : null}
                   </Flexbox>

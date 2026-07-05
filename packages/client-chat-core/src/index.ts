@@ -41,6 +41,111 @@ export type SocialHostEventKind =
   | 'notification-tap'
   | 'native-hint';
 
+export type IMConversationKind = 'friend' | 'group';
+export type IMSyncStatus = 'bootstrapping' | 'live' | 'reconciling' | 'degraded' | 'disconnected' | 'authDenied';
+export type IMProjectionErrorKind = 'network' | 'auth' | 'decrypt' | 'permission' | 'unknown';
+
+export interface IMProjectionError {
+  readonly kind: IMProjectionErrorKind;
+  readonly message: string;
+  readonly retryable: boolean;
+  readonly at: number;
+}
+
+export interface IMConversationPreviewProjection {
+  readonly content: string;
+  readonly type: number;
+  readonly senderId: string;
+}
+
+export interface IMConversationProjectionInput {
+  readonly kind: IMConversationKind;
+  readonly id: string;
+  readonly title: string;
+  readonly avatar?: string;
+  readonly lastActivityMs: number;
+  readonly unread: number;
+  readonly muted?: boolean;
+  readonly alertEnabled?: boolean;
+  readonly hidden?: boolean;
+  readonly preview?: IMConversationPreviewProjection;
+  readonly syncStatus?: IMSyncStatus;
+  readonly error?: IMProjectionError;
+  readonly cursor?: string;
+}
+
+export interface IMConversationProjection {
+  readonly kind: IMConversationKind;
+  readonly id: string;
+  readonly title: string;
+  readonly avatar: string;
+  readonly lastActivityMs: number;
+  readonly unread: number;
+  readonly visibleUnread: number;
+  readonly muted: boolean;
+  readonly alertEnabled: boolean;
+  readonly hidden: boolean;
+  readonly preview?: IMConversationPreviewProjection;
+  readonly syncStatus: IMSyncStatus;
+  readonly error?: IMProjectionError;
+  readonly cursor?: string;
+}
+
+export interface IMMessageProjectionInput<Attachment extends ChatAttachmentLike = ChatAttachmentLike> {
+  readonly id: string;
+  readonly conversationKind: IMConversationKind;
+  readonly conversationId: string;
+  readonly senderId: string;
+  readonly type: number;
+  readonly content?: string;
+  readonly attachments?: readonly Attachment[];
+  readonly status?: number | string;
+  readonly sentAtMs: number;
+  readonly recalled?: boolean;
+  readonly editedAtMs?: number;
+  readonly replyToId?: string;
+  readonly threadRootId?: string;
+  readonly encrypted?: boolean;
+  readonly error?: IMProjectionError;
+}
+
+export interface IMMessageProjection<Attachment extends ChatAttachmentLike = ChatAttachmentLike> {
+  readonly id: string;
+  readonly conversationKind: IMConversationKind;
+  readonly conversationId: string;
+  readonly senderId: string;
+  readonly type: number;
+  readonly content: string;
+  readonly attachments: readonly Attachment[];
+  readonly status?: number | string;
+  readonly sentAtMs: number;
+  readonly recalled: boolean;
+  readonly editedAtMs?: number;
+  readonly replyToId?: string;
+  readonly threadRootId?: string;
+  readonly encrypted: boolean;
+  readonly error?: IMProjectionError;
+}
+
+export interface IMProjectionState<
+  Conversation extends IMConversationProjection = IMConversationProjection,
+  Message extends IMMessageProjection = IMMessageProjection,
+> {
+  readonly syncStatus: IMSyncStatus;
+  readonly conversations: readonly Conversation[];
+  readonly messagesByConversation: Readonly<Record<string, readonly Message[]>>;
+  readonly cursorByActor?: Readonly<Record<string, string>>;
+  readonly error?: IMProjectionError;
+}
+
+export interface IMProjectionDelta {
+  readonly syncStatus?: IMSyncStatus;
+  readonly conversations?: readonly IMConversationProjection[];
+  readonly messagesByConversation?: Readonly<Record<string, readonly IMMessageProjection[]>>;
+  readonly cursorByActor?: Readonly<Record<string, string>>;
+  readonly error?: IMProjectionError;
+}
+
 export interface SocialHostEvent {
   readonly kind: SocialHostEventKind;
   readonly target?: string;
@@ -1334,6 +1439,75 @@ export function visibleChatConversationUnread(
   preference: Pick<ChatConversationPreferenceLike, 'muted' | 'alertEnabled'> | undefined,
 ): number {
   return chatConversationSuppressesAlerts(preference) ? 0 : unread;
+}
+
+export function projectIMConversation(input: IMConversationProjectionInput): IMConversationProjection {
+  const muted = Boolean(input.muted);
+  const alertEnabled = input.alertEnabled !== false;
+  const unread = Math.max(0, Math.floor(input.unread || 0));
+  return {
+    kind: input.kind,
+    id: input.id,
+    title: input.title,
+    avatar: input.avatar ?? '',
+    lastActivityMs: Number.isFinite(input.lastActivityMs) ? input.lastActivityMs : 0,
+    unread,
+    visibleUnread: visibleChatConversationUnread(unread, { muted, alertEnabled }),
+    muted,
+    alertEnabled,
+    hidden: Boolean(input.hidden),
+    preview: input.preview,
+    syncStatus: input.syncStatus ?? 'live',
+    error: input.error,
+    cursor: input.cursor,
+  };
+}
+
+export function projectIMConversations(
+  inputs: readonly IMConversationProjectionInput[],
+): IMConversationProjection[] {
+  return inputs
+    .map(projectIMConversation)
+    .filter((conversation) => !conversation.hidden)
+    .sort((a, b) => {
+      const activityDelta = b.lastActivityMs - a.lastActivityMs;
+      if (activityDelta !== 0) return activityDelta;
+      return `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`);
+    });
+}
+
+export function projectIMMessage<Attachment extends ChatAttachmentLike = ChatAttachmentLike>(
+  input: IMMessageProjectionInput<Attachment>,
+): IMMessageProjection<Attachment> {
+  return {
+    id: input.id,
+    conversationKind: input.conversationKind,
+    conversationId: input.conversationId,
+    senderId: input.senderId,
+    type: input.type,
+    content: input.content ?? '',
+    attachments: input.attachments ?? [],
+    status: input.status,
+    sentAtMs: Number.isFinite(input.sentAtMs) ? input.sentAtMs : 0,
+    recalled: Boolean(input.recalled),
+    editedAtMs: input.editedAtMs,
+    replyToId: input.replyToId,
+    threadRootId: input.threadRootId,
+    encrypted: Boolean(input.encrypted),
+    error: input.error,
+  };
+}
+
+export function projectIMMessages<Attachment extends ChatAttachmentLike = ChatAttachmentLike>(
+  inputs: readonly IMMessageProjectionInput<Attachment>[],
+): IMMessageProjection<Attachment>[] {
+  return inputs
+    .map(projectIMMessage)
+    .sort((a, b) => {
+      const timestampDelta = a.sentAtMs - b.sentAtMs;
+      if (timestampDelta !== 0) return timestampDelta;
+      return a.id.localeCompare(b.id);
+    });
 }
 
 export function buildChatConversationSurfaceItems<T>({
