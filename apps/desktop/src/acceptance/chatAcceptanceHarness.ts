@@ -78,6 +78,11 @@ interface RemoveGroupMemberInput {
   memberDid: string;
 }
 
+interface AddFederatedGroupMemberInput {
+  groupUlid: string;
+  member: GroupChatFederatedActorInput;
+}
+
 declare global {
   interface Window {
     __PT_ACCEPTANCE__?: {
@@ -139,6 +144,11 @@ declare global {
         lastFound: boolean;
         completed: boolean;
         decodedWindowCount: number;
+      }>;
+      addFederatedGroupMember(input: AddFederatedGroupMemberInput): Promise<{
+        groupUlid: string;
+        success: boolean;
+        memberCount: number;
       }>;
       removeGroupMember(input: RemoveGroupMemberInput): Promise<{ groupUlid: string; success: boolean; memberCount: number }>;
       getRealtimeDevice(): Promise<{ actorId: string | null; deviceId: string }>;
@@ -474,6 +484,20 @@ export function installChatAcceptanceHarness(): void {
         lastFound: decodedContents.includes(lastContent),
         completed: state.nextDecodeIndex >= ordered.length,
         decodedWindowCount: state.nextDecodeIndex,
+      };
+    },
+
+    async addFederatedGroupMember({ groupUlid, member }) {
+      const response = await api.groupChatAddFederatedMember(groupUlid, member);
+      const social = useSocialChatStore.getState();
+      await social.loadGroups();
+      await social.loadGroupMembers(groupUlid);
+      social.selectGroup(groupUlid);
+      social.setActiveTab('group');
+      return {
+        groupUlid,
+        success: Boolean(response.success),
+        memberCount: useSocialChatStore.getState().groupMembers[groupUlid]?.length ?? 0,
       };
     },
 

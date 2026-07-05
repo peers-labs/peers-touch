@@ -2,15 +2,15 @@ use crate::application::chat_storage;
 use crate::application::session_resolver;
 use crate::contracts::{
     AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput,
-    ChatScopeCursorSetInput, GroupAckOfflineInput, GroupChatCreateGroupInput, GroupChatEditInput,
-    GroupChatFederatedActorInput, GroupChatLeaveGroupInput, GroupChatListInput,
-    GroupChatListMessagesInput, GroupChatMarkReadInput, GroupChatSendInput, GroupChatSyncInput,
-    GroupChatThreadCountsInput, GroupChatThreadInput, GroupChatThreadReadInput,
-    GroupChatUnreadInput, GroupInviteInput, GroupJoinInput, GroupMembersInput,
-    GroupMessageActionInput, GroupOfflineMessagesInput, GroupRemoveMemberInput,
-    GroupSearchMessagesInput, GroupSkdmSubmitInput, GroupTransferOwnershipInput, GroupUlidInput,
-    GroupUpdateInput, GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput,
-    StubPayload,
+    ChatScopeCursorSetInput, GroupAckOfflineInput, GroupAddFederatedMemberInput,
+    GroupChatCreateGroupInput, GroupChatEditInput, GroupChatFederatedActorInput,
+    GroupChatLeaveGroupInput, GroupChatListInput, GroupChatListMessagesInput,
+    GroupChatMarkReadInput, GroupChatSendInput, GroupChatSyncInput, GroupChatThreadCountsInput,
+    GroupChatThreadInput, GroupChatThreadReadInput, GroupChatUnreadInput, GroupInviteInput,
+    GroupJoinInput, GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
+    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupSkdmSubmitInput,
+    GroupTransferOwnershipInput, GroupUlidInput, GroupUpdateInput, GroupUpdateMemberInput,
+    GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -897,6 +897,46 @@ pub fn group_chat_invite_to_group(
     };
 
     AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn group_chat_add_federated_member(
+    input: GroupAddFederatedMemberInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+
+    let member = group_chat_federated_actor_input_to_proto(input.member);
+    let data = match request_json(
+        Method::POST,
+        "/group-chat/member/federated-add",
+        &token,
+        None,
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "member": {
+                "actor_did": member.actor_did,
+                "home_station_peer_id": member.home_station_peer_id,
+                "home_station_domain": member.home_station_domain,
+                "federated_handle": member.federated_handle,
+                "actor_identity_public_key": member.actor_identity_public_key,
+                "profile_version": member.profile_version,
+                "federation_id": member.federation_id,
+            },
+        })),
+    ) {
+        Ok(data) => data,
+        Err(e) => return e,
+    };
+
+    AppResult::success(StubPayload {
+        command: "group_chat_add_federated_member".to_string(),
+        status: data.to_string(),
+    })
 }
 
 #[tauri::command]
