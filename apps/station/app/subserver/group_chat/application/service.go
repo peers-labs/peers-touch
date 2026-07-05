@@ -45,7 +45,7 @@ type Repository interface {
 	GetSettings(groupID, actorDID string) domain.GroupSetting
 	UpdateSettings(groupID, actorDID string, muted, pinned, showNickname, alertEnabled *bool, background *string, clearedAtUnixMs *int64)
 	GetOfflineMessages(actorDID string, limit int) []domain.OfflineMessage
-	AckOffline(ulids []string)
+	AckOffline(actorDID string, ulids []string)
 	Stats() (int32, int32, int64, int32)
 }
 
@@ -237,8 +237,8 @@ func (s *Service) GetOfflineMessages(actorDID string, limit int) []domain.Offlin
 	return s.repo.GetOfflineMessages(actorDID, limit)
 }
 
-func (s *Service) AckOffline(ulids []string) {
-	s.repo.AckOffline(ulids)
+func (s *Service) AckOffline(actorDID string, ulids []string) {
+	s.repo.AckOffline(actorDID, ulids)
 }
 
 func (s *Service) Stats() (int32, int32, int64, int32) {
