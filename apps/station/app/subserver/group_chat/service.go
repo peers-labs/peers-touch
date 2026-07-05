@@ -734,8 +734,13 @@ func federationFanoutTargetsTx(tx *gorm.DB, groupID, actorHomeStationPeerID, aut
 	return targets, nil
 }
 
-func appendAuthorityEventTx(tx *gorm.DB, now time.Time, groupID, eventType, actorDID, messageULID string, membershipEpoch int64, payload string) error {
-	_, _, err := appendAuthorityEventWithIdempotencyTx(
+func (s *service) appendAuthorityEventTx(tx *gorm.DB, now time.Time, groupID, eventType, actorDID, messageULID string, membershipEpoch int64, payload string) error {
+	_, _, err := s.appendAuthorityEventRowTx(tx, now, groupID, eventType, actorDID, messageULID, membershipEpoch, payload)
+	return err
+}
+
+func (s *service) appendAuthorityEventRowTx(tx *gorm.DB, now time.Time, groupID, eventType, actorDID, messageULID string, membershipEpoch int64, payload string) (*groupEventModel, bool, error) {
+	return appendAuthorityEventWithIdempotencyTx(
 		tx,
 		now,
 		groupID,
@@ -743,13 +748,48 @@ func appendAuthorityEventTx(tx *gorm.DB, now time.Time, groupID, eventType, acto
 		actorDID,
 		messageULID,
 		membershipEpoch,
-		foundationLocalAuthorityStation,
+		s.authorityStationID(),
 		foundationAuthorityEpoch,
 		"",
 		payload,
 		authorityEventIdempotencyKey(groupID, eventType, actorDID, messageULID, membershipEpoch, payload),
 	)
-	return err
+}
+
+func enqueueAuthorityEventFanoutTx(tx *gorm.DB, now time.Time, event groupEventModel, actor domain.FederatedActorRef) error {
+	targets, err := federationFanoutTargetsTx(tx, event.GroupULID, actor.HomeStationPeerID, event.AuthorityStationPeerID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(actor.ActorDID) == "" {
+		actor.ActorDID = event.ActorDID
+	}
+	for _, target := range targets {
+		if err := enqueueFederationOutboxTx(tx, now, event, target, actor); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func enqueueAuthorityEventHistoryForTargetTx(tx *gorm.DB, now time.Time, groupID, targetStationPeerID string, actor domain.FederatedActorRef) error {
+	targetStationPeerID = strings.TrimSpace(targetStationPeerID)
+	if targetStationPeerID == "" {
+		return nil
+	}
+	var events []groupEventModel
+	if err := tx.Where("group_ulid = ?", groupID).Order("seq ASC").Find(&events).Error; err != nil {
+		return err
+	}
+	if strings.TrimSpace(actor.ActorDID) == "" {
+		actor.ActorDID = targetStationPeerID
+	}
+	for _, event := range events {
+		if err := enqueueFederationOutboxTx(tx, now, event, targetStationPeerID, actor); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func appendAuthorityEventWithIdempotencyTx(tx *gorm.DB, now time.Time, groupID, eventType, actorDID, messageULID string, membershipEpoch int64, authorityStationPeerID string, authorityEpoch int64, proposalULID, payload, idempotencyKey string) (*groupEventModel, bool, error) {
@@ -956,21 +996,33 @@ func groupToDomain(item *group) domain.Group {
 }
 
 type service struct {
-	mu           sync.RWMutex
-	db           *gorm.DB
-	groups       map[string]*group
-	messages     map[string][]message
-	messagesByID map[string]message
-	members      map[string]map[string]*member
-	invitations  map[string]*invitation
-	settings     map[string]map[string]groupSetting
-	offline      map[string][]offlineMessage
-	unread       map[string]map[string]int64
-	threadReads  map[string]threadRead
-	groupEvents  map[string][]domain.GroupEvent
-	followers    map[string]domain.FollowerProjection
-	proposals    map[string]domain.GroupProposalOutboxItem
-	skdmOutbox   map[string]domain.GroupSkdmEnvelope
+	mu                     sync.RWMutex
+	db                     *gorm.DB
+	authorityStationPeerID string
+	groups                 map[string]*group
+	messages               map[string][]message
+	messagesByID           map[string]message
+	members                map[string]map[string]*member
+	invitations            map[string]*invitation
+	settings               map[string]map[string]groupSetting
+	offline                map[string][]offlineMessage
+	unread                 map[string]map[string]int64
+	threadReads            map[string]threadRead
+	groupEvents            map[string][]domain.GroupEvent
+	followers              map[string]domain.FollowerProjection
+	proposals              map[string]domain.GroupProposalOutboxItem
+	skdmOutbox             map[string]domain.GroupSkdmEnvelope
+}
+
+func (s *service) authorityStationID() string {
+	if s == nil {
+		return foundationLocalAuthorityStation
+	}
+	authority := strings.TrimSpace(s.authorityStationPeerID)
+	if authority == "" {
+		return foundationLocalAuthorityStation
+	}
+	return authority
 }
 
 func (s *service) CreateGroup(ownerDID, name, description string) domain.Group {
@@ -2499,7 +2551,7 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 			}).Error; err != nil {
 				return err
 			}
-			if err := appendAuthorityEventTx(tx, now, item.ID, "group.created", ownerDID, "", item.MembershipEpoch, fmt.Sprintf(`{"owner_did":"%s"}`, ownerDID)); err != nil {
+			if err := s.appendAuthorityEventTx(tx, now, item.ID, "group.created", ownerDID, "", item.MembershipEpoch, fmt.Sprintf(`{"owner_did":"%s"}`, ownerDID)); err != nil {
 				return err
 			}
 			return tx.Create(&outboxModel{
@@ -2775,7 +2827,11 @@ func (s *service) appendMessage(groupID, senderDID string, messageType int32, co
 			if err := tx.Model(&groupModel{}).Where("ulid = ?", groupID).Update("updated_at", now).Error; err != nil {
 				return err
 			}
-			if err := appendAuthorityEventTx(tx, now, groupID, "group.message.appended", senderDID, item.ID, groupRow.MembershipEpoch, fmt.Sprintf(`{"message_ulid":"%s","sender_did":"%s"}`, item.ID, senderDID)); err != nil {
+			event, _, err := s.appendAuthorityEventRowTx(tx, now, groupID, "group.message.appended", senderDID, item.ID, groupRow.MembershipEpoch, fmt.Sprintf(`{"message_ulid":"%s","sender_did":"%s"}`, item.ID, senderDID))
+			if err != nil {
+				return err
+			}
+			if err := enqueueAuthorityEventFanoutTx(tx, now, *event, domain.FederatedActorRef{ActorDID: senderDID}); err != nil {
 				return err
 			}
 			return tx.Create(&outboxModel{
@@ -3471,7 +3527,14 @@ func (s *service) addMemberWithActorRef(groupID string, actor domain.FederatedAc
 			}
 			if added {
 				nextEpoch := groupMembershipEpoch(groupRow.MembershipEpoch) + 1
-				if err := appendAuthorityEventTx(tx, now, groupID, "group.member.joined", actorDID, "", nextEpoch, fmt.Sprintf(`{"actor_did":"%s","inviter_did":"%s"}`, actorDID, inviterDID)); err != nil {
+				event, _, err := s.appendAuthorityEventRowTx(tx, now, groupID, "group.member.joined", actorDID, "", nextEpoch, fmt.Sprintf(`{"actor_did":"%s","inviter_did":"%s"}`, actorDID, inviterDID))
+				if err != nil {
+					return err
+				}
+				if err := enqueueAuthorityEventHistoryForTargetTx(tx, now, groupID, actor.HomeStationPeerID, actor); err != nil {
+					return err
+				}
+				if err := enqueueAuthorityEventFanoutTx(tx, now, *event, actor); err != nil {
 					return err
 				}
 			}
@@ -3613,7 +3676,7 @@ func (s *service) removeMember(groupID, actorDID string) bool {
 				return err
 			}
 			nextEpoch := groupMembershipEpoch(groupRow.MembershipEpoch) + 1
-			if err := appendAuthorityEventTx(tx, now, groupID, "group.member.removed", actorDID, "", nextEpoch, fmt.Sprintf(`{"actor_did":"%s"}`, actorDID)); err != nil {
+			if err := s.appendAuthorityEventTx(tx, now, groupID, "group.member.removed", actorDID, "", nextEpoch, fmt.Sprintf(`{"actor_did":"%s"}`, actorDID)); err != nil {
 				return err
 			}
 			return tx.Create(&outboxModel{
@@ -3683,7 +3746,7 @@ func (s *service) transferOwnership(groupID, currentOwnerDID, nextOwnerDID strin
 			}).Error; err != nil {
 				return err
 			}
-			if err := appendAuthorityEventTx(tx, now, groupID, "group.owner.transferred", currentOwnerDID, "", groupRow.MembershipEpoch, fmt.Sprintf(`{"from_did":"%s","to_did":"%s"}`, currentOwnerDID, nextOwnerDID)); err != nil {
+			if err := s.appendAuthorityEventTx(tx, now, groupID, "group.owner.transferred", currentOwnerDID, "", groupRow.MembershipEpoch, fmt.Sprintf(`{"from_did":"%s","to_did":"%s"}`, currentOwnerDID, nextOwnerDID)); err != nil {
 				return err
 			}
 			return tx.Create(&outboxModel{
@@ -3755,7 +3818,7 @@ func (s *service) dissolveGroup(groupID string) bool {
 				}).Error; err != nil {
 				return err
 			}
-			if err := appendAuthorityEventTx(tx, now, groupID, "group.dissolved", row.OwnerDID, "", row.MembershipEpoch, `{}`); err != nil {
+			if err := s.appendAuthorityEventTx(tx, now, groupID, "group.dissolved", row.OwnerDID, "", row.MembershipEpoch, `{}`); err != nil {
 				return err
 			}
 			return tx.Create(&outboxModel{

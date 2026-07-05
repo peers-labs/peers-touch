@@ -113,6 +113,17 @@ def realtime_device(dom_gate: Any, session: Any, expected_actor_id: str) -> str:
     return device_id
 
 
+def gateway_current_session_token(chat_gateway: Any, gateway_url: str, expected_actor_id: str) -> str:
+    status = chat_gateway.gateway_status_json(gateway_url, "acceptance_current_session")
+    actor_id = str(status.get("actor_id") or "")
+    if actor_id != expected_actor_id:
+        raise GateError(f"gateway current session actor mismatch: got={actor_id!r} want={expected_actor_id!r}")
+    token = str(status.get("token") or "").strip()
+    if not token:
+        raise GateError("gateway current session token missing")
+    return token
+
+
 def create_federated_group(dom_gate: Any, session: Any, name: str, member_did: str, member_home_peer: str, member_home_domain: str) -> str:
     result = dom_gate.evaluate_async(
         session,
@@ -351,9 +362,10 @@ def main() -> int:
 
         dom_gate.login_with_acceptance_harness(b_session, actor_b.email, actor_b.password, actor_b.actor_id)
         follower_device_id = realtime_device(dom_gate, b_session, actor_b.actor_id)
+        follower_session_token = gateway_current_session_token(chat_gateway, follower_gateway, actor_b.actor_id)
         sse_thread = threading.Thread(
             target=sse_reader,
-            args=(follower_station, actor_b.token, follower_device_id, frames, stop_sse),
+            args=(follower_station, follower_session_token, follower_device_id, frames, stop_sse),
             daemon=True,
         )
         sse_thread.start()
