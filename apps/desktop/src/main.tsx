@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { ThemeProvider } from '@lobehub/ui';
 import { I18nextProvider } from 'react-i18next';
 import { log } from './utils/logger';
-import { initI18n } from './i18n';
+import i18n, { initI18n } from './i18n';
 import { registerAppletElements } from './applet/register-elements';
 // Side-effect: register global error / unhandledrejection handlers once.
 import './kernel/events/global-error';
@@ -17,6 +17,12 @@ import { installFrontendRuntimeProfiler } from './kernel/frontendRuntimeProfiler
 // Register custom elements early — before any React component attempts to render <lynx-host>.
 registerAppletElements();
 installFrontendRuntimeProfiler();
+
+if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
+  void import('./acceptance/chatAcceptanceHarness').then(({ installChatAcceptanceHarness }) => {
+    installChatAcceptanceHarness();
+  });
+}
 
 // ── Browser Dev Gateway ──
 // When running outside Tauri WebView (e.g. Chrome), patch
@@ -72,7 +78,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
     if (this.state.error) {
       return (
         <div style={{ padding: 40, color: '#c00', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-          <h2>App crashed</h2>
+            <h2>{i18n.t('desktop.errorBoundary.title', { ns: 'common' })}</h2>
           <p>{this.state.error.message}</p>
           <pre style={{ fontSize: 12 }}>{this.state.error.stack}</pre>
         </div>
@@ -86,7 +92,7 @@ async function bootstrap() {
   markPhaseStart('shell');
 
   window.__PT_BOOT_STATUS__?.('Loading language packs…');
-  const i18n = await initI18n();
+  const initializedI18n = await initI18n();
 
   window.__PT_BOOT_STATUS__?.('Rendering UI…');
   const path = window.location.pathname;
@@ -101,7 +107,7 @@ async function bootstrap() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <ErrorBoundary>
-        <I18nextProvider i18n={i18n}>
+          <I18nextProvider i18n={initializedI18n}>
           <ThemeProvider>
             {shareMatch ? <SharePage token={shareMatch[1]} /> : <App />}
           </ThemeProvider>

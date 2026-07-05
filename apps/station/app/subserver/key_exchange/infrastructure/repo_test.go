@@ -65,3 +65,52 @@ func TestFetchKeyBundles_MultiDeviceCompositeKey(t *testing.T) {
 		t.Fatalf("expected devB to preserve supported versions [0 1], got %#v", got)
 	}
 }
+
+func TestUploadOneTimePreKeys_IsIdempotentForDuplicateIDs(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	repo := NewGormRepo(db)
+	if err := repo.db.AutoMigrate(&IdentityKeyModel{}, &SignedPreKeyModel{}, &OneTimePreKeyModel{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	did := "did:peer:test-actor"
+	deviceID := "device-a"
+	keys := []domain.OneTimePreKey{
+		{ID: 1, PublicKey: []byte("opk-1___________________________")},
+		{ID: 2, PublicKey: []byte("opk-2___________________________")},
+	}
+	if err := repo.UploadOneTimePreKeys(did, deviceID, keys); err != nil {
+		t.Fatalf("first upload: %v", err)
+	}
+	if err := repo.db.Model(&OneTimePreKeyModel{}).
+		Where("actor_did = ? AND device_id = ? AND opk_id = ?", did, deviceID, int32(1)).
+		Update("consumed", true).Error; err != nil {
+		t.Fatalf("mark consumed: %v", err)
+	}
+	if err := repo.UploadOneTimePreKeys(did, deviceID, keys); err != nil {
+		t.Fatalf("duplicate upload should be idempotent: %v", err)
+	}
+
+	var count int64
+	if err := repo.db.Model(&OneTimePreKeyModel{}).
+		Where("actor_did = ? AND device_id = ?", did, deviceID).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected duplicate upload to keep 2 rows, got %d", count)
+	}
+	var consumed bool
+	if err := repo.db.Model(&OneTimePreKeyModel{}).
+		Select("consumed").
+		Where("actor_did = ? AND device_id = ? AND opk_id = ?", did, deviceID, int32(1)).
+		Take(&consumed).Error; err != nil {
+		t.Fatalf("read consumed: %v", err)
+	}
+	if !consumed {
+		t.Fatalf("duplicate upload must not resurrect a consumed OPK")
+	}
+}
