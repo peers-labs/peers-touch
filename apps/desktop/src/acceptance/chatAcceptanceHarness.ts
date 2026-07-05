@@ -35,6 +35,11 @@ interface SendGroupMessageInput {
   type?: number;
 }
 
+interface RemoveGroupMemberInput {
+  groupUlid: string;
+  memberDid: string;
+}
+
 declare global {
   interface Window {
     __PT_ACCEPTANCE__?: {
@@ -53,6 +58,7 @@ declare global {
         pagesFetched: number;
       }>;
       sendGroupMessage(input: SendGroupMessageInput): Promise<{ groupUlid: string; messageCount: number }>;
+      removeGroupMember(input: RemoveGroupMemberInput): Promise<{ groupUlid: string; success: boolean; memberCount: number }>;
       getRealtimeDevice(): Promise<{ actorId: string | null; deviceId: string }>;
       dispatchRealtimeFrame(input: { eventId?: string; dataB64: string }): Promise<{ accepted: boolean }>;
     };
@@ -145,6 +151,18 @@ export function installChatAcceptanceHarness(): void {
       return {
         groupUlid,
         messageCount: useSocialChatStore.getState().getIMMessages('group', groupUlid).length,
+      };
+    },
+
+    async removeGroupMember({ groupUlid, memberDid }) {
+      const response = await api.groupChatRemoveMember(groupUlid, memberDid);
+      const social = useSocialChatStore.getState();
+      await social.loadGroups();
+      await social.loadGroupMembers(groupUlid);
+      return {
+        groupUlid,
+        success: Boolean(response.success),
+        memberCount: useSocialChatStore.getState().groupMembers[groupUlid]?.length ?? 0,
       };
     },
 

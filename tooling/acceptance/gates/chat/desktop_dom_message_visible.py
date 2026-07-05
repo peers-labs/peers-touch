@@ -241,6 +241,10 @@ def install_tauri_app_result_bridge(session: Any, helpers: Any, gateway_url: str
       if (status.group) writeMessage(out, 1, encodeGroup(status.group));
       return out;
     }}
+    if (cmd === 'group_chat_remove_member') {{
+      writeBool(out, 1, status.success);
+      return out;
+    }}
     if (cmd === 'group_chat_submit_skdm_envelope') return out;
     if (cmd === 'friend_chat_ack_messages') return out;
     return null;
@@ -291,6 +295,7 @@ def install_tauri_app_result_bridge(session: Any, helpers: Any, gateway_url: str
           || cmd === 'group_chat_list_messages'
           || cmd === 'group_chat_send_message'
           || cmd === 'group_chat_create_group'
+          || cmd === 'group_chat_remove_member'
           || cmd === 'group_chat_submit_skdm_envelope'
         )
         && envelope && envelope.ok && envelope.data && typeof envelope.data.status === 'string'
