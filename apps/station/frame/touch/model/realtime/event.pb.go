@@ -1574,18 +1574,19 @@ func (x *GroupFederationEvent) GetActorDid() string {
 // locally. Non-target devices for the same actor may see this envelope
 // on the actor-level stream, but cannot open it.
 type GroupSkdmEnvelopeDelivered struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	GroupUlid         string                 `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	MembershipEpoch   int64                  `protobuf:"varint,2,opt,name=membership_epoch,json=membershipEpoch,proto3" json:"membership_epoch,omitempty"`
-	SenderDid         string                 `protobuf:"bytes,3,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
-	SenderKeyId       uint32                 `protobuf:"varint,4,opt,name=sender_key_id,json=senderKeyId,proto3" json:"sender_key_id,omitempty"`
-	RecipientDid      string                 `protobuf:"bytes,5,opt,name=recipient_did,json=recipientDid,proto3" json:"recipient_did,omitempty"`
-	RecipientDeviceId string                 `protobuf:"bytes,6,opt,name=recipient_device_id,json=recipientDeviceId,proto3" json:"recipient_device_id,omitempty"`
-	IdempotencyKey    string                 `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	EncryptedPayload  []byte                 `protobuf:"bytes,8,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
-	DeliveredTsUnixMs int64                  `protobuf:"varint,9,opt,name=delivered_ts_unix_ms,json=deliveredTsUnixMs,proto3" json:"delivered_ts_unix_ms,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	GroupUlid               string                 `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
+	MembershipEpoch         int64                  `protobuf:"varint,2,opt,name=membership_epoch,json=membershipEpoch,proto3" json:"membership_epoch,omitempty"`
+	SenderDid               string                 `protobuf:"bytes,3,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
+	SenderKeyId             uint32                 `protobuf:"varint,4,opt,name=sender_key_id,json=senderKeyId,proto3" json:"sender_key_id,omitempty"`
+	RecipientDid            string                 `protobuf:"bytes,5,opt,name=recipient_did,json=recipientDid,proto3" json:"recipient_did,omitempty"`
+	RecipientDeviceId       string                 `protobuf:"bytes,6,opt,name=recipient_device_id,json=recipientDeviceId,proto3" json:"recipient_device_id,omitempty"`
+	IdempotencyKey          string                 `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	EncryptedPayload        []byte                 `protobuf:"bytes,8,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
+	DeliveredTsUnixMs       int64                  `protobuf:"varint,9,opt,name=delivered_ts_unix_ms,json=deliveredTsUnixMs,proto3" json:"delivered_ts_unix_ms,omitempty"`
+	SenderHomeStationPeerId string                 `protobuf:"bytes,10,opt,name=sender_home_station_peer_id,json=senderHomeStationPeerId,proto3" json:"sender_home_station_peer_id,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *GroupSkdmEnvelopeDelivered) Reset() {
@@ -1679,6 +1680,13 @@ func (x *GroupSkdmEnvelopeDelivered) GetDeliveredTsUnixMs() int64 {
 		return x.DeliveredTsUnixMs
 	}
 	return 0
+}
+
+func (x *GroupSkdmEnvelopeDelivered) GetSenderHomeStationPeerId() string {
+	if x != nil {
+		return x.SenderHomeStationPeerId
+	}
+	return ""
 }
 
 // Resync is the server's only signal that the client's Last-Event-ID
@@ -1884,7 +1892,7 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x10membership_epoch\x18\t \x01(\x03R\x0fmembershipEpoch\x12/\n" +
 	"\x14committed_ts_unix_ms\x18\n" +
 	" \x01(\x03R\x11committedTsUnixMs\x12\x1b\n" +
-	"\tactor_did\x18\v \x01(\tR\bactorDid\"\x85\x03\n" +
+	"\tactor_did\x18\v \x01(\tR\bactorDid\"\xc3\x03\n" +
 	"\x1aGroupSkdmEnvelopeDelivered\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12)\n" +
@@ -1896,7 +1904,9 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x13recipient_device_id\x18\x06 \x01(\tR\x11recipientDeviceId\x12'\n" +
 	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\x12+\n" +
 	"\x11encrypted_payload\x18\b \x01(\fR\x10encryptedPayload\x12/\n" +
-	"\x14delivered_ts_unix_ms\x18\t \x01(\x03R\x11deliveredTsUnixMs\"H\n" +
+	"\x14delivered_ts_unix_ms\x18\t \x01(\x03R\x11deliveredTsUnixMs\x12<\n" +
+	"\x1bsender_home_station_peer_id\x18\n" +
+	" \x01(\tR\x17senderHomeStationPeerId\"H\n" +
 	"\x06Resync\x12&\n" +
 	"\x0fnewest_event_id\x18\x01 \x01(\tR\rnewestEventId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reasonBOZMgithub.com/peers-labs/peers-touch/station/frame/touch/model/realtime;realtimeb\x06proto3"
