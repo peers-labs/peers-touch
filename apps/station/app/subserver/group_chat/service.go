@@ -996,27 +996,34 @@ func groupToDomain(item *group) domain.Group {
 }
 
 type service struct {
-	mu                     sync.RWMutex
-	db                     *gorm.DB
-	authorityStationPeerID string
-	groups                 map[string]*group
-	messages               map[string][]message
-	messagesByID           map[string]message
-	members                map[string]map[string]*member
-	invitations            map[string]*invitation
-	settings               map[string]map[string]groupSetting
-	offline                map[string][]offlineMessage
-	unread                 map[string]map[string]int64
-	threadReads            map[string]threadRead
-	groupEvents            map[string][]domain.GroupEvent
-	followers              map[string]domain.FollowerProjection
-	proposals              map[string]domain.GroupProposalOutboxItem
-	skdmOutbox             map[string]domain.GroupSkdmEnvelope
+	mu                         sync.RWMutex
+	db                         *gorm.DB
+	authorityStationPeerID     string
+	authorityStationIDResolver func() string
+	groups                     map[string]*group
+	messages                   map[string][]message
+	messagesByID               map[string]message
+	members                    map[string]map[string]*member
+	invitations                map[string]*invitation
+	settings                   map[string]map[string]groupSetting
+	offline                    map[string][]offlineMessage
+	unread                     map[string]map[string]int64
+	threadReads                map[string]threadRead
+	groupEvents                map[string][]domain.GroupEvent
+	followers                  map[string]domain.FollowerProjection
+	proposals                  map[string]domain.GroupProposalOutboxItem
+	skdmOutbox                 map[string]domain.GroupSkdmEnvelope
 }
 
 func (s *service) authorityStationID() string {
 	if s == nil {
 		return foundationLocalAuthorityStation
+	}
+	if s.authorityStationIDResolver != nil {
+		authority := strings.TrimSpace(s.authorityStationIDResolver())
+		if authority != "" && authority != foundationLocalAuthorityStation {
+			return authority
+		}
 	}
 	authority := strings.TrimSpace(s.authorityStationPeerID)
 	if authority == "" {

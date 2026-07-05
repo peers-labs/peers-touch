@@ -584,7 +584,9 @@ func TestAddFederatedMemberEnqueuesAuthorityHistoryForNewRemote(t *testing.T) {
 	if migrateErr := db.AutoMigrate(&groupModel{}, &memberModel{}, &outboxModel{}, &groupEventModel{}, &federationOutboxModel{}); migrateErr != nil {
 		t.Fatalf("auto migrate: %v", migrateErr)
 	}
-	svc := &service{db: db, authorityStationPeerID: "station-a"}
+	svc := &service{db: db, authorityStationPeerID: foundationLocalAuthorityStation, authorityStationIDResolver: func() string {
+		return "station-a"
+	}}
 	group := svc.CreateGroup("owner", "Engineering", "")
 
 	member, ok := svc.AddFederatedMember(group.ID, domain.FederatedActorRef{
@@ -618,6 +620,19 @@ func TestAddFederatedMemberEnqueuesAuthorityHistoryForNewRemote(t *testing.T) {
 	}
 	if first.AuthorityStationPeerID != "station-a" || second.AuthorityStationPeerID != "station-a" {
 		t.Fatalf("expected real authority station in history payloads, got first=%s second=%s", first.AuthorityStationPeerID, second.AuthorityStationPeerID)
+	}
+}
+
+func TestAuthorityStationIDPrefersLateRuntimeIdentityOverInitFallback(t *testing.T) {
+	svc := &service{
+		authorityStationPeerID: foundationLocalAuthorityStation,
+		authorityStationIDResolver: func() string {
+			return "station-live"
+		},
+	}
+
+	if got := svc.authorityStationID(); got != "station-live" {
+		t.Fatalf("expected live station authority, got %q", got)
 	}
 }
 

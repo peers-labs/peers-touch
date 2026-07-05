@@ -2,6 +2,7 @@ package group_chat
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -183,33 +184,35 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.peerKeys = authfed.NewPeerKeyStoreGORMWithDB(rds)
 	s.proposalKeyCache = authfed.Singleton()
 	s.localStationID = localFederationAudience()
+	audienceResolver := dynamicFederationAudienceResolver()
 	s.federationProposalWrapper = serverwrapper.RequireFederationToken(
 		groupChatProposalScopeName,
 		s.peerKeys,
-		httpadapter.StaticAudience(s.localStationID),
+		audienceResolver,
 	)
 	s.federationEventWrapper = serverwrapper.RequireFederationToken(
 		groupChatEventApplyScopeName,
 		s.peerKeys,
-		httpadapter.StaticAudience(s.localStationID),
+		audienceResolver,
 	)
 	s.federationSyncWrapper = serverwrapper.RequireFederationToken(
 		groupChatEventSyncScopeName,
 		s.peerKeys,
-		httpadapter.StaticAudience(s.localStationID),
+		audienceResolver,
 	)
 	s.federationProjectionWrapper = serverwrapper.RequireFederationToken(
 		groupChatProjectionSyncScopeName,
 		s.peerKeys,
-		httpadapter.StaticAudience(s.localStationID),
+		audienceResolver,
 	)
 	s.federationSkdmWrapper = serverwrapper.RequireFederationToken(
 		groupChatSkdmDeliverScopeName,
 		s.peerKeys,
-		httpadapter.StaticAudience(s.localStationID),
+		audienceResolver,
 	)
 	s.service.db = rds
 	s.service.authorityStationPeerID = s.localStationID
+	s.service.authorityStationIDResolver = localFederationAudience
 	if err := s.service.backfillThreadRootIDs(); err != nil {
 		return err
 	}
@@ -229,6 +232,12 @@ func localFederationAudience() string {
 		return strings.TrimSpace(identity.StationDomain)
 	}
 	return foundationLocalAuthorityStation
+}
+
+func dynamicFederationAudienceResolver() httpadapter.AudienceResolver {
+	return func(*http.Request) (string, error) {
+		return localFederationAudience(), nil
+	}
 }
 
 func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
