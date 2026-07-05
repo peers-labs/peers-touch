@@ -121,9 +121,12 @@ func (s *subServer) mintGroupSkdmOutboxToken(ctx context.Context, item domain.Gr
 	if s.proposalKeyCache == nil {
 		return "", errGroupSkdmTransportUnavailable
 	}
-	issuer := strings.TrimSpace(s.localStationID)
-	if issuer == "" {
+	issuer := strings.TrimSpace(item.SenderHomeStationPeerID)
+	if issuer == "" || issuer == foundationLocalAuthorityStation {
 		issuer = localFederationAudience()
+	}
+	if issuer == "" || issuer == foundationLocalAuthorityStation {
+		issuer = strings.TrimSpace(s.localStationID)
 	}
 	audience := strings.TrimSpace(item.RecipientHomeStationPeerID)
 	subject := strings.TrimSpace(item.SenderDID)
