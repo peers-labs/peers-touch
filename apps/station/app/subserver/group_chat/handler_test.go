@@ -118,6 +118,21 @@ func TestHandleCreatePersistsInitialFederatedMembers(t *testing.T) {
 	if local.Actor.HomeStationPeerID != "" {
 		t.Fatalf("did not expect local member to get remote station metadata: %+v", local.Actor)
 	}
+
+	var event groupEventModel
+	if err := sub.service.db.Where("group_ulid = ? AND seq = ?", groupID, int64(1)).First(&event).Error; err != nil {
+		t.Fatalf("expected initial federated create event: %v", err)
+	}
+	if event.EventType != "group.created" || event.ActorDID != "owner" || event.AuthorityStationPeerID == "" {
+		t.Fatalf("unexpected initial federated create event: %+v", event)
+	}
+	var outbox federationOutboxModel
+	if err := sub.service.db.Where("group_ulid = ? AND seq = ? AND target_station_peer_id = ?", groupID, int64(1), "station-b").First(&outbox).Error; err != nil {
+		t.Fatalf("expected initial federated create event outbox: %v", err)
+	}
+	if outbox.Status != federationOutboxStatusPending || outbox.EventULID != event.EventULID {
+		t.Fatalf("unexpected initial federated create outbox: %+v event=%+v", outbox, event)
+	}
 }
 
 func TestHandleGetMessagesNextCursorDoesNotRepeatPage(t *testing.T) {
