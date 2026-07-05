@@ -488,6 +488,7 @@ function onGroupSkdmEnvelopeDelivered(payload: RealtimeGroupSkdmEnvelopeDelivere
     await handleInboundSkdm(payload.senderDid, payload.encryptedPayloadB64, {
       groupUlid: payload.groupUlid,
       senderKeyId: payload.senderKeyId,
+      senderHomeStationPeerId: payload.senderHomeStationPeerId,
       recipientDeviceId: payload.recipientDeviceId,
     });
   });
