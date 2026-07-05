@@ -2,7 +2,7 @@
 
 **日期：** 2026-07-05
 **范围：** 联邦-Station IM Foundation 本地变更进入 PR/release review 前的 evidence packaging
-**结论：** 可进入代码审查；已证明 single-message live cross-Station Desktop/browser decrypt；不能声明 live deployed 3-Station browser/runtime pressure 完成
+**结论：** 可进入代码审查；已证明 single-message 与 3x5 repeated live cross-Station Desktop/browser decrypt；不能声明 1000-message live browser pressure 或 live browser 负例完成
 
 ## 1. Plan Source
 
@@ -29,8 +29,8 @@ make quality-evidence REVIEW_RANGE=origin/master...HEAD
 边界：
 
 - 该质量证据覆盖 committed range：`origin/master...HEAD`。
-- 当前 worktree 仍包含未提交 Phase F delta，包括 pressure gates、federated pressure harness、Phase F evidence bundle。
-- 最终 PR 创建前，应在提交所有 Phase F delta 后再次运行 `make quality-evidence REVIEW_RANGE=<base>...<head>`。
+- 当前 committed range 已包含 Phase F pressure gates、federated pressure harness、Phase F evidence bundle，以及 live browser decrypt evidence handoff。
+- PR 更新前应在提交本次 repeated browser-runtime gate delta 后再次运行 `make quality-evidence REVIEW_RANGE=<base>...<head>`。
 
 ## 3. Review Profiles
 
@@ -149,7 +149,7 @@ Boundary:
 
 | Scope | Status | Reason / Next Evidence |
 | --- | --- | --- |
-| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one home follower Station, home Relay, and dual Desktop gateways bound to distinct Stations; single-message projection sync, SKDM relay delivery, follower Desktop install, and browser decrypt passed; repeated/live browser runtime pressure remains unproven |
+| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one home follower Station, home Relay, and dual Desktop gateways bound to distinct Stations; single-message and 3x5 repeated projection sync, SKDM relay delivery, follower Desktop install, and browser decrypt passed; 1000-message browser pressure and live browser negative cases remain unproven |
 | `chat-desktop-dom-message-visible` from standard acceptance plan | NOT RUN in this packaging pass | Requires local Desktop web/gateway runtime; earlier same-home group Sender Key DOM gate evidence exists separately |
 | `chat-desktop-gateway-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires Desktop HTTP gateway runtime |
 | `chat-live-realtime-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires fedp5/live realtime environment |
@@ -202,6 +202,35 @@ Observed result:
 [OK] evidence: /tmp/peers-touch-chat-federated-dom-home/chat-federated-desktop-dom-group-decrypt.txt
 ```
 
+Live repeated cross-Station Desktop/browser decrypt command:
+
+```bash
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://192.168.31.119:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://192.168.31.119:18082 \
+CHAT_FEDERATION_RELAY_URL=http://192.168.31.119:18081 \
+CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
+CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
+CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
+CHAT_FEDERATION_FOLLOWER_WEB_URL=http://localhost:3312/#/chat \
+CHAT_FEDERATION_DOM_GROUPS=3 \
+CHAT_FEDERATION_DOM_MESSAGES_PER_GROUP=5 \
+CHAT_FEDERATION_DOM_OUT_DIR=/tmp/peers-touch-chat-federated-dom-home-repeat \
+python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_decrypt.py
+```
+
+Observed result:
+
+```text
+[OK] groups: 3
+[OK] messages_per_group: 5
+[OK] total_messages: 15
+[OK] injected_realtime_frames: 24
+[OK] duration_ms: 130842
+[OK] screenshot: /tmp/peers-touch-chat-federated-dom-home-repeat/chat-federated-desktop-dom-group-decrypt.png
+[OK] evidence: /tmp/peers-touch-chat-federated-dom-home-repeat/chat-federated-desktop-dom-group-decrypt.txt
+[OK] report: /tmp/peers-touch-chat-federated-dom-home-repeat/chat-federated-desktop-dom-group-decrypt-report.json
+```
+
 ## 7. Product Proven Scope
 
 Evidence supports these claims:
@@ -216,22 +245,23 @@ Evidence supports these claims:
 - Follower-side projection sync now materializes group/member/message rows with upsert-only semantics and no event/outbox side effects.
 - Federated key bundle lookup lets the authority Desktop resolve remote follower device bundles via Relay + peer-JWT before sealing SKDM envelopes.
 - Live home authority/follower Desktop browser gate proves post-join cross-Station group message decrypt through projection sync, SKDM relay delivery, device-scoped realtime, and local Sender Key install.
+- Live home authority/follower repeated Desktop browser gate proves 3 groups and 15 cross-Station encrypted group messages decrypt in the same follower browser runtime.
 - Desktop compile/type surface accepts the current group SKDM/realtime contracts.
 
 ## 8. Product Unproven Scope
 
 Evidence does not prove:
 
-- live deployed 3-Station Relay runtime;
-- live deployed 3-Station browser/runtime pressure;
-- repeated multi-Station Desktop DOM pressure;
+- 1000-message live deployed browser/runtime pressure;
+- late join / removed member live browser negative cases;
+- multi-follower deployed browser runtime pressure beyond one authority and one follower Station;
 - PostgreSQL-backed multi-node recovery;
 - mobile/applet chat parity;
 - recall/edit/delete user-visible workflow under pressure.
 
 ## 9. Review Handoff
 
-Ready for `pt-github-review`: **yes for the proven Foundation scope**. The remaining merge caveat is not quality evidence; the deployed prerequisite now proves home authority Station, one follower Station, home Relay, and dual Desktop gateway binding. The single-message live cross-Station group message/decrypt browser path is proven. The unproven scope is repeated/live browser runtime pressure.
+Ready for `pt-github-review`: **yes for the proven Foundation scope**. The remaining merge caveat is not quality evidence; the deployed prerequisite now proves home authority Station, one follower Station, home Relay, and dual Desktop gateway binding. The single-message and 3x5 repeated live cross-Station group message/decrypt browser paths are proven. The unproven scope is 1000-message live browser pressure and live browser negative cases.
 
 Ready for PR/release evidence packaging: **yes**.
 
@@ -244,4 +274,4 @@ Reviewer should use:
 
 The strongest accurate claim is:
 
-> Foundation IM has evidence for home Station group/private pressure, relay-mediated 3-Station federation protocol pressure, and single-message live cross-Station Desktop/browser decrypt. It is not yet proven for live deployed browser/runtime pressure.
+> Foundation IM has evidence for home Station group/private pressure, relay-mediated 3-Station federation protocol pressure, single-message live cross-Station Desktop/browser decrypt, and 3x5 repeated live browser runtime decrypt. It is not yet proven for 1000-message live browser pressure or live browser negative cases.
