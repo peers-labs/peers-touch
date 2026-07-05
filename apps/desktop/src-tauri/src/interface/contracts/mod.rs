@@ -823,6 +823,7 @@ pub struct KeyExchangeUploadInput {
 pub struct KeyExchangeFetchInput {
     pub did: String,
     pub device_id: Option<String>,
+    pub home_station_peer_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -377,6 +377,7 @@ message CreateGroupRequest {
   GroupType type = 3;
   GroupVisibility visibility = 4;
   repeated string initial_member_dids = 5;   // 初始成员
+  repeated FederatedActorRef initial_federated_members = 6; // Initial cross-Station members with routing metadata.
 }
 
 message CreateGroupResponse {
@@ -568,6 +569,32 @@ message SyncGroupEventsResponse {
   repeated GroupEvent events = 1;
   int64 last_seq = 2;
   string last_event_hash = 3;
+}
+
+// Follower Station asks the authority Station for the read projection that is
+// safe to materialize locally after event cursor advancement. This contract is
+// separate from GroupEvent: events remain metadata/hash only; message bodies
+// are returned here only as opaque Sender-Keys encrypted_payload bytes.
+message SyncGroupProjectionRequest {
+  string group_ulid = 1;
+  int64 applied_seq = 2;
+  string applied_event_hash = 3;
+  string before_message_ulid = 4;
+  int32 member_limit = 5;
+  int32 member_offset = 6;
+  int32 message_limit = 7;
+}
+
+message SyncGroupProjectionResponse {
+  Group group = 1;
+  repeated GroupMember members = 2;
+  int32 member_total = 3;
+  repeated GroupMessage messages = 4;
+  bool has_more_messages = 5;
+  string next_message_cursor = 6;
+  int64 authority_epoch = 7;
+  int64 last_event_seq = 8;
+  string last_event_hash = 9;
 }
 
 // 获取群消息
