@@ -121,6 +121,7 @@ type GroupSkdmEnvelope struct {
 	MembershipEpoch            int64
 	SenderDID                  string
 	SenderKeyID                uint32
+	SenderHomeStationPeerID    string
 	RecipientDID               string
 	RecipientDeviceID          string
 	RecipientHomeStationPeerID string

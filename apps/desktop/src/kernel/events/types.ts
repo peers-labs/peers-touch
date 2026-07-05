@@ -166,6 +166,7 @@ export interface RealtimeGroupSkdmEnvelopeDeliveredPayload {
   membershipEpoch: number;
   senderDid: string;
   senderKeyId: number;
+  senderHomeStationPeerId: string;
   recipientDid: string;
   recipientDeviceId: string;
   idempotencyKey: string;

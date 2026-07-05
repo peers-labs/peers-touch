@@ -350,6 +350,9 @@ func (s *subServer) handleSubmitGroupSkdmEnvelope(ctx context.Context, req *chat
 	if envelope.SenderDID != subject.ID {
 		return nil, server.Forbidden("sender_did does not match authenticated actor")
 	}
+	if strings.TrimSpace(envelope.SenderHomeStationPeerID) == "" {
+		envelope.SenderHomeStationPeerID = strings.TrimSpace(localFederationAudience())
+	}
 	item, replay, err := s.appService.EnqueueGroupSkdmOutbox(envelope)
 	if err != nil {
 		switch err {
@@ -380,6 +383,9 @@ func (s *subServer) handleDeliverGroupSkdmEnvelope(ctx context.Context, req *cha
 		return nil, err
 	}
 	envelope := groupSkdmEnvelopeFromProto(req.GetEnvelope())
+	if claims := serverwrapper.GetVerifiedFederationClaims(ctx, nil); claims != nil {
+		envelope.SenderHomeStationPeerID = strings.TrimSpace(claims.Issuer)
+	}
 	item, replay, err := s.appService.EnqueueGroupSkdmOutbox(envelope)
 	if err != nil {
 		switch err {
@@ -416,6 +422,9 @@ func validateFederationSkdmClaims(ctx context.Context, envelope *chat.GroupSkdmE
 	}
 	if strings.TrimSpace(claims.Issuer) == "" {
 		return server.Forbidden("federation issuer is required")
+	}
+	if senderHome := strings.TrimSpace(envelope.GetSenderHomeStationPeerId()); senderHome != "" && senderHome != claims.Issuer {
+		return server.Forbidden("federation issuer does not match sender home station")
 	}
 	if claims.Subject != envelope.GetSenderDid() {
 		return server.Forbidden("federation subject does not match skdm sender")
@@ -1340,15 +1349,16 @@ func publishGroupSkdmEnvelopeToBus(item group_chat_domain.GroupSkdmEnvelope) boo
 	ev := &realtime.StreamEvent{
 		Kind: &realtime.StreamEvent_GroupSkdmEnvelopeDelivered{
 			GroupSkdmEnvelopeDelivered: &realtime.GroupSkdmEnvelopeDelivered{
-				GroupUlid:         item.GroupID,
-				MembershipEpoch:   item.MembershipEpoch,
-				SenderDid:         item.SenderDID,
-				SenderKeyId:       item.SenderKeyID,
-				RecipientDid:      item.RecipientDID,
-				RecipientDeviceId: item.RecipientDeviceID,
-				IdempotencyKey:    item.IdempotencyKey,
-				EncryptedPayload:  append([]byte(nil), item.EncryptedPayload...),
-				DeliveredTsUnixMs: deliveredAt,
+				GroupUlid:               item.GroupID,
+				MembershipEpoch:         item.MembershipEpoch,
+				SenderDid:               item.SenderDID,
+				SenderKeyId:             item.SenderKeyID,
+				SenderHomeStationPeerId: item.SenderHomeStationPeerID,
+				RecipientDid:            item.RecipientDID,
+				RecipientDeviceId:       item.RecipientDeviceID,
+				IdempotencyKey:          item.IdempotencyKey,
+				EncryptedPayload:        append([]byte(nil), item.EncryptedPayload...),
+				DeliveredTsUnixMs:       deliveredAt,
 			},
 		},
 	}
@@ -1621,6 +1631,7 @@ func groupSkdmEnvelopeFromProto(in *chat.GroupSkdmEnvelope) group_chat_domain.Gr
 		MembershipEpoch:            in.GetMembershipEpoch(),
 		SenderDID:                  in.GetSenderDid(),
 		SenderKeyID:                in.GetSenderKeyId(),
+		SenderHomeStationPeerID:    in.GetSenderHomeStationPeerId(),
 		RecipientDID:               in.GetRecipientDid(),
 		RecipientDeviceID:          in.GetRecipientDeviceId(),
 		RecipientHomeStationPeerID: in.GetRecipientHomeStationPeerId(),
@@ -1636,6 +1647,7 @@ func groupSkdmEnvelopeToProto(in group_chat_domain.GroupSkdmEnvelope) *chat.Grou
 		MembershipEpoch:            in.MembershipEpoch,
 		SenderDid:                  in.SenderDID,
 		SenderKeyId:                in.SenderKeyID,
+		SenderHomeStationPeerId:    in.SenderHomeStationPeerID,
 		RecipientDid:               in.RecipientDID,
 		RecipientDeviceId:          in.RecipientDeviceID,
 		RecipientHomeStationPeerId: in.RecipientHomeStationPeerID,

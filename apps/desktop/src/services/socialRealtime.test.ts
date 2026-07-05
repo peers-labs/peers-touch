@@ -168,6 +168,7 @@ describe('social realtime group membership side effects', () => {
       membershipEpoch: 3,
       senderDid: 'did:peer:alice',
       senderKeyId: 7,
+      senderHomeStationPeerId: 'station-a',
       recipientDid: 'did:peer:self',
       recipientDeviceId: 'self-device-1',
       idempotencyKey: 'skdm-1',
@@ -179,6 +180,7 @@ describe('social realtime group membership side effects', () => {
       expect(mocks.handleInboundSkdm).toHaveBeenCalledWith('did:peer:alice', 'sealed', {
         groupUlid: 'group-1',
         senderKeyId: 7,
+        senderHomeStationPeerId: 'station-a',
         recipientDeviceId: 'self-device-1',
       });
     });
@@ -190,6 +192,7 @@ describe('social realtime group membership side effects', () => {
       membershipEpoch: 3,
       senderDid: 'did:peer:alice',
       senderKeyId: 7,
+      senderHomeStationPeerId: 'station-a',
       recipientDid: 'did:peer:self',
       recipientDeviceId: 'other-device',
       idempotencyKey: 'skdm-2',

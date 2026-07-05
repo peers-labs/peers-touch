@@ -216,6 +216,7 @@ message GroupSkdmEnvelope {
   bytes encrypted_payload = 8;
   string idempotency_key = 9;
   google.protobuf.Timestamp created_at = 10;
+  string sender_home_station_peer_id = 11;
 }
 
 message SubmitGroupSkdmEnvelopeRequest {

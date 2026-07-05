@@ -325,6 +325,7 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
           membershipEpoch: Number(s.membershipEpoch),
           senderDid: s.senderDid,
           senderKeyId: s.senderKeyId,
+          senderHomeStationPeerId: s.senderHomeStationPeerId,
           recipientDid: s.recipientDid,
           recipientDeviceId: s.recipientDeviceId,
           idempotencyKey: s.idempotencyKey,

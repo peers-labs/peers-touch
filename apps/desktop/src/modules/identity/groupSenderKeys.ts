@@ -93,6 +93,7 @@ export interface GroupSkdmDistributionOptions {
 export interface InboundSkdmExpectation {
   groupUlid?: string;
   senderKeyId?: number;
+  senderHomeStationPeerId?: string;
   recipientDeviceId?: string;
 }
 /**
@@ -621,7 +622,8 @@ export async function handleInboundSkdm(
   }
   let senderIkCandidates: string[] = [];
   try {
-    const fetchResp = await api.keyExchangeFetchBundle(senderDid);
+    const senderHomeStationPeerId = String(expected?.senderHomeStationPeerId ?? '').trim();
+    const fetchResp = await api.keyExchangeFetchBundle(senderDid, undefined, senderHomeStationPeerId);
     const bundles = fetchResp.bundles ?? [];
     senderIkCandidates = bundles
       .map((b) => String(b?.ik_pub ?? '').trim())

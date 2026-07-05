@@ -258,7 +258,11 @@ func TestCrossStationSkdmAcceptanceEntitlementAndOpaqueDelivery(t *testing.T) {
 		t.Fatalf("expected post-join SKDM dispatch, got %d", dispatched)
 	}
 	delivered := waitRealtimeEvent(t, bobSub.Events, 100*time.Millisecond).GetGroupSkdmEnvelopeDelivered()
-	if delivered == nil || delivered.GetRecipientDid() != "bob" || delivered.GetRecipientDeviceId() != "bob-device-1" || string(delivered.GetEncryptedPayload()) != "sealed-post-join" {
+	if delivered == nil ||
+		delivered.GetSenderHomeStationPeerId() != sourceStation ||
+		delivered.GetRecipientDid() != "bob" ||
+		delivered.GetRecipientDeviceId() != "bob-device-1" ||
+		string(delivered.GetEncryptedPayload()) != "sealed-post-join" {
 		t.Fatalf("unexpected Bob post-join SKDM event: %+v", delivered)
 	}
 

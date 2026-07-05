@@ -286,6 +286,7 @@ message GroupSkdmEnvelopeDelivered {
   string idempotency_key = 7;
   bytes encrypted_payload = 8;
   int64 delivered_ts_unix_ms = 9;
+  string sender_home_station_peer_id = 10;
 }
 
 // Resync is the server's only signal that the client's Last-Event-ID

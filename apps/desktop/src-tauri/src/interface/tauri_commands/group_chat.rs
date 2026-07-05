@@ -409,6 +409,7 @@ pub fn group_chat_submit_skdm_envelope(
             membership_epoch: input.membership_epoch,
             sender_did: input.sender_did,
             sender_key_id: input.sender_key_id,
+            sender_home_station_peer_id: String::new(),
             recipient_did: input.recipient_did,
             recipient_device_id: input.recipient_device_id,
             recipient_home_station_peer_id: input.recipient_home_station_peer_id,
