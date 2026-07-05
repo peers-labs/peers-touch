@@ -2,7 +2,7 @@
 
 **日期：** 2026-07-05
 **范围：** 联邦-Station IM Foundation 本地变更进入 PR/release review 前的 evidence packaging
-**结论：** 可进入代码审查；已证明 single-message 与 3x5 repeated live cross-Station Desktop/browser decrypt，以及 removed-member live browser negative；不能声明 1000-message live browser pressure 或 late-join live browser negative 完成
+**结论：** 可进入代码审查；已证明 single-message、3x5 repeated live cross-Station Desktop/browser decrypt、removed-member live browser negative，以及 1000-message live browser pressure；不能声明 late-join live browser negative 完成
 
 ## 1. Plan Source
 
@@ -149,7 +149,7 @@ Boundary:
 
 | Scope | Status | Reason / Next Evidence |
 | --- | --- | --- |
-| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one home follower Station, home Relay, and dual Desktop gateways bound to distinct Stations; single-message and 3x5 repeated projection sync, SKDM relay delivery, follower Desktop install, and browser decrypt passed; removed-member live browser negative passed; 1000-message browser pressure and late-join live browser negative remain unproven |
+| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one home follower Station, home Relay, and dual Desktop gateways bound to distinct Stations; single-message and 3x5 repeated projection sync, SKDM relay delivery, follower Desktop install, and browser decrypt passed; removed-member live browser negative passed; 1000-message one-authority/one-follower browser pressure passed; late-join live browser negative remains unproven |
 | `chat-desktop-dom-message-visible` from standard acceptance plan | NOT RUN in this packaging pass | Requires local Desktop web/gateway runtime; earlier same-home group Sender Key DOM gate evidence exists separately |
 | `chat-desktop-gateway-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires Desktop HTTP gateway runtime |
 | `chat-live-realtime-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires fedp5/live realtime environment |
@@ -266,6 +266,50 @@ Report evidence:
 - follower DOM did not render post-remove forbidden content during the `45s` negative observation window;
 - final body excerpt showed pre-remove plaintext and `[Waiting for sender key...]` placeholder for the post-remove row, not the post-remove plaintext.
 
+Live 1000-message cross-Station Desktop/browser pressure command:
+
+```bash
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://192.168.31.119:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://192.168.31.119:18082 \
+CHAT_FEDERATION_RELAY_URL=http://192.168.31.119:18081 \
+CHAT_FEDERATION_AUTHORITY_PEER_ID=12D3KooWBsTpWe6x5Kyueq1fLVewkU6B1dsgMPQYHuseWhERXe5D \
+CHAT_FEDERATION_FOLLOWER_PEER_ID=12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6 \
+CHAT_FEDERATION_DOM_OUT_DIR=/tmp/peers-touch-chat-federated-dom-pressure-1000-rerun3 \
+CHAT_FEDERATION_PRESSURE_MESSAGES=1000 \
+CHAT_FEDERATION_PRESSURE_PAGE_LIMIT=100 \
+CHAT_FEDERATION_PRESSURE_MAX_PAGES=12 \
+CHAT_FEDERATION_PRESSURE_TIMEOUT_SECONDS=1800 \
+CHAT_FEDERATION_PRESSURE_SEND_CHUNK_SIZE=50 \
+CHAT_FEDERATION_PRESSURE_DECODE_CHUNK_SIZE=100 \
+python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_pressure.py
+```
+
+Observed result:
+
+```text
+[OK] group: gcg-1783256420684132473
+[OK] message_count: 1000
+[OK] sent_count: 1000
+[OK] decoded_count: 1001
+[OK] waiting_count: 0
+[OK] failed_count: 0
+[OK] first_found: True
+[OK] last_found: True
+[OK] injected_realtime_frames: 1007
+[OK] duration_ms: 106547
+[OK] screenshot: /tmp/peers-touch-chat-federated-dom-pressure-1000-rerun3/chat-federated-desktop-dom-group-pressure.png
+[OK] evidence: /tmp/peers-touch-chat-federated-dom-pressure-1000-rerun3/chat-federated-desktop-dom-group-pressure.txt
+[OK] report: /tmp/peers-touch-chat-federated-dom-pressure-1000-rerun3/chat-federated-desktop-dom-group-pressure-report.json
+```
+
+Report evidence:
+
+- authority Desktop sent `1000` Sender-Key encrypted group messages in `47192ms`;
+- follower projection sync reported `syncedCount=1000` and `pagesFetched=11`;
+- follower browser runtime decoded a `1001` message window including warmup;
+- no `[Waiting for sender key...]` and no `[Decrypt failed]` were observed in the decoded pressure window;
+- follower DOM rendered the last pressure plaintext.
+
 ## 7. Product Proven Scope
 
 Evidence supports these claims:
@@ -282,13 +326,13 @@ Evidence supports these claims:
 - Live home authority/follower Desktop browser gate proves post-join cross-Station group message decrypt through projection sync, SKDM relay delivery, device-scoped realtime, and local Sender Key install.
 - Live home authority/follower repeated Desktop browser gate proves 3 groups and 15 cross-Station encrypted group messages decrypt in the same follower browser runtime.
 - Live home authority/follower removed-member negative gate proves post-remove plaintext does not render in the removed follower browser DOM after authority-side removal.
+- Live home authority/follower 1000-message pressure gate proves one authority Station and one follower Station can sync/decrypt/render a 1000-message cross-Station group pressure window through home Relay and Desktop browser runtime without waiting/decrypt placeholders.
 - Desktop compile/type surface accepts the current group SKDM/realtime contracts.
 
 ## 8. Product Unproven Scope
 
 Evidence does not prove:
 
-- 1000-message live deployed browser/runtime pressure;
 - late join live browser negative case;
 - multi-follower deployed browser runtime pressure beyond one authority and one follower Station;
 - PostgreSQL-backed multi-node recovery;
@@ -297,7 +341,7 @@ Evidence does not prove:
 
 ## 9. Review Handoff
 
-Ready for `pt-github-review`: **yes for the proven Foundation scope**. The remaining merge caveat is not quality evidence; the deployed prerequisite now proves home authority Station, one follower Station, home Relay, and dual Desktop gateway binding. The single-message and 3x5 repeated live cross-Station group message/decrypt browser paths are proven, and the removed-member live browser negative path is proven. The unproven scope is 1000-message live browser pressure and late-join live browser negative.
+Ready for `pt-github-review`: **yes for the proven Foundation scope**. The remaining merge caveat is not quality evidence; the deployed prerequisite now proves home authority Station, one follower Station, home Relay, and dual Desktop gateway binding. The single-message and 3x5 repeated live cross-Station group message/decrypt browser paths are proven, the removed-member live browser negative path is proven, and the 1000-message live browser pressure path is proven for one authority Station plus one follower Station. The unproven scope is late-join live browser negative and multi-follower deployed browser pressure.
 
 Ready for PR/release evidence packaging: **yes**.
 
@@ -310,4 +354,4 @@ Reviewer should use:
 
 The strongest accurate claim is:
 
-> Foundation IM has evidence for home Station group/private pressure, relay-mediated 3-Station federation protocol pressure, single-message live cross-Station Desktop/browser decrypt, 3x5 repeated live browser runtime decrypt, and removed-member live browser negative behavior. It is not yet proven for 1000-message live browser pressure or late-join live browser negative behavior.
+> Foundation IM has evidence for home Station group/private pressure, relay-mediated 3-Station federation protocol pressure, single-message live cross-Station Desktop/browser decrypt, 3x5 repeated live browser runtime decrypt, removed-member live browser negative behavior, and 1000-message live browser pressure for one authority Station plus one follower Station. It is not yet proven for late-join live browser negative behavior or multi-follower deployed browser pressure.
