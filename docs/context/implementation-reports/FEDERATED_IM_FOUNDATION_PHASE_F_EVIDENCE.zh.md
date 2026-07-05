@@ -3,7 +3,7 @@
 **项目：** Peers Touch 联邦-Station IM
 **日期：** 2026-07-05
 **范围：** Foundation pressure and security evidence
-**状态：** 部分完成；live deployed federation prerequisite、dual Desktop gateway binding、单条 cross-Station Desktop/browser decrypt、3x5 repeated browser runtime decrypt、removed-member live browser negative、1000-message live browser pressure 已通过，late-join live browser 负例仍未运行
+**状态：** 部分完成；live deployed federation prerequisite、dual Desktop gateway binding、单条 cross-Station Desktop/browser decrypt、3x5 repeated browser runtime decrypt、removed-member live browser negative、late-join live browser negative、1000-message live browser pressure 已通过，multi-follower deployed browser runtime pressure 仍未证明
 
 ## 1. 计划来源
 
@@ -30,6 +30,7 @@ Phase F 要求：
 | `chat-federated-browser-prereq` | live deployed federation browser/runtime prerequisite | PASS | `CHAT_FEDERATION_AUTHORITY_STATION_URL=http://192.168.31.119:18080 CHAT_FEDERATION_FOLLOWER_STATION_URL=http://192.168.31.119:18082 CHAT_FEDERATION_RELAY_URL=http://192.168.31.119:18081 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py` |
 | `chat-federated-desktop-dom-group-decrypt` | live deployed cross-Station group projection + SKDM relay delivery + follower Desktop browser decrypt | PASS | single: `/tmp/peers-touch-chat-federated-dom-home/chat-federated-desktop-dom-group-decrypt.txt`; repeated 3x5: `/tmp/peers-touch-chat-federated-dom-home-repeat/chat-federated-desktop-dom-group-decrypt-report.json` |
 | `chat-federated-desktop-dom-removed-member-negative` | live deployed removed-member browser negative: post-remove plaintext must not render in follower DOM | PASS | `/tmp/peers-touch-chat-federated-dom-removed-negative/chat-federated-desktop-dom-removed-member-negative-report.json` |
+| `chat-federated-desktop-dom-late-join-negative` | live deployed late-join browser negative: post-add follower must not decrypt pre-join plaintext, then must decrypt post-join plaintext | PASS | `/tmp/peers-touch-chat-federated-dom-late-join-negative/chat-federated-desktop-dom-late-join-negative-report.json` |
 | `chat-federated-desktop-dom-group-pressure` | live deployed 1000-message cross-Station Desktop/browser pressure | PASS | `/tmp/peers-touch-chat-federated-dom-pressure-1000-rerun3/chat-federated-desktop-dom-group-pressure-report.json` |
 | Federated key bundle lookup | cross-Station SKDM sealing prerequisite | PASS (code-level) | `cd apps/station/app && GOWORK=off go test ./subserver/key_exchange ./subserver/group_chat -count=1`; `pnpm --filter @peers-touch/app-desktop run check`; `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` |
 
@@ -258,8 +259,8 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_decrypt.py
 
 边界：
 
-- 这是单条业务路径 gate，不是 1000-message live browser pressure；1000-message live browser pressure 由第 10 节 gate 覆盖；
-- late join live browser 负例仍由 code-level harness 覆盖，尚未做 deployed browser 负例；removed-member live browser 负例由第 9 节 gate 覆盖。
+- 这是单条业务路径 gate，不是 1000-message live browser pressure；1000-message live browser pressure 由第 11 节 gate 覆盖；
+- removed-member live browser 负例由第 9 节 gate 覆盖；late-join live browser 负例由第 10 节 gate 覆盖。
 
 ## 8. Live Cross-Station Browser Runtime Repeat
 
@@ -315,8 +316,8 @@ Groups:
 
 边界：
 
-- 这是 3x5 browser-runtime repeat，不是 1000-message browser pressure；1000-message live browser pressure 由第 10 节 gate 覆盖；
-- late join 的 deployed browser 负例仍未运行；removed-member 的 deployed browser 负例见第 9 节。
+- 这是 3x5 browser-runtime repeat，不是 1000-message browser pressure；1000-message live browser pressure 由第 11 节 gate 覆盖；
+- removed-member 的 deployed browser 负例见第 9 节；late join 的 deployed browser 负例见第 10 节。
 
 ## 9. Live Removed-Member Browser Negative
 
@@ -365,10 +366,64 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_removed_member_negat
 边界：
 
 - 该 gate 证明 removed-member post-remove plaintext 不会在 follower browser DOM 渲染；
-- 该 gate 不证明 late-join negative，因为当前 Desktop 产品合约未暴露 post-create federated invite/join routing metadata；
-- 该 gate 不证明 1000-message live browser pressure；1000-message live browser pressure 由第 10 节 gate 覆盖。
+- 该 gate 不证明 late-join negative；late-join negative 由第 10 节 gate 覆盖；
+- 该 gate 不证明 1000-message live browser pressure；1000-message live browser pressure 由第 11 节 gate 覆盖。
 
-## 10. Live 1000-Message Cross-Station Browser Pressure
+## 10. Live Late-Join Browser Negative
+
+该 gate 证明 remote follower 在 encrypted history 已存在后才被添加进群时，不会获得 pre-join Sender Key 解密资格；同时证明 post-join message 仍可正常通过 federation projection、SKDM/realtime 和 follower Desktop browser runtime 解密：
+
+1. authority Desktop/browser 创建仅包含 owner 的 authority-only group；
+2. authority 发送 pre-join Sender-Key encrypted group message；
+3. authority 通过受 owner/admin 权限保护的 `/group-chat/member/federated-add` 添加 follower `FederatedActorRef`；
+4. follower Desktop/browser 同步 group projection/history；
+5. gate 断言 pre-join plaintext 不在 follower DOM 渲染，且 follower history window 中该消息保持 `[Waiting for sender key...]`；
+6. authority 发送 post-join Sender-Key encrypted group message；
+7. gate 断言 follower DOM 渲染 post-join plaintext。
+
+命令：
+
+```bash
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://192.168.31.119:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://192.168.31.119:18082 \
+CHAT_FEDERATION_RELAY_URL=http://192.168.31.119:18081 \
+CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
+CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
+CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
+CHAT_FEDERATION_FOLLOWER_WEB_URL=http://localhost:3312/#/chat \
+CHAT_FEDERATION_AUTHORITY_PEER_ID=12D3KooWBsTpWe6x5Kyueq1fLVewkU6B1dsgMPQYHuseWhERXe5D \
+CHAT_FEDERATION_FOLLOWER_PEER_ID=12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6 \
+CHAT_FEDERATION_DOM_OUT_DIR=/tmp/peers-touch-chat-federated-dom-late-join-negative \
+python3 tooling/acceptance/gates/chat/federated_desktop_dom_late_join_negative.py
+```
+
+结果：PASS。
+
+关键指标：
+
+| 指标 | 值 |
+| --- | --- |
+| Group | `gcg-1783258525714171800` |
+| Pre-join forbidden content | `federated-pre-join-1783258525701` |
+| Post-join content | `federated-post-join-1783258525701` |
+| Federated add success | `true` |
+| Member count after add | `2` |
+| Negative window | `60s` |
+| Pre-join sync attempts | `2` |
+| Pre-join synced messages | `1` |
+| Pre-join DOM state | `[Waiting for sender key...]`; forbidden plaintext absent |
+| Post-join injected frames | `2` |
+| Evidence report | `/tmp/peers-touch-chat-federated-dom-late-join-negative/chat-federated-desktop-dom-late-join-negative-report.json` |
+| Screenshot | `/tmp/peers-touch-chat-federated-dom-late-join-negative/chat-federated-desktop-dom-late-join-negative.png` |
+| Text evidence | `/tmp/peers-touch-chat-federated-dom-late-join-negative/chat-federated-desktop-dom-late-join-negative.txt` |
+
+边界：
+
+- 该 gate 证明 one authority Station + one follower Station 的 late-join Sender Key entitlement boundary；
+- 该 gate 不证明 multi-follower deployed browser runtime pressure；
+- 该 gate 不证明 1000-message live browser pressure；1000-message live browser pressure 由第 11 节 gate 覆盖。
+
+## 11. Live 1000-Message Cross-Station Browser Pressure
 
 该 gate 证明 live home authority Station、home follower Station、home Relay、双 Desktop gateway 和 follower browser runtime 在 1000 条 Sender-Key 加密群消息压力下可以完成投影同步、SKDM 解密和 DOM 渲染：
 
@@ -430,9 +485,9 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_pressure.py
 
 - 该 gate 证明 one authority Station + one follower Station 的 live home Relay/Desktop browser 1000-message pressure；
 - 该 gate 不证明 multi-follower deployed browser runtime pressure；
-- 该 gate 不证明 late-join live browser negative。
+- 该 gate 不证明 late-join live browser negative；late-join live browser negative 由第 10 节 gate 覆盖。
 
-## 11. Gate Catalog
+## 12. Gate Catalog
 
 已登记 gate：
 
@@ -442,6 +497,7 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_pressure.py
 - `chat-federated-browser-prereq`
 - `chat-federated-desktop-dom-group-decrypt`
 - `chat-federated-desktop-dom-removed-member-negative`
+- `chat-federated-desktop-dom-late-join-negative`
 - `chat-federated-desktop-dom-group-pressure`
 
 校验：
@@ -453,22 +509,22 @@ git diff --check
 
 结果：PASS。
 
-## 12. 剩余事项
+## 13. 剩余事项
 
 未完成：
 
 - PR/release 阶段需要把本报告和对应 gate 输出纳入最终 reviewer evidence；
 - presence invariant scan 仍命中既有 generated/mobile online 债务，本次 Phase F 没有新增 chat-owned presence。
-- late join live browser negative gate。
+- multi-follower deployed browser runtime pressure gate。
 
 需要的环境输入：
 
 - `CHAT_FEDERATION_AUTHORITY_STATION_URL`
 - `CHAT_FEDERATION_FOLLOWER_STATION_URL`
 - `CHAT_FEDERATION_RELAY_URL`
-- optional higher-load live cross-Station browser runtime pressure gate
+- optional multi-follower live cross-Station browser runtime pressure gate
 
-## 13. 结论
+## 14. 结论
 
 当前 Foundation Phase F 已证明：
 
@@ -480,10 +536,11 @@ git diff --check
 - live deployed 单条 cross-Station group projection、SKDM relay delivery、follower Desktop browser decrypt。
 - live deployed 3x5 repeated cross-Station browser runtime decrypt。
 - live deployed removed-member post-remove plaintext non-rendering in follower browser DOM。
+- live deployed late-join pre-join plaintext non-rendering plus post-join plaintext decrypt in follower browser DOM。
 - live deployed 1000-message cross-Station Desktop/browser pressure with no waiting/decrypt placeholders。
 
 当前未证明：
 
-- late join live browser 负例。
+- multi-follower deployed browser runtime pressure。
 
-因此 Phase F 可以作为 Foundation protocol、home-station pressure、single-message live cross-Station browser decrypt、3x5 repeated live browser runtime evidence、removed-member live browser negative evidence、1000-message live browser pressure evidence 进入 PR/release review，但不能声明 late-join live browser 负例完成。
+因此 Phase F 可以作为 Foundation protocol、home-station pressure、single-message live cross-Station browser decrypt、3x5 repeated live browser runtime evidence、removed-member live browser negative evidence、late-join live browser negative evidence、1000-message live browser pressure evidence 进入 PR/release review；但不能声明 multi-follower deployed browser runtime pressure 完成。
