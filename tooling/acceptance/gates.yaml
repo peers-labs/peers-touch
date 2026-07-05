@@ -127,6 +127,13 @@
       "tier": "env-evidence",
       "description": "Run a live two-Desktop cross-Station group pressure flow: authority sends 1000 Sender-Key encrypted messages by default, follower syncs/decrypts the pressure window in the browser runtime, and follower DOM must render the last plaintext without waiting/decrypt placeholders."
     },
+    "chat-federated-desktop-dom-multi-follower-pressure": {
+      "command": "python3 tooling/acceptance/gates/chat/federated_desktop_dom_multi_follower_pressure.py",
+      "timeout_seconds": 2400,
+      "environment": "home-station",
+      "tier": "env-evidence",
+      "description": "Run a live bounded multi-follower Desktop/browser pressure flow: authority sends Sender-Key encrypted messages to one group containing multiple follower actors, each follower Desktop runtime syncs/decrypts the pressure window, and every follower DOM must render the last plaintext without waiting/decrypt placeholders."
+    },
     "desktop-check": {
       "command": "cd apps/desktop && pnpm run check",
       "timeout_seconds": 600,
