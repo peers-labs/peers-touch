@@ -5,10 +5,15 @@ import {
   applyChatPresenceToMap,
   applyChatTypingStateToMap,
   mergeChatMessages,
+  projectIMConversation,
+  projectIMMessage,
   pruneChatTypingPeers,
   resolveChatMessageReceiptStatus,
+  type ChatAttachmentLike,
   type ChatMessageMutationInput,
   type ChatMessageMutationKind,
+  type IMConversationProjection,
+  type IMMessageProjection,
 } from '@peers-touch/client-chat-core';
 
 import { FriendMessageStatus, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
@@ -18,6 +23,21 @@ export interface MessagePreview {
   content: string;
   type: number;
   senderDid: string;
+}
+
+export interface DesktopUnifiedConversationLike {
+  type: 'friend' | 'group';
+  ulid: string;
+  name: string;
+  avatar?: string;
+  lastActivity: Date;
+  unread: number;
+  peerDid?: string;
+  memberCount?: number;
+  muted?: boolean;
+  alertEnabled?: boolean;
+  hidden?: boolean;
+  preview?: MessagePreview;
 }
 
 export interface ConversationLocalState {
@@ -42,6 +62,27 @@ export function normalizeChatBackgroundId(value: unknown): ChatBackgroundId {
 }
 
 export type SocialMessage = FriendChatMessage | GroupMessage;
+
+export type DesktopIMConversationProjection = IMConversationProjection & {
+  peerDid?: string;
+  memberCount?: number;
+};
+
+export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike> & {
+  // Compatibility aliases for shared chat helpers that still use the legacy
+  // `ulid` naming while Desktop renderers consume the IM projection contract.
+  ulid: string;
+  senderDid: string;
+  replyToUlid?: string;
+  threadRootUlid?: string;
+};
+
+export interface DesktopIMSenderProfileProjection {
+  id: string;
+  name: string;
+  avatar: string;
+  isSelf: boolean;
+}
 
 export type TypingPeers = Record<string, Record<string, { typing: boolean; lastUpdate: number }>>;
 
@@ -99,6 +140,78 @@ export function previewFromMessage(message: SocialMessage): MessagePreview {
     type: Number(message.type ?? 1),
     senderDid: message.senderDid ?? '',
   };
+}
+
+export function projectDesktopIMConversation(conversation: DesktopUnifiedConversationLike): DesktopIMConversationProjection {
+  const projection = projectIMConversation({
+    kind: conversation.type,
+    id: conversation.ulid,
+    title: conversation.name,
+    avatar: conversation.avatar,
+    lastActivityMs: conversation.lastActivity.getTime(),
+    unread: conversation.unread,
+    muted: conversation.muted,
+    alertEnabled: conversation.alertEnabled,
+    hidden: conversation.hidden,
+    preview: conversation.preview
+      ? {
+        content: conversation.preview.content,
+        type: conversation.preview.type,
+        senderId: conversation.preview.senderDid,
+      }
+      : undefined,
+  });
+  return {
+    ...projection,
+    peerDid: conversation.peerDid,
+    memberCount: conversation.memberCount,
+  };
+}
+
+export function projectDesktopIMMessage(
+  kind: 'friend' | 'group',
+  conversationId: string,
+  message: SocialMessage,
+): DesktopIMMessageProjection {
+  const encryptedPayload = (message as { encryptedPayload?: Uint8Array }).encryptedPayload;
+  const editedAt = (message as { editedAt?: unknown }).editedAt as FriendChatMessage['editedAt'] | undefined;
+  const projection = projectIMMessage<ChatAttachmentLike>({
+    id: message.ulid ?? '',
+    conversationKind: kind,
+    conversationId,
+    senderId: message.senderDid ?? '',
+    type: Number(message.type ?? 1),
+    content: message.content,
+    attachments: message.attachments ?? [],
+    status: (message as { status?: number }).status,
+    sentAtMs: messageSentMs(message),
+    recalled: Boolean((message as { recalled?: boolean }).recalled),
+    editedAtMs: editedAt ? timestampDate(editedAt).getTime() : undefined,
+    replyToId: (message as { replyToUlid?: string }).replyToUlid,
+    threadRootId: (message as { threadRootUlid?: string }).threadRootUlid,
+    encrypted: Boolean(encryptedPayload?.byteLength && !message.content),
+  });
+  return {
+    ...projection,
+    ulid: projection.id,
+    senderDid: projection.senderId,
+    replyToUlid: projection.replyToId,
+    threadRootUlid: projection.threadRootId,
+  };
+}
+
+export function projectDesktopIMMessages(
+  kind: 'friend' | 'group',
+  conversationId: string,
+  messages: SocialMessage[],
+): DesktopIMMessageProjection[] {
+  return messages
+    .map((message) => projectDesktopIMMessage(kind, conversationId, message))
+    .sort((a, b) => {
+      const timestampDelta = a.sentAtMs - b.sentAtMs;
+      if (timestampDelta !== 0) return timestampDelta;
+      return a.id.localeCompare(b.id);
+    });
 }
 
 export function applyPresenceToMap(

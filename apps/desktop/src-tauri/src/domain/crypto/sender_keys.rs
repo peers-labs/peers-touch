@@ -429,6 +429,22 @@ pub fn encrypt(
     })
 }
 
+/// Snapshot the message key that will be used by the next encrypt on
+/// this local sender chain. The command layer persists this for
+/// self-authored history so a reloaded client can decrypt messages it
+/// sent earlier without relying on the in-memory JS decrypt cache.
+pub fn current_message_key_snapshot(chain: &SenderChainState) -> SkippedMessageKey {
+    let (key, nonce) = message_keys(&chain.chain_key);
+    SkippedMessageKey {
+        group_ulid: chain.group_ulid.clone(),
+        sender_did: chain.sender_did.clone(),
+        sender_key_id: chain.sender_key_id,
+        counter: chain.counter,
+        key,
+        nonce,
+    }
+}
+
 /// Result of a successful decrypt. Carries the plaintext alongside
 /// any skipped message keys the receiver materialised while
 /// catching up, so the caller can persist them in the same

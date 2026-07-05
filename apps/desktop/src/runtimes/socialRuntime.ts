@@ -7,7 +7,8 @@
 //   • install / teardown delegate.
 //   • bootstrap is a no-op — install() has already arranged for
 //     `reconcileAuthenticatedRuntime` to fire on every authenticated
-//     edge, so the BootPipeline does not need to do extra work here.
+//     edge, while bootstrap gives the kernel an explicit projection
+//     refresh hook when it already knows the authenticated actor.
 //   • reconcile triggers an explicit projection refresh (used by the
 //     foreground/visibility heuristics; periodic reconcile is still
 //     owned by socialRealtime's own timer).
@@ -43,9 +44,9 @@ export const socialRuntime: RuntimeDescriptor = {
     teardownHostAdapter = null;
     teardownSocialRealtimeBridge();
   },
-  async bootstrap(): Promise<void> {
-    // Intentionally empty — install() already drives the first
-    // bootstrap via `reconcileAuthenticatedRuntime`.
+  async bootstrap(actorId: string | null): Promise<void> {
+    if (!actorId) return;
+    await refreshSocialProjection('runtime:bootstrap', true);
   },
   async reconcile(reason: string): Promise<void> {
     await refreshSocialProjection(`runtime:reconcile:${reason}`, true);

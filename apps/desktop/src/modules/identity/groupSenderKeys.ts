@@ -113,17 +113,17 @@ function migrateLedgerSet(set: Set<string>): Set<string> {
   return out;
 }
 
-function sentKey(actorId: string, groupUlid: string): string {
-  return `${SENT_KEY_PREFIX}:${actorId}:${groupUlid}`;
+function sentKey(actorId: string, groupUlid: string, senderKeyId: number): string {
+  return `${SENT_KEY_PREFIX}:${actorId}:${groupUlid}:${senderKeyId}`;
 }
 
-function pendingKey(actorId: string, groupUlid: string): string {
-  return `${PENDING_KEY_PREFIX}:${actorId}:${groupUlid}`;
+function pendingKey(actorId: string, groupUlid: string, senderKeyId: number): string {
+  return `${PENDING_KEY_PREFIX}:${actorId}:${groupUlid}:${senderKeyId}`;
 }
 
-function loadSentSet(actorId: string, groupUlid: string): Set<string> {
+function loadSentSet(actorId: string, groupUlid: string, senderKeyId: number): Set<string> {
   try {
-    const arr = readDesktopDomainValueSync<unknown[]>('crypto.sender-key-ledger', sentKey(actorId, groupUlid));
+    const arr = readDesktopDomainValueSync<unknown[]>('crypto.sender-key-ledger', sentKey(actorId, groupUlid, senderKeyId));
     if (!Array.isArray(arr)) return new Set();
     return migrateLedgerSet(new Set(arr.filter((v): v is string => typeof v === 'string')));
   } catch {
@@ -131,17 +131,17 @@ function loadSentSet(actorId: string, groupUlid: string): Set<string> {
   }
 }
 
-function saveSentSet(actorId: string, groupUlid: string, set: Set<string>): void {
+function saveSentSet(actorId: string, groupUlid: string, senderKeyId: number, set: Set<string>): void {
   try {
-    writeDesktopDomainValueSync('crypto.sender-key-ledger', sentKey(actorId, groupUlid), Array.from(set));
+    writeDesktopDomainValueSync('crypto.sender-key-ledger', sentKey(actorId, groupUlid, senderKeyId), Array.from(set));
   } catch (err) {
     log.warn('groupSenderKeys', 'persist sent-set failed', err);
   }
 }
 
-function loadPendingSet(actorId: string, groupUlid: string): Set<string> {
+function loadPendingSet(actorId: string, groupUlid: string, senderKeyId: number): Set<string> {
   try {
-    const arr = readDesktopDomainValueSync<unknown[]>('crypto.sender-key-ledger', pendingKey(actorId, groupUlid));
+    const arr = readDesktopDomainValueSync<unknown[]>('crypto.sender-key-ledger', pendingKey(actorId, groupUlid, senderKeyId));
     if (!Array.isArray(arr)) return new Set();
     return migrateLedgerSet(new Set(arr.filter((v): v is string => typeof v === 'string')));
   } catch {
@@ -149,12 +149,12 @@ function loadPendingSet(actorId: string, groupUlid: string): Set<string> {
   }
 }
 
-function savePendingSet(actorId: string, groupUlid: string, set: Set<string>): void {
+function savePendingSet(actorId: string, groupUlid: string, senderKeyId: number, set: Set<string>): void {
   try {
     if (set.size === 0) {
-      removeDesktopDomainValueSync('crypto.sender-key-ledger', pendingKey(actorId, groupUlid));
+      removeDesktopDomainValueSync('crypto.sender-key-ledger', pendingKey(actorId, groupUlid, senderKeyId));
     } else {
-      writeDesktopDomainValueSync('crypto.sender-key-ledger', pendingKey(actorId, groupUlid), Array.from(set));
+      writeDesktopDomainValueSync('crypto.sender-key-ledger', pendingKey(actorId, groupUlid, senderKeyId), Array.from(set));
     }
   } catch (err) {
     log.warn('groupSenderKeys', 'persist pending-set failed', err);
@@ -173,8 +173,10 @@ function savePendingSet(actorId: string, groupUlid: string, set: Set<string>): v
  */
 export function resetSkdmDistribution(actorId: string, groupUlid: string): void {
   try {
-    removeDesktopDomainValueSync('crypto.sender-key-ledger', sentKey(actorId, groupUlid));
-    removeDesktopDomainValueSync('crypto.sender-key-ledger', pendingKey(actorId, groupUlid));
+    // Legacy pre-generation keys. Generation-scoped keys are ignored by
+    // future sends once a new sender_key_id is minted.
+    removeDesktopDomainValueSync('crypto.sender-key-ledger', `${SENT_KEY_PREFIX}:${actorId}:${groupUlid}`);
+    removeDesktopDomainValueSync('crypto.sender-key-ledger', `${PENDING_KEY_PREFIX}:${actorId}:${groupUlid}`);
   } catch (err) {
     log.warn('groupSenderKeys', 'reset sent-set failed', err);
   }
@@ -297,30 +299,32 @@ export async function retrySkdmDistributionFor(actorId: string, peerDid: string)
   for (const [groupUlid, members] of Object.entries(groupMembers)) {
     if (!members?.length) continue;
 
-    const pending = loadPendingSet(actorId, groupUlid);
+    let skdmBytesB64: string;
+    let senderKeyId: number;
+    try {
+      const r = await api.cryptoGroupSkEmitSkdm(groupUlid);
+      skdmBytesB64 = r.skdm_b64;
+      senderKeyId = r.sender_key_id;
+    } catch {
+      continue;
+    }
+
+    const pending = loadPendingSet(actorId, groupUlid, senderKeyId);
     const keysForPeer = [...pending].filter((k) => parseSkdmRecipientKey(k).did === peerDid);
     if (!keysForPeer.length) continue;
 
     const stillMember = members.some((m) => m.actorDid === peerDid);
     if (!stillMember) {
       for (const k of keysForPeer) pending.delete(k);
-      savePendingSet(actorId, groupUlid, pending);
+      savePendingSet(actorId, groupUlid, senderKeyId, pending);
       continue;
     }
 
-    const sent = loadSentSet(actorId, groupUlid);
+    const sent = loadSentSet(actorId, groupUlid, senderKeyId);
     const outstanding = keysForPeer.filter((k) => !sent.has(k));
     if (!outstanding.length) {
       for (const k of keysForPeer) pending.delete(k);
-      savePendingSet(actorId, groupUlid, pending);
-      continue;
-    }
-
-    let skdmBytesB64: string;
-    try {
-      const r = await api.cryptoGroupSkEmitSkdm(groupUlid);
-      skdmBytesB64 = r.skdm_b64;
-    } catch {
+      savePendingSet(actorId, groupUlid, senderKeyId, pending);
       continue;
     }
 
@@ -345,8 +349,8 @@ export async function retrySkdmDistributionFor(actorId: string, peerDid: string)
       }
     }
 
-    saveSentSet(actorId, groupUlid, sent);
-    savePendingSet(actorId, groupUlid, pending);
+    saveSentSet(actorId, groupUlid, senderKeyId, sent);
+    savePendingSet(actorId, groupUlid, senderKeyId, pending);
   }
 }
 
@@ -377,8 +381,22 @@ export async function ensureSkdmDistributed(
     return;
   }
 
-  const sent = loadSentSet(actorId, groupUlid);
-  const pending = loadPendingSet(actorId, groupUlid);
+  // Always ensure the local sender chain exists before consulting ledgers.
+  // The dedupe state is scoped by sender_key_id so a rebuilt local chat DB or
+  // rotation cannot suppress distribution of a fresh chain.
+  let skdmBytesB64: string;
+  let senderKeyId: number;
+  try {
+    const r = await api.cryptoGroupSkEmitSkdm(groupUlid);
+    skdmBytesB64 = r.skdm_b64;
+    senderKeyId = r.sender_key_id;
+  } catch (err) {
+    log.error('groupSenderKeys', 'cryptoGroupSkEmitSkdm failed', err);
+    throw err;
+  }
+
+  const sent = loadSentSet(actorId, groupUlid, senderKeyId);
+  const pending = loadPendingSet(actorId, groupUlid, senderKeyId);
 
   const uniqueDids = [...new Set(memberDids.filter(Boolean))];
   type Work = { ledgerKey: string; peerDid: string; ikPub: string };
@@ -403,19 +421,6 @@ export async function ensureSkdmDistributed(
     }
   }
 
-  // Always ensure the local sender chain exists — this is idempotent and
-  // must happen regardless of whether there are reachable peer devices to
-  // distribute the SKDM to. Without this, `encryptBytesForGroup` will throw
-  // NotFound because no local chain has been minted.
-  let skdmBytesB64: string;
-  try {
-    const r = await api.cryptoGroupSkEmitSkdm(groupUlid);
-    skdmBytesB64 = r.skdm_b64;
-  } catch (err) {
-    log.error('groupSenderKeys', 'cryptoGroupSkEmitSkdm failed', err);
-    throw err;
-  }
-
   // No reachable peer devices — chain is minted so encryption will work,
   // but there is nobody to distribute the SKDM to right now.
   if (work.length === 0) return;
@@ -430,8 +435,8 @@ export async function ensureSkdmDistributed(
     }
   }
 
-  saveSentSet(actorId, groupUlid, sent);
-  savePendingSet(actorId, groupUlid, pending);
+  saveSentSet(actorId, groupUlid, senderKeyId, sent);
+  savePendingSet(actorId, groupUlid, senderKeyId, pending);
 }
 
 /**

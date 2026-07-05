@@ -21,6 +21,9 @@ use keyring::Entry;
 use rand::rngs::OsRng;
 use sha2::Digest;
 use sha2::Sha256;
+use sha2::Sha512;
+use std::fs;
+use std::path::PathBuf;
 use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -47,10 +50,16 @@ pub fn generate_identity_keypair() -> IdentityKeyPair {
     }
 }
 
-/// Map Ed25519 signing key bytes to an X25519 static key (seed clamped by x25519-dalek).
+/// Map an Ed25519 signing key to the corresponding X25519 static key.
 pub fn ed25519_to_x25519(signing_key: &SigningKey) -> X25519KeyPair {
     let seed = signing_key.to_bytes();
-    let private = StaticSecret::from(seed);
+    let digest = Sha512::digest(seed);
+    let mut scalar = [0u8; 32];
+    scalar.copy_from_slice(&digest[..32]);
+    scalar[0] &= 248;
+    scalar[31] &= 127;
+    scalar[31] |= 64;
+    let private = StaticSecret::from(scalar);
     let public = PublicKey::from(&private);
     X25519KeyPair { private, public }
 }
@@ -413,8 +422,36 @@ fn identity_entry(identity_key_ref: &str) -> Result<Entry, String> {
     Entry::new(CRYPTO_SERVICE, user.as_str()).map_err(|e| e.to_string())
 }
 
+fn scoped_identity_file(identity_key_ref: &str) -> Option<PathBuf> {
+    let root = std::env::var("PEERS_STORAGE_ROOT").ok()?;
+    let root = root.trim();
+    if root.is_empty() {
+        return None;
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(identity_key_ref.as_bytes());
+    let digest = hasher.finalize();
+    let name: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+    Some(
+        PathBuf::from(root)
+            .join("peers-touch")
+            .join("desktop")
+            .join("data")
+            .join("secure-store")
+            .join("identity-keys")
+            .join(format!("{name}.key")),
+    )
+}
+
 pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(), String> {
     let hex_seed: String = seed.iter().map(|b| format!("{b:02x}")).collect();
+    if let Some(path) = scoped_identity_file(identity_key_ref) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::write(path, hex_seed.as_str()).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     let entry = identity_entry(identity_key_ref)?;
     entry
         .set_password(hex_seed.as_str())
@@ -422,12 +459,24 @@ pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(),
 }
 
 pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPair>, String> {
+    if let Some(path) = scoped_identity_file(identity_key_ref) {
+        let pw = match fs::read_to_string(path) {
+            Ok(p) => p,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.to_string()),
+        };
+        return identity_key_from_hex(pw.trim());
+    }
     let entry = identity_entry(identity_key_ref)?;
     let pw = match entry.get_password() {
         Ok(p) => p,
         Err(keyring::Error::NoEntry) => return Ok(None),
         Err(e) => return Err(e.to_string()),
     };
+    identity_key_from_hex(pw.as_str())
+}
+
+fn identity_key_from_hex(pw: &str) -> Result<Option<IdentityKeyPair>, String> {
     if pw.len() != 64 || !pw.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err("stored identity key has invalid format".to_string());
     }

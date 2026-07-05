@@ -9,6 +9,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type IdentityKeyModel struct {
@@ -140,7 +141,7 @@ func (r *GormRepo) UploadOneTimePreKeys(actorDID, deviceID string, keys []domain
 				Consumed:  false,
 				CreatedAt: now,
 			}
-			if err := tx.Create(&row).Error; err != nil {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 				return err
 			}
 		}

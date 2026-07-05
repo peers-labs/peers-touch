@@ -14,6 +14,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
 type eventsSubServer struct {
@@ -28,7 +29,15 @@ func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error
 	defer s.mu.Unlock()
 
 	s.status = server.StatusStarting
-	s.bus = NewEventBus()
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return err
+	}
+	eventStore := newGormEventStore(rds)
+	if err := eventStore.AutoMigrate(); err != nil {
+		return err
+	}
+	s.bus = NewEventBus(WithDurableStore(eventStore))
 	setGlobalBus(s.bus)
 	return nil
 }
@@ -89,11 +98,9 @@ func setGlobalBus(b EventBus) {
 }
 
 // GetBus returns the live EventBus, or nil if the events subserver is
-// not running. Other subservers should treat nil as "skip publish";
-// the realtime plane is a delivery convenience, not a durability
-// path. (Durable persistence still happens in the publisher's own
-// subsystem, e.g. friend_chat writes the message to its DB before
-// calling GetBus().Publish().)
+// not running. Publish failures must be surfaced by durable domains:
+// realtime events are persisted by the events bus before fan-out, so a
+// silent skip would break the delivery contract.
 func GetBus() EventBus {
 	busMu.RLock()
 	defer busMu.RUnlock()

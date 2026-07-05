@@ -5,7 +5,7 @@ import { Button } from '@lobehub/ui';
 import { Empty, theme } from 'antd';
 import { MessageCircle, Users } from 'lucide-react';
 
-import { peerOfSession, useSocialChatStore } from '../../store/socialChat';
+import { useSocialChatStore } from '../../store/socialChat';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
 
 interface ChatContactsDetailPanelProps {
@@ -19,23 +19,20 @@ export function ChatContactsDetailPanel({ onMessage }: ChatContactsDetailPanelPr
     activeTab,
     activeSessionUlid,
     activeGroupUlid,
-    sessions,
-    groups,
-    currentUserDid,
+    getIMConversations,
     peerProfiles,
     loadPeerProfile,
     restoreConversation,
   } = useSocialChatStore();
 
-  const activeSession = activeTab === 'friend'
-    ? sessions.find((session) => session.ulid === activeSessionUlid)
+  const activeConversationId = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
+  const activeConversation = activeConversationId
+    ? getIMConversations().find(
+      (conversation) => conversation.kind === activeTab && conversation.id === activeConversationId,
+    )
     : undefined;
-  const activeGroup = activeTab === 'group'
-    ? groups.find((group) => group.ulid === activeGroupUlid)
-    : undefined;
-
-  const peer = activeSession ? peerOfSession(activeSession, currentUserDid) : null;
-  const peerDid = peer?.did || '';
+  const isGroup = activeConversation?.kind === 'group';
+  const peerDid = activeConversation?.kind === 'friend' ? activeConversation.peerDid || '' : '';
   const cachedPeer = peerDid ? peerProfiles[peerDid] : undefined;
 
   // Lazy peer profile load. The cache is single-owner (socialChat store);
@@ -47,33 +44,33 @@ export function ChatContactsDetailPanel({ onMessage }: ChatContactsDetailPanelPr
   }, [peerDid, loadPeerProfile]);
 
   const profile = useMemo<PublicProfileModel | null>(() => {
-    if (activeGroup) {
+    if (activeConversation?.kind === 'group') {
       return {
-        displayName: activeGroup.name || t('chat.social.sessionList.unnamedGroup'),
-        did: activeGroup.ulid,
+        displayName: activeConversation.title || t('chat.social.sessionList.unnamedGroup'),
+        did: activeConversation.id,
         relationLabel: t('chat.social.contacts.groupLabel'),
         relationTone: 'processing',
         stats: [
           {
             label: t('chat.social.detail.membersLabel'),
-            value: Number(activeGroup.memberCount ?? 0),
+            value: Number(activeConversation.memberCount ?? 0),
           },
         ],
       };
     }
-    if (!peer) return null;
+    if (!activeConversation) return null;
     const sessionFallback: PublicProfileModel = {
-      displayName: peer.name || t('chat.social.sessionList.unknown'),
-      avatar: peer.avatar || '',
-      did: peer.did || '',
+      displayName: activeConversation.title || t('chat.social.sessionList.unknown'),
+      avatar: activeConversation.avatar || '',
+      did: peerDid,
       relationLabel: t('chat.social.contacts.friendLabel'),
       relationTone: 'success',
     };
     if (!cachedPeer) return sessionFallback;
     return mergePeerProfile(sessionFallback, cachedPeer, t);
-  }, [activeGroup, peer, cachedPeer, t]);
+  }, [activeConversation, cachedPeer, peerDid, t]);
 
-  if (!activeSession && !activeGroup) {
+  if (!activeConversation) {
     return (
       <Flexbox
         flex={1}
@@ -101,7 +98,7 @@ export function ChatContactsDetailPanel({ onMessage }: ChatContactsDetailPanelPr
       <PublicProfileCard
         compact
         profile={profile}
-        avatarNode={activeGroup ? (
+        avatarNode={isGroup ? (
           <Flexbox
             align="center"
             justify="center"
@@ -123,8 +120,7 @@ export function ChatContactsDetailPanel({ onMessage }: ChatContactsDetailPanelPr
             type="primary"
             icon={<MessageCircle size={16} />}
             onClick={() => {
-              if (activeSession) restoreConversation('friend', activeSession.ulid);
-              if (activeGroup) restoreConversation('group', activeGroup.ulid);
+              if (activeConversation) restoreConversation(activeConversation.kind, activeConversation.id);
               onMessage();
             }}
           >

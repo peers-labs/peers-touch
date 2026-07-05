@@ -7,7 +7,8 @@ import (
 
 // Skill maps to the agent_skills table.
 // 2026-04-11 — Added Enabled field: disabled skills are excluded from
-//   BuildSkillIndex, allowing temporary deactivation without deletion.
+//
+//	BuildSkillIndex, allowing temporary deactivation without deletion.
 type Skill struct {
 	ID          string          `gorm:"primaryKey;type:varchar(36)"`
 	AgentID     string          `gorm:"not null;type:varchar(36);index:idx_skills_agent_id;uniqueIndex:idx_skills_agent_name,priority:1"`
@@ -26,8 +27,8 @@ type Skill struct {
 	ApplyCount  int             `gorm:"not null;default:0"`
 	PatchCount  int             `gorm:"not null;default:0"`
 	LastUsedAt  *time.Time      `gorm:"type:timestamptz"`
-	CreatedAt   time.Time       `gorm:"not null;default:now()"`
-	UpdatedAt   time.Time       `gorm:"not null;default:now()"`
+	CreatedAt   time.Time       `gorm:"not null;autoCreateTime"`
+	UpdatedAt   time.Time       `gorm:"not null;autoUpdateTime"`
 }
 
 // TableName sets the table name.

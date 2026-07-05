@@ -125,6 +125,7 @@ type busConfig struct {
 	queueCap int
 	now      func() time.Time
 	idGen    func() string
+	store    durableEventStore
 }
 
 // WithRingBufferSize overrides DefaultRingBufferSize for this bus.
@@ -162,6 +163,15 @@ func WithIDGenerator(gen func() string) BusOption {
 		if gen != nil {
 			c.idGen = gen
 		}
+	}
+}
+
+// WithDurableStore makes the bus persist every stamped event before fan-out and
+// replay reconnects from that durable log. Without it, the bus stays memory-only
+// and is suitable only for unit tests.
+func WithDurableStore(store durableEventStore) BusOption {
+	return func(c *busConfig) {
+		c.store = store
 	}
 }
 
@@ -260,6 +270,12 @@ func (b *eventBus) Publish(actorID string, ev *realtime.StreamEvent) (string, er
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if b.cfg.store != nil {
+		if err := b.cfg.store.Persist(actorID, ev); err != nil {
+			return "", err
+		}
+	}
+
 	// Append to ring buffer.
 	a.buffer = append(a.buffer, ev)
 	if len(a.buffer) > b.cfg.ringSize {
@@ -319,34 +335,33 @@ func (b *eventBus) Subscribe(ctx context.Context, actorID, deviceID, cursor stri
 
 	a := b.getOrCreateActor(actorID)
 
-	sub := &Subscription{
-		ActorID:  actorID,
-		DeviceID: deviceID,
-		send:     make(chan *realtime.StreamEvent, b.cfg.queueCap),
-		bus:      b,
-		state:    a,
-	}
-	sub.Events = sub.send
-
 	a.mu.Lock()
 	// Replay (or Resync sentinel) BEFORE registering for live fan-out.
 	// This preserves ordering: every event the subscriber sees came
 	// either from replay (with eventId <= newest at subscribe time) or
 	// from live publish (with eventId strictly after).
-	replay := b.replayLocked(a, cursor)
+	replay, err := b.replayLocked(a, actorID, cursor)
+	if err != nil {
+		a.mu.Unlock()
+		return nil, nil, err
+	}
+
+	queueCap := b.cfg.queueCap
+	if len(replay) > queueCap {
+		queueCap = len(replay)
+	}
+
+	sub := &Subscription{
+		ActorID:  actorID,
+		DeviceID: deviceID,
+		send:     make(chan *realtime.StreamEvent, queueCap),
+		bus:      b,
+		state:    a,
+	}
+	sub.Events = sub.send
+
 	for _, ev := range replay {
-		// Channel is brand-new and capacity == queueCap; replay length
-		// is bounded by ringSize. If queueCap < ringSize the surplus
-		// gets dropped with a wedged-counter bump — operators must
-		// configure queueCap >= ringSize for this not to bite, which is
-		// the documented expectation.
-		select {
-		case sub.send <- ev:
-		default:
-			b.dropLocked(a, sub)
-			a.mu.Unlock()
-			return nil, nil, fmt.Errorf("events: subscriber queue too small to hold replay (queue=%d, replay=%d)", b.cfg.queueCap, len(replay))
-		}
+		sub.send <- ev
 	}
 	a.subs[sub] = struct{}{}
 	a.mu.Unlock()
@@ -377,27 +392,50 @@ func (b *eventBus) Subscribe(ctx context.Context, actorID, deviceID, cursor stri
 //   - cursor matches the newest event: no replay.
 //   - cursor at-or-after newest (e.g. process restart):
 //     emit a single Resync sentinel.
-func (b *eventBus) replayLocked(a *actorState, cursor string) []*realtime.StreamEvent {
+func (b *eventBus) replayLocked(a *actorState, actorID, cursor string) ([]*realtime.StreamEvent, error) {
 	if cursor == "" {
-		return nil
+		return nil, nil
+	}
+	if b.cfg.store != nil {
+		newest, ok, err := b.cfg.store.NewestEventID(actorID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return []*realtime.StreamEvent{newResync("", "durable log empty", b)}, nil
+		}
+		if cursor == newest {
+			return nil, nil
+		}
+		if cursor > newest {
+			return []*realtime.StreamEvent{newResync(newest, "cursor newer than durable log", b)}, nil
+		}
+		events, err := b.cfg.store.ReplayAfter(actorID, cursor, 0)
+		if err != nil {
+			return nil, err
+		}
+		if len(events) == 0 {
+			return []*realtime.StreamEvent{newResync(newest, "cursor not found in durable log", b)}, nil
+		}
+		return events, nil
 	}
 	if len(a.buffer) == 0 {
-		return []*realtime.StreamEvent{newResync("", "buffer empty (process restart?)", b)}
+		return []*realtime.StreamEvent{newResync("", "buffer empty (process restart?)", b)}, nil
 	}
 	newest := a.buffer[len(a.buffer)-1].EventId
 	oldest := a.buffer[0].EventId
 
 	if cursor == newest {
-		return nil
+		return nil, nil
 	}
 	if cursor > newest {
 		// Client claims to have seen events newer than anything we hold —
 		// this happens after process restart wiped the buffer. Force a
 		// cold catch-up.
-		return []*realtime.StreamEvent{newResync(newest, "cursor newer than buffer (process restart?)", b)}
+		return []*realtime.StreamEvent{newResync(newest, "cursor newer than buffer (process restart?)", b)}, nil
 	}
 	if cursor < oldest {
-		return []*realtime.StreamEvent{newResync(newest, "cursor evicted from ring buffer", b)}
+		return []*realtime.StreamEvent{newResync(newest, "cursor evicted from ring buffer", b)}, nil
 	}
 
 	// Binary-search for the cursor inside the buffer; replay strictly
@@ -409,11 +447,11 @@ func (b *eventBus) replayLocked(a *actorState, cursor string) []*realtime.Stream
 		return a.buffer[i].EventId > cursor
 	})
 	if idx >= len(a.buffer) {
-		return nil
+		return nil, nil
 	}
 	out := make([]*realtime.StreamEvent, len(a.buffer)-idx)
 	copy(out, a.buffer[idx:])
-	return out
+	return out, nil
 }
 
 func newResync(newestEventID, reason string, b *eventBus) *realtime.StreamEvent {

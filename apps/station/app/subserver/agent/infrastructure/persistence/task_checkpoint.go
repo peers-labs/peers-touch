@@ -13,7 +13,7 @@ type TaskCheckpoint struct {
 	StateJSON           string    `gorm:"type:text"`
 	VersionsJSON        string    `gorm:"type:text"`
 	PendingWritesCursor string    `gorm:"type:text"`
-	CreatedAt           time.Time `gorm:"not null;default:now();index:idx_agent_task_checkpoints_created"`
+	CreatedAt           time.Time `gorm:"not null;autoCreateTime;index:idx_agent_task_checkpoints_created"`
 }
 
 func (TaskCheckpoint) TableName() string { return "agent_task_checkpoints" }

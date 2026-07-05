@@ -15,7 +15,7 @@ type SkillVersion struct {
 	Version   int       `gorm:"not null"`
 	Content   string    `gorm:"not null;type:text"`
 	Trigger   string    `gorm:"not null;type:varchar(30)"` // create, patch, rollback
-	CreatedAt time.Time `gorm:"not null;default:now()"`
+	CreatedAt time.Time `gorm:"not null;autoCreateTime"`
 }
 
 // TableName sets the table name.

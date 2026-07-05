@@ -8,8 +8,8 @@ type AgentKnowledgeBinding struct {
 	ResourceID string    `gorm:"not null;type:varchar(36)"`
 	Policy     string    `gorm:"not null;type:varchar(20);default:'auto'"`
 	Enabled    bool      `gorm:"not null;default:true"`
-	CreatedAt  time.Time `gorm:"not null;default:now()"`
-	UpdatedAt  time.Time `gorm:"not null;default:now()"`
+	CreatedAt  time.Time `gorm:"not null;autoCreateTime"`
+	UpdatedAt  time.Time `gorm:"not null;autoUpdateTime"`
 }
 
 func (AgentKnowledgeBinding) TableName() string { return "agent_knowledge_bindings" }
@@ -19,8 +19,8 @@ type AgentSkillBinding struct {
 	AgentID   string    `gorm:"not null;type:varchar(36);index:idx_skill_binding_agent_id"`
 	SkillID   string    `gorm:"not null;type:varchar(36)"`
 	Enabled   bool      `gorm:"not null;default:true"`
-	CreatedAt time.Time `gorm:"not null;default:now()"`
-	UpdatedAt time.Time `gorm:"not null;default:now()"`
+	CreatedAt time.Time `gorm:"not null;autoCreateTime"`
+	UpdatedAt time.Time `gorm:"not null;autoUpdateTime"`
 }
 
 func (AgentSkillBinding) TableName() string { return "agent_skill_bindings" }
@@ -30,8 +30,8 @@ type AgentMcpBinding struct {
 	AgentID    string    `gorm:"not null;type:varchar(36);index:idx_mcp_binding_agent_id"`
 	ServerName string    `gorm:"not null;type:varchar(128)"`
 	Enabled    bool      `gorm:"not null;default:true"`
-	CreatedAt  time.Time `gorm:"not null;default:now()"`
-	UpdatedAt  time.Time `gorm:"not null;default:now()"`
+	CreatedAt  time.Time `gorm:"not null;autoCreateTime"`
+	UpdatedAt  time.Time `gorm:"not null;autoUpdateTime"`
 }
 
 func (AgentMcpBinding) TableName() string { return "agent_mcp_bindings" }
