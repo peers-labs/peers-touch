@@ -4955,6 +4955,15 @@ export const api = {
   groupChatInviteToGroup: (groupUlid: string, memberDids: string[]) =>
     invokeRustProto('group_chat_invite_to_group', InviteToGroupResponseSchema, { group_ulid: groupUlid, member_dids: memberDids }),
 
+  groupChatAddFederatedMember: (groupUlid: string, member: GroupChatFederatedActorInput) =>
+    invokeRustDataFromStatus<{
+      group_ulid: string;
+      member: GroupChatFederatedActorWireInput;
+    }, { success: boolean; group?: Record<string, unknown>; member?: Record<string, unknown> }>(
+      'group_chat_add_federated_member',
+      { group_ulid: groupUlid, member: normalizeGroupChatFederatedActors([member])![0] },
+    ),
+
   groupChatJoinGroup: (groupUlid: string, invitationUlid?: string) =>
     invokeRustProto('group_chat_join_group', JoinGroupResponseSchema, { group_ulid: groupUlid, invitation_ulid: invitationUlid }),
 

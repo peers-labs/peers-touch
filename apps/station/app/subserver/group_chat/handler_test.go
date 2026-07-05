@@ -135,6 +135,71 @@ func TestHandleCreatePersistsInitialFederatedMembers(t *testing.T) {
 	}
 }
 
+func TestHandleAddFederatedMemberPersistsRoutingAndEnqueuesHistory(t *testing.T) {
+	sub := newDBBackedAcceptanceSubServer(t, "add_federated_member_handler")
+	created, err := sub.handleCreate(subjectContext("owner"), &chat.CreateGroupRequest{Name: "Federated Engineering"})
+	if err != nil {
+		t.Fatalf("handleCreate returned error: %v", err)
+	}
+	groupID := created.GetGroup().GetUlid()
+	resp, err := sub.handleAddFederatedMember(subjectContext("owner"), &addFederatedMemberRequest{
+		GroupUlid: groupID,
+		Member: federatedActorRefRequest{
+			ActorDID:          "remote-member",
+			HomeStationPeerID: "station-b",
+			HomeStationDomain: "station-b.example",
+			FederatedHandle:   "remote-member@station-b.example",
+			ProfileVersion:    7,
+			FederationID:      "fed-station-b",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleAddFederatedMember returned error: %v", err)
+	}
+	if resp == nil || !resp.Success || resp.Group.GetMemberCount() != 2 || resp.Member.GetActorDid() != "remote-member" {
+		t.Fatalf("unexpected add federated member response: %+v", resp)
+	}
+	remote, ok := sub.service.GetMember(groupID, "remote-member")
+	if !ok {
+		t.Fatal("expected remote member")
+	}
+	if remote.Actor.HomeStationPeerID != "station-b" ||
+		remote.Actor.HomeStationDomain != "station-b.example" ||
+		remote.Actor.FederatedHandle != "remote-member@station-b.example" ||
+		remote.Actor.ProfileVersion != 7 ||
+		remote.Actor.FederationID != "fed-station-b" {
+		t.Fatalf("expected remote actor routing metadata to persist, got %+v", remote.Actor)
+	}
+	var rows []federationOutboxModel
+	if err := sub.service.db.Where("group_ulid = ? AND target_station_peer_id = ?", groupID, "station-b").Order("seq ASC").Find(&rows).Error; err != nil {
+		t.Fatalf("read federation outbox: %v", err)
+	}
+	if len(rows) != 2 || rows[0].Seq != 1 || rows[1].Seq != 2 {
+		t.Fatalf("expected created+joined history outbox for late federated member, got %+v", rows)
+	}
+}
+
+func TestHandleAddFederatedMemberRejectsNonManager(t *testing.T) {
+	sub := newDBBackedAcceptanceSubServer(t, "add_federated_member_non_manager")
+	created, err := sub.handleCreate(subjectContext("owner"), &chat.CreateGroupRequest{
+		Name:              "Federated Engineering",
+		InitialMemberDids: []string{"member"},
+	})
+	if err != nil {
+		t.Fatalf("handleCreate returned error: %v", err)
+	}
+	_, err = sub.handleAddFederatedMember(subjectContext("member"), &addFederatedMemberRequest{
+		GroupUlid: created.GetGroup().GetUlid(),
+		Member: federatedActorRefRequest{
+			ActorDID:          "remote-member",
+			HomeStationPeerID: "station-b",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected non-manager federated add to be rejected")
+	}
+}
+
 func TestHandleGetMessagesNextCursorDoesNotRepeatPage(t *testing.T) {
 	sub := newTestSubServer()
 	group := sub.service.CreateGroup("owner", "Engineering", "")
