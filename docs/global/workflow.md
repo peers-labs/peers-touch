@@ -18,7 +18,29 @@ Then select platform docs:
 
 ---
 
-## 2) Use correct paths
+## 2) Bind the active worktree
+
+When the user starts by saying which worktree to use, that worktree becomes the
+task's active worktree.
+
+Default rule:
+- All edits, generated files, staging, commits, and PR operations must stay
+  inside the active worktree.
+- Other worktrees are read-only unless the user explicitly grants write scope
+  for another path.
+- IDE-open files, search results, shell defaults, and previous conversation
+  context do not override the active worktree.
+- Before editing or staging, verify `pwd` and `git rev-parse --show-toplevel`
+  point to the active worktree.
+- If a required change appears to belong in another worktree, stop and ask
+  before writing.
+
+Cross-worktree comparison is allowed for investigation, conflict analysis, and
+PR review, but write scope remains bound to the active worktree.
+
+---
+
+## 3) Use correct paths
 
 - Desktop: `apps/desktop`
 - Mobile Android: `apps/mobile/android`
@@ -29,7 +51,7 @@ Then select platform docs:
 
 ---
 
-## 3) Implementation sequence
+## 4) Implementation sequence
 
 1. Define/adjust contracts (`model/domain` or desktop tauri contracts)
 2. Implement backend/station or tauri command layer
@@ -39,7 +61,7 @@ Then select platform docs:
 
 ---
 
-## 4) Verification commands
+## 5) Verification commands
 
 ### Desktop
 
@@ -75,7 +97,7 @@ go test ./...
 
 ---
 
-## 5) Completion criteria
+## 6) Completion criteria
 
 Only mark task done when:
 - Implementation is complete
