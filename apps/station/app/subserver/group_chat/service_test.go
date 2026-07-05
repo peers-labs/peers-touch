@@ -576,6 +576,51 @@ func TestAcceptProposalWithDBIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestAddFederatedMemberEnqueuesAuthorityHistoryForNewRemote(t *testing.T) {
+	db, openErr := gorm.Open(sqlite.Open("file:add_federated_member_history_outbox?mode=memory&cache=shared"), &gorm.Config{})
+	if openErr != nil {
+		t.Fatalf("open sqlite: %v", openErr)
+	}
+	if migrateErr := db.AutoMigrate(&groupModel{}, &memberModel{}, &outboxModel{}, &groupEventModel{}, &federationOutboxModel{}); migrateErr != nil {
+		t.Fatalf("auto migrate: %v", migrateErr)
+	}
+	svc := &service{db: db, authorityStationPeerID: "station-a"}
+	group := svc.CreateGroup("owner", "Engineering", "")
+
+	member, ok := svc.AddFederatedMember(group.ID, domain.FederatedActorRef{
+		ActorDID:          "remote-actor",
+		HomeStationPeerID: "station-b",
+	}, "owner")
+	if !ok || member == nil {
+		t.Fatal("expected federated member to be added")
+	}
+
+	var rows []federationOutboxModel
+	if readErr := db.Where("group_ulid = ? AND target_station_peer_id = ?", group.ID, "station-b").Order("id ASC").Find(&rows).Error; readErr != nil {
+		t.Fatalf("read federation outbox rows: %v", readErr)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected created+joined outbox rows for new remote, got %d rows=%+v", len(rows), rows)
+	}
+	if rows[0].Seq != 1 || rows[1].Seq != 2 {
+		t.Fatalf("expected ordered seq 1 then 2, got rows=%+v", rows)
+	}
+	first, err := federationOutboxPayloadToEvent(rows[0].Payload)
+	if err != nil {
+		t.Fatalf("decode first outbox event: %v", err)
+	}
+	second, err := federationOutboxPayloadToEvent(rows[1].Payload)
+	if err != nil {
+		t.Fatalf("decode second outbox event: %v", err)
+	}
+	if first.EventType != "group.created" || second.EventType != "group.member.joined" {
+		t.Fatalf("unexpected outbox event types first=%s second=%s", first.EventType, second.EventType)
+	}
+	if first.AuthorityStationPeerID != "station-a" || second.AuthorityStationPeerID != "station-a" {
+		t.Fatalf("expected real authority station in history payloads, got first=%s second=%s", first.AuthorityStationPeerID, second.AuthorityStationPeerID)
+	}
+}
+
 func TestAcceptProposalWithDBIngestsLifecycleActorRefs(t *testing.T) {
 	db, openErr := gorm.Open(sqlite.Open("file:accept_proposal_lifecycle_actor_refs?mode=memory&cache=shared"), &gorm.Config{})
 	if openErr != nil {
