@@ -23,6 +23,8 @@ Environment:
   CHAT_FEDERATION_DOM_OUT_DIR           default /tmp/peers-touch-chat-federated-dom-group
   CHAT_FEDERATION_DOM_GROUPS            default 1
   CHAT_FEDERATION_DOM_MESSAGES_PER_GROUP default 1
+  CHAT_FEDERATION_DECRYPT_TIMEOUT_SECONDS default 180
+  CHAT_FEDERATION_DECRYPT_GRACE_SECONDS default 30
 """
 
 from __future__ import annotations
@@ -296,8 +298,39 @@ def pump_frames(dom_gate: Any, session: Any, frames: "queue.Queue[tuple[str, str
         count += 1
 
 
-def wait_for_follower_decrypt(dom_gate: Any, session: Any, group_ulid: str, content: str, frames: "queue.Queue[tuple[str, str]]") -> int:
-    deadline = time.time() + 120
+def check_follower_decrypt_once(dom_gate: Any, session: Any, group_ulid: str, content: str) -> tuple[bool, str]:
+    body = ""
+    dom_gate.wait_for(
+        session,
+        f"Boolean(document.querySelector('[data-chat-group-ulid=\"{group_ulid}\"]'))",
+        "follower Desktop group row",
+        timeout=10,
+    )
+    click_group(dom_gate, session, group_ulid)
+    try:
+        dom_gate.wait_for(
+            session,
+            f"document.body && document.body.innerText.includes({content!r})",
+            "follower Desktop decrypted federated group message",
+            timeout=8,
+        )
+        return True, body
+    except Exception:
+        body = dom_gate.evaluate(session, "document.body ? document.body.innerText : ''") or ""
+        if "[Message sent before you joined]" in body or "[Not entitled to this group message]" in body:
+            raise GateError(f"follower rendered entitlement placeholder instead of decrypting: {body[:500]!r}")
+        return False, str(body)
+
+
+def wait_for_follower_decrypt(
+    dom_gate: Any,
+    session: Any,
+    group_ulid: str,
+    content: str,
+    frames: "queue.Queue[tuple[str, str]]",
+    timeout_seconds: int | None = None,
+) -> int:
+    deadline = time.time() + (timeout_seconds or positive_int_env("CHAT_FEDERATION_DECRYPT_TIMEOUT_SECONDS", 180))
     last_sync: dict[str, Any] = {}
     frame_count = 0
     last_body = ""
@@ -306,27 +339,27 @@ def wait_for_follower_decrypt(dom_gate: Any, session: Any, group_ulid: str, cont
         last_sync = try_sync_group(dom_gate, session, group_ulid)
         frame_count += pump_frames(dom_gate, session, frames)
         if last_sync.get("ok") and int(last_sync.get("messageCount") or 0) >= 1:
-            dom_gate.wait_for(
-                session,
-                f"Boolean(document.querySelector('[data-chat-group-ulid=\"{group_ulid}\"]'))",
-                "follower Desktop group row",
-                timeout=10,
-            )
-            click_group(dom_gate, session, group_ulid)
-            try:
-                dom_gate.wait_for(
-                    session,
-                    f"document.body && document.body.innerText.includes({content!r})",
-                    "follower Desktop decrypted federated group message",
-                    timeout=8,
-                )
+            ok, last_body = check_follower_decrypt_once(dom_gate, session, group_ulid, content)
+            if ok:
                 return frame_count
-            except Exception:
-                body = dom_gate.evaluate(session, "document.body ? document.body.innerText : ''") or ""
-                last_body = str(body)
-                if "[Message sent before you joined]" in body or "[Not entitled to this group message]" in body:
-                    raise GateError(f"follower rendered entitlement placeholder instead of decrypting: {body[:500]!r}")
         time.sleep(2)
+    frame_count += pump_frames(dom_gate, session, frames)
+    last_sync = try_sync_group(dom_gate, session, group_ulid)
+    frame_count += pump_frames(dom_gate, session, frames)
+    if last_sync.get("ok") and int(last_sync.get("messageCount") or 0) >= 1:
+        ok, last_body = check_follower_decrypt_once(dom_gate, session, group_ulid, content)
+        if ok:
+            return frame_count
+    grace_deadline = time.time() + positive_int_env("CHAT_FEDERATION_DECRYPT_GRACE_SECONDS", 30)
+    while time.time() < grace_deadline:
+        frame_count += pump_frames(dom_gate, session, frames)
+        last_sync = try_sync_group(dom_gate, session, group_ulid)
+        frame_count += pump_frames(dom_gate, session, frames)
+        if last_sync.get("ok") and int(last_sync.get("messageCount") or 0) >= 1:
+            ok, last_body = check_follower_decrypt_once(dom_gate, session, group_ulid, content)
+            if ok:
+                return frame_count
+        time.sleep(1)
     raise GateError(
         "follower did not decrypt federated group message; "
         f"group={group_ulid!r} content={content!r} injected_frames={frame_count} "

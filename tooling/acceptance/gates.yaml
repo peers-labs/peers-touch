@@ -106,6 +106,13 @@
       "tier": "env-evidence",
       "description": "Run a parameterized live two-Desktop cross-Station group flow: authority creates groups with a remote FederatedActorRef, sends Sender-Key encrypted messages, follower receives SKDM over realtime SSE, syncs projection/history, and renders decrypted DOM text. Set CHAT_FEDERATION_DOM_GROUPS and CHAT_FEDERATION_DOM_MESSAGES_PER_GROUP for repeated browser-runtime evidence."
     },
+    "chat-federated-desktop-dom-removed-member-negative": {
+      "command": "python3 tooling/acceptance/gates/chat/federated_desktop_dom_removed_member_negative.py",
+      "timeout_seconds": 900,
+      "environment": "home-station",
+      "tier": "env-evidence",
+      "description": "Run a live two-Desktop cross-Station removed-member negative flow: follower decrypts a pre-remove message, authority removes the follower, authority sends a post-remove message, and follower DOM must not render the post-remove plaintext."
+    },
     "desktop-check": {
       "command": "cd apps/desktop && pnpm run check",
       "timeout_seconds": 600,
