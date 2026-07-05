@@ -953,7 +953,7 @@ func TestFollowerProjectionReadOnlyOnForkWithDB(t *testing.T) {
 	if openErr != nil {
 		t.Fatalf("open sqlite: %v", openErr)
 	}
-	if migrateErr := db.AutoMigrate(&groupFollowerProjectionModel{}); migrateErr != nil {
+	if migrateErr := db.AutoMigrate(&groupModel{}, &groupFollowerProjectionModel{}); migrateErr != nil {
 		t.Fatalf("auto migrate: %v", migrateErr)
 	}
 	now := time.Now()
@@ -1229,7 +1229,7 @@ func TestFollowerProjectionDegradedWithDBDoesNotOverrideReadOnly(t *testing.T) {
 	if openErr != nil {
 		t.Fatalf("open sqlite: %v", openErr)
 	}
-	if migrateErr := db.AutoMigrate(&groupFollowerProjectionModel{}); migrateErr != nil {
+	if migrateErr := db.AutoMigrate(&groupModel{}, &groupFollowerProjectionModel{}); migrateErr != nil {
 		t.Fatalf("auto migrate: %v", migrateErr)
 	}
 	now := time.Now()
@@ -1283,6 +1283,131 @@ func TestFollowerProjectionDegradedWithDBDoesNotOverrideReadOnly(t *testing.T) {
 	}
 	if readOnly.Status != followerProjectionStatusReadOnly || readOnly.ProtectionReason != "fork" {
 		t.Fatalf("read-only projection was overwritten: %+v", readOnly)
+	}
+}
+
+func TestListFollowerProjectionsPrioritizesUnmaterializedSnapshots(t *testing.T) {
+	db, openErr := gorm.Open(sqlite.Open("file:follower_projection_unmaterialized_priority?mode=memory&cache=shared"), &gorm.Config{})
+	if openErr != nil {
+		t.Fatalf("open sqlite: %v", openErr)
+	}
+	if migrateErr := db.AutoMigrate(&groupModel{}, &groupFollowerProjectionModel{}); migrateErr != nil {
+		t.Fatalf("auto migrate: %v", migrateErr)
+	}
+	now := time.Now()
+	if err := db.Create(&groupModel{
+		ULID:            "materialized-group",
+		Name:            "Materialized",
+		OwnerDID:        "owner",
+		MemberCount:     1,
+		Status:          domain.GroupStatusActive,
+		MembershipEpoch: 1,
+		CreatedAt:       now.Add(-time.Hour),
+		UpdatedAt:       now.Add(-time.Hour),
+	}).Error; err != nil {
+		t.Fatalf("seed materialized group: %v", err)
+	}
+	rows := []groupFollowerProjectionModel{
+		{
+			GroupULID:              "materialized-group",
+			AuthorityStationPeerID: "station-a",
+			AuthorityEpoch:         1,
+			LastSeq:                10,
+			LastEventHash:          "hash-old",
+			Status:                 followerProjectionStatusActive,
+			CreatedAt:              now.Add(-time.Hour),
+			UpdatedAt:              now.Add(-time.Hour),
+		},
+		{
+			GroupULID:              "unmaterialized-group",
+			AuthorityStationPeerID: "station-a",
+			AuthorityEpoch:         1,
+			LastSeq:                3,
+			LastEventHash:          "hash-new",
+			Status:                 followerProjectionStatusActive,
+			CreatedAt:              now,
+			UpdatedAt:              now,
+		},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatalf("seed projections: %v", err)
+	}
+
+	projections, err := (&service{db: db}).ListFollowerProjections(1)
+	if err != nil {
+		t.Fatalf("list follower projections: %v", err)
+	}
+	if len(projections) != 1 || projections[0].GroupID != "unmaterialized-group" {
+		t.Fatalf("expected unmaterialized projection to be scheduled first, got %+v", projections)
+	}
+}
+
+func TestListFollowerProjectionsPrioritizesRecentlyAdvancedSnapshots(t *testing.T) {
+	db, openErr := gorm.Open(sqlite.Open("file:follower_projection_recent_priority?mode=memory&cache=shared"), &gorm.Config{})
+	if openErr != nil {
+		t.Fatalf("open sqlite: %v", openErr)
+	}
+	if migrateErr := db.AutoMigrate(&groupModel{}, &groupFollowerProjectionModel{}); migrateErr != nil {
+		t.Fatalf("auto migrate: %v", migrateErr)
+	}
+	now := time.Now()
+	groups := []groupModel{
+		{
+			ULID:            "old-materialized-group",
+			Name:            "Old",
+			OwnerDID:        "owner",
+			MemberCount:     1,
+			Status:          domain.GroupStatusActive,
+			MembershipEpoch: 1,
+			CreatedAt:       now.Add(-time.Hour),
+			UpdatedAt:       now.Add(-time.Hour),
+		},
+		{
+			ULID:            "recent-materialized-group",
+			Name:            "Recent",
+			OwnerDID:        "owner",
+			MemberCount:     1,
+			Status:          domain.GroupStatusActive,
+			MembershipEpoch: 1,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		},
+	}
+	if err := db.Create(&groups).Error; err != nil {
+		t.Fatalf("seed groups: %v", err)
+	}
+	rows := []groupFollowerProjectionModel{
+		{
+			GroupULID:              "old-materialized-group",
+			AuthorityStationPeerID: "station-a",
+			AuthorityEpoch:         1,
+			LastSeq:                3,
+			LastEventHash:          "hash-old",
+			Status:                 followerProjectionStatusActive,
+			CreatedAt:              now.Add(-time.Hour),
+			UpdatedAt:              now.Add(-time.Hour),
+		},
+		{
+			GroupULID:              "recent-materialized-group",
+			AuthorityStationPeerID: "station-a",
+			AuthorityEpoch:         1,
+			LastSeq:                13,
+			LastEventHash:          "hash-recent",
+			Status:                 followerProjectionStatusActive,
+			CreatedAt:              now,
+			UpdatedAt:              now,
+		},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatalf("seed projections: %v", err)
+	}
+
+	projections, err := (&service{db: db}).ListFollowerProjections(1)
+	if err != nil {
+		t.Fatalf("list follower projections: %v", err)
+	}
+	if len(projections) != 1 || projections[0].GroupID != "recent-materialized-group" {
+		t.Fatalf("expected recently advanced projection to be scheduled first, got %+v", projections)
 	}
 }
 

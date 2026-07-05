@@ -80,6 +80,7 @@ const GROUP_DECRYPT_WAITING_KEY_PLACEHOLDER = '[Waiting for sender key…]';
 const GROUP_DECRYPT_BEFORE_JOIN_PLACEHOLDER = '[Message sent before you joined]';
 const GROUP_DECRYPT_NOT_ENTITLED_PLACEHOLDER = '[Not entitled to this group message]';
 const GROUP_DECRYPT_FAILED_PLACEHOLDER = '[Decrypt failed]';
+const groupDecryptQueues = new Map<string, Promise<void>>();
 
 function hasAuthenticatedActor(): boolean {
   return Boolean(currentAuthenticatedActorId());
@@ -173,7 +174,7 @@ function groupAttachmentFromInput(attachment: ChatAttachmentInput) {
   });
 }
 
-function createEncryptedChatPayloadBytes(
+export function createEncryptedChatPayloadBytes(
   text: string,
   attachments: readonly ChatAttachmentInput[] = [],
   messageType?: number,
@@ -847,6 +848,34 @@ function groupMissingSkdmPlaceholder(groupUlid: string, message: GroupMessage): 
   );
 }
 
+function cacheDecryptedGroupMessage(message: GroupMessage, decoded: GroupMessage): void {
+  if (!message.ulid) return;
+  setDecryptCache(message.ulid, {
+    content: decoded.content,
+    type: decoded.type || message.type,
+    attachments: decoded.attachments as unknown[],
+    cachedAt: Date.now(),
+  });
+}
+
+async function withGroupDecryptQueue<T>(groupUlid: string, work: () => Promise<T>): Promise<T> {
+  const previous = groupDecryptQueues.get(groupUlid) ?? Promise.resolve();
+  let release!: () => void;
+  const current = previous.catch(() => undefined).then(() => new Promise<void>((resolve) => {
+    release = resolve;
+  }));
+  groupDecryptQueues.set(groupUlid, current);
+  await previous.catch(() => undefined);
+  try {
+    return await work();
+  } finally {
+    release();
+    if (groupDecryptQueues.get(groupUlid) === current) {
+      groupDecryptQueues.delete(groupUlid);
+    }
+  }
+}
+
 function isMessageInThread(msg: SocialMessage, rootUlid: string): boolean {
   return socialMessageExplicitThreadRootUlid(msg) === rootUlid;
 }
@@ -1048,7 +1077,7 @@ async function decodeGroupMessage(
       ? applyDecodedChatPayload(message, payload)
       : ({ ...message, content: new TextDecoder().decode(out.bytes) } as GroupMessage);
     // Cache successful decrypt
-    setDecryptCache(message.ulid, { content: result.content, type: result.type, attachments: result.attachments as unknown[], cachedAt: Date.now() });
+    cacheDecryptedGroupMessage(message, result);
     return result;
   } catch (error) {
     if (error instanceof MissingSkdmError) {
@@ -1059,26 +1088,28 @@ async function decodeGroupMessage(
   }
 }
 
-async function decodeGroupMessages(
+export async function decodeGroupMessages(
   groupUlid: string,
   messages: GroupMessage[],
   logLabel: string,
 ): Promise<GroupMessage[]> {
-  // Sender Keys are a ratcheting chain per (group, sender, sender_key_id).
-  // Decrypting a batch concurrently lets multiple IPC calls race the same
-  // chain cursor and can poison some rows as `[Decrypt failed]`. Walk the batch
-  // in timeline order, then restore the API/UI order for rendering.
-  const decodedByIndex = new Map<number, GroupMessage>();
-  const ordered = messages
-    .map((message, index) => ({ message, index }))
-    .sort((a, b) => {
-      const delta = socialMessageSentAtMs(a.message) - socialMessageSentAtMs(b.message);
-      return delta || a.index - b.index;
-    });
-  for (const item of ordered) {
-    decodedByIndex.set(item.index, await decodeGroupMessage(groupUlid, item.message, logLabel));
-  }
-  return messages.map((message, index) => decodedByIndex.get(index) ?? message);
+  return withGroupDecryptQueue(groupUlid, async () => {
+    // Sender Keys are a ratcheting chain per (group, sender, sender_key_id).
+    // Decrypting batches concurrently lets multiple IPC calls race the same
+    // chain cursor and can poison rows as `[Decrypt failed]`. Serialize per group,
+    // walk each batch in timeline order, then restore the API/UI order.
+    const decodedByIndex = new Map<number, GroupMessage>();
+    const ordered = messages
+      .map((message, index) => ({ message, index }))
+      .sort((a, b) => {
+        const delta = socialMessageSentAtMs(a.message) - socialMessageSentAtMs(b.message);
+        return delta || a.index - b.index;
+      });
+    for (const item of ordered) {
+      decodedByIndex.set(item.index, await decodeGroupMessage(groupUlid, item.message, logLabel));
+    }
+    return messages.map((message, index) => decodedByIndex.get(index) ?? message);
+  });
 }
 
 async function decodeRealtimeGroupMessage(groupUlid: string, message: GroupMessage): Promise<GroupMessage> {
@@ -1973,9 +2004,11 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         const payloadB64 = bytesToB64(m.encryptedPayload);
         const out = await decryptBytesFromGroup(groupUlid, payloadB64);
         const payload = decodeEncryptedChatPayloadBytes(out.bytes);
-        decrypted.set(m.ulid, payload
+        const result = payload
           ? applyDecodedChatPayload(m, payload)
-          : ({ ...m, content: new TextDecoder().decode(out.bytes) } as GroupMessage));
+          : ({ ...m, content: new TextDecoder().decode(out.bytes) } as GroupMessage);
+        cacheDecryptedGroupMessage(m, result);
+        decrypted.set(m.ulid, result);
       } catch (err) {
         // Still missing -- e.g. the SKDM that arrived was for a
         // DIFFERENT sender than this row. Leave the placeholder in
