@@ -12,7 +12,6 @@ import {
   collectChatThreadPreviewMessages,
 } from '@peers-touch/client-chat-core';
 import {
-  peerOfSession,
   socialThreadKey,
   useSocialChatStore,
 } from '../../store/socialChat';
@@ -23,10 +22,8 @@ import { log } from '../../utils/logger';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError, type PresentedError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
-import type { FriendChatMessage } from '../../gen/proto/domain/chat/friend_chat_pb';
-import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import {
-  isFriendMessage,
+  type ChatMessage,
   messageThreadRootUlid,
   messageTimestampMs,
   replyPreviewForMessage,
@@ -70,17 +67,19 @@ export function ChatMessageArea() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
-    activeTab, activeSessionUlid, activeGroupUlid, messages,
-    sessions, groups, loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
+    activeTab, activeSessionUlid, activeGroupUlid,
+    loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
     deleteMessage, recallFriendMessage, editFriendMessage,
     recallGroupMessage, editGroupMessage, openThread,
     conversationLocalState,
+    getIMConversations,
+    getIMMessages,
+    getIMThreadMessages,
+    getIMSenderProfile,
   } = useSocialChatStore();
   const messageHasMore = useSocialChatStore((s) => s.messageHasMore);
   const messageLoadingMore = useSocialChatStore((s) => s.messageLoadingMore);
   const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
-  const currentUserProfile = useSocialChatStore((s) => s.currentUserProfile);
-  const groupMembers = useSocialChatStore((s) => s.groupMembers);
   const loadGroupMembers = useSocialChatStore((s) => s.loadGroupMembers);
   const scrollToMessageUlid = useSocialChatStore((s) => s.scrollToMessageUlid);
   const setScrollToMessageUlid = useSocialChatStore((s) => s.setScrollToMessageUlid);
@@ -89,7 +88,6 @@ export function ChatMessageArea() {
   const peerOnline = useSocialChatStore((s) => s.peerOnline);
   const typingPeers = useSocialChatStore((s) => s.typingPeers);
   const threadCounts = useSocialChatStore((s) => s.threadCounts);
-  const threadMessages = useSocialChatStore((s) => s.threadMessages);
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
@@ -100,7 +98,7 @@ export function ChatMessageArea() {
   // instead of creating a new message. The banner above the input
   // shows the original content + a cancel handle.
   const [editingUlid, setEditingUlid] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<FriendChatMessage | GroupMessage | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
   const [composerError, setComposerError] = useState<PresentedError | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -109,37 +107,26 @@ export function ChatMessageArea() {
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
-  const currentMessages = activeUlid ? (messages[activeUlid] || []) : [];
+  const activeConversation = activeUlid
+    ? getIMConversations().find((conversation) => conversation.kind === activeKind && conversation.id === activeUlid)
+    : undefined;
+  const currentMessages = activeUlid ? getIMMessages(activeKind, activeUlid) : [];
   const mainTimelineMessages = currentMessages.filter((message) => !messageThreadRootUlid(message));
   const activeLocalState = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`] : undefined;
   const activeBackground = activeLocalState?.background;
   const activeBackgroundImageUrl = useOssAttachmentUrl(activeLocalState?.backgroundImage || undefined);
 
-  const activeFriendPeer = (() => {
-    if (activeTab !== 'friend' || !activeUlid) return null;
-    const s = sessions.find((sess) => sess.ulid === activeUlid);
-    if (!s) return null;
-    return peerOfSession(s, currentUserDid);
-  })();
-
-  const currentName = (() => {
-    if (activeTab === 'friend') {
-      return activeFriendPeer?.name || '';
-    }
-    const g = groups.find((grp) => grp.ulid === activeUlid);
-    return g?.name || '';
-  })();
+  const currentName = activeConversation?.title || '';
 
   const subtitle = (() => {
     if (activeTab === 'friend') return '';
-    const g = groups.find((g) => g.ulid === activeUlid);
-    return g ? t('chat.social.detail.membersCount', { count: g.memberCount }) : '';
+    return activeConversation ? t('chat.social.detail.membersCount', { count: activeConversation.memberCount ?? 0 }) : '';
   })();
 
   // Resolve the active peer DID for friend conversations. Used by the
   // header presence dot to decide whether the friend is reachable on
   // station, separate from whether our P2P channel happens to be up.
-  const activePeerDid = activeTab === 'friend' ? activeFriendPeer?.did || null : null;
+  const activePeerDid = activeTab === 'friend' ? activeConversation?.peerDid || null : null;
 
   // Peer-presence indicator. Truth source: Station's PresenceFlip
   // events carried by the unified `/events/stream` runtime.
@@ -404,12 +391,7 @@ export function ChatMessageArea() {
         return;
       }
       if (activeTab === 'friend') {
-        const session = sessions.find((s) => s.ulid === activeUlid);
-        const receiverDid = session
-          ? session.participantADid === currentUserDid
-            ? session.participantBDid
-            : session.participantADid
-          : '';
+        const receiverDid = activeConversation?.peerDid || '';
         await sendFriendMessage(
           activeUlid,
           receiverDid,
@@ -453,11 +435,7 @@ export function ChatMessageArea() {
 
   const handleStartCall = async (kind: 'audio' | 'video') => {
     if (!callsAvailable || !currentUserDid) return;
-    const session = sessions.find((s) => s.ulid === activeUlid);
-    if (!session) return;
-    const peerDid = session.participantADid === currentUserDid
-      ? session.participantBDid
-      : session.participantADid;
+    const peerDid = activePeerDid;
     if (!peerDid) return;
     try {
       await friendChatP2p.startCall(currentUserDid, peerDid, kind);
@@ -467,10 +445,10 @@ export function ChatMessageArea() {
     }
   };
 
-  const handleRecall = async (msg: FriendChatMessage | GroupMessage) => {
+  const handleRecall = async (msg: ChatMessage) => {
     if (!activeUlid) return;
     try {
-      if (isFriendMessage(msg)) {
+      if (activeKind === 'friend') {
         await recallFriendMessage(activeUlid, msg.ulid);
       } else {
         await recallGroupMessage(activeUlid, msg.ulid);
@@ -481,7 +459,7 @@ export function ChatMessageArea() {
     }
   };
 
-  const confirmDeleteMessage = (target: FriendChatMessage | GroupMessage) => {
+  const confirmDeleteMessage = (target: ChatMessage) => {
     if (!activeUlid) return;
     setDeleteTarget(target);
   };
@@ -500,7 +478,7 @@ export function ChatMessageArea() {
     }
   };
 
-  const handleStartEdit = (msg: FriendChatMessage | GroupMessage) => {
+  const handleStartEdit = (msg: ChatMessage) => {
     // Only plaintext messages are editable today. An E2EE chat
     // would need a separate flow that re-encrypts under the active
     // ratchet key before issuing the RPC; we deliberately disable
@@ -525,11 +503,10 @@ export function ChatMessageArea() {
 
   const threadPreviewMessagesForRoot = (rootUlid: string) => {
     if (!activeUlid || !rootUlid) return [];
-    const key = socialThreadKey(activeKind, activeUlid, rootUlid);
     return collectChatThreadPreviewMessages({
       rootUlid,
       currentMessages,
-      loadedThreadMessages: threadMessages[key] || [],
+      loadedThreadMessages: getIMThreadMessages(activeKind, activeUlid, rootUlid),
       resolveTimestampMs: messageTimestampMs,
     });
   };
@@ -690,8 +667,7 @@ export function ChatMessageArea() {
             activeConversationId={activeUlid}
             activeKind={activeKind}
             currentUserDid={currentUserDid}
-            currentUserProfile={currentUserProfile}
-            groupMembers={groupMembers}
+            getSenderProfile={getIMSenderProfile}
             highlightedMessageUlid={highlightedMessageUlid}
             messages={mainTimelineMessages}
             onDelete={confirmDeleteMessage}
@@ -711,7 +687,6 @@ export function ChatMessageArea() {
                 unreadCount: threadSummary?.unreadCount ?? 0,
               };
             }}
-            sessions={sessions}
           />
         )}
         <div ref={bottomRef} />
