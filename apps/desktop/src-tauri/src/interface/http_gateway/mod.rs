@@ -105,6 +105,20 @@ impl GatewayRuntime {
     }
 }
 
+fn group_chat_federated_actor_input_to_proto(
+    input: GroupChatFederatedActorInput,
+) -> model::chat::FederatedActorRef {
+    model::chat::FederatedActorRef {
+        actor_did: input.actor_did,
+        home_station_peer_id: input.home_station_peer_id,
+        home_station_domain: input.home_station_domain.unwrap_or_default(),
+        federated_handle: input.federated_handle.unwrap_or_default(),
+        actor_identity_public_key: input.actor_identity_public_key.unwrap_or_default(),
+        profile_version: input.profile_version.unwrap_or_default(),
+        federation_id: input.federation_id.unwrap_or_default(),
+    }
+}
+
 fn resolve_bind_addr() -> String {
     let port = std::env::var("PT_GATEWAY_PORT")
         .ok()
@@ -4778,6 +4792,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let req = model::key_exchange::FetchKeyBundleRequest {
                 did: input.did,
                 device_id: input.device_id.unwrap_or_default(),
+                home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
             };
             match station_client::request_proto::<
                 model::key_exchange::FetchKeyBundleRequest,
@@ -5432,6 +5447,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 name: input.name,
                 description: input.description.unwrap_or_default(),
                 initial_member_dids: input.member_dids.unwrap_or_default(),
+                initial_federated_members: input
+                    .initial_federated_members
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(group_chat_federated_actor_input_to_proto)
+                    .collect(),
                 ..Default::default()
             };
             let resp = match station_client::request_proto::<

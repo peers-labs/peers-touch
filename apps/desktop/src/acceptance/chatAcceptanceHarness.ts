@@ -1,5 +1,7 @@
 import { identityRuntime } from '../kernel/identityRuntime';
 import { api } from '../services/desktop_api';
+import type { GroupChatFederatedActorInput } from '../services/desktop_api';
+import { dispatchRealtimeFrameForAcceptance } from '../services/eventStream';
 import { useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
 
@@ -18,6 +20,7 @@ interface CreateGroupInput {
   name: string;
   description?: string;
   memberDids?: string[];
+  initialFederatedMembers?: GroupChatFederatedActorInput[];
 }
 
 interface SyncGroupInput {
@@ -50,6 +53,8 @@ declare global {
         pagesFetched: number;
       }>;
       sendGroupMessage(input: SendGroupMessageInput): Promise<{ groupUlid: string; messageCount: number }>;
+      getRealtimeDevice(): Promise<{ actorId: string | null; deviceId: string }>;
+      dispatchRealtimeFrame(input: { eventId?: string; dataB64: string }): Promise<{ accepted: boolean }>;
     };
   }
 }
@@ -96,8 +101,8 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async createGroup({ name, description, memberDids = [] }) {
-      const response = await api.groupChatCreateGroup(name, description, memberDids);
+    async createGroup({ name, description, memberDids = [], initialFederatedMembers = [] }) {
+      const response = await api.groupChatCreateGroup(name, description, memberDids, initialFederatedMembers);
       const groupUlid = response.group?.ulid || '';
       if (!groupUlid) {
         throw new Error('groupChatCreateGroup returned no group ulid');
@@ -141,6 +146,19 @@ export function installChatAcceptanceHarness(): void {
         groupUlid,
         messageCount: useSocialChatStore.getState().getIMMessages('group', groupUlid).length,
       };
+    },
+
+    async getRealtimeDevice() {
+      const device = await api.accountGetDeviceId();
+      return {
+        actorId: activeActorId(),
+        deviceId: String(device?.device_id ?? ''),
+      };
+    },
+
+    async dispatchRealtimeFrame({ eventId = '', dataB64 }) {
+      dispatchRealtimeFrameForAcceptance({ event_id: eventId, data_b64: dataB64 });
+      return { accepted: Boolean(dataB64) };
     },
   };
 }

@@ -1,16 +1,25 @@
 package key_exchange
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	kemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
+	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
+	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"google.golang.org/protobuf/encoding/protojson"
 	"gorm.io/gorm"
 )
 
@@ -37,6 +46,7 @@ func (s *subServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewTypedHandler("ke-upload-bundle", "/key-exchange/keys/bundle", server.POST, s.handleUploadKeyBundle, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("ke-fetch-bundle", "/key-exchange/keys/bundle/fetch", server.POST, s.handleFetchKeyBundle, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("ke-federated-fetch-bundle", "/key-exchange/keys/bundle/federated-fetch", server.POST, s.handleFederatedFetchKeyBundle, logIDWrapper, s.federationFetchWrapper),
 		server.NewTypedHandler("ke-replenish", "/key-exchange/keys/replenish", server.POST, s.handleReplenishOPKs, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("ke-opk-count", "/key-exchange/keys/count", server.GET, s.handleOPKCount, logIDWrapper, s.jwtWrapper),
 	}
@@ -86,7 +96,46 @@ func (s *subServer) handleFetchKeyBundle(ctx context.Context, req *kemodel.Fetch
 	if req.GetDid() == "" {
 		return nil, server.BadRequest("did is required")
 	}
+	homeStationPeerID := strings.TrimSpace(req.GetHomeStationPeerId())
+	if homeStationPeerID != "" && homeStationPeerID != strings.TrimSpace(s.localStationID) {
+		resp, err := s.fetchFederatedKeyBundle(ctx, homeStationPeerID, req)
+		if err != nil {
+			return nil, err
+		}
+		return resp, nil
+	}
 
+	return s.fetchLocalKeyBundle(req)
+}
+
+func (s *subServer) handleFederatedFetchKeyBundle(ctx context.Context, req *kemodel.FetchKeyBundleRequest) (*kemodel.FetchKeyBundleResponse, error) {
+	if req.GetDid() == "" {
+		return nil, server.BadRequest("did is required")
+	}
+	if err := validateFederatedFetchClaims(ctx, req); err != nil {
+		return nil, err
+	}
+	return s.fetchLocalKeyBundle(req)
+}
+
+func validateFederatedFetchClaims(ctx context.Context, req *kemodel.FetchKeyBundleRequest) error {
+	claims := serverwrapper.GetVerifiedFederationClaims(ctx, nil)
+	if claims == nil {
+		return nil
+	}
+	if claims.Scope != keyExchangeFederatedFetchScopeName {
+		return server.Unauthorized("invalid federation scope")
+	}
+	if v, ok := claims.Get(keyExchangeClaimActor); !ok || v != req.GetDid() {
+		return server.Forbidden("federation actor claim does not match key bundle request")
+	}
+	if v, ok := claims.Get(keyExchangeClaimDevice); ok && v != req.GetDeviceId() {
+		return server.Forbidden("federation device claim does not match key bundle request")
+	}
+	return nil
+}
+
+func (s *subServer) fetchLocalKeyBundle(req *kemodel.FetchKeyBundleRequest) (*kemodel.FetchKeyBundleResponse, error) {
 	filter := ""
 	if strings.TrimSpace(req.GetDeviceId()) != "" {
 		filter = normalizeDeviceID(req.GetDeviceId())
@@ -122,6 +171,85 @@ func (s *subServer) handleFetchKeyBundle(ctx context.Context, req *kemodel.Fetch
 	}
 
 	return &kemodel.FetchKeyBundleResponse{Bundles: out}, nil
+}
+
+func (s *subServer) fetchFederatedKeyBundle(ctx context.Context, targetStationPeerID string, req *kemodel.FetchKeyBundleRequest) (*kemodel.FetchKeyBundleResponse, error) {
+	rc := nativefed.RelayClient()
+	if rc == nil {
+		return nil, server.InternalError("federated key bundle fetch requires Relay client")
+	}
+	base := strings.TrimRight(rc.BaseURL(), "/")
+	relayToken := strings.TrimSpace(rc.Token())
+	if base == "" || relayToken == "" {
+		return nil, server.InternalError("federated key bundle fetch requires Relay configuration")
+	}
+	token, err := s.mintFederatedFetchToken(ctx, targetStationPeerID, req.GetDid(), req.GetDeviceId())
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to mint key bundle federation token", err)
+	}
+	forwardReq := &kemodel.FetchKeyBundleRequest{
+		Did:      req.GetDid(),
+		DeviceId: req.GetDeviceId(),
+	}
+	body, err := protojson.Marshal(forwardReq)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to encode key bundle federation request", err)
+	}
+	target := fmt.Sprintf("%s/relay/forward/%s/key-exchange/keys/bundle/federated-fetch", base, url.PathEscape(targetStationPeerID))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to create key bundle federation request", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+relayToken)
+	httpReq.Header.Set(nativefed.ForwardAuthorizationHeader, "Bearer "+token)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("federated key bundle fetch failed", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to read federated key bundle response", err)
+	}
+	if resp.StatusCode >= 300 {
+		detail := string(raw)
+		if len(detail) > 200 {
+			detail = detail[:200]
+		}
+		return nil, server.InternalError(fmt.Sprintf("federated key bundle fetch failed status=%d body=%s", resp.StatusCode, detail))
+	}
+	var decoded kemodel.FetchKeyBundleResponse
+	if err := protojson.Unmarshal(raw, &decoded); err != nil {
+		return nil, server.InternalErrorWithCause("failed to decode federated key bundle response", err)
+	}
+	return &decoded, nil
+}
+
+func (s *subServer) mintFederatedFetchToken(ctx context.Context, targetStationPeerID, actorDID, deviceID string) (string, error) {
+	if s.keyCache == nil {
+		return "", errors.New("federation key cache is not configured")
+	}
+	issuer := strings.TrimSpace(s.localStationID)
+	if issuer == "" {
+		issuer = keyExchangeLocalFederationAudience()
+	}
+	if issuer == "" || strings.TrimSpace(targetStationPeerID) == "" || strings.TrimSpace(actorDID) == "" {
+		return "", errors.New("issuer, audience, and actor DID are required")
+	}
+	return authfed.Mint(ctx, s.keyCache, authfed.MintRequest{
+		Scope:    keyExchangeFederatedFetchScopeName,
+		Issuer:   issuer,
+		Audience: strings.TrimSpace(targetStationPeerID),
+		Subject:  issuer,
+		TTL:      keyExchangeFederationTTL,
+		Custom: map[string]string{
+			keyExchangeClaimActor:  actorDID,
+			keyExchangeClaimDevice: deviceID,
+		},
+	})
 }
 
 func (s *subServer) handleReplenishOPKs(ctx context.Context, req *kemodel.ReplenishOpksRequest) (*kemodel.ReplenishOpksResponse, error) {

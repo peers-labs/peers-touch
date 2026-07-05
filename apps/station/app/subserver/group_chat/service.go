@@ -491,6 +491,182 @@ func upsertMemberActorRefTx(tx *gorm.DB, now time.Time, groupID string, actor do
 	}).Error
 }
 
+func upsertFollowerGroupTx(tx *gorm.DB, now time.Time, snapshot domain.Group) error {
+	if snapshot.CreatedAt.IsZero() {
+		snapshot.CreatedAt = now
+	}
+	if snapshot.UpdatedAt.IsZero() {
+		snapshot.UpdatedAt = now
+	}
+	if snapshot.Status == "" {
+		snapshot.Status = domain.GroupStatusActive
+	}
+	row := groupModel{
+		ULID:            snapshot.ID,
+		Name:            snapshot.Name,
+		Description:     snapshot.Description,
+		OwnerDID:        snapshot.OwnerDID,
+		MemberCount:     snapshot.MemberCount,
+		Status:          snapshot.Status,
+		DissolvedAt:     timePtrOrNil(snapshot.DissolvedAt),
+		MembershipEpoch: groupMembershipEpoch(snapshot.MembershipEpoch),
+		CreatedAt:       snapshot.CreatedAt,
+		UpdatedAt:       snapshot.UpdatedAt,
+	}
+	return tx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "ulid"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"name":             row.Name,
+			"description":      row.Description,
+			"owner_did":        row.OwnerDID,
+			"member_count":     row.MemberCount,
+			"status":           row.Status,
+			"dissolved_at":     row.DissolvedAt,
+			"membership_epoch": row.MembershipEpoch,
+			"updated_at":       row.UpdatedAt,
+		}),
+	}).Create(&row).Error
+}
+
+func upsertFollowerMemberTx(tx *gorm.DB, now time.Time, snapshot domain.Member) error {
+	actorDID := strings.TrimSpace(snapshot.ActorDID)
+	if actorDID == "" {
+		actorDID = strings.TrimSpace(snapshot.Actor.ActorDID)
+	}
+	if actorDID == "" || strings.TrimSpace(snapshot.GroupID) == "" {
+		return nil
+	}
+	actor := snapshot.Actor
+	if strings.TrimSpace(actor.ActorDID) == "" {
+		actor.ActorDID = actorDID
+	}
+	if snapshot.Role == 0 {
+		snapshot.Role = domain.GroupRoleMember
+	}
+	if snapshot.JoinedAt.IsZero() {
+		snapshot.JoinedAt = now
+	}
+	row := memberModel{
+		GroupULID:              snapshot.GroupID,
+		ActorDID:               actorDID,
+		ActorHomeStationPeerID: actor.HomeStationPeerID,
+		ActorHomeStationDomain: actor.HomeStationDomain,
+		ActorFederatedHandle:   actor.FederatedHandle,
+		ActorProfileVersion:    actor.ProfileVersion,
+		ActorFederationID:      actor.FederationID,
+		Role:                   snapshot.Role,
+		Nickname:               snapshot.Nickname,
+		Muted:                  snapshot.Muted,
+		MutedUntil:             timePtrOrNil(snapshot.MutedUntil),
+		JoinedAt:               snapshot.JoinedAt,
+		InvitedBy:              snapshot.InvitedBy,
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+	result := tx.Model(&memberModel{}).
+		Where("group_ulid = ? AND actor_did = ?", row.GroupULID, row.ActorDID).
+		Updates(map[string]interface{}{
+			"actor_home_station_peer_id": row.ActorHomeStationPeerID,
+			"actor_home_station_domain":  row.ActorHomeStationDomain,
+			"actor_federated_handle":     row.ActorFederatedHandle,
+			"actor_profile_version":      row.ActorProfileVersion,
+			"actor_federation_id":        row.ActorFederationID,
+			"role":                       row.Role,
+			"nickname":                   row.Nickname,
+			"muted":                      row.Muted,
+			"muted_until":                row.MutedUntil,
+			"joined_at":                  row.JoinedAt,
+			"invited_by":                 row.InvitedBy,
+			"updated_at":                 row.UpdatedAt,
+		})
+	if result.Error != nil || result.RowsAffected > 0 {
+		return result.Error
+	}
+	return tx.Create(&row).Error
+}
+
+func upsertFollowerMessageTx(tx *gorm.DB, now time.Time, snapshot domain.Message) error {
+	snapshot.ID = strings.TrimSpace(snapshot.ID)
+	snapshot.GroupID = strings.TrimSpace(snapshot.GroupID)
+	if snapshot.ID == "" || snapshot.GroupID == "" {
+		return nil
+	}
+	if snapshot.SentAt.IsZero() {
+		snapshot.SentAt = now
+	}
+	row := messageModel{
+		ULID:             snapshot.ID,
+		GroupULID:        snapshot.GroupID,
+		SenderDID:        snapshot.SenderDID,
+		Type:             snapshot.Type,
+		Content:          "",
+		EncryptedPayload: append([]byte(nil), snapshot.EncryptedPayload...),
+		ReplyToID:        snapshot.ReplyToID,
+		ThreadRootID:     snapshot.ThreadRootID,
+		Recalled:         snapshot.Recalled,
+		EditedAt:         timePtrOrNil(snapshot.EditedAt),
+		SentAt:           snapshot.SentAt,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	if err := tx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "ulid"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"group_ulid":        row.GroupULID,
+			"sender_did":        row.SenderDID,
+			"type":              row.Type,
+			"content":           "",
+			"encrypted_payload": row.EncryptedPayload,
+			"reply_to_id":       row.ReplyToID,
+			"thread_root_ulid":  row.ThreadRootID,
+			"deleted":           row.Recalled,
+			"edited_at":         row.EditedAt,
+			"sent_at":           row.SentAt,
+			"updated_at":        row.UpdatedAt,
+		}),
+	}).Create(&row).Error; err != nil {
+		return err
+	}
+	for _, attachment := range snapshot.Attachments {
+		if strings.TrimSpace(attachment.CID) == "" && strings.TrimSpace(attachment.Filename) == "" {
+			continue
+		}
+		var existing MessageAttachmentModel
+		err := tx.
+			Where("message_ulid = ? AND cid = ? AND filename = ?", snapshot.ID, attachment.CID, attachment.Filename).
+			Limit(1).
+			Find(&existing).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		updates := map[string]interface{}{
+			"mime_type":     attachment.MimeType,
+			"size":          attachment.Size,
+			"thumbnail_cid": attachment.ThumbnailCID,
+			"visibility":    attachment.Visibility,
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) || existing.ID == 0 {
+			row := MessageAttachmentModel{
+				MessageULID:  snapshot.ID,
+				CID:          attachment.CID,
+				Filename:     attachment.Filename,
+				MimeType:     attachment.MimeType,
+				Size:         attachment.Size,
+				ThumbnailCID: attachment.ThumbnailCID,
+				Visibility:   attachment.Visibility,
+			}
+			if err := tx.Create(&row).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		if err := tx.Model(&existing).Updates(updates).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func syncProposalLifecycleActorRefsTx(tx *gorm.DB, now time.Time, proposal domain.GroupProposal) error {
 	switch chat.GroupProposalCommand(proposal.Command) {
 	case chat.GroupProposalCommand_GROUP_PROPOSAL_COMMAND_MEMBER_JOIN:
@@ -1001,6 +1177,158 @@ func (s *service) ListAuthorityEventsAfter(groupID string, afterSeq int64, limit
 		}
 	}
 	return events, nil
+}
+
+func (s *service) GetAuthorityEventCursor(groupID string) (int64, string, error) {
+	if s.db != nil {
+		var row groupEventModel
+		err := s.db.
+			Where("group_ulid = ?", groupID).
+			Order("seq DESC").
+			Limit(1).
+			First(&row).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return 0, "", nil
+			}
+			return 0, "", err
+		}
+		return row.Seq, row.EventHash, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := s.groupEvents[groupID]
+	if len(items) == 0 {
+		return 0, "", nil
+	}
+	last := items[len(items)-1]
+	return last.Seq, last.EventHash, nil
+}
+
+func (s *service) MaterializeFollowerProjection(snapshot domain.Group, members []domain.Member, messages []domain.Message) error {
+	snapshot.ID = strings.TrimSpace(snapshot.ID)
+	if snapshot.ID == "" {
+		return errors.New("follower projection group id is required")
+	}
+	now := time.Now()
+	if s.db != nil {
+		return s.db.Transaction(func(tx *gorm.DB) error {
+			if err := upsertFollowerGroupTx(tx, now, snapshot); err != nil {
+				return err
+			}
+			for _, member := range members {
+				member.GroupID = snapshot.ID
+				if strings.TrimSpace(member.ActorDID) == "" {
+					member.ActorDID = strings.TrimSpace(member.Actor.ActorDID)
+				}
+				if strings.TrimSpace(member.ActorDID) == "" {
+					continue
+				}
+				if err := upsertFollowerMemberTx(tx, now, member); err != nil {
+					return err
+				}
+			}
+			for _, msg := range messages {
+				msg.GroupID = snapshot.ID
+				msg.Content = ""
+				if strings.TrimSpace(msg.ID) == "" {
+					continue
+				}
+				if err := upsertFollowerMessageTx(tx, now, msg); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item := group{
+		ID:              snapshot.ID,
+		Name:            snapshot.Name,
+		Description:     snapshot.Description,
+		OwnerDID:        snapshot.OwnerDID,
+		MemberCount:     snapshot.MemberCount,
+		Status:          groupStatus(snapshot.Status),
+		DissolvedAt:     snapshot.DissolvedAt,
+		MembershipEpoch: groupMembershipEpoch(snapshot.MembershipEpoch),
+		CreatedAt:       snapshot.CreatedAt,
+		UpdatedAt:       snapshot.UpdatedAt,
+	}
+	if item.CreatedAt.IsZero() {
+		item.CreatedAt = now
+	}
+	if item.UpdatedAt.IsZero() {
+		item.UpdatedAt = now
+	}
+	s.groups[snapshot.ID] = &item
+	if s.members[snapshot.ID] == nil {
+		s.members[snapshot.ID] = make(map[string]*member)
+	}
+	for _, m := range members {
+		if strings.TrimSpace(m.ActorDID) == "" {
+			m.ActorDID = strings.TrimSpace(m.Actor.ActorDID)
+		}
+		if strings.TrimSpace(m.ActorDID) == "" {
+			continue
+		}
+		if m.JoinedAt.IsZero() {
+			m.JoinedAt = now
+		}
+		local := &member{
+			GroupID:    snapshot.ID,
+			ActorDID:   m.ActorDID,
+			Actor:      m.Actor,
+			Role:       m.Role,
+			Nickname:   m.Nickname,
+			Muted:      m.Muted,
+			MutedUntil: m.MutedUntil,
+			JoinedAt:   m.JoinedAt,
+			InvitedBy:  m.InvitedBy,
+		}
+		if strings.TrimSpace(local.Actor.ActorDID) == "" {
+			local.Actor.ActorDID = local.ActorDID
+		}
+		s.members[snapshot.ID][local.ActorDID] = local
+	}
+	if s.messagesByID == nil {
+		s.messagesByID = make(map[string]message)
+	}
+	existing := make(map[string]struct{}, len(s.messages[snapshot.ID]))
+	for _, msg := range s.messages[snapshot.ID] {
+		existing[msg.ID] = struct{}{}
+	}
+	for _, msg := range messages {
+		if strings.TrimSpace(msg.ID) == "" {
+			continue
+		}
+		item := message{
+			ID:               msg.ID,
+			GroupID:          snapshot.ID,
+			SenderDID:        msg.SenderDID,
+			Type:             msg.Type,
+			Content:          "",
+			EncryptedPayload: append([]byte(nil), msg.EncryptedPayload...),
+			ReplyToID:        msg.ReplyToID,
+			ThreadRootID:     msg.ThreadRootID,
+			Attachments:      append([]domain.Attachment(nil), msg.Attachments...),
+			Recalled:         msg.Recalled,
+			EditedAt:         msg.EditedAt,
+			SentAt:           msg.SentAt,
+		}
+		if item.SentAt.IsZero() {
+			item.SentAt = now
+		}
+		if _, ok := existing[item.ID]; !ok {
+			s.messages[snapshot.ID] = append(s.messages[snapshot.ID], item)
+			existing[item.ID] = struct{}{}
+		}
+		s.messagesByID[item.ID] = item
+	}
+	sort.SliceStable(s.messages[snapshot.ID], func(i, j int) bool {
+		return s.messages[snapshot.ID][i].ID < s.messages[snapshot.ID][j].ID
+	})
+	return nil
 }
 
 func (s *service) ListFollowerProjections(limit int) ([]domain.FollowerProjection, error) {
@@ -1762,7 +2090,15 @@ func (s *service) GetMember(groupID, actorDID string) (*domain.Member, bool) {
 }
 
 func (s *service) AddMember(groupID, actorDID, inviterDID string) (*domain.Member, bool) {
-	item, ok := s.addMember(groupID, actorDID, inviterDID)
+	item, ok := s.addMemberWithActorRef(groupID, domain.FederatedActorRef{ActorDID: actorDID}, inviterDID)
+	if !ok {
+		return nil, false
+	}
+	return memberToDomain(item), true
+}
+
+func (s *service) AddFederatedMember(groupID string, actor domain.FederatedActorRef, inviterDID string) (*domain.Member, bool) {
+	item, ok := s.addMemberWithActorRef(groupID, actor, inviterDID)
 	if !ok {
 		return nil, false
 	}
@@ -3066,6 +3402,14 @@ func (s *service) getMember(groupID, actorDID string) (*member, bool) {
 }
 
 func (s *service) addMember(groupID, actorDID, inviterDID string) (*member, bool) {
+	return s.addMemberWithActorRef(groupID, domain.FederatedActorRef{ActorDID: actorDID}, inviterDID)
+}
+
+func (s *service) addMemberWithActorRef(groupID string, actor domain.FederatedActorRef, inviterDID string) (*member, bool) {
+	actorDID := strings.TrimSpace(actor.ActorDID)
+	if actorDID == "" {
+		return nil, false
+	}
 	if s.db != nil {
 		now := time.Now()
 		item := &member{
@@ -3074,6 +3418,7 @@ func (s *service) addMember(groupID, actorDID, inviterDID string) (*member, bool
 			Role:      domain.GroupRoleMember,
 			JoinedAt:  now,
 			InvitedBy: inviterDID,
+			Actor:     actor,
 		}
 		added := false
 		err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -3087,19 +3432,28 @@ func (s *service) addMember(groupID, actorDID, inviterDID string) (*member, bool
 			}
 			if existed == 0 {
 				if err := tx.Create(&memberModel{
-					GroupULID: groupID,
-					ActorDID:  actorDID,
-					Role:      item.Role,
-					Nickname:  item.Nickname,
-					Muted:     item.Muted,
-					JoinedAt:  item.JoinedAt,
-					InvitedBy: item.InvitedBy,
-					CreatedAt: now,
-					UpdatedAt: now,
+					GroupULID:              groupID,
+					ActorDID:               actorDID,
+					Role:                   item.Role,
+					Nickname:               item.Nickname,
+					Muted:                  item.Muted,
+					JoinedAt:               item.JoinedAt,
+					InvitedBy:              item.InvitedBy,
+					ActorHomeStationPeerID: actor.HomeStationPeerID,
+					ActorHomeStationDomain: actor.HomeStationDomain,
+					ActorFederatedHandle:   actor.FederatedHandle,
+					ActorProfileVersion:    actor.ProfileVersion,
+					ActorFederationID:      actor.FederationID,
+					CreatedAt:              now,
+					UpdatedAt:              now,
 				}).Error; err != nil {
 					return err
 				}
 				added = true
+			} else if strings.TrimSpace(actor.HomeStationPeerID) != "" {
+				if err := syncMemberActorRefTx(tx, now, groupID, actor); err != nil {
+					return err
+				}
 			}
 			var count int64
 			if err := tx.Model(&memberModel{}).Where("group_ulid = ?", groupID).Count(&count).Error; err != nil {
@@ -3151,6 +3505,7 @@ func (s *service) addMember(groupID, actorDID, inviterDID string) (*member, bool
 		Role:      domain.GroupRoleMember,
 		JoinedAt:  now,
 		InvitedBy: inviterDID,
+		Actor:     actor,
 	}
 	_, existed := s.members[groupID][actorDID]
 	s.members[groupID][actorDID] = item
@@ -4124,4 +4479,12 @@ func derefTime(t *time.Time) time.Time {
 		return time.Time{}
 	}
 	return *t
+}
+
+func timePtrOrNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	v := t
+	return &v
 }

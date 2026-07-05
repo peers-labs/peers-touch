@@ -1163,10 +1163,21 @@ pub fn create_group(
     description: &str,
     member_dids: &[String],
 ) -> StationResult<Value> {
+    create_group_with_federated_members(token, name, description, member_dids, &[])
+}
+
+pub fn create_group_with_federated_members(
+    token: &str,
+    name: &str,
+    description: &str,
+    member_dids: &[String],
+    initial_federated_members: &[model::chat::FederatedActorRef],
+) -> StationResult<Value> {
     let req = model::chat::CreateGroupRequest {
         name: name.to_string(),
         description: description.to_string(),
         initial_member_dids: member_dids.to_vec(),
+        initial_federated_members: initial_federated_members.to_vec(),
         ..Default::default()
     };
     let resp = station_client::request_proto::<

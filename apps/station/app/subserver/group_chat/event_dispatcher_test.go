@@ -228,7 +228,14 @@ func TestDispatchFollowerEventSyncPullsFromAuthorityHandler(t *testing.T) {
 		authfed.NewInMemoryPeerKeyStore(),
 		httpadapter.StaticAudience(authorityStation),
 	)
+	authority.federationProjectionWrapper = serverwrapper.RequireFederationToken(
+		groupChatProjectionSyncScopeName,
+		authfed.NewInMemoryPeerKeyStore(),
+		httpadapter.StaticAudience(authorityStation),
+	)
 	group := authority.service.CreateGroup("owner", "Engineering", "")
+	addFederatedMemberForTest(t, authority, group.ID, "bob", followerStation)
+	authority.service.SendMessage(group.ID, "owner", int32(chat.GroupMessageType_GROUP_MESSAGE_TYPE_TEXT), "", "", "", nil, []byte("ciphertext-sync"))
 	authority.service.groupEvents[group.ID] = []domain.GroupEvent{
 		{
 			EventULID:              "event-1",
@@ -273,6 +280,21 @@ func TestDispatchFollowerEventSyncPullsFromAuthorityHandler(t *testing.T) {
 	if projection.LastSeq != 2 || projection.LastEventHash != "hash-2" || projection.Status != followerProjectionStatusActive {
 		t.Fatalf("unexpected follower projection after sync: %+v", projection)
 	}
+	groups := follower.service.ListGroups("bob")
+	if len(groups) != 1 || groups[0].ID != group.ID {
+		t.Fatalf("expected materialized group for bob, got %+v", groups)
+	}
+	members, total := follower.service.ListMembers(group.ID, 10, 0)
+	if total != 2 || len(members) != 2 {
+		t.Fatalf("expected materialized owner+bob members, total=%d members=%+v", total, members)
+	}
+	messages, err := follower.service.ListMessages(group.ID, "", 10)
+	if err != nil {
+		t.Fatalf("list materialized messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Content != "" || string(messages[0].EncryptedPayload) != "ciphertext-sync" {
+		t.Fatalf("expected opaque materialized message, got %+v", messages)
+	}
 }
 
 func TestDispatchFollowerEventSyncMarksDegradedOnAuthorityFailure(t *testing.T) {
@@ -315,7 +337,24 @@ func TestDispatchFollowerEventSyncRestoresActiveAfterAuthorityRecovery(t *testin
 		authfed.NewInMemoryPeerKeyStore(),
 		httpadapter.StaticAudience(authorityStation),
 	)
+	authority.federationProjectionWrapper = serverwrapper.RequireFederationToken(
+		groupChatProjectionSyncScopeName,
+		authfed.NewInMemoryPeerKeyStore(),
+		httpadapter.StaticAudience(authorityStation),
+	)
 	group := authority.service.CreateGroup("owner", "Engineering", "")
+	authority.service.groupEvents[group.ID] = []domain.GroupEvent{
+		{
+			EventULID:              "event-1",
+			GroupID:                group.ID,
+			Seq:                    1,
+			EventHash:              "hash-1",
+			EventType:              "group.created",
+			AuthorityStationPeerID: authorityStation,
+			AuthorityEpoch:         1,
+			MembershipEpoch:        1,
+		},
+	}
 
 	follower := newTestSubServer()
 	follower.localStationID = followerStation
@@ -372,6 +411,10 @@ func (tr failingGroupEventTransport) SyncGroupEvents(ctx context.Context, target
 	return nil, tr.err
 }
 
+func (tr failingGroupEventTransport) SyncGroupProjection(ctx context.Context, targetStationPeerID string, req *chat.SyncGroupProjectionRequest, token string) (*chat.SyncGroupProjectionResponse, error) {
+	return nil, tr.err
+}
+
 func (tr localGroupEventTransport) SyncGroupEvents(ctx context.Context, targetStationPeerID string, req *chat.SyncGroupEventsRequest, token string) (*chat.SyncGroupEventsResponse, error) {
 	_ = ctx
 	_ = targetStationPeerID
@@ -380,6 +423,20 @@ func (tr localGroupEventTransport) SyncGroupEvents(ctx context.Context, targetSt
 		return nil, proposalDispatchError(response.status, response.body.String())
 	}
 	var decoded chat.SyncGroupEventsResponse
+	if err := protojson.Unmarshal(response.body.Bytes(), &decoded); err != nil {
+		return nil, err
+	}
+	return &decoded, nil
+}
+
+func (tr localGroupEventTransport) SyncGroupProjection(ctx context.Context, targetStationPeerID string, req *chat.SyncGroupProjectionRequest, token string) (*chat.SyncGroupProjectionResponse, error) {
+	_ = ctx
+	_ = targetStationPeerID
+	response := invokeGroupChatHandler(tr.t, tr.authority, "gc-projection-sync", req, token)
+	if response.status != 200 {
+		return nil, proposalDispatchError(response.status, response.body.String())
+	}
+	var decoded chat.SyncGroupProjectionResponse
 	if err := protojson.Unmarshal(response.body.Bytes(), &decoded); err != nil {
 		return nil, err
 	}

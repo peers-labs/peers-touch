@@ -357,6 +357,10 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
   }
 }
 
+export function dispatchRealtimeFrameForAcceptance(raw: RawRealtimeEnvelope | undefined | null): void {
+  handleFrame(raw);
+}
+
 function dispatchMomentEvent(eventId: string, event: MomentEvent): void {
   const occurredAtUnixMs = Number(event.occurredTsUnixMs || 0n);
   const base = {

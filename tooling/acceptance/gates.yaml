@@ -99,6 +99,13 @@
       "tier": "env-evidence",
       "description": "Validate live deployed federated browser prerequisites: distinct authority/follower Stations, healthy Relay, discoverable Station peer IDs, and optional Desktop gateway Station binding."
     },
+    "chat-federated-desktop-dom-group-decrypt": {
+      "command": "python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_decrypt.py",
+      "timeout_seconds": 900,
+      "environment": "home-station",
+      "tier": "env-evidence",
+      "description": "Run a live two-Desktop cross-Station group flow: authority creates a group with a remote FederatedActorRef, sends a Sender-Key encrypted message, follower receives SKDM over realtime SSE, syncs projection/history, and renders decrypted DOM text."
+    },
     "desktop-check": {
       "command": "cd apps/desktop && pnpm run check",
       "timeout_seconds": 600,

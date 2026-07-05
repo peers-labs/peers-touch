@@ -24,6 +24,7 @@ var errGroupEventTransportUnavailable = errors.New("group event transport unavai
 type groupEventTransport interface {
 	ApplyGroupEvent(ctx context.Context, targetStationPeerID string, req *chat.ApplyGroupEventRequest, token string) (*chat.ApplyGroupEventResponse, error)
 	SyncGroupEvents(ctx context.Context, targetStationPeerID string, req *chat.SyncGroupEventsRequest, token string) (*chat.SyncGroupEventsResponse, error)
+	SyncGroupProjection(ctx context.Context, targetStationPeerID string, req *chat.SyncGroupProjectionRequest, token string) (*chat.SyncGroupProjectionResponse, error)
 }
 
 type relayGroupEventTransport struct {
@@ -118,6 +119,53 @@ func (tr relayGroupEventTransport) SyncGroupEvents(ctx context.Context, targetSt
 		return nil, proposalDispatchError(resp.StatusCode, string(raw))
 	}
 	var decoded chat.SyncGroupEventsResponse
+	if err := protojson.Unmarshal(raw, &decoded); err != nil {
+		return nil, err
+	}
+	return &decoded, nil
+}
+
+func (tr relayGroupEventTransport) SyncGroupProjection(ctx context.Context, targetStationPeerID string, req *chat.SyncGroupProjectionRequest, token string) (*chat.SyncGroupProjectionResponse, error) {
+	rc := nativefed.RelayClient()
+	if rc == nil {
+		return nil, errGroupEventTransportUnavailable
+	}
+	base := strings.TrimRight(rc.BaseURL(), "/")
+	relayToken := strings.TrimSpace(rc.Token())
+	if base == "" || relayToken == "" {
+		return nil, errGroupEventTransportUnavailable
+	}
+	body, err := protojson.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	target := fmt.Sprintf("%s/relay/forward/%s/group-chat/projection/sync", base, url.PathEscape(targetStationPeerID))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+relayToken)
+	httpReq.Header.Set(nativefed.ForwardAuthorizationHeader, "Bearer "+token)
+
+	client := tr.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 300 {
+		return nil, proposalDispatchError(resp.StatusCode, string(raw))
+	}
+	var decoded chat.SyncGroupProjectionResponse
 	if err := protojson.Unmarshal(raw, &decoded); err != nil {
 		return nil, err
 	}
@@ -235,13 +283,72 @@ func (s *subServer) dispatchFollowerEventSyncItem(ctx context.Context, projectio
 	if resp == nil {
 		return errors.New("event sync returned empty response")
 	}
+	finalProjection := projection
 	for _, event := range resp.GetEvents() {
-		if _, err := s.appService.ApplyFederationEvent(groupEventFromProto(event)); err != nil {
+		applied, err := s.appService.ApplyFederationEvent(groupEventFromProto(event))
+		if err != nil {
 			return err
 		}
+		finalProjection = applied
+	}
+	if finalProjection.Status == followerProjectionStatusReadOnly {
+		return errors.New("follower projection is read-only")
+	}
+	if err := s.syncFollowerProjectionSnapshot(ctx, authority, finalProjection); err != nil {
+		return err
 	}
 	s.service.MarkFollowerProjectionActive(groupID, authority)
 	return nil
+}
+
+func (s *subServer) syncFollowerProjectionSnapshot(ctx context.Context, authority string, projection domain.FollowerProjection) error {
+	beforeCursor := ""
+	firstPage := true
+	for page := 0; page < 20; page++ {
+		req := &chat.SyncGroupProjectionRequest{
+			GroupUlid:         projection.GroupID,
+			AppliedSeq:        projection.LastSeq,
+			AppliedEventHash:  projection.LastEventHash,
+			BeforeMessageUlid: beforeCursor,
+			MemberLimit:       500,
+			MemberOffset:      0,
+			MessageLimit:      100,
+		}
+		if !firstPage {
+			req.MemberLimit = 0
+		}
+		token, err := s.mintFollowerProjectionSyncToken(ctx, authority, projection.GroupID, projection.LastSeq, projection.LastEventHash)
+		if err != nil {
+			return err
+		}
+		resp, err := s.eventTransport.SyncGroupProjection(ctx, authority, req, token)
+		if err != nil {
+			return err
+		}
+		if resp == nil || resp.GetGroup() == nil {
+			return errors.New("projection sync returned empty response")
+		}
+		members := make([]domain.Member, 0, len(resp.GetMembers()))
+		for _, item := range resp.GetMembers() {
+			members = append(members, groupMemberFromProto(item))
+		}
+		messages := make([]domain.Message, 0, len(resp.GetMessages()))
+		for _, item := range resp.GetMessages() {
+			messages = append(messages, groupMessageFromProto(item))
+		}
+		if err := s.appService.MaterializeFollowerProjection(groupFromProto(resp.GetGroup()), members, messages); err != nil {
+			return err
+		}
+		if !resp.GetHasMoreMessages() {
+			return nil
+		}
+		beforeCursor = strings.TrimSpace(resp.GetNextMessageCursor())
+		if beforeCursor == "" {
+			return errors.New("projection sync has_more without next cursor")
+		}
+		firstPage = false
+	}
+	return errors.New("projection sync exceeded page limit")
 }
 
 func (s *subServer) mintFollowerEventSyncToken(ctx context.Context, authorityStationPeerID, groupID string) (string, error) {
@@ -264,6 +371,32 @@ func (s *subServer) mintFollowerEventSyncToken(ctx context.Context, authoritySta
 		TTL:      groupChatProposalMaxTTL,
 		Custom: map[string]string{
 			groupChatProposalClaimGroup: groupID,
+		},
+	})
+}
+
+func (s *subServer) mintFollowerProjectionSyncToken(ctx context.Context, authorityStationPeerID, groupID string, appliedSeq int64, appliedEventHash string) (string, error) {
+	if s.proposalKeyCache == nil {
+		return "", errGroupEventTransportUnavailable
+	}
+	issuer := strings.TrimSpace(s.localStationID)
+	if issuer == "" {
+		issuer = localFederationAudience()
+	}
+	audience := strings.TrimSpace(authorityStationPeerID)
+	if issuer == "" || audience == "" || strings.TrimSpace(groupID) == "" {
+		return "", errors.New("projection sync token requires issuer, audience, and group")
+	}
+	return authfed.Mint(ctx, s.proposalKeyCache, authfed.MintRequest{
+		Scope:    groupChatProjectionSyncScopeName,
+		Issuer:   issuer,
+		Audience: audience,
+		Subject:  issuer,
+		TTL:      groupChatProposalMaxTTL,
+		Custom: map[string]string{
+			groupChatProposalClaimGroup: groupID,
+			groupChatEventClaimSeq:      strconv.FormatInt(appliedSeq, 10),
+			groupChatEventClaimEvent:    appliedEventHash,
 		},
 	})
 }
