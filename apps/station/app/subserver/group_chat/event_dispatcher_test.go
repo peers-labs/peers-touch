@@ -297,6 +297,91 @@ func TestDispatchFollowerEventSyncPullsFromAuthorityHandler(t *testing.T) {
 	}
 }
 
+func TestDispatchFollowerEventSyncRefreshesStaleLocalIssuer(t *testing.T) {
+	registerGroupChatFederationScope()
+	const (
+		authorityStation = "station-a"
+		followerStation  = "station-b-dynamic"
+	)
+	identitySnapshot := nativefed.LocalIdentitySnapshot()
+	nativefed.SetLocalStationDomain(followerStation)
+	t.Cleanup(func() {
+		nativefed.SetLocalStationDomain(identitySnapshot.StationDomain)
+		nativefed.SetLocalStationPeerID(identitySnapshot.StationPeerID)
+	})
+	dynamicIssuer := localFederationAudience()
+	if dynamicIssuer == "" || dynamicIssuer == foundationLocalAuthorityStation {
+		t.Fatalf("expected dynamic follower issuer, got %q", dynamicIssuer)
+	}
+
+	authorityPeerKeys := authfed.NewInMemoryPeerKeyStore()
+	staleLocalKey, err := authfed.MintLocalKey(time.Now())
+	if err != nil {
+		t.Fatalf("mint stale local key: %v", err)
+	}
+	if err := authorityPeerKeys.UpsertTOFU(context.Background(), authfed.PeerKey{
+		StationID: foundationLocalAuthorityStation,
+		Kid:       staleLocalKey.Kid,
+		PubPEM:    staleLocalKey.PubPEM,
+	}); err != nil {
+		t.Fatalf("seed stale local TOFU row: %v", err)
+	}
+
+	authority := newTestSubServer()
+	authority.federationSyncWrapper = serverwrapper.RequireFederationToken(
+		groupChatEventSyncScopeName,
+		authorityPeerKeys,
+		httpadapter.StaticAudience(authorityStation),
+	)
+	authority.federationProjectionWrapper = serverwrapper.RequireFederationToken(
+		groupChatProjectionSyncScopeName,
+		authorityPeerKeys,
+		httpadapter.StaticAudience(authorityStation),
+	)
+	group := authority.service.CreateGroup("owner", "Engineering", "")
+	addFederatedMemberForTest(t, authority, group.ID, "bob", dynamicIssuer)
+	authority.service.groupEvents[group.ID] = []domain.GroupEvent{
+		{
+			EventULID:              "event-1",
+			GroupID:                group.ID,
+			Seq:                    1,
+			EventHash:              "hash-1",
+			EventType:              "group.created",
+			AuthorityStationPeerID: authorityStation,
+			AuthorityEpoch:         1,
+			MembershipEpoch:        1,
+		},
+	}
+
+	follower := newTestSubServer()
+	follower.localStationID = foundationLocalAuthorityStation
+	follower.proposalKeyCache = authfed.NewKeyCache(authfed.NewInMemoryKeyStore(), authfed.WithRecheckTTL(0))
+	follower.eventTransport = localGroupEventTransport{t: t, authority: authority}
+	follower.service.followers[group.ID+"\x00"+authorityStation] = domain.FollowerProjection{
+		GroupID:                group.ID,
+		AuthorityStationPeerID: authorityStation,
+		AuthorityEpoch:         1,
+		LastSeq:                1,
+		LastEventHash:          "hash-1",
+		Status:                 followerProjectionStatusDegraded,
+		ProtectionReason:       "token_invalid",
+	}
+
+	if synced := follower.dispatchFollowerEventSync(context.Background(), 10); synced != 1 {
+		t.Fatalf("expected one follower sync with refreshed issuer, got %d", synced)
+	}
+	if localRow, err := authorityPeerKeys.Get(context.Background(), foundationLocalAuthorityStation); err != nil || localRow == nil || localRow.Kid != staleLocalKey.Kid {
+		t.Fatalf("expected stale local TOFU row to remain untouched, row=%+v err=%v", localRow, err)
+	}
+	if dynamicRow, err := authorityPeerKeys.Get(context.Background(), dynamicIssuer); err != nil || dynamicRow == nil {
+		t.Fatalf("expected dynamic issuer TOFU row, row=%+v err=%v", dynamicRow, err)
+	}
+	projection := follower.service.followers[group.ID+"\x00"+authorityStation]
+	if projection.Status != followerProjectionStatusActive || projection.ProtectionReason != "" {
+		t.Fatalf("expected projection to recover with refreshed issuer, got %+v", projection)
+	}
+}
+
 func TestDispatchFollowerEventSyncMarksDegradedOnAuthorityFailure(t *testing.T) {
 	follower := newTestSubServer()
 	const authorityStation = "station-a"
