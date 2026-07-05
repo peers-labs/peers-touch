@@ -24,8 +24,8 @@ type AgentProvider struct {
 	CliCommand  string          `gorm:"type:text"`
 	Protocol    string          `gorm:"type:varchar(40)"`
 	Enabled     bool            `gorm:"not null;default:true"`
-	CreatedAt   time.Time       `gorm:"not null;default:now()"`
-	UpdatedAt   time.Time       `gorm:"not null;default:now()"`
+	CreatedAt   time.Time       `gorm:"not null;autoCreateTime"`
+	UpdatedAt   time.Time       `gorm:"not null;autoUpdateTime"`
 }
 
 // TableName sets the table name.
