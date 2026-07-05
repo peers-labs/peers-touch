@@ -2,7 +2,7 @@
 
 **日期：** 2026-07-05
 **范围：** 联邦-Station IM Foundation 本地变更进入 PR/release review 前的 evidence packaging
-**结论：** 可进入代码审查；已证明 single-message、3x5 repeated live cross-Station Desktop/browser decrypt、removed-member live browser negative、late-join live browser negative，以及 1000-message live browser pressure；不能声明 multi-follower deployed browser runtime pressure 完成
+**结论：** 可进入代码审查；已证明 single-message、3x5 repeated live cross-Station Desktop/browser decrypt、removed-member live browser negative、late-join live browser negative、1000-message live browser pressure，以及 bounded multi-follower deployed browser runtime pressure；不能声明 multiple distinct follower Stations browser pressure 完成
 
 ## 1. Plan Source
 
@@ -149,7 +149,7 @@ Boundary:
 
 | Scope | Status | Reason / Next Evidence |
 | --- | --- | --- |
-| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one home follower Station, home Relay, and dual Desktop gateways bound to distinct Stations; single-message and 3x5 repeated projection sync, SKDM relay delivery, follower Desktop install, and browser decrypt passed; removed-member live browser negative passed; late-join live browser negative passed; 1000-message one-authority/one-follower browser pressure passed; multi-follower deployed browser pressure remains unproven |
+| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one home follower Station, home Relay, and Desktop gateways bound to distinct Stations; single-message and 3x5 repeated projection sync, SKDM relay delivery, follower Desktop install, and browser decrypt passed; removed-member live browser negative passed; late-join live browser negative passed; 1000-message one-authority/one-follower browser pressure passed; bounded two-follower browser runtime pressure passed; multiple distinct follower Stations browser pressure remains unproven |
 | `chat-desktop-dom-message-visible` from standard acceptance plan | NOT RUN in this packaging pass | Requires local Desktop web/gateway runtime; earlier same-home group Sender Key DOM gate evidence exists separately |
 | `chat-desktop-gateway-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires Desktop HTTP gateway runtime |
 | `chat-live-realtime-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires fedp5/live realtime environment |
@@ -347,6 +347,47 @@ Report evidence:
 - no `[Waiting for sender key...]` and no `[Decrypt failed]` were observed in the decoded pressure window;
 - follower DOM rendered the last pressure plaintext.
 
+Live bounded multi-follower Desktop/browser pressure command:
+
+```bash
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://192.168.31.119:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://192.168.31.119:18082 \
+CHAT_FEDERATION_RELAY_URL=http://192.168.31.119:18081 \
+CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
+CHAT_FEDERATION_FOLLOWER_GATEWAY_URLS=http://127.0.0.1:3132,http://127.0.0.1:3133 \
+CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
+CHAT_FEDERATION_FOLLOWER_WEB_URLS=http://localhost:3312/#/chat,http://localhost:3313/#/chat \
+CHAT_FEDERATION_AUTHORITY_PEER_ID=12D3KooWBsTpWe6x5Kyueq1fLVewkU6B1dsgMPQYHuseWhERXe5D \
+CHAT_FEDERATION_FOLLOWER_PEER_ID=12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6 \
+CHAT_FEDERATION_DOM_OUT_DIR=/tmp/peers-touch-chat-federated-dom-multi-follower-pressure \
+CHAT_FEDERATION_MULTI_FOLLOWER_COUNT=2 \
+CHAT_FEDERATION_MULTI_FOLLOWER_MESSAGES=100 \
+python3 tooling/acceptance/gates/chat/federated_desktop_dom_multi_follower_pressure.py
+```
+
+Observed result:
+
+```text
+[OK] group: gcg-1783259958240421048
+[OK] follower_count: 2
+[OK] message_count: 100
+[OK] sent_count: 100
+[OK] follower_1: actor=344642852002725894 decoded=101 waiting=0 failed=0 first=True last=True frames=62
+[OK] follower_2: actor=344642852992581638 decoded=101 waiting=0 failed=0 first=True last=True frames=102
+[OK] duration_ms: 33642
+[OK] report: /tmp/peers-touch-chat-federated-dom-multi-follower-pressure/chat-federated-desktop-dom-multi-follower-pressure-report.json
+```
+
+Report evidence:
+
+- one authority Desktop runtime and two follower Desktop runtimes used independent gateways and isolated `PEERS_STORAGE_ROOT` values;
+- both follower actors were members of the same federated group on the home follower Station;
+- both follower runtimes decrypted the warmup Sender-Key message;
+- authority Desktop sent `100` Sender-Key encrypted pressure messages;
+- follower 1 decoded `101` messages including warmup with `waitingCount=0`, `failedCount=0`, `firstFound=true`, `lastFound=true`;
+- follower 2 decoded `101` messages including warmup with `waitingCount=0`, `failedCount=0`, `firstFound=true`, `lastFound=true`;
+- both follower DOMs rendered the last pressure plaintext.
+
 ## 7. Product Proven Scope
 
 Evidence supports these claims:
@@ -365,20 +406,21 @@ Evidence supports these claims:
 - Live home authority/follower removed-member negative gate proves post-remove plaintext does not render in the removed follower browser DOM after authority-side removal.
 - Live home authority/follower late-join negative gate proves a follower added after encrypted group history exists cannot decrypt/render pre-join plaintext, while post-join plaintext still decrypts.
 - Live home authority/follower 1000-message pressure gate proves one authority Station and one follower Station can sync/decrypt/render a 1000-message cross-Station group pressure window through home Relay and Desktop browser runtime without waiting/decrypt placeholders.
+- Live bounded multi-follower gate proves one authority Station and one follower Station can serve two follower actors/devices/Desktop browser runtimes in the same federated group pressure window without waiting/decrypt placeholders.
 - Desktop compile/type surface accepts the current group SKDM/realtime contracts.
 
 ## 8. Product Unproven Scope
 
 Evidence does not prove:
 
-- multi-follower deployed browser runtime pressure beyond one authority and one follower Station;
+- multiple distinct follower Stations deployed browser pressure;
 - PostgreSQL-backed multi-node recovery;
 - mobile/applet chat parity;
 - recall/edit/delete user-visible workflow under pressure.
 
 ## 9. Review Handoff
 
-Ready for `pt-github-review`: **yes for the proven Foundation scope**. The remaining merge caveat is not quality evidence; the deployed prerequisite now proves home authority Station, one follower Station, home Relay, and dual Desktop gateway binding. The single-message and 3x5 repeated live cross-Station group message/decrypt browser paths are proven, the removed-member live browser negative path is proven, the late-join live browser negative path is proven, and the 1000-message live browser pressure path is proven for one authority Station plus one follower Station. The unproven scope is multi-follower deployed browser pressure.
+Ready for `pt-github-review`: **yes for the proven Foundation scope**. The remaining merge caveat is not quality evidence; the deployed prerequisite now proves home authority Station, one follower Station, home Relay, and Desktop gateway binding. The single-message and 3x5 repeated live cross-Station group message/decrypt browser paths are proven, the removed-member live browser negative path is proven, the late-join live browser negative path is proven, the 1000-message live browser pressure path is proven for one authority Station plus one follower Station, and bounded two-follower browser runtime pressure is proven on the home follower Station. The unproven scope is multiple distinct follower Stations browser pressure.
 
 Ready for PR/release evidence packaging: **yes**.
 
@@ -391,4 +433,4 @@ Reviewer should use:
 
 The strongest accurate claim is:
 
-> Foundation IM has evidence for home Station group/private pressure, relay-mediated 3-Station federation protocol pressure, single-message live cross-Station Desktop/browser decrypt, 3x5 repeated live browser runtime decrypt, removed-member live browser negative behavior, late-join live browser negative behavior, and 1000-message live browser pressure for one authority Station plus one follower Station. It is not yet proven for multi-follower deployed browser pressure.
+> Foundation IM has evidence for home Station group/private pressure, relay-mediated 3-Station federation protocol pressure, single-message live cross-Station Desktop/browser decrypt, 3x5 repeated live browser runtime decrypt, removed-member live browser negative behavior, late-join live browser negative behavior, 1000-message live browser pressure for one authority Station plus one follower Station, and bounded two-follower browser runtime pressure on the home follower Station. It is not yet proven for multiple distinct follower Stations browser pressure.
