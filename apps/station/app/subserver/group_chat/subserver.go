@@ -20,19 +20,20 @@ import (
 )
 
 const (
-	groupChatProposalScopeName     = "group-chat-proposal-submit"
-	groupChatEventApplyScopeName   = "group-chat-event-apply"
-	groupChatEventSyncScopeName    = "group-chat-event-sync"
-	groupChatSkdmDeliverScopeName  = "group-chat-skdm-deliver"
-	groupChatProposalClaimGroup    = "group_ulid"
-	groupChatProposalClaimProposal = "proposal_ulid"
-	groupChatProposalClaimActor    = "actor_did"
-	groupChatEventClaimEvent       = "event_ulid"
-	groupChatEventClaimSeq         = "seq"
-	groupChatSkdmClaimIdempotency  = "idempotency_key"
-	groupChatSkdmClaimRecipient    = "recipient_did"
-	groupChatSkdmClaimDevice       = "recipient_device_id"
-	groupChatProposalMaxTTL        = 60 * time.Second
+	groupChatProposalScopeName       = "group-chat-proposal-submit"
+	groupChatEventApplyScopeName     = "group-chat-event-apply"
+	groupChatEventSyncScopeName      = "group-chat-event-sync"
+	groupChatProjectionSyncScopeName = "group-chat-projection-sync"
+	groupChatSkdmDeliverScopeName    = "group-chat-skdm-deliver"
+	groupChatProposalClaimGroup      = "group_ulid"
+	groupChatProposalClaimProposal   = "proposal_ulid"
+	groupChatProposalClaimActor      = "actor_did"
+	groupChatEventClaimEvent         = "event_ulid"
+	groupChatEventClaimSeq           = "seq"
+	groupChatSkdmClaimIdempotency    = "idempotency_key"
+	groupChatSkdmClaimRecipient      = "recipient_did"
+	groupChatSkdmClaimDevice         = "recipient_device_id"
+	groupChatProposalMaxTTL          = 60 * time.Second
 )
 
 var groupChatScopeOnce sync.Once
@@ -77,6 +78,19 @@ func registerGroupChatFederationScope() {
 			},
 		})
 		scope.MustRegister(scope.Scope{
+			Name:        groupChatProjectionSyncScopeName,
+			Description: "inbound federated group read projection sync query",
+			Policy: scope.Policy{
+				TTLMax:           groupChatProposalMaxTTL,
+				AudienceRequired: true,
+				AllowedClaimKeys: []string{
+					groupChatProposalClaimGroup,
+					groupChatEventClaimSeq,
+					groupChatEventClaimEvent,
+				},
+			},
+		})
+		scope.MustRegister(scope.Scope{
 			Name:        groupChatSkdmDeliverScopeName,
 			Description: "inbound federated opaque group Sender Key envelope delivery",
 			Policy: scope.Policy{
@@ -95,21 +109,22 @@ func registerGroupChatFederationScope() {
 }
 
 type subServer struct {
-	status                    server.Status
-	addrs                     []string
-	jwtWrapper                server.Wrapper
-	federationProposalWrapper server.Wrapper
-	federationEventWrapper    server.Wrapper
-	federationSyncWrapper     server.Wrapper
-	federationSkdmWrapper     server.Wrapper
-	service                   *service
-	appService                *application_group_chat.Service
-	peerKeys                  authfed.PeerKeyStore
-	proposalKeyCache          *authfed.KeyCache
-	proposalTransport         groupProposalTransport
-	eventTransport            groupEventTransport
-	skdmTransport             groupSkdmTransport
-	localStationID            string
+	status                      server.Status
+	addrs                       []string
+	jwtWrapper                  server.Wrapper
+	federationProposalWrapper   server.Wrapper
+	federationEventWrapper      server.Wrapper
+	federationSyncWrapper       server.Wrapper
+	federationProjectionWrapper server.Wrapper
+	federationSkdmWrapper       server.Wrapper
+	service                     *service
+	appService                  *application_group_chat.Service
+	peerKeys                    authfed.PeerKeyStore
+	proposalKeyCache            *authfed.KeyCache
+	proposalTransport           groupProposalTransport
+	eventTransport              groupEventTransport
+	skdmTransport               groupSkdmTransport
+	localStationID              string
 }
 
 func NewGroupChatSubServer(opts ...option.Option) server.Subserver {
@@ -180,6 +195,11 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	)
 	s.federationSyncWrapper = serverwrapper.RequireFederationToken(
 		groupChatEventSyncScopeName,
+		s.peerKeys,
+		httpadapter.StaticAudience(s.localStationID),
+	)
+	s.federationProjectionWrapper = serverwrapper.RequireFederationToken(
+		groupChatProjectionSyncScopeName,
 		s.peerKeys,
 		httpadapter.StaticAudience(s.localStationID),
 	)

@@ -149,7 +149,7 @@ Boundary:
 
 | Scope | Status | Reason / Next Evidence |
 | --- | --- | --- |
-| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one follower Station, home Relay, and dual Desktop gateways bound to distinct Stations; full Desktop browser/runtime pressure still requires cross-Station group join/projection, SKDM relay delivery, and browser decrypt evidence |
+| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one follower Station, home Relay, and dual Desktop gateways bound to distinct Stations; authority projection sync, follower materializer, and federated key bundle lookup now exist, but full Desktop browser/runtime pressure still requires live SKDM relay delivery and browser decrypt evidence |
 | `chat-desktop-dom-message-visible` from standard acceptance plan | NOT RUN in this packaging pass | Requires local Desktop web/gateway runtime; earlier same-home group Sender Key DOM gate evidence exists separately |
 | `chat-desktop-gateway-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires Desktop HTTP gateway runtime |
 | `chat-live-realtime-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires fedp5/live realtime environment |
@@ -186,6 +186,9 @@ Evidence supports these claims:
 - Station private-chat recovers 1000/1000 encrypted messages across 50 sessions.
 - Private-chat rejects non-participant, invalid receiver, and blocked-user sends.
 - Federation proposal/event path handles 1000 message proposals across 3 logical Stations and 2000 follower event deliveries.
+- Authority-side `/group-chat/projection/sync` returns cursor-bound group/member/message read projection for follower materialization without exposing plaintext message content.
+- Follower-side projection sync now materializes group/member/message rows with upsert-only semantics and no event/outbox side effects.
+- Federated key bundle lookup lets the authority Desktop resolve remote follower device bundles via Relay + peer-JWT before sealing SKDM envelopes.
 - Desktop compile/type surface accepts the current group SKDM/realtime contracts.
 
 ## 8. Product Unproven Scope
@@ -201,7 +204,7 @@ Evidence does not prove:
 
 ## 9. Review Handoff
 
-Ready for `pt-github-review`: **yes for the proven Foundation scope**. The remaining merge caveat is not quality evidence; it is the unproven live deployed 3-Station Relay/Desktop/browser runtime because the `home` profile lacks follower Station and Relay configuration.
+Ready for `pt-github-review`: **yes for the proven Foundation scope**. The remaining merge caveat is not quality evidence; the deployed prerequisite now proves home authority Station, one follower Station, home Relay, and dual Desktop gateway binding. The unproven scope is the full live cross-Station group message/decrypt browser runtime path: SKDM relay delivery into the follower Desktop and browser decrypt/pressure evidence.
 
 Ready for PR/release evidence packaging: **yes**.
 

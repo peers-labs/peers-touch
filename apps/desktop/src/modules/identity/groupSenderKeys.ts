@@ -446,7 +446,7 @@ export async function ensureSkdmDistributed(
   for (const did of uniqueDids) {
     let resp;
     try {
-      resp = await api.keyExchangeFetchBundle(did);
+      resp = await api.keyExchangeFetchBundle(did, undefined, memberHomeByDid.get(did));
     } catch (err) {
       log.warn('groupSenderKeys', `fetch bundles failed for ${did}`, err);
       continue;

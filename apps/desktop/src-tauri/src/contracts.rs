@@ -275,6 +275,7 @@ pub struct KeyExchangeUploadInput {
 pub struct KeyExchangeFetchInput {
     pub did: String,
     pub device_id: Option<String>,
+    pub home_station_peer_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1589,10 +1590,22 @@ pub struct ActorSearchUsersInput {
 // --- Group chat create / leave contracts ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatFederatedActorInput {
+    pub actor_did: String,
+    pub home_station_peer_id: String,
+    pub home_station_domain: Option<String>,
+    pub federated_handle: Option<String>,
+    pub actor_identity_public_key: Option<Vec<u8>>,
+    pub profile_version: Option<i64>,
+    pub federation_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupChatCreateGroupInput {
     pub name: String,
     pub description: Option<String>,
     pub member_dids: Option<Vec<String>>,
+    pub initial_federated_members: Option<Vec<GroupChatFederatedActorInput>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

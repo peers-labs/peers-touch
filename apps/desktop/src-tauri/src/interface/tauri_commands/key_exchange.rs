@@ -105,6 +105,7 @@ pub fn key_exchange_fetch_bundle(
     let req = kemodel::FetchKeyBundleRequest {
         did: input.did,
         device_id: input.device_id.unwrap_or_default(),
+        home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
     };
     let r = match station_client::request_proto::<
         kemodel::FetchKeyBundleRequest,

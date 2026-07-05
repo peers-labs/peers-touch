@@ -195,6 +195,26 @@ export interface ChatThreadCount {
   unreadCount: number;
 }
 
+export interface GroupChatFederatedActorInput {
+  actorDid: string;
+  homeStationPeerId: string;
+  homeStationDomain?: string;
+  federatedHandle?: string;
+  actorIdentityPublicKey?: Uint8Array | number[];
+  profileVersion?: number | bigint;
+  federationId?: string;
+}
+
+interface GroupChatFederatedActorWireInput {
+  actor_did: string;
+  home_station_peer_id: string;
+  home_station_domain?: string;
+  federated_handle?: string;
+  actor_identity_public_key?: number[];
+  profile_version?: number;
+  federation_id?: string;
+}
+
 export interface DesktopNativeHostEventInput {
   kind: 'resume' | 'app-resume' | 'tray-open' | 'notification-tap';
   target?: string;
@@ -448,6 +468,26 @@ export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
     throw new AuthCommandException(response.error);
   }
   throw new Error(response.error?.message || `${command} failed`);
+}
+
+function normalizeGroupChatFederatedActors(
+  actors?: GroupChatFederatedActorInput[],
+): GroupChatFederatedActorWireInput[] | undefined {
+  if (!actors || actors.length === 0) {
+    return undefined;
+  }
+  return actors.map((actor) => ({
+    actor_did: actor.actorDid,
+    home_station_peer_id: actor.homeStationPeerId,
+    home_station_domain: actor.homeStationDomain,
+    federated_handle: actor.federatedHandle,
+    actor_identity_public_key: actor.actorIdentityPublicKey
+      ? Array.from(actor.actorIdentityPublicKey)
+      : undefined,
+    profile_version:
+      actor.profileVersion == null ? undefined : Number(actor.profileVersion),
+    federation_id: actor.federationId,
+  }));
 }
 
 async function invokeAppResultStub<TOut>(command: string, payload?: Record<string, unknown>): Promise<TOut> {
@@ -4888,8 +4928,18 @@ export const api = {
       'group_chat_sync_from_station_scoped', { group_ulid: groupUlid, limit, max_pages: maxPages },
     ),
 
-  groupChatCreateGroup: (name: string, description?: string, memberDids?: string[]) =>
-    invokeRustProto('group_chat_create_group', CreateGroupResponseSchema, { name, description, member_dids: memberDids }),
+  groupChatCreateGroup: (
+    name: string,
+    description?: string,
+    memberDids?: string[],
+    initialFederatedMembers?: GroupChatFederatedActorInput[],
+  ) =>
+    invokeRustProto('group_chat_create_group', CreateGroupResponseSchema, {
+      name,
+      description,
+      member_dids: memberDids,
+      initial_federated_members: normalizeGroupChatFederatedActors(initialFederatedMembers),
+    }),
 
   groupChatGetGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_get_group', GetGroupResponseSchema, { group_ulid: groupUlid }),
@@ -5127,10 +5177,14 @@ export const api = {
       bundle,
     ),
 
-  keyExchangeFetchBundle: (did: string, deviceId?: string) =>
-    invokeRustDataFromStatus<{ did: string; device_id?: string }, KeyExchangeFetchBundlesResponse>(
+  keyExchangeFetchBundle: (did: string, deviceId?: string, homeStationPeerId?: string) =>
+    invokeRustDataFromStatus<{ did: string; device_id?: string; home_station_peer_id?: string }, KeyExchangeFetchBundlesResponse>(
       'key_exchange_fetch_bundle',
-      { did, ...(deviceId != null && deviceId !== '' ? { device_id: deviceId } : {}) },
+      {
+        did,
+        ...(deviceId != null && deviceId !== '' ? { device_id: deviceId } : {}),
+        ...(homeStationPeerId != null && homeStationPeerId !== '' ? { home_station_peer_id: homeStationPeerId } : {}),
+      },
     ),
 
   accountGetDeviceId: () =>
