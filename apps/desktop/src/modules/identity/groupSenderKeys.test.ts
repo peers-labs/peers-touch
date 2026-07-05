@@ -46,7 +46,7 @@ describe('ensureSkdmDistributed (multi-device bundles)', () => {
       },
     } as Storage);
     mocks.accountGetDeviceId.mockResolvedValue({ device_id: 'device-self' });
-    mocks.cryptoGroupSkEmitSkdm.mockResolvedValue({ skdm_b64: 'dummy-skdm' });
+    mocks.cryptoGroupSkEmitSkdm.mockResolvedValue({ sender_key_id: 1, skdm_b64: 'dummy-skdm' });
     mocks.signalingEnvelopeSeal.mockResolvedValue({ payload_b64: 'sealed' });
     mocks.friendChatCreateSession.mockResolvedValue({ session: { ulid: 'sess' } });
     mocks.friendChatSendMessage.mockResolvedValue({});
@@ -93,5 +93,37 @@ describe('ensureSkdmDistributed (multi-device bundles)', () => {
       'dummy-skdm',
     );
     expect(mocks.friendChatSendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let an old sender_key_id ledger suppress a fresh chain distribution', async () => {
+    const actor = 'did:peer:alice';
+    const peer = 'did:peer:bob';
+    mocks.keyExchangeFetchBundle.mockResolvedValue({
+      bundles: [
+        {
+          did: peer,
+          device_id: 'device-bob',
+          ik_pub: 'ik-bob',
+          spk_pub: 'spk',
+          spk_sig: 'sig',
+          opks: [],
+          published_at_unix_ms: 1,
+        },
+      ],
+    });
+
+    mocks.cryptoGroupSkEmitSkdm.mockResolvedValueOnce({ sender_key_id: 1, skdm_b64: 'skdm-1' });
+    await ensureSkdmDistributed(actor, 'group-1', [peer]);
+    expect(mocks.friendChatSendMessage).toHaveBeenCalledTimes(1);
+
+    mocks.cryptoGroupSkEmitSkdm.mockResolvedValueOnce({ sender_key_id: 2, skdm_b64: 'skdm-2' });
+    await ensureSkdmDistributed(actor, 'group-1', [peer]);
+    expect(mocks.friendChatSendMessage).toHaveBeenCalledTimes(2);
+    expect(mocks.signalingEnvelopeSeal).toHaveBeenLastCalledWith(
+      'ik-bob',
+      expect.any(String),
+      expect.anything(),
+      'skdm-2',
+    );
   });
 });

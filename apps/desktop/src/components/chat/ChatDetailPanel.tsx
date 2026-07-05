@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, toast } from '@lobehub/ui';
 import { Modal, Select, Tag, theme, Tooltip, Typography } from 'antd';
-import { timestampDate } from '@bufbuild/protobuf/wkt';
 import {
+  type ChatAttachmentLike,
   chatMediaKindForAttachment,
   formatChatAttachmentSize,
 } from '@peers-touch/client-chat-core';
@@ -35,16 +35,12 @@ import { CHAT_BACKGROUND_OPTIONS } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import type {
-  FriendChatMessage,
   FriendChatSession,
-  FriendMessageAttachment,
 } from '../../gen/proto/domain/chat/friend_chat_pb';
 import {
   GroupRole,
   type Group,
   type GroupMember,
-  type GroupMessage,
-  type GroupMessageAttachment,
 } from '../../gen/proto/domain/chat/group_chat_pb';
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
@@ -52,14 +48,14 @@ import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicPro
 import { getGroupMemberControlState } from './chatGroupPermissions';
 import { presentError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
+import type { DesktopIMMessageProjection } from '../../store/socialProjection';
 
 const { Text } = Typography;
 
 const DETAIL_HEADER_HEIGHT = 56;
 const HISTORY_RESTORE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-type SocialMessage = FriendChatMessage | GroupMessage;
-type DetailAttachment = FriendMessageAttachment | GroupMessageAttachment;
+type DetailAttachment = ChatAttachmentLike;
 type DetailAttachmentKind = 'media' | 'file';
 
 interface DetailAttachmentItem {
@@ -92,11 +88,6 @@ function groupRoleLabel(role: number, t: (key: string) => string): string {
   return t('chat.social.detail.roleMember');
 }
 
-function getMessageTimestampMs(message: SocialMessage): number {
-  const ts = message.createdAt ?? message.sentAt;
-  return ts ? timestampDate(ts).getTime() : 0;
-}
-
 function formatHistoryRestoreRemaining(remainingMs: number, t: (key: string, options?: Record<string, unknown>) => string): string {
   const totalMinutes = Math.max(1, Math.ceil(remainingMs / 60000));
   const hours = Math.floor(totalMinutes / 60);
@@ -107,18 +98,18 @@ function formatHistoryRestoreRemaining(remainingMs: number, t: (key: string, opt
   return t('chat.social.detail.restoreHistoryRemainingMinutes', { minutes });
 }
 
-function getCurrentConversationAttachments(messages: SocialMessage[]): DetailAttachmentItem[] {
+function getCurrentConversationAttachments(messages: DesktopIMMessageProjection[]): DetailAttachmentItem[] {
   const items: DetailAttachmentItem[] = [];
   messages.forEach((message, messageIndex) => {
     if (message.recalled || !message.attachments || message.attachments.length === 0) return;
 
-    const timestampMs = getMessageTimestampMs(message);
+    const timestampMs = message.sentAtMs;
     message.attachments.forEach((attachment, attachmentIndex) => {
       const mediaKind = chatMediaKindForAttachment(attachment);
       const isImage = mediaKind === 'image';
       const isVideo = mediaKind === 'video';
       items.push({
-        id: `${message.ulid || messageIndex}:${attachment.cid || attachmentIndex}`,
+        id: `${message.id || messageIndex}:${attachment.cid || attachmentIndex}`,
         attachment,
         kind: isImage || isVideo ? 'media' : 'file',
         isImage,
@@ -554,10 +545,12 @@ export function ChatDetailPanel() {
   const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
-    sessions, groups, groupMembers, messages,
+    sessions, groups, groupMembers,
     setShowDetail, loadSessions, loadGroupMembers, loadGroups, loadMessages,
     loadConversationPreviews, selectSession, selectGroup,
     conversationLocalState, updateConversationLocalState,
+    getIMConversations,
+    getIMMessages,
   } = useSocialChatStore();
   const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
   const ownFingerprint = useSocialChatStore((s) => s.ownFingerprint);
@@ -569,6 +562,9 @@ export function ChatDetailPanel() {
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const isGroup = activeTab === 'group';
+  const activeConversation = activeUlid
+    ? getIMConversations().find((conversation) => conversation.kind === activeTab && conversation.id === activeUlid)
+    : undefined;
   const activeFriendSession = activeTab === 'friend'
     ? sessions.find((s) => s.ulid === activeUlid)
     : undefined;
@@ -576,6 +572,7 @@ export function ChatDetailPanel() {
     ? groups.find((g) => g.ulid === activeUlid)
     : undefined;
   const groupAvatarUrl = useOssAttachmentUrl(activeGroup?.avatarCid || undefined)
+    || activeConversation?.avatar
     || groupAvatarRemoteUrl(activeGroup);
 
   const [verifyOpen, setVerifyOpen] = useState(false);
@@ -592,7 +589,9 @@ export function ChatDetailPanel() {
   const [historyActionPending, setHistoryActionPending] = useState(false);
   const [historyNow, setHistoryNow] = useState(Date.now());
 
-  const peerDid = getFriendPeerDid(activeFriendSession, currentUserDid);
+  const peerDid = !isGroup
+    ? activeConversation?.peerDid || getFriendPeerDid(activeFriendSession, currentUserDid)
+    : '';
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
   const myGroupMember = currentUserDid ? members.find((member) => member.actorDid === currentUserDid) : undefined;
   const myGroupNickname = myGroupMember?.nickname?.trim() || '';
@@ -656,7 +655,7 @@ export function ChatDetailPanel() {
       ),
     [currentUserDid, memberDidSet, sessions],
   );
-  const groupMemberCount = isGroup ? (activeGroup?.memberCount || members.length) : 0;
+  const groupMemberCount = isGroup ? (activeConversation?.memberCount || activeGroup?.memberCount || members.length) : 0;
   const myGroupRole = activeGroup?.ownerDid === currentUserDid ? GroupRole.OWNER : Number(myGroupMember?.role ?? 0);
   const canManageGroupMembers = Boolean(
     activeGroup?.ownerDid === currentUserDid ||
@@ -675,15 +674,15 @@ export function ChatDetailPanel() {
       ? t('chat.social.detail.permissionAdminBody')
       : t('chat.social.detail.permissionMemberBody');
   const currentName = isGroup
-    ? (activeGroup?.name || t('chat.social.sessionList.unnamedGroup'))
-    : getFriendPeerName(activeFriendSession, currentUserDid);
+    ? (activeConversation?.title || activeGroup?.name || t('chat.social.sessionList.unnamedGroup'))
+    : activeConversation?.title || getFriendPeerName(activeFriendSession, currentUserDid);
   const displayName = currentName || t('chat.social.sessionList.unknown');
-  const peerAvatar = getFriendPeerAvatar(activeFriendSession, currentUserDid);
+  const peerAvatar = activeConversation?.avatar || getFriendPeerAvatar(activeFriendSession, currentUserDid);
   const peerPresenceKnown = peerDid ? peerDid in peerOnline : false;
   const peerIsOnline = peerDid in peerOnline ? peerOnline[peerDid] : null;
   const localStateKey = activeUlid ? `${activeTab}:${activeUlid}` : '';
   const activeLocalState = localStateKey ? conversationLocalState[localStateKey] : undefined;
-  const activeMessages = activeUlid ? (messages[activeUlid] || []) : [];
+  const activeMessages = activeUlid ? getIMMessages(activeTab, activeUlid) : [];
   const clearHistoryClearedAt = Number(activeLocalState?.clearedAt || 0);
   const clearHistoryExpiresAt = clearHistoryClearedAt > 0
     ? clearHistoryClearedAt + HISTORY_RESTORE_WINDOW_MS
