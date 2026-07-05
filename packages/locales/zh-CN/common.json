@@ -26,6 +26,7 @@
   "desktop.auth.sessionEndedTitle": "会话已结束",
   "desktop.auth.sessionExpiredBody": "当前会话已过期，请重新登录。",
   "desktop.auth.sessionExpiredTitle": "会话已过期",
+  "desktop.errorBoundary.title": "应用异常",
 
   "common.stationPicker.addLabel": "添加 Station",
   "common.stationPicker.copiedLabel": "已复制",

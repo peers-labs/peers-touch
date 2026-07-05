@@ -11,12 +11,12 @@ type SuspectedItem struct {
 	ItemID            string    `gorm:"not null;type:varchar(36);index:idx_suspected_item_id"`
 	ItemContent       string    `gorm:"type:text"`
 	NegativeCount     int       `gorm:"not null;default:0"`
-	AttributedTurnIDs string    `gorm:"type:text"` // JSON array of turn IDs
+	AttributedTurnIDs string    `gorm:"type:text"`                                    // JSON array of turn IDs
 	Status            string    `gorm:"not null;type:varchar(20);default:'watching'"` // watching, suspected, cleared
-	FirstAttributedAt time.Time `gorm:"not null;default:now()"`
-	LastAttributedAt  time.Time `gorm:"not null;default:now()"`
-	CreatedAt         time.Time `gorm:"not null;default:now()"`
-	UpdatedAt         time.Time `gorm:"not null;default:now()"`
+	FirstAttributedAt time.Time `gorm:"not null;autoCreateTime"`
+	LastAttributedAt  time.Time `gorm:"not null;autoCreateTime"`
+	CreatedAt         time.Time `gorm:"not null;autoCreateTime"`
+	UpdatedAt         time.Time `gorm:"not null;autoUpdateTime"`
 }
 
 func (SuspectedItem) TableName() string { return "agent_suspected_items" }

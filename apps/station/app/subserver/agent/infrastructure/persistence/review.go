@@ -18,7 +18,7 @@ type Review struct {
 	ErrorReason    *string         `gorm:"type:text"`
 	RetryAttempted bool            `gorm:"not null;default:false"`
 	CredentialID   *string         `gorm:"type:varchar(36)"`
-	TriggeredAt    time.Time       `gorm:"not null;default:now()"`
+	TriggeredAt    time.Time       `gorm:"not null;autoCreateTime"`
 	CompletedAt    *time.Time      `gorm:"type:timestamp"`
 }
 

@@ -13,7 +13,7 @@ type MemoryEvent struct {
 	Layer     string    `gorm:"not null;type:varchar(30);default:'';index:idx_memory_events_layer"`
 	Detail    string    `gorm:"not null;type:text;default:''"`
 	LatencyMs int64     `gorm:"not null;default:0"`
-	CreatedAt time.Time `gorm:"not null;default:now();index:idx_memory_events_created"`
+	CreatedAt time.Time `gorm:"not null;autoCreateTime;index:idx_memory_events_created"`
 }
 
 func (MemoryEvent) TableName() string { return "agent_memory_events" }

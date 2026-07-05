@@ -17,8 +17,8 @@ type AgentMessage struct {
 	ToolCallsJSON  json.RawMessage `gorm:"type:jsonb;column:tool_calls_json"`
 	MetadataJSON   json.RawMessage `gorm:"type:jsonb;column:metadata_json"`
 	ErrorJSON      json.RawMessage `gorm:"type:jsonb;column:error_json"`
-	CreatedAt      time.Time       `gorm:"not null;default:now();index:idx_agent_messages_created_at"`
-	UpdatedAt      time.Time       `gorm:"not null;default:now()"`
+	CreatedAt      time.Time       `gorm:"not null;autoCreateTime;index:idx_agent_messages_created_at"`
+	UpdatedAt      time.Time       `gorm:"not null;autoUpdateTime"`
 
 	// Relations
 	Conversation Conversation `gorm:"foreignKey:ConversationID;references:ID"`

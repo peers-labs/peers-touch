@@ -446,7 +446,7 @@ func (r *fakeRepo) GetOfflineMessages(actorDID string, limit int) []domain.Offli
 	return nil
 }
 
-func (r *fakeRepo) AckOffline(ulids []string) {
+func (r *fakeRepo) AckOffline(actorDID string, ulids []string) {
 }
 
 func (r *fakeRepo) Stats() (int32, int32, int64, int32) {

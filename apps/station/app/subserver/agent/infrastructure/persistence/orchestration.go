@@ -15,9 +15,9 @@ type CollaborationTask struct {
 	BudgetMoney  float64   `gorm:"not null;default:0"`
 	BudgetTimeMs int64     `gorm:"not null;default:0"`
 	MetaJSON     string    `gorm:"type:text"`
-	CreatedAt    time.Time `gorm:"not null;default:now()"`
-	StartedAt    time.Time `gorm:"not null;default:now()"`
-	EndedAt      time.Time `gorm:"not null;default:now()"`
+	CreatedAt    time.Time `gorm:"not null;autoCreateTime"`
+	StartedAt    time.Time `gorm:"not null;autoCreateTime"`
+	EndedAt      time.Time `gorm:"not null;autoCreateTime"`
 }
 
 func (CollaborationTask) TableName() string { return "agent_collaboration_tasks" }
@@ -33,8 +33,8 @@ type CollaborationTaskNode struct {
 	Status              int32     `gorm:"not null;type:integer"`
 	PrerequisiteNodeIDs string    `gorm:"type:text"`
 	ResultSummary       string    `gorm:"type:text"`
-	StartedAt           time.Time `gorm:"not null;default:now()"`
-	EndedAt             time.Time `gorm:"not null;default:now()"`
+	StartedAt           time.Time `gorm:"not null;autoCreateTime"`
+	EndedAt             time.Time `gorm:"not null;autoCreateTime"`
 }
 
 func (CollaborationTaskNode) TableName() string { return "agent_collaboration_task_nodes" }

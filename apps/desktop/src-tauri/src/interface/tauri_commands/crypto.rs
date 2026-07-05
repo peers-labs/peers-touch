@@ -1020,6 +1020,7 @@ pub fn crypto_group_encrypt(
             );
         }
     };
+    let sent_key = sender_keys::current_message_key_snapshot(&chain);
     let wire = match sender_keys::encrypt(&mut chain, &plaintext) {
         Ok(w) => w,
         Err(e) => {
@@ -1033,10 +1034,12 @@ pub fn crypto_group_encrypt(
     // Persist BEFORE returning the ciphertext. AES-GCM key reuse on
     // a re-encrypt with the un-advanced chain would be catastrophic,
     // so we'd rather fail the send than risk that.
-    if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &chain) {
+    if let Err(reason) =
+        local_chat_store::apply_group_decrypt_outcome(scope.as_str(), &chain, &[sent_key], None)
+    {
         return AppResult::fail(
             ErrorCode::InternalError,
-            format!("Failed to persist advanced chain: {}", reason),
+            format!("Failed to persist advanced chain and sent message key: {}", reason),
             None,
         );
     }
@@ -1076,7 +1079,7 @@ pub fn crypto_group_decrypt(
     if group_ulid.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
     }
-    let (_actor_id, scope) = match sk_authed_scope(&state, &window) {
+    let (actor_id, scope) = match sk_authed_scope(&state, &window) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -1164,7 +1167,7 @@ pub fn crypto_group_decrypt(
         signing_seed: chain.signing_seed,
         verifying_key: chain.verifying_key,
     };
-    let consumed = if was_skipped {
+    let consumed = if was_skipped && wire.sender_did != actor_id {
         Some(wire.counter)
     } else {
         None
