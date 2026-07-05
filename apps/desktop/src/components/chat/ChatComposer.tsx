@@ -23,6 +23,7 @@ import {
   Mic,
   RotateCcw,
   Scissors,
+  Send,
   Smile,
   Square,
   Trash2,
@@ -728,6 +729,27 @@ export function ChatComposer({
                 disabled={disabled}
                 style={toolButtonStyle}
               />
+            </Tooltip>
+            <Tooltip title={canSend ? t('chat.composer.send') : t('chat.social.composer.sendDisabled')}>
+              <button
+                type="button"
+                aria-label={t('chat.composer.send')}
+                onClick={() => {
+                  submit().catch((error) => {
+                    log.error('chat', 'composer send failed', error);
+                  });
+                }}
+                disabled={!canSend}
+                style={{
+                  ...toolButtonStyle,
+                  border: 0,
+                  background: canSend ? token.colorPrimary : token.colorFillSecondary,
+                  color: canSend ? token.colorTextLightSolid : token.colorTextQuaternary,
+                  cursor: canSend ? 'pointer' : 'not-allowed',
+                }}
+              >
+                <Send size={18} />
+              </button>
             </Tooltip>
             {(uploading || voiceSending) && (
               <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>
