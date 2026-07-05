@@ -68,6 +68,58 @@ func TestHandleCreateAddsInitialMembersAndProjectsOwnerRole(t *testing.T) {
 	}
 }
 
+func TestHandleCreatePersistsInitialFederatedMembers(t *testing.T) {
+	sub := newDBBackedAcceptanceSubServer(t, "create_initial_federated_members")
+
+	resp, err := sub.handleCreate(subjectContext("owner"), &chat.CreateGroupRequest{
+		Name: "Federated Engineering",
+		InitialMemberDids: []string{
+			"local-member",
+			"remote-member",
+		},
+		InitialFederatedMembers: []*chat.FederatedActorRef{
+			{
+				ActorDid:          "remote-member",
+				HomeStationPeerId: "station-b",
+				HomeStationDomain: "station-b.example",
+				FederatedHandle:   "remote-member@station-b.example",
+				ProfileVersion:    42,
+				FederationId:      "fed-station-b",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleCreate returned error: %v", err)
+	}
+	groupID := resp.GetGroup().GetUlid()
+	if groupID == "" {
+		t.Fatal("expected create response group ulid")
+	}
+	if resp.GetGroup().GetMemberCount() != 3 {
+		t.Fatalf("expected owner + local + remote members after de-dupe, got %d", resp.GetGroup().GetMemberCount())
+	}
+
+	remote, ok := sub.service.GetMember(groupID, "remote-member")
+	if !ok {
+		t.Fatal("expected remote member")
+	}
+	if remote.Actor.HomeStationPeerID != "station-b" ||
+		remote.Actor.HomeStationDomain != "station-b.example" ||
+		remote.Actor.FederatedHandle != "remote-member@station-b.example" ||
+		remote.Actor.ProfileVersion != 42 ||
+		remote.Actor.FederationID != "fed-station-b" {
+		t.Fatalf("expected remote actor routing metadata to persist, got %+v", remote.Actor)
+	}
+
+	local, ok := sub.service.GetMember(groupID, "local-member")
+	if !ok {
+		t.Fatal("expected local member")
+	}
+	if local.Actor.HomeStationPeerID != "" {
+		t.Fatalf("did not expect local member to get remote station metadata: %+v", local.Actor)
+	}
+}
+
 func TestHandleGetMessagesNextCursorDoesNotRepeatPage(t *testing.T) {
 	sub := newTestSubServer()
 	group := sub.service.CreateGroup("owner", "Engineering", "")
@@ -674,6 +726,112 @@ func TestSyncGroupEventsRouteRejectsFederationClaimMismatch(t *testing.T) {
 	}
 }
 
+func TestSyncGroupProjectionRouteReturnsOpaqueProjection(t *testing.T) {
+	registerGroupChatFederationScope()
+	const (
+		authorityStation = "station-a"
+		followerStation  = "station-b"
+	)
+	sub := newTestSubServer()
+	sub.federationProjectionWrapper = serverwrapper.RequireFederationToken(
+		groupChatProjectionSyncScopeName,
+		authfed.NewInMemoryPeerKeyStore(),
+		httpadapter.StaticAudience(authorityStation),
+	)
+	group := sub.service.CreateGroup("owner", "Engineering", "")
+	addFederatedMemberForTest(t, sub, group.ID, "bob", followerStation)
+	sub.service.SendMessage(group.ID, "owner", int32(chat.GroupMessageType_GROUP_MESSAGE_TYPE_TEXT), "", "", "", nil, []byte("ciphertext-1"))
+	sub.service.groupEvents[group.ID] = []domain.GroupEvent{
+		{
+			EventULID:              "event-1",
+			GroupID:                group.ID,
+			Seq:                    1,
+			EventHash:              "hash-1",
+			EventType:              "group.message.appended",
+			Actor:                  domain.FederatedActorRef{ActorDID: "owner"},
+			MessageID:              "message-1",
+			MembershipEpoch:        group.MembershipEpoch,
+			AuthorityStationPeerID: authorityStation,
+			AuthorityEpoch:         1,
+		},
+	}
+	req := &chat.SyncGroupProjectionRequest{
+		GroupUlid:        group.ID,
+		AppliedSeq:       1,
+		AppliedEventHash: "hash-1",
+		MemberLimit:      10,
+		MessageLimit:     10,
+	}
+	token := mintGroupChatProjectionSyncToken(t, followerStation, authorityStation, group.ID, 1, "hash-1")
+
+	response := invokeGroupChatHandler(t, sub, "gc-projection-sync", req, token)
+	if response.status != 200 {
+		t.Fatalf("expected 200, got %d body=%s", response.status, response.body.String())
+	}
+	var decoded chat.SyncGroupProjectionResponse
+	if err := protojson.Unmarshal(response.body.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, response.body.String())
+	}
+	if decoded.GetGroup().GetUlid() != group.ID || decoded.GetLastEventSeq() != 1 || decoded.GetLastEventHash() != "hash-1" {
+		t.Fatalf("unexpected projection cursor/group: %+v", &decoded)
+	}
+	if decoded.GetMemberTotal() != 2 || len(decoded.GetMembers()) != 2 {
+		t.Fatalf("expected owner+bob members, got total=%d members=%+v", decoded.GetMemberTotal(), decoded.GetMembers())
+	}
+	var bob *chat.GroupMember
+	for _, member := range decoded.GetMembers() {
+		if member.GetActorDid() == "bob" {
+			bob = member
+			break
+		}
+	}
+	if bob == nil || bob.GetActorHomeStationPeerId() != followerStation {
+		t.Fatalf("expected bob routing metadata, got %+v", bob)
+	}
+	if len(decoded.GetMessages()) != 1 {
+		t.Fatalf("expected one message, got %+v", decoded.GetMessages())
+	}
+	msg := decoded.GetMessages()[0]
+	if msg.GetContent() != "" || string(msg.GetEncryptedPayload()) != "ciphertext-1" {
+		t.Fatalf("expected opaque encrypted message without content, got content=%q payload=%q", msg.GetContent(), string(msg.GetEncryptedPayload()))
+	}
+}
+
+func TestSyncGroupProjectionRouteRejectsCursorMismatch(t *testing.T) {
+	registerGroupChatFederationScope()
+	const (
+		authorityStation = "station-a"
+		followerStation  = "station-b"
+	)
+	sub := newTestSubServer()
+	sub.federationProjectionWrapper = serverwrapper.RequireFederationToken(
+		groupChatProjectionSyncScopeName,
+		authfed.NewInMemoryPeerKeyStore(),
+		httpadapter.StaticAudience(authorityStation),
+	)
+	group := sub.service.CreateGroup("owner", "Engineering", "")
+	sub.service.groupEvents[group.ID] = []domain.GroupEvent{
+		{
+			EventULID:              "event-1",
+			GroupID:                group.ID,
+			Seq:                    1,
+			EventHash:              "hash-1",
+			EventType:              "group.message.appended",
+			Actor:                  domain.FederatedActorRef{ActorDID: "owner"},
+			MembershipEpoch:        group.MembershipEpoch,
+			AuthorityStationPeerID: authorityStation,
+			AuthorityEpoch:         1,
+		},
+	}
+	req := &chat.SyncGroupProjectionRequest{GroupUlid: group.ID, AppliedSeq: 1, AppliedEventHash: "stale-hash"}
+	token := mintGroupChatProjectionSyncToken(t, followerStation, authorityStation, group.ID, 1, "stale-hash")
+
+	response := invokeGroupChatHandler(t, sub, "gc-projection-sync", req, token)
+	if response.status != 409 {
+		t.Fatalf("expected cursor mismatch 409, got %d body=%s", response.status, response.body.String())
+	}
+}
+
 func TestHandleSubmitGroupSkdmEnvelopeEnqueuesOpaqueEnvelope(t *testing.T) {
 	sub := newTestSubServer()
 	group := sub.service.CreateGroup("alice", "Engineering", "")
@@ -971,6 +1129,30 @@ func mintGroupChatEventSyncToken(t *testing.T, issuer, audience, groupID string)
 	})
 	if err != nil {
 		t.Fatalf("mint federation event sync token: %v", err)
+	}
+	return token
+}
+
+func mintGroupChatProjectionSyncToken(t *testing.T, issuer, audience, groupID string, appliedSeq int64, appliedEventHash string) string {
+	t.Helper()
+	cache := authfed.NewKeyCache(authfed.NewInMemoryKeyStore(), authfed.WithRecheckTTL(0))
+	if _, err := cache.Get(context.Background()); err != nil {
+		t.Fatalf("warm federation key cache: %v", err)
+	}
+	token, err := authfed.Mint(context.Background(), cache, authfed.MintRequest{
+		Scope:    groupChatProjectionSyncScopeName,
+		Issuer:   issuer,
+		Audience: audience,
+		Subject:  issuer,
+		TTL:      30 * time.Second,
+		Custom: map[string]string{
+			groupChatProposalClaimGroup: groupID,
+			groupChatEventClaimSeq:      strconv.FormatInt(appliedSeq, 10),
+			groupChatEventClaimEvent:    appliedEventHash,
+		},
+	})
+	if err != nil {
+		t.Fatalf("mint federation projection sync token: %v", err)
 	}
 	return token
 }
