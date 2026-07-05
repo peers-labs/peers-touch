@@ -151,7 +151,7 @@ func TestDispatchGroupSkdmOutboxDeliversToTargetStation(t *testing.T) {
 	addFederatedMemberForTest(t, target, group.ID, "bob", targetStation)
 
 	source := newTestSubServer()
-	source.localStationID = sourceStation
+	source.localStationID = foundationLocalAuthorityStation
 	source.proposalKeyCache = authfed.NewKeyCache(authfed.NewInMemoryKeyStore(), authfed.WithRecheckTTL(0))
 	if _, err := source.proposalKeyCache.Get(context.Background()); err != nil {
 		t.Fatalf("warm source federation key cache: %v", err)
@@ -235,7 +235,7 @@ func TestCrossStationSkdmAcceptanceEntitlementAndOpaqueDelivery(t *testing.T) {
 	defer unsubscribeCarol()
 
 	source := newTestSubServer()
-	source.localStationID = sourceStation
+	source.localStationID = foundationLocalAuthorityStation
 	source.proposalKeyCache = authfed.NewKeyCache(authfed.NewInMemoryKeyStore(), authfed.WithRecheckTTL(0))
 	if _, err := source.proposalKeyCache.Get(context.Background()); err != nil {
 		t.Fatalf("warm source federation key cache: %v", err)
@@ -247,6 +247,7 @@ func TestCrossStationSkdmAcceptanceEntitlementAndOpaqueDelivery(t *testing.T) {
 		MembershipEpoch:            currentGroup.MembershipEpoch,
 		SenderDID:                  "alice",
 		SenderKeyID:                7,
+		SenderHomeStationPeerID:    sourceStation,
 		RecipientDID:               "bob",
 		RecipientDeviceID:          "bob-device-1",
 		RecipientHomeStationPeerID: targetStation,
