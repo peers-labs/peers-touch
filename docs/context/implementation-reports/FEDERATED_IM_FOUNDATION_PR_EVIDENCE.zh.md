@@ -2,7 +2,7 @@
 
 **日期：** 2026-07-05
 **范围：** 联邦-Station IM Foundation 本地变更进入 PR/release review 前的 evidence packaging
-**结论：** 可进入代码审查；不能声明 live deployed 3-Station runtime 完成
+**结论：** 可进入代码审查；已证明 single-message live cross-Station Desktop/browser decrypt；不能声明 live deployed 3-Station browser/runtime pressure 完成
 
 ## 1. Plan Source
 
@@ -149,7 +149,7 @@ Boundary:
 
 | Scope | Status | Reason / Next Evidence |
 | --- | --- | --- |
-| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one follower Station, home Relay, and dual Desktop gateways bound to distinct Stations; authority projection sync, follower materializer, and federated key bundle lookup now exist, but full Desktop browser/runtime pressure still requires live SKDM relay delivery and browser decrypt evidence |
+| live deployed 3-Station browser/runtime pressure | PARTIAL | deployed prereq passes for home authority Station, one home follower Station, home Relay, and dual Desktop gateways bound to distinct Stations; single-message projection sync, SKDM relay delivery, follower Desktop install, and browser decrypt passed; repeated/live browser runtime pressure remains unproven |
 | `chat-desktop-dom-message-visible` from standard acceptance plan | NOT RUN in this packaging pass | Requires local Desktop web/gateway runtime; earlier same-home group Sender Key DOM gate evidence exists separately |
 | `chat-desktop-gateway-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires Desktop HTTP gateway runtime |
 | `chat-live-realtime-e2e` from standard acceptance plan | NOT RUN in this packaging pass | Requires fedp5/live realtime environment |
@@ -158,7 +158,9 @@ Boundary:
 Live 3-Station prerequisite command:
 
 ```bash
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.37.246.80:18080 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://192.168.31.119:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://192.168.31.119:18082 \
+CHAT_FEDERATION_RELAY_URL=http://192.168.31.119:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py
@@ -168,12 +170,36 @@ Observed result:
 
 ```text
 [OK] authority Station peer id: discovered from http://192.168.31.119:18080/actor/federation/health
-[OK] follower Station peer id: discovered from http://10.37.246.80:18080/actor/federation/health
+[OK] follower Station peer id: discovered from http://192.168.31.119:18082/actor/federation/health
 [OK] authority Station: http://192.168.31.119:18080/sub-oss/healthz
-[OK] follower Station: http://10.37.246.80:18080/sub-oss/healthz
+[OK] follower Station: http://192.168.31.119:18082/sub-oss/healthz
 [OK] Relay: http://192.168.31.119:18081/sub-oss/healthz
 [OK] authority gateway: http://127.0.0.1:3131
 [OK] follower gateway: http://127.0.0.1:3132
+```
+
+Live cross-Station Desktop/browser decrypt command:
+
+```bash
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://192.168.31.119:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://192.168.31.119:18082 \
+CHAT_FEDERATION_RELAY_URL=http://192.168.31.119:18081 \
+CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
+CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
+CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
+CHAT_FEDERATION_FOLLOWER_WEB_URL=http://localhost:3312/#/chat \
+CHAT_FEDERATION_DOM_OUT_DIR=/tmp/peers-touch-chat-federated-dom-home \
+python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_decrypt.py
+```
+
+Observed result:
+
+```text
+[OK] group: gcg-1783248081167879439
+[OK] content: federated-group-skdm-1783248081123
+[OK] injected_realtime_frames: 1
+[OK] screenshot: /tmp/peers-touch-chat-federated-dom-home/chat-federated-desktop-dom-group-decrypt.png
+[OK] evidence: /tmp/peers-touch-chat-federated-dom-home/chat-federated-desktop-dom-group-decrypt.txt
 ```
 
 ## 7. Product Proven Scope
@@ -189,6 +215,7 @@ Evidence supports these claims:
 - Authority-side `/group-chat/projection/sync` returns cursor-bound group/member/message read projection for follower materialization without exposing plaintext message content.
 - Follower-side projection sync now materializes group/member/message rows with upsert-only semantics and no event/outbox side effects.
 - Federated key bundle lookup lets the authority Desktop resolve remote follower device bundles via Relay + peer-JWT before sealing SKDM envelopes.
+- Live home authority/follower Desktop browser gate proves post-join cross-Station group message decrypt through projection sync, SKDM relay delivery, device-scoped realtime, and local Sender Key install.
 - Desktop compile/type surface accepts the current group SKDM/realtime contracts.
 
 ## 8. Product Unproven Scope
@@ -196,15 +223,15 @@ Evidence supports these claims:
 Evidence does not prove:
 
 - live deployed 3-Station Relay runtime;
-- live deployed 3-Station browser decrypt experience;
-- multi-Station Desktop DOM pressure;
+- live deployed 3-Station browser/runtime pressure;
+- repeated multi-Station Desktop DOM pressure;
 - PostgreSQL-backed multi-node recovery;
 - mobile/applet chat parity;
 - recall/edit/delete user-visible workflow under pressure.
 
 ## 9. Review Handoff
 
-Ready for `pt-github-review`: **yes for the proven Foundation scope**. The remaining merge caveat is not quality evidence; the deployed prerequisite now proves home authority Station, one follower Station, home Relay, and dual Desktop gateway binding. The unproven scope is the full live cross-Station group message/decrypt browser runtime path: SKDM relay delivery into the follower Desktop and browser decrypt/pressure evidence.
+Ready for `pt-github-review`: **yes for the proven Foundation scope**. The remaining merge caveat is not quality evidence; the deployed prerequisite now proves home authority Station, one follower Station, home Relay, and dual Desktop gateway binding. The single-message live cross-Station group message/decrypt browser path is proven. The unproven scope is repeated/live browser runtime pressure.
 
 Ready for PR/release evidence packaging: **yes**.
 
@@ -217,4 +244,4 @@ Reviewer should use:
 
 The strongest accurate claim is:
 
-> Foundation IM has evidence for home Station group/private pressure and relay-mediated 3-Station federation protocol pressure. It is not yet proven for live deployed 3-Station Relay/Desktop/browser runtime.
+> Foundation IM has evidence for home Station group/private pressure, relay-mediated 3-Station federation protocol pressure, and single-message live cross-Station Desktop/browser decrypt. It is not yet proven for live deployed browser/runtime pressure.
