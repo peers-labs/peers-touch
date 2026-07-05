@@ -6,12 +6,16 @@ import {
   filterUnreadChatNotifications,
   mergeChatMessages,
   mergeChatNotifications,
+  projectIMConversation,
+  projectIMMessage,
   projectChatNotificationUnreadCount,
   pruneChatTypingPeers,
   resolveChatMessageReceiptStatus,
   type ChatAttachmentLike,
   type ChatMessageMutationInput,
   type ChatMessageMutationKind,
+  type IMConversationProjection,
+  type IMMessageProjection,
 } from '@peers-touch/client-chat-core';
 
 import { timestampMillis } from './socialNormalizers';
@@ -93,6 +97,46 @@ export function projectUnreadNotificationCount(input: {
     notifications: input.notifications,
     unreadStatus: NOTIFICATION_STATUS_UNREAD,
     unreadTotal: input.unreadTotal,
+  });
+}
+
+export function projectMobileSocialIMConversation(conversation: SocialConversation): IMConversationProjection {
+  return projectIMConversation({
+    kind: 'friend',
+    id: conversation.session.ulid,
+    title: conversation.peerName || conversation.peerDid || 'Friend',
+    avatar: conversation.peerAvatar,
+    lastActivityMs: timestampMillis(conversation.session.lastMessageAt),
+    unread: conversation.unread,
+    preview: conversation.lastMessage
+      ? {
+        content: conversation.lastMessage.content || conversation.lastMessage.attachments?.[0]?.filename || '',
+        type: Number(conversation.lastMessage.type ?? 1),
+        senderId: conversation.lastMessage.senderDid ?? '',
+      }
+      : undefined,
+  });
+}
+
+export function projectMobileSocialIMMessage(
+  conversationId: string,
+  message: FriendChatMessage,
+): IMMessageProjection {
+  return projectIMMessage({
+    id: message.ulid ?? '',
+    conversationKind: 'friend',
+    conversationId,
+    senderId: message.senderDid ?? '',
+    type: Number(message.type ?? 1),
+    content: message.content,
+    attachments: message.attachments ?? [],
+    status: message.status,
+    sentAtMs: timestampMillis(message.sentAt ?? message.createdAt),
+    recalled: Boolean(message.recalled),
+    editedAtMs: message.editedAt ? timestampMillis(message.editedAt) : undefined,
+    replyToId: message.replyToUlid,
+    threadRootId: message.threadRootUlid,
+    encrypted: Boolean(message.encryptedPayload?.byteLength && !message.content),
   });
 }
 

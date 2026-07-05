@@ -27,8 +27,8 @@ type Memory struct {
 	LastAccessedAt *time.Time
 	HelpfulCount   int       `gorm:"not null;default:0"`
 	HarmfulCount   int       `gorm:"not null;default:0"`
-	CreatedAt      time.Time `gorm:"not null;default:now()"`
-	UpdatedAt      time.Time `gorm:"not null;default:now()"`
+	CreatedAt      time.Time `gorm:"not null;autoCreateTime"`
+	UpdatedAt      time.Time `gorm:"not null;autoUpdateTime"`
 }
 
 // TableName sets the table name.
