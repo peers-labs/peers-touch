@@ -104,7 +104,7 @@
       "timeout_seconds": 900,
       "environment": "home-station",
       "tier": "env-evidence",
-      "description": "Run a live two-Desktop cross-Station group flow: authority creates a group with a remote FederatedActorRef, sends a Sender-Key encrypted message, follower receives SKDM over realtime SSE, syncs projection/history, and renders decrypted DOM text."
+      "description": "Run a parameterized live two-Desktop cross-Station group flow: authority creates groups with a remote FederatedActorRef, sends Sender-Key encrypted messages, follower receives SKDM over realtime SSE, syncs projection/history, and renders decrypted DOM text. Set CHAT_FEDERATION_DOM_GROUPS and CHAT_FEDERATION_DOM_MESSAGES_PER_GROUP for repeated browser-runtime evidence."
     },
     "desktop-check": {
       "command": "cd apps/desktop && pnpm run check",

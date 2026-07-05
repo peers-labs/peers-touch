@@ -21,11 +21,14 @@ Environment:
   CHAT_FEDERATION_AUTHORITY_WEB_URL     default http://localhost:3311/#/chat
   CHAT_FEDERATION_FOLLOWER_WEB_URL      default http://localhost:3312/#/chat
   CHAT_FEDERATION_DOM_OUT_DIR           default /tmp/peers-touch-chat-federated-dom-group
+  CHAT_FEDERATION_DOM_GROUPS            default 1
+  CHAT_FEDERATION_DOM_MESSAGES_PER_GROUP default 1
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import queue
 import sys
@@ -64,6 +67,19 @@ def load_dom_gate() -> Any:
 
 def load_prereq_gate() -> Any:
     return load_module(Path(__file__).parent / "federated_browser_prereq.py", "chat_federated_browser_prereq")
+
+
+def positive_int_env(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise GateError(f"{name} must be a positive integer, got {raw!r}") from error
+    if value < 1:
+        raise GateError(f"{name} must be >= 1, got {value}")
+    return value
 
 
 def launch_renderer(dom_gate: Any, helpers: Any, chrome: str, url: str, gateway_url: str, label: str) -> tuple[Any, Any, str]:
@@ -224,7 +240,7 @@ def inject_realtime_frame(dom_gate: Any, session: Any, event_id: str, data_b64: 
         raise GateError(f"dispatchRealtimeFrame returned invalid result: {result!r}")
 
 
-def sse_reader(station_url: str, token: str, device_id: str, frames: "queue.Queue[tuple[str, str]]", stop: threading.Event) -> None:
+def sse_reader(station_url: str, token: str, device_id: str, frames: "queue.Queue[tuple[str, str]]", ready: threading.Event, stop: threading.Event) -> None:
     req = urllib.request.Request(
         f"{station_url.rstrip('/')}/events/stream",
         headers={
@@ -236,6 +252,7 @@ def sse_reader(station_url: str, token: str, device_id: str, frames: "queue.Queu
     )
     try:
         with urllib.request.urlopen(req, timeout=90) as response:
+            ready.set()
             current_id = ""
             current_data: list[str] = []
             while not stop.is_set():
@@ -257,9 +274,11 @@ def sse_reader(station_url: str, token: str, device_id: str, frames: "queue.Queu
                 if line.startswith("data:"):
                     current_data.append(line[5:].strip())
     except urllib.error.HTTPError as error:
+        ready.set()
         detail = error.read().decode("utf-8", errors="replace")
         frames.put(("__error__", f"HTTP {error.code}: {detail[:200]}"))
     except Exception as error:  # noqa: BLE001 - surfaced through gate failure.
+        ready.set()
         if not stop.is_set():
             frames.put(("__error__", str(error)))
 
@@ -281,6 +300,7 @@ def wait_for_follower_decrypt(dom_gate: Any, session: Any, group_ulid: str, cont
     deadline = time.time() + 120
     last_sync: dict[str, Any] = {}
     frame_count = 0
+    last_body = ""
     while time.time() < deadline:
         frame_count += pump_frames(dom_gate, session, frames)
         last_sync = try_sync_group(dom_gate, session, group_ulid)
@@ -303,10 +323,15 @@ def wait_for_follower_decrypt(dom_gate: Any, session: Any, group_ulid: str, cont
                 return frame_count
             except Exception:
                 body = dom_gate.evaluate(session, "document.body ? document.body.innerText : ''") or ""
+                last_body = str(body)
                 if "[Message sent before you joined]" in body or "[Not entitled to this group message]" in body:
                     raise GateError(f"follower rendered entitlement placeholder instead of decrypting: {body[:500]!r}")
         time.sleep(2)
-    raise GateError(f"follower did not decrypt federated group message; last_sync={last_sync!r}")
+    raise GateError(
+        "follower did not decrypt federated group message; "
+        f"group={group_ulid!r} content={content!r} injected_frames={frame_count} "
+        f"queued_frames={frames.qsize()} last_sync={last_sync!r} body={last_body[:800]!r}"
+    )
 
 
 def main() -> int:
@@ -342,6 +367,8 @@ def main() -> int:
     follower_web = os.environ.get("CHAT_FEDERATION_FOLLOWER_WEB_URL", DEFAULT_FOLLOWER_WEB)
     out_dir = Path(os.environ.get("CHAT_FEDERATION_DOM_OUT_DIR", DEFAULT_OUT_DIR))
     out_dir.mkdir(parents=True, exist_ok=True)
+    group_count = positive_int_env("CHAT_FEDERATION_DOM_GROUPS", 1)
+    messages_per_group = positive_int_env("CHAT_FEDERATION_DOM_MESSAGES_PER_GROUP", 1)
 
     chat_gateway.assert_gateway_station(authority_gateway, authority_station)
     chat_gateway.assert_gateway_station(follower_gateway, follower_station)
@@ -354,6 +381,7 @@ def main() -> int:
     a_process = b_process = a_session = b_session = None
     a_profile = b_profile = ""
     frames: "queue.Queue[tuple[str, str]]" = queue.Queue()
+    sse_ready = threading.Event()
     stop_sse = threading.Event()
     sse_thread: threading.Thread | None = None
     try:
@@ -365,20 +393,71 @@ def main() -> int:
         follower_session_token = gateway_current_session_token(chat_gateway, follower_gateway, actor_b.actor_id)
         sse_thread = threading.Thread(
             target=sse_reader,
-            args=(follower_station, follower_session_token, follower_device_id, frames, stop_sse),
+            args=(follower_station, follower_session_token, follower_device_id, frames, sse_ready, stop_sse),
             daemon=True,
         )
         sse_thread.start()
+        if not sse_ready.wait(timeout=15):
+            raise GateError("follower SSE did not become ready before group creation")
+        pump_frames(dom_gate, b_session, frames)
 
         dom_gate.login_with_acceptance_harness(a_session, actor_a.email, actor_a.password, actor_a.actor_id)
-        group_name = f"federated-acceptance-group-{int(time.time() * 1000)}"
-        content = f"federated-group-skdm-{int(time.time() * 1000)}"
-        group_ulid = create_federated_group(dom_gate, a_session, group_name, actor_b.actor_id, follower_peer, follower_station)
-        dom_gate.wait_for(a_session, f"Boolean(document.querySelector('[data-chat-group-ulid=\"{group_ulid}\"]'))", "authority Desktop group row", timeout=35)
-        send_group_message(dom_gate, a_session, group_ulid, content)
-        injected_frames = wait_for_follower_decrypt(dom_gate, b_session, group_ulid, content, frames)
+        started_at = time.time()
+        injected_frames = 0
+        group_results: list[dict[str, Any]] = []
+        for group_index in range(group_count):
+            group_name = f"federated-acceptance-group-{int(time.time() * 1000)}-{group_index + 1}"
+            group_ulid = create_federated_group(dom_gate, a_session, group_name, actor_b.actor_id, follower_peer, follower_station)
+            print(f"[progress] group {group_index + 1}/{group_count}: {group_ulid}", flush=True)
+            dom_gate.wait_for(a_session, f"Boolean(document.querySelector('[data-chat-group-ulid=\"{group_ulid}\"]'))", "authority Desktop group row", timeout=35)
+            message_results: list[dict[str, Any]] = []
+            for message_index in range(messages_per_group):
+                content = f"federated-group-skdm-{int(time.time() * 1000)}-{group_index + 1}-{message_index + 1}"
+                print(f"[progress] send group={group_ulid} message {message_index + 1}/{messages_per_group}: {content}", flush=True)
+                send_group_message(dom_gate, a_session, group_ulid, content)
+                before_frames = injected_frames
+                injected_frames += wait_for_follower_decrypt(dom_gate, b_session, group_ulid, content, frames)
+                print(
+                    f"[progress] decrypted group={group_ulid} message {message_index + 1}/{messages_per_group}; "
+                    f"frames={injected_frames - before_frames}",
+                    flush=True,
+                )
+                message_results.append({
+                    "content": content,
+                    "injected_frames": injected_frames - before_frames,
+                })
+            group_results.append({
+                "group_ulid": group_ulid,
+                "messages": message_results,
+            })
+        duration_ms = int((time.time() - started_at) * 1000)
+        total_messages = group_count * messages_per_group
 
         screenshot_path, text_path = dom_gate.capture_evidence(helpers, b_session, out_dir, "chat-federated-desktop-dom-group-decrypt")
+        report_path = out_dir / "chat-federated-desktop-dom-group-decrypt-report.json"
+        report_path.write_text(
+            json.dumps(
+                {
+                    "authority_station": authority_station,
+                    "follower_station": follower_station,
+                    "relay": relay,
+                    "authority_peer_id": authority_peer,
+                    "follower_peer_id": follower_peer,
+                    "follower_device_id": follower_device_id,
+                    "groups": group_count,
+                    "messages_per_group": messages_per_group,
+                    "total_messages": total_messages,
+                    "injected_realtime_frames": injected_frames,
+                    "duration_ms": duration_ms,
+                    "group_results": group_results,
+                    "screenshot": str(screenshot_path),
+                    "evidence": str(text_path),
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
         print("Chat Federated Desktop DOM Group Decrypt")
         print("========================================")
         print(f"[OK] chrome: {chrome}")
@@ -388,11 +467,14 @@ def main() -> int:
         print(f"[OK] authority_peer_id: {authority_peer}")
         print(f"[OK] follower_peer_id: {follower_peer}")
         print(f"[OK] follower_device_id: {follower_device_id}")
-        print(f"[OK] group: {group_ulid}")
-        print(f"[OK] content: {content}")
+        print(f"[OK] groups: {group_count}")
+        print(f"[OK] messages_per_group: {messages_per_group}")
+        print(f"[OK] total_messages: {total_messages}")
         print(f"[OK] injected_realtime_frames: {injected_frames}")
+        print(f"[OK] duration_ms: {duration_ms}")
         print(f"[OK] screenshot: {screenshot_path}")
         print(f"[OK] evidence: {text_path}")
+        print(f"[OK] report: {report_path}")
         return 0
     finally:
         stop_sse.set()
