@@ -23,6 +23,7 @@ type Repository interface {
 	GetGroup(groupID string) (*domain.Group, bool)
 	GetMember(groupID, actorDID string) (*domain.Member, bool)
 	AddMember(groupID, actorDID, inviterDID string) (*domain.Member, bool)
+	AddFederatedMember(groupID string, actor domain.FederatedActorRef, inviterDID string) (*domain.Member, bool)
 	UpdateMember(groupID, actorDID string, role *int32, muted *bool, mutedUntil *time.Time) (*domain.Member, bool)
 	RemoveMember(groupID, actorDID string) bool
 	TransferOwnership(groupID, currentOwnerDID, nextOwnerDID string) (*domain.Group, bool)
@@ -32,6 +33,8 @@ type Repository interface {
 	EnqueueGroupSkdmOutbox(envelope domain.GroupSkdmEnvelope) (domain.GroupSkdmEnvelope, bool, error)
 	ApplyFederationEvent(event domain.GroupEvent) (domain.FollowerProjection, error)
 	ListAuthorityEventsAfter(groupID string, afterSeq int64, limit int) ([]domain.GroupEvent, error)
+	GetAuthorityEventCursor(groupID string) (int64, string, error)
+	MaterializeFollowerProjection(group domain.Group, members []domain.Member, messages []domain.Message) error
 	UpdateGroup(groupID string, name, description *string, muted *bool) (*domain.Group, bool)
 	ListMembers(groupID string, limit, offset int) ([]domain.Member, int)
 	CreateInvitation(groupID, inviterDID, inviteeDID string) domain.Invitation
@@ -59,6 +62,18 @@ type Repository interface {
 type Service struct {
 	repo           Repository
 	mutationWindow time.Duration
+}
+
+type AuthorityProjection struct {
+	Group             domain.Group
+	Members           []domain.Member
+	MemberTotal       int
+	Messages          []domain.Message
+	HasMoreMessages   bool
+	NextMessageCursor string
+	AuthorityEpoch    int64
+	LastEventSeq      int64
+	LastEventHash     string
 }
 
 var (
@@ -227,6 +242,13 @@ func (s *Service) AddMember(groupID, actorDID, inviterDID string) (*domain.Membe
 	return s.repo.AddMember(groupID, actorDID, inviterDID)
 }
 
+func (s *Service) AddFederatedMember(groupID string, actor domain.FederatedActorRef, inviterDID string) (*domain.Member, bool) {
+	if strings.TrimSpace(actor.ActorDID) == "" || strings.TrimSpace(actor.HomeStationPeerID) == "" {
+		return nil, false
+	}
+	return s.repo.AddFederatedMember(groupID, actor, inviterDID)
+}
+
 func (s *Service) UpdateMember(groupID, actorDID string, role *int32, muted *bool, mutedUntil *time.Time) (*domain.Member, bool) {
 	return s.repo.UpdateMember(groupID, actorDID, role, muted, mutedUntil)
 }
@@ -310,6 +332,76 @@ func (s *Service) ApplyFederationEvent(event domain.GroupEvent) (domain.Follower
 		return projection, err
 	}
 	return projection, nil
+}
+
+func (s *Service) SyncAuthorityProjection(groupID string, appliedSeq int64, appliedEventHash, beforeMessageULID string, memberLimit, memberOffset, messageLimit int) (AuthorityProjection, error) {
+	groupID = strings.TrimSpace(groupID)
+	if groupID == "" {
+		return AuthorityProjection{}, ErrGroupNotFound
+	}
+	group, ok := s.repo.GetGroup(groupID)
+	if !ok {
+		return AuthorityProjection{}, ErrGroupNotFound
+	}
+	lastSeq, lastHash, err := s.repo.GetAuthorityEventCursor(groupID)
+	if err != nil {
+		return AuthorityProjection{}, err
+	}
+	if appliedSeq != lastSeq || strings.TrimSpace(appliedEventHash) != lastHash {
+		return AuthorityProjection{}, ErrInvalidGroupEvent
+	}
+	if memberLimit <= 0 || memberLimit > 500 {
+		memberLimit = 500
+	}
+	if memberOffset < 0 {
+		memberOffset = 0
+	}
+	members, memberTotal := s.repo.ListMembers(groupID, memberLimit, memberOffset)
+	if messageLimit <= 0 || messageLimit > 100 {
+		messageLimit = 50
+	}
+	messages, err := s.repo.ListMessages(groupID, beforeMessageULID, messageLimit+1)
+	if err != nil {
+		return AuthorityProjection{}, err
+	}
+	hasMore := len(messages) > messageLimit
+	if hasMore {
+		if strings.HasPrefix(beforeMessageULID, "since:") {
+			messages = messages[:messageLimit]
+		} else {
+			messages = messages[1:]
+		}
+	}
+	nextCursor := ""
+	if hasMore && len(messages) > 0 {
+		if strings.HasPrefix(beforeMessageULID, "since:") {
+			nextCursor = messages[len(messages)-1].ID
+		} else {
+			nextCursor = messages[0].ID
+		}
+	}
+	return AuthorityProjection{
+		Group:             *group,
+		Members:           members,
+		MemberTotal:       memberTotal,
+		Messages:          messages,
+		HasMoreMessages:   hasMore,
+		NextMessageCursor: nextCursor,
+		AuthorityEpoch:    1,
+		LastEventSeq:      lastSeq,
+		LastEventHash:     lastHash,
+	}, nil
+}
+
+func (s *Service) MaterializeFollowerProjection(group domain.Group, members []domain.Member, messages []domain.Message) error {
+	if strings.TrimSpace(group.ID) == "" {
+		return ErrGroupNotFound
+	}
+	for i := range messages {
+		messages[i].GroupID = group.ID
+		messages[i].Content = ""
+	}
+	return s.repo.MaterializeFollowerProjection(group, members, messages)
 }
 
 func (s *Service) EnqueueGroupSkdmOutbox(envelope domain.GroupSkdmEnvelope) (domain.GroupSkdmEnvelope, bool, error) {
