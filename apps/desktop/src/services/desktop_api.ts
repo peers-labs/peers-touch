@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { fromBinary } from '@bufbuild/protobuf';
+import { fromBinary, fromJsonString } from '@bufbuild/protobuf';
 import type { Message as ProtoMessage } from '@bufbuild/protobuf';
 import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
@@ -431,10 +431,15 @@ export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
   schema: GenMessage<TMsg>,
   input?: TInput,
 ): Promise<TMsg> {
-  const response = await invokeRustCommand<TInput, number[]>(command, input);
+  const response = await invokeRustCommand<TInput, number[] | Uint8Array | TauriStubPayload>(command, input);
   if (response.ok && response.data) {
-    const bytes = new Uint8Array(response.data);
-    return fromBinary(schema, bytes);
+    if (Array.isArray(response.data) || response.data instanceof Uint8Array) {
+      const bytes = new Uint8Array(response.data);
+      return fromBinary(schema, bytes);
+    }
+    if (typeof response.data.status === 'string') {
+      return fromJsonString(schema, response.data.status, { ignoreUnknownFields: true });
+    }
   }
   if (response.error?.code === 'UNAUTHORIZED') {
     throw new AuthCommandException(response.error);
