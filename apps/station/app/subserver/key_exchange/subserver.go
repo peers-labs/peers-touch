@@ -2,6 +2,7 @@ package key_exchange
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -91,7 +92,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.federationFetchWrapper = serverwrapper.RequireFederationToken(
 		keyExchangeFederatedFetchScopeName,
 		s.peerKeys,
-		httpadapter.StaticAudience(s.localStationID),
+		keyExchangeDynamicFederationAudienceResolver(),
 	)
 
 	return nil
@@ -123,4 +124,27 @@ func keyExchangeLocalFederationAudience() string {
 		return strings.TrimSpace(identity.StationDomain)
 	}
 	return keyExchangeFallbackLocalStation
+}
+
+func (s *subServer) currentLocalStationID() string {
+	current := strings.TrimSpace(keyExchangeLocalFederationAudience())
+	if current != "" && current != keyExchangeFallbackLocalStation {
+		return current
+	}
+	if s != nil {
+		configured := strings.TrimSpace(s.localStationID)
+		if configured != "" {
+			return configured
+		}
+	}
+	if current != "" {
+		return current
+	}
+	return keyExchangeFallbackLocalStation
+}
+
+func keyExchangeDynamicFederationAudienceResolver() httpadapter.AudienceResolver {
+	return func(*http.Request) (string, error) {
+		return keyExchangeLocalFederationAudience(), nil
+	}
 }
