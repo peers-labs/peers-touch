@@ -1174,6 +1174,7 @@ type GroupSkdmEnvelope struct {
 	EncryptedPayload           []byte                 `protobuf:"bytes,8,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
 	IdempotencyKey             string                 `protobuf:"bytes,9,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	CreatedAt                  *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	SenderHomeStationPeerId    string                 `protobuf:"bytes,11,opt,name=sender_home_station_peer_id,json=senderHomeStationPeerId,proto3" json:"sender_home_station_peer_id,omitempty"`
 	unknownFields              protoimpl.UnknownFields
 	sizeCache                  protoimpl.SizeCache
 }
@@ -1276,6 +1277,13 @@ func (x *GroupSkdmEnvelope) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *GroupSkdmEnvelope) GetSenderHomeStationPeerId() string {
+	if x != nil {
+		return x.SenderHomeStationPeerId
+	}
+	return ""
 }
 
 type SubmitGroupSkdmEnvelopeRequest struct {
@@ -5805,7 +5813,7 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\rsender_key_id\x18\x03 \x01(\rR\vsenderKeyId\x12\x1b\n" +
 	"\tchain_key\x18\x04 \x01(\fR\bchainKey\x12\x18\n" +
 	"\acounter\x18\x05 \x01(\rR\acounter\x12$\n" +
-	"\x0esender_sig_pub\x18\x06 \x01(\fR\fsenderSigPub\"\xca\x03\n" +
+	"\x0esender_sig_pub\x18\x06 \x01(\fR\fsenderSigPub\"\x88\x04\n" +
 	"\x11GroupSkdmEnvelope\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12)\n" +
@@ -5820,7 +5828,8 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\t \x01(\tR\x0eidempotencyKey\x129\n" +
 	"\n" +
 	"created_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"j\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12<\n" +
+	"\x1bsender_home_station_peer_id\x18\v \x01(\tR\x17senderHomeStationPeerId\"j\n" +
 	"\x1eSubmitGroupSkdmEnvelopeRequest\x12H\n" +
 	"\benvelope\x18\x01 \x01(\v2,.peers_touch.model.chat.v1.GroupSkdmEnvelopeR\benvelope\"\x87\x01\n" +
 	"\x1fSubmitGroupSkdmEnvelopeResponse\x12\x1f\n" +

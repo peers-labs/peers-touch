@@ -372,6 +372,7 @@ func groupSkdmOutboxModelToDomain(row groupSkdmOutboxModel) domain.GroupSkdmEnve
 		MembershipEpoch:            groupMembershipEpoch(row.MembershipEpoch),
 		SenderDID:                  row.SenderDID,
 		SenderKeyID:                row.SenderKeyID,
+		SenderHomeStationPeerID:    row.SenderHomeStationPeerID,
 		RecipientDID:               row.RecipientDID,
 		RecipientDeviceID:          row.RecipientDeviceID,
 		RecipientHomeStationPeerID: row.RecipientHomeStationPeerID,
@@ -1607,6 +1608,7 @@ func (s *service) EnqueueGroupSkdmOutbox(envelope domain.GroupSkdmEnvelope) (dom
 				groupMembershipEpoch(existing.MembershipEpoch) == groupMembershipEpoch(envelope.MembershipEpoch) &&
 				existing.SenderDID == envelope.SenderDID &&
 				existing.SenderKeyID == envelope.SenderKeyID &&
+				existing.SenderHomeStationPeerID == envelope.SenderHomeStationPeerID &&
 				existing.RecipientDID == envelope.RecipientDID &&
 				existing.RecipientDeviceID == envelope.RecipientDeviceID &&
 				existing.RecipientHomeStationPeerID == envelope.RecipientHomeStationPeerID &&
@@ -1624,6 +1626,7 @@ func (s *service) EnqueueGroupSkdmOutbox(envelope domain.GroupSkdmEnvelope) (dom
 			MembershipEpoch:            groupMembershipEpoch(envelope.MembershipEpoch),
 			SenderDID:                  envelope.SenderDID,
 			SenderKeyID:                envelope.SenderKeyID,
+			SenderHomeStationPeerID:    envelope.SenderHomeStationPeerID,
 			RecipientDID:               envelope.RecipientDID,
 			RecipientDeviceID:          envelope.RecipientDeviceID,
 			RecipientHomeStationPeerID: envelope.RecipientHomeStationPeerID,
@@ -1649,6 +1652,7 @@ func (s *service) EnqueueGroupSkdmOutbox(envelope domain.GroupSkdmEnvelope) (dom
 			existing.MembershipEpoch == groupMembershipEpoch(envelope.MembershipEpoch) &&
 			existing.SenderDID == envelope.SenderDID &&
 			existing.SenderKeyID == envelope.SenderKeyID &&
+			existing.SenderHomeStationPeerID == envelope.SenderHomeStationPeerID &&
 			existing.RecipientDID == envelope.RecipientDID &&
 			existing.RecipientDeviceID == envelope.RecipientDeviceID &&
 			existing.RecipientHomeStationPeerID == envelope.RecipientHomeStationPeerID &&

@@ -169,6 +169,7 @@ type groupSkdmOutboxModel struct {
 	MembershipEpoch            int64      `gorm:"column:membership_epoch;index"`
 	SenderDID                  string     `gorm:"column:sender_did;size:255;index"`
 	SenderKeyID                uint32     `gorm:"column:sender_key_id;index"`
+	SenderHomeStationPeerID    string     `gorm:"column:sender_home_station_peer_id;size:255;index"`
 	RecipientDID               string     `gorm:"column:recipient_did;size:255;index"`
 	RecipientDeviceID          string     `gorm:"column:recipient_device_id;size:255;index"`
 	RecipientHomeStationPeerID string     `gorm:"column:recipient_home_station_peer_id;size:255;index"`
