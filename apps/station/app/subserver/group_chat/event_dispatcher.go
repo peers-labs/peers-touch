@@ -356,7 +356,7 @@ func (s *subServer) mintFollowerEventSyncToken(ctx context.Context, authoritySta
 		return "", errGroupEventTransportUnavailable
 	}
 	issuer := strings.TrimSpace(s.localStationID)
-	if issuer == "" {
+	if issuer == "" || issuer == foundationLocalAuthorityStation {
 		issuer = localFederationAudience()
 	}
 	audience := strings.TrimSpace(authorityStationPeerID)
@@ -380,7 +380,7 @@ func (s *subServer) mintFollowerProjectionSyncToken(ctx context.Context, authori
 		return "", errGroupEventTransportUnavailable
 	}
 	issuer := strings.TrimSpace(s.localStationID)
-	if issuer == "" {
+	if issuer == "" || issuer == foundationLocalAuthorityStation {
 		issuer = localFederationAudience()
 	}
 	audience := strings.TrimSpace(authorityStationPeerID)

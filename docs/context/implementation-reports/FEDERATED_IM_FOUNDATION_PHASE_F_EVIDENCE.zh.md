@@ -3,7 +3,7 @@
 **项目：** Peers Touch 联邦-Station IM
 **日期：** 2026-07-05
 **范围：** Foundation pressure and security evidence
-**状态：** 部分完成；live deployed federation prerequisite、dual Desktop gateway binding、单条 cross-Station Desktop/browser decrypt、3x5 repeated browser runtime decrypt、removed-member live browser negative、late-join live browser negative、1000-message live browser pressure、bounded multi-follower deployed browser runtime pressure 已通过；multiple distinct follower Stations deployed browser pressure 仍未证明
+**状态：** Phase F live evidence completed；live deployed federation prerequisite、dual Desktop gateway binding、单条 cross-Station Desktop/browser decrypt、3x5 repeated browser runtime decrypt、removed-member live browser negative、late-join live browser negative、1000-message live browser pressure、bounded multi-follower deployed browser runtime pressure、multiple distinct follower Stations deployed browser pressure 已通过
 
 ## 1. 计划来源
 
@@ -543,10 +543,74 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_multi_follower_press
 边界：
 
 - 该 gate 证明 one authority Station + one follower Station 上的 multiple follower actors/devices/Desktop browser runtimes；
-- 该 gate 不证明 multiple distinct follower Stations；
+- multiple distinct follower Stations 由第 13 节 gate 另行证明；
 - 该 gate 的 pressure window 是 bounded 100 messages，不替代第 11 节 one-follower 1000-message pressure gate。
 
-## 13. Gate Catalog
+## 13. Live Distinct Follower Stations Browser Pressure
+
+该 gate 证明在 home deployed topology 下，一个 authority Desktop/browser runtime 同时向两个不同 follower Stations 上的 federated actors 发送 Sender-Key encrypted pressure window 时，两个 follower Stations 都能经 Relay/follower projection sync/materialization、各自 gateway/session/device realtime SSE 和 Desktop browser runtime 独立解码并渲染最后一条明文。
+
+运行环境：
+
+- authority Station：`http://10.0.0.10:18080`
+- follower Station A：`http://10.0.0.10:18082`，PeerID `12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6`
+- follower Station B：`http://10.0.0.10:18083`，PeerID `12D3KooWH7pDSUuERrU3gARjRCbGgRa3t3yh1o1xTESbkPi3p9b1`
+- Relay：`http://10.0.0.10:18081`
+- authority Desktop runtime：`3131/3311`
+- follower Desktop runtime A：`3132/3312`
+- follower Desktop runtime B：`3133/3313`
+- 每个 Desktop runtime 使用独立 `PEERS_STORAGE_ROOT`。
+
+命令：
+
+```bash
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URLS=http://10.0.0.10:18082,http://10.0.0.10:18083 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
+CHAT_FEDERATION_FOLLOWER_GATEWAY_URLS=http://127.0.0.1:3132,http://127.0.0.1:3133 \
+CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
+CHAT_FEDERATION_FOLLOWER_WEB_URLS=http://localhost:3312/#/chat,http://localhost:3313/#/chat \
+CHAT_FEDERATION_DOM_OUT_DIR=/tmp/peers-touch-chat-federated-dom-distinct-followers \
+CHAT_FEDERATION_MULTI_FOLLOWER_COUNT=2 \
+CHAT_FEDERATION_MULTI_FOLLOWER_MESSAGES=100 \
+CHAT_FEDERATION_MULTI_FOLLOWER_TIMEOUT_SECONDS=1200 \
+python3 tooling/acceptance/gates/chat/federated_desktop_dom_multi_follower_pressure.py
+```
+
+结果：PASS。
+
+关键指标：
+
+| 指标 | 值 |
+| --- | --- |
+| Group | `gcg-1783262599893774724` |
+| Follower Stations | `2` distinct Stations |
+| Pressure messages | `100` |
+| Warmup content | `federated-multi-follower-1783262595918-warmup` |
+| First pressure content | `federated-multi-follower-1783262595918-0001` |
+| Last pressure content | `federated-multi-follower-1783262595918-0100` |
+| Send duration | `4344ms` |
+| Follower 1 | Station `18082`; actor `344647284492861446`; device `01KWSBQF0A45WBNB1P67YS1R90`; decoded `101`; waiting `0`; failed `0`; first/last `true`; frames `62` |
+| Follower 2 | Station `18083`; actor `344647285499494407`; device `01KWSBQHXC1DPQ4C98T5NS80ET`; decoded `101`; waiting `0`; failed `0`; first/last `true`; frames `72` |
+| Duration | `28454ms` |
+| Evidence report | `/tmp/peers-touch-chat-federated-dom-distinct-followers/chat-federated-desktop-dom-multi-follower-pressure-report.json` |
+| Follower 1 evidence | `/tmp/peers-touch-chat-federated-dom-distinct-followers/chat-federated-desktop-dom-multi-follower-pressure-follower-1.txt` |
+| Follower 2 evidence | `/tmp/peers-touch-chat-federated-dom-distinct-followers/chat-federated-desktop-dom-multi-follower-pressure-follower-2.txt` |
+
+Root-cause hardening included before this PASS:
+
+- follower event/projection sync token minting now refreshes stale `local` issuer to the runtime federation audience before minting peer JWTs;
+- regression `TestDispatchFollowerEventSyncRefreshesStaleLocalIssuer` seeds authority TOFU with a conflicting `local` key and proves follower sync succeeds only when the dynamic issuer is used;
+- live home deployment was rebuilt to image `peers-touch-station:local` `9092d8e2d33e`, and Relay `relay_mount` showed all three Stations online before the gate.
+
+边界：
+
+- 该 gate 证明 one authority Station + two distinct follower Stations 的 live home Relay/Desktop browser bounded pressure；
+- 该 gate 的 pressure window 是 bounded 100 messages，不替代第 11 节 one-follower 1000-message pressure gate；
+- 该 gate 不证明 production packaged Desktop app，证据范围是 deployed Station/Relay + dev Desktop Web/browser runtime。
+
+## 14. Gate Catalog
 
 已登记 gate：
 
@@ -575,14 +639,13 @@ git diff --check
 
 - PR/release 阶段需要把本报告和对应 gate 输出纳入最终 reviewer evidence；
 - presence invariant scan 仍命中既有 generated/mobile online 债务，本次 Phase F 没有新增 chat-owned presence。
-- multiple distinct follower Stations deployed browser pressure gate。
 
 需要的环境输入：
 
 - `CHAT_FEDERATION_AUTHORITY_STATION_URL`
 - `CHAT_FEDERATION_FOLLOWER_STATION_URL`
 - `CHAT_FEDERATION_RELAY_URL`
-- optional multiple distinct follower Stations live browser runtime pressure gate
+- optional `CHAT_FEDERATION_FOLLOWER_STATION_URLS` for multiple distinct follower Stations live browser runtime pressure gate
 
 ## 15. 结论
 
@@ -599,9 +662,13 @@ git diff --check
 - live deployed late-join pre-join plaintext non-rendering plus post-join plaintext decrypt in follower browser DOM。
 - live deployed 1000-message cross-Station Desktop/browser pressure with no waiting/decrypt placeholders。
 - live deployed bounded multi-follower Desktop/browser pressure with two follower actors/devices/runtimes and no waiting/decrypt placeholders。
+- live deployed distinct follower Stations Desktop/browser pressure with two follower Stations and no waiting/decrypt placeholders。
 
 当前未证明：
 
-- multiple distinct follower Stations deployed browser pressure。
+- production packaged Desktop app pressure；
+- PostgreSQL-backed multi-node disaster recovery；
+- mobile/applet chat parity；
+- recall/edit/delete user-visible workflow under pressure。
 
-因此 Phase F 可以作为 Foundation protocol、home-station pressure、single-message live cross-Station browser decrypt、3x5 repeated live browser runtime evidence、removed-member live browser negative evidence、late-join live browser negative evidence、1000-message live browser pressure evidence、bounded multi-follower browser runtime pressure evidence 进入 PR/release review；但不能声明 multiple distinct follower Stations browser pressure 完成。
+因此 Phase F 可以作为 Foundation protocol、home-station pressure、single-message live cross-Station browser decrypt、3x5 repeated live browser runtime evidence、removed-member live browser negative evidence、late-join live browser negative evidence、1000-message live browser pressure evidence、bounded multi-follower browser runtime pressure evidence、distinct follower Stations browser pressure evidence 进入 PR/release review。

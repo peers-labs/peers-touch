@@ -5,7 +5,7 @@ This gate proves a bounded live browser-facing federated group path with more
 than one follower Desktop runtime:
 
 1. validate distinct authority/follower Stations, Relay, peer IDs, and gateways;
-2. create one authority actor and N follower actors on the follower Station;
+2. create one authority actor and N follower actors on one or more follower Stations;
 3. login each actor through an independent Desktop Web gateway/runtime;
 4. subscribe one realtime SSE stream per follower Desktop device id;
 5. create one authority group with all follower actors as FederatedActorRefs;
@@ -18,8 +18,10 @@ than one follower Desktop runtime:
 This is dev Desktop/browser runtime evidence, not packaged-app evidence. The
 default shape is intentionally bounded so it can run against the home profile:
 one authority Station, one follower Station, two follower Desktop runtimes, and
-100 encrypted messages. Increase CHAT_FEDERATION_MULTI_FOLLOWER_MESSAGES or
-CHAT_FEDERATION_MULTI_FOLLOWER_COUNT for heavier local evidence.
+100 encrypted messages. Set CHAT_FEDERATION_FOLLOWER_STATION_URLS to run the
+same gate across multiple distinct follower Stations. Increase
+CHAT_FEDERATION_MULTI_FOLLOWER_MESSAGES or CHAT_FEDERATION_MULTI_FOLLOWER_COUNT
+for heavier local evidence.
 
 Each Desktop runtime must use an independent gateway/profile and an isolated
 PEERS_STORAGE_ROOT. PT_PROFILE alone does not isolate the platform storage root
@@ -88,6 +90,80 @@ def csv_env(name: str, default: str) -> list[str]:
     return values
 
 
+def csv_optional_env(name: str) -> list[str]:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return []
+    values = [item.strip() for item in raw.split(",")]
+    return [item for item in values if item]
+
+
+def first_or_repeat(values: list[str], index: int, name: str) -> str:
+    if not values:
+        raise GateError(f"{name} must contain at least one value")
+    if index < len(values):
+        return values[index]
+    if len(values) == 1:
+        return values[0]
+    raise GateError(f"{name} must contain enough values for follower {index + 1}")
+
+
+def load_follower_configs(
+    prereq: Any,
+    chat_gateway: Any,
+    authority_station: str,
+    authority_peer: str,
+    follower_count: int,
+) -> list[dict[str, str]]:
+    station_values = csv_optional_env("CHAT_FEDERATION_FOLLOWER_STATION_URLS")
+    if not station_values:
+        station_values = [
+            prereq.require_url(
+                "CHAT_FEDERATION_FOLLOWER_STATION_URL",
+                prereq.get_url("CHAT_FEDERATION_FOLLOWER_STATION_URL"),
+            )
+        ]
+    peer_values = csv_optional_env("CHAT_FEDERATION_FOLLOWER_PEER_IDS")
+    health_values = csv_optional_env("CHAT_FEDERATION_FOLLOWER_STATION_HEALTH_URLS")
+    gateway_values = [value.rstrip("/") for value in csv_env("CHAT_FEDERATION_FOLLOWER_GATEWAY_URLS", DEFAULT_FOLLOWER_GATEWAYS)]
+    web_values = csv_env("CHAT_FEDERATION_FOLLOWER_WEB_URLS", DEFAULT_FOLLOWER_WEBS)
+    if len(gateway_values) < follower_count:
+        raise GateError(f"need {follower_count} follower gateways, got {len(gateway_values)}")
+    if len(web_values) < follower_count:
+        raise GateError(f"need {follower_count} follower web URLs, got {len(web_values)}")
+
+    configs: list[dict[str, str]] = []
+    for index in range(follower_count):
+        station = first_or_repeat(station_values, index, "CHAT_FEDERATION_FOLLOWER_STATION_URLS").rstrip("/")
+        peer_hint = first_or_repeat(peer_values, index, "CHAT_FEDERATION_FOLLOWER_PEER_IDS") if peer_values else ""
+        peer_id = prereq.discover_station_peer_id(f"follower Station {index + 1}", station, peer_hint)
+        if station == authority_station or peer_id == authority_peer:
+            raise GateError(f"follower Station {index + 1} must be distinct from authority Station")
+        health_url = first_or_repeat(health_values, index, "CHAT_FEDERATION_FOLLOWER_STATION_HEALTH_URLS") if health_values else ""
+        prereq.check_health(f"follower Station {index + 1}", station, health_url)
+        gateway = gateway_values[index]
+        chat_gateway.assert_gateway_station(gateway, station)
+        configs.append(
+            {
+                "index": str(index + 1),
+                "station": station,
+                "peer_id": peer_id,
+                "gateway": gateway,
+                "web": web_values[index],
+            }
+        )
+
+    if len(set([config["gateway"] for config in configs])) != follower_count:
+        raise GateError("follower gateways must be distinct")
+    plural_station_mode = len(station_values) > 1
+    if plural_station_mode:
+        if len(set(config["station"] for config in configs)) != follower_count:
+            raise GateError("CHAT_FEDERATION_FOLLOWER_STATION_URLS must be distinct in plural Station mode")
+        if len(set(config["peer_id"] for config in configs)) != follower_count:
+            raise GateError("follower Station peer IDs must be distinct in plural Station mode")
+    return configs
+
+
 def create_multi_federated_group(dom_gate: Any, session: Any, name: str, members: list[dict[str, str]]) -> str:
     members_json = json.dumps(members, ensure_ascii=False)
     result = dom_gate.evaluate_async(
@@ -128,10 +204,6 @@ def main() -> int:
         "CHAT_FEDERATION_AUTHORITY_STATION_URL",
         prereq.get_url("CHAT_FEDERATION_AUTHORITY_STATION_URL", "PT_STATION_URL"),
     )
-    follower_station = prereq.require_url(
-        "CHAT_FEDERATION_FOLLOWER_STATION_URL",
-        prereq.get_url("CHAT_FEDERATION_FOLLOWER_STATION_URL"),
-    )
     relay = prereq.require_url(
         "CHAT_FEDERATION_RELAY_URL",
         prereq.get_url("CHAT_FEDERATION_RELAY_URL", "PT_RELAY_URL"),
@@ -141,15 +213,7 @@ def main() -> int:
         authority_station,
         os.environ.get("CHAT_FEDERATION_AUTHORITY_PEER_ID", ""),
     )
-    follower_peer = prereq.discover_station_peer_id(
-        "follower Station",
-        follower_station,
-        os.environ.get("CHAT_FEDERATION_FOLLOWER_PEER_ID", ""),
-    )
-    if authority_station == follower_station or authority_peer == follower_peer:
-        raise GateError("authority and follower Stations must be distinct")
     prereq.check_health("authority Station", authority_station, os.environ.get("CHAT_FEDERATION_AUTHORITY_STATION_HEALTH_URL", ""))
-    prereq.check_health("follower Station", follower_station, os.environ.get("CHAT_FEDERATION_FOLLOWER_STATION_HEALTH_URL", ""))
     prereq.check_health("Relay", relay, os.environ.get("CHAT_FEDERATION_RELAY_HEALTH_URL", ""))
 
     follower_count = positive_int_env("CHAT_FEDERATION_MULTI_FOLLOWER_COUNT", 2)
@@ -159,33 +223,28 @@ def main() -> int:
     timeout_seconds = positive_int_env("CHAT_FEDERATION_MULTI_FOLLOWER_TIMEOUT_SECONDS", 1200)
     authority_gateway = os.environ.get("CHAT_FEDERATION_AUTHORITY_GATEWAY_URL", DEFAULT_AUTHORITY_GATEWAY).rstrip("/")
     authority_web = os.environ.get("CHAT_FEDERATION_AUTHORITY_WEB_URL", DEFAULT_AUTHORITY_WEB)
-    follower_gateways = [value.rstrip("/") for value in csv_env("CHAT_FEDERATION_FOLLOWER_GATEWAY_URLS", DEFAULT_FOLLOWER_GATEWAYS)]
-    follower_webs = csv_env("CHAT_FEDERATION_FOLLOWER_WEB_URLS", DEFAULT_FOLLOWER_WEBS)
-    if len(follower_gateways) < follower_count:
-        raise GateError(f"need {follower_count} follower gateways, got {len(follower_gateways)}")
-    if len(follower_webs) < follower_count:
-        raise GateError(f"need {follower_count} follower web URLs, got {len(follower_webs)}")
-    follower_gateways = follower_gateways[:follower_count]
-    follower_webs = follower_webs[:follower_count]
-    if len(set([authority_gateway, *follower_gateways])) != follower_count + 1:
-        raise GateError("authority and follower gateways must be distinct")
     out_dir = Path(os.environ.get("CHAT_FEDERATION_DOM_OUT_DIR", DEFAULT_OUT_DIR))
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("[progress] validate Desktop gateway bindings", flush=True)
     chat_gateway.assert_gateway_station(authority_gateway, authority_station)
-    for index, gateway in enumerate(follower_gateways, start=1):
-        chat_gateway.assert_gateway_station(gateway, follower_station)
-        print(f"[progress] follower gateway {index}/{follower_count}: {gateway}", flush=True)
+    follower_configs = load_follower_configs(prereq, chat_gateway, authority_station, authority_peer, follower_count)
+    if authority_gateway in {config["gateway"] for config in follower_configs}:
+        raise GateError("authority and follower gateways must be distinct")
+    for config in follower_configs:
+        print(
+            f"[progress] follower {config['index']}/{follower_count}: "
+            f"station={config['station']} peer={config['peer_id']} gateway={config['gateway']}",
+            flush=True,
+        )
 
     print("[progress] provision authority and follower actors", flush=True)
     actor_a = chat_gateway.signup_and_login(authority_station, "fmfa")
     chat_gateway.gateway_logout(authority_gateway)
-    follower_actors = []
-    for index, gateway in enumerate(follower_gateways, start=1):
-        actor = chat_gateway.signup_and_login(follower_station, f"fmfb{index}")
-        chat_gateway.gateway_logout(gateway)
-        follower_actors.append(actor)
+    for config in follower_configs:
+        actor = chat_gateway.signup_and_login(config["station"], f"fmfb{config['index']}")
+        chat_gateway.gateway_logout(config["gateway"])
+        config["actor"] = actor
 
     chrome = helpers.find_chrome()
     authority_process = authority_session = None
@@ -203,24 +262,26 @@ def main() -> int:
             "authority-multi-follower-pressure",
         )
         print("[progress] launch follower Desktop renderers and subscribe SSE", flush=True)
-        for index, actor in enumerate(follower_actors, start=1):
+        for config in follower_configs:
+            index = int(config["index"])
+            actor = config["actor"]
             process, session, profile = fed_gate.launch_renderer(
                 dom_gate,
                 helpers,
                 chrome,
-                follower_webs[index - 1],
-                follower_gateways[index - 1],
+                config["web"],
+                config["gateway"],
                 f"follower-{index}-multi-follower-pressure",
             )
             dom_gate.login_with_acceptance_harness(session, actor.email, actor.password, actor.actor_id)
             device_id = fed_gate.realtime_device(dom_gate, session, actor.actor_id)
-            session_token = fed_gate.gateway_current_session_token(chat_gateway, follower_gateways[index - 1], actor.actor_id)
+            session_token = fed_gate.gateway_current_session_token(chat_gateway, config["gateway"], actor.actor_id)
             frames: "queue.Queue[tuple[str, str]]" = queue.Queue()
             ready = threading.Event()
             stop = threading.Event()
             thread = threading.Thread(
                 target=fed_gate.sse_reader,
-                args=(follower_station, session_token, device_id, frames, ready, stop),
+                args=(config["station"], session_token, device_id, frames, ready, stop),
                 daemon=True,
             )
             thread.start()
@@ -231,8 +292,10 @@ def main() -> int:
                 {
                     "index": index,
                     "actor": actor,
-                    "gateway": follower_gateways[index - 1],
-                    "web": follower_webs[index - 1],
+                    "station": config["station"],
+                    "peer_id": config["peer_id"],
+                    "gateway": config["gateway"],
+                    "web": config["web"],
                     "process": process,
                     "session": session,
                     "profile": profile,
@@ -249,8 +312,8 @@ def main() -> int:
         members = [
             {
                 "actorDid": str(follower["actor"].actor_id),
-                "homeStationPeerId": follower_peer,
-                "homeStationDomain": follower_station,
+                "homeStationPeerId": follower["peer_id"],
+                "homeStationDomain": follower["station"],
             }
             for follower in followers
         ]
@@ -321,6 +384,8 @@ def main() -> int:
                 {
                     "index": follower["index"],
                     "actor_id": follower["actor"].actor_id,
+                    "station": follower["station"],
+                    "peer_id": follower["peer_id"],
                     "gateway": follower["gateway"],
                     "web": follower["web"],
                     "device_id": follower["device_id"],
@@ -338,10 +403,18 @@ def main() -> int:
             json.dumps(
                 {
                     "authority_station": authority_station,
-                    "follower_station": follower_station,
+                    "follower_stations": [
+                        {
+                            "index": config["index"],
+                            "station": config["station"],
+                            "peer_id": config["peer_id"],
+                            "gateway": config["gateway"],
+                            "web": config["web"],
+                        }
+                        for config in follower_configs
+                    ],
                     "relay": relay,
                     "authority_peer_id": authority_peer,
-                    "follower_peer_id": follower_peer,
                     "authority_gateway": authority_gateway,
                     "authority_web": authority_web,
                     "group_ulid": group_ulid,
@@ -361,10 +434,13 @@ def main() -> int:
         print("==================================================")
         print(f"[OK] chrome: {chrome}")
         print(f"[OK] authority_station: {authority_station}")
-        print(f"[OK] follower_station: {follower_station}")
         print(f"[OK] relay: {relay}")
         print(f"[OK] authority_peer_id: {authority_peer}")
-        print(f"[OK] follower_peer_id: {follower_peer}")
+        for config in follower_configs:
+            print(
+                f"[OK] follower_station_{config['index']}: "
+                f"{config['station']} peer={config['peer_id']} gateway={config['gateway']}"
+            )
         print(f"[OK] group: {group_ulid}")
         print(f"[OK] follower_count: {follower_count}")
         print(f"[OK] message_count: {message_count}")
