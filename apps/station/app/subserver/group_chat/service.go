@@ -2394,8 +2394,8 @@ func (s *service) GetOfflineMessages(actorDID string, limit int) []domain.Offlin
 	return out
 }
 
-func (s *service) AckOffline(ulids []string) {
-	s.ackOffline(ulids)
+func (s *service) AckOffline(actorDID string, ulids []string) {
+	s.ackOffline(actorDID, ulids)
 }
 
 func (s *service) Stats() (int32, int32, int64, int32) {
@@ -4520,9 +4520,9 @@ func (s *service) getOfflineMessages(actorDID string, limit int) []offlineMessag
 	return out
 }
 
-func (s *service) ackOffline(ulids []string) {
+func (s *service) ackOffline(actorDID string, ulids []string) {
 	if s.db != nil {
-		_ = s.db.Where("ulid IN ?", ulids).Delete(&offlineModel{}).Error
+		_ = s.db.Where("receiver_id = ? AND ulid IN ?", actorDID, ulids).Delete(&offlineModel{}).Error
 		return
 	}
 	s.mu.Lock()
@@ -4531,16 +4531,15 @@ func (s *service) ackOffline(ulids []string) {
 	for _, id := range ulids {
 		target[id] = struct{}{}
 	}
-	for did, items := range s.offline {
-		out := make([]offlineMessage, 0, len(items))
-		for _, item := range items {
-			if _, ok := target[item.ID]; ok {
-				continue
-			}
-			out = append(out, item)
+	items := s.offline[actorDID]
+	out := make([]offlineMessage, 0, len(items))
+	for _, item := range items {
+		if _, ok := target[item.ID]; ok {
+			continue
 		}
-		s.offline[did] = out
+		out = append(out, item)
 	}
+	s.offline[actorDID] = out
 }
 
 func (s *service) stats() (int32, int32, int64, int32) {

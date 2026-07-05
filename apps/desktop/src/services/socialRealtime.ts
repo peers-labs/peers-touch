@@ -19,7 +19,12 @@ import type {
   RealtimeResyncPayload,
   RealtimeTypingStatePayload,
 } from '../kernel/events/types';
-import { handleInboundSkdm, retrySkdmDistributionFor, rotateGroupSenderChain } from '../modules/identity/groupSenderKeys';
+import {
+  FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION,
+  handleInboundSkdm,
+  retrySkdmDistributionFor,
+  rotateGroupSenderChain,
+} from '../modules/identity/groupSenderKeys';
 import { useMediaRuntimeStore } from './mediaRuntime';
 import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
 import { api, type NotificationData } from './desktop_api';
@@ -325,8 +330,9 @@ function decodeRealtimeMessage(
 async function projectRealtimeMessage(
   payload: RealtimeMessageReceivedPayload,
   isKnownGroup: boolean,
+  decodedMessage?: DecodedRealtimeMessage | null,
 ): Promise<'friend' | 'group' | null> {
-  const decoded = decodeRealtimeMessage(payload, isKnownGroup);
+  const decoded = decodedMessage ?? decodeRealtimeMessage(payload, isKnownGroup);
   if (!decoded) return null;
   await useSocialChatStore.getState().ingestRealtimeMessage(decoded.kind, payload.sessionUlid, decoded.message);
   const messages = useSocialChatStore.getState().messages[payload.sessionUlid];
@@ -334,6 +340,16 @@ async function projectRealtimeMessage(
     useMediaRuntimeStore.getState().prewarmMessages({ [payload.sessionUlid]: messages });
   }
   return decoded.kind;
+}
+
+function consumeRealtimeFriendControlMessage(message: FriendChatMessage, myDid?: string | null): boolean {
+  if (Number(message.type ?? 0) !== FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION) return false;
+  if (message.senderDid && (!myDid || message.senderDid !== myDid) && message.content) {
+    runDetached('realtime friend SKDM install', async () => {
+      await handleInboundSkdm(message.senderDid, message.content);
+    });
+  }
+  return true;
 }
 
 function onMessageReceived(payload: RealtimeMessageReceivedPayload): void {
@@ -345,6 +361,13 @@ function onMessageReceived(payload: RealtimeMessageReceivedPayload): void {
 
   const store = useSocialChatStore.getState();
   const isKnownGroup = store.groups.some((group) => group.ulid === payload.sessionUlid);
+  const decodedMessage = decodeRealtimeMessage(payload, isKnownGroup);
+  if (
+    decodedMessage?.kind === 'friend'
+    && consumeRealtimeFriendControlMessage(decodedMessage.message, store.currentUserDid)
+  ) {
+    return;
+  }
   const isSelfEcho = Boolean(store.currentUserDid && payload.senderActorId === store.currentUserDid);
   const isActiveConversation = isVisibleConversation(store, payload.sessionUlid, isKnownGroup);
 
@@ -366,7 +389,7 @@ function onMessageReceived(payload: RealtimeMessageReceivedPayload): void {
   }
 
   runDetached('message projection and refresh', async () => {
-    const projectedKind = await projectRealtimeMessage(payload, isKnownGroup);
+    const projectedKind = await projectRealtimeMessage(payload, isKnownGroup, decodedMessage);
     const effectiveIsGroup = projectedKind ? projectedKind === 'group' : isKnownGroup;
     if (effectiveIsGroup) {
       await refreshGroupMessage(payload.sessionUlid, isActiveConversation);
@@ -540,6 +563,11 @@ function onResync(payload: RealtimeResyncPayload): void {
     await syncKnownConversations();
 
     const refreshed = useSocialChatStore.getState();
+    if (refreshed.activeTab === 'friend' && refreshed.activeSessionUlid) {
+      await refreshed.loadMessages(refreshed.activeSessionUlid, 'friend');
+    } else if (refreshed.activeTab === 'group' && refreshed.activeGroupUlid) {
+      await refreshed.loadMessages(refreshed.activeGroupUlid, 'group');
+    }
     await Promise.allSettled([
       refreshed.loadGroupUnreadCounts(),
       refreshed.loadConversationPreviews(),

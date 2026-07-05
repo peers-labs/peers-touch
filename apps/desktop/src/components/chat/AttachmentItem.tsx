@@ -27,18 +27,16 @@ import {
   Volume2,
 } from 'lucide-react';
 import {
+  type ChatAttachmentLike,
   chatMediaKindForAttachment,
   formatChatAttachmentSize,
 } from '@peers-touch/client-chat-core';
 import { useDecryptedOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
-import type { FriendMessageAttachment } from '../../gen/proto/domain/chat/friend_chat_pb';
-import type { GroupMessageAttachment } from '../../gen/proto/domain/chat/group_chat_pb';
-import type { ChatAttachmentLike } from '../../store/socialProjection';
 
 const { Text } = Typography;
 
-type Attachment = FriendMessageAttachment | GroupMessageAttachment | ChatAttachmentLike;
+type Attachment = ChatAttachmentLike;
 
 export type ChatAttachmentVisibilityHint = 'public' | 'chat' | 'private';
 
@@ -267,7 +265,9 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const [previewFailed, setPreviewFailed] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioDuration, setAudioDuration] = useState('');
-  const src = useDecryptedOssAttachmentUrl(attachment);
+  const src = useDecryptedOssAttachmentUrl(
+    attachment as Parameters<typeof useDecryptedOssAttachmentUrl>[0],
+  );
   const attachmentKind = chatMediaKindForAttachment(attachment);
   const isImage = attachmentKind === 'image';
   const isVideo = attachmentKind === 'video';

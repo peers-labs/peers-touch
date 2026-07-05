@@ -13,8 +13,8 @@ type Agent struct {
 	Visibility   string    `gorm:"not null;type:varchar(20);default:'private';index:idx_agents_visibility"`
 	OwnerActorID string    `gorm:"not null;type:text;index:idx_agents_owner_actor_id"`
 	ConfigJSON   string    `gorm:"type:text"`
-	CreatedAt    time.Time `gorm:"not null;default:now()"`
-	UpdatedAt    time.Time `gorm:"not null;default:now()"`
+	CreatedAt    time.Time `gorm:"not null;autoCreateTime"`
+	UpdatedAt    time.Time `gorm:"not null;autoUpdateTime"`
 }
 
 func (Agent) TableName() string { return "agents" }
