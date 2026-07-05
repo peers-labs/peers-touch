@@ -5567,6 +5567,38 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => e,
             }
         }
+        "group_chat_add_federated_member" => {
+            let input = match parse_args::<GroupAddFederatedMemberInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let member = group_chat_federated_actor_input_to_proto(input.member);
+            match station_request_json(
+                Method::POST,
+                "/group-chat/member/federated-add",
+                &token,
+                None,
+                Some(json!({
+                    "group_ulid": input.group_ulid,
+                    "member": {
+                        "actor_did": member.actor_did,
+                        "home_station_peer_id": member.home_station_peer_id,
+                        "home_station_domain": member.home_station_domain,
+                        "federated_handle": member.federated_handle,
+                        "actor_identity_public_key": member.actor_identity_public_key,
+                        "profile_version": member.profile_version,
+                        "federation_id": member.federation_id,
+                    },
+                })),
+            ) {
+                Ok(data) => to_json(to_stub("group_chat_add_federated_member", data)),
+                Err(e) => e,
+            }
+        }
         "group_chat_join_group" => {
             let input = match parse_args::<GroupJoinInput>(args) {
                 Ok(v) => v,

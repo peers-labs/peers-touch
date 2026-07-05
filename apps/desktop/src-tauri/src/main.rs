@@ -472,6 +472,7 @@ fn main() {
             group_chat::group_chat_get_group,
             group_chat::group_chat_update_group,
             group_chat::group_chat_invite_to_group,
+            group_chat::group_chat_add_federated_member,
             group_chat::group_chat_join_group,
             group_chat::group_chat_leave_group,
             group_chat::group_chat_get_members,

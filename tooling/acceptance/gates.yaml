@@ -113,6 +113,13 @@
       "tier": "env-evidence",
       "description": "Run a live two-Desktop cross-Station removed-member negative flow: follower decrypts a pre-remove message, authority removes the follower, authority sends a post-remove message, and follower DOM must not render the post-remove plaintext."
     },
+    "chat-federated-desktop-dom-late-join-negative": {
+      "command": "python3 tooling/acceptance/gates/chat/federated_desktop_dom_late_join_negative.py",
+      "timeout_seconds": 900,
+      "environment": "home-station",
+      "tier": "env-evidence",
+      "description": "Run a live two-Desktop cross-Station late-join negative flow: authority sends a pre-join encrypted message, adds the follower as a federated member, follower DOM must not render the pre-join plaintext, then follower must decrypt a post-join message."
+    },
     "chat-federated-desktop-dom-group-pressure": {
       "command": "python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_pressure.py",
       "timeout_seconds": 2400,
