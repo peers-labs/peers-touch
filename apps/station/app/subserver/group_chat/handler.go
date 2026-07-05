@@ -154,6 +154,7 @@ func (s *subServer) handleCreate(ctx context.Context, req *chat.CreateGroupReque
 	// CreateGroup itself), duplicates are de-duped, and we re-fetch
 	// the group at the end so the response carries the correct
 	// MemberCount instead of the stale snapshot from CreateGroup.
+	initialFederatedActors := make([]group_chat_domain.FederatedActorRef, 0, len(req.InitialFederatedMembers))
 	if len(req.InitialMemberDids) > 0 || len(req.InitialFederatedMembers) > 0 {
 		seen := make(map[string]struct{}, len(req.InitialMemberDids)+len(req.InitialFederatedMembers))
 		seen[subject.ID] = struct{}{}
@@ -178,10 +179,16 @@ func (s *subServer) handleCreate(ctx context.Context, req *chat.CreateGroupReque
 			if _, ok := s.appService.AddFederatedMember(item.ID, actor, subject.ID); !ok {
 				return nil, server.InternalError("add federated member failed")
 			}
+			initialFederatedActors = append(initialFederatedActors, actor)
 			seen[actor.ActorDID] = struct{}{}
 		}
 		if refreshed, ok := s.appService.GetGroup(item.ID); ok {
 			item = *refreshed
+		}
+	}
+	if len(initialFederatedActors) > 0 {
+		if err := s.service.EnqueueInitialFederatedGroupHistory(item.ID, initialFederatedActors); err != nil {
+			return nil, server.InternalErrorWithCause("failed to publish initial federated group history", err)
 		}
 	}
 	return &chat.CreateGroupResponse{

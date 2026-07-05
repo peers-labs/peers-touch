@@ -1099,6 +1099,34 @@ func (s *service) SendMessage(groupID, senderDID string, messageType int32, cont
 	}
 }
 
+func (s *service) EnqueueInitialFederatedGroupHistory(groupID string, actors []domain.FederatedActorRef) error {
+	groupID = strings.TrimSpace(groupID)
+	if groupID == "" || len(actors) == 0 {
+		return nil
+	}
+	now := time.Now()
+	if s.db != nil {
+		return s.db.Transaction(func(tx *gorm.DB) error {
+			seen := map[string]struct{}{}
+			for _, actor := range actors {
+				target := strings.TrimSpace(actor.HomeStationPeerID)
+				if target == "" || target == s.authorityStationID() {
+					continue
+				}
+				if _, ok := seen[target]; ok {
+					continue
+				}
+				seen[target] = struct{}{}
+				if err := enqueueAuthorityEventHistoryForTargetTx(tx, now, groupID, target, actor); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	return nil
+}
+
 func (s *service) AcceptProposal(proposal domain.GroupProposal) (domain.GroupEvent, bool, error) {
 	payload, err := proposalEventPayload(proposal)
 	if err != nil {
@@ -1398,8 +1426,12 @@ func (s *service) ListFollowerProjections(limit int) ([]domain.FollowerProjectio
 	if s.db != nil {
 		var rows []groupFollowerProjectionModel
 		if err := s.db.
-			Where("status IN ?", []string{followerProjectionStatusActive, followerProjectionStatusDegraded}).
-			Order("updated_at ASC, id ASC").
+			Table("group_chat_follower_projections").
+			Select("group_chat_follower_projections.*").
+			Joins("LEFT JOIN group_chat_groups ON group_chat_groups.ulid = group_chat_follower_projections.group_ulid").
+			Where("group_chat_follower_projections.status IN ?", []string{followerProjectionStatusActive, followerProjectionStatusDegraded}).
+			Order("CASE WHEN group_chat_groups.id IS NULL THEN 0 ELSE 1 END").
+			Order("group_chat_follower_projections.updated_at DESC, group_chat_follower_projections.id DESC").
 			Limit(limit).
 			Find(&rows).Error; err != nil {
 			return nil, err
