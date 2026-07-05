@@ -2277,6 +2277,29 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_auth::auth_validate_token(input, state))
         }
+        "acceptance_current_session" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let actor_id = match actor_id_from_state(state) {
+                Some(id) if !id.trim().is_empty() => id,
+                Some(_) | None => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::Unauthorized,
+                        "authentication required",
+                        None,
+                    ));
+                }
+            };
+            to_json(to_stub(
+                "acceptance_current_session",
+                json!({
+                    "actor_id": actor_id,
+                    "token": token,
+                }),
+            ))
+        }
         "ensure_station_session" => to_json(app_auth::ensure_station_session(state)),
 
         // =================================================================
@@ -6637,6 +6660,48 @@ mod tests {
             }
         })
         .expect("provider store should be available");
+    }
+
+    #[test]
+    fn acceptance_current_session_returns_debug_gateway_session() {
+        let state = test_state("acceptance-session");
+        let runtime = GatewayRuntime::headless();
+
+        let result = dispatch("acceptance_current_session", json!({}), &state, &runtime);
+
+        assert!(app_result_ok(&result), "current session failed: {}", result);
+        let status = status_json(&result);
+        assert_eq!(
+            status.get("actor_id").and_then(Value::as_str),
+            Some("actor-http-gateway-test")
+        );
+        assert_eq!(
+            status.get("token").and_then(Value::as_str),
+            Some("token-http-gateway-test")
+        );
+    }
+
+    #[test]
+    fn acceptance_current_session_requires_authentication() {
+        let layout = temp_layout("acceptance-session-auth");
+        let config_dir = layout
+            .dirs
+            .get(&StorageKind::Config)
+            .cloned()
+            .unwrap_or_else(PathBuf::new);
+        let state = AppState::new(layout, I18nService::new(&config_dir));
+        let runtime = GatewayRuntime::headless();
+
+        let result = dispatch("acceptance_current_session", json!({}), &state, &runtime);
+
+        assert_eq!(result.get("ok").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            result
+                .get("error")
+                .and_then(|error| error.get("code"))
+                .and_then(Value::as_str),
+            Some("UNAUTHORIZED")
+        );
     }
 
     #[test]
