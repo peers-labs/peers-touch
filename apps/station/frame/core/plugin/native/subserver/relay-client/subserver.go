@@ -490,6 +490,10 @@ func (s *SubServer) makeDispatcher() client.Dispatcher {
 			}
 			httpReq.Header.Set(k, v)
 		}
+		if targetAuth := strings.TrimSpace(httpReq.Header.Get(federation.ForwardAuthorizationHeader)); targetAuth != "" {
+			httpReq.Header.Set("Authorization", targetAuth)
+			httpReq.Header.Del(federation.ForwardAuthorizationHeader)
+		}
 		resp, err := cl.Do(httpReq)
 		if err != nil {
 			return http.StatusBadGateway,

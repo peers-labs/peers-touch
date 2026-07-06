@@ -243,12 +243,12 @@ impl KeyProvider for PlatformKeyProvider {
             return Ok(item.clone());
         }
         let created = Self::generate_key_material(key_ref, 1);
-        if let Err(e) = Self::write_to_os_store(key_ref, &created) {
-            return Err(KeyProviderError::io_failure(
+        Self::write_to_os_store(key_ref, &created).map_err(|e| {
+            KeyProviderError::io_failure(
                 key_ref,
-                format!("failed to persist key to os store: {e}"),
-            ));
-        }
+                format!("failed to persist newly generated key to os store: {e}"),
+            )
+        })?;
         guard.insert(key_ref.to_string(), created.clone());
         Ok(created)
     }

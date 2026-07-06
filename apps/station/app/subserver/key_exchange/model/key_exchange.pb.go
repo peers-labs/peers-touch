@@ -272,9 +272,13 @@ type FetchKeyBundleRequest struct {
 	Did   string                 `protobuf:"bytes,1,opt,name=did,proto3" json:"did,omitempty"`
 	// When empty, return all bundles for the DID. When set, only that device_id
 	// (after server-side normalization matching upload).
-	DeviceId      string `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	DeviceId string `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	// Optional Station peer id for federated lookup. When present and different
+	// from the local Station, the serving Station relay-forwards the request to
+	// the actor's home Station under a peer-JWT protected fetch route.
+	HomeStationPeerId string `protobuf:"bytes,3,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *FetchKeyBundleRequest) Reset() {
@@ -317,6 +321,13 @@ func (x *FetchKeyBundleRequest) GetDid() string {
 func (x *FetchKeyBundleRequest) GetDeviceId() string {
 	if x != nil {
 		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *FetchKeyBundleRequest) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
 	}
 	return ""
 }
@@ -575,10 +586,11 @@ const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\aspk_sig\x18\x05 \x01(\tR\x06spkSig\x12\x12\n" +
 	"\x04opks\x18\x06 \x03(\tR\x04opks\x12/\n" +
 	"\x14published_at_unix_ms\x18\a \x01(\x03R\x11publishedAtUnixMs\x12-\n" +
-	"\x12supported_versions\x18\b \x03(\rR\x11supportedVersions\"F\n" +
+	"\x12supported_versions\x18\b \x03(\rR\x11supportedVersions\"w\n" +
 	"\x15FetchKeyBundleRequest\x12\x10\n" +
 	"\x03did\x18\x01 \x01(\tR\x03did\x12\x1b\n" +
-	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\"`\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12/\n" +
+	"\x14home_station_peer_id\x18\x03 \x01(\tR\x11homeStationPeerId\"`\n" +
 	"\x16FetchKeyBundleResponse\x12F\n" +
 	"\abundles\x18\x01 \x03(\v2,.peers_touch.model.key_exchange.v1.KeyBundleR\abundles\"g\n" +
 	"\x14ReplenishOpksRequest\x12\x17\n" +

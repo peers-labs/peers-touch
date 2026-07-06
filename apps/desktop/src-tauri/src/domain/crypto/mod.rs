@@ -19,16 +19,17 @@ use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
 use hkdf::Hkdf;
 use keyring::Entry;
 use rand::rngs::OsRng;
-use sha2::Digest;
-use sha2::Sha256;
-use sha2::Sha512;
+use sha2::{Digest, Sha256, Sha512};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // --- Key types ----------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct IdentityKeyPair {
     pub signing_key: SigningKey,
     pub verifying_key: VerifyingKey,
@@ -50,7 +51,8 @@ pub fn generate_identity_keypair() -> IdentityKeyPair {
     }
 }
 
-/// Map an Ed25519 signing key to the corresponding X25519 static key.
+/// Map an Ed25519 signing key to the X25519 key that corresponds to its
+/// Edwards public key after Edwards->Montgomery conversion.
 pub fn ed25519_to_x25519(signing_key: &SigningKey) -> X25519KeyPair {
     let seed = signing_key.to_bytes();
     let digest = Sha512::digest(seed);
@@ -417,6 +419,20 @@ impl CryptoSession {
 
 const CRYPTO_SERVICE: &str = "peers-touch.desktop.crypto";
 
+fn identity_cache() -> &'static Mutex<HashMap<String, [u8; 32]>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, [u8; 32]>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn identity_from_seed(seed: [u8; 32]) -> IdentityKeyPair {
+    let signing_key = SigningKey::from_bytes(&seed);
+    let verifying_key = signing_key.verifying_key();
+    IdentityKeyPair {
+        signing_key,
+        verifying_key,
+    }
+}
+
 fn identity_entry(identity_key_ref: &str) -> Result<Entry, String> {
     let user = format!("identity-key:{identity_key_ref}");
     Entry::new(CRYPTO_SERVICE, user.as_str()).map_err(|e| e.to_string())
@@ -459,13 +475,18 @@ pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(),
 }
 
 pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPair>, String> {
+    if let Ok(cache) = identity_cache().lock() {
+        if let Some(seed) = cache.get(identity_key_ref) {
+            return Ok(Some(identity_from_seed(*seed)));
+        }
+    }
     if let Some(path) = scoped_identity_file(identity_key_ref) {
         let pw = match fs::read_to_string(path) {
             Ok(p) => p,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(e.to_string()),
         };
-        return identity_key_from_hex(pw.trim());
+        return identity_key_from_hex(identity_key_ref, pw.trim());
     }
     let entry = identity_entry(identity_key_ref)?;
     let pw = match entry.get_password() {
@@ -473,10 +494,13 @@ pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPai
         Err(keyring::Error::NoEntry) => return Ok(None),
         Err(e) => return Err(e.to_string()),
     };
-    identity_key_from_hex(pw.as_str())
+    identity_key_from_hex(identity_key_ref, pw.as_str())
 }
 
-fn identity_key_from_hex(pw: &str) -> Result<Option<IdentityKeyPair>, String> {
+fn identity_key_from_hex(
+    identity_key_ref: &str,
+    pw: &str,
+) -> Result<Option<IdentityKeyPair>, String> {
     if pw.len() != 64 || !pw.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err("stored identity key has invalid format".to_string());
     }
@@ -485,12 +509,10 @@ fn identity_key_from_hex(pw: &str) -> Result<Option<IdentityKeyPair>, String> {
         seed[i] = u8::from_str_radix(&pw[i * 2..i * 2 + 2], 16)
             .map_err(|_| "identity key hex decode failed")?;
     }
-    let signing_key = SigningKey::from_bytes(&seed);
-    let verifying_key = signing_key.verifying_key();
-    Ok(Some(IdentityKeyPair {
-        signing_key,
-        verifying_key,
-    }))
+    if let Ok(mut cache) = identity_cache().lock() {
+        cache.insert(identity_key_ref.to_string(), seed);
+    }
+    Ok(Some(identity_from_seed(seed)))
 }
 
 pub fn get_or_create_identity(identity_key_ref: &str) -> Result<IdentityKeyPair, String> {
@@ -500,6 +522,9 @@ pub fn get_or_create_identity(identity_key_ref: &str) -> Result<IdentityKeyPair,
     let kp = generate_identity_keypair();
     let seed = kp.signing_key.to_bytes();
     store_identity_key(identity_key_ref, &seed)?;
+    if let Ok(mut cache) = identity_cache().lock() {
+        cache.insert(identity_key_ref.to_string(), seed);
+    }
     Ok(kp)
 }
 
@@ -526,3 +551,19 @@ pub fn identity_fingerprint_hex(verifying_key: &VerifyingKey) -> String {
 // The replacement is the Sender Keys protocol designed in
 // peers-touch/docs/architecture/encryption/group-sender-keys.md;
 // implementation lands per the G0..G5 phase plan in that doc.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ed25519_private_and_public_map_to_same_x25519_public() {
+        let identity = generate_identity_keypair();
+
+        let from_private = ed25519_to_x25519(&identity.signing_key);
+        let from_public = ed25519_verifying_to_x25519_public(&identity.verifying_key)
+            .expect("Ed25519 verifying key should map to X25519 public");
+
+        assert_eq!(from_private.public.as_bytes(), from_public.as_bytes());
+    }
+}

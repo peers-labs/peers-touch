@@ -20,7 +20,13 @@ use tauri::AppHandle;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::contracts::*;
+use crate::domain::crypto::sender_keys::{
+    self, GroupCiphertextWire, SenderChainState, SenderKeyDistributionPayload,
+};
+use crate::domain::crypto::{self};
 use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::local_chat_store;
+use crate::model::chat as model_chat;
 use crate::state::AppState;
 
 // -------------------------------------------------------------------------
@@ -56,11 +62,6 @@ use crate::application::skills_market as app_skills_market;
 use crate::application::system as app_system;
 use crate::application::tools as app_tools;
 use crate::application::tts as app_tts;
-use crate::domain::crypto;
-use crate::domain::crypto::sender_keys::{
-    self, GroupCiphertextWire, SenderChainState, SenderKeyDistributionPayload,
-};
-use crate::infrastructure::local_chat_store;
 
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
@@ -69,7 +70,6 @@ use crate::interface::tauri_commands::oss::{
     OssCaptureScreenshotInput, OssUploadAttachmentBytesInput,
 };
 use crate::model;
-use crate::model::chat as model_chat;
 use prost::Message;
 use reqwest::Method;
 use ulid::Ulid;
@@ -102,6 +102,20 @@ impl GatewayRuntime {
                 None,
             ))),
         }
+    }
+}
+
+fn group_chat_federated_actor_input_to_proto(
+    input: GroupChatFederatedActorInput,
+) -> model::chat::FederatedActorRef {
+    model::chat::FederatedActorRef {
+        actor_did: input.actor_did,
+        home_station_peer_id: input.home_station_peer_id,
+        home_station_domain: input.home_station_domain.unwrap_or_default(),
+        federated_handle: input.federated_handle.unwrap_or_default(),
+        actor_identity_public_key: input.actor_identity_public_key.unwrap_or_default(),
+        profile_version: input.profile_version.unwrap_or_default(),
+        federation_id: input.federation_id.unwrap_or_default(),
     }
 }
 
@@ -454,7 +468,16 @@ fn user_scope_from_state(state: &AppState) -> String {
     crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref())
 }
 
-fn sk_authed_scope_from_state(state: &AppState) -> Result<(String, String), AppResult<StubPayload>> {
+fn now_unix_seconds_i32() -> i32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs().min(i32::MAX as u64) as i32)
+        .unwrap_or(0)
+}
+
+fn sk_authed_scope_from_state(
+    state: &AppState,
+) -> Result<(String, String), AppResult<StubPayload>> {
     let actor_id = match actor_id_from_state(state) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
@@ -465,8 +488,8 @@ fn sk_authed_scope_from_state(state: &AppState) -> Result<(String, String), AppR
             ));
         }
     };
-    let scope = crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
-        .user_scope();
+    let scope =
+        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str()).user_scope();
     Ok((actor_id, scope))
 }
 
@@ -888,13 +911,6 @@ fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
     })
 }
 
-fn now_unix_seconds_i32() -> i32 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs().min(i32::MAX as u64) as i32)
-        .unwrap_or(0)
-}
-
 fn extract_latest_ulid(payload: &Value) -> Option<String> {
     payload
         .get("messages")?
@@ -1062,16 +1078,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 opk_pubs.push(pk.to_bytes());
                 opk_privs.push(opk_sk.to_bytes().to_vec());
             }
-            let opk_ids = match local_chat_store::crypto_insert_opks(user_scope.as_str(), &opk_privs) {
-                Ok(ids) => ids,
-                Err(reason) => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::InternalError,
-                        format!("Failed to store one-time pre-keys: {}", reason),
-                        None,
-                    ));
-                }
-            };
+            let opk_ids =
+                match local_chat_store::crypto_insert_opks(user_scope.as_str(), &opk_privs) {
+                    Ok(ids) => ids,
+                    Err(reason) => {
+                        return to_json(AppResult::<StubPayload>::fail(
+                            ErrorCode::InternalError,
+                            format!("Failed to store one-time pre-keys: {}", reason),
+                            None,
+                        ));
+                    }
+                };
 
             to_json(to_stub(
                 "crypto_get_key_bundle",
@@ -1185,7 +1202,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ));
                 }
             };
-            to_json(to_stub("signaling_envelope_open", json!({ "plaintext": text })))
+            to_json(to_stub(
+                "signaling_envelope_open",
+                json!({ "plaintext": text }),
+            ))
         }
         "crypto_group_sk_emit_skdm" => {
             let input = match parse_args::<CryptoGroupUlidInput>(args) {
@@ -1211,8 +1231,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ) {
                 Ok(Some(c)) => c,
                 Ok(None) => {
-                    let fresh = sender_keys::create_local_chain(group_ulid.as_str(), actor_id.as_str(), 1);
-                    if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &fresh) {
+                    let fresh =
+                        sender_keys::create_local_chain(group_ulid.as_str(), actor_id.as_str(), 1);
+                    if let Err(reason) =
+                        local_chat_store::save_group_sender_chain(scope.as_str(), &fresh)
+                    {
                         return to_json(AppResult::<StubPayload>::fail(
                             ErrorCode::InternalError,
                             format!("Failed to persist new sender chain: {}", reason),
@@ -1282,7 +1305,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             let payload = match proto_skdm_to_payload(&proto) {
                 Ok(p) => p,
-                Err(e) => return to_json(AppResult::<StubPayload>::fail(ErrorCode::InvalidArgument, e, None)),
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        e,
+                        None,
+                    ))
+                }
             };
             if payload.sender_did != claimed_sender_did {
                 return to_json(AppResult::<StubPayload>::fail(
@@ -1377,18 +1406,26 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ));
                 }
             };
-            if let Err(reason) =
-                local_chat_store::apply_group_decrypt_outcome(scope.as_str(), &chain, &[sent_key], None)
-            {
+            if let Err(reason) = local_chat_store::apply_group_decrypt_outcome(
+                scope.as_str(),
+                &chain,
+                &[sent_key],
+                None,
+            ) {
                 return to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::InternalError,
-                    format!("Failed to persist advanced chain and sent message key: {}", reason),
+                    format!(
+                        "Failed to persist advanced chain and sent message key: {}",
+                        reason
+                    ),
                     None,
                 ));
             }
             let proto = wire_to_proto_ciphertext(&wire);
             let mut buf = Vec::with_capacity(proto.encoded_len());
-            proto.encode(&mut buf).expect("prost GroupCiphertext encode");
+            proto
+                .encode(&mut buf)
+                .expect("prost GroupCiphertext encode");
             to_json(to_stub(
                 "crypto_group_encrypt",
                 json!({
@@ -1438,7 +1475,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             let wire = match proto_ciphertext_to_wire(&proto) {
                 Ok(w) => w,
-                Err(e) => return to_json(AppResult::<StubPayload>::fail(ErrorCode::InvalidArgument, e, None)),
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        e,
+                        None,
+                    ))
+                }
             };
             let chain = match local_chat_store::load_group_sender_chain(
                 scope.as_str(),
@@ -1517,6 +1560,57 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(to_stub(
                 "crypto_group_decrypt",
                 json!({ "plaintext_b64": B64.encode(&outcome.plaintext) }),
+            ))
+        }
+
+        "crypto_group_sk_rotate" => {
+            let input = match parse_args::<CryptoGroupUlidInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let group_ulid = input_group_ulid(&input);
+            if group_ulid.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "group_ulid is required",
+                    None,
+                ));
+            }
+            let (actor_id, scope) = match sk_authed_scope_from_state(state) {
+                Ok(v) => v,
+                Err(e) => return to_json(e),
+            };
+            let next_id = match local_chat_store::max_sender_key_id(
+                scope.as_str(),
+                group_ulid.as_str(),
+                actor_id.as_str(),
+            ) {
+                Ok(Some(v)) => v.checked_add(1).unwrap_or(1),
+                Ok(None) => 1,
+                Err(reason) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to query max sender_key_id: {}", reason),
+                        None,
+                    ));
+                }
+            };
+            let fresh =
+                sender_keys::create_local_chain(group_ulid.as_str(), actor_id.as_str(), next_id);
+            if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &fresh) {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to persist rotated chain: {}", reason),
+                    None,
+                ));
+            }
+            to_json(to_stub(
+                "crypto_group_sk_rotate",
+                json!({
+                    "group_ulid": group_ulid,
+                    "sender_did": actor_id,
+                    "sender_key_id": next_id,
+                }),
             ))
         }
 
@@ -2217,6 +2311,29 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_auth::auth_validate_token(input, state))
+        }
+        "acceptance_current_session" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let actor_id = match actor_id_from_state(state) {
+                Some(id) if !id.trim().is_empty() => id,
+                Some(_) | None => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::Unauthorized,
+                        "authentication required",
+                        None,
+                    ));
+                }
+            };
+            to_json(to_stub(
+                "acceptance_current_session",
+                json!({
+                    "actor_id": actor_id,
+                    "token": token,
+                }),
+            ))
         }
         "ensure_station_session" => to_json(app_auth::ensure_station_session(state)),
 
@@ -4733,6 +4850,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let req = model::key_exchange::FetchKeyBundleRequest {
                 did: input.did,
                 device_id: input.device_id.unwrap_or_default(),
+                home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
             };
             match station_client::request_proto::<
                 model::key_exchange::FetchKeyBundleRequest,
@@ -5288,6 +5406,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     "mention_all": input.mention_all.unwrap_or(false),
                     "attachments": input.attachments.unwrap_or_default(),
                     "encrypted_payload": input.encrypted_payload.unwrap_or_default(),
+                    "observed_membership_epoch": input.observed_membership_epoch.unwrap_or_default(),
                 })),
             ) {
                 Ok(d) => d,
@@ -5296,6 +5415,38 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let user_scope = user_scope_from_state(state);
             let _ = chat_storage::ingest_group_messages(&user_scope, &data);
             to_json(to_stub("group_chat_send_message", data))
+        }
+        "group_chat_submit_skdm_envelope" => {
+            let input = match parse_args::<GroupSkdmSubmitInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            match station_request_json(
+                Method::POST,
+                "/group-chat/skdm/submit",
+                &token,
+                None,
+                Some(json!({
+                    "envelope": {
+                        "group_ulid": input.group_ulid,
+                        "membership_epoch": input.membership_epoch,
+                        "sender_did": input.sender_did,
+                        "sender_key_id": input.sender_key_id,
+                        "recipient_did": input.recipient_did,
+                        "recipient_device_id": input.recipient_device_id,
+                        "recipient_home_station_peer_id": input.recipient_home_station_peer_id,
+                        "encrypted_payload": input.encrypted_payload,
+                        "idempotency_key": input.idempotency_key.unwrap_or_default(),
+                    },
+                })),
+            ) {
+                Ok(data) => to_json(to_stub("group_chat_submit_skdm_envelope", data)),
+                Err(e) => e,
+            }
         }
         "group_chat_unread_count" => {
             let input = match parse_args::<GroupChatUnreadInput>(args) {
@@ -5354,6 +5505,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 name: input.name,
                 description: input.description.unwrap_or_default(),
                 initial_member_dids: input.member_dids.unwrap_or_default(),
+                initial_federated_members: input
+                    .initial_federated_members
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(group_chat_federated_actor_input_to_proto)
+                    .collect(),
                 ..Default::default()
             };
             let resp = match station_client::request_proto::<
@@ -5442,6 +5599,38 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 })),
             ) {
                 Ok(data) => to_json(to_stub("group_chat_invite_to_group", data)),
+                Err(e) => e,
+            }
+        }
+        "group_chat_add_federated_member" => {
+            let input = match parse_args::<GroupAddFederatedMemberInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let member = group_chat_federated_actor_input_to_proto(input.member);
+            match station_request_json(
+                Method::POST,
+                "/group-chat/member/federated-add",
+                &token,
+                None,
+                Some(json!({
+                    "group_ulid": input.group_ulid,
+                    "member": {
+                        "actor_did": member.actor_did,
+                        "home_station_peer_id": member.home_station_peer_id,
+                        "home_station_domain": member.home_station_domain,
+                        "federated_handle": member.federated_handle,
+                        "actor_identity_public_key": member.actor_identity_public_key,
+                        "profile_version": member.profile_version,
+                        "federation_id": member.federation_id,
+                    },
+                })),
+            ) {
+                Ok(data) => to_json(to_stub("group_chat_add_federated_member", data)),
                 Err(e) => e,
             }
         }
@@ -6538,6 +6727,48 @@ mod tests {
             }
         })
         .expect("provider store should be available");
+    }
+
+    #[test]
+    fn acceptance_current_session_returns_debug_gateway_session() {
+        let state = test_state("acceptance-session");
+        let runtime = GatewayRuntime::headless();
+
+        let result = dispatch("acceptance_current_session", json!({}), &state, &runtime);
+
+        assert!(app_result_ok(&result), "current session failed: {}", result);
+        let status = status_json(&result);
+        assert_eq!(
+            status.get("actor_id").and_then(Value::as_str),
+            Some("actor-http-gateway-test")
+        );
+        assert_eq!(
+            status.get("token").and_then(Value::as_str),
+            Some("token-http-gateway-test")
+        );
+    }
+
+    #[test]
+    fn acceptance_current_session_requires_authentication() {
+        let layout = temp_layout("acceptance-session-auth");
+        let config_dir = layout
+            .dirs
+            .get(&StorageKind::Config)
+            .cloned()
+            .unwrap_or_else(PathBuf::new);
+        let state = AppState::new(layout, I18nService::new(&config_dir));
+        let runtime = GatewayRuntime::headless();
+
+        let result = dispatch("acceptance_current_session", json!({}), &state, &runtime);
+
+        assert_eq!(result.get("ok").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            result
+                .get("error")
+                .and_then(|error| error.get("code"))
+                .and_then(Value::as_str),
+            Some("UNAUTHORIZED")
+        );
     }
 
     #[test]

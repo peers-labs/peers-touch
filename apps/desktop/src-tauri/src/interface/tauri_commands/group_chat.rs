@@ -2,14 +2,15 @@ use crate::application::chat_storage;
 use crate::application::session_resolver;
 use crate::contracts::{
     AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput,
-    ChatScopeCursorSetInput, GroupAckOfflineInput, GroupChatCreateGroupInput, GroupChatEditInput,
+    ChatScopeCursorSetInput, GroupAckOfflineInput, GroupAddFederatedMemberInput,
+    GroupChatCreateGroupInput, GroupChatEditInput, GroupChatFederatedActorInput,
     GroupChatLeaveGroupInput, GroupChatListInput, GroupChatListMessagesInput,
     GroupChatMarkReadInput, GroupChatSendInput, GroupChatSyncInput, GroupChatThreadCountsInput,
     GroupChatThreadInput, GroupChatThreadReadInput, GroupChatUnreadInput, GroupInviteInput,
     GroupJoinInput, GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
-    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupTransferOwnershipInput, GroupUlidInput,
-    GroupUpdateInput, GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput,
-    StubPayload,
+    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupSkdmSubmitInput,
+    GroupTransferOwnershipInput, GroupUlidInput, GroupUpdateInput, GroupUpdateMemberInput,
+    GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -356,6 +357,7 @@ pub fn group_chat_send_message(
         mention_all: input.mention_all.unwrap_or(false),
         encrypted_payload,
         thread_root_ulid: input.thread_root_ulid.unwrap_or_default(),
+        observed_membership_epoch: input.observed_membership_epoch.unwrap_or_default(),
     };
 
     let resp = match station_client::request_proto::<
@@ -370,6 +372,64 @@ pub fn group_chat_send_message(
     ) {
         Ok(r) => r,
         Err(e) => return e.into_app_result("station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn group_chat_submit_skdm_envelope(
+    input: GroupSkdmSubmitInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    let encrypted_payload = match B64.decode(input.encrypted_payload.trim().as_bytes()) {
+        Ok(bytes) if !bytes.is_empty() => bytes,
+        Ok(_) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "encrypted_payload is required for SKDM submit",
+                None,
+            );
+        }
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("Invalid encrypted_payload: {}", e),
+                None,
+            );
+        }
+    };
+    let req = model::chat::SubmitGroupSkdmEnvelopeRequest {
+        envelope: Some(model::chat::GroupSkdmEnvelope {
+            group_ulid: input.group_ulid,
+            membership_epoch: input.membership_epoch,
+            sender_did: input.sender_did,
+            sender_key_id: input.sender_key_id,
+            sender_home_station_peer_id: String::new(),
+            recipient_did: input.recipient_did,
+            recipient_device_id: input.recipient_device_id,
+            recipient_home_station_peer_id: input.recipient_home_station_peer_id,
+            encrypted_payload,
+            idempotency_key: input.idempotency_key.unwrap_or_default(),
+            created_at: None,
+        }),
+    };
+    let resp = match station_client::request_proto::<
+        model::chat::SubmitGroupSkdmEnvelopeRequest,
+        model::chat::SubmitGroupSkdmEnvelopeResponse,
+    >(
+        Method::POST,
+        "/group-chat/skdm/submit",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -687,6 +747,12 @@ pub fn group_chat_create_group(
         name: input.name,
         description: input.description.unwrap_or_default(),
         initial_member_dids: input.member_dids.unwrap_or_default(),
+        initial_federated_members: input
+            .initial_federated_members
+            .unwrap_or_default()
+            .into_iter()
+            .map(group_chat_federated_actor_input_to_proto)
+            .collect(),
         ..Default::default()
     };
 
@@ -700,6 +766,20 @@ pub fn group_chat_create_group(
     };
 
     AppResult::success(resp.encode_to_vec())
+}
+
+fn group_chat_federated_actor_input_to_proto(
+    input: GroupChatFederatedActorInput,
+) -> model::chat::FederatedActorRef {
+    model::chat::FederatedActorRef {
+        actor_did: input.actor_did,
+        home_station_peer_id: input.home_station_peer_id,
+        home_station_domain: input.home_station_domain.unwrap_or_default(),
+        federated_handle: input.federated_handle.unwrap_or_default(),
+        actor_identity_public_key: input.actor_identity_public_key.unwrap_or_default(),
+        profile_version: input.profile_version.unwrap_or_default(),
+        federation_id: input.federation_id.unwrap_or_default(),
+    }
 }
 
 #[tauri::command]
@@ -817,6 +897,46 @@ pub fn group_chat_invite_to_group(
     };
 
     AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn group_chat_add_federated_member(
+    input: GroupAddFederatedMemberInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+
+    let member = group_chat_federated_actor_input_to_proto(input.member);
+    let data = match request_json(
+        Method::POST,
+        "/group-chat/member/federated-add",
+        &token,
+        None,
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "member": {
+                "actor_did": member.actor_did,
+                "home_station_peer_id": member.home_station_peer_id,
+                "home_station_domain": member.home_station_domain,
+                "federated_handle": member.federated_handle,
+                "actor_identity_public_key": member.actor_identity_public_key,
+                "profile_version": member.profile_version,
+                "federation_id": member.federation_id,
+            },
+        })),
+    ) {
+        Ok(data) => data,
+        Err(e) => return e,
+    };
+
+    AppResult::success(StubPayload {
+        command: "group_chat_add_federated_member".to_string(),
+        status: data.to_string(),
+    })
 }
 
 #[tauri::command]

@@ -56,7 +56,7 @@ interface ChatMessageRowProps {
   getSenderProfile: (
     kind: ChatSurfaceKind,
     conversationUlid: string,
-    senderDid: string,
+    senderId: string,
   ) => DesktopIMSenderProfileProjection;
   highlighted: boolean;
   message: ChatMessage;
@@ -279,7 +279,7 @@ function ThreadReplyPreviewList({
   getSenderProfile: (
     kind: ChatSurfaceKind,
     conversationUlid: string,
-    senderDid: string,
+    senderId: string,
   ) => DesktopIMSenderProfileProjection;
   isOwnRoot: boolean;
   messages: ChatMessage[];
@@ -388,7 +388,7 @@ function ThreadReplyPreviewList({
                 </Text>
               )}
               {previewMessages.map((reply) => {
-                const profile = getSenderProfile(activeKind, activeConversationId, reply.senderDid);
+                const profile = getSenderProfile(activeKind, activeConversationId, reply.senderId);
                 const ownReply = isOwnMessage(reply, currentUserDid);
                 return (
                   <div
@@ -480,7 +480,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const { t } = useTranslation('chat');
   const isOwn = isOwnMessage(message, currentUserDid);
   const isGroup = !isFriendMessage(message);
-  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderDid);
+  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderId);
   const senderName = senderProfile.name;
   const senderAvatar = senderProfile.avatar;
   const replyToUlid = messageReplyToUlid(message);

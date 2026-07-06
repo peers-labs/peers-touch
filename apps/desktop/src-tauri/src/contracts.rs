@@ -275,6 +275,7 @@ pub struct KeyExchangeUploadInput {
 pub struct KeyExchangeFetchInput {
     pub did: String,
     pub device_id: Option<String>,
+    pub home_station_peer_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -357,6 +358,22 @@ pub struct GroupChatSendInput {
     pub attachments: Option<Vec<AttachmentInput>>,
     /// Optional base64 ciphertext envelope for E2E (group symmetric key); forwarded to Station JSON when set.
     pub encrypted_payload: Option<String>,
+    pub observed_membership_epoch: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupSkdmSubmitInput {
+    pub group_ulid: String,
+    pub membership_epoch: i64,
+    pub sender_did: String,
+    pub sender_key_id: u32,
+    pub recipient_did: String,
+    pub recipient_device_id: String,
+    pub recipient_home_station_peer_id: String,
+    /// Base64 of the already sealed SKDM carrier payload. Desktop must never
+    /// submit raw SenderKeyDistributionMessage bytes to Station.
+    pub encrypted_payload: String,
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1447,6 +1464,12 @@ pub struct GroupInviteInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupAddFederatedMemberInput {
+    pub group_ulid: String,
+    pub member: GroupChatFederatedActorInput,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupRemoveMemberInput {
     pub group_ulid: String,
     pub member_did: String,
@@ -1573,10 +1596,22 @@ pub struct ActorSearchUsersInput {
 // --- Group chat create / leave contracts ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatFederatedActorInput {
+    pub actor_did: String,
+    pub home_station_peer_id: String,
+    pub home_station_domain: Option<String>,
+    pub federated_handle: Option<String>,
+    pub actor_identity_public_key: Option<Vec<u8>>,
+    pub profile_version: Option<i64>,
+    pub federation_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupChatCreateGroupInput {
     pub name: String,
     pub description: Option<String>,
     pub member_dids: Option<Vec<String>>,
+    pub initial_federated_members: Option<Vec<GroupChatFederatedActorInput>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

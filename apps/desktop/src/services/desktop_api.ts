@@ -61,6 +61,7 @@ import {
   GetOfflineMessagesResponseSchema,
   AckOfflineMessagesResponseSchema,
   GetGroupStatsResponseSchema,
+  SubmitGroupSkdmEnvelopeResponseSchema,
 } from '../gen/proto/domain/chat/group_chat_pb';
 export type {
   ActorList,
@@ -148,6 +149,7 @@ export type {
   GetOfflineMessagesResponse,
   AckOfflineMessagesResponse,
   GetGroupStatsResponse,
+  SubmitGroupSkdmEnvelopeResponse,
 } from '../gen/proto/domain/chat/group_chat_pb';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -191,6 +193,26 @@ export interface ChatThreadCount {
   latestReplyUlid: string;
   latestReplyAt: number;
   unreadCount: number;
+}
+
+export interface GroupChatFederatedActorInput {
+  actorDid: string;
+  homeStationPeerId: string;
+  homeStationDomain?: string;
+  federatedHandle?: string;
+  actorIdentityPublicKey?: Uint8Array | number[];
+  profileVersion?: number | bigint;
+  federationId?: string;
+}
+
+interface GroupChatFederatedActorWireInput {
+  actor_did: string;
+  home_station_peer_id: string;
+  home_station_domain?: string;
+  federated_handle?: string;
+  actor_identity_public_key?: number[];
+  profile_version?: number;
+  federation_id?: string;
 }
 
 export interface DesktopNativeHostEventInput {
@@ -440,11 +462,32 @@ export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
     if (typeof response.data.status === 'string') {
       return fromJsonString(schema, response.data.status, { ignoreUnknownFields: true });
     }
+		throw new Error(`${command} returned invalid proto payload`);
   }
   if (response.error?.code === 'UNAUTHORIZED') {
     throw new AuthCommandException(response.error);
   }
   throw new Error(response.error?.message || `${command} failed`);
+}
+
+function normalizeGroupChatFederatedActors(
+  actors?: GroupChatFederatedActorInput[],
+): GroupChatFederatedActorWireInput[] | undefined {
+  if (!actors || actors.length === 0) {
+    return undefined;
+  }
+  return actors.map((actor) => ({
+    actor_did: actor.actorDid,
+    home_station_peer_id: actor.homeStationPeerId,
+    home_station_domain: actor.homeStationDomain,
+    federated_handle: actor.federatedHandle,
+    actor_identity_public_key: actor.actorIdentityPublicKey
+      ? Array.from(actor.actorIdentityPublicKey)
+      : undefined,
+    profile_version:
+      actor.profileVersion == null ? undefined : Number(actor.profileVersion),
+    federation_id: actor.federationId,
+  }));
 }
 
 async function invokeAppResultStub<TOut>(command: string, payload?: Record<string, unknown>): Promise<TOut> {
@@ -4829,6 +4872,7 @@ export const api = {
     attachments?: ChatAttachmentInput[],
     encryptedPayload?: string,
     threadRootUlid?: string,
+    observedMembershipEpoch?: number | bigint,
   ) =>
     invokeRustProto('group_chat_send_message', SendGroupMessageResponseSchema, {
       group_ulid: groupUlid,
@@ -4842,6 +4886,30 @@ export const api = {
       ...(encryptedPayload != null && encryptedPayload !== ''
         ? { encrypted_payload: encryptedPayload }
         : {}),
+      observed_membership_epoch: Number(observedMembershipEpoch ?? 0),
+    }),
+
+  groupChatSubmitSkdmEnvelope: (input: {
+    groupUlid: string;
+    membershipEpoch: number | bigint;
+    senderDid: string;
+    senderKeyId: number;
+    recipientDid: string;
+    recipientDeviceId: string;
+    recipientHomeStationPeerId: string;
+    encryptedPayload: string;
+    idempotencyKey?: string;
+  }) =>
+    invokeRustProto('group_chat_submit_skdm_envelope', SubmitGroupSkdmEnvelopeResponseSchema, {
+      group_ulid: input.groupUlid,
+      membership_epoch: Number(input.membershipEpoch),
+      sender_did: input.senderDid,
+      sender_key_id: input.senderKeyId,
+      recipient_did: input.recipientDid,
+      recipient_device_id: input.recipientDeviceId,
+      recipient_home_station_peer_id: input.recipientHomeStationPeerId,
+      encrypted_payload: input.encryptedPayload,
+      idempotency_key: input.idempotencyKey,
     }),
 
   groupChatUnreadCount: (groupUlid?: string) =>
@@ -4860,8 +4928,18 @@ export const api = {
       'group_chat_sync_from_station_scoped', { group_ulid: groupUlid, limit, max_pages: maxPages },
     ),
 
-  groupChatCreateGroup: (name: string, description?: string, memberDids?: string[]) =>
-    invokeRustProto('group_chat_create_group', CreateGroupResponseSchema, { name, description, member_dids: memberDids }),
+  groupChatCreateGroup: (
+    name: string,
+    description?: string,
+    memberDids?: string[],
+    initialFederatedMembers?: GroupChatFederatedActorInput[],
+  ) =>
+    invokeRustProto('group_chat_create_group', CreateGroupResponseSchema, {
+      name,
+      description,
+      member_dids: memberDids,
+      initial_federated_members: normalizeGroupChatFederatedActors(initialFederatedMembers),
+    }),
 
   groupChatGetGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_get_group', GetGroupResponseSchema, { group_ulid: groupUlid }),
@@ -4876,6 +4954,15 @@ export const api = {
 
   groupChatInviteToGroup: (groupUlid: string, memberDids: string[]) =>
     invokeRustProto('group_chat_invite_to_group', InviteToGroupResponseSchema, { group_ulid: groupUlid, member_dids: memberDids }),
+
+  groupChatAddFederatedMember: (groupUlid: string, member: GroupChatFederatedActorInput) =>
+    invokeRustDataFromStatus<{
+      group_ulid: string;
+      member: GroupChatFederatedActorWireInput;
+    }, { success: boolean; group?: Record<string, unknown>; member?: Record<string, unknown> }>(
+      'group_chat_add_federated_member',
+      { group_ulid: groupUlid, member: normalizeGroupChatFederatedActors([member])![0] },
+    ),
 
   groupChatJoinGroup: (groupUlid: string, invitationUlid?: string) =>
     invokeRustProto('group_chat_join_group', JoinGroupResponseSchema, { group_ulid: groupUlid, invitation_ulid: invitationUlid }),
@@ -5099,10 +5186,14 @@ export const api = {
       bundle,
     ),
 
-  keyExchangeFetchBundle: (did: string, deviceId?: string) =>
-    invokeRustDataFromStatus<{ did: string; device_id?: string }, KeyExchangeFetchBundlesResponse>(
+  keyExchangeFetchBundle: (did: string, deviceId?: string, homeStationPeerId?: string) =>
+    invokeRustDataFromStatus<{ did: string; device_id?: string; home_station_peer_id?: string }, KeyExchangeFetchBundlesResponse>(
       'key_exchange_fetch_bundle',
-      { did, ...(deviceId != null && deviceId !== '' ? { device_id: deviceId } : {}) },
+      {
+        did,
+        ...(deviceId != null && deviceId !== '' ? { device_id: deviceId } : {}),
+        ...(homeStationPeerId != null && homeStationPeerId !== '' ? { home_station_peer_id: homeStationPeerId } : {}),
+      },
     ),
 
   accountGetDeviceId: () =>

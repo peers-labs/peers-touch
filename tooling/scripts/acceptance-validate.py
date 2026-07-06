@@ -22,6 +22,7 @@ ALLOWED_GATE_TIERS = {
 ALLOWED_GATE_ENVIRONMENTS = {
     "local",
     "fedp5",
+    "home-station",
     "local-desktop-gateway",
     "local-desktop-web-gateway",
 }

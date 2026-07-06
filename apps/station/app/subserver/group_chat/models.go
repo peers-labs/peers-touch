@@ -3,30 +3,38 @@ package group_chat
 import "time"
 
 type groupModel struct {
-	ID          uint      `gorm:"column:id;primaryKey"`
-	ULID        string    `gorm:"column:ulid;size:64;uniqueIndex"`
-	Name        string    `gorm:"column:name;size:255;index"`
-	Description string    `gorm:"column:description;type:text"`
-	OwnerDID    string    `gorm:"column:owner_did;size:255;index"`
-	MemberCount int32     `gorm:"column:member_count"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at"`
+	ID              uint       `gorm:"column:id;primaryKey"`
+	ULID            string     `gorm:"column:ulid;size:64;uniqueIndex"`
+	Name            string     `gorm:"column:name;size:255;index"`
+	Description     string     `gorm:"column:description;type:text"`
+	OwnerDID        string     `gorm:"column:owner_did;size:255;index"`
+	MemberCount     int32      `gorm:"column:member_count"`
+	Status          string     `gorm:"column:status;size:32;index;default:'active'"`
+	DissolvedAt     *time.Time `gorm:"column:dissolved_at;index"`
+	MembershipEpoch int64      `gorm:"column:membership_epoch;default:1"`
+	CreatedAt       time.Time  `gorm:"column:created_at"`
+	UpdatedAt       time.Time  `gorm:"column:updated_at"`
 }
 
 func (groupModel) TableName() string { return "group_chat_groups" }
 
 type memberModel struct {
-	ID         uint       `gorm:"column:id;primaryKey"`
-	GroupULID  string     `gorm:"column:group_ulid;size:64;index:idx_gc_member,priority:1"`
-	ActorDID   string     `gorm:"column:actor_did;size:255;index:idx_gc_member,priority:2"`
-	Role       int32      `gorm:"column:role"`
-	Nickname   string     `gorm:"column:nickname;size:255"`
-	Muted      bool       `gorm:"column:muted"`
-	MutedUntil *time.Time `gorm:"column:muted_until"`
-	JoinedAt   time.Time  `gorm:"column:joined_at"`
-	InvitedBy  string     `gorm:"column:invited_by;size:255"`
-	CreatedAt  time.Time  `gorm:"column:created_at"`
-	UpdatedAt  time.Time  `gorm:"column:updated_at"`
+	ID                     uint       `gorm:"column:id;primaryKey"`
+	GroupULID              string     `gorm:"column:group_ulid;size:64;index:idx_gc_member,priority:1"`
+	ActorDID               string     `gorm:"column:actor_did;size:255;index:idx_gc_member,priority:2"`
+	ActorHomeStationPeerID string     `gorm:"column:actor_home_station_peer_id;size:255;index"`
+	ActorHomeStationDomain string     `gorm:"column:actor_home_station_domain;size:255"`
+	ActorFederatedHandle   string     `gorm:"column:actor_federated_handle;size:255"`
+	ActorProfileVersion    int64      `gorm:"column:actor_profile_version"`
+	ActorFederationID      string     `gorm:"column:actor_federation_id;size:255"`
+	Role                   int32      `gorm:"column:role"`
+	Nickname               string     `gorm:"column:nickname;size:255"`
+	Muted                  bool       `gorm:"column:muted"`
+	MutedUntil             *time.Time `gorm:"column:muted_until"`
+	JoinedAt               time.Time  `gorm:"column:joined_at"`
+	InvitedBy              string     `gorm:"column:invited_by;size:255"`
+	CreatedAt              time.Time  `gorm:"column:created_at"`
+	UpdatedAt              time.Time  `gorm:"column:updated_at"`
 }
 
 func (memberModel) TableName() string { return "group_chat_members" }
@@ -109,6 +117,114 @@ type outboxModel struct {
 
 func (outboxModel) TableName() string { return "group_chat_outbox" }
 
+type federationOutboxModel struct {
+	ID                     uint       `gorm:"column:id;primaryKey"`
+	EventULID              string     `gorm:"column:event_ulid;size:64;uniqueIndex:idx_gcfed_outbox_event_target,priority:1;index"`
+	GroupULID              string     `gorm:"column:group_ulid;size:64;index"`
+	Seq                    int64      `gorm:"column:seq;index"`
+	TargetStationPeerID    string     `gorm:"column:target_station_peer_id;size:255;uniqueIndex:idx_gcfed_outbox_event_target,priority:2;index"`
+	AuthorityStationPeerID string     `gorm:"column:authority_station_peer_id;size:255;index"`
+	AuthorityEpoch         int64      `gorm:"column:authority_epoch;default:1"`
+	Status                 string     `gorm:"column:status;size:32;index"`
+	AttemptCount           int        `gorm:"column:attempt_count"`
+	NextAttemptAt          *time.Time `gorm:"column:next_attempt_at;index"`
+	LastError              string     `gorm:"column:last_error;type:text"`
+	Payload                string     `gorm:"column:payload;type:text"`
+	CreatedAt              time.Time  `gorm:"column:created_at"`
+	UpdatedAt              time.Time  `gorm:"column:updated_at"`
+}
+
+func (federationOutboxModel) TableName() string {
+	return "group_chat_federation_outbox"
+}
+
+type groupProposalOutboxModel struct {
+	ID                      uint       `gorm:"column:id;primaryKey"`
+	ProposalULID            string     `gorm:"column:proposal_ulid;size:64;uniqueIndex"`
+	GroupULID               string     `gorm:"column:group_ulid;size:64;index"`
+	ActorDID                string     `gorm:"column:actor_did;size:255;index"`
+	ActorHomeStationPeerID  string     `gorm:"column:actor_home_station_peer_id;size:255;index"`
+	AuthorityStationPeerID  string     `gorm:"column:authority_station_peer_id;size:255;index"`
+	AuthorityEpoch          int64      `gorm:"column:authority_epoch;default:1"`
+	ObservedMembershipEpoch int64      `gorm:"column:observed_membership_epoch;index"`
+	Command                 int32      `gorm:"column:command;index"`
+	IdempotencyKey          string     `gorm:"column:idempotency_key;size:255;uniqueIndex"`
+	Status                  string     `gorm:"column:status;size:32;index"`
+	AttemptCount            int        `gorm:"column:attempt_count"`
+	NextAttemptAt           *time.Time `gorm:"column:next_attempt_at;index"`
+	LastError               string     `gorm:"column:last_error;type:text"`
+	Payload                 string     `gorm:"column:payload;type:text"`
+	CreatedAt               time.Time  `gorm:"column:created_at"`
+	UpdatedAt               time.Time  `gorm:"column:updated_at"`
+}
+
+func (groupProposalOutboxModel) TableName() string {
+	return "group_chat_proposal_outbox"
+}
+
+type groupSkdmOutboxModel struct {
+	ID                         uint       `gorm:"column:id;primaryKey"`
+	OutboxULID                 string     `gorm:"column:outbox_ulid;size:64;uniqueIndex"`
+	GroupULID                  string     `gorm:"column:group_ulid;size:64;index"`
+	MembershipEpoch            int64      `gorm:"column:membership_epoch;index"`
+	SenderDID                  string     `gorm:"column:sender_did;size:255;index"`
+	SenderKeyID                uint32     `gorm:"column:sender_key_id;index"`
+	SenderHomeStationPeerID    string     `gorm:"column:sender_home_station_peer_id;size:255;index"`
+	RecipientDID               string     `gorm:"column:recipient_did;size:255;index"`
+	RecipientDeviceID          string     `gorm:"column:recipient_device_id;size:255;index"`
+	RecipientHomeStationPeerID string     `gorm:"column:recipient_home_station_peer_id;size:255;index"`
+	IdempotencyKey             string     `gorm:"column:idempotency_key;size:255;uniqueIndex"`
+	Status                     string     `gorm:"column:status;size:32;index"`
+	AttemptCount               int        `gorm:"column:attempt_count"`
+	NextAttemptAt              *time.Time `gorm:"column:next_attempt_at;index"`
+	LastError                  string     `gorm:"column:last_error;type:text"`
+	EncryptedPayload           []byte     `gorm:"column:encrypted_payload;type:bytea"`
+	CreatedAt                  time.Time  `gorm:"column:created_at"`
+	UpdatedAt                  time.Time  `gorm:"column:updated_at"`
+}
+
+func (groupSkdmOutboxModel) TableName() string {
+	return "group_chat_skdm_outbox"
+}
+
+type groupEventModel struct {
+	ID                     uint      `gorm:"column:id;primaryKey"`
+	EventULID              string    `gorm:"column:event_ulid;size:64;uniqueIndex"`
+	GroupULID              string    `gorm:"column:group_ulid;size:64;uniqueIndex:idx_gc_event_seq,priority:1;index"`
+	Seq                    int64     `gorm:"column:seq;uniqueIndex:idx_gc_event_seq,priority:2"`
+	PrevHash               string    `gorm:"column:prev_hash;size:64"`
+	EventHash              string    `gorm:"column:event_hash;size:64;uniqueIndex"`
+	EventType              string    `gorm:"column:event_type;size:128;index"`
+	ActorDID               string    `gorm:"column:actor_did;size:255;index"`
+	MessageULID            string    `gorm:"column:message_ulid;size:64;index"`
+	MembershipEpoch        int64     `gorm:"column:membership_epoch;index"`
+	AuthorityStationPeerID string    `gorm:"column:authority_station_peer_id;size:255;index"`
+	AuthorityEpoch         int64     `gorm:"column:authority_epoch;default:1"`
+	ProposalULID           string    `gorm:"column:proposal_ulid;size:64;index"`
+	IdempotencyKey         string    `gorm:"column:idempotency_key;size:255;uniqueIndex:idx_gc_event_idempotency"`
+	Payload                string    `gorm:"column:payload;type:text"`
+	CreatedAt              time.Time `gorm:"column:created_at"`
+}
+
+func (groupEventModel) TableName() string { return "group_chat_events" }
+
+type groupFollowerProjectionModel struct {
+	ID                     uint      `gorm:"column:id;primaryKey"`
+	GroupULID              string    `gorm:"column:group_ulid;size:64;uniqueIndex:idx_gc_follower_group_authority,priority:1;index"`
+	AuthorityStationPeerID string    `gorm:"column:authority_station_peer_id;size:255;uniqueIndex:idx_gc_follower_group_authority,priority:2;index"`
+	AuthorityEpoch         int64     `gorm:"column:authority_epoch;default:1"`
+	LastSeq                int64     `gorm:"column:last_seq"`
+	LastEventHash          string    `gorm:"column:last_event_hash;size:64"`
+	Status                 string    `gorm:"column:status;size:32;index"`
+	ProtectionReason       string    `gorm:"column:protection_reason;type:text"`
+	CreatedAt              time.Time `gorm:"column:created_at"`
+	UpdatedAt              time.Time `gorm:"column:updated_at"`
+}
+
+func (groupFollowerProjectionModel) TableName() string {
+	return "group_chat_follower_projections"
+}
+
 type invitationModel struct {
 	ID         uint      `gorm:"column:id;primaryKey"`
 	ULID       string    `gorm:"column:ulid;size:64;uniqueIndex"`
@@ -116,6 +232,7 @@ type invitationModel struct {
 	InviterDID string    `gorm:"column:inviter_did;size:255;index"`
 	InviteeDID string    `gorm:"column:invitee_did;size:255;index"`
 	Status     int32     `gorm:"column:status"`
+	ExpireAt   time.Time `gorm:"column:expire_at;index"`
 	CreatedAt  time.Time `gorm:"column:created_at"`
 	UpdatedAt  time.Time `gorm:"column:updated_at"`
 }

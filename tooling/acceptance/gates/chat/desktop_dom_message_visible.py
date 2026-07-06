@@ -102,6 +102,11 @@ def install_tauri_app_result_bridge(session: Any, helpers: Any, gateway_url: str
     writeVarint(out, 1);
   }};
   const writeMessage = (out, field, messageBytes) => writeBytes(out, field, messageBytes);
+  const bytesFromBase64 = (value) => {{
+    if (!value) return [];
+    const binary = atob(String(value));
+    return Array.from(binary, (ch) => ch.charCodeAt(0));
+  }};
   const enumValue = (value, values) => {{
     if (typeof value === 'number') return value;
     if (typeof value === 'string') return values[value] || 0;
@@ -150,6 +155,55 @@ def install_tauri_app_result_bridge(session: Any, helpers: Any, gateway_url: str
     writeString(out, 18, raw.thread_root_ulid || raw.threadRootUlid);
     return out;
   }};
+  const groupMessageType = (value) => enumValue(value, {{
+    GROUP_MESSAGE_TYPE_TEXT: 1,
+    GROUP_MESSAGE_TYPE_IMAGE: 2,
+    GROUP_MESSAGE_TYPE_FILE: 3,
+    GROUP_MESSAGE_TYPE_AUDIO: 4,
+    GROUP_MESSAGE_TYPE_VIDEO: 5,
+  }});
+  const groupRole = (value) => enumValue(value, {{
+    GROUP_ROLE_MEMBER: 1,
+    GROUP_ROLE_ADMIN: 2,
+    GROUP_ROLE_OWNER: 3,
+  }});
+  const encodeGroup = (raw) => {{
+    const out = [];
+    writeString(out, 1, raw.ulid);
+    writeString(out, 2, raw.name);
+    writeString(out, 3, raw.description);
+    writeString(out, 4, raw.avatar_cid || raw.avatarCid);
+    writeString(out, 5, raw.owner_did || raw.ownerDid);
+    writeInt(out, 16, raw.membership_epoch ?? raw.membershipEpoch);
+    return out;
+  }};
+  const encodeGroupMember = (raw) => {{
+    const out = [];
+    writeString(out, 1, raw.group_ulid || raw.groupUlid);
+    writeString(out, 2, raw.actor_did || raw.actorDid);
+    writeInt(out, 3, groupRole(raw.role));
+    writeString(out, 4, raw.nickname);
+    writeBool(out, 5, raw.muted);
+    writeString(out, 8, raw.invited_by || raw.invitedBy);
+    writeString(out, 9, raw.actor_home_station_peer_id || raw.actorHomeStationPeerId);
+    writeString(out, 10, raw.actor_home_station_domain || raw.actorHomeStationDomain);
+    return out;
+  }};
+  const encodeGroupMessage = (raw) => {{
+    const out = [];
+    writeString(out, 1, raw.ulid);
+    writeString(out, 2, raw.group_ulid || raw.groupUlid);
+    writeString(out, 3, raw.sender_did || raw.senderDid);
+    writeInt(out, 4, groupMessageType(raw.type));
+    writeString(out, 5, raw.content);
+    writeString(out, 7, raw.reply_to_ulid || raw.replyToUlid);
+    for (const item of raw.mentioned_dids || raw.mentionedDids || []) writeString(out, 8, item);
+    writeBool(out, 9, raw.mention_all || raw.mentionAll);
+    writeBool(out, 13, raw.recalled);
+    writeBytes(out, 14, bytesFromBase64(raw.encrypted_payload || raw.encryptedPayload));
+    writeString(out, 16, raw.thread_root_ulid || raw.threadRootUlid);
+    return out;
+  }};
   const encodeChatProtoCommand = (cmd, status) => {{
     const out = [];
     if (cmd === 'friend_chat_list_sessions') {{
@@ -163,6 +217,35 @@ def install_tauri_app_result_bridge(session: Any, helpers: Any, gateway_url: str
       writeString(out, 3, status.next_cursor || status.nextCursor);
       return out;
     }}
+    if (cmd === 'group_chat_list_groups') {{
+      for (const item of status.groups || []) writeMessage(out, 1, encodeGroup(item));
+      writeInt(out, 2, status.total);
+      return out;
+    }}
+    if (cmd === 'group_chat_get_members') {{
+      for (const item of status.members || []) writeMessage(out, 1, encodeGroupMember(item));
+      writeInt(out, 2, status.total);
+      return out;
+    }}
+    if (cmd === 'group_chat_list_messages') {{
+      for (const item of status.messages || []) writeMessage(out, 1, encodeGroupMessage(item));
+      writeBool(out, 2, status.has_more || status.hasMore);
+      writeString(out, 3, status.next_cursor || status.nextCursor);
+      return out;
+    }}
+    if (cmd === 'group_chat_send_message') {{
+      if (status.message) writeMessage(out, 1, encodeGroupMessage(status.message));
+      return out;
+    }}
+    if (cmd === 'group_chat_create_group') {{
+      if (status.group) writeMessage(out, 1, encodeGroup(status.group));
+      return out;
+    }}
+    if (cmd === 'group_chat_remove_member') {{
+      writeBool(out, 1, status.success);
+      return out;
+    }}
+    if (cmd === 'group_chat_submit_skdm_envelope') return out;
     if (cmd === 'friend_chat_ack_messages') return out;
     return null;
   }};
@@ -203,7 +286,18 @@ def install_tauri_app_result_bridge(session: Any, helpers: Any, gateway_url: str
       }}
       const envelope = await response.json();
       if (
-        (cmd === 'friend_chat_list_sessions' || cmd === 'friend_chat_list_messages' || cmd === 'friend_chat_ack_messages')
+        (
+          cmd === 'friend_chat_list_sessions'
+          || cmd === 'friend_chat_list_messages'
+          || cmd === 'friend_chat_ack_messages'
+          || cmd === 'group_chat_list_groups'
+          || cmd === 'group_chat_get_members'
+          || cmd === 'group_chat_list_messages'
+          || cmd === 'group_chat_send_message'
+          || cmd === 'group_chat_create_group'
+          || cmd === 'group_chat_remove_member'
+          || cmd === 'group_chat_submit_skdm_envelope'
+        )
         && envelope && envelope.ok && envelope.data && typeof envelope.data.status === 'string'
       ) {{
         const status = JSON.parse(envelope.data.status || '{{}}');

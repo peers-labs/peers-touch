@@ -332,6 +332,26 @@ pub fn snapshot_for_skdm(chain: &SenderChainState) -> SenderKeyDistributionPaylo
     }
 }
 
+/// Snapshot the message key that will be used by the next encrypt on
+/// this local sender chain.
+///
+/// Senders persist this key for their own just-authored message before
+/// returning the ciphertext. After the chain advances, a renderer reload
+/// no longer has the old chain key or the JS plaintext cache; the persisted
+/// key lets the local author decrypt their own history through the same
+/// skipped-key replay path receivers use for out-of-order delivery.
+pub fn current_message_key_snapshot(chain: &SenderChainState) -> SkippedMessageKey {
+    let (key, nonce) = message_keys(&chain.chain_key);
+    SkippedMessageKey {
+        group_ulid: chain.group_ulid.clone(),
+        sender_did: chain.sender_did.clone(),
+        sender_key_id: chain.sender_key_id,
+        counter: chain.counter,
+        key,
+        nonce,
+    }
+}
+
 /// Logical content of a `SenderKeyDistributionMessage`. Independent
 /// of the proto type so this module stays prost-free.
 #[derive(Clone, Debug, Zeroize, ZeroizeOnDrop)]
@@ -427,22 +447,6 @@ pub fn encrypt(
         ciphertext,
         signature: signature.to_bytes(),
     })
-}
-
-/// Snapshot the message key that will be used by the next encrypt on
-/// this local sender chain. The command layer persists this for
-/// self-authored history so a reloaded client can decrypt messages it
-/// sent earlier without relying on the in-memory JS decrypt cache.
-pub fn current_message_key_snapshot(chain: &SenderChainState) -> SkippedMessageKey {
-    let (key, nonce) = message_keys(&chain.chain_key);
-    SkippedMessageKey {
-        group_ulid: chain.group_ulid.clone(),
-        sender_did: chain.sender_did.clone(),
-        sender_key_id: chain.sender_key_id,
-        counter: chain.counter,
-        key,
-        nonce,
-    }
 }
 
 /// Result of a successful decrypt. Carries the plaintext alongside
