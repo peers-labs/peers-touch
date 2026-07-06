@@ -58,7 +58,7 @@ interface ThreadMessageItemProps {
   getSenderProfile: (
     kind: 'friend' | 'group',
     conversationUlid: string,
-    senderDid: string,
+    senderId: string,
   ) => DesktopIMSenderProfileProjection;
   message: ChatMessage;
   messages: ChatMessage[];
@@ -84,7 +84,7 @@ function ThreadMessageItem({
 }: ThreadMessageItemProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderDid);
+  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderId);
   const isOwn = isOwnMessage(message, currentUserDid);
   const isRecalled = isRecalledMessage(message);
   const sentMs = messageTimestampMs(message);

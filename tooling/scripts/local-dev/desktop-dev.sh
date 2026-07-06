@@ -26,10 +26,16 @@ case "$MODE" in
 esac
 
 export PEERS_STATION_URL="${PT_STATION_URL:-http://127.0.0.1:18080}"
+export STATION_HEALTHCHECK_URL="${PT_STATION_HEALTH_URL:-$PEERS_STATION_URL/api/oauth/providers}"
+export PEERS_STATION_MODE="${PT_STATION_MODE:-local}"
 export STATION_PORT="${PT_STATION_PORT:-18080}"
 
 # Ensure Station
-bash "$SCRIPT_DIR/station-dev.sh"
+if [[ "${PT_STATION_MODE:-local}" == "remote" && -z "${PT_STATION_DEPLOY_ENV:-}" ]]; then
+  bash "$SCRIPT_DIR/station-check.sh"
+else
+  bash "$SCRIPT_DIR/station-dev.sh"
+fi
 
 # Delegate to existing desktop script
 DESKTOP_SCRIPT="$PROJECT_ROOT/tooling/scripts/dev-desktop-${MODE}.sh"

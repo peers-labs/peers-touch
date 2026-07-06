@@ -823,6 +823,7 @@ pub struct KeyExchangeUploadInput {
 pub struct KeyExchangeFetchInput {
     pub did: String,
     pub device_id: Option<String>,
+    pub home_station_peer_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -867,6 +868,7 @@ pub struct GroupChatSendInput {
     pub mention_all: Option<bool>,
     pub attachments: Option<Vec<AttachmentInput>>,
     pub encrypted_payload: Option<String>,
+    pub observed_membership_epoch: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
