@@ -350,6 +350,53 @@ func TestPublish_FanOutToMultipleSubscribers(t *testing.T) {
 	}
 }
 
+func TestPublishToDevice_TargetsLiveAndReplay(t *testing.T) {
+	bus := newTestBus(t)
+	floorID, err := bus.Publish("alice", msg("floor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s1, _, _ := bus.Subscribe(ctx, "alice", "dev-1", "")
+	s2, _, _ := bus.Subscribe(ctx, "alice", "dev-2", "")
+
+	if _, err := bus.PublishToDevice("alice", "dev-1", msg("device-only")); err != nil {
+		t.Fatal(err)
+	}
+
+	got := drainN(t, s1, 1, 50*time.Millisecond)
+	if len(got) != 1 || got[0].GetMessage().GetUlid() != "device-only" {
+		t.Fatalf("target device got %#v, want device-only", got)
+	}
+	select {
+	case ev := <-s2.Events:
+		t.Fatalf("non-target device received %#v", ev)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	_, _ = bus.Publish("alice", msg("broadcast"))
+	replayDev1, _, err := bus.Subscribe(ctx, "alice", "dev-1", floorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed := drainN(t, replayDev1, 2, 50*time.Millisecond)
+	if len(replayed) != 2 ||
+		replayed[0].GetMessage().GetUlid() != "device-only" ||
+		replayed[1].GetMessage().GetUlid() != "broadcast" {
+		t.Fatalf("target replay = %#v, want device-only then broadcast", replayed)
+	}
+
+	replayDev2, _, err := bus.Subscribe(ctx, "alice", "dev-2", floorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed = drainN(t, replayDev2, 1, 50*time.Millisecond)
+	if len(replayed) != 1 || replayed[0].GetMessage().GetUlid() != "broadcast" {
+		t.Fatalf("non-target replay = %#v, want only broadcast", replayed)
+	}
+}
+
 func TestPublish_DropsWedgedSubscriber(t *testing.T) {
 	// Queue capacity 1 — second publish without a reader wedges the channel.
 	bus := newTestBus(t, WithSubscriberQueue(1))

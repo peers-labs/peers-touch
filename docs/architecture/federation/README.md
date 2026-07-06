@@ -21,6 +21,7 @@
 本文档集不定义：
 
 - 普通聊天、点赞、评论、动态等社交数据协议。
+- 联邦 IM 的群 authority、Group Event Log、Sender Key 跨站路由；见 `../federated-im/README.md`。
 - 具体 Desktop 页面实现细节。
 - 具体 Station handler、repository、database migration 实现。
 - 完整公链、token、gas、PoW/PoS 或通用区块链系统。
@@ -65,6 +66,7 @@
 | [data-model.md](./data-model.md) | Federation、ledger、membership、role、scope、sync 的概念数据模型 |
 | [integration.md](./integration.md) | 与 Station、Catalog、Resolver、ActivityPub、Client projection 的映射 |
 | [execution-plans/phase-1-federation-ledger.md](./execution-plans/phase-1-federation-ledger.md) | Federation Ledger 最小闭环落地计划 |
+| [../federated-im/README.md](../federated-im/README.md) | 联邦 IM 架构：跨 Station 群/私聊、group authority、事件日志、Sender Key 边界 |
 
 ---
 
