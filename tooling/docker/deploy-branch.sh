@@ -17,7 +17,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DEPLOY_ROOT="${PEERS_DEPLOY_ROOT:-$HOME/peers-touch}"
 REPO_URL="${2:-git@github.com:nicepeerslabs/peers-touch.git}"
 BRANCH="${1:?Usage: deploy-branch.sh <branch> [repo_url]}"

@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DESKTOP_DIR="$PROJECT_ROOT/apps/desktop"
 
-PROFILE="${PT_PROFILE:-desktop-web}"
+PROFILE="${PT_PROFILE:-${PROFILE:-desktop-web}}"
 GATEWAY_PORT="${GATEWAY_PORT:-3031}"
 WEB_PORT="${WEB_PORT:-3211}"
 WEB_URL="http://localhost:$WEB_PORT"
@@ -32,7 +32,18 @@ if [[ ! -d "$DESKTOP_DIR" ]]; then
 fi
 
 # ── 1. Station ────────────────────────────────────────────────
-ensure_station_ready "$PROJECT_ROOT"
+if [[ "${PEERS_STATION_MODE:-local}" == "remote" ]]; then
+  station_target="${PEERS_STATION_URL:-http://127.0.0.1:18080}"
+  station_check_url="${STATION_HEALTHCHECK_URL:-$station_target/api/oauth/providers}"
+  if curl -fsS -m 5 "$station_check_url" >/dev/null 2>&1; then
+    echo "[INFO] remote station is ready: $station_check_url"
+  else
+    echo "[ERROR] remote station is not reachable: $station_check_url"
+    exit 1
+  fi
+else
+  ensure_station_ready "$PROJECT_ROOT"
+fi
 
 # ── 2. Vite (frontend dev server) ────────────────────────────
 ensure_desktop_vite_ready "$DESKTOP_DIR" "$WEB_PORT" "$GATEWAY_PORT" "$PROFILE"

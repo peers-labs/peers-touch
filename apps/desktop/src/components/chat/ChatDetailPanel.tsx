@@ -31,12 +31,10 @@ import {
   X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl, useSocialChatStore } from '../../store/socialChat';
-import { CHAT_BACKGROUND_OPTIONS } from '../../store/socialProjection';
+import { CHAT_BACKGROUND_OPTIONS, type DesktopIMMessageProjection } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
-import type {
-  FriendChatSession,
-} from '../../gen/proto/domain/chat/friend_chat_pb';
+import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';
 import {
   GroupRole,
   type Group,
@@ -48,7 +46,6 @@ import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicPro
 import { getGroupMemberControlState } from './chatGroupPermissions';
 import { presentError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
-import type { DesktopIMMessageProjection } from '../../store/socialProjection';
 
 const { Text } = Typography;
 
