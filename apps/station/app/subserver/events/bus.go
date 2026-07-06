@@ -53,6 +53,11 @@ type EventBus interface {
 	// multi-device echo) safely.
 	Publish(actorID string, ev *realtime.StreamEvent) (string, error)
 
+	// PublishToDevice is the per-device variant of Publish. It stamps and
+	// buffers the event on the actor stream, but live fan-out and cursor
+	// replay are restricted to subscribers whose DeviceID matches deviceID.
+	PublishToDevice(actorID, deviceID string, ev *realtime.StreamEvent) (string, error)
+
 	// Subscribe registers a new realtime stream subscriber. cursor is
 	// the client's Last-Event-ID; pass empty string for first connect.
 	//
@@ -215,8 +220,13 @@ type eventBus struct {
 // itself.
 type actorState struct {
 	mu     sync.Mutex
-	buffer []*realtime.StreamEvent // oldest first; len <= ringSize
+	buffer []bufferedEvent // oldest first; len <= ringSize
 	subs   map[*Subscription]struct{}
+}
+
+type bufferedEvent struct {
+	ev             *realtime.StreamEvent
+	targetDeviceID string
 }
 
 func (b *eventBus) getOrCreateActor(actorID string) *actorState {
@@ -241,6 +251,18 @@ func (b *eventBus) getOrCreateActor(actorID string) *actorState {
 
 // Publish — see EventBus.
 func (b *eventBus) Publish(actorID string, ev *realtime.StreamEvent) (string, error) {
+	return b.publish(actorID, "", ev)
+}
+
+// PublishToDevice — see EventBus.
+func (b *eventBus) PublishToDevice(actorID, deviceID string, ev *realtime.StreamEvent) (string, error) {
+	if deviceID == "" {
+		return "", fmt.Errorf("events: empty deviceID")
+	}
+	return b.publish(actorID, deviceID, ev)
+}
+
+func (b *eventBus) publish(actorID, targetDeviceID string, ev *realtime.StreamEvent) (string, error) {
 	if actorID == "" {
 		return "", fmt.Errorf("events: empty actorID")
 	}
@@ -277,7 +299,7 @@ func (b *eventBus) Publish(actorID string, ev *realtime.StreamEvent) (string, er
 	}
 
 	// Append to ring buffer.
-	a.buffer = append(a.buffer, ev)
+	a.buffer = append(a.buffer, bufferedEvent{ev: ev, targetDeviceID: targetDeviceID})
 	if len(a.buffer) > b.cfg.ringSize {
 		// Drop oldest in-place to bound allocation churn under hot fan-out.
 		copy(a.buffer, a.buffer[1:])
@@ -286,6 +308,9 @@ func (b *eventBus) Publish(actorID string, ev *realtime.StreamEvent) (string, er
 
 	// Fan out non-blocking. A wedged subscriber gets dropped per §2.6.
 	for sub := range a.subs {
+		if targetDeviceID != "" && sub.DeviceID != targetDeviceID {
+			continue
+		}
 		select {
 		case sub.send <- ev:
 		default:
@@ -340,7 +365,7 @@ func (b *eventBus) Subscribe(ctx context.Context, actorID, deviceID, cursor stri
 	// This preserves ordering: every event the subscriber sees came
 	// either from replay (with eventId <= newest at subscribe time) or
 	// from live publish (with eventId strictly after).
-	replay, err := b.replayLocked(a, actorID, cursor)
+	replay, err := b.replayLocked(a, actorID, deviceID, cursor)
 	if err != nil {
 		a.mu.Unlock()
 		return nil, nil, err
@@ -392,7 +417,7 @@ func (b *eventBus) Subscribe(ctx context.Context, actorID, deviceID, cursor stri
 //   - cursor matches the newest event: no replay.
 //   - cursor at-or-after newest (e.g. process restart):
 //     emit a single Resync sentinel.
-func (b *eventBus) replayLocked(a *actorState, actorID, cursor string) ([]*realtime.StreamEvent, error) {
+func (b *eventBus) replayLocked(a *actorState, actorID, deviceID, cursor string) ([]*realtime.StreamEvent, error) {
 	if cursor == "" {
 		return nil, nil
 	}
@@ -422,8 +447,8 @@ func (b *eventBus) replayLocked(a *actorState, actorID, cursor string) ([]*realt
 	if len(a.buffer) == 0 {
 		return []*realtime.StreamEvent{newResync("", "buffer empty (process restart?)", b)}, nil
 	}
-	newest := a.buffer[len(a.buffer)-1].EventId
-	oldest := a.buffer[0].EventId
+	newest := a.buffer[len(a.buffer)-1].ev.EventId
+	oldest := a.buffer[0].ev.EventId
 
 	if cursor == newest {
 		return nil, nil
@@ -444,13 +469,18 @@ func (b *eventBus) replayLocked(a *actorState, actorID, cursor string) ([]*realt
 	// the search returns the insertion index which is exactly what we
 	// want for "replay everything after this".
 	idx := sort.Search(len(a.buffer), func(i int) bool {
-		return a.buffer[i].EventId > cursor
+		return a.buffer[i].ev.EventId > cursor
 	})
 	if idx >= len(a.buffer) {
 		return nil, nil
 	}
-	out := make([]*realtime.StreamEvent, len(a.buffer)-idx)
-	copy(out, a.buffer[idx:])
+	out := make([]*realtime.StreamEvent, 0, len(a.buffer)-idx)
+	for _, item := range a.buffer[idx:] {
+		if item.targetDeviceID != "" && item.targetDeviceID != deviceID {
+			continue
+		}
+		out = append(out, item.ev)
+	}
 	return out, nil
 }
 

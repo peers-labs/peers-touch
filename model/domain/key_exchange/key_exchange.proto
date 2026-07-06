@@ -43,6 +43,10 @@ message FetchKeyBundleRequest {
   // When empty, return all bundles for the DID. When set, only that device_id
   // (after server-side normalization matching upload).
   string device_id = 2;
+  // Optional Station peer id for federated lookup. When present and different
+  // from the local Station, the serving Station relay-forwards the request to
+  // the actor's home Station under a peer-JWT protected fetch route.
+  string home_station_peer_id = 3;
 }
 
 message FetchKeyBundleResponse {

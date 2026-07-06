@@ -40,6 +40,13 @@ import (
 // guard the adapter's error wiring.
 var ErrRelayNotConnected = errors.New("relay-client: not connected")
 
+// ForwardAuthorizationHeader carries the target-station Authorization value
+// through /relay/forward when the relay hop itself already consumes the
+// regular Authorization header for the relay-client bearer token. The
+// station-side relay-client loopback dispatcher rewrites this header back to
+// Authorization before calling the local HTTP server.
+const ForwardAuthorizationHeader = "X-Peers-Forward-Authorization"
+
 // RelayClientHandle is the read-only view federation consumers see.
 //
 // Implementations MUST be safe for concurrent use; the resolver may call

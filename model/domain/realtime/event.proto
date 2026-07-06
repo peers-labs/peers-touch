@@ -40,6 +40,8 @@ message StreamEvent {
     GroupMembershipChange group_membership_change   = 18;
     ConversationSettingsChanged conversation_settings_changed = 19;
     MomentEvent           moment                   = 20;
+    GroupFederationEvent  group_federation_event   = 21;
+      GroupSkdmEnvelopeDelivered group_skdm_envelope_delivered = 22;
   }
 }
 
@@ -244,6 +246,47 @@ message MomentEvent {
     COMMENTED = 3;
     REACTED = 4;
   }
+}
+
+// GroupFederationEvent notifies a member's Home Station client that a
+// committed authority-owned group event has been applied to the local
+// follower projection. It carries identifiers only; clients refresh the
+// group/message projection through group_chat APIs so Station remains
+// unable to read E2EE plaintext.
+message GroupFederationEvent {
+  string group_ulid = 1;
+  string event_ulid = 2;
+  int64 seq = 3;
+  string event_type = 4;
+  string authority_station_peer_id = 5;
+  int64 authority_epoch = 6;
+  string event_hash = 7;
+  string message_ulid = 8;
+  int64 membership_epoch = 9;
+  int64 committed_ts_unix_ms = 10;
+  string actor_did = 11;
+}
+
+// GroupSkdmEnvelopeDelivered notifies one actor stream that their Home
+// Station accepted an opaque, already sealed Sender Key Distribution
+// Message envelope for one recipient device.
+//
+// Station must not inspect or transform encrypted_payload. The target
+// client filters by recipient_device_id, opens encrypted_payload with
+// its local identity key, and installs the inner SenderKeyDistributionMessage
+// locally. Non-target devices for the same actor may see this envelope
+// on the actor-level stream, but cannot open it.
+message GroupSkdmEnvelopeDelivered {
+  string group_ulid = 1;
+  int64 membership_epoch = 2;
+  string sender_did = 3;
+  uint32 sender_key_id = 4;
+  string recipient_did = 5;
+  string recipient_device_id = 6;
+  string idempotency_key = 7;
+  bytes encrypted_payload = 8;
+  int64 delivered_ts_unix_ms = 9;
+  string sender_home_station_peer_id = 10;
 }
 
 // Resync is the server's only signal that the client's Last-Event-ID

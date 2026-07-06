@@ -22,7 +22,7 @@ import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 export interface MessagePreview {
   content: string;
   type: number;
-  senderDid: string;
+	senderId: string;
 }
 
 export interface DesktopUnifiedConversationLike {
@@ -138,7 +138,7 @@ export function previewFromMessage(message: SocialMessage): MessagePreview {
   return {
     content: message.content || attachmentName,
     type: Number(message.type ?? 1),
-    senderDid: message.senderDid ?? '',
+		senderId: message.senderDid ?? '',
   };
 }
 
@@ -157,7 +157,7 @@ export function projectDesktopIMConversation(conversation: DesktopUnifiedConvers
       ? {
         content: conversation.preview.content,
         type: conversation.preview.type,
-        senderId: conversation.preview.senderDid,
+			senderId: conversation.preview.senderId,
       }
       : undefined,
   });
