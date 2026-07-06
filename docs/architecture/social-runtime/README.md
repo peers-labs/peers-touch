@@ -22,7 +22,9 @@
 - Station 社交/聊天/通知子服务内部 DDD 设计。
 - Desktop 或 Mobile 的视觉设计细节。
 - iOS/Android push SDK、Desktop tray/menu 等宿主能力的具体插件实现。
-- Group chat、E2EE、offline queue 的完整协议细节；这些能力在本文档中只定义接入边界。
+- Group chat E2EE 密文格式细节；见 `docs/architecture/encryption/group-sender-keys.md`。
+- Group chat 生命周期业务真源；见 `group-lifecycle.md`。
+- 跨 Station / Federation IM 架构；见 `docs/architecture/federated-im/README.md`。
 
 ---
 
@@ -54,6 +56,8 @@ Peers-Touch 的社交能力需要在 Desktop 与 Mobile 上长期共同演进。
 | 文档 | 说明 |
 | --- | --- |
 | [design.md](./design.md) | 双端社交 runtime 架构、抽象层级、核心接口 |
+| [group-lifecycle.md](./group-lifecycle.md) | 群创建、加人、退群、解散、历史、事件、Sender Key 轮换的业务真源 |
+| [../federated-im/README.md](../federated-im/README.md) | 联邦 IM 架构：跨 Station 群/私聊、group authority、事件日志、Sender Key 边界 |
 | [decisions.md](./decisions.md) | Station 真源、Host Adapter、projection owner、防回退等关键决策 |
 | [integration.md](./integration.md) | 当前 Desktop/Mobile 文件映射、差异矩阵、迁移策略 |
 | [execution-plans/phase-1-runtime-alignment.md](./execution-plans/phase-1-runtime-alignment.md) | 第一阶段落地计划 |
@@ -71,3 +75,4 @@ Peers-Touch 的社交能力需要在 Desktop 与 Mobile 上长期共同演进。
 | `docs/architecture/runtime/desktop-runtime-architecture.md` | Desktop 多运行单元边界 |
 | `docs/architecture/notification/notification-architecture.md` | 通知系统真源 |
 | `docs/architecture/realtime/event-stream.md` | Realtime event stream 真源 |
+| `docs/architecture/encryption/group-sender-keys.md` | 群 Sender Keys 加密与 SKDM 分发设计 |

@@ -60,7 +60,7 @@ echo "════════════════════════�
 echo ""
 
 # ── Push source to remote ─────────────────────────────────────────────────────
-REMOTE_WORK="~/${DEPLOY_ROOT}/branches/${SAFE_BRANCH}"
+REMOTE_WORK="\$HOME/${DEPLOY_ROOT}/branches/${SAFE_BRANCH}"
 REMOTE_REPO="${REMOTE_WORK}/repo"
 
 echo "==> Creating remote directory..."
@@ -90,6 +90,7 @@ echo ""
 # ── Ensure .env exists on remote ──────────────────────────────────────────────
 REMOTE_IP=$(echo "$REMOTE_HOST" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+')
 
+# shellcheck disable=SC2087 # Local deployment values are intentionally expanded before the remote shell runs.
 ssh "$REMOTE_HOST" bash -s <<REMOTE_ENV
 mkdir -p ${REMOTE_WORK}
 [ -f ${REMOTE_WORK}/.auth_secret ] || openssl rand -hex 32 > ${REMOTE_WORK}/.auth_secret

@@ -154,7 +154,8 @@ VITE_ACCEPTANCE_HARNESS='${VITE_ACCEPTANCE_HARNESS:-}'
 VITE_PID='${VITE_PID}'
 EOF
 
-  for _ in {1..60}; do
+  local startup_timeout="${VITE_STARTUP_TIMEOUT_SECONDS:-180}"
+  for (( i=1; i<=startup_timeout; i++ )); do
     if ! ps -p "$VITE_PID" >/dev/null 2>&1; then
       echo "[ERROR] Vite process exited unexpectedly"
       return 1
@@ -166,6 +167,6 @@ EOF
     sleep 1
   done
 
-  echo "[ERROR] Vite did not become healthy within 60s"
+  echo "[ERROR] Vite did not become healthy within ${startup_timeout}s"
   return 1
 }

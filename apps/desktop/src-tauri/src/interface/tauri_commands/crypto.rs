@@ -1031,15 +1031,19 @@ pub fn crypto_group_encrypt(
             );
         }
     };
-    // Persist BEFORE returning the ciphertext. AES-GCM key reuse on
-    // a re-encrypt with the un-advanced chain would be catastrophic,
-    // so we'd rather fail the send than risk that.
+    // Persist BEFORE returning the ciphertext. Save the advanced chain and
+    // the just-used message key atomically: the advanced chain prevents
+    // AES-GCM key reuse, while the sent key lets a reloaded sender decrypt
+    // their own historical ciphertext after the JS plaintext cache is gone.
     if let Err(reason) =
         local_chat_store::apply_group_decrypt_outcome(scope.as_str(), &chain, &[sent_key], None)
     {
         return AppResult::fail(
             ErrorCode::InternalError,
-            format!("Failed to persist advanced chain and sent message key: {}", reason),
+            format!(
+                "Failed to persist advanced chain and sent message key: {}",
+                reason
+            ),
             None,
         );
     }

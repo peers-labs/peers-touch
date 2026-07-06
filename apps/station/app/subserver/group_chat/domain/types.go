@@ -8,6 +8,11 @@ const (
 	GroupRoleOwner  int32 = 3
 )
 
+const (
+	GroupStatusActive    = "active"
+	GroupStatusDissolved = "dissolved"
+)
+
 // Attachment references blob storage for a group message (e.g. image/file).
 //
 // Visibility echoes the OSS-side `oss_files.visibility` for the
@@ -27,13 +32,123 @@ type Attachment struct {
 }
 
 type Group struct {
-	ID          string
-	Name        string
-	Description string
-	OwnerDID    string
-	MemberCount int32
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID              string
+	Name            string
+	Description     string
+	OwnerDID        string
+	MemberCount     int32
+	Status          string
+	DissolvedAt     time.Time
+	MembershipEpoch int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+type FederatedActorRef struct {
+	ActorDID               string
+	HomeStationPeerID      string
+	HomeStationDomain      string
+	FederatedHandle        string
+	ActorIdentityPublicKey []byte
+	ProfileVersion         int64
+	FederationID           string
+}
+
+type GroupProposal struct {
+	ProposalULID            string
+	GroupID                 string
+	Actor                   FederatedActorRef
+	Command                 int32
+	CommandPayload          []byte
+	ObservedMembershipEpoch int64
+	AuthorityStationPeerID  string
+	AuthorityEpoch          int64
+	IdempotencyKey          string
+	SigningKeyID            string
+	Signature               []byte
+	CreatedAt               time.Time
+}
+
+type GroupProposalOutboxItem struct {
+	ProposalULID            string
+	GroupID                 string
+	Proposal                GroupProposal
+	Actor                   FederatedActorRef
+	Command                 int32
+	AuthorityStationPeerID  string
+	AuthorityEpoch          int64
+	ObservedMembershipEpoch int64
+	IdempotencyKey          string
+	Status                  string
+	AttemptCount            int
+	NextAttemptAt           time.Time
+	LastError               string
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+}
+
+type GroupEvent struct {
+	EventULID              string
+	GroupID                string
+	Seq                    int64
+	PrevHash               string
+	EventHash              string
+	EventType              string
+	Actor                  FederatedActorRef
+	MessageID              string
+	MembershipEpoch        int64
+	AuthorityStationPeerID string
+	AuthorityEpoch         int64
+	ProposalULID           string
+	IdempotencyKey         string
+	EventPayload           []byte
+	CreatedAt              time.Time
+}
+
+type FollowerProjection struct {
+	GroupID                string
+	AuthorityStationPeerID string
+	AuthorityEpoch         int64
+	LastSeq                int64
+	LastEventHash          string
+	Status                 string
+	ProtectionReason       string
+}
+
+type GroupSkdmEnvelope struct {
+	OutboxULID                 string
+	GroupID                    string
+	MembershipEpoch            int64
+	SenderDID                  string
+	SenderKeyID                uint32
+	SenderHomeStationPeerID    string
+	RecipientDID               string
+	RecipientDeviceID          string
+	RecipientHomeStationPeerID string
+	EncryptedPayload           []byte
+	IdempotencyKey             string
+	Status                     string
+	AttemptCount               int
+	NextAttemptAt              time.Time
+	LastError                  string
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
+}
+
+type FederationOutboxItem struct {
+	EventULID              string
+	GroupID                string
+	Seq                    int64
+	TargetStationPeerID    string
+	AuthorityStationPeerID string
+	AuthorityEpoch         int64
+	Status                 string
+	AttemptCount           int
+	NextAttemptAt          time.Time
+	LastError              string
+	Event                  GroupEvent
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 type Message struct {
@@ -88,6 +203,7 @@ type MutationOutcome struct {
 type Member struct {
 	GroupID    string
 	ActorDID   string
+	Actor      FederatedActorRef
 	Role       int32
 	Nickname   string
 	Muted      bool
@@ -102,6 +218,7 @@ type Invitation struct {
 	InviterDID string
 	InviteeDID string
 	Status     int32
+	ExpireAt   time.Time
 	CreatedAt  time.Time
 }
 

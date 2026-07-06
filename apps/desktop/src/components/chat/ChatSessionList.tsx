@@ -41,6 +41,7 @@ export function ChatSessionList() {
     groupUnreadCounts,
     lastPreviews,
     currentUserDid,
+    messages,
     activeTab,
     activeSessionUlid,
     activeGroupUlid,
@@ -66,7 +67,16 @@ export function ChatSessionList() {
 
   const conversations = useMemo(
     () => getIMConversations(),
-    [getIMConversations, sessions, groups, groupUnreadCounts, lastPreviews, currentUserDid, conversationLocalState],
+    [
+      getIMConversations,
+      sessions,
+      groups,
+      groupUnreadCounts,
+      lastPreviews,
+      currentUserDid,
+      conversationLocalState,
+      messages,
+    ],
   );
 
   const filteredItems = useMemo(() => {
@@ -283,21 +293,22 @@ export function ChatSessionList() {
 
               return (
                 <Dropdown key={`${c.kind}-${c.id}`} menu={buildContextMenu(c)} trigger={['contextMenu']}>
-                <Flexbox
-                  horizontal
-                  align="center"
-                  gap={10}
-                  data-chat-session-ulid={c.id}
-                  data-chat-session-kind={c.kind}
-                  onClick={() => handleSelect(c)}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    background: isActive ? token.colorPrimaryBg : 'transparent',
-                    transition: 'background 0.15s',
-                  }}
-                >
+                  <Flexbox
+                    horizontal
+                    align="center"
+                    gap={10}
+                    data-chat-conversation-kind={c.kind}
+                    data-chat-session-ulid={c.kind === 'friend' ? c.id : undefined}
+                    data-chat-group-ulid={c.kind === 'group' ? c.id : undefined}
+                    onClick={() => handleSelect(c)}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      cursor: 'pointer',
+                      background: isActive ? token.colorPrimaryBg : 'transparent',
+                      transition: 'background 0.15s',
+                    }}
+                  >
                   <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
 
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
