@@ -4,11 +4,11 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Input, toast } from '@lobehub/ui';
 import { theme } from 'antd';
 import { Search, X, Check } from 'lucide-react';
-import { peerOfSession, useSocialChatStore } from '../../store/socialChat';
+import { peerOfSession } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
-import { useSessionStore } from '../../store/session';
+import { useActiveChatSessionSlice, useActiveSocialChatSlice } from './useActiveSocialChatStore';
 
 interface Props {
   open: boolean;
@@ -31,8 +31,14 @@ function getFirstLetter(name: string): string {
 export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sessions, currentUserDid, loadGroups, selectGroup, setActiveTab } = useSocialChatStore();
-  const sessionActorId = useSessionStore((s) => s.currentUser?.actorId ?? null);
+  const { sessions, currentUserDid, loadGroups, selectGroup, setActiveTab } = useActiveSocialChatSlice((s) => ({
+    sessions: s.sessions,
+    currentUserDid: s.currentUserDid,
+    loadGroups: s.loadGroups,
+    selectGroup: s.selectGroup,
+    setActiveTab: s.setActiveTab,
+  }));
+  const sessionActorId = useActiveChatSessionSlice((s) => s.currentUser?.actorId ?? null);
   const ownDid = currentUserDid || sessionActorId;
 
   const [searchText, setSearchText] = useState('');

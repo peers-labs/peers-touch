@@ -1,0 +1,14 @@
+{
+  "service": "atelier",
+  "routes": {
+    "stationPrefix": "/applets/atelier/v1",
+    "publicPrefix": "/v1"
+  },
+  "deployment": {
+    "stationBundled": true,
+    "standalone": "planned"
+  },
+  "health": {
+    "path": "/healthz"
+  }
+}

@@ -2,9 +2,9 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-22 | **Updated**: 2026-06-22
+> **Created**: 2026-06-22 | **Updated**: 2026-07-05
 > **Owner**: Peers-Touch Agent Team
-> **关联原型**: `packages/prototypes/atelier`（`src/engine.ts` / `src/engineTrace.tsx`）、`packages/prototypes/agent-canvas`（`src/AgentCanvasPage.tsx` 引擎编排页）
+> **关联原型**: `packages/prototypes/desktop/applets/atelier`（`src/engine.ts` / `src/engineTrace.tsx`）、`packages/prototypes/agent-canvas`（`src/AgentCanvasPage.tsx` 引擎编排页）
 > **上游设计**: [design.md](../design.md) §3-4、[data-model.md](../data-model.md) §1.4 / §2.5、[functional-modules.md](./functional-modules.md) §7
 
 ---
@@ -16,7 +16,7 @@
 这份文档不靠好看的 mock 假装回答，而是**把每个引擎机制锚定到 Station 里已经存在的真实 Go 代码**，逐条标清三件事：
 
 1. **复用**：这个机制现在已经有哪段真实代码可以撑（不是规划，是已跑的 Go）。
-2. **缺口**：还差哪段代码（全仓 grep 已确认零命中，必须新写）。
+2. **缺口**：还差哪段代码（区分 proto/service-static 已有证据、EnginePolicy runtime 未落、真实 E2E 未验）。
 3. **范围**：第一批做哪三个引擎、为什么是这三个。
 
 并且诚实区分**原型能证明的**和**原型证明不了的**（见 §6）。
@@ -50,21 +50,20 @@
 | **单 Agent 一个回合**（prompt 组装 → provider 调用 → model→tool→model 执行循环 → 记忆抽取 → trace 落库） | [`turn_service.go`](../../../../apps/station/app/subserver/agent/service/turn_service.go) 的 `ExecuteTurn`（11 步）+ `processToolCalls`（model→tool→model 循环，硬上限 `maxToolIterations=25`）+ `providerCallWithRetry`（凭证轮换 + 错误分类恢复） | 无——这是 EnginePolicy 里「每个 turn」直接映射的执行单元，已可用 |
 | **一轮里多个角色并行发言**（Roundtable 全员提案、Debate 正反同时立论、Swarm/Mesh 并行） | [`delegation_service.go`](../../../../apps/station/app/subserver/agent/service/delegation_service.go) 的 `Execute`（信号量 `MaxConcurrentChildren=3` 有界并发 + 每任务超时 5min + panic 恢复 + 结果归集；`executor` 回调注入解耦） | 无——这是「一轮扇出 N 个发言」的执行骨架，已可用 |
 | **子任务工具裁剪 / 递归深度**（防止子 Agent 越权、防止无限递归） | [`delegation.go`](../../../../apps/station/app/subserver/agent/domain/delegation.go) 的 `MaxDelegationDepth=2`、`DelegateBlockedTools`、`ComputeChildToolset` | 无——已可用 |
-| **EnginePolicy 抽象本身**（schedule / convergenceMechanism / authority） | — | **缺**：`EngineType` 枚举、`EnginePolicy` 接口、`schedule` 实现 |
-| **CollaborationSession 状态机**（gathering → converging → reached / awaiting_human） | — | **缺**：`CollaborationSession` / `CollaborationTask` 实体 + 状态流转 |
+| **EnginePolicy 抽象本身**（schedule / convergenceMechanism / authority） | `model/domain/agent/orchestration.proto` 已有 `CollaborationEngineType`，`AtelierProjectionService.CreateProjectFromGoal` 已把六个 prototype `flowId` 映射到该 enum 并拒绝未知 flow；`TestAtelierEngineTypeFromFlowIDMapsPrototypeFlows` / `RejectsUnknownFlow` 有 service-static 证据 | **仍缺**：`EnginePolicy` runtime 接口、`schedule` 实现、真实多引擎运行时 |
+| **CollaborationSession 状态机**（gathering → converging → reached / awaiting_human） | `CollaborationTask` / `CollaborationTaskStatus` proto、persistence 与 `OrchestrationService.CreateCollaborationTask` 已存在；Atelier `agents` intent 已能创建 Station-owned collaboration task | **仍待 runtime**：把 EnginePolicy runtime 接入 gathering/converging/reached/awaiting_human 的真实状态流转与 E2E |
 | **共识收敛闸**（authority_signoff ∧ 带证据未决反对=0） | — | **缺**：`Consensus` / `Objection` / `signoff` 判定逻辑 |
-| **九角色权力结构**（GoalOwner 终裁、Risk 硬否决、Verifier 验收否决须带证据） | — | **缺**：`AgentRole` 枚举 + 权力约束校验 |
+| **九角色权力结构**（GoalOwner 终裁、Risk 硬否决、Verifier 验收否决须带证据） | `OrchestrationService` 已有 Atelier role allowlist/canonicalization，TaskGraph projection 会输出 `agentRole`；CreateTask/provider plan role guard 有 service/static evidence；formal `AtelierAgentRole` proto enum + `AtelierAgentRoleAuthority` matrix schema 已补 | **仍缺**：EnginePolicy runtime、Consensus/Objection/signoff 判定、真实运行时否决与验收 E2E |
 
-### 2.1 缺口已用全仓 grep 核实
+### 2.1 当前缺口口径
 
-以下标识符在 Station 的 Go 代码里**一行都没有**（除 `skill_service.go` 一处与 `authority` 无关的命中）：
+早期“EngineType / CollaborationTask 零实现”的判断已经过期。当前证据分级如下：
 
-```
-EngineType / CollaborationSession / CollaborationTask / AgentRole /
-EnginePolicy / Consensus / Objection / signoff / Verifier / authority
-```
+- `CollaborationEngineType` 与 `CollaborationTask` 已进入 proto / persistence / service-static 路径，Atelier `flowId` 会映射到六个 EngineType，并拒绝未知 flow。
+- `AgentRole` 已有 formal `AtelierAgentRole` proto enum 与 `AtelierAgentRoleAuthority` matrix schema；Station CreateTask/provider plan 仍以 role allowlist/canonicalization 承接运行时输入，TaskGraph projection 也会输出 `agentRole`。
+- `EnginePolicy` runtime、`schedule` 实现、`Consensus` / `Objection` / `signoff` 判定、完整权力矩阵与真实多引擎 E2E 仍未落。
 
-结论：**多引擎编排目前 100% 停留在「文档 + 原型下拉框名字」，Station 没有任何实现。** 这不是「快做完了」，是「还没开始写 Go」。这份诚实结论比任何乐观措辞都重要。
+结论：多引擎编排已从“文档 + 原型下拉框名字”推进到 **proto/service-static evidence**；但仍不能声明真实多引擎运行时完成。下一步应落 EnginePolicy runtime 与真实 provider 垂直切片，而不是把旧“100% 没开始”继续作为执行依据。
 
 ---
 
