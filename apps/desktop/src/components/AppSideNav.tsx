@@ -24,6 +24,7 @@ import { useChatStore } from '../store/chat';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
 import { useAppletsStore } from '../store/applets';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
+import { markInteractionStarted } from '../kernel/frontendRuntimeProfiler';
 
 interface AppSideNavProps {
   page: Page;
@@ -39,6 +40,14 @@ interface CommandPaletteItem {
   shortcut: string;
   icon: ReactNode;
   run: () => void;
+}
+
+function PrimaryNavAnchor({ pageId, children }: { readonly pageId: string; readonly children: ReactNode }) {
+  return (
+    <span data-pt-primary-nav={pageId} style={{ display: 'contents' }}>
+      {children}
+    </span>
+  );
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -70,7 +79,13 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
 
+  const navigatePrimary = useCallback((pageId: string) => {
+    markInteractionStarted('shell', `primary-nav:${pageId}`, { pageId });
+    navigation.navigateTo(pageId);
+  }, [navigation]);
+
   const navigateAgentChat = useCallback(() => {
+    markInteractionStarted('shell', 'primary-nav:agent', { pageId: 'agent' });
     if (selectedAgent) {
       const agent = agents.find((item) => item.name === selectedAgent);
       if (agent) {
@@ -122,7 +137,7 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
       description: t('layout.command.searchDesc'),
       shortcut: shortcut('Mod K'),
       icon: <Search size={16} />,
-      run: () => navigation.navigateTo('search'),
+      run: () => navigatePrimary('search'),
     },
     {
       id: 'new-chat',
@@ -146,7 +161,7 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
       description: t('layout.command.notesDesc'),
       shortcut: shortcut('Mod Shift N'),
       icon: <NotebookTabs size={16} />,
-      run: () => navigation.navigateTo('notes'),
+      run: () => navigatePrimary('notes'),
     },
     {
       id: 'settings',
@@ -154,9 +169,9 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
       description: t('layout.command.settingsDesc'),
       shortcut: shortcut('Mod ,'),
       icon: <Settings size={16} />,
-      run: () => navigation.navigateTo('settings'),
+      run: () => navigatePrimary('settings'),
     },
-  ], [handleNewChat, handleNextAgent, navigation, t]);
+  ], [handleNewChat, handleNextAgent, navigatePrimary, t]);
 
   const filteredCommands = useMemo(() => {
     const query = commandQuery.trim().toLowerCase();
@@ -187,10 +202,10 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
 
       if (key === 'k') {
         event.preventDefault();
-        navigation.navigateTo('search');
+        navigatePrimary('search');
       } else if (key === 'n' && event.shiftKey) {
         event.preventDefault();
-        navigation.navigateTo('notes');
+        navigatePrimary('notes');
       } else if (key === 'n') {
         event.preventDefault();
         handleNewChat();
@@ -199,12 +214,12 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
         handleNextAgent();
       } else if (key === ',') {
         event.preventDefault();
-        navigation.navigateTo('settings');
+        navigatePrimary('settings');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleNewChat, handleNextAgent, navigation]);
+  }, [handleNewChat, handleNextAgent, navigatePrimary]);
 
   return (
     <>
@@ -218,58 +233,68 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
         }
         topActions={
           <>
-            <ActionIcon
-              icon={Search}
-              size="large"
-              active={page === 'search'}
-              onClick={() => navigation.navigateTo('search')}
-              title={t('layout.nav.search')}
-            />
-            <ActionIcon
-              icon={MessageCircle}
-              size="large"
-              active={page === 'chat'}
-              onClick={() => navigation.navigateTo('chat')}
-              title={t('layout.nav.chat')}
-            />
-            <ActionIcon
-              icon={Bot}
-              size="large"
-              active={page === 'agent' || page === 'agent-profile' || page === 'agent-orchestration'}
-              onClick={navigateAgentChat}
-              title={t('layout.nav.agent')}
-            />
-            <ActionIcon
-              icon={FileText}
-              size="large"
-              active={page === 'notes'}
-              onClick={() => navigation.navigateTo('notes')}
-              title={t('layout.nav.notes')}
-            />
+            <PrimaryNavAnchor pageId="search">
+              <ActionIcon
+                icon={Search}
+                size="large"
+                active={page === 'search'}
+                onClick={() => navigatePrimary('search')}
+                title={t('layout.nav.search')}
+              />
+            </PrimaryNavAnchor>
+            <PrimaryNavAnchor pageId="chat">
+              <ActionIcon
+                icon={MessageCircle}
+                size="large"
+                active={page === 'chat'}
+                onClick={() => navigatePrimary('chat')}
+                title={t('layout.nav.chat')}
+              />
+            </PrimaryNavAnchor>
+            <PrimaryNavAnchor pageId="agent">
+              <ActionIcon
+                icon={Bot}
+                size="large"
+                active={page === 'agent' || page === 'agent-profile' || page === 'agent-orchestration'}
+                onClick={navigateAgentChat}
+                title={t('layout.nav.agent')}
+              />
+            </PrimaryNavAnchor>
+            <PrimaryNavAnchor pageId="notes">
+              <ActionIcon
+                icon={FileText}
+                size="large"
+                active={page === 'notes'}
+                onClick={() => navigatePrimary('notes')}
+                title={t('layout.nav.notes')}
+              />
+            </PrimaryNavAnchor>
             {getModulesWithSidebar()
               .filter((m) => m.sidebarEntry!.position === 'top')
               .map((m) => (
-                <ActionIcon
-                  key={m.id}
-                  icon={m.icon}
-                  size="large"
-                  active={page === m.id}
-                  onClick={() => navigation.navigateTo(m.id)}
-                  title={m.id === 'applets' ? t('layout.nav.applets') : m.sidebarEntry?.title || m.name}
-                />
+                <PrimaryNavAnchor key={m.id} pageId={m.id}>
+                  <ActionIcon
+                    icon={m.icon}
+                    size="large"
+                    active={page === m.id}
+                    onClick={() => navigatePrimary(m.id)}
+                    title={m.id === 'applets' ? t('layout.nav.applets') : m.sidebarEntry?.title || m.name}
+                  />
+                </PrimaryNavAnchor>
               ))}
             {appletPins.pinnedApplets.filter((appletId) => installedAppletById.has(appletId)).map((appletId) => {
               const info = installedAppletById.get(appletId) ?? appletManager.getAppletInfo(appletId);
               if (!info) return null;
               return (
-                <ActionIcon
-                  key={appletId}
-                  icon={Blocks}
-                  size="large"
-                  active={page === `applet:${appletId}`}
-                  onClick={() => navigation.navigateTo(`applet:${appletId}`)}
-                  title={info.name}
-                />
+                <PrimaryNavAnchor key={appletId} pageId={`applet:${appletId}`}>
+                  <ActionIcon
+                    icon={Blocks}
+                    size="large"
+                    active={page === `applet:${appletId}`}
+                    onClick={() => navigatePrimary(`applet:${appletId}`)}
+                    title={info.name}
+                  />
+                </PrimaryNavAnchor>
               );
             })}
           </>
@@ -284,13 +309,15 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
               onClick={() => setCommandPaletteOpen(true)}
               title={t('layout.command.openPaletteWithShortcut', { shortcut: shortcut('Mod Shift P') })}
             />
-            <ActionIcon
-              icon={Settings}
-              size="large"
-              active={page === 'settings'}
-              onClick={() => navigation.navigateTo('settings')}
-              title={t('layout.nav.settings')}
-            />
+            <PrimaryNavAnchor pageId="settings">
+              <ActionIcon
+                icon={Settings}
+                size="large"
+                active={page === 'settings'}
+                onClick={() => navigatePrimary('settings')}
+                title={t('layout.nav.settings')}
+              />
+            </PrimaryNavAnchor>
           </>
         }
       />

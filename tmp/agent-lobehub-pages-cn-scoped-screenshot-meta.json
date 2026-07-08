@@ -1,0 +1,57 @@
+{
+  "out": "tmp/agent-lobehub-l2-screenshots/pages-cn-compact-pages-scoped.png",
+  "domOut": "tmp/agent-lobehub-pages-cn-dom.json",
+  "captureMethod": "cdp-card-click-scoped-layout-screenshot",
+  "clip": {
+    "x": 365,
+    "y": 426,
+    "width": 1320,
+    "height": 415,
+    "scale": 1
+  },
+  "info": {
+    "url": "http://localhost:3200/?surface=pages&check=cn",
+    "root": true,
+    "compactPages": true,
+    "compactShell": true,
+    "scopedSelector": ".pt-pages-layout.is-compact-pages",
+    "sidebar": true,
+    "search": true,
+    "privateBucket": true,
+    "workspaceBucket": true,
+    "pageRows": 4,
+    "placeholder": true,
+    "placeholderMain": true,
+    "actionCards": 3,
+    "createNewDocument": true,
+    "uploadFiles": true,
+    "importNotion": true,
+    "drawerAbsentByDefault": true,
+    "historyAbsentByDefault": true,
+    "compareAbsentByDefault": true,
+    "editorCanvasAbsentByDefault": true,
+    "pageAgentAbsentByDefault": true,
+    "actionCardsVisible": true,
+    "stateBoxVisible": true,
+    "forbiddenHits": [],
+    "portalChromeHit": false,
+    "bodyPortalChromeHit": true,
+    "box": {
+      "x": 365,
+      "y": 426,
+      "width": 1320,
+      "height": 414.390625
+    },
+    "shellBox": {
+      "x": 365,
+      "y": 426,
+      "width": 2124,
+      "height": 414.390625
+    },
+    "viewport": {
+      "width": 2200,
+      "height": 1200
+    },
+    "excerpt": "Pages\nSearch\nPrivate 2\nMeeting notes\nToday · 640 words\nSupport runbook\nJul 07 · 2.4k words\nWorkspace 2\nAgent launch brief\n2 min ago · 1.2k words\n这是一篇Test\nYesterday · 420 words\nPages\nCreate or import a page\nPick an action to start a document workspace.\nDisplay 20\nAll pages\nPages\nor\nNew document\nUpload files\nImport Notion\nChoose an action to manage this page."
+  }
+}

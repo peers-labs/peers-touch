@@ -1,0 +1,45 @@
+{
+  "out": "tmp/agent-lobehub-l2-screenshots/tasks-cm-compact-tasks-scoped.png",
+  "captureMethod": "cdp-page-capture-screenshot-wide-viewport",
+  "clip": {
+    "x": 365,
+    "y": 426,
+    "width": 2235,
+    "height": 444,
+    "scale": 1
+  },
+  "info": {
+    "url": "http://localhost:3200/?surface=tasks&check=cm",
+    "root": true,
+    "compactTasks": true,
+    "compactShell": true,
+    "compactList": true,
+    "allTasks": true,
+    "scheduledGroup": true,
+    "awaitingInputGroup": true,
+    "pausedGroup": true,
+    "taskRows": 3,
+    "selectedTask": "Scheduled\nARXIV\nArXiv daily picks\nDaily at 09:00\n09:12",
+    "rightPanel": true,
+    "taskComposer": true,
+    "modelButton": true,
+    "searchButton": true,
+    "createTaskButton": true,
+    "viewSettingsCollapsedByDefault": true,
+    "rightPanelVisibleInViewport": true,
+    "taskComposerVisible": true,
+    "portalChromeHit": false,
+    "bodyPortalChromeHit": true,
+    "forbiddenHits": [],
+    "box": {
+      "x": 365,
+      "y": 426,
+      "width": 2524,
+      "height": 444
+    },
+    "viewport": {
+      "width": 2600,
+      "height": 1200
+    }
+  }
+}

@@ -10,6 +10,7 @@
  * onClick handlers. Colors come from theme.ts.
  */
 import { useState, type CSSProperties } from 'react';
+import { ATELIER_FEEDBACK_SIGNALS, ATELIER_PROJECTION_DISPLAY_LIMITS } from './projection.contract.generated';
 import { C, ROLE_COLOR, STANCE } from './theme';
 import type {
   AgentMsg,
@@ -19,6 +20,14 @@ import type {
   ArtifactBlock,
   DiffBlock,
 } from './types';
+import type { AtelierFeedbackSignal } from './runtime';
+
+const FEEDBACK_SIGNAL_LABELS: Record<AtelierFeedbackSignal, string> = {
+  positive: '👍',
+  negative: '👎',
+  copy: '复制',
+  regenerate: '重新生成',
+};
 
 /** small pill tag (was antd Tag). */
 function Tag({ text, color }: { text: string; color: string }) {
@@ -99,20 +108,95 @@ export function UserBubble({ m }: { m: UserMsg }) {
 }
 
 /* ── feedback bar (up / down / copy / regenerate), like SOLO ── */
-function FeedbackBar() {
+function FeedbackBar({
+  blockId,
+  feedbackStatus,
+  memoryConfirmationFeedbackId,
+  memoryConfirming,
+  rerunConfirmationFeedbackId,
+  rerunConfirming,
+  submittingId,
+  onConfirmMemoryCandidate,
+  onConfirmRerun,
+  onFeedback,
+}: {
+  blockId: string;
+  feedbackStatus: string;
+  memoryConfirmationFeedbackId: string;
+  memoryConfirming: boolean;
+  rerunConfirmationFeedbackId: string;
+  rerunConfirming: boolean;
+  submittingId: string;
+  onConfirmMemoryCandidate: () => void;
+  onConfirmRerun: () => void;
+  onFeedback: (blockId: string, signal: AtelierFeedbackSignal) => void;
+}) {
   const item: CSSProperties = { marginRight: 10, fontSize: 13, color: C.textTertiary, cursor: 'pointer' };
+  const button = (signal: AtelierFeedbackSignal, label: string) => {
+    const busy = submittingId === `${blockId}:${signal}`;
+    return (
+      <span
+        style={{ ...item, color: busy ? C.primary : item.color, opacity: submittingId && !busy ? 0.56 : 1 }}
+        onClick={() => {
+          if (!busy) onFeedback(blockId, signal);
+        }}
+      >
+        {busy ? '提交中' : label}
+      </span>
+    );
+  };
   return (
     <div style={{ display: 'flex', marginTop: 6 }}>
-      <span style={item}>👍</span>
-      <span style={item}>👎</span>
-      <span style={item}>复制</span>
-      <span style={{ fontSize: 13, color: C.textTertiary, cursor: 'pointer' }}>重新生成</span>
+      {ATELIER_FEEDBACK_SIGNALS.map((signal) => button(signal, FEEDBACK_SIGNAL_LABELS[signal]))}
+      {feedbackStatus ? <span style={{ fontSize: 12, color: C.textQuaternary }}>{feedbackStatus}</span> : null}
+      {memoryConfirmationFeedbackId ? (
+        <span
+          style={{ ...item, color: C.warning, fontWeight: 700 }}
+          onClick={() => {
+            if (!memoryConfirming) onConfirmMemoryCandidate();
+          }}
+        >
+          {memoryConfirming ? '确认记忆中' : '确认写入记忆'}
+        </span>
+      ) : null}
+      {rerunConfirmationFeedbackId ? (
+        <span
+          style={{ ...item, color: C.warning, fontWeight: 700 }}
+          onClick={() => {
+            if (!rerunConfirming) onConfirmRerun();
+          }}
+        >
+          {rerunConfirming ? '确认重跑中' : '确认重新生成'}
+        </span>
+      ) : null}
     </div>
   );
 }
 
 /* ── agent reply ── */
-export function AgentBubble({ m }: { m: AgentMsg }) {
+export function AgentBubble({
+  m,
+  feedbackStatus = '',
+  feedbackSubmittingId = '',
+  memoryConfirmationFeedbackId = '',
+  memoryConfirming = false,
+  rerunConfirmationFeedbackId = '',
+  rerunConfirming = false,
+  onConfirmMemoryCandidate,
+  onConfirmRerun,
+  onFeedback,
+}: {
+  m: AgentMsg;
+  feedbackStatus?: string;
+  feedbackSubmittingId?: string;
+  memoryConfirmationFeedbackId?: string;
+  memoryConfirming?: boolean;
+  rerunConfirmationFeedbackId?: string;
+  rerunConfirming?: boolean;
+  onConfirmMemoryCandidate?: () => void;
+  onConfirmRerun?: () => void;
+  onFeedback?: (blockId: string, signal: AtelierFeedbackSignal) => void;
+}) {
   return (
     <div style={{ margin: '18px 0' }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
@@ -148,7 +232,20 @@ export function AgentBubble({ m }: { m: AgentMsg }) {
           <div style={{ display: 'flex', alignItems: 'center', marginTop: 8 }}>
             <span style={{ fontSize: 12, color: C.success }}>✓ Completed</span>
           </div>
-          <FeedbackBar />
+          {onFeedback ? (
+            <FeedbackBar
+              blockId={m.id}
+              feedbackStatus={feedbackStatus}
+              memoryConfirmationFeedbackId={memoryConfirmationFeedbackId}
+              memoryConfirming={memoryConfirming}
+              rerunConfirmationFeedbackId={rerunConfirmationFeedbackId}
+              rerunConfirming={rerunConfirming}
+              submittingId={feedbackSubmittingId}
+              onConfirmMemoryCandidate={onConfirmMemoryCandidate ?? (() => undefined)}
+              onConfirmRerun={onConfirmRerun ?? (() => undefined)}
+              onFeedback={onFeedback}
+            />
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -158,6 +255,8 @@ export function AgentBubble({ m }: { m: AgentMsg }) {
 /* ── folded multi-agent negotiation ── */
 export function NegoRow({ b }: { b: NegoBlock }) {
   const [open, setOpen] = useState(false);
+  const visibleVoices = b.voices.slice(0, ATELIER_PROJECTION_DISPLAY_LIMITS.negotiationVoices);
+  const hiddenVoiceCount = Math.max(0, b.voices.length - visibleVoices.length);
   return (
     <div
       style={{
@@ -187,7 +286,7 @@ export function NegoRow({ b }: { b: NegoBlock }) {
       {/* expanded: voices + consensus */}
       {open ? (
         <div style={{ padding: '0 14px 14px' }}>
-          {b.voices.map((v, i) => {
+          {visibleVoices.map((v, i) => {
             const noEvidenceObjection = v.stance === 'objection' && !v.evidenceRef;
             return (
               <div
@@ -209,6 +308,11 @@ export function NegoRow({ b }: { b: NegoBlock }) {
               </div>
             );
           })}
+          {hiddenVoiceCount > 0 ? (
+            <div style={{ paddingTop: 8, borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.textTertiary }}>
+              +{hiddenVoiceCount} more Station negotiation voices hidden in the compact prototype row.
+            </div>
+          ) : null}
           <div
             style={{
               marginTop: 10,

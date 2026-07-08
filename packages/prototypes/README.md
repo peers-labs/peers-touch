@@ -24,7 +24,7 @@
 | 站点 | 含义 | 示例 |
 |------|------|------|
 | `desktop` | Desktop App / desktop-web / applet 容器内体验 | desktop shell、atelier applet、social chat、call |
-| `mobile` | Mobile 端页面、组件与交互体验 | mobile chat、mobile form |
+| `mobile` | Mobile 端页面、组件与交互体验 | mobile shell、chat、contacts |
 | `dashboard` | Station Dashboard / 管理台 / 运维台体验 | station admin dashboard |
 
 注意：
@@ -60,11 +60,18 @@ packages/prototypes/
 make run-prototype
 ```
 
+并行开发 / 多 worktree 预览时使用：
+
+```bash
+make -w run-prototype
+```
+
 Prototype Portal 内部提供 `desktop` / `mobile` / `dashboard` 站点切换。禁止把 `pnpm dev` / Vite 原生命令作为对用户或 Agent 的正式运行方式。原生命令只允许作为 Makefile 内部实现细节。
 
 跨 worktree / branch 预览：
 
 - 当前 worktree 信息由 `make run-prototype` 自动注入 Portal。
+- `make run-prototype` 默认同一 worktree 排它；`make -w run-prototype` 跳过排它锁并自动递增到下一个空闲端口。
 - 外部 worktree 需要自行启动自己的 Prototype Portal，然后通过 `VITE_PROTOTYPE_WORKTREES` 注入 registry。
 - Portal 选择外部 worktree 时只使用 iframe 展示对应 URL，不直接 import 其他 worktree 的源码。
 
@@ -98,7 +105,7 @@ Prototype Portal 内部提供 `desktop` / `mobile` / `dashboard` 站点切换。
 | desktop | `applet-lifecycle` | `packages/prototypes/desktop/features/applet-lifecycle/` | Applet Box 极简 launcher 与安装包导入生命周期原型 |
 | desktop | `call` | `packages/prototypes/desktop/features/call/` | Desktop Chat/通话能力原型 |
 | desktop | `social-chat` | `packages/prototypes/desktop/features/social-chat/` | Desktop Chat 能力原型 |
-| mobile | `mobile-chat` | `packages/prototypes/mobile/chat/` | Mobile Chat / 跨设备会话体验基准原型 |
+| mobile | `mobile-chat` | `packages/prototypes/mobile/chat/` | Mobile Shell 基准原型：对齐 `apps/mobile` 的 Access Gate、Chat、Moments、Contacts、Settings、Friend / Group flows |
 | dashboard | `station-dashboard` | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard 运维台体验基准原型 |
 
 ---

@@ -241,6 +241,14 @@ func taskEventRecordToDomainEvent(record *persistence.TaskEvent, subscribedAgent
 }
 
 func taskEventDomainType(eventType int32, payload map[string]interface{}) string {
+	switch payloadString(payload, "block_kind") {
+	case "artifact":
+		return string(domain.EventTypeCollaborationArtifactCreated)
+	case "gate_result":
+		return string(domain.EventTypeCollaborationGateResult)
+	case "decision_resolved":
+		return string(domain.EventTypeCollaborationInterruptResolved)
+	}
 	switch model.TaskEventType(eventType) {
 	case model.TaskEventType_TASK_EVENT_TYPE_TASK_CREATED:
 		return string(domain.EventTypeCollaborationTaskCreated)
@@ -259,6 +267,16 @@ func taskEventDomainType(eventType int32, payload map[string]interface{}) string
 		return string(domain.EventTypeCollaborationNodeCompleted)
 	case model.TaskEventType_TASK_EVENT_TYPE_STEP_FAILED:
 		return string(domain.EventTypeCollaborationNodeFailed)
+	case model.TaskEventType_TASK_EVENT_TYPE_ARTIFACT_CREATED:
+		return string(domain.EventTypeCollaborationArtifactCreated)
+	case model.TaskEventType_TASK_EVENT_TYPE_GATE_RESULT:
+		return string(domain.EventTypeCollaborationGateResult)
+	case model.TaskEventType_TASK_EVENT_TYPE_INTERRUPT_REQUESTED:
+		return string(domain.EventTypeCollaborationInterruptRequested)
+	case model.TaskEventType_TASK_EVENT_TYPE_INTERRUPT_RESOLVED:
+		return string(domain.EventTypeCollaborationInterruptResolved)
+	case model.TaskEventType_TASK_EVENT_TYPE_FEEDBACK_RECORDED:
+		return string(domain.EventTypeCollaborationFeedbackRecorded)
 	case model.TaskEventType_TASK_EVENT_TYPE_TURN_EVENT:
 		return string(domain.EventTypeAgentTurnCompleted)
 	default:

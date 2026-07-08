@@ -1,0 +1,53 @@
+{
+  "url": "http://localhost:3200/?surface=settings&check=ss",
+  "compactSettings": true,
+  "settingsLayout": true,
+  "navPanel": true,
+  "providerLayout": true,
+  "providerMenu": true,
+  "providerGrid": true,
+  "navGroups": [
+    "General",
+    "Subscription",
+    "Agent",
+    "System"
+  ],
+  "navItemCount": 22,
+  "activeSettingsTab": "Provider",
+  "searchInput": true,
+  "addProviderAction": true,
+  "providerSections": [
+    "Enabled Providers",
+    "Custom Providers",
+    "Disabled Providers"
+  ],
+  "gridSections": [
+    "Enabled Providers",
+    "Custom Providers",
+    "Disabled Providers"
+  ],
+  "sectionCounts": [
+    "Enabled Providers2",
+    "Custom Providers1",
+    "Disabled Providers1"
+  ],
+  "providerCardCount": 4,
+  "providerCardNames": [
+    "OpenAI",
+    "TRAE CLI",
+    "Workspace Router",
+    "Anthropic"
+  ],
+  "allProvidersActive": true,
+  "duplicateProviderCards": [],
+  "providerDetailAbsentByDefault": true,
+  "createProviderModalAbsentByDefault": true,
+  "sortDialogAbsentByDefault": true,
+  "modelConfigAbsentByDefault": true,
+  "deleteConfirmAbsentByDefault": true,
+  "evidenceChipAbsentByDefault": true,
+  "layoutWidth": 635,
+  "navWidth": 240,
+  "providerMenuWidth": 280,
+  "forbiddenHits": []
+}

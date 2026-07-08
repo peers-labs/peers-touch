@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { chatService, type Session } from '../services/chat-service';
 import { useAgentStore } from './agent';
 import { log } from '../utils/logger';
@@ -92,7 +92,7 @@ function findSelectedAgentId(): string {
   return agents.find((agent) => agent.name === selectedAgent)?.id || '';
 }
 
-export const useAgentTopicStore = create<AgentTopicState>((set, get) => ({
+export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopics', (set, get) => ({
   topicsByAgentId: {},
   activeAgentId: '',
   loadingAgentIds: {},

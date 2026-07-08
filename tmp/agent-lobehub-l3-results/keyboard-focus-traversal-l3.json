@@ -1,0 +1,105 @@
+{
+  "evidenceId": "EVID-010-PROTOTYPE-REBUILD-I",
+  "url": "http://localhost:3111/",
+  "viewport": "1440x1100",
+  "results": [
+    {
+      "label": "home-context-open-first-focus",
+      "url": "http://localhost:3111/",
+      "activeElement": {
+        "tag": "BUTTON",
+        "aria": null,
+        "text": "Upload File or Image ba e-re ource",
+        "className": ""
+      },
+      "hasAgentSettingsModal": false,
+      "hasAddResource": false,
+      "settingsActiveText": false,
+      "bodyExcerpt": "S\nShu xian\nWorkspace · local parity\nSearch\n⌘ K\nHome\nTasks\nPages\nRecents\nAgents\nCommunity\nResources\nMemory\nImage\nSettings\nSkills\nUpgrade your plan\n\nQuota, billing and credits are base-settings, not Agent-owned state.\n\nbase-settings\nAgent LobeHub Parity\ndrafting · source-backed reset after EVID-010-PROTOTYPE-RESET\nHome\nAgent Chat\nProfile\nTasks\nResources\nCommunity\nSettings\nLIVE-001..LIVE-100\nhome/_layout/index.tsx -> Sidebar + HomeFreeCreditBadge + AgentSelect + WelcomeText + InputArea + DailyBrief\nagent-consumer\nFree credits · model quota is Settings-owned\n🤖\nLobe AI\nHow can I help you today?\n\nHome follows LobeHub: AgentSelect + WelcomeText + central InputArea, not a dashboard grid.\n\nAdd files, skills, and more context\nUpload File or Image\nbase-resource\nFiles / Libraries\nvisible-but-unbound\nSkills\nbase-settings\nOpenAI\nOpenAI / gpt-4.1\nDeepSeek / deepseek-chat\nTRAE CLI / trae-agent-v1\nSend\nCreate a task\nSummarize memory\nUse a resource\nOpen image generation"
+    },
+    {
+      "label": "home-context-escape-return",
+      "url": "http://localhost:3111/",
+      "activeElement": {
+        "tag": "BUTTON",
+        "aria": "Add context",
+        "text": "",
+        "className": "pt-icon-button"
+      },
+      "hasAgentSettingsModal": false,
+      "hasAddResource": false,
+      "settingsActiveText": false,
+      "bodyExcerpt": "S\nShu xian\nWorkspace · local parity\nSearch\n⌘ K\nHome\nTasks\nPages\nRecents\nAgents\nCommunity\nResources\nMemory\nImage\nSettings\nSkills\nUpgrade your plan\n\nQuota, billing and credits are base-settings, not Agent-owned state.\n\nbase-settings\nAgent LobeHub Parity\ndrafting · source-backed reset after EVID-010-PROTOTYPE-RESET\nHome\nAgent Chat\nProfile\nTasks\nResources\nCommunity\nSettings\nLIVE-001..LIVE-100\nhome/_layout/index.tsx -> Sidebar + HomeFreeCreditBadge + AgentSelect + WelcomeText + InputArea + DailyBrief\nagent-consumer\nFree credits · model quota is Settings-owned\n🤖\nLobe AI\nHow can I help you today?\n\nHome follows LobeHub: AgentSelect + WelcomeText + central InputArea, not a dashboard grid.\n\nOpenAI\nOpenAI / gpt-4.1\nDeepSeek / deepseek-chat\nTRAE CLI / trae-agent-v1\nSend\nCreate a task\nSummarize memory\nUse a resource\nOpen image generation"
+    },
+    {
+      "label": "profile-modal-close-focus",
+      "url": "http://localhost:3111/?surface=profile",
+      "activeElement": {
+        "tag": "BUTTON",
+        "aria": null,
+        "text": "Clo e",
+        "className": ""
+      },
+      "hasAgentSettingsModal": true,
+      "hasAddResource": false,
+      "settingsActiveText": false,
+      "bodyExcerpt": "S\nShu xian\nWorkspace · local parity\nSearch\n⌘ K\nHome\nTasks\nPages\nRecents\nAgents\nCommunity\nResources\nMemory\nImage\nSettings\nSkills\nUpgrade your plan\n\nQuota, billing and credits are base-settings, not Agent-owned state.\n\nbase-settings\nAgent LobeHub Parity\ndrafting · source-backed reset after EVID-010-PROTOTYPE-RESET\nHome\nAgent Chat\nProfile\nTasks\nResources\nCommunity\nSettings\n🤖\nLobe AI\n\nAgent profile follows Header + ProfileEditor + AgentSettings modal/content.\n\nagent/profile/index.tsx -> Header + ProfileEditor + AgentSettings modal/content\nOpen Agent Settings\nAgent name\nCore instructions\nOpening message\nSummarize today\nCreate a scheduled task\nUse workspace resources\nAgent Settings\nmodal width 960 · 60vh\nModel\nbase-settings\n\nOpenAI:gpt-4.1. Provider + model is the identity; model-only is invalid.\n\nTools / Skills\nagent-consumer\n\nAgent stores selected references; install/import/credentials belong to base-settings.\n\nMemory\nagent-domain\n\nRuntime memory projection is visible; Station remains sou"
+    },
+    {
+      "label": "profile-modal-escape-return",
+      "url": "http://localhost:3111/?surface=profile",
+      "activeElement": {
+        "tag": "BUTTON",
+        "aria": null,
+        "text": "Open Agent Setting",
+        "className": ""
+      },
+      "hasAgentSettingsModal": false,
+      "hasAddResource": false,
+      "settingsActiveText": false,
+      "bodyExcerpt": "S\nShu xian\nWorkspace · local parity\nSearch\n⌘ K\nHome\nTasks\nPages\nRecents\nAgents\nCommunity\nResources\nMemory\nImage\nSettings\nSkills\nUpgrade your plan\n\nQuota, billing and credits are base-settings, not Agent-owned state.\n\nbase-settings\nAgent LobeHub Parity\ndrafting · source-backed reset after EVID-010-PROTOTYPE-RESET\nHome\nAgent Chat\nProfile\nTasks\nResources\nCommunity\nSettings\n🤖\nLobe AI\n\nAgent profile follows Header + ProfileEditor + AgentSettings modal/content.\n\nagent/profile/index.tsx -> Header + ProfileEditor + AgentSettings modal/content\nOpen Agent Settings\nAgent name\nCore instructions\nOpening message\nSummarize today\nCreate a scheduled task\nUse workspace resources\nAgent Settings\nmodal width 960 · 60vh\nModel\nbase-settings\n\nOpenAI:gpt-4.1. Provider + model is the identity; model-only is invalid.\n\nTools / Skills\nagent-consumer\n\nAgent stores selected references; install/import/credentials belong to base-settings.\n\nMemory\nagent-domain\n\nRuntime memory projection is visible; Station remains sou"
+    },
+    {
+      "label": "resources-add-upload-focus",
+      "url": "http://localhost:3111/?surface=resources",
+      "activeElement": {
+        "tag": "BUTTON",
+        "aria": null,
+        "text": "Upload file",
+        "className": ""
+      },
+      "hasAgentSettingsModal": false,
+      "hasAddResource": true,
+      "settingsActiveText": false,
+      "bodyExcerpt": "S\nShu xian\nWorkspace · local parity\nSearch\n⌘ K\nHome\nTasks\nPages\nRecents\nAgents\nCommunity\nResources\nMemory\nImage\nSettings\nSkills\nUpgrade your plan\n\nQuota, billing and credits are base-settings, not Agent-owned state.\n\nbase-settings\nAgent LobeHub Parity\ndrafting · source-backed reset after EVID-010-PROTOTYPE-RESET\nHome\nAgent Chat\nProfile\nTasks\nResources\nCommunity\nSettings\nResources\n\nResource library owns uploads, files, pages, generated images, search, batch actions and preview boundaries.\n\nbase-resource\nAdd\nAdd resource\nUpload file\nImport URL\nBatch actions\nno-visible-state\nSearch `mp3` did not visibly filter and clear failed in live audit.\ngenerated-image.png\nImage generation output · download request proven\nmsg_tkBFQp2tdTurb6.mp3\nVisible in Agent picker · binding unresolved\n这是一篇Test\nPage resource\nimage.png\nUploaded/generated file boundary\nPreview boundary\n\nNo resource selected. Preview remains base-resource owned.\n\nNo iframe/native file picker in this browser prototype. Upload/import i"
+    },
+    {
+      "label": "resources-add-escape-return",
+      "url": "http://localhost:3111/?surface=resources",
+      "activeElement": {
+        "tag": "BUTTON",
+        "aria": null,
+        "text": "Add",
+        "className": "pt-wide-button"
+      },
+      "hasAgentSettingsModal": false,
+      "hasAddResource": false,
+      "settingsActiveText": false,
+      "bodyExcerpt": "S\nShu xian\nWorkspace · local parity\nSearch\n⌘ K\nHome\nTasks\nPages\nRecents\nAgents\nCommunity\nResources\nMemory\nImage\nSettings\nSkills\nUpgrade your plan\n\nQuota, billing and credits are base-settings, not Agent-owned state.\n\nbase-settings\nAgent LobeHub Parity\ndrafting · source-backed reset after EVID-010-PROTOTYPE-RESET\nHome\nAgent Chat\nProfile\nTasks\nResources\nCommunity\nSettings\nResources\n\nResource library owns uploads, files, pages, generated images, search, batch actions and preview boundaries.\n\nbase-resource\nAdd\nBatch actions\nno-visible-state\nSearch `mp3` did not visibly filter and clear failed in live audit.\ngenerated-image.png\nImage generation output · download request proven\nmsg_tkBFQp2tdTurb6.mp3\nVisible in Agent picker · binding unresolved\n这是一篇Test\nPage resource\nimage.png\nUploaded/generated file boundary\nPreview boundary\n\nNo resource selected. Preview remains base-resource owned.\n\nNo iframe/native file picker in this browser prototype. Upload/import is tool-limited until runtime support"
+    },
+    {
+      "label": "settings-about-detail-focus",
+      "url": "http://localhost:3111/?surface=settings",
+      "activeElement": {
+        "tag": "MAIN",
+        "aria": null,
+        "text": "Setting  Provider + model regi tryAboutAbout i  repre ented a  a  hared ba e- etting  projection. Agent may read relevan",
+        "className": "pt-detail-card"
+      },
+      "hasAgentSettingsModal": false,
+      "hasAddResource": false,
+      "settingsActiveText": true,
+      "bodyExcerpt": "S\nShu xian\nWorkspace · local parity\nSearch\n⌘ K\nHome\nTasks\nPages\nRecents\nAgents\nCommunity\nResources\nMemory\nImage\nSettings\nSkills\nUpgrade your plan\n\nQuota, billing and credits are base-settings, not Agent-owned state.\n\nbase-settings\nAgent LobeHub Parity\ndrafting · source-backed reset after EVID-010-PROTOTYPE-RESET\nHome\nAgent Chat\nProfile\nTasks\nResources\nCommunity\nSettings\nSettings\n\nGlobal provider/model/credentials/storage/billing/preferences are shared Settings projections consumed by Agent.\n\nbase-settings\nProfile\nProvider\nStorage\nAdvanced\nService Model\nSkills\nStatistics\nAppearance\nDevices\nHotkeys\nNotifications\nPlans\nUsage\nCredits\nBilling\nAbout\nSettings Provider + model registry\nAbout\n\nAbout is represented as a shared base-settings projection. Agent may read relevant settings but must not own account, billing, storage or credentials.\n\nbase-settings owns provider registry, credentials, model fetch, quota and billing. Active tab: About."
+    }
+  ]
+}
