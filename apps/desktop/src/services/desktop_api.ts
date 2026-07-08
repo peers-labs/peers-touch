@@ -7,6 +7,10 @@ import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import { readDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type {
+  DesktopFrontendTelemetryEvent,
+  FrontendTelemetryUploadResult,
+} from '../kernel/frontendTelemetry';
+import type {
   AgentTurnStreamEventPayload,
   RealtimeCallSignalKind,
   SessionRevokedPayload,
@@ -237,6 +241,7 @@ const ALWAYS_QUIET_COMMANDS = new Set([
   'ice_session_answer_get',
   'ice_session_answer_post',
   'ice_peer_register',
+  'frontend_telemetry_upload',
   'notification_list',
   'applets_action',
   'applets_invoke',
@@ -446,6 +451,18 @@ async function invokeRustDataFromStatus<TInput, TOut>(
   const err = new RustCommandException(command, response.error);
   log.error('api', `Command error: ${command}`, { error: err.message, code: err.code });
   throw err;
+}
+
+export async function uploadFrontendTelemetryEvents(
+  events: DesktopFrontendTelemetryEvent[],
+): Promise<FrontendTelemetryUploadResult> {
+  if (events.length === 0) {
+    return { accepted: 0, failed: 0, rejected: 0, uploaded: false };
+  }
+  return invokeRustDataFromStatus<{ events: DesktopFrontendTelemetryEvent[] }, FrontendTelemetryUploadResult>(
+    'frontend_telemetry_upload',
+    { events },
+  );
 }
 
 export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
@@ -1025,6 +1042,10 @@ export interface AgentCollaborationSubscribeInput {
 }
 
 export interface AgentCollaborationCancelTaskInput {
+  task_id: string;
+}
+
+export interface AgentCollaborationResumeTaskInput {
   task_id: string;
 }
 
@@ -2764,6 +2785,8 @@ export interface AppletProductWindowLaunchContext {
   mode?: 'product-shell' | 'lifecycle-smoothness';
   secondaryAppletId?: string;
   startPage?: string;
+  closeAfterRender?: boolean;
+  closeAfterRenderDelayMs?: number;
 }
 
 export interface AppletProductWindowRenderedInput {
@@ -3519,6 +3542,12 @@ export const api = {
   cancelAgentCollaborationTask: (taskId: string) =>
     invokeRustDataFromStatus<AgentCollaborationCancelTaskInput, { task?: CollaborationTask }>(
       'agent_collaboration_cancel_task',
+      { task_id: taskId },
+    ),
+
+  resumeAgentCollaborationTask: (taskId: string) =>
+    invokeRustDataFromStatus<AgentCollaborationResumeTaskInput, { task?: CollaborationTask }>(
+      'agent_collaboration_resume_task',
       { task_id: taskId },
     ),
 
