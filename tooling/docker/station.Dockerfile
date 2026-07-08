@@ -7,11 +7,17 @@
 
 ARG BASE_IMAGE=ubuntu:22.04
 ARG GO_VERSION=1.24.6
+ARG BUILD_COMMIT=unknown
+ARG BUILD_LABEL=dev
+ARG BUILD_TIME=unknown
 
 # ─── Stage 1: Builder ─────────────────────────────────────────────────────────
 FROM ${BASE_IMAGE} AS builder
 
 ARG GO_VERSION
+ARG BUILD_COMMIT
+ARG BUILD_LABEL
+ARG BUILD_TIME
 
 # Switch to TUNA mirror for apt (CN network)
 RUN sed -i 's|http://ports.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list
@@ -64,7 +70,12 @@ COPY apps/applets/ ./applets/
 
 # Build — CGO_ENABLED=0 produces a static binary; GOARCH detected automatically.
 WORKDIR /src/station/app
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/peers-touch-station .
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w \
+      -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildCommit=${BUILD_COMMIT} \
+      -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildLabel=${BUILD_LABEL} \
+      -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildTime=${BUILD_TIME}" \
+    -o /out/peers-touch-station .
 
 # ─── Stage 2: Runtime ──────────────────────────────────────────────────────────
 FROM ${BASE_IMAGE}

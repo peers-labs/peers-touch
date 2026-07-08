@@ -1066,7 +1066,7 @@ def recommended_review_commands(report: dict[str, Any], failed_step: str) -> lis
         },
         {
             "purpose": "Re-run the full Phase 0 bundle and keep fail-closed evidence if runtime samples are still missing.",
-            "command": "make acceptance-desktop-performance-phase0",
+            "command": "make acceptance PLAN=tooling/acceptance/plans/desktop-performance-phase0.json",
         },
     ]
     if failed_step == "preflight.gateway_station":
