@@ -16,7 +16,17 @@
 // the BootPipeline + RuntimeRegistry; this component only orchestrates
 // DOM presence and visibility.
 
-import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import {
+  Profiler,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ProfilerOnRenderCallback,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 
 import { scheduleIdle, markPhaseEnd, markPhaseStart } from './boot';
 import {
@@ -31,9 +41,11 @@ import { acquirePageRuntimeLease, releasePageRuntimeLease } from './pageRuntimeL
 import {
   markRouteRequested,
   markRouteVisible,
+  recordReactCommit,
   recordHiddenSurfaceRender,
   recordSurfaceRender,
 } from './frontendRuntimeProfiler';
+import { PageActivityProvider } from './PageActivityContext';
 import { log } from '../utils/logger';
 
 interface PageHostProps {
@@ -265,7 +277,11 @@ const RegisteredPageFrame = memo(function RegisteredPageFrame({
     if (!isActive) return null;
     return (
       <div key={pageKey} data-page={pageId} data-page-descriptor={desc.id} style={{ display: 'contents' }}>
-        {renderFactory(desc, pageId)}
+        <PageFrameCommitProfiler active={isActive} descriptorId={desc.id} pageId={pageId} pageKey={pageKey}>
+          <PageActivityProvider active={isActive} descriptorId={desc.id} pageId={pageId}>
+            {renderFactory(desc, pageId, isActive)}
+          </PageActivityProvider>
+        </PageFrameCommitProfiler>
       </div>
     );
   }
@@ -277,15 +293,62 @@ const RegisteredPageFrame = memo(function RegisteredPageFrame({
       data-page-descriptor={desc.id}
       style={{ display: isActive ? 'contents' : 'none' }}
     >
-      {renderFactory(desc, pageId)}
+      <PageFrameCommitProfiler active={isActive} descriptorId={desc.id} pageId={pageId} pageKey={pageKey}>
+        <PageActivityProvider active={isActive} descriptorId={desc.id} pageId={pageId}>
+          {renderFactory(desc, pageId, isActive)}
+        </PageActivityProvider>
+      </PageFrameCommitProfiler>
     </div>
   );
 });
 
-function renderFactory(desc: PageDescriptor, pageId: string): ReactElement | null {
+function PageFrameCommitProfiler({
+  active,
+  children,
+  descriptorId,
+  pageId,
+  pageKey,
+}: {
+  active: boolean;
+  children: ReactNode;
+  descriptorId: string;
+  pageId: string;
+  pageKey: string;
+}): ReactElement {
+  if (!import.meta.env.DEV) return <>{children}</>;
+  const owner = `page-frame:${pageKey}`;
+  const onRender: ProfilerOnRenderCallback = (
+    id,
+    phase,
+    actualDuration,
+    baseDuration,
+    startTime,
+    commitTime,
+  ) => {
+    recordReactCommit({
+      actualDuration,
+      baseDuration,
+      commitTime,
+      data: { active, descriptorId, surface: 'page-frame' },
+      id,
+      owner,
+      pageId,
+      phase,
+      source: 'shell',
+      startTime,
+    });
+  };
+  return (
+    <Profiler id={owner} onRender={onRender}>
+      {children}
+    </Profiler>
+  );
+}
+
+function renderFactory(desc: PageDescriptor, pageId: string, active: boolean): ReactElement | null {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   try {
-    const result = desc.factory({ pageId, descriptorId: desc.id });
+    const result = desc.factory({ pageId, descriptorId: desc.id, active });
     const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     recordSurfaceRender(pageId, ms, { descriptorId: desc.id });
     return result;

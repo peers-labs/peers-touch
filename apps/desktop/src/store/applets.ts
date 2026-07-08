@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import AppletManager from '../applet/AppletManager';
 import type { AppletInfo } from '../applet/types';
@@ -259,7 +259,7 @@ function runtimeErrorDetail(error: unknown): string {
   return parts.join(' | ');
 }
 
-export const useAppletsStore = create<AppletsState>((set, get) => ({
+export const useAppletsStore = createDesktopStore<AppletsState>('applets', (set, get) => ({
   applets: [],
   catalogApplets: [],
   localDevInstalledAppletIds: readLocalDevInstalledAppletIds(),
