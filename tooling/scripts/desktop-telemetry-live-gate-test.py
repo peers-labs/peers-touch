@@ -648,7 +648,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
             report["recommendedReviewCommands"],
         )
         self.assertTrue(
-            any(item["command"] == "make acceptance-desktop-performance-phase0" for item in report["recommendedReviewCommands"])
+            any(item["command"] == "make acceptance PLAN=tooling/acceptance/plans/desktop-performance-phase0.json" for item in report["recommendedReviewCommands"])
         )
         self.assertEqual(report["steps"][-1]["name"], "gateway.frontend_telemetry_upload")
         self.assertEqual(report["steps"][-1]["status"], "fail")
