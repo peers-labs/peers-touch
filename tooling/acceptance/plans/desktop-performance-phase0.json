@@ -1,0 +1,29 @@
+{
+  "id": "desktop-performance-phase0",
+  "description": "Desktop global lag governance Phase 0 acceptance bundle. Runtime environment is prepared before acceptance through the active profile; gate scripts execute only their own checks.",
+  "selected_gates": [
+    "acceptance-run-static-gate",
+    "desktop-performance-preflight-static-gate",
+    "desktop-performance-preflight-gate",
+    "desktop-telemetry-mirror-static-gate",
+    "desktop-telemetry-live-gate",
+    "desktop-telemetry-mirror-template-static-gate",
+    "desktop-telemetry-mirror-template-gate",
+    "desktop-anchor-dom-evidence-template-static-gate",
+    "desktop-anchor-dom-evidence-collect-static-gate",
+    "desktop-anchor-dom-evidence-template-gate",
+    "desktop-anchor-source-static-gate",
+    "desktop-anchor-source-gate",
+    "desktop-anchor-inventory-gate",
+    "desktop-anchor-dom-evidence-gate",
+    "desktop-performance-cell-template-static-gate",
+    "desktop-performance-cell-template-gate",
+    "desktop-performance-cell-collect-static-gate",
+    "desktop-performance-cell-collect-gate",
+    "desktop-performance-sampler-static-gate",
+    "desktop-performance-sampler-gate",
+    "desktop-performance-matrix-gate",
+    "desktop-performance-report-gate",
+    "desktop-performance-traceability-gate"
+  ]
+}
