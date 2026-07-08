@@ -13,7 +13,7 @@ import {
   message,
 } from 'antd';
 import { Pencil, Plus, Trash2, UsersRound } from 'lucide-react';
-import { useMomentsStore } from '../../store/moments';
+import { useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
 
 const { Text } = Typography;
 
@@ -40,14 +40,25 @@ interface CircleEditState {
 
 export function CircleManageView() {
   const { t } = useTranslation('moments');
-  const circles = useMomentsStore((s) => s.circles);
-  const circlesLoading = useMomentsStore((s) => s.circlesLoading);
-  const circleMembers = useMomentsStore((s) => s.circleMembers);
-  const createCircle = useMomentsStore((s) => s.createCircle);
-  const renameCircle = useMomentsStore((s) => s.renameCircle);
-  const deleteCircle = useMomentsStore((s) => s.deleteCircle);
-  const addCircleMember = useMomentsStore((s) => s.addCircleMember);
-  const removeCircleMember = useMomentsStore((s) => s.removeCircleMember);
+  const {
+    circles,
+    circlesLoading,
+    circleMembers,
+    createCircle,
+    renameCircle,
+    deleteCircle,
+    addCircleMember,
+    removeCircleMember,
+  } = useActiveMomentsSlice((s) => ({
+    circles: s.circles,
+    circlesLoading: s.circlesLoading,
+    circleMembers: s.circleMembers,
+    createCircle: s.createCircle,
+    renameCircle: s.renameCircle,
+    deleteCircle: s.deleteCircle,
+    addCircleMember: s.addCircleMember,
+    removeCircleMember: s.removeCircleMember,
+  }));
 
   const [editing, setEditing] = useState<CircleEditState | null>(null);
   const [memberInput, setMemberInput] = useState<Record<string, string>>({});

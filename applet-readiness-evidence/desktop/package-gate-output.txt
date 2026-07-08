@@ -1,6 +1,6 @@
-PASS Desktop applet index contains 5 canonical packages.
-PASS Packages: agent-pilot, big-a, hello-lynx, remote-cli, web-search
-PASS Desktop Lynx packages: big-a, hello-lynx
+PASS Desktop applet index contains 7 canonical packages.
+PASS Packages: agent-pilot, big-a, hello-lynx, peers.atelier, peers.note, remote-cli, web-search
+PASS Desktop Lynx packages: big-a, hello-lynx, peers.atelier, peers.note
 PASS Standalone web-spa packages excluded from Desktop Lynx evidence: agent-pilot, remote-cli, web-search
 PASS Each package has canonical bridge protocol, manifest.json, and SHA-256 integrity.
 PASS Desktop Lynx packages use bundle entries and avoid Browser DOM / React DOM source assumptions.

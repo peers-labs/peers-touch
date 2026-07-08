@@ -1,0 +1,127 @@
+{
+  "status": "PASS",
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.atelier",
+  "checkedFiles": [
+    "apps/applets/atelier/applet.manifest.json",
+    "apps/applets/atelier/service.manifest.json",
+    "apps/applets/atelier/contracts/atelier-projection.contract.json",
+    "apps/station/app/main.go",
+    "apps/station/app/subserver/official_applets/atelier.go",
+    "apps/desktop/applets-dist/index.json",
+    "apps/desktop/applets-dist/peers.atelier/manifest.json",
+    "apps/desktop/applets-dist/peers.atelier/main.lynx.bundle"
+  ],
+  "desktopPackage": "apps/desktop/applets-dist/peers.atelier",
+  "indexed": true,
+  "desktopLoad": {
+    "type": "lynx-web",
+    "entry": "main.lynx.bundle"
+  },
+  "atelierService": {
+    "id": "atelier",
+    "kind": "http",
+    "binding": "station-resolved",
+    "allowedMethods": [
+      "GET",
+      "POST",
+      "PATCH",
+      "DELETE"
+    ],
+    "allowedPaths": [
+      "/v1/workspace",
+      "/v1/projects",
+      "/v1/projects/*",
+      "/v1/messages",
+      "/v1/escalations:resolve",
+      "/v1/tasks",
+      "/v1/tasks/*"
+    ],
+    "publicPathPrefix": "/v1",
+    "stationPathPrefix": "/applets/atelier/v1",
+    "streaming": true
+  },
+  "permissionsChecked": [
+    "network.request",
+    "events.subscribe",
+    "events.unsubscribe",
+    "events.poll",
+    "atelier.workspace.load",
+    "atelier.project.createFromGoal",
+    "atelier.message.send",
+    "atelier.escalation.resolve",
+    "atelier.task.setStatus",
+    "atelier.task.purge",
+    "atelier.provider.capabilities",
+    "atelier.feedback.submit",
+    "atelier.memory.confirmCandidate",
+    "atelier.feedback.confirmRerun",
+    "atelier.workspace.open",
+    "atelier.artifact.body.fetch",
+    "atelier.artifact.preview.open",
+    "atelier.events.subscribe"
+  ],
+  "forbiddenPermissions": [
+    "atelier.provider.invoke",
+    "atelier.skills.invoke",
+    "atelier.memory.write",
+    "atelier.rerun",
+    "atelier.artifact.produce",
+    "atelier.gate.produce",
+    "execute",
+    "run",
+    "shell",
+    "file"
+  ],
+  "serviceManifest": {
+    "service": "atelier",
+    "routes": {
+      "stationPrefix": "/applets/atelier/v1",
+      "publicPrefix": "/v1"
+    },
+    "stationBundled": true
+  },
+  "stationRouteAlignment": {
+    "mainRegistered": true,
+    "mountPath": "/applets/atelier",
+    "stationPrefix": "/applets/atelier/v1",
+    "httpMapping": [
+      {
+        "method": "GET",
+        "publicPath": "/v1/workspace",
+        "stationPath": "/applets/atelier/v1/workspace"
+      },
+      {
+        "method": "POST",
+        "publicPath": "/v1/projects",
+        "stationPath": "/applets/atelier/v1/projects"
+      },
+      {
+        "method": "POST",
+        "publicPath": "/v1/messages",
+        "stationPath": "/applets/atelier/v1/messages"
+      },
+      {
+        "method": "POST",
+        "publicPath": "/v1/escalations:resolve",
+        "stationPath": "/applets/atelier/v1/escalations:resolve"
+      },
+      {
+        "method": "PATCH",
+        "publicPath": "/v1/tasks/*",
+        "stationPath": "/applets/atelier/v1/tasks/{task_id}/status"
+      },
+      {
+        "method": "DELETE",
+        "publicPath": "/v1/tasks/*",
+        "stationPath": "/applets/atelier/v1/tasks/{task_id}"
+      }
+    ]
+  },
+  "integrity": {
+    "sourcePlaceholder": "sha256:pending-atelier-bundle",
+    "expected": "sha256:208cefd4ae1e888f1b49cd52a56e6fb0913ea9daa678dac1c7ddf9ccd94acc8a",
+    "actual": "sha256:208cefd4ae1e888f1b49cd52a56e6fb0913ea9daa678dac1c7ddf9ccd94acc8a"
+  },
+  "errors": []
+}

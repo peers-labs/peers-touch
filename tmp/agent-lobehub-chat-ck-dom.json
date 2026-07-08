@@ -1,0 +1,23 @@
+{
+  "url": "http://localhost:3200/?surface=chat&check=ck",
+  "root": true,
+  "region": true,
+  "compactChat": true,
+  "topicActionStack": true,
+  "newTopicHeader": true,
+  "lobeAiGreeting": true,
+  "lobeGreeting": true,
+  "compactPrompt": true,
+  "compactComposer": true,
+  "modelButton": true,
+  "contextButton": true,
+  "promptButton": true,
+  "allowList": true,
+  "allowListVisible": true,
+  "sendButton": true,
+  "sendButtonVisible": true,
+  "messageStreamAbsent": true,
+  "workingSidebarAbsent": true,
+  "deepControlsAbsent": true,
+  "forbiddenHits": []
+}

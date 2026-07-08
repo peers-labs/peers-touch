@@ -1,0 +1,33 @@
+{
+  "evidenceId": "EVID-010-PROTOTYPE-REBUILD-G",
+  "url": "http://localhost:3111/",
+  "viewport": "1440x1100",
+  "results": [
+    {
+      "label": "button-send",
+      "url": "http://localhost:3111/",
+      "activeElement": {
+        "tag": "TEXTAREA",
+        "aria": "Agent chat prompt",
+        "text": ""
+      },
+      "hasHome": false,
+      "hasChat": true,
+      "handoffText": "You · Home composer handoffButton path prompt: verify handoff to Chat",
+      "bodyExcerpt": "S\nShu xian\nWorkspace · local parity\nSearch\n⌘ K\nHome\nTasks\nPages\nRecents\nAgents\nCommunity\nResources\nMemory\nImage\nSettings\nSkills\nUpgrade your plan\n\nQuota, billing and credits are base-settings, not Agent-owned state.\n\nbase-settings\nAgent LobeHub Parity\ndrafting · source-backed reset after EVID-010-PROTOTYPE-RESET\nHome\nAgent Chat\nProfile\nTasks\nResources\nCommunity\nSettings\n🤖\nLobe AI\nSearch topics\nT-1\nArXiv daily picks\nScheduled · daily 09:00\nGreetings\nToday\nHome 新会话测试\nToday\nArXiv daily picks\nScheduled\nUntitled\nBacklog\nagent/features/Conversation/ConversationArea.tsx -> ConversationProvider + ChatList + MainChatInput + WorkingSidebar\nprovider+model = OpenAI:gpt-4.1\n🤖\nLobe AI\n\nAgentHome welcome state appears inside ChatList when no active messages dominate the thread.\n\nYou\n\nCompare Peers-Touch Agent with LobeHub and prepare migration gates.\n\nYou · Home composer handoff\n\nButton path prompt: verify handoff to Chat\n\nLobe AI · streaming\n\nHome composer handoff entered this chat thread. Runtime remains mock, but the flow proves prompt carry-over, streaming state and recovery actions.\n\nStop\nRegenerate\nBranch\nTool approval required\n\nfilesystem.read · needs workspace scope approval before cons"
+    },
+    {
+      "label": "enter-send",
+      "url": "http://localhost:3111/",
+      "activeElement": {
+        "tag": "TEXTAREA",
+        "aria": "Agent chat prompt",
+        "text": ""
+      },
+      "hasHome": false,
+      "hasChat": true,
+      "handoffText": "You · Home composer handoffEnter path prompt: keyboard send from Home",
+      "bodyExcerpt": "S\nShu xian\nWorkspace · local parity\nSearch\n⌘ K\nHome\nTasks\nPages\nRecents\nAgents\nCommunity\nResources\nMemory\nImage\nSettings\nSkills\nUpgrade your plan\n\nQuota, billing and credits are base-settings, not Agent-owned state.\n\nbase-settings\nAgent LobeHub Parity\ndrafting · source-backed reset after EVID-010-PROTOTYPE-RESET\nHome\nAgent Chat\nProfile\nTasks\nResources\nCommunity\nSettings\n🤖\nLobe AI\nSearch topics\nT-1\nArXiv daily picks\nScheduled · daily 09:00\nGreetings\nToday\nHome 新会话测试\nToday\nArXiv daily picks\nScheduled\nUntitled\nBacklog\nagent/features/Conversation/ConversationArea.tsx -> ConversationProvider + ChatList + MainChatInput + WorkingSidebar\nprovider+model = OpenAI:gpt-4.1\n🤖\nLobe AI\n\nAgentHome welcome state appears inside ChatList when no active messages dominate the thread.\n\nYou\n\nCompare Peers-Touch Agent with LobeHub and prepare migration gates.\n\nYou · Home composer handoff\n\nEnter path prompt: keyboard send from Home\n\nLobe AI · streaming\n\nHome composer handoff entered this chat thread. Runtime remains mock, but the flow proves prompt carry-over, streaming state and recovery actions.\n\nStop\nRegenerate\nBranch\nTool approval required\n\nfilesystem.read · needs workspace scope approval before cons"
+    }
+  ]
+}

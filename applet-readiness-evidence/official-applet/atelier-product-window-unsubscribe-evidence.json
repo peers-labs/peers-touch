@@ -1,0 +1,10 @@
+{
+  "appletId": "peers.atelier",
+  "event": "atelier.projection.unsubscribe",
+  "launchMode": "product-window-certification",
+  "ok": true,
+  "productShell": true,
+  "recordedAt": 1783287580489,
+  "sessionId": "desktop-peers.atelier-apl-1783287575090-2",
+  "topic": "atelier.projection.event"
+}
