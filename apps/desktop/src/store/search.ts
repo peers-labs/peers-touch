@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { api } from '../services/desktop_api';
 import type {
   SearchSource,
@@ -24,7 +24,7 @@ interface SearchState {
   reset: () => void;
 }
 
-export const useSearchStore = create<SearchState>((set, get) => ({
+export const useSearchStore = createDesktopStore<SearchState>('search', (set, get) => ({
   query: '',
   activeSource: 'all',
   sources: [],

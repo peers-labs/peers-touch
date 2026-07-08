@@ -56,6 +56,9 @@ Peers Touch Desktop 已经具备 `PageHost`、`PageDescriptor`、`RuntimeDescrip
 | [module-layout.md](./module-layout.md) | 文档与代码模块映射 |
 | [integration.md](./integration.md) | 与现有 UI Identity、Desktop Runtime、Applet Runtime 的集成 |
 | [execution-plans/20260702-frontend-runtime-upgrade.md](./execution-plans/20260702-frontend-runtime-upgrade.md) | 分阶段升级执行计划 |
+| [execution-plans/20260706-desktop-global-lag-framework-plan.md](./execution-plans/20260706-desktop-global-lag-framework-plan.md) | Desktop 全局卡顿框架级治理计划 |
+| [execution-plans/20260706-desktop-global-lag-bom-spec-trace.md](./execution-plans/20260706-desktop-global-lag-bom-spec-trace.md) | Desktop 卡顿治理 BOM / Spec / Gate / Trace 试点 |
+| [execution-plans/20260706-desktop-global-lag-phase0-construction-plan.md](./execution-plans/20260706-desktop-global-lag-phase0-construction-plan.md) | Desktop 卡顿治理 Phase 0 施工图 |
 
 ## 5. 下游真源
 

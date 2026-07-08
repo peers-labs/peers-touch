@@ -79,3 +79,58 @@ func (h *AtelierProjectionHandlers) HandlePurgeTask(
 	}
 	return snapshot, nil
 }
+
+func (h *AtelierProjectionHandlers) HandleProviderCapabilities(
+	ctx context.Context,
+	req *service.ListAtelierProviderCapabilitiesRequest,
+) (*service.AtelierProviderCapabilitiesResponse, error) {
+	response, err := h.projectionService.ProviderCapabilities(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return response, nil
+}
+
+func (h *AtelierProjectionHandlers) HandleSubmitFeedback(
+	ctx context.Context,
+	req *service.SubmitAtelierFeedbackRequest,
+) (*service.SubmitAtelierFeedbackResponse, error) {
+	response, err := h.projectionService.SubmitFeedback(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return response, nil
+}
+
+func (h *AtelierProjectionHandlers) HandleConfirmMemoryCandidate(
+	ctx context.Context,
+	req *service.ConfirmAtelierMemoryCandidateRequest,
+) (*service.ConfirmAtelierMemoryCandidateResponse, error) {
+	response, err := h.projectionService.ConfirmMemoryCandidate(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return response, nil
+}
+
+func (h *AtelierProjectionHandlers) HandleConfirmRerun(
+	ctx context.Context,
+	req *service.ConfirmAtelierRerunRequest,
+) (*service.ConfirmAtelierRerunResponse, error) {
+	response, err := h.projectionService.ConfirmRerun(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return response, nil
+}
+
+func (h *AtelierProjectionHandlers) HandleFetchArtifactBody(
+	ctx context.Context,
+	req *service.FetchAtelierArtifactBodyRequest,
+) (*service.FetchAtelierArtifactBodyResponse, error) {
+	response, err := h.projectionService.FetchArtifactBody(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return response, nil
+}

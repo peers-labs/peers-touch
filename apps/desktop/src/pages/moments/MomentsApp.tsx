@@ -10,17 +10,16 @@ import { MomentDetailView } from './MomentDetailPage';
 import { MomentsUserView } from './MomentsUserPage';
 import { UserSearchView } from './UserSearchPage';
 import { CircleManageView } from './CircleManagePage';
-import { useDiscoveryStore } from '../../store/discovery';
 import {
   ensureMomentDetailProjection,
   ensureUserMomentsProjection,
 } from '../../runtimes/momentsRuntime';
-import { useMomentsStore } from '../../store/moments';
 import {
   SocialContentRail,
   SocialScopeBar,
   SocialSection,
 } from '../../components/moments/surfaces';
+import { useActiveDiscoverySlice, useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
 
 // MomentsApp — the single page registered in the module registry.
 //
@@ -50,9 +49,11 @@ export function MomentsApp() {
   const [layoutWidth, setLayoutWidth] = useState(1080);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
-  const me = useDiscoveryStore((s) => s.me);
-  const circles = useMomentsStore((s) => s.circles);
-  const circleMembers = useMomentsStore((s) => s.circleMembers);
+  const me = useActiveDiscoverySlice((s) => s.me);
+  const { circles, circleMembers } = useActiveMomentsSlice((s) => ({
+    circles: s.circles,
+    circleMembers: s.circleMembers,
+  }));
 
   const activeTab: MainTab =
     view.kind === 'tab' ? view.tab : view.from;

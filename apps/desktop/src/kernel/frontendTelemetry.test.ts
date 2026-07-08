@@ -42,6 +42,23 @@ describe('frontend telemetry queue', () => {
     expect(window.__PT_FRONTEND_RUNTIME_EVENTS__).toBe(getFrontendTelemetryEvents());
   });
 
+  it('uses epoch-compatible timestamps for Station query ordering', () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('performance', {
+      timeOrigin: 1_783_503_302_000,
+      now: () => 42.5,
+    });
+    installFrontendTelemetryQueue({ runtime: 'browser-gateway' });
+
+    const event = emitFrontendTelemetryEvent({
+      kind: 'route.visible',
+      module: 'chat',
+      source: 'shell',
+    });
+
+    expect(event?.ts).toBe(1_783_503_302_042.5);
+  });
+
   it('bounds the queue and reports dropped event count', () => {
     vi.stubGlobal('window', {});
     installFrontendTelemetryQueue({ maxEvents: 2, runtime: 'browser-gateway' });
@@ -57,6 +74,58 @@ describe('frontend telemetry queue', () => {
     expect(getFrontendTelemetryEvents().map((event) => event.module)).toEqual(['two', 'three']);
     expect(getFrontendTelemetryDroppedCount()).toBe(1);
     expect(window.__PT_FRONTEND_TELEMETRY__?.getDroppedCount()).toBe(1);
+  });
+
+  it('exposes a contract snapshot with kind and interaction coverage', () => {
+    vi.stubGlobal('window', {
+      location: { href: 'http://localhost:3210/#/chat' },
+    });
+    installFrontendTelemetryQueue({ maxEvents: 2, runtime: 'browser-gateway' });
+
+    emitFrontendTelemetryEvent({
+      interactionId: 'interaction-1',
+      kind: 'interaction.started',
+      module: 'primary-nav:chat',
+      phase: 'interaction',
+      source: 'shell',
+    });
+    emitFrontendTelemetryEvent({
+      interactionId: 'interaction-1',
+      kind: 'route.visible',
+      module: 'chat',
+      phase: 'interaction',
+      source: 'shell',
+    });
+    emitFrontendTelemetryEvent({
+      kind: 'paint.timing',
+      module: 'main-thread',
+      source: 'runtime',
+    });
+
+    const snapshot = window.__PT_FRONTEND_TELEMETRY__?.snapshot();
+
+    expect(snapshot).toMatchObject({
+      byKind: {
+        'paint.timing': 1,
+        'route.visible': 1,
+      },
+      droppedByKind: {
+        'interaction.started': 1,
+      },
+      droppedCount: 1,
+      droppedWithInteraction: {
+        'interaction.started': 1,
+      },
+      eventCount: 2,
+      maxEvents: 2,
+      runtime: 'browser-gateway',
+      source: 'window.__PT_FRONTEND_TELEMETRY__',
+      url: 'http://localhost:3210/#/chat',
+      withInteraction: {
+        'route.visible': 1,
+      },
+    });
+    expect(snapshot?.events).toHaveLength(2);
   });
 
   it('redacts sensitive payload fields before queueing', () => {

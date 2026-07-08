@@ -20,6 +20,8 @@
     "desktop-performance-cell-template-gate",
     "desktop-performance-cell-collect-static-gate",
     "desktop-performance-cell-collect-gate",
+    "desktop-local-telemetry-buffer-static-gate",
+    "desktop-local-telemetry-buffer-gate",
     "desktop-performance-sampler-static-gate",
     "desktop-performance-sampler-gate",
     "desktop-performance-matrix-gate",

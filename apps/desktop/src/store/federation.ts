@@ -23,7 +23,7 @@
 // store on success — this makes `locator_seq` stay correct across
 // flips without a follow-up GET.
 
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { api } from '../services/desktop_api';
 import type {
   FederationHealthView,
@@ -53,7 +53,7 @@ export interface FederationState {
   clearSession: () => void;
 }
 
-export const useFederationStore = create<FederationState>((set, get) => ({
+export const useFederationStore = createDesktopStore<FederationState>('federation', (set, get) => ({
   self: null,
   health: null,
   loading: false,

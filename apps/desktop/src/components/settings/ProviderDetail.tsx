@@ -11,11 +11,11 @@ import {
   Brain, X, RefreshCw, Wrench, Eye, Sparkles, Pencil,
   Image, Globe, Video, Search,
 } from 'lucide-react';
-import { useProviderStore } from '../../store/provider';
 import { ProviderIcon } from './ProviderIcon';
 import { UpdateProviderModal } from './UpdateProviderModal';
 import { api } from '../../services/desktop_api';
 import { useTranslation } from 'react-i18next';
+import { useActiveProviderSlice } from './useActiveSettingsStores';
 
 const { Text, Title, Link } = Typography;
 
@@ -98,7 +98,22 @@ export function ProviderDetail() {
     checkProvider, deleteProvider, addModel, updateModel, deleteModel,
     fetchRemoteModels, selectProvider, toggleModel, toggleAllModels,
     selectedId,
-  } = useProviderStore();
+  } = useActiveProviderSlice((s) => ({
+    detail: s.detail,
+    loading: s.loading,
+    updateProvider: s.updateProvider,
+    toggleProvider: s.toggleProvider,
+    checkProvider: s.checkProvider,
+    deleteProvider: s.deleteProvider,
+    addModel: s.addModel,
+    updateModel: s.updateModel,
+    deleteModel: s.deleteModel,
+    fetchRemoteModels: s.fetchRemoteModels,
+    selectProvider: s.selectProvider,
+    toggleModel: s.toggleModel,
+    toggleAllModels: s.toggleAllModels,
+    selectedId: s.selectedId,
+  }));
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [enabled, setEnabled] = useState(false);

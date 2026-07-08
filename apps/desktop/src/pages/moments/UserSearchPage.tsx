@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { Input } from '@lobehub/ui';
 import { Empty, List, Spin, Typography } from 'antd';
 import { Search } from 'lucide-react';
-import { useDiscoveryStore, type DiscoveryUser } from '../../store/discovery';
+import type { DiscoveryUser } from '../../store/discovery';
 import { UserProfileHeader } from '../../components/moments/UserProfileHeader';
+import { useActiveDiscoverySlice } from '../../components/moments/useActiveMomentsStore';
 import type { PostAuthor } from '../../gen/proto/domain/social/post_pb';
 
 const { Text } = Typography;
@@ -40,10 +41,12 @@ function asPostAuthor(u: DiscoveryUser): PostAuthor {
 export function UserSearchView({ viewerActorId, onOpenUser }: UserSearchViewProps) {
   const { t } = useTranslation('moments');
   const [text, setText] = useState('');
-  const query = useDiscoveryStore((s) => s.query);
-  const results = useDiscoveryStore((s) => s.results);
-  const searching = useDiscoveryStore((s) => s.searching);
-  const searchUsers = useDiscoveryStore((s) => s.searchUsers);
+  const { query, results, searching, searchUsers } = useActiveDiscoverySlice((s) => ({
+    query: s.query,
+    results: s.results,
+    searching: s.searching,
+    searchUsers: s.searchUsers,
+  }));
 
   useEffect(() => {
     const handle = setTimeout(() => {

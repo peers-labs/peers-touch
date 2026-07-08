@@ -38,9 +38,9 @@ import { Globe, Info, Network, Wifi, WifiOff } from 'lucide-react';
 import {
   selectFederationReady,
   selectFederationVisibility,
-  useFederationStore,
   type FederationVisibilityLabel,
 } from '../../store/federation';
+import { useActiveFederationSlice } from './useActiveSettingsStores';
 import {
   SettingsContainer,
   SettingsItemCard,
@@ -61,12 +61,14 @@ export function FederationTab() {
   const { t } = useTranslation('settings');
   const { token } = theme.useToken();
 
-  const self = useFederationStore((s) => s.self);
-  const health = useFederationStore((s) => s.health);
-  const lastError = useFederationStore((s) => s.lastError);
-  const ready = useFederationStore(selectFederationReady);
-  const visibility = useFederationStore(selectFederationVisibility);
-  const setVisibility = useFederationStore((s) => s.setVisibility);
+  const { self, health, lastError, ready, visibility, setVisibility } = useActiveFederationSlice((s) => ({
+    self: s.self,
+    health: s.health,
+    lastError: s.lastError,
+    ready: selectFederationReady(s),
+    visibility: selectFederationVisibility(s),
+    setVisibility: s.setVisibility,
+  }));
 
   const [saving, setSaving] = useState(false);
 

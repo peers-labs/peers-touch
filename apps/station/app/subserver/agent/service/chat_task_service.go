@@ -211,6 +211,11 @@ func (s *ChatTaskService) FinishChatStep(ctx context.Context, taskID, stepID, tu
 			return err
 		}
 		checkpoint.EventSeq = last.EventSeq
+		stateJSON, err := buildChatTaskCheckpointStateJSONTx(tx, taskID, checkpoint.EventSeq)
+		if err != nil {
+			return err
+		}
+		checkpoint.StateJSON = stateJSON
 		if err := tx.Create(&checkpoint).Error; err != nil {
 			return err
 		}

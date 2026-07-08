@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Blocks } from 'lucide-react';
@@ -8,10 +8,12 @@ import { PageHeader } from '../components/PageHeader';
 import { AppletContainerShell } from '../applet/AppletContainerShell';
 import LynxContainer from '../applet/LynxContainer';
 import { LynxDebugPanel, createLynxDebugEvent, type LynxDebugEvent } from '../applet/LynxDebugPanel';
-import { useAppletsStore } from '../store/applets';
+import { handleAtelierArtifactPreviewHostUiRequest } from '../applet/AtelierArtifactPreviewHost';
+import { getAppletProductWindowLaunchContext } from '../applet/productWindowE2E';
 import { requestPageRuntimeRelease } from '../kernel/pageRuntimeLease';
 import { markRouteVisible } from '../kernel/frontendRuntimeProfiler';
 import { usePageContext } from '../kernel/usePageContext';
+import { useActiveAppletsSlice } from './useActiveAppletsStore';
 import { api } from '../services/desktop_api';
 import { log } from '../utils/logger';
 import type { AppletHostDeviceRequest, AppletHostNavigationRequest, AppletHostUiRequest } from '../applet/lynx-host-element';
@@ -32,18 +34,28 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
   const [debugEvents, setDebugEvents] = useState<LynxDebugEvent[]>([]);
   const [immersive, setImmersive] = useState(() => isStandaloneAppletShell());
   const [controlsVisible, setControlsVisible] = useState(true);
-  const loading = useAppletsStore((state) => state.loading);
-  const applets = useAppletsStore((state) => state.applets);
-  const catalogApplets = useAppletsStore((state) => state.catalogApplets);
-  const runtimeErrorDetail = useAppletsStore((state) => state.runtimeErrorDetailById[appletId]);
-  const runtimeErrorKey = useAppletsStore((state) => state.runtimeErrorKeyById[appletId]);
+  const productWindowCloseAfterRenderRef = useRef(false);
+  const {
+    loading,
+    applets,
+    catalogApplets,
+    runtimeErrorDetail,
+    runtimeErrorKey,
+    allDiagnostics,
+  } = useActiveAppletsSlice((state) => ({
+    loading: state.loading,
+    applets: state.applets,
+    catalogApplets: state.catalogApplets,
+    runtimeErrorDetail: state.runtimeErrorDetailById[appletId],
+    runtimeErrorKey: state.runtimeErrorKeyById[appletId],
+    allDiagnostics: state.diagnostics,
+  }));
   const runtimeApplet = useMemo(
     () => [...applets, ...catalogApplets].find((item) => item.manifest.id === appletId),
     [applets, catalogApplets, appletId],
   );
   const applet = runtimeApplet?.manifest;
   const appletStatus = runtimeApplet?.status;
-  const allDiagnostics = useAppletsStore((state) => state.diagnostics);
   const diagnostics = useMemo(
     () => allDiagnostics
       .filter((diag) => diag.source === appletId)
@@ -149,6 +161,18 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
     const { action, params } = request;
     recordDebugStage('host.ui.request', { data: { action }, level: 'debug' });
     const loadingKey = `applet:${appletId}:loading`;
+    const atelierPreviewResult = handleAtelierArtifactPreviewHostUiRequest(request);
+    if (atelierPreviewResult) {
+      recordDebugStage('host.ui.atelierPreview', {
+        data: {
+          ok: atelierPreviewResult.ok,
+          reason: atelierPreviewResult.reason,
+          rendererSessionId: atelierPreviewResult.session?.rendererSessionId,
+        },
+        level: atelierPreviewResult.ok ? 'info' : 'warn',
+      });
+      return atelierPreviewResult;
+    }
     if (action === 'setNavigationBar' || action === 'set_navigation_bar') {
       const title = stringParam(params, 'title');
       setNavigationTitle(title ?? null);
@@ -204,7 +228,23 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
         error: error instanceof Error ? error.message : String(error),
       });
     });
-  }, [appletId, pageId, recordDebugStage]);
+    const productWindowContext = getAppletProductWindowLaunchContext();
+    if (
+      productWindowContext?.enabled
+      && productWindowContext.closeAfterRender
+      && productWindowContext.appletId === appletId
+      && !productWindowCloseAfterRenderRef.current
+    ) {
+      productWindowCloseAfterRenderRef.current = true;
+      const delayMs = Number.isFinite(productWindowContext.closeAfterRenderDelayMs)
+        ? Math.max(0, Number(productWindowContext.closeAfterRenderDelayMs))
+        : 3000;
+      window.setTimeout(() => {
+        log.info('applets', 'product-window E2E closing applet after render', { appletId, delayMs });
+        handleClose();
+      }, delayMs);
+    }
+  }, [appletId, handleClose, pageId, recordDebugStage]);
 
   if (loading && !runtimeApplet) {
     return (
