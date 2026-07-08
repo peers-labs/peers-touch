@@ -76,6 +76,7 @@ use ulid::Ulid;
 
 const DEFAULT_PORT: u16 = 3030;
 const POOL_SIZE: usize = 8;
+const MAX_FRONTEND_TELEMETRY_BATCH_EVENTS: usize = 500;
 
 #[derive(Clone)]
 enum GatewayRuntime {
@@ -902,6 +903,37 @@ fn station_request_json(
     station_client::request_json(method, path, token, query, body).map_err(|e| {
         to_json(e.into_app_result::<StubPayload>(format!("station request to {} failed", path)))
     })
+}
+
+fn frontend_telemetry_upload_with_token(token: &str, args: Value) -> Value {
+    let events = args.get("events").and_then(|value| value.as_array());
+    let event_count = match events {
+        Some(items) if !items.is_empty() => items.len(),
+        _ => {
+            return to_json(AppResult::<StubPayload>::fail(
+                ErrorCode::InvalidArgument,
+                "events must not be empty",
+                None,
+            ));
+        }
+    };
+    if event_count > MAX_FRONTEND_TELEMETRY_BATCH_EVENTS {
+        return to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::InvalidArgument,
+            "events batch exceeds 500",
+            None,
+        ));
+    }
+    match station_request_json(
+        Method::POST,
+        "/telemetry/frontend/events:batch",
+        token,
+        None,
+        Some(args),
+    ) {
+        Ok(data) => to_json(to_stub("frontend_telemetry_upload", data)),
+        Err(e) => e,
+    }
 }
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -3046,6 +3078,19 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_orchestration::agent_collaboration_cancel_task(
+                input, &token,
+            ))
+        }
+        "agent_collaboration_resume_task" => {
+            let input = match parse_args::<AgentCollaborationResumeTaskInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_resume_task(
                 input, &token,
             ))
         }
@@ -6297,6 +6342,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(data) => to_json(to_stub("notification_preferences_update", data)),
                 Err(e) => e,
             }
+        }
+        "frontend_telemetry_upload" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            frontend_telemetry_upload_with_token(&token, args)
         }
 
         // =================================================================

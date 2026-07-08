@@ -13,11 +13,14 @@ import SharePage from './pages/SharePage';
 import './modules';
 import './index.css';
 import { markPhaseEnd, markPhaseStart } from './kernel/boot';
+import { configureFrontendTelemetryUploader } from './kernel/frontendTelemetry';
 import { installFrontendRuntimeProfiler } from './kernel/frontendRuntimeProfiler';
+import { uploadFrontendTelemetryEvents } from './services/desktop_api';
 
 // Register custom elements early — before any React component attempts to render <lynx-host>.
 registerAppletElements();
 installFrontendRuntimeProfiler();
+configureFrontendTelemetryUploader(uploadFrontendTelemetryEvents);
 
 if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
   void import('./acceptance/chatAcceptanceHarness').then(({ installChatAcceptanceHarness }) => {
