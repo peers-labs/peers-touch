@@ -121,9 +121,9 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         subserver.write_text(
             "\n".join(
                 [
-                    'server.NewTypedHandler("frontend-telemetry-ingest", "/telemetry/frontend/events:batch", server.POST, s.handleIngest)',
-                    'server.NewTypedHandler("frontend-telemetry-query", "/telemetry/frontend/events:query", server.POST, s.handleQuery)',
-                    'server.NewTypedHandler("frontend-telemetry-rollup-query", "/telemetry/frontend/rollups:query", server.POST, s.handleRollupQuery)',
+                    'server.NewTypedHandler("frontend-telemetry-ingest", "/telemetry/frontend/events/batch", server.POST, s.handleIngest)',
+                    'server.NewTypedHandler("frontend-telemetry-query", "/telemetry/frontend/events/query", server.POST, s.handleQuery)',
+                    'server.NewTypedHandler("frontend-telemetry-rollup-query", "/telemetry/frontend/rollups/query", server.POST, s.handleRollupQuery)',
                 ]
             ),
             encoding="utf-8",
@@ -469,7 +469,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         self.assertIn("PARTIAL/UNPROVEN", report["issueBreakdown"][0]["proofImpact"])
         self.assertTrue(
             any(
-                "/telemetry/frontend/events:batch" in item["command"]
+                "/telemetry/frontend/events/batch" in item["command"]
                 for item in report["recommendedReviewCommands"]
             )
         )
@@ -484,7 +484,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         self.assertIn("- Local source route contracts: `3/3`", markdown)
         self.assertIn("- Target runtime route contracts: `0/3`", markdown)
         self.assertIn("- Target runtime route contract proof: `UNPROVEN`", markdown)
-        self.assertIn("POST /telemetry/frontend/events:batch", markdown)
+        self.assertIn("POST /telemetry/frontend/events/batch", markdown)
         self.assertIn(
             "- Environment classification: `target-station-handler-missing-while-local-source-registers-routes`",
             markdown,
@@ -498,7 +498,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         self.assertIn("- Target runtime identity proof: `UNPROVEN`", markdown)
         self.assertIn("- Target runtime identity missing fields: `buildCommit,buildTime`", markdown)
         self.assertIn(
-            "- Target runtime missing routes: `/telemetry/frontend/events:batch,/telemetry/frontend/events:query,/telemetry/frontend/rollups:query`",
+            "- Target runtime missing routes: `/telemetry/frontend/events/batch,/telemetry/frontend/events/query,/telemetry/frontend/rollups/query`",
             markdown,
         )
 

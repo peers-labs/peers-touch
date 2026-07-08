@@ -926,7 +926,7 @@ fn frontend_telemetry_upload_with_token(token: &str, args: Value) -> Value {
     }
     match station_request_json(
         Method::POST,
-        "/telemetry/frontend/events:batch",
+		"/telemetry/frontend/events/batch",
         token,
         None,
         Some(args),

@@ -61,8 +61,8 @@ func (s *subServer) Address() server.SubserverAddress {
 
 func (s *subServer) Handlers() []server.Handler {
 	return []server.Handler{
-		server.NewTypedHandler("frontend-telemetry-ingest", "/telemetry/frontend/events:batch", server.POST, s.handleIngest, s.jwtWrapper),
-		server.NewTypedHandler("frontend-telemetry-query", "/telemetry/frontend/events:query", server.POST, s.handleQuery, s.jwtWrapper),
-		server.NewTypedHandler("frontend-telemetry-rollup-query", "/telemetry/frontend/rollups:query", server.POST, s.handleRollupQuery, s.jwtWrapper),
+		server.NewTypedHandler("frontend-telemetry-ingest", "/telemetry/frontend/events/batch", server.POST, s.handleIngest, s.jwtWrapper),
+		server.NewTypedHandler("frontend-telemetry-query", "/telemetry/frontend/events/query", server.POST, s.handleQuery, s.jwtWrapper),
+		server.NewTypedHandler("frontend-telemetry-rollup-query", "/telemetry/frontend/rollups/query", server.POST, s.handleRollupQuery, s.jwtWrapper),
 	}
 }

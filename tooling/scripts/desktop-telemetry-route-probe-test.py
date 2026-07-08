@@ -200,9 +200,9 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
         subserver.write_text(
             "\n".join(
                 [
-                    'server.NewTypedHandler("frontend-telemetry-ingest", "/telemetry/frontend/events:batch", server.POST, s.handleIngest)',
-                    'server.NewTypedHandler("frontend-telemetry-query", "/telemetry/frontend/events:query", server.POST, s.handleQuery)',
-                    'server.NewTypedHandler("frontend-telemetry-rollup-query", "/telemetry/frontend/rollups:query", server.POST, s.handleRollupQuery)',
+                    'server.NewTypedHandler("frontend-telemetry-ingest", "/telemetry/frontend/events/batch", server.POST, s.handleIngest)',
+                    'server.NewTypedHandler("frontend-telemetry-query", "/telemetry/frontend/events/query", server.POST, s.handleQuery)',
+                    'server.NewTypedHandler("frontend-telemetry-rollup-query", "/telemetry/frontend/rollups/query", server.POST, s.handleRollupQuery)',
                 ]
             ),
             encoding="utf-8",
@@ -274,7 +274,7 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
         self.assertIn("- Source BOM: `BOM-CON-03,BOM-CON-04,BOM-CAP-05,BOM-RUN-05`", markdown)
         self.assertIn("- Source Spec: `SPEC-STA-01,SPEC-STA-02,SPEC-DB-01,SPEC-DB-02,SPEC-STA-03,SPEC-MIRROR-01`", markdown)
         self.assertIn(
-            "- Probed routes: `/telemetry/frontend/events:batch,/telemetry/frontend/events:query,/telemetry/frontend/rollups:query`",
+            "- Probed routes: `/telemetry/frontend/events/batch,/telemetry/frontend/events/query,/telemetry/frontend/rollups/query`",
             markdown,
         )
 
@@ -396,7 +396,7 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
                 module,
                 "probe_routes",
                 side_effect=module.GateError(
-                    "Station telemetry route missing path=/telemetry/frontend/events:batch status=404 body=404 page not found"
+                    "Station telemetry route missing path=/telemetry/frontend/events/batch status=404 body=404 page not found"
                 ),
             ):
                 report = module.build_report("http://station.local", "b@p.t", "1", 0.1, "out.json", repo_root=root)
@@ -459,19 +459,19 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
             [
                 {
                     "name": "frontend-telemetry-ingest",
-                    "path": "/telemetry/frontend/events:batch",
+                    "path": "/telemetry/frontend/events/batch",
                     "method": "POST",
                     "status": "missing",
                 },
                 {
                     "name": "frontend-telemetry-query",
-                    "path": "/telemetry/frontend/events:query",
+                    "path": "/telemetry/frontend/events/query",
                     "method": "POST",
                     "status": "missing",
                 },
                 {
                     "name": "frontend-telemetry-rollup-query",
-                    "path": "/telemetry/frontend/rollups:query",
+                    "path": "/telemetry/frontend/rollups/query",
                     "method": "POST",
                     "status": "missing",
                 },
@@ -486,7 +486,7 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
         )
         self.assertFalse(report["summary"]["sampleEmissionAllowed"])
         self.assertEqual(issue["recommendedReviewCommands"], report["recommendedReviewCommands"])
-        self.assertTrue(any("/telemetry/frontend/events:batch" in item["command"] for item in report["recommendedReviewCommands"]))
+        self.assertTrue(any("/telemetry/frontend/events/batch" in item["command"] for item in report["recommendedReviewCommands"]))
         markdown = module.render_markdown(report)
         self.assertIn("- Status: `fail`", markdown)
         self.assertIn("- Completion: `PARTIAL`", markdown)
@@ -502,11 +502,11 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
         self.assertIn("- Target runtime routes: `0/3`", markdown)
         self.assertIn("- Target runtime route contracts: `0/3`", markdown)
         self.assertIn("- Target runtime route contract proof: `UNPROVEN`", markdown)
-        self.assertIn("POST /telemetry/frontend/events:batch", markdown)
+        self.assertIn("POST /telemetry/frontend/events/batch", markdown)
         self.assertIn("- Version build commit: `abc123`", markdown)
         self.assertIn("- Identity proof: `PROVEN`", markdown)
         self.assertIn(
-            "- Target runtime missing routes: `/telemetry/frontend/events:batch,/telemetry/frontend/events:query,/telemetry/frontend/rollups:query`",
+            "- Target runtime missing routes: `/telemetry/frontend/events/batch,/telemetry/frontend/events/query,/telemetry/frontend/rollups/query`",
             markdown,
         )
         self.assertIn("- Handler count: `12`", markdown)
@@ -601,9 +601,9 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
         main_text = 'server.WithSubServer("frontend_telemetry", frontendtelemetry.NewFrontendTelemetrySubServer)\n'
         subserver_text = "\n".join(
             [
-                'server.NewTypedHandler("frontend-telemetry-ingest", "/telemetry/frontend/events:batch", server.POST, s.handleIngest)',
-                'server.NewTypedHandler("frontend-telemetry-query", "/telemetry/frontend/events:query", server.POST, s.handleQuery)',
-                'server.NewTypedHandler("frontend-telemetry-rollup-query", "/telemetry/frontend/rollups:query", server.POST, s.handleRollupQuery)',
+                'server.NewTypedHandler("frontend-telemetry-ingest", "/telemetry/frontend/events/batch", server.POST, s.handleIngest)',
+                'server.NewTypedHandler("frontend-telemetry-query", "/telemetry/frontend/events/query", server.POST, s.handleQuery)',
+                'server.NewTypedHandler("frontend-telemetry-rollup-query", "/telemetry/frontend/rollups/query", server.POST, s.handleRollupQuery)',
             ]
         )
 
