@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-20 | **Updated**: 2026-06-20
+> **Created**: 2026-06-20 | **Updated**: 2026-07-05
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -159,6 +159,7 @@ coding CLI 的共性是「指令→diff/log→二值校验」；研究/交易/�
 ### Consequences
 
 - 正面：每个领域接口贴合实际；高危动作安全。
+- 正面：Atelier applet 可通过 `atelier.provider.capabilities` 读取 Station Provider 的只读 capability descriptor，并把 slash command 写回 composer intent；Provider `invoke / execute / run` 仍只属于 Station / orchestration，不进入 applet capability 面。
 - 负面：阶段 5 需要一次归纳重构（已在路线中规划）。
 
 ---
@@ -259,4 +260,5 @@ Memory 分 candidate → confirmed 两阶段。默认只生成 candidate，由�
 ### Consequences
 
 - 正面：长期记忆质量可控。
+- 正面：FeedbackBar 只提交 `atelier.feedback.submit` 弱信号；`positive / negative` 只能生成 memory candidate policy metadata，并以 `requiresConfirmation=true` / `confirmationMode=station_memory_review` 暴露二次确认需求；Applet 可提交 `atelier.memory.confirmCandidate` confirmation intent，但长期 memory write 仍由 Station 校验 durable feedback payload 后通过 `MemoryService` 执行，且不得暴露 `memory.write`；`regenerate` 只能记录 rerun intent，并以 `requiresConfirmation=true` / `confirmationMode=station_rerun_review` 暴露 Station-owned rerun review 需求；Applet 可提交 `atelier.feedback.confirmRerun` confirmation intent，但新 Run 创建仍由 Station / orchestration 从 durable feedback event 派生并执行，不暴露 `atelier.rerun`、`execute` 或 `run`。
 - 负面：需要用户确认动作；可设计批量确认降低打扰。
