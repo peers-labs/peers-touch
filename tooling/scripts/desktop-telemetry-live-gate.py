@@ -44,9 +44,9 @@ EXPECTED_STEPS = [
     "preflight.gateway_station",
     "station.create_temp_account",
     "gateway.auth_login",
+    "gateway.frontend_telemetry_upload",
     "station.auth_login",
     "station.telemetry_routes",
-    "gateway.frontend_telemetry_upload",
     "station.raw_query",
     "station.rollup_query",
     "dev_mirror",
@@ -303,6 +303,20 @@ def station_login_token(station: str, account: str, password: str) -> str:
         )
     )
     return actor_token_from_auth(response)
+
+
+def gateway_stub_status(data: dict[str, Any]) -> dict[str, Any]:
+    status = data.get("status")
+    if isinstance(status, str):
+        try:
+            parsed = json.loads(status)
+        except json.JSONDecodeError as exc:
+            raise GateError(f"gateway command status is not valid JSON: {status}") from exc
+        if isinstance(parsed, dict):
+            return parsed
+    if isinstance(status, dict):
+        return status
+    return data
 
 
 def local_source_route_evidence(repo_root: Path) -> dict[str, Any]:
@@ -1234,18 +1248,22 @@ def main() -> int:
             raise GateError(f"gateway auth did not report authenticated status: {auth}")
         step("gateway.auth_login", "pass", {"actorId": auth.get("actor_id") or auth.get("actorId")})
 
+        interaction_id = f"p0a-live-{int(time.time() * 1000)}"
+        event = build_event(interaction_id)
+        upload = gateway_command(args.gateway, "frontend_telemetry_upload", {"events": [event]})
+        upload_status = gateway_stub_status(upload)
+        if not upload_status.get("uploaded"):
+            raise GateError(f"telemetry upload did not report uploaded=true: {upload}")
+        step("gateway.frontend_telemetry_upload", "pass", upload_status)
+
+        # Direct Station auth is intentionally delayed until Gateway upload is
+        # complete. The shared test account has exclusive sessions, so logging
+        # in to Station before upload can revoke the Gateway session under test.
         token = station_login_token(args.station, account, password)
         step("station.auth_login", "pass", {"tokenSource": "/actor/login"})
 
         route_probe = assert_station_telemetry_routes(args.station, token)
         step("station.telemetry_routes", "pass", route_probe)
-
-        interaction_id = f"p0a-live-{int(time.time() * 1000)}"
-        event = build_event(interaction_id)
-        upload = gateway_command(args.gateway, "frontend_telemetry_upload", {"events": [event]})
-        if not upload.get("uploaded"):
-            raise GateError(f"telemetry upload did not report uploaded=true: {upload}")
-        step("gateway.frontend_telemetry_upload", "pass", upload)
 
         raw = data_or_self(station_post(args.station, FRONTEND_TELEMETRY_QUERY_PATH, token, {"interactionId": interaction_id, "limit": 10}))
         events = raw.get("events")
