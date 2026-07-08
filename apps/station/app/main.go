@@ -56,7 +56,6 @@ func main() {
 		server.WithSubServer("social", social.NewSocialSubServer),
 		server.WithSubServer("notification", notifsubserver.NewNotificationSubServer),
 		server.WithSubServer("official_applet_note", officialapplets.NewNoteSubServer),
-		server.WithSubServer("official_applet_atelier", officialapplets.NewAtelierSubServer),
 		server.WithSubServer("applet_store", appletstore.NewAppletStoreSubServer),
 		server.WithSubServer("frontend_telemetry", frontendtelemetry.NewFrontendTelemetrySubServer),
 		server.WithSubServer("dashboard", dashboard.NewDashboardSubServer),
