@@ -318,7 +318,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         )
         self.assertLessEqual(len(module.STATION_LOGIN_DEVICE_TYPE), 20)
 
-    def test_gateway_auth_without_token_is_allowed_before_station_auth(self) -> None:
+    def test_gateway_upload_runs_before_direct_station_auth(self) -> None:
         module = load_gate_module()
 
         report = {
@@ -333,11 +333,20 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         module.apply_status_metadata(report)
 
         self.assertEqual(report["status"], "fail")
-        self.assertEqual(report["failedStep"], "station.auth_login")
-        self.assertEqual(report["issueBreakdown"][0]["category"], "station-auth")
-        self.assertEqual(report["issueBreakdown"][0]["proofImpact"], "Station raw/rollup query proof cannot start.")
+        self.assertEqual(report["failedStep"], "gateway.frontend_telemetry_upload")
+        self.assertEqual(report["issueBreakdown"][0]["category"], "gateway-telemetry-upload")
         self.assertEqual(report["completionStatus"], "PARTIAL")
         self.assertEqual(report["proofStatus"], "UNPROVEN")
+
+    def test_gateway_stub_status_parses_upload_result(self) -> None:
+        module = load_gate_module()
+
+        result = module.gateway_stub_status(
+            {"command": "frontend_telemetry_upload", "status": '{"accepted":1,"failed":0,"rejected":0,"uploaded":true}'}
+        )
+
+        self.assertTrue(result["uploaded"])
+        self.assertEqual(result["accepted"], 1)
 
     def test_station_route_404_upload_failure_is_classified_as_station_capability_gap(self) -> None:
         module = load_gate_module()
@@ -422,6 +431,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
                     self.runtime_closure_step(),
                     {"name": "preflight.gateway_station", "status": "pass"},
                     {"name": "gateway.auth_login", "status": "pass"},
+                    {"name": "gateway.frontend_telemetry_upload", "status": "pass"},
                     {"name": "station.auth_login", "status": "pass"},
                 ],
             }
@@ -489,9 +499,9 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
             "- Environment classification: `target-station-handler-missing-while-local-source-registers-routes`",
             markdown,
         )
-        self.assertIn("- Passed steps: `runtime.closure,preflight.gateway_station,gateway.auth_login,station.auth_login`", markdown)
+        self.assertIn("- Passed steps: `runtime.closure,preflight.gateway_station,gateway.auth_login,gateway.frontend_telemetry_upload,station.auth_login`", markdown)
         self.assertIn("- Failed steps: `station.telemetry_routes`", markdown)
-        self.assertIn("- Pending steps: `gateway.frontend_telemetry_upload,station.raw_query,station.rollup_query,dev_mirror`", markdown)
+        self.assertIn("- Pending steps: `station.raw_query,station.rollup_query,dev_mirror`", markdown)
         self.assertIn("- Local source routes: `3/3`", markdown)
         self.assertIn("- Target runtime routes: `0/3`", markdown)
         self.assertIn("- Target runtime build commit: `unknown`", markdown)
