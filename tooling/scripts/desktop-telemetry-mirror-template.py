@@ -45,7 +45,7 @@ def build_template(station_url: str, filters: dict[str, Any] | None = None) -> d
         },
         {
             "purpose": "Re-run the full Phase 0 bundle and keep fail-closed evidence if live samples are still missing.",
-            "command": "make acceptance-desktop-performance-phase0",
+            "command": "make acceptance PLAN=tooling/acceptance/plans/desktop-performance-phase0.json",
         },
     ]
     issue_details = [
