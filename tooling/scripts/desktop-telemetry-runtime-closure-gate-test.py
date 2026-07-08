@@ -293,6 +293,54 @@ class DesktopTelemetryRuntimeClosureGateTest(unittest.TestCase):
         self.assertEqual(compose_contract["proofStatus"], "UNPROVEN")
         self.assertFalse(report["sampleEmissionAllowed"])
 
+    def test_remote_profile_health_proves_runtime_closure_without_local_docker(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_runtime_files(root)
+            active = root / ".local/dev/active" / f"{root.name}.env"
+            active.parent.mkdir(parents=True, exist_ok=True)
+            active.write_text(
+                "\n".join(
+                    [
+                        "PT_DEV_PROFILE=one",
+                        "PT_STATION_MODE=remote",
+                        "PT_STATION_URL=http://10.37.246.80:18080",
+                        "PT_STATION_HEALTH_URL=http://10.37.246.80:18080/sub-oss/healthz",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            def fake_run(command: list[str], _timeout: float) -> dict[str, Any]:
+                if command[:2] == ["docker", "info"]:
+                    return command_result(command, "UNPROVEN", ["Cannot connect to the Docker daemon"])
+                return command_result(command, "PROVEN", ["ok"])
+
+            remote_health = {
+                "name": "remote-station-health",
+                "status": "pass",
+                "proofStatus": "PROVEN",
+                "url": "http://10.37.246.80:18080/sub-oss/healthz",
+                "reason": "remote Station health check passed",
+            }
+            with mock.patch.object(module, "run_command", side_effect=fake_run), mock.patch.object(
+                module, "remote_station_health_evidence", return_value=remote_health
+            ):
+                report = module.build_report(root, Path("out.json"), 0.1)
+
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["completionStatus"], "DONE")
+        self.assertEqual(report["proofStatus"], "PROVEN")
+        self.assertTrue(report["sampleEmissionAllowed"])
+        self.assertEqual(report["managedRuntimeClosure"], "remote-profile-station")
+        self.assertEqual(report["summary"]["remoteRuntimeClosureProofStatus"], "PROVEN")
+        self.assertEqual(report["summary"]["remoteRuntimeClosure"]["profile"], "one")
+        self.assertEqual(report["summary"]["remoteRuntimeClosure"]["stationURL"], "http://10.37.246.80:18080")
+        self.assertEqual(report["summary"]["failedChecks"], [])
+        self.assertEqual(report["blockedDownstreamProofs"], [])
+        self.assertEqual(report["issueBreakdown"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
