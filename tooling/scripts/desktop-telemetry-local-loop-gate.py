@@ -37,7 +37,7 @@ GATEWAY_UPLOAD_SOURCE_REQUIREMENTS = (
     {
         "id": "station-ingest-path",
         "path": TAURI_FRONTEND_TELEMETRY_COMMAND_PATH,
-        "tokens": ['post_json_with_auth("/telemetry/frontend/events:batch"', "MAX_BATCH_EVENTS"],
+        "tokens": ['post_json_with_auth("/telemetry/frontend/events/batch"', "MAX_BATCH_EVENTS"],
     },
     {
         "id": "desktop-api-wrapper",
