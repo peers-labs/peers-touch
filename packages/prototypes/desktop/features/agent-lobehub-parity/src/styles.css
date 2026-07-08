@@ -4694,8 +4694,8 @@ button {
 
 .pt-task-compact-list {
   display: grid;
-  gap: 16px;
-  width: min(860px, 100%);
+  gap: 14px;
+  width: min(900px, 100%);
 }
 
 .pt-task-list-page {
@@ -4708,6 +4708,7 @@ button {
 }
 
 .pt-task-inline-composer {
+  position: relative;
   display: grid;
   gap: 10px;
   padding: 12px;
@@ -4717,9 +4718,36 @@ button {
   box-shadow: 0 16px 48px rgba(16, 24, 40, 0.07);
 }
 
+.pt-task-inline-composer.is-compact-tasks {
+  gap: 0;
+  padding: 0;
+  border-radius: var(--pt-radius-xl);
+  box-shadow: 0 14px 42px rgba(16, 24, 40, 0.045);
+}
+
+.pt-task-inline-collapse {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--pt-muted);
+  background: transparent;
+}
+
 .pt-task-inline-editor {
   display: grid;
   gap: 8px;
+}
+
+.pt-task-inline-editor.is-compact-tasks {
+  padding: 12px 42px 4px 14px;
 }
 
 .pt-task-inline-editor textarea,
@@ -4733,6 +4761,15 @@ button {
   resize: vertical;
 }
 
+.pt-task-inline-editor.is-compact-tasks textarea {
+  min-height: 62px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  resize: none;
+}
+
 .pt-task-inline-attachments,
 .pt-task-inline-controls,
 .pt-task-create-error,
@@ -4743,6 +4780,12 @@ button {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.pt-task-inline-controls.is-compact-tasks {
+  justify-content: space-between;
+  padding: 8px;
+  border-top: 1px solid var(--pt-border);
 }
 
 .pt-task-inline-attachments span,
@@ -4779,6 +4822,16 @@ button {
 .pt-task-topic-feedback button {
   color: var(--pt-text);
   background: #eef6ff;
+}
+
+.pt-task-inline-controls.is-compact-tasks button.primary {
+  margin-left: auto;
+}
+
+.pt-task-inline-note {
+  padding: 0 12px 10px;
+  color: var(--pt-muted);
+  font-size: 11px;
 }
 
 .pt-task-inline-controls button.is-disabled {
@@ -4835,6 +4888,15 @@ button {
 .pt-task-list-block.is-compact-tasks {
   border-radius: var(--pt-radius-xl);
   box-shadow: 0 14px 42px rgba(16, 24, 40, 0.045);
+}
+
+.pt-task-hidden-footer {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 0 10px;
+  color: var(--pt-muted);
+  font-size: 12px;
 }
 
 .pt-task-row-wrap {
@@ -5143,6 +5205,24 @@ button {
   background: rgba(255, 255, 255, 0.76);
 }
 
+.pt-task-agent-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pt-task-agent-header-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--pt-radius-md);
+  color: var(--pt-secondary);
+  background: transparent;
+}
+
 .pt-task-agent-toolbar span {
   color: var(--pt-secondary);
   font-size: 12px;
@@ -5163,7 +5243,8 @@ button {
 }
 
 .pt-task-agent-chat.is-compact-tasks {
-  align-content: end;
+  align-content: center;
+  justify-items: center;
   padding: 24px 18px;
 }
 
@@ -5182,6 +5263,11 @@ button {
   justify-self: end;
   color: var(--pt-text);
   background: #edf5ff;
+}
+
+.pt-task-agent-chat .is-welcome {
+  color: var(--pt-muted);
+  background: transparent;
 }
 
 .pt-task-agent-input {
