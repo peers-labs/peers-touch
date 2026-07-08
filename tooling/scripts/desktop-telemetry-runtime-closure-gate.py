@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,6 +27,7 @@ STATION_DEV_PATH = Path("tooling/scripts/local-dev/station-dev.sh")
 STORE_LOCAL_PATH = Path("apps/station/app/conf/store.local.yml")
 COMPOSE_PATH = Path("tooling/docker/compose.yml")
 COMPOSE_ENV_PATH = Path("tooling/docker/.env")
+LOCAL_DEV_ACTIVE_DIR = Path(".local/dev/active")
 
 COMPOSE_CONTRACT_TOKENS = [
     "postgres:",
@@ -90,6 +94,81 @@ def run_command(command: list[str], timeout: float) -> dict[str, Any]:
         else f"command exited {completed.returncode}: {failure_detail}"
         if failure_detail
         else f"command exited {completed.returncode}",
+    }
+
+
+def parse_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    text = read_text(path)
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def active_profile_evidence(root: Path) -> dict[str, Any]:
+    worktree_id = root.name
+    active_file = root / LOCAL_DEV_ACTIVE_DIR / f"{worktree_id}.env"
+    file_values = parse_env_file(active_file) if active_file.exists() else {}
+    env_values = {key: value for key, value in os.environ.items() if key.startswith("PT_")}
+    values = {**file_values, **env_values}
+    profile = values.get("PT_DEV_PROFILE", "")
+    mode = values.get("PT_STATION_MODE", "")
+    station_url = values.get("PT_STATION_URL", "")
+    health_url = values.get("PT_STATION_HEALTH_URL", "")
+    has_profile = bool(profile and mode and station_url)
+    return {
+        "name": "active-profile",
+        "path": str(active_file),
+        "status": "pass" if has_profile else "diagnostic incomplete",
+        "proofStatus": "PROVEN" if has_profile else "UNPROVEN",
+        "profile": profile,
+        "stationMode": mode,
+        "stationURL": station_url,
+        "stationHealthURL": health_url,
+        "reason": "active profile selects the Station runtime"
+        if has_profile
+        else "active profile is missing PT_DEV_PROFILE, PT_STATION_MODE, or PT_STATION_URL",
+    }
+
+
+def remote_station_health_evidence(profile: dict[str, Any], timeout: float) -> dict[str, Any]:
+    station_url = str(profile.get("stationURL") or "").rstrip("/")
+    health_url = str(profile.get("stationHealthURL") or "").strip() or f"{station_url}/sub-oss/healthz"
+    if not station_url:
+        return {
+            "name": "remote-station-health",
+            "status": "diagnostic incomplete",
+            "proofStatus": "UNPROVEN",
+            "url": health_url,
+            "reason": "active profile does not provide PT_STATION_URL",
+        }
+    try:
+        with urllib.request.urlopen(health_url, timeout=timeout) as response:
+            body = response.read(512).decode("utf-8", errors="replace")
+            status_code = response.getcode()
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return {
+            "name": "remote-station-health",
+            "status": "diagnostic incomplete",
+            "proofStatus": "UNPROVEN",
+            "url": health_url,
+            "reason": f"remote Station health check failed: {exc}",
+        }
+    proven = 200 <= status_code < 300
+    return {
+        "name": "remote-station-health",
+        "status": "pass" if proven else "diagnostic incomplete",
+        "proofStatus": "PROVEN" if proven else "UNPROVEN",
+        "url": health_url,
+        "statusCode": status_code,
+        "body": body,
+        "reason": "remote Station health check passed"
+        if proven
+        else f"remote Station health check returned HTTP {status_code}",
     }
 
 
@@ -327,6 +406,8 @@ def blocked_downstream_proofs(
 
 
 def build_report(root: Path, output: Path, timeout: float) -> dict[str, Any]:
+    active_profile = active_profile_evidence(root)
+    remote_health = remote_station_health_evidence(active_profile, timeout)
     local_entrypoint = local_station_entrypoint_evidence(root)
     local_store_dsn = local_store_dsn_evidence(root, local_entrypoint)
     compose_contract = compose_contract_evidence(root)
@@ -345,45 +426,93 @@ def build_report(root: Path, output: Path, timeout: float) -> dict[str, Any]:
         check["proofStatus"] == "PROVEN"
         for check in (compose_contract, compose_env, docker_client, compose_config, docker_daemon)
     )
-    sample_allowed = local_closure_proven or compose_closure_proven
-    checks = [local_entrypoint, local_store_dsn, compose_contract, compose_env, docker_client, compose_config, docker_daemon]
+    remote_profile_selected = active_profile.get("stationMode") == "remote"
+    remote_closure_proven = (
+        remote_profile_selected
+        and active_profile["proofStatus"] == "PROVEN"
+        and remote_health["proofStatus"] == "PROVEN"
+    )
+    sample_allowed = remote_closure_proven or local_closure_proven or compose_closure_proven
+    checks = (
+        [active_profile, remote_health]
+        if remote_profile_selected
+        else [local_entrypoint, local_store_dsn, compose_contract, compose_env, docker_client, compose_config, docker_daemon]
+    )
 
     issues: list[dict[str, Any]] = []
     if not sample_allowed:
-        local_failed = [
-            check
-            for check in (local_entrypoint, local_store_dsn)
-            if check["proofStatus"] != "PROVEN" or not local_entrypoint_delegates_compose
-        ]
-        if local_failed:
+        if remote_profile_selected:
             issues.append(
                 source_issue(
-                    "local-dev-station-runtime-closure-unproven",
-                    "local make station does not prove a managed Station+Postgres closure.",
-                    local_failed,
+                    "remote-station-runtime-closure-unproven",
+                    "remote profile Station closure is not currently ready for runtime proof.",
+                    [active_profile, remote_health],
                     output,
                 )
             )
-        issues.append(
-            source_issue(
-                "compose-station-runtime-closure-unproven",
-                "compose Station+Postgres closure is not currently ready for runtime proof.",
-                [compose_contract, compose_env, docker_client, compose_config, docker_daemon],
-                output,
+        else:
+            local_failed = [
+                check
+                for check in (local_entrypoint, local_store_dsn)
+                if check["proofStatus"] != "PROVEN" or not local_entrypoint_delegates_compose
+            ]
+            if local_failed:
+                issues.append(
+                    source_issue(
+                        "local-dev-station-runtime-closure-unproven",
+                        "local make station does not prove a managed Station+Postgres closure.",
+                        local_failed,
+                        output,
+                    )
+                )
+            issues.append(
+                source_issue(
+                    "compose-station-runtime-closure-unproven",
+                    "compose Station+Postgres closure is not currently ready for runtime proof.",
+                    [compose_contract, compose_env, docker_client, compose_config, docker_daemon],
+                    output,
+                )
             )
-        )
 
     status = "pass" if sample_allowed else "diagnostic incomplete"
-    managed_runtime = "local-dev-station" if local_closure_proven else "compose-station-postgres" if compose_closure_proven else None
+    managed_runtime = (
+        "remote-profile-station"
+        if remote_closure_proven
+        else "local-dev-station"
+        if local_closure_proven
+        else "compose-station-postgres"
+        if compose_closure_proven
+        else None
+    )
     failed_checks = [check for check in checks if check["proofStatus"] != "PROVEN"]
+    if remote_closure_proven:
+        failed_checks = []
     local_failed_checks = [check["name"] for check in (local_entrypoint, local_store_dsn) if check["proofStatus"] != "PROVEN"]
     compose_failed_checks = [
         check["name"]
         for check in (compose_contract, compose_env, docker_client, compose_config, docker_daemon)
         if check["proofStatus"] != "PROVEN"
     ]
+    remote_failed_checks = [
+        check["name"]
+        for check in (active_profile, remote_health)
+        if check["proofStatus"] != "PROVEN"
+    ]
     check_reasons = {check["name"]: check.get("reason") for check in checks}
     failed_check_reasons = {check["name"]: check.get("reason") for check in failed_checks}
+    remote_runtime_closure = {
+        "proofStatus": "PROVEN" if remote_closure_proven else "UNPROVEN",
+        "sampleEmissionAllowed": remote_closure_proven,
+        "failedChecks": remote_failed_checks,
+        "failedCheckReasons": {
+            check["name"]: check.get("reason")
+            for check in (active_profile, remote_health)
+            if check["proofStatus"] != "PROVEN"
+        },
+        "checks": [active_profile["name"], remote_health["name"]],
+        "profile": active_profile.get("profile"),
+        "stationURL": active_profile.get("stationURL"),
+    }
     local_runtime_closure = {
         "proofStatus": "PROVEN" if local_closure_proven else "UNPROVEN",
         "sampleEmissionAllowed": local_closure_proven,
@@ -471,16 +600,19 @@ def build_report(root: Path, output: Path, timeout: float) -> dict[str, Any]:
             "blockedByPhase": None if sample_allowed else PHASE,
             "blockedByGate": None if sample_allowed else GATE,
             "blockedDownstreamSteps": [] if sample_allowed else BLOCKED_DOWNSTREAM_STEPS,
-              "blockedDownstreamProofs": downstream_proofs,
+            "blockedDownstreamProofs": downstream_proofs,
             "localRuntimeClosureProofStatus": "PROVEN" if local_closure_proven else "UNPROVEN",
             "composeRuntimeClosureProofStatus": "PROVEN" if compose_closure_proven else "UNPROVEN",
+            "remoteRuntimeClosureProofStatus": "PROVEN" if remote_closure_proven else "UNPROVEN",
             "dockerDaemonProofStatus": docker_daemon["proofStatus"],
             "failedCheckCount": len(failed_checks),
             "failedChecks": [check["name"] for check in failed_checks],
             "checkReasons": check_reasons,
             "failedCheckReasons": failed_check_reasons,
+            "remoteFailedChecks": remote_failed_checks,
             "localFailedChecks": local_failed_checks,
             "composeFailedChecks": compose_failed_checks,
+            "remoteRuntimeClosure": remote_runtime_closure,
             "localRuntimeClosure": local_runtime_closure,
             "composeRuntimeClosure": compose_runtime_closure,
         },

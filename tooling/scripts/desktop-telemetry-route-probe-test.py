@@ -370,10 +370,10 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
         self.assertFalse(report["routeProofTrusted"])
         self.assertFalse(report["summary"]["routeProofTrusted"])
         blocked_steps = {proof["step"] for proof in report["routeTrustBlockedProofs"]}
-        self.assertIn("local-source.deployable-head", blocked_steps)
-        self.assertIn("local-source.head-route-contracts", blocked_steps)
         self.assertIn("target-runtime.identity", blocked_steps)
         self.assertIn("target-runtime.route-contracts", blocked_steps)
+        self.assertNotIn("local-source.deployable-head", blocked_steps)
+        self.assertNotIn("local-source.head-route-contracts", blocked_steps)
         self.assertEqual(report["summary"]["routeTrustBlockedProofs"], report["routeTrustBlockedProofs"])
         self.assertEqual(report["summary"]["routeTrustBlockedProofCount"], report["routeTrustBlockedProofCount"])
         for proof in report["routeTrustBlockedProofs"]:
