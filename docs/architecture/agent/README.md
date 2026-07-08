@@ -34,6 +34,8 @@
 |---|---|
 | [agent-canvas-orchestration.md](./agent-canvas-orchestration.md) | **当前 Agent 编排正式设计** — 以 Agent Canvas 为入口、GoalKeeper 为目标锚点、EngineMatcher/RunPlan/AutonomyController 为运行内核的多 Agent 编排架构 |
 | [agent-lobehub-blueprint.md](./agent-lobehub-blueprint.md) | **当前 Agent 重构正式设计** — 以 LobeHub 为蓝本的 UI/UX、Tool、MCP、Skill、后端能力映射与目标架构 |
+| [lobehub-parity/](./lobehub-parity/) | **Agent LobeHub 全栈能力对标账本** — 以 BOM/Spec/Plan/Gate/Evidence/Traceability 追踪 LobeHub 源码级对标、原型确认门与迁移设计 |
+| [prototype/](./prototype/) | **Agent LobeHub 原型审查入口** — 指向当前 `agent-lobehub-parity` pending-review 原型、Owner checklist 和产品迁移 fail-closed 边界 |
 | [agent-self-growth-architecture.md](./agent-self-growth-architecture.md) | **peers-touch 架构设计** — 自成长生命周期、领域对象、服务拓扑、Turn 执行闭环、成长评估机制 |
 | [agent-memory-architecture.md](./agent-memory-architecture.md) | **Agent Memory 架构** — Memory 分层、存储、检索、反馈与可视化 |
 | [hermes-agent-self-improving-analysis.md](./hermes-agent-self-improving-analysis.md) | **Hermes 参考分析** — hermes-agent 的七层架构、工程实现细节，作为设计参考 |

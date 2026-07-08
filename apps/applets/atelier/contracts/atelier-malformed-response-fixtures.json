@@ -1,0 +1,452 @@
+{
+  "providerCapabilities": [
+    {
+      "name": "provider capabilities reject empty source",
+      "officialName": "official provider capabilities reject empty source",
+      "method": "atelier.provider.capabilities",
+      "payload": { "taskId": "task-1" },
+      "response": {
+        "source": "",
+        "capabilities": [
+          {
+            "id": "cap-empty-source",
+            "label": "Review",
+            "description": "Review",
+            "slashCommand": "/review",
+            "providerKind": "verifier",
+            "scope": "station-provider",
+            "readOnly": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "provider capabilities reject empty descriptor id",
+      "officialName": "official provider capabilities reject empty descriptor id",
+      "method": "atelier.provider.capabilities",
+      "payload": { "taskId": "task-1" },
+      "response": {
+        "source": "station.provider.capabilities",
+        "capabilities": [
+          {
+            "id": "",
+            "label": "Review",
+            "description": "Review",
+            "slashCommand": "/review",
+            "providerKind": "verifier",
+            "scope": "station-provider",
+            "readOnly": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "provider capabilities reject empty slash command",
+      "officialName": "official provider capabilities reject empty slash command",
+      "method": "atelier.provider.capabilities",
+      "payload": { "taskId": "task-1" },
+      "response": {
+        "source": "station.provider.capabilities",
+        "capabilities": [
+          {
+            "id": "cap-empty-command",
+            "label": "Review",
+            "description": "Review",
+            "slashCommand": "",
+            "providerKind": "verifier",
+            "scope": "station-provider",
+            "readOnly": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "provider capabilities reject missing slash prefix",
+      "officialName": "official provider capabilities reject missing slash prefix",
+      "method": "atelier.provider.capabilities",
+      "payload": { "taskId": "task-1" },
+      "response": {
+        "source": "station.provider.capabilities",
+        "capabilities": [
+          {
+            "id": "cap-missing-slash-command",
+            "label": "Review",
+            "description": "Review",
+            "slashCommand": "review",
+            "providerKind": "verifier",
+            "scope": "station-provider",
+            "readOnly": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "provider capabilities reject non-station scope",
+      "officialName": "official provider capabilities reject non-station scope",
+      "method": "atelier.provider.capabilities",
+      "payload": { "taskId": "task-1" },
+      "response": {
+        "source": "station.provider.capabilities",
+        "capabilities": [
+          {
+            "id": "cap-non-station-scope",
+            "label": "Review",
+            "description": "Review",
+            "slashCommand": "/review",
+            "providerKind": "verifier",
+            "scope": "provider-runtime",
+            "readOnly": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "provider capabilities reject writable descriptor",
+      "officialName": "official provider capabilities reject writable descriptor",
+      "method": "atelier.provider.capabilities",
+      "payload": { "taskId": "task-1" },
+      "response": {
+        "source": "station.provider.capabilities",
+        "capabilities": [
+          {
+            "id": "cap-writable-descriptor",
+            "label": "Review",
+            "description": "Review",
+            "slashCommand": "/review",
+            "providerKind": "verifier",
+            "scope": "station-provider",
+            "readOnly": false
+          }
+        ]
+      }
+    }
+  ],
+  "nonArtifactCapabilities": [
+    {
+      "name": "feedback submit rejects accepted false",
+      "officialName": "official feedback submit rejects accepted false",
+      "method": "atelier.feedback.submit",
+      "payload": { "taskId": "task-1", "blockId": "block-1", "signal": "positive" },
+      "response": {
+        "accepted": false,
+        "feedbackId": "feedback-not-accepted",
+        "memoryCandidate": { "status": "candidate", "reason": "not accepted", "requiresConfirmation": true, "confirmationMode": "station_memory_review", "feeds": ["planner"] },
+        "rerunIntent": { "status": "not_requested", "reason": "not accepted", "requiresConfirmation": false, "confirmationMode": "not_required", "feeds": [] }
+      }
+    },
+    {
+      "name": "feedback submit rejects forbidden feed",
+      "officialName": "official feedback submit rejects forbidden feed",
+      "method": "atelier.feedback.submit",
+      "payload": { "taskId": "task-1", "blockId": "block-1", "signal": "positive" },
+      "response": {
+        "accepted": true,
+        "feedbackId": "feedback-1",
+        "memoryCandidate": { "status": "candidate", "reason": "ok", "requiresConfirmation": true, "confirmationMode": "station_memory_review", "feeds": ["executor"] },
+        "rerunIntent": { "status": "not_requested", "reason": "ok", "requiresConfirmation": false, "confirmationMode": "not_required", "feeds": [] }
+      }
+    },
+    {
+      "name": "feedback submit rejects empty feedback id",
+      "officialName": "official feedback submit rejects empty feedback id",
+      "method": "atelier.feedback.submit",
+      "payload": { "taskId": "task-1", "blockId": "block-1", "signal": "positive" },
+      "response": {
+        "accepted": true,
+        "feedbackId": "",
+        "memoryCandidate": { "status": "candidate", "reason": "ok", "requiresConfirmation": true, "confirmationMode": "station_memory_review", "feeds": ["planner"] },
+        "rerunIntent": { "status": "not_requested", "reason": "ok", "requiresConfirmation": false, "confirmationMode": "not_required", "feeds": [] }
+      }
+    },
+    {
+      "name": "feedback submit rejects empty policy reason",
+      "officialName": "official feedback submit rejects empty policy reason",
+      "method": "atelier.feedback.submit",
+      "payload": { "taskId": "task-1", "blockId": "block-1", "signal": "positive" },
+      "response": {
+        "accepted": true,
+        "feedbackId": "feedback-empty-reason",
+        "memoryCandidate": { "status": "candidate", "reason": "", "requiresConfirmation": true, "confirmationMode": "station_memory_review", "feeds": ["planner"] },
+        "rerunIntent": { "status": "not_requested", "reason": "ok", "requiresConfirmation": false, "confirmationMode": "not_required", "feeds": [] }
+      }
+    },
+    {
+      "name": "feedback submit rejects empty confirmation mode",
+      "officialName": "official feedback submit rejects empty confirmation mode",
+      "method": "atelier.feedback.submit",
+      "payload": { "taskId": "task-1", "blockId": "block-1", "signal": "positive" },
+      "response": {
+        "accepted": true,
+        "feedbackId": "feedback-empty-confirmation-mode",
+        "memoryCandidate": { "status": "candidate", "reason": "ok", "requiresConfirmation": true, "confirmationMode": "", "feeds": ["planner"] },
+        "rerunIntent": { "status": "not_requested", "reason": "ok", "requiresConfirmation": false, "confirmationMode": "not_required", "feeds": [] }
+      }
+    },
+    {
+      "name": "feedback submit rejects non-boolean confirmation requirement",
+      "officialName": "official feedback submit rejects non-boolean confirmation requirement",
+      "method": "atelier.feedback.submit",
+      "payload": { "taskId": "task-1", "blockId": "block-1", "signal": "positive" },
+      "response": {
+        "accepted": true,
+        "feedbackId": "feedback-non-boolean-confirmation",
+        "memoryCandidate": { "status": "candidate", "reason": "ok", "requiresConfirmation": "yes", "confirmationMode": "station_memory_review", "feeds": ["planner"] },
+        "rerunIntent": { "status": "not_requested", "reason": "ok", "requiresConfirmation": false, "confirmationMode": "not_required", "feeds": [] }
+      }
+    },
+    {
+      "name": "feedback submit rejects rerun forbidden feed",
+      "officialName": "official feedback submit rejects rerun forbidden feed",
+      "method": "atelier.feedback.submit",
+      "payload": { "taskId": "task-1", "blockId": "block-1", "signal": "regenerate" },
+      "response": {
+        "accepted": true,
+        "feedbackId": "feedback-rerun-bad-feed",
+        "memoryCandidate": { "status": "not_requested", "reason": "ok", "requiresConfirmation": false, "confirmationMode": "not_required", "feeds": [] },
+        "rerunIntent": { "status": "requested", "reason": "rerun", "requiresConfirmation": true, "confirmationMode": "station_rerun_review", "feeds": ["executor"] }
+      }
+    },
+    {
+      "name": "memory confirmation rejects accepted false",
+      "officialName": "official memory confirmation rejects accepted false",
+      "method": "atelier.memory.confirmCandidate",
+      "payload": { "taskId": "task-1", "feedbackId": "feedback-1" },
+      "response": { "accepted": false, "feedbackId": "feedback-1", "memoryId": "memory-not-accepted", "status": "confirmed", "source": "atelier.memory.confirmCandidate", "alreadyDone": false }
+    },
+    {
+      "name": "memory confirmation rejects empty memory id",
+      "officialName": "official memory confirmation rejects empty memory id",
+      "method": "atelier.memory.confirmCandidate",
+      "payload": { "taskId": "task-1", "feedbackId": "feedback-1" },
+      "response": { "accepted": true, "feedbackId": "feedback-1", "memoryId": "", "status": "confirmed", "source": "atelier.memory.confirmCandidate", "alreadyDone": false }
+    },
+    {
+      "name": "memory confirmation rejects empty source",
+      "officialName": "official memory confirmation rejects empty source",
+      "method": "atelier.memory.confirmCandidate",
+      "payload": { "taskId": "task-1", "feedbackId": "feedback-1" },
+      "response": { "accepted": true, "feedbackId": "feedback-1", "memoryId": "memory-1", "status": "confirmed", "source": "", "alreadyDone": false }
+    },
+    {
+      "name": "memory confirmation rejects wrong feedback id",
+      "officialName": "official memory confirmation rejects wrong feedback id",
+      "method": "atelier.memory.confirmCandidate",
+      "payload": { "taskId": "task-1", "feedbackId": "feedback-1" },
+      "response": { "accepted": true, "feedbackId": "feedback-2", "memoryId": "memory-1", "status": "confirmed", "source": "atelier.memory.confirmCandidate", "alreadyDone": false }
+    },
+    {
+      "name": "rerun confirmation rejects accepted false",
+      "officialName": "official rerun confirmation rejects accepted false",
+      "method": "atelier.feedback.confirmRerun",
+      "payload": { "taskId": "task-1", "feedbackId": "feedback-1" },
+      "response": { "accepted": false, "feedbackId": "feedback-1", "taskId": "task-1", "rerunTaskId": "task-rerun-not-accepted", "status": "created", "source": "atelier.feedback.confirmRerun", "alreadyDone": false, "started": false }
+    },
+    {
+      "name": "rerun confirmation rejects non-boolean started",
+      "officialName": "official rerun confirmation rejects non-boolean started",
+      "method": "atelier.feedback.confirmRerun",
+      "payload": { "taskId": "task-1", "feedbackId": "feedback-1" },
+      "response": { "accepted": true, "feedbackId": "feedback-1", "taskId": "task-1", "rerunTaskId": "task-rerun-1", "status": "created", "source": "atelier.feedback.confirmRerun", "alreadyDone": false, "started": "yes" }
+    },
+    {
+      "name": "rerun confirmation rejects empty rerun task id",
+      "officialName": "official rerun confirmation rejects empty rerun task id",
+      "method": "atelier.feedback.confirmRerun",
+      "payload": { "taskId": "task-1", "feedbackId": "feedback-1" },
+      "response": { "accepted": true, "feedbackId": "feedback-1", "taskId": "task-1", "rerunTaskId": "", "status": "created", "source": "atelier.feedback.confirmRerun", "alreadyDone": false, "started": false }
+    },
+    {
+      "name": "rerun confirmation rejects wrong feedback id",
+      "officialName": "official rerun confirmation rejects wrong feedback id",
+      "method": "atelier.feedback.confirmRerun",
+      "payload": { "taskId": "task-1", "feedbackId": "feedback-1" },
+      "response": { "accepted": true, "feedbackId": "feedback-2", "taskId": "task-1", "rerunTaskId": "task-rerun-1", "status": "created", "source": "atelier.feedback.confirmRerun", "alreadyDone": false, "started": false }
+    },
+    {
+      "name": "rerun confirmation rejects wrong task id",
+      "officialName": "official rerun confirmation rejects wrong task id",
+      "method": "atelier.feedback.confirmRerun",
+      "payload": { "taskId": "task-1", "feedbackId": "feedback-1" },
+      "response": { "accepted": true, "feedbackId": "feedback-1", "taskId": "task-2", "rerunTaskId": "task-rerun-1", "status": "created", "source": "atelier.feedback.confirmRerun", "alreadyDone": false, "started": false }
+    },
+    {
+      "name": "workspace open rejects accepted false",
+      "officialName": "official workspace open rejects accepted false",
+      "method": "atelier.workspace.open",
+      "payload": { "taskId": "task-1", "workspaceUri": "pt-workspace://task/task-1?workspace=peers-touch" },
+      "response": { "accepted": false, "opened": false, "workspaceUri": "pt-workspace://task/task-1?workspace=peers-touch", "mode": "host_intent", "reason": "not accepted" }
+    },
+    {
+      "name": "workspace open rejects bad workspace uri",
+      "officialName": "official workspace open rejects bad workspace uri",
+      "method": "atelier.workspace.open",
+      "payload": { "taskId": "task-1", "workspaceUri": "pt-workspace://task/task-1?workspace=peers-touch" },
+      "response": { "accepted": true, "opened": false, "workspaceUri": "file:///tmp/ws", "mode": "host_intent", "reason": "bad uri" }
+    },
+    {
+      "name": "workspace open rejects wrong workspace uri",
+      "officialName": "official workspace open rejects wrong workspace uri",
+      "method": "atelier.workspace.open",
+      "payload": { "taskId": "task-1", "workspaceUri": "pt-workspace://task/task-1?workspace=peers-touch" },
+      "response": { "accepted": true, "opened": false, "workspaceUri": "pt-workspace://task/task-2?workspace=peers-touch", "mode": "host_intent", "reason": "wrong workspace uri" }
+    },
+    {
+      "name": "workspace open rejects empty mode",
+      "officialName": "official workspace open rejects empty mode",
+      "method": "atelier.workspace.open",
+      "payload": { "taskId": "task-1", "workspaceUri": "pt-workspace://task/task-1?workspace=peers-touch" },
+      "response": { "accepted": true, "opened": false, "workspaceUri": "pt-workspace://task/task-1?workspace=peers-touch", "mode": "", "reason": "empty mode" }
+    },
+    {
+      "name": "workspace open rejects empty reason",
+      "officialName": "official workspace open rejects empty reason",
+      "method": "atelier.workspace.open",
+      "payload": { "taskId": "task-1", "workspaceUri": "pt-workspace://task/task-1?workspace=peers-touch" },
+      "response": { "accepted": true, "opened": false, "workspaceUri": "pt-workspace://task/task-1?workspace=peers-touch", "mode": "host_intent", "reason": "" }
+    }
+  ],
+  "artifactBody": [
+    {
+      "name": "artifact body rejects non-canonical body ref",
+      "officialName": "official artifact body rejects non-canonical body ref",
+      "method": "atelier.artifact.body.fetch",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "taskId": "task-1", "artifactId": "artifact-1", "bodyRef": "file:///tmp/body", "bodyKind": "markdown", "bodyHash": "sha256:bad", "bodySize": 1, "text": "# leak", "truncated": false, "retentionStatus": "active" }
+    },
+    {
+      "name": "artifact body rejects whitespace body ref",
+      "officialName": "official artifact body rejects whitespace body ref",
+      "method": "atelier.artifact.body.fetch",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "taskId": "task-1", "artifactId": "artifact-1", "bodyRef": "artifact://task 1/artifact-1/body", "bodyKind": "markdown", "bodyHash": "sha256:bad", "bodySize": 1, "text": "# leak", "truncated": false, "retentionStatus": "active" }
+    },
+    {
+      "name": "artifact body rejects wrong task",
+      "officialName": "official artifact body rejects wrong task",
+      "method": "atelier.artifact.body.fetch",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "bodyRef": "artifact://task-1/artifact-1/body", "expectedHash": "sha256:expected" },
+      "response": { "taskId": "task-2", "artifactId": "artifact-1", "bodyRef": "artifact://task-1/artifact-1/body", "bodyKind": "markdown", "bodyHash": "sha256:expected", "bodySize": 1, "text": "# wrong task", "truncated": false, "retentionStatus": "active" }
+    },
+    {
+      "name": "artifact body rejects wrong artifact",
+      "officialName": "official artifact body rejects wrong artifact",
+      "method": "atelier.artifact.body.fetch",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "bodyRef": "artifact://task-1/artifact-1/body", "expectedHash": "sha256:expected" },
+      "response": { "taskId": "task-1", "artifactId": "artifact-2", "bodyRef": "artifact://task-1/artifact-1/body", "bodyKind": "markdown", "bodyHash": "sha256:expected", "bodySize": 1, "text": "# wrong artifact", "truncated": false, "retentionStatus": "active" }
+    },
+    {
+      "name": "artifact body rejects wrong body ref",
+      "officialName": "official artifact body rejects wrong body ref",
+      "method": "atelier.artifact.body.fetch",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "bodyRef": "artifact://task-1/artifact-1/body", "expectedHash": "sha256:expected" },
+      "response": { "taskId": "task-1", "artifactId": "artifact-1", "bodyRef": "artifact://task-1/artifact-2/body", "bodyKind": "markdown", "bodyHash": "sha256:expected", "bodySize": 1, "text": "# wrong ref", "truncated": false, "retentionStatus": "active" }
+    },
+    {
+      "name": "artifact body rejects expected hash mismatch",
+      "officialName": "official artifact body rejects expected hash mismatch",
+      "method": "atelier.artifact.body.fetch",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "bodyRef": "artifact://task-1/artifact-1/body", "expectedHash": "sha256:expected" },
+      "response": { "taskId": "task-1", "artifactId": "artifact-1", "bodyRef": "artifact://task-1/artifact-1/body", "bodyKind": "markdown", "bodyHash": "sha256:actual", "bodySize": 1, "text": "# wrong hash", "truncated": false, "retentionStatus": "active" }
+    }
+  ],
+  "artifactPreview": [
+    {
+      "name": "artifact preview rejects raw url renderer",
+      "officialName": "official artifact preview rejects raw url renderer",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "https://example.invalid/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "iframe", "rendererSessionId": "session-1", "rendererOwner": "applet", "rendererMode": "iframe", "rendererStatus": "opened", "rendererCapabilities": ["raw_url"], "reason": "bad renderer" }
+    },
+    {
+      "name": "artifact preview rejects whitespace sandbox ref",
+      "officialName": "official artifact preview rejects whitespace sandbox ref",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task 1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "session-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "prepared_not_opened", "rendererCapabilities": ["text"], "reason": "bad sandboxRef" }
+    },
+    {
+      "name": "artifact preview rejects whitespace body ref",
+      "officialName": "official artifact preview rejects whitespace body ref",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact 1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "session-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "prepared_not_opened", "rendererCapabilities": ["text"], "reason": "bad bodyRef" }
+    },
+    {
+      "name": "artifact preview rejects accepted false",
+      "officialName": "official artifact preview rejects accepted false",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": false, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "atelier-preview:task-1:artifact-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "prepared_not_opened", "rendererCapabilities": ["text"], "reason": "not accepted" }
+    },
+    {
+      "name": "artifact preview rejects not prepared",
+      "officialName": "official artifact preview rejects not prepared",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": false, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "atelier-preview:task-1:artifact-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "prepared_not_opened", "rendererCapabilities": ["text"], "reason": "not prepared" }
+    },
+    {
+      "name": "artifact preview rejects bad session id",
+      "officialName": "official artifact preview rejects bad session id",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "session-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "prepared_not_opened", "rendererCapabilities": ["text"], "reason": "bad session id" }
+    },
+    {
+      "name": "artifact preview rejects bad renderer mode",
+      "officialName": "official artifact preview rejects bad renderer mode",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "atelier-preview:task-1:artifact-1", "rendererOwner": "desktop_host", "rendererMode": "iframe", "rendererStatus": "prepared_not_opened", "rendererCapabilities": ["text"], "reason": "bad renderer mode" }
+    },
+    {
+      "name": "artifact preview rejects bad renderer status",
+      "officialName": "official artifact preview rejects bad renderer status",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "atelier-preview:task-1:artifact-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "opened", "rendererCapabilities": ["text"], "reason": "bad renderer status" }
+    },
+    {
+      "name": "artifact preview rejects empty renderer capability",
+      "officialName": "official artifact preview rejects empty renderer capability",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "atelier-preview:task-1:artifact-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "prepared_not_opened", "rendererCapabilities": [""], "reason": "bad renderer capability" }
+    },
+    {
+      "name": "artifact preview rejects missing required renderer capability",
+      "officialName": "official artifact preview rejects missing required renderer capability",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "atelier-preview:task-1:artifact-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "prepared_not_opened", "rendererCapabilities": ["text"], "reason": "missing host visual renderer surface" }
+    },
+    {
+      "name": "artifact preview rejects wrong task",
+      "officialName": "official artifact preview rejects wrong task",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-2", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "atelier-preview:task-1:artifact-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "prepared_not_opened", "rendererCapabilities": ["text"], "reason": "wrong task" }
+    },
+    {
+      "name": "artifact preview rejects wrong artifact",
+      "officialName": "official artifact preview rejects wrong artifact",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-2", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "atelier-preview:task-1:artifact-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "prepared_not_opened", "rendererCapabilities": ["text"], "reason": "wrong artifact" }
+    },
+    {
+      "name": "artifact preview rejects wrong sandbox ref",
+      "officialName": "official artifact preview rejects wrong sandbox ref",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-2/preview", "bodyRef": "artifact://task-1/artifact-1/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "atelier-preview:task-1:artifact-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "prepared_not_opened", "rendererCapabilities": ["text"], "reason": "wrong sandbox ref" }
+    },
+    {
+      "name": "artifact preview rejects wrong body ref",
+      "officialName": "official artifact preview rejects wrong body ref",
+      "method": "atelier.artifact.preview.open",
+      "payload": { "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-1/body" },
+      "response": { "accepted": true, "opened": false, "prepared": true, "taskId": "task-1", "artifactId": "artifact-1", "sandboxRef": "atelier-sandbox://task-1/artifact-1/preview", "bodyRef": "artifact://task-1/artifact-2/body", "kind": "markdown", "mode": "sandbox_manifest", "rendererSessionId": "atelier-preview:task-1:artifact-1", "rendererOwner": "desktop_host", "rendererMode": "host_sandbox_manifest", "rendererStatus": "prepared_not_opened", "rendererCapabilities": ["text"], "reason": "wrong body ref" }
+    }
+  ]
+}

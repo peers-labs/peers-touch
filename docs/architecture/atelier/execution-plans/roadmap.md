@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-20 | **Updated**: 2026-06-20
+> **Created**: 2026-06-20 | **Updated**: 2026-07-05
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -63,9 +63,9 @@
 
 ### B1 ｜单次真实执行
 
-- **搭完能看到什么**：对一条 Task 触发一次 Run，Atelier **真实调用**一个 coding CLI（Codex / Claude Code 其一），命令跑完，回收 stdout/日志和产物文件，存成 Artifact，`Run.state=succeeded`。界面能看到这次运行的日志和产出的 `diff.patch`。
-- **怎么算搭完**：真实 CLI 调用（**不 mock**）；Artifact 落盘且可下载；Run 状态正确；cost（token/时长）被记录。
-- **复用 / 新增**：复用 B0 台账；新增 Provider 接口（先只 CodingProvider 一个实例）+ Run 实体 + Artifact 存储。
+- **搭完能看到什么**：对一条 Task 触发一次 Run，Atelier **真实调用**一个 coding CLI（Codex / Claude Code 其一），命令跑完，回收 stdout/日志和产物文件，存成 Artifact，`Run.state=succeeded`。界面能看到这次运行的日志和产出的 `diff.patch`，并能看到该 Run 绑定的 Workspace / Sandbox 引用。
+- **怎么算搭完**：真实 CLI 调用（**不 mock**）；Artifact 落盘且可下载；Run 状态正确；cost（token/时长）被记录；Workspace 至少具备 `uri / sandbox_ref / policy_ref`，Open in IDE 只能消费该引用，不能让 applet 直接改 workspace 真源。
+- **复用 / 新增**：复用 B0 台账；新增 Provider 接口（先只 CodingProvider 一个实例）+ Run 实体 + Artifact 存储 + Workspace/Sandbox schema。
 
 ### B2 ｜执行循环
 
@@ -117,6 +117,12 @@
 - **怎么算搭完**：`reached ⟺ 终裁签字 ∧ 无带证据的未决反对`；反附和规则生效；超轮次升级。
 - **复用 / 新增**：复用 B8；新增 CollaborationSession 收敛语义 + 证据约束。
 
+### B9.5 ｜推进控制（Supervisor / Replan / Resume Anchor）
+
+- **搭完能看到什么**：Supervisor Loop 订阅 Station durable event/outbox，能发现预算熔断、max_rounds、max_fix_loops、workspace_conflict 等卡点；Replan 不等到 L1 才出现，而是在 B10 前可对卡点子图重规划；Resume 从最近 accepted checkpoint / milestone anchor 恢复，已 accepted 产物不重跑。
+- **怎么算搭完**：`TaskProviderPlan.orchestration_policy` 明确 `supervisor_loop / replan_policy / resume_anchor_policy / task_graph_parallel_policy`；parallel TaskGraph 必须声明 integrator identity；没有 integrator 时 B 阶段只允许 `serial_only`。
+- **复用 / 新增**：复用 B6 熔断、B8 TaskGraph、B9 event/evidence；新增 typed `TaskOrchestrationPolicy`、Station CreateTask guard 和 contract gate，不新增 Atelier applet 执行 method。
+
 ### B10 ｜项目聚合（Milestone / Project Acceptance）
 
 - **搭完能看到什么**：一个**小项目**从 `ProjectContract`（含 acceptance + non_goals）一路到 `Project=accepted`，完成由**完成谓词**判定，残余风险 / follow-up 落账。能看到 Milestone Tree 的逐个 accepted。
@@ -133,13 +139,13 @@
 
 ### B12 ｜L1 领域（换形状不换地基）
 
-- **搭完能看到什么**：接入一个 DataProvider，跑一个「数据查询 + 规则校验」任务，规则引擎 Verifier（L1）**自动验收**；引入 Replan 与 Resume：项目中断后能从最近 accepted 锚点恢复。
-- **复用 / 新增**：复用 B0–B11 全部地基；新增 DataProvider 子类型 + 规则引擎 Verifier + Domain Gate + Replan + Resume。
+- **搭完能看到什么**：接入一个 DataProvider，跑一个「数据查询 + 规则校验」任务，规则引擎 Verifier（L1）**自动验收**；项目中断时复用 B9.5 的 Replan / Resume Anchor，从最近 accepted 锚点恢复。
+- **复用 / 新增**：复用 B0–B11 全部地基；新增 DataProvider 子类型 + 规则引擎 Verifier + Domain Gate，不在此阶段才首次引入 Replan / Resume。
 
 ### B13 ｜L2 主观
 
 - **搭完能看到什么**：跑一个研究/内容任务（如选股研究），L2 Verifier 只产「建议 + 证据」，任务停在 `awaiting_human`，把多个结论 + 证据 + 反对意见**一次性汇聚**给人签字；并行子任务由 Integrator 合并去冲突。
-- **复用 / 新增**：复用全部地基；新增研究/内容 Provider + LLM-建议型 Verifier + 人工验收汇聚点 + Expert Mesh/Debate 引擎 + Integrator 角色。
+- **复用 / 新增**：复用全部地基；新增研究/内容 Provider + LLM-建议型 Verifier + 人工验收汇聚点 + Expert Mesh/Debate 引擎；Integrator 角色必须满足 B9.5 的 `integrator_required` 前置条件。
 
 ### B14 ｜高危动作
 

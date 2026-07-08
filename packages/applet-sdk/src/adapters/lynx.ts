@@ -1,7 +1,7 @@
 // LynxBridgeAdapter — for Lynx for Web environment inside <lynx-view>.
 // Applet code runs in a Lynx background thread (no DOM). Communicates via NativeModules.
 //
-// Event reception uses the bridge long-poll channel (events.subscribe) instead of
+// Event reception uses the bridge host-event long-poll channel instead of
 // lynx.getJSModule('GlobalEventEmitter'). web-core does not implement getJSModule
 // on either thread — the native Lynx API is unavailable in the web runtime.
 
@@ -67,11 +67,12 @@ export class LynxBridgeAdapter implements BridgeAdapter {
   }
 
   /**
-   * Subscribe to host→applet events via the bridge long-poll channel.
+   * Subscribe to host→applet events via the bridge local long-poll channel.
    *
-   * The host resolves each `events.subscribe` call when it has an event to
-   * deliver. After receiving an event the SDK immediately re-subscribes,
-   * creating a continuous event stream without relying on GlobalEventEmitter.
+   * `sdk.events.subscribe(topic)` registers topics with the Gateway. This
+   * receiver intentionally calls `events.subscribe` without params; LynxHost
+   * treats that as the local delivery long-poll after it drains Gateway events
+   * into the host queue.
    */
   onEvent(handler: (topic: string, payload: unknown) => void): () => void {
     if (this.subscriptionActive) return () => {};
@@ -81,19 +82,21 @@ export class LynxBridgeAdapter implements BridgeAdapter {
       while (this.subscriptionActive) {
         try {
           // Events travel through the same canonical bridge envelope as
-          // invoke() (`{ ok: true, result: <event> }`); decode via the shared
-          // unwrapResult path so subscribe never reads the raw envelope.
-          const result = await this.callBridge({ method: 'events.subscribe', params: {} });
+          // invoke() (`{ ok: true, result: <event> }`); decode via the
+          // shared unwrapResult path so polling never reads the raw envelope.
+          const result = await this.callBridge({ method: 'events.subscribe' });
           if (!this.subscriptionActive) break;
           const event = this.unwrapResult(result);
-          if (event && typeof event === 'object' && !Array.isArray(event)) {
-            const envelope = event as { topic?: unknown; event?: unknown; payload?: unknown };
-            const topic = typeof envelope.topic === 'string'
-              ? envelope.topic
-              : typeof envelope.event === 'string' ? envelope.event : undefined;
-            if (topic) {
-              handler(topic, envelope.payload);
-            }
+          if (!event || typeof event !== 'object' || Array.isArray(event)) {
+            await new Promise((r) => setTimeout(r, 200));
+            continue;
+          }
+          const envelope = event as { topic?: unknown; event?: unknown; payload?: unknown };
+          const topic = typeof envelope.topic === 'string'
+            ? envelope.topic
+            : typeof envelope.event === 'string' ? envelope.event : undefined;
+          if (topic) {
+            handler(topic, envelope.payload);
           }
         } catch {
           // Bridge not ready or session destroyed — back off then retry

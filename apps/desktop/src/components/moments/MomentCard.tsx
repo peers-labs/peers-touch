@@ -15,7 +15,7 @@ import type { Comment } from '../../gen/proto/domain/social/comment_pb';
 import { ImageGrid } from './ImageGrid';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
-import { useFederationStore } from '../../store/federation';
+import { useActiveMomentsFederationSlice } from './useActiveMomentsStore';
 import {
   SocialTrustMeta,
   SocialActionBar,
@@ -205,7 +205,7 @@ export function MomentCard({
 }: MomentCardProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
-  const selfStationDomain = useFederationStore((s) => s.self?.homeStationDomain);
+  const selfStationDomain = useActiveMomentsFederationSlice((s) => s.self?.homeStationDomain);
   const [expanded, setExpanded] = useState(false);
   const [reactionSubmitting, setReactionSubmitting] = useState(false);
 

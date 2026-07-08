@@ -1,0 +1,25 @@
+{
+  "name": "@peers-touch/atelier-official-applet",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "build": "rspeedy build --config rspeedy.config.ts"
+  },
+  "dependencies": {
+    "@lynx-js/react": "^0.121.0",
+    "@peers-touch/applet-sdk": "workspace:*",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@lynx-js/react-rsbuild-plugin": "^0.16.2",
+    "@lynx-js/rspeedy": "^0.14.4",
+    "@lynx-js/types": "^3.9.0",
+    "@types/react": "^18.3.31",
+    "typescript": "^5.9.3"
+  },
+  "peersTouch": {
+    "appletId": "peers.atelier"
+  }
+}
