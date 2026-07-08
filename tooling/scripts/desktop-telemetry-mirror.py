@@ -189,8 +189,8 @@ def main() -> int:
         raise SystemExit("missing token: set PT_STATION_ACCESS_TOKEN or pass --token")
 
     filters = compact_filter(args)
-    events_response = post_json(args.station_url, args.token, "/telemetry/frontend/events:query", filters)
-    rollups_response = post_json(args.station_url, args.token, "/telemetry/frontend/rollups:query", filters)
+    events_response = post_json(args.station_url, args.token, "/telemetry/frontend/events/query", filters)
+    rollups_response = post_json(args.station_url, args.token, "/telemetry/frontend/rollups/query", filters)
     events = events_response.get("events", [])
     rollups = rollups_response.get("rollups", [])
     report = build_report(args.station_url, filters, events, rollups)

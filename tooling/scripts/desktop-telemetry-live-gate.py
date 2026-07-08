@@ -53,9 +53,9 @@ EXPECTED_STEPS = [
 ]
 TEMP_ACCOUNT_PASSWORD_PREFIX = "Telemetry1!"
 STATION_LOGIN_DEVICE_TYPE = "telemetry-live-gate"
-FRONTEND_TELEMETRY_INGEST_PATH = "/telemetry/frontend/events:batch"
-FRONTEND_TELEMETRY_QUERY_PATH = "/telemetry/frontend/events:query"
-FRONTEND_TELEMETRY_ROLLUP_PATH = "/telemetry/frontend/rollups:query"
+FRONTEND_TELEMETRY_INGEST_PATH = "/telemetry/frontend/events/batch"
+FRONTEND_TELEMETRY_QUERY_PATH = "/telemetry/frontend/events/query"
+FRONTEND_TELEMETRY_ROLLUP_PATH = "/telemetry/frontend/rollups/query"
 APP_META_VERSION_PATH = "/app-meta/version"
 DEBUG_HANDLERS_PATH = "/debug/list-all-handlers"
 LOCAL_STATION_MAIN = Path("apps/station/app/main.go")
@@ -1082,7 +1082,7 @@ def recommended_review_commands(report: dict[str, Any], failed_step: str) -> lis
             3,
             {
                 "purpose": "Verify that the local Station build registers the frontend telemetry routes expected by P0a.",
-                "command": "rg -n 'frontend_telemetry|/telemetry/frontend/events:batch|/telemetry/frontend/events:query|/telemetry/frontend/rollups:query' apps/station/app/main.go apps/station/app/subserver/frontend_telemetry",
+                "command": "rg -n 'frontend_telemetry|/telemetry/frontend/events/batch|/telemetry/frontend/events/query|/telemetry/frontend/rollups/query' apps/station/app/main.go apps/station/app/subserver/frontend_telemetry",
             },
         )
         commands.insert(

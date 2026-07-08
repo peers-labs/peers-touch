@@ -43,7 +43,7 @@ fn post_frontend_telemetry_batch_with_auth(
     token: &str,
     body: Value,
 ) -> Result<Value, StationClientError> {
-    station_client::post_json_with_auth("/telemetry/frontend/events:batch", token, body)
+    station_client::post_json_with_auth("/telemetry/frontend/events/batch", token, body)
 }
 
 fn token_from_state(state: &State<'_, Arc<AppState>>) -> Result<String, AppResult<StubPayload>> {

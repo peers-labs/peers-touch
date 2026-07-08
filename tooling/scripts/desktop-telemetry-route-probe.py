@@ -31,9 +31,9 @@ RUNTIME_CLOSURE_GATE = (
     "Gateway upload, route probe, query, rollup, mirror, or runtime sample emission can be trusted"
 )
 STATION_LOGIN_DEVICE_TYPE = "telemetry-probe"
-INGEST_PATH = "/telemetry/frontend/events:batch"
-QUERY_PATH = "/telemetry/frontend/events:query"
-ROLLUP_PATH = "/telemetry/frontend/rollups:query"
+INGEST_PATH = "/telemetry/frontend/events/batch"
+QUERY_PATH = "/telemetry/frontend/events/query"
+ROLLUP_PATH = "/telemetry/frontend/rollups/query"
 APP_META_VERSION_PATH = "/app-meta/version"
 DEBUG_HANDLERS_PATH = "/debug/list-all-handlers"
 LOCAL_STATION_MAIN = Path("apps/station/app/main.go")
@@ -677,7 +677,7 @@ def recommended_review_commands(station: str) -> list[dict[str, str]]:
         },
         {
             "purpose": "Verify that the local Station build registers the frontend telemetry routes expected by P0a.",
-            "command": "rg -n 'frontend_telemetry|/telemetry/frontend/events:batch|/telemetry/frontend/events:query|/telemetry/frontend/rollups:query' apps/station/app/main.go apps/station/app/subserver/frontend_telemetry",
+            "command": "rg -n 'frontend_telemetry|/telemetry/frontend/events/batch|/telemetry/frontend/events/query|/telemetry/frontend/rollups/query' apps/station/app/main.go apps/station/app/subserver/frontend_telemetry",
         },
         {
             "purpose": "Run the Station route capability probe against the selected Station.",
