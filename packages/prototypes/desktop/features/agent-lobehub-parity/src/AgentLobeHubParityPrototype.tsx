@@ -1706,9 +1706,23 @@ function TasksSurface() {
             <div className="pt-task-compact-container">
               {viewMode === 'list' ? (
                 <section className="pt-task-compact-list" aria-label="All tasks">
+                  <article className="pt-task-inline-composer is-compact-tasks" aria-label="Create task inline entry">
+                    <button className="pt-task-inline-collapse" type="button" aria-label="Collapse task composer"><ChevronDown size={14} /></button>
+                    <div className="pt-task-inline-editor is-compact-tasks">
+                      <textarea aria-label="Task instruction draft" placeholder="What needs to be done?" />
+                    </div>
+                    <div className="pt-task-inline-controls is-compact-tasks">
+                      <button type="button">No priority</button>
+                      <button type="button">Research Agent</button>
+                      <button type="button">Private</button>
+                      <button type="button"><UploadCloud size={14} /> Attach</button>
+                      <button className="primary" type="button">Create task</button>
+                    </div>
+                    <div className="pt-task-inline-note">Draft persistence and real creation stay unproven in prototype review.</div>
+                  </article>
                   {groupedTasks.map((group) => (
                     <section className="pt-task-group" key={group.group}>
-                      <button className="pt-task-group-title is-compact-tasks" type="button"><ChevronDown size={14} /> {group.group}<span>{group.items.length}</span></button>
+                      <button className="pt-task-group-title is-compact-tasks" type="button"><CircleDashed size={14} /> {group.group}<span>{group.items.length}</span></button>
                       <div className="pt-task-list-block is-compact-tasks">
                         {group.items.map((task) => (
                           <div key={task.id} className="pt-task-row-wrap">
@@ -1728,6 +1742,7 @@ function TasksSurface() {
                       </div>
                     </section>
                   ))}
+                  <div className="pt-task-hidden-footer">Completed and canceled tasks are hidden. Show hidden</div>
                 </section>
               ) : (
                 <section className="pt-task-board is-compact-tasks" aria-label="Task board">
@@ -1750,17 +1765,21 @@ function TasksSurface() {
 
           <aside className="pt-task-agent-panel is-compact-tasks" aria-label="Task agent manager">
             <div className="pt-task-agent-toolbar is-compact-tasks">
-              <strong>Topic</strong>
-              <span>Task Agent</span>
+              <strong>Task</strong>
+              <div className="pt-task-agent-header-actions" aria-label="Task agent toolbar actions">
+                <button type="button" aria-label="Create topic"><Plus size={14} /></button>
+                <button type="button" aria-label="Task topics"><Clock3 size={14} /></button>
+                <button type="button" aria-label="Close task agent panel"><PanelRightClose size={14} /></button>
+              </div>
             </div>
-            <div className="pt-task-agent-chat is-compact-tasks">
-              <p className="assistant">Ask me about your tasks</p>
-              <p className="assistant">Create, start, or review a task. Use @ to assign tasks to other agents.</p>
+            <div className="pt-task-agent-chat is-compact-tasks" aria-label="Task agent conversation">
+              <p className="assistant is-welcome">Ask me about your tasks</p>
             </div>
             <div className="pt-task-agent-input is-compact-tasks">
               <textarea aria-label="Task agent message" placeholder="Ask, create, or start a task. @ to assign tasks to other agents." />
               <div>
-                <button type="button">Topic</button>
+                <button type="button">Agent</button>
+                <button type="button"><Search size={14} /> Search</button>
                 <button type="button">DeepSeek V4 Pro</button>
                 <button className="primary" type="button">Send</button>
               </div>
