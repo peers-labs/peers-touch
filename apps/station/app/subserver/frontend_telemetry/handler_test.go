@@ -83,6 +83,32 @@ func TestHandleQueryFiltersByInteractionID(t *testing.T) {
 	}
 }
 
+func TestHandleQueryReturnsPersistedTagsAndData(t *testing.T) {
+	s := newTestSubServer(t)
+	ctx := testContext()
+
+	if _, err := s.handleIngest(ctx, &ingestRequest{Events: []frontendTelemetryEvent{
+		validEvent("event-with-context", "interaction-context", 11),
+	}}); err != nil {
+		t.Fatalf("handleIngest: %v", err)
+	}
+
+	res, err := s.handleQuery(ctx, &queryRequest{InteractionID: "interaction-context", Limit: 10})
+	if err != nil {
+		t.Fatalf("handleQuery: %v", err)
+	}
+	if len(res.Events) != 1 {
+		t.Fatalf("query result count = %d, want 1", len(res.Events))
+	}
+	event := res.Events[0]
+	if event.Tags["gate"] != "test" {
+		t.Fatalf("tags = %+v, want gate=test", event.Tags)
+	}
+	if event.Data["state"] != "visible" {
+		t.Fatalf("data = %+v, want state=visible", event.Data)
+	}
+}
+
 func TestHandleRollupQueryReturnsPersistedPercentiles(t *testing.T) {
 	s := newTestSubServer(t)
 	ctx := testContext()
@@ -111,5 +137,46 @@ func TestHandleRollupQueryReturnsPersistedPercentiles(t *testing.T) {
 	}
 	if *rollup.MaxDurationMS != 30 {
 		t.Fatalf("max duration = %v, want 30", *rollup.MaxDurationMS)
+	}
+}
+
+func TestPersistBatchRebuildsLargeRollupSetInBatches(t *testing.T) {
+	s := newTestSubServer(t)
+	ctx := context.Background()
+	const actorID = "actor-large-rollups"
+	const batchSize = 500
+	const batchCount = 5
+
+	for batch := 0; batch < batchCount; batch++ {
+		events := make([]frontendTelemetryEvent, 0, batchSize)
+		for index := 0; index < batchSize; index++ {
+			globalIndex := batch*batchSize + index
+			duration := float64(globalIndex % 100)
+			events = append(events, frontendTelemetryEvent{
+				ID:            fmt.Sprintf("large-rollup-event-%d", globalIndex),
+				SchemaVersion: 1,
+				TS:            float64(time.Now().UTC().Add(time.Duration(globalIndex) * time.Millisecond).UnixMilli()),
+				Kind:          "route.visible",
+				Source:        "shell",
+				Module:        fmt.Sprintf("desktop-large-rollup-module-%d", globalIndex),
+				Runtime:       "prod-preview",
+				InteractionID: fmt.Sprintf("interaction-%d", globalIndex),
+				DurationMS:    &duration,
+			})
+		}
+		if _, err := s.store.PersistBatch(ctx, actorID, "session-large-rollups", events); err != nil {
+			t.Fatalf("PersistBatch batch %d: %v", batch, err)
+		}
+	}
+
+	var rollupCount int64
+	if err := s.store.db.WithContext(ctx).
+		Model(&rollupModel{}).
+		Where("actor_id = ? AND runtime = ?", actorID, "prod-preview").
+		Count(&rollupCount).Error; err != nil {
+		t.Fatalf("count rollups: %v", err)
+	}
+	if rollupCount != batchSize*batchCount {
+		t.Fatalf("rollup count = %d, want %d", rollupCount, batchSize*batchCount)
 	}
 }
