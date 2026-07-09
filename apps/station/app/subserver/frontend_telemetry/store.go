@@ -11,6 +11,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const rollupInsertBatchSize = 500
+
 type rawEventModel struct {
 	ID            uint       `gorm:"column:id;primaryKey"`
 	ActorID       string     `gorm:"column:actor_id;size:255;uniqueIndex:idx_frontend_telemetry_actor_event,priority:1;index"`
@@ -233,7 +235,7 @@ func (s *rawEventStore) rebuildRollups(ctx context.Context, tx *gorm.DB, actorID
 	if len(rollups) == 0 {
 		return nil
 	}
-	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rollups).Error; err != nil {
+	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&rollups, rollupInsertBatchSize).Error; err != nil {
 		return fmt.Errorf("persist frontend telemetry rollups: %w", err)
 	}
 	return nil
