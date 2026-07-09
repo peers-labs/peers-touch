@@ -97,6 +97,9 @@ func (s *rawEventStore) PersistBatch(ctx context.Context, actorID, sessionID str
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockActorTelemetryRollups(ctx, tx, actorID); err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error; err != nil {
 			return fmt.Errorf("persist frontend telemetry events: %w", err)
 		}
@@ -106,6 +109,16 @@ func (s *rawEventStore) PersistBatch(ctx context.Context, actorID, sessionID str
 		return ingestResult{}, err
 	}
 	return ingestResult{Accepted: len(rows), Rejected: len(rejected), RejectedReasons: rejected}, nil
+}
+
+func lockActorTelemetryRollups(ctx context.Context, tx *gorm.DB, actorID string) error {
+	if tx.Dialector == nil || tx.Dialector.Name() != "postgres" {
+		return nil
+	}
+	if err := tx.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", actorID).Error; err != nil {
+		return fmt.Errorf("lock frontend telemetry actor rollups: %w", err)
+	}
+	return nil
 }
 
 func (s *rawEventStore) Query(ctx context.Context, actorID string, req queryRequest) ([]rawEventModel, error) {
