@@ -29,6 +29,7 @@ import {
 } from 'react';
 
 import { scheduleIdle, markPhaseEnd, markPhaseStart } from './boot';
+import { scheduler } from './scheduler';
 import {
   getExactPage,
   listIdlePreloadPages,
@@ -41,6 +42,7 @@ import { acquirePageRuntimeLease, releasePageRuntimeLease } from './pageRuntimeL
 import {
   markRouteRequested,
   markRouteVisible,
+  isFrontendRuntimeProfilerEnabled,
   recordReactCommit,
   recordHiddenSurfaceRender,
   recordSurfaceRender,
@@ -213,6 +215,43 @@ export function PageHost({ page, fallback }: PageHostProps): ReactElement {
     }
   }, [activeDescriptor, activePageKey]);
 
+  // Global LRU cap (D-07 Phase 1c): max 5 hidden pages total.
+  // When total hidden pages exceed PAGE_HOST_LRU_CAP, evict the oldest
+  // via scheduler.teardown lane and emit page.evict telemetry.
+  const PAGE_HOST_LRU_CAP = 5;
+  useEffect(() => {
+    if (!activePageKey) return;
+    const hiddenPages = Array.from(mounted).filter((k) => k !== activePageKey);
+    if (hiddenPages.length <= PAGE_HOST_LRU_CAP) return;
+
+    const recent = recentRef.current;
+    const hiddenByRecency = hiddenPages.sort((a, b) => {
+      const ai = recent.indexOf(a);
+      const bi = recent.indexOf(b);
+      return (bi === -1 ? Infinity : bi) - (ai === -1 ? Infinity : ai);
+    });
+    const toEvict = hiddenByRecency.slice(PAGE_HOST_LRU_CAP);
+    if (toEvict.length === 0) return;
+
+    scheduler.teardown('pagehost:global-lru-evict', () => {
+      for (const evictKey of toEvict) {
+        releasePageRuntimeLease(evictKey, 'evict');
+        log.info('pageHost', `page.evict: ${evictKey}`, { reason: 'global-lru-cap', cap: PAGE_HOST_LRU_CAP });
+      }
+      setMounted((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const evictKey of toEvict) {
+          if (next.has(evictKey) && evictKey !== activePageKey) {
+            next.delete(evictKey);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    });
+  }, [activePageKey, mounted]);
+
   const registeredOrder = useMemo(() => listPages(), []);
   const dynamicPages = Array.from(mounted)
     .filter((pageKey) => !getExactPage(pageKey))
@@ -315,7 +354,7 @@ function PageFrameCommitProfiler({
   pageId: string;
   pageKey: string;
 }): ReactElement {
-  if (!import.meta.env.DEV) return <>{children}</>;
+  if (!isFrontendRuntimeProfilerEnabled()) return <>{children}</>;
   const owner = `page-frame:${pageKey}`;
   const onRender: ProfilerOnRenderCallback = (
     id,
