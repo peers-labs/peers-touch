@@ -102,7 +102,7 @@
 - "调哪个工具"→ Provider 接入 + 路由 → `F-PR-01`、`F-PR-02`（coding）/`F-PR-03`（数据）、`F-CO-05`
 - "真实执行一次"→ Run + Run 状态机 → `F-CO-02`
 - "自动一条条跑"→ 执行循环 → `F-CO-06`、`F-CO-01`（Task 状态机）
-- "产物可看可下"→ Artifact metadata projection + Host sandbox intent → `F-CO-07a` / `F-CO-07b`（metadata-only 已落；rich renderer / Console Logs / attachment runtime 待 Host runtime/E2E）
+- "产物可看可下"→ Artifact metadata projection + Host sandbox intent → `F-CO-07a` / `F-CO-07b`（metadata-only 已落；focused product-window safe body fetch 已补且 evidence 不含 raw `text`；artifactRendererSurface / runtimeLogStream / hostStorageAttachment 均有 `controlledEvidence`，其中 `artifactRendererSurface.controlledEvidence.liveWebviewProven=false`；rich renderer / Console Logs / attachment runtime 仍待 Host runtime/E2E）
 - "改代码改在哪、不乱动别的"→ 工作区/沙箱 → `F-PR-05` ⚠️（WorkspaceOpenTarget / Host open intent 已接入；真实 IDE launch、workspace resolver、sandbox runtime 与 E2E 待验）
 - "全程能回看"→ Trace → `F-FD-01`
 

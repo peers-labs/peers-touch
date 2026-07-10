@@ -9,6 +9,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
 const evidenceDir = path.join(repoRoot, 'applet-readiness-evidence', 'official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-real-product-gate.json');
+const realProductCoveredPaths = [
+  '/v1/workspace',
+  'atelier.projection.event replay via /sub-agent/agent/events/subscribe',
+  'afterEventSeq cursor-filtered replay through Desktop Gateway and Station EventStreamService',
+  'controlled Station SSE close before first replay followed by Desktop Gateway reconnect with afterEventSeq=0',
+  'controlled Station SSE close after first replay followed by Desktop Gateway reconnect using persisted cursor',
+];
+const realProductDoesNotProve = [
+  'arbitrary network failure outside controlled pre-replay/post-replay Station SSE EOF',
+  'cross-restart cursor recovery in real Desktop product window UI',
+  'real Desktop product window UI',
+];
+
+function realProductClaimBoundary(proves = []) {
+  return {
+    readiness: 'NOT_READY',
+    proves,
+    doesNotProve: realProductDoesNotProve,
+  };
+}
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -166,18 +186,9 @@ async function main() {
           stationMountPath: '/applets/atelier/v1',
           stationEventPath: '/sub-agent/agent/events/subscribe',
           desktopPublicPath: '/v1',
-          coveredPaths: [
-            '/v1/workspace',
-            'atelier.projection.event replay via /sub-agent/agent/events/subscribe',
-            'afterEventSeq cursor-filtered replay through Desktop Gateway and Station EventStreamService',
-            'controlled Station SSE close before first replay followed by Desktop Gateway reconnect with afterEventSeq=0',
-            'controlled Station SSE close after first replay followed by Desktop Gateway reconnect using persisted cursor',
-          ],
-          notCovered: [
-            'arbitrary network failure outside controlled pre-replay/post-replay Station SSE EOF',
-            'cross-restart cursor recovery in real Desktop product window UI',
-            'real Desktop product window UI',
-          ],
+          coveredPaths: realProductCoveredPaths,
+          claimBoundary: realProductClaimBoundary(realProductCoveredPaths),
+          notCovered: realProductDoesNotProve,
           command:
             'cargo test --bin peers-touch-desktop atelier_gateway_reaches_station_bundled_atelier_workspace -- --nocapture',
           startedAt,
@@ -202,6 +213,8 @@ main().catch((error) => {
         appletId: 'peers.atelier',
         service: 'atelier',
         error: String(error?.message ?? error),
+        claimBoundary: realProductClaimBoundary(),
+        notCovered: realProductDoesNotProve,
         completedAt: new Date().toISOString(),
       },
       null,

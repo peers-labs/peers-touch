@@ -17,7 +17,53 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "snapshotFirstTaskId"
     ],
     "defaultCursorSource": "workspace.replay[taskId].nextEventSeq",
-    "zeroCursorPolicy": "omit"
+    "cursorNumberPolicy": "safe_integer",
+    "zeroCursorPolicy": "omit",
+    "zeroCursorException": {
+      "certificationMode": "product-window-e2e",
+      "explicitZeroCursorPolicy": "preserve"
+    },
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:official-frontend-gate",
+        "atelier:bridge-runtime-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+      ],
+      "eventTopic": "atelier.projection.event",
+      "subscriptionMethod": "atelier.events.subscribe",
+      "agentIdSourcePriority": [
+        "agentId",
+        "agentIds[0]"
+      ],
+      "taskIdSourcePriority": [
+        "certificationCreatedSelectedTaskId",
+        "explicitTaskId",
+        "controllerSelectedTaskId",
+        "snapshotSelectedTaskId",
+        "snapshotFirstTaskId"
+      ],
+      "defaultCursorSource": "workspace.replay[taskId].nextEventSeq",
+      "cursorNumberPolicy": "safe_integer",
+      "zeroCursorPolicy": "omit",
+      "zeroCursorException": {
+        "certificationMode": "product-window-e2e",
+        "explicitZeroCursorPolicy": "preserve"
+      },
+      "hostEventBridgeRequired": true,
+      "missingHostEventBridgeFailsClosed": true,
+      "subscriptionRejectionTypedRecoveryProven": true,
+      "eventVsSnapshotFreshnessProven": true,
+      "releaseBeforeRejectCleanupProven": true,
+      "boundedRetryMatrixProven": true,
+      "realStationSseFailureMatrixProven": false,
+      "realCrossRestartE2EProven": false,
+      "realHostStationAppletE2EProven": false
+    }
   },
   "subscriptionMethod": "atelier.events.subscribe",
   "methods": [
@@ -137,6 +183,95 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "executionForbidden": true
     }
   },
+  "methodGovernance": {
+    "surfaceKind": "applet_method_governance",
+    "sourceOfTruth": "station_projection_contract",
+    "allowedIntentOwners": [
+      "station",
+      "desktop_host"
+    ],
+    "allowedSideEffectClasses": [
+      "none",
+      "host_ui",
+      "station_transaction"
+    ],
+    "serviceBindingMethods": [
+      "atelier.workspace.load",
+      "atelier.project.createFromGoal",
+      "atelier.message.send",
+      "atelier.escalation.resolve",
+      "atelier.task.setStatus",
+      "atelier.task.purge",
+      "atelier.provider.capabilities",
+      "atelier.feedback.submit",
+      "atelier.memory.confirmCandidate",
+      "atelier.feedback.confirmRerun",
+      "atelier.artifact.body.fetch"
+    ],
+    "hostLocalMethods": [
+      "atelier.workspace.open",
+      "atelier.artifact.preview.open"
+    ],
+    "eventSubscriptionMethods": [
+      "atelier.events.subscribe"
+    ],
+    "payloadlessMethods": [
+      "atelier.workspace.load",
+      "atelier.events.subscribe"
+    ],
+    "forbiddenExecutionActions": [
+      "provider.invoke",
+      "runtime.execute",
+      "model.run",
+      "cli.execute",
+      "shell.execute",
+      "gate.run",
+      "artifact.write",
+      "memory.write",
+      "input_snapshot.write",
+      "inputSnapshot.write",
+      "HostStorage.write"
+    ],
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:projection-contract-gate",
+        "atelier:official-frontend-gate",
+        "atelier:bridge-runtime-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-projection-contract-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+      ],
+      "methodKeysMatchMethods": true,
+      "runtimeMethodsExcludeEventSubscription": true,
+      "intentKeysMatchMethods": true,
+      "transportKeysMatchMethods": true,
+      "payloadKeysExcludePayloadlessMethods": true,
+      "allMethodsExecutionForbidden": true,
+      "serviceBindingUsesHostGateway": true,
+      "hostLocalLimitedToUiIntent": true,
+      "eventSubscriptionTransportBoundToProjectionTopic": true,
+      "generatedIntentMetadataExportProven": true,
+      "exactTransportMatrixGateProven": true,
+      "appletProviderInvokeExposed": false,
+      "appletRuntimeExecuteExposed": false,
+      "appletModelRunExposed": false,
+      "appletShellExecuteExposed": false,
+      "appletGateRunExposed": false,
+      "appletArtifactWriteExposed": false,
+      "appletMemoryWriteExposed": false,
+      "appletInputSnapshotWriteExposed": false,
+      "appletHostStorageWriteExposed": false,
+      "realProviderRuntimeProven": false,
+      "realGateRuntimeProven": false,
+      "realArtifactMutationRuntimeProven": false,
+      "realMemoryWriteE2EProven": false,
+      "realHostStationAppletE2EProven": false
+    }
+  },
   "methodPayloads": {
     "atelier.project.createFromGoal": {
       "requiredFields": [
@@ -244,20 +379,254 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "shell",
           "file"
         ]
+      },
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        ],
+        "method": "atelier.project.createFromGoal",
+        "intentOwner": "station",
+        "intentKind": "project_create_intent",
+        "sideEffectClass": "station_transaction",
+        "executionForbidden": true,
+        "transportKind": "service_binding",
+        "frontendCall": "requestAtelierService('/v1/projects', 'POST')",
+        "service": "atelier",
+        "httpMethod": "POST",
+        "publicPath": "/v1/projects",
+        "stationPath": "/applets/atelier/v1/projects",
+        "stationHandler": "CreateProjectFromGoal",
+        "desktopGateway": "host_service_binding",
+        "requiredFields": [
+          "goal",
+          "agentIds"
+        ],
+        "optionalFields": [
+          "intentPreset",
+          "run.kind",
+          "run.flowId",
+          "run.model"
+        ],
+        "allowedIntentPresets": [
+          "work",
+          "code",
+          "design"
+        ],
+        "allowedRunKinds": [
+          "agents",
+          "model"
+        ],
+        "defaultRunKind": "agents",
+        "allowedDirectRunModels": [
+          "openrouter-3o",
+          "claude-sonnet",
+          "gpt-5",
+          "gemini-pro"
+        ],
+        "defaultDirectRunModel": "openrouter-3o",
+        "allowedAgentFlowIds": [
+          "expert-hierarchy",
+          "roundtable",
+          "debate-judge",
+          "expert-mesh",
+          "swarm",
+          "hierarchy"
+        ],
+        "defaultAgentFlowId": "expert-hierarchy",
+        "intentPresetMappingProven": true,
+        "agentFlowDescriptorGuardProven": true,
+        "directRunIntentGuardProven": true,
+        "stationRunTargetGuardProven": true,
+        "stationFlowIdMappingGuardProven": true,
+        "officialPayloadShapeGuardProven": true,
+        "prototypePayloadShapeGuardProven": true,
+        "appletProviderInvokeExposed": false,
+        "appletModelRunExposed": false,
+        "appletCliExecuteExposed": false,
+        "appletAgentOrchestrationExposed": false,
+        "realProviderRuntimeProven": false,
+        "realAgentRuntimeProven": false,
+        "realDirectRunE2EProven": false,
+        "realHostStationAppletE2EProven": false
       }
     },
     "atelier.message.send": {
       "requiredFields": [
         "taskId",
         "text"
-      ]
+      ],
+      "forbiddenAppletFields": [
+        "run",
+        "attachments",
+        "inputSnapshot",
+        "input_snapshot"
+      ],
+      "forbiddenActions": [
+        "provider.invoke",
+        "runtime.execute",
+        "model.run",
+        "run",
+        "input_snapshot.write",
+        "inputSnapshot.write",
+        "attachment.upload",
+        "HostStorage.write"
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate",
+          "atelier:message-send-ingress-controlled-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-message-send-ingress-controlled-gate.json"
+        ],
+        "method": "atelier.message.send",
+        "intentOwner": "station",
+        "intentKind": "message_append_intent",
+        "sideEffectClass": "station_transaction",
+        "executionForbidden": true,
+        "transportKind": "service_binding",
+        "frontendCall": "requestAtelierService('/v1/messages', 'POST')",
+        "service": "atelier",
+        "httpMethod": "POST",
+        "publicPath": "/v1/messages",
+        "stationPath": "/applets/atelier/v1/messages",
+        "stationHandler": "SendMessage",
+        "desktopGateway": "host_service_binding",
+        "requiredFields": [
+          "taskId",
+          "text"
+        ],
+        "forbiddenAppletFields": [
+          "run",
+          "attachments",
+          "inputSnapshot",
+          "input_snapshot"
+        ],
+        "forbiddenActions": [
+          "provider.invoke",
+          "runtime.execute",
+          "model.run",
+          "run",
+          "input_snapshot.write",
+          "inputSnapshot.write",
+          "attachment.upload",
+          "HostStorage.write"
+        ],
+        "officialTextOnlyPayloadGuardProven": true,
+        "prototypeTextOnlyPayloadGuardProven": true,
+        "serviceBindingGuardProven": true,
+        "snapshotRefreshGuardProven": true,
+        "staleArtifactPreviewCleanupProven": true,
+        "stationIngressForbiddenFieldGuardProven": true,
+        "stationTextOnlyEventPayloadProven": true,
+        "appletRunIntentExposed": false,
+        "appletProviderInvokeExposed": false,
+        "appletRuntimeExecuteExposed": false,
+        "appletInputSnapshotWriteExposed": false,
+        "appletAttachmentUploadExposed": false,
+        "realAgentReplyE2EProven": false,
+        "realProviderExecutionProven": false,
+        "realRunInputSnapshotWriteProven": false,
+        "realHostStationAppletE2EProven": false
+      }
     },
     "atelier.escalation.resolve": {
       "requiredFields": [
         "taskId",
         "blockId",
         "choice"
-      ]
+      ],
+      "forbiddenActions": [
+        "resume",
+        "rerun",
+        "execute",
+        "run",
+        "provider.invoke",
+        "runtime.execute",
+        "gate.rerun",
+        "taskGraph.diff.apply",
+        "memory.write",
+        "input_snapshot.write",
+        "inputSnapshot.write"
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate",
+          "applet:atelier-decision-product-window-gate",
+          "applet:atelier-live-resume-product-window-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-decision-product-window-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-live-resume-product-window-gate.json"
+        ],
+        "method": "atelier.escalation.resolve",
+        "intentOwner": "station",
+        "intentKind": "human_decision_intent",
+        "sideEffectClass": "station_transaction",
+        "executionForbidden": true,
+        "transportKind": "service_binding",
+        "frontendCall": "requestAtelierService('/v1/escalations:resolve', 'POST')",
+        "service": "atelier",
+        "httpMethod": "POST",
+        "publicPath": "/v1/escalations:resolve",
+        "stationPath": "/applets/atelier/v1/escalations:resolve",
+        "stationHandler": "ResolveDecision",
+        "desktopGateway": "host_service_binding",
+        "requiredFields": [
+          "taskId",
+          "blockId",
+          "choice"
+        ],
+        "forbiddenActions": [
+          "resume",
+          "rerun",
+          "execute",
+          "run",
+          "provider.invoke",
+          "runtime.execute",
+          "gate.rerun",
+          "taskGraph.diff.apply",
+          "memory.write",
+          "input_snapshot.write",
+          "inputSnapshot.write"
+        ],
+        "officialHumanChoiceResolveGuardProven": true,
+        "prototypeHumanChoiceResolveGuardProven": true,
+        "serviceBindingGuardProven": true,
+        "stationInterruptResolveRouteProven": true,
+        "focusedProductWindowDecisionResolveProven": true,
+        "focusedLiveResumeWaiterWakeProven": true,
+        "focusedLiveResumeProviderLoopProven": true,
+        "appletResumeExecutionExposed": false,
+        "appletRerunExecutionExposed": false,
+        "appletProviderInvokeExposed": false,
+        "appletRuntimeExecuteExposed": false,
+        "appletTaskGraphMutationExposed": false,
+        "appletMemoryWriteExposed": false,
+        "appletInputSnapshotWriteExposed": false,
+        "completeExecutorProviderRecoveryE2EProven": false,
+        "realHostStationAppletE2EProven": false
+      }
     },
     "atelier.task.setStatus": {
       "requiredFields": [
@@ -268,13 +637,150 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "active",
         "archived",
         "deleted"
-      ]
+      ],
+      "forbiddenActions": [
+        "execute",
+        "run",
+        "provider.invoke",
+        "runtime.execute",
+        "taskGraph.execute",
+        "taskGraph.diff.apply",
+        "memory.write",
+        "input_snapshot.write",
+        "inputSnapshot.write"
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        ],
+        "method": "atelier.task.setStatus",
+        "intentOwner": "station",
+        "intentKind": "task_lifecycle_intent",
+        "sideEffectClass": "station_transaction",
+        "executionForbidden": true,
+        "transportKind": "service_binding",
+        "frontendCall": "requestAtelierService(`/v1/tasks/${encodeURIComponent(input.taskId)}/status`, 'PATCH')",
+        "service": "atelier",
+        "httpMethod": "PATCH",
+        "publicPath": "/v1/tasks/{task_id}/status",
+        "stationPath": "/applets/atelier/v1/tasks/{task_id}/status",
+        "stationHandler": "SetTaskStatus",
+        "desktopGateway": "host_service_binding",
+        "requiredFields": [
+          "taskId",
+          "status"
+        ],
+        "allowedStatus": [
+          "active",
+          "archived",
+          "deleted"
+        ],
+        "forbiddenActions": [
+          "execute",
+          "run",
+          "provider.invoke",
+          "runtime.execute",
+          "taskGraph.execute",
+          "taskGraph.diff.apply",
+          "memory.write",
+          "input_snapshot.write",
+          "inputSnapshot.write"
+        ],
+        "officialLifecycleGuardProven": true,
+        "prototypeLifecycleGuardProven": true,
+        "serviceBindingGuardProven": true,
+        "statusTaxonomyGuardProven": true,
+        "taskLifecycleMetadataGuardProven": true,
+        "archiveDeleteRestoreGuardProven": true,
+        "appletTaskExecutionExposed": false,
+        "appletProviderInvokeExposed": false,
+        "appletRuntimeExecuteExposed": false,
+        "appletTaskGraphMutationExposed": false,
+        "appletMemoryWriteExposed": false,
+        "appletInputSnapshotWriteExposed": false,
+        "realLifecyclePersistenceE2EProven": false,
+        "realHostStationAppletE2EProven": false
+      }
     },
     "atelier.task.purge": {
       "requiredFields": [
         "taskId"
       ],
-      "requiresStatus": "deleted"
+      "requiresStatus": "deleted",
+      "forbiddenActions": [
+        "execute",
+        "run",
+        "provider.invoke",
+        "runtime.execute",
+        "taskGraph.execute",
+        "taskGraph.diff.apply",
+        "memory.write",
+        "input_snapshot.write",
+        "inputSnapshot.write"
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        ],
+        "method": "atelier.task.purge",
+        "intentOwner": "station",
+        "intentKind": "task_purge_intent",
+        "sideEffectClass": "station_transaction",
+        "executionForbidden": true,
+        "transportKind": "service_binding",
+        "frontendCall": "requestAtelierService(`/v1/tasks/${encodeURIComponent(input.taskId)}`, 'DELETE')",
+        "service": "atelier",
+        "httpMethod": "DELETE",
+        "publicPath": "/v1/tasks/{task_id}",
+        "stationPath": "/applets/atelier/v1/tasks/{task_id}",
+        "stationHandler": "PurgeTask",
+        "desktopGateway": "host_service_binding",
+        "requiredFields": [
+          "taskId"
+        ],
+        "requiresStatus": "deleted",
+        "forbiddenActions": [
+          "execute",
+          "run",
+          "provider.invoke",
+          "runtime.execute",
+          "taskGraph.execute",
+          "taskGraph.diff.apply",
+          "memory.write",
+          "input_snapshot.write",
+          "inputSnapshot.write"
+        ],
+        "officialPurgeConfirmationGuardProven": true,
+        "prototypePurgeConfirmationGuardProven": true,
+        "serviceBindingGuardProven": true,
+        "requiresDeletedGuardProven": true,
+        "durableIndexCleanupGuardProven": true,
+        "taskLifecycleMetadataGuardProven": true,
+        "appletTaskExecutionExposed": false,
+        "appletProviderInvokeExposed": false,
+        "appletRuntimeExecuteExposed": false,
+        "appletTaskGraphMutationExposed": false,
+        "appletMemoryWriteExposed": false,
+        "appletInputSnapshotWriteExposed": false,
+        "realPurgeE2EProven": false,
+        "realHostStationAppletE2EProven": false
+      }
     },
     "atelier.provider.capabilities": {
       "optionalFields": [
@@ -297,7 +803,52 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "action.run",
         "policy.override",
         "rollback.execute"
-      ]
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        ],
+        "method": "atelier.provider.capabilities",
+        "optionalFields": [
+          "taskId"
+        ],
+        "responseFields": [
+          "capabilities",
+          "source"
+        ],
+        "allowedCapabilityScopes": [
+          "station-provider"
+        ],
+        "capabilityScope": "station-provider",
+        "capabilityReadOnly": true,
+        "forbiddenActions": [
+          "invoke",
+          "execute",
+          "run",
+          "action.execute",
+          "action.run",
+          "policy.override",
+          "rollback.execute"
+        ],
+        "officialResponseGuardProven": true,
+        "prototypeBridgeResponseGuardProven": true,
+        "slashCommandInsertOnlyProven": true,
+        "appletProviderInvokeExposed": false,
+        "appletActionExecutionExposed": false,
+        "appletPolicyOverrideExposed": false,
+        "appletRollbackExecutionExposed": false,
+        "realProviderRuntimeProven": false,
+        "realActionProviderRuntimeProven": false,
+        "realHostStationAppletE2EProven": false
+      }
     },
     "atelier.feedback.submit": {
       "requiredFields": [
@@ -336,7 +887,90 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "invoke",
         "execute",
         "run"
-      ]
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate",
+          "atelier:feedback-submit-ingress-controlled-gate",
+          "atelier:feedback-memory-consumption-controlled-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-feedback-submit-ingress-controlled-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-feedback-memory-consumption-controlled-gate.json"
+        ],
+        "method": "atelier.feedback.submit",
+        "intentOwner": "station",
+        "intentKind": "feedback_record_intent",
+        "sideEffectClass": "station_transaction",
+        "executionForbidden": true,
+        "transportKind": "service_binding",
+        "frontendCall": "requestAtelierService('/v1/feedback/submit', 'POST')",
+        "service": "atelier",
+        "httpMethod": "POST",
+        "publicPath": "/v1/feedback/submit",
+        "stationPath": "/applets/atelier/v1/feedback/submit",
+        "stationHandler": "SubmitFeedback",
+        "desktopGateway": "host_service_binding",
+        "requiredFields": [
+          "taskId",
+          "blockId",
+          "signal"
+        ],
+        "optionalFields": [
+          "comment"
+        ],
+        "responseFields": [
+          "accepted",
+          "feedbackId",
+          "memoryCandidate",
+          "memoryCandidate.status",
+          "memoryCandidate.reason",
+          "memoryCandidate.feeds",
+          "memoryCandidate.requiresConfirmation",
+          "memoryCandidate.confirmationMode",
+          "rerunIntent",
+          "rerunIntent.status",
+          "rerunIntent.reason",
+          "rerunIntent.feeds",
+          "rerunIntent.requiresConfirmation",
+          "rerunIntent.confirmationMode"
+        ],
+        "allowedSignals": [
+          "positive",
+          "negative",
+          "copy",
+          "regenerate"
+        ],
+        "forbiddenActions": [
+          "memory.write",
+          "rerun",
+          "invoke",
+          "execute",
+          "run"
+        ],
+        "officialResponseGuardProven": true,
+        "prototypeBridgeResponseGuardProven": true,
+        "generatedSignalTaxonomyProven": true,
+        "policyHintGuardProven": true,
+        "sourceBlockBindingProven": true,
+        "nonSnapshotResponseGuardProven": true,
+        "stationIngressForbiddenFieldGuardProven": true,
+        "stationPolicyEventPayloadProven": true,
+        "stationPlannerRiskVerifierFeedPolicyProven": true,
+        "appletMemoryWriteExposed": false,
+        "appletRerunExecutionExposed": false,
+        "appletProviderInvokeExposed": false,
+        "realMemoryWriteE2EProven": false,
+        "realRerunTaskCreationE2EProven": false,
+        "realPlannerRiskVerifierFeedbackConsumptionProven": false,
+        "realHostStationAppletE2EProven": false
+      }
     },
     "atelier.memory.confirmCandidate": {
       "requiredFields": [
@@ -357,7 +991,77 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "invoke",
         "execute",
         "run"
-      ]
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate",
+          "atelier:confirmation-ingress-controlled-gate",
+          "atelier:confirmation-outcome-controlled-gate",
+          "atelier:feedback-memory-consumption-controlled-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-confirmation-ingress-controlled-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-confirmation-outcome-controlled-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-feedback-memory-consumption-controlled-gate.json"
+        ],
+        "method": "atelier.memory.confirmCandidate",
+        "intentOwner": "station",
+        "intentKind": "memory_confirmation_intent",
+        "sideEffectClass": "station_transaction",
+        "executionForbidden": true,
+        "transportKind": "service_binding",
+        "frontendCall": "requestAtelierService('/v1/memory/confirm-candidate', 'POST')",
+        "service": "atelier",
+        "httpMethod": "POST",
+        "publicPath": "/v1/memory/confirm-candidate",
+        "stationPath": "/applets/atelier/v1/memory/confirm-candidate",
+        "stationHandler": "ConfirmMemoryCandidate",
+        "desktopGateway": "host_service_binding",
+        "requiredFields": [
+          "taskId",
+          "feedbackId"
+        ],
+        "responseFields": [
+          "accepted",
+          "feedbackId",
+          "memoryId",
+          "status",
+          "source",
+          "alreadyDone"
+        ],
+        "allowedConfirmationMode": "station_memory_review",
+        "forbiddenActions": [
+          "memory.write",
+          "invoke",
+          "execute",
+          "run"
+        ],
+        "officialResponseGuardProven": true,
+        "prototypeBridgeResponseGuardProven": true,
+        "generatedConfirmationModeProven": true,
+        "sourceBlockBindingProven": true,
+        "nonSnapshotResponseGuardProven": true,
+        "requestCorrelationProven": true,
+        "stationIngressForbiddenFieldGuardProven": true,
+        "stationReferenceOnlyRequestProven": true,
+        "stationOwnedMemoryWriteProven": true,
+        "stationMemoryAuditEventProven": true,
+        "stationMemoryIdempotencyProven": true,
+        "stationNonCandidateRejectedProven": true,
+        "stationPlannerRiskVerifierMemoryRetrievalProven": true,
+        "stationPromptMemorySnapshotConsumptionProven": true,
+        "appletMemoryWriteExposed": false,
+        "appletProviderInvokeExposed": false,
+        "realMemoryWriteE2EProven": false,
+        "realPlannerVerifierConsumptionProven": false,
+        "realHostStationAppletE2EProven": false
+      }
     },
     "atelier.feedback.confirmRerun": {
       "requiredFields": [
@@ -380,7 +1084,76 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "invoke",
         "execute",
         "run"
-      ]
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate",
+          "atelier:confirmation-ingress-controlled-gate",
+          "atelier:confirmation-outcome-controlled-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-confirmation-ingress-controlled-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-confirmation-outcome-controlled-gate.json"
+        ],
+        "method": "atelier.feedback.confirmRerun",
+        "intentOwner": "station",
+        "intentKind": "rerun_confirmation_intent",
+        "sideEffectClass": "station_transaction",
+        "executionForbidden": true,
+        "transportKind": "service_binding",
+        "frontendCall": "requestAtelierService('/v1/feedback/confirm-rerun', 'POST')",
+        "service": "atelier",
+        "httpMethod": "POST",
+        "publicPath": "/v1/feedback/confirm-rerun",
+        "stationPath": "/applets/atelier/v1/feedback/confirm-rerun",
+        "stationHandler": "ConfirmRerun",
+        "desktopGateway": "host_service_binding",
+        "requiredFields": [
+          "taskId",
+          "feedbackId"
+        ],
+        "responseFields": [
+          "accepted",
+          "feedbackId",
+          "taskId",
+          "rerunTaskId",
+          "status",
+          "source",
+          "alreadyDone",
+          "started"
+        ],
+        "allowedConfirmationMode": "station_rerun_review",
+        "forbiddenActions": [
+          "rerun",
+          "invoke",
+          "execute",
+          "run"
+        ],
+        "officialResponseGuardProven": true,
+        "prototypeBridgeResponseGuardProven": true,
+        "generatedConfirmationModeProven": true,
+        "sourceBlockBindingProven": true,
+        "nonSnapshotResponseGuardProven": true,
+        "requestCorrelationProven": true,
+        "stationIngressForbiddenFieldGuardProven": true,
+        "stationReferenceOnlyRequestProven": true,
+        "stationOwnedRerunTaskCreationProven": true,
+        "stationRerunProviderPlanCloneProven": true,
+        "stationRerunAuditEventProven": true,
+        "stationRerunIdempotencyProven": true,
+        "stationNonRerunRejectedProven": true,
+        "appletRerunExecutionExposed": false,
+        "appletProviderInvokeExposed": false,
+        "realRerunTaskCreationE2EProven": false,
+        "realExecutorProviderRecoveryE2EProven": false,
+        "realHostStationAppletE2EProven": false
+      }
     },
     "atelier.workspace.open": {
       "requiredFields": [
@@ -413,7 +1186,77 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "execute",
         "run",
         "openExternalUrl"
-      ]
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate",
+          "atelier:workspace-open-controlled-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-workspace-open-controlled-gate.json"
+        ],
+        "method": "atelier.workspace.open",
+        "intentOwner": "desktop_host",
+        "intentKind": "workspace_open_host_intent",
+        "sideEffectClass": "host_ui",
+        "executionForbidden": true,
+        "transportKind": "desktop_gateway_host_local",
+        "frontendCall": "sdk.invoke('atelier.workspace.open')",
+        "desktopGatewayAction": "workspace.open",
+        "desktopHostHandler": "handle_atelier_workspace_open",
+        "hostSideEffect": "workspace_open_intent",
+        "requiredFields": [
+          "taskId",
+          "workspaceUri"
+        ],
+        "optionalFields": [
+          "ideHint"
+        ],
+        "responseFields": [
+          "accepted",
+          "opened",
+          "workspaceUri",
+          "mode",
+          "reason"
+        ],
+        "allowedUriSchemes": [
+          "pt-workspace"
+        ],
+        "uriShape": {
+          "scheme": "pt-workspace",
+          "host": "task",
+          "taskPathSegments": 1,
+          "workspaceQueryKey": "workspace"
+        },
+        "forbiddenActions": [
+          "file",
+          "shell",
+          "spawn",
+          "execute",
+          "run",
+          "openExternalUrl"
+        ],
+        "hostIntentOnlyProven": true,
+        "officialResponseGuardProven": true,
+        "prototypeBridgeResponseGuardProven": true,
+        "requestCorrelationProven": true,
+        "generatedUriShapeGuardProven": true,
+        "desktopGatewayUriShapeProven": true,
+        "desktopGatewayRejectsNonContractUriProven": true,
+        "desktopGatewayNoNativeLaunchProven": true,
+        "appletFileShellExecuteExposed": false,
+        "appletOpenExternalUrlExposed": false,
+        "realIdeLaunchProven": false,
+        "realWorkspaceResolverProven": false,
+        "realSandboxRuntimeProven": false,
+        "realHostStationAppletE2EProven": false
+      }
     },
     "atelier.artifact.body.fetch": {
       "requiredFields": [
@@ -452,7 +1295,105 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "execute",
         "run",
         "openExternalUrl"
-      ]
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:artifact-body-fetch-controlled-gate",
+          "applet:atelier-artifact-body-fetch-product-window-gate",
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-controlled-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-evidence.json",
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        ],
+        "method": "atelier.artifact.body.fetch",
+        "intentOwner": "station",
+        "intentKind": "artifact_body_safe_text_read",
+        "sideEffectClass": "none",
+        "executionForbidden": true,
+        "transportKind": "service_binding",
+        "frontendCall": "requestAtelierService('/v1/artifact/body/fetch', 'POST')",
+        "service": "atelier",
+        "httpMethod": "POST",
+        "publicPath": "/v1/artifact/body/fetch",
+        "stationPath": "/applets/atelier/v1/artifact/body/fetch",
+        "stationHandler": "FetchArtifactBody",
+        "desktopGateway": "host_service_binding",
+        "owner": "station",
+        "source": "agent_task_artifact_blobs",
+        "bodyRefShape": {
+          "scheme": "artifact",
+          "pathSegments": 2,
+          "terminalSegment": "body"
+        },
+        "allowedBodyKindsFrom": "workbenchSurface.artifactBodyKinds",
+        "defaultMaxBytes": 65536,
+        "requiredFields": [
+          "taskId",
+          "artifactId",
+          "bodyRef"
+        ],
+        "optionalFields": [
+          "expectedHash",
+          "maxBytes"
+        ],
+        "responseFields": [
+          "taskId",
+          "artifactId",
+          "bodyRef",
+          "bodyKind",
+          "bodyHash",
+          "bodySize",
+          "text",
+          "truncated",
+          "retentionStatus"
+        ],
+        "allowedBodyKinds": [
+          "markdown",
+          "diff",
+          "text",
+          "json"
+        ],
+        "requiredSafetyChecks": [
+          "actor_owned_task",
+          "canonical_body_ref",
+          "active_retention",
+          "not_expired",
+          "fetchable_text_kind",
+          "stored_hash_matches_body",
+          "expected_hash_matches_body",
+          "utf8_max_bytes_truncation"
+        ],
+        "forbiddenActions": [
+          "file",
+          "path",
+          "url",
+          "iframe",
+          "image",
+          "html",
+          "execute",
+          "run",
+          "openExternalUrl"
+        ],
+        "focusedProductWindowBodyFetchProven": true,
+        "metadataOnlyTelemetryProven": true,
+        "rawTextExposedToEvidence": false,
+        "stationSafetyChecksProven": true,
+        "officialResponseGuardProven": true,
+        "prototypeBridgeResponseGuardProven": true,
+        "appletRawBodyReadExposed": false,
+        "appletFilePathUrlOpenExposed": false,
+        "realProviderExecutorArtifactBlobProductionProven": false,
+        "realLiveDesktopWebviewRendererProven": false,
+        "realHostStationAppletE2EProven": false
+      }
     },
     "atelier.artifact.preview.open": {
       "requiredFields": [
@@ -515,7 +1456,106 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "execute",
         "run",
         "openExternalUrl"
-      ]
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:projection-contract-gate",
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        ],
+        "method": "atelier.artifact.preview.open",
+        "intentOwner": "desktop_host",
+        "intentKind": "artifact_preview_host_intent",
+        "sideEffectClass": "host_ui",
+        "executionForbidden": true,
+        "transportKind": "desktop_gateway_host_local",
+        "frontendCall": "sdk.invoke('atelier.artifact.preview.open')",
+        "desktopGatewayAction": "artifact.preview.open",
+        "desktopHostHandler": "handle_atelier_artifact_preview_open",
+        "hostSideEffect": "artifact_preview_host_intent",
+        "requiredFields": [
+          "taskId",
+          "artifactId",
+          "sandboxRef",
+          "bodyRef"
+        ],
+        "optionalFields": [
+          "kind",
+          "mode"
+        ],
+        "responseFields": [
+          "accepted",
+          "opened",
+          "prepared",
+          "taskId",
+          "artifactId",
+          "sandboxRef",
+          "bodyRef",
+          "kind",
+          "mode",
+          "rendererSessionId",
+          "rendererOwner",
+          "rendererMode",
+          "rendererStatus",
+          "rendererCapabilities",
+          "reason"
+        ],
+        "allowedModes": [
+          "sandbox_manifest"
+        ],
+        "defaultMode": "sandbox_manifest",
+        "allowedSandboxRefSchemes": [
+          "atelier-sandbox"
+        ],
+        "allowedRendererOwner": [
+          "desktop_host"
+        ],
+        "allowedRendererMode": [
+          "host_sandbox_manifest"
+        ],
+        "allowedRendererStatus": [
+          "prepared_not_opened",
+          "rendered"
+        ],
+        "requiredRendererCapabilities": [
+          "host_visual_renderer_surface"
+        ],
+        "hostSideEffects": [
+          "ui.openAtelierArtifactPreview"
+        ],
+        "forbiddenActions": [
+          "file",
+          "path",
+          "url",
+          "iframe",
+          "image",
+          "html",
+          "execute",
+          "run",
+          "openExternalUrl"
+        ],
+        "metadataOnlyProjectionProven": true,
+        "canonicalRefShapeGuardProven": true,
+        "hostPreviewIntentOnly": true,
+        "officialResponseGuardProven": true,
+        "prototypeBridgeResponseGuardProven": true,
+        "desktopGatewayHostIntentGuardProven": true,
+        "stalePreviewOpenGuardProven": true,
+        "rawBodyProjectionForbidden": true,
+        "appletRendererExposed": false,
+        "appletRawBodyReadExposed": false,
+        "appletFilePathUrlOpenExposed": false,
+        "realHostVisualRendererProven": false,
+        "realArtifactBodyFetchE2EProven": false,
+        "realDesktopProductWindowUIProven": false,
+        "realHostStationAppletE2EProven": false
+      }
     }
   },
   "taskLifecycle": {
@@ -561,7 +1601,46 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "failed",
       "paused",
       "blocked"
-    ]
+    ],
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:official-frontend-gate",
+        "atelier:bridge-runtime-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+      ],
+      "field": "status",
+      "domain": "workbench_lifecycle",
+      "orthogonalTo": "execution_state",
+      "states": [
+        "active",
+        "archived",
+        "deleted"
+      ],
+      "purgeRequiresStatus": "deleted",
+      "forbiddenExecutionStatusValues": [
+        "running",
+        "succeeded",
+        "failed",
+        "paused",
+        "blocked"
+      ],
+      "setStatusMethod": "atelier.task.setStatus",
+      "purgeMethod": "atelier.task.purge",
+      "setStatusPayloadAllowedStatusMatchesStates": true,
+      "purgePayloadRequiresDeletedStatus": true,
+      "statusOrthogonalToExecutionState": true,
+      "lifecycleMenuExecutionActionsForbidden": true,
+      "purgeBypassForbidden": true,
+      "realStationTaskLifecycleE2EProven": false,
+      "realPurgeE2EProven": false,
+      "realExecutionStateTransitionProven": false,
+      "realHostStationAppletE2EProven": false
+    }
   },
   "agentRoleAuthority": {
     "roles": [
@@ -597,7 +1676,61 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "historian"
     ],
     "executionOwner": "station",
-    "appletMayExecuteAuthority": false
+    "appletMayExecuteAuthority": false,
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:projection-contract-gate",
+        "atelier:official-frontend-gate",
+        "atelier:bridge-runtime-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+      ],
+      "roles": [
+        "goal_owner",
+        "architect",
+        "planner",
+        "risk",
+        "supervisor",
+        "executor",
+        "verifier",
+        "integrator",
+        "historian"
+      ],
+      "terminalSignoffRoles": [
+        "goal_owner"
+      ],
+      "hardVetoRoles": [
+        "risk"
+      ],
+      "acceptanceVetoRoles": [
+        "verifier"
+      ],
+      "progressControlRoles": [
+        "supervisor"
+      ],
+      "judgmentForbiddenRoles": [
+        "executor"
+      ],
+      "mergeRoles": [
+        "integrator"
+      ],
+      "memoryRecordRoles": [
+        "historian"
+      ],
+      "executionOwner": "station",
+      "appletMayExecuteAuthority": false,
+      "formalProtoAuthoritySchemaProven": true,
+      "stationRoleAllowlistParityProven": true,
+      "appletAuthorityExecutionExposed": false,
+      "realConsensusEvaluatorE2EProven": false,
+      "realVetoSignoffE2EProven": false,
+      "realSchedulePolicyRuntimeProven": false,
+      "realHostStationAppletE2EProven": false
+    }
   },
   "negotiationProjection": {
     "voiceStances": [
@@ -634,7 +1767,62 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "runtime.execute",
       "gate.rerun",
       "taskGraph.diff.apply"
-    ]
+    ],
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:projection-contract-gate",
+        "atelier:official-frontend-gate",
+        "atelier:bridge-runtime-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+      ],
+      "voiceStances": [
+        "proposal",
+        "objection",
+        "counter",
+        "signoff"
+      ],
+      "requiredVoiceFields": [
+        "role",
+        "stance",
+        "text"
+      ],
+      "optionalVoiceFields": [
+        "evidenceRef",
+        "sessionId",
+        "roundId",
+        "voiceId",
+        "objectionId"
+      ],
+      "evidenceRequiredStances": [
+        "objection"
+      ],
+      "noEvidenceObjectionDisposition": "concern",
+      "consensusOwner": "station",
+      "appletMayResolveConsensus": false,
+      "forbiddenActions": [
+        "agent.invoke",
+        "atelier.agent",
+        "orchestration.start",
+        "negotiation.run",
+        "provider.invoke",
+        "runtime.invokeProvider",
+        "runtime.execute",
+        "gate.rerun",
+        "taskGraph.diff.apply"
+      ],
+      "officialProjectionParserGuardProven": true,
+      "prototypeProjectionIngressGuardProven": true,
+      "appletConsensusExecutionExposed": false,
+      "realConsensusEvaluatorE2EProven": false,
+      "realMultiAgentNegotiationRuntimeProven": false,
+      "realProviderVoiceQualityProven": false,
+      "realHostStationAppletE2EProven": false
+    }
   },
   "gatewayActions": [
     "workspace.load",
@@ -718,7 +1906,76 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "added",
       "removed",
       "paths"
-    ]
+    ],
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:projection-contract-gate",
+        "atelier:official-frontend-gate",
+        "atelier:bridge-runtime-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+      ],
+      "allowedKinds": [
+        "user",
+        "agent",
+        "nego",
+        "decision",
+        "artifact",
+        "diff"
+      ],
+      "requiredFieldsByKind": {
+        "user": [
+          "text"
+        ],
+        "agent": [
+          "text"
+        ],
+        "nego": [
+          "summary",
+          "agentCount",
+          "converged",
+          "voices",
+          "consensus"
+        ],
+        "decision": [
+          "question",
+          "spentSoFar",
+          "options",
+          "rollbackImpact"
+        ],
+        "artifact": [
+          "name",
+          "fileKind",
+          "producedBy"
+        ],
+        "diff": [
+          "files",
+          "added",
+          "removed",
+          "paths"
+        ]
+      },
+      "diffSummaryFields": [
+        "files",
+        "added",
+        "removed",
+        "paths"
+      ],
+      "officialProjectionIngressGuardProven": true,
+      "prototypeProjectionIngressGuardProven": true,
+      "diffMetadataOnlyCardProven": true,
+      "rawDiffPatchRenderingForbidden": true,
+      "appletStreamProducerExposed": false,
+      "realStreamProducerRuntimeProven": false,
+      "realProviderExecutionProven": false,
+      "realArtifactBodyRendererProven": false,
+      "realDesktopProductWindowUIProven": false,
+      "realHostStationAppletE2EProven": false
+    }
   },
   "viewSurface": {
     "statuses": [
@@ -745,7 +2002,105 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "reconciling",
       "degraded"
     ],
+    "statusNoticeLabelKeyByStatus": {
+      "reconciling": {
+        "titleKey": "atelier.status.reconcilingTitle",
+        "detailKey": "atelier.status.reconcilingDetail"
+      },
+      "degraded": {
+        "titleKey": "atelier.status.degradedTitle",
+        "detailKey": "atelier.status.degradedDetail"
+      }
+    },
     "emptyCtaStatus": "empty",
+    "centeredStateLabelKeyByStatus": {
+      "loading": {
+        "titleKey": "atelier.status.loading",
+        "detailKey": "atelier.status.loadingDetail"
+      },
+      "empty": {
+        "titleKey": "atelier.empty.title",
+        "detailKey": "atelier.empty.detail"
+      }
+    },
+    "prototypeStatusScenarioCopyByStatus": {
+      "loading": {
+        "title": "Loading Atelier projection",
+        "detail": "Controlled prototype scenario: loading owns the surface and hides stale stream content."
+      },
+      "empty": {
+        "title": "No Atelier tasks yet",
+        "detail": "Controlled prototype scenario: empty state is distinct from disconnected or auth-denied recovery."
+      },
+      "ready": {
+        "title": "Atelier projection ready",
+        "detail": "Controlled prototype scenario: ready state exposes the steady projection surface without recovery affordance."
+      },
+      "reconciling": {
+        "title": "Reconciling Atelier projection",
+        "detail": "Controlled prototype scenario: reconciling preserves visible projection while the stream catches up."
+      },
+      "degraded": {
+        "title": "Atelier projection degraded",
+        "detail": "Controlled prototype scenario: degraded keeps the last projection visible without exposing execution recovery."
+      },
+      "disconnected": {
+        "title": "Projection stream disconnected",
+        "detail": "Controlled prototype scenario: existing projection remains visible while retry stays projection-only."
+      },
+      "auth-denied": {
+        "title": "Atelier access denied",
+        "detail": "Controlled prototype scenario: auth denied is non-retryable and does not expose execution capability."
+      },
+      "error": {
+        "title": "Atelier projection error",
+        "detail": "Controlled prototype scenario: generic errors use projection-only retry and preserve existing stream content."
+      }
+    },
+    "bridgeRuntimeStatusCopyByKind": {
+      "loading": {
+        "title": "正在加载 Atelier projection",
+        "detail": "等待 Desktop Host 通过 applet bridge 返回 Station workspace snapshot。"
+      },
+      "ready": {
+        "title": "Projection 已连接",
+        "detail": "正在消费 Station / Agent orchestration 投影事件。"
+      },
+      "reconciling": {
+        "title": "Projection 正在同步",
+        "detail": "已保留当前 snapshot，正在连接 Desktop Host 的 Atelier projection event stream。"
+      },
+      "degraded": {
+        "title": "Projection 降级",
+        "detail": "收到过期 projection event，已拒绝应用并保留最后一份有效 snapshot。"
+      },
+      "auth-denied": {
+        "title": "Atelier 权限被拒绝",
+        "detail": "当前 applet session 没有 Atelier projection capability，或登录身份已失效。"
+      },
+      "disconnected": {
+        "title": "Projection 连接中断",
+        "detail": "Desktop Host 暂时无法连接 Station projection stream；当前页面保留最后一次 snapshot。"
+      },
+      "error": {
+        "title": "Projection 加载失败",
+        "detail": "Host bridge 返回了无法识别的 projection 响应。"
+      }
+    },
+    "bridgeRuntimeRecoveryCodeKindByCode": {
+      "PERMISSION_DENIED": "auth-denied",
+      "UNAUTHORIZED": "auth-denied",
+      "FORBIDDEN": "auth-denied",
+      "AUTH_DENIED": "auth-denied",
+      "NETWORK_DISCONNECTED": "disconnected",
+      "NETWORK_ERROR": "disconnected",
+      "TIMEOUT": "disconnected",
+      "STREAM_DISCONNECTED": "disconnected",
+      "CONNECTION_CLOSED": "disconnected",
+      "CAPABILITY_FAILED": "error",
+      "INVALID_PROJECTION": "error",
+      "UNKNOWN": "error"
+    },
     "reconcilingEventStreamState": "subscribing",
     "degradedEventStreamStates": [
       "degraded"
@@ -773,6 +2128,25 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "disconnected",
         "error"
       ],
+      "labelKeyByKind": {
+        "auth-denied": {
+          "titleKey": "atelier.error.authDeniedTitle",
+          "detailKey": "atelier.error.authDeniedDetail"
+        },
+        "invalid-projection": {
+          "titleKey": "atelier.status.error"
+        },
+        "agent-ids-required": {
+          "titleKey": "atelier.status.error"
+        },
+        "disconnected": {
+          "titleKey": "atelier.error.disconnectedTitle",
+          "detailKey": "atelier.error.disconnectedDetail"
+        },
+        "error": {
+          "titleKey": "atelier.status.error"
+        }
+      },
       "statusSeverityByStatus": {
         "loading": "info",
         "empty": "info",
@@ -782,6 +2156,16 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "disconnected": "warning",
         "auth-denied": "danger",
         "error": "danger"
+      },
+      "statusLabelKeyByStatus": {
+        "loading": "atelier.status.loading",
+        "empty": "atelier.status.empty",
+        "ready": "atelier.status.ready",
+        "reconciling": "atelier.status.reconciling",
+        "degraded": "atelier.status.degraded",
+        "disconnected": "atelier.status.disconnected",
+        "auth-denied": "atelier.status.authDenied",
+        "error": "atelier.status.error"
       },
       "prototypeSeverityByStatus": {
         "loading": "info",
@@ -803,6 +2187,44 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "auth-denied": "!",
         "error": "!"
       }
+    },
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:official-frontend-gate",
+        "atelier:bridge-runtime-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+      ],
+      "coveredStatuses": [
+        "loading",
+        "empty",
+        "ready",
+        "reconciling",
+        "degraded",
+        "disconnected",
+        "auth-denied",
+        "error"
+      ],
+      "centeredStates": [
+        "loading",
+        "empty"
+      ],
+      "typedRecoveryKinds": [
+        "auth-denied",
+        "disconnected"
+      ],
+      "statusNoticeKinds": [
+        "reconciling",
+        "degraded"
+      ],
+      "structuredErrorCodeTaxonomy": "bridgeRuntimeRecoveryCodeKindByCode",
+      "pageSurfaceMatrix": "officialPageSurfaceMatrix",
+      "prototypeStatusScenarioMatrix": "prototypeStatusScenarioCopyByStatus",
+      "realHostStationFailureMatrixProven": false
     }
   },
   "projectSurface": {
@@ -911,6 +2333,151 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "gateItems": 4,
       "gateChecks": 3,
       "gateArtifactRefs": 4
+    },
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:projection-contract-gate",
+        "atelier:official-frontend-gate",
+        "atelier:bridge-runtime-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+      ],
+      "surfaceId": "projectSurface",
+      "surfaceRole": "applet_read_only_projection_taxonomy",
+      "sourceOfTruth": "station_projection_contract",
+      "blockerSeverities": [
+        "block",
+        "warn",
+        "info"
+      ],
+      "blockerStates": [
+        "open",
+        "resolved",
+        "waived"
+      ],
+      "residualRiskStates": [
+        "logged",
+        "downgraded",
+        "follow_up"
+      ],
+      "dependencyEdgeTypes": [
+        "blocks",
+        "informs",
+        "produces_input_for"
+      ],
+      "taskGraphParallelPolicies": [
+        "serial_only",
+        "independent_only",
+        "integrator_required"
+      ],
+      "projectStates": [
+        "draft",
+        "contracted",
+        "executing",
+        "blocked",
+        "verifying",
+        "awaiting_owner_signoff",
+        "accepted",
+        "escalated"
+      ],
+      "milestoneStates": [
+        "planned",
+        "active",
+        "blocked",
+        "replanning",
+        "accepted",
+        "abandoned"
+      ],
+      "taskGraphNodeStates": [
+        "todo",
+        "running",
+        "done"
+      ],
+      "memoryCandidateTypes": [
+        "success_pattern",
+        "failure_cause",
+        "project_rule",
+        "domain_rule",
+        "arch_decision",
+        "workflow_improvement"
+      ],
+      "memoryCandidateScopes": [
+        "user",
+        "project",
+        "domain"
+      ],
+      "memoryCandidateFeeds": [
+        "planner",
+        "risk",
+        "verifier"
+      ],
+      "policyRuleScopes": [
+        "workspace",
+        "command",
+        "network",
+        "data",
+        "action"
+      ],
+      "defectSources": [
+        "gate",
+        "verifier",
+        "user",
+        "supervisor"
+      ],
+      "defectStates": [
+        "proposed",
+        "accepted",
+        "fixed",
+        "rejected"
+      ],
+      "projectionDisplayLimits": {
+        "projectHealthItems": 3,
+        "projectHealthMilestones": 4,
+        "milestoneRefs": 2,
+        "taskGraphNodes": 5,
+        "taskGraphRootIds": 3,
+        "taskGraphEdges": 4,
+        "taskGraphNodeRefs": 2,
+        "legacyTodos": 5,
+        "providerCapabilities": 5,
+        "negotiationVoices": 4,
+        "diffPaths": 5,
+        "contextFileRefs": 4,
+        "contextOtherRefs": 3,
+        "sidePanelArtifacts": 4,
+        "artifactPaths": 5,
+        "safeTextPreviewLines": 80,
+        "gateItems": 4,
+        "gateChecks": 3,
+        "gateArtifactRefs": 4
+      },
+      "displaySurfaces": [
+        "project_health",
+        "task_graph"
+      ],
+      "generatedTaxonomyProven": true,
+      "officialProjectionGuardProven": true,
+      "prototypeProjectionGuardProven": true,
+      "displayLimitConsumptionProven": true,
+      "projectHealthReadOnlyBoundaryProven": true,
+      "taskGraphReadOnlyBoundaryProven": true,
+      "memoryCandidateProjectionGuardProven": true,
+      "policyDefectProjectionGuardProven": true,
+      "appletProjectMutationExposed": false,
+      "appletTaskGraphMutationExposed": false,
+      "appletMemoryWriteExposed": false,
+      "appletPolicyOverrideExposed": false,
+      "appletDefectLifecycleMutationExposed": false,
+      "realProjectStateMachineProven": false,
+      "realTaskGraphProductionRuntimeProven": false,
+      "realMemoryWriteE2EProven": false,
+      "realPolicyEngineProven": false,
+      "realDefectGovernanceLifecycleProven": false,
+      "realHostStationAppletE2EProven": false
     }
   },
   "workbenchSurface": {
@@ -972,7 +2539,94 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "passed",
       "failed",
       "pending"
-    ]
+    ],
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:projection-contract-gate",
+        "atelier:official-frontend-gate",
+        "atelier:bridge-runtime-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+      ],
+      "surfaceId": "workbenchSurface",
+      "surfaceRole": "applet_projection_surface",
+      "sourceOfTruth": "station_projection_contract",
+      "taskIntentPresets": [
+        "work",
+        "code",
+        "design"
+      ],
+      "defaultTaskIntentPreset": "work",
+      "todoStatuses": [
+        "done",
+        "running",
+        "todo"
+      ],
+      "contextFileGroups": [
+        "files",
+        "other"
+      ],
+      "defaultContextFileGroup": "files",
+      "taskOrganizerModes": [
+        {
+          "id": "folders",
+          "ready": true
+        },
+        {
+          "id": "flat-list",
+          "ready": true
+        },
+        {
+          "id": "kanban",
+          "ready": false
+        },
+        {
+          "id": "dag",
+          "ready": false
+        }
+      ],
+      "defaultTaskOrganizerMode": "folders",
+      "artifactKinds": [
+        "markdown",
+        "web",
+        "image",
+        "diff"
+      ],
+      "artifactBodyKinds": [
+        "markdown",
+        "diff",
+        "text",
+        "json"
+      ],
+      "gateStatuses": [
+        "pending",
+        "running",
+        "passed",
+        "failed",
+        "blocked"
+      ],
+      "gateCheckStatuses": [
+        "passed",
+        "failed",
+        "pending"
+      ],
+      "generatedTaxonomyProven": true,
+      "officialGeneratedConsumptionProven": true,
+      "prototypeGeneratedConsumptionProven": true,
+      "readyOrganizerModesProven": true,
+      "disabledOrganizerModesExecutionForbidden": true,
+      "artifactBodyKindAllowlistFeedsBodyFetch": true,
+      "gateStatusTaxonomyGenerated": true,
+      "appletOrganizerExecutionExposed": false,
+      "appletArtifactBodyKindOverrideExposed": false,
+      "realKanbanDagRuntimeProven": false,
+      "realArtifactRendererRuntimeProven": false,
+      "realHostStationAppletE2EProven": false
+    }
   },
   "budgetSurface": {
     "budgetStatuses": [
@@ -980,7 +2634,38 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "warning",
       "danger",
       "blocked"
-    ]
+    ],
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:official-frontend-gate",
+        "atelier:bridge-runtime-gate",
+        "atelier:budget-surface-controlled-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-budget-surface-controlled-gate.json"
+      ],
+      "descriptorField": "workspace.budget",
+      "coveredStatuses": [
+        "ok",
+        "warning",
+        "danger",
+        "blocked"
+      ],
+      "generatedTaxonomy": "ATELIER_BUDGET_STATUSES",
+      "officialGuard": "isAtelierBudgetProjection",
+      "prototypeGuard": "isBudgetProjection",
+      "readOnlyProjection": true,
+      "appletBudgetWriteExposed": false,
+      "stationAggregationProven": true,
+      "providerBillingReconciliationProven": true,
+      "budgetCircuitBreakerProven": true,
+      "decisionCardRecoveryProven": true,
+      "realHostStationAppletE2EProven": false
+    }
   },
   "artifactPreview": {
     "allowedPreviewHints": [
@@ -990,6 +2675,12 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "diff",
       "metadata",
       "metadata_only"
+    ],
+    "allowedPreviewTargetKinds": [
+      "markdown",
+      "web",
+      "image",
+      "diff"
     ],
     "metadataFields": [
       "previewHint",
@@ -1037,7 +2728,675 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "url",
       "src",
       "iframe"
-    ]
+    ],
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:projection-contract-gate",
+        "atelier:official-frontend-gate",
+        "atelier:bridge-runtime-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+      ],
+      "allowedPreviewHints": [
+        "markdown",
+        "web",
+        "image",
+        "diff",
+        "metadata",
+        "metadata_only"
+      ],
+      "allowedPreviewTargetKinds": [
+        "markdown",
+        "web",
+        "image",
+        "diff"
+      ],
+      "metadataFields": [
+        "previewHint",
+        "bodyRef",
+        "bodyHash",
+        "bodySize",
+        "bodyKind",
+        "paths",
+        "size",
+        "previewTarget"
+      ],
+      "previewTargetFields": [
+        "kind",
+        "mode",
+        "label",
+        "sandboxRef",
+        "bodyRef"
+      ],
+      "allowedPreviewTargetModes": [
+        "sandbox_manifest"
+      ],
+      "allowedBodyRefSchemes": [
+        "artifact"
+      ],
+      "allowedSandboxRefSchemes": [
+        "atelier-sandbox"
+      ],
+      "bodyRefShape": {
+        "scheme": "artifact",
+        "pathSegments": 2,
+        "terminalSegment": "body"
+      },
+      "sandboxRefShape": {
+        "scheme": "atelier-sandbox",
+        "pathSegments": 2,
+        "terminalSegment": "preview"
+      },
+      "forbiddenBodyFields": [
+        "markdown",
+        "content",
+        "body",
+        "html",
+        "diff",
+        "patch",
+        "url",
+        "src",
+        "iframe"
+      ],
+      "metadataOnlyProjectionProven": true,
+      "canonicalRefShapeGuardProven": true,
+      "hostPreviewIntentOnly": true,
+      "rawBodyProjectionForbidden": true,
+      "appletRendererExposed": false,
+      "realHostVisualRendererProven": false,
+      "realArtifactBodyFetchE2EProven": false,
+      "realDesktopProductWindowUIProven": false,
+      "realHostStationAppletE2EProven": false
+    }
+  },
+  "readOnlyProjectionSurfaces": {
+    "project_health": {
+      "owner": "station",
+      "surfaceKind": "read_only_projection",
+      "projectionOnly": true,
+      "displayFields": [
+        "project.state",
+        "completion",
+        "openBlockers",
+        "residualRisks",
+        "milestones",
+        "memoryCandidates",
+        "policy.rules",
+        "defects"
+      ],
+      "forbiddenActions": [
+        "project.accept",
+        "project.waive",
+        "project.mutate",
+        "predicate.evaluate",
+        "memory.write",
+        "policy.override",
+        "defect.accept",
+        "defect.reject"
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        ],
+        "surfaceId": "project_health",
+        "displayFields": [
+          "project.state",
+          "completion",
+          "openBlockers",
+          "residualRisks",
+          "milestones",
+          "memoryCandidates",
+          "policy.rules",
+          "defects"
+        ],
+        "forbiddenActions": [
+          "project.accept",
+          "project.waive",
+          "project.mutate",
+          "predicate.evaluate",
+          "memory.write",
+          "policy.override",
+          "defect.accept",
+          "defect.reject"
+        ],
+        "readOnlyProjection": true,
+        "appletProjectMutationExposed": false,
+        "appletPredicateEvaluationExposed": false,
+        "appletMemoryWriteExposed": false,
+        "appletPolicyOverrideExposed": false,
+        "appletDefectLifecycleMutationExposed": false,
+        "realProjectGovernanceLifecycleProven": false,
+        "realAcceptancePredicateRuntimeProven": false,
+        "realPolicyEngineProven": false,
+        "realDefectGovernanceLifecycleProven": false,
+        "realHostStationAppletE2EProven": false
+      }
+    },
+    "task_graph": {
+      "owner": "station",
+      "surfaceKind": "read_only_projection",
+      "projectionOnly": true,
+      "displayFields": [
+        "rootTaskIds",
+        "tasks",
+        "edges",
+        "parallelPolicy",
+        "artifactIds",
+        "gateIds"
+      ],
+      "evidenceRefResolution": {
+        "scope": "current_workspace_projection_index",
+        "artifactRefIds": "workspace.artifacts[*].id",
+        "gateRefIds": "workspace.gates[*].id",
+        "unresolvedPolicy": "display_unresolved",
+        "unresolvedLabel": "(unresolved)",
+        "hiddenRefCountSeparateFromUnresolvedCount": true,
+        "readOnlyProjectionOnly": true,
+        "appletMayResolveMissingRefs": false,
+        "appletMayFetchRawArtifactBody": false,
+        "appletMayRunGates": false,
+        "realStationProducerProven": false
+      },
+      "forbiddenActions": [
+        "taskGraph.schedule",
+        "taskGraph.execute",
+        "taskGraph.replan",
+        "taskGraph.diff.apply",
+        "taskGraph.merge",
+        "integrator.run",
+        "node.reorder"
+      ],
+      "controlledEvidence": {
+        "readiness": "controlled_local_upstream",
+        "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+        "gates": [
+          "atelier:official-frontend-gate",
+          "atelier:bridge-runtime-gate"
+        ],
+        "evidenceFiles": [
+          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        ],
+        "surfaceId": "task_graph",
+        "displayFields": [
+          "rootTaskIds",
+          "tasks",
+          "edges",
+          "parallelPolicy",
+          "artifactIds",
+          "gateIds"
+        ],
+        "evidenceRefResolution": {
+          "scope": "current_workspace_projection_index",
+          "artifactRefIds": "workspace.artifacts[*].id",
+          "gateRefIds": "workspace.gates[*].id",
+          "unresolvedPolicy": "display_unresolved",
+          "unresolvedLabel": "(unresolved)",
+          "hiddenRefCountSeparateFromUnresolvedCount": true,
+          "readOnlyProjectionOnly": true,
+          "appletMayResolveMissingRefs": false,
+          "appletMayFetchRawArtifactBody": false,
+          "appletMayRunGates": false,
+          "realStationProducerProven": false
+        },
+        "forbiddenActions": [
+          "taskGraph.schedule",
+          "taskGraph.execute",
+          "taskGraph.replan",
+          "taskGraph.diff.apply",
+          "taskGraph.merge",
+          "integrator.run",
+          "node.reorder"
+        ],
+        "readOnlyProjection": true,
+        "appletTaskGraphScheduleExecuteExposed": false,
+        "appletTaskGraphReplanExposed": false,
+        "appletTaskGraphDiffApplyExposed": false,
+        "appletTaskGraphMergeExposed": false,
+        "appletIntegratorRunExposed": false,
+        "appletNodeReorderExposed": false,
+        "realTaskGraphProductionRuntimeProven": false,
+        "realIntegratorMergeRuntimeProven": false,
+        "realArtifactGateProductionProven": false,
+        "realHostStationAppletE2EProven": false
+      }
+    }
+  },
+  "directRunExecutionEvidence": {
+    "owner": "station",
+    "surfaceKind": "read_only_execution_evidence",
+    "projectionOnly": true,
+    "source": "agent_direct_runs + agent_task_runs + agent_task_events + agent_task_artifacts + agent_task_gate_results + agent_task_budget_usages",
+    "displayFields": [
+      "directRunId",
+      "taskId",
+      "providerId",
+      "modelIntent",
+      "state",
+      "traceId",
+      "artifactRefs",
+      "gateRefs",
+      "budgetUsage",
+      "failureArtifactRef",
+      "cliHandoffRef"
+    ],
+    "forbiddenActions": [
+      "directRun.start",
+      "directRun.resume",
+      "directRun.cancel",
+      "provider.invoke",
+      "model.run",
+      "cli.execute",
+      "shell.execute",
+      "trace.write",
+      "artifact.write",
+      "gate.run",
+      "budget.write",
+      "inputSnapshot.read",
+      "inputSnapshot.write",
+      "HostStorage.write"
+    ],
+    "claimBoundary": {
+      "doesNotProve": [
+        "real Desktop CodingProvider worker execution",
+        "real provider/model quality",
+        "real streaming reply UX",
+        "complete Host + Station + applet E2E"
+      ]
+    },
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gate": "atelier:direct-run-execution-evidence-controlled-gate",
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-direct-run-execution-evidence-controlled-gate.json"
+      ],
+      "source": "direct_run_execution_evidence_controlled_harness",
+      "displayFields": [
+        "directRunId",
+        "taskId",
+        "providerId",
+        "modelIntent",
+        "state",
+        "traceId",
+        "artifactRefs",
+        "gateRefs",
+        "budgetUsage",
+        "failureArtifactRef",
+        "cliHandoffRef"
+      ],
+      "forbiddenActions": [
+        "directRun.start",
+        "directRun.resume",
+        "directRun.cancel",
+        "provider.invoke",
+        "model.run",
+        "cli.execute",
+        "shell.execute",
+        "trace.write",
+        "artifact.write",
+        "gate.run",
+        "budget.write",
+        "inputSnapshot.read",
+        "inputSnapshot.write",
+        "HostStorage.write"
+      ],
+      "readOnlyProjection": true,
+      "stationServiceProjectionProven": true,
+      "stationOwnedRecordSourceProven": true,
+      "metadataOnlyProjectionProven": true,
+      "appletProviderInvokeExposed": false,
+      "appletModelRunExposed": false,
+      "appletCliExecuteExposed": false,
+      "appletTraceWriteExposed": false,
+      "appletArtifactWriteExposed": false,
+      "appletGateRunExposed": false,
+      "appletBudgetWriteExposed": false,
+      "inputSnapshotReadWriteExposed": false,
+      "realDesktopCodingProviderWorkerProven": false,
+      "realProviderModelQualityProven": false,
+      "realStreamingReplyUXProven": false,
+      "realHostStationAppletE2EProven": false
+    }
+  },
+  "artifactBodyFetch": {
+    "readiness": "controlled_local_upstream",
+    "owner": "station",
+    "source": "agent_task_artifact_blobs",
+    "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+    "transport": "service_binding",
+    "method": "atelier.artifact.body.fetch",
+    "bodyRefShape": {
+      "scheme": "artifact",
+      "pathSegments": 2,
+      "terminalSegment": "body"
+    },
+    "allowedBodyKindsFrom": "workbenchSurface.artifactBodyKinds",
+    "defaultMaxBytes": 65536,
+    "requiredSafetyChecks": [
+      "actor_owned_task",
+      "canonical_body_ref",
+      "active_retention",
+      "not_expired",
+      "fetchable_text_kind",
+      "stored_hash_matches_body",
+      "expected_hash_matches_body",
+      "utf8_max_bytes_truncation"
+    ],
+    "forbiddenActions": [
+      "file",
+      "path",
+      "url",
+      "iframe",
+      "image",
+      "html",
+      "execute",
+      "run",
+      "openExternalUrl"
+    ],
+    "productWindowEvidence": {
+      "readiness": "focused_real_product_path",
+      "evidenceClass": "REAL_PRODUCT_PATH",
+      "gate": "applet:atelier-artifact-body-fetch-product-window-gate",
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-evidence.json"
+      ],
+      "telemetryEvent": "atelier.artifact.body.fetched",
+      "metadataOnly": true,
+      "rawTextExposedToEvidence": false,
+      "metadataFields": [
+        "taskId",
+        "artifactId",
+        "bodyRef",
+        "bodyKind",
+        "bodyHash",
+        "bodySize",
+        "truncated",
+        "retentionStatus"
+      ]
+    },
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gates": [
+        "atelier:artifact-body-fetch-controlled-gate",
+        "applet:atelier-artifact-body-fetch-product-window-gate",
+        "atelier:projection-contract-gate"
+      ],
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-controlled-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
+        "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-evidence.json"
+      ],
+      "owner": "station",
+      "source": "agent_task_artifact_blobs",
+      "transport": "service_binding",
+      "method": "atelier.artifact.body.fetch",
+      "bodyRefShape": {
+        "scheme": "artifact",
+        "pathSegments": 2,
+        "terminalSegment": "body"
+      },
+      "allowedBodyKindsFrom": "workbenchSurface.artifactBodyKinds",
+      "defaultMaxBytes": 65536,
+      "requiredSafetyChecks": [
+        "actor_owned_task",
+        "canonical_body_ref",
+        "active_retention",
+        "not_expired",
+        "fetchable_text_kind",
+        "stored_hash_matches_body",
+        "expected_hash_matches_body",
+        "utf8_max_bytes_truncation"
+      ],
+      "forbiddenActions": [
+        "file",
+        "path",
+        "url",
+        "iframe",
+        "image",
+        "html",
+        "execute",
+        "run",
+        "openExternalUrl"
+      ],
+      "focusedProductWindowBodyFetchProven": true,
+      "metadataOnlyTelemetryProven": true,
+      "rawTextExposedToEvidence": false,
+      "stationSafetyChecksProven": true,
+      "appletRawBodyReadExposed": false,
+      "appletFilePathUrlOpenExposed": false,
+      "realProviderExecutorArtifactBlobProductionProven": false,
+      "realLiveDesktopWebviewRendererProven": false,
+      "realHostStationAppletE2EProven": false
+    },
+    "claimBoundary": {
+      "doesNotProve": [
+        "live Desktop webview renderer",
+        "real Station artifact blob production by provider/executor",
+        "complete Host + Station + applet E2E"
+      ]
+    }
+  },
+  "artifactRendererSurface": {
+    "readiness": "controlled_local_upstream",
+    "owner": "desktop_host",
+    "source": "desktop_host_adapter_unit_matrix",
+    "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+    "surfaceKind": "host_sandbox_visual_surface",
+    "rendererKinds": [
+      "markdown",
+      "web",
+      "image",
+      "diff"
+    ],
+    "rendererOwner": "desktop_host",
+    "rendererMode": "host_sandbox_manifest",
+    "requiredRendererCapabilitiesFrom": "methodPayloads.atelier.artifact.preview.open.requiredRendererCapabilities",
+    "sandboxPolicy": {
+      "allowScripts": false,
+      "allowNetwork": false,
+      "allowExternalNavigation": false,
+      "allowFileAccess": false,
+      "allowPatchApply": false
+    },
+    "rawBodyExposedToApplet": false,
+    "appletRenderable": false,
+    "forbiddenFields": [
+      "url",
+      "src",
+      "href",
+      "iframe",
+      "html",
+      "image",
+      "file",
+      "path",
+      "execute",
+      "run",
+      "openExternalUrl"
+    ],
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gate": "atelier:artifact-renderer-controlled-gate",
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-artifact-renderer-controlled-gate.json"
+      ],
+      "source": "desktop_host_adapter_unit_matrix",
+      "surfaceKind": "host_sandbox_visual_surface",
+      "rendererKinds": [
+        "markdown",
+        "web",
+        "image",
+        "diff"
+      ],
+      "runtimeEvidenceBlocks": [
+        "markdownRuntimeEvidence",
+        "diffRuntimeEvidence",
+        "webRuntimeEvidence",
+        "imageRuntimeEvidence"
+      ],
+      "rawExposureFlags": [
+        "rawBodyExposedToApplet",
+        "rawDiffExposedToApplet",
+        "rawHtmlExposedToApplet",
+        "rawImageBytesExposedToApplet"
+      ],
+      "appletRenderable": false,
+      "liveWebviewProven": false
+    },
+    "claimBoundary": {
+      "doesNotProve": [
+        "real iframe/image/html/diff rendering in a live Desktop webview",
+        "real artifact blob fetch from Station storage",
+        "real Console Logs runtime stream",
+        "real attachment Host Storage runtime",
+        "complete Host + Station + applet E2E"
+      ]
+    }
+  },
+  "runtimeLogStream": {
+    "readiness": "controlled_local_upstream",
+    "owner": "desktop_host",
+    "source": "host_sandbox_cdp",
+    "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+    "levels": [
+      "log",
+      "warn",
+      "error"
+    ],
+    "forbiddenMethods": [
+      "atelier.logs.subscribe",
+      "runtime.logs.subscribe",
+      "atelier.console.subscribe",
+      "console.logs.subscribe"
+    ],
+    "forbiddenFields": [
+      "body",
+      "html",
+      "iframe",
+      "url",
+      "src",
+      "file",
+      "path",
+      "execute",
+      "run",
+      "shell"
+    ],
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gate": "atelier:runtime-log-stream-controlled-gate",
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-runtime-log-stream-controlled-gate.json"
+      ],
+      "source": "host_sandbox_cdp",
+      "orderedLevels": [
+        "log",
+        "warn",
+        "error"
+      ],
+      "normalizedFields": [
+        "streamId",
+        "seq",
+        "level",
+        "message",
+        "source",
+        "evidenceClass"
+      ],
+      "appletSubscriptionExposed": false
+    },
+    "claimBoundary": {
+      "doesNotProve": [
+        "real Run runtime stream",
+        "real provider/executor lifecycle",
+        "applet log subscription capability",
+        "complete Host + Station + applet E2E"
+      ]
+    }
+  },
+  "hostStorageAttachment": {
+    "readiness": "controlled_local_upstream",
+    "owner": "desktop_host",
+    "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+    "stationIngress": "direct_run_input_snapshot",
+    "refShape": {
+      "scheme": "host-storage",
+      "pathSegments": 1
+    },
+    "requiredMetadataFields": [
+      "hostStorageRef",
+      "mime",
+      "size",
+      "sha256"
+    ],
+    "forbiddenFields": [
+      "path",
+      "filePath",
+      "url",
+      "src",
+      "body",
+      "content",
+      "base64",
+      "bytes",
+      "write",
+      "writeIntent",
+      "inputSnapshot",
+      "input_snapshot"
+    ],
+    "forbiddenMethods": [
+      "atelier.attachment.upload",
+      "attachment.upload",
+      "HostStorage.write",
+      "input_snapshot.write",
+      "inputSnapshot.write"
+    ],
+    "controlledEvidence": {
+      "readiness": "controlled_local_upstream",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+      "gate": "atelier:host-storage-attachment-controlled-gate",
+      "evidenceFiles": [
+        "applet-readiness-evidence/official-applet/atelier-host-storage-attachment-controlled-gate.json"
+      ],
+      "source": "host_storage_controlled_harness",
+      "refScheme": "host-storage",
+      "metadataFields": [
+        "hostStorageRef",
+        "mime",
+        "size",
+        "sha256"
+      ],
+      "rawInputRejectionCases": [
+        "path",
+        "url",
+        "body",
+        "base64",
+        "bytes"
+      ],
+      "appletUploadExposed": false,
+      "inputSnapshotWriteExposed": false
+    },
+    "claimBoundary": {
+      "doesNotProve": [
+        "real Desktop Host Storage runtime",
+        "real Host Storage upload",
+        "Run input_snapshot write from applet",
+        "attachment persistence E2E",
+        "Desktop Host + Station + applet E2E"
+      ]
+    }
   }
 } as const;
 
@@ -1078,6 +3437,7 @@ export const ATELIER_RECOVERY_TONE_BY_KIND = ATELIER_PROJECTION_CONTRACT.viewSur
 export const ATELIER_RECOVERY_RETRYABLE_KINDS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.retryableKinds;
 export const ATELIER_PROTOTYPE_RECOVERY_SEVERITY_BY_STATUS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.prototypeSeverityByStatus;
 export const ATELIER_PROTOTYPE_RECOVERY_SYMBOL_BY_STATUS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.prototypeSymbolByStatus;
+export const ATELIER_STATUS_LABEL_KEY_BY_STATUS = ATELIER_PROJECTION_CONTRACT.viewSurface.recovery.statusLabelKeyByStatus;
 export const ATELIER_PROJECT_SURFACE = ATELIER_PROJECTION_CONTRACT.projectSurface;
 export const ATELIER_PROJECT_STATES = ATELIER_PROJECTION_CONTRACT.projectSurface.projectStates;
 export const ATELIER_MILESTONE_STATES = ATELIER_PROJECTION_CONTRACT.projectSurface.milestoneStates;
@@ -1132,8 +3492,10 @@ export const ATELIER_GATE_STATUSES = ATELIER_PROJECTION_CONTRACT.workbenchSurfac
 export const ATELIER_GATE_CHECK_STATUSES = ATELIER_PROJECTION_CONTRACT.workbenchSurface.gateCheckStatuses;
 export const ATELIER_BUDGET_SURFACE = ATELIER_PROJECTION_CONTRACT.budgetSurface;
 export const ATELIER_BUDGET_STATUSES = ATELIER_PROJECTION_CONTRACT.budgetSurface.budgetStatuses;
+export const ATELIER_METHOD_GOVERNANCE = ATELIER_PROJECTION_CONTRACT.methodGovernance;
 export const ATELIER_PROVIDER_CAPABILITY_SCOPE = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.provider.capabilities'].capabilityScope;
 export const ATELIER_ARTIFACT_PREVIEW_OPEN_DEFAULT_MODE = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].defaultMode;
+export const ATELIER_ARTIFACT_PREVIEW_TARGET_KINDS = ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedPreviewTargetKinds;
 export const ATELIER_ARTIFACT_PREVIEW_HINTS = ATELIER_PROJECTION_CONTRACT.artifactPreview.allowedPreviewHints;
 export const ATELIER_ARTIFACT_METADATA_FIELDS = ATELIER_PROJECTION_CONTRACT.artifactPreview.metadataFields;
 export const ATELIER_ARTIFACT_PREVIEW_TARGET_FIELDS = ATELIER_PROJECTION_CONTRACT.artifactPreview.previewTargetFields;
@@ -1147,3 +3509,12 @@ export const ATELIER_ARTIFACT_PREVIEW_OPEN_RENDERER_OWNERS = ATELIER_PROJECTION_
 export const ATELIER_ARTIFACT_PREVIEW_OPEN_RENDERER_MODES = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].allowedRendererMode;
 export const ATELIER_ARTIFACT_PREVIEW_OPEN_RENDERER_STATUSES = ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.artifact.preview.open'].allowedRendererStatus;
 export const ATELIER_ARTIFACT_FORBIDDEN_BODY_FIELDS = ATELIER_PROJECTION_CONTRACT.artifactPreview.forbiddenBodyFields;
+export const ATELIER_RUNTIME_LOG_STREAM = ATELIER_PROJECTION_CONTRACT.runtimeLogStream;
+export const ATELIER_RUNTIME_LOG_STREAM_LEVELS = ATELIER_PROJECTION_CONTRACT.runtimeLogStream.levels;
+export const ATELIER_RUNTIME_LOG_STREAM_FORBIDDEN_METHODS = ATELIER_PROJECTION_CONTRACT.runtimeLogStream.forbiddenMethods;
+export const ATELIER_RUNTIME_LOG_STREAM_FORBIDDEN_FIELDS = ATELIER_PROJECTION_CONTRACT.runtimeLogStream.forbiddenFields;
+export const ATELIER_HOST_STORAGE_ATTACHMENT = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment;
+export const ATELIER_HOST_STORAGE_ATTACHMENT_REF_SHAPE = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.refShape;
+export const ATELIER_HOST_STORAGE_ATTACHMENT_REQUIRED_METADATA_FIELDS = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.requiredMetadataFields;
+export const ATELIER_HOST_STORAGE_ATTACHMENT_FORBIDDEN_FIELDS = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.forbiddenFields;
+export const ATELIER_HOST_STORAGE_ATTACHMENT_FORBIDDEN_METHODS = ATELIER_PROJECTION_CONTRACT.hostStorageAttachment.forbiddenMethods;

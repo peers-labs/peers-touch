@@ -1476,6 +1476,7 @@ func (s *OrchestrationService) RequestCollaborationInterrupt(
 		metadata := map[string]string{
 			"agent_id":  strings.TrimSpace(agentID),
 			"task_id":   taskID,
+			"event_id":  record.ID,
 			"event_seq": fmt.Sprintf("%d", record.EventSeq),
 		}
 		_ = writer.eventBus.Publish(ctx, domain.DomainEvent{
@@ -1534,6 +1535,7 @@ func (s *OrchestrationService) ResolveCollaborationInterrupt(
 		metadata := map[string]string{
 			"agent_id":  strings.TrimSpace(agentID),
 			"task_id":   taskID,
+			"event_id":  record.ID,
 			"event_seq": fmt.Sprintf("%d", record.EventSeq),
 		}
 		_ = writer.eventBus.Publish(ctx, domain.DomainEvent{
@@ -2766,6 +2768,9 @@ func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context
 	if actorID == "" || taskID == "" || nodeID == "" {
 		return nil, nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id, task_id and node_id are required", nil)
 	}
+	if reason := validateEnginePolicyTurnProto(req.GetEnginePolicyTurn()); reason != "" {
+		return nil, nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, reason, nil)
+	}
 	if leaseID == "" || executorID == "" {
 		return nil, nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "lease_id and executor_id are required", nil)
 	}
@@ -2886,7 +2891,7 @@ func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context
 				Payload:   blockingGateInterruptPayload(task, node, gateDecision),
 			})
 		}
-		events, err := appendNodeResultTaskEventsTx(ctx, tx, writer, &task, &node, &lease, eventType, turnID, resultSummary, resultStatus, projectionEvents)
+		events, err := appendNodeResultTaskEventsTx(ctx, tx, writer, &task, &node, &lease, eventType, turnID, resultSummary, resultStatus, req.GetEnginePolicyTurn(), projectionEvents)
 		if err != nil {
 			return err
 		}
@@ -3195,18 +3200,19 @@ func buildCollaborationTaskNodes(
 	nodeRecords := make([]persistence.CollaborationTaskNode, 0, len(agentIDs)+1)
 	prerequisiteNodeIDs := make([]string, 0, len(agentIDs))
 	previousNodeID := ""
+	schedule := enginePolicyScheduleForEngine(engine)
 	for index, agentID := range agentIDs {
 		nodeID := generateID("node")
 		prerequisiteNodeIDs = append(prerequisiteNodeIDs, nodeID)
 		prerequisites := ""
-		if !isParallelCollaborationEngine(engine) && previousNodeID != "" {
+		if !schedule.Parallel && previousNodeID != "" {
 			prerequisites = previousNodeID
 		}
 		nodeRecords = append(nodeRecords, persistence.CollaborationTaskNode{
 			ID:                  nodeID,
 			TaskID:              taskID,
 			AgentID:             agentID,
-			Role:                providerPlanRoleForIndex(providerPlan, index),
+			Role:                providerPlanRoleForIndex(providerPlan, schedule, index),
 			Description:         description,
 			Status:              int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
 			PrerequisiteNodeIDs: prerequisites,
@@ -3229,13 +3235,13 @@ func buildCollaborationTaskNodes(
 	return nodeRecords
 }
 
-func providerPlanRoleForIndex(plan *model.TaskProviderPlan, index int) string {
+func providerPlanRoleForIndex(plan *model.TaskProviderPlan, schedule enginePolicySchedule, index int) string {
 	if plan != nil && index >= 0 && index < len(plan.GetProviders()) {
 		if role, err := normalizeAtelierAgentRole(plan.GetProviders()[index].GetRole()); err == nil && role != "" {
 			return role
 		}
 	}
-	return roleForIndex(index)
+	return schedule.roleForIndex(index)
 }
 
 func (s *OrchestrationService) executeTaskNodesSequential(
@@ -3664,6 +3670,20 @@ func (s *OrchestrationService) finishExecutedTask(
 	}
 	if hasRunningCollaborationNodes(nodes) {
 		return task, nodes
+	}
+	if enginePolicyRuntimeEnabled(task) {
+		enginePolicyEvents, err := loadEnginePolicyTaskEvents(ctx, db, task.ID)
+		if err != nil {
+			s.updateTaskMeta(ctx, db, task, enginePolicyLoadErrorMeta(err))
+			s.updateTaskStatus(ctx, db, task, model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED)
+			return task, nodes
+		}
+		enginePolicyResult := evaluateCollaborationEnginePolicy(task, nodes, enginePolicyEvents...)
+		s.updateTaskMeta(ctx, db, task, enginePolicyEvaluationMeta(enginePolicyResult))
+		if enginePolicyResult.Phase == enginePolicyPhaseAwaitingHuman {
+			s.updateTaskStatus(ctx, db, task, model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED)
+			return task, nodes
+		}
 	}
 	verdict := evaluateGoalKeeperVerdict(task, nodes, finalSummary, hasFailure)
 	s.updateTaskMeta(ctx, db, task, goalKeeperVerdictMeta(verdict))
@@ -4328,14 +4348,7 @@ func normalNodeStatusCounts(nodes []persistence.CollaborationTaskNode) (complete
 }
 
 func isParallelCollaborationEngine(engine model.CollaborationEngineType) bool {
-	switch engine {
-	case model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_ROUNDTABLE,
-		model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_SWARM,
-		model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_EXPERT_MESH:
-		return true
-	default:
-		return false
-	}
+	return enginePolicyScheduleForEngine(engine).Parallel
 }
 
 func readyCollaborationNodes(nodes []persistence.CollaborationTaskNode) []int {
@@ -4937,7 +4950,7 @@ func (s *OrchestrationService) publishNodeEvent(ctx context.Context, task *persi
 	if task == nil || node == nil {
 		return
 	}
-	s.publishEvent(ctx, node.AgentID, string(eventType), nodeEventPayload(task, node, turnID, resultSummary), task.ID, node.ID)
+	s.publishEvent(ctx, node.AgentID, string(eventType), nodeEventPayload(task, node, turnID, resultSummary, nil), task.ID, node.ID)
 }
 
 func (s *OrchestrationService) publishExecutorLeaseEvent(ctx context.Context, task *persistence.CollaborationTask, node *persistence.CollaborationTaskNode, lease *persistence.ExecutorLease, eventType domain.EventType, reason string) {
@@ -4958,13 +4971,14 @@ func appendNodeResultTaskEventsTx(
 	turnID string,
 	resultSummary string,
 	resultStatus string,
+	enginePolicyTurn *model.EnginePolicyTurn,
 	projectionEvents []collaborationProjectionEvent,
 ) ([]committedTaskEvent, error) {
 	if task == nil || node == nil || lease == nil || writer == nil {
 		return nil, nil
 	}
 	events := make([]committedTaskEvent, 0, 2+len(projectionEvents))
-	if event, err := appendCommittedTaskEventTx(ctx, tx, writer, node.AgentID, string(nodeEventType), nodeEventPayload(task, node, turnID, resultSummary), task.ID, node.ID); err != nil {
+	if event, err := appendCommittedTaskEventTx(ctx, tx, writer, node.AgentID, string(nodeEventType), nodeEventPayload(task, node, turnID, resultSummary, enginePolicyTurn), task.ID, node.ID); err != nil {
 		return nil, err
 	} else {
 		events = append(events, event)
@@ -5059,7 +5073,7 @@ func appendCommittedTaskEventTx(ctx context.Context, tx *gorm.DB, writer *TaskEv
 	}, nil
 }
 
-func nodeEventPayload(task *persistence.CollaborationTask, node *persistence.CollaborationTaskNode, turnID, resultSummary string) map[string]interface{} {
+func nodeEventPayload(task *persistence.CollaborationTask, node *persistence.CollaborationTaskNode, turnID, resultSummary string, typedEnginePolicyTurn *model.EnginePolicyTurn) map[string]interface{} {
 	payload := map[string]interface{}{
 		"task_id":  task.ID,
 		"node_id":  node.ID,
@@ -5072,6 +5086,13 @@ func nodeEventPayload(task *persistence.CollaborationTask, node *persistence.Col
 	}
 	if strings.TrimSpace(resultSummary) != "" {
 		payload["result_summary"] = resultSummary
+	}
+	if turn, ok := enginePolicyTurnFromProto(typedEnginePolicyTurn); ok {
+		payload["engine_policy_turn"] = enginePolicyTurnPayloadFromTurn(turn)
+	} else if strings.TrimSpace(resultSummary) != "" {
+		if turn, ok := enginePolicyTurnFromSummary(node.Role, resultSummary); ok {
+			payload["engine_policy_turn"] = enginePolicyTurnPayloadFromTurn(turn)
+		}
 	}
 	return payload
 }
@@ -5119,6 +5140,7 @@ func (s *OrchestrationService) publishCommittedTaskEvents(ctx context.Context, e
 		metadata := map[string]string{
 			"agent_id":  strings.TrimSpace(event.AgentID),
 			"task_id":   event.Record.TaskID,
+			"event_id":  event.Record.ID,
 			"event_seq": fmt.Sprintf("%d", event.Record.EventSeq),
 		}
 		if strings.TrimSpace(event.Record.StepID) != "" {
@@ -5139,14 +5161,16 @@ func taskEventRecordToProto(record *persistence.TaskEvent) *model.TaskEvent {
 		return nil
 	}
 	return &model.TaskEvent{
-		EventId:     record.ID,
-		TaskId:      record.TaskID,
-		StepId:      record.StepID,
-		TurnId:      record.TurnID,
-		EventSeq:    record.EventSeq,
-		Type:        model.TaskEventType(record.EventType),
-		PayloadJson: record.Payload,
-		CreatedAt:   timestamppb.New(record.CreatedAt),
+		EventId:                   record.ID,
+		TaskId:                    record.TaskID,
+		StepId:                    record.StepID,
+		TurnId:                    record.TurnID,
+		EventSeq:                  record.EventSeq,
+		Type:                      model.TaskEventType(record.EventType),
+		PayloadJson:               record.Payload,
+		CreatedAt:                 timestamppb.New(record.CreatedAt),
+		EnginePolicyTurn:          enginePolicyTurnProtoFromTaskEventPayload(record.Payload),
+		CollaborationSessionEvent: collaborationSessionEventProtoFromTaskEventPayload(record.Payload),
 	}
 }
 
