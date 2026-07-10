@@ -4,15 +4,21 @@ import { Flexbox } from 'react-layout-kit';
 import { Typography, Modal, Form, theme, Divider, Avatar } from 'antd';
 import { Input, Button, TextArea, InputPassword, Tag, toast } from '@lobehub/ui';
 import { Search, Plus, Brain } from 'lucide-react';
-import { useProviderStore } from '../../store/provider';
 import { ProviderIcon } from './ProviderIcon';
 import { useTranslation } from 'react-i18next';
+import { useActiveProviderSlice } from './useActiveSettingsStores';
 
 const { Text } = Typography;
 
 export function ProviderMenu() {
   const { t } = useTranslation('provider');
-  const { providers, selectedId, loadProviders, selectProvider, createProvider } = useProviderStore();
+  const { providers, selectedId, loadProviders, selectProvider, createProvider } = useActiveProviderSlice((s) => ({
+    providers: s.providers,
+    selectedId: s.selectedId,
+    loadProviders: s.loadProviders,
+    selectProvider: s.selectProvider,
+    createProvider: s.createProvider,
+  }));
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const { token } = theme.useToken();

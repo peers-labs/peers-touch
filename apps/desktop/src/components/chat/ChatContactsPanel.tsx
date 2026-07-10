@@ -4,9 +4,9 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Tag } from '@lobehub/ui';
 import { Collapse, Empty, Tabs, theme, Typography } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
-import { useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { log } from '../../utils/logger';
+import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 
 const { Text } = Typography;
 
@@ -27,7 +27,19 @@ export function ChatContactsPanel() {
     setActiveTab,
     acceptFriendRequest,
     rejectFriendRequest,
-  } = useSocialChatStore();
+  } = useActiveSocialChatSlice((s) => ({
+    friendRequests: s.friendRequests,
+    currentUserDid: s.currentUserDid,
+    activeTab: s.activeTab,
+    activeSessionUlid: s.activeSessionUlid,
+    activeGroupUlid: s.activeGroupUlid,
+    getIMConversations: s.getIMConversations,
+    selectSession: s.selectSession,
+    selectGroup: s.selectGroup,
+    setActiveTab: s.setActiveTab,
+    acceptFriendRequest: s.acceptFriendRequest,
+    rejectFriendRequest: s.rejectFriendRequest,
+  }));
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
   const conversations = getIMConversations();

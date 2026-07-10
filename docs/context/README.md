@@ -14,12 +14,20 @@ docs/context/
 ├── implementation-reports/ # Technical implementation reports
 ├── evolution/              # Development history and daily logs
 ├── mobile/                 # Mobile proposal-stage architecture notes
-└── features/               # Feature planning and archived roadmaps
+├── features/               # Feature planning and archived roadmaps
+└── test-resources.md       # Reusable test accounts and E2E material references
 ```
 
 ---
 
 ## 📋 Contents
+
+### 🧪 Test Resources
+
+**Location**: [`test-resources.md`](./test-resources.md)
+
+- Desktop 常用测试账号、PIN、E2E/性能排查测试物料。
+- 仅用于测试/验收环境，不是生产凭据或安全策略真源。
 
 ### 🧭 Historical Architecture Notes
 
@@ -59,6 +67,11 @@ docs/context/
 **Location**: [`implementation-reports/`](./implementation-reports/)
 
 Technical reports documenting completed feature implementations:
+
+- [**Desktop Global Lag Diagnosis**](./implementation-reports/20260706-desktop-global-lag-diagnosis.md)
+  - Desktop 一级导航、二级 tab、右键菜单全局卡顿的框架级诊断报告
+  - 包含 Vite browser、Tauri bridge、production build/preview、offline/no-gateway 基线边界
+  - 对应执行计划见 [`docs/architecture/frontend-runtime/execution-plans/20260706-desktop-global-lag-framework-plan.md`](../architecture/frontend-runtime/execution-plans/20260706-desktop-global-lag-framework-plan.md)
 
 - [**ActivityPub Implementation Report**](./implementation-reports/ACTIVITYPUB_IMPLEMENTATION_REPORT.zh.md) (32KB)
   - ActivityPub 协议集成的完整实现报告

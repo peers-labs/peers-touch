@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { api, type ProviderListItem, type ProviderDetail } from '../services/desktop_api';
 import { log } from '../utils/logger';
 
@@ -23,7 +23,7 @@ interface ProviderState {
   toggleAllModels: (providerId: string, enabled: boolean) => Promise<void>;
 }
 
-export const useProviderStore = create<ProviderState>((set, get) => ({
+export const useProviderStore = createDesktopStore<ProviderState>('provider', (set, get) => ({
   providers: [],
   selectedId: null,
   detail: null,
