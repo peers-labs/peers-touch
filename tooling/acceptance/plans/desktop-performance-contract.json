@@ -1,0 +1,26 @@
+{
+  "id": "desktop-performance-contract",
+  "description": "Long-lived Desktop performance contract gates. This layer proves the acceptance runner, stable source anchors, artifact traceability, and fail-closed metadata before any runtime evidence is trusted.",
+  "logic": {
+    "layer": "contract",
+    "question": "Can the performance acceptance system identify stable Desktop interaction targets and preserve source-bound evidence without running product runtime samples?",
+    "invariant": "No runtime sample can be trusted when source anchors, artifact traceability, or PARTIAL/UNPROVEN semantics are broken.",
+    "promote_from_phase0": true
+  },
+  "selected_gates": [
+    "acceptance-run-static-gate",
+    "desktop-performance-preflight-static-gate",
+    "desktop-telemetry-mirror-static-gate",
+    "desktop-telemetry-mirror-template-static-gate",
+    "desktop-anchor-dom-evidence-template-static-gate",
+    "desktop-anchor-dom-evidence-collect-static-gate",
+    "desktop-anchor-source-static-gate",
+    "desktop-anchor-source-gate",
+    "desktop-anchor-inventory-gate",
+    "desktop-performance-cell-template-static-gate",
+    "desktop-performance-cell-collect-static-gate",
+    "desktop-local-telemetry-buffer-static-gate",
+    "desktop-performance-sampler-static-gate",
+    "desktop-performance-traceability-gate"
+  ]
+}

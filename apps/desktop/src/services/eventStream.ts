@@ -43,7 +43,7 @@ import { log } from '../utils/logger';
 
 const REALTIME_EVENT = 'realtime:event';
 const REALTIME_CONNECTION_STATE = 'realtime:connection-state';
-const BROWSER_GATEWAY_RESYNC_INTERVAL_MS = 1_000;
+const BROWSER_GATEWAY_RESYNC_INTERVAL_MS = 30_000;
 
 interface RawRealtimeEnvelope {
   event_id?: string;
@@ -143,7 +143,8 @@ function startBrowserGatewayResyncFallback(): void {
   // Browser desktop-web talks to the Rust HTTP gateway outside a Tauri WebView,
   // so `@tauri-apps/api/event.listen` has no native event channel to receive
   // Rust `emit` frames. Keep the fallback inside the runtime bridge and reuse
-  // the canonical cold-resync path instead of letting pages poll data.
+  // the canonical cold-resync path as a low-frequency missed-event safety net
+  // instead of turning full runtime reconciliation into a per-second poll.
   browserGatewayResyncTimer = window.setInterval(() => {
     eventBus.publish(EVENT.REALTIME_RESYNC, {
       newestEventId: '',
