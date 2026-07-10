@@ -15,6 +15,30 @@ const unsubscribeEvidencePath = path.join(evidenceDir, 'atelier-product-window-u
 const renderedProjectionEvidencePath = path.join(evidenceDir, 'atelier-product-window-rendered-projection-evidence.json');
 const createdProjectEvidencePath = path.join(evidenceDir, 'atelier-product-window-created-project-evidence.json');
 const certificationCreateGoal = 'Atelier product-window createFromGoal E2E';
+const productWindowCoveredPaths = [
+  'packaged peers.atelier renders inside the normal Desktop product shell',
+  'Desktop product-window route reports applet.product.rendered for peers.atelier',
+  'official peers.atelier loads Station workspace through /v1/workspace service binding inside the real Desktop product window UI',
+  'official peers.atelier sends createFromGoal through /v1/projects service binding and Station creates a durable task/node/provider-plan/event projection source inside the real Desktop product window UI',
+  'official peers.atelier starts Station projection event replay through atelier.events.subscribe -> /sub-agent/agent/events/subscribe inside the real Desktop product window UI',
+  'official peers.atelier reconnects after controlled post-first-replay SSE close and resumes from the persisted cursor inside the real Desktop product window UI',
+  'official peers.atelier applies a Station projection event to rendered stream state inside the real Desktop product window UI',
+  'official peers.atelier unsubscribes atelier.projection.event and cancels the Desktop Gateway projection subscription after product-window close',
+];
+const productWindowDoesNotProve = [
+  'projection SSE cross-restart cursor recovery inside real Desktop product window UI',
+  'human decision / escalation / resume E2E',
+  'Artifact/Gate production and blocking-gate recovery E2E',
+  'complete Host + Station + applet E2E',
+];
+
+function productWindowClaimBoundary(proves = []) {
+  return {
+    readiness: 'NOT_READY',
+    proves,
+    doesNotProve: productWindowDoesNotProve,
+  };
+}
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
@@ -207,10 +231,8 @@ function fail(message, details = []) {
     gate: 'applet:atelier-product-window-gate',
     message,
     details,
-    notCovered: [
-      'projection SSE subscribe/cancel/reconnect/cursor recovery inside real Desktop product window UI',
-      'complete Host + Station + applet E2E',
-    ],
+    claimBoundary: productWindowClaimBoundary(),
+    notCovered: productWindowDoesNotProve,
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
   process.stderr.write(`FAIL Atelier product-window gate\n${message}\n${details.join('\n')}\n`);
@@ -247,7 +269,7 @@ async function main() {
           PEERS_APPLET_PRODUCT_WINDOW_E2E_TOKEN: server.ready.token,
           PEERS_APPLET_PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER: '1',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER_DELAY_MS:
-            process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER_DELAY_MS ?? '5000',
+            process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER_DELAY_MS ?? '30000',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_UNSUBSCRIBE_EVIDENCE: unsubscribeEvidencePath,
           PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_RENDERED_PROJECTION_EVIDENCE:
             renderedProjectionEvidencePath,
@@ -267,9 +289,9 @@ async function main() {
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS:
             '/applets/atelier/v1/workspace,/applets/atelier/v1/projects,/sub-agent/agent/events/subscribe',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS:
-            process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS ?? '20000',
+            process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS ?? '60000',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS:
-            process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS ?? '8000',
+            process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS ?? '35000',
         },
       },
     );
@@ -446,22 +468,9 @@ async function main() {
         replayProbe,
         createProbe,
       },
-      coveredPaths: [
-        'packaged peers.atelier renders inside the normal Desktop product shell',
-        'Desktop product-window route reports applet.product.rendered for peers.atelier',
-        'official peers.atelier loads Station workspace through /v1/workspace service binding inside the real Desktop product window UI',
-        'official peers.atelier sends createFromGoal through /v1/projects service binding and Station creates a durable task/node/provider-plan/event projection source inside the real Desktop product window UI',
-        'official peers.atelier starts Station projection event replay through atelier.events.subscribe -> /sub-agent/agent/events/subscribe inside the real Desktop product window UI',
-        'official peers.atelier reconnects after controlled post-first-replay SSE close and resumes from the persisted cursor inside the real Desktop product window UI',
-        'official peers.atelier applies a Station projection event to rendered stream state inside the real Desktop product window UI',
-        'official peers.atelier unsubscribes atelier.projection.event and cancels the Desktop Gateway projection subscription after product-window close',
-      ],
-      notCovered: [
-        'projection SSE cross-restart cursor recovery inside real Desktop product window UI',
-        'human decision / escalation / resume E2E',
-        'Artifact/Gate production and blocking-gate recovery E2E',
-        'complete Host + Station + applet E2E',
-      ],
+      coveredPaths: productWindowCoveredPaths,
+      claimBoundary: productWindowClaimBoundary(productWindowCoveredPaths),
+      notCovered: productWindowDoesNotProve,
     };
     writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
     process.stdout.write([

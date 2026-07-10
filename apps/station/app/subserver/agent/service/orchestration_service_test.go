@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -106,6 +107,92 @@ func TestCollaborationEngineExecutionMode(t *testing.T) {
 	}
 }
 
+func TestEnginePolicyScheduleForEngine(t *testing.T) {
+	tests := []struct {
+		name                 string
+		engine               model.CollaborationEngineType
+		expectedEngine       model.CollaborationEngineType
+		parallel             bool
+		roles                string
+		convergenceMechanism string
+	}{
+		{
+			name:                 "expert hierarchy",
+			engine:               model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_EXPERT_HIERARCHY,
+			expectedEngine:       model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_EXPERT_HIERARCHY,
+			parallel:             false,
+			roles:                "architect,planner,executor,verifier,risk",
+			convergenceMechanism: "expert_hierarchy_serial_review_then_authority_signoff",
+		},
+		{
+			name:                 "roundtable",
+			engine:               model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_ROUNDTABLE,
+			expectedEngine:       model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_ROUNDTABLE,
+			parallel:             true,
+			roles:                "planner,architect,risk,verifier,executor",
+			convergenceMechanism: "roundtable_parallel_proposals_then_authority_signoff",
+		},
+		{
+			name:                 "debate judge",
+			engine:               model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_DEBATE_JUDGE,
+			expectedEngine:       model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_DEBATE_JUDGE,
+			parallel:             false,
+			roles:                "planner,risk,verifier",
+			convergenceMechanism: "debate_then_integrator_judge_signoff",
+		},
+		{
+			name:                 "swarm",
+			engine:               model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_SWARM,
+			expectedEngine:       model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_SWARM,
+			parallel:             true,
+			roles:                "executor,executor,executor,verifier,risk",
+			convergenceMechanism: "swarm_parallel_execution_then_integrator_merge",
+		},
+		{
+			name:                 "hierarchy",
+			engine:               model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_HIERARCHY,
+			expectedEngine:       model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_HIERARCHY,
+			parallel:             false,
+			roles:                "planner,executor,verifier",
+			convergenceMechanism: "hierarchical_serial_execution_then_integrator_signoff",
+		},
+		{
+			name:                 "expert mesh",
+			engine:               model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_EXPERT_MESH,
+			expectedEngine:       model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_EXPERT_MESH,
+			parallel:             true,
+			roles:                "architect,planner,risk,verifier,executor",
+			convergenceMechanism: "expert_mesh_parallel_review_then_integrator_merge",
+		},
+		{
+			name:                 "unspecified falls back to expert hierarchy",
+			engine:               model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_UNSPECIFIED,
+			expectedEngine:       model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_EXPERT_HIERARCHY,
+			parallel:             false,
+			roles:                "architect,planner,executor,verifier,risk",
+			convergenceMechanism: "expert_hierarchy_serial_review_then_authority_signoff",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			schedule := enginePolicyScheduleForEngine(tt.engine)
+			if schedule.Engine != tt.expectedEngine {
+				t.Fatalf("expected schedule engine %v, got %v", tt.expectedEngine, schedule.Engine)
+			}
+			if schedule.Parallel != tt.parallel {
+				t.Fatalf("expected parallel=%v, got %v", tt.parallel, schedule.Parallel)
+			}
+			if roles := strings.Join(schedule.DefaultRoles, ","); roles != tt.roles {
+				t.Fatalf("expected default roles %q, got %q", tt.roles, roles)
+			}
+			if schedule.ConvergenceMechanism != tt.convergenceMechanism {
+				t.Fatalf("expected convergence mechanism %q, got %q", tt.convergenceMechanism, schedule.ConvergenceMechanism)
+			}
+		})
+	}
+}
+
 func TestBuildCollaborationTaskNodesPlansParallelFanOut(t *testing.T) {
 	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
 	nodes := buildCollaborationTaskNodes(
@@ -162,6 +249,33 @@ func TestBuildCollaborationTaskNodesPlansSequentialChain(t *testing.T) {
 	}
 	if prerequisites := parseMetaList(nodes[3].PrerequisiteNodeIDs); len(prerequisites) != 3 {
 		t.Fatalf("expected synthesis to depend on all normal nodes, got %#v", prerequisites)
+	}
+}
+
+func TestBuildCollaborationTaskNodesUsesEnginePolicyScheduleRoles(t *testing.T) {
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	nodes := buildCollaborationTaskNodes(
+		"task-schedule",
+		"Ship deterministic schedule policy.",
+		model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_SWARM,
+		[]string{"agent-a", "agent-b", "agent-c", "agent-d", "agent-e"},
+		"agent-judge",
+		nil,
+		now,
+	)
+
+	if len(nodes) != 6 {
+		t.Fatalf("expected five schedule nodes plus synthesis, got %d", len(nodes))
+	}
+	roles := make([]string, 0, 5)
+	for index := 0; index < 5; index++ {
+		roles = append(roles, nodes[index].Role)
+	}
+	if got := strings.Join(roles, ","); got != "executor,executor,executor,verifier,risk" {
+		t.Fatalf("expected swarm schedule roles, got %q", got)
+	}
+	if nodes[5].Role != collaborationRoleIntegrator {
+		t.Fatalf("expected synthesis role, got %q", nodes[5].Role)
 	}
 }
 
@@ -2002,6 +2116,117 @@ func TestResolveCollaborationInterruptTxRoutesHumanDecisionGateRerun(t *testing.
 		eventPayload["gate_id"] != "gate-block" ||
 		eventPayload["node_id"] != "node-gate" {
 		t.Fatalf("resolved event missing typed human decision route: %+v", eventPayload)
+	}
+}
+
+func TestResolveCollaborationInterruptTxRoutesHumanDecisionBudgetContinue(t *testing.T) {
+	db := openResumeCollaborationTaskDB(t, "resolve_human_decision_route_budget_continue")
+	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
+	task := persistence.CollaborationTask{
+		ID:          "task-human-route-budget",
+		Title:       "Budget route",
+		GoalOwnerID: "actor-1",
+		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		MetaJSON:    `{"budget_blocked":"true","budget_ref":"budget-direct"}`,
+		CreatedAt:   now,
+		StartedAt:   now,
+		EndedAt:     now,
+	}
+	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{{
+		ID:        "node-budget",
+		TaskID:    task.ID,
+		AgentID:   "agent-1",
+		Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+		StartedAt: now,
+		EndedAt:   now,
+	}})
+	if err := db.Create(&persistence.InterruptRequest{
+		InterruptID:   "decision_budget_continue",
+		TaskID:        task.ID,
+		InterruptType: "direct_run_budget_exceeded",
+		Status:        int32(model.InterruptStatus_INTERRUPT_STATUS_PENDING),
+		PayloadJSON: mustJSONString(map[string]interface{}{
+			"interrupt_id":      "decision_budget_continue",
+			"reason":            "budget",
+			"budget_ref":        "budget-direct",
+			"question":          "Budget exceeded before provider execution. Continue?",
+			"rollback_impact":   "Station keeps budget recovery and provider resume ownership.",
+			"block_kind":        "decision",
+			"human_decision_id": "decision_budget_continue",
+			"options": []map[string]string{{
+				"id":     "continue-budget",
+				"label":  "继续执行",
+				"action": "continue",
+			}},
+		}),
+		CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed pending budget decision: %v", err)
+	}
+
+	writer := NewTaskEventWriter(nil)
+	var resumed bool
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		_, _, didResume, _, err := resolveCollaborationInterruptTx(
+			context.Background(),
+			tx,
+			writer,
+			"actor-1",
+			task.ID,
+			"atelier.escalation.resolve",
+			string(domain.EventTypeCollaborationInterruptResolved),
+			map[string]interface{}{
+				"interrupt_id": "decision_budget_continue",
+				"block_kind":   "decision_resolved",
+				"choice":       "继续执行",
+			},
+		)
+		resumed = didResume
+		return err
+	}); err != nil {
+		t.Fatalf("resolve routed budget decision: %v", err)
+	}
+	if !resumed {
+		t.Fatal("expected budget continue decision to resume Station-owned execution")
+	}
+	var updated persistence.CollaborationTask
+	if err := db.First(&updated, "id = ?", task.ID).Error; err != nil {
+		t.Fatalf("load updated budget task: %v", err)
+	}
+	if got := model.CollaborationTaskStatus(updated.Status); got != model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING {
+		t.Fatalf("expected budget task RUNNING after continue, got %v", got)
+	}
+	var interrupt persistence.InterruptRequest
+	if err := db.First(&interrupt, "interrupt_id = ?", "decision_budget_continue").Error; err != nil {
+		t.Fatalf("load budget interrupt: %v", err)
+	}
+	if interrupt.Status != int32(model.InterruptStatus_INTERRUPT_STATUS_RESOLVED) ||
+		interrupt.ResumePayloadJSON == "" ||
+		strings.Contains(interrupt.ResumePayloadJSON, "budget.write") ||
+		strings.Contains(interrupt.ResumePayloadJSON, "provider.invoke") ||
+		strings.Contains(interrupt.ResumePayloadJSON, "runtime.execute") {
+		t.Fatalf("expected reference-only resolved budget interrupt, got %+v", interrupt)
+	}
+	var event persistence.TaskEvent
+	if err := db.First(&event, "task_id = ?", task.ID).Error; err != nil {
+		t.Fatalf("load budget resolved event: %v", err)
+	}
+	eventPayload := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(event.Payload), &eventPayload); err != nil {
+		t.Fatalf("decode budget resolved event payload: %v", err)
+	}
+	if eventPayload["human_decision_route"] != "station.orchestration" ||
+		eventPayload["human_decision_reason"] != "budget" ||
+		eventPayload["human_decision_action"] != "continue" ||
+		eventPayload["human_decision_transition"] != "escalated->executing" ||
+		eventPayload["resume_action"] != "continue" {
+		t.Fatalf("budget decision event missing typed Station route: %+v", eventPayload)
+	}
+	payloadJSON := string(event.Payload)
+	for _, forbidden := range []string{"budget.write", "budget.resume", "provider.invoke", "runtime.execute", "shell.execute", "input_snapshot"} {
+		if strings.Contains(payloadJSON, forbidden) {
+			t.Fatalf("budget decision event must remain reference-only; found %q in %s", forbidden, payloadJSON)
+		}
 	}
 }
 
@@ -3920,6 +4145,7 @@ func TestAppendNodeResultTaskEventsTxPersistsOrderedOutbox(t *testing.T) {
 			"turn-provider",
 			"provider completed",
 			"completed",
+			nil,
 			projectionEvents,
 		)
 		if err != nil {
@@ -5582,6 +5808,405 @@ func TestGoalKeeperVerdictRejectsFailedOrMissingSummary(t *testing.T) {
 	}
 	if !strings.Contains(verdict.Reason, "missing") {
 		t.Fatalf("expected missing summary reason, got %q", verdict.Reason)
+	}
+}
+
+func TestEnginePolicyEvaluationReachesWithAuthoritySignoffAndResolvedObjection(t *testing.T) {
+	task := &persistence.CollaborationTask{
+		ID:       "task-engine-reached",
+		MetaJSON: mergeStringMapJSON("", map[string]string{"engine_policy_runtime": "enabled", "engine_policy_authority_role": "goal_owner"}),
+	}
+	nodes := []persistence.CollaborationTaskNode{
+		{Role: "risk", ResultSummary: `{"role":"risk","stance":"objection","text":"API quota risk.","evidenceRef":"risk:quota"}`},
+		{Role: "architect", ResultSummary: `{"role":"architect","stance":"counter","text":"Backoff resolves quota risk."}`},
+		{Role: "goal_owner", ResultSummary: `{"role":"goal_owner","stance":"signoff","text":"Approved."}`},
+	}
+
+	result := evaluateCollaborationEnginePolicy(task, nodes)
+	if !result.Enabled || result.Phase != enginePolicyPhaseReached || !result.AuthoritySignoff || result.PendingObjections != 0 {
+		t.Fatalf("expected reached consensus, got %+v", result)
+	}
+	meta := enginePolicyEvaluationMeta(result)
+	if meta["engine_policy_phase"] != "reached" || meta["engine_policy_authority_signoff"] != "true" {
+		t.Fatalf("unexpected engine policy meta: %#v", meta)
+	}
+}
+
+func TestEnginePolicyEvaluationAwaitsHumanForEvidenceBackedObjection(t *testing.T) {
+	task := &persistence.CollaborationTask{
+		ID:       "task-engine-awaiting",
+		MetaJSON: mergeStringMapJSON("", map[string]string{"engine_policy_runtime": "enabled", "engine_policy_authority_role": "goal_owner"}),
+	}
+	nodes := []persistence.CollaborationTaskNode{
+		{Role: "risk", ResultSummary: `{"role":"risk","stance":"objection","text":"Cost risk.","evidenceRef":"risk:cost"}`},
+		{Role: "goal_owner", ResultSummary: `{"role":"goal_owner","stance":"signoff","text":"Escalate for budget.","escalates":true}`},
+	}
+
+	result := evaluateCollaborationEnginePolicy(task, nodes)
+	if result.Phase != enginePolicyPhaseAwaitingHuman || result.AuthoritySignoff || result.PendingObjections != 1 {
+		t.Fatalf("expected awaiting human with one pending evidence objection, got %+v", result)
+	}
+	if result.HardVetoObjections != 1 {
+		t.Fatalf("expected risk objection to count as hard veto, got %+v", result)
+	}
+}
+
+func TestEnginePolicyEvaluationDowngradesObjectionWithoutEvidence(t *testing.T) {
+	task := &persistence.CollaborationTask{
+		ID:       "task-engine-concern",
+		MetaJSON: mergeStringMapJSON("", map[string]string{"engine_policy_runtime": "enabled", "engine_policy_authority_role": "goal_owner"}),
+	}
+	nodes := []persistence.CollaborationTaskNode{
+		{Role: "risk", ResultSummary: `{"role":"risk","stance":"objection","text":"I am uneasy."}`},
+		{Role: "goal_owner", ResultSummary: `{"role":"goal_owner","stance":"signoff","text":"Approved."}`},
+	}
+
+	result := evaluateCollaborationEnginePolicy(task, nodes)
+	if result.Phase != enginePolicyPhaseReached || result.PendingObjections != 0 || result.DowngradedConcerns != 1 {
+		t.Fatalf("expected evidence-less objection to be downgraded, got %+v", result)
+	}
+}
+
+func TestEnginePolicyEvaluationCountsVerifierAcceptanceVeto(t *testing.T) {
+	task := &persistence.CollaborationTask{
+		ID:       "task-engine-verifier-veto",
+		MetaJSON: mergeStringMapJSON("", map[string]string{"engine_policy_runtime": "enabled", "engine_policy_authority_role": "goal_owner"}),
+	}
+	nodes := []persistence.CollaborationTaskNode{
+		{Role: "verifier", ResultSummary: `{"role":"verifier","stance":"objection","text":"Acceptance evidence is missing.","evidenceRef":"acceptance:missing"}`},
+		{Role: "goal_owner", ResultSummary: `{"role":"goal_owner","stance":"signoff","text":"Approved."}`},
+	}
+
+	result := evaluateCollaborationEnginePolicy(task, nodes)
+	if result.Phase != enginePolicyPhaseAwaitingHuman || result.PendingObjections != 1 || result.AcceptanceVetoes != 1 {
+		t.Fatalf("expected verifier acceptance veto to block consensus, got %+v", result)
+	}
+	meta := enginePolicyEvaluationMeta(result)
+	if meta["engine_policy_acceptance_vetoes"] != "1" {
+		t.Fatalf("expected acceptance veto metadata, got %#v", meta)
+	}
+}
+
+func TestEnginePolicyEvaluationIgnoresExecutorJudgment(t *testing.T) {
+	task := &persistence.CollaborationTask{
+		ID:       "task-engine-executor-judgment",
+		MetaJSON: mergeStringMapJSON("", map[string]string{"engine_policy_runtime": "enabled", "engine_policy_authority_role": "goal_owner"}),
+	}
+	nodes := []persistence.CollaborationTaskNode{
+		{Role: "executor", ResultSummary: `{"role":"executor","stance":"objection","text":"Executor cannot veto acceptance.","evidenceRef":"executor:veto"}`},
+		{Role: "executor", ResultSummary: `{"role":"executor","stance":"signoff","text":"Executor cannot approve."}`},
+		{Role: "goal_owner", ResultSummary: `{"role":"goal_owner","stance":"signoff","text":"Approved."}`},
+	}
+
+	result := evaluateCollaborationEnginePolicy(task, nodes)
+	if result.Phase != enginePolicyPhaseReached || result.PendingObjections != 0 || result.DowngradedConcerns != 2 {
+		t.Fatalf("expected executor judgment to be downgraded and non-blocking, got %+v", result)
+	}
+}
+
+func TestEnginePolicyEvaluationRejectsNonTerminalSignoff(t *testing.T) {
+	task := &persistence.CollaborationTask{
+		ID:       "task-engine-non-terminal-signoff",
+		MetaJSON: mergeStringMapJSON("", map[string]string{"engine_policy_runtime": "enabled", "engine_policy_authority_role": "risk"}),
+	}
+	nodes := []persistence.CollaborationTaskNode{
+		{Role: "risk", ResultSummary: `{"role":"risk","stance":"signoff","text":"Risk cannot terminally approve."}`},
+	}
+
+	result := evaluateCollaborationEnginePolicy(task, nodes)
+	if result.Phase != enginePolicyPhaseAwaitingHuman || result.AuthoritySignoff {
+		t.Fatalf("expected non-terminal signoff role to be ignored, got %+v", result)
+	}
+}
+
+func TestEnginePolicyEvaluationPrefersDurableTaskEvents(t *testing.T) {
+	task := &persistence.CollaborationTask{
+		ID:       "task-engine-event-source",
+		MetaJSON: mergeStringMapJSON("", map[string]string{"engine_policy_runtime": "enabled", "engine_policy_authority_role": "goal_owner"}),
+	}
+	nodes := []persistence.CollaborationTaskNode{
+		{Role: "goal_owner", ResultSummary: `{"role":"goal_owner","stance":"signoff","text":"Node summary would approve."}`},
+	}
+	events := []persistence.TaskEvent{
+		{
+			EventSeq: 1,
+			Payload: mustJSONString(map[string]interface{}{
+				"role": "risk",
+				"engine_policy_turn": map[string]interface{}{
+					"role":        "risk",
+					"stance":      "objection",
+					"text":        "Durable event objection blocks approval.",
+					"evidenceRef": "risk:event",
+				},
+			}),
+		},
+	}
+
+	result := evaluateCollaborationEnginePolicy(task, nodes, events...)
+	if result.Phase != enginePolicyPhaseAwaitingHuman || result.PendingObjections != 1 || result.AuthoritySignoff {
+		t.Fatalf("expected durable event source to override node summary, got %+v", result)
+	}
+}
+
+func TestNodeEventPayloadPersistsEnginePolicyTurn(t *testing.T) {
+	task := &persistence.CollaborationTask{ID: "task-engine-payload"}
+	node := &persistence.CollaborationTaskNode{ID: "node-risk", AgentID: "agent-risk", Role: "risk"}
+
+	payload := nodeEventPayload(task, node, "turn-risk", `{"role":"risk","stance":"objection","text":"Quota risk.","evidenceRef":"risk:quota"}`, nil)
+	turn, ok := payload["engine_policy_turn"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected engine_policy_turn payload, got %#v", payload)
+	}
+	if turn["stance"] != "objection" || turn["evidenceRef"] != "risk:quota" {
+		t.Fatalf("unexpected engine policy turn payload: %#v", turn)
+	}
+}
+
+func TestNodeEventPayloadPersistsTypedEnginePolicyTurn(t *testing.T) {
+	task := &persistence.CollaborationTask{ID: "task-engine-typed-payload"}
+	node := &persistence.CollaborationTaskNode{ID: "node-risk", AgentID: "agent-risk", Role: "risk"}
+
+	payload := nodeEventPayload(task, node, "turn-risk", "plain summary", &model.EnginePolicyTurn{
+		Role:        "risk",
+		Stance:      model.EnginePolicyStance_ENGINE_POLICY_STANCE_OBJECTION,
+		Text:        "Typed quota risk.",
+		EvidenceRef: "risk:typed",
+	})
+	turn, ok := payload["engine_policy_turn"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected typed engine_policy_turn payload, got %#v", payload)
+	}
+	if turn["stance"] != "objection" || turn["evidenceRef"] != "risk:typed" || turn["text"] != "Typed quota risk." {
+		t.Fatalf("unexpected typed engine policy turn payload: %#v", turn)
+	}
+}
+
+func TestTaskEventRecordToProtoExposesTypedEnginePolicyTurn(t *testing.T) {
+	record := &persistence.TaskEvent{
+		ID:        "event-engine-policy-turn",
+		TaskID:    "task-engine",
+		StepID:    "node-risk",
+		TurnID:    "turn-risk",
+		EventSeq:  42,
+		EventType: int32(model.TaskEventType_TASK_EVENT_TYPE_STEP_COMPLETED),
+		Payload: `{
+			"role":"risk",
+			"result_summary":"fallback summary",
+			"engine_policy_turn":{
+				"role":"risk",
+				"stance":"objection",
+				"text":"Typed risk objection.",
+				"evidenceRef":"risk:typed",
+				"escalates":true
+			}
+		}`,
+	}
+
+	event := taskEventRecordToProto(record)
+	turn := event.GetEnginePolicyTurn()
+	if turn == nil {
+		t.Fatalf("expected typed engine policy turn on task event")
+	}
+	if turn.GetRole() != "risk" ||
+		turn.GetStance() != model.EnginePolicyStance_ENGINE_POLICY_STANCE_OBJECTION ||
+		turn.GetText() != "Typed risk objection." ||
+		turn.GetEvidenceRef() != "risk:typed" ||
+		!turn.GetEscalates() {
+		t.Fatalf("unexpected task event engine policy turn: %+v", turn)
+	}
+}
+
+func TestTaskEventRecordToProtoDoesNotInferEnginePolicyTurnFromSummary(t *testing.T) {
+	record := &persistence.TaskEvent{
+		ID:        "event-engine-policy-summary",
+		TaskID:    "task-engine",
+		StepID:    "node-risk",
+		TurnID:    "turn-risk",
+		EventSeq:  43,
+		EventType: int32(model.TaskEventType_TASK_EVENT_TYPE_STEP_COMPLETED),
+		Payload:   `{"role":"risk","result_summary":"{\"role\":\"risk\",\"stance\":\"objection\",\"text\":\"summary only\",\"evidenceRef\":\"risk:summary\"}"}`,
+	}
+
+	event := taskEventRecordToProto(record)
+	if event.GetEnginePolicyTurn() != nil {
+		t.Fatalf("expected no typed turn when durable payload lacks explicit engine_policy_turn, got %+v", event.GetEnginePolicyTurn())
+	}
+}
+
+func TestTaskEventRecordToProtoExposesTypedCollaborationSessionEvent(t *testing.T) {
+	record := &persistence.TaskEvent{
+		ID:        "event-session-lifecycle",
+		TaskID:    "task-session",
+		StepID:    "node-risk",
+		TurnID:    "turn-risk",
+		EventSeq:  44,
+		EventType: int32(model.TaskEventType_TASK_EVENT_TYPE_STEP_COMPLETED),
+		Payload: `{
+                        "role":"risk",
+                        "result_summary":"fallback summary",
+                        "collaboration_session_event":{
+                                "type":"convergence_evaluated",
+                                "phase":"awaiting_human",
+                                "role":"risk",
+                                "engineType":"roundtable",
+                                "roundIndex":2,
+                                "convergenceMechanism":"terminal_signoff && pending_authority_objections == 0",
+                                "evidenceRef":"risk:typed-session",
+                                "summary":"Risk veto keeps session awaiting human.",
+                                "requiresHuman":true
+                        }
+                }`,
+	}
+
+	event := taskEventRecordToProto(record)
+	sessionEvent := event.GetCollaborationSessionEvent()
+	if sessionEvent == nil {
+		t.Fatalf("expected typed collaboration session event on task event")
+	}
+	if sessionEvent.GetType() != model.CollaborationSessionEventType_COLLABORATION_SESSION_EVENT_TYPE_CONVERGENCE_EVALUATED ||
+		sessionEvent.GetPhase() != model.CollaborationSessionPhase_COLLABORATION_SESSION_PHASE_AWAITING_HUMAN ||
+		sessionEvent.GetRole() != "risk" ||
+		sessionEvent.GetEngineType() != model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_ROUNDTABLE ||
+		sessionEvent.GetRoundIndex() != 2 ||
+		sessionEvent.GetConvergenceMechanism() != "terminal_signoff && pending_authority_objections == 0" ||
+		sessionEvent.GetEvidenceRef() != "risk:typed-session" ||
+		sessionEvent.GetSummary() != "Risk veto keeps session awaiting human." ||
+		!sessionEvent.GetRequiresHuman() {
+		t.Fatalf("unexpected task event collaboration session event: %+v", sessionEvent)
+	}
+}
+
+func TestTaskEventRecordToProtoDoesNotInferCollaborationSessionEventFromSummary(t *testing.T) {
+	record := &persistence.TaskEvent{
+		ID:        "event-session-summary",
+		TaskID:    "task-session",
+		StepID:    "node-risk",
+		TurnID:    "turn-risk",
+		EventSeq:  45,
+		EventType: int32(model.TaskEventType_TASK_EVENT_TYPE_STEP_COMPLETED),
+		Payload:   `{"role":"risk","result_summary":"{\"type\":\"awaiting_human\",\"phase\":\"awaiting_human\",\"summary\":\"summary only\"}"}`,
+	}
+
+	event := taskEventRecordToProto(record)
+	if event.GetCollaborationSessionEvent() != nil {
+		t.Fatalf("expected no typed session event when durable payload lacks explicit collaboration_session_event, got %+v", event.GetCollaborationSessionEvent())
+	}
+}
+
+func TestValidateEnginePolicyTurnProtoRejectsInvalidTypedTurn(t *testing.T) {
+	cases := []struct {
+		name string
+		turn *model.EnginePolicyTurn
+		want string
+	}{
+		{
+			name: "unspecified stance",
+			turn: &model.EnginePolicyTurn{Role: "risk", Text: "risk"},
+			want: "stance",
+		},
+		{
+			name: "empty role",
+			turn: &model.EnginePolicyTurn{Stance: model.EnginePolicyStance_ENGINE_POLICY_STANCE_OBJECTION, Text: "risk"},
+			want: "role",
+		},
+		{
+			name: "empty text",
+			turn: &model.EnginePolicyTurn{Role: "risk", Stance: model.EnginePolicyStance_ENGINE_POLICY_STANCE_OBJECTION},
+			want: "text",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reason := validateEnginePolicyTurnProto(tc.turn)
+			if !strings.Contains(reason, tc.want) {
+				t.Fatalf("expected validation reason containing %q, got %q", tc.want, reason)
+			}
+		})
+	}
+	if reason := validateEnginePolicyTurnProto(&model.EnginePolicyTurn{
+		Role:   "risk",
+		Stance: model.EnginePolicyStance_ENGINE_POLICY_STANCE_OBJECTION,
+		Text:   "Quota risk.",
+	}); reason != "" {
+		t.Fatalf("expected valid typed turn, got %q", reason)
+	}
+}
+
+func TestEnginePolicyLoadErrorMetaPausesAwaitingHuman(t *testing.T) {
+	meta := enginePolicyLoadErrorMeta(errors.New("event store unavailable"))
+	if meta["engine_policy_phase"] != enginePolicyPhaseAwaitingHuman ||
+		meta["engine_policy_source"] != "agent_task_events" ||
+		!strings.Contains(meta["engine_policy_error"], "event store unavailable") {
+		t.Fatalf("unexpected engine policy load error meta: %#v", meta)
+	}
+}
+
+func TestFinishExecutedTaskPausesForEnginePolicyAwaitingHuman(t *testing.T) {
+	db := openResumeCollaborationTaskDB(t, "engine_policy_finish_pauses")
+	now := time.Date(2026, 7, 6, 10, 0, 0, 0, time.UTC)
+	task := persistence.CollaborationTask{
+		ID:          "task-engine-finish",
+		Title:       "Engine policy finish",
+		EngineType:  int32(model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_ROUNDTABLE),
+		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		GoalOwnerID: "actor-1",
+		MetaJSON:    mergeStringMapJSON("", map[string]string{"engine_policy_runtime": "enabled", "engine_policy_authority_role": "goal_owner"}),
+		CreatedAt:   now,
+		StartedAt:   now,
+		EndedAt:     now,
+	}
+	nodes := []persistence.CollaborationTaskNode{
+		{
+			ID:            "node-risk",
+			TaskID:        task.ID,
+			AgentID:       "agent-risk",
+			Role:          "risk",
+			Status:        int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED),
+			ResultSummary: `{"role":"goal_owner","stance":"signoff","text":"Node summary would approve."}`,
+			StartedAt:     now,
+			EndedAt:       now,
+		},
+	}
+	seedResumeCollaborationTask(t, db, task, nodes)
+	if err := db.Create(&persistence.TaskEvent{
+		ID:        "evt-engine-objection",
+		TaskID:    task.ID,
+		StepID:    "node-risk",
+		EventSeq:  1,
+		EventType: int32(model.TaskEventType_TASK_EVENT_TYPE_STEP_COMPLETED),
+		Payload: mustJSONString(map[string]interface{}{
+			"role": "risk",
+			"engine_policy_turn": map[string]interface{}{
+				"role":        "risk",
+				"stance":      "objection",
+				"text":        "Durable objection blocks finish.",
+				"evidenceRef": "risk:durable",
+			},
+		}),
+		CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("create engine policy event: %v", err)
+	}
+
+	svc := &OrchestrationService{}
+	_, _ = svc.finishExecutedTask(context.Background(), db, "actor-1", &task, nodes, false)
+
+	var stored persistence.CollaborationTask
+	if err := db.Where("id = ?", task.ID).First(&stored).Error; err != nil {
+		t.Fatalf("load stored task: %v", err)
+	}
+	if got := model.CollaborationTaskStatus(stored.Status); got != model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED {
+		t.Fatalf("expected EnginePolicy awaiting_human to pause task, got %v", got)
+	}
+	meta := map[string]string{}
+	if err := json.Unmarshal([]byte(stored.MetaJSON), &meta); err != nil {
+		t.Fatalf("decode task meta: %v", err)
+	}
+	if meta["engine_policy_phase"] != enginePolicyPhaseAwaitingHuman ||
+		meta["engine_policy_pending_objections"] != "1" ||
+		meta["engine_policy_source"] != "" ||
+		meta["acceptance_verdict"] != "" {
+		t.Fatalf("unexpected EnginePolicy finish meta: %+v", meta)
 	}
 }
 
