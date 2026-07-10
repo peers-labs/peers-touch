@@ -13,7 +13,8 @@ import {
   Search,
   TerminalSquare,
 } from 'lucide-react';
-import { useAppletsStore, type RuntimeAppletInfo } from '../store/applets';
+import type { RuntimeAppletInfo } from '../store/applets';
+import { useActiveAppletsSlice } from './useActiveAppletsStore';
 
 const { Text } = Typography;
 
@@ -87,10 +88,17 @@ function appletIdentity(info: RuntimeAppletInfo) {
 export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const { t } = useTranslation('applet');
   const { token } = theme.useToken();
-  const applets = useAppletsStore((state) => state.applets);
-  const loading = useAppletsStore((state) => state.loading);
-  const stationUnavailable = useAppletsStore((state) => state.stationUnavailable);
-  const importAppletDirectory = useAppletsStore((state) => state.importAppletDirectory);
+  const {
+    applets,
+    loading,
+    stationUnavailable,
+    importAppletDirectory,
+  } = useActiveAppletsSlice((state) => ({
+    applets: state.applets,
+    loading: state.loading,
+    stationUnavailable: state.stationUnavailable,
+    importAppletDirectory: state.importAppletDirectory,
+  }));
 
   const [query, setQuery] = useState('');
   const [importMenuOpen, setImportMenuOpen] = useState(false);

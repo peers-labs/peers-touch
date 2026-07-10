@@ -25,9 +25,9 @@ pub mod peers_touch {
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
     applets, auth, channels, chat, cron, crypto, desktop_capture, federation, friend_chat,
-    frontend_log, group_chat, host_events, i18n, ice, key_exchange, mcp, memory, model_config,
-    models, notebook, notification, oauth2, oss, presence, profile, provider, realtime, search,
-    settings, skills, skills_market, social, station, system, tools, tts,
+    frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice, key_exchange, mcp,
+    memory, model_config, models, notebook, notification, oauth2, oss, presence, profile, provider,
+    realtime, search, settings, skills, skills_market, social, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -111,6 +111,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             interface::tauri_commands::meta_contract_version,
             frontend_log::frontend_log,
+            frontend_telemetry::frontend_telemetry_upload,
             i18n::i18n_load_resources,
             actor::actor_search_actors,
             actor::actor_get_my_profile,
@@ -228,6 +229,7 @@ fn main() {
             agent_orchestration::agent_collaboration_subscribe,
             agent_orchestration::agent_collaboration_cancel_stream,
             agent_orchestration::agent_collaboration_cancel_task,
+            agent_orchestration::agent_collaboration_resume_task,
             agent_orchestration::agent_collaboration_submit_node_result,
             agent_orchestration::agent_collaboration_claim_executor_task,
             agent_orchestration::agent_collaboration_heartbeat_executor_lease,

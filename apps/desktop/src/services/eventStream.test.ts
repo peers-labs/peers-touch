@@ -9,6 +9,8 @@ import {
 } from '../gen/proto/domain/realtime/event_pb';
 import {
   installEventStreamBridge,
+  startEventStream,
+  stopEventStream,
   teardownEventStreamBridge,
 } from './eventStream';
 import type {
@@ -20,6 +22,14 @@ import type {
 type TauriEventHandler = (event: { payload: unknown }) => void;
 
 class TestWindow extends EventTarget {
+  setInterval(handler: TimerHandler, timeout?: number, ...arguments_: unknown[]): number {
+    return globalThis.setInterval(handler, timeout, ...arguments_) as unknown as number;
+  }
+
+  clearInterval(id?: number): void {
+    globalThis.clearInterval(id);
+  }
+
   addEventListener(type: string, listener: EventListenerOrEventListenerObject | null) {
     super.addEventListener(type, listener);
   }
@@ -174,6 +184,34 @@ describe('event stream group membership decode', () => {
         encryptedPayloadB64: Buffer.from('sealed-skdm').toString('base64'),
       }),
     ]);
+  });
+
+  it('keeps browser gateway resync fallback low-frequency', async () => {
+    vi.useFakeTimers();
+    (window as any).__PT_GATEWAY_BASE__ = 'http://127.0.0.1:3031';
+    const payloads: unknown[] = [];
+    const unsubscribe = eventBus.subscribe(EVENT.REALTIME_RESYNC, (payload) => {
+      payloads.push(payload);
+    });
+
+    try {
+      await startEventStream();
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(payloads).toEqual([]);
+
+      await vi.advanceTimersByTimeAsync(28_000);
+      expect(payloads).toEqual([
+        {
+          newestEventId: '',
+          reason: 'browser-dev-gateway-resync',
+        },
+      ]);
+    } finally {
+      await stopEventStream();
+      unsubscribe();
+      vi.useRealTimers();
+    }
   });
 });
 

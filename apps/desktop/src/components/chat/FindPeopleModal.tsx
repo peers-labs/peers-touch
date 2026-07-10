@@ -5,10 +5,13 @@ import { Button, Input, toast } from '@lobehub/ui';
 import { Alert, Spin, Tag, theme, Modal, Typography } from 'antd';
 import { Search, ShieldCheck } from 'lucide-react';
 import { api, type FederationResolveView } from '../../services/desktop_api';
-import { useSocialChatStore } from '../../store/socialChat';
+import {
+  useActiveChatFederationSlice,
+  useActiveSocialChatSlice,
+  useActiveSocialChatStore,
+} from './useActiveSocialChatStore';
 import {
   selectFederationReady,
-  useFederationStore,
 } from '../../store/federation';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
@@ -117,9 +120,11 @@ function profileToResult(view: FederationResolveView): ActorSearchResult | null 
 export function FindPeopleModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sendFriendRequest } = useSocialChatStore();
-  const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
-  const federationReady = useFederationStore(selectFederationReady);
+  const { sendFriendRequest } = useActiveSocialChatSlice((s) => ({
+    sendFriendRequest: s.sendFriendRequest,
+  }));
+  const currentUserDid = useActiveSocialChatStore((s) => s.currentUserDid);
+  const federationReady = useActiveChatFederationSlice(selectFederationReady);
 
   const [searchText, setSearchText] = useState('');
   const [results, setResults] = useState<ActorSearchResult[]>([]);

@@ -1,8 +1,8 @@
 # Frontend Runtime Architecture — 模块目录结构
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-07-02 | **Updated**: 2026-07-02
+> **Version**: v1.1
+> **Created**: 2026-07-02 | **Updated**: 2026-07-10
 > **Owner**: Client Platform Team
 > **Module**: `apps/desktop/src/kernel/`, `apps/desktop/src/runtimes/`
 
@@ -19,7 +19,11 @@ docs/architecture/frontend-runtime/
 ├── module-layout.md
 ├── integration.md
 └── execution-plans/
-    └── 20260702-frontend-runtime-upgrade.md
+    ├── 20260702-frontend-runtime-upgrade.md
+    ├── 20260706-desktop-global-lag-framework-plan.md
+    ├── 20260706-desktop-global-lag-bom-spec-trace.md
+    ├── 20260706-desktop-global-lag-phase0-construction-plan.md
+    └── 20260710-desktop-global-lag-phase1-optimization.md
 
 docs/client/common/ui-identity/
 ├── frontend-component-tree.md

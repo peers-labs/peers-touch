@@ -16,6 +16,7 @@ pub mod desktop_capture;
 pub mod federation;
 pub mod friend_chat;
 pub mod frontend_log;
+pub mod frontend_telemetry;
 pub mod group_chat;
 pub mod host_events;
 pub mod i18n;

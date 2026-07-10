@@ -62,6 +62,8 @@ let bootstrapSequence = 0;
 let realtimeStreamActorId: string | null = null;
 let realtimeStreamTransition: Promise<void> = Promise.resolve();
 let socialRefreshInFlight: Promise<void> | null = null;
+let coldResyncInFlight = false;
+let pendingColdResyncPayload: RealtimeResyncPayload | null = null;
 const seenRealtimeMessageKeys = new Set<string>();
 const seenSocialNotificationIds = new Set<string>();
 const seenGroupFederationEventKeys = new Set<string>();
@@ -545,35 +547,65 @@ async function syncKnownConversations(): Promise<void> {
   }
 }
 
-function onResync(payload: RealtimeResyncPayload): void {
+async function executeColdResync(payload: RealtimeResyncPayload): Promise<void> {
+  log.info('socialRealtime', 'cold resync started', payload);
+
+  const chat = useSocialChatStore.getState();
+  const notifications = useNotificationStore.getState();
+
+  await Promise.allSettled([
+    chat.loadSessions(),
+    chat.loadGroups(),
+    chat.loadFriendRequests(),
+    notifications.loadNotifications(),
+    notifications.refreshUnreadCounts(),
+  ]);
+
+  await syncKnownConversations();
+
+  const refreshed = useSocialChatStore.getState();
+  if (refreshed.activeTab === 'friend' && refreshed.activeSessionUlid) {
+    await refreshed.loadMessages(refreshed.activeSessionUlid, 'friend');
+  } else if (refreshed.activeTab === 'group' && refreshed.activeGroupUlid) {
+    await refreshed.loadMessages(refreshed.activeGroupUlid, 'group');
+  }
+  await Promise.allSettled([
+    refreshed.loadGroupUnreadCounts(),
+    refreshed.loadConversationPreviews(),
+  ]);
+  useMediaRuntimeStore.getState().prewarmMessages(refreshed.messages);
+}
+
+function scheduleColdResync(payload: RealtimeResyncPayload): void {
+  if (coldResyncInFlight) {
+    pendingColdResyncPayload = payload;
+    return;
+  }
+
+  coldResyncInFlight = true;
   runDetached('cold resync', async () => {
-    log.info('socialRealtime', 'cold resync started', payload);
-
-    const chat = useSocialChatStore.getState();
-    const notifications = useNotificationStore.getState();
-
-    await Promise.allSettled([
-      chat.loadSessions(),
-      chat.loadGroups(),
-      chat.loadFriendRequests(),
-      notifications.loadNotifications(),
-      notifications.refreshUnreadCounts(),
-    ]);
-
-    await syncKnownConversations();
-
-    const refreshed = useSocialChatStore.getState();
-    if (refreshed.activeTab === 'friend' && refreshed.activeSessionUlid) {
-      await refreshed.loadMessages(refreshed.activeSessionUlid, 'friend');
-    } else if (refreshed.activeTab === 'group' && refreshed.activeGroupUlid) {
-      await refreshed.loadMessages(refreshed.activeGroupUlid, 'group');
+    try {
+      let current: RealtimeResyncPayload | null = payload;
+      while (current) {
+        const next = current;
+        current = null;
+        await executeColdResync(next);
+        current = pendingColdResyncPayload;
+        pendingColdResyncPayload = null;
+      }
+    } finally {
+      coldResyncInFlight = false;
+      if (pendingColdResyncPayload) {
+        const pending = pendingColdResyncPayload;
+        pendingColdResyncPayload = null;
+        scheduleColdResync(pending);
+      }
     }
-    await Promise.allSettled([
-      refreshed.loadGroupUnreadCounts(),
-      refreshed.loadConversationPreviews(),
-    ]);
-    useMediaRuntimeStore.getState().prewarmMessages(refreshed.messages);
   });
+}
+
+function onResync(payload: RealtimeResyncPayload): void {
+  scheduleColdResync(payload);
 }
 
 function scheduleGroupFederationRefresh(groupUlid: string, shouldLoadMessages: boolean): void {
@@ -700,6 +732,8 @@ export function installSocialRealtimeBridge(): void {
       window.clearTimeout(externalHostReconcileTimer);
       externalHostReconcileTimer = null;
     }
+    pendingColdResyncPayload = null;
+    coldResyncInFlight = false;
     teardownBridge = null;
   };
 

@@ -12,6 +12,7 @@ import (
 	appletstore "github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	friendchat "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat"
+	frontendtelemetry "github.com/peers-labs/peers-touch/station/app/subserver/frontend_telemetry"
 	groupchat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat"
 	keyexchange "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange"
 	notifsubserver "github.com/peers-labs/peers-touch/station/app/subserver/notification"
@@ -22,8 +23,8 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard"
 
-	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/agent"
+	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
 
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
@@ -56,6 +57,7 @@ func main() {
 		server.WithSubServer("notification", notifsubserver.NewNotificationSubServer),
 		server.WithSubServer("official_applet_note", officialapplets.NewNoteSubServer),
 		server.WithSubServer("applet_store", appletstore.NewAppletStoreSubServer),
+		server.WithSubServer("frontend_telemetry", frontendtelemetry.NewFrontendTelemetrySubServer),
 		server.WithSubServer("dashboard", dashboard.NewDashboardSubServer),
 	)
 	if err != nil {
