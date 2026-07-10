@@ -89,6 +89,23 @@ export function getBootTrace(): ReadonlyArray<PhaseEntry> {
 
 // ── Critical runtime install ──────────────────────────────────────────────
 
+const BOOTSTRAP_TIMEOUT_MS = 5000;
+
+async function bootstrapWithTimeout(runtimeId: string, actorId: string | null): Promise<void> {
+  const timeout = new Promise<'timeout'>((resolve) =>
+    setTimeout(() => resolve('timeout'), BOOTSTRAP_TIMEOUT_MS),
+  );
+  const bootstrap = bootstrapRuntime(runtimeId, actorId).then(() => 'done' as const);
+
+  const result = await Promise.race([bootstrap, timeout]);
+  if (result === 'timeout') {
+    log.warn('boot', `bootstrap.timeout: ${runtimeId} exceeded ${BOOTSTRAP_TIMEOUT_MS}ms — entering degraded mode`, {
+      runtimeId,
+      timeoutMs: BOOTSTRAP_TIMEOUT_MS,
+    });
+  }
+}
+
 /**
  * Install all `app`-scope runtimes immediately and the `session`-scope
  * runtimes whose ids appear in `criticalSessionRuntimes`. The pipeline
@@ -102,12 +119,12 @@ export async function installCriticalRuntimes(
   markPhaseStart('runtime:critical');
   for (const desc of listRuntimes('app')) {
     installRuntime(desc.id);
-    await bootstrapRuntime(desc.id, null);
+    await bootstrapWithTimeout(desc.id, null);
   }
   if (actorId) {
     for (const id of criticalSessionRuntimes) {
       installRuntime(id);
-      await bootstrapRuntime(id, actorId);
+      await bootstrapWithTimeout(id, actorId);
     }
   }
   markPhaseEnd('runtime:critical', { actorId, critical: criticalSessionRuntimes });
@@ -128,7 +145,7 @@ export async function installIdleRuntimes(
   for (const desc of listRuntimes('session')) {
     if (criticalSessionRuntimes.includes(desc.id)) continue;
     installRuntime(desc.id);
-    await bootstrapRuntime(desc.id, actorId);
+    await bootstrapWithTimeout(desc.id, actorId);
     installed.push(desc.id);
   }
   markPhaseEnd('runtime:idle', { installed });
