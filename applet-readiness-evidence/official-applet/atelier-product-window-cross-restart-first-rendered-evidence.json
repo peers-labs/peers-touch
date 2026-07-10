@@ -1,0 +1,30 @@
+{
+  "appletId": "peers.atelier",
+  "event": "atelier.projection.rendered",
+  "launchMode": "product-window-certification",
+  "ok": true,
+  "productShell": true,
+  "properties": {
+    "eventBlockIds": [
+      "evt_d6a4d5e1dd73954bbbd12cb5"
+    ],
+    "eventId": "evt_d6a4d5e1dd73954bbbd12cb5",
+    "eventSeq": 4,
+    "patchKind": "stream.append",
+    "renderedBlockIds": [
+      "collab_8659c7dc52e0493a90998ab8-summary",
+      "collab_8659c7dc52e0493a90998ab8-negotiation",
+      "evt_d30e63b01a4300d1a3a5b421",
+      "evt_dc1626fae4fedce4e11c59bb",
+      "evt_6c98a82f969edf301100b672",
+      "evt_d6a4d5e1dd73954bbbd12cb5"
+    ],
+    "replayLabel": "3/3 · seq 3",
+    "selectedTaskTitle": "Atelier product-window cross-restart cursor E2E",
+    "streamCount": 6,
+    "taskId": "collab_8659c7dc52e0493a90998ab8",
+    "viewStatus": "ready"
+  },
+  "recordedAt": 1783317342324,
+  "sessionId": "desktop-peers.atelier-apl-1783317341312-2"
+}

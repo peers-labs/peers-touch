@@ -1,0 +1,23 @@
+{
+  "url": "http://localhost:3200/?surface=tasks&check=cm",
+  "root": true,
+  "compactTasks": true,
+  "compactShell": true,
+  "compactList": true,
+  "allTasks": true,
+  "scheduledGroup": true,
+  "awaitingInputGroup": true,
+  "pausedGroup": true,
+  "taskRows": 3,
+  "selectedTask": "Scheduled\nARXIV\nArXiv daily picks\nDaily at 09:00\n09:12",
+  "rightPanel": true,
+  "taskComposer": true,
+  "modelButton": true,
+  "searchButton": true,
+  "createTaskButton": true,
+  "viewSettingsCollapsedByDefault": true,
+  "rightPanelVisibleInViewport": true,
+  "taskComposerVisible": true,
+  "forbiddenHits": [],
+  "portalChromeHit": false
+}

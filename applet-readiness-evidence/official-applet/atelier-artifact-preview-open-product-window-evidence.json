@@ -1,0 +1,28 @@
+{
+  "appletId": "peers.atelier",
+  "event": "atelier.artifact.preview.opened",
+  "launchMode": "product-window-certification",
+  "ok": true,
+  "productShell": true,
+  "properties": {
+    "accepted": true,
+    "artifactId": "atelier-real-product-gate-artifact",
+    "bodyRef": "artifact://atelier-real-product-gate-task/atelier-real-product-gate-artifact/body",
+    "opened": true,
+    "prepared": true,
+    "rendererCapabilities": [
+      "sandbox_manifest_validation",
+      "artifact_body_binding",
+      "host_owned_renderer_session",
+      "host_visual_renderer_surface"
+    ],
+    "rendererMode": "host_sandbox_manifest",
+    "rendererOwner": "desktop_host",
+    "rendererSessionId": "atelier-preview:atelier-real-product-gate-task:atelier-real-product-gate-artifact",
+    "rendererStatus": "rendered",
+    "sandboxRef": "atelier-sandbox://atelier-real-product-gate-task/atelier-real-product-gate-artifact/preview",
+    "taskId": "atelier-real-product-gate-task"
+  },
+  "recordedAt": 1783321669688,
+  "sessionId": "desktop-peers.atelier-apl-1783321669533-2"
+}

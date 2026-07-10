@@ -1,0 +1,447 @@
+syntax = "proto3";
+
+package peers_touch.model.atelier.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model/atelier;ateliermodel";
+
+message AtelierProjectionContract {
+  string version = 1;
+  string event_topic = 2;
+  repeated string methods = 3;
+  repeated string runtime_methods = 4;
+  repeated string gateway_actions = 5;
+  repeated AtelierProjectionPatchKind patch_kinds = 6;
+  repeated AtelierAppletMethodIntent method_intents = 7;
+  AtelierAgentRoleAuthority agent_role_authority = 8;
+}
+
+message AtelierAppletMethodIntent {
+  string method = 1;
+  string intent_owner = 2;
+  string intent_kind = 3;
+  string side_effect_class = 4;
+  bool execution_forbidden = 5;
+}
+
+enum AtelierAgentRole {
+  ATELIER_AGENT_ROLE_UNSPECIFIED = 0;
+  ATELIER_AGENT_ROLE_GOAL_OWNER = 1;
+  ATELIER_AGENT_ROLE_ARCHITECT = 2;
+  ATELIER_AGENT_ROLE_PLANNER = 3;
+  ATELIER_AGENT_ROLE_RISK = 4;
+  ATELIER_AGENT_ROLE_SUPERVISOR = 5;
+  ATELIER_AGENT_ROLE_EXECUTOR = 6;
+  ATELIER_AGENT_ROLE_VERIFIER = 7;
+  ATELIER_AGENT_ROLE_INTEGRATOR = 8;
+  ATELIER_AGENT_ROLE_HISTORIAN = 9;
+}
+
+message AtelierAgentRoleAuthority {
+  repeated AtelierAgentRole roles = 1;
+  repeated AtelierAgentRole terminal_signoff_roles = 2;
+  repeated AtelierAgentRole hard_veto_roles = 3;
+  repeated AtelierAgentRole acceptance_veto_roles = 4;
+  repeated AtelierAgentRole progress_control_roles = 5;
+  repeated AtelierAgentRole judgment_forbidden_roles = 6;
+  repeated AtelierAgentRole merge_roles = 7;
+  repeated AtelierAgentRole memory_record_roles = 8;
+  string execution_owner = 9;
+  bool applet_may_execute_authority = 10;
+}
+
+enum AtelierProjectionPatchKind {
+  ATELIER_PROJECTION_PATCH_KIND_UNSPECIFIED = 0;
+  ATELIER_PROJECTION_PATCH_KIND_SNAPSHOT = 1;
+  ATELIER_PROJECTION_PATCH_KIND_TASK_UPSERT = 2;
+  ATELIER_PROJECTION_PATCH_KIND_TASK_STATUS = 3;
+  ATELIER_PROJECTION_PATCH_KIND_STREAM_APPEND = 4;
+  ATELIER_PROJECTION_PATCH_KIND_CONTEXT_REPLACE = 5;
+  ATELIER_PROJECTION_PATCH_KIND_TODO_REPLACE = 6;
+  ATELIER_PROJECTION_PATCH_KIND_DECISION_RESOLVED = 7;
+  ATELIER_PROJECTION_PATCH_KIND_ARTIFACT_UPSERT = 8;
+  ATELIER_PROJECTION_PATCH_KIND_GATE_UPSERT = 9;
+}
+
+message AtelierProjectionSnapshot {
+  string version = 1;
+  string selected_task_id = 2;
+  AtelierWorkspaceProjection workspace = 3;
+}
+
+message AtelierWorkspaceProjection {
+  repeated AtelierTaskProjection tasks = 1;
+  map<string, AtelierStreamBlockList> streams = 2;
+  map<string, AtelierContextItemList> context = 3;
+  map<string, AtelierTodoItemList> todos = 4;
+  map<string, AtelierArtifactProjectionList> artifacts = 5;
+  map<string, AtelierGateProjectionList> gates = 6;
+  repeated AtelierProjectProjection projects = 7;
+}
+
+message AtelierTaskProjection {
+  string id = 1;
+  string project = 2;
+  string title = 3;
+  string status = 4;
+  bool running = 5;
+  string branch = 6;
+  AtelierWorkspaceOpenTarget workspace_open_target = 7;
+  string project_id = 8;
+}
+
+message AtelierWorkspaceOpenTarget {
+  string workspace_id = 1;
+  string workspace_uri = 2; // Must use pt-workspace://. Must not expose file:// or local paths.
+  string label = 3;
+  string ide_hint = 4;
+}
+
+message AtelierProjectProjection {
+  string id = 1;
+  string goal = 2;
+  string title = 3;
+  string state = 4;
+  string workspace_ref = 5;
+  string trace_root = 6;
+  bool goal_owner_signoff = 7;
+  repeated AtelierResidualRiskProjection residual_risks = 8;
+  repeated AtelierBlockerProjection open_blockers = 9;
+  repeated AtelierMemoryCandidateProjection memory_candidates = 10;
+  AtelierProjectCompletionProjection completion = 11;
+  AtelierMilestoneTreeProjection milestone_tree = 12;
+  AtelierTaskGraphProjection task_graph = 13;
+  AtelierPolicyProjection policy = 14;
+  repeated AtelierDefectProjection defects = 15;
+}
+
+message AtelierProjectCompletionProjection {
+  bool no_open_blockers = 1;
+  bool l0_l1_acceptance_passed = 2;
+  bool l2_human_signoff_complete = 3;
+  bool residual_risks_logged = 4;
+  bool memory_candidates_generated = 5;
+}
+
+message AtelierBlockerProjection {
+  string id = 1;
+  string owner = 2;
+  string severity = 3;
+  string state = 4;
+  string evidence_ref = 5;
+  string reason = 6;
+}
+
+message AtelierResidualRiskProjection {
+  string id = 1;
+  string desc = 2;
+  string state = 3;
+  string evidence_ref = 4;
+  string owner = 5;
+}
+
+message AtelierMemoryCandidateProjection {
+  string id = 1;
+  string type = 2;
+  string content = 3;
+  repeated string evidence_refs = 4;
+  string scope = 5;
+  bool confirmed = 6;
+  repeated string feeds = 7;
+}
+
+message AtelierMilestoneTreeProjection {
+  string root_id = 1;
+  repeated AtelierMilestoneProjection milestones = 2;
+  repeated AtelierDependencyEdgeProjection edges = 3;
+}
+
+message AtelierMilestoneProjection {
+  string id = 1;
+  string title = 2;
+  string state = 3;
+  repeated string task_ids = 4;
+  repeated string acceptance_predicate_ids = 5;
+  repeated AtelierBlockerProjection open_blockers = 6;
+}
+
+message AtelierTaskGraphProjection {
+  repeated string root_task_ids = 1;
+  repeated AtelierTaskNodeProjection tasks = 2;
+  repeated AtelierDependencyEdgeProjection edges = 3;
+  string parallel_policy = 4;
+}
+
+message AtelierTaskNodeProjection {
+  string id = 1;
+  string title = 2;
+  string state = 3;
+  string agent_role = 4;
+  repeated string artifact_ids = 5;
+  repeated string gate_ids = 6;
+}
+
+message AtelierDependencyEdgeProjection {
+  string from = 1;
+  string to = 2;
+  string type = 3;
+}
+
+message AtelierPolicyProjection {
+  string id = 1;
+  repeated AtelierPolicyRuleProjection rules = 2;
+  bool hard_deny = 3;
+}
+
+message AtelierPolicyRuleProjection {
+  string id = 1;
+  string scope = 2;
+  string expr = 3;
+  string severity = 4;
+}
+
+message AtelierDefectProjection {
+  string id = 1;
+  string task_id = 2;
+  string source = 3;
+  string state = 4;
+  string evidence_ref = 5;
+  AtelierDefectProposalProjection proposal = 6;
+}
+
+message AtelierDefectProposalProjection {
+  string summary = 1;
+  string expected_change = 2;
+  repeated string target_refs = 3;
+}
+
+message AtelierStreamBlockList {
+  repeated AtelierStreamBlock items = 1;
+}
+
+message AtelierStreamBlock {
+  string id = 1;
+  string kind = 2;
+  string role = 3;
+  string text = 4;
+  bool done = 5;
+  repeated AtelierDecisionOption options = 6;
+  repeated AtelierNegotiationVoice voices = 7;
+}
+
+message AtelierDecisionOption {
+  string id = 1;
+  string label = 2;
+}
+
+message AtelierNegotiationVoice {
+  string id = 1;
+  string role = 2;
+  string stance = 3;
+  string text = 4;
+  string evidence_ref = 5;
+}
+
+message AtelierContextItemList {
+  repeated AtelierContextItem items = 1;
+}
+
+message AtelierContextItem {
+  string id = 1;
+  string title = 2;
+  string summary = 3;
+}
+
+message AtelierTodoItemList {
+  repeated AtelierTodoItem items = 1;
+}
+
+message AtelierTodoItem {
+  string id = 1;
+  string text = 2;
+  bool done = 3;
+}
+
+message AtelierArtifactProjectionList {
+  repeated AtelierArtifactProjection items = 1;
+}
+
+message AtelierArtifactProjection {
+  reserved 5, 6;
+  reserved "markdown", "content", "body", "html", "diff", "patch", "url", "src", "iframe";
+
+  string id = 1;
+  string title = 2;
+  string kind = 3;
+  string preview_hint = 4;
+  repeated string paths = 7;
+  string body_ref = 8;
+  string body_hash = 9;
+  int64 body_size = 10;
+  string body_kind = 11;
+  map<string, string> meta = 12;
+  AtelierArtifactPreviewTargetProjection preview_target = 13;
+}
+
+message AtelierArtifactPreviewTargetProjection {
+  string kind = 1;
+  string mode = 2;
+  string label = 3;
+  string sandbox_ref = 4;
+  string body_ref = 5;
+}
+
+message AtelierGateProjectionList {
+  repeated AtelierGateProjection items = 1;
+}
+
+message AtelierGateProjection {
+  string id = 1;
+  string status = 2;
+  string summary = 3;
+  bool blocking = 4;
+  repeated AtelierGateCheck checks = 5;
+  repeated string artifact_ids = 6;
+}
+
+message AtelierGateCheck {
+  string id = 1;
+  string label = 2;
+  string status = 3;
+  string detail = 4;
+}
+
+message AtelierProjectionEvent {
+  string id = 1;
+  int64 seq = 2;
+  string received_at = 3;
+  AtelierProjectionPatch patch = 4;
+}
+
+message AtelierProjectionPatch {
+  oneof patch {
+    AtelierSnapshotPatch snapshot = 1;
+    AtelierTaskUpsertPatch task_upsert = 2;
+    AtelierTaskStatusPatch task_status = 3;
+    AtelierStreamAppendPatch stream_append = 4;
+    AtelierContextReplacePatch context_replace = 5;
+    AtelierTodoReplacePatch todo_replace = 6;
+    AtelierDecisionResolvedPatch decision_resolved = 7;
+    AtelierArtifactUpsertPatch artifact_upsert = 8;
+    AtelierGateUpsertPatch gate_upsert = 9;
+  }
+}
+
+message AtelierSnapshotPatch {
+  AtelierProjectionSnapshot snapshot = 1;
+}
+
+message AtelierTaskUpsertPatch {
+  AtelierTaskProjection task = 1;
+}
+
+message AtelierTaskStatusPatch {
+  string task_id = 1;
+  string status = 2;
+}
+
+message AtelierStreamAppendPatch {
+  string task_id = 1;
+  AtelierStreamBlock block = 2;
+}
+
+message AtelierContextReplacePatch {
+  string task_id = 1;
+  repeated AtelierContextItem items = 2;
+}
+
+message AtelierTodoReplacePatch {
+  string task_id = 1;
+  repeated AtelierTodoItem items = 2;
+}
+
+message AtelierDecisionResolvedPatch {
+  string task_id = 1;
+  string block_id = 2;
+  string choice = 3;
+}
+
+message AtelierArtifactUpsertPatch {
+  string task_id = 1;
+  AtelierArtifactProjection artifact = 2;
+}
+
+message AtelierGateUpsertPatch {
+  string task_id = 1;
+  AtelierGateProjection gate = 2;
+}
+
+message AtelierProviderCapability {
+  string id = 1;
+  string label = 2;
+  string description = 3;
+  string slash_command = 4;
+  string provider_kind = 5;
+  string scope = 6;
+  bool read_only = 7;
+}
+
+message AtelierProviderCapabilitiesResponse {
+  repeated AtelierProviderCapability capabilities = 1;
+  string source = 2;
+}
+
+message SubmitAtelierFeedbackRequest {
+  string task_id = 1;
+  string block_id = 2;
+  string signal = 3;
+  string comment = 4;
+}
+
+message SubmitAtelierFeedbackResponse {
+  bool accepted = 1;
+  string feedback_id = 2;
+  AtelierFeedbackPolicyHint memory_candidate = 3;
+  AtelierFeedbackPolicyHint rerun_intent = 4;
+}
+
+message AtelierFeedbackPolicyHint {
+  string status = 1;
+  string reason = 2;
+  bool requires_confirmation = 3;
+  string confirmation_mode = 4;
+  repeated string feeds = 5;
+}
+
+message OpenAtelierWorkspaceRequest {
+  string task_id = 1;
+  string workspace_uri = 2;
+  string ide_hint = 3;
+}
+
+message OpenAtelierWorkspaceResponse {
+  bool accepted = 1;
+  bool opened = 2;
+  string workspace_uri = 3;
+  string mode = 4;
+  string reason = 5;
+}
+
+message FetchAtelierArtifactBodyRequest {
+  string task_id = 1;
+  string artifact_id = 2;
+  string body_ref = 3; // Must be artifact://<task_id>/<artifact_id>/body.
+  string expected_hash = 4;
+  int64 max_bytes = 5;
+}
+
+message FetchAtelierArtifactBodyResponse {
+  string task_id = 1;
+  string artifact_id = 2;
+  string body_ref = 3;
+  string body_kind = 4;
+  string body_hash = 5;
+  int64 body_size = 6;
+  string text = 7;
+  bool truncated = 8;
+  string retention_status = 9;
+}

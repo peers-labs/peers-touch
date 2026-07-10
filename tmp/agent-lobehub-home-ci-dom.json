@@ -1,0 +1,33 @@
+{
+  "url": "http://localhost:3200/?surface=home&state=compact-home&check=ci",
+  "region": true,
+  "compactHome": true,
+  "deepHome": false,
+  "connectorStrip": true,
+  "connectorButtons": 5,
+  "connectedConnectors": 3,
+  "authRequiredConnectors": 2,
+  "compactPrompt": true,
+  "compactComposer": true,
+  "recommendedModelChips": 4,
+  "dashboardCards": 2,
+  "briefCard": true,
+  "briefDivider": true,
+  "briefArtifacts": 2,
+  "briefActions": [
+    "View run",
+    "Confirm"
+  ],
+  "recommendationCards": 3,
+  "recommendationMetaRows": 3,
+  "recommendationAuthLabels": [
+    "Calendar required",
+    "Web + Drive",
+    "No connector"
+  ],
+  "viewAllTasks": true,
+  "addTaskActions": 3,
+  "legacyHeroAbsent": true,
+  "deepInspectionMenusAbsent": true,
+  "forbiddenHits": []
+}

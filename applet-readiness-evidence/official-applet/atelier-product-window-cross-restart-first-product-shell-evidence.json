@@ -1,0 +1,9 @@
+{
+  "appletId": "peers.atelier",
+  "event": "applet.product.rendered",
+  "launchMode": "product-window-certification",
+  "ok": true,
+  "productShell": true,
+  "readySource": "lifecycle.reportReady",
+  "recordedAt": 1783317347249
+}

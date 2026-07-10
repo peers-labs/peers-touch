@@ -1,0 +1,45 @@
+{
+  "out": "tmp/agent-lobehub-l2-screenshots/profile-cl-compact-profile-scoped.png",
+  "clip": {
+    "x": 365,
+    "y": 426,
+    "width": 2524,
+    "height": 1100,
+    "scale": 1
+  },
+  "info": {
+    "url": "http://localhost:3200/?surface=profile&check=cl",
+    "root": true,
+    "compactProfile": true,
+    "agentRail": true,
+    "compactHeader": true,
+    "compactEditor": true,
+    "avatarVisible": true,
+    "titlePlaceholder": true,
+    "modelTools": true,
+    "addSkillVisible": true,
+    "coreInstructions": true,
+    "coreInstructionTextVisible": true,
+    "settingsPreviewAbsent": true,
+    "identityCardAbsent": true,
+    "legacyEditorAbsent": true,
+    "builderAbsentByDefault": true,
+    "forbiddenHits": [],
+    "excerpt": "🤖\nCustom Agent\nPersonal assistant\nStart New Topic\nSearch\nAgent Profile\nTopics\nChannels\nTasks\nAgent workspace plan\nTopics\nStart New Topic\nCustom Agent\nAgent Profile\nLatest version loaded\n🤖\nEdit avatar\nModel & Tools\nlobehub/claude-opus-4-7\nAdd Skill\nCore Instructions\n\nDefines who this agent is, what it is responsible for, and how it works and responds. It serves as a core instruction in every conversation.\n\nEnter core instructions, press / to open the Slash Menu\nSlash",
+    "box": {
+      "x": 365,
+      "y": 426,
+      "width": 2524,
+      "height": 1500,
+      "top": 426,
+      "right": 2889,
+      "bottom": 1926,
+      "left": 365
+    },
+    "viewport": {
+      "width": 2600,
+      "height": 1500
+    },
+    "portalChromeHit": false
+  }
+}

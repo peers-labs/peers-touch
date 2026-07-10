@@ -1,0 +1,18 @@
+{
+  "appletId": "peers.atelier",
+  "event": "atelier.project.created.rendered",
+  "launchMode": "product-window-certification",
+  "ok": true,
+  "productShell": true,
+  "properties": {
+    "eventSeq": 4,
+    "goal": "Atelier product-window cross-restart cursor E2E",
+    "nodeCount": 2,
+    "runKind": "agents",
+    "taskCount": 3,
+    "taskId": "collab_1cebee9d11dc013f8ca84557",
+    "taskTitle": "Atelier product-window cross-restart cursor E2E"
+  },
+  "recordedAt": 1783317347661,
+  "sessionId": "desktop-peers.atelier-apl-1783317341312-2"
+}

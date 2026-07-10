@@ -1,0 +1,29 @@
+{
+  "appletId": "peers.atelier",
+  "event": "atelier.decision.resolved.rendered",
+  "launchMode": "product-window-certification",
+  "ok": true,
+  "productShell": true,
+  "properties": {
+    "artifactCount": 1,
+    "artifactIds": [
+      "atelier-real-product-gate-artifact"
+    ],
+    "blockId": "atelier-real-product-gate-blocking-decision",
+    "choice": "Cancel task",
+    "eventSeq": 5,
+    "failedGateCount": 1,
+    "gateCount": 1,
+    "gateIds": [
+      "atelier-real-product-blocking-gate"
+    ],
+    "gateStatuses": [
+      "failed"
+    ],
+    "streamCount": 5,
+    "taskId": "atelier-real-product-gate-task",
+    "taskTitle": "Atelier Real Product Gate"
+  },
+  "recordedAt": 1783316602132,
+  "sessionId": "desktop-peers.atelier-apl-1783316602010-2"
+}

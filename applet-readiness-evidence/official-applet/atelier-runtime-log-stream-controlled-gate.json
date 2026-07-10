@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "gate": "atelier-runtime-log-stream-controlled-gate",
+  "streamId": "atelier-controlled-log-stream-32345-1783331900563",
+  "source": "host_sandbox_cdp",
+  "normalized": [
+    {
+      "streamId": "atelier-controlled-log-stream-32345-1783331900563",
+      "seq": 1,
+      "level": "log",
+      "message": "sandbox booted",
+      "source": "host_sandbox_cdp",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM"
+    },
+    {
+      "streamId": "atelier-controlled-log-stream-32345-1783331900563",
+      "seq": 2,
+      "level": "warn",
+      "message": "sandbox warning",
+      "source": "host_sandbox_cdp",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM"
+    },
+    {
+      "streamId": "atelier-controlled-log-stream-32345-1783331900563",
+      "seq": 3,
+      "level": "error",
+      "message": "sandbox error",
+      "source": "host_sandbox_cdp",
+      "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM"
+    }
+  ],
+  "notCovered": [
+    "real Run runtime stream",
+    "real provider/executor lifecycle",
+    "atelier.logs.subscribe applet capability",
+    "runtime.logs.subscribe applet capability",
+    "complete Host + Station + applet E2E"
+  ]
+}

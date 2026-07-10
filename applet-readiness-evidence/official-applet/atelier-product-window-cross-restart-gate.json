@@ -1,0 +1,211 @@
+{
+  "ok": true,
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.atelier",
+  "gate": "applet:atelier-product-window-cross-restart-gate",
+  "packageDir": "apps/desktop/applets-dist/peers.atelier",
+  "underlyingGate": "tooling/scripts/applet-desktop-product-window-gate.mjs --product-app",
+  "storageRoot": ".local/applet-product-window-gate/atelier-cross-restart-storage",
+  "firstProductShellEvidencePath": "applet-readiness-evidence/official-applet/atelier-product-window-cross-restart-first-product-shell-evidence.json",
+  "secondProductShellEvidencePath": "applet-readiness-evidence/official-applet/atelier-product-window-cross-restart-second-product-shell-evidence.json",
+  "firstRenderedEvidencePath": "applet-readiness-evidence/official-applet/atelier-product-window-cross-restart-first-rendered-evidence.json",
+  "firstCreatedEvidencePath": "applet-readiness-evidence/official-applet/atelier-product-window-cross-restart-first-created-evidence.json",
+  "firstProductShellEvidence": {
+    "appletId": "peers.atelier",
+    "event": "applet.product.rendered",
+    "launchMode": "product-window-certification",
+    "ok": true,
+    "productShell": true,
+    "readySource": "lifecycle.reportReady",
+    "recordedAt": 1783317347249
+  },
+  "secondProductShellEvidence": {
+    "appletId": "peers.atelier",
+    "event": "applet.product.rendered",
+    "launchMode": "product-window-certification",
+    "ok": true,
+    "productShell": true,
+    "readySource": "lifecycle.reportReady",
+    "recordedAt": 1783317350670
+  },
+  "createdProjectEvidence": {
+    "appletId": "peers.atelier",
+    "event": "atelier.project.created.rendered",
+    "launchMode": "product-window-certification",
+    "ok": true,
+    "productShell": true,
+    "properties": {
+      "eventSeq": 4,
+      "goal": "Atelier product-window cross-restart cursor E2E",
+      "nodeCount": 2,
+      "runKind": "agents",
+      "taskCount": 3,
+      "taskId": "collab_1cebee9d11dc013f8ca84557",
+      "taskTitle": "Atelier product-window cross-restart cursor E2E"
+    },
+    "recordedAt": 1783317347661,
+    "sessionId": "desktop-peers.atelier-apl-1783317341312-2"
+  },
+  "renderedProjectionEvidence": {
+    "appletId": "peers.atelier",
+    "event": "atelier.projection.rendered",
+    "launchMode": "product-window-certification",
+    "ok": true,
+    "productShell": true,
+    "properties": {
+      "eventBlockIds": [
+        "evt_d6a4d5e1dd73954bbbd12cb5"
+      ],
+      "eventId": "evt_d6a4d5e1dd73954bbbd12cb5",
+      "eventSeq": 4,
+      "patchKind": "stream.append",
+      "renderedBlockIds": [
+        "collab_8659c7dc52e0493a90998ab8-summary",
+        "collab_8659c7dc52e0493a90998ab8-negotiation",
+        "evt_d30e63b01a4300d1a3a5b421",
+        "evt_dc1626fae4fedce4e11c59bb",
+        "evt_6c98a82f969edf301100b672",
+        "evt_d6a4d5e1dd73954bbbd12cb5"
+      ],
+      "replayLabel": "3/3 · seq 3",
+      "selectedTaskTitle": "Atelier product-window cross-restart cursor E2E",
+      "streamCount": 6,
+      "taskId": "collab_8659c7dc52e0493a90998ab8",
+      "viewStatus": "ready"
+    },
+    "recordedAt": 1783317342324,
+    "sessionId": "desktop-peers.atelier-apl-1783317341312-2"
+  },
+  "stationGateServer": {
+    "baseUrl": "http://127.0.0.1:54061",
+    "agentId": "atelier-real-product-gate-agent",
+    "firstRenderedSeq": 4,
+    "secondStartIndex": 9,
+    "crossRestartReplayProbe": {
+      "requests": [
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_8659c7dc52e0493a90998ab8",
+          "afterEventSeq": 0,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_8659c7dc52e0493a90998ab8",
+          "afterEventSeq": 0,
+          "replayedSeqs": [
+            1
+          ]
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_8659c7dc52e0493a90998ab8",
+          "afterEventSeq": 1,
+          "replayedSeqs": [
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_8659c7dc52e0493a90998ab8",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_8659c7dc52e0493a90998ab8",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_1cebee9d11dc013f8ca84557",
+          "afterEventSeq": 0,
+          "replayedSeqs": [
+            1
+          ]
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_1cebee9d11dc013f8ca84557",
+          "afterEventSeq": 1,
+          "replayedSeqs": [
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_1cebee9d11dc013f8ca84557",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_1cebee9d11dc013f8ca84557",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_1cebee9d11dc013f8ca84557",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_1cebee9d11dc013f8ca84557",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_1cebee9d11dc013f8ca84557",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_1cebee9d11dc013f8ca84557",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_1cebee9d11dc013f8ca84557",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "collab_1cebee9d11dc013f8ca84557",
+          "afterEventSeq": 4,
+          "replayedSeqs": []
+        }
+      ],
+      "matchedRequest": {
+        "agentId": "atelier-real-product-gate-agent",
+        "taskId": "collab_1cebee9d11dc013f8ca84557",
+        "afterEventSeq": 4,
+        "replayedSeqs": []
+      },
+      "startIndex": 9
+    }
+  },
+  "coveredPaths": [
+    "first packaged peers.atelier product-window launch creates a Station task and renders a projection event",
+    "Desktop Gateway persists the Atelier projection cursor to the product-window storage root",
+    "second packaged peers.atelier product-window launch reuses the same storage root with a new applet session",
+    "second launch subscribes through /sub-agent/agent/events/subscribe using the persisted cursor instead of afterEventSeq=0",
+    "Station replay after cross-restart returns no already-applied projection events"
+  ],
+  "notCovered": [
+    "human decision / escalation / resume E2E",
+    "Artifact/Gate production and blocking-gate recovery E2E",
+    "rich artifact body rendering in a Host sandbox",
+    "complete Host + Station + applet E2E"
+  ]
+}

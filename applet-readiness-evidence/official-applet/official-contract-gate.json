@@ -1,7 +1,7 @@
 {
   "status": "PASS",
-  "checkedPath": "apps/applets/note",
-  "service": "note",
+  "checkedPath": "apps/applets/atelier",
+  "service": "atelier",
   "evidenceClass": "REAL_PRODUCT_PATH",
   "errors": []
 }

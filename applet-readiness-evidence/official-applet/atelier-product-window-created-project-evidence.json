@@ -1,0 +1,18 @@
+{
+  "appletId": "peers.atelier",
+  "event": "atelier.project.created.rendered",
+  "launchMode": "product-window-certification",
+  "ok": true,
+  "productShell": true,
+  "properties": {
+    "eventSeq": 4,
+    "goal": "Atelier product-window createFromGoal E2E",
+    "nodeCount": 2,
+    "runKind": "agents",
+    "taskCount": 3,
+    "taskId": "collab_ef01f6410355f14d4e0b199a",
+    "taskTitle": "Atelier product-window createFromGoal E2E"
+  },
+  "recordedAt": 1783287581194,
+  "sessionId": "desktop-peers.atelier-apl-1783287575090-2"
+}

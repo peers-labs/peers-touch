@@ -1,0 +1,17 @@
+{
+  "appletId": "peers.atelier",
+  "event": "atelier.decision.resolved.rendered",
+  "launchMode": "product-window-certification",
+  "ok": true,
+  "productShell": true,
+  "properties": {
+    "blockId": "atelier-real-product-gate-decision",
+    "choice": "继续执行",
+    "eventSeq": 4,
+    "streamCount": 4,
+    "taskId": "atelier-real-product-gate-task",
+    "taskTitle": "Atelier Real Product Gate"
+  },
+  "recordedAt": 1783288595986,
+  "sessionId": "desktop-peers.atelier-apl-1783288595876-2"
+}

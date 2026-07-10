@@ -4,6 +4,7 @@ import { createMockAtelierRuntime } from './runtime';
 import { createAppletSdkAtelierBridge, type CreateAppletSdkAtelierBridgeOptions } from './appletBridge';
 import { createBridgeAtelierRuntime } from './bridgeRuntime';
 import { toProjectionSnapshot } from './projection';
+import { ATELIER_DEFAULT_DIRECT_RUN_MODEL } from './projection.contract.generated';
 import type { AtelierState } from './types';
 
 declare global {
@@ -23,12 +24,14 @@ export function createAtelierRuntimeForEnvironment(): AtelierRuntime {
   if (!HOST_RUNTIMES.has(sdk.runtime)) {
     return createMockAtelierRuntime();
   }
+  const initialSnapshot = toProjectionSnapshot(emptyHostState());
 
   return createBridgeAtelierRuntime({
     bridge: createAppletSdkAtelierBridge(sdk, {
       projectionStream: readProjectionStreamConfig(),
+      initialSnapshot,
     }),
-    initialSnapshot: toProjectionSnapshot(emptyHostState()),
+    initialSnapshot,
   });
 }
 
@@ -36,7 +39,7 @@ function emptyHostState(): AtelierState {
   return {
     budgetSpent: 0,
     budgetCap: 1,
-    model: 'openrouter-3o',
+    model: ATELIER_DEFAULT_DIRECT_RUN_MODEL,
     tasks: [],
     selectedTaskId: '',
     stream: {},
@@ -49,21 +52,34 @@ function emptyHostState(): AtelierState {
 
 function readProjectionStreamConfig(): CreateAppletSdkAtelierBridgeOptions['projectionStream'] {
   const globalConfig = typeof window !== 'undefined' ? window.__ATELIER_PROJECTION_STREAM__ : undefined;
-  if (globalConfig?.agentId) return globalConfig;
+  const normalizedGlobalConfig = normalizeProjectionStreamConfig(globalConfig);
+  if (normalizedGlobalConfig) return normalizedGlobalConfig;
 
   if (typeof window === 'undefined') return undefined;
 
   const params = new URLSearchParams(window.location.search);
-  const agentId = params.get('agentId')?.trim();
+  return normalizeProjectionStreamConfig({
+    agentId: params.get('agentId'),
+    taskId: params.get('taskId'),
+    afterEventSeq: params.get('afterEventSeq'),
+  });
+}
+
+export function normalizeProjectionStreamConfig(input: unknown): CreateAppletSdkAtelierBridgeOptions['projectionStream'] {
+  if (!input || typeof input !== 'object') return undefined;
+  const record = input as Record<string, unknown>;
+  const agentId = typeof record.agentId === 'string' ? record.agentId.trim() : '';
   if (!agentId) return undefined;
-
-  const taskId = params.get('taskId')?.trim() || undefined;
-  const afterEventSeqRaw = params.get('afterEventSeq');
-  const afterEventSeq = afterEventSeqRaw ? Number(afterEventSeqRaw) : undefined;
-
+  const taskId = typeof record.taskId === 'string' ? record.taskId.trim() : '';
+  const afterEventSeq = normalizeAfterEventSeq(record.afterEventSeq);
   return {
     agentId,
-    taskId,
-    afterEventSeq: Number.isFinite(afterEventSeq) ? afterEventSeq : undefined,
+    ...(taskId ? { taskId } : {}),
+    ...(afterEventSeq !== undefined ? { afterEventSeq } : {}),
   };
+}
+
+function normalizeAfterEventSeq(value: unknown): number | undefined {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : undefined;
+  return parsed !== undefined && Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
