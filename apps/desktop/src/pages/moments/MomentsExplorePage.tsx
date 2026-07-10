@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Segmented, Typography } from 'antd';
-import { useMomentsStore } from '../../store/moments';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { MomentListState } from '../../components/moments/MomentListState';
+import { useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
 import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
 import type { TimelineSort } from '../../services/social_api';
 
@@ -28,14 +28,25 @@ interface MomentsExploreViewProps {
 
 export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, onAuthorClick }: MomentsExploreViewProps) {
   const { t } = useTranslation('moments');
-  const feed = useMomentsStore((s) => s.feeds.explore);
-  const postsById = useMomentsStore((s) => s.postsById);
-  const comments = useMomentsStore((s) => s.comments);
-  const reactions = useMomentsStore((s) => s.reactions);
-  const feedExplanations = useMomentsStore((s) => s.feedExplanations);
-  const loadFeed = useMomentsStore((s) => s.loadFeed);
-  const reactToPost = useMomentsStore((s) => s.reactToPost);
-  const unreactToPost = useMomentsStore((s) => s.unreactToPost);
+  const {
+    feed,
+    postsById,
+    comments,
+    reactions,
+    feedExplanations,
+    loadFeed,
+    reactToPost,
+    unreactToPost,
+  } = useActiveMomentsSlice((s) => ({
+    feed: s.feeds.explore,
+    postsById: s.postsById,
+    comments: s.comments,
+    reactions: s.reactions,
+    feedExplanations: s.feedExplanations,
+    loadFeed: s.loadFeed,
+    reactToPost: s.reactToPost,
+    unreactToPost: s.unreactToPost,
+  }));
 
   const [sort, setSort] = useState<TimelineSort>(feed.sort ?? 'recent');
 

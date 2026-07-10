@@ -33,7 +33,9 @@ const mocks = vi.hoisted(() => ({
   rotateGroupSenderChain: vi.fn(),
   retrySkdmDistributionFor: vi.fn(),
   selectGroup: vi.fn(),
+  loadSessions: vi.fn(),
   loadGroups: vi.fn(),
+  loadFriendRequests: vi.fn(),
   loadGroupUnreadCounts: vi.fn(),
   loadGroupMembers: vi.fn(),
   loadConversationPreviews: vi.fn(),
@@ -69,12 +71,15 @@ vi.mock('../store/socialChat', () => ({
     getState: () => ({
       currentUserDid: 'did:peer:self',
       activeTab: 'group',
+      sessions: [],
       groups: [],
       conversationLocalState: {},
       messages: {},
       activeGroupUlid: 'group-1',
       selectGroup: mocks.selectGroup,
+      loadSessions: mocks.loadSessions,
       loadGroups: mocks.loadGroups,
+      loadFriendRequests: mocks.loadFriendRequests,
       loadGroupUnreadCounts: mocks.loadGroupUnreadCounts,
       loadGroupMembers: mocks.loadGroupMembers,
       loadConversationPreviews: mocks.loadConversationPreviews,
@@ -155,7 +160,9 @@ describe('social realtime group membership side effects', () => {
     mocks.friendChatAckMessages.mockResolvedValue(undefined);
     mocks.friendChatSync.mockResolvedValue(undefined);
     mocks.groupChatSync.mockResolvedValue(undefined);
+    mocks.loadSessions.mockResolvedValue(undefined);
     mocks.loadGroups.mockResolvedValue(undefined);
+    mocks.loadFriendRequests.mockResolvedValue(undefined);
     mocks.loadGroupUnreadCounts.mockResolvedValue(undefined);
     mocks.loadGroupMembers.mockResolvedValue(undefined);
     mocks.loadConversationPreviews.mockResolvedValue(undefined);
@@ -300,6 +307,39 @@ describe('social realtime group membership side effects', () => {
     expect(mocks.ingestRealtimeMessage).not.toHaveBeenCalled();
     expect(mocks.friendChatSync).not.toHaveBeenCalled();
   });
+
+  it('coalesces overlapping realtime resync requests into a serial cold resync lane', async () => {
+    const firstColdResync = deferred<void>();
+    mocks.loadSessions.mockImplementationOnce(() => firstColdResync.promise);
+
+    eventBus.publish(EVENT.REALTIME_RESYNC, {
+      newestEventId: '',
+      reason: 'browser-dev-gateway-resync',
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.loadSessions).toHaveBeenCalledTimes(1);
+    });
+
+    eventBus.publish(EVENT.REALTIME_RESYNC, {
+      newestEventId: 'event-2',
+      reason: 'browser-dev-gateway-resync',
+    });
+    eventBus.publish(EVENT.REALTIME_RESYNC, {
+      newestEventId: 'event-3',
+      reason: 'browser-dev-gateway-resync',
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.loadSessions).toHaveBeenCalledTimes(1);
+
+    firstColdResync.resolve();
+
+    await vi.waitFor(() => {
+      expect(mocks.loadSessions).toHaveBeenCalledTimes(2);
+    });
+    expect(mocks.loadGroups).toHaveBeenCalledTimes(2);
+  });
 });
 
 function publishGroupMembership(kind: RealtimeGroupMembershipChangeKind, actorDid: string): void {
@@ -311,4 +351,14 @@ function publishGroupMembership(kind: RealtimeGroupMembershipChangeKind, actorDi
     kind,
     changedTsUnixMs: 123,
   });
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }

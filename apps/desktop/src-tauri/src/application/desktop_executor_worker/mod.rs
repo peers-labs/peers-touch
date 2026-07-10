@@ -15,6 +15,8 @@ use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::Duration;
 
+const PRODUCT_WINDOW_E2E_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E";
+const DESKTOP_EXECUTOR_WORKER_ENV: &str = "PEERS_DESKTOP_EXECUTOR_WORKER";
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(1500);
 const WORKER_LEASE_TTL_MS: i64 = 300_000;
 const WORKER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
@@ -26,6 +28,13 @@ struct WorkerSession {
 }
 
 pub fn start(state: Arc<AppState>) {
+    if !desktop_executor_worker_enabled(
+        std::env::var(PRODUCT_WINDOW_E2E_ENV).ok().as_deref(),
+        std::env::var(DESKTOP_EXECUTOR_WORKER_ENV).ok().as_deref(),
+    ) {
+        tracing::info!("desktop executor worker disabled for product-window certification");
+        return;
+    }
     static STARTED: OnceLock<()> = OnceLock::new();
     if STARTED.set(()).is_err() {
         return;
@@ -34,6 +43,16 @@ pub fn start(state: Arc<AppState>) {
         .name("desktop-executor-worker".to_string())
         .spawn(move || run_loop(state))
         .expect("failed to start desktop executor worker");
+}
+
+fn desktop_executor_worker_enabled(product_window_e2e: Option<&str>, worker_env: Option<&str>) -> bool {
+    if let Some(value) = worker_env.map(str::trim).filter(|value| !value.is_empty()) {
+        return matches!(value, "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON");
+    }
+    !matches!(
+        product_window_e2e.map(str::trim),
+        Some("1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON")
+    )
 }
 
 fn run_loop(state: Arc<AppState>) {
@@ -443,4 +462,27 @@ fn value_string(value: &Value, keys: &[&str]) -> String {
         .filter(|value| !value.is_empty())
         .unwrap_or_default()
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::desktop_executor_worker_enabled;
+
+    #[test]
+    fn desktop_executor_worker_starts_by_default() {
+        assert!(desktop_executor_worker_enabled(None, None));
+        assert!(desktop_executor_worker_enabled(Some("0"), None));
+    }
+
+    #[test]
+    fn product_window_certification_disables_desktop_executor_worker() {
+        assert!(!desktop_executor_worker_enabled(Some("1"), None));
+        assert!(!desktop_executor_worker_enabled(Some("true"), None));
+    }
+
+    #[test]
+    fn explicit_worker_env_overrides_product_window_default() {
+        assert!(desktop_executor_worker_enabled(Some("1"), Some("1")));
+        assert!(!desktop_executor_worker_enabled(Some("0"), Some("0")));
+    }
 }
