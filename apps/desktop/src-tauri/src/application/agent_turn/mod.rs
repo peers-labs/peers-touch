@@ -1555,6 +1555,7 @@ mod tests {
                 knowledge_resources: None,
             },
             "unused-token",
+            "actor-cli-test",
         );
         if let Some(value) = previous_agent_home {
             std::env::set_var("PEERS_TOUCH_AGENT_HOME", value);
@@ -1611,6 +1612,7 @@ mod tests {
                 knowledge_resources: None,
             },
             "unused-token",
+            "actor-traecli-e2e-test",
         );
 
         assert!(result.ok, "traecli turn should succeed: {:?}", result.error);

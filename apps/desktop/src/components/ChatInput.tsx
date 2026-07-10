@@ -9,9 +9,14 @@ import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import { useChatAttachmentDrafts } from './chat/composer/useChatAttachmentDrafts';
+import type { AvailableModel } from '../services/desktop_api';
 
 export interface ChatInputProps {
   placeholder?: string;
+}
+
+function modelMenuKey(model: AvailableModel): string {
+  return `${encodeURIComponent(model.provider_id || '')}/${encodeURIComponent(model.id)}`;
 }
 
 export function ChatInput({ placeholder: customPlaceholder }: ChatInputProps) {
@@ -25,7 +30,7 @@ export function ChatInput({ placeholder: customPlaceholder }: ChatInputProps) {
   const { t } = useTranslation('chat');
 
   const { sendMessage, stopStreaming, isStreaming, currentSessionKey } = useChatStore();
-  const { selectedModel, defaultModel, availableModels, loadModels, setSelectedModel } = useAgentStore();
+  const { selectedModel, selectedProviderId, defaultModel, availableModels, loadModels, setSelectedModel } = useAgentStore();
 
   const {
     drafts,
@@ -116,29 +121,35 @@ export function ChatInput({ placeholder: customPlaceholder }: ChatInputProps) {
   }, [addFiles]);
 
   const currentModelId = selectedModel || defaultModel;
-  const modelInfo = availableModels.find((model) => model.id === currentModelId);
+  const modelInfo =
+    availableModels.find((model) => model.id === currentModelId && (!selectedProviderId || model.provider_id === selectedProviderId)) ||
+    availableModels.find((model) => model.id === currentModelId);
+  const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
   const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading;
 
   const modelMenu = useMemo<MenuProps>(() => ({
-    selectedKeys: currentModelId ? [currentModelId] : [],
+    selectedKeys: currentModelKey ? [currentModelKey] : [],
     items: availableModels
       .filter((model) => model.enabled)
       .map((model) => ({
-        key: model.id,
+        key: modelMenuKey(model),
         label: (
           <Flexbox horizontal align="center" gap={8} style={{ minWidth: 160 }}>
             <ModelIcon model={model.id} size={16} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {model.display_name || model.id}
             </span>
+            <span style={{ color: token.colorTextTertiary, fontSize: 11, marginLeft: 'auto' }}>
+              {model.provider_name || model.provider_id}
+            </span>
           </Flexbox>
         ),
       })),
     onClick: ({ key }) => {
-      const next = availableModels.find((model) => model.id === key);
-      setSelectedModel(key, next?.provider_id);
+      const next = availableModels.find((model) => modelMenuKey(model) === key);
+      if (next) setSelectedModel(next.id, next.provider_id);
     },
-  }), [availableModels, currentModelId, setSelectedModel]);
+  }), [availableModels, currentModelKey, setSelectedModel, token.colorTextTertiary]);
 
   const circleButtonStyle = {
     borderRadius: '50%',
@@ -260,7 +271,7 @@ export function ChatInput({ placeholder: customPlaceholder }: ChatInputProps) {
                 maxWidth: 260,
               }}
             >
-              <ModelIcon model={currentModelId} size={16} />
+              <ModelIcon model={modelInfo?.id || currentModelId} size={16} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {modelInfo?.display_name || currentModelId || t('chat.model.select')}
               </span>

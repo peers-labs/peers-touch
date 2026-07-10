@@ -1,19 +1,14 @@
 /**
  * Atelier — Artifacts tray + right-side preview panel (SOLO-style).
  *
- * SOLO's core loop is "Agent produces an artifact -> open it on the right":
- *   - markdown : a rendered document
- *   - web      : a REAL embedded browser (<iframe>) pointing at the running
- *                URL, plus the captured console logs. This is a web prototype,
- *                so the DOM/iframe is available directly.
- *   - image    : an image preview
- *   - diff     : a touched-file list
- *
- * Web prototype surface: plain React DOM (<div>/<span>/<iframe>/<img>).
+ * The prototype mirrors the official projection boundary: artifact projection
+ * is metadata-only, safe body text is fetched through Host capability, and rich
+ * visual rendering remains a Host-owned sandbox preview intent.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { C } from './theme';
-import type { Artifact, ConsoleLog } from './types';
+import type { Artifact } from './types';
+import type { FetchArtifactBodyResponse, OpenArtifactPreviewResponse } from './runtime';
 
 const KIND_GLYPH: Record<Artifact['kind'], string> = {
   markdown: '📄',
@@ -72,119 +67,142 @@ export function ArtifactsTray({
   );
 }
 
-/* ── very light markdown renderer (headings, lists, inline code/bold) ── */
-function inlineParts(text: string) {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
-  return parts.map((p, i) => {
-    if (p.startsWith('`') && p.endsWith('`'))
-      return <span key={i} style={{ color: C.primary }}>{p.slice(1, -1)}</span>;
-    if (p.startsWith('**') && p.endsWith('**'))
-      return <span key={i} style={{ fontWeight: 'bold' }}>{p.slice(2, -2)}</span>;
-    return <span key={i}>{p}</span>;
-  });
-}
-
-function Markdown({ src }: { src: string }) {
-  const lines = src.split('\n');
-  return (
-    <div style={{ padding: '8px 4px' }}>
-      {lines.map((ln, i) => {
-        if (ln.startsWith('# '))
-          return <div key={i} style={{ fontSize: 22, fontWeight: 'bold', marginTop: 14, marginBottom: 8 }}>{inlineParts(ln.slice(2))}</div>;
-        if (ln.startsWith('## '))
-          return <div key={i} style={{ fontSize: 17, fontWeight: 'bold', marginTop: 14, marginBottom: 6 }}>{inlineParts(ln.slice(3))}</div>;
-        if (ln.startsWith('- '))
-          return (
-            <div key={i} style={{ display: 'flex', marginLeft: 8, marginTop: 2 }}>
-              <span style={{ fontSize: 14, color: C.textTertiary, marginRight: 6 }}>•</span>
-              <span style={{ flex: 1, fontSize: 14, lineHeight: '24px' }}>{inlineParts(ln.slice(2))}</span>
-            </div>
-          );
-        if (/^\d+\.\s/.test(ln))
-          return (
-            <div key={i} style={{ display: 'flex', marginLeft: 8, marginTop: 2 }}>
-              <span style={{ fontSize: 14, color: C.textTertiary, marginRight: 6 }}>{ln.match(/^\d+/)?.[0]}.</span>
-              <span style={{ flex: 1, fontSize: 14, lineHeight: '24px' }}>{inlineParts(ln.replace(/^\d+\.\s/, ''))}</span>
-            </div>
-          );
-        if (ln.trim() === '') return <div key={i} style={{ height: 8 }} />;
-        return <div key={i} style={{ fontSize: 14, lineHeight: '24px', margin: '4px 0' }}>{inlineParts(ln)}</div>;
-      })}
-    </div>
-  );
-}
-
-/**
- * web preview — REAL embedded browser (<iframe>).
- *
- * This is a web prototype, so a running web artifact is embedded directly as
- * an iframe pointing at its URL, alongside the captured console logs.
- */
-function WebPreview({ a }: { a: Artifact }) {
-  const [showConsole, setShowConsole] = useState(true);
-  const logColor = (l: ConsoleLog['level']) =>
-    l === 'error' ? C.error : l === 'warn' ? C.warning : l === 'info' ? C.textTertiary : C.text;
+function ArtifactMetadataPreview({ artifact }: { artifact: Artifact }) {
+  const logColor = (level: string) =>
+    level === 'error' ? C.error : level === 'warn' ? C.warning : level === 'info' ? C.textTertiary : C.text;
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 16, minHeight: 0 }}>
-      {/* address bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          border: `1px solid ${C.border}`,
-          borderTopLeftRadius: 10,
-          borderTopRightRadius: 10,
-          padding: '8px 12px',
-          backgroundColor: C.fillQuaternary,
-        }}
-      >
-        <span style={{ fontSize: 14, color: C.primary, marginRight: 8 }}>🌐</span>
-        <span style={{ flex: 1, fontSize: 12, color: C.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.url}</span>
-      </div>
-      {/* embedded browser */}
-      <iframe
-        src={a.url}
-        title={a.name}
-        style={{
-          width: '100%',
-          height: 320,
-          border: `1px solid ${C.border}`,
-          borderTop: 'none',
-          borderBottomLeftRadius: 10,
-          borderBottomRightRadius: 10,
-        }}
-      />
-
-      {/* console logs */}
-      <div style={{ marginTop: 16, borderTop: `1px solid ${C.border}` }}>
-        <div
-          onClick={() => setShowConsole((v) => !v)}
-          style={{ display: 'flex', alignItems: 'center', padding: '8px 0', cursor: 'pointer' }}
-        >
-          <span style={{ fontSize: 12, fontWeight: 'bold', color: C.textSecondary, marginRight: 8 }}>Console Logs</span>
-          <span style={{ backgroundColor: C.fillSecondary, borderRadius: 10, padding: '0 7px', fontSize: 11, color: C.textSecondary }}>
-            {a.logs?.length ?? 0}
-          </span>
-          <span style={{ flex: 1, textAlign: 'right', fontSize: 12, color: C.textTertiary }}>{showConsole ? '▾' : '▸'}</span>
+    <div style={{ padding: 18 }}>
+      <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, backgroundColor: C.fillQuaternary, padding: 12 }}>
+        <div style={{ color: C.textSecondary, fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
+          Metadata-only artifact preview
         </div>
-        {showConsole ? (
-          <div style={{ paddingBottom: 10 }}>
-            {(a.logs ?? []).map((l, i) => (
-              <div key={i} style={{ display: 'flex', padding: '2px 0' }}>
-                <span style={{ fontSize: 12, color: C.textQuaternary, marginRight: 8 }}>{l.level}</span>
-                <span style={{ flex: 1, fontSize: 12, color: logColor(l.level) }}>{l.text}</span>
-              </div>
-            ))}
-          </div>
+        <div style={{ color: C.textTertiary, fontSize: 11, lineHeight: '18px' }}>
+          Browser prototype no longer renders raw markdown, iframe, image, diff, URL, or source fields from projection. Use Host safe text fetch or sandbox manifest preview intent above.
+        </div>
+        {artifact.size ? (
+          <div style={{ color: C.textQuaternary, fontSize: 11, marginTop: 8 }}>{artifact.size}</div>
         ) : null}
+      </div>
+      {artifact.paths?.length ? (
+        <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 14, paddingTop: 10 }}>
+          <div style={{ color: C.textSecondary, fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Projected changed paths</div>
+          {artifact.paths.map((p) => (
+            <div key={p} style={{ display: 'flex', alignItems: 'center', padding: '5px 0' }}>
+              <span style={{ fontSize: 13, color: C.textTertiary, marginRight: 8 }}>📄</span>
+              <span style={{ fontSize: 13, color: C.textSecondary }}>{p}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {artifact.logs?.length ? (
+        <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 14, paddingTop: 10 }}>
+          <div style={{ color: C.textSecondary, fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Console Logs</div>
+          <div style={{ color: C.warning, fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
+            Prototype-only mock logs: real Run runtime stream is not wired.
+          </div>
+          {artifact.logs.map((log, index) => (
+            <div key={`${log.level}-${index}`} style={{ display: 'flex', padding: '2px 0' }}>
+              <span style={{ fontSize: 12, color: C.textQuaternary, marginRight: 8 }}>{log.level}</span>
+              <span style={{ flex: 1, fontSize: 12, color: logColor(log.level) }}>{log.text}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div style={{ color: C.warning, fontSize: 11, lineHeight: '18px', marginTop: 12 }}>
+        Rich visual rendering remains Host-owned and is not implemented by reading raw projection fields in the browser prototype.
       </div>
     </div>
   );
 }
 
 /* ── right-side preview panel ── */
-export function PreviewPanel({ artifact, onClose }: { artifact: Artifact; onClose: () => void }) {
+export function PreviewPanel({
+  artifact,
+  taskId,
+  onClose,
+  onFetchBody,
+  onOpenPreview,
+}: {
+  artifact: Artifact;
+  taskId: string;
+  onClose: () => void;
+  onFetchBody: (input: {
+    taskId: string;
+    artifactId: string;
+    bodyRef: string;
+    expectedHash?: string;
+    maxBytes?: number;
+  }) => Promise<FetchArtifactBodyResponse>;
+  onOpenPreview: (input: {
+    taskId: string;
+    artifactId: string;
+    sandboxRef: string;
+    bodyRef: string;
+    kind?: string;
+    mode?: string;
+  }) => Promise<OpenArtifactPreviewResponse>;
+}) {
+  const [safeBody, setSafeBody] = useState<FetchArtifactBodyResponse | null>(null);
+  const [safeBodyLoading, setSafeBodyLoading] = useState(false);
+  const [safeBodyError, setSafeBodyError] = useState('');
+  const [previewOpen, setPreviewOpen] = useState<OpenArtifactPreviewResponse | null>(null);
+  const [previewOpenLoading, setPreviewOpenLoading] = useState(false);
+  const [previewOpenError, setPreviewOpenError] = useState('');
+  const bodyRef = artifact.bodyRef ?? '';
+  const previewTarget = artifact.previewTarget;
+  const previewSandboxRef = previewTarget?.sandboxRef ?? '';
+  const previewBodyRef = previewTarget?.bodyRef ?? '';
+  const canFetchSafeBody = Boolean(bodyRef);
+  const canOpenSandboxPreview = Boolean(previewSandboxRef && previewBodyRef);
+
+  useEffect(() => {
+    setSafeBody(null);
+    setSafeBodyLoading(false);
+    setSafeBodyError('');
+    setPreviewOpen(null);
+    setPreviewOpenLoading(false);
+    setPreviewOpenError('');
+  }, [artifact.bodyHash, artifact.id, bodyRef, previewBodyRef, previewSandboxRef, previewTarget?.kind, previewTarget?.mode, taskId]);
+
+  const fetchSafeBody = () => {
+    if (!taskId || !canFetchSafeBody || safeBodyLoading) return;
+    setSafeBodyLoading(true);
+    setSafeBodyError('');
+    void onFetchBody({
+      taskId,
+      artifactId: artifact.id,
+      bodyRef,
+      expectedHash: artifact.bodyHash,
+    })
+      .then((response) => setSafeBody(response))
+      .catch((error) => {
+        setSafeBody(null);
+        setSafeBodyError(error instanceof Error ? error.message : 'Artifact body fetch unavailable');
+      })
+      .finally(() => setSafeBodyLoading(false));
+  };
+
+  const openSandboxPreview = () => {
+    if (!taskId || !previewTarget || !canOpenSandboxPreview || previewOpenLoading) return;
+    setPreviewOpenLoading(true);
+    setPreviewOpenError('');
+    void onOpenPreview({
+      taskId,
+      artifactId: artifact.id,
+      sandboxRef: previewSandboxRef,
+      bodyRef: previewBodyRef,
+      kind: previewTarget.kind,
+      mode: previewTarget.mode ?? 'sandbox_manifest',
+    })
+      .then((response) => setPreviewOpen(response))
+      .catch((error) => {
+        setPreviewOpen(null);
+        setPreviewOpenError(error instanceof Error ? error.message : 'Artifact sandbox preview unavailable');
+      })
+      .finally(() => setPreviewOpenLoading(false));
+  };
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* header */}
@@ -202,28 +220,100 @@ export function PreviewPanel({ artifact, onClose }: { artifact: Artifact; onClos
       </div>
       {/* body */}
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {artifact.kind === 'markdown' ? (
-          <div style={{ padding: '0 18px' }}>
-            <Markdown src={artifact.markdown ?? ''} />
+        <div style={{ borderBottom: `1px solid ${C.border}`, padding: '12px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ flex: 1, color: C.textSecondary, fontSize: 12, fontWeight: 700 }}>
+              Host safe text capability
+            </span>
+            <button
+              onClick={fetchSafeBody}
+              disabled={!canFetchSafeBody || safeBodyLoading}
+              style={{
+                backgroundColor: C.primaryWash,
+                border: `1px solid ${C.border}`,
+                borderRadius: 999,
+                color: C.primary,
+                cursor: !canFetchSafeBody || safeBodyLoading ? 'default' : 'pointer',
+                fontSize: 12,
+                fontWeight: 700,
+                opacity: !canFetchSafeBody || safeBodyLoading ? 0.55 : 1,
+                padding: '5px 10px',
+              }}
+            >
+              {safeBodyLoading ? 'Fetching…' : 'Fetch safe text'}
+            </button>
           </div>
-        ) : null}
-        {artifact.kind === 'web' ? <WebPreview a={artifact} /> : null}
-        {artifact.kind === 'image' ? (
-          <div style={{ padding: 18 }}>
-            <img src={artifact.src} alt={artifact.name} style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 10 }} />
-            <div style={{ fontSize: 12, color: C.textTertiary, marginTop: 8 }}>{artifact.size}</div>
+          <div style={{ color: C.textTertiary, fontSize: 11, lineHeight: '18px', marginTop: 6 }}>
+            Official applet uses <code>atelier.artifact.body.fetch</code> and receives text only; iframe, image, html, raw URL, and execute remain out of the official path.
           </div>
-        ) : null}
-        {artifact.kind === 'diff' ? (
-          <div style={{ padding: 18 }}>
-            {(artifact.paths ?? []).map((p) => (
-              <div key={p} style={{ display: 'flex', alignItems: 'center', padding: '5px 0' }}>
-                <span style={{ fontSize: 13, color: C.textTertiary, marginRight: 8 }}>📄</span>
-                <span style={{ fontSize: 13, color: C.textSecondary }}>{p}</span>
+          {!canFetchSafeBody ? (
+            <div style={{ color: C.warning, fontSize: 11, lineHeight: '18px', marginTop: 4 }}>
+              Station-projected bodyRef missing; prototype will not synthesize an artifact body ref.
+            </div>
+          ) : null}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+            <span style={{ flex: 1, color: C.textSecondary, fontSize: 12, fontWeight: 700 }}>
+              Host sandbox preview capability
+            </span>
+            <button
+              onClick={openSandboxPreview}
+              disabled={!canOpenSandboxPreview || previewOpenLoading}
+              style={{
+                backgroundColor: C.primaryWash,
+                border: `1px solid ${C.border}`,
+                borderRadius: 999,
+                color: C.primary,
+                cursor: !canOpenSandboxPreview || previewOpenLoading ? 'default' : 'pointer',
+                fontSize: 12,
+                fontWeight: 700,
+                opacity: !canOpenSandboxPreview || previewOpenLoading ? 0.55 : 1,
+                padding: '5px 10px',
+              }}
+            >
+              {previewOpenLoading ? 'Opening…' : 'Open sandbox manifest'}
+            </button>
+          </div>
+          <div style={{ color: C.textTertiary, fontSize: 11, lineHeight: '18px', marginTop: 6 }}>
+              Official path calls <code>atelier.artifact.preview.open</code> with <code>atelier-sandbox://</code> metadata. The browser prototype does not render raw iframe/image/html fields from projection.
+          </div>
+          {!canOpenSandboxPreview ? (
+            <div style={{ color: C.warning, fontSize: 11, lineHeight: '18px', marginTop: 4 }}>
+              Station-projected previewTarget missing; prototype will not synthesize a sandbox manifest ref.
+            </div>
+          ) : null}
+          {previewSandboxRef ? (
+            <div style={{ color: C.textQuaternary, fontSize: 11, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {previewSandboxRef}
+            </div>
+          ) : null}
+          {previewOpenError ? (
+            <div style={{ color: C.error, fontSize: 11, marginTop: 6 }}>{previewOpenError}</div>
+          ) : null}
+          {previewOpen ? (
+            <div style={{ color: C.textTertiary, fontSize: 11, lineHeight: '18px', marginTop: 6 }}>
+              {previewOpen.rendererMode}:{previewOpen.rendererStatus} · {previewOpen.rendererSessionId} · {previewOpen.reason}
+            </div>
+          ) : null}
+          {bodyRef ? (
+            <div style={{ color: C.textQuaternary, fontSize: 11, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {bodyRef}
+            </div>
+          ) : null}
+          {safeBodyError ? (
+            <div style={{ color: C.error, fontSize: 11, marginTop: 6 }}>{safeBodyError}</div>
+          ) : null}
+          {safeBody ? (
+            <div style={{ backgroundColor: C.fillQuaternary, border: `1px solid ${C.border}`, borderRadius: 10, marginTop: 8, padding: 10 }}>
+              <div style={{ color: C.textTertiary, fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
+                {safeBody.bodyKind} · {safeBody.bodySize} bytes{safeBody.truncated ? ' · truncated' : ''}
               </div>
-            ))}
-          </div>
-        ) : null}
+              <pre style={{ color: C.text, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, lineHeight: '18px', margin: 0, maxHeight: 180, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+                {safeBody.text}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+          <ArtifactMetadataPreview artifact={artifact} />
       </div>
     </div>
   );

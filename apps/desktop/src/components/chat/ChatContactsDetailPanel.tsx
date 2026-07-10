@@ -5,8 +5,8 @@ import { Button } from '@lobehub/ui';
 import { Empty, theme } from 'antd';
 import { MessageCircle, Users } from 'lucide-react';
 
-import { useSocialChatStore } from '../../store/socialChat';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
+import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 
 interface ChatContactsDetailPanelProps {
   onMessage: () => void;
@@ -23,7 +23,15 @@ export function ChatContactsDetailPanel({ onMessage }: ChatContactsDetailPanelPr
     peerProfiles,
     loadPeerProfile,
     restoreConversation,
-  } = useSocialChatStore();
+  } = useActiveSocialChatSlice((s) => ({
+    activeTab: s.activeTab,
+    activeSessionUlid: s.activeSessionUlid,
+    activeGroupUlid: s.activeGroupUlid,
+    getIMConversations: s.getIMConversations,
+    peerProfiles: s.peerProfiles,
+    loadPeerProfile: s.loadPeerProfile,
+    restoreConversation: s.restoreConversation,
+  }));
 
   const activeConversationId = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const activeConversation = activeConversationId

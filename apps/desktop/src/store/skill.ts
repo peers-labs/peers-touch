@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import {
   skillService,
   type BuiltinSkillInfo,
@@ -16,7 +16,7 @@ interface SkillState extends RevalidationState {
   deleteSkill: (id: string) => Promise<void>;
 }
 
-export const useSkillStore = create<SkillState>((set, get) => ({
+export const useSkillStore = createDesktopStore<SkillState>('skill', (set, get) => ({
   skills: [],
   builtins: [],
   loading: false,

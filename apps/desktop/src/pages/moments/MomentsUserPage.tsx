@@ -1,11 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { Button } from '@lobehub/ui';
 import { ChevronLeft } from 'lucide-react';
-import { useMomentsStore } from '../../store/moments';
-import { useRelationshipsStore } from '../../store/relationships';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { MomentListState } from '../../components/moments/MomentListState';
 import { UserProfileHeader } from '../../components/moments/UserProfileHeader';
+import { useActiveMomentsSlice, useActiveRelationshipsSlice } from '../../components/moments/useActiveMomentsStore';
 import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
 
 // MomentsUserView — actor profile + their authored posts.
@@ -33,16 +32,28 @@ export function MomentsUserView({
   onOpenPost,
 }: MomentsUserViewProps) {
   const { t } = useTranslation('moments');
-  const feed = useMomentsStore((s) => s.userFeeds[actorId]);
-  const postsById = useMomentsStore((s) => s.postsById);
-  const reactions = useMomentsStore((s) => s.reactions);
-  const feedExplanations = useMomentsStore((s) => s.feedExplanations);
-  const loadUserFeed = useMomentsStore((s) => s.loadUserFeed);
-  const reactToPost = useMomentsStore((s) => s.reactToPost);
-  const unreactToPost = useMomentsStore((s) => s.unreactToPost);
+  const {
+    feed,
+    postsById,
+    reactions,
+    feedExplanations,
+    loadUserFeed,
+    reactToPost,
+    unreactToPost,
+  } = useActiveMomentsSlice((s) => ({
+    feed: s.userFeeds[actorId],
+    postsById: s.postsById,
+    reactions: s.reactions,
+    feedExplanations: s.feedExplanations,
+    loadUserFeed: s.loadUserFeed,
+    reactToPost: s.reactToPost,
+    unreactToPost: s.unreactToPost,
+  }));
 
-  const followers = useRelationshipsStore((s) => s.followersByActor[actorId]);
-  const following = useRelationshipsStore((s) => s.followingByActor[actorId]);
+  const { followers, following } = useActiveRelationshipsSlice((s) => ({
+    followers: s.followersByActor[actorId],
+    following: s.followingByActor[actorId],
+  }));
 
   const posts = (feed?.postIds ?? []).map((id) => postsById[id]).filter(Boolean);
   const author = posts.find((p) => p.author?.id === actorId)?.author;

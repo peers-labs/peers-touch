@@ -5,7 +5,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Input } from '@lobehub/ui';
 import { Button, Empty, Modal, Spin, Tag, Typography, theme } from 'antd';
 import { ArrowRight, FileText, Image as ImageIcon, MessageSquare, MessagesSquare, Music, Search, Users, Video } from 'lucide-react';
-import { useSocialChatStore } from '../../store/socialChat';
+import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import type { SearchResult } from '../../store/socialChat';
 import { log } from '../../utils/logger';
 
@@ -198,18 +198,33 @@ export function SearchMessagesModal({
   const { t } = useTranslation('chat');
   const [localQuery, setLocalQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<SearchFilter>('all');
-  const currentUserDid = useSocialChatStore((state) => state.currentUserDid);
-  const groupMembers = useSocialChatStore((state) => state.groupMembers);
-  const searchQuery = useSocialChatStore((state) => state.searchQuery);
-  const searchResults = useSocialChatStore((state) => state.searchResults);
-  const searchLoading = useSocialChatStore((state) => state.searchLoading);
-  const searchMessages = useSocialChatStore((state) => state.searchMessages);
-  const clearSearch = useSocialChatStore((state) => state.clearSearch);
-  const selectSession = useSocialChatStore((state) => state.selectSession);
-  const selectGroup = useSocialChatStore((state) => state.selectGroup);
-  const setActiveTab = useSocialChatStore((state) => state.setActiveTab);
-  const setScrollToMessageUlid = useSocialChatStore((state) => state.setScrollToMessageUlid);
-  const openThread = useSocialChatStore((state) => state.openThread);
+  const {
+    currentUserDid,
+    groupMembers,
+    searchQuery,
+    searchResults,
+    searchLoading,
+    searchMessages,
+    clearSearch,
+    selectSession,
+    selectGroup,
+    setActiveTab,
+    setScrollToMessageUlid,
+    openThread,
+  } = useActiveSocialChatSlice((state) => ({
+    currentUserDid: state.currentUserDid,
+    groupMembers: state.groupMembers,
+    searchQuery: state.searchQuery,
+    searchResults: state.searchResults,
+    searchLoading: state.searchLoading,
+    searchMessages: state.searchMessages,
+    clearSearch: state.clearSearch,
+    selectSession: state.selectSession,
+    selectGroup: state.selectGroup,
+    setActiveTab: state.setActiveTab,
+    setScrollToMessageUlid: state.setScrollToMessageUlid,
+    openThread: state.openThread,
+  }));
 
   useEffect(() => {
     if (!open) return;

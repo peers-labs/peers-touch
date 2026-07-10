@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { chatService, type Message } from '../services/chat-service';
 import type { AgentTopic } from './agentTopics';
 import { log } from '../utils/logger';
@@ -53,7 +53,7 @@ function matchMessages(query: string, topic: AgentTopic, messages: Message[]): A
     }));
 }
 
-export const useAgentSearchStore = create<AgentSearchState>((set) => ({
+export const useAgentSearchStore = createDesktopStore<AgentSearchState>('agentSearch', (set) => ({
   query: '',
   searching: false,
   results: [],

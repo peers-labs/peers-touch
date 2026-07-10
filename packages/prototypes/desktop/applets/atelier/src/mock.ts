@@ -9,6 +9,7 @@
  */
 import type { AtelierState } from './types';
 import type { CollaborationInput } from './engine';
+import { ATELIER_DEFAULT_DIRECT_RUN_MODEL } from './projection.contract.generated';
 
 /**
  * Shared, engine-INDEPENDENT position pool for a task's negotiation. The same
@@ -33,10 +34,35 @@ export const COLLAB_INPUTS: Record<string, CollaborationInput> = {
 export const MOCK: AtelierState = {
   budgetSpent: 2.1,
   budgetCap: 5,
-  model: 'openrouter-3o',
+  budget: {
+    status: 'warning',
+    summary: '$2.1 / $5',
+    decisionHint: 'Station will raise a budget DecisionCard before halt/resume.',
+    dimensions: [
+      { id: 'money', label: 'Money', used: 2.1, cap: 5, unit: '$', percent: 42, status: 'ok' },
+      { id: 'tokens', label: 'Tokens', used: 78000, cap: 100000, unit: 'tok', percent: 78, status: 'warning' },
+      { id: 'time', label: 'Time', used: 46, cap: 60, unit: 'min', percent: 77, status: 'warning' },
+      { id: 'cap', label: 'Cap', used: 3, cap: 4, unit: 'runs', percent: 75, status: 'warning' },
+    ],
+  },
+  model: ATELIER_DEFAULT_DIRECT_RUN_MODEL,
 
   tasks: [
-    { id: 't-data', project: 'peers-touch', title: '接入行情 DataProvider', status: 'active', running: true, branch: 'feat/data-provider' },
+    {
+      id: 't-data',
+      project: 'peers-touch',
+      projectId: 'proj-data-provider',
+      title: '接入行情 DataProvider',
+      status: 'active',
+      running: true,
+      branch: 'feat/data-provider',
+      workspaceOpenTarget: {
+        workspaceId: 'peers-touch',
+        workspaceUri: 'pt-workspace://task/t-data?workspace=peers-touch',
+        label: 'peers-touch',
+        ideHint: 'vscode',
+      },
+    },
     { id: 't-stock', project: 'peers-touch', title: '选股研究报告', status: 'active' },
     { id: 't-arch', project: 'peers-touch', title: '架构重构 PoC', status: 'archived', branch: 'poc/3-layer' },
     { id: 't-social', project: 'peers-social', title: '酷炫网络实体介绍动画', status: 'active' },
@@ -46,6 +72,76 @@ export const MOCK: AtelierState = {
   ],
 
   selectedTaskId: 't-data',
+
+  projects: [
+    {
+      id: 'proj-data-provider',
+      goal: '为平台选定并接入稳定的行情 DataProvider，统一到 Provider 接口',
+      title: '行情 DataProvider 接入',
+      state: 'running',
+      workspaceRef: 'workspace://peers-touch',
+      goalOwnerSignoff: false,
+      residualRisks: [],
+      openBlockers: [],
+      memoryCandidates: [],
+      completion: {
+        noOpenBlockers: true,
+        l0L1AcceptancePassed: false,
+        l2HumanSignoffComplete: false,
+        residualRisksLogged: false,
+        memoryCandidatesGenerated: false,
+      },
+      milestoneTree: {
+        rootId: 'ms-data-root',
+        milestones: [
+          {
+            id: 'ms-data-root',
+            title: 'DataProvider adapter accepted',
+            state: 'running',
+            taskIds: ['t-data'],
+            acceptancePredicateIds: ['gate.contract.passed', 'goal_owner_signoff'],
+            openBlockers: [],
+          },
+        ],
+        edges: [],
+      },
+      taskGraph: {
+        rootTaskIds: ['tg-select-provider'],
+        parallelPolicy: 'serial_only',
+        tasks: [
+          {
+            id: 'tg-select-provider',
+            title: 'Compare provider candidates',
+            state: 'done',
+            agentRole: 'Planner',
+            artifactIds: ['art-rfc'],
+            gateIds: ['gate-provider-contract'],
+          },
+          {
+            id: 't-data',
+            title: 'Implement selected adapter',
+            state: 'running',
+            agentRole: 'Executor',
+            artifactIds: ['art-diff'],
+            gateIds: ['gate-provider-contract'],
+          },
+          {
+            id: 'tg-verify-provider',
+            title: 'Verify contract and smoke coverage',
+            state: 'pending',
+            agentRole: 'Verifier',
+            artifactIds: [],
+            gateIds: ['gate-smoke'],
+          },
+        ],
+        edges: [
+          { from: 'tg-select-provider', to: 't-data', type: 'blocks' },
+          { from: 't-data', to: 'tg-verify-provider', type: 'blocks' },
+        ],
+      },
+      defects: [],
+    },
+  ],
 
   stream: {
     't-data': [
@@ -237,22 +333,6 @@ export const MOCK: AtelierState = {
         name: 'adapter-cache.rfc.md',
         kind: 'markdown',
         meta: 'Markdown · 来自 Architect',
-        markdown: [
-          '# 适配层缓存退避 RFC',
-          '',
-          '## 背景',
-          'vendor-A 限频 `50 req/s` 且无官方降级 SLA，高峰直连会被拖垮。',
-          '',
-          '## 方案',
-          '- 适配层内置 **本地缓存**（TTL 可配），命中即不打外部。',
-          '- 未命中走 **指数退避** 重试，封顶 3 次。',
-          '- 统一暴露到现有 `Provider` 接口，上层业务零改动。',
-          '',
-          '## 验收口径',
-          '1. `result.json` 通过 schema 校验（L0 自动）',
-          '2. 契约测试全绿（L1 自动）',
-          '3. 高峰压测不触发限频告警（需签字）',
-        ].join('\n'),
       },
       {
         id: 'art-bench',
@@ -264,13 +344,10 @@ export const MOCK: AtelierState = {
     ],
     't-social': [
       {
-        // kind 'web' is shown as a real embedded browser (<iframe>) pointing
-        // at the running URL, alongside the captured console logs.
         id: 'art-web',
         name: 'NetworkHero 预览',
         kind: 'web',
         meta: 'Web · 来自 Executor',
-        url: 'http://localhost:3102/',
         logs: [
           { level: 'info', text: '[vite] connecting...' },
           { level: 'info', text: '[vite] connected.' },
@@ -284,7 +361,6 @@ export const MOCK: AtelierState = {
         name: 'image.png',
         kind: 'image',
         meta: 'PNG · 846.2 KB',
-        src: 'https://avatar.example.invalid/api/ide/v1/text_to_image?prompt=abstract%20glowing%20particle%20network%20constellation%20on%20dark%20background%2C%20cyan%20and%20violet%20nodes%20connected%20by%20thin%20lines%2C%20hero%20banner%2C%20cinematic&image_size=landscape_16_9',
         size: '846.2 KB',
       },
     ],
@@ -294,16 +370,6 @@ export const MOCK: AtelierState = {
         name: 'daily-brief-0621.pdf',
         kind: 'markdown',
         meta: 'PDF · 来自 Executor',
-        markdown: [
-          '# 每日简报 · 06-21',
-          '',
-          '## 市场',
-          '- A 股新能源板块小幅回暖（+1.2%）。',
-          '',
-          '## 项目',
-          '- `t-data` 等你拍板降级策略。',
-          '- `t-social` Hero 动画已提交，待预览验收。',
-        ].join('\n'),
       },
     ],
     't-arch': [
@@ -312,12 +378,6 @@ export const MOCK: AtelierState = {
         name: 'arch-3layer.rfc.md',
         kind: 'markdown',
         meta: 'Report · 来自 Architect',
-        markdown: [
-          '# 三层重构 PoC 报告',
-          '',
-          '编译通过、基准回归 **无退化（-0.3%）**。',
-          '剩一条 L2 主观项「是否值得长期维护」待签字。',
-        ].join('\n'),
       },
     ],
   },

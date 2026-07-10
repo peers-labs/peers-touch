@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import AppletManager from '../applet/AppletManager';
 import type { AppletInfo } from '../applet/types';
@@ -10,7 +10,7 @@ import { log } from '../utils/logger';
 export type RuntimeAppletStatus = 'available' | 'installed' | 'active' | 'revoked' | 'disabled' | 'update-available';
 export type RuntimeAppletSource = 'station' | 'local-dev' | 'bundled-official';
 
-const PRODUCTION_DEFAULT_INSTALLED_APPLET_IDS = ['peers.note'];
+const PRODUCTION_DEFAULT_INSTALLED_APPLET_IDS = ['peers.note', 'peers.atelier'];
 const DEV_LIFECYCLE_DEFAULT_INSTALLED_APPLET_IDS = ['hello-lynx'];
 const DEFAULT_INSTALLED_APPLET_IDS = import.meta.env.DEV
   ? [...PRODUCTION_DEFAULT_INSTALLED_APPLET_IDS, ...DEV_LIFECYCLE_DEFAULT_INSTALLED_APPLET_IDS]
@@ -259,7 +259,7 @@ function runtimeErrorDetail(error: unknown): string {
   return parts.join(' | ');
 }
 
-export const useAppletsStore = create<AppletsState>((set, get) => ({
+export const useAppletsStore = createDesktopStore<AppletsState>('applets', (set, get) => ({
   applets: [],
   catalogApplets: [],
   localDevInstalledAppletIds: readLocalDevInstalledAppletIds(),

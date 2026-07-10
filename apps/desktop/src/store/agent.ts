@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { log } from '../utils/logger';
 import { resolveI18nValue } from '../i18n/index';
 import {
@@ -40,7 +40,7 @@ interface AgentState extends RevalidationState {
   getCurrentAgentChatConfig: () => AgentChatConfig;
 }
 
-export const useAgentStore = create<AgentState>((set, get) => ({
+export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) => ({
   selectedModel: '',
   selectedProviderId: '',
   selectedAgent: 'assistant',

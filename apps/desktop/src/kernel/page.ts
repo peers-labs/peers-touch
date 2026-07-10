@@ -55,6 +55,8 @@ export interface PageFactoryContext {
   readonly pageId: string;
   /** Descriptor id, e.g. `applet:*` for dynamic descriptors. */
   readonly descriptorId: string;
+  /** True only while this PageFrame owns the active route. */
+  readonly active: boolean;
 }
 
 export interface PageResolution {

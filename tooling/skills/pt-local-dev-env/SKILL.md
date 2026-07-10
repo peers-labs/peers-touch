@@ -332,3 +332,18 @@ ln -sfn /path/to/primary-worktree/.local .local
 Each worktree has its own active profile pointer at
 `.local/dev/active/<worktree-basename>.env`, so switching profiles in one
 worktree doesn't affect others.
+
+## Test Accounts
+
+Built-in test users for debug and testing scenarios:
+
+| User | Password | PIN |
+|------|----------|-----|
+| `a`  | `1`      | `111111` |
+| `b`  | `1`      | `111111` |
+| `c`  | `1`      | `111111` |
+
+These accounts are pre-seeded in all Station environments (one/two/three).
+Use them for local Desktop login, mobile login, E2E test runs, and acceptance
+verification. When the agent needs to authenticate against a running Station,
+use user `a` with password `1` and PIN `111111` unless instructed otherwise.

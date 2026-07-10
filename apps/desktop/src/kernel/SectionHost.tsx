@@ -1,6 +1,14 @@
-import { memo, useEffect, useState, type ReactElement } from 'react';
+import {
+  Profiler,
+  memo,
+  useEffect,
+  useState,
+  type ProfilerOnRenderCallback,
+  type ReactElement,
+} from 'react';
 
-import { recordHiddenSurfaceRender, recordSurfaceRender } from './frontendRuntimeProfiler';
+import { recordHiddenSurfaceRender, recordReactCommit, recordSurfaceRender } from './frontendRuntimeProfiler';
+import { SectionActivityProvider } from './SectionActivityContext';
 import { nextMountedSectionIds, shouldRenderSection, type SectionDescriptor } from './section';
 
 interface SectionHostProps {
@@ -70,9 +78,31 @@ const SectionFrame = memo(function SectionFrame({
   const content = descriptor.render({ active: isActive, highlightId, sectionId: descriptor.id });
   const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
   recordSurfaceRender(surfaceId, ms, { sectionId: descriptor.id });
+  const owner = `section-frame:${surfaceId}`;
+  const onRender: ProfilerOnRenderCallback = (
+    id,
+    phase,
+    actualDuration,
+    baseDuration,
+    startTime,
+    commitTime,
+  ) => {
+    recordReactCommit({
+      actualDuration,
+      baseDuration,
+      commitTime,
+      data: { active: isActive, sectionId: descriptor.id, surface: 'section-frame', surfaceId },
+      id,
+      owner,
+      phase,
+      source: 'shell',
+      startTime,
+    });
+  };
 
-  return (
+  const frame = (
     <div
+      data-pt-section-host={descriptor.id}
       data-section-host-id={descriptor.id}
       style={{
         contentVisibility: isActive ? 'visible' : 'hidden',
@@ -80,7 +110,15 @@ const SectionFrame = memo(function SectionFrame({
         height: '100%',
       }}
     >
-      {content}
+      <SectionActivityProvider active={isActive} sectionId={descriptor.id} surfaceId={surfaceId}>
+        {content}
+      </SectionActivityProvider>
     </div>
+  );
+  if (!import.meta.env.DEV) return frame;
+  return (
+    <Profiler id={owner} onRender={onRender}>
+      {frame}
+    </Profiler>
   );
 });

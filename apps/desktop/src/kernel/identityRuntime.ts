@@ -133,7 +133,7 @@ function activateAppletProductWindowLaunch(context: AppletProductWindowLaunchCon
     ? '#/applets'
     : `#/applet:${context.appletId}`;
   if (window.location.hash !== targetHash) {
-    window.history.replaceState(null, '', targetHash);
+    window.location.hash = targetHash;
   }
   return true;
 }
