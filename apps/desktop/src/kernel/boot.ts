@@ -143,26 +143,12 @@ export function tearDownSessionRuntimes(): void {
 
 // ── Idle scheduling ──────────────────────────────────────────────────────
 
-type IdleCallback = (deadline: { didTimeout: boolean; timeRemaining(): number }) => void;
-type RequestIdleCallback = (cb: IdleCallback, opts?: { timeout?: number }) => number;
-type CancelIdleCallback = (handle: number) => void;
+// Legacy bridge: existing consumers import scheduleIdle from boot.ts.
+// Phase 1a migration: new code should import { scheduler } from './scheduler'.
+// This re-export uses the scheduler's idleChunk lane internally.
 
-interface IdleCapableWindow {
-  requestIdleCallback?: RequestIdleCallback;
-  cancelIdleCallback?: CancelIdleCallback;
-}
+import { scheduler } from './scheduler';
 
 export function scheduleIdle(callback: () => void, timeout = 1500): () => void {
-  if (typeof window === 'undefined') {
-    return () => undefined;
-  }
-  const w = window as unknown as IdleCapableWindow;
-  if (typeof w.requestIdleCallback === 'function') {
-    const handle = w.requestIdleCallback(() => callback(), { timeout });
-    return () => {
-      if (typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(handle);
-    };
-  }
-  const handle = window.setTimeout(callback, 200);
-  return () => window.clearTimeout(handle);
+  return scheduler.idleChunk('legacy:scheduleIdle', callback, timeout);
 }

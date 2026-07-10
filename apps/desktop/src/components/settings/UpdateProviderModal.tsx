@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Modal, Form } from 'antd';
 import { Input, TextArea, toast } from '@lobehub/ui';
-import { useProviderStore } from '../../store/provider';
 import type { ProviderDetail } from '../../services/desktop_api';
 import { useTranslation } from 'react-i18next';
+import { useActiveProviderSlice } from './useActiveSettingsStores';
 
 interface UpdateProviderModalProps {
   open: boolean;
@@ -15,7 +15,9 @@ export function UpdateProviderModal({ open, detail, onClose }: UpdateProviderMod
   const { t } = useTranslation('provider');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const { updateProvider } = useProviderStore();
+  const { updateProvider } = useActiveProviderSlice((s) => ({
+    updateProvider: s.updateProvider,
+  }));
 
   const handleOk = async () => {
     try {

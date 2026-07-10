@@ -48,6 +48,10 @@ services:
     build:
       context: ../..
       dockerfile: tooling/docker/station.Dockerfile
+      args:
+        BUILD_COMMIT: ${PEERS_TOUCH_BUILD_COMMIT:-unknown}
+        BUILD_LABEL: ${PEERS_TOUCH_BUILD_LABEL:-dev}
+        BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
     profiles: [station]
     environment:
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
@@ -127,6 +131,10 @@ services:
     build:
       context: ../..
       dockerfile: tooling/docker/station.Dockerfile
+      args:
+        BUILD_COMMIT: ${PEERS_TOUCH_BUILD_COMMIT:-unknown}
+        BUILD_LABEL: ${PEERS_TOUCH_BUILD_LABEL:-dev}
+        BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
     profiles: [relay]
     environment:
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}

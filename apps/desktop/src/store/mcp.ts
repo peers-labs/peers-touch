@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { mcpService, type MCPServerItem, type MCPServerRecord } from '../services/mcp-service';
 import { log } from '../utils/logger';
 import { beginMutation, endMutation, toStoreError, type RevalidationState } from './revalidation';
@@ -12,7 +12,7 @@ interface MCPState extends RevalidationState {
   deleteServer: (name: string) => Promise<void>;
 }
 
-export const useMCPStore = create<MCPState>((set, get) => ({
+export const useMCPStore = createDesktopStore<MCPState>('mcp', (set, get) => ({
   servers: [],
   loading: false,
   error: null,
