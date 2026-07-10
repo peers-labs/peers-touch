@@ -20,6 +20,75 @@ const malformedResponseFixtures = JSON.parse(
     'utf8',
   ),
 );
+const evidenceDir = path.join(repoRoot, 'applet-readiness-evidence/official-applet');
+const evidencePath = path.join(evidenceDir, 'atelier-official-frontend-gate.json');
+const coveredPaths = [
+  'official Atelier frontend uses service binding for Station-owned methods',
+  'official Atelier frontend keeps workspace/artifact preview Host intents out of Station service binding',
+  'official Atelier frontend controlled loading, empty, recovery, and status taxonomy coverage is exhaustive against generated contract statuses',
+  'official Atelier frontend render consumes status action policy for empty create-project and retry affordances',
+  'official Atelier frontend status action policy keeps primary action and visibility flags mutually consistent',
+  'official Atelier frontend status action policy matrix is exhaustive against generated view statuses and recovery kinds',
+  'official Atelier frontend status action policy source unit matrix covers every generated view status and recovery kind without execution payload fields',
+  'official Atelier frontend projection subscription source unit matrix covers rejected subscribe cleanup release idempotence and late payload isolation',
+  'official Atelier frontend projection stream subscribe reject source unit matrix covers Station stream cleanup late payload isolation and no unhandled rejection',
+  'official Atelier frontend active typed subscription rejection source unit matrix covers recovery delivery cleanup idempotence and late event isolation',
+  'official Atelier frontend typed subscription rejection code taxonomy source unit matrix covers auth-denied and disconnected recovery classification',
+  'official Atelier frontend malformed typed subscription rejection source unit matrix covers fail-closed generic recovery and projection-event isolation',
+  'official Atelier frontend typed subscription rejection sanitized cause source unit matrix preserves recovery code and strips execution-shaped fields',
+  'official Atelier frontend typed subscription rejection reason diagnostic and warning sanitization source unit matrix strips execution-shaped fields',
+  'official Atelier frontend typed subscription rejection code whitelist source unit matrix keeps only known recovery codes in Error.cause',
+  'official Atelier frontend recovery transitions clear every transient workbench action field before auth-denied disconnected or error surfaces',
+  'official Atelier frontend page surface unit matrix covers every generated view status so loading empty disconnected and auth-denied states stay mutually exclusive',
+    'official Atelier frontend single-column recovery-state layout keeps loading empty disconnected and auth-denied surfaces above the projection content rail without app-level side rails',
+  'official Atelier frontend recovery view unit matrix covers every generated recovery kind with contract-owned tone retry and label keys',
+  'official Atelier frontend status pill unit matrix covers every generated view status with contract-owned tone and label keys',
+  'official Atelier frontend status notice unit matrix covers every generated notice kind with contract-owned title and detail keys',
+  'official Atelier frontend centered state unit matrix covers loading and empty states with contract-owned title and detail keys',
+  'official Atelier frontend classifies structured Host and service error codes through generated recovery taxonomy before legacy message fallback',
+  'official Atelier frontend rejects malformed service and Host capability responses through executable public client fixtures',
+  'official Atelier frontend rejects decimal and unsafe projection event/replay sequence numbers before reducer or cursor use',
+  'official Atelier frontend rejects task purge intents unless projected task status is deleted before service calls',
+  'official Atelier frontend marks unresolved TaskGraph artifact and gate evidence refs before display',
+  'official Atelier frontend keeps artifact preview metadata-only and safe-text bounded without raw iframe/image/html/diff rendering',
+  'official Atelier frontend preserves projection-only forbidden capability boundaries for provider, shell, file, memory, artifact, gate, and attachment writes',
+];
+const doesNotProve = [
+  'real Desktop product window UI',
+  'real Desktop Host capability producer behavior',
+  'real Station projection stream failure matrix',
+  'real auth recovery or reconnect behavior against Station',
+  'real artifact body fetch or Host sandbox renderer E2E',
+  'complete Host + Station + applet E2E',
+];
+
+function writeEvidence(status, errorMessage) {
+  const proves = status === 'PASS' ? coveredPaths : [];
+  fsSync.mkdirSync(evidenceDir, { recursive: true });
+  fsSync.writeFileSync(
+    evidencePath,
+    `${JSON.stringify(
+      {
+        status,
+        evidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
+        appletId: 'peers.atelier',
+        gate: 'atelier:official-frontend-gate',
+        coveredPaths: proves,
+        notCovered: doesNotProve,
+        claimBoundary: {
+          readiness: 'NOT_READY',
+          proves,
+          doesNotProve,
+        },
+        command: 'pnpm run atelier:official-frontend-gate',
+        error: errorMessage,
+        completedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
 const pageSource = fsSync.readFileSync(
   path.join(repoRoot, 'apps/applets/atelier/frontend/src/presentation/pages/AtelierAppletPage.tsx'),
   'utf8',
@@ -40,12 +109,24 @@ const controllerTransitionsSource = fsSync.readFileSync(
   path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/controllerTransitions.ts'),
   'utf8',
 );
+const projectionSubscriptionKeySource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/atelierProjectionSubscriptionKey.ts'),
+  'utf8',
+);
 const viewStatusSource = fsSync.readFileSync(
   path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/viewStatus.ts'),
   'utf8',
 );
 const pageCompositionSource = fsSync.readFileSync(
   path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/pageComposition.ts'),
+  'utf8',
+);
+const centeredStateViewSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/centeredStateView.ts'),
+  'utf8',
+);
+const statusNoticeViewSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/statusNoticeView.ts'),
   'utf8',
 );
 const eventStreamRecoverySource = fsSync.readFileSync(
@@ -56,12 +137,64 @@ const eventStreamEventGuardSource = fsSync.readFileSync(
   path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/eventStreamEventGuard.ts'),
   'utf8',
 );
+const artifactActionGuardsSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/artifactActionGuards.ts'),
+  'utf8',
+);
+const messageActionGuardsSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/messageActionGuards.ts'),
+  'utf8',
+);
+const decisionActionGuardsSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/decisionActionGuards.ts'),
+  'utf8',
+);
+const feedbackActionGuardsSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/feedbackActionGuards.ts'),
+  'utf8',
+);
+const confirmationActionGuardsSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/confirmationActionGuards.ts'),
+  'utf8',
+);
+const workspaceActionGuardsSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/workspaceActionGuards.ts'),
+  'utf8',
+);
+const projectCreateActionGuardsSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/projectCreateActionGuards.ts'),
+  'utf8',
+);
+const providerCapabilityActionGuardsSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/providerCapabilityActionGuards.ts'),
+  'utf8',
+);
 const officialRecoveryViewSource = fsSync.readFileSync(
   path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/officialRecoveryView.ts'),
   'utf8',
 );
 const statusPillViewSource = fsSync.readFileSync(
   path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/statusPillView.ts'),
+  'utf8',
+);
+const atelierViewStateTestSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/atelierViewState.test.ts'),
+  'utf8',
+);
+const controllerTransitionsTestSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/controllerTransitions.test.ts'),
+  'utf8',
+);
+const atelierClientTestSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/infrastructure/capability/atelierClient.test.ts'),
+  'utf8',
+);
+const atelierClientSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/src/infrastructure/capability/atelierClient.ts'),
+  'utf8',
+);
+const officialFrontendPackageSource = fsSync.readFileSync(
+  path.join(repoRoot, 'apps/applets/atelier/frontend/package.json'),
   'utf8',
 );
 const localeFiles = [
@@ -219,8 +352,6 @@ const requiredPageSnippets = [
   'atelier.nego.moreVoices',
   'atelier.nego.converged',
   'atelier.nego.pending',
-  'atelier.status.degradedDetail',
-  'atelier.status.reconcilingDetail',
   'atelier.task.archive',
   'atelier.task.purge',
   'atelier.task.confirmPurge',
@@ -232,14 +363,12 @@ const requiredPageSnippets = [
 for (const snippet of requiredPageSnippets) {
   assert.ok(pageSource.includes(snippet), `Atelier official page must include ${snippet}`);
 }
-for (const snippet of [
-  'atelier.error.authDeniedTitle',
-  'atelier.error.authDeniedDetail',
-  'atelier.error.disconnectedTitle',
-  'atelier.error.disconnectedDetail',
-]) {
-  assert.ok(officialRecoveryViewSource.includes(snippet), `Atelier official recovery view must include ${snippet}`);
-}
+assert.ok(
+  officialRecoveryViewSource.includes('ATELIER_VIEW_SURFACE.recovery.labelKeyByKind') &&
+    !officialRecoveryViewSource.includes("titleKey: 'atelier.error.authDeniedTitle'") &&
+    !officialRecoveryViewSource.includes("detailKey: 'atelier.error.disconnectedDetail'"),
+  'Atelier official recovery view must derive label keys from generated recovery taxonomy',
+);
 assert.ok(
   pageSource.indexOf("atelier.composer.attachmentUnsupported") !== pageSource.lastIndexOf("atelier.composer.attachmentUnsupported"),
   'Atelier official page must disclose unsupported attachments in both empty GoalComposer and task MessageComposer',
@@ -322,6 +451,11 @@ for (const requiredServiceCall of [
   "requestAtelierService('/v1/escalations:resolve', 'POST', input)",
   "requestAtelierService(`/v1/tasks/${encodeURIComponent(input.taskId)}/status`, 'PATCH', { status: input.status })",
   "requestAtelierService(`/v1/tasks/${encodeURIComponent(input.taskId)}`, 'DELETE')",
+  "requestAtelierService('/v1/provider/capabilities', 'POST', taskId ? { taskId } : {})",
+  "requestAtelierService('/v1/feedback/submit', 'POST', input)",
+  "requestAtelierService('/v1/memory/confirm-candidate', 'POST', input)",
+  "requestAtelierService('/v1/feedback/confirm-rerun', 'POST', input)",
+  "requestAtelierService('/v1/artifact/body/fetch', 'POST', input)",
 ]) {
   assert.ok(clientSource.includes(requiredServiceCall), `Atelier official client must use service binding call ${requiredServiceCall}`);
 }
@@ -332,6 +466,11 @@ for (const forbiddenInvoke of [
   'atelier.escalation.resolve',
   'atelier.task.setStatus',
   'atelier.task.purge',
+  'atelier.provider.capabilities',
+  'atelier.feedback.submit',
+  'atelier.memory.confirmCandidate',
+  'atelier.feedback.confirmRerun',
+  'atelier.artifact.body.fetch',
 ]) {
   assert.ok(!clientSource.includes(`sdk.invoke<unknown>('${forbiddenInvoke}'`), `Atelier official client must not invoke ${forbiddenInvoke}; use service binding`);
   assert.ok(!clientSource.includes(`sdk.invoke<unknown>("${forbiddenInvoke}"`), `Atelier official client must not invoke ${forbiddenInvoke}; use service binding`);
@@ -364,12 +503,118 @@ assert.ok(
   clientSource.includes('function safeUnsubscribeAtelierProjectionEventTopic') &&
     clientSource.includes('void sdk.events.unsubscribe(ATELIER_PROJECTION_EVENT_TOPIC).catch') &&
     clientSource.includes('Atelier official projection event topic unsubscribe rejected') &&
-    clientSource.split('safeUnsubscribeAtelierProjectionEventTopic();').length >= 3 &&
+    clientSource.includes('const closeSubscription = () => {') &&
+    clientSource.includes('safeUnsubscribeAtelierProjectionEventTopic();') &&
+    clientSource.includes('return closeSubscription;') &&
     !clientSource.includes('void sdk.events.unsubscribe(ATELIER_PROJECTION_EVENT_TOPIC);'),
-  'Atelier official client must handle projection event topic unsubscribe rejection on subscribe failure and release cleanup',
+  'Atelier official client must handle projection event topic unsubscribe rejection through idempotent subscribe failure and release cleanup',
+);
+assert.ok(
+  officialFrontendPackageSource.includes('src/infrastructure/capability/*.test.ts') &&
+    clientSource.includes('const closeSubscription = () => {') &&
+    clientSource.includes('if (closed) return;') &&
+    clientSource.includes('closed = true;') &&
+    clientSource.includes('if (closed) return;') &&
+    clientSource.includes('return closeSubscription;') &&
+    atelierClientTestSource.includes('cleans local listener and Host topic when events.subscribe rejects before Station stream subscribe') &&
+    atelierClientTestSource.includes('keeps release idempotent and blocks late event or subscription-rejected payload delivery') &&
+    atelierClientTestSource.includes('expect(sdkState.unsubscribe).toHaveBeenCalledTimes(1)') &&
+    atelierClientTestSource.includes("sdkState.unsubscribe.mockRejectedValueOnce(new Error('late rejected official events.unsubscribe'))") &&
+    atelierClientTestSource.includes('expect(unhandledRejections).toHaveLength(0)') &&
+    atelierClientTestSource.includes("reason: 'late rejected official atelier.events.subscribe'") &&
+    atelierClientTestSource.includes('/provider\\.invoke|runtime\\.execute|shell|memory\\.write|input_snapshot|run\\.execute/'),
+  'Atelier official projection subscription source unit matrix must cover rejected subscribe cleanup, idempotent release, late payload isolation, no unhandled rejection, and projection-only payload boundaries',
+);
+assert.ok(
+  atelierClientTestSource.includes('cleans local listener and Host topic when atelier.events.subscribe rejects after Host topic subscribe') &&
+    atelierClientTestSource.includes("streamSubscribeReady.reject(new Error('late rejected official atelier.events.subscribe invoke'))") &&
+    atelierClientTestSource.includes("sdkState.unsubscribe.mockRejectedValueOnce(new Error('late rejected official events.unsubscribe after stream reject'))") &&
+    atelierClientTestSource.includes("projectionEvent('evt-after-stream-reject')") &&
+    atelierClientTestSource.includes('expect(unhandledRejections).toHaveLength(0)') &&
+    atelierClientTestSource.includes('expect(sdkState.handlers.has(ATELIER_PROJECTION_EVENT_TOPIC)).toBe(false)') &&
+    atelierClientTestSource.includes('/provider\\.invoke|runtime\\.execute|shell|memory\\.write|input_snapshot|run\\.execute/'),
+  'Atelier official projection stream subscribe reject source unit matrix must cover Station stream cleanup, late payload isolation, no unhandled rejection, and projection-only payload boundaries',
+);
+assert.ok(
+  atelierClientTestSource.includes('delivers active typed subscription rejection once then cleans listener and blocks later events') &&
+    atelierClientTestSource.includes("code: 'PERMISSION_DENIED'") &&
+    atelierClientTestSource.includes('Atelier projection stream subscription atelier.events.subscribe rejected') &&
+    atelierClientTestSource.includes("projectionEvent('evt-after-active-typed-reject')") &&
+    atelierClientTestSource.includes('expect(rejected).toHaveLength(1)') &&
+    atelierClientTestSource.includes('expect(sdkState.unsubscribe).toHaveBeenCalledTimes(1)') &&
+    atelierClientTestSource.includes('expect(unhandledRejections).toHaveLength(0)') &&
+    atelierClientTestSource.includes('/provider\\.invoke|runtime\\.execute|shell|memory\\.write|input_snapshot|run\\.execute/'),
+  'Atelier official active typed subscription rejection source unit matrix must cover recovery delivery, cleanup idempotence, late event isolation, no unhandled rejection, and projection-only payload boundaries',
+);
+assert.ok(
+  atelierClientTestSource.includes('preserves active typed subscription rejection codes for recovery taxonomy') &&
+    atelierClientTestSource.includes("code: 'FORBIDDEN'") &&
+    atelierClientTestSource.includes("code: 'CONNECTION_CLOSED'") &&
+    atelierClientTestSource.includes("expected: { key: 'atelier.error.authDenied', kind: 'auth-denied' }") &&
+    atelierClientTestSource.includes("expected: { key: 'atelier.error.disconnected', kind: 'disconnected' }") &&
+    atelierClientTestSource.includes('expect(classifyAtelierError(rejected[0])).toEqual(item.expected)') &&
+    atelierClientTestSource.includes('/provider\\.invoke|runtime\\.execute|shell|memory\\.write|input_snapshot|run\\.execute/'),
+  'Atelier official typed subscription rejection code taxonomy source unit matrix must cover auth-denied and disconnected recovery classification with projection-only payload boundaries',
+);
+assert.ok(
+  atelierClientTestSource.includes('fails closed on malformed typed subscription rejection payload fields without treating them as projection events') &&
+    atelierClientTestSource.includes("method: ''") &&
+    atelierClientTestSource.includes("code: { nested: 'FORBIDDEN' }") &&
+    atelierClientTestSource.includes("reason: { nested: 'do not trust malformed reason' }") &&
+    atelierClientTestSource.includes("shellExecute: { command: 'open .' }") &&
+    atelierClientTestSource.includes("Atelier projection stream subscription unknown rejected: unknown rejection") &&
+    atelierClientTestSource.includes("key: 'atelier.error.loadFailed'") &&
+    atelierClientTestSource.includes('expect(malformed).toEqual([])') &&
+    atelierClientTestSource.includes("projectionEvent('evt-after-malformed-typed-reject')"),
+  'Atelier official malformed typed subscription rejection source unit matrix must cover fail-closed generic recovery, projection event isolation, cleanup, and malformed execution-shaped field containment',
+);
+assert.ok(
+  atelierClientSource.includes('const sanitizedCause: Record<string, unknown> = {') &&
+    atelierClientSource.includes("kind: 'atelier.projection.subscription-rejected'") &&
+    atelierClientSource.includes('const code = typeof value.code ===') &&
+    atelierClientSource.includes('sanitizeProjectionSubscriptionCode(value.code)') &&
+    atelierClientSource.includes('if (code) {') &&
+    atelierClientSource.includes('cause: sanitizedCause') &&
+    atelierClientTestSource.includes('sanitizes typed subscription rejection error cause while preserving valid recovery code') &&
+    atelierClientTestSource.includes("providerInvoke: { provider: 'model' }") &&
+    atelierClientTestSource.includes("runtimeExecute: { taskId: 'task-official-subscribe' }") &&
+    atelierClientTestSource.includes("input_snapshot: { prompt: 'must not leak' }") &&
+    atelierClientTestSource.includes('expect(rejected[0]?.cause).toEqual({') &&
+    atelierClientTestSource.includes('expect(classifyAtelierError(rejected[0])).toEqual({') &&
+    atelierClientTestSource.includes('/provider\\.invoke|providerInvoke|runtime\\.execute|runtimeExecute|shell|memory\\.write|input_snapshot|run\\.execute/'),
+  'Atelier official typed subscription rejection sanitized cause source unit matrix must preserve recovery code while stripping execution-shaped fields from Error.cause',
+);
+assert.ok(
+  atelierClientSource.includes('function sanitizeProjectionSubscriptionReason(reason: string): string') &&
+    atelierClientSource.includes('forbiddenProjectionSubscriptionReasonPatterns') &&
+    atelierClientSource.includes('sanitizeProjectionSubscriptionReason(value.reason)') &&
+    atelierClientSource.includes('error: sanitizeProjectionSubscriptionReason(error instanceof Error ? error.message : String(error))') &&
+    atelierClientSource.includes("console.warn('Atelier official projection event topic unsubscribe rejected', {") &&
+    atelierClientTestSource.includes('sanitizes typed subscription rejection reason diagnostic and warning text') &&
+    atelierClientTestSource.includes("reason: 'provider.invoke providerInvoke runtime.execute runtimeExecute shellExecute input_snapshot should not leak from typed rejection'") &&
+    atelierClientTestSource.includes("new Error('provider.invoke providerInvoke runtime.execute runtimeExecute shellExecute input_snapshot should not leak from unsubscribe')") &&
+    atelierClientTestSource.includes("reason: 'Host projection subscription rejected'") &&
+    atelierClientTestSource.includes('subscribeRejectedDiagnostic?.properties?.error') &&
+    atelierClientTestSource.includes('JSON.stringify({ rejected, warnings, subscribeRejectedDiagnostic })'),
+  'Atelier official typed subscription rejection reason diagnostic and warning sanitization source unit matrix must strip execution-shaped fields while preserving structured code',
+);
+assert.ok(
+  atelierClientSource.includes('function sanitizeProjectionSubscriptionCode(code: string): string | undefined') &&
+    atelierClientSource.includes('ATELIER_VIEW_SURFACE.bridgeRuntimeRecoveryCodeKindByCode') &&
+    atelierClientSource.includes('sanitizeProjectionSubscriptionCode(value.code)') &&
+    atelierClientTestSource.includes('keeps only known typed subscription rejection recovery codes in sanitized cause') &&
+    atelierClientTestSource.includes("code: 'connection_closed'") &&
+    atelierClientTestSource.includes("code: 'CONNECTION_CLOSED'") &&
+    atelierClientTestSource.includes("key: 'atelier.error.disconnected'") &&
+    atelierClientTestSource.includes("code: 'providerInvoke runtimeExecute shellExecute input_snapshot should not leak'") &&
+    atelierClientTestSource.includes("reason: 'host sent unknown code'") &&
+    atelierClientTestSource.includes("key: 'atelier.error.loadFailed'") &&
+    atelierClientTestSource.includes('/providerInvoke|runtimeExecute|shellExecute|input_snapshot/'),
+  'Atelier official typed subscription rejection code whitelist source unit matrix must keep only known recovery codes in Error.cause',
 );
 assert.ok(
   controllerSource.includes('if (!state.snapshot) return undefined') &&
+    controllerSource.includes('deriveAtelierProjectionSubscriptionKey(state.snapshot, state.selectedTaskId)') &&
     controllerSource.includes('subscribeAtelierProjectionEvents(') &&
     controllerSource.includes('state.snapshot,\n        subscriptionTaskId') &&
     controllerSource.includes('stateFromAtelierEventStreamConnecting()') &&
@@ -380,6 +625,29 @@ assert.ok(
     !controllerSource.includes('}, [state.selectedTaskId, state.snapshot]);'),
   'Atelier official controller must subscribe projection events after snapshot load using a stable replay cursor key',
 );
+assert.ok(
+  projectionSubscriptionKeySource.includes('export function deriveAtelierProjectionSubscriptionKey') &&
+    projectionSubscriptionKeySource.includes("selectedTaskId || snapshot?.selectedTaskId || snapshot?.workspace.tasks[0]?.id || ''") &&
+    projectionSubscriptionKeySource.includes('snapshot?.workspace.replay?.[taskId]?.nextEventSeq ?? 0') &&
+    projectionSubscriptionKeySource.includes('hasSnapshot: Boolean(snapshot)'),
+  'Atelier official controller must centralize projection subscription key derivation for created-task resubscribe proof',
+);
+for (const [name, startToken, endToken] of [
+  ['createProject', 'const createProject = useCallback(async () => {', '\n  const resolveDecision = useCallback'],
+  ['resolveDecision', 'const resolveDecision = useCallback(async (taskId: string, blockId: string, choice: string) => {', '\n  const sendMessage = useCallback'],
+  ['sendMessage', 'const sendMessage = useCallback(async () => {', '\n  const insertProviderCapabilityCommand'],
+  ['setTaskLifecycle', 'const setTaskLifecycle = useCallback(async (taskId: string, action: AtelierTaskActionKind) => {', '\n  return {'],
+]) {
+  const start = controllerSource.indexOf(startToken);
+  const end = controllerSource.indexOf(endToken, start);
+  const block = start >= 0 && end > start ? controllerSource.slice(start, end) : '';
+  assert.ok(
+    block.includes('...stateFromAtelierSnapshot(snapshot)') &&
+      block.includes('...stateFromAtelierEventStreamConnecting()') &&
+      !block.includes("eventStreamState: 'live'"),
+    `Atelier official ${name} snapshot success must enter reconnecting state until projection subscribe succeeds`,
+  );
+}
 assert.ok(
   clientSource.includes('type AtelierRunTargetKind') &&
       clientSource.includes('type AtelierAgentFlowId') &&
@@ -426,7 +694,7 @@ for (const key of [
 }
 assert.ok(
   clientSource.includes('fetchAtelierArtifactBody') &&
-    clientSource.includes("sdk.invoke<unknown>('atelier.artifact.body.fetch'") &&
+    clientSource.includes("requestAtelierService('/v1/artifact/body/fetch', 'POST', input)") &&
     clientSource.includes('isAtelierArtifactBodyResponse') &&
     clientSource.includes('ATELIER_ARTIFACT_BODY_KINDS') &&
     clientSource.includes('isAtelierArtifactBodyKind(record.bodyKind)') &&
@@ -445,7 +713,7 @@ assert.ok(
     clientSource.includes('isNonNegativeFiniteNumber(record.bodySize)') &&
     !clientSource.includes("['markdown', 'diff', 'text', 'json'].includes(record.bodyKind)") &&
     !clientSource.includes('typeof record.bodySize === \'number\''),
-  'Atelier official client must fetch artifact body through Host capability, accept only safe text body kinds, and reject invalid body metadata',
+  'Atelier official client must fetch artifact body through service binding, accept only safe text body kinds, and reject invalid body metadata',
 );
 assert.ok(
   clientSource.includes('openAtelierArtifactPreview') &&
@@ -476,23 +744,25 @@ assert.ok(
   'Atelier official client must open artifact preview through Host sandbox manifest capability without iframe/image/raw URL rendering',
 );
   assert.ok(
-    controllerSource.includes('ATELIER_ARTIFACT_BODY_REF_SHAPE') &&
-      controllerSource.includes('ATELIER_ARTIFACT_SANDBOX_REF_SHAPE') &&
-        controllerSource.includes('ATELIER_ARTIFACT_PREVIEW_OPEN_DEFAULT_MODE') &&
-      controllerSource.includes('ATELIER_ARTIFACT_PREVIEW_OPEN_MODES') &&
-      controllerSource.includes('isCanonicalAtelierArtifactRef(value, ATELIER_ARTIFACT_BODY_REF_SHAPE)') &&
-      controllerSource.includes('isCanonicalAtelierArtifactRef(value, ATELIER_ARTIFACT_SANDBOX_REF_SHAPE)') &&
-      controllerSource.includes('isAtelierArtifactPreviewOpenMode(mode)') &&
-      !controllerSource.includes('/^artifact:\\/\\//') &&
-      !controllerSource.includes('/^atelier-sandbox:\\/\\//') &&
-        !controllerSource.includes("previewTarget?.mode?.trim() || 'sandbox_manifest'") &&
-        !controllerSource.includes('previewTarget?.mode?.trim() || ATELIER_ARTIFACT_PREVIEW_OPEN_MODES[0]') &&
+    controllerSource.includes('buildAtelierArtifactBodyFetchIntent') &&
+      controllerSource.includes('buildAtelierArtifactPreviewOpenIntent') &&
+      artifactActionGuardsSource.includes('ATELIER_ARTIFACT_BODY_REF_SHAPE') &&
+      artifactActionGuardsSource.includes('ATELIER_ARTIFACT_SANDBOX_REF_SHAPE') &&
+      artifactActionGuardsSource.includes('ATELIER_ARTIFACT_PREVIEW_OPEN_DEFAULT_MODE') &&
+      artifactActionGuardsSource.includes('ATELIER_ARTIFACT_PREVIEW_OPEN_MODES') &&
+      artifactActionGuardsSource.includes('isCanonicalAtelierArtifactRef(value, ATELIER_ARTIFACT_BODY_REF_SHAPE)') &&
+      artifactActionGuardsSource.includes('isCanonicalAtelierArtifactRef(value, ATELIER_ARTIFACT_SANDBOX_REF_SHAPE)') &&
+      artifactActionGuardsSource.includes('isAtelierArtifactPreviewOpenMode(mode)') &&
+      !artifactActionGuardsSource.includes('/^artifact:\\/\\//') &&
+      !artifactActionGuardsSource.includes('/^atelier-sandbox:\\/\\//') &&
+      !controllerSource.includes("previewTarget?.mode?.trim() || 'sandbox_manifest'") &&
+      !controllerSource.includes('previewTarget?.mode?.trim() || ATELIER_ARTIFACT_PREVIEW_OPEN_MODES[0]') &&
       !controllerSource.includes("mode !== 'sandbox_manifest'"),
-    'Atelier official controller artifact preview preflight must consume generated artifact ref shape and preview-open mode descriptors',
+    'Atelier official artifact preview preflight must consume generated artifact ref shape and preview-open mode descriptors through pure guards',
   );
 assert.ok(
   clientSource.includes('submitAtelierFeedback') &&
-    clientSource.includes("sdk.invoke<unknown>('atelier.feedback.submit'") &&
+    clientSource.includes("requestAtelierService('/v1/feedback/submit', 'POST', input)") &&
     clientSource.includes('isSubmitAtelierFeedbackResponse') &&
     clientSource.includes('isNonEmptyString(record.feedbackId)') &&
     clientSource.includes('isFeedbackPolicyHint') &&
@@ -507,25 +777,25 @@ assert.ok(
 );
 assert.ok(
   clientSource.includes('confirmAtelierMemoryCandidate') &&
-    clientSource.includes("sdk.invoke<unknown>('atelier.memory.confirmCandidate'") &&
+    clientSource.includes("requestAtelierService('/v1/memory/confirm-candidate', 'POST', input)") &&
     clientSource.includes('isConfirmAtelierMemoryCandidateResponse') &&
     clientSource.includes('isNonEmptyString(record.memoryId)') &&
     clientSource.includes('isNonEmptyString(record.source)') &&
     clientSource.includes('record.feedbackId === input.feedbackId') &&
     !clientSource.includes("sdk.invoke<unknown>('memory.write'") &&
     !clientSource.includes('memory.write'),
-  'Atelier official client must confirm memory candidates through Station-owned Host capability, validate confirmation response fields, and must not write memory directly',
+  'Atelier official client must confirm memory candidates through Station service binding, validate confirmation response fields, and must not write memory directly',
 );
 assert.ok(
   clientSource.includes('confirmAtelierFeedbackRerun') &&
-    clientSource.includes("sdk.invoke<unknown>('atelier.feedback.confirmRerun'") &&
+    clientSource.includes("requestAtelierService('/v1/feedback/confirm-rerun', 'POST', input)") &&
     clientSource.includes('isConfirmAtelierRerunResponse') &&
     clientSource.includes('isNonEmptyString(record.taskId)') &&
     clientSource.includes('isNonEmptyString(record.rerunTaskId)') &&
     !clientSource.includes("sdk.invoke<unknown>('atelier.rerun'") &&
     !clientSource.includes("sdk.invoke<unknown>('atelier.run'") &&
     !clientSource.includes("sdk.invoke<unknown>('atelier.execute'"),
-  'Atelier official client must confirm rerun through Station-owned feedback capability and must not execute runs directly',
+  'Atelier official client must confirm rerun through Station service binding and must not execute runs directly',
 );
 assert.ok(
   clientSource.includes('openAtelierWorkspace') &&
@@ -544,7 +814,20 @@ assert.ok(
     !clientSource.includes("uri.hostname === 'task'") &&
     !clientSource.includes("uri.searchParams.getAll('workspace')") &&
     !clientSource.includes('openExternalUrl') &&
-    !clientSource.includes('shell'),
+    !clientSource.includes('shell(') &&
+    !clientSource.includes('shell.execute') &&
+    controllerSource.includes('buildAtelierWorkspaceOpenIntent') &&
+    controllerSource.includes('openAtelierWorkspace(intent)') &&
+    workspaceActionGuardsSource.includes("ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.workspace.open']") &&
+    workspaceActionGuardsSource.includes('ATELIER_WORKSPACE_OPEN_URI_SCHEMES') &&
+    workspaceActionGuardsSource.includes('ATELIER_WORKSPACE_OPEN_URI_SHAPE') &&
+    workspaceActionGuardsSource.includes('containsForbiddenAtelierWorkspacePayloadActions(input.extraPayload)') &&
+    workspaceActionGuardsSource.includes('intent: {') &&
+    !workspaceActionGuardsSource.includes("uri.protocol === 'pt-workspace:'") &&
+    !workspaceActionGuardsSource.includes("uri.hostname === 'task'") &&
+    !workspaceActionGuardsSource.includes("uri.searchParams.getAll('workspace')") &&
+    !workspaceActionGuardsSource.includes('openExternalUrl(') &&
+    !workspaceActionGuardsSource.includes('shell('),
   'Atelier official client must submit workspace open Host intent and reject empty workspace response metadata without local file/shell open',
 );
 assert.ok(
@@ -595,7 +878,7 @@ assert.ok(
     pageSource.includes('pageSurface.typedRecoveryKind') &&
     pageSource.includes('pageSurface.statusNotice') &&
     pageSource.includes('pageSurface.loadingVisible') &&
-    pageSource.includes('pageSurface.emptyVisible') &&
+    pageSource.includes('statusActionPolicy.createProjectVisible') &&
     pageSource.includes('pageSurface.mainContentVisible') &&
     pageCompositionSource.includes('shouldRenderAtelierEmptyState') &&
     pageCompositionSource.includes('atelierTypedRecoveryKind') &&
@@ -603,16 +886,24 @@ assert.ok(
     pageCompositionSource.includes('ATELIER_TYPED_RECOVERY_KINDS') &&
     pageCompositionSource.includes('ATELIER_STATUS_NOTICE_KINDS') &&
     pageSource.includes('function StatusNotice') &&
-    pageSource.includes('atelier.status.degradedTitle') &&
-    pageSource.includes('atelier.status.reconcilingTitle') &&
-    pageSource.includes('atelier.status.degradedDetail') &&
-    pageSource.includes('atelier.status.reconcilingDetail') &&
-    officialRecoveryViewSource.includes('atelier.error.authDeniedTitle') &&
-    officialRecoveryViewSource.includes('atelier.error.disconnectedTitle') &&
-    officialRecoveryViewSource.includes('atelier.error.authDeniedDetail') &&
-    officialRecoveryViewSource.includes('atelier.error.disconnectedDetail') &&
+    pageSource.includes('deriveOfficialStatusNoticeView(status)') &&
+    statusNoticeViewSource.includes('ATELIER_VIEW_SURFACE.statusNoticeLabelKeyByStatus') &&
+    statusNoticeViewSource.includes('function deriveOfficialStatusNoticeView') &&
+    pageSource.includes("deriveOfficialCenteredStateView('loading')") &&
+    pageSource.includes("deriveOfficialCenteredStateView('empty')") &&
+    centeredStateViewSource.includes('ATELIER_VIEW_SURFACE.centeredStateLabelKeyByStatus') &&
+    centeredStateViewSource.includes('function deriveOfficialCenteredStateView') &&
+    !pageSource.includes("status === 'reconciling' ? t('atelier.status.reconcilingTitle')") &&
+    !pageSource.includes("status === 'reconciling' ? t('atelier.status.reconcilingDetail')") &&
+    officialRecoveryViewSource.includes('ATELIER_VIEW_SURFACE.recovery.labelKeyByKind') &&
+    !officialRecoveryViewSource.includes("titleKey: 'atelier.error.authDeniedTitle'") &&
+    !officialRecoveryViewSource.includes("detailKey: 'atelier.error.disconnectedDetail'") &&
     pageSource.includes('deriveOfficialRecoveryView(kind)') &&
-    pageSource.includes('<ErrorPanel kind={pageSurface.typedRecoveryKind} message={controller.eventStreamError} onRetry={controller.load} />') &&
+    pageSource.includes('const statusActionPolicy = deriveOfficialStatusActionPolicy({') &&
+    pageSource.includes('retryVisible={statusActionPolicy.retryVisible}') &&
+    pageSource.includes('statusActionPolicy.createProjectVisible ?') &&
+    pageSource.includes('retryVisible: boolean') &&
+    !pageSource.includes('retryVisible ?? recoveryView.retryVisible') &&
     pageSource.includes('recoveryView.detailKey ? t(recoveryView.detailKey) : message || title') &&
     pageSource.includes('const rawMessageVisible = Boolean(message) && detail !== message;') &&
     !pageSource.includes("pageSurface.typedRecoveryKind === 'auth-denied'") &&
@@ -630,14 +921,51 @@ assert.ok(
     pageSource.includes("t('atelier.recovery.retryBoundary')"),
   'Atelier official page must render auth-denied, disconnected, degraded, and reconciling as distinct recovery states',
 );
+const officialRecoverySurfaceAnchors = [
+  '{pageSurface.globalErrorVisible ? (',
+  '{pageSurface.typedRecoveryKind ? (',
+  '{pageSurface.statusNotice ? (',
+  '{pageSurface.loadingVisible ? (',
+  '{statusActionPolicy.createProjectVisible ? (',
+];
+const officialMainContentAnchor = '{pageSurface.mainContentVisible ? (';
+for (const anchor of officialRecoverySurfaceAnchors) {
+  assert.ok(
+    pageSource.indexOf(anchor) >= 0 && pageSource.indexOf(anchor) < pageSource.indexOf(officialMainContentAnchor),
+    'official single-column recovery-state layout must render ' + anchor + ' above the projection content rail',
+  );
+}
+assert.ok(
+  pageSource.includes("flexDirection: 'column', minHeight: px(0)") &&
+    pageSource.includes("minWidth: px(0), padding: px(12), width: '100%'") &&
+    pageSource.includes("minWidth: px(0), width: '100%'") &&
+    !pageSource.includes('PanelToggleButton') &&
+    !pageSource.includes('railOpen') &&
+    !pageSource.includes('railRightOpen') &&
+    !pageSource.includes('minWidth: px(360)'),
+  'official single-column recovery-state layout must keep projection sections stacked without app-level side rails or desktop-only minimum widths',
+);
 assert.ok(
   controllerSource.includes('resolveAtelierDecision') &&
-    controllerSource.includes('resolvingDecisionId'),
-  'Atelier official controller must expose decision resolving state and action',
+    controllerSource.includes('resolvingDecisionId') &&
+    controllerSource.includes('buildAtelierDecisionResolveIntent') &&
+    controllerSource.includes('pendingBlockId: state.resolvingDecisionId') &&
+    controllerSource.includes('resolveAtelierDecision(intent)') &&
+    clientSource.includes("requestAtelierService('/v1/escalations:resolve', 'POST', input)") &&
+    decisionActionGuardsSource.includes("ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.escalation.resolve']") &&
+    decisionActionGuardsSource.includes('ATELIER_DECISION_RESOLVE_REQUIRED_FIELDS') &&
+    decisionActionGuardsSource.includes('ATELIER_DECISION_RESOLVE_FORBIDDEN_ACTIONS') &&
+    decisionActionGuardsSource.includes('containsForbiddenAtelierDecisionPayloadActions(input.extraPayload)') &&
+    decisionActionGuardsSource.includes('intent: { taskId, blockId, choice }') &&
+    !decisionActionGuardsSource.includes('provider.invoke(') &&
+    !decisionActionGuardsSource.includes('runtime.execute(') &&
+    !decisionActionGuardsSource.includes('memory.write(') &&
+    !decisionActionGuardsSource.includes('input_snapshot.write('),
+  'Atelier official controller must expose decision resolving state and route only generated Station human decision intents',
 );
 assert.ok(
   controllerSource.includes('feedbackStatusBlockId') &&
-    controllerSource.includes('feedbackStatusBlockId: trimmedBlockId') &&
+    controllerSource.includes('feedbackStatusBlockId: intent.blockId') &&
     controllerSource.includes('feedbackStatus: normalized.error') &&
     controllerSource.includes('feedbackStatusBlockId: current.memoryConfirmationBlockId') &&
     controllerSource.includes('feedbackStatusBlockId: current.rerunConfirmationBlockId') &&
@@ -651,8 +979,12 @@ assert.ok(
     controllerSource.includes('memoryConfirmationBlockId') &&
     controllerSource.includes('memoryConfirming') &&
     controllerSource.includes('confirmMemoryCandidate') &&
+      controllerSource.includes('buildAtelierMemoryConfirmIntent') &&
+      controllerSource.includes('confirmAtelierMemoryCandidate(intent)') &&
       controllerSource.includes('ATELIER_MEMORY_CONFIRMATION_MODE') &&
       !controllerSource.includes("confirmationMode === 'station_memory_review'") &&
+      confirmationActionGuardsSource.includes("ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.memory.confirmCandidate']") &&
+      confirmationActionGuardsSource.includes('ATELIER_MEMORY_CONFIRM_FORBIDDEN_ACTIONS') &&
     controllerSource.includes('atelier.feedback.memoryConfirmed') &&
     controllerSource.includes('memoryConfirmationFeedbackId: current.memoryConfirmationFeedbackId') &&
     controllerSource.includes('memoryConfirmationTaskId: current.memoryConfirmationTaskId') &&
@@ -674,8 +1006,12 @@ assert.ok(
     controllerSource.includes('rerunConfirmationBlockId') &&
     controllerSource.includes('rerunConfirming') &&
     controllerSource.includes('confirmRerun') &&
+      controllerSource.includes('buildAtelierRerunConfirmIntent') &&
+      controllerSource.includes('confirmAtelierFeedbackRerun(intent)') &&
       controllerSource.includes('ATELIER_RERUN_CONFIRMATION_MODE') &&
       !controllerSource.includes("confirmationMode === 'station_rerun_review'") &&
+      confirmationActionGuardsSource.includes("ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.feedback.confirmRerun']") &&
+      confirmationActionGuardsSource.includes('ATELIER_RERUN_CONFIRM_FORBIDDEN_ACTIONS') &&
     controllerSource.includes('atelier.feedback.rerunConfirmed') &&
     controllerSource.includes('rerunConfirmationFeedbackId: current.rerunConfirmationFeedbackId') &&
     controllerSource.includes('rerunConfirmationTaskId: current.rerunConfirmationTaskId') &&
@@ -711,11 +1047,21 @@ assert.ok(
     officialFeedbackBarSource.includes('if (!busy) void onSubmitFeedback(taskId, blockId, item.signal);') &&
     officialFeedbackBarSource.includes('if (!memoryConfirming) void onConfirmMemoryCandidate();') &&
     officialFeedbackBarSource.includes('if (!rerunConfirming) void onConfirmRerun();') &&
-    officialFeedbackFlowSource.includes('const response = await submitAtelierFeedback({') &&
+    officialFeedbackFlowSource.includes('buildAtelierFeedbackSubmitIntent({') &&
+      officialFeedbackFlowSource.includes('pendingFeedbackId: state.feedbackSubmittingId') &&
+      officialFeedbackFlowSource.includes('const response = await submitAtelierFeedback(intent);') &&
+      feedbackActionGuardsSource.includes("ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.feedback.submit']") &&
+      feedbackActionGuardsSource.includes('ATELIER_FEEDBACK_SUBMIT_REQUIRED_FIELDS') &&
+      feedbackActionGuardsSource.includes('ATELIER_FEEDBACK_SUBMIT_FORBIDDEN_ACTIONS') &&
+      feedbackActionGuardsSource.includes('isAtelierFeedbackSignal') &&
+      feedbackActionGuardsSource.includes('containsForbiddenAtelierFeedbackPayloadActions(input.extraPayload)') &&
       officialFeedbackFlowSource.includes('response.memoryCandidate.confirmationMode === ATELIER_MEMORY_CONFIRMATION_MODE') &&
       officialFeedbackFlowSource.includes('response.rerunIntent.confirmationMode === ATELIER_RERUN_CONFIRMATION_MODE') &&
-    officialFeedbackFlowSource.includes('const response = await confirmAtelierMemoryCandidate({ taskId, feedbackId });') &&
-    officialFeedbackFlowSource.includes('const response = await confirmAtelierFeedbackRerun({ taskId, feedbackId });') &&
+    officialFeedbackFlowSource.includes('buildAtelierMemoryConfirmIntent({') &&
+    officialFeedbackFlowSource.includes('const response = await confirmAtelierMemoryCandidate(intent);') &&
+    officialFeedbackFlowSource.includes('buildAtelierRerunConfirmIntent({') &&
+    officialFeedbackFlowSource.includes('const response = await confirmAtelierFeedbackRerun(intent);') &&
+    confirmationActionGuardsSource.includes('containsForbiddenAtelierConfirmationPayloadActions') &&
     officialFeedbackFlowSource.includes('await load();') &&
     !officialFeedbackBarSource.includes('submitAtelierFeedback') &&
     !officialFeedbackBarSource.includes('confirmAtelierMemoryCandidate') &&
@@ -735,7 +1081,7 @@ assert.ok(
     !officialFeedbackFlowSource.includes('gate.rerun') &&
     !officialFeedbackFlowSource.includes('taskGraph.diff.apply') &&
     !officialFeedbackFlowSource.includes('cli.execute'),
-  'Atelier official FeedbackBar confirmations must stay Host capability policy intents and must not expose direct memory write/rerun/execute/provider capabilities',
+  'Atelier official FeedbackBar confirmations must stay Station-owned service policy intents and must not expose direct memory write/rerun/execute/provider capabilities',
 );
 assert.ok(
   controllerSource.includes('selectedProject: AtelierProjectProjection | undefined') &&
@@ -755,10 +1101,14 @@ assert.ok(
     pageSource.includes('hiddenEdgeCount') &&
     pageSource.includes('atelier.taskGraph.roots') &&
     pageSource.includes('atelier.taskGraph.edges') &&
-    pageSource.includes('visibleNodeArtifactIds') &&
-    pageSource.includes('hiddenNodeArtifactCount') &&
-    pageSource.includes('visibleNodeGateIds') &&
-    pageSource.includes('hiddenNodeGateCount') &&
+    pageSource.includes('visibleNodeArtifactRefs') &&
+    pageSource.includes('evidenceView.hiddenArtifactCount') &&
+    pageSource.includes('evidenceView.unresolvedArtifactCount') &&
+    pageSource.includes('visibleNodeGateRefs') &&
+    pageSource.includes('evidenceView.hiddenGateCount') &&
+    pageSource.includes('evidenceView.unresolvedGateCount') &&
+    pageSource.includes('visibleNodeArtifactRefs.map((ref) => ref.label)') &&
+    pageSource.includes('visibleNodeGateRefs.map((ref) => ref.label)') &&
     pageSource.includes('atelier.taskGraph.artifactRefs') &&
     pageSource.includes('atelier.taskGraph.gateRefs') &&
     pageSource.includes('hiddenNodeCount') &&
@@ -786,8 +1136,10 @@ assert.ok(
     officialTaskGraphSource.includes("project.taskGraph.parallelPolicy === 'integrator_required'") &&
     officialTaskGraphSource.includes('visibleRootTaskIds') &&
     officialTaskGraphSource.includes('visibleEdges') &&
-    officialTaskGraphSource.includes('visibleNodeArtifactIds') &&
-    officialTaskGraphSource.includes('visibleNodeGateIds') &&
+    officialTaskGraphSource.includes('visibleNodeArtifactRefs') &&
+    officialTaskGraphSource.includes('evidenceView.unresolvedArtifactCount') &&
+    officialTaskGraphSource.includes('visibleNodeGateRefs') &&
+    officialTaskGraphSource.includes('evidenceView.unresolvedGateCount') &&
     !officialTaskGraphSource.includes('taskGraph.schedule') &&
     !officialTaskGraphSource.includes('taskGraph.execute') &&
     !officialTaskGraphSource.includes('taskGraph.replan') &&
@@ -1125,7 +1477,7 @@ assert.ok(
 );
 assert.ok(
   clientSource.includes('loadAtelierProviderCapabilities') &&
-    clientSource.includes("sdk.invoke<unknown>('atelier.provider.capabilities'") &&
+    clientSource.includes("requestAtelierService('/v1/provider/capabilities', 'POST', taskId ? { taskId } : {})") &&
     clientSource.includes('isAtelierProviderCapabilitiesResponse') &&
     clientSource.includes('isAtelierProviderCapability') &&
     clientSource.includes('isNonEmptyString(record.source)') &&
@@ -1141,7 +1493,7 @@ assert.ok(
       !clientSource.includes("record.scope === 'station-provider'") &&
       !clientSource.includes('record.readOnly === true') &&
     !clientSource.includes("sdk.invoke<unknown>('atelier.provider.invoke'"),
-  'Atelier official client must load provider capabilities through discovery-only Host capability and reject empty descriptors or provider invoke',
+  'Atelier official client must load provider capabilities through discovery-only service binding and reject empty descriptors or provider invoke',
 );
 const insertProviderCapabilityStart = controllerSource.indexOf('const insertProviderCapabilityCommand = useCallback((command: string) => {');
 const insertProviderCapabilityEnd = controllerSource.indexOf('\n  const submitFeedback = useCallback', insertProviderCapabilityStart);
@@ -1150,11 +1502,22 @@ const insertProviderCapabilitySource =
     ? controllerSource.slice(insertProviderCapabilityStart, insertProviderCapabilityEnd)
     : '';
 assert.ok(
-  insertProviderCapabilitySource.includes('const trimmed = command.trim();') &&
-    insertProviderCapabilitySource.includes("if (!trimmed.startsWith('/')) return;") &&
+  controllerSource.includes('buildAtelierProviderCapabilityDiscoveryIntent({') &&
+    controllerSource.includes('loadAtelierProviderCapabilities(intent.taskId)') &&
+    providerCapabilityActionGuardsSource.includes('buildAtelierProviderCapabilityDiscoveryIntent') &&
+    providerCapabilityActionGuardsSource.includes('taskId ? { taskId } : {}') &&
+    providerCapabilityActionGuardsSource.includes('containsForbiddenAtelierProviderCapabilityPayloadActions(input.extraPayload)') &&
+    insertProviderCapabilitySource.includes('buildAtelierProviderCapabilityCommandInsertIntent({ command })') &&
+    insertProviderCapabilitySource.includes('appendAtelierProviderCapabilityCommand({') &&
     insertProviderCapabilitySource.includes('setComposerText((current) => {') &&
-    insertProviderCapabilitySource.includes('return existing ? `${existing} ${trimmed} ` : `${trimmed} `;') &&
     insertProviderCapabilitySource.includes('setComposerRevision((current) => current + 1);') &&
+    providerCapabilityActionGuardsSource.includes("ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.provider.capabilities']") &&
+    providerCapabilityActionGuardsSource.includes('ATELIER_PROVIDER_CAPABILITY_ALLOWED_SCOPES') &&
+    providerCapabilityActionGuardsSource.includes('ATELIER_PROVIDER_CAPABILITY_INSERT_READ_ONLY') &&
+    providerCapabilityActionGuardsSource.includes('ATELIER_PROVIDER_CAPABILITY_FORBIDDEN_ACTIONS') &&
+    providerCapabilityActionGuardsSource.includes('containsForbiddenAtelierProviderCapabilityPayloadActions(input.extraPayload)') &&
+    providerCapabilityActionGuardsSource.includes("command.startsWith('/')") &&
+    providerCapabilityActionGuardsSource.includes('existing ? `${existing} ${command} ` : `${command} `') &&
     !insertProviderCapabilitySource.includes('sendAtelierMessage') &&
     !insertProviderCapabilitySource.includes('requestAtelierService') &&
     !insertProviderCapabilitySource.includes('sdk.invoke') &&
@@ -1216,9 +1579,17 @@ assert.ok(
   'Atelier official sendMessage success must clear stale artifact body and preview open state after applying a new projection snapshot',
 );
 assert.ok(
-  sendMessageSource.includes('const taskId = state.selectedTaskId.trim();') &&
-    sendMessageSource.includes('const text = composerText.trim();') &&
-    sendMessageSource.includes('const snapshot = await sendAtelierMessage({ taskId, text });') &&
+  sendMessageSource.includes('buildAtelierMessageSendIntent({') &&
+    sendMessageSource.includes('taskId: state.selectedTaskId') &&
+    sendMessageSource.includes('text: composerText') &&
+    sendMessageSource.includes('pending: state.sendingMessage') &&
+    sendMessageSource.includes('const snapshot = await sendAtelierMessage(intent);') &&
+    messageActionGuardsSource.includes("ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.message.send']") &&
+    messageActionGuardsSource.includes('ATELIER_MESSAGE_SEND_REQUIRED_FIELDS') &&
+    messageActionGuardsSource.includes('ATELIER_MESSAGE_SEND_FORBIDDEN_APPLET_FIELDS') &&
+    messageActionGuardsSource.includes('ATELIER_MESSAGE_SEND_FORBIDDEN_ACTIONS') &&
+    messageActionGuardsSource.includes('containsForbiddenAtelierMessagePayloadFields(input.extraPayload)') &&
+    messageActionGuardsSource.includes('intent: { taskId, text }') &&
     clientSendMessageSource.includes('taskId: string;') &&
     clientSendMessageSource.includes('text: string;') &&
     clientSendMessageSource.includes("requestAtelierService('/v1/messages', 'POST', input)") &&
@@ -1235,7 +1606,11 @@ assert.ok(
     !clientSendMessageSource.includes('runtime.execute') &&
     !clientSendMessageSource.includes('model.run') &&
     !clientSendMessageSource.includes('input_snapshot.write') &&
-    !clientSendMessageSource.includes('inputSnapshot.write'),
+    !clientSendMessageSource.includes('inputSnapshot.write') &&
+    !messageActionGuardsSource.includes('provider.invoke(') &&
+    !messageActionGuardsSource.includes('runtime.execute(') &&
+    !messageActionGuardsSource.includes('model.run(') &&
+    !messageActionGuardsSource.includes('HostStorage.write('),
   'Atelier official message send must stay text-only Station intent and must not expose run/provider/execute/input snapshot capabilities',
 );
 assert.ok(
@@ -1256,8 +1631,20 @@ assert.ok(
       controllerSource.includes('useState<AtelierAgentFlowId>(ATELIER_DEFAULT_AGENT_FLOW_ID)') &&
       !controllerSource.includes('useState<AtelierAgentFlowId>(ATELIER_AGENT_FLOW_IDS[0])') &&
     controllerSource.includes('selectedFlowId') &&
-    controllerSource.includes('setSelectedFlowId'),
-  'Atelier official controller must expose new task creation state, selected run target intent, selected model/flow, action, and explicit generated run kind default',
+    controllerSource.includes('setSelectedFlowId') &&
+    controllerSource.includes('buildAtelierProjectCreateIntent') &&
+    controllerSource.includes('createAtelierProjectFromGoal(intent)') &&
+    projectCreateActionGuardsSource.includes("ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.project.createFromGoal']") &&
+    projectCreateActionGuardsSource.includes('ATELIER_TASK_INTENT_PRESETS') &&
+    projectCreateActionGuardsSource.includes('ATELIER_RUN_TARGET_KINDS') &&
+    projectCreateActionGuardsSource.includes('ATELIER_DIRECT_RUN_MODELS') &&
+    projectCreateActionGuardsSource.includes('ATELIER_AGENT_FLOW_IDS') &&
+    projectCreateActionGuardsSource.includes('const agentFlowId: AtelierAgentFlowId | undefined = runKind ===') &&
+    projectCreateActionGuardsSource.includes("if (runKind === 'model')") &&
+    projectCreateActionGuardsSource.includes('if (!agentFlowId)') &&
+    projectCreateActionGuardsSource.includes('flowId: agentFlowId') &&
+    projectCreateActionGuardsSource.includes('containsForbiddenAtelierProjectCreatePayloadActions(input.extraPayload)'),
+  'Atelier official controller must expose new task creation state, selected run target intent, selected model/flow, action, explicit generated run kind default, DirectRun model flowId omission, and pure project-create intent preflight',
 );
 assert.ok(
   controllerSource.includes('setAtelierTaskStatus') &&
@@ -1272,10 +1659,11 @@ assert.ok(
     controllerSource.includes('fetchArtifactBody') &&
     controllerSource.includes('artifactBodyFetchId') &&
     controllerSource.includes('artifactBodyError') &&
-    controllerSource.includes('expectedHash: artifact.bodyHash') &&
-    controllerSource.includes('artifact.bodyRef?.trim()') &&
-    controllerSource.includes('isCanonicalAtelierArtifactBodyRef(bodyRef)'),
-  'Atelier official controller must expose explicit artifact body fetch state and preflight canonical bodyRef/hash metadata',
+    controllerSource.includes('buildAtelierArtifactBodyFetchIntent') &&
+    artifactActionGuardsSource.includes('expectedHash: input.artifact.bodyHash') &&
+    artifactActionGuardsSource.includes('input.artifact.bodyRef?.trim()') &&
+    artifactActionGuardsSource.includes('isCanonicalAtelierArtifactBodyRef(bodyRef)'),
+  'Atelier official artifact body fetch must expose explicit state and preflight canonical bodyRef/hash metadata through pure guards',
 );
 const artifactBodyFetchStart = controllerSource.indexOf('const fetchArtifactBody = useCallback');
 const artifactBodyFetchEnd = controllerSource.indexOf('\n  const openArtifactPreview', artifactBodyFetchStart);
@@ -1286,7 +1674,8 @@ const artifactBodyFetchSource =
 assert.ok(
   controllerSource.includes('const artifactBodyRequestSeq = useRef(0)') &&
     artifactBodyFetchSource.includes('const requestSeq = ++artifactBodyRequestSeq.current') &&
-    artifactBodyFetchSource.includes('current.artifactBodyFetchId !== fetchKey') &&
+    artifactBodyFetchSource.includes('isCurrentAtelierArtifactRequest') &&
+    artifactBodyFetchSource.includes('currentPendingKey: current.artifactBodyFetchId') &&
     artifactBodyFetchSource.includes('return current;') &&
     artifactBodyFetchSource.includes('artifactBody: response') &&
     artifactBodyFetchSource.includes('artifactBodyError: normalized.error'),
@@ -1296,15 +1685,16 @@ assert.ok(
   controllerSource.includes('openAtelierArtifactPreview') &&
     controllerSource.includes('openArtifactPreview') &&
     controllerSource.includes('artifactPreviewOpenId') &&
-    controllerSource.includes('artifact.previewTarget') &&
-    controllerSource.includes('sandboxRef') &&
-      controllerSource.includes('mode = previewTarget?.mode?.trim() || ATELIER_ARTIFACT_PREVIEW_OPEN_DEFAULT_MODE') &&
-    controllerSource.includes('isCanonicalAtelierSandboxRef(sandboxRef)') &&
-    controllerSource.includes('isAtelierArtifactPreviewOpenMode(mode)') &&
+    controllerSource.includes('buildAtelierArtifactPreviewOpenIntent') &&
+    artifactActionGuardsSource.includes('input.artifact.previewTarget') &&
+    artifactActionGuardsSource.includes('sandboxRef') &&
+      artifactActionGuardsSource.includes('const mode = previewTarget?.mode?.trim() || ATELIER_ARTIFACT_PREVIEW_OPEN_DEFAULT_MODE') &&
+    artifactActionGuardsSource.includes('isCanonicalAtelierSandboxRef(sandboxRef)') &&
+    artifactActionGuardsSource.includes('isAtelierArtifactPreviewOpenMode(mode)') &&
       !controllerSource.includes("mode = previewTarget?.mode?.trim() || 'sandbox_manifest'") &&
       !controllerSource.includes('mode = previewTarget?.mode?.trim() || ATELIER_ARTIFACT_PREVIEW_OPEN_MODES[0]') &&
     !controllerSource.includes("mode !== 'sandbox_manifest'"),
-  'Atelier official controller must expose Host-owned artifact preview open intent with controller-side canonical ref guard',
+  'Atelier official artifact preview open intent must keep canonical ref guard in pure guards',
 );
 const artifactPreviewOpenStart = controllerSource.indexOf('const openArtifactPreview = useCallback');
 const artifactPreviewOpenEnd = controllerSource.indexOf('\n  const setTaskLifecycle', artifactPreviewOpenStart);
@@ -1315,7 +1705,8 @@ const artifactPreviewOpenSource =
 assert.ok(
   controllerSource.includes('const artifactPreviewOpenRequestSeq = useRef(0)') &&
     artifactPreviewOpenSource.includes('const requestSeq = ++artifactPreviewOpenRequestSeq.current') &&
-    artifactPreviewOpenSource.includes('current.artifactPreviewOpenId !== openKey') &&
+    artifactPreviewOpenSource.includes('isCurrentAtelierArtifactRequest') &&
+    artifactPreviewOpenSource.includes('currentPendingKey: current.artifactPreviewOpenId') &&
     artifactPreviewOpenSource.includes('return current;') &&
     artifactPreviewOpenSource.includes('artifactPreviewOpenResponse: response') &&
     artifactPreviewOpenSource.includes('artifactPreviewOpenError: normalized.error'),
@@ -1710,9 +2101,7 @@ export const sdk = {
     getLaunchOptions: async () => globalThis.__atelierOfficialFrontendGateLaunchOptions,
   },
   network: {
-    request: async () => {
-      throw new Error('atelier-official-frontend-gate: unexpected network.request');
-    },
+    request: async (request) => globalThis.__atelierOfficialFrontendGateNetworkRequest(request),
   },
 };
 `,
@@ -1740,29 +2129,55 @@ import {
 } from './apps/applets/atelier/frontend/src/application/projectionReducer.ts';
 import { nextAtelierEventStreamRetryDelayMs } from './apps/applets/atelier/frontend/src/application/eventStreamRecovery.ts';
 import { stateFromMalformedAtelierProjectionEvent } from './apps/applets/atelier/frontend/src/application/eventStreamEventGuard.ts';
+import { deriveAtelierProjectionSubscriptionKey } from './apps/applets/atelier/frontend/src/application/atelierProjectionSubscriptionKey.ts';
 import {
   stateFromAtelierError,
   stateFromAtelierEventStreamConnecting,
   stateFromAtelierEventStreamError,
 } from './apps/applets/atelier/frontend/src/application/controllerTransitions.ts';
-import { deriveOfficialRecoveryView } from './apps/applets/atelier/frontend/src/application/officialRecoveryView.ts';
+import { deriveOfficialRecoveryView, deriveOfficialStatusActionPolicy, isOfficialStatusActionPolicyConsistent } from './apps/applets/atelier/frontend/src/application/officialRecoveryView.ts';
 import { deriveOfficialStatusPillView } from './apps/applets/atelier/frontend/src/application/statusPillView.ts';
 import { atelierTypedRecoveryKind, deriveAtelierPageSurface, shouldRenderAtelierEmptyState } from './apps/applets/atelier/frontend/src/application/pageComposition.ts';
 import { deriveAtelierViewStatus } from './apps/applets/atelier/frontend/src/application/viewStatus.ts';
-import { ATELIER_PROJECTION_EVENT_TOPIC, ATELIER_PROJECTION_SUBSCRIPTION_METHOD, ATELIER_RECOVERY_RETRYABLE_KINDS, ATELIER_RECOVERY_TONE_BY_KIND, ATELIER_STATUS_NOTICE_KINDS, ATELIER_TYPED_RECOVERY_KINDS, ATELIER_VIEW_STATUSES } from './apps/applets/atelier/frontend/src/domain/projection.contract.generated.ts';
+import { ATELIER_PROJECTION_EVENT_TOPIC, ATELIER_PROJECTION_SUBSCRIPTION_METHOD, ATELIER_RECOVERY_RETRYABLE_KINDS, ATELIER_RECOVERY_TONE_BY_KIND, ATELIER_STATUS_NOTICE_KINDS, ATELIER_TYPED_RECOVERY_KINDS, ATELIER_VIEW_STATUSES, ATELIER_VIEW_SURFACE } from './apps/applets/atelier/frontend/src/domain/projection.contract.generated.ts';
 
 const messagesZhCn = ${JSON.stringify(messagesZhCn, null, 2)};
 const statusPillViewSource = ${JSON.stringify(statusPillViewSource)};
+const centeredStateViewSource = ${JSON.stringify(centeredStateViewSource)};
+const atelierViewStateTestSource = ${JSON.stringify(atelierViewStateTestSource)};
+const controllerTransitionsTestSource = ${JSON.stringify(controllerTransitionsTestSource)};
 const capabilityResponses = [];
+const serviceBoundCapabilityRequests = new Map([
+  ['atelier.provider.capabilities', { service: 'atelier', method: 'POST', path: '/v1/provider/capabilities' }],
+  ['atelier.feedback.submit', { service: 'atelier', method: 'POST', path: '/v1/feedback/submit' }],
+  ['atelier.memory.confirmCandidate', { service: 'atelier', method: 'POST', path: '/v1/memory/confirm-candidate' }],
+  ['atelier.feedback.confirmRerun', { service: 'atelier', method: 'POST', path: '/v1/feedback/confirm-rerun' }],
+  ['atelier.artifact.body.fetch', { service: 'atelier', method: 'POST', path: '/v1/artifact/body/fetch' }],
+]);
 globalThis.__atelierOfficialFrontendGateInvoke = async (method, payload) => {
   const next = capabilityResponses.shift();
   assert.ok(next, 'unexpected sdk.invoke call: ' + method);
+  assert.ok(!serviceBoundCapabilityRequests.has(next.method), next.name + ' must use network.request service binding');
   assert.equal(method, next.method, next.name);
   assert.deepEqual(payload, next.payload, next.name);
   if (next.reject) {
     throw next.reject;
   }
   return next.response;
+};
+globalThis.__atelierOfficialFrontendGateNetworkRequest = async (request) => {
+  const next = capabilityResponses.shift();
+  assert.ok(next, 'unexpected network.request call: ' + JSON.stringify(request));
+  const expected = serviceBoundCapabilityRequests.get(next.method);
+  assert.ok(expected, next.name + ' must use sdk.invoke Host capability');
+  assert.equal(request.service, expected.service, next.name);
+  assert.equal(request.method, expected.method, next.name);
+  assert.equal(request.path, expected.path, next.name);
+  assert.deepEqual(request.body, next.payload, next.name);
+  if (next.reject) {
+    throw next.reject;
+  }
+  return { body: next.response };
 };
 globalThis.__atelierOfficialFrontendGateLaunchOptions = null;
 const officialEventCalls = [];
@@ -1806,7 +2221,7 @@ function resetOfficialEventHarness() {
 async function assertCapabilityRejectsMalformedResponse(name, method, payload, response, invoke) {
   capabilityResponses.push({ name, method, payload, response });
   await assert.rejects(invoke, /atelier\\.error\\./, name);
-  assert.equal(capabilityResponses.length, 0, name + ' consumed exactly one Host response');
+  assert.equal(capabilityResponses.length, 0, name + ' consumed exactly one capability response');
 }
 
 function invokeMalformedCapabilityFixture(fixture) {
@@ -1903,6 +2318,78 @@ function snapshot() {
   };
 }
 
+resetOfficialEventHarness();
+globalThis.__ATELIER_PROJECTION_STREAM__ = {
+  agentId: 'official-created-task-agent',
+  certificationMode: 'product-window-e2e',
+  createGoal: ' build atelier ',
+};
+const officialCreatedTaskInitialSnapshot = snapshot();
+officialCreatedTaskInitialSnapshot.selectedTaskId = '';
+officialCreatedTaskInitialSnapshot.workspace.tasks = [];
+officialCreatedTaskInitialSnapshot.workspace.streams = {};
+officialCreatedTaskInitialSnapshot.workspace.todos = {};
+officialCreatedTaskInitialSnapshot.workspace.contexts = {};
+assert.deepEqual(
+  deriveAtelierProjectionSubscriptionKey(officialCreatedTaskInitialSnapshot, ''),
+  { hasSnapshot: true, taskId: '', afterEventSeq: 0 },
+  'official controller subscription key starts empty before Station returns the created task snapshot',
+);
+capabilityResponses.push({
+  name: 'official created-task lifecycle initial subscribe omits taskId before created snapshot',
+  method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
+  payload: { agentId: 'official-created-task-agent' },
+  response: { accepted: true },
+});
+const releaseOfficialCreatedTaskInitialSubscription = await subscribeAtelierProjectionEvents(
+  officialCreatedTaskInitialSnapshot,
+  '',
+  () => {},
+);
+releaseOfficialCreatedTaskInitialSubscription();
+
+const officialCreatedTaskFreshSnapshot = snapshot();
+officialCreatedTaskFreshSnapshot.selectedTaskId = 'created-task';
+officialCreatedTaskFreshSnapshot.workspace.tasks = [
+  { id: 'created-task', project: 'peers-touch', title: 'Created task', status: 'active' },
+];
+officialCreatedTaskFreshSnapshot.workspace.replay = {
+  'created-task': {
+    source: 'event-window',
+    eventCount: 0,
+    replayedEventCount: 0,
+    nextEventSeq: 23,
+    hasMore: false,
+  },
+};
+const officialCreatedTaskFreshKey = deriveAtelierProjectionSubscriptionKey(
+  officialCreatedTaskFreshSnapshot,
+  '',
+);
+assert.deepEqual(
+  officialCreatedTaskFreshKey,
+  { hasSnapshot: true, taskId: 'created-task', afterEventSeq: 23 },
+  'official controller subscription key retargets to the Station-created selected task and replay cursor',
+);
+capabilityResponses.push({
+  name: 'official created-task lifecycle refreshed subscribe targets created task after fresh snapshot',
+  method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
+  payload: { agentId: 'official-created-task-agent', taskId: 'created-task', afterEventSeq: 23 },
+  response: { accepted: true },
+});
+const releaseOfficialCreatedTaskFreshSubscription = await subscribeAtelierProjectionEvents(
+  officialCreatedTaskFreshSnapshot,
+  officialCreatedTaskFreshKey.taskId,
+  () => {},
+);
+releaseOfficialCreatedTaskFreshSubscription();
+assert.equal(capabilityResponses.length, 0, 'official created-task lifecycle consumed both subscription payloads');
+assert.doesNotMatch(
+  JSON.stringify(officialCreatedTaskFreshKey),
+  /provider|gate|artifact|trace|checkpoint|resume|memory|input_snapshot|shell|file|run/,
+  'official created-task subscription key must remain projection-only metadata',
+);
+
 function validProjectProjection(overrides = {}) {
   return {
     id: 'project-1',
@@ -1964,6 +2451,18 @@ function viewInput(overrides = {}) {
   };
 }
 
+function typedRejectedErrorForGate(payload) {
+  const method = typeof payload.method === 'string' && payload.method.length > 0
+    ? payload.method
+    : 'unknown';
+  const reason = typeof payload.reason === 'string' && payload.reason.length > 0
+    ? payload.reason
+    : 'unknown rejection';
+  return new Error('Atelier projection stream subscription ' + method + ' rejected: ' + reason, {
+    cause: payload,
+  });
+}
+
 function event(id, seq, patch, overrides = {}) {
   return {
     id,
@@ -2013,6 +2512,1076 @@ assert.deepEqual(
 );
 assert.equal(officialEventHandlers.has(ATELIER_PROJECTION_EVENT_TOPIC), false);
 assert.equal(capabilityResponses.length, 0, 'official projection subscription success consumed Station stream subscribe invoke');
+
+  resetOfficialEventHarness();
+  globalThis.__ATELIER_PROJECTION_STREAM__ = { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 7 };
+  officialEventSubscribeError = new Error('Host event topic subscribe rejected');
+  await assert.rejects(
+    () => subscribeAtelierProjectionEvents(snapshot(), 'task-1', (projectionEvent) => receivedOfficialEvents.push(projectionEvent.id)),
+    /Host event topic subscribe rejected/,
+    'official projection Host event-topic subscribe rejection must surface to the controller',
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(
+    officialEventCalls.map((call) => call.method + ':' + call.topic),
+    [
+      'on:' + ATELIER_PROJECTION_EVENT_TOPIC,
+      'subscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
+      'off:' + ATELIER_PROJECTION_EVENT_TOPIC,
+      'unsubscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
+    ],
+    'official projection Host event-topic subscribe rejection must remove local handler and request Host unsubscribe',
+  );
+  assert.equal(officialEventHandlers.has(ATELIER_PROJECTION_EVENT_TOPIC), false);
+  officialEventHandlers.get(ATELIER_PROJECTION_EVENT_TOPIC)?.(event('evt-after-rejected-official-host-topic-subscribe', 2, {
+    kind: 'stream.append',
+    taskId: 'task-1',
+    blocks: [{ id: 'block-after-rejected-official-host-topic-subscribe', kind: 'agent', text: 'must not deliver', done: true }],
+  }));
+  assert.equal(
+    receivedOfficialEvents.includes('evt-after-rejected-official-host-topic-subscribe'),
+    false,
+    'official projection Host event-topic subscribe rejection must not keep delivering Host events after local cleanup',
+  );
+  assert.equal(
+    capabilityResponses.length,
+    0,
+    'official projection Host event-topic subscribe rejection must not call Station stream subscribe',
+  );
+
+  resetOfficialEventHarness();
+  globalThis.__ATELIER_PROJECTION_STREAM__ = { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 7 };
+  capabilityResponses.push({
+    name: 'official projection typed subscription-rejected event after subscribe',
+    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
+    payload: { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 7 },
+    response: { accepted: true },
+  });
+  const typedRejectedReceivedEvents = [];
+  const typedRejectedErrors = [];
+  await subscribeAtelierProjectionEvents(
+    snapshot(),
+    'task-1',
+    (projectionEvent) => typedRejectedReceivedEvents.push(projectionEvent.id),
+    undefined,
+    (error) => typedRejectedErrors.push(error),
+  );
+  officialEventHandlers.get(ATELIER_PROJECTION_EVENT_TOPIC)?.({
+    kind: 'atelier.projection.subscription-rejected',
+    method: 'events.subscribe',
+    code: 'FORBIDDEN',
+    reason: 'opaque Host rejected Atelier projection topic',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(typedRejectedErrors.length, 1);
+  assert.equal(
+    typedRejectedErrors[0].message,
+    'Atelier projection stream subscription events.subscribe rejected: opaque Host rejected Atelier projection topic',
+  );
+  assert.deepEqual(
+    classifyAtelierError(typedRejectedErrors[0]),
+    { key: 'atelier.error.authDenied', kind: 'auth-denied' },
+    'official typed subscription-rejected event must preserve structured code for recovery taxonomy',
+  );
+  assert.deepEqual(typedRejectedReceivedEvents, []);
+  assert.deepEqual(
+    officialEventCalls.map((call) => call.method + ':' + call.topic),
+    [
+      'on:' + ATELIER_PROJECTION_EVENT_TOPIC,
+      'subscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
+      'off:' + ATELIER_PROJECTION_EVENT_TOPIC,
+      'unsubscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
+    ],
+    'official typed subscription-rejected event must remove local handler and request Host unsubscribe',
+  );
+  assert.equal(officialEventHandlers.has(ATELIER_PROJECTION_EVENT_TOPIC), false);
+  officialEventHandlers.get(ATELIER_PROJECTION_EVENT_TOPIC)?.(event('evt-after-official-typed-subscription-rejected', 2, {
+    kind: 'stream.append',
+    taskId: 'task-1',
+    blocks: [{ id: 'block-after-official-typed-subscription-rejected', kind: 'agent', text: 'must not deliver', done: true }],
+  }));
+  assert.deepEqual(
+    typedRejectedReceivedEvents,
+    [],
+    'official typed subscription-rejected event must not keep delivering Host events after local cleanup',
+  );
+  assert.equal(
+    capabilityResponses.length,
+    0,
+    'official typed subscription-rejected event case consumed Station stream subscribe before Host rejection payload',
+  );
+
+for (const [name, payload, expected] of [
+  ['official typed subscription-rejected forbidden code hard-stops controller recovery', {
+    kind: 'atelier.projection.subscription-rejected',
+    method: 'events.subscribe',
+    code: 'FORBIDDEN',
+    reason: 'opaque Host rejected Atelier projection topic',
+  }, {
+    errorKind: 'auth-denied',
+    viewStatus: 'auth-denied',
+    retryDelayMs: null,
+  }],
+  ['official typed subscription-rejected connection closed code retries controller recovery', {
+    kind: 'atelier.projection.subscription-rejected',
+    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
+    code: 'CONNECTION_CLOSED',
+    reason: 'opaque Host closed Atelier projection stream',
+  }, {
+    errorKind: 'disconnected',
+    viewStatus: 'disconnected',
+    retryDelayMs: 500,
+  }],
+]) {
+  const typedRejectedError = typedRejectedErrorForGate(payload);
+  const transition = stateFromAtelierEventStreamError(typedRejectedError, true);
+  const transitionErrorKind = 'eventStreamErrorKind' in transition ? transition.eventStreamErrorKind : transition.errorKind;
+  assert.equal(transitionErrorKind, expected.errorKind, name + ' classified typed subscription rejection');
+  assert.equal(
+    nextAtelierEventStreamRetryDelayMs({
+      attempt: 0,
+      errorKind: transitionErrorKind,
+      hasSnapshot: true,
+    }),
+    expected.retryDelayMs,
+    name + ' applied controller retry policy',
+  );
+  assert.equal(
+    deriveAtelierViewStatus({
+      loading: transition.loading,
+      error: 'error' in transition ? transition.error : '',
+      errorKind: 'errorKind' in transition ? transition.errorKind : '',
+      eventStreamErrorKind: 'eventStreamErrorKind' in transition ? transition.eventStreamErrorKind : '',
+      eventStreamState: 'eventStreamState' in transition ? transition.eventStreamState : 'idle',
+      replayHasMore: false,
+      taskCount: 1,
+    }),
+    expected.viewStatus,
+    name + ' derived controller view status',
+  );
+}
+
+for (const [name, explicitAfterEventSeq, snapshotAfterEventSeq, expectedPayload] of [
+  [
+    'official projection stream omits explicit zero cursor and uses snapshot replay cursor',
+    0,
+    9,
+    { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 9 },
+  ],
+  [
+    'official projection stream omits explicit negative cursor and uses snapshot replay cursor',
+    -3,
+    11,
+    { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 11 },
+  ],
+  [
+    'official projection stream omits explicit decimal cursor and uses snapshot replay cursor',
+    '1.5',
+    12,
+    { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 12 },
+  ],
+  [
+    'official projection stream omits unsafe integer cursor and uses snapshot replay cursor',
+    '9007199254740992',
+    13,
+    { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 13 },
+  ],
+]) {
+  resetOfficialEventHarness();
+  globalThis.__ATELIER_PROJECTION_STREAM__ = { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: explicitAfterEventSeq };
+  const cursorSnapshot = snapshot();
+  cursorSnapshot.workspace.replay = {
+    'task-1': {
+      source: 'event-window',
+      eventCount: 0,
+      replayedEventCount: 0,
+      nextEventSeq: snapshotAfterEventSeq,
+      hasMore: false,
+    },
+  };
+  capabilityResponses.push({
+    name,
+    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
+    payload: expectedPayload,
+    response: { accepted: true },
+  });
+  const releaseCursorSubscription = await subscribeAtelierProjectionEvents(cursorSnapshot, 'task-1', () => {});
+  releaseCursorSubscription();
+  assert.equal(capabilityResponses.length, 0, name + ' consumed Station stream subscribe invoke');
+}
+
+for (const [name, configureLaunchSource, expectedPayload] of [
+  [
+    'official projection stream trims generated agentIds[0] fallback and taskId',
+    () => {
+      globalThis.__ATELIER_PROJECTION_STREAM__ = {
+        agentId: '   ',
+        agentIds: [' agent-fallback ', 'agent-ignored'],
+        taskId: ' task-from-global ',
+        afterEventSeq: 12,
+      };
+    },
+    { agentId: 'agent-fallback', taskId: 'task-from-global', afterEventSeq: 12 },
+  ],
+  [
+    'official projection stream trims launch option agentId and taskId',
+    () => {
+      globalThis.__atelierOfficialFrontendGateLaunchOptions = {
+        query: {
+          agentId: ' launch-agent ',
+          taskId: ' launch-task ',
+          afterEventSeq: 13,
+        },
+      };
+    },
+    { agentId: 'launch-agent', taskId: 'launch-task', afterEventSeq: 13 },
+  ],
+  [
+    'official projection stream trims launch option generated agentIds[0] fallback',
+    () => {
+      globalThis.__atelierOfficialFrontendGateLaunchOptions = {
+        query: {
+          agentId: '   ',
+          agentIds: [' launch-agent-fallback ', 'launch-agent-ignored'],
+          taskId: ' launch-task-from-list ',
+          afterEventSeq: 16,
+        },
+      };
+    },
+    { agentId: 'launch-agent-fallback', taskId: 'launch-task-from-list', afterEventSeq: 16 },
+  ],
+  [
+    'official projection stream trims launch option cursor string',
+    () => {
+      globalThis.__atelierOfficialFrontendGateLaunchOptions = {
+        query: {
+          agentId: ' launch-agent ',
+          taskId: ' launch-task ',
+          afterEventSeq: ' 14 ',
+        },
+      };
+    },
+    { agentId: 'launch-agent', taskId: 'launch-task', afterEventSeq: 14 },
+  ],
+]) {
+  resetOfficialEventHarness();
+  configureLaunchSource();
+  capabilityResponses.push({
+    name,
+    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
+    payload: expectedPayload,
+    response: { accepted: true },
+  });
+  const releaseNormalizedSubscription = await subscribeAtelierProjectionEvents(snapshot(), 'task-1', () => {});
+  releaseNormalizedSubscription();
+  assert.equal(capabilityResponses.length, 0, name + ' consumed normalized Station stream subscribe invoke');
+}
+
+for (const [name, source, selectedTaskId, configureSnapshot, expectedPayload] of [
+  [
+    'official projection stream prefers product-window created selected task before explicit taskId',
+    {
+      agentId: 'agent-task-source',
+      certificationMode: 'product-window-e2e',
+      createGoal: ' build atelier ',
+      taskId: ' explicit-task-ignored ',
+    },
+    'controller-task-ignored',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'created-task';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'created-task', project: 'peers-touch', title: 'Created task', status: 'active' },
+        { id: 'explicit-task-ignored', project: 'peers-touch', title: 'Explicit ignored', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'created-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 21,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'created-task', afterEventSeq: 21 },
+  ],
+  [
+    'official projection stream trims product-window created selected task fallback',
+    {
+      agentId: 'agent-task-source',
+      certificationMode: 'product-window-e2e',
+      createGoal: ' build atelier ',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = ' created-trimmed-task ';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'created-trimmed-task', project: 'peers-touch', title: 'Created trimmed task', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'created-trimmed-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 37,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'created-trimmed-task', afterEventSeq: 37 },
+  ],
+  [
+    'official projection stream ignores blank createGoal certification task and uses explicit taskId',
+    {
+      agentId: 'agent-task-source',
+      certificationMode: 'product-window-e2e',
+      createGoal: '   ',
+      taskId: ' explicit-task ',
+    },
+    'created-task-ignored',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'created-task-ignored';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'created-task-ignored', project: 'peers-touch', title: 'Created task ignored', status: 'active' },
+        { id: 'explicit-task', project: 'peers-touch', title: 'Explicit task', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'explicit-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 33,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'explicit-task', afterEventSeq: 33 },
+  ],
+  [
+    'official projection stream ignores non-product certification task and uses explicit taskId',
+    {
+      agentId: 'agent-task-source',
+      certificationMode: 'local-smoke',
+      createGoal: ' build atelier ',
+      taskId: ' explicit-task ',
+    },
+    'created-task-ignored',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'created-task-ignored';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'created-task-ignored', project: 'peers-touch', title: 'Created task ignored', status: 'active' },
+        { id: 'explicit-task', project: 'peers-touch', title: 'Explicit task', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'explicit-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 35,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'explicit-task', afterEventSeq: 35 },
+  ],
+  [
+    'official projection stream uses explicit taskId before controller selected task',
+    {
+      agentId: 'agent-task-source',
+      taskId: ' explicit-task ',
+    },
+    'controller-task-ignored',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'snapshot-selected-task-ignored';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'explicit-task', project: 'peers-touch', title: 'Explicit task', status: 'active' },
+        { id: 'controller-task-ignored', project: 'peers-touch', title: 'Controller ignored', status: 'active' },
+        { id: 'snapshot-selected-task-ignored', project: 'peers-touch', title: 'Snapshot selected ignored', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'explicit-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 29,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'explicit-task', afterEventSeq: 29 },
+  ],
+  [
+    'official projection stream ignores blank explicit taskId and uses controller selected task',
+    {
+      agentId: 'agent-task-source',
+      taskId: '   ',
+    },
+    'controller-task',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'snapshot-selected-task-ignored';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'controller-task', project: 'peers-touch', title: 'Controller selected', status: 'active' },
+        { id: 'snapshot-selected-task-ignored', project: 'peers-touch', title: 'Snapshot selected ignored', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'controller-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 31,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'controller-task', afterEventSeq: 31 },
+  ],
+  [
+    'official projection stream uses controller selected task before snapshot selected task',
+    {
+      agentId: 'agent-task-source',
+    },
+    'controller-task',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'snapshot-selected-task';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'snapshot-selected-task', project: 'peers-touch', title: 'Snapshot selected', status: 'active' },
+        { id: 'controller-task', project: 'peers-touch', title: 'Controller selected', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'controller-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 22,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'controller-task', afterEventSeq: 22 },
+  ],
+  [
+    'official projection stream trims controller selected task fallback',
+    {
+      agentId: 'agent-task-source',
+    },
+    ' controller-trimmed-task ',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'snapshot-selected-task-ignored';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'controller-trimmed-task', project: 'peers-touch', title: 'Controller trimmed', status: 'active' },
+        { id: 'snapshot-selected-task-ignored', project: 'peers-touch', title: 'Snapshot selected ignored', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'controller-trimmed-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 38,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'controller-trimmed-task', afterEventSeq: 38 },
+  ],
+  [
+    'official projection stream ignores blank controller selected task and uses snapshot selected task',
+    {
+      agentId: 'agent-task-source',
+    },
+    '   ',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'snapshot-selected-after-blank-controller';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'snapshot-first-task-ignored', project: 'peers-touch', title: 'Snapshot first ignored', status: 'active' },
+        { id: 'snapshot-selected-after-blank-controller', project: 'peers-touch', title: 'Snapshot selected after blank controller', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'snapshot-selected-after-blank-controller': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 45,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'snapshot-selected-after-blank-controller', afterEventSeq: 45 },
+  ],
+  [
+    'official projection stream uses snapshot selected task before snapshot first task',
+    {
+      agentId: 'agent-task-source',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'snapshot-selected-task';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'snapshot-first-task', project: 'peers-touch', title: 'Snapshot first', status: 'active' },
+        { id: 'snapshot-selected-task', project: 'peers-touch', title: 'Snapshot selected', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'snapshot-selected-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 23,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'snapshot-selected-task', afterEventSeq: 23 },
+  ],
+  [
+    'official projection stream trims snapshot selected task fallback',
+    {
+      agentId: 'agent-task-source',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = ' snapshot-selected-trimmed-task ';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'snapshot-first-task-ignored', project: 'peers-touch', title: 'Snapshot first ignored', status: 'active' },
+        { id: 'snapshot-selected-trimmed-task', project: 'peers-touch', title: 'Snapshot selected trimmed', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'snapshot-selected-trimmed-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 39,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'snapshot-selected-trimmed-task', afterEventSeq: 39 },
+  ],
+  [
+    'official projection stream ignores blank snapshot selected task and uses snapshot first task',
+    {
+      agentId: 'agent-task-source',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = '   ';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'snapshot-first-after-blank-snapshot', project: 'peers-touch', title: 'Snapshot first after blank snapshot', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'snapshot-first-after-blank-snapshot': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 46,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'snapshot-first-after-blank-snapshot', afterEventSeq: 46 },
+  ],
+  [
+    'official projection stream uses snapshot first task when selected tasks are empty',
+    {
+      agentId: 'agent-task-source',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = '';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'snapshot-first-task', project: 'peers-touch', title: 'Snapshot first', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'snapshot-first-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 24,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'snapshot-first-task', afterEventSeq: 24 },
+  ],
+  [
+    'official projection stream trims snapshot first task fallback',
+    {
+      agentId: 'agent-task-source',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = '';
+      projectionSnapshot.workspace.tasks = [
+        { id: ' snapshot-first-trimmed-task ', project: 'peers-touch', title: 'Snapshot first trimmed', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'snapshot-first-trimmed-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 40,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'agent-task-source', taskId: 'snapshot-first-trimmed-task', afterEventSeq: 40 },
+  ],
+]) {
+  resetOfficialEventHarness();
+  globalThis.__ATELIER_PROJECTION_STREAM__ = source;
+  const taskSourceSnapshot = snapshot();
+  configureSnapshot(taskSourceSnapshot);
+  capabilityResponses.push({
+    name,
+    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
+    payload: expectedPayload,
+    response: { accepted: true },
+  });
+  const releaseTaskFallbackSubscription = await subscribeAtelierProjectionEvents(taskSourceSnapshot, selectedTaskId, () => {});
+  releaseTaskFallbackSubscription();
+  assert.equal(capabilityResponses.length, 0, name + ' consumed generated task source priority Station stream subscribe invoke');
+}
+
+for (const [name, query, selectedTaskId, configureSnapshot, expectedPayload] of [
+  [
+    'official projection stream launch options prefer product-window created selected task before explicit taskId',
+    {
+      agentId: 'launch-agent-task-source',
+      certificationMode: 'product-window-e2e',
+      createGoal: ' build atelier ',
+      taskId: ' launch-explicit-task-ignored ',
+    },
+    'launch-controller-task-ignored',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'launch-created-task';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-created-task', project: 'peers-touch', title: 'Launch created task', status: 'active' },
+        { id: 'launch-explicit-task-ignored', project: 'peers-touch', title: 'Launch explicit ignored', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-created-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 25,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-created-task', afterEventSeq: 25 },
+  ],
+  [
+    'official projection stream launch options trim product-window created selected task fallback',
+    {
+      agentId: 'launch-agent-task-source',
+      certificationMode: 'product-window-e2e',
+      createGoal: ' build atelier ',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = ' launch-created-trimmed-task ';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-created-trimmed-task', project: 'peers-touch', title: 'Launch created trimmed task', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-created-trimmed-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 41,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-created-trimmed-task', afterEventSeq: 41 },
+  ],
+  [
+    'official projection stream launch options ignore blank createGoal certification task and use explicit taskId',
+    {
+      agentId: 'launch-agent-task-source',
+      certificationMode: 'product-window-e2e',
+      createGoal: '   ',
+      taskId: ' launch-explicit-task ',
+    },
+    'launch-created-task-ignored',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'launch-created-task-ignored';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-created-task-ignored', project: 'peers-touch', title: 'Launch created task ignored', status: 'active' },
+        { id: 'launch-explicit-task', project: 'peers-touch', title: 'Launch explicit task', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-explicit-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 34,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-explicit-task', afterEventSeq: 34 },
+  ],
+  [
+    'official projection stream launch options ignore non-product certification task and use explicit taskId',
+    {
+      agentId: 'launch-agent-task-source',
+      certificationMode: 'local-smoke',
+      createGoal: ' build atelier ',
+      taskId: ' launch-explicit-task ',
+    },
+    'launch-created-task-ignored',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'launch-created-task-ignored';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-created-task-ignored', project: 'peers-touch', title: 'Launch created task ignored', status: 'active' },
+        { id: 'launch-explicit-task', project: 'peers-touch', title: 'Launch explicit task', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-explicit-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 36,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-explicit-task', afterEventSeq: 36 },
+  ],
+  [
+    'official projection stream launch options use explicit taskId before controller selected task',
+    {
+      agentId: 'launch-agent-task-source',
+      taskId: ' launch-explicit-task ',
+    },
+    'launch-controller-task-ignored',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-task-ignored';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-explicit-task', project: 'peers-touch', title: 'Launch explicit task', status: 'active' },
+        { id: 'launch-controller-task-ignored', project: 'peers-touch', title: 'Launch controller ignored', status: 'active' },
+        { id: 'launch-snapshot-selected-task-ignored', project: 'peers-touch', title: 'Launch snapshot selected ignored', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-explicit-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 30,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-explicit-task', afterEventSeq: 30 },
+  ],
+  [
+    'official projection stream launch options ignore blank explicit taskId and use controller selected task',
+    {
+      agentId: 'launch-agent-task-source',
+      taskId: '   ',
+    },
+    'launch-controller-task',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-task-ignored';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-controller-task', project: 'peers-touch', title: 'Launch controller selected', status: 'active' },
+        { id: 'launch-snapshot-selected-task-ignored', project: 'peers-touch', title: 'Launch snapshot selected ignored', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-controller-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 32,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-controller-task', afterEventSeq: 32 },
+  ],
+  [
+    'official projection stream launch options use controller selected task before snapshot selected task',
+    {
+      agentId: 'launch-agent-task-source',
+    },
+    'launch-controller-task',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-task';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-snapshot-selected-task', project: 'peers-touch', title: 'Launch snapshot selected', status: 'active' },
+        { id: 'launch-controller-task', project: 'peers-touch', title: 'Launch controller selected', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-controller-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 26,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-controller-task', afterEventSeq: 26 },
+  ],
+  [
+    'official projection stream launch options trim controller selected task fallback',
+    {
+      agentId: 'launch-agent-task-source',
+    },
+    ' launch-controller-trimmed-task ',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-task-ignored';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-controller-trimmed-task', project: 'peers-touch', title: 'Launch controller trimmed', status: 'active' },
+        { id: 'launch-snapshot-selected-task-ignored', project: 'peers-touch', title: 'Launch snapshot selected ignored', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-controller-trimmed-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 42,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-controller-trimmed-task', afterEventSeq: 42 },
+  ],
+  [
+    'official projection stream launch options ignore blank controller selected task and use snapshot selected task',
+    {
+      agentId: 'launch-agent-task-source',
+    },
+    '   ',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-after-blank-controller';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-snapshot-first-task-ignored', project: 'peers-touch', title: 'Launch snapshot first ignored', status: 'active' },
+        { id: 'launch-snapshot-selected-after-blank-controller', project: 'peers-touch', title: 'Launch snapshot selected after blank controller', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-snapshot-selected-after-blank-controller': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 47,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-selected-after-blank-controller', afterEventSeq: 47 },
+  ],
+  [
+    'official projection stream launch options use snapshot selected task before snapshot first task',
+    {
+      agentId: 'launch-agent-task-source',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-task';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-snapshot-first-task', project: 'peers-touch', title: 'Launch snapshot first', status: 'active' },
+        { id: 'launch-snapshot-selected-task', project: 'peers-touch', title: 'Launch snapshot selected', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-snapshot-selected-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 27,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-selected-task', afterEventSeq: 27 },
+  ],
+  [
+    'official projection stream launch options trim snapshot selected task fallback',
+    {
+      agentId: 'launch-agent-task-source',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = ' launch-snapshot-selected-trimmed-task ';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-snapshot-first-task-ignored', project: 'peers-touch', title: 'Launch snapshot first ignored', status: 'active' },
+        { id: 'launch-snapshot-selected-trimmed-task', project: 'peers-touch', title: 'Launch snapshot selected trimmed', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-snapshot-selected-trimmed-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 43,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-selected-trimmed-task', afterEventSeq: 43 },
+  ],
+  [
+    'official projection stream launch options ignore blank snapshot selected task and use snapshot first task',
+    {
+      agentId: 'launch-agent-task-source',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = '   ';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-snapshot-first-after-blank-snapshot', project: 'peers-touch', title: 'Launch snapshot first after blank snapshot', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-snapshot-first-after-blank-snapshot': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 48,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-first-after-blank-snapshot', afterEventSeq: 48 },
+  ],
+  [
+    'official projection stream launch options use snapshot first task when selected tasks are empty',
+    {
+      agentId: 'launch-agent-task-source',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = '';
+      projectionSnapshot.workspace.tasks = [
+        { id: 'launch-snapshot-first-task', project: 'peers-touch', title: 'Launch snapshot first', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-snapshot-first-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 28,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-first-task', afterEventSeq: 28 },
+  ],
+  [
+    'official projection stream launch options trim snapshot first task fallback',
+    {
+      agentId: 'launch-agent-task-source',
+    },
+    '',
+    (projectionSnapshot) => {
+      projectionSnapshot.selectedTaskId = '';
+      projectionSnapshot.workspace.tasks = [
+        { id: ' launch-snapshot-first-trimmed-task ', project: 'peers-touch', title: 'Launch snapshot first trimmed', status: 'active' },
+      ];
+      projectionSnapshot.workspace.replay = {
+        'launch-snapshot-first-trimmed-task': {
+          source: 'event-window',
+          eventCount: 0,
+          replayedEventCount: 0,
+          nextEventSeq: 44,
+          hasMore: false,
+        },
+      };
+    },
+    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-first-trimmed-task', afterEventSeq: 44 },
+  ],
+]) {
+  resetOfficialEventHarness();
+  globalThis.__atelierOfficialFrontendGateLaunchOptions = { query };
+  const launchTaskSourceSnapshot = snapshot();
+  configureSnapshot(launchTaskSourceSnapshot);
+  capabilityResponses.push({
+    name,
+    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
+    payload: expectedPayload,
+    response: { accepted: true },
+  });
+  const releaseLaunchTaskFallbackSubscription = await subscribeAtelierProjectionEvents(launchTaskSourceSnapshot, selectedTaskId, () => {});
+  releaseLaunchTaskFallbackSubscription();
+  assert.equal(capabilityResponses.length, 0, name + ' consumed launch options generated task source priority Station stream subscribe invoke');
+}
+
+resetOfficialEventHarness();
+globalThis.__ATELIER_PROJECTION_STREAM__ = {
+  agentId: '   ',
+  agentIds: ['   ', 'agent-ignored'],
+  taskId: ' task-from-global ',
+  afterEventSeq: 15,
+};
+const releaseStrictEmptyAgentIdsFallback = await subscribeAtelierProjectionEvents(snapshot(), 'task-1', () => {});
+releaseStrictEmptyAgentIdsFallback();
+assert.deepEqual(
+  officialEventCalls.map((call) => call.method + ':' + call.topic),
+  [
+    'on:' + ATELIER_PROJECTION_EVENT_TOPIC,
+    'subscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
+    'off:' + ATELIER_PROJECTION_EVENT_TOPIC,
+    'unsubscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
+  ],
+  'official projection stream rejects empty generated agentIds[0] fallback without falling through to agentIds[1]',
+);
+assert.equal(
+  capabilityResponses.length,
+  0,
+  'official projection stream empty generated agentIds[0] fallback did not invoke Station stream subscribe',
+);
+
+resetOfficialEventHarness();
+globalThis.__atelierOfficialFrontendGateLaunchOptions = {
+  query: {
+    agentId: '   ',
+    agentIds: ['   ', 'launch-agent-ignored'],
+    taskId: ' launch-task-from-list ',
+    afterEventSeq: 17,
+  },
+};
+const releaseStrictEmptyLaunchAgentIdsFallback = await subscribeAtelierProjectionEvents(snapshot(), 'task-1', () => {});
+releaseStrictEmptyLaunchAgentIdsFallback();
+assert.deepEqual(
+  officialEventCalls.map((call) => call.method + ':' + call.topic),
+  [
+    'on:' + ATELIER_PROJECTION_EVENT_TOPIC,
+    'subscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
+    'off:' + ATELIER_PROJECTION_EVENT_TOPIC,
+    'unsubscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
+  ],
+  'official projection stream rejects empty launch option agentIds[0] fallback without falling through to agentIds[1]',
+);
+assert.equal(
+  capabilityResponses.length,
+  0,
+  'official projection stream empty launch option agentIds[0] fallback did not invoke Station stream subscribe',
+);
+
+resetOfficialEventHarness();
+globalThis.__atelierOfficialFrontendGateLaunchOptions = {
+  query: {
+    agentId: 'launch-agent',
+    taskId: 'launch-task',
+    certificationMode: 'product-window-e2e',
+    afterEventSeq: '0',
+  },
+};
+capabilityResponses.push({
+  name: 'official projection stream launch options preserve product-window zero cursor string',
+  method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
+  payload: {
+    agentId: 'launch-agent',
+    taskId: 'launch-task',
+    afterEventSeq: 0,
+  },
+  response: { accepted: true },
+});
+const releaseLaunchOptionsSubscription = await subscribeAtelierProjectionEvents(snapshot(), 'task-1', () => {});
+releaseLaunchOptionsSubscription();
+assert.equal(
+  capabilityResponses.length,
+  0,
+  'official projection stream launch options query consumed Station stream subscribe invoke with product-window zero cursor string',
+);
+resetOfficialEventHarness();
 
 resetOfficialEventHarness();
 globalThis.__ATELIER_PROJECTION_STREAM__ = { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 7 };
@@ -2065,6 +3634,12 @@ for (const [name, error, expected] of [
   ['uppercase permission denied maps to auth-denied', new Error('PERMISSION_DENIED Station rejected Atelier access'), { key: 'atelier.error.authDenied', kind: 'auth-denied' }],
   ['mixed-case unauthorized maps to auth-denied', new Error('UnAuthorized Station rejected Atelier access'), { key: 'atelier.error.authDenied', kind: 'auth-denied' }],
   ['forbidden maps to auth-denied', new Error('Forbidden Station rejected Atelier access'), { key: 'atelier.error.authDenied', kind: 'auth-denied' }],
+  ['structured permission denied code maps without message keyword', Object.assign(new Error('Station rejected Atelier access'), { code: 'PERMISSION_DENIED' }), { key: 'atelier.error.authDenied', kind: 'auth-denied' }],
+  ['structured connection closed code maps without message keyword', Object.assign(new Error('Station closed projection stream'), { code: 'CONNECTION_CLOSED' }), { key: 'atelier.error.disconnected', kind: 'disconnected' }],
+  ['structured cause error code maps without message keyword', new Error('Station rejected projection stream', { cause: { error: { code: 'FORBIDDEN', message: 'Access rejected' } } }), { key: 'atelier.error.authDenied', kind: 'auth-denied' }],
+  ['plain structured network error object maps without message keyword', { code: 'NETWORK_DISCONNECTED', message: 'Station stream closed' }, { key: 'atelier.error.disconnected', kind: 'disconnected' }],
+  ['direct nested structured error envelope maps without message keyword', { error: { code: 'PERMISSION_DENIED', message: 'Access rejected' } }, { key: 'atelier.error.authDenied', kind: 'auth-denied' }],
+  ['explicit atelier error key wins over structured cause code', new Error('atelier.error.invalidProjection', { cause: { code: 'NETWORK_DISCONNECTED' } }), { key: 'atelier.error.invalidProjection', kind: 'invalid-projection' }],
   ['mixed-case network maps to disconnected', new Error('Network request failed'), { key: 'atelier.error.disconnected', kind: 'disconnected' }],
   ['mixed-case timeout maps to disconnected', new Error('Request TimeOut while loading Atelier projection'), { key: 'atelier.error.disconnected', kind: 'disconnected' }],
   ['mixed-case disconnected maps to disconnected', new Error('Station DisConnected from projection stream'), { key: 'atelier.error.disconnected', kind: 'disconnected' }],
@@ -2110,31 +3685,78 @@ assert.deepEqual(
   'official view status matrix must cover every generated view status',
 );
 
-  const officialStatusPillMatrix = [
-    ['loading', 'info', 'atelier.status.loading'],
-    ['empty', 'info', 'atelier.status.empty'],
-    ['ready', 'success', 'atelier.status.ready'],
-    ['reconciling', 'warning', 'atelier.status.reconciling'],
-    ['degraded', 'warning', 'atelier.status.degraded'],
-    ['disconnected', 'warning', 'atelier.status.disconnected'],
-    ['auth-denied', 'danger', 'atelier.status.authDenied'],
-    ['error', 'danger', 'atelier.status.error'],
-  ];
-  for (const [status, expectedTone, expectedLabelKey] of officialStatusPillMatrix) {
-    const statusPillView = deriveOfficialStatusPillView(status);
-    assert.equal(statusPillView.tone, expectedTone, 'official status pill tone matrix failed: ' + status);
-    assert.equal(statusPillView.labelKey, expectedLabelKey, 'official status pill label key matrix failed: ' + status);
-  }
-  assert.deepEqual(
-    officialStatusPillMatrix.map(([status]) => status).sort(),
-    [...ATELIER_VIEW_STATUSES].sort(),
-    'official status pill tone matrix must cover every generated view status',
-  );
-  assert.ok(
-    statusPillViewSource.includes('(typeof ATELIER_VIEW_SURFACE.recovery.statusSeverityByStatus)[AtelierViewStatus]') &&
-      !statusPillViewSource.includes("OfficialStatusPillTone = 'info' | 'warning' | 'danger' | 'success'"),
-    'official status pill tone type must derive from generated status severity taxonomy',
-  );
+const officialStatusPillMatrix = [
+  ['loading', 'info', 'atelier.status.loading'],
+  ['empty', 'info', 'atelier.status.empty'],
+  ['ready', 'success', 'atelier.status.ready'],
+  ['reconciling', 'warning', 'atelier.status.reconciling'],
+  ['degraded', 'warning', 'atelier.status.degraded'],
+  ['disconnected', 'warning', 'atelier.status.disconnected'],
+  ['auth-denied', 'danger', 'atelier.status.authDenied'],
+  ['error', 'danger', 'atelier.status.error'],
+];
+for (const [status, expectedTone, expectedLabelKey] of officialStatusPillMatrix) {
+  const statusPillView = deriveOfficialStatusPillView(status);
+  assert.equal(statusPillView.tone, expectedTone, 'official status pill tone matrix failed: ' + status);
+  assert.equal(statusPillView.labelKey, expectedLabelKey, 'official status pill label key matrix failed: ' + status);
+}
+assert.deepEqual(
+  officialStatusPillMatrix.map(([status]) => status).sort(),
+  [...ATELIER_VIEW_STATUSES].sort(),
+  'official status pill tone matrix must cover every generated view status',
+);
+assert.ok(
+  atelierViewStateTestSource.includes('covers every generated view status in the official status pill matrix') &&
+    atelierViewStateTestSource.includes('ATELIER_STATUS_LABEL_KEY_BY_STATUS') &&
+    atelierViewStateTestSource.includes('ATELIER_VIEW_SURFACE.recovery.statusSeverityByStatus') &&
+    atelierViewStateTestSource.includes('deriveOfficialStatusPillView(viewStatus)'),
+  'official status pill generated unit matrix must be present in atelierViewState.test.ts',
+);
+for (const [status, expectedTitleKey, expectedDetailKey] of [
+  ['reconciling', 'atelier.status.reconcilingTitle', 'atelier.status.reconcilingDetail'],
+  ['degraded', 'atelier.status.degradedTitle', 'atelier.status.degradedDetail'],
+]) {
+  const actual = ATELIER_VIEW_SURFACE.statusNoticeLabelKeyByStatus[status];
+  assert.equal(actual.titleKey, expectedTitleKey, 'official status notice title key mismatch for ' + status);
+  assert.equal(actual.detailKey, expectedDetailKey, 'official status notice detail key mismatch for ' + status);
+}
+assert.deepEqual(
+  Object.keys(ATELIER_VIEW_SURFACE.statusNoticeLabelKeyByStatus).sort(),
+  [...ATELIER_STATUS_NOTICE_KINDS].sort(),
+  'official status notice label key matrix must cover every generated status notice kind',
+);
+assert.ok(
+  atelierViewStateTestSource.includes('covers every generated status notice kind in the official status notice matrix') &&
+    atelierViewStateTestSource.includes('deriveOfficialStatusNoticeView(statusNoticeKind)') &&
+    atelierViewStateTestSource.includes('ATELIER_VIEW_SURFACE.statusNoticeLabelKeyByStatus[statusNoticeKind]') &&
+    atelierViewStateTestSource.includes('ATELIER_STATUS_NOTICE_KINDS'),
+  'official status notice generated unit matrix must be present in atelierViewState.test.ts',
+);
+for (const [status, expectedTitleKey, expectedDetailKey] of [
+  ['loading', 'atelier.status.loading', 'atelier.status.loadingDetail'],
+  ['empty', 'atelier.empty.title', 'atelier.empty.detail'],
+]) {
+  const actual = ATELIER_VIEW_SURFACE.centeredStateLabelKeyByStatus[status];
+  assert.equal(actual.titleKey, expectedTitleKey, 'official centered state title key mismatch for ' + status);
+  assert.equal(actual.detailKey, expectedDetailKey, 'official centered state detail key mismatch for ' + status);
+}
+assert.deepEqual(
+  Object.keys(ATELIER_VIEW_SURFACE.centeredStateLabelKeyByStatus).sort(),
+  ['empty', 'loading'],
+  'official centered state label key matrix must cover loading and empty states',
+);
+assert.ok(
+  atelierViewStateTestSource.includes('covers every generated centered state kind in the official centered state matrix') &&
+    atelierViewStateTestSource.includes('deriveOfficialCenteredStateView(centeredStateKind)') &&
+    atelierViewStateTestSource.includes('ATELIER_VIEW_SURFACE.centeredStateLabelKeyByStatus[centeredStateKind]') &&
+    centeredStateViewSource.includes('ATELIER_VIEW_SURFACE.centeredStateLabelKeyByStatus'),
+  'official centered state generated unit matrix must be present in atelierViewState.test.ts',
+);
+assert.ok(
+  statusPillViewSource.includes('(typeof ATELIER_VIEW_SURFACE.recovery.statusSeverityByStatus)[AtelierViewStatus]') &&
+    !statusPillViewSource.includes("OfficialStatusPillTone = 'info' | 'warning' | 'danger' | 'success'"),
+  'official status pill tone type must derive from generated status severity taxonomy',
+);
 
 for (const [name, input, expectedEmpty, expectedRecovery] of [
   ['empty workspace shows empty CTA', { error: '', loading: false, taskCount: 0, viewStatus: 'empty' }, true, ''],
@@ -2150,6 +3772,7 @@ for (const [name, input, expectedEmpty, expectedRecovery] of [
 }
 const officialPageSurfaceMatrix = [
   ['global error owns page surface', { error: 'failed', loading: false, taskCount: 2, viewStatus: 'auth-denied' }, { globalErrorVisible: true, typedRecoveryKind: '', statusNotice: '', loadingVisible: false, emptyVisible: false, mainContentVisible: false }],
+  ['global error suppresses loading recovery and empty surfaces', { error: 'failed', loading: true, taskCount: 0, viewStatus: 'auth-denied' }, { globalErrorVisible: true, typedRecoveryKind: '', statusNotice: '', loadingVisible: false, emptyVisible: false, mainContentVisible: false }],
   ['generic error owns page surface', { error: 'failed', loading: false, taskCount: 2, viewStatus: 'error' }, { globalErrorVisible: true, typedRecoveryKind: '', statusNotice: '', loadingVisible: false, emptyVisible: false, mainContentVisible: false }],
   ['loading owns empty page surface', { error: '', loading: true, taskCount: 0, viewStatus: 'loading' }, { globalErrorVisible: false, typedRecoveryKind: '', statusNotice: '', loadingVisible: true, emptyVisible: false, mainContentVisible: false }],
   ['empty workspace shows empty only', { error: '', loading: false, taskCount: 0, viewStatus: 'empty' }, { globalErrorVisible: false, typedRecoveryKind: '', statusNotice: '', loadingVisible: false, emptyVisible: true, mainContentVisible: false }],
@@ -2170,6 +3793,13 @@ assert.deepEqual(
   [...ATELIER_VIEW_STATUSES].sort(),
   'official page surface matrix must cover every generated view status',
 );
+assert.ok(
+  atelierViewStateTestSource.includes('covers every generated view status in the official page surface matrix') &&
+    atelierViewStateTestSource.includes('ATELIER_TYPED_RECOVERY_KINDS') &&
+    atelierViewStateTestSource.includes('ATELIER_STATUS_NOTICE_KINDS') &&
+    atelierViewStateTestSource.includes('surface.emptyVisible && surface.loadingVisible'),
+  'official page surface generated unit matrix must be present in atelierViewState.test.ts',
+);
 assert.deepEqual(
   [...new Set(officialPageSurfaceMatrix
     .filter(([, , expected]) => expected.statusNotice)
@@ -2185,20 +3815,26 @@ assert.deepEqual(
 );
 
 const officialRecoveryViewMatrix = [
-  ['auth-denied', { tone: 'danger', retryVisible: false, titleKey: 'atelier.error.authDeniedTitle', detailKey: 'atelier.error.authDeniedDetail' }],
-  ['invalid-projection', { tone: 'danger', retryVisible: false, titleKey: 'atelier.status.error' }],
-  ['agent-ids-required', { tone: 'danger', retryVisible: false, titleKey: 'atelier.status.error' }],
-  ['disconnected', { tone: 'warning', retryVisible: true, titleKey: 'atelier.error.disconnectedTitle', detailKey: 'atelier.error.disconnectedDetail' }],
-  ['error', { tone: 'danger', retryVisible: true, titleKey: 'atelier.status.error' }],
+  ...Object.entries(ATELIER_VIEW_SURFACE.recovery.labelKeyByKind).map(([kind, label]) => [
+    kind,
+    {
+      tone: ATELIER_RECOVERY_TONE_BY_KIND[kind],
+      retryVisible: ATELIER_RECOVERY_RETRYABLE_KINDS.includes(kind),
+      ...label,
+    },
+  ]),
   ['', { tone: 'danger', retryVisible: false, titleKey: 'atelier.status.error' }],
 ];
 for (const [kind, expected] of officialRecoveryViewMatrix) {
   assert.deepEqual(deriveOfficialRecoveryView(kind), expected, 'official recovery view matrix failed: ' + kind);
 }
 assert.deepEqual(
-  ['auth-denied', 'invalid-projection', 'agent-ids-required', 'disconnected', 'error'].sort(),
-  Object.keys(ATELIER_RECOVERY_TONE_BY_KIND).sort(),
-  'official recovery label key matrix must cover every generated recovery tone kind',
+  officialRecoveryViewMatrix
+    .filter(([kind]) => kind)
+    .map(([kind]) => kind)
+    .sort(),
+  Object.keys(ATELIER_VIEW_SURFACE.recovery.labelKeyByKind).sort(),
+  'official recovery label key matrix must cover every generated recovery label kind',
 );
 assert.deepEqual(
   officialRecoveryViewMatrix
@@ -2208,6 +3844,97 @@ assert.deepEqual(
   [...ATELIER_RECOVERY_RETRYABLE_KINDS].sort(),
   'official recovery retry visibility matrix must cover every generated retryable recovery kind',
 );
+assert.ok(
+  atelierViewStateTestSource.includes('covers every generated recovery kind in the official recovery view matrix') &&
+    atelierViewStateTestSource.includes('ATELIER_RECOVERY_TONE_BY_KIND') &&
+    atelierViewStateTestSource.includes('ATELIER_VIEW_SURFACE.recovery.labelKeyByKind') &&
+    atelierViewStateTestSource.includes("deriveOfficialRecoveryView('')"),
+  'official recovery view generated unit matrix must be present in atelierViewState.test.ts',
+);
+const officialStatusActionPolicyMatrix = [
+  ['empty workspace exposes create-project only', { error: '', errorKind: '', loading: false, taskCount: 0, viewStatus: 'empty' }, { primaryAction: 'create-project', createProjectVisible: true, retryVisible: false }],
+  ['loading workspace exposes no primary action', { error: '', errorKind: '', loading: true, taskCount: 0, viewStatus: 'loading' }, { primaryAction: 'none', createProjectVisible: false, retryVisible: false }],
+  ['auth-denied typed recovery exposes no retry or create action', { error: '', errorKind: '', loading: false, taskCount: 0, viewStatus: 'auth-denied' }, { primaryAction: 'none', createProjectVisible: false, retryVisible: false }],
+  ['disconnected typed recovery exposes retry only', { error: '', errorKind: '', loading: false, taskCount: 1, viewStatus: 'disconnected' }, { primaryAction: 'retry', createProjectVisible: false, retryVisible: true }],
+  ['global disconnected error exposes retry only', { error: 'stream closed', errorKind: 'disconnected', loading: false, taskCount: 1, viewStatus: 'ready' }, { primaryAction: 'retry', createProjectVisible: false, retryVisible: true }],
+  ['global auth-denied error exposes no retry or create action', { error: 'permission denied', errorKind: 'auth-denied', loading: false, taskCount: 1, viewStatus: 'ready' }, { primaryAction: 'none', createProjectVisible: false, retryVisible: false }],
+  ['degraded notice preserves content without primary action', { error: '', errorKind: '', loading: false, taskCount: 1, viewStatus: 'degraded' }, { primaryAction: 'none', createProjectVisible: false, retryVisible: false }],
+];
+for (const [name, input, expected] of officialStatusActionPolicyMatrix) {
+  const actual = deriveOfficialStatusActionPolicy(input);
+  assert.deepEqual(actual, expected, 'official status action policy matrix failed: ' + name);
+  assert.equal(isOfficialStatusActionPolicyConsistent(actual), true, 'official status action policy must keep primary action and visibility flags consistent: ' + name);
+  assert.deepEqual(
+    Object.keys(actual).sort(),
+    ['createProjectVisible', 'primaryAction', 'retryVisible'],
+    'official status action policy must expose only projection UI fields: ' + name,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(actual),
+    /provider\.invoke|gate\.run|artifact\.write|trace\.write|checkpoint\.write|resume\.execute|memory\.write|input_snapshot|shell|file\.write|run\.execute/,
+    'official status action policy must stay projection-only: ' + name,
+  );
+}
+assert.deepEqual(
+  [...new Set(officialStatusActionPolicyMatrix.map(([, , expected]) => expected.primaryAction))].sort(),
+  ['create-project', 'none', 'retry'],
+  'official status action policy matrix must cover create, retry, and no-action outcomes',
+);
+assert.ok(
+  atelierViewStateTestSource.includes('covers every generated view status in the action policy matrix') &&
+    atelierViewStateTestSource.includes('covers every generated recovery kind in global-error action policy') &&
+    atelierViewStateTestSource.includes("Object.keys(policy).sort()).toEqual(['createProjectVisible', 'primaryAction', 'retryVisible'])") &&
+    atelierViewStateTestSource.includes('provider\\\\.invoke|gate\\\\.run|artifact\\\\.write'),
+  'official status action policy generated source unit matrix must be present in atelierViewState.test.ts',
+);
+for (const [name, policy] of [
+  ['create action without create visibility', { primaryAction: 'create-project', createProjectVisible: false, retryVisible: false }],
+  ['retry action with both actions visible', { primaryAction: 'retry', createProjectVisible: true, retryVisible: true }],
+  ['none action with retry visible', { primaryAction: 'none', createProjectVisible: false, retryVisible: true }],
+]) {
+  assert.equal(isOfficialStatusActionPolicyConsistent(policy), false, 'official status action policy consistency guard must reject ' + name);
+}
+function expectedOfficialGeneratedStatusActionPolicy(viewStatus, taskCount) {
+  if (viewStatus === 'empty' && taskCount === 0) {
+    return { primaryAction: 'create-project', createProjectVisible: true, retryVisible: false };
+  }
+  if (viewStatus === 'disconnected') {
+    return { primaryAction: 'retry', createProjectVisible: false, retryVisible: true };
+  }
+  return { primaryAction: 'none', createProjectVisible: false, retryVisible: false };
+}
+for (const taskCount of [0, 1]) {
+  const coveredStatuses = [];
+  for (const viewStatus of ATELIER_VIEW_STATUSES) {
+    const policy = deriveOfficialStatusActionPolicy({
+      error: '',
+      errorKind: '',
+      loading: viewStatus === 'loading',
+      taskCount,
+      viewStatus,
+    });
+    coveredStatuses.push(viewStatus);
+    assert.deepEqual(policy, expectedOfficialGeneratedStatusActionPolicy(viewStatus, taskCount), 'official generated view status action policy matrix failed: ' + viewStatus + ' taskCount=' + taskCount);
+    assert.equal(isOfficialStatusActionPolicyConsistent(policy), true, 'official generated view status action policy must be consistent: ' + viewStatus + ' taskCount=' + taskCount);
+  }
+  assert.deepEqual(coveredStatuses, [...ATELIER_VIEW_STATUSES], 'official status action policy generated matrix must cover every generated view status for taskCount=' + taskCount);
+}
+for (const errorKind of Object.keys(ATELIER_VIEW_SURFACE.recovery.labelKeyByKind)) {
+  const retryVisible = ATELIER_RECOVERY_RETRYABLE_KINDS.includes(errorKind);
+  const policy = deriveOfficialStatusActionPolicy({
+    error: 'global recovery',
+    errorKind,
+    loading: false,
+    taskCount: 1,
+    viewStatus: 'ready',
+  });
+  assert.deepEqual(
+    policy,
+    { primaryAction: retryVisible ? 'retry' : 'none', createProjectVisible: false, retryVisible },
+    'official global recovery action policy matrix failed: ' + errorKind,
+  );
+  assert.equal(isOfficialStatusActionPolicyConsistent(policy), true, 'official generated recovery action policy must be consistent: ' + errorKind);
+}
 
 for (const key of [
   'atelier.status.empty',
@@ -2327,6 +4054,59 @@ for (const [name, error, hasSnapshot, expected] of [
   }
 }
 
+const controllerTransientResetFields = [
+  'resolvingDecisionId',
+  'creatingProject',
+  'sendingMessage',
+  'taskActionId',
+  'taskActionKind',
+  'purgeConfirmTaskId',
+  'providerCapabilitiesLoading',
+  'feedbackSubmittingId',
+  'memoryConfirming',
+  'rerunConfirming',
+  'workspaceOpenSubmittingId',
+  'artifactBodyFetchId',
+  'artifactPreviewOpenId',
+];
+for (const [name, error, hasSnapshot, expectedKind] of [
+  ['snapshot auth-denied transient reset', new Error('atelier.error.authDenied'), true, 'auth-denied'],
+  ['snapshot disconnected transient reset', new Error('atelier.error.disconnected'), true, 'disconnected'],
+  ['snapshot generic transient reset', new Error('boom'), true, 'error'],
+  ['load auth-denied transient reset', new Error('atelier.error.authDenied'), false, 'auth-denied'],
+  ['load disconnected transient reset', new Error('atelier.error.disconnected'), false, 'disconnected'],
+  ['load generic transient reset', new Error('boom'), false, 'error'],
+]) {
+  const transition = stateFromAtelierEventStreamError(error, hasSnapshot);
+  const kind = 'eventStreamErrorKind' in transition ? transition.eventStreamErrorKind : transition.errorKind;
+  assert.equal(kind, expectedKind, 'controller recovery transition must preserve typed recovery kind: ' + name);
+  for (const field of controllerTransientResetFields) {
+    assert.equal(
+      transition[field],
+      typeof transition[field] === 'boolean' ? false : '',
+      'controller recovery transition must clear transient workbench action field: ' + name + ' ' + field,
+    );
+  }
+  assert.doesNotMatch(
+    JSON.stringify(transition),
+    /provider\.invoke|gate\.run|artifact\.write|trace\.write|checkpoint\.write|resume\.execute|memory\.write|input_snapshot|shell|file\.write|run\.execute/,
+    'controller recovery transition reset must stay projection-only: ' + name,
+  );
+}
+assert.ok(
+  controllerTransitionsTestSource.includes('clears every transient workbench action field for snapshot recovery failures') &&
+    controllerTransitionsTestSource.includes('clears every transient workbench action field for no-snapshot load failures') &&
+    controllerTransitionsTestSource.includes('providerCapabilitiesLoading') &&
+    controllerTransitionsTestSource.includes('feedbackSubmittingId') &&
+    controllerTransitionsTestSource.includes('memoryConfirming') &&
+    controllerTransitionsTestSource.includes('rerunConfirming') &&
+    controllerTransitionsTestSource.includes('workspaceOpenSubmittingId') &&
+    controllerTransitionsTestSource.includes('artifactBodyFetchId') &&
+    controllerTransitionsTestSource.includes('artifactPreviewOpenId') &&
+    controllerTransitionsTestSource.includes('provider\\\\.invoke|gate\\\\.run|artifact\\\\.write'),
+  'official controller recovery transition transient reset source unit matrix must be present in controllerTransitions.test.ts',
+);
+
 assert.equal(stateFromAtelierError(new Error('atelier.error.authDenied')).errorKind, 'auth-denied');
 assert.equal(stateFromAtelierError(new Error('atelier.error.disconnected')).errorKind, 'disconnected');
 
@@ -2434,10 +4214,18 @@ for (const invalidWorkspacePatch of [
   { replay: { 'task-unknown': { source: 'checkpoint', eventCount: 1, replayedEventCount: 1, nextEventSeq: 2, hasMore: false } } },
   { replay: { 'task-1': { source: '', eventCount: 1, replayedEventCount: 1, nextEventSeq: 2, hasMore: false } } },
   { replay: { 'task-1': { source: 'checkpoint', eventCount: '1', replayedEventCount: 1, nextEventSeq: 2, hasMore: false } } },
+  { replay: { 'task-1': { source: 'checkpoint', eventCount: 1.5, replayedEventCount: 1, nextEventSeq: 2, hasMore: false } } },
+  { replay: { 'task-1': { source: 'checkpoint', eventCount: Number.MAX_SAFE_INTEGER + 1, replayedEventCount: 1, nextEventSeq: 2, hasMore: false } } },
+  { replay: { 'task-1': { source: 'checkpoint', eventCount: 1, replayedEventCount: 1.5, nextEventSeq: 2, hasMore: false } } },
+  { replay: { 'task-1': { source: 'checkpoint', eventCount: 1, replayedEventCount: Number.MAX_SAFE_INTEGER + 1, nextEventSeq: 2, hasMore: false } } },
   { replay: { 'task-1': { source: 'checkpoint', eventCount: 1, replayedEventCount: 1, nextEventSeq: -1, hasMore: false } } },
+  { replay: { 'task-1': { source: 'checkpoint', eventCount: 1, replayedEventCount: 1, nextEventSeq: 2.5, hasMore: false } } },
+  { replay: { 'task-1': { source: 'checkpoint', eventCount: 1, replayedEventCount: 1, nextEventSeq: Number.MAX_SAFE_INTEGER + 1, hasMore: false } } },
   { replay: { 'task-1': { source: 'checkpoint', eventCount: 1, replayedEventCount: 1, nextEventSeq: 2, hasMore: 'no' } } },
   { replay: { 'task-1': { source: 'checkpoint', eventCount: 1, replayedEventCount: 1, nextEventSeq: 2, hasMore: false, checkpointId: '' } } },
   { replay: { 'task-1': { source: 'checkpoint', eventCount: 1, replayedEventCount: 1, nextEventSeq: 2, hasMore: false, checkpointEventSeq: -1 } } },
+  { replay: { 'task-1': { source: 'checkpoint', eventCount: 1, replayedEventCount: 1, nextEventSeq: 2, hasMore: false, checkpointEventSeq: 2.5 } } },
+  { replay: { 'task-1': { source: 'checkpoint', eventCount: 1, replayedEventCount: 1, nextEventSeq: 2, hasMore: false, checkpointEventSeq: Number.MAX_SAFE_INTEGER + 1 } } },
 ]) {
   const invalidSnapshot = snapshot();
   if ('selectedTaskId' in invalidWorkspacePatch) {
@@ -2447,6 +4235,16 @@ for (const invalidWorkspacePatch of [
   }
   assert.equal(isAtelierProjectionSnapshot(invalidSnapshot), false);
 }
+assert.equal(parseAtelierProjectionEvent(event('evt-decimal-seq', 1.5, {
+  kind: 'stream.append',
+  taskId: 'task-1',
+  blocks: [],
+})), null);
+assert.equal(parseAtelierProjectionEvent(event('evt-unsafe-seq', Number.MAX_SAFE_INTEGER + 1, {
+  kind: 'stream.append',
+  taskId: 'task-1',
+  blocks: [],
+})), null);
 assert.equal(parseAtelierProjectionEvent(event('evt-empty-top-level-task', 1, {
   kind: 'stream.append',
   taskId: 'task-1',
@@ -3066,8 +4864,10 @@ try {
     logLevel: 'silent',
   });
   await import(pathToFileURL(outfile).href);
+  writeEvidence('PASS');
   console.log('Atelier official frontend gate passed.');
 } catch (error) {
+  writeEvidence('FAIL', error instanceof Error ? error.message : String(error));
   console.error('Atelier official frontend gate failed:');
   console.error(error);
   process.exitCode = 1;

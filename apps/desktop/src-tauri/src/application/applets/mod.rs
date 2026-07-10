@@ -13,12 +13,15 @@ use crate::infrastructure::station_client;
 use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Method;
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -46,10 +49,22 @@ const PRODUCT_WINDOW_E2E_ATELIER_DECISION_RESOLVED_EVIDENCE_ENV: &str =
     "PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_DECISION_RESOLVED_EVIDENCE";
 const PRODUCT_WINDOW_E2E_ATELIER_ARTIFACT_GATE_RENDERED_EVIDENCE_ENV: &str =
     "PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_ARTIFACT_GATE_RENDERED_EVIDENCE";
+const PRODUCT_WINDOW_E2E_ATELIER_ARTIFACT_BODY_FETCHED_EVIDENCE_ENV: &str =
+    "PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_ARTIFACT_BODY_FETCHED_EVIDENCE";
 const PRODUCT_WINDOW_E2E_ATELIER_ARTIFACT_PREVIEW_OPENED_EVIDENCE_ENV: &str =
     "PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_ARTIFACT_PREVIEW_OPENED_EVIDENCE";
 const PRODUCT_WINDOW_E2E_ATELIER_SUBSCRIPTION_DIAGNOSTIC_EVIDENCE_ENV: &str =
     "PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_SUBSCRIPTION_DIAGNOSTIC_EVIDENCE";
+const ATELIER_FULL_E2E_ENV: &str = "PEERS_ATELIER_FULL_E2E";
+const ATELIER_FULL_E2E_APPLET_ID_ENV: &str = "PEERS_ATELIER_FULL_E2E_APPLET_ID";
+const ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV: &str = "PEERS_ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID";
+const ATELIER_FULL_E2E_DESKTOP_READY_EVIDENCE_ENV: &str =
+    "PEERS_ATELIER_FULL_E2E_DESKTOP_READY_EVIDENCE";
+const ATELIER_FULL_E2E_WORKSPACE_OPEN_EVIDENCE_ENV: &str =
+    "PEERS_ATELIER_FULL_E2E_WORKSPACE_OPEN_EVIDENCE";
+const ATELIER_FULL_E2E_IDE_LAUNCH_EVIDENCE_ENV: &str =
+    "PEERS_ATELIER_FULL_E2E_IDE_LAUNCH_EVIDENCE";
+const ATELIER_FULL_E2E_IDE_LAUNCHER_ENV: &str = "PEERS_ATELIER_FULL_E2E_IDE_LAUNCHER";
 const ATELIER_PROJECTION_CONTRACT_JSON: &str = include_str!(
     "../../../../../../apps/applets/atelier/contracts/atelier-projection.contract.json"
 );
@@ -1776,14 +1791,19 @@ fn ensure_atelier_projection_subscription(
     })
 }
 
-fn cancel_atelier_projection_subscriptions_for_session(applet_id: &str, session_id: &str) {
+fn cancel_atelier_projection_subscriptions_for_session(applet_id: &str, session_id: &str) -> bool {
+    let mut cancelled_any = false;
     if let Ok(mut guard) = atelier_projection_subscription_store().lock() {
         for record in guard.values_mut() {
             if record.applet_id == applet_id && record.session_id == session_id {
+                if !record.cancelled {
+                    cancelled_any = true;
+                }
                 record.cancelled = true;
             }
         }
     }
+    cancelled_any
 }
 
 fn is_atelier_projection_subscription_active(key: &str) -> bool {
@@ -2604,10 +2624,29 @@ fn clear_session_work(applet_id: &str, session_id: &str) {
     if let Ok(mut guard) = runtime_skill_store().lock() {
         guard.remove(&key);
     }
+    let mut had_atelier_projection_event_topic = false;
     if let Ok(mut guard) = event_subscription_store().lock() {
+        had_atelier_projection_event_topic = guard
+            .get(&key)
+            .is_some_and(|topics| topics.contains("atelier.projection.event"));
         guard.remove(&key);
     }
-    cancel_atelier_projection_subscriptions_for_session(applet_id, session_id);
+    let cancelled_atelier_projection =
+        cancel_atelier_projection_subscriptions_for_session(applet_id, session_id);
+    if had_atelier_projection_event_topic || cancelled_atelier_projection {
+        if let Err(error) = record_product_window_e2e_atelier_unsubscribe(
+            applet_id,
+            session_id,
+            "atelier.projection.event",
+        ) {
+            tracing::warn!(
+                error = %error,
+                applet_id = %applet_id,
+                session_id = %session_id,
+                "Failed to record product-window Atelier unsubscribe evidence during session teardown",
+            );
+        }
+    }
     if let Ok(mut guard) = event_outbox_store().lock() {
         guard.remove(&key);
     }
@@ -3725,7 +3764,9 @@ fn handle_atelier(
             Some(params.unwrap_or_else(|| json!({}))),
         )
         .map_err(|error| format!("atelier gateway request failed: {}", error)),
-        "workspace.open" | "workspaceOpen" => handle_atelier_workspace_open(params),
+        "workspace.open" | "workspaceOpen" => {
+            handle_atelier_workspace_open(applet_id, session_id, params)
+        }
         "artifact.body.fetch" | "artifactBodyFetch" => station_client::request_json(
             Method::POST,
             "/sub-agent/agent/atelier/artifact/body/fetch",
@@ -3780,7 +3821,11 @@ fn handle_atelier(
     }
 }
 
-fn handle_atelier_workspace_open(params: Option<Value>) -> Result<Value, String> {
+fn handle_atelier_workspace_open(
+    applet_id: &str,
+    session_id: &str,
+    params: Option<Value>,
+) -> Result<Value, String> {
     let params = params.unwrap_or_else(|| json!({}));
     let task_id = params
         .get("taskId")
@@ -3796,9 +3841,7 @@ fn handle_atelier_workspace_open(params: Option<Value>) -> Result<Value, String>
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "atelier.workspace.open requires params.workspaceUri".to_string())?;
-    if !workspace_uri.starts_with("pt-workspace://") {
-        return Err("atelier.workspace.open only accepts pt-workspace:// URIs".to_string());
-    }
+    validate_atelier_workspace_open_uri(task_id, workspace_uri)?;
     let ide_hint = params
         .get("ideHint")
         .or_else(|| params.get("ide_hint"))
@@ -3806,7 +3849,7 @@ fn handle_atelier_workspace_open(params: Option<Value>) -> Result<Value, String>
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("vscode");
-    Ok(json!({
+    let response = json!({
         "accepted": true,
         "opened": false,
         "taskId": task_id,
@@ -3814,7 +3857,58 @@ fn handle_atelier_workspace_open(params: Option<Value>) -> Result<Value, String>
         "ideHint": ide_hint,
         "mode": "host_intent",
         "reason": "Desktop Host accepted a validated Atelier workspace open intent; native IDE launch is gated for real E2E."
-    }))
+    });
+    record_atelier_full_e2e_workspace_open(
+        applet_id,
+        session_id,
+        task_id,
+        workspace_uri,
+        ide_hint,
+        &response,
+    )?;
+    record_atelier_full_e2e_ide_launch(applet_id, session_id, task_id, workspace_uri, ide_hint)?;
+    Ok(response)
+}
+
+fn validate_atelier_workspace_open_uri(task_id: &str, workspace_uri: &str) -> Result<(), String> {
+    let parsed = Url::parse(workspace_uri)
+        .map_err(|_| "atelier.workspace.open requires a valid workspaceUri".to_string())?;
+    if parsed.scheme() != "pt-workspace" {
+        return Err("atelier.workspace.open only accepts pt-workspace:// URIs".to_string());
+    }
+    if parsed.host_str() != Some("task") {
+        return Err("atelier.workspace.open requires pt-workspace://task/<taskId>".to_string());
+    }
+    if parsed.username() != "" || parsed.password().is_some() || parsed.port().is_some() {
+        return Err("atelier.workspace.open rejects authority credentials and ports".to_string());
+    }
+    if parsed.fragment().is_some() {
+        return Err("atelier.workspace.open rejects URI fragments".to_string());
+    }
+    let task_segments: Vec<&str> = parsed
+        .path_segments()
+        .ok_or_else(|| "atelier.workspace.open requires task path segment".to_string())?
+        .collect();
+    if task_segments.len() != 1
+        || task_segments[0].is_empty()
+        || task_segments[0].chars().any(char::is_whitespace)
+    {
+        return Err("atelier.workspace.open requires exactly one non-empty task path segment".to_string());
+    }
+    if task_segments[0] != task_id {
+        return Err("atelier.workspace.open task path must match params.taskId".to_string());
+    }
+    let query_pairs: Vec<(String, String)> = parsed
+        .query_pairs()
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect();
+    if query_pairs.len() != 1 || query_pairs[0].0 != "workspace" || query_pairs[0].1.trim().is_empty() {
+        return Err("atelier.workspace.open requires exactly one non-empty workspace query".to_string());
+    }
+    if query_pairs[0].1.chars().any(char::is_whitespace) {
+        return Err("atelier.workspace.open workspace query must not contain whitespace".to_string());
+    }
+    Ok(())
 }
 
 fn handle_atelier_artifact_preview_open(params: Option<Value>) -> Result<Value, String> {
@@ -4043,6 +4137,14 @@ fn start_atelier_projection_event_stream(
                     if !is_atelier_projection_subscription_active(&subscription_for_thread.key) {
                         break;
                     }
+                    if let Err(enqueue_error) = enqueue_atelier_projection_subscription_rejected(
+                        &applet_id,
+                        &session_id,
+                        "atelier.events.subscribe",
+                        &error,
+                    ) {
+                        tracing::warn!(error = %enqueue_error, applet_id = %applet_id, "Failed to enqueue Atelier projection subscription rejection");
+                    }
                     tracing::warn!(error = %error, applet_id = %applet_id, "Atelier projection event stream failed; reconnecting");
                 }
             }
@@ -4092,11 +4194,24 @@ fn stream_atelier_projection_events(
         .header("Accept", "text/event-stream")
         .json(&body)
         .send()
-        .map_err(|error| format!("Station Atelier event stream request failed: {error}"))?;
+        .map_err(|error| {
+            if error.is_timeout() {
+                format!("TIMEOUT Station Atelier event stream request failed: {error}")
+            } else {
+                format!("Station Atelier event stream request failed: {error}")
+            }
+        })?;
     if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().unwrap_or_default();
+        let body = body.trim();
+        if body.is_empty() {
+            return Err(format!(
+                "Station Atelier event stream returned HTTP {status}"
+            ));
+        }
         return Err(format!(
-            "Station Atelier event stream returned HTTP {}",
-            response.status()
+            "Station Atelier event stream returned HTTP {status}: {body}"
         ));
     }
 
@@ -4144,6 +4259,26 @@ fn stream_atelier_projection_events(
         }
     }
     Ok(())
+}
+
+fn enqueue_atelier_projection_subscription_rejected(
+    applet_id: &str,
+    session_id: &str,
+    method: &str,
+    reason: &str,
+) -> Result<(), String> {
+    enqueue_gateway_events(
+        applet_id,
+        session_id,
+        vec![json!({
+            "topic": "atelier.projection.event",
+            "payload": {
+                "kind": "atelier.projection.subscription-rejected",
+                "method": method,
+                "reason": reason,
+            }
+        })],
+    )
 }
 
 fn parse_atelier_sse_frame(frame: &str) -> Option<(String, Value)> {
@@ -4633,6 +4768,11 @@ fn handle_telemetry(
                 session_id,
                 params.as_ref(),
             )?;
+            record_product_window_e2e_atelier_artifact_body_fetched(
+                applet_id,
+                session_id,
+                params.as_ref(),
+            )?;
             record_product_window_e2e_atelier_artifact_preview_opened(
                 applet_id,
                 session_id,
@@ -4643,6 +4783,7 @@ fn handle_telemetry(
                 session_id,
                 params.as_ref(),
             )?;
+            record_atelier_full_e2e_desktop_ready(applet_id, session_id, params.as_ref())?;
             Ok(json!({ "ok": true }))
         }
         "reportError" | "mark" => Ok(json!({ "ok": true })),
@@ -4714,6 +4855,310 @@ fn record_product_window_e2e_telemetry(
         )
     })?;
     Ok(())
+}
+
+fn record_atelier_full_e2e_desktop_ready(
+    applet_id: &str,
+    session_id: &str,
+    params: Option<&Value>,
+) -> Result<(), String> {
+    let enabled = std::env::var(ATELIER_FULL_E2E_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+    if !enabled {
+        return Ok(());
+    }
+
+    let expected_applet_id =
+        std::env::var(ATELIER_FULL_E2E_APPLET_ID_ENV).unwrap_or_else(|_| "peers.atelier".into());
+    if expected_applet_id.trim() != "peers.atelier" || applet_id.trim() != expected_applet_id.trim()
+    {
+        return Ok(());
+    }
+
+    let event = params.map(|value| value.get("event").unwrap_or(value));
+    let name = event
+        .and_then(|value| value.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if name != "official_applet.bootstrap" {
+        return Ok(());
+    }
+    let service = event
+        .and_then(|value| value.get("properties"))
+        .and_then(|value| value.get("service"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if service != "atelier" {
+        return Err("Atelier full E2E bootstrap telemetry must prove service=atelier".to_string());
+    }
+
+    let launch_id = std::env::var(ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV)
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default();
+    if launch_id.is_empty() {
+        return Err(format!(
+            "{} must be present for Atelier full E2E ready evidence",
+            ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV
+        ));
+    }
+    let station_url = std::env::var("PEERS_APPLET_SERVICE_ATELIER")
+        .or_else(|_| std::env::var("PEERS_STATION_URL"))
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .unwrap_or_default();
+    if station_url.is_empty() {
+        return Err(
+            "PEERS_APPLET_SERVICE_ATELIER or PEERS_STATION_URL must be present for Atelier full E2E ready evidence"
+                .to_string(),
+        );
+    }
+
+    let output_path = match std::env::var(ATELIER_FULL_E2E_DESKTOP_READY_EVIDENCE_ENV) {
+        Ok(path) if !path.trim().is_empty() => PathBuf::from(path),
+        _ => return Ok(()),
+    };
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create Atelier full E2E Desktop ready evidence directory: {}",
+                error
+            )
+        })?;
+    }
+
+    let evidence = json!({
+        "ok": true,
+        "launchId": launch_id,
+        "appletId": "peers.atelier",
+        "sessionId": session_id,
+        "readiness": "NOT_READY",
+        "globalReady": false,
+        "serviceBinding": {
+            "service": "atelier",
+            "transport": "sdk.network.request",
+            "stationUrlRedacted": true,
+            "stationUrlHash": atelier_full_e2e_sha256(&station_url),
+            "stationPathPrefix": "/applets/atelier/v1"
+        },
+        "productShell": {
+            "kind": "desktop_host_product_shell",
+            "appletId": "peers.atelier"
+        },
+        "productWindow": {
+            "kind": "desktop_product_window",
+            "appletId": "peers.atelier",
+            "mounted": true
+        },
+        "event": name,
+        "completedAt": now_timestamp(),
+    });
+    fs::write(
+        &output_path,
+        serde_json::to_vec_pretty(&evidence).map_err(|error| {
+            format!(
+                "failed to serialize Atelier full E2E Desktop ready evidence: {}",
+                error
+            )
+        })?,
+    )
+    .map_err(|error| {
+        format!(
+            "failed to write Atelier full E2E Desktop ready evidence {}: {}",
+            output_path.display(),
+            error
+        )
+    })
+}
+
+fn atelier_full_e2e_enabled_for(applet_id: &str) -> bool {
+    let enabled = std::env::var(ATELIER_FULL_E2E_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+    if !enabled {
+        return false;
+    }
+    let expected_applet_id =
+        std::env::var(ATELIER_FULL_E2E_APPLET_ID_ENV).unwrap_or_else(|_| "peers.atelier".into());
+    expected_applet_id.trim() == "peers.atelier" && applet_id.trim() == expected_applet_id.trim()
+}
+
+fn atelier_full_e2e_sha256(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    format!("sha256:{}", hex::encode(hasher.finalize()))
+}
+
+fn record_atelier_full_e2e_workspace_open(
+    applet_id: &str,
+    session_id: &str,
+    task_id: &str,
+    workspace_uri: &str,
+    ide_hint: &str,
+    response: &Value,
+) -> Result<(), String> {
+    if !atelier_full_e2e_enabled_for(applet_id) {
+        return Ok(());
+    }
+    let output_path = match std::env::var(ATELIER_FULL_E2E_WORKSPACE_OPEN_EVIDENCE_ENV) {
+        Ok(path) if !path.trim().is_empty() => PathBuf::from(path),
+        _ => return Ok(()),
+    };
+    let launch_id = std::env::var(ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV)
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default();
+    if launch_id.is_empty() {
+        return Err(format!(
+            "{} must be present for Atelier full E2E workspace open evidence",
+            ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV
+        ));
+    }
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create Atelier full E2E workspace open evidence directory: {}",
+                error
+            )
+        })?;
+    }
+
+    let evidence = json!({
+        "ok": true,
+        "launchId": launch_id,
+        "appletId": "peers.atelier",
+        "sessionId": session_id,
+        "action": "atelier.workspace.open",
+        "taskId": task_id,
+        "workspaceUri": workspace_uri,
+        "ideHintRedacted": true,
+        "ideTargetHash": atelier_full_e2e_sha256(ide_hint),
+        "accepted": response.get("accepted").and_then(Value::as_bool).unwrap_or(false),
+        "opened": response.get("opened").and_then(Value::as_bool).unwrap_or(false),
+        "mode": response.get("mode").and_then(Value::as_str).unwrap_or("host_intent"),
+        "hostSideEffect": "workspace_open_intent",
+        "realIdeLaunchProven": false,
+        "completedAt": now_timestamp(),
+    });
+    fs::write(
+        &output_path,
+        serde_json::to_vec_pretty(&evidence).map_err(|error| {
+            format!(
+                "failed to serialize Atelier full E2E workspace open evidence: {}",
+                error
+            )
+        })?,
+    )
+    .map_err(|error| {
+        format!(
+            "failed to write Atelier full E2E workspace open evidence {}: {}",
+            output_path.display(),
+            error
+        )
+    })
+}
+
+fn record_atelier_full_e2e_ide_launch(
+    applet_id: &str,
+    session_id: &str,
+    task_id: &str,
+    workspace_uri: &str,
+    ide_hint: &str,
+) -> Result<(), String> {
+    if !atelier_full_e2e_enabled_for(applet_id) {
+        return Ok(());
+    }
+    let output_path = match std::env::var(ATELIER_FULL_E2E_IDE_LAUNCH_EVIDENCE_ENV) {
+        Ok(path) if !path.trim().is_empty() => PathBuf::from(path),
+        _ => return Ok(()),
+    };
+    let launcher = std::env::var(ATELIER_FULL_E2E_IDE_LAUNCHER_ENV)
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default();
+    if launcher.is_empty() || launcher.contains('\0') || launcher.contains('\n') || launcher.contains('\r') {
+        return Err(format!(
+            "{} must name a non-empty executable path for Atelier full E2E IDE launch evidence",
+            ATELIER_FULL_E2E_IDE_LAUNCHER_ENV
+        ));
+    }
+    let launch_id = std::env::var(ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV)
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default();
+    if launch_id.is_empty() {
+        return Err(format!(
+            "{} must be present for Atelier full E2E IDE launch evidence",
+            ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV
+        ));
+    }
+
+    let parsed = Url::parse(workspace_uri)
+        .map_err(|_| "atelier.workspace.open requires a valid workspaceUri".to_string())?;
+    let workspace_id = parsed
+        .query_pairs()
+        .find_map(|(key, value)| (key == "workspace").then(|| value.into_owned()))
+        .ok_or_else(|| "atelier.workspace.open requires workspace query for IDE launch evidence".to_string())?;
+
+    let status = Command::new(&launcher)
+        .arg(ide_hint)
+        .arg(task_id)
+        .arg(&workspace_id)
+        .arg(workspace_uri)
+        .status()
+        .map_err(|error| {
+            format!(
+                "failed to run Atelier full E2E IDE launcher {}: {}",
+                launcher, error
+            )
+        })?;
+    if !status.success() {
+        return Err(format!(
+            "Atelier full E2E IDE launcher {} exited with status {}",
+            launcher, status
+        ));
+    }
+
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create Atelier full E2E IDE launch evidence directory: {}",
+                error
+            )
+        })?;
+    }
+
+    let evidence = json!({
+        "ok": true,
+        "launchId": launch_id,
+        "appletId": "peers.atelier",
+        "sessionId": session_id,
+        "action": "atelier.workspace.open",
+        "taskId": task_id,
+        "workspaceUri": workspace_uri,
+        "ideTargetRedacted": true,
+        "ideTargetHash": atelier_full_e2e_sha256(ide_hint),
+        "realIdeLaunchProven": true,
+        "launchOwner": "desktop_host",
+        "resolver": "desktop_host.pt_workspace_uri",
+        "workspaceId": workspace_id,
+        "launchCommand": "env:PEERS_ATELIER_FULL_E2E_IDE_LAUNCHER",
+        "appletFileShellExecuteExposed": false,
+        "appletOpenExternalUrlExposed": false,
+        "completedAt": now_timestamp(),
+    });
+    fs::write(
+        &output_path,
+        serde_json::to_vec_pretty(&evidence).map_err(|error| {
+            format!(
+                "failed to serialize Atelier full E2E IDE launch evidence: {}",
+                error
+            )
+        })?,
+    )
+    .map_err(|error| {
+        format!(
+            "failed to write Atelier full E2E IDE launch evidence {}: {}",
+            output_path.display(),
+            error
+        )
+    })
 }
 
 fn record_product_window_e2e_atelier_rendered_projection(
@@ -5076,6 +5521,78 @@ fn record_product_window_e2e_atelier_artifact_gate_rendered(
     .map_err(|error| {
         format!(
             "failed to write product-window Atelier artifact/gate evidence {}: {}",
+            output_path.display(),
+            error
+        )
+    })?;
+    Ok(())
+}
+
+fn record_product_window_e2e_atelier_artifact_body_fetched(
+    applet_id: &str,
+    session_id: &str,
+    params: Option<&Value>,
+) -> Result<(), String> {
+    let enabled = std::env::var(PRODUCT_WINDOW_E2E_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+    if !enabled {
+        return Ok(());
+    }
+
+    let expected_applet_id = std::env::var(PRODUCT_WINDOW_E2E_APPLET_ID_ENV).unwrap_or_default();
+    if expected_applet_id.trim().is_empty() || expected_applet_id.trim() != applet_id.trim() {
+        return Ok(());
+    }
+
+    let event = params.map(|value| value.get("event").unwrap_or(value));
+    let name = event
+        .and_then(|value| value.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if name != "atelier.artifact.body.fetched" {
+        return Ok(());
+    }
+
+    let output_path =
+        match std::env::var(PRODUCT_WINDOW_E2E_ATELIER_ARTIFACT_BODY_FETCHED_EVIDENCE_ENV) {
+            Ok(path) if !path.trim().is_empty() => PathBuf::from(path),
+            _ => return Ok(()),
+        };
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create product-window Atelier artifact body fetch evidence directory: {}",
+                error
+            )
+        })?;
+    }
+
+    let evidence = json!({
+        "ok": true,
+        "appletId": applet_id,
+        "sessionId": session_id,
+        "launchMode": "product-window-certification",
+        "productShell": true,
+        "event": name,
+        "properties": event
+            .and_then(|value| value.get("properties"))
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+        "recordedAt": now_millis(),
+    });
+    fs::write(
+        &output_path,
+        serde_json::to_vec_pretty(&evidence).map_err(|error| {
+            format!(
+                "failed to serialize product-window Atelier artifact body fetch evidence: {}",
+                error
+            )
+        })?,
+    )
+    .map_err(|error| {
+        format!(
+            "failed to write product-window Atelier artifact body fetch evidence {}: {}",
             output_path.display(),
             error
         )
@@ -5737,7 +6254,25 @@ mod tests {
                 .and_then(|body| body.get("tasks"))
                 .and_then(Value::as_array)
                 .map(Vec::len),
-            Some(0)
+            Some(1)
+        );
+        assert_eq!(
+            loaded
+                .get("body")
+                .and_then(|body| body.get("selectedTaskId"))
+                .and_then(Value::as_str),
+            Some(task_id.as_str())
+        );
+        assert_eq!(
+            loaded
+                .get("body")
+                .and_then(|body| body.get("workspace"))
+                .and_then(|body| body.get("tasks"))
+                .and_then(Value::as_array)
+                .and_then(|tasks| tasks.first())
+                .and_then(|task| task.get("id"))
+                .and_then(Value::as_str),
+            Some(task_id.as_str())
         );
 
         let subscribe_topic = applets_invoke_registered(
@@ -5832,8 +6367,8 @@ mod tests {
             replay_probe
         );
         assert!(
-			replay_probe_request_matches(&replay_probe_requests, 1, &[2]),
-			"reconnected stream request should use persisted cursor afterEventSeq=1 and replay seq=2: {:?}",
+            replay_probe_request_replays_after_cursor(&replay_probe_requests, 1, 2),
+            "reconnected stream request should use persisted cursor afterEventSeq=1, replay seq=2, and not replay stale events: {:?}",
 			replay_probe
 		);
         assert_eq!(
@@ -5869,6 +6404,7 @@ mod tests {
         );
 
         let cursor_session_id = unique_session_id("session-atelier-product-cursor");
+        let cursor_data_dir = temp_data_dir("atelier-real-product-gate-cursor");
         let subscribe_cursor_topic = applets_invoke_registered(
             gateway_context.clone(),
             atelier_invoke(
@@ -5877,7 +6413,7 @@ mod tests {
                 "subscribe",
                 Some(json!({ "topic": "atelier.projection.event" })),
             ),
-            &data_dir,
+            &cursor_data_dir,
         );
         assert!(
             subscribe_cursor_topic.ok,
@@ -5896,7 +6432,7 @@ mod tests {
                     "afterEventSeq": 1
                 })),
             ),
-            &data_dir,
+            &cursor_data_dir,
         );
         assert!(
             subscribe_cursor_stream.ok,
@@ -5910,7 +6446,7 @@ mod tests {
             let poll = applets_invoke_registered(
                 gateway_context.clone(),
                 atelier_invoke(&cursor_session_id, "events", "poll", None),
-                &data_dir,
+                &cursor_data_dir,
             );
             assert!(poll.ok, "cursor events.poll failed: {:?}", poll.error);
             let payload: Value = serde_json::from_str(&poll.data.unwrap().status).unwrap();
@@ -6016,6 +6552,23 @@ mod tests {
         })
     }
 
+    fn replay_probe_request_replays_after_cursor(
+        requests: &[Value],
+        after_event_seq: i64,
+        required_seq: i64,
+    ) -> bool {
+        requests.iter().any(|request| {
+            let replayed_seqs = request
+                .get("replayedSeqs")
+                .and_then(Value::as_array)
+                .map(|values| values.iter().filter_map(Value::as_i64).collect::<Vec<_>>())
+                .unwrap_or_default();
+            request.get("afterEventSeq").and_then(Value::as_i64) == Some(after_event_seq)
+                && replayed_seqs.contains(&required_seq)
+                && replayed_seqs.iter().all(|seq| *seq > after_event_seq)
+        })
+    }
+
     fn subscribe_event(
         session_id: &str,
         topic: &str,
@@ -6045,6 +6598,77 @@ mod tests {
 
     fn unique_session_id(prefix: &str) -> String {
         format!("{}-{}", prefix, build_request_id())
+    }
+
+    fn full_e2e_env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("full E2E env lock should not be poisoned")
+    }
+
+    #[test]
+    fn atelier_full_e2e_desktop_ready_evidence_is_schema_strong() {
+        let _guard = full_e2e_env_lock();
+        let data_dir = temp_data_dir("atelier-full-e2e-ready");
+        let output_path = data_dir.join("atelier-full-e2e-desktop-ready.json");
+        let station_url = "http://127.0.0.1:19091";
+        std::env::set_var(ATELIER_FULL_E2E_ENV, "1");
+        std::env::set_var(ATELIER_FULL_E2E_APPLET_ID_ENV, "peers.atelier");
+        std::env::set_var(ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV, "launch-test-1");
+        std::env::set_var(
+            ATELIER_FULL_E2E_DESKTOP_READY_EVIDENCE_ENV,
+            &output_path,
+        );
+        std::env::set_var("PEERS_APPLET_SERVICE_ATELIER", station_url);
+
+        let result = record_atelier_full_e2e_desktop_ready(
+            "peers.atelier",
+            "session-atl-ready",
+            Some(&json!({
+                "event": {
+                    "name": "official_applet.bootstrap",
+                    "properties": { "service": "atelier" }
+                }
+            })),
+        );
+
+        std::env::remove_var(ATELIER_FULL_E2E_ENV);
+        std::env::remove_var(ATELIER_FULL_E2E_APPLET_ID_ENV);
+        std::env::remove_var(ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV);
+        std::env::remove_var(ATELIER_FULL_E2E_DESKTOP_READY_EVIDENCE_ENV);
+        std::env::remove_var("PEERS_APPLET_SERVICE_ATELIER");
+
+        assert!(result.is_ok(), "ready evidence failed: {:?}", result);
+        let evidence: Value = serde_json::from_slice(
+            &fs::read(&output_path).expect("ready evidence should be written"),
+        )
+        .expect("ready evidence should be JSON");
+        assert_eq!(evidence["ok"], true);
+        assert_eq!(evidence["launchId"], "launch-test-1");
+        assert_eq!(evidence["appletId"], "peers.atelier");
+        assert_eq!(evidence["readiness"], "NOT_READY");
+        assert_eq!(evidence["globalReady"], false);
+        assert_eq!(evidence["serviceBinding"]["service"], "atelier");
+        assert_eq!(
+            evidence["serviceBinding"]["transport"],
+            "sdk.network.request"
+        );
+        assert_eq!(evidence["serviceBinding"]["stationUrl"], station_url);
+        assert_eq!(
+            evidence["serviceBinding"]["stationPathPrefix"],
+            "/applets/atelier/v1"
+        );
+        assert_eq!(
+            evidence["productShell"]["kind"],
+            "desktop_host_product_shell"
+        );
+        assert_eq!(
+            evidence["productWindow"]["kind"],
+            "desktop_product_window"
+        );
+        assert_eq!(evidence["productWindow"]["mounted"], true);
     }
 
     fn register_e2e_provider(provider_id: &str, protocol: &str, model_id: &str, base_url: &str) {
@@ -8177,6 +8801,190 @@ mod tests {
             applet_error_code(&result).as_deref(),
             Some("PERMISSION_DENIED")
         );
+    }
+
+    #[test]
+    fn atelier_workspace_open_accepts_host_intent_only_canonical_uri() {
+        let _guard = full_e2e_env_lock();
+        let result = handle_atelier_workspace_open(
+            "peers.atelier",
+            "session-workspace-open",
+            Some(json!({
+                "taskId": "task-1",
+                "workspaceUri": "pt-workspace://task/task-1?workspace=workspace-1",
+                "ideHint": "vscode",
+                "shell": "open .",
+                "execute": true,
+                "openExternalUrl": "file:///tmp/workspace"
+            })),
+        )
+        .expect("canonical Host workspace intent should be accepted");
+
+        assert_eq!(result["accepted"], true);
+        assert_eq!(result["opened"], false);
+        assert_eq!(result["taskId"], "task-1");
+        assert_eq!(
+            result["workspaceUri"],
+            "pt-workspace://task/task-1?workspace=workspace-1"
+        );
+        assert_eq!(result["ideHint"], "vscode");
+        assert_eq!(result["mode"], "host_intent");
+        assert!(result.get("localPath").is_none());
+        assert!(result.get("file").is_none());
+        assert!(result.get("shell").is_none());
+        assert!(result.get("execute").is_none());
+        assert!(result.get("run").is_none());
+        assert!(result.get("openExternalUrl").is_none());
+    }
+
+    #[test]
+    fn atelier_workspace_open_rejects_non_contract_uri_shapes() {
+        let _guard = full_e2e_env_lock();
+        for workspace_uri in [
+            "file:///tmp/workspace",
+            "https://example.com/workspace",
+            "pt-workspace://project/task-1?workspace=workspace-1",
+            "pt-workspace://task/task-2?workspace=workspace-1",
+            "pt-workspace://task/task-1/extra?workspace=workspace-1",
+            "pt-workspace://task/task-1",
+            "pt-workspace://task/task-1?workspace=",
+            "pt-workspace://task/task-1?workspace=workspace-1&extra=1",
+            "pt-workspace://task/task-1?workspace=workspace-1#fragment",
+            "pt-workspace://user@task/task-1?workspace=workspace-1",
+            "pt-workspace://task:443/task-1?workspace=workspace-1",
+        ] {
+            let result = handle_atelier_workspace_open(
+                "peers.atelier",
+                "session-workspace-open",
+                Some(json!({
+                    "taskId": "task-1",
+                    "workspaceUri": workspace_uri
+                })),
+            );
+
+            assert!(
+                result.is_err(),
+                "expected workspace URI to be rejected: {}",
+                workspace_uri
+            );
+        }
+    }
+
+    #[test]
+    fn atelier_workspace_open_writes_full_e2e_action_evidence() {
+        let _guard = full_e2e_env_lock();
+        let data_dir = temp_data_dir("atelier-full-e2e-workspace-open");
+        let output_path = data_dir.join("atelier-full-e2e-workspace-open.json");
+        std::env::set_var(ATELIER_FULL_E2E_ENV, "1");
+        std::env::set_var(ATELIER_FULL_E2E_APPLET_ID_ENV, "peers.atelier");
+        std::env::set_var(ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV, "launch-test-1");
+        std::env::set_var(ATELIER_FULL_E2E_WORKSPACE_OPEN_EVIDENCE_ENV, &output_path);
+
+        let result = handle_atelier_workspace_open(
+            "peers.atelier",
+            "session-atl-action",
+            Some(json!({
+                "taskId": "task-1",
+                "workspaceUri": "pt-workspace://task/task-1?workspace=workspace-1",
+                "ideHint": "vscode",
+            })),
+        );
+
+        std::env::remove_var(ATELIER_FULL_E2E_ENV);
+        std::env::remove_var(ATELIER_FULL_E2E_APPLET_ID_ENV);
+        std::env::remove_var(ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV);
+        std::env::remove_var(ATELIER_FULL_E2E_WORKSPACE_OPEN_EVIDENCE_ENV);
+
+        assert!(result.is_ok(), "workspace open failed: {:?}", result);
+        let evidence: Value = serde_json::from_slice(
+            &fs::read(&output_path).expect("workspace open evidence should be written"),
+        )
+        .expect("workspace open evidence should be JSON");
+        assert_eq!(evidence["ok"], true);
+        assert_eq!(evidence["launchId"], "launch-test-1");
+        assert_eq!(evidence["appletId"], "peers.atelier");
+        assert_eq!(evidence["sessionId"], "session-atl-action");
+        assert_eq!(evidence["action"], "atelier.workspace.open");
+        assert_eq!(evidence["taskId"], "task-1");
+        assert_eq!(
+            evidence["workspaceUri"],
+            "pt-workspace://task/task-1?workspace=workspace-1"
+        );
+        assert_eq!(evidence["ideHint"], "vscode");
+        assert_eq!(evidence["accepted"], true);
+        assert_eq!(evidence["opened"], false);
+        assert_eq!(evidence["mode"], "host_intent");
+        assert_eq!(evidence["hostSideEffect"], "workspace_open_intent");
+        assert_eq!(evidence["realIdeLaunchProven"], false);
+    }
+
+    #[test]
+    fn atelier_workspace_open_writes_full_e2e_ide_launch_evidence_with_controlled_launcher() {
+        let _guard = full_e2e_env_lock();
+        let data_dir = temp_data_dir("atelier-full-e2e-ide-launch");
+        let workspace_output_path = data_dir.join("atelier-full-e2e-workspace-open.json");
+        let ide_output_path = data_dir.join("atelier-full-e2e-ide-launch.json");
+        std::env::set_var(ATELIER_FULL_E2E_ENV, "1");
+        std::env::set_var(ATELIER_FULL_E2E_APPLET_ID_ENV, "peers.atelier");
+        std::env::set_var(ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV, "launch-test-ide-1");
+        std::env::set_var(
+            ATELIER_FULL_E2E_WORKSPACE_OPEN_EVIDENCE_ENV,
+            &workspace_output_path,
+        );
+        std::env::set_var(ATELIER_FULL_E2E_IDE_LAUNCH_EVIDENCE_ENV, &ide_output_path);
+        std::env::set_var(ATELIER_FULL_E2E_IDE_LAUNCHER_ENV, "/usr/bin/true");
+
+        let result = handle_atelier_workspace_open(
+            "peers.atelier",
+            "session-atl-ide-launch",
+            Some(json!({
+                "taskId": "task-1",
+                "workspaceUri": "pt-workspace://task/task-1?workspace=workspace-1",
+                "ideHint": "controlled-ide",
+            })),
+        );
+
+        std::env::remove_var(ATELIER_FULL_E2E_ENV);
+        std::env::remove_var(ATELIER_FULL_E2E_APPLET_ID_ENV);
+        std::env::remove_var(ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV);
+        std::env::remove_var(ATELIER_FULL_E2E_WORKSPACE_OPEN_EVIDENCE_ENV);
+        std::env::remove_var(ATELIER_FULL_E2E_IDE_LAUNCH_EVIDENCE_ENV);
+        std::env::remove_var(ATELIER_FULL_E2E_IDE_LAUNCHER_ENV);
+
+        assert!(result.is_ok(), "workspace open failed: {:?}", result);
+        let response = result.expect("workspace open response should be present");
+        assert_eq!(response["accepted"], true);
+        assert_eq!(response["opened"], false);
+        assert_eq!(response["mode"], "host_intent");
+        assert!(response.get("shell").is_none());
+        assert!(response.get("execute").is_none());
+        assert!(response.get("openExternalUrl").is_none());
+
+        let ide_evidence: Value = serde_json::from_slice(
+            &fs::read(&ide_output_path).expect("IDE launch evidence should be written"),
+        )
+        .expect("IDE launch evidence should be JSON");
+        assert_eq!(ide_evidence["ok"], true);
+        assert_eq!(ide_evidence["launchId"], "launch-test-ide-1");
+        assert_eq!(ide_evidence["appletId"], "peers.atelier");
+        assert_eq!(ide_evidence["sessionId"], "session-atl-ide-launch");
+        assert_eq!(ide_evidence["action"], "atelier.workspace.open");
+        assert_eq!(ide_evidence["taskId"], "task-1");
+        assert_eq!(
+            ide_evidence["workspaceUri"],
+            "pt-workspace://task/task-1?workspace=workspace-1"
+        );
+        assert_eq!(ide_evidence["ideTarget"], "controlled-ide");
+        assert_eq!(ide_evidence["realIdeLaunchProven"], true);
+        assert_eq!(ide_evidence["launchOwner"], "desktop_host");
+        assert_eq!(ide_evidence["resolver"], "desktop_host.pt_workspace_uri");
+        assert_eq!(ide_evidence["workspaceId"], "workspace-1");
+        assert_eq!(
+            ide_evidence["launchCommand"],
+            "env:PEERS_ATELIER_FULL_E2E_IDE_LAUNCHER"
+        );
+        assert_eq!(ide_evidence["appletFileShellExecuteExposed"], false);
+        assert_eq!(ide_evidence["appletOpenExternalUrlExposed"], false);
     }
 
     #[test]

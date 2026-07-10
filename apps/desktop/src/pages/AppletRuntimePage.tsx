@@ -10,10 +10,10 @@ import LynxContainer from '../applet/LynxContainer';
 import { LynxDebugPanel, createLynxDebugEvent, type LynxDebugEvent } from '../applet/LynxDebugPanel';
 import { handleAtelierArtifactPreviewHostUiRequest } from '../applet/AtelierArtifactPreviewHost';
 import { getAppletProductWindowLaunchContext } from '../applet/productWindowE2E';
+import { useAppletsStore } from '../store/applets';
 import { requestPageRuntimeRelease } from '../kernel/pageRuntimeLease';
 import { markRouteVisible } from '../kernel/frontendRuntimeProfiler';
 import { usePageContext } from '../kernel/usePageContext';
-import { useActiveAppletsSlice } from './useActiveAppletsStore';
 import { api } from '../services/desktop_api';
 import { log } from '../utils/logger';
 import type { AppletHostDeviceRequest, AppletHostNavigationRequest, AppletHostUiRequest } from '../applet/lynx-host-element';
@@ -35,27 +35,18 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
   const [immersive, setImmersive] = useState(() => isStandaloneAppletShell());
   const [controlsVisible, setControlsVisible] = useState(true);
   const productWindowCloseAfterRenderRef = useRef(false);
-  const {
-    loading,
-    applets,
-    catalogApplets,
-    runtimeErrorDetail,
-    runtimeErrorKey,
-    allDiagnostics,
-  } = useActiveAppletsSlice((state) => ({
-    loading: state.loading,
-    applets: state.applets,
-    catalogApplets: state.catalogApplets,
-    runtimeErrorDetail: state.runtimeErrorDetailById[appletId],
-    runtimeErrorKey: state.runtimeErrorKeyById[appletId],
-    allDiagnostics: state.diagnostics,
-  }));
+  const loading = useAppletsStore((state) => state.loading);
+  const applets = useAppletsStore((state) => state.applets);
+  const catalogApplets = useAppletsStore((state) => state.catalogApplets);
+  const runtimeErrorDetail = useAppletsStore((state) => state.runtimeErrorDetailById[appletId]);
+  const runtimeErrorKey = useAppletsStore((state) => state.runtimeErrorKeyById[appletId]);
   const runtimeApplet = useMemo(
     () => [...applets, ...catalogApplets].find((item) => item.manifest.id === appletId),
     [applets, catalogApplets, appletId],
   );
   const applet = runtimeApplet?.manifest;
   const appletStatus = runtimeApplet?.status;
+  const allDiagnostics = useAppletsStore((state) => state.diagnostics);
   const diagnostics = useMemo(
     () => allDiagnostics
       .filter((diag) => diag.source === appletId)

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -31,21 +32,28 @@ import (
 )
 
 const (
-	gateActorID              = "atelier-real-product-gate-actor"
-	gateAgentID              = "atelier-real-product-gate-agent"
-	gateTaskID               = "atelier-real-product-gate-task"
-	gateDecisionID           = "atelier-real-product-gate-decision"
-	gateBlockingDecisionID   = "atelier-real-product-gate-blocking-decision"
-	gateArtifactID           = "atelier-real-product-gate-artifact"
-	gateBlockingGateID       = "atelier-real-product-blocking-gate"
-	gateBlockingNodeID       = "atelier-real-product-gate-node"
-	gateScenarioArtifactGate = "artifact_gate_blocking"
-	gateScenarioLiveResume   = "live_resume_provider"
-	gateLiveResumeNodeID     = "atelier-real-product-live-resume-node"
-	gateLiveResumeProviderID = "atelier-live-resume-provider"
-	atelierMount             = "/applets/atelier"
-	agentEventAPI            = "/sub-agent/agent/events/subscribe"
-	providerCapabilitiesAPI  = "/sub-agent/agent/atelier/provider/capabilities"
+	gateActorID                            = "atelier-real-product-gate-actor"
+	gateAgentID                            = "atelier-real-product-gate-agent"
+	gateTaskID                             = "atelier-real-product-gate-task"
+	gateDecisionID                         = "atelier-real-product-gate-decision"
+	gateBlockingDecisionID                 = "atelier-real-product-gate-blocking-decision"
+	gateArtifactID                         = "atelier-real-product-gate-artifact"
+	gateBlockingGateID                     = "atelier-real-product-blocking-gate"
+	gateBlockingNodeID                     = "atelier-real-product-gate-node"
+	gateScenarioArtifactGate               = "artifact_gate_blocking"
+	gateScenarioLiveResume                 = "live_resume_provider"
+	gateRecoveryActionEnv                  = "PEERS_ATELIER_GATE_RECOVERY_ACTION"
+	gateFailureScenarioEnv                 = "PEERS_ATELIER_GATE_EVENT_REPLAY_FAILURE_SCENARIO"
+	gateLiveResumeNodeID                   = "atelier-real-product-live-resume-node"
+	gateLiveResumeProviderID               = "atelier-live-resume-provider"
+	gateControlledProviderName             = "openai"
+	gateControlledProviderModel            = "atelier-live-resume-model"
+	gateArtifactRerunProviderFinalResponse = "Atelier artifact gate rerun provider recovery completed through Station orchestration."
+	gateArtifactBodyText                   = "# Atelier blocking gate evidence\n\nStation-owned safe text artifact body for product-window fetch evidence.\n"
+	gateArtifactBodyKind                   = "markdown"
+	atelierMount                           = "/applets/atelier"
+	agentEventAPI                          = "/sub-agent/agent/events/subscribe"
+	providerCapabilitiesAPI                = "/sub-agent/agent/atelier/provider/capabilities"
 )
 
 type sqliteStore struct {
@@ -251,6 +259,24 @@ func createAtelierProjectionTables(db *gorm.DB) error {
 			payload_json text,
 			created_at datetime NOT NULL
 		)`,
+		`CREATE TABLE agent_task_artifact_blobs (
+                        blob_id text PRIMARY KEY,
+                        artifact_id text NOT NULL,
+                        task_id text NOT NULL,
+                        step_id text,
+                        turn_id text,
+                        event_id text,
+                        event_seq integer NOT NULL DEFAULT 0,
+                        body_kind text,
+                        body_uri text,
+                        content_hash text,
+                        byte_size integer NOT NULL DEFAULT 0,
+                        retention_policy text,
+                        retention_status text,
+                        body_text text,
+                        created_at datetime NOT NULL,
+                        expires_at datetime
+                )`,
 		`CREATE TABLE agent_task_gate_results (
 			gate_result_id text PRIMARY KEY,
 			task_id text NOT NULL,
@@ -548,6 +574,7 @@ type providerProbe struct {
 
 type providerProbeRequest struct {
 	CallIndex    int    `json:"callIndex"`
+	Scenario     string `json:"scenario"`
 	Model        string `json:"model"`
 	MessageCount int    `json:"messageCount"`
 	WaitTool     bool   `json:"waitTool"`
@@ -736,6 +763,16 @@ func run(ctx context.Context) error {
 		return err
 	}
 	now := time.Now().UTC()
+	scenario := strings.TrimSpace(os.Getenv("PEERS_ATELIER_GATE_SCENARIO"))
+	recoveryAction := strings.TrimSpace(os.Getenv(gateRecoveryActionEnv))
+	agentConfig := `{"executorKind":"desktop_device"}`
+	agentProviderID := ""
+	agentModelName := ""
+	if scenario == gateScenarioArtifactGate && recoveryAction == "rerun_failed_node" {
+		agentConfig = `{"executorKind":"station_hosted"}`
+		agentProviderID = gateControlledProviderName
+		agentModelName = gateControlledProviderModel
+	}
 	if err := db.Exec(`INSERT INTO agents (
 		id, name, title, description, provider_id, model_name, effort,
 		visibility, owner_actor_id, config_json, created_at, updated_at
@@ -744,18 +781,17 @@ func run(ctx context.Context) error {
 		"Atelier Product Window Gate Agent",
 		"Atelier Product Window Gate Agent",
 		"Desktop executor fixture for Atelier product-window createFromGoal gate",
-		"",
-		"",
+		agentProviderID,
+		agentModelName,
 		"",
 		string(agentdomain.AgentVisibilityPrivate),
 		gateActorID,
-		`{"executorKind":"desktop_device"}`,
+		agentConfig,
 		now,
 		now,
 	).Error; err != nil {
 		return err
 	}
-	scenario := strings.TrimSpace(os.Getenv("PEERS_ATELIER_GATE_SCENARIO"))
 	decisionID := gateDecisionID
 	taskStatus := int32(agentmodel.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING)
 	taskMetaValues := map[string]string{
@@ -940,6 +976,8 @@ func run(ctx context.Context) error {
 		},
 	}
 	if scenario == gateScenarioArtifactGate {
+		artifactBodyHash := gateArtifactBodyHash(gateArtifactBodyText)
+		artifactBodyRef := fmt.Sprintf("artifact://%s/%s/body", gateTaskID, gateArtifactID)
 		seededEvents = []struct {
 			id        string
 			seq       int64
@@ -973,12 +1011,12 @@ func run(ctx context.Context) error {
 					"checksum":              "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 					"produced_by":           "station.gate_runner",
 					"preview_hint":          "markdown",
-					"body_ref":              fmt.Sprintf("artifact://%s/%s/body", gateTaskID, gateArtifactID),
-					"body_kind":             "text",
-					"body_size":             64,
-					"body_hash":             "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+					"body_ref":              artifactBodyRef,
+					"body_kind":             gateArtifactBodyKind,
+					"body_size":             len([]byte(gateArtifactBodyText)),
+					"body_hash":             artifactBodyHash,
 					"body_retention_policy": "station_managed",
-					"body_retention_status": "retained",
+					"body_retention_status": "active",
 				},
 			},
 			{
@@ -1031,6 +1069,67 @@ func run(ctx context.Context) error {
 					},
 				},
 			},
+		}
+	}
+	if scenario == gateScenarioArtifactGate {
+		artifactBodyRef := fmt.Sprintf("artifact://%s/%s/body", gateTaskID, gateArtifactID)
+		artifactPayload, err := json.Marshal(map[string]any{
+			"bodyRef":         artifactBodyRef,
+			"bodyHash":        gateArtifactBodyHash(gateArtifactBodyText),
+			"bodySize":        len([]byte(gateArtifactBodyText)),
+			"bodyKind":        gateArtifactBodyKind,
+			"previewHint":     "markdown",
+			"retentionPolicy": "station_managed",
+			"retentionStatus": "active",
+		})
+		if err != nil {
+			return err
+		}
+		if err := db.Exec(`INSERT INTO agent_task_artifacts (
+			artifact_id, task_id, step_id, turn_id, event_id, event_seq, run_id,
+			kind, name, uri, checksum, produced_by, refs_json, payload_json, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			gateArtifactID,
+			gateTaskID,
+			gateBlockingNodeID,
+			"",
+			"atelier-real-product-artifact-gate-event-2",
+			int64(2),
+			"",
+			"markdown",
+			"Atelier blocking gate evidence",
+			fmt.Sprintf("artifact://%s/%s", gateTaskID, gateArtifactID),
+			gateArtifactBodyHash(gateArtifactBodyText),
+			"station.gate_runner",
+			"[]",
+			string(artifactPayload),
+			now,
+		).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(`INSERT INTO agent_task_artifact_blobs (
+                        blob_id, artifact_id, task_id, step_id, turn_id, event_id, event_seq,
+                        body_kind, body_uri, content_hash, byte_size, retention_policy,
+                        retention_status, body_text, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"atelier-real-product-gate-artifact-body",
+			gateArtifactID,
+			gateTaskID,
+			gateBlockingNodeID,
+			"",
+			"atelier-real-product-artifact-gate-event-2",
+			int64(2),
+			gateArtifactBodyKind,
+			artifactBodyRef,
+			gateArtifactBodyHash(gateArtifactBodyText),
+			int64(len([]byte(gateArtifactBodyText))),
+			"station_managed",
+			"active",
+			gateArtifactBodyText,
+			now,
+			nil,
+		).Error; err != nil {
+			return err
 		}
 	}
 	for _, seededEvent := range seededEvents {
@@ -1111,6 +1210,10 @@ func run(ctx context.Context) error {
 			handleCreateProject(response, request, db, projectionService, subject.ID, createdProbe)
 		case request.Method == http.MethodPost && request.URL.Path == atelierMount+"/v1/escalations:resolve":
 			handleResolveDecision(response, request, db, projectionService, subject.ID, resolvedProbe)
+		case request.Method == http.MethodPost && request.URL.Path == atelierMount+"/v1/artifact/body/fetch":
+			handleFetchArtifactBody(response, request, projectionService, subject.ID)
+		case request.Method == http.MethodPost && request.URL.Path == "/sub-agent/agent/atelier/artifact/body/fetch":
+			handleFetchArtifactBody(response, request, projectionService, subject.ID)
 		case request.Method == http.MethodPost && request.URL.Path == agentEventAPI:
 			handleEventReplay(response, request, eventStreamService, subject.ID, probe)
 		case request.Method == http.MethodPost && request.URL.Path == providerCapabilitiesAPI:
@@ -1124,6 +1227,7 @@ func run(ctx context.Context) error {
 	mux.Handle(atelierMount+"/", authenticated)
 	mux.Handle(agentEventAPI, authenticated)
 	mux.Handle(providerCapabilitiesAPI, authenticated)
+	mux.Handle("/sub-agent/agent/atelier/artifact/body/fetch", authenticated)
 	mux.HandleFunc("/__atelier_gate/replay_probe", func(response http.ResponseWriter, _ *http.Request) {
 		response.Header().Set("Content-Type", "application/json")
 		response.WriteHeader(http.StatusOK)
@@ -1140,7 +1244,7 @@ func run(ctx context.Context) error {
 		_ = json.NewEncoder(response).Encode(map[string]any{"requests": resolvedProbe.snapshot()})
 	})
 	mux.HandleFunc("/__atelier_gate/artifact_gate_probe", func(response http.ResponseWriter, _ *http.Request) {
-		handleArtifactGateProbe(response, db)
+		handleArtifactGateProbe(response, db, providerProbe)
 	})
 	mux.HandleFunc("/__atelier_gate/provider/v1/chat/completions", func(response http.ResponseWriter, request *http.Request) {
 		handleLiveResumeProvider(response, request, providerProbe)
@@ -1164,7 +1268,8 @@ func run(ctx context.Context) error {
 		return err
 	}
 	baseURL := "http://" + listener.Addr().String()
-	if scenario == gateScenarioLiveResume {
+	if (scenario == gateScenarioArtifactGate && strings.TrimSpace(os.Getenv(gateRecoveryActionEnv)) == "rerun_failed_node") ||
+		scenario == gateScenarioLiveResume {
 		if err := seedLiveResumeProviderRuntime(db, baseURL, now); err != nil {
 			return err
 		}
@@ -1313,7 +1418,7 @@ func seedLiveResumeProviderRuntime(db *gorm.DB, baseURL string, now time.Time) e
 		gateActorID,
 		"Atelier live resume provider turn",
 		"",
-		"openai",
+		gateControlledProviderName,
 		conversationModel,
 		"active",
 		nil,
@@ -1345,6 +1450,11 @@ func runLiveResumeProviderTurn(ctx context.Context, turnSvc *agentservice.TurnSe
 		TaskID:            gateTaskID,
 		StepID:            gateLiveResumeNodeID,
 	}, "Wait for the Station human decision interrupt and then complete the provider turn.")
+}
+
+func gateArtifactBodyHash(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return fmt.Sprintf("sha256:%x", sum[:])
 }
 
 func handleCreateProject(response http.ResponseWriter, request *http.Request, db *gorm.DB, projectionService *agentservice.AtelierProjectionService, actorID string, probe *createProbe) {
@@ -1430,6 +1540,31 @@ func handleResolveDecision(response http.ResponseWriter, request *http.Request, 
 	_ = json.NewEncoder(response).Encode(snapshot)
 }
 
+func handleFetchArtifactBody(response http.ResponseWriter, request *http.Request, projectionService *agentservice.AtelierProjectionService, actorID string) {
+	var input agentservice.FetchAtelierArtifactBodyRequest
+	if request.Body != nil {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			http.Error(response, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &input); err != nil {
+				http.Error(response, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	body, err := projectionService.FetchArtifactBody(request.Context(), actorID, &input)
+	if err != nil {
+		http.Error(response, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	response.Header().Set("Content-Type", "application/json")
+	response.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(response).Encode(body)
+}
+
 func handleLiveResumeProvider(response http.ResponseWriter, request *http.Request, probe *providerProbe) {
 	var input struct {
 		Model    string `json:"model"`
@@ -1455,8 +1590,19 @@ func handleLiveResumeProvider(response http.ResponseWriter, request *http.Reques
 			break
 		}
 	}
+	if isArtifactRerunProviderRequest(input.Messages) {
+		probe.record(providerProbeRequest{
+			Scenario:     "artifact_gate_rerun",
+			Model:        input.Model,
+			MessageCount: len(input.Messages),
+			Final:        true,
+		})
+		writeOpenAIChatCompletion(response, input.Model, gateArtifactRerunProviderFinalResponse)
+		return
+	}
 	if !sawToolResult {
 		probe.record(providerProbeRequest{
+			Scenario:     "live_resume",
 			Model:        input.Model,
 			MessageCount: len(input.Messages),
 			WaitTool:     true,
@@ -1470,11 +1616,26 @@ func handleLiveResumeProvider(response http.ResponseWriter, request *http.Reques
 		return
 	}
 	probe.record(providerProbeRequest{
+		Scenario:     "live_resume",
 		Model:        input.Model,
 		MessageCount: len(input.Messages),
 		Final:        true,
 	})
 	writeOpenAIChatCompletion(response, input.Model, "Atelier live resume provider turn completed after Station human decision.")
+}
+
+func isArtifactRerunProviderRequest(messages []struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}) bool {
+	for _, message := range messages {
+		content := strings.ToLower(message.Content)
+		if strings.Contains(content, "atelier product-window blocking gate node") ||
+			strings.Contains(content, "artifact produced; blocking gate failed for recovery proof") {
+			return true
+		}
+	}
+	return false
 }
 
 func writeOpenAIChatCompletion(response http.ResponseWriter, model string, content string) {
@@ -1542,13 +1703,27 @@ func handleLiveResumeProbe(response http.ResponseWriter, db *gorm.DB, providerPr
 	_ = json.NewEncoder(response).Encode(probe)
 }
 
-func handleArtifactGateProbe(response http.ResponseWriter, db *gorm.DB) {
+func handleArtifactGateProbe(response http.ResponseWriter, db *gorm.DB, providerProbe *providerProbe) {
 	probe := map[string]any{
 		"taskId":     gateTaskID,
 		"artifactId": gateArtifactID,
 		"gateId":     gateBlockingGateID,
 		"decisionId": gateBlockingDecisionID,
 	}
+	providerCalls := providerProbe.snapshot()
+	probe["providerCalls"] = providerCalls
+	var turnStatus string
+	var finalResponse string
+	_ = db.Raw(`SELECT status FROM agent_turns WHERE conversation_id = ? ORDER BY started_at DESC LIMIT 1`, gateBlockingNodeID).Scan(&turnStatus).Error
+	_ = db.Raw(`SELECT final_response FROM agent_turns WHERE conversation_id = ? ORDER BY started_at DESC LIMIT 1`, gateBlockingNodeID).Scan(&finalResponse).Error
+	probe["turnStatus"] = strings.TrimSpace(turnStatus)
+	probe["finalResponse"] = strings.TrimSpace(finalResponse)
+	var nodeCompletedEvents int
+	_ = db.Raw(`SELECT COUNT(*) FROM agent_task_events WHERE task_id = ? AND step_id = ? AND event_type = ?`, gateTaskID, gateBlockingNodeID, int32(agentmodel.TaskEventType_TASK_EVENT_TYPE_STEP_COMPLETED)).Scan(&nodeCompletedEvents).Error
+	probe["nodeCompletedEvents"] = nodeCompletedEvents
+	var taskCompletedEvents int
+	_ = db.Raw(`SELECT COUNT(*) FROM agent_task_events WHERE task_id = ? AND event_type = ?`, gateTaskID, int32(agentmodel.TaskEventType_TASK_EVENT_TYPE_TASK_STATUS_CHANGED)).Scan(&taskCompletedEvents).Error
+	probe["taskCompletedEvents"] = taskCompletedEvents
 	var taskStatus int32
 	_ = db.Raw(`SELECT status FROM agent_collaboration_tasks WHERE id = ?`, gateTaskID).Scan(&taskStatus).Error
 	var nodeStatus int32
@@ -1633,6 +1808,15 @@ func handleEventReplay(response http.ResponseWriter, request *http.Request, even
 		http.Error(response, "agent_id is required", http.StatusBadRequest)
 		return
 	}
+	if handleEventReplayFailureScenario(response) {
+		probe.record(replayProbeRequest{
+			AgentID:       input.AgentID,
+			TaskID:        input.TaskID,
+			AfterEventSeq: input.AfterEventSeq,
+			ReplayedSeqs:  []int64{},
+		})
+		return
+	}
 	response.Header().Set("Content-Type", "text/event-stream")
 	response.Header().Set("Cache-Control", "no-cache")
 	response.Header().Set("Connection", "keep-alive")
@@ -1683,6 +1867,26 @@ func handleEventReplay(response http.ResponseWriter, request *http.Request, even
 		AfterEventSeq: input.AfterEventSeq,
 		ReplayedSeqs:  replayedSeqs,
 	})
+}
+
+func handleEventReplayFailureScenario(response http.ResponseWriter) bool {
+	switch strings.TrimSpace(os.Getenv(gateFailureScenarioEnv)) {
+	case "":
+		return false
+	case "auth-denied":
+		http.Error(response, "PERMISSION_DENIED Atelier projection subscription denied", http.StatusForbidden)
+		return true
+	case "disconnected":
+		http.Error(response, "NETWORK_DISCONNECTED Atelier projection stream disconnected", http.StatusServiceUnavailable)
+		return true
+	case "timeout":
+		time.Sleep(1500 * time.Millisecond)
+		http.Error(response, "TIMEOUT Atelier projection subscription timed out", http.StatusGatewayTimeout)
+		return true
+	default:
+		http.Error(response, "UNKNOWN Atelier projection subscription failure scenario", http.StatusInternalServerError)
+		return true
+	}
 }
 
 func shouldCloseAfterFirstReplayEvent(afterEventSeq int64) bool {

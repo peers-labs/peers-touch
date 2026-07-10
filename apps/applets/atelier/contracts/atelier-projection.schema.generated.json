@@ -341,7 +341,12 @@
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "type": "string"
+          "enum": [
+            "markdown",
+            "web",
+            "image",
+            "diff"
+          ]
         },
         "mode": {
           "type": "string"
