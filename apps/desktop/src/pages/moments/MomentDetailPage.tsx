@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { Button, message } from 'antd';
 import { ChevronLeft } from 'lucide-react';
-import { selectMomentComments, useMomentsStore } from '../../store/moments';
+import { selectMomentComments } from '../../store/moments';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { CommentList } from '../../components/moments/CommentList';
+import { useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
 import {
   SocialEmptyState,
   SocialThreadDivider,
@@ -34,17 +35,31 @@ export function MomentDetailView({
   onAuthorClick,
 }: MomentDetailViewProps) {
   const { t } = useTranslation('moments');
-  const post = useMomentsStore((s) => s.postsById[postId]);
-  const reactions = useMomentsStore((s) => s.reactions[postId]);
-  const explanation = useMomentsStore((s) => s.feedExplanations[postId]);
-  const comments = useMomentsStore((s) => selectMomentComments(s, postId));
-  const commentsHasMore = useMomentsStore((s) => !!s.commentsHasMore[postId]);
-  const commentsLoading = useMomentsStore((s) => !!s.commentsLoading[postId]);
-  const loadComments = useMomentsStore((s) => s.loadComments);
-  const createComment = useMomentsStore((s) => s.createComment);
-  const deleteComment = useMomentsStore((s) => s.deleteComment);
-  const reactToPost = useMomentsStore((s) => s.reactToPost);
-  const unreactToPost = useMomentsStore((s) => s.unreactToPost);
+  const {
+    post,
+    reactions,
+    explanation,
+    comments,
+    commentsHasMore,
+    commentsLoading,
+    loadComments,
+    createComment,
+    deleteComment,
+    reactToPost,
+    unreactToPost,
+  } = useActiveMomentsSlice((s) => ({
+    post: s.postsById[postId],
+    reactions: s.reactions[postId],
+    explanation: s.feedExplanations[postId],
+    comments: selectMomentComments(s, postId),
+    commentsHasMore: !!s.commentsHasMore[postId],
+    commentsLoading: !!s.commentsLoading[postId],
+    loadComments: s.loadComments,
+    createComment: s.createComment,
+    deleteComment: s.deleteComment,
+    reactToPost: s.reactToPost,
+    unreactToPost: s.unreactToPost,
+  }));
 
   const handleReact = async (id: string, kind: ReactionKind) => {
     await reactToPost(id, kind);

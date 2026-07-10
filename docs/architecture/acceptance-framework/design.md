@@ -302,6 +302,7 @@ Acceptance Framework 不对外提供 HTTP API。它的稳定入口是 Make targe
 ```bash
 make acceptance-plan
 make acceptance-run
+make acceptance PLAN=<plan-path>
 make acceptance-report
 make acceptance-validate
 make acceptance-validate DOMAIN=chat
@@ -323,6 +324,8 @@ make acceptance-federation-mutual-validation
 - synthetic paths 能通过 registry 命中期望 gates。
 - 在 `--require-proven` 模式下，最近 run results 中该 domain 的 required gates 通过。
 - report 能输出 proven / unproven scope。
+
+`make acceptance PLAN=<plan-path>` 是显式 gate bundle 的稳定入口。环境由调用前已激活的 profile / runtime 决定；plan 只声明要运行哪些 gates，gate 脚本只执行自身检查，不承载环境选择。Phase 型验收应新增或更新 plan 文件，而不是新增 phase-specific Make target。
 
 `acceptance-federation-mutual-validation` 只是 Federation domain 的兼容 alias，不是 acceptance core。
 

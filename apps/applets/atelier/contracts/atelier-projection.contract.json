@@ -1,0 +1,1068 @@
+{
+  "id": "peers.atelier.projection",
+  "appletId": "peers.atelier",
+  "service": "atelier",
+  "version": "atelier-projection/v0",
+  "eventTopic": "atelier.projection.event",
+  "eventSubscription": {
+    "agentIdSourcePriority": [
+      "agentId",
+      "agentIds[0]"
+    ],
+    "taskIdSourcePriority": [
+      "certificationCreatedSelectedTaskId",
+      "explicitTaskId",
+      "controllerSelectedTaskId",
+      "snapshotSelectedTaskId",
+      "snapshotFirstTaskId"
+    ],
+    "defaultCursorSource": "workspace.replay[taskId].nextEventSeq",
+    "zeroCursorPolicy": "omit"
+  },
+  "methods": [
+    "atelier.workspace.load",
+    "atelier.project.createFromGoal",
+    "atelier.message.send",
+    "atelier.escalation.resolve",
+    "atelier.task.setStatus",
+    "atelier.task.purge",
+    "atelier.provider.capabilities",
+    "atelier.feedback.submit",
+    "atelier.memory.confirmCandidate",
+    "atelier.feedback.confirmRerun",
+    "atelier.workspace.open",
+    "atelier.artifact.body.fetch",
+    "atelier.artifact.preview.open",
+    "atelier.events.subscribe"
+  ],
+  "runtimeMethods": [
+    "atelier.workspace.load",
+    "atelier.project.createFromGoal",
+    "atelier.message.send",
+    "atelier.escalation.resolve",
+    "atelier.task.setStatus",
+    "atelier.task.purge",
+    "atelier.provider.capabilities",
+    "atelier.feedback.submit",
+    "atelier.memory.confirmCandidate",
+    "atelier.feedback.confirmRerun",
+    "atelier.workspace.open",
+    "atelier.artifact.body.fetch",
+    "atelier.artifact.preview.open"
+  ],
+  "methodIntents": {
+    "atelier.workspace.load": {
+      "intentOwner": "station",
+      "intentKind": "projection_read",
+      "sideEffectClass": "none",
+      "executionForbidden": true
+    },
+    "atelier.project.createFromGoal": {
+      "intentOwner": "station",
+      "intentKind": "project_create_intent",
+      "sideEffectClass": "station_transaction",
+      "executionForbidden": true
+    },
+    "atelier.message.send": {
+      "intentOwner": "station",
+      "intentKind": "message_append_intent",
+      "sideEffectClass": "station_transaction",
+      "executionForbidden": true
+    },
+    "atelier.escalation.resolve": {
+      "intentOwner": "station",
+      "intentKind": "human_decision_intent",
+      "sideEffectClass": "station_transaction",
+      "executionForbidden": true
+    },
+    "atelier.task.setStatus": {
+      "intentOwner": "station",
+      "intentKind": "task_lifecycle_intent",
+      "sideEffectClass": "station_transaction",
+      "executionForbidden": true
+    },
+    "atelier.task.purge": {
+      "intentOwner": "station",
+      "intentKind": "task_purge_intent",
+      "sideEffectClass": "station_transaction",
+      "executionForbidden": true
+    },
+    "atelier.provider.capabilities": {
+      "intentOwner": "station",
+      "intentKind": "provider_discovery_read",
+      "sideEffectClass": "none",
+      "executionForbidden": true
+    },
+    "atelier.feedback.submit": {
+      "intentOwner": "station",
+      "intentKind": "feedback_record_intent",
+      "sideEffectClass": "station_transaction",
+      "executionForbidden": true
+    },
+    "atelier.memory.confirmCandidate": {
+      "intentOwner": "station",
+      "intentKind": "memory_confirmation_intent",
+      "sideEffectClass": "station_transaction",
+      "executionForbidden": true
+    },
+    "atelier.feedback.confirmRerun": {
+      "intentOwner": "station",
+      "intentKind": "rerun_confirmation_intent",
+      "sideEffectClass": "station_transaction",
+      "executionForbidden": true
+    },
+    "atelier.workspace.open": {
+      "intentOwner": "desktop_host",
+      "intentKind": "workspace_open_host_intent",
+      "sideEffectClass": "host_ui",
+      "executionForbidden": true
+    },
+    "atelier.artifact.body.fetch": {
+      "intentOwner": "station",
+      "intentKind": "artifact_body_safe_text_read",
+      "sideEffectClass": "none",
+      "executionForbidden": true
+    },
+    "atelier.artifact.preview.open": {
+      "intentOwner": "desktop_host",
+      "intentKind": "artifact_preview_host_intent",
+      "sideEffectClass": "host_ui",
+      "executionForbidden": true
+    },
+    "atelier.events.subscribe": {
+      "intentOwner": "station",
+      "intentKind": "projection_event_subscription",
+      "sideEffectClass": "none",
+      "executionForbidden": true
+    }
+  },
+  "taskLifecycle": {
+    "field": "status",
+    "domain": "workbench_lifecycle",
+    "orthogonalTo": "execution_state",
+    "states": [
+      "active",
+      "archived",
+      "deleted"
+    ],
+    "transitions": [
+      {
+        "from": "active",
+        "to": "archived",
+        "reversible": true
+      },
+      {
+        "from": "archived",
+        "to": "active",
+        "reversible": true
+      },
+      {
+        "from": "active",
+        "to": "deleted",
+        "reversible": true
+      },
+      {
+        "from": "archived",
+        "to": "deleted",
+        "reversible": true
+      },
+      {
+        "from": "deleted",
+        "to": "active",
+        "reversible": true
+      }
+    ],
+    "purgeRequiresStatus": "deleted",
+    "forbiddenExecutionStatusValues": [
+      "running",
+      "succeeded",
+      "failed",
+      "paused",
+      "blocked"
+    ]
+  },
+  "agentRoleAuthority": {
+    "roles": [
+      "goal_owner",
+      "architect",
+      "planner",
+      "risk",
+      "supervisor",
+      "executor",
+      "verifier",
+      "integrator",
+      "historian"
+    ],
+    "terminalSignoffRoles": [
+      "goal_owner"
+    ],
+    "hardVetoRoles": [
+      "risk"
+    ],
+    "acceptanceVetoRoles": [
+      "verifier"
+    ],
+    "progressControlRoles": [
+      "supervisor"
+    ],
+    "judgmentForbiddenRoles": [
+      "executor"
+    ],
+    "mergeRoles": [
+      "integrator"
+    ],
+    "memoryRecordRoles": [
+      "historian"
+    ],
+    "executionOwner": "station",
+    "appletMayExecuteAuthority": false
+  },
+  "negotiationProjection": {
+    "voiceStances": [
+      "proposal",
+      "objection",
+      "counter",
+      "signoff"
+    ],
+    "requiredVoiceFields": [
+      "role",
+      "stance",
+      "text"
+    ],
+    "optionalVoiceFields": [
+      "evidenceRef",
+      "sessionId",
+      "roundId",
+      "voiceId",
+      "objectionId"
+    ],
+    "evidenceRequiredStances": [
+      "objection"
+    ],
+    "noEvidenceObjectionDisposition": "concern",
+    "consensusOwner": "station",
+    "appletMayResolveConsensus": false,
+    "forbiddenActions": [
+      "agent.invoke",
+      "atelier.agent",
+      "orchestration.start",
+      "negotiation.run",
+      "provider.invoke",
+      "runtime.invokeProvider",
+      "runtime.execute",
+      "gate.rerun",
+      "taskGraph.diff.apply"
+    ]
+  },
+  "methodPayloads": {
+    "atelier.project.createFromGoal": {
+      "requiredFields": [
+        "goal",
+        "agentIds"
+      ],
+      "optionalFields": [
+        "intentPreset",
+        "run.kind",
+        "run.flowId",
+        "run.model"
+      ],
+      "allowedIntentPresets": [
+        "work",
+        "code",
+        "design"
+      ],
+      "intentPresetMapping": {
+        "work": {
+          "providerStrategyPreset": "station_generalist_research",
+          "gatePlanPreset": "plan_review_evidence"
+        },
+        "code": {
+          "providerStrategyPreset": "coding_provider_preferred",
+          "gatePlanPreset": "lint_typecheck_build"
+        },
+        "design": {
+          "providerStrategyPreset": "design_review_preferred",
+          "gatePlanPreset": "prototype_visual_review"
+        }
+      },
+      "allowedRunKinds": [
+        "agents",
+        "model"
+      ],
+      "defaultRunKind": "agents",
+      "allowedDirectRunModels": [
+        "openrouter-3o",
+        "claude-sonnet",
+        "gpt-5",
+        "gemini-pro"
+      ],
+      "defaultDirectRunModel": "openrouter-3o",
+      "allowedAgentFlowIds": [
+        "expert-hierarchy",
+        "roundtable",
+        "debate-judge",
+        "expert-mesh",
+        "swarm",
+        "hierarchy"
+      ],
+      "defaultAgentFlowId": "expert-hierarchy",
+      "agentFlowDescriptors": [
+        {
+          "id": "expert-hierarchy",
+          "label": "Expert Hierarchy（默认）",
+          "description": "长流程 + 能力互补 · 终裁签字 + 无未决反对",
+          "batch": 1
+        },
+        {
+          "id": "roundtable",
+          "label": "Roundtable 圆桌",
+          "description": "方案发散 / 头脑风暴 · 主持人收敛",
+          "batch": 1
+        },
+        {
+          "id": "debate-judge",
+          "label": "Debate Judge 辩论裁决",
+          "description": "多方案冲突 · Judge 裁决达成共识",
+          "batch": 1
+        },
+        {
+          "id": "expert-mesh",
+          "label": "Expert Mesh 专家网",
+          "description": "能力互补并行 · 聚合器合并",
+          "batch": 2
+        },
+        {
+          "id": "swarm",
+          "label": "Swarm 蜂群",
+          "description": "海量同构并行 · 结果归约 + 多数",
+          "batch": 2
+        },
+        {
+          "id": "hierarchy",
+          "label": "Hierarchy 层级（edict）",
+          "description": "长流程强秩序 · 上级签字下令",
+          "batch": 2
+        }
+      ],
+      "directRunIntent": {
+        "kind": "model",
+        "requiredFields": [
+          "run.model"
+        ],
+        "forbiddenFields": [
+          "run.flowId",
+          "run.agentIds"
+        ],
+        "stationSource": "atelier.direct_run.intent",
+        "forbiddenActions": [
+          "invoke",
+          "execute",
+          "run",
+          "shell",
+          "file"
+        ]
+      }
+    },
+    "atelier.message.send": {
+      "requiredFields": [
+        "taskId",
+        "text"
+      ]
+    },
+    "atelier.escalation.resolve": {
+      "requiredFields": [
+        "taskId",
+        "blockId",
+        "choice"
+      ]
+    },
+    "atelier.task.setStatus": {
+      "requiredFields": [
+        "taskId",
+        "status"
+      ],
+      "allowedStatus": [
+        "active",
+        "archived",
+        "deleted"
+      ]
+    },
+    "atelier.task.purge": {
+      "requiredFields": [
+        "taskId"
+      ],
+      "requiresStatus": "deleted"
+    },
+    "atelier.provider.capabilities": {
+      "optionalFields": [
+        "taskId"
+      ],
+      "responseFields": [
+        "capabilities",
+        "source"
+      ],
+        "allowedCapabilityScopes": [
+          "station-provider"
+        ],
+        "capabilityScope": "station-provider",
+        "capabilityReadOnly": true,
+      "forbiddenActions": [
+        "invoke",
+        "execute",
+        "run",
+        "action.execute",
+        "action.run",
+        "policy.override",
+        "rollback.execute"
+      ]
+    },
+    "atelier.feedback.submit": {
+      "requiredFields": [
+        "taskId",
+        "blockId",
+        "signal"
+      ],
+      "optionalFields": [
+        "comment"
+      ],
+      "responseFields": [
+        "accepted",
+        "feedbackId",
+        "memoryCandidate",
+        "memoryCandidate.status",
+        "memoryCandidate.reason",
+        "memoryCandidate.feeds",
+        "memoryCandidate.requiresConfirmation",
+        "memoryCandidate.confirmationMode",
+        "rerunIntent",
+        "rerunIntent.status",
+        "rerunIntent.reason",
+        "rerunIntent.feeds",
+        "rerunIntent.requiresConfirmation",
+        "rerunIntent.confirmationMode"
+      ],
+      "allowedSignals": [
+        "positive",
+        "negative",
+        "copy",
+        "regenerate"
+      ],
+      "forbiddenActions": [
+        "memory.write",
+        "rerun",
+        "invoke",
+        "execute",
+        "run"
+      ]
+    },
+    "atelier.memory.confirmCandidate": {
+      "requiredFields": [
+        "taskId",
+        "feedbackId"
+      ],
+      "responseFields": [
+        "accepted",
+        "feedbackId",
+        "memoryId",
+        "status",
+        "source",
+        "alreadyDone"
+      ],
+      "allowedConfirmationMode": "station_memory_review",
+      "forbiddenActions": [
+        "memory.write",
+        "invoke",
+        "execute",
+        "run"
+      ]
+    },
+    "atelier.feedback.confirmRerun": {
+      "requiredFields": [
+        "taskId",
+        "feedbackId"
+      ],
+      "responseFields": [
+        "accepted",
+        "feedbackId",
+        "taskId",
+        "rerunTaskId",
+        "status",
+        "source",
+        "alreadyDone",
+        "started"
+      ],
+      "allowedConfirmationMode": "station_rerun_review",
+      "forbiddenActions": [
+        "rerun",
+        "invoke",
+        "execute",
+        "run"
+      ]
+    },
+    "atelier.workspace.open": {
+      "requiredFields": [
+        "taskId",
+        "workspaceUri"
+      ],
+      "optionalFields": [
+        "ideHint"
+      ],
+      "responseFields": [
+        "accepted",
+        "opened",
+        "workspaceUri",
+        "mode",
+        "reason"
+      ],
+      "allowedUriSchemes": [
+        "pt-workspace"
+      ],
+      "uriShape": {
+        "scheme": "pt-workspace",
+        "host": "task",
+        "taskPathSegments": 1,
+        "workspaceQueryKey": "workspace"
+      },
+      "forbiddenActions": [
+        "file",
+        "shell",
+        "spawn",
+        "execute",
+        "run",
+        "openExternalUrl"
+      ]
+    },
+    "atelier.artifact.body.fetch": {
+      "requiredFields": [
+        "taskId",
+        "artifactId",
+        "bodyRef"
+      ],
+      "optionalFields": [
+        "expectedHash",
+        "maxBytes"
+      ],
+      "responseFields": [
+        "taskId",
+        "artifactId",
+        "bodyRef",
+        "bodyKind",
+        "bodyHash",
+        "bodySize",
+        "text",
+        "truncated",
+        "retentionStatus"
+      ],
+      "allowedBodyKinds": [
+        "markdown",
+        "diff",
+        "text",
+        "json"
+      ],
+      "forbiddenActions": [
+        "file",
+        "path",
+        "url",
+        "iframe",
+        "image",
+        "html",
+        "execute",
+        "run",
+        "openExternalUrl"
+      ]
+    },
+    "atelier.artifact.preview.open": {
+      "requiredFields": [
+        "taskId",
+        "artifactId",
+        "sandboxRef",
+        "bodyRef"
+      ],
+      "optionalFields": [
+        "kind",
+        "mode"
+      ],
+      "responseFields": [
+        "accepted",
+        "opened",
+        "prepared",
+        "taskId",
+        "artifactId",
+        "sandboxRef",
+        "bodyRef",
+        "kind",
+        "mode",
+        "rendererSessionId",
+        "rendererOwner",
+        "rendererMode",
+        "rendererStatus",
+        "rendererCapabilities",
+        "reason"
+      ],
+      "allowedModes": [
+        "sandbox_manifest"
+      ],
+        "defaultMode": "sandbox_manifest",
+      "allowedSandboxRefSchemes": [
+        "atelier-sandbox"
+      ],
+      "allowedRendererOwner": [
+        "desktop_host"
+      ],
+      "allowedRendererMode": [
+        "host_sandbox_manifest"
+      ],
+        "allowedRendererStatus": [
+          "prepared_not_opened",
+          "rendered"
+        ],
+      "requiredRendererCapabilities": [
+        "host_visual_renderer_surface"
+      ],
+      "hostSideEffects": [
+        "ui.openAtelierArtifactPreview"
+      ],
+      "forbiddenActions": [
+        "file",
+        "path",
+        "url",
+        "iframe",
+        "image",
+        "html",
+        "execute",
+        "run",
+        "openExternalUrl"
+      ]
+    }
+  },
+  "subscriptionMethod": "atelier.events.subscribe",
+  "gatewayActions": [
+    "workspace.load",
+    "project.createFromGoal",
+    "message.send",
+    "escalation.resolve",
+    "task.setStatus",
+    "task.purge",
+    "provider.capabilities",
+    "feedback.submit",
+    "memory.confirmCandidate",
+    "feedback.confirmRerun",
+    "workspace.open",
+    "artifact.body.fetch",
+    "artifact.preview.open",
+    "events.subscribe"
+  ],
+  "patchKinds": [
+    "snapshot",
+    "task.upsert",
+    "task.status",
+    "stream.append",
+    "decision.resolved",
+    "artifact.upsert",
+    "gate.upsert",
+    "context.replace",
+    "todo.replace"
+  ],
+  "snapshotRequiredFields": [
+    "version",
+    "selectedTaskId",
+    "workspace.budgetSpent",
+    "workspace.budgetCap",
+    "workspace.model",
+    "workspace.tasks",
+    "workspace.streams",
+    "workspace.todos",
+    "workspace.contexts",
+    "workspace.artifacts"
+  ],
+  "snapshotOptionalFields": [
+    "workspace.budget",
+    "workspace.gates",
+    "workspace.replay"
+  ],
+  "eventRequiredFields": [
+    "id",
+    "seq",
+    "patch",
+    "receivedAt"
+  ],
+  "eventOptionalFields": [
+    "taskId"
+  ],
+  "replayFields": [
+    "source",
+    "eventCount",
+    "replayedEventCount",
+    "nextEventSeq",
+    "hasMore",
+    "checkpointId",
+    "checkpointEventSeq"
+  ],
+  "streamBlocks": {
+    "allowedKinds": [
+      "user",
+      "agent",
+      "nego",
+      "decision",
+      "artifact",
+      "diff"
+    ],
+    "requiredFieldsByKind": {
+      "user": [
+        "text"
+      ],
+      "agent": [
+        "text"
+      ],
+      "nego": [
+        "summary",
+        "agentCount",
+        "converged",
+        "voices",
+        "consensus"
+      ],
+      "decision": [
+        "question",
+        "spentSoFar",
+        "options",
+        "rollbackImpact"
+      ],
+      "artifact": [
+        "name",
+        "fileKind",
+        "producedBy"
+      ],
+      "diff": [
+        "files",
+        "added",
+        "removed",
+        "paths"
+      ]
+    },
+    "diffSummaryFields": [
+      "files",
+      "added",
+      "removed",
+      "paths"
+    ]
+  },
+  "viewSurface": {
+    "statuses": [
+      "loading",
+      "empty",
+      "ready",
+      "reconciling",
+      "degraded",
+      "disconnected",
+      "auth-denied",
+      "error"
+    ],
+    "eventStreamStates": [
+      "idle",
+      "subscribing",
+      "live",
+      "degraded"
+    ],
+    "typedRecoveryKinds": [
+      "auth-denied",
+      "disconnected"
+    ],
+    "statusNoticeKinds": [
+      "reconciling",
+      "degraded"
+    ],
+    "emptyCtaStatus": "empty",
+    "reconcilingEventStreamState": "subscribing",
+    "degradedEventStreamStates": [
+      "degraded"
+    ],
+    "recovery": {
+      "kinds": [
+        "auth-denied",
+        "invalid-projection",
+        "agent-ids-required",
+        "disconnected",
+        "error"
+      ],
+      "tones": [
+        "warning",
+        "danger"
+      ],
+      "toneByKind": {
+        "auth-denied": "danger",
+        "invalid-projection": "danger",
+        "agent-ids-required": "danger",
+        "disconnected": "warning",
+        "error": "danger"
+      },
+      "retryableKinds": [
+        "disconnected",
+        "error"
+      ],
+      "statusSeverityByStatus": {
+        "loading": "info",
+        "empty": "info",
+        "ready": "success",
+        "reconciling": "warning",
+        "degraded": "warning",
+        "disconnected": "warning",
+        "auth-denied": "danger",
+        "error": "danger"
+      },
+      "prototypeSeverityByStatus": {
+        "loading": "info",
+        "empty": "info",
+        "ready": "info",
+        "reconciling": "warning",
+        "degraded": "warning",
+        "disconnected": "warning",
+        "auth-denied": "danger",
+        "error": "danger"
+      },
+      "prototypeSymbolByStatus": {
+        "loading": "◌",
+        "empty": "+",
+        "ready": "✓",
+        "reconciling": "↻",
+        "degraded": "↻",
+        "disconnected": "↻",
+        "auth-denied": "!",
+        "error": "!"
+      }
+    }
+  },
+  "projectSurface": {
+    "blockerSeverities": [
+      "block",
+      "warn",
+      "info"
+    ],
+    "blockerStates": [
+      "open",
+      "resolved",
+      "waived"
+    ],
+    "residualRiskStates": [
+      "logged",
+      "downgraded",
+      "follow_up"
+    ],
+    "dependencyEdgeTypes": [
+      "blocks",
+      "informs",
+      "produces_input_for"
+    ],
+    "taskGraphParallelPolicies": [
+      "serial_only",
+      "independent_only",
+      "integrator_required"
+    ],
+    "projectStates": [
+      "draft",
+      "contracted",
+      "executing",
+      "blocked",
+      "verifying",
+      "awaiting_owner_signoff",
+      "accepted",
+      "escalated"
+    ],
+    "milestoneStates": [
+      "planned",
+      "active",
+      "blocked",
+      "replanning",
+      "accepted",
+      "abandoned"
+    ],
+    "taskGraphNodeStates": [
+      "todo",
+      "running",
+      "done"
+    ],
+    "memoryCandidateTypes": [
+      "success_pattern",
+      "failure_cause",
+      "project_rule",
+      "domain_rule",
+      "arch_decision",
+      "workflow_improvement"
+    ],
+    "memoryCandidateScopes": [
+      "user",
+      "project",
+      "domain"
+    ],
+    "memoryCandidateFeeds": [
+      "planner",
+      "risk",
+      "verifier"
+    ],
+    "policyRuleScopes": [
+      "workspace",
+      "command",
+      "network",
+      "data",
+      "action"
+    ],
+    "defectSources": [
+      "gate",
+      "verifier",
+      "user",
+      "supervisor"
+    ],
+    "defectStates": [
+      "proposed",
+      "accepted",
+      "fixed",
+      "rejected"
+    ],
+    "projectionDisplayLimits": {
+      "projectHealthItems": 3,
+      "projectHealthMilestones": 4,
+      "milestoneRefs": 2,
+      "taskGraphNodes": 5,
+      "taskGraphRootIds": 3,
+      "taskGraphEdges": 4,
+      "taskGraphNodeRefs": 2,
+      "legacyTodos": 5,
+      "providerCapabilities": 5,
+      "negotiationVoices": 4,
+      "diffPaths": 5,
+      "contextFileRefs": 4,
+      "contextOtherRefs": 3,
+      "sidePanelArtifacts": 4,
+      "artifactPaths": 5,
+      "safeTextPreviewLines": 80,
+      "gateItems": 4,
+      "gateChecks": 3,
+      "gateArtifactRefs": 4
+    }
+  },
+  "workbenchSurface": {
+    "taskIntentPresets": [
+      "work",
+      "code",
+      "design"
+    ],
+    "defaultTaskIntentPreset": "work",
+    "todoStatuses": [
+      "done",
+      "running",
+      "todo"
+    ],
+    "contextFileGroups": [
+      "files",
+      "other"
+    ],
+    "defaultContextFileGroup": "files",
+    "taskOrganizerModes": [
+      {
+        "id": "folders",
+        "ready": true
+      },
+      {
+        "id": "flat-list",
+        "ready": true
+      },
+      {
+        "id": "kanban",
+        "ready": false
+      },
+      {
+        "id": "dag",
+        "ready": false
+      }
+    ],
+    "defaultTaskOrganizerMode": "folders",
+    "artifactKinds": [
+      "markdown",
+      "web",
+      "image",
+      "diff"
+    ],
+    "artifactBodyKinds": [
+      "markdown",
+      "diff",
+      "text",
+      "json"
+    ],
+    "gateStatuses": [
+      "pending",
+      "running",
+      "passed",
+      "failed",
+      "blocked"
+    ],
+    "gateCheckStatuses": [
+      "passed",
+      "failed",
+      "pending"
+    ]
+  },
+  "budgetSurface": {
+    "budgetStatuses": [
+      "ok",
+      "warning",
+      "danger",
+      "blocked"
+    ]
+  },
+  "artifactPreview": {
+    "allowedPreviewHints": [
+      "markdown",
+      "web",
+      "image",
+      "diff",
+      "metadata",
+      "metadata_only"
+    ],
+    "metadataFields": [
+      "previewHint",
+      "bodyRef",
+      "bodyHash",
+      "bodySize",
+      "bodyKind",
+      "paths",
+      "size",
+      "previewTarget"
+    ],
+    "previewTargetFields": [
+      "kind",
+      "mode",
+      "label",
+      "sandboxRef",
+      "bodyRef"
+    ],
+    "allowedPreviewTargetModes": [
+      "sandbox_manifest"
+    ],
+    "allowedBodyRefSchemes": [
+      "artifact"
+    ],
+    "allowedSandboxRefSchemes": [
+      "atelier-sandbox"
+    ],
+    "bodyRefShape": {
+      "scheme": "artifact",
+      "pathSegments": 2,
+      "terminalSegment": "body"
+    },
+    "sandboxRefShape": {
+      "scheme": "atelier-sandbox",
+      "pathSegments": 2,
+      "terminalSegment": "preview"
+    },
+    "forbiddenBodyFields": [
+      "markdown",
+      "content",
+      "body",
+      "html",
+      "diff",
+      "patch",
+      "url",
+      "src",
+      "iframe"
+    ]
+}
+}

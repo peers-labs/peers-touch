@@ -200,7 +200,7 @@ case "$cmd" in
 
     echo "[2/4] Building ..."
     if [[ -n "${PT_DEPLOY_BUILD_CMD:-}" ]]; then
-      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && $PT_DEPLOY_BUILD_CMD"
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && PEERS_TOUCH_BUILD_COMMIT=\$(git rev-parse --short=12 HEAD) PEERS_TOUCH_BUILD_LABEL=$BRANCH PEERS_TOUCH_BUILD_TIME=\$(date -u +%Y-%m-%dT%H:%M:%SZ) $PT_DEPLOY_BUILD_CMD"
     else
       case "$PT_DEPLOY_ROLE" in
         station)

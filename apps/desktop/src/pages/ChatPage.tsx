@@ -37,6 +37,7 @@ export function ChatPage({ onNavigateAgentProfile }: {
 }) {
   const {
     selectedModel,
+    selectedProviderId,
     availableModels,
     defaultModel,
     selectedAgent,
@@ -56,7 +57,9 @@ export function ChatPage({ onNavigateAgentProfile }: {
   const [activeArtifact, setActiveArtifact] = useState<MessageArtifact | null>(null);
 
   const currentModelId = selectedModel || defaultModel;
-  const currentModel = availableModels.find((m) => m.id === currentModelId);
+  const currentModel =
+    availableModels.find((m) => m.id === currentModelId && (!selectedProviderId || m.provider_id === selectedProviderId)) ||
+    availableModels.find((m) => m.id === currentModelId);
   const currentAgent = useMemo(
     () =>
       agents.find((a) => a.name === selectedAgent) || {
