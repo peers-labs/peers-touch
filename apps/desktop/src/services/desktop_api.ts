@@ -3,6 +3,7 @@ import { fromBinary, fromJsonString } from '@bufbuild/protobuf';
 import type { Message as ProtoMessage } from '@bufbuild/protobuf';
 import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
+import { throttleInvoke } from '../kernel/invokeThrottler';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import { readDesktopPreferenceSync } from '../storage/desktopClientStorage';
@@ -350,29 +351,34 @@ async function invokeRustCommand<TInput, TData>(
   if (!quiet) {
     log.info('api', `→ ${command}`, input != null ? { req: input } : undefined);
   }
-  try {
+
+  const executeFn = async (): Promise<RustCommandResult<TData>> => {
     const payload = input === undefined ? undefined : { input };
-    const result = await invoke<RustCommandResult<TData>>(command, payload);
+    return invoke<RustCommandResult<TData>>(command, payload);
+  };
+
+  try {
+    const { deferred, promise } = throttleInvoke<RustCommandResult<TData>>(command, executeFn);
+    const result = await promise;
     const elapsed = Date.now() - start;
     if (!result.ok) {
       const revoked = extractSessionRevoked(result.error);
       if (revoked) {
         publishSessionRevoked(revoked);
         if (!quiet) {
-          log.info('api', `← ${command} UNAUTHORIZED (${elapsed}ms)`, { reason: revoked.reason });
+          log.info('api', `← ${command} UNAUTHORIZED (${elapsed}ms)`, { reason: revoked.reason, deferred });
         }
         return result;
       }
-      // Surface `details.reason` from the Rust side so we don't have to
-      // round-trip to the binary just to read why a command failed.
       const detailsReason = (result.error?.details as any)?.reason;
       log.warn('api', `← ${command} FAIL (${elapsed}ms)`, {
         error: result.error?.message,
         code: result.error?.code,
+        deferred,
         ...(detailsReason ? { reason: detailsReason } : {}),
       });
     } else if (!quiet) {
-      log.info('api', `← ${command} OK (${elapsed}ms)`);
+      log.info('api', `← ${command} OK (${elapsed}ms)${deferred ? ' [deferred]' : ''}`);
     }
     scheduleAppletAuditFlush(command);
     return result;
