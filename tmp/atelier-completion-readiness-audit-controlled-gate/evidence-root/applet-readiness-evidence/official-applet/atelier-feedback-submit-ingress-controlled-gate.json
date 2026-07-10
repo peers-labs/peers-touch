@@ -1,0 +1,64 @@
+{
+  "ok": true,
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "gate": "atelier-feedback-submit-ingress-controlled-gate",
+  "commands": [
+    "go test ./subserver/agent/service -run 'TestAtelierSubmitFeedbackPersistsStationOwnedPolicyEvent'",
+    "go test ./subserver/official_applets -run 'TestDecodeAtelierFeedbackSubmitJSON(RejectsExecutionShapedFields|AcceptsSignalPayload)'"
+  ],
+  "tests": [
+    "TestAtelierSubmitFeedbackPersistsStationOwnedPolicyEvent",
+    "TestDecodeAtelierFeedbackSubmitJSONRejectsExecutionShapedFields",
+    "TestDecodeAtelierFeedbackSubmitJSONAcceptsSignalPayload"
+  ],
+  "forbiddenIngressFields": [
+    "run",
+    "execute",
+    "provider",
+    "attachments",
+    "memory",
+    "memoryContent",
+    "memory_content",
+    "rerun",
+    "rerunTaskId",
+    "inputSnapshot",
+    "input_snapshot"
+  ],
+  "forbiddenPersistedPayloadFields": [
+    "run",
+    "execute",
+    "provider",
+    "attachments",
+    "memory",
+    "memoryContent",
+    "memory_content",
+    "rerun",
+    "rerunTaskId",
+    "inputSnapshot",
+    "input_snapshot"
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "Station official Atelier /v1/feedback/submit ingress rejects execution-shaped memory, rerun, provider, attachment, and input_snapshot fields",
+      "Station Atelier SubmitFeedback persists Station-owned policy hint event metadata derived from allowed signal taxonomy",
+      "Atelier feedback submit remains Station-owned review intent and does not expose memory.write, rerun execution, provider, runtime, or input_snapshot actions"
+    ],
+    "doesNotProve": [
+      "real Planner/Risk/Verifier feedback consumption",
+      "real memory write E2E",
+      "real rerun task creation E2E",
+      "real Desktop Host + Station + applet feedback submit E2E"
+    ]
+  },
+  "notCovered": [
+    "real Planner/Risk/Verifier feedback consumption",
+    "real memory write E2E",
+    "real rerun task creation E2E",
+    "real Desktop Host + Station + applet feedback submit E2E"
+  ],
+  "outputTail": [
+    "ok  \tgithub.com/peers-labs/peers-touch/station/app/subserver/agent/service\t(cached)",
+    "ok  \tgithub.com/peers-labs/peers-touch/station/app/subserver/official_applets\t(cached)"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "evidenceClass": "READINESS_AUDIT",
+  "gate": "atelier:full-e2e-preflight",
+  "readiness": "NOT_READY",
+  "globalReady": false,
+  "sourceInstrumentationGaps": [
+    {
+      "id": "real-ide-launch-side-evidence-producer",
+      "proofObligationId": "real-ide-launch",
+      "path": "apps/desktop/src-tauri/src/application/applets/mod.rs",
+      "owner": "desktop_host",
+      "missingAnchors": [
+        "PEERS_ATELIER_FULL_E2E_IDE_LAUNCH_EVIDENCE"
+      ]
+    },
+    {
+      "id": "provider-runtime-side-evidence-producer",
+      "proofObligationId": "production-provider-runtime-quality",
+      "path": "apps/station/app/subserver/agent/service/atelier_projection.go",
+      "owner": "station",
+      "missingAnchors": [
+        "PEERS_ATELIER_FULL_E2E_PROVIDER_RUNTIME_EVIDENCE"
+      ]
+    }
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY"
+  }
+}

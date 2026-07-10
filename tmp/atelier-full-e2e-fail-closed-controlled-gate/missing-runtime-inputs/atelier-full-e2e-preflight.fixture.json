@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "evidenceClass": "READINESS_AUDIT",
+  "gate": "atelier:full-e2e-preflight",
+  "readiness": "NOT_READY",
+  "globalReady": false,
+  "sourceInstrumentationGaps": [],
+  "claimBoundary": {
+    "readiness": "NOT_READY"
+  }
+}

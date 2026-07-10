@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "launchId": "61e35a35-f485-432b-82e6-b0cc7936726b",
+  "appletId": "peers.atelier",
+  "sessionId": "controlled-session-workspace-open-wrong-ide-target",
+  "action": "atelier.workspace.open",
+  "accepted": true,
+  "mode": "host_intent",
+  "hostSideEffect": "workspace_open_intent",
+  "realIdeLaunchProven": false,
+  "ideHintRedacted": true,
+  "ideTargetHash": "sha256:bc2899171432245197e0e521c7f81f06426c8f2a5fcb6045abada4c767c9e2dc",
+  "taskId": "controlled-task",
+  "workspaceUri": "pt-workspace://task/controlled-task?workspace=controlled-workspace",
+  "completedAt": "2026-07-09T02:39:17.625Z"
+}

@@ -1,0 +1,110 @@
+{
+  "ok": true,
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "gate": "atelier:full-e2e-fail-closed-controlled-gate",
+  "readiness": "NOT_READY",
+  "globalReady": false,
+  "scenarios": [
+    {
+      "name": "missing-runtime-inputs",
+      "status": "PASS",
+      "expectedFailureMode": "MISSING_RUNTIME_INPUTS",
+      "evidencePath": "tmp/atelier-full-e2e-fail-closed-controlled-gate/missing-runtime-inputs/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E missing runtime inputs: PEERS_ATELIER_FULL_E2E_STATION_URL, PEERS_ATELIER_FULL_E2E_DESKTOP_APP, PEERS_ATELIER_FULL_E2E_IDE, PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE"
+      ],
+      "missingRuntimeInputs": [
+        "PEERS_ATELIER_FULL_E2E_STATION_URL",
+        "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+        "PEERS_ATELIER_FULL_E2E_IDE",
+        "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE"
+      ],
+      "invalidRuntimeInputs": [],
+      "sourceInstrumentationGapIds": [],
+      "missingFinalEvidenceIds": [
+        "full-host-station-applet-e2e",
+        "post-ready-applet-ui-actions",
+        "real-ide-launch",
+        "production-provider-runtime-quality"
+      ]
+    },
+    {
+      "name": "invalid-runtime-inputs",
+      "status": "PASS",
+      "expectedFailureMode": "INVALID_RUNTIME_INPUTS",
+      "evidencePath": "tmp/atelier-full-e2e-fail-closed-controlled-gate/invalid-runtime-inputs/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E invalid runtime inputs: PEERS_ATELIER_FULL_E2E_STATION_URL"
+      ],
+      "missingRuntimeInputs": [],
+      "invalidRuntimeInputs": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "reason": "PEERS_ATELIER_FULL_E2E_STATION_URL must not include username\n\n'operator' !== ''\n"
+        }
+      ],
+      "sourceInstrumentationGapIds": [],
+      "missingFinalEvidenceIds": [
+        "full-host-station-applet-e2e",
+        "post-ready-applet-ui-actions",
+        "real-ide-launch",
+        "production-provider-runtime-quality"
+      ]
+    },
+    {
+      "name": "source-instrumentation-gaps",
+      "status": "PASS",
+      "expectedFailureMode": "SOURCE_INSTRUMENTATION_GAPS",
+      "evidencePath": "tmp/atelier-full-e2e-fail-closed-controlled-gate/source-instrumentation-gaps/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E source instrumentation gaps: real-ide-launch-side-evidence-producer, provider-runtime-side-evidence-producer"
+      ],
+      "missingRuntimeInputs": [],
+      "invalidRuntimeInputs": [],
+      "sourceInstrumentationGapIds": [
+        "real-ide-launch-side-evidence-producer",
+        "provider-runtime-side-evidence-producer"
+      ],
+      "missingFinalEvidenceIds": [
+        "full-host-station-applet-e2e",
+        "post-ready-applet-ui-actions",
+        "real-ide-launch",
+        "production-provider-runtime-quality"
+      ]
+    }
+  ],
+  "isolatedWorkDir": "tmp/atelier-full-e2e-fail-closed-controlled-gate",
+  "mutatesSharedFullE2EEvidence": false,
+  "mutatesSharedPreflightEvidence": false,
+  "mutatesSharedFinalSideEvidence": false,
+  "staleFinalSideEvidenceCleared": true,
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "full E2E runner missing runtime input branch exits non-zero and writes isolated NOT_READY evidence",
+      "full E2E runner invalid runtime input branch exits non-zero before Desktop launch and writes isolated NOT_READY evidence",
+      "full E2E runner source instrumentation gap branch exits non-zero before Desktop launch and writes isolated NOT_READY evidence",
+      "controlled fail-closed branch coverage does not mutate shared atelier-full-e2e.json evidence",
+      "controlled fail-closed branch coverage isolates and clears stale final side evidence before any real runtime launch"
+    ],
+    "doesNotProve": [
+      "real Desktop Host launch",
+      "real Station service binding",
+      "real applet UI actions",
+      "real IDE launch",
+      "production provider/model/runtime quality",
+      "full Host + Station + applet E2E",
+      "global Atelier readiness"
+    ]
+  },
+  "notCovered": [
+    "real Desktop Host launch",
+    "real Station service binding",
+    "real applet UI actions",
+    "real IDE launch",
+    "production provider/model/runtime quality",
+    "full Host + Station + applet E2E",
+    "global Atelier readiness"
+  ],
+  "completedAt": "2026-07-09T02:19:24.034Z"
+}

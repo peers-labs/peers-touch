@@ -1,0 +1,28 @@
+{
+  "url": "http://localhost:3200/?surface=chat&check=cc",
+  "root": true,
+  "region": true,
+  "compactChat": true,
+  "topicActionStack": true,
+  "newTopicHeader": true,
+  "lobeGreeting": true,
+  "compactPrompt": true,
+  "allowList": true,
+  "sendButton": true,
+  "messageStreamAbsent": true,
+  "workingSidebarAbsent": true,
+  "deepControlsAbsent": true,
+  "forbiddenHits": [],
+  "box": {
+    "x": 289,
+    "y": 444,
+    "width": 1900,
+    "height": 1213
+  },
+  "footerBox": {
+    "x": 1008,
+    "y": 877,
+    "width": 818,
+    "height": 54
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "status": "PASS",
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "appletId": "peers.atelier",
+  "gate": "atelier:sdk-lynx-bridge-unit-gate",
+  "coveredPaths": [
+    "Applet SDK Lynx bridge unit matrix unwraps canonical object and string envelopes before applet capability consumers observe results",
+    "Applet SDK Lynx bridge unit matrix preserves canonical Host error envelopes as AppletError with code details and requestId",
+    "Applet SDK Lynx bridge unit matrix covers bridge.invoke and legacy bridge.call fallback without exposing provider runtime execution",
+    "Applet SDK Lynx bridge unit matrix normalizes synchronous legacy bridge.call throws as AppletError before applet capability consumers observe failures",
+    "Applet SDK Lynx bridge unit matrix unwraps legacy bridge.call string envelopes before applet capability consumers observe results",
+    "Applet SDK Lynx bridge unit matrix preserves legacy bridge.call string error envelopes as AppletError before applet capability consumers observe failures",
+    "Applet SDK Lynx bridge unit matrix covers lynx.requireModule bridge injection fallback when NativeModules is absent",
+    "Applet SDK Lynx bridge unit matrix tolerates delayed Host bridge injection before readiness timeout",
+    "Applet SDK Lynx bridge unit matrix fails closed when the Lynx bridge is not available",
+    "Applet SDK Lynx bridge event receiver long-polls events.subscribe without params and backs off malformed event envelopes",
+    "Applet SDK Lynx bridge event receiver retries events.subscribe after canonical Host error envelopes without dispatching invalid events",
+    "Applet SDK Lynx bridge event receiver retries events.subscribe after string canonical Host error envelopes without dispatching invalid events",
+    "Applet SDK pending Host event replay buffers unmatched events by topic with a bounded retained tail",
+    "Applet SDK destroy tears down bridge event subscription and clears local handlers before stale Host events can be retained",
+    "Applet SDK local event unsubscribe removes topic handlers before stale Host events can be delivered",
+    "Applet SDK local event unsubscribe preserves sibling same-topic handlers for subsequent Host events",
+    "Applet SDK local event dispatch snapshots same-topic handlers so self-unsubscribe cannot skip sibling handlers",
+    "Applet SDK local event dispatch snapshots same-topic handlers so newly registered handlers wait for subsequent Host events",
+    "Applet SDK pending Host event replay snapshots queued events so reentrant unmatched Host events remain buffered"
+  ],
+  "notCovered": [
+    "real Desktop Host Lynx bridge injection",
+    "real Desktop Host event stream producer behavior",
+    "real Station SSE topic registration or Gateway delivery",
+    "real applet product-window UI",
+    "complete Host + Station + applet E2E"
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "Applet SDK Lynx bridge unit matrix unwraps canonical object and string envelopes before applet capability consumers observe results",
+      "Applet SDK Lynx bridge unit matrix preserves canonical Host error envelopes as AppletError with code details and requestId",
+      "Applet SDK Lynx bridge unit matrix covers bridge.invoke and legacy bridge.call fallback without exposing provider runtime execution",
+      "Applet SDK Lynx bridge unit matrix normalizes synchronous legacy bridge.call throws as AppletError before applet capability consumers observe failures",
+      "Applet SDK Lynx bridge unit matrix unwraps legacy bridge.call string envelopes before applet capability consumers observe results",
+      "Applet SDK Lynx bridge unit matrix preserves legacy bridge.call string error envelopes as AppletError before applet capability consumers observe failures",
+      "Applet SDK Lynx bridge unit matrix covers lynx.requireModule bridge injection fallback when NativeModules is absent",
+      "Applet SDK Lynx bridge unit matrix tolerates delayed Host bridge injection before readiness timeout",
+      "Applet SDK Lynx bridge unit matrix fails closed when the Lynx bridge is not available",
+      "Applet SDK Lynx bridge event receiver long-polls events.subscribe without params and backs off malformed event envelopes",
+      "Applet SDK Lynx bridge event receiver retries events.subscribe after canonical Host error envelopes without dispatching invalid events",
+      "Applet SDK Lynx bridge event receiver retries events.subscribe after string canonical Host error envelopes without dispatching invalid events",
+      "Applet SDK pending Host event replay buffers unmatched events by topic with a bounded retained tail",
+      "Applet SDK destroy tears down bridge event subscription and clears local handlers before stale Host events can be retained",
+      "Applet SDK local event unsubscribe removes topic handlers before stale Host events can be delivered",
+      "Applet SDK local event unsubscribe preserves sibling same-topic handlers for subsequent Host events",
+      "Applet SDK local event dispatch snapshots same-topic handlers so self-unsubscribe cannot skip sibling handlers",
+      "Applet SDK local event dispatch snapshots same-topic handlers so newly registered handlers wait for subsequent Host events",
+      "Applet SDK pending Host event replay snapshots queued events so reentrant unmatched Host events remain buffered"
+    ],
+    "doesNotProve": [
+      "real Desktop Host Lynx bridge injection",
+      "real Desktop Host event stream producer behavior",
+      "real Station SSE topic registration or Gateway delivery",
+      "real applet product-window UI",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "commands": [
+    {
+      "id": "sdk-check",
+      "command": "pnpm --filter @peers-touch/applet-sdk run check",
+      "status": "PASS",
+      "exitCode": 0,
+      "outputTail": [
+        "> @peers-touch/applet-sdk@1.0.0 check /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/packages/applet-sdk",
+        "> tsc --noEmit"
+      ]
+    },
+    {
+      "id": "sdk-unit",
+      "command": "pnpm --filter @peers-touch/applet-sdk run test:unit",
+      "status": "PASS",
+      "exitCode": 0,
+      "outputTail": [
+        "> @peers-touch/applet-sdk@1.0.0 test:unit /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/packages/applet-sdk",
+        "> vitest run src/**/*.test.ts",
+        "\u001b[1m\u001b[30m\u001b[46m RUN \u001b[49m\u001b[39m\u001b[22m \u001b[36mv4.1.8 \u001b[39m\u001b[90m/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/packages/applet-sdk\u001b[39m",
+        " \u001b[32m✓\u001b[39m src/adapters/lynx.test.ts \u001b[2m(\u001b[22m\u001b[2m21 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 17\u001b[2mms\u001b[22m\u001b[39m",
+        "\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m",
+        "\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m21 passed\u001b[39m\u001b[22m\u001b[90m (21)\u001b[39m",
+        "\u001b[2m   Start at \u001b[22m 16:52:38",
+        "\u001b[2m   Duration \u001b[22m 157ms\u001b[2m (transform 57ms, setup 0ms, import 72ms, tests 17ms, environment 0ms)\u001b[22m"
+      ]
+    }
+  ],
+  "sourceAnchors": {
+    "packageScript": "packages/applet-sdk/package.json#test:unit",
+    "unitTest": "packages/applet-sdk/src/adapters/lynx.test.ts",
+    "lynxAdapter": "packages/applet-sdk/src/adapters/lynx.ts",
+    "sdkPendingReplay": "packages/applet-sdk/src/index.ts"
+  },
+  "completedAt": "2026-07-09T08:52:39.136Z"
+}

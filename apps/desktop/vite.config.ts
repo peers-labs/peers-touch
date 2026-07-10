@@ -84,10 +84,6 @@ export default defineConfig({
             return 'markdown-core'
           }
 
-          if (id.includes('/@lobehub/ui/')) {
-            return 'lobehub-ui'
-          }
-
           if (id.includes('/antd/') || id.includes('/@ant-design/')) {
             return 'antd'
           }

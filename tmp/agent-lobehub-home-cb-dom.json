@@ -1,0 +1,19 @@
+{
+  "url": "http://localhost:3200/?surface=home&state=compact-home&check=cb",
+  "region": true,
+  "compactHome": true,
+  "deepHome": false,
+  "connectorStrip": true,
+  "connectorButtons": 5,
+  "compactPrompt": true,
+  "compactComposer": true,
+  "recommendedModelChips": 4,
+  "dashboardCards": 2,
+  "briefCard": true,
+  "recommendationCards": 3,
+  "viewAllTasks": true,
+  "addTaskActions": 3,
+  "legacyHeroAbsent": true,
+  "deepInspectionMenusAbsent": true,
+  "forbiddenHits": []
+}

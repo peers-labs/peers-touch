@@ -1,0 +1,192 @@
+{
+  "status": "PASS",
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.atelier",
+  "coveredPaths": [
+    "source peers.atelier manifest, service manifest, and projection contract are present",
+    "packaged peers.atelier Desktop manifest is indexed and matches the source applet manifest service binding",
+    "packaged peers.atelier Desktop manifest grants only the projection/service/event permissions required by the contract",
+    "packaged peers.atelier Desktop manifest declares station-resolved atelier service binding from /v1 to /applets/atelier/v1",
+    "Station main registers the official Atelier applet subserver and exposes the expected /applets/atelier/v1 routes",
+    "packaged main.lynx.bundle integrity matches the Desktop manifest and avoids direct Desktop/Station/Tauri imports"
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "source peers.atelier manifest, service manifest, and projection contract are present",
+      "packaged peers.atelier Desktop manifest is indexed and matches the source applet manifest service binding",
+      "packaged peers.atelier Desktop manifest grants only the projection/service/event permissions required by the contract",
+      "packaged peers.atelier Desktop manifest declares station-resolved atelier service binding from /v1 to /applets/atelier/v1",
+      "Station main registers the official Atelier applet subserver and exposes the expected /applets/atelier/v1 routes",
+      "packaged main.lynx.bundle integrity matches the Desktop manifest and avoids direct Desktop/Station/Tauri imports"
+    ],
+    "doesNotProve": [
+      "real Desktop product window UI renders peers.atelier",
+      "real Desktop Gateway network.request reaches Station at runtime",
+      "real Station projection event stream, reconnect, cursor replay, or unsubscribe lifecycle",
+      "real provider, gate, artifact, memory, rerun, workspace-open, or preview-open side effects",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "notCovered": [
+    "real Desktop product window UI renders peers.atelier",
+    "real Desktop Gateway network.request reaches Station at runtime",
+    "real Station projection event stream, reconnect, cursor replay, or unsubscribe lifecycle",
+    "real provider, gate, artifact, memory, rerun, workspace-open, or preview-open side effects",
+    "complete Host + Station + applet E2E"
+  ],
+  "checkedFiles": [
+    "apps/applets/atelier/applet.manifest.json",
+    "apps/applets/atelier/service.manifest.json",
+    "apps/applets/atelier/contracts/atelier-projection.contract.json",
+    "apps/station/app/main.go",
+    "apps/station/app/subserver/official_applets/atelier.go",
+    "apps/desktop/applets-dist/index.json",
+    "apps/desktop/applets-dist/peers.atelier/manifest.json",
+    "apps/desktop/applets-dist/peers.atelier/main.lynx.bundle"
+  ],
+  "desktopPackage": "apps/desktop/applets-dist/peers.atelier",
+  "indexed": true,
+  "desktopLoad": {
+    "type": "lynx-web",
+    "entry": "main.lynx.bundle"
+  },
+  "atelierService": {
+    "id": "atelier",
+    "kind": "http",
+    "binding": "station-resolved",
+    "allowedMethods": [
+      "GET",
+      "POST",
+      "PATCH",
+      "DELETE"
+    ],
+    "allowedPaths": [
+      "/v1/workspace",
+      "/v1/projects",
+      "/v1/projects/*",
+      "/v1/messages",
+      "/v1/escalations:resolve",
+      "/v1/provider/capabilities",
+      "/v1/feedback/submit",
+      "/v1/memory/confirm-candidate",
+      "/v1/feedback/confirm-rerun",
+      "/v1/tasks",
+      "/v1/tasks/*",
+      "/v1/artifact/body/fetch"
+    ],
+    "publicPathPrefix": "/v1",
+    "stationPathPrefix": "/applets/atelier/v1",
+    "streaming": true
+  },
+  "permissionsChecked": [
+    "network.request",
+    "events.subscribe",
+    "events.unsubscribe",
+    "events.poll",
+    "atelier.workspace.load",
+    "atelier.project.createFromGoal",
+    "atelier.message.send",
+    "atelier.escalation.resolve",
+    "atelier.task.setStatus",
+    "atelier.task.purge",
+    "atelier.provider.capabilities",
+    "atelier.feedback.submit",
+    "atelier.memory.confirmCandidate",
+    "atelier.feedback.confirmRerun",
+    "atelier.workspace.open",
+    "atelier.artifact.body.fetch",
+    "atelier.artifact.preview.open",
+    "atelier.events.subscribe"
+  ],
+  "forbiddenPermissions": [
+    "atelier.provider.invoke",
+    "atelier.skills.invoke",
+    "atelier.memory.write",
+    "atelier.rerun",
+    "atelier.artifact.produce",
+    "atelier.gate.produce",
+    "execute",
+    "run",
+    "shell",
+    "file"
+  ],
+  "serviceManifest": {
+    "service": "atelier",
+    "routes": {
+      "stationPrefix": "/applets/atelier/v1",
+      "publicPrefix": "/v1"
+    },
+    "stationBundled": true
+  },
+  "stationRouteAlignment": {
+    "mainRegistered": true,
+    "mountPath": "/applets/atelier",
+    "stationPrefix": "/applets/atelier/v1",
+    "httpMapping": [
+      {
+        "method": "GET",
+        "publicPath": "/v1/workspace",
+        "stationPath": "/applets/atelier/v1/workspace"
+      },
+      {
+        "method": "POST",
+        "publicPath": "/v1/projects",
+        "stationPath": "/applets/atelier/v1/projects"
+      },
+      {
+        "method": "POST",
+        "publicPath": "/v1/messages",
+        "stationPath": "/applets/atelier/v1/messages"
+      },
+      {
+        "method": "POST",
+        "publicPath": "/v1/escalations:resolve",
+        "stationPath": "/applets/atelier/v1/escalations:resolve"
+      },
+      {
+        "method": "POST",
+        "publicPath": "/v1/provider/capabilities",
+        "stationPath": "/applets/atelier/v1/provider/capabilities"
+      },
+      {
+        "method": "POST",
+        "publicPath": "/v1/feedback/submit",
+        "stationPath": "/applets/atelier/v1/feedback/submit"
+      },
+      {
+        "method": "POST",
+        "publicPath": "/v1/memory/confirm-candidate",
+        "stationPath": "/applets/atelier/v1/memory/confirm-candidate"
+      },
+      {
+        "method": "POST",
+        "publicPath": "/v1/feedback/confirm-rerun",
+        "stationPath": "/applets/atelier/v1/feedback/confirm-rerun"
+      },
+      {
+        "method": "POST",
+        "publicPath": "/v1/artifact/body/fetch",
+        "stationPath": "/applets/atelier/v1/artifact/body/fetch"
+      },
+      {
+        "method": "PATCH",
+        "publicPath": "/v1/tasks/*",
+        "stationPath": "/applets/atelier/v1/tasks/{task_id}/status"
+      },
+      {
+        "method": "DELETE",
+        "publicPath": "/v1/tasks/*",
+        "stationPath": "/applets/atelier/v1/tasks/{task_id}"
+      }
+    ]
+  },
+  "integrity": {
+    "sourcePlaceholder": "sha256:pending-atelier-bundle",
+    "sourcePlaceholderExpected": true,
+    "distManifestIsIntegrityTruth": true,
+    "expected": "sha256:607b4e9e9e50f3b78a21f28f1504aadd96e9acd5671fe5f68e48f7ef6c2c9910",
+    "actual": "sha256:607b4e9e9e50f3b78a21f28f1504aadd96e9acd5671fe5f68e48f7ef6c2c9910"
+  },
+  "errors": []
+}
