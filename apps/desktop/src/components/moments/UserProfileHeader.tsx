@@ -5,7 +5,7 @@ import type { PostAuthor } from '../../gen/proto/domain/social/post_pb';
 import { FollowButton } from './FollowButton';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
-import { useFederationStore } from '../../store/federation';
+import { useActiveMomentsFederationSlice } from './useActiveMomentsStore';
 
 const { Title, Text } = Typography;
 
@@ -81,7 +81,7 @@ export function UserProfileHeader({
 }: UserProfileHeaderProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
-  const federationSelf = useFederationStore((s) => s.self);
+  const federationSelf = useActiveMomentsFederationSlice((s) => s.self);
 
   if (loading || !actor) {
     return (

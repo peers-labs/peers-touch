@@ -33,6 +33,7 @@ import {
   replyPreviewForMessage,
   type ChatMessage,
 } from './message/chatMessageModel';
+import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 
 const { Text } = Typography;
 
@@ -232,7 +233,33 @@ export function ChatThreadPanel() {
     getIMMessages,
     getIMThreadMessages,
     getIMSenderProfile,
-  } = useSocialChatStore();
+  } = useActiveSocialChatSlice((s) => ({
+    activeTab: s.activeTab,
+    activeSessionUlid: s.activeSessionUlid,
+    activeGroupUlid: s.activeGroupUlid,
+    threadLoading: s.threadLoading,
+    threadLoadingMore: s.threadLoadingMore,
+    threadError: s.threadError,
+    threadHasMore: s.threadHasMore,
+    threadNextCursor: s.threadNextCursor,
+    currentUserDid: s.currentUserDid,
+    openThreadRootUlid: s.openThreadRootUlid,
+    closeThread: s.closeThread,
+    loadThreadMessages: s.loadThreadMessages,
+    refreshThreadCounts: s.refreshThreadCounts,
+    markThreadRead: s.markThreadRead,
+    setScrollToMessageUlid: s.setScrollToMessageUlid,
+    sendFriendMessage: s.sendFriendMessage,
+    sendGroupMessage: s.sendGroupMessage,
+    loadGroupMembers: s.loadGroupMembers,
+    deleteMessage: s.deleteMessage,
+    recallFriendMessage: s.recallFriendMessage,
+    recallGroupMessage: s.recallGroupMessage,
+    getIMConversations: s.getIMConversations,
+    getIMMessages: s.getIMMessages,
+    getIMThreadMessages: s.getIMThreadMessages,
+    getIMSenderProfile: s.getIMSenderProfile,
+  }));
   const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);

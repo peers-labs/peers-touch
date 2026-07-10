@@ -20,8 +20,9 @@ import (
 type ScheduledJobKind string
 
 const (
-	JobKindReview  ScheduledJobKind = "silent_review"
-	JobKindDogfood ScheduledJobKind = "dogfood"
+	JobKindReview                  ScheduledJobKind = "silent_review"
+	JobKindDogfood                 ScheduledJobKind = "dogfood"
+	JobKindCollaborationSupervisor ScheduledJobKind = "collaboration_supervisor"
 )
 
 // ScheduledJobConfig describes a repeating job.
@@ -65,6 +66,7 @@ type SchedulerService struct {
 	dogfoodService *DogfoodService
 	memoryService  *MemoryService
 	growthMetrics  *GrowthMetricsService
+	orchestration  *OrchestrationService
 
 	running   bool
 	startedAt *time.Time
@@ -92,6 +94,12 @@ func NewSchedulerService(
 		memoryService:  memorySvc,
 		growthMetrics:  growthMetrics,
 	}
+}
+
+func (s *SchedulerService) SetOrchestrationService(orchestrationSvc *OrchestrationService) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.orchestration = orchestrationSvc
 }
 
 // Start begins all registered scheduled jobs. It's idempotent — calling Start
@@ -240,6 +248,8 @@ func (s *SchedulerService) executeJob(ctx context.Context, j *scheduledJob) {
 		err = s.executeSilentReview(ctx, j.config.AgentID)
 	case JobKindDogfood:
 		err = s.executeDogfood(ctx, j.config.AgentID, j.config.Tiers)
+	case JobKindCollaborationSupervisor:
+		err = s.executeCollaborationSupervisorSweep(ctx, j.config.AgentID)
 	default:
 		err = fmt.Errorf("unknown job kind: %s", j.config.Kind)
 	}
@@ -401,6 +411,25 @@ func (s *SchedulerService) executeDogfood(ctx context.Context, agentID string, t
 	return nil
 }
 
+func (s *SchedulerService) executeCollaborationSupervisorSweep(ctx context.Context, agentID string) error {
+	if s.orchestration == nil {
+		return fmt.Errorf("orchestration service is not configured")
+	}
+	result, err := s.orchestration.RunCollaborationSupervisorSweep(ctx, agentID, 50)
+	if err != nil {
+		return err
+	}
+	logger.Infof(ctx, "scheduler: collaboration supervisor sweep agent=%s scanned=%d requested=%d skipped=%d",
+		agentID, result.Scanned, result.Requested, result.Skipped)
+	if s.growthMetrics != nil {
+		s.growthMetrics.RecordEvent(ctx, agentID, "collaboration_supervisor_sweep",
+			"scheduler", "supervisor_sweep",
+			fmt.Sprintf("scanned=%d requested=%d skipped=%d", result.Scanned, result.Requested, result.Skipped),
+			"success")
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------------
@@ -462,6 +491,12 @@ func DefaultSchedulerConfigs(agentID string) []ScheduledJobConfig {
 			Interval: 6 * time.Hour,
 			Enabled:  true,
 			Tiers:    []DogfoodTier{TierHealthCheck, TierBasicChain},
+		},
+		{
+			Kind:     JobKindCollaborationSupervisor,
+			AgentID:  agentID,
+			Interval: 5 * time.Minute,
+			Enabled:  true,
 		},
 	}
 }

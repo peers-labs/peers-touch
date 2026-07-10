@@ -24,12 +24,27 @@ const packageDir = path.resolve(packageArg ?? 'applet-readiness-evidence/package
 const evidenceDir = path.resolve('applet-readiness-evidence/desktop/product-window-gate');
 const outputPath = path.resolve('applet-readiness-evidence/desktop/product-window-gate-output.txt');
 const windowEvidencePath = path.join(evidenceDir, 'product-shell-evidence.json');
+const lifecycleEvidencePath = path.join(evidenceDir, 'product-lifecycle-evidence.json');
 const sourceAppletRoot = path.resolve('apps/desktop/applets-dist');
 const distAppletRoot = path.resolve('apps/desktop/dist/applets-dist');
 const sourceIndexPath = path.join(sourceAppletRoot, 'index.json');
+const desktopFrontendDist = path.resolve('apps/desktop/dist');
 const appShellSourcePath = path.resolve('apps/desktop/src/App.tsx');
 const defaultBundleRoot = path.resolve('apps/desktop/src-tauri/target/release/bundle');
 const runId = `${process.pid}-${Date.now()}`;
+const stableTempRoot = path.resolve(
+  process.env.TMPDIR
+    ?? process.env.TEMP
+    ?? process.env.TMP
+    ?? '.local/applet-product-window-gate/tmp',
+);
+mkdirSync(stableTempRoot, { recursive: true });
+const stableProcessEnv = {
+  ...process.env,
+  TMPDIR: stableTempRoot,
+  TEMP: stableTempRoot,
+  TMP: stableTempRoot,
+};
 const isolatedCargoTargetDir = path.resolve(
   process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_CARGO_TARGET_DIR
     ?? '.local/applet-product-window-gate/cargo-target',
@@ -37,6 +52,9 @@ const isolatedCargoTargetDir = path.resolve(
 const isolatedStorageRoot = path.resolve(
   process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_STORAGE_ROOT
     ?? `.local/applet-product-window-gate/storage-${runId}`,
+);
+const preserveStorageRoot = /^(1|true|TRUE|yes|YES)$/.test(
+  process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_PRESERVE_STORAGE_ROOT ?? '',
 );
 const isolatedProfile = process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_PROFILE
   ?? 'desktop-product-window-certification';
@@ -51,6 +69,22 @@ const requiredUpstreamUrls = (process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIR
   .split(',')
   .map((url) => url.trim())
   .filter(Boolean);
+const externalStationBaseUrl = (process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_EXTERNAL_STATION_BASE_URL ?? '').trim();
+const requiredUpstreamTimeoutMs = Number.parseInt(
+  process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS ?? '15000',
+  10,
+);
+const postRequiredUpstreamWaitMs = Number.parseInt(
+  process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS ?? '0',
+  10,
+);
+const lifecycleMode = (process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_LIFECYCLE ?? '').trim() === '1';
+const lifecycleEvidenceTimeoutMs = Number.parseInt(
+  process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_LIFECYCLE_TIMEOUT_MS ?? '30000',
+  10,
+);
+const productWindowActorId = (process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_ACTOR_ID ?? 'applet-product-window-e2e-actor').trim()
+  || 'applet-product-window-e2e-actor';
 
 mkdirSync(evidenceDir, { recursive: true });
 
@@ -72,7 +106,7 @@ function run(command, args, options = {}) {
     cwd: rootDir,
     encoding: 'utf8',
     stdio: 'pipe',
-    env: { ...process.env, ...(options.env ?? {}) },
+    env: { ...stableProcessEnv, ...(options.env ?? {}) },
   });
   if (result.status !== 0) {
     throw new Error([
@@ -126,7 +160,7 @@ function protoString(fieldNumber, value) {
 
 function actorProfileProto() {
   return Buffer.concat([
-    protoString(1, 'applet-product-window-e2e-actor'),
+    protoString(1, productWindowActorId),
     protoString(2, 'Applet Product Window Certification'),
     protoString(3, 'applet-product-window-e2e'),
   ]);
@@ -163,9 +197,42 @@ function writeSse(res) {
   res.write(': product-window-certification\n\n');
 }
 
+async function proxyExternalStationRequest(req, res, targetBaseUrl) {
+  const target = new URL(req.url ?? '/', targetBaseUrl);
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (!value || name.toLowerCase() === 'host' || name.toLowerCase() === 'connection') {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) headers.append(name, item);
+    } else {
+      headers.set(name, value);
+    }
+  }
+  const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await readBody(req);
+  const response = await fetch(target, {
+    method: req.method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  response.headers.forEach((value, name) => {
+    res.setHeader(name, value);
+  });
+  res.writeHead(response.status);
+  if (!response.body) {
+    res.end();
+    return;
+  }
+  for await (const chunk of response.body) {
+    res.write(chunk);
+  }
+  res.end();
+}
+
 function productAppletInstallState(manifest) {
   return {
-    actorId: 'applet-product-window-e2e-actor',
+    actorId: productWindowActorId,
     deviceId: 'desktop-default',
     appletId: manifest.id,
     version: manifest.version ?? '0.0.0',
@@ -290,6 +357,24 @@ function startControlledUpstream(manifest) {
       }));
       return;
     }
+    if (
+      externalStationBaseUrl
+      && (
+        parsed.pathname.startsWith('/applets/')
+        || parsed.pathname.startsWith('/sub-agent/')
+      )
+    ) {
+      try {
+        await proxyExternalStationRequest(req, res, externalStationBaseUrl);
+      } catch (error) {
+        writeJson(res, 502, {
+          error: 'external_station_proxy_failed',
+          path: req.url,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
     writeJson(res, 404, { error: 'not_found', path: req.url });
   });
 
@@ -392,7 +477,8 @@ function findMacApp() {
   if (!existsSync(macosDir)) return null;
   return readdirSync(macosDir)
     .filter((entry) => entry.endsWith('.app'))
-    .map((entry) => path.join(macosDir, entry))[0] ?? null;
+    .map((entry) => path.join(macosDir, entry))
+    .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs)[0] ?? null;
 }
 
 function findMacExecutable(appPath) {
@@ -417,6 +503,36 @@ async function waitForEvidence(child, timeoutMs) {
   throw new Error(lastState ?? `timed out waiting for ${windowEvidencePath}`);
 }
 
+async function waitForJsonEvidence(child, evidencePath, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs;
+  let lastState = null;
+  while (Date.now() < deadline) {
+    if (existsSync(evidencePath)) {
+      return readJson(evidencePath);
+    }
+    if (child.exitCode !== null) {
+      lastState = `app exited with code ${child.exitCode}`;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(lastState ?? `timed out waiting for ${label}: ${evidencePath}`);
+}
+
+async function waitForRequiredUpstreamUrls(upstream, requiredUrls, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const hitUrls = new Set(upstream.requests.map((request) => request.url));
+    const missing = requiredUrls.filter((requiredUrl) => !hitUrls.has(requiredUrl));
+    if (missing.length === 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const hitUrls = new Set(upstream.requests.map((request) => request.url));
+  const missing = requiredUrls.filter((requiredUrl) => !hitUrls.has(requiredUrl));
+  assert.deepEqual(missing, [], `controlled upstream did not receive required URLs: ${missing.join(', ')}`);
+}
+
 function stopChild(child) {
   if (child.exitCode !== null || child.killed) return Promise.resolve();
   child.kill('SIGTERM');
@@ -438,6 +554,8 @@ let controlledUpstream = null;
 let child = null;
 let appStdout = '';
 let appStderr = '';
+let selectedAppPath = '';
+let selectedExecutablePath = '';
 
 try {
   if (usesDefaultFixture && !existsSync(path.join(packageDir, 'manifest.json'))) {
@@ -460,7 +578,10 @@ try {
   );
 
   rmSync(windowEvidencePath, { force: true });
-  rmSync(isolatedStorageRoot, { recursive: true, force: true });
+  rmSync(lifecycleEvidencePath, { force: true });
+  if (!preserveStorageRoot) {
+    rmSync(isolatedStorageRoot, { recursive: true, force: true });
+  }
   mkdirSync(isolatedStorageRoot, { recursive: true });
 
   if (!skipBuild) {
@@ -475,7 +596,7 @@ try {
       '--bundles',
       'app',
       '--config',
-      JSON.stringify({ build: { beforeBuildCommand: 'true' } }),
+      JSON.stringify({ build: { frontendDist: desktopFrontendDist, beforeBuildCommand: 'true' } }),
     ], {
       env: { CI: 'false', CARGO_TARGET_DIR: isolatedCargoTargetDir },
     });
@@ -487,17 +608,20 @@ try {
   assert.ok(appPath, 'macOS .app bundle is missing; run without --skip-build to create it');
   const executablePath = findMacExecutable(appPath);
   assert.ok(executablePath, 'macOS .app executable is missing');
+  selectedAppPath = appPath;
+  selectedExecutablePath = executablePath;
 
   controlledUpstream = await startControlledUpstream(manifest);
   child = spawn(executablePath, [], {
-    cwd: rootDir,
+    cwd: path.dirname(executablePath),
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
-      ...process.env,
+      ...stableProcessEnv,
       PEERS_APPLET_PRODUCT_WINDOW_E2E: '1',
       PEERS_APPLET_PRODUCT_WINDOW_E2E_PRODUCT_APP: productAppMode ? '1' : '0',
       PEERS_APPLET_PRODUCT_WINDOW_E2E_APPLET_ID: manifest.id,
       PEERS_APPLET_PRODUCT_WINDOW_E2E_EVIDENCE: windowEvidencePath,
+      PEERS_APPLET_PRODUCT_WINDOW_E2E_LIFECYCLE_EVIDENCE: lifecycleEvidencePath,
       PEERS_APPLET_PRODUCT_WINDOW_E2E_PROVIDER_BASE_URL: controlledUpstream.baseUrl,
       PEERS_APPLET_E2E_BASE_URL: controlledUpstream.baseUrl,
       PEERS_STATION_URL: controlledUpstream.baseUrl,
@@ -544,11 +668,32 @@ try {
     );
   }
 
-  const hitUrls = new Set(controlledUpstream.requests.map((request) => request.url));
-  if (!productAppMode) {
-    for (const requiredUrl of requiredUpstreamUrls) {
-      assert.ok(hitUrls.has(requiredUrl), `controlled upstream did not receive ${requiredUrl}`);
+  if (requiredUpstreamUrls.length > 0) {
+    const waitMs = Number.isFinite(requiredUpstreamTimeoutMs) && requiredUpstreamTimeoutMs > 0
+      ? requiredUpstreamTimeoutMs
+      : 15000;
+    await waitForRequiredUpstreamUrls(controlledUpstream, requiredUpstreamUrls, waitMs);
+    if (Number.isFinite(postRequiredUpstreamWaitMs) && postRequiredUpstreamWaitMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, postRequiredUpstreamWaitMs));
     }
+  }
+  const lifecycleEvidence = lifecycleMode
+    ? await waitForJsonEvidence(
+      child,
+      lifecycleEvidencePath,
+      Number.isFinite(lifecycleEvidenceTimeoutMs) && lifecycleEvidenceTimeoutMs > 0
+        ? lifecycleEvidenceTimeoutMs
+        : 30000,
+      'product-window lifecycle evidence',
+    )
+    : null;
+  if (lifecycleMode) {
+    assert.equal(lifecycleEvidence?.ok, true, 'Gateway lifecycle evidence did not report ok=true');
+    assert.equal(
+      lifecycleEvidence?.event,
+      'applet.lifecycle.smoothness.completed',
+      'Gateway lifecycle evidence did not report applet.lifecycle.smoothness.completed',
+    );
   }
 
   const output = [
@@ -557,11 +702,15 @@ try {
     `macOS app: ${appPath}`,
     `Executable: ${executablePath}`,
     `Controlled upstream: ${controlledUpstream.baseUrl}`,
+    externalStationBaseUrl ? `External Station upstream: ${externalStationBaseUrl}` : '',
     `Isolated storage root: ${isolatedStorageRoot}`,
+    `Preserve storage root: ${preserveStorageRoot ? 'enabled' : 'disabled'}`,
     `Isolated profile: ${isolatedProfile}`,
     `Product app mode: ${productAppMode ? 'enabled' : 'disabled'}`,
+    `Lifecycle mode: ${lifecycleMode ? 'enabled' : 'disabled'}`,
     `Required upstream URLs: ${JSON.stringify(requiredUpstreamUrls)}`,
     `Product shell evidence: ${JSON.stringify(evidence)}`,
+    lifecycleEvidence ? `Product lifecycle evidence: ${JSON.stringify(lifecycleEvidence)}` : '',
     `Controlled upstream requests: ${JSON.stringify(controlledUpstream.requests)}`,
     appStdout ? `App stdout: ${appStdout}` : '',
     appStderr ? `App stderr: ${appStderr}` : '',
@@ -572,6 +721,8 @@ try {
   const output = [
     'FAIL Desktop packaged product-window applet gate',
     error instanceof Error ? error.message : String(error),
+    selectedAppPath ? `macOS app: ${selectedAppPath}` : '',
+    selectedExecutablePath ? `Executable: ${selectedExecutablePath}` : '',
     controlledUpstream ? `Controlled upstream: ${controlledUpstream.baseUrl}` : '',
     controlledUpstream ? `Controlled upstream requests: ${JSON.stringify(controlledUpstream.requests)}` : '',
     `Isolated storage root: ${isolatedStorageRoot}`,

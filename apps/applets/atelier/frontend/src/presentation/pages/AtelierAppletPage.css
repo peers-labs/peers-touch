@@ -1,0 +1,266 @@
+page {
+  height: 100%;
+  background-color: #ffffff;
+}
+
+.root {
+  height: 100%;
+  flex-direction: row;
+}
+
+.left-rail {
+  width: 212px;
+  flex-direction: column;
+  background-color: #fafafa;
+  border-right: 1px solid #f0f0f0;
+  padding: 10px 8px 8px;
+}
+
+.mode-tabs {
+  flex-direction: row;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  padding: 2px;
+  margin-bottom: 10px;
+}
+
+.mode-tab {
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 0;
+  border-radius: 6px;
+}
+
+.mode-tab--active {
+  background-color: #ffffff;
+}
+
+.nav-item {
+  flex-direction: row;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: 6px;
+}
+
+.task-list-header {
+  padding: 10px 4px 6px;
+}
+
+.task-group {
+  margin-bottom: 12px;
+}
+
+.task-group-label {
+  flex-direction: row;
+  align-items: center;
+  padding-bottom: 4px;
+  padding-left: 4px;
+}
+
+.task-row {
+  flex-direction: row;
+  align-items: center;
+  padding: 6px 8px 6px 8px;
+  border-radius: 6px;
+}
+
+.task-row--selected {
+  background-color: rgba(110, 91, 214, 0.1);
+}
+
+.centre {
+  flex: 1;
+  flex-direction: column;
+}
+
+.top-bar {
+  flex-direction: row;
+  align-items: center;
+  height: 40px;
+  padding: 0 18px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.stream-area {
+  flex: 1;
+}
+
+.stream-content {
+  padding: 18px 24px 0;
+  max-width: 760px;
+}
+
+.composer {
+  padding: 12px 24px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.composer-row {
+  flex-direction: row;
+  align-items: center;
+  background-color: #f5f5f5;
+  border-radius: 12px;
+  padding: 10px 8px 10px 14px;
+}
+
+.composer-toolbar {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.send-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+}
+
+.send-btn--active {
+  background-color: #6b5bd6;
+}
+
+.send-btn--disabled {
+  background-color: #f5f5f5;
+}
+
+.right-panel {
+  width: 226px;
+  flex-direction: column;
+  border-left: 1px solid #f0f0f0;
+  padding: 14px 16px;
+}
+
+.right-panel-scroll {
+  flex: 1;
+}
+
+.todo-empty {
+  height: 126px;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.todo-empty-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.context-section {
+  margin-top: 24px;
+}
+
+.context-bar {
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.context-progress {
+  flex: 1;
+  height: 4px;
+  background-color: #f5f5f5;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.context-progress-fill {
+  height: 4px;
+  background-color: #6b5bd6;
+  border-radius: 2px;
+}
+
+.context-tabs {
+  flex-direction: row;
+  margin-bottom: 8px;
+}
+
+.user-bubble {
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.user-bubble-body {
+  background-color: #f5f5f5;
+  border-radius: 12px;
+  padding: 10px 14px;
+  max-width: 75%;
+}
+
+.agent-bubble {
+  flex-direction: row;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.agent-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background-color: #6b5bd6;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  margin-top: 2px;
+}
+
+.nego-row {
+  margin-bottom: 16px;
+  padding-left: 32px;
+}
+
+.nego-header {
+  flex-direction: row;
+  align-items: center;
+  padding: 8px 10px;
+  background-color: #fafafa;
+  border-radius: 8px;
+}
+
+.decision-card {
+  margin-bottom: 16px;
+  padding-left: 32px;
+}
+
+.decision-body {
+  background-color: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.artifact-row {
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-left: 32px;
+  padding: 6px 0 6px 32px;
+}
+
+.diff-row {
+  margin-bottom: 12px;
+  padding-left: 32px;
+}
+
+.diff-header {
+  flex-direction: row;
+  align-items: center;
+  padding: 6px 10px;
+  background-color: #fafafa;
+  border-radius: 6px;
+}
+
+.feedback-bar {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 6px;
+}
