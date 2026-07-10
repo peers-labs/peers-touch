@@ -1,8 +1,8 @@
 # Frontend Runtime Architecture
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-07-02 | **Updated**: 2026-07-02
+> **Version**: v1.1
+> **Created**: 2026-07-02 | **Updated**: 2026-07-10
 > **Owner**: Client Platform Team
 > **Module**: `apps/desktop/src/kernel/`, `apps/desktop/src/runtimes/`, `docs/client/common/ui-identity/`
 
@@ -59,6 +59,7 @@ Peers Touch Desktop 已经具备 `PageHost`、`PageDescriptor`、`RuntimeDescrip
 | [execution-plans/20260706-desktop-global-lag-framework-plan.md](./execution-plans/20260706-desktop-global-lag-framework-plan.md) | Desktop 全局卡顿框架级治理计划 |
 | [execution-plans/20260706-desktop-global-lag-bom-spec-trace.md](./execution-plans/20260706-desktop-global-lag-bom-spec-trace.md) | Desktop 卡顿治理 BOM / Spec / Gate / Trace 试点 |
 | [execution-plans/20260706-desktop-global-lag-phase0-construction-plan.md](./execution-plans/20260706-desktop-global-lag-phase0-construction-plan.md) | Desktop 卡顿治理 Phase 0 施工图 |
+| [execution-plans/20260710-desktop-global-lag-phase1-optimization.md](./execution-plans/20260710-desktop-global-lag-phase1-optimization.md) | Desktop 卡顿治理 Phase 1 系统性优化（Scheduler / LRU / InvokeThrottler / StoreFanout / Red-line CI） |
 
 ## 5. 下游真源
 
