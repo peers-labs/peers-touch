@@ -26,12 +26,16 @@ import { theme, Modal, Popover } from 'antd';
 import { Dropdown, Input, toast } from '@lobehub/ui';
 import type { MenuProps } from '@lobehub/ui';
 import { useTranslation } from 'react-i18next';
-import { useChatStore } from '../store/chat';
-import { useAgentStore } from '../store/agent';
-import { useAgentTopicStore, type AgentTopic } from '../store/agentTopics';
-import { useAgentSearchStore, type AgentMessageSearchResult } from '../store/agentSearch';
+import type { AgentTopic } from '../store/agentTopics';
+import type { AgentMessageSearchResult } from '../store/agentSearch';
 import { api, type Agent, parseAgentChatConfig } from '../services/desktop_api';
 import { AgentIconTile } from './agent/AgentIconTile';
+import {
+  useActiveAgentSearchSlice,
+  useActiveAgentSlice,
+  useActiveAgentTopicSlice,
+  useActiveChatSlice,
+} from './agent/useActiveAgentStores';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
 
 interface AgentSidebarProps {
@@ -106,12 +110,22 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     selectedAgent,
     defaultAgent,
     setDefaultAgent,
-  } = useAgentStore();
+  } = useActiveAgentSlice((s) => ({
+    agents: s.agents,
+    loadAgents: s.loadAgents,
+    selectedAgent: s.selectedAgent,
+    defaultAgent: s.defaultAgent,
+    setDefaultAgent: s.setDefaultAgent,
+  }));
   const {
     currentSessionKey,
     sessions: storeSessions,
     selectSession,
-  } = useChatStore();
+  } = useActiveChatSlice((s) => ({
+    currentSessionKey: s.currentSessionKey,
+    sessions: s.sessions,
+    selectSession: s.selectSession,
+  }));
   const {
     activeAgentId,
     topicsByAgentId,
@@ -123,13 +137,29 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     smartRenameTopic,
     revertGeneratedTitle,
     duplicateTopic,
-  } = useAgentTopicStore();
+  } = useActiveAgentTopicSlice((s) => ({
+    activeAgentId: s.activeAgentId,
+    topicsByAgentId: s.topicsByAgentId,
+    loadingAgentIds: s.loadingAgentIds,
+    loadTopicsForAgent: s.loadTopicsForAgent,
+    createDraftTopic: s.createDraftTopic,
+    deleteTopic: s.deleteTopic,
+    renameTopic: s.renameTopic,
+    smartRenameTopic: s.smartRenameTopic,
+    revertGeneratedTitle: s.revertGeneratedTitle,
+    duplicateTopic: s.duplicateTopic,
+  }));
   const {
     searching: messageSearching,
     results: messageSearchResults,
     searchAgentMessages,
     resetSearch,
-  } = useAgentSearchStore();
+  } = useActiveAgentSearchSlice((s) => ({
+    searching: s.searching,
+    results: s.results,
+    searchAgentMessages: s.searchAgentMessages,
+    resetSearch: s.resetSearch,
+  }));
 
   const [searchText, setSearchText] = useState('');
   const [topicSearch, setTopicSearch] = useState('');

@@ -1228,6 +1228,11 @@ pub struct AgentCollaborationCancelTaskInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationResumeTaskInput {
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCollaborationSubmitNodeResultInput {
     pub task_id: String,
     pub node_id: String,

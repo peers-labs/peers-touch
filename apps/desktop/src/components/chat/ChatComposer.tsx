@@ -52,7 +52,7 @@ import {
 } from './composer/useChatAttachmentDrafts';
 import { useChatScreenshotCapture } from './composer/useChatScreenshotCapture';
 import { useChatVoiceRecorder } from './composer/useChatVoiceRecorder';
-import { useSettingsStore } from '../../store/settings';
+import { useActiveChatSettingsSlice } from './useActiveSocialChatStore';
 import { formatChatScreenshotShortcut } from '../../utils/chatScreenshotShortcut';
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
 import { uploadChatAttachmentFile } from '../../services/chatAttachments';
@@ -151,7 +151,7 @@ export function ChatComposer({
   const [inputExpanded, setInputExpanded] = useState(false);
   const [voiceSending, setVoiceSending] = useState(false);
   const [recentEmojis, setRecentEmojis] = useState<string[]>(() => loadRecentEmojis());
-  const screenshotShortcut = useSettingsStore((state) => state.chatScreenshotShortcut);
+  const screenshotShortcut = useActiveChatSettingsSlice((state) => state.chatScreenshotShortcut);
   const activeCapabilities = resolveChatComposerCapabilities(
     CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
     capabilities,

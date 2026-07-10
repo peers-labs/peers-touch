@@ -3,6 +3,15 @@ export function onWindowPopState(handler: () => void) {
   return () => window.removeEventListener('popstate', handler);
 }
 
+export function onWindowLocationChange(handler: () => void) {
+  window.addEventListener('popstate', handler);
+  window.addEventListener('hashchange', handler);
+  return () => {
+    window.removeEventListener('popstate', handler);
+    window.removeEventListener('hashchange', handler);
+  };
+}
+
 export function onWindowKeydown(handler: (event: KeyboardEvent) => void) {
   window.addEventListener('keydown', handler);
   return () => window.removeEventListener('keydown', handler);

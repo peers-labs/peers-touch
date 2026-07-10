@@ -31,9 +31,15 @@ const PRODUCT_WINDOW_E2E_PROVIDER_BASE_URL_ENV: &str =
     "PEERS_APPLET_PRODUCT_WINDOW_E2E_PROVIDER_BASE_URL";
 const PRODUCT_WINDOW_E2E_PRODUCT_APP_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E_PRODUCT_APP";
 const PRODUCT_WINDOW_E2E_EVIDENCE_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E_EVIDENCE";
+const PRODUCT_WINDOW_E2E_LIFECYCLE_EVIDENCE_ENV: &str =
+    "PEERS_APPLET_PRODUCT_WINDOW_E2E_LIFECYCLE_EVIDENCE";
 const PRODUCT_WINDOW_E2E_LIFECYCLE_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E_LIFECYCLE";
 const PRODUCT_WINDOW_E2E_SECONDARY_APPLET_ID_ENV: &str =
     "PEERS_APPLET_PRODUCT_WINDOW_E2E_SECONDARY_APPLET_ID";
+const PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER_ENV: &str =
+    "PEERS_APPLET_PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER";
+const PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER_DELAY_MS_ENV: &str =
+    "PEERS_APPLET_PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER_DELAY_MS";
 const PRODUCT_WINDOW_E2E_LOGIN_METHOD: &str = "product-window-certification";
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +69,12 @@ fn product_window_e2e_product_app_enabled() -> bool {
 
 fn product_window_e2e_lifecycle_enabled() -> bool {
     std::env::var(PRODUCT_WINDOW_E2E_LIFECYCLE_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn product_window_e2e_close_after_render_enabled() -> bool {
+    std::env::var(PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER_ENV)
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
 }
@@ -223,6 +235,12 @@ pub fn applets_product_window_launch_context(
     let lifecycle_enabled = product_window_e2e_lifecycle_enabled();
     let secondary_applet_id = std::env::var(PRODUCT_WINDOW_E2E_SECONDARY_APPLET_ID_ENV)
         .unwrap_or_else(|_| "peers.note".to_string());
+    let close_after_render = product_window_e2e_close_after_render_enabled();
+    let close_after_render_delay_ms =
+        std::env::var(PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER_DELAY_MS_ENV)
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(3000);
 
     if applet_id.trim().is_empty() || actor_id.trim().is_empty() || token.trim().is_empty() {
         return AppResult::fail(
@@ -246,7 +264,9 @@ pub fn applets_product_window_launch_context(
             "loginMethod": PRODUCT_WINDOW_E2E_LOGIN_METHOD,
             "mode": if lifecycle_enabled { "lifecycle-smoothness" } else { "product-shell" },
             "secondaryAppletId": secondary_applet_id,
-            "startPage": if lifecycle_enabled { "applets" } else { "" }
+            "startPage": if lifecycle_enabled { "applets" } else { "" },
+            "closeAfterRender": close_after_render,
+            "closeAfterRenderDelayMs": close_after_render_delay_ms
         }),
     )
 }
@@ -353,7 +373,9 @@ pub fn applets_product_window_report_lifecycle(
         );
     }
 
-    let output_path = match std::env::var(PRODUCT_WINDOW_E2E_EVIDENCE_ENV) {
+    let output_path = match std::env::var(PRODUCT_WINDOW_E2E_LIFECYCLE_EVIDENCE_ENV)
+        .or_else(|_| std::env::var(PRODUCT_WINDOW_E2E_EVIDENCE_ENV))
+    {
         Ok(path) if !path.trim().is_empty() => PathBuf::from(path),
         _ => {
             return status_payload(

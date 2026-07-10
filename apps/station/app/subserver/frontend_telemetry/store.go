@@ -11,6 +11,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const rollupInsertBatchSize = 500
+
 type rawEventModel struct {
 	ID            uint       `gorm:"column:id;primaryKey"`
 	ActorID       string     `gorm:"column:actor_id;size:255;uniqueIndex:idx_frontend_telemetry_actor_event,priority:1;index"`
@@ -95,6 +97,9 @@ func (s *rawEventStore) PersistBatch(ctx context.Context, actorID, sessionID str
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockActorTelemetryRollups(ctx, tx, actorID); err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error; err != nil {
 			return fmt.Errorf("persist frontend telemetry events: %w", err)
 		}
@@ -104,6 +109,16 @@ func (s *rawEventStore) PersistBatch(ctx context.Context, actorID, sessionID str
 		return ingestResult{}, err
 	}
 	return ingestResult{Accepted: len(rows), Rejected: len(rejected), RejectedReasons: rejected}, nil
+}
+
+func lockActorTelemetryRollups(ctx context.Context, tx *gorm.DB, actorID string) error {
+	if tx.Dialector == nil || tx.Dialector.Name() != "postgres" {
+		return nil
+	}
+	if err := tx.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", actorID).Error; err != nil {
+		return fmt.Errorf("lock frontend telemetry actor rollups: %w", err)
+	}
+	return nil
 }
 
 func (s *rawEventStore) Query(ctx context.Context, actorID string, req queryRequest) ([]rawEventModel, error) {
@@ -233,7 +248,7 @@ func (s *rawEventStore) rebuildRollups(ctx context.Context, tx *gorm.DB, actorID
 	if len(rollups) == 0 {
 		return nil
 	}
-	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rollups).Error; err != nil {
+	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&rollups, rollupInsertBatchSize).Error; err != nil {
 		return fmt.Errorf("persist frontend telemetry rollups: %w", err)
 	}
 	return nil
