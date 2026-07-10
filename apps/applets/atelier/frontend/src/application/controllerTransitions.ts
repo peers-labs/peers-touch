@@ -14,6 +14,13 @@ interface AtelierControllerPendingActionReset {
   taskActionId: '';
   taskActionKind: '';
   purgeConfirmTaskId: '';
+  providerCapabilitiesLoading: false;
+  feedbackSubmittingId: '';
+  memoryConfirming: false;
+  rerunConfirming: false;
+  workspaceOpenSubmittingId: '';
+  artifactBodyFetchId: '';
+  artifactPreviewOpenId: '';
 }
 
 export interface AtelierEventStreamDegradedState extends AtelierControllerPendingActionReset {
@@ -44,6 +51,13 @@ function pendingActionReset(): AtelierControllerPendingActionReset {
     taskActionId: '',
     taskActionKind: '',
     purgeConfirmTaskId: '',
+    providerCapabilitiesLoading: false,
+    feedbackSubmittingId: '',
+    memoryConfirming: false,
+    rerunConfirming: false,
+    workspaceOpenSubmittingId: '',
+    artifactBodyFetchId: '',
+    artifactPreviewOpenId: '',
   };
 }
 

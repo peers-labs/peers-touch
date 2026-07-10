@@ -5,6 +5,7 @@ import {
   ATELIER_ARTIFACT_KINDS,
   ATELIER_ARTIFACT_SANDBOX_REF_SHAPE,
   ATELIER_ARTIFACT_PREVIEW_TARGET_FIELDS,
+  ATELIER_ARTIFACT_PREVIEW_TARGET_KINDS,
   ATELIER_ARTIFACT_PREVIEW_TARGET_MODES,
   ATELIER_ARTIFACT_PREVIEW_HINTS,
   ATELIER_BUDGET_STATUSES,
@@ -415,7 +416,7 @@ export function parseAtelierProjectionEvent(value: unknown): AtelierProjectionEv
 
   if (!isRecord(value)) return null;
   if (typeof value.id !== 'string' || value.id.length === 0) return null;
-  if (!isFiniteNumber(value.seq) || value.seq < 0) return null;
+  if (!isNonNegativeSafeInteger(value.seq)) return null;
   if (value.taskId !== undefined && !isNonEmptyString(value.taskId)) return null;
   if (typeof value.receivedAt !== 'string' || value.receivedAt.length === 0) return null;
   if (!isAtelierProjectionPatch(value.patch)) return null;
@@ -807,7 +808,7 @@ function isAtelierArtifactProjection(value: unknown, taskId?: string): value is 
   return (
     artifactId !== undefined &&
     (value.name === undefined || typeof value.name === 'string') &&
-    (value.kind === undefined || isOneOfString(value.kind, ATELIER_ARTIFACT_KINDS)) &&
+    (value.kind === undefined || isOneOfString(value.kind, ATELIER_ARTIFACT_PREVIEW_TARGET_KINDS)) &&
     (value.meta === undefined || typeof value.meta === 'string') &&
     (value.previewHint === undefined || isArtifactPreviewHint(value.previewHint)) &&
     (value.bodyRef === undefined || isAtelierArtifactBodyRef(value.bodyRef, taskId, artifactId)) &&
@@ -909,12 +910,12 @@ function isAtelierReplayRecord(value: unknown, taskIds?: ReadonlySet<string>): v
       (taskIds === undefined || taskIds.has(key)) &&
       isRecord(item) &&
       isNonEmptyString(item.source) &&
-      isNonNegativeFiniteNumber(item.eventCount) &&
-      isNonNegativeFiniteNumber(item.replayedEventCount) &&
-      isNonNegativeFiniteNumber(item.nextEventSeq) &&
+      isNonNegativeSafeInteger(item.eventCount) &&
+      isNonNegativeSafeInteger(item.replayedEventCount) &&
+      isNonNegativeSafeInteger(item.nextEventSeq) &&
       typeof item.hasMore === 'boolean' &&
       (item.checkpointId === undefined || isNonEmptyString(item.checkpointId)) &&
-      (item.checkpointEventSeq === undefined || isNonNegativeFiniteNumber(item.checkpointEventSeq))
+      (item.checkpointEventSeq === undefined || isNonNegativeSafeInteger(item.checkpointEventSeq))
     )
   );
 }
@@ -993,6 +994,10 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isNonNegativeFiniteNumber(value: unknown): value is number {
   return isFiniteNumber(value) && value >= 0;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function isNonEmptyString(value: unknown): value is string {

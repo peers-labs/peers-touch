@@ -31,6 +31,7 @@
     "app.getContext",
     "app.getLaunchOptions",
     "lifecycle.reportReady",
+    "lifecycle.destroy",
     "network.request",
     "events.subscribe",
     "events.unsubscribe",
@@ -72,8 +73,13 @@
         "/v1/projects/*",
         "/v1/messages",
         "/v1/escalations:resolve",
+        "/v1/provider/capabilities",
+        "/v1/feedback/submit",
+        "/v1/memory/confirm-candidate",
+        "/v1/feedback/confirm-rerun",
         "/v1/tasks",
-        "/v1/tasks/*"
+        "/v1/tasks/*",
+        "/v1/artifact/body/fetch"
       ],
       "publicPathPrefix": "/v1",
       "stationPathPrefix": "/applets/atelier/v1",

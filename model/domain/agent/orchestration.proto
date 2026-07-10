@@ -42,6 +42,31 @@ enum VoteType {
   VOTE_TYPE_ABSTAIN = 3;
 }
 
+enum EnginePolicyStance {
+  ENGINE_POLICY_STANCE_UNSPECIFIED = 0;
+  ENGINE_POLICY_STANCE_PROPOSAL = 1;
+  ENGINE_POLICY_STANCE_OBJECTION = 2;
+  ENGINE_POLICY_STANCE_COUNTER = 3;
+  ENGINE_POLICY_STANCE_SIGNOFF = 4;
+}
+
+enum CollaborationSessionEventType {
+  COLLABORATION_SESSION_EVENT_TYPE_UNSPECIFIED = 0;
+  COLLABORATION_SESSION_EVENT_TYPE_ROUND_STARTED = 1;
+  COLLABORATION_SESSION_EVENT_TYPE_VOICE_RECORDED = 2;
+  COLLABORATION_SESSION_EVENT_TYPE_CONVERGENCE_EVALUATED = 3;
+  COLLABORATION_SESSION_EVENT_TYPE_AWAITING_HUMAN = 4;
+  COLLABORATION_SESSION_EVENT_TYPE_REACHED = 5;
+}
+
+enum CollaborationSessionPhase {
+  COLLABORATION_SESSION_PHASE_UNSPECIFIED = 0;
+  COLLABORATION_SESSION_PHASE_GATHERING = 1;
+  COLLABORATION_SESSION_PHASE_CONVERGING = 2;
+  COLLABORATION_SESSION_PHASE_AWAITING_HUMAN = 3;
+  COLLABORATION_SESSION_PHASE_REACHED = 4;
+}
+
 enum AcceptanceLevel {
   ACCEPTANCE_LEVEL_UNSPECIFIED = 0;
   ACCEPTANCE_LEVEL_L0 = 1;
@@ -231,6 +256,8 @@ message TaskEvent {
   TaskEventType type = 6;
   string payload_json = 7;
   google.protobuf.Timestamp created_at = 8;
+  EnginePolicyTurn engine_policy_turn = 9;
+  CollaborationSessionEvent collaboration_session_event = 10;
 }
 
 message TaskArtifact {
@@ -258,6 +285,26 @@ message TaskArtifactRef {
   string markdown = 8;
   string meta = 9;
   string size = 10;
+}
+
+message EnginePolicyTurn {
+  string role = 1;
+  EnginePolicyStance stance = 2;
+  string text = 3;
+  string evidence_ref = 4;
+  bool escalates = 5;
+}
+
+message CollaborationSessionEvent {
+  CollaborationSessionEventType type = 1;
+  CollaborationSessionPhase phase = 2;
+  string role = 3;
+  CollaborationEngineType engine_type = 4;
+  int32 round_index = 5;
+  string convergence_mechanism = 6;
+  string evidence_ref = 7;
+  string summary = 8;
+  bool requires_human = 9;
 }
 
 message TaskGateCheck {
@@ -533,6 +580,7 @@ message SubmitCollaborationNodeResultRequest {
   repeated TaskArtifactRef artifacts = 8;
   repeated TaskGateResult gates = 9;
   map<string, string> meta = 10;
+  EnginePolicyTurn engine_policy_turn = 11;
 }
 
 message SubmitCollaborationNodeResultResponse {

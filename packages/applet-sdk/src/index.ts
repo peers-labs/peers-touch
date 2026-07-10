@@ -89,11 +89,13 @@ export class AppletSDK {
     // Subscribe to bridge events and dispatch to registered handlers
     this.unsubscribeBridge = this.adapter.onEvent((topic, payload) => {
       let delivered = false;
-      for (const entry of this.eventHandlers) {
-        if (entry.topic === topic) {
-          entry.handler(payload);
-          delivered = true;
+      const matchingHandlers = this.eventHandlers.filter((entry) => entry.topic === topic);
+      for (const entry of matchingHandlers) {
+        if (!this.eventHandlers.includes(entry)) {
+          continue;
         }
+        entry.handler(payload);
+        delivered = true;
       }
       if (!delivered) {
         this.pendingEvents.push({ topic, payload });
@@ -113,15 +115,18 @@ export class AppletSDK {
   onEvent(topic: string, handler: (payload: unknown) => void): () => void {
     const entry = { topic, handler };
     this.eventHandlers.push(entry);
-    const remaining: Array<{ topic: string; payload: unknown }> = [];
-    for (const event of this.pendingEvents) {
+    const pendingSnapshot = this.pendingEvents;
+    this.pendingEvents = [];
+    for (const event of pendingSnapshot) {
+      if (!this.eventHandlers.includes(entry)) {
+        break;
+      }
       if (event.topic === topic) {
         handler(event.payload);
       } else {
-        remaining.push(event);
+        this.pendingEvents.push(event);
       }
     }
-    this.pendingEvents = remaining;
 
     return () => {
       const idx = this.eventHandlers.indexOf(entry);

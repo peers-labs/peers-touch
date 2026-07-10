@@ -7,6 +7,7 @@ import {
   Bot,
   ChartCandlestick,
   FileInput,
+  FlaskConical,
   NotebookPen,
   PackageOpen,
   Plus,
@@ -33,6 +34,7 @@ const IDENTITY_TINTS = [
 
 const OFFICIAL_IDENTITY: Record<string, { icon: ReactNode }> = {
   'peers.note': { icon: <NotebookPen size={30} strokeWidth={2} /> },
+  'peers.atelier': { icon: <FlaskConical size={30} strokeWidth={2} /> },
   'remote-cli': { icon: <TerminalSquare size={30} strokeWidth={2} /> },
   'web-search': { icon: <Search size={30} strokeWidth={2} /> },
   'agent-pilot': { icon: <Bot size={30} strokeWidth={2} /> },

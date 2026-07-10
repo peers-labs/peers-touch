@@ -14,6 +14,20 @@ const expectedMessages = [
   { level: 'warn', message: 'sandbox warning' },
   { level: 'error', message: 'sandbox error' },
 ];
+const claimBoundary = {
+  readiness: 'NOT_READY',
+  proves: [
+    'controlled Host sandbox CDP console capture normalization',
+    'ordered log/warn/error evidence from a local sandbox harness',
+  ],
+  doesNotProve: [
+    'real Run runtime stream',
+    'real provider/executor lifecycle',
+    'atelier.logs.subscribe applet capability',
+    'runtime.logs.subscribe applet capability',
+    'complete Host + Station + applet E2E',
+  ],
+};
 
 mkdirSync(evidenceDir, { recursive: true });
 
@@ -231,13 +245,8 @@ async function runGate() {
       streamId,
       source: 'host_sandbox_cdp',
       normalized,
-      notCovered: [
-        'real Run runtime stream',
-        'real provider/executor lifecycle',
-        'atelier.logs.subscribe applet capability',
-        'runtime.logs.subscribe applet capability',
-        'complete Host + Station + applet E2E',
-      ],
+      claimBoundary,
+      notCovered: claimBoundary.doesNotProve,
     };
   } finally {
     if (cdp) cdp.close();
@@ -259,6 +268,7 @@ try {
     ok: false,
     evidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     gate: 'atelier-runtime-log-stream-controlled-gate',
+    claimBoundary,
     error: error instanceof Error ? error.message : String(error),
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);

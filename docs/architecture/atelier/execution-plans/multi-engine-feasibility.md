@@ -50,10 +50,10 @@
 | **单 Agent 一个回合**（prompt 组装 → provider 调用 → model→tool→model 执行循环 → 记忆抽取 → trace 落库） | [`turn_service.go`](../../../../apps/station/app/subserver/agent/service/turn_service.go) 的 `ExecuteTurn`（11 步）+ `processToolCalls`（model→tool→model 循环，硬上限 `maxToolIterations=25`）+ `providerCallWithRetry`（凭证轮换 + 错误分类恢复） | 无——这是 EnginePolicy 里「每个 turn」直接映射的执行单元，已可用 |
 | **一轮里多个角色并行发言**（Roundtable 全员提案、Debate 正反同时立论、Swarm/Mesh 并行） | [`delegation_service.go`](../../../../apps/station/app/subserver/agent/service/delegation_service.go) 的 `Execute`（信号量 `MaxConcurrentChildren=3` 有界并发 + 每任务超时 5min + panic 恢复 + 结果归集；`executor` 回调注入解耦） | 无——这是「一轮扇出 N 个发言」的执行骨架，已可用 |
 | **子任务工具裁剪 / 递归深度**（防止子 Agent 越权、防止无限递归） | [`delegation.go`](../../../../apps/station/app/subserver/agent/domain/delegation.go) 的 `MaxDelegationDepth=2`、`DelegateBlockedTools`、`ComputeChildToolset` | 无——已可用 |
-| **EnginePolicy 抽象本身**（schedule / convergenceMechanism / authority） | `model/domain/agent/orchestration.proto` 已有 `CollaborationEngineType`，`AtelierProjectionService.CreateProjectFromGoal` 已把六个 prototype `flowId` 映射到该 enum 并拒绝未知 flow；`TestAtelierEngineTypeFromFlowIDMapsPrototypeFlows` / `RejectsUnknownFlow` 有 service-static 证据 | **仍缺**：`EnginePolicy` runtime 接口、`schedule` 实现、真实多引擎运行时 |
-| **CollaborationSession 状态机**（gathering → converging → reached / awaiting_human） | `CollaborationTask` / `CollaborationTaskStatus` proto、persistence 与 `OrchestrationService.CreateCollaborationTask` 已存在；Atelier `agents` intent 已能创建 Station-owned collaboration task | **仍待 runtime**：把 EnginePolicy runtime 接入 gathering/converging/reached/awaiting_human 的真实状态流转与 E2E |
-| **共识收敛闸**（authority_signoff ∧ 带证据未决反对=0） | — | **缺**：`Consensus` / `Objection` / `signoff` 判定逻辑 |
-| **九角色权力结构**（GoalOwner 终裁、Risk 硬否决、Verifier 验收否决须带证据） | `OrchestrationService` 已有 Atelier role allowlist/canonicalization，TaskGraph projection 会输出 `agentRole`；CreateTask/provider plan role guard 有 service/static evidence；formal `AtelierAgentRole` proto enum + `AtelierAgentRoleAuthority` matrix schema 已补 | **仍缺**：EnginePolicy runtime、Consensus/Objection/signoff 判定、真实运行时否决与验收 E2E |
+| **EnginePolicy 抽象本身**（schedule / convergenceMechanism / authority） | `model/domain/agent/orchestration.proto` 已有 `CollaborationEngineType`，`AtelierProjectionService.CreateProjectFromGoal` 已把六个 prototype `flowId` 映射到该 enum 并拒绝未知 flow；Station deterministic `engine_policy.go` 已实现共识闸 evaluator 与 `finishExecutedTask` pause hook；finish-path integration test 证明 unresolved durable objection 会在 GoalKeeper 前 PAUSED；node result outbox payload 会持久化 `engine_policy_turn`，evaluator 优先消费 durable `agent_task_events`；typed proto `EnginePolicyTurn` schema 已补并接入 submit-node-result request，`TaskEvent.engine_policy_turn` 也会从 durable explicit payload 投影 typed turn；Station deterministic `EnginePolicy` schedule policy 已补六引擎 role order / parallel flag / convergenceMechanism，`buildCollaborationTaskNodes` 已消费该 schedule，provider plan typed role 仍优先；service-static tests 覆盖 reached/awaiting_human/concern downgrade/event priority/typed turn persistence/typed turn validation/schedule roles | **仍缺**：真实多引擎 provider E2E |
+| **CollaborationSession 状态机**（gathering → converging → reached / awaiting_human） | `CollaborationTask` / `CollaborationTaskStatus` proto、persistence 与 `OrchestrationService.CreateCollaborationTask` 已存在；Atelier `agents` intent 已能创建 Station-owned collaboration task；EnginePolicy evaluator 可在受控 meta 下把 awaiting_human 收口为 PAUSED，且 finish-path integration test 固定 GoalKeeper 前暂停，并从 durable outbox turn input 读取共识发言；`TaskEvent.engine_policy_turn` 已提供 explicit durable EnginePolicy turn 的 typed proto projection；typed proto `CollaborationSessionEvent` schema 已补，`TaskEvent.collaboration_session_event` 只从 durable explicit payload 投影 typed session lifecycle event，不从 summary fallback 推断 | **仍待 runtime**：真实 schedule 流转与 E2E |
+| **共识收敛闸**（authority_signoff ∧ 带证据未决反对=0） | Station deterministic `engine_policy.go` 已翻译 prototype 规则：带证据 objection - counter、无证据 objection 降级 concern、escalating signoff 不算 authority approval；typed proto `EnginePolicyTurn.stance` 已覆盖 proposal/objection/counter/signoff；tests 覆盖 reached/awaiting_human/downgrade/durable event priority | **仍缺**：真实 LLM 质量与 E2E |
+| **九角色权力结构**（GoalOwner 终裁、Risk 硬否决、Verifier 验收否决须带证据） | `OrchestrationService` 已有 Atelier role allowlist/canonicalization，TaskGraph projection 会输出 `agentRole`；CreateTask/provider plan role guard 有 service/static evidence；formal `AtelierAgentRole` proto enum + `AtelierAgentRoleAuthority` matrix schema 已补；typed proto `EnginePolicyTurn.role` 已接入 submit result；Station deterministic evaluator 已按 authority matrix 校验 non-escalating GoalOwner terminal signoff、Risk hard veto、Verifier acceptance veto 与 Executor judgment forbidden | **仍缺**：真实运行时否决与验收 E2E |
 
 ### 2.1 当前缺口口径
 
@@ -61,9 +61,9 @@
 
 - `CollaborationEngineType` 与 `CollaborationTask` 已进入 proto / persistence / service-static 路径，Atelier `flowId` 会映射到六个 EngineType，并拒绝未知 flow。
 - `AgentRole` 已有 formal `AtelierAgentRole` proto enum 与 `AtelierAgentRoleAuthority` matrix schema；Station CreateTask/provider plan 仍以 role allowlist/canonicalization 承接运行时输入，TaskGraph projection 也会输出 `agentRole`。
-- `EnginePolicy` runtime、`schedule` 实现、`Consensus` / `Objection` / `signoff` 判定、完整权力矩阵与真实多引擎 E2E 仍未落。
+- Station deterministic `engine_policy.go` 已实现共识闸 evaluator、awaiting_human pause hook、finish-path integration evidence、durable `engine_policy_turn` event input、typed proto `EnginePolicyTurn` schema、`TaskEvent.engine_policy_turn` typed event projection、typed proto `CollaborationSessionEvent` schema、`TaskEvent.collaboration_session_event` explicit durable payload projection、deterministic `EnginePolicy` schedule policy 与 authority matrix service-static runtime；真实多引擎 provider E2E 仍未落。
 
-结论：多引擎编排已从“文档 + 原型下拉框名字”推进到 **proto/service-static evidence**；但仍不能声明真实多引擎运行时完成。下一步应落 EnginePolicy runtime 与真实 provider 垂直切片，而不是把旧“100% 没开始”继续作为执行依据。
+结论：多引擎编排已从“文档 + 原型下拉框名字”推进到 **proto/service-static evidence + deterministic consensus evaluator + durable event input + typed turn schema + typed session event schema + typed event projection + deterministic schedule policy**；但仍不能声明真实多引擎运行时完成。下一步应接真实 provider 垂直切片验证质量。
 
 ---
 
@@ -100,7 +100,7 @@ reached  ⟺  authority_signoff == true  ∧  带证据的未决反对数 == 0
 - 一个 counter 解决一个带证据的 objection。
 - escalating 的 signoff **不算** authority 批准（防止用「我签了但其实升级了」蒙混）。
 
-> 原型 `engine.ts` 的 `runSession` 已实现这套闸：`evidenceObjections - counters` 得到 `pendingObjections`，`authoritySignoff = signoffTurn 存在且 !escalates`，`reached = authoritySignoff && pendingObjections === 0`。`engineTrace.tsx` 把无证据 objection 显式渲染为「降级为疑虑」。
+> 原型 `engine.ts` 的 `runSession` 已实现这套闸；Station `apps/station/app/subserver/agent/service/engine_policy.go` 已翻译为 deterministic evaluator，并在受控 `engine_policy_runtime=enabled` meta 下由 `finishExecutedTask` 将 `awaiting_human` 收口为 `PAUSED`，并有 integration test 证明 unresolved durable objection 不会继续写 GoalKeeper acceptance。node result outbox payload 会写入 `engine_policy_turn`，evaluator 优先从 durable `agent_task_events` 读取；typed proto `EnginePolicyTurn` 已补；Station deterministic `EnginePolicy` schedule policy 已补六引擎 role order / parallel flag / convergenceMechanism 并被 node builder 消费。当前仍缺真实 provider E2E。
 
 ---
 
@@ -135,9 +135,9 @@ reached  ⟺  authority_signoff == true  ∧  带证据的未决反对数 == 0
 ## 7. 建议的落地顺序（接真实 Go）
 
 1. 定义 `AgentRole` / `EngineType` 枚举 + `CollaborationSession` / `CollaborationTask` 实体（data-model.md §1.4 已有 schema）。
-2. 写 `EnginePolicy` 接口 + `runSession` 状态机（直接翻译原型 `engine.ts`）。
-3. 落 `Expert Hierarchy` 一个 policy，`schedule` 复用 `turn_service.go` 串行多回合。
-4. 接共识闸（design.md §4.1），跑通 `reached / awaiting_human`。
+2. 已先落 deterministic consensus evaluator + awaiting_human pause hook + durable `engine_policy_turn` event input + typed proto `EnginePolicyTurn` + deterministic `EnginePolicy` schedule policy。
+3. 将 schedule policy 接入真实 provider vertical slice，先证明 `Expert Hierarchy` 可复用 `turn_service.go` 串行多回合。
+4. 扩展共识闸到真实 objection/counter/signoff event source，保留 `reached / awaiting_human` 的 deterministic gate。
 5. **垂直切片验证**：用真实 provider 跑一个真实任务，验证第三层质量。
 6. 加 `Roundtable`（复用 `delegation_service.go` 并发扇出）+ `Debate Judge`。
 7. 第二批三引擎作为前三种收敛机制的变体扩展。

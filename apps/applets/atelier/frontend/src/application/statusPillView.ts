@@ -1,4 +1,4 @@
-import { ATELIER_VIEW_SURFACE } from '../domain/projection.contract.generated';
+import { ATELIER_STATUS_LABEL_KEY_BY_STATUS, ATELIER_VIEW_SURFACE } from '../domain/projection.contract.generated';
 import type { AtelierViewStatus } from '../domain/projection.contract.generated';
 
 export type OfficialStatusPillTone =
@@ -10,16 +10,7 @@ export interface OfficialStatusPillView {
 }
 
 const statusSeverityByStatus = ATELIER_VIEW_SURFACE.recovery.statusSeverityByStatus as Record<AtelierViewStatus, OfficialStatusPillTone>;
-const statusLabelKeyByStatus: Record<AtelierViewStatus, string> = {
-  loading: 'atelier.status.loading',
-  empty: 'atelier.status.empty',
-  ready: 'atelier.status.ready',
-  reconciling: 'atelier.status.reconciling',
-  degraded: 'atelier.status.degraded',
-  disconnected: 'atelier.status.disconnected',
-  'auth-denied': 'atelier.status.authDenied',
-  error: 'atelier.status.error',
-};
+const statusLabelKeyByStatus = ATELIER_STATUS_LABEL_KEY_BY_STATUS as Record<AtelierViewStatus, string>;
 
 export function deriveOfficialStatusPillView(status: AtelierViewStatus): OfficialStatusPillView {
   return {

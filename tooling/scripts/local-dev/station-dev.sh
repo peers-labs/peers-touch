@@ -50,6 +50,16 @@ start_compose_station() {
 }
 
 if [[ "$STATION_MODE" == "remote" ]]; then
+  skip_deploy="${PT_STATION_SKIP_DEPLOY:-false}"
+
+  if [[ "$skip_deploy" == "true" ]]; then
+    if station_is_ready; then
+      echo "[OK] Remote Station already ready (deploy skipped): $STATION_URL"
+      exit 0
+    fi
+    echo "[WARN] PT_STATION_SKIP_DEPLOY=true but Station not reachable: $STATION_URL"
+  fi
+
   deploy_env="${PT_STATION_DEPLOY_ENV:-}"
   if [[ -z "$deploy_env" ]]; then
     echo "[ERROR] Station mode is remote, but PT_STATION_DEPLOY_ENV is not set."

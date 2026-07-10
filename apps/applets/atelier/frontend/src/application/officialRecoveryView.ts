@@ -1,9 +1,11 @@
 import {
   ATELIER_RECOVERY_RETRYABLE_KINDS,
   ATELIER_RECOVERY_TONE_BY_KIND,
+  ATELIER_VIEW_SURFACE,
 } from '../domain/projection.contract.generated';
-import type { AtelierRecoveryTone } from '../domain/projection.contract.generated';
+import type { AtelierRecoveryTone, AtelierViewStatus as AtelierPageViewStatus } from '../domain/projection.contract.generated';
 import type { AtelierErrorKind } from '../infrastructure/capability/atelierClient';
+import { deriveAtelierPageSurface } from './pageComposition';
 
 export interface OfficialRecoveryView {
   tone: AtelierRecoveryTone;
@@ -12,26 +14,26 @@ export interface OfficialRecoveryView {
   detailKey?: string;
 }
 
-const recoveryLabelKeyByKind = {
-  'auth-denied': {
-    titleKey: 'atelier.error.authDeniedTitle',
-    detailKey: 'atelier.error.authDeniedDetail',
-  },
-  disconnected: {
-    titleKey: 'atelier.error.disconnectedTitle',
-    detailKey: 'atelier.error.disconnectedDetail',
-  },
-  'invalid-projection': {
-    titleKey: 'atelier.status.error',
-  },
-  'agent-ids-required': {
-    titleKey: 'atelier.status.error',
-  },
-  error: {
-    titleKey: 'atelier.status.error',
-  },
-} satisfies Record<AtelierErrorKind, { titleKey: string; detailKey?: string }>;
+export type OfficialStatusActionKind = 'create-project' | 'retry' | 'none';
 
+export interface OfficialStatusActionPolicy {
+  primaryAction: OfficialStatusActionKind;
+  createProjectVisible: boolean;
+  retryVisible: boolean;
+}
+
+export function isOfficialStatusActionPolicyConsistent(policy: OfficialStatusActionPolicy): boolean {
+  if (policy.createProjectVisible && policy.retryVisible) return false;
+  if (policy.primaryAction === 'create-project') {
+    return policy.createProjectVisible && !policy.retryVisible;
+  }
+  if (policy.primaryAction === 'retry') {
+    return !policy.createProjectVisible && policy.retryVisible;
+  }
+  return !policy.createProjectVisible && !policy.retryVisible;
+}
+
+const recoveryLabelKeyByKind = ATELIER_VIEW_SURFACE.recovery.labelKeyByKind satisfies Record<AtelierErrorKind, { titleKey: string; detailKey?: string }>;
 const recoveryToneByKind = ATELIER_RECOVERY_TONE_BY_KIND satisfies Record<AtelierErrorKind, AtelierRecoveryTone>;
 
 export function deriveOfficialRecoveryView(kind: AtelierErrorKind | ''): OfficialRecoveryView {
@@ -48,5 +50,36 @@ export function deriveOfficialRecoveryView(kind: AtelierErrorKind | ''): Officia
     tone: recoveryToneByKind[kind],
     retryVisible,
     ...recoveryLabelKeyByKind[kind],
+  };
+}
+
+export function deriveOfficialStatusActionPolicy(input: {
+  error: string;
+  errorKind: AtelierErrorKind | '';
+  loading: boolean;
+  taskCount: number;
+  viewStatus: AtelierPageViewStatus;
+}): OfficialStatusActionPolicy {
+  const pageSurface = deriveAtelierPageSurface(input);
+  if (pageSurface.emptyVisible) {
+    return {
+      primaryAction: 'create-project',
+      createProjectVisible: true,
+      retryVisible: false,
+    };
+  }
+  const recoveryKind = pageSurface.globalErrorVisible ? input.errorKind : pageSurface.typedRecoveryKind;
+  if (recoveryKind) {
+    const recoveryView = deriveOfficialRecoveryView(recoveryKind);
+    return {
+      primaryAction: recoveryView.retryVisible ? 'retry' : 'none',
+      createProjectVisible: false,
+      retryVisible: recoveryView.retryVisible,
+    };
+  }
+  return {
+    primaryAction: 'none',
+    createProjectVisible: false,
+    retryVisible: false,
   };
 }

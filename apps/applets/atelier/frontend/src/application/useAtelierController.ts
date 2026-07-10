@@ -11,6 +11,7 @@ import type {
 } from '../domain/projection';
 import type {
   AtelierAgentFlowId,
+  AtelierCertificationCreateConfig,
   AtelierErrorKind,
   AtelierFeedbackSignal,
   AtelierArtifactBodyResponse,
@@ -20,10 +21,6 @@ import type {
   AtelierRunTargetKind,
 } from '../infrastructure/capability/atelierClient';
 import {
-  ATELIER_ARTIFACT_BODY_REF_SHAPE,
-    ATELIER_ARTIFACT_PREVIEW_OPEN_DEFAULT_MODE,
-  ATELIER_ARTIFACT_PREVIEW_OPEN_MODES,
-  ATELIER_ARTIFACT_SANDBOX_REF_SHAPE,
   ATELIER_DEFAULT_AGENT_FLOW_ID,
   ATELIER_DEFAULT_DIRECT_RUN_MODEL,
   ATELIER_DEFAULT_RUN_TARGET_KIND,
@@ -41,6 +38,7 @@ import {
   openAtelierArtifactPreview,
   openAtelierWorkspace,
   purgeAtelierTask,
+  readAtelierCertificationArtifactBodyFetchConfig,
   readAtelierCertificationCreateConfig,
   readAtelierCertificationDecisionConfig,
   readAtelierCertificationPreviewOpenConfig,
@@ -58,7 +56,11 @@ import {
   stateFromAtelierEventStreamError,
 } from './controllerTransitions';
 import { nextAtelierEventStreamRetryDelayMs } from './eventStreamRecovery';
-import { stateFromMalformedAtelierProjectionEvent } from './eventStreamEventGuard';
+import {
+  stateFromAtelierProjectionEventApplyOutcome,
+  stateFromMalformedAtelierProjectionEvent,
+} from './eventStreamEventGuard';
+import { deriveAtelierProjectionSubscriptionKey } from './atelierProjectionSubscriptionKey';
 import {
   applyAtelierProjectionEventWithResult,
   createAtelierProjectionRuntimeState,
@@ -70,8 +72,31 @@ import {
   type AtelierEventStreamState,
   type AtelierViewStatus,
 } from './viewStatus';
+import {
+  buildAtelierArtifactBodyFetchIntent,
+  buildAtelierArtifactPreviewOpenIntent,
+  isCurrentAtelierArtifactRequest,
+} from './artifactActionGuards';
+import {
+  buildAtelierTaskLifecycleIntent,
+  type AtelierTaskActionKind,
+} from './taskLifecycleActionGuards';
+import { buildAtelierMessageSendIntent } from './messageActionGuards';
+import { buildAtelierDecisionResolveIntent } from './decisionActionGuards';
+import { buildAtelierFeedbackSubmitIntent } from './feedbackActionGuards';
+import {
+  buildAtelierMemoryConfirmIntent,
+  buildAtelierRerunConfirmIntent,
+} from './confirmationActionGuards';
+import { buildAtelierWorkspaceOpenIntent } from './workspaceActionGuards';
+import { buildAtelierProjectCreateIntent } from './projectCreateActionGuards';
+import {
+  appendAtelierProviderCapabilityCommand,
+  buildAtelierProviderCapabilityDiscoveryIntent,
+  buildAtelierProviderCapabilityCommandInsertIntent,
+} from './providerCapabilityActionGuards';
 
-export type AtelierTaskActionKind = 'archive' | 'restore' | 'delete' | 'purge';
+export type { AtelierTaskActionKind } from './taskLifecycleActionGuards';
 export type { AtelierEventStreamState, AtelierViewStatus } from './viewStatus';
 
 export interface AtelierCreatedProjectRenderEvidence {
@@ -84,6 +109,19 @@ export interface AtelierDecisionResolutionRenderEvidence {
   taskId: string;
   blockId: string;
   choice: string;
+}
+
+const certificationCreateSubmissionKeys = new Set<string>();
+
+function certificationCreateSubmissionKey(config: AtelierCertificationCreateConfig): string {
+  return JSON.stringify({
+    flowId: config.flowId ?? '',
+    goal: config.goal,
+    intentPreset: config.intentPreset ?? '',
+    model: config.model ?? '',
+    project: config.project ?? '',
+    runKind: config.runKind ?? ATELIER_DEFAULT_RUN_TARGET_KIND,
+  });
 }
 
 export interface AtelierControllerState extends AtelierProjectionRuntimeState {
@@ -249,6 +287,7 @@ export function useAtelierController(): AtelierController {
   const [composerRevision, setComposerRevision] = useState(0);
   const certificationCreateSubmittedRef = useRef(false);
   const certificationDecisionSubmittedRef = useRef(false);
+  const certificationArtifactBodyFetchSubmittedRef = useRef(false);
   const certificationPreviewOpenSubmittedRef = useRef(false);
   const artifactBodyRequestSeq = useRef(0);
   const artifactPreviewOpenRequestSeq = useRef(0);
@@ -269,20 +308,31 @@ export function useAtelierController(): AtelierController {
       const certificationCreate = certificationCreateSubmittedRef.current
         ? null
         : await readAtelierCertificationCreateConfig();
-      if (certificationCreate) {
+      const certificationCreateKey = certificationCreate
+        ? certificationCreateSubmissionKey(certificationCreate)
+        : '';
+      if (certificationCreate && !certificationCreateSubmissionKeys.has(certificationCreateKey)) {
         certificationCreateSubmittedRef.current = true;
+        certificationCreateSubmissionKeys.add(certificationCreateKey);
         setState((current) => ({ ...current, creatingProject: true }));
-          const runKind = certificationCreate.runKind ?? ATELIER_DEFAULT_RUN_TARGET_KIND;
-        snapshot = await createAtelierProjectFromGoal({
-          ...certificationCreate,
-          runKind,
-        });
+        const runKind = certificationCreate.runKind ?? ATELIER_DEFAULT_RUN_TARGET_KIND;
+        try {
+          snapshot = await createAtelierProjectFromGoal({
+            ...certificationCreate,
+            runKind,
+          });
+        } catch (error) {
+          certificationCreateSubmissionKeys.delete(certificationCreateKey);
+          throw error;
+        }
         const createdTaskId = snapshot.selectedTaskId;
         createdProjectRenderEvidence = {
           taskId: createdTaskId,
           goal: certificationCreate.goal,
           runKind,
         };
+      } else if (certificationCreate) {
+        certificationCreateSubmittedRef.current = true;
       }
       const certificationDecision = certificationDecisionSubmittedRef.current
         ? null
@@ -356,19 +406,24 @@ export function useAtelierController(): AtelierController {
     void load();
   }, [load]);
 
-  const subscriptionTaskId =
-    state.selectedTaskId || state.snapshot?.selectedTaskId || state.snapshot?.workspace.tasks[0]?.id || '';
-  const subscriptionAfterEventSeq = state.snapshot?.workspace.replay?.[subscriptionTaskId]?.nextEventSeq ?? 0;
-  const hasSnapshot = Boolean(state.snapshot);
+  const subscriptionKey = deriveAtelierProjectionSubscriptionKey(state.snapshot, state.selectedTaskId);
+  const subscriptionTaskId = subscriptionKey.taskId;
+  const subscriptionAfterEventSeq = subscriptionKey.afterEventSeq;
+  const hasSnapshot = subscriptionKey.hasSnapshot;
 
   useEffect(() => {
+    const intentResult = buildAtelierProviderCapabilityDiscoveryIntent({
+      taskId: state.selectedTaskId,
+    });
+    if (intentResult.status === 'invalid') return undefined;
+    const { intent } = intentResult;
     let disposed = false;
     setState((current) => ({
       ...current,
       providerCapabilitiesLoading: true,
       providerCapabilitiesError: '',
     }));
-    void loadAtelierProviderCapabilities(state.selectedTaskId)
+    void loadAtelierProviderCapabilities(intent.taskId)
       .then((response) => {
         if (disposed) return;
         setState((current) => ({
@@ -421,6 +476,35 @@ export function useAtelierController(): AtelierController {
         ...current,
         ...stateFromAtelierEventStreamConnecting(),
       }));
+      const handleSubscriptionRejected = (error: unknown) => {
+        if (disposed) return;
+        const normalized = stateFromAtelierError(error);
+        const retryDelayMs = nextAtelierEventStreamRetryDelayMs({
+          attempt: retryAttempt,
+          errorKind: normalized.errorKind,
+          hasSnapshot: true,
+        });
+        void trackAtelierProjectionSubscriptionDiagnostic({
+          stage: 'controller.subscribe-rejected',
+          selectedTaskId: subscriptionTaskId,
+          snapshotSelectedTaskId: state.snapshot?.selectedTaskId,
+          taskCount: state.snapshot?.workspace.tasks.length ?? 0,
+          afterEventSeq: subscriptionAfterEventSeq,
+          error: error instanceof Error ? error.message : String(error),
+          errorKind: normalized.errorKind,
+          retryAttempt,
+          retryDelayMs,
+          retryable: retryDelayMs !== null,
+        }).catch(() => undefined);
+        setState((current) => ({
+          ...current,
+          ...stateFromAtelierEventStreamError(error, Boolean(current.snapshot)),
+        }));
+        if (retryDelayMs !== null) {
+          retryAttempt += 1;
+          retryTimer = setTimeout(connect, retryDelayMs);
+        }
+      };
       void subscribeAtelierProjectionEvents(
         state.snapshot,
         subscriptionTaskId,
@@ -428,15 +512,7 @@ export function useAtelierController(): AtelierController {
           retryAttempt = 0;
           setState((current) => {
             const result = applyAtelierProjectionEventWithResult(current, event);
-            const rejectedProjectionEvent =
-              result.outcome === 'stale' || result.outcome === 'unknown-task'
-                ? stateFromMalformedAtelierProjectionEvent()
-                : {
-                    loading: false as const,
-                    eventStreamState: 'live' as const,
-                    eventStreamError: '',
-                    eventStreamErrorKind: '' as const,
-                  };
+            const eventApplyUiState = stateFromAtelierProjectionEventApplyOutcome(result.outcome);
             const artifactPreviewInvalidation =
               result.outcome === 'applied' &&
               event.patch.kind === 'artifact.upsert' &&
@@ -456,7 +532,7 @@ export function useAtelierController(): AtelierController {
               ...result.state,
               error: '',
               errorKind: '',
-              ...rejectedProjectionEvent,
+              ...eventApplyUiState,
               ...artifactPreviewInvalidation,
               lastAppliedProjectionEvent: result.outcome === 'applied' ? event : current.lastAppliedProjectionEvent,
               resolvingDecisionId:
@@ -478,6 +554,7 @@ export function useAtelierController(): AtelierController {
             ...stateFromMalformedAtelierProjectionEvent(),
           }));
         },
+        handleSubscriptionRejected,
       )
         .then((release) => {
           if (disposed) {
@@ -493,23 +570,7 @@ export function useAtelierController(): AtelierController {
             eventStreamErrorKind: '',
           }));
         })
-        .catch((error) => {
-          if (disposed) return;
-          const normalized = stateFromAtelierError(error);
-          const retryDelayMs = nextAtelierEventStreamRetryDelayMs({
-            attempt: retryAttempt,
-            errorKind: normalized.errorKind,
-            hasSnapshot: true,
-          });
-          setState((current) => ({
-            ...current,
-            ...stateFromAtelierEventStreamError(error, Boolean(current.snapshot)),
-          }));
-          if (retryDelayMs !== null) {
-            retryAttempt += 1;
-            retryTimer = setTimeout(connect, retryDelayMs);
-          }
-        });
+        .catch(handleSubscriptionRejected);
     };
 
     connect();
@@ -552,10 +613,19 @@ export function useAtelierController(): AtelierController {
   }, []);
 
   const createProject = useCallback(async () => {
-    const goal = goalDraft.trim();
-    if (!goal || state.creatingProject) return;
-
     const selectedProject = state.snapshot?.workspace.tasks.find((task) => task.id === state.selectedTaskId)?.project;
+    const intentResult = buildAtelierProjectCreateIntent({
+      goal: goalDraft,
+      intentPreset: selectedIntentPreset,
+      model: selectedModel,
+      runKind: selectedRunKind,
+      flowId: selectedFlowId,
+      project: selectedProject,
+      pending: state.creatingProject,
+    });
+    if (intentResult.status === 'blocked' || intentResult.status === 'invalid') return;
+    const { intent } = intentResult;
+
     setState((current) => ({
       ...current,
       error: '',
@@ -564,14 +634,7 @@ export function useAtelierController(): AtelierController {
       purgeConfirmTaskId: '',
     }));
     try {
-      const snapshot = await createAtelierProjectFromGoal({
-        goal,
-        intentPreset: selectedIntentPreset,
-        model: selectedModel,
-        runKind: selectedRunKind,
-        flowId: selectedFlowId,
-        project: selectedProject,
-      });
+      const snapshot = await createAtelierProjectFromGoal(intent);
       setSelectedArtifactId('');
       setGoalDraft('');
       setGoalRevision((current) => current + 1);
@@ -580,12 +643,9 @@ export function useAtelierController(): AtelierController {
       setState((current) => ({
         ...current,
         ...stateFromAtelierSnapshot(snapshot),
-        loading: false,
         error: '',
         errorKind: '',
-        eventStreamState: 'live',
-        eventStreamError: '',
-        eventStreamErrorKind: '',
+        ...stateFromAtelierEventStreamConnecting(),
         resolvingDecisionId: '',
         creatingProject: false,
         sendingMessage: false,
@@ -610,27 +670,24 @@ export function useAtelierController(): AtelierController {
   }, [goalDraft, selectedFlowId, selectedIntentPreset, selectedModel, selectedRunKind, state.creatingProject, state.selectedTaskId, state.snapshot]);
 
   const resolveDecision = useCallback(async (taskId: string, blockId: string, choice: string) => {
-    const trimmedTaskId = taskId.trim();
-    const trimmedBlockId = blockId.trim();
-    const trimmedChoice = choice.trim();
-    if (!trimmedTaskId || !trimmedBlockId || !trimmedChoice) return;
+    const intentResult = buildAtelierDecisionResolveIntent({
+      taskId,
+      blockId,
+      choice,
+      pendingBlockId: state.resolvingDecisionId,
+    });
+    if (intentResult.status === 'blocked' || intentResult.status === 'invalid') return;
+    const { intent } = intentResult;
 
-    setState((current) => ({ ...current, error: '', errorKind: '', resolvingDecisionId: trimmedBlockId }));
+    setState((current) => ({ ...current, error: '', errorKind: '', resolvingDecisionId: intent.blockId }));
     try {
-      const snapshot = await resolveAtelierDecision({
-        taskId: trimmedTaskId,
-        blockId: trimmedBlockId,
-        choice: trimmedChoice,
-      });
+      const snapshot = await resolveAtelierDecision(intent);
       setState((current) => ({
         ...current,
         ...stateFromAtelierSnapshot(snapshot),
-        loading: false,
         error: '',
         errorKind: '',
-        eventStreamState: 'live',
-        eventStreamError: '',
-        eventStreamErrorKind: '',
+        ...stateFromAtelierEventStreamConnecting(),
         resolvingDecisionId: '',
         creatingProject: false,
         sendingMessage: false,
@@ -653,27 +710,28 @@ export function useAtelierController(): AtelierController {
         purgeConfirmTaskId: '',
       }));
     }
-  }, []);
+  }, [state.resolvingDecisionId]);
 
   const sendMessage = useCallback(async () => {
-    const taskId = state.selectedTaskId.trim();
-    const text = composerText.trim();
-    if (!taskId || !text || state.sendingMessage) return;
+    const intentResult = buildAtelierMessageSendIntent({
+      taskId: state.selectedTaskId,
+      text: composerText,
+      pending: state.sendingMessage,
+    });
+    if (intentResult.status === 'blocked' || intentResult.status === 'invalid') return;
+    const { intent } = intentResult;
 
     setState((current) => ({ ...current, error: '', errorKind: '', sendingMessage: true }));
     try {
-      const snapshot = await sendAtelierMessage({ taskId, text });
+      const snapshot = await sendAtelierMessage(intent);
       setComposerText('');
       setComposerRevision((current) => current + 1);
       setState((current) => ({
         ...current,
         ...stateFromAtelierSnapshot(snapshot),
-        loading: false,
         error: '',
         errorKind: '',
-        eventStreamState: 'live',
-        eventStreamError: '',
-        eventStreamErrorKind: '',
+        ...stateFromAtelierEventStreamConnecting(),
         resolvingDecisionId: '',
         creatingProject: false,
         sendingMessage: false,
@@ -699,20 +757,27 @@ export function useAtelierController(): AtelierController {
   }, [composerText, state.selectedTaskId, state.sendingMessage]);
 
   const insertProviderCapabilityCommand = useCallback((command: string) => {
-    const trimmed = command.trim();
-    if (!trimmed.startsWith('/')) return;
+    const intentResult = buildAtelierProviderCapabilityCommandInsertIntent({ command });
+    if (intentResult.status === 'blocked' || intentResult.status === 'invalid') return;
+    const { intent } = intentResult;
     setComposerText((current) => {
-      const existing = current.trim();
-      return existing ? `${existing} ${trimmed} ` : `${trimmed} `;
+      return appendAtelierProviderCapabilityCommand({
+        currentComposerText: current,
+        command: intent.command,
+      });
     });
     setComposerRevision((current) => current + 1);
   }, []);
 
   const submitFeedback = useCallback(async (taskId: string, blockId: string, signal: AtelierFeedbackSignal) => {
-    const trimmedTaskId = taskId.trim();
-    const trimmedBlockId = blockId.trim();
-    const submitKey = `${trimmedBlockId}:${signal}`;
-    if (!trimmedTaskId || !trimmedBlockId || state.feedbackSubmittingId) return;
+    const intentResult = buildAtelierFeedbackSubmitIntent({
+      taskId,
+      blockId,
+      signal,
+      pendingFeedbackId: state.feedbackSubmittingId,
+    });
+    if (intentResult.status === 'blocked' || intentResult.status === 'invalid') return;
+    const { intent, submitKey } = intentResult;
 
     setState((current) => ({
       ...current,
@@ -720,18 +785,14 @@ export function useAtelierController(): AtelierController {
       errorKind: '',
       feedbackSubmittingId: submitKey,
       feedbackStatus: '',
-      feedbackStatusBlockId: trimmedBlockId,
+      feedbackStatusBlockId: intent.blockId,
     }));
     try {
-      const response = await submitAtelierFeedback({
-        taskId: trimmedTaskId,
-        blockId: trimmedBlockId,
-        signal,
-      });
+      const response = await submitAtelierFeedback(intent);
       const policy =
-        signal === 'regenerate'
+        intent.signal === 'regenerate'
           ? response.rerunIntent.status
-          : signal === 'positive' || signal === 'negative'
+          : intent.signal === 'positive' || intent.signal === 'negative'
             ? response.memoryCandidate.status
             : 'acknowledged';
         const requiresMemoryConfirmation =
@@ -746,19 +807,19 @@ export function useAtelierController(): AtelierController {
       setState((current) => ({
         ...current,
         feedbackSubmittingId: '',
-        feedbackStatus: `${signal}:${policy}${confirmation}`,
-        feedbackStatusBlockId: trimmedBlockId,
+        feedbackStatus: `${intent.signal}:${policy}${confirmation}`,
+        feedbackStatusBlockId: intent.blockId,
         memoryConfirmationFeedbackId:
             requiresMemoryConfirmation
             ? response.feedbackId
             : current.memoryConfirmationFeedbackId,
         memoryConfirmationTaskId:
             requiresMemoryConfirmation
-            ? trimmedTaskId
+            ? intent.taskId
             : current.memoryConfirmationTaskId,
         memoryConfirmationBlockId:
             requiresMemoryConfirmation
-            ? trimmedBlockId
+            ? intent.blockId
             : current.memoryConfirmationBlockId,
         rerunConfirmationFeedbackId:
             requiresRerunConfirmation
@@ -766,11 +827,11 @@ export function useAtelierController(): AtelierController {
             : current.rerunConfirmationFeedbackId,
         rerunConfirmationTaskId:
             requiresRerunConfirmation
-            ? trimmedTaskId
+            ? intent.taskId
             : current.rerunConfirmationTaskId,
         rerunConfirmationBlockId:
             requiresRerunConfirmation
-            ? trimmedBlockId
+            ? intent.blockId
             : current.rerunConfirmationBlockId,
       }));
     } catch (error) {
@@ -780,15 +841,20 @@ export function useAtelierController(): AtelierController {
         ...normalized,
         feedbackSubmittingId: '',
         feedbackStatus: normalized.error,
-        feedbackStatusBlockId: trimmedBlockId,
+        feedbackStatusBlockId: intent.blockId,
       }));
     }
   }, [state.feedbackSubmittingId]);
 
   const confirmMemoryCandidate = useCallback(async () => {
-    if (!state.memoryConfirmationTaskId || !state.memoryConfirmationFeedbackId || state.memoryConfirming) return;
-    const taskId = state.memoryConfirmationTaskId;
-    const feedbackId = state.memoryConfirmationFeedbackId;
+    const intentResult = buildAtelierMemoryConfirmIntent({
+      taskId: state.memoryConfirmationTaskId,
+      feedbackId: state.memoryConfirmationFeedbackId,
+      pending: state.memoryConfirming,
+      confirmationMode: ATELIER_MEMORY_CONFIRMATION_MODE,
+    });
+    if (intentResult.status === 'blocked' || intentResult.status === 'invalid') return;
+    const { intent } = intentResult;
     setState((current) => ({
       ...current,
       error: '',
@@ -796,7 +862,7 @@ export function useAtelierController(): AtelierController {
       memoryConfirming: true,
     }));
     try {
-      const response = await confirmAtelierMemoryCandidate({ taskId, feedbackId });
+      const response = await confirmAtelierMemoryCandidate(intent);
       setState((current) => ({
         ...current,
         memoryConfirming: false,
@@ -819,9 +885,14 @@ export function useAtelierController(): AtelierController {
   }, [state.memoryConfirmationTaskId, state.memoryConfirmationFeedbackId, state.memoryConfirming]);
 
   const confirmRerun = useCallback(async () => {
-    if (!state.rerunConfirmationTaskId || !state.rerunConfirmationFeedbackId || state.rerunConfirming) return;
-    const taskId = state.rerunConfirmationTaskId;
-    const feedbackId = state.rerunConfirmationFeedbackId;
+    const intentResult = buildAtelierRerunConfirmIntent({
+      taskId: state.rerunConfirmationTaskId,
+      feedbackId: state.rerunConfirmationFeedbackId,
+      pending: state.rerunConfirming,
+      confirmationMode: ATELIER_RERUN_CONFIRMATION_MODE,
+    });
+    if (intentResult.status === 'blocked' || intentResult.status === 'invalid') return;
+    const { intent } = intentResult;
     setState((current) => ({
       ...current,
       error: '',
@@ -829,7 +900,7 @@ export function useAtelierController(): AtelierController {
       rerunConfirming: true,
     }));
     try {
-      const response = await confirmAtelierFeedbackRerun({ taskId, feedbackId });
+      const response = await confirmAtelierFeedbackRerun(intent);
       setState((current) => ({
         ...current,
         rerunConfirming: false,
@@ -853,22 +924,23 @@ export function useAtelierController(): AtelierController {
   }, [state.rerunConfirmationTaskId, state.rerunConfirmationFeedbackId, state.rerunConfirming, load]);
 
   const openWorkspace = useCallback(async (task: AtelierTask) => {
-    const target = task.workspaceOpenTarget;
-    if (!target || state.workspaceOpenSubmittingId) return;
+    const intentResult = buildAtelierWorkspaceOpenIntent({
+      taskId: task.id,
+      target: task.workspaceOpenTarget,
+      pendingWorkspaceOpenId: state.workspaceOpenSubmittingId,
+    });
+    if (intentResult.status === 'blocked' || intentResult.status === 'invalid') return;
+    const { intent } = intentResult;
 
     setState((current) => ({
       ...current,
       error: '',
       errorKind: '',
-      workspaceOpenSubmittingId: task.id,
+      workspaceOpenSubmittingId: intent.taskId,
       workspaceOpenStatus: '',
     }));
     try {
-      const response = await openAtelierWorkspace({
-        taskId: task.id,
-        workspaceUri: target.workspaceUri,
-        ideHint: target.ideHint,
-      });
+      const response = await openAtelierWorkspace(intent);
       setState((current) => ({
         ...current,
         workspaceOpenSubmittingId: '',
@@ -884,12 +956,13 @@ export function useAtelierController(): AtelierController {
   }, [state.workspaceOpenSubmittingId]);
 
   const fetchArtifactBody = useCallback(async (taskId: string, artifact: AtelierArtifactProjection) => {
-    const trimmedTaskId = taskId.trim();
-    const artifactId = artifact.id.trim();
-    const bodyRef = artifact.bodyRef?.trim() ?? '';
-    const fetchKey = `${trimmedTaskId}:${artifactId}`;
-    if (!trimmedTaskId || !artifactId || !bodyRef || state.artifactBodyFetchId) return;
-    if (!isCanonicalAtelierArtifactBodyRef(bodyRef)) {
+    const intentResult = buildAtelierArtifactBodyFetchIntent({
+      taskId,
+      artifact,
+      pendingKey: state.artifactBodyFetchId,
+    });
+    if (intentResult.status === 'blocked') return;
+    if (intentResult.status === 'invalid') {
       setState((current) => ({
         ...current,
         artifactBody: null,
@@ -897,6 +970,7 @@ export function useAtelierController(): AtelierController {
       }));
       return;
     }
+    const { intent } = intentResult;
 
     const requestSeq = ++artifactBodyRequestSeq.current;
     setState((current) => ({
@@ -904,18 +978,23 @@ export function useAtelierController(): AtelierController {
       error: '',
       errorKind: '',
       artifactBody: null,
-      artifactBodyFetchId: fetchKey,
+      artifactBodyFetchId: intent.key,
       artifactBodyError: '',
     }));
     try {
       const response = await fetchAtelierArtifactBody({
-        taskId: trimmedTaskId,
-        artifactId,
-        bodyRef,
-        expectedHash: artifact.bodyHash,
+        taskId: intent.taskId,
+        artifactId: intent.artifactId,
+        bodyRef: intent.bodyRef,
+        expectedHash: intent.expectedHash,
       });
       setState((current) => {
-        if (artifactBodyRequestSeq.current !== requestSeq || current.artifactBodyFetchId !== fetchKey) {
+        if (!isCurrentAtelierArtifactRequest({
+          currentSeq: artifactBodyRequestSeq.current,
+          requestSeq,
+          currentPendingKey: current.artifactBodyFetchId,
+          expectedPendingKey: intent.key,
+        })) {
           return current;
         }
         return {
@@ -928,7 +1007,12 @@ export function useAtelierController(): AtelierController {
     } catch (error) {
       const normalized = stateFromAtelierError(error);
       setState((current) => {
-        if (artifactBodyRequestSeq.current !== requestSeq || current.artifactBodyFetchId !== fetchKey) {
+        if (!isCurrentAtelierArtifactRequest({
+          currentSeq: artifactBodyRequestSeq.current,
+          requestSeq,
+          currentPendingKey: current.artifactBodyFetchId,
+          expectedPendingKey: intent.key,
+        })) {
           return current;
         }
         return {
@@ -943,15 +1027,13 @@ export function useAtelierController(): AtelierController {
   }, [state.artifactBodyFetchId]);
 
   const openArtifactPreview = useCallback(async (taskId: string, artifact: AtelierArtifactProjection) => {
-    const trimmedTaskId = taskId.trim();
-    const artifactId = artifact.id.trim();
-    const previewTarget = artifact.previewTarget;
-    const sandboxRef = previewTarget?.sandboxRef?.trim() ?? '';
-    const bodyRef = previewTarget?.bodyRef?.trim() || artifact.bodyRef?.trim() || '';
-    const mode = previewTarget?.mode?.trim() || ATELIER_ARTIFACT_PREVIEW_OPEN_DEFAULT_MODE;
-    const openKey = `${trimmedTaskId}:${artifactId}`;
-    if (!trimmedTaskId || !artifactId || !sandboxRef || !bodyRef || state.artifactPreviewOpenId) return;
-    if (!isCanonicalAtelierSandboxRef(sandboxRef) || !isCanonicalAtelierArtifactBodyRef(bodyRef) || !isAtelierArtifactPreviewOpenMode(mode)) {
+    const intentResult = buildAtelierArtifactPreviewOpenIntent({
+      taskId,
+      artifact,
+      pendingKey: state.artifactPreviewOpenId,
+    });
+    if (intentResult.status === 'blocked') return;
+    if (intentResult.status === 'invalid') {
       setState((current) => ({
         ...current,
         artifactPreviewOpenResponse: null,
@@ -959,6 +1041,7 @@ export function useAtelierController(): AtelierController {
       }));
       return;
     }
+    const { intent } = intentResult;
 
     const requestSeq = ++artifactPreviewOpenRequestSeq.current;
     setState((current) => ({
@@ -966,20 +1049,25 @@ export function useAtelierController(): AtelierController {
       error: '',
       errorKind: '',
       artifactPreviewOpenResponse: null,
-      artifactPreviewOpenId: openKey,
+      artifactPreviewOpenId: intent.key,
       artifactPreviewOpenError: '',
     }));
     try {
       const response = await openAtelierArtifactPreview({
-        taskId: trimmedTaskId,
-        artifactId,
-        sandboxRef,
-        bodyRef,
-        kind: previewTarget?.kind,
-        mode,
+        taskId: intent.taskId,
+        artifactId: intent.artifactId,
+        sandboxRef: intent.sandboxRef,
+        bodyRef: intent.bodyRef,
+        kind: intent.kind,
+        mode: intent.mode,
       });
       setState((current) => {
-        if (artifactPreviewOpenRequestSeq.current !== requestSeq || current.artifactPreviewOpenId !== openKey) {
+        if (!isCurrentAtelierArtifactRequest({
+          currentSeq: artifactPreviewOpenRequestSeq.current,
+          requestSeq,
+          currentPendingKey: current.artifactPreviewOpenId,
+          expectedPendingKey: intent.key,
+        })) {
           return current;
         }
         return {
@@ -992,7 +1080,12 @@ export function useAtelierController(): AtelierController {
     } catch (error) {
       const normalized = stateFromAtelierError(error);
       setState((current) => {
-        if (artifactPreviewOpenRequestSeq.current !== requestSeq || current.artifactPreviewOpenId !== openKey) {
+        if (!isCurrentAtelierArtifactRequest({
+          currentSeq: artifactPreviewOpenRequestSeq.current,
+          requestSeq,
+          currentPendingKey: current.artifactPreviewOpenId,
+          expectedPendingKey: intent.key,
+        })) {
           return current;
         }
         return {
@@ -1005,6 +1098,41 @@ export function useAtelierController(): AtelierController {
       });
     }
   }, [state.artifactPreviewOpenId]);
+
+  useEffect(() => {
+    if (certificationArtifactBodyFetchSubmittedRef.current || state.loading || !state.snapshot || state.artifactBodyFetchId) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const config = await readAtelierCertificationArtifactBodyFetchConfig();
+      if (!config || cancelled || certificationArtifactBodyFetchSubmittedRef.current) {
+        return;
+      }
+      const taskId = config.taskId ?? state.selectedTaskId;
+      if (!taskId) {
+        return;
+      }
+      const artifacts = state.snapshot?.workspace.artifacts[taskId] ?? [];
+      const artifact =
+        (config.artifactId ? artifacts.find((candidate) => candidate.id === config.artifactId) : undefined) ??
+        artifacts.find((candidate) => candidate.bodyRef);
+      if (!artifact) {
+        return;
+      }
+      certificationArtifactBodyFetchSubmittedRef.current = true;
+      await fetchArtifactBody(taskId, artifact);
+    })().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    fetchArtifactBody,
+    state.artifactBodyFetchId,
+    state.loading,
+    state.selectedTaskId,
+    state.snapshot,
+  ]);
 
   useEffect(() => {
     if (certificationPreviewOpenSubmittedRef.current || state.loading || !state.snapshot || state.artifactPreviewOpenId) {
@@ -1042,34 +1170,42 @@ export function useAtelierController(): AtelierController {
   ]);
 
   const setTaskLifecycle = useCallback(async (taskId: string, action: AtelierTaskActionKind) => {
-    const trimmedTaskId = taskId.trim();
-    if (!trimmedTaskId || state.taskActionId) return;
+    const taskStatus = state.snapshot?.workspace.tasks.find((task) => task.id === taskId)?.status;
+    const intentResult = buildAtelierTaskLifecycleIntent({
+      taskId,
+      action,
+      pendingTaskActionId: state.taskActionId,
+      purgeConfirmTaskId: state.purgeConfirmTaskId,
+      taskStatus,
+    });
+    if (intentResult.status === 'blocked' || intentResult.status === 'invalid') return;
 
-    if (action === 'purge' && state.purgeConfirmTaskId !== trimmedTaskId) {
+    if (intentResult.status === 'confirm-purge') {
       setState((current) => ({
         ...current,
         error: '',
         errorKind: '',
-        purgeConfirmTaskId: trimmedTaskId,
+        purgeConfirmTaskId: intentResult.taskId,
       }));
       return;
     }
+    const { intent } = intentResult;
 
     setState((current) => ({
       ...current,
       error: '',
       errorKind: '',
-      taskActionId: trimmedTaskId,
-      taskActionKind: action,
+      taskActionId: intent.taskId,
+      taskActionKind: intent.action,
       purgeConfirmTaskId: '',
     }));
     try {
       const snapshot =
-        action === 'purge'
-          ? await purgeAtelierTask({ taskId: trimmedTaskId })
+        intent.kind === 'purge'
+          ? await purgeAtelierTask({ taskId: intent.taskId })
           : await setAtelierTaskStatus({
-              taskId: trimmedTaskId,
-              status: action === 'archive' ? 'archived' : action === 'restore' ? 'active' : 'deleted',
+              taskId: intent.taskId,
+              status: intent.status,
             });
       setSelectedArtifactId('');
       setComposerText('');
@@ -1077,12 +1213,9 @@ export function useAtelierController(): AtelierController {
       setState((current) => ({
         ...current,
         ...stateFromAtelierSnapshot(snapshot),
-        loading: false,
         error: '',
         errorKind: '',
-        eventStreamState: 'live',
-        eventStreamError: '',
-        eventStreamErrorKind: '',
+        ...stateFromAtelierEventStreamConnecting(),
         resolvingDecisionId: '',
         creatingProject: false,
         sendingMessage: false,
@@ -1106,7 +1239,7 @@ export function useAtelierController(): AtelierController {
         purgeConfirmTaskId: '',
       }));
     }
-  }, [state.purgeConfirmTaskId, state.taskActionId]);
+  }, [state.purgeConfirmTaskId, state.snapshot, state.taskActionId]);
 
   const selectedTask = useMemo(
     () => state.snapshot?.workspace.tasks.find((task) => task.id === state.selectedTaskId),
@@ -1190,36 +1323,4 @@ export function useAtelierController(): AtelierController {
     fetchArtifactBody,
     openArtifactPreview,
   };
-}
-
-function isCanonicalAtelierArtifactBodyRef(value: string): boolean {
-  return isCanonicalAtelierArtifactRef(value, ATELIER_ARTIFACT_BODY_REF_SHAPE);
-}
-
-function isCanonicalAtelierSandboxRef(value: string): boolean {
-  return isCanonicalAtelierArtifactRef(value, ATELIER_ARTIFACT_SANDBOX_REF_SHAPE);
-}
-
-function isCanonicalAtelierArtifactRef(
-  value: string,
-  shape: { scheme: string; pathSegments: number; terminalSegment: string },
-): boolean {
-  if (/\s/.test(value)) return false;
-  try {
-    const uri = new URL(value);
-    const path = uri.pathname.split('/').filter(Boolean);
-    return (
-      uri.protocol.slice(0, -1) === shape.scheme &&
-      uri.hostname.trim().length > 0 &&
-      path.length === shape.pathSegments &&
-      path[path.length - 1] === shape.terminalSegment &&
-      path.slice(0, -1).every((segment) => segment.trim().length > 0)
-    );
-  } catch {
-    return false;
-  }
-}
-
-function isAtelierArtifactPreviewOpenMode(value: string): boolean {
-  return (ATELIER_ARTIFACT_PREVIEW_OPEN_MODES as readonly string[]).includes(value);
 }

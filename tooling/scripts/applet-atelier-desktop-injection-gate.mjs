@@ -17,6 +17,29 @@ const desktopManifestPath = path.join(desktopPackageDir, 'manifest.json');
 const bundlePath = path.join(desktopPackageDir, 'main.lynx.bundle');
 const evidenceDir = path.join(repoRoot, 'applet-readiness-evidence/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-desktop-injection-gate.json');
+const desktopInjectionCoveredPaths = [
+  'source peers.atelier manifest, service manifest, and projection contract are present',
+  'packaged peers.atelier Desktop manifest is indexed and matches the source applet manifest service binding',
+  'packaged peers.atelier Desktop manifest grants only the projection/service/event permissions required by the contract',
+  'packaged peers.atelier Desktop manifest declares station-resolved atelier service binding from /v1 to /applets/atelier/v1',
+  'Station main registers the official Atelier applet subserver and exposes the expected /applets/atelier/v1 routes',
+  'packaged main.lynx.bundle integrity matches the Desktop manifest and avoids direct Desktop/Station/Tauri imports',
+];
+const desktopInjectionDoesNotProve = [
+  'real Desktop product window UI renders peers.atelier',
+  'real Desktop Gateway network.request reaches Station at runtime',
+  'real Station projection event stream, reconnect, cursor replay, or unsubscribe lifecycle',
+  'real provider, gate, artifact, memory, rerun, workspace-open, or preview-open side effects',
+  'complete Host + Station + applet E2E',
+];
+
+function desktopInjectionClaimBoundary(proves = []) {
+  return {
+    readiness: 'NOT_READY',
+    proves,
+    doesNotProve: desktopInjectionDoesNotProve,
+  };
+}
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
@@ -66,6 +89,8 @@ function main() {
       evidenceClass: 'REAL_PRODUCT_PATH',
       appletId,
       checkedFiles: [],
+      claimBoundary: desktopInjectionClaimBoundary(),
+      notCovered: desktopInjectionDoesNotProve,
       errors,
     });
     return;
@@ -186,6 +211,11 @@ function main() {
     { method: 'POST', publicPath: '/v1/projects', stationPath: '/applets/atelier/v1/projects' },
     { method: 'POST', publicPath: '/v1/messages', stationPath: '/applets/atelier/v1/messages' },
     { method: 'POST', publicPath: '/v1/escalations:resolve', stationPath: '/applets/atelier/v1/escalations:resolve' },
+    { method: 'POST', publicPath: '/v1/provider/capabilities', stationPath: '/applets/atelier/v1/provider/capabilities' },
+    { method: 'POST', publicPath: '/v1/feedback/submit', stationPath: '/applets/atelier/v1/feedback/submit' },
+    { method: 'POST', publicPath: '/v1/memory/confirm-candidate', stationPath: '/applets/atelier/v1/memory/confirm-candidate' },
+    { method: 'POST', publicPath: '/v1/feedback/confirm-rerun', stationPath: '/applets/atelier/v1/feedback/confirm-rerun' },
+    { method: 'POST', publicPath: '/v1/artifact/body/fetch', stationPath: '/applets/atelier/v1/artifact/body/fetch' },
     { method: 'PATCH', publicPath: '/v1/tasks/*', stationPath: '/applets/atelier/v1/tasks/{task_id}/status' },
     { method: 'DELETE', publicPath: '/v1/tasks/*', stationPath: '/applets/atelier/v1/tasks/{task_id}' },
   ];
@@ -207,11 +237,21 @@ function main() {
     'path == atelierV1Prefix+"/projects"',
     'path == atelierV1Prefix+"/messages"',
     'path == atelierV1Prefix+"/escalations:resolve"',
+    'path == atelierV1Prefix+"/provider/capabilities"',
+    'path == atelierV1Prefix+"/feedback/submit"',
+    'path == atelierV1Prefix+"/memory/confirm-candidate"',
+    'path == atelierV1Prefix+"/feedback/confirm-rerun"',
+    'path == atelierV1Prefix+"/artifact/body/fetch"',
     'strings.HasPrefix(path, atelierV1Prefix+"/tasks/") && strings.HasSuffix(path, "/status")',
     'strings.HasPrefix(path, atelierV1Prefix+"/tasks/")',
     'CreateProjectFromGoal(ctx, actorID',
     'SendMessage(ctx, actorID',
     'ResolveDecision(ctx, actorID',
+    'ProviderCapabilities(ctx, actorID',
+    'SubmitFeedback(ctx, actorID',
+    'ConfirmMemoryCandidate(ctx, actorID',
+    'ConfirmRerun(ctx, actorID',
+    'FetchArtifactBody(ctx, actorID',
     'SetTaskStatus(ctx, actorID',
     'PurgeTask(ctx, actorID',
   ]) {
@@ -252,6 +292,9 @@ function main() {
     status: errors.length === 0 ? 'PASS' : 'FAIL',
     evidenceClass: 'REAL_PRODUCT_PATH',
     appletId,
+    coveredPaths: desktopInjectionCoveredPaths,
+    claimBoundary: desktopInjectionClaimBoundary(errors.length === 0 ? desktopInjectionCoveredPaths : []),
+    notCovered: desktopInjectionDoesNotProve,
     checkedFiles: [
       path.relative(repoRoot, sourceManifestPath),
       path.relative(repoRoot, sourceServiceManifestPath),
@@ -281,6 +324,8 @@ function main() {
     },
     integrity: {
       sourcePlaceholder: sourceManifest.integrity?.files?.['main.lynx.bundle'] ?? null,
+      sourcePlaceholderExpected: sourceManifest.integrity?.files?.['main.lynx.bundle'] === 'sha256:pending-atelier-bundle',
+      distManifestIsIntegrityTruth: expectedIntegrity === actualIntegrity,
       expected: expectedIntegrity ?? null,
       actual: actualIntegrity,
     },
@@ -296,6 +341,8 @@ try {
     evidenceClass: 'REAL_PRODUCT_PATH',
     appletId,
     checkedFiles: [],
+    claimBoundary: desktopInjectionClaimBoundary(),
+    notCovered: desktopInjectionDoesNotProve,
     errors: [error.message],
   });
 }

@@ -10,7 +10,7 @@ import { log } from '../utils/logger';
 export type RuntimeAppletStatus = 'available' | 'installed' | 'active' | 'revoked' | 'disabled' | 'update-available';
 export type RuntimeAppletSource = 'station' | 'local-dev' | 'bundled-official';
 
-const PRODUCTION_DEFAULT_INSTALLED_APPLET_IDS = ['peers.note'];
+const PRODUCTION_DEFAULT_INSTALLED_APPLET_IDS = ['peers.note', 'peers.atelier'];
 const DEV_LIFECYCLE_DEFAULT_INSTALLED_APPLET_IDS = ['hello-lynx'];
 const DEFAULT_INSTALLED_APPLET_IDS = import.meta.env.DEV
   ? [...PRODUCTION_DEFAULT_INSTALLED_APPLET_IDS, ...DEV_LIFECYCLE_DEFAULT_INSTALLED_APPLET_IDS]

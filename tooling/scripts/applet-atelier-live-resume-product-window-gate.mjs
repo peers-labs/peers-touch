@@ -17,6 +17,26 @@ const gateTaskId = 'atelier-real-product-gate-task';
 const gateDecisionId = 'atelier-real-product-gate-decision';
 const gateNodeId = 'atelier-real-product-live-resume-node';
 const gateChoice = '继续执行';
+const liveResumeCoveredPaths = [
+  'packaged peers.atelier renders inside the normal Desktop product shell',
+  'official peers.atelier loads Station pending human decision through /v1/workspace service binding',
+  'official peers.atelier submits the decision through /v1/escalations:resolve service binding',
+  'Station ResolveCollaborationInterrupt wakes an in-flight LiveResumeBroker waiter',
+  'real TurnService.ExecuteTurn provider loop executes station_human_decision_resume, consumes the interrupt, and performs the final provider call in the same turn',
+];
+const liveResumeDoesNotProve = [
+  'complete Host + Station + applet E2E',
+  'rich Host artifact sandbox visual renderer',
+  'real executor/provider recovery completion beyond live human-decision resume',
+];
+
+function liveResumeClaimBoundary(proves = []) {
+  return {
+    readiness: 'NOT_READY',
+    proves,
+    doesNotProve: liveResumeDoesNotProve,
+  };
+}
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
@@ -166,11 +186,8 @@ function fail(message, details = []) {
     gate: 'applet:atelier-live-resume-product-window-gate',
     message,
     details,
-    notCovered: [
-      'complete Host + Station + applet E2E',
-      'rich Host artifact sandbox visual renderer',
-      'real executor/provider recovery completion beyond live human-decision resume',
-    ],
+    claimBoundary: liveResumeClaimBoundary(),
+    notCovered: liveResumeDoesNotProve,
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
   process.stderr.write(`FAIL Atelier live-resume product-window gate\n${message}\n${details.join('\n')}\n`);
@@ -295,18 +312,9 @@ async function main() {
         nodeId: gateNodeId,
         liveResumeProbe,
       },
-      coveredPaths: [
-        'packaged peers.atelier renders inside the normal Desktop product shell',
-        'official peers.atelier loads Station pending human decision through /v1/workspace service binding',
-        'official peers.atelier submits the decision through /v1/escalations:resolve service binding',
-        'Station ResolveCollaborationInterrupt wakes an in-flight LiveResumeBroker waiter',
-        'real TurnService.ExecuteTurn provider loop executes station_human_decision_resume, consumes the interrupt, and performs the final provider call in the same turn',
-      ],
-      notCovered: [
-        'complete Host + Station + applet E2E',
-        'rich Host artifact sandbox visual renderer',
-        'real executor/provider recovery completion beyond live human-decision resume',
-      ],
+      coveredPaths: liveResumeCoveredPaths,
+      claimBoundary: liveResumeClaimBoundary(liveResumeCoveredPaths),
+      notCovered: liveResumeDoesNotProve,
     };
     writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
     process.stdout.write([

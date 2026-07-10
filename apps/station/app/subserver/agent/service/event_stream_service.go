@@ -222,6 +222,7 @@ func taskEventRecordToDomainEvent(record *persistence.TaskEvent, subscribedAgent
 	}
 	metadata := map[string]string{
 		"task_id":   record.TaskID,
+		"event_id":  record.ID,
 		"event_seq": fmt.Sprintf("%d", record.EventSeq),
 	}
 	if actorID != "" {

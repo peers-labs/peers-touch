@@ -65,7 +65,7 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-> **形态校准（见 [prototype/](../prototype/)）**：当前 official applet 的实现口径是 SOLO 式**对话优先**形态：task organizer + projection stream + Project Health / TaskGraph / Context / Artifacts / Gates 等 read-only projection sections 以 controlled single-column 堆叠；多 Agent 协商**内联折叠进对话流**而非独立右侧栏。Browser prototype 仍保留 SOLO left rail / centre stream / right panel 壳体用于交互探索，标记为 `UNSYNCED with official single-column product shape`，不能反推 official applet 采用三栏。
+> **形态校准（见 [prototype/](../prototype/)）**：当前 official applet 与 browser prototype 的实现口径均是 SOLO 式**对话优先**形态：task organizer + projection stream + Project Health / TaskGraph / Context / Artifacts / Gates 等 read-only projection sections 以 controlled single-column 堆叠；多 Agent 协商**内联折叠进对话流**而非独立右侧栏。Browser prototype 的历史 left rail / centre stream / right panel 探索壳已被 P4-278 收敛，不再作为当前产品形态。
 
 ### 1.2bis 左栏任务管理 = 可插拔 plugin
 
@@ -78,16 +78,17 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 
 接口与 plugin 已在原型落地：`src/types.ts`（`TaskHost`/`TaskPlugin`）、`src/plugins.tsx`（默认 folders 项目分组 + 简单平铺 + 看板/DAG 占位）。
 
-### 1.2ter Browser prototype SOLO 外壳探索（UNSYNCED with official single-column product shape）
+### 1.2ter Browser prototype SOLO 外壳收敛（synced with official single-column product shape）
 
-可运行 browser prototype 把外壳保真度对齐到 SOLO 级别（SOLO 作外壳人体工学基准线，Atelier 在其上叠协商 / 决策 / 预算的灵魂），但这是 `UNSYNCED with official single-column product shape` 的浏览器交互探索，不是 official Lynx applet 当前产品形态：
+可运行 browser prototype 仍以 SOLO 作为外壳人体工学基准线（Atelier 在其上叠协商 / 决策 / 预算的灵魂），但 P4-278 已把默认产品形态收敛为和 official Lynx applet 一致的 controlled single-column projection shell：
 
-- **左栏**：顶部 Work / Code 双模式 toggle（视觉态）+ 全局导航 New task / Skills / Automation + "Your Task List"（筛选图标 + plugin 切换器）+ 项目文件夹分组 + 底部用户 footer；标题行可收起侧栏。
-- **顶栏**：（侧栏收起时显展开按钮）任务标题 + 项目 chip（`Task.project`）+ git 分支（`Task.branch`）+ 打开文件夹 / 终端 / 大纲图标 + Open in IDE + 预算条。
-- **中栏对话流**：轻 markdown（`code` / **粗体** / 列表）、完成回复带 Completed 标记 + 反馈条（赞/踩/复制/重新生成）、"N files changed +X -Y" diff 卡（可展开文件列表）、图片附件 chip、Artifact 卡；composer 上方 **Artifacts 托盘**（markdown / web / image / diff 卡片）。
-- **右栏（三元切换）**：打开产物时为**产物预览面板**（M14：当前 browser prototype 也已收敛为 metadata-only artifact preview + Host safe text fetch / Host sandbox preview intent；web iframe / image / html / diff rich renderer、真实 Console Logs runtime stream 与 attachment Host Storage 仍属 Host-owned runtime/E2E pending），否则优先展示只读 Station Project Health projection（completion / blockers / residual risks / milestones / policy / defects）+ TaskGraph projection（无 project projection 时回退 legacy Todo）+ Context（token 用量条 + Files/Other 标签的触达文件）；Applet 不验收、不豁免、不修改 project state，也不调度、不执行、不 replan 节点。
-- **富输入框**：斜杠命令 / 图片附件 / 模型选择器（openrouter-3o…）/ 语音 / 发送。
-- **已知差异 / 待补**：Work/Code/Design 已作为 `intentPreset` 声明式默认策略提交并由 Station 投影 `provider_strategy_preset / gate_plan_preset` metadata，但仍不切真实 IDE 模式；终端 / 大纲图标未接真实面板，browser prototype 顶栏已把 Terminal / Outline 标为 prototype-only placeholder，明确未接 shell/execute capability 或真实 TaskGraph panel；Console Logs 为 mock 日志流、输入框真实发送 + 流式回复本轮未做。
+- **Header / action rail**：任务标题、project/status metadata、预算条、New task、Open in IDE Host intent、Work / Code / Design intent preset 与 Host-intent-only disclosure 处于 content rail 顶部。
+- **Task organizer section**：原左栏任务组织能力保留为单列 section，包含 plugin 切换器、项目文件夹分组与 lifecycle sections。
+- **Provider capability section**：Skills / provider capabilities 是只读 Station descriptors，点击只插入 slash command，不执行 provider。
+- **Projection stream**：轻 markdown（`code` / **粗体** / 列表）、完成回复带 Completed 标记 + 反馈条（赞/踩/复制/重新生成）、"N files changed +X -Y" diff 卡（可展开文件列表）、图片附件 chip、Artifact 卡；composer 上方 **Artifacts 托盘**（markdown / web / image / diff 卡片）。
+- **Workspace projection / Artifact preview sections**：只读 Station Project Health projection（completion / blockers / residual risks / milestones / policy / defects）+ TaskGraph projection（无 project projection 时回退 legacy Todo）+ Context 纵向堆叠；打开产物时在 content rail 内展示 metadata-only artifact preview + Host safe text fetch / Host sandbox preview intent。Applet 不验收、不豁免、不修改 project state，也不调度、不执行、不 replan 节点。
+- **富输入框**：斜杠命令 / 图片附件 / run target selector / 发送；语音输入暂不展示。
+- **已知差异 / 待补**：Work/Code/Design 已作为 `intentPreset` 声明式默认策略提交并由 Station 投影 `provider_strategy_preset / gate_plan_preset` metadata，但仍不切真实 IDE 模式；Terminal disclosure 仍是 prototype-only placeholder，明确未接 shell/execute capability；Console Logs 为 mock 日志流，真实 Host runtime stream 与完整 Host+Station+applet E2E 未做。
 
 ### 1.3 Projection stream 状态片段（用户真正「看到的样子」）
 
@@ -100,7 +101,7 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 
 ### 1.4 协商与产物：内联折叠 + section 投影（Atelier 的独有体验）
 
-这是 Atelier 区别于「单 Agent 黑箱」的关键 UI——**协作过程不是黑箱，是一条可读的时间线**。Official applet 把协商折叠进 projection stream，把产物/TaskGraph/Project Health/Gates 放在纵向 section；browser prototype 的右栏 tab/preview panel 是 `UNSYNCED with official single-column product shape` 的交互探索：
+这是 Atelier 区别于「单 Agent 黑箱」的关键 UI——**协作过程不是黑箱，是一条可读的时间线**。Official applet 与 browser prototype 都把协商折叠进 projection stream，把产物/TaskGraph/Project Health/Gates 放在纵向 sections：
 
 - **协作过程 tab**：谁（角色）提了什么提案、谁带证据反对、谁签了字、为什么收敛/为什么升级。用户能「看懂这群 Agent 是怎么商量的」。（M1/M2/M3）
 - **产物 tab**：所有 Artifact（diff/报告/数据）集中预览、下载，每条产物可回链到「是哪步、哪个 Agent 产的」。（M8/M9）
@@ -193,13 +194,13 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 
 - **框架现状**：三端架构（`client/desktop` / `client/mobile` / `station`）+ 跨端同步已是基线能力。
 - **Atelier 怎么用**：协作任务台账/状态/事件**走框架多端同步通道**，任意端下发/观察验收。**不自建三端联动**，只保证 Project/Task/CollaborationSession 状态可被同步。（`F-FD-04/05`、`F-UI-02`）
-- **UI 落点**：左栏项目列表多端一致。
+- **UI 落点**：Task organizer section 的项目列表多端一致。
 
 ### M12 ｜自动化定时任务（复用框架）
 
 - **框架现状**：框架 `domain/cron` Scheduler（cron/间隔/一次性）。
 - **Atelier 怎么用**：复用 cron **触发一个完整协作项目**；不自建调度器，只注册「定时触发 → 起协作会话」模板。（`F-CO-01`、`F-FD-01`）
-- **UI 落点**：左栏「定时」分组。
+- **UI 落点**：Task organizer / Automation projection section。
 
 ### M13 ｜多元输入与意图入口（复用框架 + 薄增量）
 
@@ -211,8 +212,8 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 
 - **能力**：对话内实时看进度、预览成果、验收，不切工具。
 - **怎么做**：复用框架产物/对话 UI；增量是验收分自动(L0/L1，见 M6)与人工(L2)双路；official 先落 metadata-only projection parity，rich renderer / Console Logs / attachment runtime 等 Host runtime/E2E 后补。（`F-CO-07a/07b`、`F-UI-02`）
-- **UI 落点**：右栏产物 tab + 中栏验收面。
-- **原型落地（见 [prototype/](../prototype/)）**：composer 上方 Artifacts 托盘 + 右侧产物预览面板，browser prototype 与 official 当前都不再从 projection 读取或渲染 `markdown/content/diff/url/src` raw artifact body/ref 字段；browser preview 统一展示 `ArtifactMetadataPreview`、Host safe text fetch 与 Host sandbox preview intent，与 TaskGraph projection / legacy Todo + Context 三元切换。official Lynx 右栏优先展示只读 Station TaskGraph projection，紧凑右栏最多展开前 5 个节点并显式显示剩余 projected node 数量，无 project projection 时才回退 Todo。源码 `src/preview.tsx`、数据契约 `src/types.ts` 的 `Artifact`/`ConsoleLog`。P2-04a / F-CO-07a 已收口为 metadata-only projection parity：Production official applet 只展示 `previewHint / bodyRef / bodyHash / bodySize / bodyKind / previewTarget` metadata；Artifacts 托盘和右侧 Artifacts 面板在紧凑列表折叠 metadata projection 时会显示剩余 artifact 数量，Gates 面板在紧凑列表折叠 gate、check 或 artifact evidence ref 时也会显示剩余数量，避免静默隐藏投影证据；正文只经 `atelier.artifact.body.fetch` 的 safe text capability 获取，sandbox preview 只经 `atelier.artifact.preview.open` Host intent，且 `previewTarget` 仅接受 `mode=sandbox_manifest`、`sandboxRef=atelier-sandbox://...`、`bodyRef=artifact://...`；Desktop Host 已返回 `desktop_host/host_sandbox_manifest/rendered` opaque surface descriptor，并携带 `host_visual_renderer_surface` capability。P2-04b / F-CO-07b 已补 Host sandbox console capture controlled gate，可规范化 `host_sandbox_cdp` log/warn/error evidence，但不证明真实 Run runtime stream；已补 Station DirectRun input_snapshot attachment shape guard，只接受 Host-owned opaque ref + metadata 并拒绝 raw path/url/base64/body/write intent；仍 pending Host runtime/E2E：web iframe/image/html/diff renderer、Console Logs 真实 Run runtime stream 与 attachment upload / Host Storage runtime；Applet 不接 renderer、不读 raw body、不上传附件、不执行 provider/run/shell，official 与 browser prototype 都不 iframe、不加载图片、不渲染 html。
+- **UI 落点**：单列 content rail 内的 Artifacts tray / inline artifact preview section + stream 内验收面。
+- **原型落地（见 [prototype/](../prototype/)）**：composer 上方 Artifacts 托盘 + 单列 content rail 内联产物预览 section，browser prototype 与 official 当前都不再从 projection 读取或渲染 `markdown/content/diff/url/src` raw artifact body/ref 字段；browser preview 统一展示 `ArtifactMetadataPreview`、Host safe text fetch 与 Host sandbox preview intent，并与 TaskGraph projection / legacy Todo + Context 同属 Workspace projection / Artifact preview 纵向 sections。official Lynx 单列 projection sections 优先展示只读 Station TaskGraph projection，紧凑列表最多展开前 5 个节点并显式显示剩余 projected node 数量，无 project projection 时才回退 Todo。源码 `src/preview.tsx`、数据契约 `src/types.ts` 的 `Artifact`/`ConsoleLog`。P2-04a / F-CO-07a 已收口为 metadata-only projection parity：Production official applet 只展示 `previewHint / bodyRef / bodyHash / bodySize / bodyKind / previewTarget` metadata；Artifacts 托盘和 Artifacts panel/section 在紧凑列表折叠 metadata projection 时会显示剩余 artifact 数量，Gates 面板在紧凑列表折叠 gate、check 或 artifact evidence ref 时也会显示剩余数量，避免静默隐藏投影证据；正文只经 `atelier.artifact.body.fetch` 的 safe text capability 获取，sandbox preview 只经 `atelier.artifact.preview.open` Host intent，且 `previewTarget` 仅接受 `mode=sandbox_manifest`、`sandboxRef=atelier-sandbox://...`、`bodyRef=artifact://...`；Desktop Host 已返回 `desktop_host/host_sandbox_manifest/rendered` opaque surface descriptor，并携带 `host_visual_renderer_surface` capability。P2-04b / F-CO-07b artifact body fetch controlled service gate 已补 + focused product-window safe body fetch 已补，Station `FetchArtifactBody` 只对 actor-owned task + canonical `artifact://.../body` + active safe text kind + matching hash 返回截断 safe text，product-window evidence 仅记录 metadata 且不含 raw `text`；artifact renderer controlled surface matrix，可为 `markdown/web/image/diff` 生成 Host-owned `host_sandbox_visual_surface` descriptor，并已扩展为 controlled surface/runtime evidence，四类 runtime 只返回 metadata-only evidence并禁用 scripts/network/external navigation/file access/patch apply，artifactRendererSurface contract `controlledEvidence.liveWebviewProven=false`，但不证明 live Desktop webview 真渲染；Host sandbox console capture controlled gate，可规范化 `host_sandbox_cdp` log/warn/error evidence，runtimeLogStream contract `controlledEvidence` 已补，但不证明真实 Run runtime stream；Host Storage attachment staging controlled gate 已补，可生成 `host-storage://...` opaque ref + mime/size/sha256 metadata，browser File API intake controlled gate 已补，可证明 controlled browser attachment metadata 转 Host-owned opaque ref 且不暴露 raw path/url/base64/body/bytes/write intent，hostStorageAttachment contract `controlledEvidence` 已补并校验 readback、拒绝 raw path/url/base64/body/bytes/write intent，但不证明真实 Desktop Host Storage runtime、真实 native file picker 或真实 upload flow；已补 Station DirectRun input_snapshot attachment shape guard，只接受 Host-owned opaque ref + metadata 并拒绝 raw path/url/base64/body/write intent；仍 pending Host runtime/E2E：web iframe/image/html/diff renderer、Console Logs 真实 Run runtime stream 与 attachment upload / Host Storage runtime，具体 live webview 渲染仍未证明；Applet 不接 renderer、不读 raw body、不上传附件、不执行 provider/run/shell，official 与 browser prototype 都不 iframe、不加载图片、不渲染 html。
 
 ---
 

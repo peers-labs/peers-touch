@@ -254,6 +254,174 @@ func (VoteType) EnumDescriptor() ([]byte, []int) {
 	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{3}
 }
 
+type EnginePolicyStance int32
+
+const (
+	EnginePolicyStance_ENGINE_POLICY_STANCE_UNSPECIFIED EnginePolicyStance = 0
+	EnginePolicyStance_ENGINE_POLICY_STANCE_PROPOSAL    EnginePolicyStance = 1
+	EnginePolicyStance_ENGINE_POLICY_STANCE_OBJECTION   EnginePolicyStance = 2
+	EnginePolicyStance_ENGINE_POLICY_STANCE_COUNTER     EnginePolicyStance = 3
+	EnginePolicyStance_ENGINE_POLICY_STANCE_SIGNOFF     EnginePolicyStance = 4
+)
+
+// Enum value maps for EnginePolicyStance.
+var (
+	EnginePolicyStance_name = map[int32]string{
+		0: "ENGINE_POLICY_STANCE_UNSPECIFIED",
+		1: "ENGINE_POLICY_STANCE_PROPOSAL",
+		2: "ENGINE_POLICY_STANCE_OBJECTION",
+		3: "ENGINE_POLICY_STANCE_COUNTER",
+		4: "ENGINE_POLICY_STANCE_SIGNOFF",
+	}
+	EnginePolicyStance_value = map[string]int32{
+		"ENGINE_POLICY_STANCE_UNSPECIFIED": 0,
+		"ENGINE_POLICY_STANCE_PROPOSAL":    1,
+		"ENGINE_POLICY_STANCE_OBJECTION":   2,
+		"ENGINE_POLICY_STANCE_COUNTER":     3,
+		"ENGINE_POLICY_STANCE_SIGNOFF":     4,
+	}
+)
+
+func (x EnginePolicyStance) Enum() *EnginePolicyStance {
+	p := new(EnginePolicyStance)
+	*p = x
+	return p
+}
+
+func (x EnginePolicyStance) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (EnginePolicyStance) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_agent_orchestration_proto_enumTypes[4].Descriptor()
+}
+
+func (EnginePolicyStance) Type() protoreflect.EnumType {
+	return &file_domain_agent_orchestration_proto_enumTypes[4]
+}
+
+func (x EnginePolicyStance) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use EnginePolicyStance.Descriptor instead.
+func (EnginePolicyStance) EnumDescriptor() ([]byte, []int) {
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{4}
+}
+
+type CollaborationSessionEventType int32
+
+const (
+	CollaborationSessionEventType_COLLABORATION_SESSION_EVENT_TYPE_UNSPECIFIED           CollaborationSessionEventType = 0
+	CollaborationSessionEventType_COLLABORATION_SESSION_EVENT_TYPE_ROUND_STARTED         CollaborationSessionEventType = 1
+	CollaborationSessionEventType_COLLABORATION_SESSION_EVENT_TYPE_VOICE_RECORDED        CollaborationSessionEventType = 2
+	CollaborationSessionEventType_COLLABORATION_SESSION_EVENT_TYPE_CONVERGENCE_EVALUATED CollaborationSessionEventType = 3
+	CollaborationSessionEventType_COLLABORATION_SESSION_EVENT_TYPE_AWAITING_HUMAN        CollaborationSessionEventType = 4
+	CollaborationSessionEventType_COLLABORATION_SESSION_EVENT_TYPE_REACHED               CollaborationSessionEventType = 5
+)
+
+// Enum value maps for CollaborationSessionEventType.
+var (
+	CollaborationSessionEventType_name = map[int32]string{
+		0: "COLLABORATION_SESSION_EVENT_TYPE_UNSPECIFIED",
+		1: "COLLABORATION_SESSION_EVENT_TYPE_ROUND_STARTED",
+		2: "COLLABORATION_SESSION_EVENT_TYPE_VOICE_RECORDED",
+		3: "COLLABORATION_SESSION_EVENT_TYPE_CONVERGENCE_EVALUATED",
+		4: "COLLABORATION_SESSION_EVENT_TYPE_AWAITING_HUMAN",
+		5: "COLLABORATION_SESSION_EVENT_TYPE_REACHED",
+	}
+	CollaborationSessionEventType_value = map[string]int32{
+		"COLLABORATION_SESSION_EVENT_TYPE_UNSPECIFIED":           0,
+		"COLLABORATION_SESSION_EVENT_TYPE_ROUND_STARTED":         1,
+		"COLLABORATION_SESSION_EVENT_TYPE_VOICE_RECORDED":        2,
+		"COLLABORATION_SESSION_EVENT_TYPE_CONVERGENCE_EVALUATED": 3,
+		"COLLABORATION_SESSION_EVENT_TYPE_AWAITING_HUMAN":        4,
+		"COLLABORATION_SESSION_EVENT_TYPE_REACHED":               5,
+	}
+)
+
+func (x CollaborationSessionEventType) Enum() *CollaborationSessionEventType {
+	p := new(CollaborationSessionEventType)
+	*p = x
+	return p
+}
+
+func (x CollaborationSessionEventType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CollaborationSessionEventType) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_agent_orchestration_proto_enumTypes[5].Descriptor()
+}
+
+func (CollaborationSessionEventType) Type() protoreflect.EnumType {
+	return &file_domain_agent_orchestration_proto_enumTypes[5]
+}
+
+func (x CollaborationSessionEventType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CollaborationSessionEventType.Descriptor instead.
+func (CollaborationSessionEventType) EnumDescriptor() ([]byte, []int) {
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{5}
+}
+
+type CollaborationSessionPhase int32
+
+const (
+	CollaborationSessionPhase_COLLABORATION_SESSION_PHASE_UNSPECIFIED    CollaborationSessionPhase = 0
+	CollaborationSessionPhase_COLLABORATION_SESSION_PHASE_GATHERING      CollaborationSessionPhase = 1
+	CollaborationSessionPhase_COLLABORATION_SESSION_PHASE_CONVERGING     CollaborationSessionPhase = 2
+	CollaborationSessionPhase_COLLABORATION_SESSION_PHASE_AWAITING_HUMAN CollaborationSessionPhase = 3
+	CollaborationSessionPhase_COLLABORATION_SESSION_PHASE_REACHED        CollaborationSessionPhase = 4
+)
+
+// Enum value maps for CollaborationSessionPhase.
+var (
+	CollaborationSessionPhase_name = map[int32]string{
+		0: "COLLABORATION_SESSION_PHASE_UNSPECIFIED",
+		1: "COLLABORATION_SESSION_PHASE_GATHERING",
+		2: "COLLABORATION_SESSION_PHASE_CONVERGING",
+		3: "COLLABORATION_SESSION_PHASE_AWAITING_HUMAN",
+		4: "COLLABORATION_SESSION_PHASE_REACHED",
+	}
+	CollaborationSessionPhase_value = map[string]int32{
+		"COLLABORATION_SESSION_PHASE_UNSPECIFIED":    0,
+		"COLLABORATION_SESSION_PHASE_GATHERING":      1,
+		"COLLABORATION_SESSION_PHASE_CONVERGING":     2,
+		"COLLABORATION_SESSION_PHASE_AWAITING_HUMAN": 3,
+		"COLLABORATION_SESSION_PHASE_REACHED":        4,
+	}
+)
+
+func (x CollaborationSessionPhase) Enum() *CollaborationSessionPhase {
+	p := new(CollaborationSessionPhase)
+	*p = x
+	return p
+}
+
+func (x CollaborationSessionPhase) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CollaborationSessionPhase) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_agent_orchestration_proto_enumTypes[6].Descriptor()
+}
+
+func (CollaborationSessionPhase) Type() protoreflect.EnumType {
+	return &file_domain_agent_orchestration_proto_enumTypes[6]
+}
+
+func (x CollaborationSessionPhase) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CollaborationSessionPhase.Descriptor instead.
+func (CollaborationSessionPhase) EnumDescriptor() ([]byte, []int) {
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{6}
+}
+
 type AcceptanceLevel int32
 
 const (
@@ -290,11 +458,11 @@ func (x AcceptanceLevel) String() string {
 }
 
 func (AcceptanceLevel) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[4].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[7].Descriptor()
 }
 
 func (AcceptanceLevel) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[4]
+	return &file_domain_agent_orchestration_proto_enumTypes[7]
 }
 
 func (x AcceptanceLevel) Number() protoreflect.EnumNumber {
@@ -303,7 +471,7 @@ func (x AcceptanceLevel) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AcceptanceLevel.Descriptor instead.
 func (AcceptanceLevel) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{4}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{7}
 }
 
 type AcceptanceVerdict int32
@@ -342,11 +510,11 @@ func (x AcceptanceVerdict) String() string {
 }
 
 func (AcceptanceVerdict) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[5].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[8].Descriptor()
 }
 
 func (AcceptanceVerdict) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[5]
+	return &file_domain_agent_orchestration_proto_enumTypes[8]
 }
 
 func (x AcceptanceVerdict) Number() protoreflect.EnumNumber {
@@ -355,7 +523,7 @@ func (x AcceptanceVerdict) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AcceptanceVerdict.Descriptor instead.
 func (AcceptanceVerdict) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{5}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{8}
 }
 
 type CircuitBreakerState int32
@@ -394,11 +562,11 @@ func (x CircuitBreakerState) String() string {
 }
 
 func (CircuitBreakerState) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[6].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[9].Descriptor()
 }
 
 func (CircuitBreakerState) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[6]
+	return &file_domain_agent_orchestration_proto_enumTypes[9]
 }
 
 func (x CircuitBreakerState) Number() protoreflect.EnumNumber {
@@ -407,7 +575,7 @@ func (x CircuitBreakerState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CircuitBreakerState.Descriptor instead.
 func (CircuitBreakerState) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{6}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{9}
 }
 
 type TaskSurface int32
@@ -452,11 +620,11 @@ func (x TaskSurface) String() string {
 }
 
 func (TaskSurface) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[7].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[10].Descriptor()
 }
 
 func (TaskSurface) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[7]
+	return &file_domain_agent_orchestration_proto_enumTypes[10]
 }
 
 func (x TaskSurface) Number() protoreflect.EnumNumber {
@@ -465,7 +633,7 @@ func (x TaskSurface) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskSurface.Descriptor instead.
 func (TaskSurface) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{7}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{10}
 }
 
 type ExecutorKind int32
@@ -510,11 +678,11 @@ func (x ExecutorKind) String() string {
 }
 
 func (ExecutorKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[8].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[11].Descriptor()
 }
 
 func (ExecutorKind) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[8]
+	return &file_domain_agent_orchestration_proto_enumTypes[11]
 }
 
 func (x ExecutorKind) Number() protoreflect.EnumNumber {
@@ -523,7 +691,7 @@ func (x ExecutorKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ExecutorKind.Descriptor instead.
 func (ExecutorKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{8}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{11}
 }
 
 type TaskEventType int32
@@ -595,11 +763,11 @@ func (x TaskEventType) String() string {
 }
 
 func (TaskEventType) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[9].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[12].Descriptor()
 }
 
 func (TaskEventType) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[9]
+	return &file_domain_agent_orchestration_proto_enumTypes[12]
 }
 
 func (x TaskEventType) Number() protoreflect.EnumNumber {
@@ -608,7 +776,7 @@ func (x TaskEventType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskEventType.Descriptor instead.
 func (TaskEventType) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{9}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{12}
 }
 
 type ArtifactKind int32
@@ -656,11 +824,11 @@ func (x ArtifactKind) String() string {
 }
 
 func (ArtifactKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[10].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[13].Descriptor()
 }
 
 func (ArtifactKind) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[10]
+	return &file_domain_agent_orchestration_proto_enumTypes[13]
 }
 
 func (x ArtifactKind) Number() protoreflect.EnumNumber {
@@ -669,7 +837,7 @@ func (x ArtifactKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ArtifactKind.Descriptor instead.
 func (ArtifactKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{10}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{13}
 }
 
 type InterruptStatus int32
@@ -711,11 +879,11 @@ func (x InterruptStatus) String() string {
 }
 
 func (InterruptStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[11].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[14].Descriptor()
 }
 
 func (InterruptStatus) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[11]
+	return &file_domain_agent_orchestration_proto_enumTypes[14]
 }
 
 func (x InterruptStatus) Number() protoreflect.EnumNumber {
@@ -724,7 +892,7 @@ func (x InterruptStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use InterruptStatus.Descriptor instead.
 func (InterruptStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{11}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{14}
 }
 
 type TaskGateBlockingLevel int32
@@ -763,11 +931,11 @@ func (x TaskGateBlockingLevel) String() string {
 }
 
 func (TaskGateBlockingLevel) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[12].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[15].Descriptor()
 }
 
 func (TaskGateBlockingLevel) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[12]
+	return &file_domain_agent_orchestration_proto_enumTypes[15]
 }
 
 func (x TaskGateBlockingLevel) Number() protoreflect.EnumNumber {
@@ -776,7 +944,7 @@ func (x TaskGateBlockingLevel) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskGateBlockingLevel.Descriptor instead.
 func (TaskGateBlockingLevel) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{12}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{15}
 }
 
 type TaskGateType int32
@@ -821,11 +989,11 @@ func (x TaskGateType) String() string {
 }
 
 func (TaskGateType) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[13].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[16].Descriptor()
 }
 
 func (TaskGateType) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[13]
+	return &file_domain_agent_orchestration_proto_enumTypes[16]
 }
 
 func (x TaskGateType) Number() protoreflect.EnumNumber {
@@ -834,7 +1002,7 @@ func (x TaskGateType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskGateType.Descriptor instead.
 func (TaskGateType) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{13}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{16}
 }
 
 type TaskGateCheckType int32
@@ -882,11 +1050,11 @@ func (x TaskGateCheckType) String() string {
 }
 
 func (TaskGateCheckType) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[14].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[17].Descriptor()
 }
 
 func (TaskGateCheckType) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[14]
+	return &file_domain_agent_orchestration_proto_enumTypes[17]
 }
 
 func (x TaskGateCheckType) Number() protoreflect.EnumNumber {
@@ -895,7 +1063,7 @@ func (x TaskGateCheckType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskGateCheckType.Descriptor instead.
 func (TaskGateCheckType) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{14}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{17}
 }
 
 type TaskGateEvaluatorKind int32
@@ -940,11 +1108,11 @@ func (x TaskGateEvaluatorKind) String() string {
 }
 
 func (TaskGateEvaluatorKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[15].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[18].Descriptor()
 }
 
 func (TaskGateEvaluatorKind) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[15]
+	return &file_domain_agent_orchestration_proto_enumTypes[18]
 }
 
 func (x TaskGateEvaluatorKind) Number() protoreflect.EnumNumber {
@@ -953,7 +1121,7 @@ func (x TaskGateEvaluatorKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskGateEvaluatorKind.Descriptor instead.
 func (TaskGateEvaluatorKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{15}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{18}
 }
 
 type TaskGraphParallelPolicy int32
@@ -992,11 +1160,11 @@ func (x TaskGraphParallelPolicy) String() string {
 }
 
 func (TaskGraphParallelPolicy) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[16].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[19].Descriptor()
 }
 
 func (TaskGraphParallelPolicy) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[16]
+	return &file_domain_agent_orchestration_proto_enumTypes[19]
 }
 
 func (x TaskGraphParallelPolicy) Number() protoreflect.EnumNumber {
@@ -1005,7 +1173,7 @@ func (x TaskGraphParallelPolicy) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskGraphParallelPolicy.Descriptor instead.
 func (TaskGraphParallelPolicy) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{16}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{19}
 }
 
 type SupervisorLoopKind int32
@@ -1038,11 +1206,11 @@ func (x SupervisorLoopKind) String() string {
 }
 
 func (SupervisorLoopKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[17].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[20].Descriptor()
 }
 
 func (SupervisorLoopKind) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[17]
+	return &file_domain_agent_orchestration_proto_enumTypes[20]
 }
 
 func (x SupervisorLoopKind) Number() protoreflect.EnumNumber {
@@ -1051,7 +1219,7 @@ func (x SupervisorLoopKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SupervisorLoopKind.Descriptor instead.
 func (SupervisorLoopKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{17}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{20}
 }
 
 type ReplanPolicyKind int32
@@ -1084,11 +1252,11 @@ func (x ReplanPolicyKind) String() string {
 }
 
 func (ReplanPolicyKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[18].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[21].Descriptor()
 }
 
 func (ReplanPolicyKind) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[18]
+	return &file_domain_agent_orchestration_proto_enumTypes[21]
 }
 
 func (x ReplanPolicyKind) Number() protoreflect.EnumNumber {
@@ -1097,7 +1265,7 @@ func (x ReplanPolicyKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ReplanPolicyKind.Descriptor instead.
 func (ReplanPolicyKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{18}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{21}
 }
 
 type ResumeAnchorPolicyKind int32
@@ -1130,11 +1298,11 @@ func (x ResumeAnchorPolicyKind) String() string {
 }
 
 func (ResumeAnchorPolicyKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_agent_orchestration_proto_enumTypes[19].Descriptor()
+	return file_domain_agent_orchestration_proto_enumTypes[22].Descriptor()
 }
 
 func (ResumeAnchorPolicyKind) Type() protoreflect.EnumType {
-	return &file_domain_agent_orchestration_proto_enumTypes[19]
+	return &file_domain_agent_orchestration_proto_enumTypes[22]
 }
 
 func (x ResumeAnchorPolicyKind) Number() protoreflect.EnumNumber {
@@ -1143,7 +1311,7 @@ func (x ResumeAnchorPolicyKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ResumeAnchorPolicyKind.Descriptor instead.
 func (ResumeAnchorPolicyKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{19}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{22}
 }
 
 type CollaborationTask struct {
@@ -1755,17 +1923,19 @@ func (x *ExecutionStep) GetEndedAt() *timestamppb.Timestamp {
 }
 
 type TaskEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
-	TaskId        string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	StepId        string                 `protobuf:"bytes,3,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
-	TurnId        string                 `protobuf:"bytes,4,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
-	EventSeq      int64                  `protobuf:"varint,5,opt,name=event_seq,json=eventSeq,proto3" json:"event_seq,omitempty"`
-	Type          TaskEventType          `protobuf:"varint,6,opt,name=type,proto3,enum=peers_touch.model.agent.v1.TaskEventType" json:"type,omitempty"`
-	PayloadJson   string                 `protobuf:"bytes,7,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                     protoimpl.MessageState     `protogen:"open.v1"`
+	EventId                   string                     `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	TaskId                    string                     `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	StepId                    string                     `protobuf:"bytes,3,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
+	TurnId                    string                     `protobuf:"bytes,4,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	EventSeq                  int64                      `protobuf:"varint,5,opt,name=event_seq,json=eventSeq,proto3" json:"event_seq,omitempty"`
+	Type                      TaskEventType              `protobuf:"varint,6,opt,name=type,proto3,enum=peers_touch.model.agent.v1.TaskEventType" json:"type,omitempty"`
+	PayloadJson               string                     `protobuf:"bytes,7,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
+	CreatedAt                 *timestamppb.Timestamp     `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	EnginePolicyTurn          *EnginePolicyTurn          `protobuf:"bytes,9,opt,name=engine_policy_turn,json=enginePolicyTurn,proto3" json:"engine_policy_turn,omitempty"`
+	CollaborationSessionEvent *CollaborationSessionEvent `protobuf:"bytes,10,opt,name=collaboration_session_event,json=collaborationSessionEvent,proto3" json:"collaboration_session_event,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *TaskEvent) Reset() {
@@ -1850,6 +2020,20 @@ func (x *TaskEvent) GetPayloadJson() string {
 func (x *TaskEvent) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *TaskEvent) GetEnginePolicyTurn() *EnginePolicyTurn {
+	if x != nil {
+		return x.EnginePolicyTurn
+	}
+	return nil
+}
+
+func (x *TaskEvent) GetCollaborationSessionEvent() *CollaborationSessionEvent {
+	if x != nil {
+		return x.CollaborationSessionEvent
 	}
 	return nil
 }
@@ -2094,6 +2278,190 @@ func (x *TaskArtifactRef) GetSize() string {
 	return ""
 }
 
+type EnginePolicyTurn struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Role          string                 `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
+	Stance        EnginePolicyStance     `protobuf:"varint,2,opt,name=stance,proto3,enum=peers_touch.model.agent.v1.EnginePolicyStance" json:"stance,omitempty"`
+	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	EvidenceRef   string                 `protobuf:"bytes,4,opt,name=evidence_ref,json=evidenceRef,proto3" json:"evidence_ref,omitempty"`
+	Escalates     bool                   `protobuf:"varint,5,opt,name=escalates,proto3" json:"escalates,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnginePolicyTurn) Reset() {
+	*x = EnginePolicyTurn{}
+	mi := &file_domain_agent_orchestration_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnginePolicyTurn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnginePolicyTurn) ProtoMessage() {}
+
+func (x *EnginePolicyTurn) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_orchestration_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnginePolicyTurn.ProtoReflect.Descriptor instead.
+func (*EnginePolicyTurn) Descriptor() ([]byte, []int) {
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *EnginePolicyTurn) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *EnginePolicyTurn) GetStance() EnginePolicyStance {
+	if x != nil {
+		return x.Stance
+	}
+	return EnginePolicyStance_ENGINE_POLICY_STANCE_UNSPECIFIED
+}
+
+func (x *EnginePolicyTurn) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *EnginePolicyTurn) GetEvidenceRef() string {
+	if x != nil {
+		return x.EvidenceRef
+	}
+	return ""
+}
+
+func (x *EnginePolicyTurn) GetEscalates() bool {
+	if x != nil {
+		return x.Escalates
+	}
+	return false
+}
+
+type CollaborationSessionEvent struct {
+	state                protoimpl.MessageState        `protogen:"open.v1"`
+	Type                 CollaborationSessionEventType `protobuf:"varint,1,opt,name=type,proto3,enum=peers_touch.model.agent.v1.CollaborationSessionEventType" json:"type,omitempty"`
+	Phase                CollaborationSessionPhase     `protobuf:"varint,2,opt,name=phase,proto3,enum=peers_touch.model.agent.v1.CollaborationSessionPhase" json:"phase,omitempty"`
+	Role                 string                        `protobuf:"bytes,3,opt,name=role,proto3" json:"role,omitempty"`
+	EngineType           CollaborationEngineType       `protobuf:"varint,4,opt,name=engine_type,json=engineType,proto3,enum=peers_touch.model.agent.v1.CollaborationEngineType" json:"engine_type,omitempty"`
+	RoundIndex           int32                         `protobuf:"varint,5,opt,name=round_index,json=roundIndex,proto3" json:"round_index,omitempty"`
+	ConvergenceMechanism string                        `protobuf:"bytes,6,opt,name=convergence_mechanism,json=convergenceMechanism,proto3" json:"convergence_mechanism,omitempty"`
+	EvidenceRef          string                        `protobuf:"bytes,7,opt,name=evidence_ref,json=evidenceRef,proto3" json:"evidence_ref,omitempty"`
+	Summary              string                        `protobuf:"bytes,8,opt,name=summary,proto3" json:"summary,omitempty"`
+	RequiresHuman        bool                          `protobuf:"varint,9,opt,name=requires_human,json=requiresHuman,proto3" json:"requires_human,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *CollaborationSessionEvent) Reset() {
+	*x = CollaborationSessionEvent{}
+	mi := &file_domain_agent_orchestration_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollaborationSessionEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollaborationSessionEvent) ProtoMessage() {}
+
+func (x *CollaborationSessionEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_orchestration_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollaborationSessionEvent.ProtoReflect.Descriptor instead.
+func (*CollaborationSessionEvent) Descriptor() ([]byte, []int) {
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CollaborationSessionEvent) GetType() CollaborationSessionEventType {
+	if x != nil {
+		return x.Type
+	}
+	return CollaborationSessionEventType_COLLABORATION_SESSION_EVENT_TYPE_UNSPECIFIED
+}
+
+func (x *CollaborationSessionEvent) GetPhase() CollaborationSessionPhase {
+	if x != nil {
+		return x.Phase
+	}
+	return CollaborationSessionPhase_COLLABORATION_SESSION_PHASE_UNSPECIFIED
+}
+
+func (x *CollaborationSessionEvent) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *CollaborationSessionEvent) GetEngineType() CollaborationEngineType {
+	if x != nil {
+		return x.EngineType
+	}
+	return CollaborationEngineType_COLLABORATION_ENGINE_TYPE_UNSPECIFIED
+}
+
+func (x *CollaborationSessionEvent) GetRoundIndex() int32 {
+	if x != nil {
+		return x.RoundIndex
+	}
+	return 0
+}
+
+func (x *CollaborationSessionEvent) GetConvergenceMechanism() string {
+	if x != nil {
+		return x.ConvergenceMechanism
+	}
+	return ""
+}
+
+func (x *CollaborationSessionEvent) GetEvidenceRef() string {
+	if x != nil {
+		return x.EvidenceRef
+	}
+	return ""
+}
+
+func (x *CollaborationSessionEvent) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *CollaborationSessionEvent) GetRequiresHuman() bool {
+	if x != nil {
+		return x.RequiresHuman
+	}
+	return false
+}
+
 type TaskGateCheck struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -2105,7 +2473,7 @@ type TaskGateCheck struct {
 
 func (x *TaskGateCheck) Reset() {
 	*x = TaskGateCheck{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[7]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2117,7 +2485,7 @@ func (x *TaskGateCheck) String() string {
 func (*TaskGateCheck) ProtoMessage() {}
 
 func (x *TaskGateCheck) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[7]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2130,7 +2498,7 @@ func (x *TaskGateCheck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskGateCheck.ProtoReflect.Descriptor instead.
 func (*TaskGateCheck) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{7}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *TaskGateCheck) GetName() string {
@@ -2169,7 +2537,7 @@ type TaskProviderSpec struct {
 
 func (x *TaskProviderSpec) Reset() {
 	*x = TaskProviderSpec{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[8]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2181,7 +2549,7 @@ func (x *TaskProviderSpec) String() string {
 func (*TaskProviderSpec) ProtoMessage() {}
 
 func (x *TaskProviderSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[8]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2194,7 +2562,7 @@ func (x *TaskProviderSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskProviderSpec.ProtoReflect.Descriptor instead.
 func (*TaskProviderSpec) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{8}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TaskProviderSpec) GetProviderId() string {
@@ -2258,7 +2626,7 @@ type TaskProviderPlan struct {
 
 func (x *TaskProviderPlan) Reset() {
 	*x = TaskProviderPlan{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[9]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2270,7 +2638,7 @@ func (x *TaskProviderPlan) String() string {
 func (*TaskProviderPlan) ProtoMessage() {}
 
 func (x *TaskProviderPlan) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[9]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2283,7 +2651,7 @@ func (x *TaskProviderPlan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskProviderPlan.ProtoReflect.Descriptor instead.
 func (*TaskProviderPlan) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{9}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TaskProviderPlan) GetProviders() []*TaskProviderSpec {
@@ -2328,7 +2696,7 @@ type TaskOrchestrationPolicy struct {
 
 func (x *TaskOrchestrationPolicy) Reset() {
 	*x = TaskOrchestrationPolicy{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[10]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2340,7 +2708,7 @@ func (x *TaskOrchestrationPolicy) String() string {
 func (*TaskOrchestrationPolicy) ProtoMessage() {}
 
 func (x *TaskOrchestrationPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[10]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2353,7 +2721,7 @@ func (x *TaskOrchestrationPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskOrchestrationPolicy.ProtoReflect.Descriptor instead.
 func (*TaskOrchestrationPolicy) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{10}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TaskOrchestrationPolicy) GetTaskGraphParallelPolicy() TaskGraphParallelPolicy {
@@ -2411,7 +2779,7 @@ type TaskGateEvaluatorSpec struct {
 
 func (x *TaskGateEvaluatorSpec) Reset() {
 	*x = TaskGateEvaluatorSpec{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[11]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2423,7 +2791,7 @@ func (x *TaskGateEvaluatorSpec) String() string {
 func (*TaskGateEvaluatorSpec) ProtoMessage() {}
 
 func (x *TaskGateEvaluatorSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[11]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2436,7 +2804,7 @@ func (x *TaskGateEvaluatorSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskGateEvaluatorSpec.ProtoReflect.Descriptor instead.
 func (*TaskGateEvaluatorSpec) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{11}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TaskGateEvaluatorSpec) GetKind() TaskGateEvaluatorKind {
@@ -2489,7 +2857,7 @@ type TaskGateCheckSpec struct {
 
 func (x *TaskGateCheckSpec) Reset() {
 	*x = TaskGateCheckSpec{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[12]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2501,7 +2869,7 @@ func (x *TaskGateCheckSpec) String() string {
 func (*TaskGateCheckSpec) ProtoMessage() {}
 
 func (x *TaskGateCheckSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[12]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2514,7 +2882,7 @@ func (x *TaskGateCheckSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskGateCheckSpec.ProtoReflect.Descriptor instead.
 func (*TaskGateCheckSpec) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{12}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *TaskGateCheckSpec) GetCheckId() string {
@@ -2585,7 +2953,7 @@ type TaskGateSpec struct {
 
 func (x *TaskGateSpec) Reset() {
 	*x = TaskGateSpec{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[13]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2597,7 +2965,7 @@ func (x *TaskGateSpec) String() string {
 func (*TaskGateSpec) ProtoMessage() {}
 
 func (x *TaskGateSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[13]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2610,7 +2978,7 @@ func (x *TaskGateSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskGateSpec.ProtoReflect.Descriptor instead.
 func (*TaskGateSpec) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{13}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TaskGateSpec) GetGateId() string {
@@ -2707,7 +3075,7 @@ type TaskGatePlan struct {
 
 func (x *TaskGatePlan) Reset() {
 	*x = TaskGatePlan{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[14]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2719,7 +3087,7 @@ func (x *TaskGatePlan) String() string {
 func (*TaskGatePlan) ProtoMessage() {}
 
 func (x *TaskGatePlan) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[14]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2732,7 +3100,7 @@ func (x *TaskGatePlan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskGatePlan.ProtoReflect.Descriptor instead.
 func (*TaskGatePlan) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{14}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TaskGatePlan) GetGatePlanId() string {
@@ -2814,7 +3182,7 @@ type TaskGateResult struct {
 
 func (x *TaskGateResult) Reset() {
 	*x = TaskGateResult{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[15]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2826,7 +3194,7 @@ func (x *TaskGateResult) String() string {
 func (*TaskGateResult) ProtoMessage() {}
 
 func (x *TaskGateResult) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[15]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2839,7 +3207,7 @@ func (x *TaskGateResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskGateResult.ProtoReflect.Descriptor instead.
 func (*TaskGateResult) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{15}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *TaskGateResult) GetGateId() string {
@@ -2913,7 +3281,7 @@ type TaskCheckpoint struct {
 
 func (x *TaskCheckpoint) Reset() {
 	*x = TaskCheckpoint{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[16]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2925,7 +3293,7 @@ func (x *TaskCheckpoint) String() string {
 func (*TaskCheckpoint) ProtoMessage() {}
 
 func (x *TaskCheckpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[16]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2938,7 +3306,7 @@ func (x *TaskCheckpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskCheckpoint.ProtoReflect.Descriptor instead.
 func (*TaskCheckpoint) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{16}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *TaskCheckpoint) GetCheckpointId() string {
@@ -3007,7 +3375,7 @@ type ExecutorLease struct {
 
 func (x *ExecutorLease) Reset() {
 	*x = ExecutorLease{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[17]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3019,7 +3387,7 @@ func (x *ExecutorLease) String() string {
 func (*ExecutorLease) ProtoMessage() {}
 
 func (x *ExecutorLease) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[17]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3032,7 +3400,7 @@ func (x *ExecutorLease) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutorLease.ProtoReflect.Descriptor instead.
 func (*ExecutorLease) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{17}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ExecutorLease) GetLeaseId() string {
@@ -3116,7 +3484,7 @@ type InterruptRequest struct {
 
 func (x *InterruptRequest) Reset() {
 	*x = InterruptRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[18]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3128,7 +3496,7 @@ func (x *InterruptRequest) String() string {
 func (*InterruptRequest) ProtoMessage() {}
 
 func (x *InterruptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[18]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3141,7 +3509,7 @@ func (x *InterruptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InterruptRequest.ProtoReflect.Descriptor instead.
 func (*InterruptRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{18}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *InterruptRequest) GetInterruptId() string {
@@ -3225,7 +3593,7 @@ type ListTaskEventsRequest struct {
 
 func (x *ListTaskEventsRequest) Reset() {
 	*x = ListTaskEventsRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[19]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3237,7 +3605,7 @@ func (x *ListTaskEventsRequest) String() string {
 func (*ListTaskEventsRequest) ProtoMessage() {}
 
 func (x *ListTaskEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[19]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3250,7 +3618,7 @@ func (x *ListTaskEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTaskEventsRequest.ProtoReflect.Descriptor instead.
 func (*ListTaskEventsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{19}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListTaskEventsRequest) GetTaskId() string {
@@ -3284,7 +3652,7 @@ type ListTaskEventsResponse struct {
 
 func (x *ListTaskEventsResponse) Reset() {
 	*x = ListTaskEventsResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[20]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3296,7 +3664,7 @@ func (x *ListTaskEventsResponse) String() string {
 func (*ListTaskEventsResponse) ProtoMessage() {}
 
 func (x *ListTaskEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[20]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3309,7 +3677,7 @@ func (x *ListTaskEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTaskEventsResponse.ProtoReflect.Descriptor instead.
 func (*ListTaskEventsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{20}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListTaskEventsResponse) GetEvents() []*TaskEvent {
@@ -3342,7 +3710,7 @@ type Vote struct {
 
 func (x *Vote) Reset() {
 	*x = Vote{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[21]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3354,7 +3722,7 @@ func (x *Vote) String() string {
 func (*Vote) ProtoMessage() {}
 
 func (x *Vote) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[21]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3367,7 +3735,7 @@ func (x *Vote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Vote.ProtoReflect.Descriptor instead.
 func (*Vote) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{21}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *Vote) GetVoteId() string {
@@ -3438,7 +3806,7 @@ type EvidenceRef struct {
 
 func (x *EvidenceRef) Reset() {
 	*x = EvidenceRef{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[22]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3450,7 +3818,7 @@ func (x *EvidenceRef) String() string {
 func (*EvidenceRef) ProtoMessage() {}
 
 func (x *EvidenceRef) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[22]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3463,7 +3831,7 @@ func (x *EvidenceRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvidenceRef.ProtoReflect.Descriptor instead.
 func (*EvidenceRef) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{22}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *EvidenceRef) GetEvidenceId() string {
@@ -3507,7 +3875,7 @@ type AcceptanceCriteria struct {
 
 func (x *AcceptanceCriteria) Reset() {
 	*x = AcceptanceCriteria{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[23]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3519,7 +3887,7 @@ func (x *AcceptanceCriteria) String() string {
 func (*AcceptanceCriteria) ProtoMessage() {}
 
 func (x *AcceptanceCriteria) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[23]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3532,7 +3900,7 @@ func (x *AcceptanceCriteria) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptanceCriteria.ProtoReflect.Descriptor instead.
 func (*AcceptanceCriteria) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{23}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *AcceptanceCriteria) GetCriteriaId() string {
@@ -3585,7 +3953,7 @@ type AcceptanceVerdictResult struct {
 
 func (x *AcceptanceVerdictResult) Reset() {
 	*x = AcceptanceVerdictResult{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[24]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3597,7 +3965,7 @@ func (x *AcceptanceVerdictResult) String() string {
 func (*AcceptanceVerdictResult) ProtoMessage() {}
 
 func (x *AcceptanceVerdictResult) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[24]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3610,7 +3978,7 @@ func (x *AcceptanceVerdictResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptanceVerdictResult.ProtoReflect.Descriptor instead.
 func (*AcceptanceVerdictResult) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{24}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *AcceptanceVerdictResult) GetVerdictId() string {
@@ -3679,7 +4047,7 @@ type Budget struct {
 
 func (x *Budget) Reset() {
 	*x = Budget{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[25]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3691,7 +4059,7 @@ func (x *Budget) String() string {
 func (*Budget) ProtoMessage() {}
 
 func (x *Budget) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[25]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3704,7 +4072,7 @@ func (x *Budget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Budget.ProtoReflect.Descriptor instead.
 func (*Budget) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{25}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *Budget) GetBudgetId() string {
@@ -3784,7 +4152,7 @@ type CircuitBreakerStatus struct {
 
 func (x *CircuitBreakerStatus) Reset() {
 	*x = CircuitBreakerStatus{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[26]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3796,7 +4164,7 @@ func (x *CircuitBreakerStatus) String() string {
 func (*CircuitBreakerStatus) ProtoMessage() {}
 
 func (x *CircuitBreakerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[26]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3809,7 +4177,7 @@ func (x *CircuitBreakerStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CircuitBreakerStatus.ProtoReflect.Descriptor instead.
 func (*CircuitBreakerStatus) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{26}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CircuitBreakerStatus) GetCircuitId() string {
@@ -3872,7 +4240,7 @@ type CreateCollaborationTaskRequest struct {
 
 func (x *CreateCollaborationTaskRequest) Reset() {
 	*x = CreateCollaborationTaskRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[27]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3884,7 +4252,7 @@ func (x *CreateCollaborationTaskRequest) String() string {
 func (*CreateCollaborationTaskRequest) ProtoMessage() {}
 
 func (x *CreateCollaborationTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[27]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3897,7 +4265,7 @@ func (x *CreateCollaborationTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCollaborationTaskRequest.ProtoReflect.Descriptor instead.
 func (*CreateCollaborationTaskRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{27}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CreateCollaborationTaskRequest) GetTitle() string {
@@ -3979,7 +4347,7 @@ type CreateCollaborationTaskResponse struct {
 
 func (x *CreateCollaborationTaskResponse) Reset() {
 	*x = CreateCollaborationTaskResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[28]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3991,7 +4359,7 @@ func (x *CreateCollaborationTaskResponse) String() string {
 func (*CreateCollaborationTaskResponse) ProtoMessage() {}
 
 func (x *CreateCollaborationTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[28]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4004,7 +4372,7 @@ func (x *CreateCollaborationTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCollaborationTaskResponse.ProtoReflect.Descriptor instead.
 func (*CreateCollaborationTaskResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{28}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *CreateCollaborationTaskResponse) GetTask() *CollaborationTask {
@@ -4023,7 +4391,7 @@ type GetCollaborationTaskRequest struct {
 
 func (x *GetCollaborationTaskRequest) Reset() {
 	*x = GetCollaborationTaskRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[29]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4035,7 +4403,7 @@ func (x *GetCollaborationTaskRequest) String() string {
 func (*GetCollaborationTaskRequest) ProtoMessage() {}
 
 func (x *GetCollaborationTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[29]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4048,7 +4416,7 @@ func (x *GetCollaborationTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCollaborationTaskRequest.ProtoReflect.Descriptor instead.
 func (*GetCollaborationTaskRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{29}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *GetCollaborationTaskRequest) GetTaskId() string {
@@ -4068,7 +4436,7 @@ type GetCollaborationTaskResponse struct {
 
 func (x *GetCollaborationTaskResponse) Reset() {
 	*x = GetCollaborationTaskResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[30]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4080,7 +4448,7 @@ func (x *GetCollaborationTaskResponse) String() string {
 func (*GetCollaborationTaskResponse) ProtoMessage() {}
 
 func (x *GetCollaborationTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[30]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4093,7 +4461,7 @@ func (x *GetCollaborationTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCollaborationTaskResponse.ProtoReflect.Descriptor instead.
 func (*GetCollaborationTaskResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{30}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *GetCollaborationTaskResponse) GetTask() *CollaborationTask {
@@ -4122,7 +4490,7 @@ type ListCollaborationTasksRequest struct {
 
 func (x *ListCollaborationTasksRequest) Reset() {
 	*x = ListCollaborationTasksRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[31]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4134,7 +4502,7 @@ func (x *ListCollaborationTasksRequest) String() string {
 func (*ListCollaborationTasksRequest) ProtoMessage() {}
 
 func (x *ListCollaborationTasksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[31]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4147,7 +4515,7 @@ func (x *ListCollaborationTasksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCollaborationTasksRequest.ProtoReflect.Descriptor instead.
 func (*ListCollaborationTasksRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{31}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ListCollaborationTasksRequest) GetOwnerId() string {
@@ -4188,7 +4556,7 @@ type ListCollaborationTasksResponse struct {
 
 func (x *ListCollaborationTasksResponse) Reset() {
 	*x = ListCollaborationTasksResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[32]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4200,7 +4568,7 @@ func (x *ListCollaborationTasksResponse) String() string {
 func (*ListCollaborationTasksResponse) ProtoMessage() {}
 
 func (x *ListCollaborationTasksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[32]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4213,7 +4581,7 @@ func (x *ListCollaborationTasksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCollaborationTasksResponse.ProtoReflect.Descriptor instead.
 func (*ListCollaborationTasksResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{32}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListCollaborationTasksResponse) GetTasks() []*CollaborationTask {
@@ -4243,7 +4611,7 @@ type UpdateCollaborationTaskRequest struct {
 
 func (x *UpdateCollaborationTaskRequest) Reset() {
 	*x = UpdateCollaborationTaskRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[33]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4255,7 +4623,7 @@ func (x *UpdateCollaborationTaskRequest) String() string {
 func (*UpdateCollaborationTaskRequest) ProtoMessage() {}
 
 func (x *UpdateCollaborationTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[33]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4268,7 +4636,7 @@ func (x *UpdateCollaborationTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateCollaborationTaskRequest.ProtoReflect.Descriptor instead.
 func (*UpdateCollaborationTaskRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{33}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *UpdateCollaborationTaskRequest) GetTaskId() string {
@@ -4315,7 +4683,7 @@ type UpdateCollaborationTaskResponse struct {
 
 func (x *UpdateCollaborationTaskResponse) Reset() {
 	*x = UpdateCollaborationTaskResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[34]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4327,7 +4695,7 @@ func (x *UpdateCollaborationTaskResponse) String() string {
 func (*UpdateCollaborationTaskResponse) ProtoMessage() {}
 
 func (x *UpdateCollaborationTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[34]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4340,7 +4708,7 @@ func (x *UpdateCollaborationTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateCollaborationTaskResponse.ProtoReflect.Descriptor instead.
 func (*UpdateCollaborationTaskResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{34}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *UpdateCollaborationTaskResponse) GetTask() *CollaborationTask {
@@ -4351,24 +4719,25 @@ func (x *UpdateCollaborationTaskResponse) GetTask() *CollaborationTask {
 }
 
 type SubmitCollaborationNodeResultRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	LeaseId       string                 `protobuf:"bytes,3,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	ExecutorId    string                 `protobuf:"bytes,4,opt,name=executor_id,json=executorId,proto3" json:"executor_id,omitempty"`
-	ResultSummary string                 `protobuf:"bytes,5,opt,name=result_summary,json=resultSummary,proto3" json:"result_summary,omitempty"`
-	Status        string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
-	TurnId        string                 `protobuf:"bytes,7,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
-	Artifacts     []*TaskArtifactRef     `protobuf:"bytes,8,rep,name=artifacts,proto3" json:"artifacts,omitempty"`
-	Gates         []*TaskGateResult      `protobuf:"bytes,9,rep,name=gates,proto3" json:"gates,omitempty"`
-	Meta          map[string]string      `protobuf:"bytes,10,rep,name=meta,proto3" json:"meta,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TaskId           string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	NodeId           string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	LeaseId          string                 `protobuf:"bytes,3,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	ExecutorId       string                 `protobuf:"bytes,4,opt,name=executor_id,json=executorId,proto3" json:"executor_id,omitempty"`
+	ResultSummary    string                 `protobuf:"bytes,5,opt,name=result_summary,json=resultSummary,proto3" json:"result_summary,omitempty"`
+	Status           string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	TurnId           string                 `protobuf:"bytes,7,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	Artifacts        []*TaskArtifactRef     `protobuf:"bytes,8,rep,name=artifacts,proto3" json:"artifacts,omitempty"`
+	Gates            []*TaskGateResult      `protobuf:"bytes,9,rep,name=gates,proto3" json:"gates,omitempty"`
+	Meta             map[string]string      `protobuf:"bytes,10,rep,name=meta,proto3" json:"meta,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	EnginePolicyTurn *EnginePolicyTurn      `protobuf:"bytes,11,opt,name=engine_policy_turn,json=enginePolicyTurn,proto3" json:"engine_policy_turn,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *SubmitCollaborationNodeResultRequest) Reset() {
 	*x = SubmitCollaborationNodeResultRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[35]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4380,7 +4749,7 @@ func (x *SubmitCollaborationNodeResultRequest) String() string {
 func (*SubmitCollaborationNodeResultRequest) ProtoMessage() {}
 
 func (x *SubmitCollaborationNodeResultRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[35]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4393,7 +4762,7 @@ func (x *SubmitCollaborationNodeResultRequest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use SubmitCollaborationNodeResultRequest.ProtoReflect.Descriptor instead.
 func (*SubmitCollaborationNodeResultRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{35}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *SubmitCollaborationNodeResultRequest) GetTaskId() string {
@@ -4466,6 +4835,13 @@ func (x *SubmitCollaborationNodeResultRequest) GetMeta() map[string]string {
 	return nil
 }
 
+func (x *SubmitCollaborationNodeResultRequest) GetEnginePolicyTurn() *EnginePolicyTurn {
+	if x != nil {
+		return x.EnginePolicyTurn
+	}
+	return nil
+}
+
 type SubmitCollaborationNodeResultResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Task          *CollaborationTask     `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
@@ -4476,7 +4852,7 @@ type SubmitCollaborationNodeResultResponse struct {
 
 func (x *SubmitCollaborationNodeResultResponse) Reset() {
 	*x = SubmitCollaborationNodeResultResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[36]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4488,7 +4864,7 @@ func (x *SubmitCollaborationNodeResultResponse) String() string {
 func (*SubmitCollaborationNodeResultResponse) ProtoMessage() {}
 
 func (x *SubmitCollaborationNodeResultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[36]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4501,7 +4877,7 @@ func (x *SubmitCollaborationNodeResultResponse) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use SubmitCollaborationNodeResultResponse.ProtoReflect.Descriptor instead.
 func (*SubmitCollaborationNodeResultResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{36}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *SubmitCollaborationNodeResultResponse) GetTask() *CollaborationTask {
@@ -4532,7 +4908,7 @@ type ClaimDesktopExecutorTaskRequest struct {
 
 func (x *ClaimDesktopExecutorTaskRequest) Reset() {
 	*x = ClaimDesktopExecutorTaskRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[37]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4544,7 +4920,7 @@ func (x *ClaimDesktopExecutorTaskRequest) String() string {
 func (*ClaimDesktopExecutorTaskRequest) ProtoMessage() {}
 
 func (x *ClaimDesktopExecutorTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[37]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4557,7 +4933,7 @@ func (x *ClaimDesktopExecutorTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimDesktopExecutorTaskRequest.ProtoReflect.Descriptor instead.
 func (*ClaimDesktopExecutorTaskRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{37}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ClaimDesktopExecutorTaskRequest) GetExecutorId() string {
@@ -4614,7 +4990,7 @@ type ClaimDesktopExecutorTaskResponse struct {
 
 func (x *ClaimDesktopExecutorTaskResponse) Reset() {
 	*x = ClaimDesktopExecutorTaskResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[38]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4626,7 +5002,7 @@ func (x *ClaimDesktopExecutorTaskResponse) String() string {
 func (*ClaimDesktopExecutorTaskResponse) ProtoMessage() {}
 
 func (x *ClaimDesktopExecutorTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[38]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4639,7 +5015,7 @@ func (x *ClaimDesktopExecutorTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimDesktopExecutorTaskResponse.ProtoReflect.Descriptor instead.
 func (*ClaimDesktopExecutorTaskResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{38}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ClaimDesktopExecutorTaskResponse) GetTask() *CollaborationTask {
@@ -4681,7 +5057,7 @@ type HeartbeatExecutorLeaseRequest struct {
 
 func (x *HeartbeatExecutorLeaseRequest) Reset() {
 	*x = HeartbeatExecutorLeaseRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[39]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4693,7 +5069,7 @@ func (x *HeartbeatExecutorLeaseRequest) String() string {
 func (*HeartbeatExecutorLeaseRequest) ProtoMessage() {}
 
 func (x *HeartbeatExecutorLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[39]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4706,7 +5082,7 @@ func (x *HeartbeatExecutorLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatExecutorLeaseRequest.ProtoReflect.Descriptor instead.
 func (*HeartbeatExecutorLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{39}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *HeartbeatExecutorLeaseRequest) GetLeaseId() string {
@@ -4739,7 +5115,7 @@ type HeartbeatExecutorLeaseResponse struct {
 
 func (x *HeartbeatExecutorLeaseResponse) Reset() {
 	*x = HeartbeatExecutorLeaseResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[40]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4751,7 +5127,7 @@ func (x *HeartbeatExecutorLeaseResponse) String() string {
 func (*HeartbeatExecutorLeaseResponse) ProtoMessage() {}
 
 func (x *HeartbeatExecutorLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[40]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4764,7 +5140,7 @@ func (x *HeartbeatExecutorLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatExecutorLeaseResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatExecutorLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{40}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *HeartbeatExecutorLeaseResponse) GetLease() *ExecutorLease {
@@ -4785,7 +5161,7 @@ type ReleaseExecutorLeaseRequest struct {
 
 func (x *ReleaseExecutorLeaseRequest) Reset() {
 	*x = ReleaseExecutorLeaseRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[41]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4797,7 +5173,7 @@ func (x *ReleaseExecutorLeaseRequest) String() string {
 func (*ReleaseExecutorLeaseRequest) ProtoMessage() {}
 
 func (x *ReleaseExecutorLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[41]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4810,7 +5186,7 @@ func (x *ReleaseExecutorLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseExecutorLeaseRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseExecutorLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{41}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ReleaseExecutorLeaseRequest) GetLeaseId() string {
@@ -4843,7 +5219,7 @@ type ReleaseExecutorLeaseResponse struct {
 
 func (x *ReleaseExecutorLeaseResponse) Reset() {
 	*x = ReleaseExecutorLeaseResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[42]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4855,7 +5231,7 @@ func (x *ReleaseExecutorLeaseResponse) String() string {
 func (*ReleaseExecutorLeaseResponse) ProtoMessage() {}
 
 func (x *ReleaseExecutorLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[42]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4868,7 +5244,7 @@ func (x *ReleaseExecutorLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseExecutorLeaseResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseExecutorLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{42}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ReleaseExecutorLeaseResponse) GetLease() *ExecutorLease {
@@ -4887,7 +5263,7 @@ type DeleteCollaborationTaskRequest struct {
 
 func (x *DeleteCollaborationTaskRequest) Reset() {
 	*x = DeleteCollaborationTaskRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[43]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4899,7 +5275,7 @@ func (x *DeleteCollaborationTaskRequest) String() string {
 func (*DeleteCollaborationTaskRequest) ProtoMessage() {}
 
 func (x *DeleteCollaborationTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[43]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4912,7 +5288,7 @@ func (x *DeleteCollaborationTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCollaborationTaskRequest.ProtoReflect.Descriptor instead.
 func (*DeleteCollaborationTaskRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{43}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *DeleteCollaborationTaskRequest) GetTaskId() string {
@@ -4931,7 +5307,7 @@ type DeleteCollaborationTaskResponse struct {
 
 func (x *DeleteCollaborationTaskResponse) Reset() {
 	*x = DeleteCollaborationTaskResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[44]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4943,7 +5319,7 @@ func (x *DeleteCollaborationTaskResponse) String() string {
 func (*DeleteCollaborationTaskResponse) ProtoMessage() {}
 
 func (x *DeleteCollaborationTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[44]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4956,7 +5332,7 @@ func (x *DeleteCollaborationTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCollaborationTaskResponse.ProtoReflect.Descriptor instead.
 func (*DeleteCollaborationTaskResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{44}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *DeleteCollaborationTaskResponse) GetSuccess() bool {
@@ -4979,7 +5355,7 @@ type SubmitVoteRequest struct {
 
 func (x *SubmitVoteRequest) Reset() {
 	*x = SubmitVoteRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[45]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4991,7 +5367,7 @@ func (x *SubmitVoteRequest) String() string {
 func (*SubmitVoteRequest) ProtoMessage() {}
 
 func (x *SubmitVoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[45]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5004,7 +5380,7 @@ func (x *SubmitVoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitVoteRequest.ProtoReflect.Descriptor instead.
 func (*SubmitVoteRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{45}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *SubmitVoteRequest) GetTaskId() string {
@@ -5051,7 +5427,7 @@ type SubmitVoteResponse struct {
 
 func (x *SubmitVoteResponse) Reset() {
 	*x = SubmitVoteResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[46]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5063,7 +5439,7 @@ func (x *SubmitVoteResponse) String() string {
 func (*SubmitVoteResponse) ProtoMessage() {}
 
 func (x *SubmitVoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[46]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5076,7 +5452,7 @@ func (x *SubmitVoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitVoteResponse.ProtoReflect.Descriptor instead.
 func (*SubmitVoteResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{46}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *SubmitVoteResponse) GetVote() *Vote {
@@ -5096,7 +5472,7 @@ type ListVotesRequest struct {
 
 func (x *ListVotesRequest) Reset() {
 	*x = ListVotesRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[47]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5108,7 +5484,7 @@ func (x *ListVotesRequest) String() string {
 func (*ListVotesRequest) ProtoMessage() {}
 
 func (x *ListVotesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[47]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5121,7 +5497,7 @@ func (x *ListVotesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVotesRequest.ProtoReflect.Descriptor instead.
 func (*ListVotesRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{47}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ListVotesRequest) GetTaskId() string {
@@ -5147,7 +5523,7 @@ type ListVotesResponse struct {
 
 func (x *ListVotesResponse) Reset() {
 	*x = ListVotesResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[48]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5159,7 +5535,7 @@ func (x *ListVotesResponse) String() string {
 func (*ListVotesResponse) ProtoMessage() {}
 
 func (x *ListVotesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[48]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5172,7 +5548,7 @@ func (x *ListVotesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVotesResponse.ProtoReflect.Descriptor instead.
 func (*ListVotesResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{48}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListVotesResponse) GetVotes() []*Vote {
@@ -5191,7 +5567,7 @@ type GetAcceptanceVerdictRequest struct {
 
 func (x *GetAcceptanceVerdictRequest) Reset() {
 	*x = GetAcceptanceVerdictRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[49]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5203,7 +5579,7 @@ func (x *GetAcceptanceVerdictRequest) String() string {
 func (*GetAcceptanceVerdictRequest) ProtoMessage() {}
 
 func (x *GetAcceptanceVerdictRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[49]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5216,7 +5592,7 @@ func (x *GetAcceptanceVerdictRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAcceptanceVerdictRequest.ProtoReflect.Descriptor instead.
 func (*GetAcceptanceVerdictRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{49}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *GetAcceptanceVerdictRequest) GetTaskId() string {
@@ -5235,7 +5611,7 @@ type GetAcceptanceVerdictResponse struct {
 
 func (x *GetAcceptanceVerdictResponse) Reset() {
 	*x = GetAcceptanceVerdictResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[50]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5247,7 +5623,7 @@ func (x *GetAcceptanceVerdictResponse) String() string {
 func (*GetAcceptanceVerdictResponse) ProtoMessage() {}
 
 func (x *GetAcceptanceVerdictResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[50]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5260,7 +5636,7 @@ func (x *GetAcceptanceVerdictResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAcceptanceVerdictResponse.ProtoReflect.Descriptor instead.
 func (*GetAcceptanceVerdictResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{50}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *GetAcceptanceVerdictResponse) GetVerdict() *AcceptanceVerdictResult {
@@ -5281,7 +5657,7 @@ type SubmitAcceptanceVerdictRequest struct {
 
 func (x *SubmitAcceptanceVerdictRequest) Reset() {
 	*x = SubmitAcceptanceVerdictRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[51]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5293,7 +5669,7 @@ func (x *SubmitAcceptanceVerdictRequest) String() string {
 func (*SubmitAcceptanceVerdictRequest) ProtoMessage() {}
 
 func (x *SubmitAcceptanceVerdictRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[51]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5306,7 +5682,7 @@ func (x *SubmitAcceptanceVerdictRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitAcceptanceVerdictRequest.ProtoReflect.Descriptor instead.
 func (*SubmitAcceptanceVerdictRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{51}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *SubmitAcceptanceVerdictRequest) GetTaskId() string {
@@ -5339,7 +5715,7 @@ type SubmitAcceptanceVerdictResponse struct {
 
 func (x *SubmitAcceptanceVerdictResponse) Reset() {
 	*x = SubmitAcceptanceVerdictResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[52]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5351,7 +5727,7 @@ func (x *SubmitAcceptanceVerdictResponse) String() string {
 func (*SubmitAcceptanceVerdictResponse) ProtoMessage() {}
 
 func (x *SubmitAcceptanceVerdictResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[52]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5364,7 +5740,7 @@ func (x *SubmitAcceptanceVerdictResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitAcceptanceVerdictResponse.ProtoReflect.Descriptor instead.
 func (*SubmitAcceptanceVerdictResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{52}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *SubmitAcceptanceVerdictResponse) GetVerdict() *AcceptanceVerdictResult {
@@ -5383,7 +5759,7 @@ type GetBudgetRequest struct {
 
 func (x *GetBudgetRequest) Reset() {
 	*x = GetBudgetRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[53]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5395,7 +5771,7 @@ func (x *GetBudgetRequest) String() string {
 func (*GetBudgetRequest) ProtoMessage() {}
 
 func (x *GetBudgetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[53]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5408,7 +5784,7 @@ func (x *GetBudgetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBudgetRequest.ProtoReflect.Descriptor instead.
 func (*GetBudgetRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{53}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *GetBudgetRequest) GetTaskId() string {
@@ -5427,7 +5803,7 @@ type GetBudgetResponse struct {
 
 func (x *GetBudgetResponse) Reset() {
 	*x = GetBudgetResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[54]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5439,7 +5815,7 @@ func (x *GetBudgetResponse) String() string {
 func (*GetBudgetResponse) ProtoMessage() {}
 
 func (x *GetBudgetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[54]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5452,7 +5828,7 @@ func (x *GetBudgetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBudgetResponse.ProtoReflect.Descriptor instead.
 func (*GetBudgetResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{54}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *GetBudgetResponse) GetBudget() *Budget {
@@ -5471,7 +5847,7 @@ type ResumeTaskRequest struct {
 
 func (x *ResumeTaskRequest) Reset() {
 	*x = ResumeTaskRequest{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[55]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5483,7 +5859,7 @@ func (x *ResumeTaskRequest) String() string {
 func (*ResumeTaskRequest) ProtoMessage() {}
 
 func (x *ResumeTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[55]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5496,7 +5872,7 @@ func (x *ResumeTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeTaskRequest.ProtoReflect.Descriptor instead.
 func (*ResumeTaskRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{55}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ResumeTaskRequest) GetTaskId() string {
@@ -5515,7 +5891,7 @@ type ResumeTaskResponse struct {
 
 func (x *ResumeTaskResponse) Reset() {
 	*x = ResumeTaskResponse{}
-	mi := &file_domain_agent_orchestration_proto_msgTypes[56]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5527,7 +5903,7 @@ func (x *ResumeTaskResponse) String() string {
 func (*ResumeTaskResponse) ProtoMessage() {}
 
 func (x *ResumeTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_orchestration_proto_msgTypes[56]
+	mi := &file_domain_agent_orchestration_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5540,7 +5916,7 @@ func (x *ResumeTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeTaskResponse.ProtoReflect.Descriptor instead.
 func (*ResumeTaskResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{56}
+	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ResumeTaskResponse) GetTask() *CollaborationTask {
@@ -5635,7 +6011,7 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\x0eresult_summary\x18\x11 \x01(\tR\rresultSummary\x129\n" +
 	"\n" +
 	"started_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
-	"\bended_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xab\x02\n" +
+	"\bended_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xfe\x03\n" +
 	"\tTaskEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x17\n" +
@@ -5645,7 +6021,10 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\x04type\x18\x06 \x01(\x0e2).peers_touch.model.agent.v1.TaskEventTypeR\x04type\x12!\n" +
 	"\fpayload_json\x18\a \x01(\tR\vpayloadJson\x129\n" +
 	"\n" +
-	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x89\x03\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12Z\n" +
+	"\x12engine_policy_turn\x18\t \x01(\v2,.peers_touch.model.agent.v1.EnginePolicyTurnR\x10enginePolicyTurn\x12u\n" +
+	"\x1bcollaboration_session_event\x18\n" +
+	" \x01(\v25.peers_touch.model.agent.v1.CollaborationSessionEventR\x19collaborationSessionEvent\"\x89\x03\n" +
 	"\fTaskArtifact\x12\x1f\n" +
 	"\vartifact_id\x18\x01 \x01(\tR\n" +
 	"artifactId\x12\x17\n" +
@@ -5676,7 +6055,25 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\bmarkdown\x18\b \x01(\tR\bmarkdown\x12\x12\n" +
 	"\x04meta\x18\t \x01(\tR\x04meta\x12\x12\n" +
 	"\x04size\x18\n" +
-	" \x01(\tR\x04size\"S\n" +
+	" \x01(\tR\x04size\"\xc3\x01\n" +
+	"\x10EnginePolicyTurn\x12\x12\n" +
+	"\x04role\x18\x01 \x01(\tR\x04role\x12F\n" +
+	"\x06stance\x18\x02 \x01(\x0e2..peers_touch.model.agent.v1.EnginePolicyStanceR\x06stance\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\x12!\n" +
+	"\fevidence_ref\x18\x04 \x01(\tR\vevidenceRef\x12\x1c\n" +
+	"\tescalates\x18\x05 \x01(\bR\tescalates\"\xdb\x03\n" +
+	"\x19CollaborationSessionEvent\x12M\n" +
+	"\x04type\x18\x01 \x01(\x0e29.peers_touch.model.agent.v1.CollaborationSessionEventTypeR\x04type\x12K\n" +
+	"\x05phase\x18\x02 \x01(\x0e25.peers_touch.model.agent.v1.CollaborationSessionPhaseR\x05phase\x12\x12\n" +
+	"\x04role\x18\x03 \x01(\tR\x04role\x12T\n" +
+	"\vengine_type\x18\x04 \x01(\x0e23.peers_touch.model.agent.v1.CollaborationEngineTypeR\n" +
+	"engineType\x12\x1f\n" +
+	"\vround_index\x18\x05 \x01(\x05R\n" +
+	"roundIndex\x123\n" +
+	"\x15convergence_mechanism\x18\x06 \x01(\tR\x14convergenceMechanism\x12!\n" +
+	"\fevidence_ref\x18\a \x01(\tR\vevidenceRef\x12\x18\n" +
+	"\asummary\x18\b \x01(\tR\asummary\x12%\n" +
+	"\x0erequires_human\x18\t \x01(\bR\rrequiresHuman\"S\n" +
 	"\rTaskGateCheck\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x16\n" +
@@ -5901,7 +6298,7 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\f_descriptionB\t\n" +
 	"\a_status\"d\n" +
 	"\x1fUpdateCollaborationTaskResponse\x12A\n" +
-	"\x04task\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.CollaborationTaskR\x04task\"\x92\x04\n" +
+	"\x04task\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.CollaborationTaskR\x04task\"\xee\x04\n" +
 	"$SubmitCollaborationNodeResultRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x17\n" +
 	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12\x19\n" +
@@ -5914,7 +6311,8 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\tartifacts\x18\b \x03(\v2+.peers_touch.model.agent.v1.TaskArtifactRefR\tartifacts\x12@\n" +
 	"\x05gates\x18\t \x03(\v2*.peers_touch.model.agent.v1.TaskGateResultR\x05gates\x12^\n" +
 	"\x04meta\x18\n" +
-	" \x03(\v2J.peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.MetaEntryR\x04meta\x1a7\n" +
+	" \x03(\v2J.peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.MetaEntryR\x04meta\x12Z\n" +
+	"\x12engine_policy_turn\x18\v \x01(\v2,.peers_touch.model.agent.v1.EnginePolicyTurnR\x10enginePolicyTurn\x1a7\n" +
 	"\tMetaEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa6\x01\n" +
@@ -6022,7 +6420,26 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\x15VOTE_TYPE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fVOTE_TYPE_AGREE\x10\x01\x12\x16\n" +
 	"\x12VOTE_TYPE_DISAGREE\x10\x02\x12\x15\n" +
-	"\x11VOTE_TYPE_ABSTAIN\x10\x03*~\n" +
+	"\x11VOTE_TYPE_ABSTAIN\x10\x03*\xc5\x01\n" +
+	"\x12EnginePolicyStance\x12$\n" +
+	" ENGINE_POLICY_STANCE_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dENGINE_POLICY_STANCE_PROPOSAL\x10\x01\x12\"\n" +
+	"\x1eENGINE_POLICY_STANCE_OBJECTION\x10\x02\x12 \n" +
+	"\x1cENGINE_POLICY_STANCE_COUNTER\x10\x03\x12 \n" +
+	"\x1cENGINE_POLICY_STANCE_SIGNOFF\x10\x04*\xd9\x02\n" +
+	"\x1dCollaborationSessionEventType\x120\n" +
+	",COLLABORATION_SESSION_EVENT_TYPE_UNSPECIFIED\x10\x00\x122\n" +
+	".COLLABORATION_SESSION_EVENT_TYPE_ROUND_STARTED\x10\x01\x123\n" +
+	"/COLLABORATION_SESSION_EVENT_TYPE_VOICE_RECORDED\x10\x02\x12:\n" +
+	"6COLLABORATION_SESSION_EVENT_TYPE_CONVERGENCE_EVALUATED\x10\x03\x123\n" +
+	"/COLLABORATION_SESSION_EVENT_TYPE_AWAITING_HUMAN\x10\x04\x12,\n" +
+	"(COLLABORATION_SESSION_EVENT_TYPE_REACHED\x10\x05*\xf8\x01\n" +
+	"\x19CollaborationSessionPhase\x12+\n" +
+	"'COLLABORATION_SESSION_PHASE_UNSPECIFIED\x10\x00\x12)\n" +
+	"%COLLABORATION_SESSION_PHASE_GATHERING\x10\x01\x12*\n" +
+	"&COLLABORATION_SESSION_PHASE_CONVERGING\x10\x02\x12.\n" +
+	"*COLLABORATION_SESSION_PHASE_AWAITING_HUMAN\x10\x03\x12'\n" +
+	"#COLLABORATION_SESSION_PHASE_REACHED\x10\x04*~\n" +
 	"\x0fAcceptanceLevel\x12 \n" +
 	"\x1cACCEPTANCE_LEVEL_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ACCEPTANCE_LEVEL_L0\x10\x01\x12\x17\n" +
@@ -6137,190 +6554,202 @@ func file_domain_agent_orchestration_proto_rawDescGZIP() []byte {
 	return file_domain_agent_orchestration_proto_rawDescData
 }
 
-var file_domain_agent_orchestration_proto_enumTypes = make([]protoimpl.EnumInfo, 20)
-var file_domain_agent_orchestration_proto_msgTypes = make([]protoimpl.MessageInfo, 63)
+var file_domain_agent_orchestration_proto_enumTypes = make([]protoimpl.EnumInfo, 23)
+var file_domain_agent_orchestration_proto_msgTypes = make([]protoimpl.MessageInfo, 65)
 var file_domain_agent_orchestration_proto_goTypes = []any{
 	(CollaborationEngineType)(0),                  // 0: peers_touch.model.agent.v1.CollaborationEngineType
 	(CollaborationTaskStatus)(0),                  // 1: peers_touch.model.agent.v1.CollaborationTaskStatus
 	(TaskNodeStatus)(0),                           // 2: peers_touch.model.agent.v1.TaskNodeStatus
 	(VoteType)(0),                                 // 3: peers_touch.model.agent.v1.VoteType
-	(AcceptanceLevel)(0),                          // 4: peers_touch.model.agent.v1.AcceptanceLevel
-	(AcceptanceVerdict)(0),                        // 5: peers_touch.model.agent.v1.AcceptanceVerdict
-	(CircuitBreakerState)(0),                      // 6: peers_touch.model.agent.v1.CircuitBreakerState
-	(TaskSurface)(0),                              // 7: peers_touch.model.agent.v1.TaskSurface
-	(ExecutorKind)(0),                             // 8: peers_touch.model.agent.v1.ExecutorKind
-	(TaskEventType)(0),                            // 9: peers_touch.model.agent.v1.TaskEventType
-	(ArtifactKind)(0),                             // 10: peers_touch.model.agent.v1.ArtifactKind
-	(InterruptStatus)(0),                          // 11: peers_touch.model.agent.v1.InterruptStatus
-	(TaskGateBlockingLevel)(0),                    // 12: peers_touch.model.agent.v1.TaskGateBlockingLevel
-	(TaskGateType)(0),                             // 13: peers_touch.model.agent.v1.TaskGateType
-	(TaskGateCheckType)(0),                        // 14: peers_touch.model.agent.v1.TaskGateCheckType
-	(TaskGateEvaluatorKind)(0),                    // 15: peers_touch.model.agent.v1.TaskGateEvaluatorKind
-	(TaskGraphParallelPolicy)(0),                  // 16: peers_touch.model.agent.v1.TaskGraphParallelPolicy
-	(SupervisorLoopKind)(0),                       // 17: peers_touch.model.agent.v1.SupervisorLoopKind
-	(ReplanPolicyKind)(0),                         // 18: peers_touch.model.agent.v1.ReplanPolicyKind
-	(ResumeAnchorPolicyKind)(0),                   // 19: peers_touch.model.agent.v1.ResumeAnchorPolicyKind
-	(*CollaborationTask)(nil),                     // 20: peers_touch.model.agent.v1.CollaborationTask
-	(*TaskNode)(nil),                              // 21: peers_touch.model.agent.v1.TaskNode
-	(*TaskRun)(nil),                               // 22: peers_touch.model.agent.v1.TaskRun
-	(*ExecutionStep)(nil),                         // 23: peers_touch.model.agent.v1.ExecutionStep
-	(*TaskEvent)(nil),                             // 24: peers_touch.model.agent.v1.TaskEvent
-	(*TaskArtifact)(nil),                          // 25: peers_touch.model.agent.v1.TaskArtifact
-	(*TaskArtifactRef)(nil),                       // 26: peers_touch.model.agent.v1.TaskArtifactRef
-	(*TaskGateCheck)(nil),                         // 27: peers_touch.model.agent.v1.TaskGateCheck
-	(*TaskProviderSpec)(nil),                      // 28: peers_touch.model.agent.v1.TaskProviderSpec
-	(*TaskProviderPlan)(nil),                      // 29: peers_touch.model.agent.v1.TaskProviderPlan
-	(*TaskOrchestrationPolicy)(nil),               // 30: peers_touch.model.agent.v1.TaskOrchestrationPolicy
-	(*TaskGateEvaluatorSpec)(nil),                 // 31: peers_touch.model.agent.v1.TaskGateEvaluatorSpec
-	(*TaskGateCheckSpec)(nil),                     // 32: peers_touch.model.agent.v1.TaskGateCheckSpec
-	(*TaskGateSpec)(nil),                          // 33: peers_touch.model.agent.v1.TaskGateSpec
-	(*TaskGatePlan)(nil),                          // 34: peers_touch.model.agent.v1.TaskGatePlan
-	(*TaskGateResult)(nil),                        // 35: peers_touch.model.agent.v1.TaskGateResult
-	(*TaskCheckpoint)(nil),                        // 36: peers_touch.model.agent.v1.TaskCheckpoint
-	(*ExecutorLease)(nil),                         // 37: peers_touch.model.agent.v1.ExecutorLease
-	(*InterruptRequest)(nil),                      // 38: peers_touch.model.agent.v1.InterruptRequest
-	(*ListTaskEventsRequest)(nil),                 // 39: peers_touch.model.agent.v1.ListTaskEventsRequest
-	(*ListTaskEventsResponse)(nil),                // 40: peers_touch.model.agent.v1.ListTaskEventsResponse
-	(*Vote)(nil),                                  // 41: peers_touch.model.agent.v1.Vote
-	(*EvidenceRef)(nil),                           // 42: peers_touch.model.agent.v1.EvidenceRef
-	(*AcceptanceCriteria)(nil),                    // 43: peers_touch.model.agent.v1.AcceptanceCriteria
-	(*AcceptanceVerdictResult)(nil),               // 44: peers_touch.model.agent.v1.AcceptanceVerdictResult
-	(*Budget)(nil),                                // 45: peers_touch.model.agent.v1.Budget
-	(*CircuitBreakerStatus)(nil),                  // 46: peers_touch.model.agent.v1.CircuitBreakerStatus
-	(*CreateCollaborationTaskRequest)(nil),        // 47: peers_touch.model.agent.v1.CreateCollaborationTaskRequest
-	(*CreateCollaborationTaskResponse)(nil),       // 48: peers_touch.model.agent.v1.CreateCollaborationTaskResponse
-	(*GetCollaborationTaskRequest)(nil),           // 49: peers_touch.model.agent.v1.GetCollaborationTaskRequest
-	(*GetCollaborationTaskResponse)(nil),          // 50: peers_touch.model.agent.v1.GetCollaborationTaskResponse
-	(*ListCollaborationTasksRequest)(nil),         // 51: peers_touch.model.agent.v1.ListCollaborationTasksRequest
-	(*ListCollaborationTasksResponse)(nil),        // 52: peers_touch.model.agent.v1.ListCollaborationTasksResponse
-	(*UpdateCollaborationTaskRequest)(nil),        // 53: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest
-	(*UpdateCollaborationTaskResponse)(nil),       // 54: peers_touch.model.agent.v1.UpdateCollaborationTaskResponse
-	(*SubmitCollaborationNodeResultRequest)(nil),  // 55: peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest
-	(*SubmitCollaborationNodeResultResponse)(nil), // 56: peers_touch.model.agent.v1.SubmitCollaborationNodeResultResponse
-	(*ClaimDesktopExecutorTaskRequest)(nil),       // 57: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskRequest
-	(*ClaimDesktopExecutorTaskResponse)(nil),      // 58: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse
-	(*HeartbeatExecutorLeaseRequest)(nil),         // 59: peers_touch.model.agent.v1.HeartbeatExecutorLeaseRequest
-	(*HeartbeatExecutorLeaseResponse)(nil),        // 60: peers_touch.model.agent.v1.HeartbeatExecutorLeaseResponse
-	(*ReleaseExecutorLeaseRequest)(nil),           // 61: peers_touch.model.agent.v1.ReleaseExecutorLeaseRequest
-	(*ReleaseExecutorLeaseResponse)(nil),          // 62: peers_touch.model.agent.v1.ReleaseExecutorLeaseResponse
-	(*DeleteCollaborationTaskRequest)(nil),        // 63: peers_touch.model.agent.v1.DeleteCollaborationTaskRequest
-	(*DeleteCollaborationTaskResponse)(nil),       // 64: peers_touch.model.agent.v1.DeleteCollaborationTaskResponse
-	(*SubmitVoteRequest)(nil),                     // 65: peers_touch.model.agent.v1.SubmitVoteRequest
-	(*SubmitVoteResponse)(nil),                    // 66: peers_touch.model.agent.v1.SubmitVoteResponse
-	(*ListVotesRequest)(nil),                      // 67: peers_touch.model.agent.v1.ListVotesRequest
-	(*ListVotesResponse)(nil),                     // 68: peers_touch.model.agent.v1.ListVotesResponse
-	(*GetAcceptanceVerdictRequest)(nil),           // 69: peers_touch.model.agent.v1.GetAcceptanceVerdictRequest
-	(*GetAcceptanceVerdictResponse)(nil),          // 70: peers_touch.model.agent.v1.GetAcceptanceVerdictResponse
-	(*SubmitAcceptanceVerdictRequest)(nil),        // 71: peers_touch.model.agent.v1.SubmitAcceptanceVerdictRequest
-	(*SubmitAcceptanceVerdictResponse)(nil),       // 72: peers_touch.model.agent.v1.SubmitAcceptanceVerdictResponse
-	(*GetBudgetRequest)(nil),                      // 73: peers_touch.model.agent.v1.GetBudgetRequest
-	(*GetBudgetResponse)(nil),                     // 74: peers_touch.model.agent.v1.GetBudgetResponse
-	(*ResumeTaskRequest)(nil),                     // 75: peers_touch.model.agent.v1.ResumeTaskRequest
-	(*ResumeTaskResponse)(nil),                    // 76: peers_touch.model.agent.v1.ResumeTaskResponse
-	nil,                                           // 77: peers_touch.model.agent.v1.CollaborationTask.MetaEntry
-	nil,                                           // 78: peers_touch.model.agent.v1.TaskRun.MetaEntry
-	nil,                                           // 79: peers_touch.model.agent.v1.TaskProviderSpec.OptionsEntry
-	nil,                                           // 80: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.MetaEntry
-	nil,                                           // 81: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.MetaEntry
-	nil,                                           // 82: peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.MetaEntry
-	(*timestamppb.Timestamp)(nil),                 // 83: google.protobuf.Timestamp
+	(EnginePolicyStance)(0),                       // 4: peers_touch.model.agent.v1.EnginePolicyStance
+	(CollaborationSessionEventType)(0),            // 5: peers_touch.model.agent.v1.CollaborationSessionEventType
+	(CollaborationSessionPhase)(0),                // 6: peers_touch.model.agent.v1.CollaborationSessionPhase
+	(AcceptanceLevel)(0),                          // 7: peers_touch.model.agent.v1.AcceptanceLevel
+	(AcceptanceVerdict)(0),                        // 8: peers_touch.model.agent.v1.AcceptanceVerdict
+	(CircuitBreakerState)(0),                      // 9: peers_touch.model.agent.v1.CircuitBreakerState
+	(TaskSurface)(0),                              // 10: peers_touch.model.agent.v1.TaskSurface
+	(ExecutorKind)(0),                             // 11: peers_touch.model.agent.v1.ExecutorKind
+	(TaskEventType)(0),                            // 12: peers_touch.model.agent.v1.TaskEventType
+	(ArtifactKind)(0),                             // 13: peers_touch.model.agent.v1.ArtifactKind
+	(InterruptStatus)(0),                          // 14: peers_touch.model.agent.v1.InterruptStatus
+	(TaskGateBlockingLevel)(0),                    // 15: peers_touch.model.agent.v1.TaskGateBlockingLevel
+	(TaskGateType)(0),                             // 16: peers_touch.model.agent.v1.TaskGateType
+	(TaskGateCheckType)(0),                        // 17: peers_touch.model.agent.v1.TaskGateCheckType
+	(TaskGateEvaluatorKind)(0),                    // 18: peers_touch.model.agent.v1.TaskGateEvaluatorKind
+	(TaskGraphParallelPolicy)(0),                  // 19: peers_touch.model.agent.v1.TaskGraphParallelPolicy
+	(SupervisorLoopKind)(0),                       // 20: peers_touch.model.agent.v1.SupervisorLoopKind
+	(ReplanPolicyKind)(0),                         // 21: peers_touch.model.agent.v1.ReplanPolicyKind
+	(ResumeAnchorPolicyKind)(0),                   // 22: peers_touch.model.agent.v1.ResumeAnchorPolicyKind
+	(*CollaborationTask)(nil),                     // 23: peers_touch.model.agent.v1.CollaborationTask
+	(*TaskNode)(nil),                              // 24: peers_touch.model.agent.v1.TaskNode
+	(*TaskRun)(nil),                               // 25: peers_touch.model.agent.v1.TaskRun
+	(*ExecutionStep)(nil),                         // 26: peers_touch.model.agent.v1.ExecutionStep
+	(*TaskEvent)(nil),                             // 27: peers_touch.model.agent.v1.TaskEvent
+	(*TaskArtifact)(nil),                          // 28: peers_touch.model.agent.v1.TaskArtifact
+	(*TaskArtifactRef)(nil),                       // 29: peers_touch.model.agent.v1.TaskArtifactRef
+	(*EnginePolicyTurn)(nil),                      // 30: peers_touch.model.agent.v1.EnginePolicyTurn
+	(*CollaborationSessionEvent)(nil),             // 31: peers_touch.model.agent.v1.CollaborationSessionEvent
+	(*TaskGateCheck)(nil),                         // 32: peers_touch.model.agent.v1.TaskGateCheck
+	(*TaskProviderSpec)(nil),                      // 33: peers_touch.model.agent.v1.TaskProviderSpec
+	(*TaskProviderPlan)(nil),                      // 34: peers_touch.model.agent.v1.TaskProviderPlan
+	(*TaskOrchestrationPolicy)(nil),               // 35: peers_touch.model.agent.v1.TaskOrchestrationPolicy
+	(*TaskGateEvaluatorSpec)(nil),                 // 36: peers_touch.model.agent.v1.TaskGateEvaluatorSpec
+	(*TaskGateCheckSpec)(nil),                     // 37: peers_touch.model.agent.v1.TaskGateCheckSpec
+	(*TaskGateSpec)(nil),                          // 38: peers_touch.model.agent.v1.TaskGateSpec
+	(*TaskGatePlan)(nil),                          // 39: peers_touch.model.agent.v1.TaskGatePlan
+	(*TaskGateResult)(nil),                        // 40: peers_touch.model.agent.v1.TaskGateResult
+	(*TaskCheckpoint)(nil),                        // 41: peers_touch.model.agent.v1.TaskCheckpoint
+	(*ExecutorLease)(nil),                         // 42: peers_touch.model.agent.v1.ExecutorLease
+	(*InterruptRequest)(nil),                      // 43: peers_touch.model.agent.v1.InterruptRequest
+	(*ListTaskEventsRequest)(nil),                 // 44: peers_touch.model.agent.v1.ListTaskEventsRequest
+	(*ListTaskEventsResponse)(nil),                // 45: peers_touch.model.agent.v1.ListTaskEventsResponse
+	(*Vote)(nil),                                  // 46: peers_touch.model.agent.v1.Vote
+	(*EvidenceRef)(nil),                           // 47: peers_touch.model.agent.v1.EvidenceRef
+	(*AcceptanceCriteria)(nil),                    // 48: peers_touch.model.agent.v1.AcceptanceCriteria
+	(*AcceptanceVerdictResult)(nil),               // 49: peers_touch.model.agent.v1.AcceptanceVerdictResult
+	(*Budget)(nil),                                // 50: peers_touch.model.agent.v1.Budget
+	(*CircuitBreakerStatus)(nil),                  // 51: peers_touch.model.agent.v1.CircuitBreakerStatus
+	(*CreateCollaborationTaskRequest)(nil),        // 52: peers_touch.model.agent.v1.CreateCollaborationTaskRequest
+	(*CreateCollaborationTaskResponse)(nil),       // 53: peers_touch.model.agent.v1.CreateCollaborationTaskResponse
+	(*GetCollaborationTaskRequest)(nil),           // 54: peers_touch.model.agent.v1.GetCollaborationTaskRequest
+	(*GetCollaborationTaskResponse)(nil),          // 55: peers_touch.model.agent.v1.GetCollaborationTaskResponse
+	(*ListCollaborationTasksRequest)(nil),         // 56: peers_touch.model.agent.v1.ListCollaborationTasksRequest
+	(*ListCollaborationTasksResponse)(nil),        // 57: peers_touch.model.agent.v1.ListCollaborationTasksResponse
+	(*UpdateCollaborationTaskRequest)(nil),        // 58: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest
+	(*UpdateCollaborationTaskResponse)(nil),       // 59: peers_touch.model.agent.v1.UpdateCollaborationTaskResponse
+	(*SubmitCollaborationNodeResultRequest)(nil),  // 60: peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest
+	(*SubmitCollaborationNodeResultResponse)(nil), // 61: peers_touch.model.agent.v1.SubmitCollaborationNodeResultResponse
+	(*ClaimDesktopExecutorTaskRequest)(nil),       // 62: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskRequest
+	(*ClaimDesktopExecutorTaskResponse)(nil),      // 63: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse
+	(*HeartbeatExecutorLeaseRequest)(nil),         // 64: peers_touch.model.agent.v1.HeartbeatExecutorLeaseRequest
+	(*HeartbeatExecutorLeaseResponse)(nil),        // 65: peers_touch.model.agent.v1.HeartbeatExecutorLeaseResponse
+	(*ReleaseExecutorLeaseRequest)(nil),           // 66: peers_touch.model.agent.v1.ReleaseExecutorLeaseRequest
+	(*ReleaseExecutorLeaseResponse)(nil),          // 67: peers_touch.model.agent.v1.ReleaseExecutorLeaseResponse
+	(*DeleteCollaborationTaskRequest)(nil),        // 68: peers_touch.model.agent.v1.DeleteCollaborationTaskRequest
+	(*DeleteCollaborationTaskResponse)(nil),       // 69: peers_touch.model.agent.v1.DeleteCollaborationTaskResponse
+	(*SubmitVoteRequest)(nil),                     // 70: peers_touch.model.agent.v1.SubmitVoteRequest
+	(*SubmitVoteResponse)(nil),                    // 71: peers_touch.model.agent.v1.SubmitVoteResponse
+	(*ListVotesRequest)(nil),                      // 72: peers_touch.model.agent.v1.ListVotesRequest
+	(*ListVotesResponse)(nil),                     // 73: peers_touch.model.agent.v1.ListVotesResponse
+	(*GetAcceptanceVerdictRequest)(nil),           // 74: peers_touch.model.agent.v1.GetAcceptanceVerdictRequest
+	(*GetAcceptanceVerdictResponse)(nil),          // 75: peers_touch.model.agent.v1.GetAcceptanceVerdictResponse
+	(*SubmitAcceptanceVerdictRequest)(nil),        // 76: peers_touch.model.agent.v1.SubmitAcceptanceVerdictRequest
+	(*SubmitAcceptanceVerdictResponse)(nil),       // 77: peers_touch.model.agent.v1.SubmitAcceptanceVerdictResponse
+	(*GetBudgetRequest)(nil),                      // 78: peers_touch.model.agent.v1.GetBudgetRequest
+	(*GetBudgetResponse)(nil),                     // 79: peers_touch.model.agent.v1.GetBudgetResponse
+	(*ResumeTaskRequest)(nil),                     // 80: peers_touch.model.agent.v1.ResumeTaskRequest
+	(*ResumeTaskResponse)(nil),                    // 81: peers_touch.model.agent.v1.ResumeTaskResponse
+	nil,                                           // 82: peers_touch.model.agent.v1.CollaborationTask.MetaEntry
+	nil,                                           // 83: peers_touch.model.agent.v1.TaskRun.MetaEntry
+	nil,                                           // 84: peers_touch.model.agent.v1.TaskProviderSpec.OptionsEntry
+	nil,                                           // 85: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.MetaEntry
+	nil,                                           // 86: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.MetaEntry
+	nil,                                           // 87: peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.MetaEntry
+	(*timestamppb.Timestamp)(nil),                 // 88: google.protobuf.Timestamp
 }
 var file_domain_agent_orchestration_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.agent.v1.CollaborationTask.engine_type:type_name -> peers_touch.model.agent.v1.CollaborationEngineType
 	1,  // 1: peers_touch.model.agent.v1.CollaborationTask.status:type_name -> peers_touch.model.agent.v1.CollaborationTaskStatus
-	83, // 2: peers_touch.model.agent.v1.CollaborationTask.created_at:type_name -> google.protobuf.Timestamp
-	83, // 3: peers_touch.model.agent.v1.CollaborationTask.started_at:type_name -> google.protobuf.Timestamp
-	83, // 4: peers_touch.model.agent.v1.CollaborationTask.ended_at:type_name -> google.protobuf.Timestamp
-	77, // 5: peers_touch.model.agent.v1.CollaborationTask.meta:type_name -> peers_touch.model.agent.v1.CollaborationTask.MetaEntry
+	88, // 2: peers_touch.model.agent.v1.CollaborationTask.created_at:type_name -> google.protobuf.Timestamp
+	88, // 3: peers_touch.model.agent.v1.CollaborationTask.started_at:type_name -> google.protobuf.Timestamp
+	88, // 4: peers_touch.model.agent.v1.CollaborationTask.ended_at:type_name -> google.protobuf.Timestamp
+	82, // 5: peers_touch.model.agent.v1.CollaborationTask.meta:type_name -> peers_touch.model.agent.v1.CollaborationTask.MetaEntry
 	2,  // 6: peers_touch.model.agent.v1.TaskNode.status:type_name -> peers_touch.model.agent.v1.TaskNodeStatus
-	83, // 7: peers_touch.model.agent.v1.TaskNode.started_at:type_name -> google.protobuf.Timestamp
-	83, // 8: peers_touch.model.agent.v1.TaskNode.ended_at:type_name -> google.protobuf.Timestamp
-	7,  // 9: peers_touch.model.agent.v1.TaskRun.surface:type_name -> peers_touch.model.agent.v1.TaskSurface
+	88, // 7: peers_touch.model.agent.v1.TaskNode.started_at:type_name -> google.protobuf.Timestamp
+	88, // 8: peers_touch.model.agent.v1.TaskNode.ended_at:type_name -> google.protobuf.Timestamp
+	10, // 9: peers_touch.model.agent.v1.TaskRun.surface:type_name -> peers_touch.model.agent.v1.TaskSurface
 	1,  // 10: peers_touch.model.agent.v1.TaskRun.status:type_name -> peers_touch.model.agent.v1.CollaborationTaskStatus
-	78, // 11: peers_touch.model.agent.v1.TaskRun.meta:type_name -> peers_touch.model.agent.v1.TaskRun.MetaEntry
-	83, // 12: peers_touch.model.agent.v1.TaskRun.created_at:type_name -> google.protobuf.Timestamp
-	83, // 13: peers_touch.model.agent.v1.TaskRun.started_at:type_name -> google.protobuf.Timestamp
-	83, // 14: peers_touch.model.agent.v1.TaskRun.updated_at:type_name -> google.protobuf.Timestamp
-	83, // 15: peers_touch.model.agent.v1.TaskRun.ended_at:type_name -> google.protobuf.Timestamp
+	83, // 11: peers_touch.model.agent.v1.TaskRun.meta:type_name -> peers_touch.model.agent.v1.TaskRun.MetaEntry
+	88, // 12: peers_touch.model.agent.v1.TaskRun.created_at:type_name -> google.protobuf.Timestamp
+	88, // 13: peers_touch.model.agent.v1.TaskRun.started_at:type_name -> google.protobuf.Timestamp
+	88, // 14: peers_touch.model.agent.v1.TaskRun.updated_at:type_name -> google.protobuf.Timestamp
+	88, // 15: peers_touch.model.agent.v1.TaskRun.ended_at:type_name -> google.protobuf.Timestamp
 	2,  // 16: peers_touch.model.agent.v1.ExecutionStep.status:type_name -> peers_touch.model.agent.v1.TaskNodeStatus
-	8,  // 17: peers_touch.model.agent.v1.ExecutionStep.eligible_executors:type_name -> peers_touch.model.agent.v1.ExecutorKind
-	83, // 18: peers_touch.model.agent.v1.ExecutionStep.started_at:type_name -> google.protobuf.Timestamp
-	83, // 19: peers_touch.model.agent.v1.ExecutionStep.ended_at:type_name -> google.protobuf.Timestamp
-	9,  // 20: peers_touch.model.agent.v1.TaskEvent.type:type_name -> peers_touch.model.agent.v1.TaskEventType
-	83, // 21: peers_touch.model.agent.v1.TaskEvent.created_at:type_name -> google.protobuf.Timestamp
-	10, // 22: peers_touch.model.agent.v1.TaskArtifact.kind:type_name -> peers_touch.model.agent.v1.ArtifactKind
-	83, // 23: peers_touch.model.agent.v1.TaskArtifact.created_at:type_name -> google.protobuf.Timestamp
-	79, // 24: peers_touch.model.agent.v1.TaskProviderSpec.options:type_name -> peers_touch.model.agent.v1.TaskProviderSpec.OptionsEntry
-	28, // 25: peers_touch.model.agent.v1.TaskProviderPlan.providers:type_name -> peers_touch.model.agent.v1.TaskProviderSpec
-	30, // 26: peers_touch.model.agent.v1.TaskProviderPlan.orchestration_policy:type_name -> peers_touch.model.agent.v1.TaskOrchestrationPolicy
-	16, // 27: peers_touch.model.agent.v1.TaskOrchestrationPolicy.task_graph_parallel_policy:type_name -> peers_touch.model.agent.v1.TaskGraphParallelPolicy
-	17, // 28: peers_touch.model.agent.v1.TaskOrchestrationPolicy.supervisor_loop:type_name -> peers_touch.model.agent.v1.SupervisorLoopKind
-	18, // 29: peers_touch.model.agent.v1.TaskOrchestrationPolicy.replan_policy:type_name -> peers_touch.model.agent.v1.ReplanPolicyKind
-	19, // 30: peers_touch.model.agent.v1.TaskOrchestrationPolicy.resume_anchor_policy:type_name -> peers_touch.model.agent.v1.ResumeAnchorPolicyKind
-	15, // 31: peers_touch.model.agent.v1.TaskGateEvaluatorSpec.kind:type_name -> peers_touch.model.agent.v1.TaskGateEvaluatorKind
-	28, // 32: peers_touch.model.agent.v1.TaskGateEvaluatorSpec.provider:type_name -> peers_touch.model.agent.v1.TaskProviderSpec
-	14, // 33: peers_touch.model.agent.v1.TaskGateCheckSpec.typed_check_type:type_name -> peers_touch.model.agent.v1.TaskGateCheckType
-	12, // 34: peers_touch.model.agent.v1.TaskGateSpec.blocking_level:type_name -> peers_touch.model.agent.v1.TaskGateBlockingLevel
-	32, // 35: peers_touch.model.agent.v1.TaskGateSpec.checks:type_name -> peers_touch.model.agent.v1.TaskGateCheckSpec
-	13, // 36: peers_touch.model.agent.v1.TaskGateSpec.typed_gate_type:type_name -> peers_touch.model.agent.v1.TaskGateType
-	31, // 37: peers_touch.model.agent.v1.TaskGateSpec.evaluator_spec:type_name -> peers_touch.model.agent.v1.TaskGateEvaluatorSpec
-	33, // 38: peers_touch.model.agent.v1.TaskGatePlan.gates:type_name -> peers_touch.model.agent.v1.TaskGateSpec
-	83, // 39: peers_touch.model.agent.v1.TaskGatePlan.created_at:type_name -> google.protobuf.Timestamp
-	83, // 40: peers_touch.model.agent.v1.TaskGatePlan.updated_at:type_name -> google.protobuf.Timestamp
-	27, // 41: peers_touch.model.agent.v1.TaskGateResult.checks:type_name -> peers_touch.model.agent.v1.TaskGateCheck
-	83, // 42: peers_touch.model.agent.v1.TaskCheckpoint.created_at:type_name -> google.protobuf.Timestamp
-	8,  // 43: peers_touch.model.agent.v1.ExecutorLease.executor_kind:type_name -> peers_touch.model.agent.v1.ExecutorKind
-	83, // 44: peers_touch.model.agent.v1.ExecutorLease.acquired_at:type_name -> google.protobuf.Timestamp
-	83, // 45: peers_touch.model.agent.v1.ExecutorLease.heartbeat_at:type_name -> google.protobuf.Timestamp
-	83, // 46: peers_touch.model.agent.v1.ExecutorLease.expires_at:type_name -> google.protobuf.Timestamp
-	11, // 47: peers_touch.model.agent.v1.InterruptRequest.status:type_name -> peers_touch.model.agent.v1.InterruptStatus
-	83, // 48: peers_touch.model.agent.v1.InterruptRequest.created_at:type_name -> google.protobuf.Timestamp
-	83, // 49: peers_touch.model.agent.v1.InterruptRequest.resolved_at:type_name -> google.protobuf.Timestamp
-	24, // 50: peers_touch.model.agent.v1.ListTaskEventsResponse.events:type_name -> peers_touch.model.agent.v1.TaskEvent
-	3,  // 51: peers_touch.model.agent.v1.Vote.vote_type:type_name -> peers_touch.model.agent.v1.VoteType
-	83, // 52: peers_touch.model.agent.v1.Vote.voted_at:type_name -> google.protobuf.Timestamp
-	4,  // 53: peers_touch.model.agent.v1.AcceptanceCriteria.level:type_name -> peers_touch.model.agent.v1.AcceptanceLevel
-	4,  // 54: peers_touch.model.agent.v1.AcceptanceVerdictResult.level:type_name -> peers_touch.model.agent.v1.AcceptanceLevel
-	5,  // 55: peers_touch.model.agent.v1.AcceptanceVerdictResult.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdict
-	83, // 56: peers_touch.model.agent.v1.AcceptanceVerdictResult.decided_at:type_name -> google.protobuf.Timestamp
-	83, // 57: peers_touch.model.agent.v1.Budget.updated_at:type_name -> google.protobuf.Timestamp
-	6,  // 58: peers_touch.model.agent.v1.CircuitBreakerStatus.state:type_name -> peers_touch.model.agent.v1.CircuitBreakerState
-	83, // 59: peers_touch.model.agent.v1.CircuitBreakerStatus.last_failure_at:type_name -> google.protobuf.Timestamp
-	83, // 60: peers_touch.model.agent.v1.CircuitBreakerStatus.last_reset_at:type_name -> google.protobuf.Timestamp
-	0,  // 61: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.engine_type:type_name -> peers_touch.model.agent.v1.CollaborationEngineType
-	80, // 62: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.meta:type_name -> peers_touch.model.agent.v1.CreateCollaborationTaskRequest.MetaEntry
-	29, // 63: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.provider_plan:type_name -> peers_touch.model.agent.v1.TaskProviderPlan
-	20, // 64: peers_touch.model.agent.v1.CreateCollaborationTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
-	20, // 65: peers_touch.model.agent.v1.GetCollaborationTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
-	21, // 66: peers_touch.model.agent.v1.GetCollaborationTaskResponse.nodes:type_name -> peers_touch.model.agent.v1.TaskNode
-	1,  // 67: peers_touch.model.agent.v1.ListCollaborationTasksRequest.status:type_name -> peers_touch.model.agent.v1.CollaborationTaskStatus
-	20, // 68: peers_touch.model.agent.v1.ListCollaborationTasksResponse.tasks:type_name -> peers_touch.model.agent.v1.CollaborationTask
-	1,  // 69: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.status:type_name -> peers_touch.model.agent.v1.CollaborationTaskStatus
-	81, // 70: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.meta:type_name -> peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.MetaEntry
-	20, // 71: peers_touch.model.agent.v1.UpdateCollaborationTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
-	26, // 72: peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.artifacts:type_name -> peers_touch.model.agent.v1.TaskArtifactRef
-	35, // 73: peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.gates:type_name -> peers_touch.model.agent.v1.TaskGateResult
-	82, // 74: peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.meta:type_name -> peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.MetaEntry
-	20, // 75: peers_touch.model.agent.v1.SubmitCollaborationNodeResultResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
-	21, // 76: peers_touch.model.agent.v1.SubmitCollaborationNodeResultResponse.nodes:type_name -> peers_touch.model.agent.v1.TaskNode
-	20, // 77: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
-	21, // 78: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse.node:type_name -> peers_touch.model.agent.v1.TaskNode
-	37, // 79: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse.lease:type_name -> peers_touch.model.agent.v1.ExecutorLease
-	37, // 80: peers_touch.model.agent.v1.HeartbeatExecutorLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ExecutorLease
-	37, // 81: peers_touch.model.agent.v1.ReleaseExecutorLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ExecutorLease
-	3,  // 82: peers_touch.model.agent.v1.SubmitVoteRequest.vote_type:type_name -> peers_touch.model.agent.v1.VoteType
-	41, // 83: peers_touch.model.agent.v1.SubmitVoteResponse.vote:type_name -> peers_touch.model.agent.v1.Vote
-	41, // 84: peers_touch.model.agent.v1.ListVotesResponse.votes:type_name -> peers_touch.model.agent.v1.Vote
-	44, // 85: peers_touch.model.agent.v1.GetAcceptanceVerdictResponse.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdictResult
-	5,  // 86: peers_touch.model.agent.v1.SubmitAcceptanceVerdictRequest.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdict
-	44, // 87: peers_touch.model.agent.v1.SubmitAcceptanceVerdictResponse.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdictResult
-	45, // 88: peers_touch.model.agent.v1.GetBudgetResponse.budget:type_name -> peers_touch.model.agent.v1.Budget
-	20, // 89: peers_touch.model.agent.v1.ResumeTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
-	90, // [90:90] is the sub-list for method output_type
-	90, // [90:90] is the sub-list for method input_type
-	90, // [90:90] is the sub-list for extension type_name
-	90, // [90:90] is the sub-list for extension extendee
-	0,  // [0:90] is the sub-list for field type_name
+	11, // 17: peers_touch.model.agent.v1.ExecutionStep.eligible_executors:type_name -> peers_touch.model.agent.v1.ExecutorKind
+	88, // 18: peers_touch.model.agent.v1.ExecutionStep.started_at:type_name -> google.protobuf.Timestamp
+	88, // 19: peers_touch.model.agent.v1.ExecutionStep.ended_at:type_name -> google.protobuf.Timestamp
+	12, // 20: peers_touch.model.agent.v1.TaskEvent.type:type_name -> peers_touch.model.agent.v1.TaskEventType
+	88, // 21: peers_touch.model.agent.v1.TaskEvent.created_at:type_name -> google.protobuf.Timestamp
+	30, // 22: peers_touch.model.agent.v1.TaskEvent.engine_policy_turn:type_name -> peers_touch.model.agent.v1.EnginePolicyTurn
+	31, // 23: peers_touch.model.agent.v1.TaskEvent.collaboration_session_event:type_name -> peers_touch.model.agent.v1.CollaborationSessionEvent
+	13, // 24: peers_touch.model.agent.v1.TaskArtifact.kind:type_name -> peers_touch.model.agent.v1.ArtifactKind
+	88, // 25: peers_touch.model.agent.v1.TaskArtifact.created_at:type_name -> google.protobuf.Timestamp
+	4,  // 26: peers_touch.model.agent.v1.EnginePolicyTurn.stance:type_name -> peers_touch.model.agent.v1.EnginePolicyStance
+	5,  // 27: peers_touch.model.agent.v1.CollaborationSessionEvent.type:type_name -> peers_touch.model.agent.v1.CollaborationSessionEventType
+	6,  // 28: peers_touch.model.agent.v1.CollaborationSessionEvent.phase:type_name -> peers_touch.model.agent.v1.CollaborationSessionPhase
+	0,  // 29: peers_touch.model.agent.v1.CollaborationSessionEvent.engine_type:type_name -> peers_touch.model.agent.v1.CollaborationEngineType
+	84, // 30: peers_touch.model.agent.v1.TaskProviderSpec.options:type_name -> peers_touch.model.agent.v1.TaskProviderSpec.OptionsEntry
+	33, // 31: peers_touch.model.agent.v1.TaskProviderPlan.providers:type_name -> peers_touch.model.agent.v1.TaskProviderSpec
+	35, // 32: peers_touch.model.agent.v1.TaskProviderPlan.orchestration_policy:type_name -> peers_touch.model.agent.v1.TaskOrchestrationPolicy
+	19, // 33: peers_touch.model.agent.v1.TaskOrchestrationPolicy.task_graph_parallel_policy:type_name -> peers_touch.model.agent.v1.TaskGraphParallelPolicy
+	20, // 34: peers_touch.model.agent.v1.TaskOrchestrationPolicy.supervisor_loop:type_name -> peers_touch.model.agent.v1.SupervisorLoopKind
+	21, // 35: peers_touch.model.agent.v1.TaskOrchestrationPolicy.replan_policy:type_name -> peers_touch.model.agent.v1.ReplanPolicyKind
+	22, // 36: peers_touch.model.agent.v1.TaskOrchestrationPolicy.resume_anchor_policy:type_name -> peers_touch.model.agent.v1.ResumeAnchorPolicyKind
+	18, // 37: peers_touch.model.agent.v1.TaskGateEvaluatorSpec.kind:type_name -> peers_touch.model.agent.v1.TaskGateEvaluatorKind
+	33, // 38: peers_touch.model.agent.v1.TaskGateEvaluatorSpec.provider:type_name -> peers_touch.model.agent.v1.TaskProviderSpec
+	17, // 39: peers_touch.model.agent.v1.TaskGateCheckSpec.typed_check_type:type_name -> peers_touch.model.agent.v1.TaskGateCheckType
+	15, // 40: peers_touch.model.agent.v1.TaskGateSpec.blocking_level:type_name -> peers_touch.model.agent.v1.TaskGateBlockingLevel
+	37, // 41: peers_touch.model.agent.v1.TaskGateSpec.checks:type_name -> peers_touch.model.agent.v1.TaskGateCheckSpec
+	16, // 42: peers_touch.model.agent.v1.TaskGateSpec.typed_gate_type:type_name -> peers_touch.model.agent.v1.TaskGateType
+	36, // 43: peers_touch.model.agent.v1.TaskGateSpec.evaluator_spec:type_name -> peers_touch.model.agent.v1.TaskGateEvaluatorSpec
+	38, // 44: peers_touch.model.agent.v1.TaskGatePlan.gates:type_name -> peers_touch.model.agent.v1.TaskGateSpec
+	88, // 45: peers_touch.model.agent.v1.TaskGatePlan.created_at:type_name -> google.protobuf.Timestamp
+	88, // 46: peers_touch.model.agent.v1.TaskGatePlan.updated_at:type_name -> google.protobuf.Timestamp
+	32, // 47: peers_touch.model.agent.v1.TaskGateResult.checks:type_name -> peers_touch.model.agent.v1.TaskGateCheck
+	88, // 48: peers_touch.model.agent.v1.TaskCheckpoint.created_at:type_name -> google.protobuf.Timestamp
+	11, // 49: peers_touch.model.agent.v1.ExecutorLease.executor_kind:type_name -> peers_touch.model.agent.v1.ExecutorKind
+	88, // 50: peers_touch.model.agent.v1.ExecutorLease.acquired_at:type_name -> google.protobuf.Timestamp
+	88, // 51: peers_touch.model.agent.v1.ExecutorLease.heartbeat_at:type_name -> google.protobuf.Timestamp
+	88, // 52: peers_touch.model.agent.v1.ExecutorLease.expires_at:type_name -> google.protobuf.Timestamp
+	14, // 53: peers_touch.model.agent.v1.InterruptRequest.status:type_name -> peers_touch.model.agent.v1.InterruptStatus
+	88, // 54: peers_touch.model.agent.v1.InterruptRequest.created_at:type_name -> google.protobuf.Timestamp
+	88, // 55: peers_touch.model.agent.v1.InterruptRequest.resolved_at:type_name -> google.protobuf.Timestamp
+	27, // 56: peers_touch.model.agent.v1.ListTaskEventsResponse.events:type_name -> peers_touch.model.agent.v1.TaskEvent
+	3,  // 57: peers_touch.model.agent.v1.Vote.vote_type:type_name -> peers_touch.model.agent.v1.VoteType
+	88, // 58: peers_touch.model.agent.v1.Vote.voted_at:type_name -> google.protobuf.Timestamp
+	7,  // 59: peers_touch.model.agent.v1.AcceptanceCriteria.level:type_name -> peers_touch.model.agent.v1.AcceptanceLevel
+	7,  // 60: peers_touch.model.agent.v1.AcceptanceVerdictResult.level:type_name -> peers_touch.model.agent.v1.AcceptanceLevel
+	8,  // 61: peers_touch.model.agent.v1.AcceptanceVerdictResult.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdict
+	88, // 62: peers_touch.model.agent.v1.AcceptanceVerdictResult.decided_at:type_name -> google.protobuf.Timestamp
+	88, // 63: peers_touch.model.agent.v1.Budget.updated_at:type_name -> google.protobuf.Timestamp
+	9,  // 64: peers_touch.model.agent.v1.CircuitBreakerStatus.state:type_name -> peers_touch.model.agent.v1.CircuitBreakerState
+	88, // 65: peers_touch.model.agent.v1.CircuitBreakerStatus.last_failure_at:type_name -> google.protobuf.Timestamp
+	88, // 66: peers_touch.model.agent.v1.CircuitBreakerStatus.last_reset_at:type_name -> google.protobuf.Timestamp
+	0,  // 67: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.engine_type:type_name -> peers_touch.model.agent.v1.CollaborationEngineType
+	85, // 68: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.meta:type_name -> peers_touch.model.agent.v1.CreateCollaborationTaskRequest.MetaEntry
+	34, // 69: peers_touch.model.agent.v1.CreateCollaborationTaskRequest.provider_plan:type_name -> peers_touch.model.agent.v1.TaskProviderPlan
+	23, // 70: peers_touch.model.agent.v1.CreateCollaborationTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
+	23, // 71: peers_touch.model.agent.v1.GetCollaborationTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
+	24, // 72: peers_touch.model.agent.v1.GetCollaborationTaskResponse.nodes:type_name -> peers_touch.model.agent.v1.TaskNode
+	1,  // 73: peers_touch.model.agent.v1.ListCollaborationTasksRequest.status:type_name -> peers_touch.model.agent.v1.CollaborationTaskStatus
+	23, // 74: peers_touch.model.agent.v1.ListCollaborationTasksResponse.tasks:type_name -> peers_touch.model.agent.v1.CollaborationTask
+	1,  // 75: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.status:type_name -> peers_touch.model.agent.v1.CollaborationTaskStatus
+	86, // 76: peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.meta:type_name -> peers_touch.model.agent.v1.UpdateCollaborationTaskRequest.MetaEntry
+	23, // 77: peers_touch.model.agent.v1.UpdateCollaborationTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
+	29, // 78: peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.artifacts:type_name -> peers_touch.model.agent.v1.TaskArtifactRef
+	40, // 79: peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.gates:type_name -> peers_touch.model.agent.v1.TaskGateResult
+	87, // 80: peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.meta:type_name -> peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.MetaEntry
+	30, // 81: peers_touch.model.agent.v1.SubmitCollaborationNodeResultRequest.engine_policy_turn:type_name -> peers_touch.model.agent.v1.EnginePolicyTurn
+	23, // 82: peers_touch.model.agent.v1.SubmitCollaborationNodeResultResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
+	24, // 83: peers_touch.model.agent.v1.SubmitCollaborationNodeResultResponse.nodes:type_name -> peers_touch.model.agent.v1.TaskNode
+	23, // 84: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
+	24, // 85: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse.node:type_name -> peers_touch.model.agent.v1.TaskNode
+	42, // 86: peers_touch.model.agent.v1.ClaimDesktopExecutorTaskResponse.lease:type_name -> peers_touch.model.agent.v1.ExecutorLease
+	42, // 87: peers_touch.model.agent.v1.HeartbeatExecutorLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ExecutorLease
+	42, // 88: peers_touch.model.agent.v1.ReleaseExecutorLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ExecutorLease
+	3,  // 89: peers_touch.model.agent.v1.SubmitVoteRequest.vote_type:type_name -> peers_touch.model.agent.v1.VoteType
+	46, // 90: peers_touch.model.agent.v1.SubmitVoteResponse.vote:type_name -> peers_touch.model.agent.v1.Vote
+	46, // 91: peers_touch.model.agent.v1.ListVotesResponse.votes:type_name -> peers_touch.model.agent.v1.Vote
+	49, // 92: peers_touch.model.agent.v1.GetAcceptanceVerdictResponse.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdictResult
+	8,  // 93: peers_touch.model.agent.v1.SubmitAcceptanceVerdictRequest.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdict
+	49, // 94: peers_touch.model.agent.v1.SubmitAcceptanceVerdictResponse.verdict:type_name -> peers_touch.model.agent.v1.AcceptanceVerdictResult
+	50, // 95: peers_touch.model.agent.v1.GetBudgetResponse.budget:type_name -> peers_touch.model.agent.v1.Budget
+	23, // 96: peers_touch.model.agent.v1.ResumeTaskResponse.task:type_name -> peers_touch.model.agent.v1.CollaborationTask
+	97, // [97:97] is the sub-list for method output_type
+	97, // [97:97] is the sub-list for method input_type
+	97, // [97:97] is the sub-list for extension type_name
+	97, // [97:97] is the sub-list for extension extendee
+	0,  // [0:97] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_orchestration_proto_init() }
@@ -6328,18 +6757,18 @@ func file_domain_agent_orchestration_proto_init() {
 	if File_domain_agent_orchestration_proto != nil {
 		return
 	}
-	file_domain_agent_orchestration_proto_msgTypes[27].OneofWrappers = []any{}
-	file_domain_agent_orchestration_proto_msgTypes[33].OneofWrappers = []any{}
-	file_domain_agent_orchestration_proto_msgTypes[37].OneofWrappers = []any{}
-	file_domain_agent_orchestration_proto_msgTypes[45].OneofWrappers = []any{}
+	file_domain_agent_orchestration_proto_msgTypes[29].OneofWrappers = []any{}
+	file_domain_agent_orchestration_proto_msgTypes[35].OneofWrappers = []any{}
+	file_domain_agent_orchestration_proto_msgTypes[39].OneofWrappers = []any{}
 	file_domain_agent_orchestration_proto_msgTypes[47].OneofWrappers = []any{}
+	file_domain_agent_orchestration_proto_msgTypes[49].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_orchestration_proto_rawDesc), len(file_domain_agent_orchestration_proto_rawDesc)),
-			NumEnums:      20,
-			NumMessages:   63,
+			NumEnums:      23,
+			NumMessages:   65,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

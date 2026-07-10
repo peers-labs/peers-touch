@@ -138,6 +138,25 @@ AppletMethodIntent {                     // projection contract metadata
   execution_forbidden : true              // applet-visible methods never own provider/run/gate/artifact execution
 }
 
+AppletMethodTransport {                  // machine contract: methodTransports
+  method                 : string
+  transport_kind         : enum{
+    service_binding,                      // sdk.network.request({service:'atelier', path})
+    desktop_gateway_host_local,           // sdk.invoke -> Desktop Host-local intent handler
+    event_subscription                    // sdk.events topic + Host-opened Station stream
+  }
+  public_path            : string?         // /v1/... for service_binding
+  station_path           : string?         // /applets/atelier/v1/... or /agent/events/subscribe
+  desktop_gateway_action : string?         // Host-local/event actions only
+  station_handler        : string?         // Station handler/facade anchor
+}
+
+Station-owned applet methods must prefer `service_binding`; Host-local
+transports are reserved for local UI intents such as workspace open and artifact
+preview open. The applet still submits intents only; provider execution, memory
+writes, rerun creation, artifact storage and gate execution remain Station/Host
+owned.
+
 Sandbox {
   id            : ID
   type          : enum{ worktree, container, remote_station, readonly }
@@ -214,9 +233,26 @@ DirectRunCLIHandoff {
   cli_command_ref    : "agent_provider.cli_command" // raw command is not projected
   invariant          : "Station records typed handoff; Applet never executes CLI"
 }
+
+DirectRunExecutionEvidence {
+  owner        : "station"
+  surface_kind : "read_only_execution_evidence"
+  source       : "agent_direct_runs + agent_task_runs + agent_task_events + agent_task_artifacts + agent_task_gate_results + agent_task_budget_usages"
+  display_fields : [
+    directRunId, taskId, providerId, modelIntent, state, traceId,
+    artifactRefs, gateRefs, budgetUsage, failureArtifactRef, cliHandoffRef
+  ]
+  forbidden_actions : [
+    directRun.start, directRun.resume, directRun.cancel,
+    provider.invoke, model.run, cli.execute, shell.execute,
+    trace.write, artifact.write, gate.run, budget.write,
+    inputSnapshot.read, inputSnapshot.write, HostStorage.write
+  ]
+}
 ```
 
 > **直连约束**：`DirectRun` 只跳过协作会话，不跳过 Budget / Policy / Trace / Artifact / Gate。Atelier applet 不能直接创建 Provider 调用，只能提交用户意图，由 Station 决定是否创建 `DirectRun`。
+> `DirectRunExecutionEvidence` 只是 Station-owned 运行证据的只读投影契约；它不能被解释为 applet 拥有 provider/model/CLI 执行、trace/artifact/gate/budget 写入或 `input_snapshot` 读取/写入能力。
 
 ### 1.3.1 Provider / Capability 子类型
 
@@ -442,7 +478,8 @@ TaskGraphDiffProposal {
 
 约束：
 
-- `StationEvent.event_seq` 必须来自 durable `TaskEventWriter` / transaction；内存 EventBus 只用于实时 fanout。
+- `StationEvent.id` / metadata `event_id` 与 `StationEvent.event_seq` 必须来自 durable `TaskEventWriter` / transaction；内存 EventBus 只用于实时 fanout。
+- `TaskEvent.collaboration_session_event` 是 Station-owned typed session lifecycle projection，只能从 durable payload 中显式 `collaboration_session_event` 字段投影，不能从 `result_summary` 或自然语言 fallback 推断。当前 typed schema 覆盖 `round_started / voice_recorded / convergence_evaluated / awaiting_human / reached` 与 `gathering / converging / awaiting_human / reached` phase；它证明 session lifecycle event envelope 已有 proto/service-static evidence，不证明真实 schedule 流转、真实 SSE reconnect 或完整 Host+Station+applet E2E。
 - `SupervisorEventPayload` 只由 Station supervisor tick/sweep 产生，Applet 只能通过 human decision 选择已给出的 `HumanDecisionOption.action=replan`。
 - `TaskGraphDiffProposal` 只有在 pending `supervisor_replan` interrupt 被 Goal Owner 批准后，才能由 Station interrupt resolution apply；不得由 applet 直接写 TaskGraph。
 
