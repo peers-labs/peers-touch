@@ -1,0 +1,93 @@
+{
+  "ok": true,
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "gate": "atelier-workspace-open-controlled-gate",
+  "source": "desktop_gateway_workspace_open_host_intent_tests",
+  "command": "cargo test atelier_workspace_open_",
+  "tests": [
+    "atelier_workspace_open_accepts_host_intent_only_canonical_uri",
+    "atelier_workspace_open_rejects_non_contract_uri_shapes"
+  ],
+  "desktopGatewayWorkspaceOpen": {
+    "desktopGatewayUriShapeProven": true,
+    "desktopGatewayRejectsNonContractUriProven": true,
+    "desktopGatewayNoNativeLaunchProven": true,
+    "realIdeLaunchProven": false,
+    "realWorkspaceResolverProven": false,
+    "realSandboxRuntimeProven": false
+  },
+  "currentLaunchActionEvidence": {
+    "currentLaunchScoped": true,
+    "acceptsCanonicalHostIntentEvidence": true,
+    "rejectsStaleLaunchEvidence": true,
+    "rejectsStaleSessionEvidence": true,
+    "rejectsNonWorkspaceActionEvidence": true,
+    "rejectsNativeLaunchOverclaim": true,
+    "rejectsFileShellOpenExternalPayload": true
+  },
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "Desktop gateway accepts only canonical pt-workspace://task/<taskId>?workspace=<workspaceId> workspace open intents",
+      "Desktop gateway rejects non-contract workspace URI shapes before native resolver or IDE launch",
+      "Desktop gateway response remains Host-intent-only and does not expose file, shell, execute, run, or openExternalUrl fields",
+      "Atelier applet workspace.open remains a Host UI intent rather than provider/runtime execution"
+    ],
+    "doesNotProve": [
+      "real IDE launch",
+      "real workspace resolver",
+      "real sandbox runtime",
+      "real Desktop product window UI",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "notCovered": [
+    "real IDE launch",
+    "real workspace resolver",
+    "real sandbox runtime",
+    "real Desktop product window UI",
+    "complete Host + Station + applet E2E"
+  ],
+  "outputTail": [
+    " \u001b[1m\u001b[94m--> \u001b[0m/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/src-tauri/target/debug/build/peers-touch-desktop-6ff6296dadc5362f/out/peers.actor.rs:3:12",
+    "  \u001b[1m\u001b[94m|\u001b[0m",
+    "\u001b[1m\u001b[94m3\u001b[0m \u001b[1m\u001b[94m|\u001b[0m pub struct ActorSessionSnapshot {",
+    "  \u001b[1m\u001b[94m|\u001b[0m            \u001b[1m\u001b[33m^^^^^^^^^^^^^^^^^^^^\u001b[0m",
+    "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: struct `VerifySessionRequest` is never constructed\u001b[0m",
+    "  \u001b[1m\u001b[94m--> \u001b[0m/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/src-tauri/target/debug/build/peers-touch-desktop-6ff6296dadc5362f/out/peers.actor.rs:23:12",
+    "   \u001b[1m\u001b[94m|\u001b[0m",
+    "\u001b[1m\u001b[94m23\u001b[0m \u001b[1m\u001b[94m|\u001b[0m pub struct VerifySessionRequest {}",
+    "   \u001b[1m\u001b[94m|\u001b[0m            \u001b[1m\u001b[33m^^^^^^^^^^^^^^^^^^^^\u001b[0m",
+    "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: struct `VerifySessionResponse` is never constructed\u001b[0m",
+    "  \u001b[1m\u001b[94m--> \u001b[0m/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/src-tauri/target/debug/build/peers-touch-desktop-6ff6296dadc5362f/out/peers.actor.rs:25:12",
+    "   \u001b[1m\u001b[94m|\u001b[0m",
+    "\u001b[1m\u001b[94m25\u001b[0m \u001b[1m\u001b[94m|\u001b[0m pub struct VerifySessionResponse {",
+    "   \u001b[1m\u001b[94m|\u001b[0m            \u001b[1m\u001b[33m^^^^^^^^^^^^^^^^^^^^^\u001b[0m",
+    "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: struct `ActorPreferences` is never constructed\u001b[0m",
+    "  \u001b[1m\u001b[94m--> \u001b[0m/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/src-tauri/target/debug/build/peers-touch-desktop-6ff6296dadc5362f/out/peers.actor.rs:43:12",
+    "   \u001b[1m\u001b[94m|\u001b[0m",
+    "\u001b[1m\u001b[94m43\u001b[0m \u001b[1m\u001b[94m|\u001b[0m pub struct ActorPreferences {",
+    "   \u001b[1m\u001b[94m|\u001b[0m            \u001b[1m\u001b[33m^^^^^^^^^^^^^^^^\u001b[0m",
+    "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: fields `connected` and `transport` are never read\u001b[0m",
+    "  \u001b[1m\u001b[94m--> \u001b[0msrc/state/mod.rs:20:9",
+    "   \u001b[1m\u001b[94m|\u001b[0m",
+    "\u001b[1m\u001b[94m19\u001b[0m \u001b[1m\u001b[94m|\u001b[0m pub struct RealtimeState {",
+    "   \u001b[1m\u001b[94m|\u001b[0m            \u001b[1m\u001b[94m-------------\u001b[0m \u001b[1m\u001b[94mfields in this struct\u001b[0m",
+    "\u001b[1m\u001b[94m20\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     pub connected: bool,",
+    "   \u001b[1m\u001b[94m|\u001b[0m         \u001b[1m\u001b[33m^^^^^^^^^\u001b[0m",
+    "\u001b[1m\u001b[94m21\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     pub transport: Option<String>,",
+    "   \u001b[1m\u001b[94m|\u001b[0m         \u001b[1m\u001b[33m^^^^^^^^^\u001b[0m",
+    "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: field `realtime` is never read\u001b[0m",
+    "  \u001b[1m\u001b[94m--> \u001b[0msrc/state/mod.rs:30:9",
+    "   \u001b[1m\u001b[94m|\u001b[0m",
+    "\u001b[1m\u001b[94m24\u001b[0m \u001b[1m\u001b[94m|\u001b[0m pub struct AppState {",
+    "   \u001b[1m\u001b[94m|\u001b[0m            \u001b[1m\u001b[94m--------\u001b[0m \u001b[1m\u001b[94mfield in this struct\u001b[0m",
+    "\u001b[1m\u001b[94m...\u001b[0m",
+    "\u001b[1m\u001b[94m30\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     pub realtime: Mutex<RealtimeState>,",
+    "   \u001b[1m\u001b[94m|\u001b[0m         \u001b[1m\u001b[33m^^^^^^^^\u001b[0m",
+    "\u001b[1m\u001b[33mwarning\u001b[0m: `peers-touch-desktop` (bin \"peers-touch-desktop\" test) generated 499 warnings (4 duplicates) (run `cargo fix --bin \"peers-touch-desktop\" -p peers-touch-desktop --tests` to apply 13 suggestions)",
+    "\u001b[1m\u001b[92m    Finished\u001b[0m \u001b]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\u001b\\`test` profile [unoptimized + debuginfo]\u001b]8;;\u001b\\ target(s) in 1.38s",
+    "\u001b[1m\u001b[92m     Running\u001b[0m unittests src/provider_models_lib.rs (target/debug/deps/provider_models_lib-bdcda0524ab4fa67)",
+    "\u001b[1m\u001b[92m     Running\u001b[0m unittests src/main.rs (target/debug/deps/peers_touch_desktop-de9dd4537539ca64)"
+  ]
+}

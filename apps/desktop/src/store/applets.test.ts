@@ -54,6 +54,14 @@ const manifest: AppletInfo = {
   path: '/tmp/peers-touch-test/product-shell-applet',
 };
 
+const atelierManifest: AppletInfo = {
+  ...manifest,
+  id: 'peers.atelier',
+  name: 'Atelier',
+  description: 'Personal Agent workbench',
+  path: '/applets-dist/peers.atelier',
+};
+
 describe('applets runtime store', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -132,5 +140,27 @@ describe('applets runtime store', () => {
         status: 'active',
       }),
     ]);
+  });
+
+  it('shows bundled Atelier as an installed official applet', async () => {
+    manager.scanApplets.mockResolvedValue([atelierManifest]);
+    const { useAppletsStore } = await import('./applets');
+    useAppletsStore.setState({
+      applets: [],
+      catalogApplets: [],
+      localDevInstalledAppletIds: [],
+      loading: true,
+    });
+
+    await useAppletsStore.getState().refresh();
+
+    expect(useAppletsStore.getState().applets).toEqual([
+      expect.objectContaining({
+        manifest: atelierManifest,
+        source: 'bundled-official',
+        status: 'installed',
+      }),
+    ]);
+    expect(useAppletsStore.getState().catalogApplets).toEqual([]);
   });
 });

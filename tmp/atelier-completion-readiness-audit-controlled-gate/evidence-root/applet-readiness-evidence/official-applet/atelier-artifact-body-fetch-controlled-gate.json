@@ -1,0 +1,52 @@
+{
+  "ok": true,
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "gate": "atelier-artifact-body-fetch-controlled-gate",
+  "source": "station_artifact_body_fetch_service_tests",
+  "testRun": {
+    "command": "go test ./subserver/agent/service -run TestFetchAtelierArtifactBody",
+    "cwd": "apps/station/app",
+    "status": "PASS"
+  },
+  "coveredPolicy": {
+    "allowedBodyKinds": [
+      "markdown",
+      "diff",
+      "text",
+      "json"
+    ],
+    "canonicalBodyRef": "artifact://<taskId>/<artifactId>/body",
+    "rejectionCases": [
+      "unowned task",
+      "body ref mismatch",
+      "unsafe html kind",
+      "expired body",
+      "hash mismatch"
+    ],
+    "maxBytesTruncation": true
+  },
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "Station-owned Atelier artifact body fetch returns owned safe-text bodies through canonical artifact:// bodyRef",
+      "Station artifact body fetch enforces actor-owned task scope, canonical bodyRef, active retention, fetchable text kinds, and body hash checks",
+      "Station artifact body fetch truncates safe text by maxBytes without exposing file/path/url/html/iframe/image execution channels"
+    ],
+    "doesNotProve": [
+      "real Desktop product-window artifact body fetch",
+      "live Desktop webview iframe/image/html/diff rendering",
+      "real Station artifact blob production by provider/executor",
+      "Console Logs runtime stream",
+      "attachment Host Storage runtime",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "notCovered": [
+    "real Desktop product-window artifact body fetch",
+    "live Desktop webview iframe/image/html/diff rendering",
+    "real Station artifact blob production by provider/executor",
+    "Console Logs runtime stream",
+    "attachment Host Storage runtime",
+    "complete Host + Station + applet E2E"
+  ]
+}

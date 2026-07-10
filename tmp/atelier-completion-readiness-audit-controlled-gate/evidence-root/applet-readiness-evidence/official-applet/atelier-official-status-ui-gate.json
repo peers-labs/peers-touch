@@ -1,0 +1,79 @@
+{
+  "status": "PASS",
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "appletId": "peers.atelier",
+  "gate": "atelier:official-status-ui-gate",
+  "coveredPaths": [
+    "official Atelier status UI unit matrix covers loading empty disconnected auth-denied error reconciling degraded and ready statuses from generated contract",
+    "official Atelier status UI page surface keeps loading empty typed recovery status notice global error and main content mutually exclusive where required",
+    "official Atelier status UI action policy exposes create-project only for empty workspaces and retry only for retryable recovery kinds",
+    "official Atelier status UI render wiring consumes status action policy for empty create-project and projection-only retry affordances",
+    "official Atelier status UI retry boundary reloads Station projection only and does not expose execution provider gate artifact memory shell file or input_snapshot actions",
+    "official Atelier status UI copy and tone are contract-owned through generated label keys and i18n catalogs"
+  ],
+  "notCovered": [
+    "real Desktop product window UI",
+    "real Desktop Host failure producer behavior",
+    "real Station projection stream failure matrix",
+    "real auth recovery or reconnect behavior against Station",
+    "post-ready applet UI actions",
+    "complete Host + Station + applet E2E"
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "official Atelier status UI unit matrix covers loading empty disconnected auth-denied error reconciling degraded and ready statuses from generated contract",
+      "official Atelier status UI page surface keeps loading empty typed recovery status notice global error and main content mutually exclusive where required",
+      "official Atelier status UI action policy exposes create-project only for empty workspaces and retry only for retryable recovery kinds",
+      "official Atelier status UI render wiring consumes status action policy for empty create-project and projection-only retry affordances",
+      "official Atelier status UI retry boundary reloads Station projection only and does not expose execution provider gate artifact memory shell file or input_snapshot actions",
+      "official Atelier status UI copy and tone are contract-owned through generated label keys and i18n catalogs"
+    ],
+    "doesNotProve": [
+      "real Desktop product window UI",
+      "real Desktop Host failure producer behavior",
+      "real Station projection stream failure matrix",
+      "real auth recovery or reconnect behavior against Station",
+      "post-ready applet UI actions",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "sourceAnchors": [
+    "apps/applets/atelier/frontend/src/application/atelierViewState.test.ts",
+    "apps/applets/atelier/frontend/src/application/pageComposition.ts",
+    "apps/applets/atelier/frontend/src/application/officialRecoveryView.ts",
+    "apps/applets/atelier/frontend/src/presentation/pages/AtelierAppletPage.tsx",
+    "apps/applets/atelier/frontend/locales/en.json",
+    "apps/applets/atelier/frontend/locales/zh-CN.json"
+  ],
+  "anchorFailures": [],
+  "command": {
+    "id": "official-frontend-unit",
+    "command": "pnpm --filter @peers-touch/atelier-official-applet run test:unit",
+    "status": "PASS",
+    "exitCode": 0,
+    "outputTail": [
+      " \u001b[32m✓\u001b[39m src/application/projectionReducer.test.ts \u001b[2m(\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 3\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/artifactActionGuards.test.ts \u001b[2m(\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 3\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/decisionActionGuards.test.ts \u001b[2m(\u001b[22m\u001b[2m4 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 2\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/projectCreateActionGuards.test.ts \u001b[2m(\u001b[22m\u001b[2m7 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 3\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/messageActionGuards.test.ts \u001b[2m(\u001b[22m\u001b[2m4 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 2\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/feedbackActionGuards.test.ts \u001b[2m(\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 2\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/providerCapabilityActionGuards.test.ts \u001b[2m(\u001b[22m\u001b[2m7 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 3\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/confirmationActionGuards.test.ts \u001b[2m(\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 2\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/workspaceActionGuards.test.ts \u001b[2m(\u001b[22m\u001b[2m4 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 3\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/taskGraphEvidenceRefs.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 2\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/taskLifecycleActionGuards.test.ts \u001b[2m(\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 3\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/eventStreamEventGuard.test.ts \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 2\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/atelierViewState.test.ts \u001b[2m(\u001b[22m\u001b[2m23 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 7\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/infrastructure/capability/atelierClient.test.ts \u001b[2m(\u001b[22m\u001b[2m9 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 24\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/controllerTransitions.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 2\u001b[2mms\u001b[22m\u001b[39m",
+      " \u001b[32m✓\u001b[39m src/application/atelierErrorClassification.test.ts \u001b[2m(\u001b[22m\u001b[2m8 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 3\u001b[2mms\u001b[22m\u001b[39m",
+      "\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m16 passed\u001b[39m\u001b[22m\u001b[90m (16)\u001b[39m",
+      "\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m100 passed\u001b[39m\u001b[22m\u001b[90m (100)\u001b[39m",
+      "\u001b[2m   Start at \u001b[22m 11:48:31",
+      "\u001b[2m   Duration \u001b[22m 408ms\u001b[2m (transform 2.31s, setup 0ms, import 2.74s, tests 68ms, environment 1ms)\u001b[22m"
+    ]
+  },
+  "completedAt": "2026-07-09T03:48:31.661Z"
+}

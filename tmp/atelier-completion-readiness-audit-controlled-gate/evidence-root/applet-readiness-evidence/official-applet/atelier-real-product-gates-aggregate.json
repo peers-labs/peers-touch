@@ -1,0 +1,180 @@
+{
+  "ok": true,
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "gate": "atelier:real-product-gates",
+  "message": "Atelier real-product aggregate gates passed",
+  "details": [
+    {
+      "script": "applet:atelier-real-product-gate",
+      "startedAt": "2026-07-08T18:41:49.891Z",
+      "completedAt": "2026-07-08T18:42:28.577Z",
+      "timeoutMs": 900000,
+      "evidence": [
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-real-product-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        }
+      ]
+    },
+    {
+      "script": "applet:atelier-product-window-gate",
+      "startedAt": "2026-07-08T18:42:28.577Z",
+      "completedAt": "2026-07-08T18:45:15.810Z",
+      "timeoutMs": 900000,
+      "evidence": [
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-product-window-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        }
+      ]
+    },
+    {
+      "script": "applet:atelier-product-window-failure-matrix-gate",
+      "startedAt": "2026-07-08T18:45:15.810Z",
+      "completedAt": "2026-07-08T18:50:55.509Z",
+      "timeoutMs": 900000,
+      "evidence": [
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-product-window-failure-matrix-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        }
+      ]
+    },
+    {
+      "script": "applet:atelier-product-window-cross-restart-gate",
+      "startedAt": "2026-07-08T18:50:55.509Z",
+      "completedAt": "2026-07-08T18:53:37.666Z",
+      "timeoutMs": 900000,
+      "evidence": [
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-product-window-cross-restart-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        }
+      ]
+    },
+    {
+      "script": "applet:atelier-decision-product-window-gate",
+      "startedAt": "2026-07-08T18:53:37.666Z",
+      "completedAt": "2026-07-08T18:56:07.471Z",
+      "timeoutMs": 900000,
+      "evidence": [
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-decision-product-window-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        }
+      ]
+    },
+    {
+      "script": "applet:atelier-live-resume-product-window-gate",
+      "startedAt": "2026-07-08T18:56:07.471Z",
+      "completedAt": "2026-07-08T18:58:17.766Z",
+      "timeoutMs": 900000,
+      "evidence": [
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-live-resume-product-window-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        }
+      ]
+    },
+    {
+      "script": "applet:atelier-artifact-gate-product-window-gate",
+      "startedAt": "2026-07-08T18:58:17.766Z",
+      "completedAt": "2026-07-08T19:00:34.540Z",
+      "timeoutMs": 900000,
+      "evidence": [
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-artifact-gate-product-window-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        }
+      ]
+    },
+    {
+      "script": "applet:atelier-artifact-body-fetch-product-window-gate",
+      "startedAt": "2026-07-08T19:00:34.540Z",
+      "completedAt": "2026-07-08T19:03:04.166Z",
+      "timeoutMs": 900000,
+      "evidence": [
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        }
+      ]
+    },
+    {
+      "script": "applet:atelier-artifact-gate-recovery-product-window-gate",
+      "startedAt": "2026-07-08T19:03:04.166Z",
+      "completedAt": "2026-07-08T19:05:33.827Z",
+      "timeoutMs": 900000,
+      "evidence": [
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-product-window-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        }
+      ]
+    },
+    {
+      "script": "applet:atelier-artifact-gate-recovery-variants-product-window-gate",
+      "startedAt": "2026-07-08T19:05:33.827Z",
+      "completedAt": "2026-07-08T19:12:34.975Z",
+      "timeoutMs": 1800000,
+      "evidence": [
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-accept-risk-product-window-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        },
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-continue-product-window-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        },
+        {
+          "path": "applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-cancel-product-window-gate.json",
+          "ok": true,
+          "readiness": "NOT_READY",
+          "evidenceClass": "REAL_PRODUCT_PATH"
+        }
+      ]
+    }
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "bounded aggregate wrapper runs all Atelier real-product and product-window child gates to clean exit",
+      "all child gate evidence files parse as ok=true with claimBoundary.readiness=NOT_READY",
+      "aggregate command fails closed on child gate failure, timeout, missing evidence, or readiness drift"
+    ],
+    "doesNotProve": [
+      "arbitrary user-driven Host + Station + applet E2E beyond the scripted real-product gates",
+      "real IDE launch",
+      "production provider/model/runtime quality outside the controlled gate server paths",
+      "global Atelier readiness"
+    ]
+  },
+  "notCovered": [
+    "arbitrary user-driven Host + Station + applet E2E beyond the scripted real-product gates",
+    "real IDE launch",
+    "production provider/model/runtime quality outside the controlled gate server paths",
+    "global Atelier readiness"
+  ]
+}

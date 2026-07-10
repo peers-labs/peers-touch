@@ -1,0 +1,151 @@
+{
+  "ok": false,
+  "evidenceClass": "READINESS_AUDIT",
+  "gate": "atelier:full-e2e",
+  "readiness": "NOT_READY",
+  "globalReady": false,
+  "failureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+  "presentRuntimeInputs": [
+    {
+      "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+      "purpose": "real Station base URL used by Desktop Host service binding",
+      "status": "PRESENT",
+      "rawValueRedacted": true
+    },
+    {
+      "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+      "purpose": "real Desktop app bundle or launch command under test",
+      "status": "PRESENT",
+      "rawValueRedacted": true
+    },
+    {
+      "env": "PEERS_ATELIER_FULL_E2E_IDE",
+      "purpose": "real IDE target for atelier.workspace.open native launch proof",
+      "status": "PRESENT",
+      "rawValueRedacted": true
+    },
+    {
+      "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+      "purpose": "production provider/model/runtime profile used outside scripted gate server paths",
+      "status": "PRESENT",
+      "rawValueRedacted": true
+    }
+  ],
+  "runtimeHandshakes": {
+    "stationWorkspace": {
+      "path": "/applets/atelier/v1/workspace",
+      "publicPath": "/v1/workspace",
+      "method": "GET",
+      "status": "PASS",
+      "transport": "desktop_host.applets_invoke.network.request",
+      "taskCount": 1,
+      "selectedTaskId": "controlled-task"
+    },
+    "providerCapabilities": {
+      "path": "/applets/atelier/v1/provider/capabilities",
+      "publicPath": "/v1/provider/capabilities",
+      "method": "POST",
+      "status": "PASS",
+      "transport": "desktop_host.applets_invoke.network.request",
+      "count": 1,
+      "source": "station.provider.capabilities"
+    }
+  },
+  "desktopLaunch": {
+    "status": "PASS",
+    "launchKind": "cmd",
+    "commandRedacted": true,
+    "argsCount": 2,
+    "readyEvidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/workspace-open-claims-real-ide-launch/atelier-desktop-ready.fixture.json",
+    "readyEvidence": {
+      "launchId": "207c00a3-a552-46e6-8ba7-8e2bd45dbd12",
+      "sessionId": "controlled-session-workspace-open-claims-real-ide-launch",
+      "appletId": "peers.atelier",
+      "service": "atelier",
+      "transport": "sdk.network.request",
+      "stationUrlRedacted": true,
+      "stationUrlMatchesConfigured": true,
+      "productShell": "desktop_host_product_shell",
+      "productWindow": "desktop_product_window",
+      "mounted": true
+    }
+  },
+  "postReadyActions": {
+    "workspaceOpen": {
+      "status": "FAIL",
+      "reason": "workspace open action evidence must not claim real IDE launch\n\ntrue !== false\n"
+    }
+  },
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "full E2E entrypoint fails closed when required real runtime inputs are missing",
+      "full E2E cannot be counted as passing evidence until the real runtime path writes ok=true",
+      "missing runtime inputs remain explicit and machine-readable",
+      "when runtime inputs are present, Desktop Host launch must use a bounded non-shell child process before any full E2E claim",
+      "Desktop Host readiness evidence must be current-launch scoped and prove peers.atelier service binding/product-window semantics before the runner advances",
+      "when Desktop Host is ready, Station-owned Atelier routes must pass authenticated Host service-binding handshakes through applets_invoke before any full E2E claim",
+      "post-ready applet action evidence must be current-launch scoped before UI/IDE/provider runtime automation can claim progress",
+      "real IDE launch evidence must be a separate current-launch Desktop Host proof and cannot be inferred from workspace.open Host intent acceptance",
+      "production provider/runtime quality evidence must be a separate Station-owned proof before full E2E can pass"
+    ],
+    "doesNotProve": [
+      "full Host + Station + applet E2E",
+      "real IDE launch",
+      "production provider/model/runtime quality",
+      "global Atelier readiness"
+    ]
+  },
+  "notCovered": [
+    "full Host + Station + applet E2E",
+    "real IDE launch",
+    "production provider/model/runtime quality",
+    "global Atelier readiness"
+  ],
+  "startedAt": "2026-07-09T02:39:16.545Z",
+  "completedAt": "2026-07-09T02:39:16.835Z",
+  "finalProofObligations": [
+    {
+      "id": "full-host-station-applet-e2e",
+      "status": "MISSING",
+      "requiredEvidence": "Run the official peers.atelier package through the real Desktop Host product shell/window against a real Station service binding and record task creation, projection replay, decision resolve, artifact/body/preview, cleanup, and auth/error behavior."
+    },
+    {
+      "id": "post-ready-applet-ui-actions",
+      "status": "MISSING",
+      "requiredEvidence": "After Desktop ready evidence, prove current-launch applet UI actions reached Desktop Host, starting with atelier.workspace.open action evidence bound to launchId/sessionId/taskId/workspaceUri/IDE target."
+    },
+    {
+      "id": "real-ide-launch",
+      "status": "MISSING",
+      "requiredEvidence": "Produce independent atelier-full-e2e-ide-launch.json evidence from the real Desktop Host workspace resolver proving IDE launch for atelier.workspace.open."
+    },
+    {
+      "id": "production-provider-runtime-quality",
+      "status": "MISSING",
+      "requiredEvidence": "Produce independent atelier-full-e2e-provider-runtime.json Station-owned evidence for the configured provider profileRef, proving provider runtime, model quality, streaming UX, artifact persistence, and trace/checkpoint/resume without applet execution exposure."
+    }
+  ],
+  "missingFinalEvidence": [
+    {
+      "id": "full-host-station-applet-e2e",
+      "status": "MISSING",
+      "requiredEvidence": "Run the official peers.atelier package through the real Desktop Host product shell/window against a real Station service binding and record task creation, projection replay, decision resolve, artifact/body/preview, cleanup, and auth/error behavior."
+    },
+    {
+      "id": "post-ready-applet-ui-actions",
+      "status": "MISSING",
+      "requiredEvidence": "After Desktop ready evidence, prove current-launch applet UI actions reached Desktop Host, starting with atelier.workspace.open action evidence bound to launchId/sessionId/taskId/workspaceUri/IDE target."
+    },
+    {
+      "id": "real-ide-launch",
+      "status": "MISSING",
+      "requiredEvidence": "Produce independent atelier-full-e2e-ide-launch.json evidence from the real Desktop Host workspace resolver proving IDE launch for atelier.workspace.open."
+    },
+    {
+      "id": "production-provider-runtime-quality",
+      "status": "MISSING",
+      "requiredEvidence": "Produce independent atelier-full-e2e-provider-runtime.json Station-owned evidence for the configured provider profileRef, proving provider runtime, model quality, streaming UX, artifact persistence, and trace/checkpoint/resume without applet execution exposure."
+    }
+  ]
+}

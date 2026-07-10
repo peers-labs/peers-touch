@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "launchId": "controlled-launch",
+  "appletId": "peers.atelier",
+  "sessionId": "controlled-session",
+  "owner": "station",
+  "scope": "production-provider-runtime",
+  "providerProfileRefRedacted": true,
+  "providerProfileRefHash": "sha256:1ebcda60edf46dc0f3deaec35a494c4ba0510592fb26ad76f36c334eb884fdb5",
+  "providerRuntimeProven": true,
+  "providerModelQualityProven": true,
+  "streamingReplyUXProven": true,
+  "artifactPersistenceProven": true,
+  "traceCheckpointResumeProven": true,
+  "appletProviderInvokeExposed": false,
+  "appletRuntimeExecuteExposed": false,
+  "appletArtifactWriteExposed": false,
+  "appletTraceCheckpointResumeExposed": false,
+  "completedAt": "2026-07-08T00:00:00.000Z"
+}

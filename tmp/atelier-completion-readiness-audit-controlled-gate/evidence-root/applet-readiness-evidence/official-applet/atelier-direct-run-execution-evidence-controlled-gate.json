@@ -1,0 +1,107 @@
+{
+  "ok": true,
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "gate": "atelier-direct-run-execution-evidence-controlled-gate",
+  "source": "direct_run_execution_evidence_controlled_harness",
+  "directRunExecutionEvidence": {
+    "owner": "station",
+    "surfaceKind": "read_only_execution_evidence",
+    "projectionOnly": true,
+    "displayFields": [
+      "directRunId",
+      "taskId",
+      "providerId",
+      "modelIntent",
+      "state",
+      "traceId",
+      "artifactRefs",
+      "gateRefs",
+      "budgetUsage",
+      "failureArtifactRef",
+      "cliHandoffRef"
+    ],
+    "forbiddenActions": [
+      "directRun.start",
+      "directRun.resume",
+      "directRun.cancel",
+      "provider.invoke",
+      "model.run",
+      "cli.execute",
+      "shell.execute",
+      "trace.write",
+      "artifact.write",
+      "gate.run",
+      "budget.write",
+      "inputSnapshot.read",
+      "inputSnapshot.write",
+      "HostStorage.write"
+    ],
+    "readOnlyProjection": true,
+    "stationServiceProjectionProven": true,
+    "stationOwnedRecordSourceProven": true,
+    "metadataOnlyProjectionProven": true,
+    "appletProviderInvokeExposed": false,
+    "appletModelRunExposed": false,
+    "appletCliExecuteExposed": false,
+    "appletTraceWriteExposed": false,
+    "appletArtifactWriteExposed": false,
+    "appletGateRunExposed": false,
+    "appletBudgetWriteExposed": false,
+    "inputSnapshotReadWriteExposed": false,
+    "realDesktopCodingProviderWorkerProven": false,
+    "realProviderModelQualityProven": false,
+    "realStreamingReplyUXProven": false,
+    "realHostStationAppletE2EProven": false
+  },
+  "controlledProjection": {
+    "directRunId": "direct-run-controlled-evidence",
+    "taskId": "task-controlled-evidence",
+    "providerId": "provider-controlled-readonly",
+    "modelIntent": "gpt-4.1",
+    "state": "completed",
+    "traceId": "trace-controlled-evidence",
+    "artifactRefs": [
+      "artifact://task-controlled-evidence/artifact-controlled/body"
+    ],
+    "gateRefs": [
+      "gate://task-controlled-evidence/gate-controlled"
+    ],
+    "budgetUsage": {
+      "tokens": 42,
+      "moneyUsd": 0.01,
+      "source": "station_budget_ledger_projection"
+    },
+    "failureArtifactRef": null,
+    "cliHandoffRef": null
+  },
+  "commands": [
+    "go test ./subserver/agent/service -run 'TestAtelierDirectRunExecutionEvidenceIsStationOwnedMetadataOnly'"
+  ],
+  "tests": [
+    "TestAtelierDirectRunExecutionEvidenceIsStationOwnedMetadataOnly"
+  ],
+  "outputTail": [
+    "ok  \tgithub.com/peers-labs/peers-touch/station/app/subserver/agent/service\t(cached)"
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "controlled DirectRun execution evidence remains a Station-owned read-only projection",
+      "controlled DirectRun evidence exposes only canonical evidence refs and status fields",
+      "Station service-level DirectRun evidence is derived from durable DirectRun/artifact/gate/budget indexes without raw input snapshot or artifact body fields",
+      "official applet client and browser prototype runtime do not expose DirectRun execution/write actions"
+    ],
+    "doesNotProve": [
+      "real Desktop CodingProvider worker execution",
+      "real provider/model quality",
+      "real streaming reply UX",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "notCovered": [
+    "real Desktop CodingProvider worker execution",
+    "real provider/model quality",
+    "real streaming reply UX",
+    "complete Host + Station + applet E2E"
+  ]
+}

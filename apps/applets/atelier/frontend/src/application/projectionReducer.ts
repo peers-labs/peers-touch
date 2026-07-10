@@ -56,7 +56,11 @@ export function applyAtelierProjectionEventWithResult(
   if (!canApplyPatchToKnownTask(current.snapshot, event.patch)) return { state: current, outcome: 'unknown-task' };
 
   const snapshot = applyAtelierProjectionPatch(current.snapshot, event);
-  const selectedTaskId = snapshot ? selectTaskId(snapshot, current.selectedTaskId) : current.selectedTaskId;
+  const preferredSelectedTaskId =
+    event.patch.kind === 'task.upsert' && event.patch.select
+      ? event.patch.task.id
+      : current.selectedTaskId;
+  const selectedTaskId = snapshot ? selectTaskId(snapshot, preferredSelectedTaskId) : current.selectedTaskId;
   const scope = eventScope(event);
 
   return {

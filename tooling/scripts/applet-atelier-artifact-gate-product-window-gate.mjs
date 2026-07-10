@@ -7,6 +7,10 @@ import path from 'node:path';
 const rootDir = process.cwd();
 const requestedArgs = process.argv.slice(2);
 const resolveBlockingGate = requestedArgs.includes('--resolve-blocking-gate');
+const fetchArtifactBody = requestedArgs.includes('--fetch-artifact-body');
+if (resolveBlockingGate && fetchArtifactBody) {
+  throw new Error('--fetch-artifact-body cannot be combined with --resolve-blocking-gate');
+}
 const recoveryActionArg = requestedArgs.find((arg) => arg.startsWith('--gate-recovery-action='));
 const recoveryAction = resolveBlockingGate
   ? (recoveryActionArg?.split('=')[1] ?? 'rerun_failed_node')
@@ -16,10 +20,11 @@ const recoveryVariants = {
     choice: 'Rerun failed node',
     evidenceSlug: '',
     gateRecoveryAction: 'rerun',
-    taskStatus: 2,
-    nodeStatus: 2,
+    taskStatus: 3,
+    nodeStatus: 3,
     gatePlanStatus: 'active',
     resumesExecution: true,
+    provesProviderRecovery: true,
   },
   accept_risk: {
     choice: 'Accept risk',
@@ -54,7 +59,9 @@ if (resolveBlockingGate && !recoveryVariant) {
   throw new Error(`Unsupported --gate-recovery-action=${recoveryAction}`);
 }
 const passThroughArgs = requestedArgs.filter((arg) =>
-  arg !== '--resolve-blocking-gate' && !arg.startsWith('--gate-recovery-action='));
+  arg !== '--resolve-blocking-gate' &&
+  arg !== '--fetch-artifact-body' &&
+  !arg.startsWith('--gate-recovery-action='));
 const packageDir = path.resolve('apps/desktop/applets-dist/peers.atelier');
 const genericEvidencePath = path.resolve('applet-readiness-evidence/desktop/product-window-gate/product-shell-evidence.json');
 const genericOutputPath = path.resolve('applet-readiness-evidence/desktop/product-window-gate-output.txt');
@@ -65,10 +72,13 @@ const evidencePath = path.join(
     ? (recoveryVariant.evidenceSlug
       ? `atelier-artifact-gate-recovery-${recoveryVariant.evidenceSlug}-product-window-gate.json`
       : 'atelier-artifact-gate-recovery-product-window-gate.json')
+    : fetchArtifactBody
+      ? 'atelier-artifact-body-fetch-product-window-gate.json'
     : 'atelier-artifact-gate-product-window-gate.json',
 );
 const unsubscribeEvidencePath = path.join(evidenceDir, 'atelier-artifact-gate-product-window-unsubscribe-evidence.json');
 const renderedEvidencePath = path.join(evidenceDir, 'atelier-artifact-gate-product-window-rendered-evidence.json');
+const bodyFetchEvidencePath = path.join(evidenceDir, 'atelier-artifact-body-fetch-product-window-evidence.json');
 const previewOpenEvidencePath = path.join(evidenceDir, 'atelier-artifact-preview-open-product-window-evidence.json');
 const decisionEvidencePath = path.join(
   evidenceDir,
@@ -162,6 +172,36 @@ async function waitForResolvedArtifactGateProbe(baseUrl, expected, timeoutMs) {
   throw new Error(`Timed out waiting for resolved artifact/gate probe: ${JSON.stringify({ lastProbe })}`);
 }
 
+async function waitForArtifactRerunProviderRecoveryProbe(baseUrl, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let lastProbe;
+  while (Date.now() < deadline) {
+    lastProbe = await fetchJson(`${baseUrl}/__atelier_gate/artifact_gate_probe`);
+    const providerCalls = Array.isArray(lastProbe?.providerCalls) ? lastProbe.providerCalls : [];
+    const sawArtifactRerunFinal = providerCalls.some((call) =>
+      call?.scenario === 'artifact_gate_rerun' &&
+      call?.final === true &&
+      call?.model === 'atelier-live-resume-model');
+    if (
+      lastProbe &&
+      lastProbe.taskId === gateTaskId &&
+      lastProbe.gateRecoveryAction === 'rerun' &&
+      lastProbe.taskStatus === recoveryVariants.rerun_failed_node.taskStatus &&
+      lastProbe.nodeStatus === recoveryVariants.rerun_failed_node.nodeStatus &&
+      lastProbe.turnStatus === 'completed' &&
+      typeof lastProbe.finalResponse === 'string' &&
+      lastProbe.finalResponse.includes('Atelier artifact gate rerun provider recovery completed') &&
+      Number(lastProbe.nodeCompletedEvents) >= 1 &&
+      Number(lastProbe.taskCompletedEvents) >= 1 &&
+      sawArtifactRerunFinal
+    ) {
+      return lastProbe;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Timed out waiting for artifact rerun provider recovery probe: ${JSON.stringify({ lastProbe })}`);
+}
+
 function replayProbeMatches(request, expected) {
   if (!request || typeof request !== 'object') {
     return false;
@@ -184,11 +224,13 @@ function replayProbeMatches(request, expected) {
 
 function notCoveredForCurrentMode() {
   const notCovered = [
-    'rerun_failed_node recovery into a real executor/provider loop',
     'web iframe/image/html/diff renderer, Console Logs runtime stream, and attachment Host Storage runtime',
     'projection SSE cross-restart cursor recovery inside real Desktop product window UI',
     'complete Host + Station + applet E2E',
   ];
+  if (!resolveBlockingGate || recoveryAction !== 'rerun_failed_node') {
+    notCovered.unshift('rerun_failed_node recovery into a real executor/provider loop');
+  }
   if (!resolveBlockingGate) {
     notCovered.splice(
       1,
@@ -197,6 +239,14 @@ function notCoveredForCurrentMode() {
     );
   }
   return notCovered;
+}
+
+function artifactGateClaimBoundary(proves = []) {
+  return {
+    readiness: 'NOT_READY',
+    proves,
+    doesNotProve: notCoveredForCurrentMode(),
+  };
 }
 
 async function waitForReplayProbeRequest(baseUrl, expected, timeoutMs) {
@@ -223,6 +273,7 @@ function startGateServer() {
       env: {
         ...process.env,
         PEERS_ATELIER_GATE_SCENARIO: 'artifact_gate_blocking',
+        PEERS_ATELIER_GATE_RECOVERY_ACTION: recoveryAction,
         PEERS_ATELIER_GATE_CLOSE_BEFORE_FIRST_REPLAY: '0',
         PEERS_ATELIER_GATE_CLOSE_AFTER_FIRST_REPLAY: '0',
       },
@@ -318,6 +369,7 @@ function stopGateServer(child) {
 
 function fail(message, details = []) {
   mkdirSync(evidenceDir, { recursive: true });
+  const claimBoundary = artifactGateClaimBoundary();
   const evidence = {
     ok: false,
     evidenceClass: 'REAL_PRODUCT_PATH',
@@ -325,7 +377,8 @@ function fail(message, details = []) {
     gate: 'applet:atelier-artifact-gate-product-window-gate',
     message,
     details,
-      notCovered: notCoveredForCurrentMode(),
+    claimBoundary,
+    notCovered: claimBoundary.doesNotProve,
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
   process.stderr.write(`FAIL Atelier artifact/gate product-window gate\n${message}\n${details.join('\n')}\n`);
@@ -343,6 +396,7 @@ async function main() {
   try {
     rmSync(unsubscribeEvidencePath, { force: true });
     rmSync(renderedEvidencePath, { force: true });
+    rmSync(bodyFetchEvidencePath, { force: true });
     rmSync(previewOpenEvidencePath, { force: true });
     rmSync(decisionEvidencePath, { force: true });
     rmSync(subscriptionDiagnosticEvidencePath, { force: true });
@@ -356,6 +410,11 @@ async function main() {
       openArtifactPreviewTaskId: gateTaskId,
       openArtifactPreviewArtifactId: gateArtifactId,
     };
+    if (fetchArtifactBody) {
+      launchOptions.fetchArtifactBody = true;
+      launchOptions.fetchArtifactBodyTaskId = gateTaskId;
+      launchOptions.fetchArtifactBodyArtifactId = gateArtifactId;
+    }
     if (resolveBlockingGate) {
       launchOptions.resolveDecisionTaskId = gateTaskId;
       launchOptions.resolveDecisionBlockId = gateDecisionId;
@@ -383,6 +442,8 @@ async function main() {
           PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_UNSUBSCRIBE_EVIDENCE: unsubscribeEvidencePath,
           PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_ARTIFACT_GATE_RENDERED_EVIDENCE:
             renderedEvidencePath,
+          PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_ARTIFACT_BODY_FETCHED_EVIDENCE:
+            bodyFetchEvidencePath,
           PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_ARTIFACT_PREVIEW_OPENED_EVIDENCE:
             previewOpenEvidencePath,
           PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_DECISION_RESOLVED_EVIDENCE:
@@ -394,7 +455,9 @@ async function main() {
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS:
             resolveBlockingGate
               ? '/applets/atelier/v1/workspace,/applets/atelier/v1/escalations:resolve,/sub-agent/agent/events/subscribe'
-              : '/applets/atelier/v1/workspace,/sub-agent/agent/events/subscribe',
+              : fetchArtifactBody
+                ? '/applets/atelier/v1/workspace,/applets/atelier/v1/artifact/body/fetch,/sub-agent/agent/events/subscribe'
+                : '/applets/atelier/v1/workspace,/sub-agent/agent/events/subscribe',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS:
             process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS ?? '30000',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS:
@@ -452,6 +515,29 @@ async function main() {
     assert.equal(previewOpenProperties.sandboxRef, `atelier-sandbox://${gateTaskId}/${gateArtifactId}/preview`, 'preview open evidence sandboxRef mismatch');
     assert.equal(previewOpenProperties.bodyRef, `artifact://${gateTaskId}/${gateArtifactId}/body`, 'preview open evidence bodyRef mismatch');
 
+    let bodyFetchEvidence = null;
+    if (fetchArtifactBody) {
+      bodyFetchEvidence = readJson(bodyFetchEvidencePath);
+      assert.equal(bodyFetchEvidence.ok, true, 'artifact body fetch evidence must report ok=true');
+      assert.equal(bodyFetchEvidence.event, 'atelier.artifact.body.fetched', 'artifact body fetch evidence event mismatch');
+      const bodyFetchProperties = bodyFetchEvidence.properties ?? {};
+      assert.equal(bodyFetchProperties.taskId, gateTaskId, 'artifact body fetch taskId mismatch');
+      assert.equal(bodyFetchProperties.artifactId, gateArtifactId, 'artifact body fetch artifactId mismatch');
+      assert.equal(bodyFetchProperties.bodyRef, `artifact://${gateTaskId}/${gateArtifactId}/body`, 'artifact body fetch bodyRef mismatch');
+      assert.equal(bodyFetchProperties.bodyKind, 'markdown', 'artifact body fetch bodyKind mismatch');
+      assert.equal(typeof bodyFetchProperties.bodyHash, 'string', 'artifact body fetch must include bodyHash');
+      assert.ok(bodyFetchProperties.bodyHash.length > 0, 'artifact body fetch bodyHash must be non-empty');
+      assert.equal(typeof bodyFetchProperties.bodySize, 'number', 'artifact body fetch must include bodySize');
+      assert.ok(bodyFetchProperties.bodySize > 0, 'artifact body fetch bodySize must be positive');
+      assert.equal(bodyFetchProperties.truncated, false, 'artifact body fetch should not truncate fixture body');
+      assert.equal(bodyFetchProperties.retentionStatus, 'active', 'artifact body fetch retentionStatus mismatch');
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(bodyFetchProperties, 'text'),
+        false,
+        'artifact body fetch product-window evidence must not include raw text body',
+      );
+    }
+
     let decisionEvidence = null;
     let replayProbe = null;
     if (resolveBlockingGate) {
@@ -507,16 +593,50 @@ async function main() {
         server.ready.baseUrl,
         Number(process.env.PEERS_ATELIER_PRODUCT_WINDOW_ARTIFACT_GATE_PROBE_TIMEOUT_MS ?? 15_000),
       );
+    const artifactRerunProviderRecoveryProbe = resolveBlockingGate && recoveryVariant.provesProviderRecovery
+      ? await waitForArtifactRerunProviderRecoveryProbe(
+        server.ready.baseUrl,
+        Number(process.env.PEERS_ATELIER_PRODUCT_WINDOW_ARTIFACT_RERUN_PROVIDER_TIMEOUT_MS ?? 30_000),
+      )
+      : null;
     const unsubscribeEvidence = existsSync(unsubscribeEvidencePath)
       ? readJson(unsubscribeEvidencePath)
       : null;
 
     mkdirSync(evidenceDir, { recursive: true });
+    const coveredPaths = [
+      'packaged peers.atelier renders inside the normal Desktop product shell',
+      'official peers.atelier loads Station-produced artifact and failed blocking gate metadata through /v1/workspace service binding',
+      'official peers.atelier renders Station-produced artifact metadata, failed blocking gate metadata, and the pending recovery decision in the normal Desktop product window',
+      'official peers.atelier submits the Station-projected sandbox preview target through atelier.artifact.preview.open and receives a Desktop Host-owned rendered sandbox surface descriptor',
+      ...(fetchArtifactBody
+        ? [
+            'official peers.atelier fetches the Station-owned safe text artifact body through /v1/artifact/body/fetch service binding in the normal Desktop product window',
+          ]
+        : []),
+      'Station fixture keeps the blocking gate pending and does not grant applet artifact/gate production or execution capability',
+      ...(resolveBlockingGate
+        ? [
+            `official peers.atelier submits a blocking-gate ${recoveryAction} choice through /v1/escalations:resolve service binding`,
+            `Station guarded decision resolve consumes the durable blocking gate interrupt and materializes gate_recovery_action=${recoveryVariant.gateRecoveryAction}`,
+            'official peers.atelier renders the resolved blocking gate decision choice from the Station-owned snapshot',
+            'official peers.atelier starts Station projection replay after the resolved durable event cursor',
+            ...(recoveryVariant.provesProviderRecovery
+              ? [
+                  'Station orchestration resumes the rerun_failed_node recovery path and completes the reset node through the real TurnService provider loop',
+                ]
+              : []),
+          ]
+        : []),
+    ];
+    const claimBoundary = artifactGateClaimBoundary(coveredPaths);
     const evidence = {
       ok: true,
       evidenceClass: 'REAL_PRODUCT_PATH',
       appletId: 'peers.atelier',
-      gate: 'applet:atelier-artifact-gate-product-window-gate',
+      gate: fetchArtifactBody
+        ? 'applet:atelier-artifact-body-fetch-product-window-gate'
+        : 'applet:atelier-artifact-gate-product-window-gate',
       packageDir: path.relative(rootDir, packageDir),
       underlyingGate: 'tooling/scripts/applet-desktop-product-window-gate.mjs --product-app',
       genericEvidencePath: path.relative(rootDir, genericEvidencePath),
@@ -524,6 +644,7 @@ async function main() {
       subscriptionDiagnosticEvidencePath: path.relative(rootDir, subscriptionDiagnosticEvidencePath),
       productShellEvidence,
       renderedEvidence,
+      bodyFetchEvidence,
       previewOpenEvidence,
       decisionEvidence,
       unsubscribeEvidence,
@@ -536,24 +657,12 @@ async function main() {
         gateId,
         decisionId: gateDecisionId,
         artifactGateProbe,
+        artifactRerunProviderRecoveryProbe,
         replayProbe,
       },
-      coveredPaths: [
-        'packaged peers.atelier renders inside the normal Desktop product shell',
-        'official peers.atelier loads Station-produced artifact and failed blocking gate metadata through /v1/workspace service binding',
-        'official peers.atelier renders Station-produced artifact metadata, failed blocking gate metadata, and the pending recovery decision in the normal Desktop product window',
-        'official peers.atelier submits the Station-projected sandbox preview target through atelier.artifact.preview.open and receives a Desktop Host-owned rendered sandbox surface descriptor',
-        'Station fixture keeps the blocking gate pending and does not grant applet artifact/gate production or execution capability',
-        ...(resolveBlockingGate
-          ? [
-              `official peers.atelier submits a blocking-gate ${recoveryAction} choice through /v1/escalations:resolve service binding`,
-              `Station guarded decision resolve consumes the durable blocking gate interrupt and materializes gate_recovery_action=${recoveryVariant.gateRecoveryAction}`,
-            'official peers.atelier renders the resolved blocking gate decision choice from the Station-owned snapshot',
-            'official peers.atelier starts Station projection replay after the resolved durable event cursor',
-          ]
-          : []),
-      ],
-        notCovered: notCoveredForCurrentMode(),
+      coveredPaths,
+      claimBoundary,
+      notCovered: claimBoundary.doesNotProve,
     };
     writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
     process.stdout.write([

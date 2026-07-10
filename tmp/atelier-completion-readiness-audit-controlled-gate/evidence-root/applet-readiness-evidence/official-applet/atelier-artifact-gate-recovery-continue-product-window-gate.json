@@ -1,0 +1,320 @@
+{
+  "ok": true,
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.atelier",
+  "gate": "applet:atelier-artifact-gate-product-window-gate",
+  "packageDir": "apps/desktop/applets-dist/peers.atelier",
+  "underlyingGate": "tooling/scripts/applet-desktop-product-window-gate.mjs --product-app",
+  "genericEvidencePath": "applet-readiness-evidence/desktop/product-window-gate/product-shell-evidence.json",
+  "genericOutputPath": "applet-readiness-evidence/desktop/product-window-gate-output.txt",
+  "subscriptionDiagnosticEvidencePath": "applet-readiness-evidence/official-applet/atelier-artifact-gate-product-window-subscription-diagnostic.jsonl",
+  "productShellEvidence": {
+    "appletId": "peers.atelier",
+    "event": "applet.product.rendered",
+    "launchMode": "product-window-certification",
+    "ok": true,
+    "productShell": true,
+    "readySource": "lifecycle.reportReady",
+    "recordedAt": 1783537808494
+  },
+  "renderedEvidence": {
+    "appletId": "peers.atelier",
+    "event": "atelier.artifact_gate.rendered",
+    "launchMode": "product-window-certification",
+    "ok": true,
+    "productShell": true,
+    "properties": {
+      "artifactCount": 1,
+      "artifactIds": [
+        "atelier-real-product-gate-artifact"
+      ],
+      "eventSeq": 5,
+      "failedGateCount": 2,
+      "gateCount": 2,
+      "gateIds": [
+        "atelier-real-product-blocking-gate",
+        "atelier-real-product-gate-task-goalkeeper"
+      ],
+      "gateStatuses": [
+        "failed"
+      ],
+      "taskId": "atelier-real-product-gate-task",
+      "taskTitle": "Atelier Real Product Gate"
+    },
+    "recordedAt": 1783537809454,
+    "sessionId": "desktop-peers.atelier-apl-1783537808402-2"
+  },
+  "bodyFetchEvidence": null,
+  "previewOpenEvidence": {
+    "appletId": "peers.atelier",
+    "event": "atelier.artifact.preview.opened",
+    "launchMode": "product-window-certification",
+    "ok": true,
+    "productShell": true,
+    "properties": {
+      "accepted": true,
+      "artifactId": "atelier-real-product-gate-artifact",
+      "bodyRef": "artifact://atelier-real-product-gate-task/atelier-real-product-gate-artifact/body",
+      "opened": true,
+      "prepared": true,
+      "rendererCapabilities": [
+        "sandbox_manifest_validation",
+        "artifact_body_binding",
+        "host_owned_renderer_session",
+        "host_visual_renderer_surface"
+      ],
+      "rendererMode": "host_sandbox_manifest",
+      "rendererOwner": "desktop_host",
+      "rendererSessionId": "atelier-preview:atelier-real-product-gate-task:atelier-real-product-gate-artifact",
+      "rendererStatus": "rendered",
+      "sandboxRef": "atelier-sandbox://atelier-real-product-gate-task/atelier-real-product-gate-artifact/preview",
+      "taskId": "atelier-real-product-gate-task"
+    },
+    "recordedAt": 1783537808689,
+    "sessionId": "desktop-peers.atelier-apl-1783537808402-2"
+  },
+  "decisionEvidence": {
+    "appletId": "peers.atelier",
+    "event": "atelier.decision.resolved.rendered",
+    "launchMode": "product-window-certification",
+    "ok": true,
+    "productShell": true,
+    "properties": {
+      "artifactCount": 1,
+      "artifactIds": [
+        "atelier-real-product-gate-artifact"
+      ],
+      "blockId": "atelier-real-product-gate-blocking-decision",
+      "choice": "Continue",
+      "eventSeq": 5,
+      "failedGateCount": 2,
+      "gateCount": 2,
+      "gateIds": [
+        "atelier-real-product-blocking-gate",
+        "atelier-real-product-gate-task-goalkeeper"
+      ],
+      "gateStatuses": [
+        "failed"
+      ],
+      "streamCount": 7,
+      "taskId": "atelier-real-product-gate-task",
+      "taskTitle": "Atelier Real Product Gate"
+    },
+    "recordedAt": 1783537809455,
+    "sessionId": "desktop-peers.atelier-apl-1783537808402-2"
+  },
+  "unsubscribeEvidence": null,
+  "subscriptionDiagnostics": [
+    {
+      "appletId": "peers.atelier",
+      "event": "atelier.projection.subscription.diagnostic",
+      "launchMode": "product-window-certification",
+      "ok": true,
+      "productShell": true,
+      "properties": {
+        "afterEventSeq": 0,
+        "selectedTaskId": "",
+        "stage": "controller.effect-no-snapshot",
+        "taskCount": 0
+      },
+      "recordedAt": 1783537808492,
+      "sessionId": "desktop-peers.atelier-apl-1783537808402-2"
+    },
+    {
+      "appletId": "peers.atelier",
+      "event": "atelier.projection.subscription.diagnostic",
+      "launchMode": "product-window-certification",
+      "ok": true,
+      "productShell": true,
+      "properties": {
+        "afterEventSeq": 5,
+        "selectedTaskId": "atelier-real-product-gate-task",
+        "snapshotSelectedTaskId": "atelier-real-product-gate-task",
+        "stage": "controller.effect-enter",
+        "taskCount": 1
+      },
+      "recordedAt": 1783537808573,
+      "sessionId": "desktop-peers.atelier-apl-1783537808402-2"
+    },
+    {
+      "appletId": "peers.atelier",
+      "event": "atelier.projection.subscription.diagnostic",
+      "launchMode": "product-window-certification",
+      "ok": true,
+      "productShell": true,
+      "properties": {
+        "afterEventSeq": 5,
+        "selectedTaskId": "atelier-real-product-gate-task",
+        "snapshotSelectedTaskId": "atelier-real-product-gate-task",
+        "stage": "controller.connect",
+        "taskCount": 1
+      },
+      "recordedAt": 1783537808575,
+      "sessionId": "desktop-peers.atelier-apl-1783537808402-2"
+    },
+    {
+      "appletId": "peers.atelier",
+      "event": "atelier.projection.subscription.diagnostic",
+      "launchMode": "product-window-certification",
+      "ok": true,
+      "productShell": true,
+      "properties": {
+        "afterEventSeq": 0,
+        "agentId": "atelier-real-product-gate-agent",
+        "hasStreamConfig": true,
+        "selectedTaskId": "atelier-real-product-gate-task",
+        "snapshotSelectedTaskId": "atelier-real-product-gate-task",
+        "stage": "client.stream-config",
+        "streamConfigKeys": [
+          "afterEventSeq",
+          "agentId",
+          "taskId"
+        ],
+        "taskCount": 1,
+        "taskId": "atelier-real-product-gate-task"
+      },
+      "recordedAt": 1783537808677,
+      "sessionId": "desktop-peers.atelier-apl-1783537808402-2"
+    },
+    {
+      "appletId": "peers.atelier",
+      "event": "atelier.projection.subscription.diagnostic",
+      "launchMode": "product-window-certification",
+      "ok": true,
+      "productShell": true,
+      "properties": {
+        "afterEventSeq": 0,
+        "agentId": "atelier-real-product-gate-agent",
+        "hasStreamConfig": true,
+        "selectedTaskId": "atelier-real-product-gate-task",
+        "snapshotSelectedTaskId": "atelier-real-product-gate-task",
+        "stage": "client.invoke-stream-subscribe",
+        "streamConfigKeys": [
+          "afterEventSeq",
+          "agentId",
+          "taskId"
+        ],
+        "taskCount": 1,
+        "taskId": "atelier-real-product-gate-task"
+      },
+      "recordedAt": 1783537808683,
+      "sessionId": "desktop-peers.atelier-apl-1783537808402-2"
+    }
+  ],
+  "stationGateServer": {
+    "baseUrl": "http://127.0.0.1:51263",
+    "taskId": "atelier-real-product-gate-task",
+    "agentId": "atelier-real-product-gate-agent",
+    "artifactId": "atelier-real-product-gate-artifact",
+    "gateId": "atelier-real-product-blocking-gate",
+    "decisionId": "atelier-real-product-gate-blocking-decision",
+    "artifactGateProbe": {
+      "artifactEventCount": 1,
+      "artifactId": "atelier-real-product-gate-artifact",
+      "decisionId": "atelier-real-product-gate-blocking-decision",
+      "failedGateEventCount": 1,
+      "finalResponse": "",
+      "gateId": "atelier-real-product-blocking-gate",
+      "gatePlanStatus": "continued",
+      "gateRecoveryAction": "continue",
+      "humanDecisionAction": "continue",
+      "humanDecisionReason": "gate_blocked",
+      "humanDecisionRoute": "station.orchestration",
+      "nodeCompletedEvents": 0,
+      "nodeStatus": 3,
+      "pendingInterrupts": 0,
+      "providerCalls": null,
+      "resolvedInterrupts": 1,
+      "taskCompletedEvents": 1,
+      "taskId": "atelier-real-product-gate-task",
+      "taskStatus": 4,
+      "turnStatus": ""
+    },
+    "artifactRerunProviderRecoveryProbe": null,
+    "replayProbe": {
+      "requests": [
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 0,
+          "replayedSeqs": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 7,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 7,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 7,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 7,
+          "replayedSeqs": []
+        },
+        {
+          "agentId": "atelier-real-product-gate-agent",
+          "taskId": "atelier-real-product-gate-task",
+          "afterEventSeq": 7,
+          "replayedSeqs": []
+        }
+      ]
+    }
+  },
+  "coveredPaths": [
+    "packaged peers.atelier renders inside the normal Desktop product shell",
+    "official peers.atelier loads Station-produced artifact and failed blocking gate metadata through /v1/workspace service binding",
+    "official peers.atelier renders Station-produced artifact metadata, failed blocking gate metadata, and the pending recovery decision in the normal Desktop product window",
+    "official peers.atelier submits the Station-projected sandbox preview target through atelier.artifact.preview.open and receives a Desktop Host-owned rendered sandbox surface descriptor",
+    "Station fixture keeps the blocking gate pending and does not grant applet artifact/gate production or execution capability",
+    "official peers.atelier submits a blocking-gate continue choice through /v1/escalations:resolve service binding",
+    "Station guarded decision resolve consumes the durable blocking gate interrupt and materializes gate_recovery_action=continue",
+    "official peers.atelier renders the resolved blocking gate decision choice from the Station-owned snapshot",
+    "official peers.atelier starts Station projection replay after the resolved durable event cursor"
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "packaged peers.atelier renders inside the normal Desktop product shell",
+      "official peers.atelier loads Station-produced artifact and failed blocking gate metadata through /v1/workspace service binding",
+      "official peers.atelier renders Station-produced artifact metadata, failed blocking gate metadata, and the pending recovery decision in the normal Desktop product window",
+      "official peers.atelier submits the Station-projected sandbox preview target through atelier.artifact.preview.open and receives a Desktop Host-owned rendered sandbox surface descriptor",
+      "Station fixture keeps the blocking gate pending and does not grant applet artifact/gate production or execution capability",
+      "official peers.atelier submits a blocking-gate continue choice through /v1/escalations:resolve service binding",
+      "Station guarded decision resolve consumes the durable blocking gate interrupt and materializes gate_recovery_action=continue",
+      "official peers.atelier renders the resolved blocking gate decision choice from the Station-owned snapshot",
+      "official peers.atelier starts Station projection replay after the resolved durable event cursor"
+    ],
+    "doesNotProve": [
+      "rerun_failed_node recovery into a real executor/provider loop",
+      "web iframe/image/html/diff renderer, Console Logs runtime stream, and attachment Host Storage runtime",
+      "projection SSE cross-restart cursor recovery inside real Desktop product window UI",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "notCovered": [
+    "rerun_failed_node recovery into a real executor/provider loop",
+    "web iframe/image/html/diff renderer, Console Logs runtime stream, and attachment Host Storage runtime",
+    "projection SSE cross-restart cursor recovery inside real Desktop product window UI",
+    "complete Host + Station + applet E2E"
+  ]
+}
