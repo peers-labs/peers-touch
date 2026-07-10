@@ -1,0 +1,27 @@
+{
+  "url": "http://localhost:3200/?surface=profile&check=dd",
+  "selector": ".pt-profile-shell.is-compact-profile",
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/profile-dd-compact-builder-scoped.png",
+  "dom": "tmp/agent-lobehub-profile-dd-dom.json",
+  "clip": {
+    "x": 0,
+    "y": 0,
+    "width": 1720,
+    "height": 920,
+    "scale": 1
+  },
+  "portalChromeHit": false,
+  "captureMode": "scoped-isolated-profile-shell",
+  "preScreenshotTextIncludesBuilder": true,
+  "preScreenshotTextIncludesUpgrade": true,
+  "preScreenshotTextSample": "🤖\nCustom Agent\nPersonal assistant\nStart New Topic\nSearch\nAgent Profile\nTopics\nChannels\nTasks\nAgent workspace plan\nTopics\nStart New Topic\nUpgrade your plan\nUnlock more capacity and advanced features.\nCustom Agent\nAgent Profile\nLatest version loaded\n🤖\nEdit avatar\nModel & Tools\nlobehub/claude-opus-4-7\nAdd Skill\nCore Instructions\n\nDefines who this agent is, what it is responsible for, and how it works and responds. It serves as a core instruction in every conversation.\n\nEnter core instructions, pres",
+  "viewport": {
+    "width": 1720,
+    "height": 920
+  },
+  "preScreenshotTextIncludesComposerPlaceholder": false,
+  "preIsolationTextIncludesBuilder": true,
+  "preIsolationTextIncludesUpgrade": true,
+  "isolatedTextIncludesBuilder": true,
+  "isolatedTextIncludesUpgrade": true
+}

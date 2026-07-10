@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-20 | **Updated**: 2026-06-21
+> **Created**: 2026-06-20 | **Updated**: 2026-07-05
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -29,7 +29,7 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 
 **Atelier 不是独立宿主程序，它本身就是一个 applet**，运行在框架的 [applet-runtime](../../applet-runtime/README.md) 上。这是「复用框架、不自建基础设施」原则的直接延伸：
 
-- **UI 用 ReactLynx / Lynx 元素**（不用 React DOM / iframe）：Desktop 走 Lynx for Web `<lynx-view>`，Mobile 走原生 `LynxView`，**一套源码三端运行**——§1 的三栏界面就是一个 Lynx applet 的视图。
+- **UI 用 ReactLynx / Lynx 元素**（不用 React DOM / iframe）：Desktop 走 Lynx for Web `<lynx-view>`，Mobile 走原生 `LynxView`，**一套源码三端运行**——当前落地形态是 controlled single-column projection surface，而不是在 applet 内另建浏览器或三栏宿主。
 - **生命周期由 Host 管**：Atelier 不自建浏览器上下文、不自持敏感能力。
 - **能力全走 Host Capability Gateway**：Storage / Network / Config / Notification 等统一经 Gateway，**Atelier 的多端同步(M11)、定时(M12)、输入(M13)、产物预览(M14) 都是经 Gateway / SDK 调框架能力，不是直连**。
 - **权限 Manifest 声明、默认拒绝**：Atelier 要在 Manifest 里声明它用到的能力（含调 Agent/协作引擎/Provider 的能力），Host 按 applet id + session + method 强校验。
@@ -45,29 +45,27 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 
 ### 1.1 一句话
 
-用户拿到的是 **peers-touch 里的一个 applet——「Atelier 项目工作台」**：从宿主里打开它，左边是他的项目/任务列表，中间是「当前项目此刻在干什么」，右边是「这群 Agent 是怎么商量出来的 + 产出了什么」。中间区域**随项目阶段自动切换**四种面孔：①确认目标 → ②看计划 → ③看它干活 → ④验收收尾。
+用户拿到的是 **peers-touch 里的一个 applet——「Atelier 项目工作台」**：从宿主里打开它，看到的是 SOLO 式**对话优先**的 controlled single-column projection surface。任务 organizer、projection stream、Project Health / TaskGraph / Context / Artifacts / Gates 等只读投影 section 在同一纵向工作台里堆叠；多 Agent 协商内联折叠在对话流里，Artifact / Gate / Project Health 等只展示 Station 投影或 Host-owned intent，不在 Applet 内执行 provider/run/shell。
 
-### 1.2 主界面线框（ReactLynx 视图，一套源码 Desktop/Mobile 同构，移动收敛为单栏）
+### 1.2 主界面线框（ReactLynx 视图，一套源码 Desktop/Mobile 同构，当前为单栏投影面）
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  Atelier   [预算 ▓▓▓░░ $2.1/$5]   [🔔 1 条待你决策]        [+ 新目标]      │ ← 全局条
-├───────────────┬──────────────────────────────────────┬───────────────────┤
-│ 项目 / 任务    │   主舞台（随阶段切换四种面孔）          │  协作 & 产物侧栏    │
-│ （左栏）       │   （中栏）                            │  （右栏）          │
-│               │                                      │                    │
-│ ▸ 进行中       │  ┌── 面孔随阶段切换 ──────────────┐   │  [协作过程] tab     │
-│   · DataProv.. │  │ ① 目标确认卡                   │   │   Planner 提案 ✎    │
-│   · 选股研究    │  │ ② 计划图(里程碑→任务 DAG)      │   │   Risk  反对(证据)  │
-│ ▸ 定时         │  │ ③ 活动流(任务卡+日志+产物)      │   │   GoalOwner 签字 ✔  │
-│   · 每日简报    │  │ ④ 验收面(✅自动 / ⏸待你签)     │   │  ─────────────     │
-│ ▸ 已完成        │  └───────────────────────────────┘   │  [产物] tab         │
-│               │                                      │   diff.patch  ⬇     │
-│               │                                      │   result.json 👁    │
-└───────────────┴──────────────────────────────────────┴───────────────────┘
+├──────────────────────────────────────────────────────────────────────────┤
+│ Task organizer：项目/任务 folders + flat list + lifecycle sections        │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Projection stream：用户输入、Agent 回复、协商折叠行、Decision、Artifact 卡 │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Project Health：completion / blockers / risks / milestones / policies    │
+├──────────────────────────────────────────────────────────────────────────┤
+│ TaskGraph：root ids / edges / nodes / evidence refs / integrator policy   │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Context / Artifacts / Gates：只读 Station projection + Host-owned intents │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-> **形态校准（见 [prototype/](../prototype/)）**：上面的三栏 + 协作侧栏线框是**早期团队视角**草图。可运行原型已收敛为 SOLO 式**对话优先**形态——左栏任务列表 + 中间一条对话流 + 底部大输入框，多 Agent 协商**内联折叠进对话流**而非独立右侧栏。本节线框待后续与原型对齐，下方 §1.2bis 是已落地的左栏设计。
+> **形态校准（见 [prototype/](../prototype/)）**：当前 official applet 的实现口径是 SOLO 式**对话优先**形态：task organizer + projection stream + Project Health / TaskGraph / Context / Artifacts / Gates 等 read-only projection sections 以 controlled single-column 堆叠；多 Agent 协商**内联折叠进对话流**而非独立右侧栏。Browser prototype 仍保留 SOLO left rail / centre stream / right panel 壳体用于交互探索，标记为 `UNSYNCED with official single-column product shape`，不能反推 official applet 采用三栏。
 
 ### 1.2bis 左栏任务管理 = 可插拔 plugin
 
@@ -80,18 +78,18 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 
 接口与 plugin 已在原型落地：`src/types.ts`（`TaskHost`/`TaskPlugin`）、`src/plugins.tsx`（默认 folders 项目分组 + 简单平铺 + 看板/DAG 占位）。
 
-### 1.2ter SOLO 外壳对齐基准
+### 1.2ter Browser prototype SOLO 外壳探索（UNSYNCED with official single-column product shape）
 
-可运行原型把外壳保真度对齐到 SOLO 级别（SOLO 作外壳人体工学基准线，Atelier 在其上叠协商 / 决策 / 预算的灵魂）：
+可运行 browser prototype 把外壳保真度对齐到 SOLO 级别（SOLO 作外壳人体工学基准线，Atelier 在其上叠协商 / 决策 / 预算的灵魂），但这是 `UNSYNCED with official single-column product shape` 的浏览器交互探索，不是 official Lynx applet 当前产品形态：
 
 - **左栏**：顶部 Work / Code 双模式 toggle（视觉态）+ 全局导航 New task / Skills / Automation + "Your Task List"（筛选图标 + plugin 切换器）+ 项目文件夹分组 + 底部用户 footer；标题行可收起侧栏。
 - **顶栏**：（侧栏收起时显展开按钮）任务标题 + 项目 chip（`Task.project`）+ git 分支（`Task.branch`）+ 打开文件夹 / 终端 / 大纲图标 + Open in IDE + 预算条。
 - **中栏对话流**：轻 markdown（`code` / **粗体** / 列表）、完成回复带 Completed 标记 + 反馈条（赞/踩/复制/重新生成）、"N files changed +X -Y" diff 卡（可展开文件列表）、图片附件 chip、Artifact 卡；composer 上方 **Artifacts 托盘**（markdown / web / image / diff 卡片）。
-- **右栏（三元切换）**：打开产物时为**产物预览面板**（M14：markdown 轻渲染 / web 真 `<iframe>` 内嵌浏览器含地址栏 + Console Logs / image / diff），否则为 Todo + Context（token 用量条 + Files/Other 标签的触达文件）。
+- **右栏（三元切换）**：打开产物时为**产物预览面板**（M14：当前 browser prototype 也已收敛为 metadata-only artifact preview + Host safe text fetch / Host sandbox preview intent；web iframe / image / html / diff rich renderer、真实 Console Logs runtime stream 与 attachment Host Storage 仍属 Host-owned runtime/E2E pending），否则优先展示只读 Station Project Health projection（completion / blockers / residual risks / milestones / policy / defects）+ TaskGraph projection（无 project projection 时回退 legacy Todo）+ Context（token 用量条 + Files/Other 标签的触达文件）；Applet 不验收、不豁免、不修改 project state，也不调度、不执行、不 replan 节点。
 - **富输入框**：斜杠命令 / 图片附件 / 模型选择器（openrouter-3o…）/ 语音 / 发送。
-- **已知差异 / 待补**：Work/Code 仅视觉 toggle（不切真实 IDE 模式）、终端 / 大纲图标未接真实面板、Console Logs 为 mock 日志流、输入框真实发送 + 流式回复本轮未做。
+- **已知差异 / 待补**：Work/Code/Design 已作为 `intentPreset` 声明式默认策略提交并由 Station 投影 `provider_strategy_preset / gate_plan_preset` metadata，但仍不切真实 IDE 模式；终端 / 大纲图标未接真实面板，browser prototype 顶栏已把 Terminal / Outline 标为 prototype-only placeholder，明确未接 shell/execute capability 或真实 TaskGraph panel；Console Logs 为 mock 日志流、输入框真实发送 + 流式回复本轮未做。
 
-### 1.3 中栏的四种面孔（用户真正「看到的样子」）
+### 1.3 Projection stream 状态片段（用户真正「看到的样子」）
 
 | 阶段 | 用户看到的面孔 | 关键交互 | 背后模块 |
 |------|--------------|---------|---------|
@@ -100,9 +98,9 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 | **③ 执行中** | **活动流**：任务卡像消息流一条条往下，每张卡显 调用了谁/日志/产出文件/Gate 红绿 | 基本只看；可展开某卡 | M8 执行、M9 Provider、M6 Gate |
 | **④ 完成前** | **验收面**：🟢L0/L1 已自动通过的折叠；🟡L2 待你签的高亮置顶，附证据 | 逐条签字 / 打回 | M6 验收、M7 升级、M10 记忆 |
 
-### 1.4 右栏：让「多 Agent 协商」看得见（Atelier 的独有体验）
+### 1.4 协商与产物：内联折叠 + section 投影（Atelier 的独有体验）
 
-这是 Atelier 区别于「单 Agent 黑箱」的关键 UI——**协作过程不是黑箱，是一条可读的时间线**：
+这是 Atelier 区别于「单 Agent 黑箱」的关键 UI——**协作过程不是黑箱，是一条可读的时间线**。Official applet 把协商折叠进 projection stream，把产物/TaskGraph/Project Health/Gates 放在纵向 section；browser prototype 的右栏 tab/preview panel 是 `UNSYNCED with official single-column product shape` 的交互探索：
 
 - **协作过程 tab**：谁（角色）提了什么提案、谁带证据反对、谁签了字、为什么收敛/为什么升级。用户能「看懂这群 Agent 是怎么商量的」。（M1/M2/M3）
 - **产物 tab**：所有 Artifact（diff/报告/数据）集中预览、下载，每条产物可回链到「是哪步、哪个 Agent 产的」。（M8/M9）
@@ -170,7 +168,7 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 ### M8 ｜执行引擎（本地 / 沙箱，**不含云端**）
 
 - **能力**：在隔离环境真实执行任务。**不做云端智能体。**
-- **怎么做**：Executor 调 Provider 在本地 Workspace/Sandbox 发起 Run，回收 Artifact，确定性可重放，零判断权。（`F-CO-02/05/06`、`F-PR-05`、`F-CO-07`）
+- **怎么做**：Executor 调 Provider 在本地 Workspace/Sandbox 发起 Run，回收 Artifact metadata / evidence index，确定性可重放，零判断权；rich preview runtime 仍由 Host sandbox capability 承担。（`F-CO-02/05/06`、`F-PR-05`、`F-CO-07a/07b`）
 - **UI 落点**：中栏面孔③活动流任务卡 + 右栏产物 tab。
 
 ### M9 ｜Provider 接入（分领域）
@@ -212,9 +210,9 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 ### M14 ｜产物预览与验收 UI（复用框架 + 验收双路）
 
 - **能力**：对话内实时看进度、预览成果、验收，不切工具。
-- **怎么做**：复用框架产物/对话 UI；增量是验收分自动(L0/L1，见 M6)与人工(L2)双路。（`F-CO-07`、`F-UI-02`）
+- **怎么做**：复用框架产物/对话 UI；增量是验收分自动(L0/L1，见 M6)与人工(L2)双路；official 先落 metadata-only projection parity，rich renderer / Console Logs / attachment runtime 等 Host runtime/E2E 后补。（`F-CO-07a/07b`、`F-UI-02`）
 - **UI 落点**：右栏产物 tab + 中栏验收面。
-- **原型落地（见 [prototype/](../prototype/)）**：composer 上方 Artifacts 托盘 + 右侧产物预览面板，支持四种产物 kind——markdown（轻渲染）/ web（真 `<iframe>` 内嵌浏览器 + 地址栏 + Console Logs）/ image / diff（文件清单），与 Todo+Context 三元切换。源码 `src/preview.tsx`、数据契约 `src/types.ts` 的 `Artifact`/`ConsoleLog`。
+- **原型落地（见 [prototype/](../prototype/)）**：composer 上方 Artifacts 托盘 + 右侧产物预览面板，browser prototype 与 official 当前都不再从 projection 读取或渲染 `markdown/content/diff/url/src` raw artifact body/ref 字段；browser preview 统一展示 `ArtifactMetadataPreview`、Host safe text fetch 与 Host sandbox preview intent，与 TaskGraph projection / legacy Todo + Context 三元切换。official Lynx 右栏优先展示只读 Station TaskGraph projection，紧凑右栏最多展开前 5 个节点并显式显示剩余 projected node 数量，无 project projection 时才回退 Todo。源码 `src/preview.tsx`、数据契约 `src/types.ts` 的 `Artifact`/`ConsoleLog`。P2-04a / F-CO-07a 已收口为 metadata-only projection parity：Production official applet 只展示 `previewHint / bodyRef / bodyHash / bodySize / bodyKind / previewTarget` metadata；Artifacts 托盘和右侧 Artifacts 面板在紧凑列表折叠 metadata projection 时会显示剩余 artifact 数量，Gates 面板在紧凑列表折叠 gate、check 或 artifact evidence ref 时也会显示剩余数量，避免静默隐藏投影证据；正文只经 `atelier.artifact.body.fetch` 的 safe text capability 获取，sandbox preview 只经 `atelier.artifact.preview.open` Host intent，且 `previewTarget` 仅接受 `mode=sandbox_manifest`、`sandboxRef=atelier-sandbox://...`、`bodyRef=artifact://...`；Desktop Host 已返回 `desktop_host/host_sandbox_manifest/rendered` opaque surface descriptor，并携带 `host_visual_renderer_surface` capability。P2-04b / F-CO-07b 已补 Host sandbox console capture controlled gate，可规范化 `host_sandbox_cdp` log/warn/error evidence，但不证明真实 Run runtime stream；已补 Station DirectRun input_snapshot attachment shape guard，只接受 Host-owned opaque ref + metadata 并拒绝 raw path/url/base64/body/write intent；仍 pending Host runtime/E2E：web iframe/image/html/diff renderer、Console Logs 真实 Run runtime stream 与 attachment upload / Host Storage runtime；Applet 不接 renderer、不读 raw body、不上传附件、不执行 provider/run/shell，official 与 browser prototype 都不 iframe、不加载图片、不渲染 html。
 
 ---
 
@@ -258,8 +256,8 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 复用框架（不另起炉灶）：
   M11 多端同步 / M12 定时触发 / M13 多元输入 / M14 验收 UI
 
-最小 UI（先把四种面孔之③④ + 全局条 + 右栏做出来）：
-  中栏活动流 + 验收面、全局预算条+决策铃、右栏协作时间线+产物
+最小 UI（先把 controlled single-column projection sections 做出来）：
+  task organizer + projection stream 活动流/验收片段、全局预算条+决策铃、Project Health / TaskGraph / Context / Artifacts / Gates 只读 section
 ```
 
 对应 [roadmap.md](./roadmap.md) 检查点 A。
@@ -271,7 +269,7 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是把 **St
 ## 8. 与其他文档的关系
 
 - 本文档讲「产品形态 + 有哪些功能模块 + 主轴 + 哪些复用框架」；
-- **可跑可点的原型**（用自有前端框架 ReactLynx/applet-sdk 把 §1 的三栏+四种面孔做出来，替代靠线框/嘴对齐）见 [prototype/README.md](../prototype/README.md)，源码在 `packages/prototypes/desktop/applets/atelier/`；
+- **可跑可点的原型**（用自有前端框架 ReactLynx/applet-sdk 把 §1 的 conversation-first projection surface 做出来，替代靠线框/嘴对齐）见 [prototype/README.md](../prototype/README.md)，源码在 `packages/prototypes/desktop/applets/atelier/`；
 - **Atelier 作为 applet 的运行时契约**（UI/SDK/Gateway/Manifest/生命周期）见 [applet-runtime](../../applet-runtime/README.md)；
 - 协作引擎/角色/机制设计原理见 [design.md](../design.md)（§3–§4）；
 - 用户端到端体验串联见 [user-view.md](./user-view.md)（U1–U7 流程）；

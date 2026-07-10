@@ -88,14 +88,17 @@ type ProviderDelta struct {
 // ProviderCallResponse captures the structured result of an LLM call,
 // including token usage and cache hit status.
 type ProviderCallResponse struct {
-	Content      string
-	Model        string
-	Provider     string
-	InputTokens  int
-	OutputTokens int
-	CacheHit     bool
-	FinishReason string
-	Streamed     bool
+	Content         string
+	Model           string
+	Provider        string
+	InputTokens     int
+	OutputTokens    int
+	BilledMoney     float64
+	BillingSource   string
+	BillingCurrency string
+	CacheHit        bool
+	FinishReason    string
+	Streamed        bool
 }
 
 // ProviderHTTPError wraps HTTP-level errors from LLM provider APIs,

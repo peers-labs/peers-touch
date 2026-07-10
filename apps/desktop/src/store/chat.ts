@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { log } from '../utils/logger';
 import i18n, { resolveI18nValue } from '../i18n/index';
 import {
@@ -605,7 +605,7 @@ function findRegenerationPrompt(messages: ChatMessage[], messageId: string): {
   return { userMsg, msgIndex, responseIds };
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
+export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => ({
   sessions: [],
   currentSessionKey: 'main',
   messages: [],

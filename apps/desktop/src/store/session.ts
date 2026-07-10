@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { api, AuthCommandException, type AuthSessionResponse } from '../services/desktop_api';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
@@ -66,7 +66,7 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
 
 // ── Store ──
 
-export const useSessionStore = create<SessionStore>((set, get) => ({
+export const useSessionStore = createDesktopStore<SessionStore>('session', (set, get) => ({
   ...initialState,
 
   reset: () => set({ ...initialState }),

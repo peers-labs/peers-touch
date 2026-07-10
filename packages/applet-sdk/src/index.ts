@@ -42,7 +42,9 @@ import type { SystemAPI, SystemInfo } from './capabilities/system.js';
 export class AppletSDK {
   private adapter: BridgeAdapter;
   private eventHandlers: Array<{ topic: string; handler: (payload: unknown) => void }> = [];
+  private pendingEvents: Array<{ topic: string; payload: unknown }> = [];
   private unsubscribeBridge: (() => void) | null = null;
+  private static readonly MAX_PENDING_EVENTS = 100;
 
   readonly storage: StorageAPI;
   readonly network: NetworkAPI;
@@ -86,9 +88,17 @@ export class AppletSDK {
 
     // Subscribe to bridge events and dispatch to registered handlers
     this.unsubscribeBridge = this.adapter.onEvent((topic, payload) => {
+      let delivered = false;
       for (const entry of this.eventHandlers) {
         if (entry.topic === topic) {
           entry.handler(payload);
+          delivered = true;
+        }
+      }
+      if (!delivered) {
+        this.pendingEvents.push({ topic, payload });
+        if (this.pendingEvents.length > AppletSDK.MAX_PENDING_EVENTS) {
+          this.pendingEvents.splice(0, this.pendingEvents.length - AppletSDK.MAX_PENDING_EVENTS);
         }
       }
     });
@@ -103,6 +113,15 @@ export class AppletSDK {
   onEvent(topic: string, handler: (payload: unknown) => void): () => void {
     const entry = { topic, handler };
     this.eventHandlers.push(entry);
+    const remaining: Array<{ topic: string; payload: unknown }> = [];
+    for (const event of this.pendingEvents) {
+      if (event.topic === topic) {
+        handler(event.payload);
+      } else {
+        remaining.push(event);
+      }
+    }
+    this.pendingEvents = remaining;
 
     return () => {
       const idx = this.eventHandlers.indexOf(entry);
@@ -120,6 +139,7 @@ export class AppletSDK {
   // Teardown: remove all event listeners
   destroy(): void {
     this.eventHandlers = [];
+    this.pendingEvents = [];
     if (this.unsubscribeBridge) {
       this.unsubscribeBridge();
       this.unsubscribeBridge = null;
