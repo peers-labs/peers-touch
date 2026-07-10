@@ -18,6 +18,27 @@ const storageRoot = path.resolve('.local/applet-product-window-gate/atelier-cros
 const cargoTargetDir = path.resolve('.local/applet-product-window-gate/atelier-cross-restart-cargo-target');
 const bundleRoot = path.join(cargoTargetDir, 'release', 'bundle');
 const certificationCreateGoal = 'Atelier product-window cross-restart cursor E2E';
+const crossRestartCoveredPaths = [
+  'first packaged peers.atelier product-window launch creates a Station task and renders a projection event',
+  'Desktop Gateway persists the Atelier projection cursor to the product-window storage root',
+  'second packaged peers.atelier product-window launch reuses the same storage root with a new applet session',
+  'second launch subscribes through /sub-agent/agent/events/subscribe using the persisted cursor instead of afterEventSeq=0',
+  'Station replay after cross-restart returns no already-applied projection events',
+];
+const crossRestartDoesNotProve = [
+  'human decision / escalation / resume E2E',
+  'Artifact/Gate production and blocking-gate recovery E2E',
+  'rich artifact body rendering in a Host sandbox',
+  'complete Host + Station + applet E2E',
+];
+
+function crossRestartClaimBoundary(proves = []) {
+  return {
+    readiness: 'NOT_READY',
+    proves,
+    doesNotProve: crossRestartDoesNotProve,
+  };
+}
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
@@ -210,12 +231,8 @@ function fail(message, details = []) {
     gate: 'applet:atelier-product-window-cross-restart-gate',
     message,
     details,
-    notCovered: [
-      'human decision / escalation / resume E2E',
-      'Artifact/Gate production and blocking-gate recovery E2E',
-      'rich artifact body rendering in a Host sandbox',
-      'complete Host + Station + applet E2E',
-    ],
+    claimBoundary: crossRestartClaimBoundary(),
+    notCovered: crossRestartDoesNotProve,
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
   process.stderr.write(`FAIL Atelier product-window cross-restart gate\n${message}\n${details.join('\n')}\n`);
@@ -323,19 +340,9 @@ async function main() {
         secondStartIndex,
         crossRestartReplayProbe,
       },
-      coveredPaths: [
-        'first packaged peers.atelier product-window launch creates a Station task and renders a projection event',
-        'Desktop Gateway persists the Atelier projection cursor to the product-window storage root',
-        'second packaged peers.atelier product-window launch reuses the same storage root with a new applet session',
-        'second launch subscribes through /sub-agent/agent/events/subscribe using the persisted cursor instead of afterEventSeq=0',
-        'Station replay after cross-restart returns no already-applied projection events',
-      ],
-      notCovered: [
-        'human decision / escalation / resume E2E',
-        'Artifact/Gate production and blocking-gate recovery E2E',
-        'rich artifact body rendering in a Host sandbox',
-        'complete Host + Station + applet E2E',
-      ],
+      coveredPaths: crossRestartCoveredPaths,
+      claimBoundary: crossRestartClaimBoundary(crossRestartCoveredPaths),
+      notCovered: crossRestartDoesNotProve,
     };
     writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
     process.stdout.write([

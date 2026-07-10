@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -467,6 +468,187 @@ func TestAtelierProviderCapabilitiesAreReadOnlyDiscovery(t *testing.T) {
 		}
 		if capability.SlashCommand == "" || capability.SlashCommand[0] != '/' {
 			t.Fatalf("expected slash command metadata, got %+v", capability)
+		}
+	}
+}
+
+func TestAtelierProviderCapabilitiesWritesFullE2EProviderRuntimeEvidenceFromStationFacts(t *testing.T) {
+	db := openResumeCollaborationTaskDB(t, "atelier_provider_runtime_evidence")
+	injectOrchestrationServiceTestStore(t, db)
+	now := time.Now().UTC()
+	taskID := "task-provider-runtime-evidence"
+	directRunID := "direct-run-provider-runtime"
+	artifactID := "artifact-provider-runtime"
+	if err := db.Create(&persistence.CollaborationTask{
+		ID:          taskID,
+		Title:       "Provider runtime evidence",
+		GoalOwnerID: "actor-1",
+		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
+		CreatedAt:   now,
+		StartedAt:   now,
+		EndedAt:     now,
+	}).Error; err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+	if err := db.Create(&persistence.DirectRun{
+		DirectRunID:       directRunID,
+		TaskID:            taskID,
+		ProviderID:        "openai-direct",
+		ModelIntent:       "gpt-4.1",
+		InputSnapshotJSON: `{"raw_prompt":"must-not-project"}`,
+		BudgetRef:         "budget-provider-runtime",
+		PolicyRef:         "policy-provider-runtime",
+		TraceID:           "trace-provider-runtime",
+		State:             "succeeded",
+		Source:            "atelier.direct_run.intent",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}).Error; err != nil {
+		t.Fatalf("seed direct run: %v", err)
+	}
+	if err := db.Create(&persistence.TaskArtifact{
+		ArtifactID:  artifactID,
+		TaskID:      taskID,
+		EventID:     "evt-provider-runtime-artifact",
+		EventSeq:    1,
+		RunID:       directRunID,
+		Kind:        "direct_run.provider_response",
+		Name:        "DirectRun provider response",
+		URI:         stationArtifactURI(taskID, artifactID),
+		Checksum:    "sha256:provider-runtime",
+		ProducedBy:  "station.direct_run",
+		RefsJSON:    `["direct-run-provider-runtime"]`,
+		PayloadJSON: `{"streamed":true,"markdown":"must-not-project","input_snapshot":{"write":true}}`,
+		CreatedAt:   now,
+	}).Error; err != nil {
+		t.Fatalf("seed artifact: %v", err)
+	}
+	if err := db.Create(&persistence.TaskArtifactBlob{
+		BlobID:          artifactID + ":body",
+		ArtifactID:      artifactID,
+		TaskID:          taskID,
+		EventID:         "evt-provider-runtime-artifact",
+		EventSeq:        1,
+		BodyKind:        "markdown",
+		BodyURI:         atelierArtifactBodyRef(taskID, artifactID),
+		ContentHash:     atelierArtifactBodyHash("Station-owned DirectRun result"),
+		ByteSize:        int64(len([]byte("Station-owned DirectRun result"))),
+		RetentionPolicy: "station_managed",
+		RetentionStatus: "active",
+		BodyText:        "Station-owned DirectRun result",
+		CreatedAt:       now,
+	}).Error; err != nil {
+		t.Fatalf("seed artifact blob: %v", err)
+	}
+	if err := db.Create(&persistence.TaskGateResult{
+		GateResultID:    "gate-result-provider-runtime",
+		TaskID:          taskID,
+		EventID:         "evt-provider-runtime-gate",
+		EventSeq:        2,
+		GateID:          "gate-provider-runtime",
+		Status:          "passed",
+		Summary:         "DirectRun provider execution produced durable evidence.",
+		ArtifactIDsJSON: `["artifact-provider-runtime"]`,
+		ProducedBy:      "station.direct_run",
+		PayloadJSON:     `{"checks":[{"raw":"must-not-project"}]}`,
+		CreatedAt:       now,
+	}).Error; err != nil {
+		t.Fatalf("seed gate: %v", err)
+	}
+	if err := db.Create(&persistence.TaskBudgetUsage{
+		BudgetUsageID:  "budget-usage-provider-runtime",
+		TaskID:         taskID,
+		EventID:        "evt-provider-runtime-artifact",
+		EventSeq:       1,
+		BudgetID:       "budget-provider-runtime",
+		DirectRunID:    directRunID,
+		ProviderID:     "openai-direct",
+		Model:          "gpt-4.1",
+		InputTokens:    12,
+		OutputTokens:   34,
+		TotalTokens:    46,
+		UsedMoney:      0.09,
+		EstimatedMoney: 0.08,
+		PricingSource:  "provider.config.pricing",
+		Source:         "station.direct_run",
+		PayloadJSON:    `{"raw_invoice":"must-not-project"}`,
+		CreatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed budget usage: %v", err)
+	}
+	if err := db.Create(&persistence.TaskCheckpoint{
+		CheckpointID: "ckpt-provider-runtime",
+		TaskID:       taskID,
+		EventSeq:     2,
+		StateJSON:    `{"resume":"station-owned"}`,
+		CreatedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed checkpoint: %v", err)
+	}
+
+	outputPath := t.TempDir() + "/atelier-full-e2e-provider-runtime.json"
+	t.Setenv(atelierFullE2EProviderRuntimeEvidenceEnv, outputPath)
+	service := NewAtelierProjectionService(nil)
+	response, err := service.ProviderCapabilities(context.Background(), "actor-1", &ListAtelierProviderCapabilitiesRequest{
+		TaskID:                    taskID,
+		FullE2ELaunchID:           "launch-provider-runtime",
+		FullE2ESessionID:          "session-provider-runtime",
+		FullE2EProviderProfileRef: "controlled-provider-profile",
+	})
+	if err != nil {
+		t.Fatalf("provider capabilities: %v", err)
+	}
+	if response.Source != "station.provider.capabilities" || len(response.Capabilities) == 0 {
+		t.Fatalf("expected read-only provider capabilities response, got %+v", response)
+	}
+	body, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read provider runtime evidence: %v", err)
+	}
+	var evidence map[string]interface{}
+	if err := json.Unmarshal(body, &evidence); err != nil {
+		t.Fatalf("decode provider runtime evidence: %v", err)
+	}
+	for _, key := range []string{
+		"ok",
+		"providerRuntimeProven",
+		"providerModelQualityProven",
+		"streamingReplyUXProven",
+		"artifactPersistenceProven",
+		"traceCheckpointResumeProven",
+	} {
+		if evidence[key] != true {
+			t.Fatalf("expected %s=true in evidence, got %+v", key, evidence)
+		}
+	}
+	if evidence["owner"] != "station" ||
+		evidence["scope"] != "production-provider-runtime" ||
+		evidence["launchId"] != "launch-provider-runtime" ||
+                evidence["sessionId"] != "session-provider-runtime" ||
+                evidence["providerProfileRefRedacted"] != true ||
+                evidence["providerProfileRefHash"] != atelierSHA256Hash("controlled-provider-profile") {
+		t.Fatalf("unexpected provider runtime identity evidence: %+v", evidence)
+	}
+        if _, ok := evidence["providerProfileRef"]; ok {
+                t.Fatalf("provider runtime evidence must not persist raw providerProfileRef: %+v", evidence)
+        }
+	for _, key := range []string{
+		"appletProviderInvokeExposed",
+		"appletRuntimeExecuteExposed",
+		"appletArtifactWriteExposed",
+		"appletTraceCheckpointResumeExposed",
+	} {
+		if evidence[key] != false {
+			t.Fatalf("expected %s=false in evidence, got %+v", key, evidence)
+		}
+	}
+	serialized, err := json.Marshal(evidence)
+	if err != nil {
+		t.Fatalf("marshal evidence: %v", err)
+	}
+	for _, forbidden := range []string{"must-not-project", "raw_prompt", "raw_invoice", "input_snapshot", "markdown", "checks"} {
+		if strings.Contains(string(serialized), forbidden) {
+			t.Fatalf("provider runtime evidence leaked forbidden field %q: %s", forbidden, serialized)
 		}
 	}
 }
@@ -1225,6 +1407,369 @@ func TestFetchAtelierArtifactBodyRejectsUnsafeOrUnownedBlob(t *testing.T) {
 	}
 }
 
+func TestAtelierDirectRunExecutionEvidenceIsStationOwnedMetadataOnly(t *testing.T) {
+	db := openResumeCollaborationTaskDB(t, "atelier_direct_run_execution_evidence")
+	now := time.Now().UTC()
+	taskID := "task-direct-run-evidence"
+	directRunID := "direct-run-evidence"
+	artifactID := "artifact-direct-run-result"
+	if err := db.Create(&persistence.DirectRun{
+		DirectRunID:       directRunID,
+		TaskID:            taskID,
+		ProviderID:        "openai-direct",
+		ModelIntent:       "gpt-4.1",
+		InputSnapshotJSON: `{"raw_prompt":"must-not-project","input_snapshot":{"write":true},"attachments":[{"base64":"AAAA"}]}`,
+		BudgetRef:         "budget-direct",
+		PolicyRef:         "policy-direct",
+		TraceID:           "trace-direct-run",
+		State:             "succeeded",
+		Source:            "atelier.direct_run.intent",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}).Error; err != nil {
+		t.Fatalf("seed direct run: %v", err)
+	}
+	if err := db.Create(&persistence.TaskArtifact{
+		ArtifactID:  artifactID,
+		TaskID:      taskID,
+		EventID:     "evt-direct-run-artifact",
+		EventSeq:    1,
+		RunID:       directRunID,
+		Kind:        "direct_run.provider_response",
+		Name:        "DirectRun provider response",
+		URI:         stationArtifactURI(taskID, artifactID),
+		Checksum:    "sha256:artifact",
+		ProducedBy:  "station.direct_run",
+		RefsJSON:    `["direct-run-evidence"]`,
+		PayloadJSON: `{"markdown":"raw provider body must-not-project","input_snapshot":{"write":true}}`,
+		CreatedAt:   now,
+	}).Error; err != nil {
+		t.Fatalf("seed direct run artifact: %v", err)
+	}
+	if err := db.Create(&persistence.TaskArtifactBlob{
+		BlobID:          artifactID + ":body",
+		ArtifactID:      artifactID,
+		TaskID:          taskID,
+		EventID:         "evt-direct-run-artifact",
+		EventSeq:        1,
+		BodyKind:        "markdown",
+		BodyURI:         atelierArtifactBodyRef(taskID, artifactID),
+		ContentHash:     atelierArtifactBodyHash("raw provider body must-not-project"),
+		ByteSize:        int64(len([]byte("raw provider body must-not-project"))),
+		RetentionPolicy: "station_managed",
+		RetentionStatus: "active",
+		BodyText:        "raw provider body must-not-project",
+		CreatedAt:       now,
+	}).Error; err != nil {
+		t.Fatalf("seed direct run blob: %v", err)
+	}
+	if err := db.Create(&persistence.TaskGateResult{
+		GateResultID:    "gate-result-direct-run",
+		TaskID:          taskID,
+		EventID:         "evt-direct-run-gate",
+		EventSeq:        2,
+		GateID:          "gate-direct-run",
+		Status:          "passed",
+		Summary:         "DirectRun provider execution produced durable evidence.",
+		ArtifactIDsJSON: `["artifact-direct-run-result"]`,
+		ProducedBy:      "station.direct_run",
+		PayloadJSON:     `{"checks":[{"raw":"must-not-project"}]}`,
+		CreatedAt:       now,
+	}).Error; err != nil {
+		t.Fatalf("seed direct run gate: %v", err)
+	}
+	if err := db.Create(&persistence.TaskBudgetUsage{
+		BudgetUsageID:  "budget-usage-direct-run",
+		TaskID:         taskID,
+		EventID:        "evt-direct-run-artifact",
+		EventSeq:       1,
+		BudgetID:       "budget-direct",
+		DirectRunID:    directRunID,
+		ProviderID:     "openai-direct",
+		Model:          "gpt-4.1",
+		InputTokens:    12,
+		OutputTokens:   34,
+		TotalTokens:    46,
+		UsedMoney:      0.09,
+		EstimatedMoney: 0.08,
+		PricingSource:  "provider.config.pricing",
+		Source:         "station.direct_run",
+		PayloadJSON:    `{"raw_invoice":"must-not-project"}`,
+		CreatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed direct run budget usage: %v", err)
+	}
+
+	evidence, err := buildAtelierDirectRunExecutionEvidence(context.Background(), db, taskID)
+	if err != nil {
+		t.Fatalf("build direct run evidence: %v", err)
+	}
+	if len(evidence) != 1 {
+		t.Fatalf("expected one direct run evidence item, got %+v", evidence)
+	}
+	item := evidence[0]
+	if item.DirectRunID != directRunID ||
+		item.TaskID != taskID ||
+		item.ProviderID != "openai-direct" ||
+		item.ModelIntent != "gpt-4.1" ||
+		item.State != "succeeded" ||
+		item.TraceID != "trace-direct-run" {
+		t.Fatalf("unexpected direct run metadata: %+v", item)
+	}
+	if !reflect.DeepEqual(item.ArtifactRefs, []string{stationArtifactURI(taskID, artifactID)}) ||
+		!reflect.DeepEqual(item.GateRefs, []string{"gate://task-direct-run-evidence/gate-direct-run"}) {
+		t.Fatalf("unexpected direct run refs: %+v", item)
+	}
+	if item.BudgetUsage.Tokens != 46 ||
+		item.BudgetUsage.MoneyUSD != 0.09 ||
+		item.BudgetUsage.Source != "station_budget_ledger_projection" ||
+		item.BudgetUsage.BudgetRef != "budget-direct" ||
+		item.BudgetUsage.PricingRef != "provider.config.pricing" {
+		t.Fatalf("unexpected budget usage projection: %+v", item.BudgetUsage)
+	}
+	serialized, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal evidence: %v", err)
+	}
+	for _, forbidden := range []string{
+		"must-not-project",
+		"raw_prompt",
+		"raw provider body",
+		"raw_invoice",
+		"input_snapshot",
+		"base64",
+		"markdown",
+		"checks",
+	} {
+		if strings.Contains(string(serialized), forbidden) {
+			t.Fatalf("direct run evidence leaked forbidden field %q: %s", forbidden, serialized)
+		}
+	}
+}
+
+func TestAtelierTaskLifecycleSetStatusPersistsWorkbenchStateWithoutExecutionTransition(t *testing.T) {
+	db := openResumeCollaborationTaskDB(t, "atelier_task_lifecycle_set_status")
+	injectOrchestrationServiceTestStore(t, db)
+	now := time.Now().UTC()
+	task := persistence.CollaborationTask{
+		ID:          "task-lifecycle-status",
+		Title:       "Lifecycle status",
+		GoalOwnerID: "actor-1",
+		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:    `{"atelier_status":"active","project":"atelier"}`,
+		CreatedAt:   now,
+		StartedAt:   now,
+		EndedAt:     now,
+	}
+	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{{
+		ID:        "node-lifecycle-status",
+		TaskID:    task.ID,
+		AgentID:   "agent-lifecycle",
+		Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+		StartedAt: now,
+		EndedAt:   now,
+	}})
+
+	service := NewAtelierProjectionService(nil)
+	snapshot, err := service.SetTaskStatus(context.Background(), "actor-1", &SetAtelierTaskStatusRequest{
+		TaskID: task.ID,
+		Status: "archived",
+	})
+	if err != nil {
+		t.Fatalf("set task status archived: %v", err)
+	}
+	if len(snapshot.Workspace.Tasks) != 1 {
+		t.Fatalf("expected one projected task, got %+v", snapshot.Workspace.Tasks)
+	}
+	projected := snapshot.Workspace.Tasks[0]
+	if projected.Status != "archived" {
+		t.Fatalf("expected archived workbench lifecycle, got %+v", projected)
+	}
+	if !projected.Running {
+		t.Fatalf("expected execution state to stay running while archived, got %+v", projected)
+	}
+	var persisted persistence.CollaborationTask
+	if err := db.First(&persisted, "id = ?", task.ID).Error; err != nil {
+		t.Fatalf("load persisted task: %v", err)
+	}
+	if persisted.Status != int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING) {
+		t.Fatalf("expected execution status to remain running, got %d", persisted.Status)
+	}
+	meta := decodeStringMap(persisted.MetaJSON)
+	if meta["atelier_status"] != "archived" || meta["project"] != "atelier" {
+		t.Fatalf("expected archived lifecycle metadata preserving existing meta, got %+v", meta)
+	}
+	if _, err := service.SetTaskStatus(context.Background(), "actor-1", &SetAtelierTaskStatusRequest{
+		TaskID: task.ID,
+		Status: "running",
+	}); err == nil {
+		t.Fatal("expected execution status value to be rejected as workbench lifecycle status")
+	}
+}
+
+func TestAtelierTaskLifecyclePurgeRequiresDeletedAndUsesPublicService(t *testing.T) {
+	db := openResumeCollaborationTaskDB(t, "atelier_task_lifecycle_purge_service")
+	injectOrchestrationServiceTestStore(t, db)
+	now := time.Now().UTC()
+	task := persistence.CollaborationTask{
+		ID:          "task-lifecycle-purge",
+		Title:       "Lifecycle purge",
+		GoalOwnerID: "actor-1",
+		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_CANCELLED),
+		MetaJSON:    `{"atelier_status":"archived"}`,
+		CreatedAt:   now,
+		StartedAt:   now,
+		EndedAt:     now,
+	}
+	otherTask := persistence.CollaborationTask{
+		ID:          "task-lifecycle-keep",
+		Title:       "Keep lifecycle",
+		GoalOwnerID: "actor-1",
+		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:    `{"atelier_status":"active"}`,
+		CreatedAt:   now,
+		StartedAt:   now,
+		EndedAt:     now,
+	}
+	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{{
+		ID:        "node-lifecycle-purge",
+		TaskID:    task.ID,
+		AgentID:   "agent-lifecycle",
+		Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED),
+		StartedAt: now,
+		EndedAt:   now,
+	}})
+	seedResumeCollaborationTask(t, db, otherTask, nil)
+	if err := db.Create(&persistence.TaskEvent{
+		ID:        "evt-lifecycle-purge",
+		TaskID:    task.ID,
+		EventSeq:  1,
+		EventType: int32(model.TaskEventType_TASK_EVENT_TYPE_GATE_RESULT),
+		Payload:   `{"block_kind":"gate_result","gate_id":"gate-lifecycle-purge"}`,
+		CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed task event: %v", err)
+	}
+	if err := db.Create(&persistence.TaskArtifact{
+		ArtifactID: "artifact-lifecycle-purge",
+		TaskID:     task.ID,
+		EventID:    "evt-lifecycle-purge",
+		EventSeq:   1,
+		CreatedAt:  now,
+	}).Error; err != nil {
+		t.Fatalf("seed artifact: %v", err)
+	}
+	if err := db.Create(&persistence.TaskGateResult{
+		GateResultID: "gate-result-lifecycle-purge",
+		TaskID:       task.ID,
+		EventID:      "evt-lifecycle-purge",
+		EventSeq:     1,
+		GateID:       "gate-lifecycle-purge",
+		Status:       "failed",
+		Blocking:     true,
+		CreatedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed gate result: %v", err)
+	}
+
+	service := NewAtelierProjectionService(nil)
+	if _, err := service.PurgeTask(context.Background(), "actor-1", &PurgeAtelierTaskRequest{TaskID: task.ID}); err == nil {
+		t.Fatal("expected purge to require deleted lifecycle status")
+	}
+	if _, err := service.SetTaskStatus(context.Background(), "actor-1", &SetAtelierTaskStatusRequest{
+		TaskID: task.ID,
+		Status: "deleted",
+	}); err != nil {
+		t.Fatalf("set deleted status: %v", err)
+	}
+	snapshot, err := service.PurgeTask(context.Background(), "actor-1", &PurgeAtelierTaskRequest{TaskID: task.ID})
+	if err != nil {
+		t.Fatalf("purge deleted task: %v", err)
+	}
+	for _, projected := range snapshot.Workspace.Tasks {
+		if projected.ID == task.ID {
+			t.Fatalf("purged task should not remain in projection: %+v", snapshot.Workspace.Tasks)
+		}
+	}
+	for _, item := range []struct {
+		label string
+		model interface{}
+		where string
+	}{
+		{label: "task", model: &persistence.CollaborationTask{}, where: "id = ?"},
+		{label: "node", model: &persistence.CollaborationTaskNode{}, where: "task_id = ?"},
+		{label: "event", model: &persistence.TaskEvent{}, where: "task_id = ?"},
+		{label: "artifact", model: &persistence.TaskArtifact{}, where: "task_id = ?"},
+		{label: "gate result", model: &persistence.TaskGateResult{}, where: "task_id = ?"},
+	} {
+		var count int64
+		if err := db.Model(item.model).Where(item.where, task.ID).Count(&count).Error; err != nil {
+			t.Fatalf("count purged %s: %v", item.label, err)
+		}
+		if count != 0 {
+			t.Fatalf("expected public purge service to delete %s records, got %d", item.label, count)
+		}
+	}
+	var kept int64
+	if err := db.Model(&persistence.CollaborationTask{}).Where("id = ?", otherTask.ID).Count(&kept).Error; err != nil {
+		t.Fatalf("count kept task: %v", err)
+	}
+	if kept != 1 {
+		t.Fatalf("expected unrelated task to remain, got %d", kept)
+	}
+}
+
+func TestAtelierSendMessagePersistsTextOnlyUserEvent(t *testing.T) {
+	db := openResumeCollaborationTaskDB(t, "atelier_message_send_text_only")
+	injectOrchestrationServiceTestStore(t, db)
+	now := time.Now().UTC()
+	task := persistence.CollaborationTask{
+		ID:          "task-message-text-only",
+		Title:       "Message text only",
+		GoalOwnerID: "actor-1",
+		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:    `{"agent_ids":"agent-message"}`,
+		CreatedAt:   now,
+		StartedAt:   now,
+		EndedAt:     now,
+	}
+	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{{
+		ID:        "node-message-text-only",
+		TaskID:    task.ID,
+		AgentID:   "agent-message",
+		Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+		StartedAt: now,
+		EndedAt:   now,
+	}})
+
+	orchestration := NewOrchestrationService(nil, nil, nil)
+	orchestration.SetEventBus(nil)
+	service := NewAtelierProjectionService(orchestration)
+	if _, err := service.SendMessage(context.Background(), "actor-1", &SendAtelierMessageRequest{
+		TaskID: task.ID,
+		Text:   "继续推进实现",
+	}); err != nil {
+		t.Fatalf("send message: %v", err)
+	}
+
+	var event persistence.TaskEvent
+	if err := db.Where("task_id = ?", task.ID).Order("event_seq DESC").First(&event).Error; err != nil {
+		t.Fatalf("load message event: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	for _, forbidden := range []string{"run", "run_kind", "run_model", "run_flow_id", "attachments", "inputSnapshot", "input_snapshot"} {
+		if _, ok := payload[forbidden]; ok {
+			t.Fatalf("message send payload must not include %s: %+v", forbidden, payload)
+		}
+	}
+	if payload["source"] != "atelier.message.send" || payload["block_kind"] != "user" || payload["text"] != "继续推进实现" {
+		t.Fatalf("unexpected text-only message payload: %+v", payload)
+	}
+}
+
 func TestBuildAtelierProjectionEventMapsTaskEventToStreamPatch(t *testing.T) {
 	event := &model.TaskEvent{
 		EventId:     "evt_1",
@@ -1451,8 +1996,76 @@ func TestAtelierFeedbackRecordedIsTypedIntentNotStreamPatch(t *testing.T) {
 	}
 }
 
+func TestAtelierSubmitFeedbackPersistsStationOwnedPolicyEvent(t *testing.T) {
+	db := openResumeCollaborationTaskDB(t, "atelier_feedback_submit_policy_event")
+	injectOrchestrationServiceTestStore(t, db)
+	now := time.Now().UTC()
+	task := persistence.CollaborationTask{
+		ID:          "task-feedback-policy-event",
+		Title:       "Feedback policy event",
+		GoalOwnerID: "actor-1",
+		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:    `{"agent_ids":["agent-feedback"]}`,
+		CreatedAt:   now,
+		StartedAt:   now,
+		EndedAt:     now,
+	}
+	seedResumeCollaborationTask(t, db, task, nil)
+
+	orchestration := NewOrchestrationService(nil, nil, nil)
+	orchestration.SetEventBus(nil)
+	service := NewAtelierProjectionService(orchestration)
+	response, err := service.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
+		TaskID:  task.ID,
+		BlockID: "block-feedback-policy",
+		Signal:  "regenerate",
+		Comment: "Please try again after Station review.",
+	})
+	if err != nil {
+		t.Fatalf("submit feedback: %v", err)
+	}
+	if !response.Accepted || !response.RerunIntent.RequiresConfirmation || response.RerunIntent.ConfirmationMode != "station_rerun_review" {
+		t.Fatalf("expected Station-owned rerun review response, got %+v", response)
+	}
+
+	var event persistence.TaskEvent
+	if err := db.Where("task_id = ?", task.ID).Order("event_seq DESC").First(&event).Error; err != nil {
+		t.Fatalf("load feedback event: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+		t.Fatalf("decode feedback payload: %v", err)
+	}
+	for _, forbidden := range []string{
+		"run",
+		"execute",
+		"provider",
+		"attachments",
+		"memory",
+		"memoryContent",
+		"memory_content",
+		"rerun",
+		"rerunTaskId",
+		"inputSnapshot",
+		"input_snapshot",
+	} {
+		if _, ok := payload[forbidden]; ok {
+			t.Fatalf("feedback payload must not include applet-supplied %s: %+v", forbidden, payload)
+		}
+	}
+	if payload["source"] != "atelier.feedback.submit" ||
+		payload["block_kind"] != "feedback" ||
+		payload["signal"] != "regenerate" ||
+		payload["rerun_intent_status"] != "intent_recorded" ||
+		payload["rerun_confirmation_required"] != true ||
+		payload["rerun_confirmation_mode"] != "station_rerun_review" {
+		t.Fatalf("unexpected Station-owned feedback payload: %+v", payload)
+	}
+}
+
 func TestConfirmAtelierMemoryCandidateWritesStationOwnedMemory(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "atelier_memory_confirm_candidate")
+	injectOrchestrationServiceTestStore(t, db)
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
@@ -1577,6 +2190,78 @@ func TestConfirmAtelierMemoryCandidateRejectsNonCandidateFeedback(t *testing.T) 
 	}
 	if memoryCount != 0 {
 		t.Fatalf("expected no memory writes for non-candidate feedback, got %d", memoryCount)
+	}
+}
+
+func TestAtelierConfirmedMemoryFeedsPlannerRiskVerifierRetrieval(t *testing.T) {
+	db := openResumeCollaborationTaskDB(t, "atelier_confirmed_memory_consumption")
+	injectOrchestrationServiceTestStore(t, db)
+	now := time.Now().UTC()
+	task := persistence.CollaborationTask{
+		ID:          "task-confirmed-memory-consumption",
+		Title:       "Memory consumption task",
+		GoalOwnerID: "actor-1",
+		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:    `{"agent_ids":["agent-1"]}`,
+		CreatedAt:   now,
+		StartedAt:   now,
+		EndedAt:     now,
+	}
+	seedResumeCollaborationTask(t, db, task, nil)
+	orchestration := NewOrchestrationService(nil, nil, nil)
+	orchestration.SetEventBus(nil)
+	memoryService := NewMemoryService(nil)
+	svc := NewAtelierProjectionService(orchestration, memoryService)
+
+	feedback, err := svc.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
+		TaskID:  task.ID,
+		BlockID: "block-agent-1",
+		Signal:  "negative",
+		Comment: "Prefer guarded migrations when planner risk verifier review asks for rollback notes",
+	})
+	if err != nil {
+		t.Fatalf("submit feedback: %v", err)
+	}
+	if !reflect.DeepEqual(feedback.MemoryCandidate.Feeds, []string{"planner", "risk", "verifier"}) {
+		t.Fatalf("expected negative memory candidate to feed planner/risk/verifier, got %#v", feedback.MemoryCandidate.Feeds)
+	}
+	confirmed, err := svc.ConfirmMemoryCandidate(context.Background(), "actor-1", &ConfirmAtelierMemoryCandidateRequest{
+		TaskID:     task.ID,
+		FeedbackID: feedback.FeedbackID,
+	})
+	if err != nil {
+		t.Fatalf("confirm memory candidate: %v", err)
+	}
+	if confirmed.MemoryID == "" {
+		t.Fatalf("expected confirmed memory id: %+v", confirmed)
+	}
+
+	results, err := memoryService.Search(context.Background(), domain.MemorySearchOptions{
+		AgentID: "actor-1",
+		Query:   "planner risk verifier rollback notes",
+		Layers:  []domain.MemoryLayer{domain.MemoryLayerExperience},
+		Limit:   5,
+		Effort:  "medium",
+	})
+	if err != nil {
+		t.Fatalf("search confirmed memory: %v", err)
+	}
+	if len(results) == 0 || results[0].Memory.MemoryID != confirmed.MemoryID {
+		t.Fatalf("expected confirmed memory to be retrievable by planner/risk/verifier query, got %+v", results)
+	}
+
+	snapshot, err := memoryService.BuildRelevantSnapshot(context.Background(), "actor-1", "planner risk verifier rollback notes")
+	if err != nil {
+		t.Fatalf("build relevant snapshot: %v", err)
+	}
+	if !strings.Contains(snapshot.MemoryContent, "signal=negative") ||
+		len(snapshot.RelevantItems) == 0 ||
+		snapshot.RelevantItems[0].MemoryID != confirmed.MemoryID ||
+		!strings.Contains(snapshot.RelevantItems[0].Content, "planner risk verifier") {
+		t.Fatalf("expected prompt memory snapshot to include confirmed Atelier feedback memory, got %+v", snapshot)
+	}
+	if snapshot.RelevantItems[0].RetrievalCount == 0 {
+		t.Fatalf("expected confirmed memory retrieval count to be updated, got %+v", snapshot.RelevantItems[0])
 	}
 }
 
@@ -2014,6 +2699,39 @@ func TestMergeAtelierProjectionReplayRecordsKeepsAnchorsAndTail(t *testing.T) {
 	}
 	if events[len(events)-1].GetEventSeq() != 101 {
 		t.Fatalf("expected latest tail event to be retained, got seq %d", events[len(events)-1].GetEventSeq())
+	}
+}
+
+func TestTaskEventRecordToDomainEventIncludesDurableEventEnvelopeMetadata(t *testing.T) {
+	createdAt := time.Date(2026, 7, 1, 12, 20, 0, 0, time.UTC)
+	record := &persistence.TaskEvent{
+		ID:        "evt_replay_envelope",
+		TaskID:    "collab_replay_envelope",
+		StepID:    "node_replay_envelope",
+		EventSeq:  42,
+		EventType: int32(model.TaskEventType_TASK_EVENT_TYPE_TURN_EVENT),
+		Payload:   `{"agent_id":"agent_replay_envelope","result_summary":"projection event"}`,
+		CreatedAt: createdAt,
+	}
+
+	event, ok := taskEventRecordToDomainEvent(record, "agent_replay_envelope")
+	if !ok {
+		t.Fatal("expected replay record to map to domain event")
+	}
+	if event.EventID != record.ID {
+		t.Fatalf("expected domain event id %q, got %q", record.ID, event.EventID)
+	}
+	if event.Metadata["event_id"] != record.ID {
+		t.Fatalf("expected metadata event_id %q, got %q", record.ID, event.Metadata["event_id"])
+	}
+	if event.Metadata["event_seq"] != "42" {
+		t.Fatalf("expected metadata event_seq 42, got %q", event.Metadata["event_seq"])
+	}
+	if event.Metadata["task_id"] != record.TaskID {
+		t.Fatalf("expected metadata task_id %q, got %q", record.TaskID, event.Metadata["task_id"])
+	}
+	if event.Metadata["node_id"] != record.StepID {
+		t.Fatalf("expected metadata node_id %q, got %q", record.StepID, event.Metadata["node_id"])
 	}
 }
 

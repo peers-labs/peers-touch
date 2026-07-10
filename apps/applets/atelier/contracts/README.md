@@ -100,6 +100,41 @@ sdk.network.request({
 
 The applet frontend must not know or construct a backend base URL.
 
+## Capability Transport Matrix
+
+`atelier-projection.contract.json` owns `methodTransports`, the static transport
+matrix for every applet-visible Atelier method.
+
+Station-owned applet service methods use the Station-bundled `atelier` service
+binding:
+
+```text
+atelier.workspace.load           -> GET    /v1/workspace
+atelier.project.createFromGoal   -> POST   /v1/projects
+atelier.message.send             -> POST   /v1/messages
+atelier.escalation.resolve       -> POST   /v1/escalations:resolve
+atelier.task.setStatus           -> PATCH  /v1/tasks/{task_id}/status
+atelier.task.purge               -> DELETE /v1/tasks/{task_id}
+atelier.provider.capabilities    -> POST   /v1/provider/capabilities
+atelier.feedback.submit          -> POST   /v1/feedback/submit
+atelier.memory.confirmCandidate  -> POST   /v1/memory/confirm-candidate
+atelier.feedback.confirmRerun    -> POST   /v1/feedback/confirm-rerun
+atelier.artifact.body.fetch      -> POST   /v1/artifact/body/fetch
+```
+
+Host-local methods stay behind Desktop Gateway intents and do not become Station
+service routes:
+
+```text
+atelier.workspace.open           -> handle_atelier_workspace_open
+atelier.artifact.preview.open    -> handle_atelier_artifact_preview_open
+```
+
+`atelier.events.subscribe` is a mixed event transport: the applet subscribes to
+the Host event topic and the Host opens the Station event stream. The applet
+still does not own provider execution, artifact production, gate execution, or
+memory writes.
+
 ## HTTP Mapping
 
 ```text
@@ -109,6 +144,11 @@ POST   /v1/messages
 POST   /v1/escalations:resolve
 PATCH  /v1/tasks/{task_id}/status
 DELETE /v1/tasks/{task_id}
+POST   /v1/provider/capabilities
+POST   /v1/feedback/submit
+POST   /v1/memory/confirm-candidate
+POST   /v1/feedback/confirm-rerun
+POST   /v1/artifact/body/fetch
 ```
 
 ## Error Mapping

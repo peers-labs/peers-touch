@@ -17,6 +17,28 @@ const gateTaskId = 'atelier-real-product-gate-task';
 const gateDecisionId = 'atelier-real-product-gate-decision';
 const gateChoice = '继续执行';
 const runningTaskStatus = 2;
+const decisionCoveredPaths = [
+  'packaged peers.atelier renders inside the normal Desktop product shell',
+  'official peers.atelier loads Station pending decision through /v1/workspace service binding inside the real Desktop product window UI',
+  'official peers.atelier submits a decision option through /v1/escalations:resolve service binding inside the real Desktop product window UI',
+  'Station guarded decision resolve consumes a durable pending interrupt while preserving the running task boundary',
+  'official peers.atelier renders the resolved decision choice from the Station-owned snapshot',
+  'official peers.atelier starts Station projection replay after the resolved durable event cursor',
+];
+const decisionDoesNotProve = [
+  'Artifact/Gate production and blocking-gate recovery E2E',
+  'PAUSED task live resume into the execution loop with a real executor/provider',
+  'projection SSE cross-restart cursor recovery inside real Desktop product window UI',
+  'complete Host + Station + applet E2E',
+];
+
+function decisionClaimBoundary(proves = []) {
+  return {
+    readiness: 'NOT_READY',
+    proves,
+    doesNotProve: decisionDoesNotProve,
+  };
+}
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
@@ -200,12 +222,8 @@ function fail(message, details = []) {
     gate: 'applet:atelier-decision-product-window-gate',
     message,
     details,
-    notCovered: [
-      'Artifact/Gate production and blocking-gate recovery E2E',
-      'PAUSED task live resume into the execution loop with a real executor/provider',
-      'projection SSE cross-restart cursor recovery inside real Desktop product window UI',
-      'complete Host + Station + applet E2E',
-    ],
+    claimBoundary: decisionClaimBoundary(),
+    notCovered: decisionDoesNotProve,
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
   process.stderr.write(`FAIL Atelier decision product-window gate\n${message}\n${details.join('\n')}\n`);
@@ -349,20 +367,9 @@ async function main() {
         resolveProbe,
         replayProbe,
       },
-      coveredPaths: [
-        'packaged peers.atelier renders inside the normal Desktop product shell',
-        'official peers.atelier loads Station pending decision through /v1/workspace service binding inside the real Desktop product window UI',
-        'official peers.atelier submits a decision option through /v1/escalations:resolve service binding inside the real Desktop product window UI',
-        'Station guarded decision resolve consumes a durable pending interrupt while preserving the running task boundary',
-        'official peers.atelier renders the resolved decision choice from the Station-owned snapshot',
-        'official peers.atelier starts Station projection replay after the resolved durable event cursor',
-      ],
-      notCovered: [
-        'Artifact/Gate production and blocking-gate recovery E2E',
-        'PAUSED task live resume into the execution loop with a real executor/provider',
-        'projection SSE cross-restart cursor recovery inside real Desktop product window UI',
-        'complete Host + Station + applet E2E',
-      ],
+      coveredPaths: decisionCoveredPaths,
+      claimBoundary: decisionClaimBoundary(decisionCoveredPaths),
+      notCovered: decisionDoesNotProve,
     };
     writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
     process.stdout.write([

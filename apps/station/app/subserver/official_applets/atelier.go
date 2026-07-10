@@ -56,79 +56,177 @@ func (s *AtelierSubServer) Status() server.Status            { return s.status }
 func (s *AtelierSubServer) Address() server.SubserverAddress { return server.SubserverAddress{} }
 
 func (s *AtelierSubServer) Handlers() []server.Handler {
+	w := []server.Wrapper{serverwrapper.LogID(), s.jwtWrapper}
 	return []server.Handler{
-		server.NewHTTPHandler(
-			"official-applet-atelier",
-			atelierMountPath+"/",
-			server.ANY,
-			s.handle,
-			serverwrapper.LogID(),
-			s.jwtWrapper,
-		),
+		server.NewHTTPHandler("atelier-workspace", atelierV1Prefix+"/workspace", server.GET, s.handleWorkspace, w...),
+		server.NewHTTPHandler("atelier-projects-create", atelierV1Prefix+"/projects", server.POST, s.handleCreateProject, w...),
+		server.NewHTTPHandler("atelier-messages-send", atelierV1Prefix+"/messages", server.POST, s.handleSendMessage, w...),
+		server.NewHTTPHandler("atelier-escalations-resolve", atelierV1Prefix+"/escalations:resolve", server.POST, s.handleResolveDecision, w...),
+		server.NewHTTPHandler("atelier-provider-capabilities", atelierV1Prefix+"/provider/capabilities", server.POST, s.handleProviderCapabilities, w...),
+		server.NewHTTPHandler("atelier-feedback-submit", atelierV1Prefix+"/feedback/submit", server.POST, s.handleSubmitFeedback, w...),
+		server.NewHTTPHandler("atelier-memory-confirm", atelierV1Prefix+"/memory/confirm-candidate", server.POST, s.handleConfirmMemory, w...),
+		server.NewHTTPHandler("atelier-feedback-rerun", atelierV1Prefix+"/feedback/confirm-rerun", server.POST, s.handleConfirmRerun, w...),
+		server.NewHTTPHandler("atelier-artifact-fetch", atelierV1Prefix+"/artifact/body/fetch", server.POST, s.handleFetchArtifact, w...),
+		server.NewHTTPHandler("atelier-task-status", atelierV1Prefix+"/tasks/:taskID/status", server.PATCH, s.handleSetTaskStatus, w...),
+		server.NewHTTPHandler("atelier-task-purge", atelierV1Prefix+"/tasks/:taskID", server.DELETE, s.handlePurgeTask, w...),
 	}
 }
 
-func (s *AtelierSubServer) handle(ctx context.Context, req server.Request, resp server.Response) error {
+func (s *AtelierSubServer) requireActor(ctx context.Context) (string, error) {
 	if s.projectionService == nil {
-		return server.InternalError("atelier applet projection service is not initialized")
+		return "", server.InternalError("atelier applet projection service is not initialized")
 	}
-
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil || strings.TrimSpace(subject.ID) == "" {
-		return server.Unauthorized("authentication required")
+		return "", server.Unauthorized("authentication required")
 	}
+	return strings.TrimSpace(subject.ID), nil
+}
 
+func (s *AtelierSubServer) handleWorkspace(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID, err := s.requireActor(ctx)
+	if err != nil {
+		return err
+	}
+	output, svcErr := s.projectionService.LoadWorkspace(ctx, actorID, &agentservice.LoadAtelierWorkspaceRequest{})
+	return s.writeJSON(resp, output, svcErr)
+}
+
+func (s *AtelierSubServer) handleCreateProject(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID, err := s.requireActor(ctx)
+	if err != nil {
+		return err
+	}
+	var input agentservice.CreateAtelierProjectFromGoalRequest
+	if err := decodeJSON(req, &input); err != nil {
+		return server.BadRequestWithCause("invalid Atelier project create request", err)
+	}
+	output, svcErr := s.projectionService.CreateProjectFromGoal(ctx, actorID, &input)
+	return s.writeJSON(resp, output, svcErr)
+}
+
+func (s *AtelierSubServer) handleSendMessage(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID, err := s.requireActor(ctx)
+	if err != nil {
+		return err
+	}
+	var input agentservice.SendAtelierMessageRequest
+	if err := decodeAtelierMessageJSON(req, &input); err != nil {
+		return server.BadRequestWithCause("invalid Atelier message request", err)
+	}
+	output, svcErr := s.projectionService.SendMessage(ctx, actorID, &input)
+	return s.writeJSON(resp, output, svcErr)
+}
+
+func (s *AtelierSubServer) handleResolveDecision(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID, err := s.requireActor(ctx)
+	if err != nil {
+		return err
+	}
+	var input agentservice.ResolveAtelierDecisionRequest
+	if err := decodeJSON(req, &input); err != nil {
+		return server.BadRequestWithCause("invalid Atelier escalation resolve request", err)
+	}
+	output, svcErr := s.projectionService.ResolveDecision(ctx, actorID, &input)
+	return s.writeJSON(resp, output, svcErr)
+}
+
+func (s *AtelierSubServer) handleProviderCapabilities(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID, err := s.requireActor(ctx)
+	if err != nil {
+		return err
+	}
+	var input agentservice.ListAtelierProviderCapabilitiesRequest
+	if err := decodeJSON(req, &input); err != nil {
+		return server.BadRequestWithCause("invalid Atelier provider capabilities request", err)
+	}
+	output, svcErr := s.projectionService.ProviderCapabilities(ctx, actorID, &input)
+	return s.writeJSON(resp, output, svcErr)
+}
+
+func (s *AtelierSubServer) handleSubmitFeedback(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID, err := s.requireActor(ctx)
+	if err != nil {
+		return err
+	}
+	var input agentservice.SubmitAtelierFeedbackRequest
+	if err := decodeAtelierFeedbackSubmitJSON(req, &input); err != nil {
+		return server.BadRequestWithCause("invalid Atelier feedback submit request", err)
+	}
+	output, svcErr := s.projectionService.SubmitFeedback(ctx, actorID, &input)
+	return s.writeJSON(resp, output, svcErr)
+}
+
+func (s *AtelierSubServer) handleConfirmMemory(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID, err := s.requireActor(ctx)
+	if err != nil {
+		return err
+	}
+	var input agentservice.ConfirmAtelierMemoryCandidateRequest
+	if err := decodeAtelierMemoryConfirmationJSON(req, &input); err != nil {
+		return server.BadRequestWithCause("invalid Atelier memory confirmation request", err)
+	}
+	output, svcErr := s.projectionService.ConfirmMemoryCandidate(ctx, actorID, &input)
+	return s.writeJSON(resp, output, svcErr)
+}
+
+func (s *AtelierSubServer) handleConfirmRerun(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID, err := s.requireActor(ctx)
+	if err != nil {
+		return err
+	}
+	var input agentservice.ConfirmAtelierRerunRequest
+	if err := decodeAtelierRerunConfirmationJSON(req, &input); err != nil {
+		return server.BadRequestWithCause("invalid Atelier rerun confirmation request", err)
+	}
+	output, svcErr := s.projectionService.ConfirmRerun(ctx, actorID, &input)
+	return s.writeJSON(resp, output, svcErr)
+}
+
+func (s *AtelierSubServer) handleFetchArtifact(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID, err := s.requireActor(ctx)
+	if err != nil {
+		return err
+	}
+	var input agentservice.FetchAtelierArtifactBodyRequest
+	if err := decodeJSON(req, &input); err != nil {
+		return server.BadRequestWithCause("invalid Atelier artifact body fetch request", err)
+	}
+	output, svcErr := s.projectionService.FetchArtifactBody(ctx, actorID, &input)
+	return s.writeJSON(resp, output, svcErr)
+}
+
+func (s *AtelierSubServer) handleSetTaskStatus(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID, err := s.requireActor(ctx)
+	if err != nil {
+		return err
+	}
 	path := requestPathOnly(req.Path())
-	method := req.Method()
-	actorID := strings.TrimSpace(subject.ID)
-
-	switch {
-	case method == server.GET && path == atelierV1Prefix+"/workspace":
-		output, err := s.projectionService.LoadWorkspace(ctx, actorID, &agentservice.LoadAtelierWorkspaceRequest{})
-		return s.writeJSON(resp, output, err)
-	case method == server.POST && path == atelierV1Prefix+"/projects":
-		var input agentservice.CreateAtelierProjectFromGoalRequest
-		if err := decodeJSON(req, &input); err != nil {
-			return server.BadRequestWithCause("invalid Atelier project create request", err)
-		}
-		output, err := s.projectionService.CreateProjectFromGoal(ctx, actorID, &input)
-		return s.writeJSON(resp, output, err)
-	case method == server.POST && path == atelierV1Prefix+"/messages":
-		var input agentservice.SendAtelierMessageRequest
-		if err := decodeJSON(req, &input); err != nil {
-			return server.BadRequestWithCause("invalid Atelier message request", err)
-		}
-		output, err := s.projectionService.SendMessage(ctx, actorID, &input)
-		return s.writeJSON(resp, output, err)
-	case method == server.POST && path == atelierV1Prefix+"/escalations:resolve":
-		var input agentservice.ResolveAtelierDecisionRequest
-		if err := decodeJSON(req, &input); err != nil {
-			return server.BadRequestWithCause("invalid Atelier escalation resolve request", err)
-		}
-		output, err := s.projectionService.ResolveDecision(ctx, actorID, &input)
-		return s.writeJSON(resp, output, err)
-	case method == server.PATCH && strings.HasPrefix(path, atelierV1Prefix+"/tasks/") && strings.HasSuffix(path, "/status"):
-		taskID := strings.TrimSuffix(strings.TrimPrefix(path, atelierV1Prefix+"/tasks/"), "/status")
-		if strings.TrimSpace(taskID) == "" || strings.Contains(taskID, "/") {
-			return server.BadRequest("invalid Atelier task status path")
-		}
-		var input agentservice.SetAtelierTaskStatusRequest
-		if err := decodeJSON(req, &input); err != nil {
-			return server.BadRequestWithCause("invalid Atelier task status request", err)
-		}
-		input.TaskID = taskID
-		output, err := s.projectionService.SetTaskStatus(ctx, actorID, &input)
-		return s.writeJSON(resp, output, err)
-	case method == server.DELETE && strings.HasPrefix(path, atelierV1Prefix+"/tasks/"):
-		taskID := strings.TrimPrefix(path, atelierV1Prefix+"/tasks/")
-		if strings.TrimSpace(taskID) == "" || strings.Contains(taskID, "/") {
-			return server.BadRequest("invalid Atelier task purge path")
-		}
-		output, err := s.projectionService.PurgeTask(ctx, actorID, &agentservice.PurgeAtelierTaskRequest{TaskID: taskID})
-		return s.writeJSON(resp, output, err)
-	default:
-		return server.NotFound("Atelier applet route not found")
+	taskID := strings.TrimSuffix(strings.TrimPrefix(path, atelierV1Prefix+"/tasks/"), "/status")
+	if strings.TrimSpace(taskID) == "" || strings.Contains(taskID, "/") {
+		return server.BadRequest("invalid Atelier task status path")
 	}
+	var input agentservice.SetAtelierTaskStatusRequest
+	if err := decodeJSON(req, &input); err != nil {
+		return server.BadRequestWithCause("invalid Atelier task status request", err)
+	}
+	input.TaskID = taskID
+	output, svcErr := s.projectionService.SetTaskStatus(ctx, actorID, &input)
+	return s.writeJSON(resp, output, svcErr)
+}
+
+func (s *AtelierSubServer) handlePurgeTask(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID, err := s.requireActor(ctx)
+	if err != nil {
+		return err
+	}
+	path := requestPathOnly(req.Path())
+	taskID := strings.TrimPrefix(path, atelierV1Prefix+"/tasks/")
+	if strings.TrimSpace(taskID) == "" || strings.Contains(taskID, "/") {
+		return server.BadRequest("invalid Atelier task purge path")
+	}
+	output, svcErr := s.projectionService.PurgeTask(ctx, actorID, &agentservice.PurgeAtelierTaskRequest{TaskID: taskID})
+	return s.writeJSON(resp, output, svcErr)
 }
 
 func newOfficialAtelierProjectionService() *agentservice.AtelierProjectionService {
@@ -190,6 +288,75 @@ func decodeJSON(req server.Request, target interface{}) error {
 	body := req.Body()
 	if len(body) == 0 {
 		return nil
+	}
+	return json.Unmarshal(body, target)
+}
+
+func decodeAtelierMessageJSON(req server.Request, target *agentservice.SendAtelierMessageRequest) error {
+	return decodeAtelierStrictJSON(req, target, []string{"run", "attachments", "inputSnapshot", "input_snapshot"}, "Atelier message request")
+}
+
+func decodeAtelierFeedbackSubmitJSON(req server.Request, target *agentservice.SubmitAtelierFeedbackRequest) error {
+	return decodeAtelierStrictJSON(req, target, []string{
+		"run",
+		"execute",
+		"provider",
+		"attachments",
+		"memory",
+		"memoryContent",
+		"memory_content",
+		"rerun",
+		"rerunTaskId",
+		"inputSnapshot",
+		"input_snapshot",
+	}, "Atelier feedback submit request")
+}
+
+func decodeAtelierMemoryConfirmationJSON(req server.Request, target *agentservice.ConfirmAtelierMemoryCandidateRequest) error {
+	return decodeAtelierStrictJSON(req, target, []string{
+		"run",
+		"execute",
+		"provider",
+		"attachments",
+		"memory",
+		"memoryContent",
+		"memory_content",
+		"content",
+		"target",
+		"layer",
+		"inputSnapshot",
+		"input_snapshot",
+	}, "Atelier memory confirmation request")
+}
+
+func decodeAtelierRerunConfirmationJSON(req server.Request, target *agentservice.ConfirmAtelierRerunRequest) error {
+	return decodeAtelierStrictJSON(req, target, []string{
+		"run",
+		"execute",
+		"provider",
+		"attachments",
+		"rerun",
+		"rerunTaskId",
+		"goal",
+		"model",
+		"inputSnapshot",
+		"input_snapshot",
+	}, "Atelier rerun confirmation request")
+}
+
+func decodeAtelierStrictJSON(req server.Request, target interface{}, forbiddenFields []string, label string) error {
+	body := req.Body()
+	if len(body) == 0 {
+		return nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return err
+	}
+	for _, field := range forbiddenFields {
+		if _, ok := raw[field]; ok {
+			return fmt.Errorf("%s must not include %s", label, field)
+		}
 	}
 	return json.Unmarshal(body, target)
 }

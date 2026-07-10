@@ -20,6 +20,7 @@ import {
   ATELIER_PROVIDER_CAPABILITY_SCOPES,
   ATELIER_RUN_TARGET_KINDS,
   ATELIER_TASK_INTENT_PRESETS,
+  ATELIER_VIEW_SURFACE,
   ATELIER_WORKSPACE_OPEN_URI_SHAPE,
   ATELIER_WORKSPACE_OPEN_URI_SCHEMES,
   type AtelierAgentFlowId,
@@ -70,6 +71,11 @@ export type AtelierCertificationDecisionConfig = {
 };
 
 export type AtelierCertificationPreviewOpenConfig = {
+  taskId?: string;
+  artifactId?: string;
+};
+
+export type AtelierCertificationArtifactBodyFetchConfig = {
   taskId?: string;
   artifactId?: string;
 };
@@ -166,11 +172,12 @@ export async function loadAtelierWorkspace(): Promise<AtelierProjectionSnapshot>
 }
 
 export async function loadAtelierProviderCapabilities(taskId?: string): Promise<AtelierProviderCapabilitiesResponse> {
-  const response = await sdk.invoke<unknown>('atelier.provider.capabilities', taskId ? { taskId } : {});
-  if (!isAtelierProviderCapabilitiesResponse(response)) {
+  const response = await requestAtelierService('/v1/provider/capabilities', 'POST', taskId ? { taskId } : {});
+  const body = response.body;
+  if (!isAtelierProviderCapabilitiesResponse(body)) {
     throw new Error('atelier.error.invalidProviderCapabilities');
   }
-  return response;
+  return body;
 }
 
 export async function submitAtelierFeedback(input: {
@@ -179,33 +186,36 @@ export async function submitAtelierFeedback(input: {
   signal: AtelierFeedbackSignal;
   comment?: string;
 }): Promise<SubmitAtelierFeedbackResponse> {
-  const response = await sdk.invoke<unknown>('atelier.feedback.submit', input);
-  if (!isSubmitAtelierFeedbackResponse(response)) {
+  const response = await requestAtelierService('/v1/feedback/submit', 'POST', input);
+  const body = response.body;
+  if (!isSubmitAtelierFeedbackResponse(body)) {
     throw new Error('atelier.error.invalidFeedbackResponse');
   }
-  return response;
+  return body;
 }
 
 export async function confirmAtelierMemoryCandidate(input: {
   taskId: string;
   feedbackId: string;
 }): Promise<ConfirmAtelierMemoryCandidateResponse> {
-  const response = await sdk.invoke<unknown>('atelier.memory.confirmCandidate', input);
-  if (!isConfirmAtelierMemoryCandidateResponse(response, input)) {
+  const response = await requestAtelierService('/v1/memory/confirm-candidate', 'POST', input);
+  const body = response.body;
+  if (!isConfirmAtelierMemoryCandidateResponse(body, input)) {
     throw new Error('atelier.error.invalidMemoryConfirmationResponse');
   }
-  return response;
+  return body;
 }
 
 export async function confirmAtelierFeedbackRerun(input: {
   taskId: string;
   feedbackId: string;
 }): Promise<ConfirmAtelierRerunResponse> {
-  const response = await sdk.invoke<unknown>('atelier.feedback.confirmRerun', input);
-  if (!isConfirmAtelierRerunResponse(response, input)) {
+  const response = await requestAtelierService('/v1/feedback/confirm-rerun', 'POST', input);
+  const body = response.body;
+  if (!isConfirmAtelierRerunResponse(body, input)) {
     throw new Error('atelier.error.invalidRerunConfirmationResponse');
   }
-  return response;
+  return body;
 }
 
 export async function openAtelierWorkspace(input: {
@@ -227,11 +237,12 @@ export async function fetchAtelierArtifactBody(input: {
   expectedHash?: string;
   maxBytes?: number;
 }): Promise<AtelierArtifactBodyResponse> {
-  const response = await sdk.invoke<unknown>('atelier.artifact.body.fetch', input);
-  if (!isAtelierArtifactBodyResponse(response, input)) {
+  const response = await requestAtelierService('/v1/artifact/body/fetch', 'POST', input);
+  const body = response.body;
+  if (!isAtelierArtifactBodyResponse(body, input)) {
     throw new Error('atelier.error.invalidArtifactBodyResponse');
   }
-  return response;
+  return body;
 }
 
 export async function openAtelierArtifactPreview(input: {
@@ -258,10 +269,7 @@ export async function createAtelierProjectFromGoal(input: {
   project?: string;
 }): Promise<AtelierProjectionSnapshot> {
   const config = await readAtelierLaunchConfig();
-  const agentIds = config.agentIds;
-  if (agentIds.length === 0) {
-    throw new Error('atelier.error.agentIdsRequired');
-  }
+  const agentIds = config.agentIds.length > 0 ? config.agentIds : ['station-default'];
   const selectedModel = input.model?.trim() || config.model;
   const selectedFlowId = input.flowId ?? config.flowId;
   const runKind: AtelierRunTargetKind = input.runKind ?? ATELIER_DEFAULT_RUN_TARGET_KIND;
@@ -353,6 +361,21 @@ export async function readAtelierCertificationPreviewOpenConfig(): Promise<Ateli
   return config;
 }
 
+export async function readAtelierCertificationArtifactBodyFetchConfig(): Promise<AtelierCertificationArtifactBodyFetchConfig | null> {
+  const source = launchConfigSource(readGlobalAtelierConfig()) ?? launchConfigSource(await readLaunchOptions());
+  if (!source || source.certificationMode !== 'product-window-e2e' || source.fetchArtifactBody !== true) {
+    return null;
+  }
+  const config: AtelierCertificationArtifactBodyFetchConfig = {};
+  if (typeof source.fetchArtifactBodyTaskId === 'string' && source.fetchArtifactBodyTaskId.trim().length > 0) {
+    config.taskId = source.fetchArtifactBodyTaskId.trim();
+  }
+  if (typeof source.fetchArtifactBodyArtifactId === 'string' && source.fetchArtifactBodyArtifactId.trim().length > 0) {
+    config.artifactId = source.fetchArtifactBodyArtifactId.trim();
+  }
+  return config;
+}
+
 export async function trackAtelierCreatedProjectRendered(input: {
   taskId: string;
   goal: string;
@@ -425,6 +448,22 @@ export async function trackAtelierArtifactPreviewOpened(input: {
   });
 }
 
+export async function trackAtelierArtifactBodyFetched(input: {
+  taskId: string;
+  artifactId: string;
+  bodyRef: string;
+  bodyKind: AtelierArtifactBodyKind;
+  bodyHash: string;
+  bodySize: number;
+  truncated: boolean;
+  retentionStatus: string;
+}): Promise<void> {
+  await sdk.telemetry.track({
+    name: 'atelier.artifact.body.fetched',
+    properties: input,
+  });
+}
+
 export async function trackAtelierProjectionSubscriptionDiagnostic(input: {
   stage: string;
   selectedTaskId?: string;
@@ -436,6 +475,10 @@ export async function trackAtelierProjectionSubscriptionDiagnostic(input: {
   taskId?: string;
   afterEventSeq?: number;
   error?: string;
+  errorKind?: string;
+  retryAttempt?: number;
+  retryDelayMs?: number | null;
+  retryable?: boolean;
 }): Promise<void> {
   await sdk.telemetry.track({
     name: 'atelier.projection.subscription.diagnostic',
@@ -762,6 +805,7 @@ export async function subscribeAtelierProjectionEvents(
   selectedTaskId: string,
   handler: (event: AtelierProjectionEvent) => void,
   onMalformedEvent?: (payload: unknown) => void,
+  onSubscriptionRejected?: (error: Error) => void,
 ): Promise<() => void> {
   const streamConfig = await readProjectionStreamConfig(snapshot, selectedTaskId);
   void trackAtelierProjectionSubscriptionDiagnostic({
@@ -774,8 +818,35 @@ export async function subscribeAtelierProjectionEvents(
     agentId: typeof streamConfig?.agentId === 'string' ? streamConfig.agentId : undefined,
     taskId: typeof streamConfig?.taskId === 'string' ? streamConfig.taskId : undefined,
     afterEventSeq: typeof streamConfig?.afterEventSeq === 'number' ? streamConfig.afterEventSeq : undefined,
-    }).catch(() => undefined);
-    const unsubscribeLocal = sdk.events.on(ATELIER_PROJECTION_EVENT_TOPIC, (payload) => {
+  }).catch(() => undefined);
+  let closed = false;
+  let unsubscribeLocal: () => void = () => undefined;
+  const closeSubscription = () => {
+    if (closed) return;
+    closed = true;
+    unsubscribeLocal();
+    safeUnsubscribeAtelierProjectionEventTopic();
+  };
+  unsubscribeLocal = sdk.events.on(ATELIER_PROJECTION_EVENT_TOPIC, (payload) => {
+    if (closed) return;
+      const subscriptionRejectedError = projectionSubscriptionRejectedError(payload);
+      if (subscriptionRejectedError) {
+        void trackAtelierProjectionSubscriptionDiagnostic({
+          stage: 'client.subscribe-rejected',
+          selectedTaskId,
+          snapshotSelectedTaskId: snapshot?.selectedTaskId,
+          taskCount: snapshot?.workspace.tasks.length ?? 0,
+          hasStreamConfig: Boolean(streamConfig),
+          streamConfigKeys: streamConfig ? Object.keys(streamConfig).sort() : [],
+          agentId: typeof streamConfig?.agentId === 'string' ? streamConfig.agentId : undefined,
+          taskId: typeof streamConfig?.taskId === 'string' ? streamConfig.taskId : undefined,
+          afterEventSeq: typeof streamConfig?.afterEventSeq === 'number' ? streamConfig.afterEventSeq : undefined,
+          error: subscriptionRejectedError.message,
+        }).catch(() => undefined);
+        closeSubscription();
+        onSubscriptionRejected?.(subscriptionRejectedError);
+        return;
+      }
       const event = parseAtelierProjectionEvent(payload);
       if (event) {
         handler(event);
@@ -785,7 +856,7 @@ export async function subscribeAtelierProjectionEvents(
     });
 
   try {
-      await sdk.events.subscribe(ATELIER_PROJECTION_EVENT_TOPIC);
+    await sdk.events.subscribe(ATELIER_PROJECTION_EVENT_TOPIC);
     if (streamConfig) {
       void trackAtelierProjectionSubscriptionDiagnostic({
         stage: 'client.invoke-stream-subscribe',
@@ -811,23 +882,78 @@ export async function subscribeAtelierProjectionEvents(
       agentId: typeof streamConfig?.agentId === 'string' ? streamConfig.agentId : undefined,
       taskId: typeof streamConfig?.taskId === 'string' ? streamConfig.taskId : undefined,
       afterEventSeq: typeof streamConfig?.afterEventSeq === 'number' ? streamConfig.afterEventSeq : undefined,
-      error: error instanceof Error ? error.message : String(error),
-      }).catch(() => undefined);
-      unsubscribeLocal();
-    safeUnsubscribeAtelierProjectionEventTopic();
+      error: sanitizeProjectionSubscriptionReason(error instanceof Error ? error.message : String(error)),
+    }).catch(() => undefined);
+    closeSubscription();
     throw error;
   }
 
-  return () => {
-    unsubscribeLocal();
-    safeUnsubscribeAtelierProjectionEventTopic();
-  };
+  return closeSubscription;
 }
 
 function safeUnsubscribeAtelierProjectionEventTopic(): void {
   void sdk.events.unsubscribe(ATELIER_PROJECTION_EVENT_TOPIC).catch((error: unknown) => {
-    console.warn('Atelier official projection event topic unsubscribe rejected', error);
+    console.warn('Atelier official projection event topic unsubscribe rejected', {
+      reason: sanitizeProjectionSubscriptionReason(error instanceof Error ? error.message : String(error)),
+    });
   });
+}
+
+function projectionSubscriptionRejectedError(value: unknown): Error | undefined {
+  if (!isRecord(value) || value.kind !== 'atelier.projection.subscription-rejected') {
+    return undefined;
+  }
+  const method = typeof value.method === 'string' && value.method.length > 0
+    ? value.method
+    : 'unknown';
+  const reason = typeof value.reason === 'string' && value.reason.length > 0
+    ? sanitizeProjectionSubscriptionReason(value.reason)
+    : 'unknown rejection';
+  const sanitizedCause: Record<string, unknown> = {
+    kind: 'atelier.projection.subscription-rejected',
+    method,
+    reason,
+  };
+  const code = typeof value.code === 'string' && value.code.length > 0
+    ? sanitizeProjectionSubscriptionCode(value.code)
+    : undefined;
+  if (code) {
+    sanitizedCause.code = code;
+  }
+  return new Error(`Atelier projection stream subscription ${method} rejected: ${reason}`, {
+    cause: sanitizedCause,
+  });
+}
+
+const forbiddenProjectionSubscriptionReasonPatterns = [
+  /provider\.invoke/i,
+  /providerInvoke/i,
+  /runtime\.execute/i,
+  /runtimeExecute/i,
+  /shell/i,
+  /shellExecute/i,
+  /memory\.write/i,
+  /input_snapshot/i,
+  /run\.execute/i,
+];
+
+function sanitizeProjectionSubscriptionReason(reason: string): string {
+  if (!reason.trim()) return 'Host projection subscription rejected';
+  if (forbiddenProjectionSubscriptionReasonPatterns.some((pattern) => pattern.test(reason))) {
+    return 'Host projection subscription rejected';
+  }
+  return reason;
+}
+
+function sanitizeProjectionSubscriptionCode(code: string): string | undefined {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!normalizedCode) return undefined;
+  return Object.prototype.hasOwnProperty.call(
+    ATELIER_VIEW_SURFACE.bridgeRuntimeRecoveryCodeKindByCode,
+    normalizedCode,
+  )
+    ? normalizedCode
+    : undefined;
 }
 
 export function normalizeAtelierError(error: unknown): string {
@@ -835,6 +961,15 @@ export function normalizeAtelierError(error: unknown): string {
     if (error.message.startsWith('atelier.error.')) {
       return error.message;
     }
+  }
+  const structuredKind = atelierRecoveryKindFromErrorCode(error);
+  if (structuredKind === 'auth-denied') {
+    return 'atelier.error.authDenied';
+  }
+  if (structuredKind === 'disconnected') {
+    return 'atelier.error.disconnected';
+  }
+  if (error instanceof Error) {
     const normalizedMessage = error.message.toLowerCase();
     if (
       normalizedMessage.includes('permission_denied') ||
@@ -852,6 +987,34 @@ export function normalizeAtelierError(error: unknown): string {
     }
   }
   return 'atelier.error.loadFailed';
+}
+
+function atelierRecoveryKindFromErrorCode(error: unknown): 'auth-denied' | 'disconnected' | 'error' | undefined {
+  const code = atelierErrorCode(error);
+  if (!code) return undefined;
+  const normalizedCode = code.trim().toUpperCase();
+  return ATELIER_VIEW_SURFACE.bridgeRuntimeRecoveryCodeKindByCode[
+    normalizedCode as keyof typeof ATELIER_VIEW_SURFACE.bridgeRuntimeRecoveryCodeKindByCode
+  ];
+}
+
+function atelierErrorCode(error: unknown): string | undefined {
+  if (isRecord(error) && typeof error.code === 'string' && error.code.trim().length > 0) {
+    return error.code;
+  }
+  if (isRecord(error) && isRecord(error.error) && typeof error.error.code === 'string' && error.error.code.trim().length > 0) {
+    return error.error.code;
+  }
+  if (error instanceof Error && isRecord(error.cause)) {
+    const cause = error.cause;
+    if (typeof cause.code === 'string' && cause.code.trim().length > 0) {
+      return cause.code;
+    }
+    if (isRecord(cause.error) && typeof cause.error.code === 'string' && cause.error.code.trim().length > 0) {
+      return cause.error.code;
+    }
+  }
+  return undefined;
 }
 
 export function classifyAtelierError(error: unknown): { key: string; kind: AtelierErrorKind } {
@@ -944,8 +1107,8 @@ type ProjectionTaskIdResolverInput = {
 
 const projectionAgentIdResolvers = {
   agentId: (source: Record<string, unknown>) =>
-    typeof source.agentId === 'string' && source.agentId.length > 0 ? source.agentId : '',
-  'agentIds[0]': (source: Record<string, unknown>) => agentIdsFromSource(source)[0] ?? '',
+    trimmedNonEmptyString(source.agentId),
+  'agentIds[0]': (source: Record<string, unknown>) => agentIdAtSourceIndex(source, 0),
 } satisfies Record<ProjectionAgentIdSource, (source: Record<string, unknown>) => string>;
 
 const projectionTaskIdResolvers = {
@@ -954,13 +1117,13 @@ const projectionTaskIdResolvers = {
     typeof source.createGoal === 'string' &&
     source.createGoal.trim().length > 0 &&
     snapshot?.selectedTaskId
-      ? snapshot.selectedTaskId
+      ? trimmedNonEmptyString(snapshot.selectedTaskId)
       : '',
   explicitTaskId: ({ source }: ProjectionTaskIdResolverInput) =>
-    typeof source.taskId === 'string' && source.taskId.length > 0 ? source.taskId : '',
-  controllerSelectedTaskId: ({ selectedTaskId }: ProjectionTaskIdResolverInput) => selectedTaskId,
-  snapshotSelectedTaskId: ({ snapshot }: ProjectionTaskIdResolverInput) => snapshot?.selectedTaskId ?? '',
-  snapshotFirstTaskId: ({ snapshot }: ProjectionTaskIdResolverInput) => snapshot?.workspace.tasks[0]?.id ?? '',
+    trimmedNonEmptyString(source.taskId),
+  controllerSelectedTaskId: ({ selectedTaskId }: ProjectionTaskIdResolverInput) => trimmedNonEmptyString(selectedTaskId),
+  snapshotSelectedTaskId: ({ snapshot }: ProjectionTaskIdResolverInput) => trimmedNonEmptyString(snapshot?.selectedTaskId),
+  snapshotFirstTaskId: ({ snapshot }: ProjectionTaskIdResolverInput) => trimmedNonEmptyString(snapshot?.workspace.tasks[0]?.id),
 } satisfies Record<ProjectionTaskIdSource, (input: ProjectionTaskIdResolverInput) => string>;
 
 function projectionConfigFromUnknown(
@@ -978,8 +1141,12 @@ function projectionConfigFromUnknown(
   if (taskId) {
     config.taskId = taskId;
   }
-  if (typeof source.afterEventSeq === 'number' && Number.isFinite(source.afterEventSeq)) {
-    config.afterEventSeq = source.afterEventSeq;
+  const explicitAfterEventSeq = projectionAfterEventSeqFromSource(source.afterEventSeq);
+  if (
+    explicitAfterEventSeq !== undefined &&
+    (explicitAfterEventSeq > 0 || shouldPreserveExplicitZeroCursor(source, explicitAfterEventSeq))
+  ) {
+    config.afterEventSeq = explicitAfterEventSeq;
   } else {
     const afterEventSeq = projectionAfterEventSeqFromSnapshot(snapshot, taskId);
     if (afterEventSeq > 0) {
@@ -990,11 +1157,11 @@ function projectionConfigFromUnknown(
 }
 
 function projectionAgentIdFromSource(source: Record<string, unknown>): string {
-    for (const sourceKey of ATELIER_PROJECTION_CONTRACT.eventSubscription.agentIdSourcePriority) {
-      const agentId = projectionAgentIdResolvers[sourceKey](source);
-      if (agentId) return agentId;
+  for (const sourceKey of ATELIER_PROJECTION_CONTRACT.eventSubscription.agentIdSourcePriority) {
+    const agentId = projectionAgentIdResolvers[sourceKey](source);
+    if (agentId) return agentId;
   }
-    return '';
+  return '';
 }
 
 function projectionTaskIdFromSource(
@@ -1002,12 +1169,12 @@ function projectionTaskIdFromSource(
   snapshot: AtelierProjectionSnapshot | null,
   selectedTaskId: string,
 ): string {
-    const input = { source, snapshot, selectedTaskId };
-    for (const sourceKey of ATELIER_PROJECTION_CONTRACT.eventSubscription.taskIdSourcePriority) {
-      const taskId = projectionTaskIdResolvers[sourceKey](input);
-      if (taskId) return taskId;
+  const input = { source, snapshot, selectedTaskId };
+  for (const sourceKey of ATELIER_PROJECTION_CONTRACT.eventSubscription.taskIdSourcePriority) {
+    const taskId = projectionTaskIdResolvers[sourceKey](input);
+    if (taskId) return taskId;
   }
-    return '';
+  return '';
 }
 
 function projectionAfterEventSeqFromSnapshot(snapshot: AtelierProjectionSnapshot | null, taskId: string): number {
@@ -1015,7 +1182,29 @@ function projectionAfterEventSeqFromSnapshot(snapshot: AtelierProjectionSnapshot
     return 0;
   }
   const nextEventSeq = snapshot.workspace.replay?.[taskId]?.nextEventSeq;
-  return typeof nextEventSeq === 'number' && Number.isFinite(nextEventSeq) && nextEventSeq > 0 ? nextEventSeq : 0;
+  return isProjectionCursorNumber(nextEventSeq) && nextEventSeq > 0 ? nextEventSeq : 0;
+}
+
+function projectionAfterEventSeqFromSource(value: unknown): number | undefined {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : undefined;
+  return isProjectionCursorNumber(parsed) ? parsed : undefined;
+}
+
+function shouldPreserveExplicitZeroCursor(source: Record<string, unknown>, afterEventSeq: number): boolean {
+  const exception = ATELIER_PROJECTION_CONTRACT.eventSubscription.zeroCursorException;
+  return (
+    afterEventSeq === 0 &&
+    exception.explicitZeroCursorPolicy === 'preserve' &&
+    source.certificationMode === exception.certificationMode
+  );
+}
+
+function isProjectionCursorNumber(value: unknown): value is number {
+  return (
+    ATELIER_PROJECTION_CONTRACT.eventSubscription.cursorNumberPolicy === 'safe_integer' &&
+    typeof value === 'number' &&
+    Number.isSafeInteger(value)
+  );
 }
 
 function launchConfigSource(value: unknown): Record<string, unknown> | null {
@@ -1025,12 +1214,26 @@ function launchConfigSource(value: unknown): Record<string, unknown> | null {
 
 function agentIdsFromSource(source: Record<string, unknown>): string[] {
   if (Array.isArray(source.agentIds)) {
-    return source.agentIds.filter((item): item is string => typeof item === 'string' && item.length > 0);
+    return source.agentIds
+      .map((item) => trimmedNonEmptyString(item))
+      .filter((item) => item.length > 0);
   }
-  if (typeof source.agentId === 'string' && source.agentId.length > 0) {
-    return [source.agentId];
+  const agentId = trimmedNonEmptyString(source.agentId);
+  if (agentId) {
+    return [agentId];
   }
   return [];
+}
+
+function agentIdAtSourceIndex(source: Record<string, unknown>, index: number): string {
+  if (!Array.isArray(source.agentIds)) {
+    return '';
+  }
+  return trimmedNonEmptyString(source.agentIds[index]);
+}
+
+function trimmedNonEmptyString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

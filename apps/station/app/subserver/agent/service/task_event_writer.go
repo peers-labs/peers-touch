@@ -1057,9 +1057,11 @@ func (w *TaskEventWriter) Publish(ctx context.Context, agentID, eventType string
 			}
 		} else {
 			eventID = record.ID
+			metadata["event_id"] = record.ID
 			metadata["event_seq"] = fmt.Sprintf("%d", record.EventSeq)
 		}
 	}
+	metadata["event_id"] = eventID
 	if w.eventBus == nil {
 		return
 	}

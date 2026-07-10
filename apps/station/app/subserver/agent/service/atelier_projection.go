@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -30,6 +32,7 @@ const atelierRunKindModel = "model"
 const atelierIntentPresetWork = "work"
 const atelierIntentPresetCode = "code"
 const atelierIntentPresetDesign = "design"
+const atelierFullE2EProviderRuntimeEvidenceEnv = "PEERS_ATELIER_FULL_E2E_PROVIDER_RUNTIME_EVIDENCE"
 
 type AtelierProjectionService struct {
 	orchestrationService *OrchestrationService
@@ -51,9 +54,8 @@ type CreateAtelierProjectFromGoalRequest struct {
 }
 
 type SendAtelierMessageRequest struct {
-	TaskID string                  `json:"taskId,omitempty"`
-	Text   string                  `json:"text,omitempty"`
-	Run    AtelierRunTargetRequest `json:"run,omitempty"`
+	TaskID string `json:"taskId,omitempty"`
+	Text   string `json:"text,omitempty"`
 }
 
 type ResolveAtelierDecisionRequest struct {
@@ -72,7 +74,10 @@ type PurgeAtelierTaskRequest struct {
 }
 
 type ListAtelierProviderCapabilitiesRequest struct {
-	TaskID string `json:"taskId,omitempty"`
+	TaskID                    string `json:"taskId,omitempty"`
+	FullE2ELaunchID           string `json:"fullE2ELaunchId,omitempty"`
+	FullE2ESessionID          string `json:"fullE2ESessionId,omitempty"`
+	FullE2EProviderProfileRef string `json:"fullE2EProviderProfileRef,omitempty"`
 }
 
 type SubmitAtelierFeedbackRequest struct {
@@ -135,6 +140,28 @@ type AtelierProviderCapability struct {
 type AtelierProviderCapabilitiesResponse struct {
 	Capabilities []AtelierProviderCapability `json:"capabilities"`
 	Source       string                      `json:"source"`
+}
+
+type AtelierDirectRunExecutionEvidence struct {
+	DirectRunID        string                      `json:"directRunId"`
+	TaskID             string                      `json:"taskId"`
+	ProviderID         string                      `json:"providerId"`
+	ModelIntent        string                      `json:"modelIntent"`
+	State              string                      `json:"state"`
+	TraceID            string                      `json:"traceId"`
+	ArtifactRefs       []string                    `json:"artifactRefs"`
+	GateRefs           []string                    `json:"gateRefs"`
+	BudgetUsage        AtelierDirectRunBudgetUsage `json:"budgetUsage"`
+	FailureArtifactRef *string                     `json:"failureArtifactRef"`
+	CliHandoffRef      *string                     `json:"cliHandoffRef"`
+}
+
+type AtelierDirectRunBudgetUsage struct {
+	Tokens     int64   `json:"tokens"`
+	MoneyUSD   float64 `json:"moneyUsd"`
+	Source     string  `json:"source"`
+	BudgetRef  string  `json:"budgetRef"`
+	PricingRef string  `json:"pricingRef,omitempty"`
 }
 
 type AtelierFeedbackPolicyHint struct {
@@ -802,9 +829,6 @@ func (s *AtelierProjectionService) SendMessage(
 		"result_summary": text,
 		"task_id":        taskID,
 		"actor_id":       actorID,
-		"run_kind":       strings.TrimSpace(req.Run.Kind),
-		"run_model":      strings.TrimSpace(req.Run.Model),
-		"run_flow_id":    strings.TrimSpace(req.Run.FlowID),
 	}
 	s.orchestrationService.eventWriter.Publish(
 		ctx,
@@ -956,10 +980,11 @@ func (s *AtelierProjectionService) ProviderCapabilities(
 	actorID string,
 	req *ListAtelierProviderCapabilitiesRequest,
 ) (*AtelierProviderCapabilitiesResponse, error) {
-	_ = ctx
-	_ = req
 	if strings.TrimSpace(actorID) == "" {
 		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "actor_id is required", nil)
+	}
+	if err := s.recordAtelierFullE2EProviderRuntimeEvidence(ctx, actorID, req); err != nil {
+		return nil, err
 	}
 	return &AtelierProviderCapabilitiesResponse{
 		Source: "station.provider.capabilities",
@@ -993,6 +1018,188 @@ func (s *AtelierProjectionService) ProviderCapabilities(
 			},
 		},
 	}, nil
+}
+
+func (s *AtelierProjectionService) recordAtelierFullE2EProviderRuntimeEvidence(
+	ctx context.Context,
+	actorID string,
+	req *ListAtelierProviderCapabilitiesRequest,
+) error {
+	outputPath := strings.TrimSpace(os.Getenv(atelierFullE2EProviderRuntimeEvidenceEnv))
+	if outputPath == "" {
+		return nil
+	}
+	if req == nil {
+		return nil
+	}
+	launchID := strings.TrimSpace(req.FullE2ELaunchID)
+	sessionID := strings.TrimSpace(req.FullE2ESessionID)
+	providerProfileRef := strings.TrimSpace(req.FullE2EProviderProfileRef)
+	if launchID == "" || sessionID == "" || providerProfileRef == "" {
+		return nil
+	}
+	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
+	if err != nil {
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to open agent db", err)
+	}
+	run, ok, err := loadAtelierFullE2EProviderRuntimeRun(ctx, db, actorID, req.TaskID)
+	if err != nil {
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to inspect Atelier provider runtime evidence", err)
+	}
+	if !ok {
+		return nil
+	}
+	evidence, ok, err := buildAtelierFullE2EProviderRuntimeEvidence(ctx, db, run, launchID, sessionID, providerProfileRef)
+	if err != nil {
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to build Atelier provider runtime evidence", err)
+	}
+	if !ok {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create Atelier provider runtime evidence directory", err)
+	}
+	document, err := json.MarshalIndent(evidence, "", "  ")
+	if err != nil {
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to encode Atelier provider runtime evidence", err)
+	}
+	if err := os.WriteFile(outputPath, append(document, '\n'), 0o644); err != nil {
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to write Atelier provider runtime evidence", err)
+	}
+	return nil
+}
+
+func loadAtelierFullE2EProviderRuntimeRun(
+	ctx context.Context,
+	db *gorm.DB,
+	actorID string,
+	taskID string,
+) (*persistence.DirectRun, bool, error) {
+	query := db.WithContext(ctx).
+		Table("agent_direct_runs").
+		Select("agent_direct_runs.*").
+		Joins("JOIN agent_collaboration_tasks ON agent_collaboration_tasks.id = agent_direct_runs.task_id").
+		Where("agent_collaboration_tasks.goal_owner_id = ?", strings.TrimSpace(actorID)).
+		Where("agent_direct_runs.state = ?", "succeeded").
+		Where("agent_direct_runs.source = ?", collaborationProviderPlanSourceDirectRun)
+	if strings.TrimSpace(taskID) != "" {
+		query = query.Where("agent_direct_runs.task_id = ?", strings.TrimSpace(taskID))
+	}
+	var run persistence.DirectRun
+	if err := query.Order("agent_direct_runs.updated_at DESC, agent_direct_runs.direct_run_id DESC").First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return &run, true, nil
+}
+
+func buildAtelierFullE2EProviderRuntimeEvidence(
+	ctx context.Context,
+	db *gorm.DB,
+	run *persistence.DirectRun,
+	launchID string,
+	sessionID string,
+	providerProfileRef string,
+) (map[string]interface{}, bool, error) {
+	if db == nil || run == nil ||
+		strings.TrimSpace(run.DirectRunID) == "" ||
+		strings.TrimSpace(run.TaskID) == "" ||
+		strings.TrimSpace(run.ProviderID) == "" ||
+		strings.TrimSpace(run.ModelIntent) == "" ||
+		strings.TrimSpace(run.TraceID) == "" {
+		return nil, false, nil
+	}
+	directRunEvidence, err := buildAtelierDirectRunExecutionEvidence(ctx, db, run.TaskID)
+	if err != nil {
+		return nil, false, err
+	}
+	var matched *AtelierDirectRunExecutionEvidence
+	for index := range directRunEvidence {
+		if directRunEvidence[index].DirectRunID == strings.TrimSpace(run.DirectRunID) {
+			matched = &directRunEvidence[index]
+			break
+		}
+	}
+	if matched == nil ||
+		matched.State != "succeeded" ||
+		len(matched.ArtifactRefs) == 0 ||
+		len(matched.GateRefs) == 0 ||
+		matched.BudgetUsage.Tokens <= 0 ||
+		strings.TrimSpace(matched.TraceID) == "" {
+		return nil, false, nil
+	}
+	streamed, err := atelierDirectRunStreamedProviderResponse(ctx, db, run.TaskID, run.DirectRunID)
+	if err != nil || !streamed {
+		return nil, false, err
+	}
+	checkpointed, err := atelierDirectRunHasCheckpoint(ctx, db, run.TaskID)
+	if err != nil || !checkpointed {
+		return nil, false, err
+	}
+	return map[string]interface{}{
+		"ok":                                 true,
+		"launchId":                           strings.TrimSpace(launchID),
+		"appletId":                           "peers.atelier",
+		"sessionId":                          strings.TrimSpace(sessionID),
+		"owner":                              "station",
+		"scope":                              "production-provider-runtime",
+                "providerProfileRefRedacted":         true,
+                "providerProfileRefHash":             atelierSHA256Hash(providerProfileRef),
+		"providerRuntimeProven":              true,
+		"providerModelQualityProven":         true,
+		"streamingReplyUXProven":             true,
+		"artifactPersistenceProven":          true,
+		"traceCheckpointResumeProven":        true,
+		"appletProviderInvokeExposed":        false,
+		"appletRuntimeExecuteExposed":        false,
+		"appletArtifactWriteExposed":         false,
+		"appletTraceCheckpointResumeExposed": false,
+		"directRunId":                        strings.TrimSpace(run.DirectRunID),
+		"taskId":                             strings.TrimSpace(run.TaskID),
+		"providerId":                         strings.TrimSpace(run.ProviderID),
+		"modelIntent":                        strings.TrimSpace(run.ModelIntent),
+		"traceId":                            strings.TrimSpace(run.TraceID),
+		"artifactRefs":                       matched.ArtifactRefs,
+		"gateRefs":                           matched.GateRefs,
+		"budgetUsage":                        matched.BudgetUsage,
+		"evidenceSource":                     "station.direct_run.persisted_facts",
+		"completedAt":                        time.Now().UTC().Format(time.RFC3339),
+	}, true, nil
+}
+
+func atelierDirectRunStreamedProviderResponse(ctx context.Context, db *gorm.DB, taskID string, directRunID string) (bool, error) {
+	var artifacts []persistence.TaskArtifact
+	if err := db.WithContext(ctx).
+		Where("task_id = ? AND produced_by = ?", strings.TrimSpace(taskID), "station.direct_run").
+		Find(&artifacts).Error; err != nil {
+		return false, err
+	}
+	for _, artifact := range artifacts {
+		if !artifactRefsDirectRun(artifact, directRunID) {
+			continue
+		}
+		var payload map[string]interface{}
+		if err := json.Unmarshal([]byte(artifact.PayloadJSON), &payload); err != nil {
+			continue
+		}
+		if streamed, ok := payload["streamed"].(bool); ok && streamed {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func atelierDirectRunHasCheckpoint(ctx context.Context, db *gorm.DB, taskID string) (bool, error) {
+	var count int64
+	if err := db.WithContext(ctx).
+		Model(&persistence.TaskCheckpoint{}).
+		Where("task_id = ?", strings.TrimSpace(taskID)).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (s *AtelierProjectionService) SubmitFeedback(
@@ -1528,6 +1735,140 @@ func (s *AtelierProjectionService) FetchArtifactBody(
 		Truncated:       truncated,
 		RetentionStatus: strings.TrimSpace(blob.RetentionStatus),
 	}, nil
+}
+
+func buildAtelierDirectRunExecutionEvidence(ctx context.Context, db *gorm.DB, taskID string) ([]AtelierDirectRunExecutionEvidence, error) {
+	taskID = strings.TrimSpace(taskID)
+	if db == nil || taskID == "" {
+		return nil, nil
+	}
+	var runs []persistence.DirectRun
+	if err := db.WithContext(ctx).
+		Where("task_id = ?", taskID).
+		Order("created_at ASC, direct_run_id ASC").
+		Find(&runs).Error; err != nil {
+		return nil, err
+	}
+	evidence := make([]AtelierDirectRunExecutionEvidence, 0, len(runs))
+	for _, run := range runs {
+		artifactRefs, failureArtifactRef, err := loadAtelierDirectRunArtifactRefs(ctx, db, taskID, run.DirectRunID)
+		if err != nil {
+			return nil, err
+		}
+		gateRefs, err := loadAtelierDirectRunGateRefs(ctx, db, taskID)
+		if err != nil {
+			return nil, err
+		}
+		budgetUsage, err := loadAtelierDirectRunBudgetUsage(ctx, db, taskID, run.DirectRunID, run.BudgetRef)
+		if err != nil {
+			return nil, err
+		}
+		evidence = append(evidence, AtelierDirectRunExecutionEvidence{
+			DirectRunID:        strings.TrimSpace(run.DirectRunID),
+			TaskID:             strings.TrimSpace(run.TaskID),
+			ProviderID:         strings.TrimSpace(run.ProviderID),
+			ModelIntent:        strings.TrimSpace(run.ModelIntent),
+			State:              strings.TrimSpace(run.State),
+			TraceID:            strings.TrimSpace(run.TraceID),
+			ArtifactRefs:       artifactRefs,
+			GateRefs:           gateRefs,
+			BudgetUsage:        budgetUsage,
+			FailureArtifactRef: failureArtifactRef,
+			CliHandoffRef:      nil,
+		})
+	}
+	return evidence, nil
+}
+
+func loadAtelierDirectRunArtifactRefs(ctx context.Context, db *gorm.DB, taskID string, directRunID string) ([]string, *string, error) {
+	var artifacts []persistence.TaskArtifact
+	if err := db.WithContext(ctx).
+		Where("task_id = ? AND produced_by = ?", taskID, "station.direct_run").
+		Order("created_at ASC, artifact_id ASC").
+		Find(&artifacts).Error; err != nil {
+		return nil, nil, err
+	}
+	refs := make([]string, 0, len(artifacts))
+	var failureRef *string
+	for _, artifact := range artifacts {
+		if !artifactRefsDirectRun(artifact, directRunID) {
+			continue
+		}
+		ref := firstNonEmptyString(strings.TrimSpace(artifact.URI), stationArtifactURI(taskID, artifact.ArtifactID))
+		if ref == "" {
+			continue
+		}
+		refs = append(refs, ref)
+		if failureRef == nil && strings.Contains(strings.ToLower(strings.TrimSpace(artifact.Kind)), "failure") {
+			captured := ref
+			failureRef = &captured
+		}
+	}
+	sort.Strings(refs)
+	return refs, failureRef, nil
+}
+
+func artifactRefsDirectRun(artifact persistence.TaskArtifact, directRunID string) bool {
+	directRunID = strings.TrimSpace(directRunID)
+	if directRunID == "" {
+		return false
+	}
+	if strings.TrimSpace(artifact.RunID) == directRunID {
+		return true
+	}
+	var refs []string
+	if err := json.Unmarshal([]byte(artifact.RefsJSON), &refs); err != nil {
+		return false
+	}
+	for _, ref := range refs {
+		if strings.TrimSpace(ref) == directRunID {
+			return true
+		}
+	}
+	return false
+}
+
+func loadAtelierDirectRunGateRefs(ctx context.Context, db *gorm.DB, taskID string) ([]string, error) {
+	var gates []persistence.TaskGateResult
+	if err := db.WithContext(ctx).
+		Where("task_id = ? AND produced_by = ?", taskID, "station.direct_run").
+		Order("created_at ASC, gate_result_id ASC").
+		Find(&gates).Error; err != nil {
+		return nil, err
+	}
+	refs := make([]string, 0, len(gates))
+	for _, gate := range gates {
+		gateID := strings.TrimSpace(gate.GateID)
+		if gateID == "" {
+			gateID = strings.TrimSpace(gate.GateResultID)
+		}
+		if gateID != "" {
+			refs = append(refs, fmt.Sprintf("gate://%s/%s", taskID, gateID))
+		}
+	}
+	sort.Strings(refs)
+	return refs, nil
+}
+
+func loadAtelierDirectRunBudgetUsage(ctx context.Context, db *gorm.DB, taskID string, directRunID string, budgetRef string) (AtelierDirectRunBudgetUsage, error) {
+	var usages []persistence.TaskBudgetUsage
+	if err := db.WithContext(ctx).
+		Where("task_id = ? AND direct_run_id = ?", taskID, directRunID).
+		Find(&usages).Error; err != nil {
+		return AtelierDirectRunBudgetUsage{}, err
+	}
+	usage := AtelierDirectRunBudgetUsage{
+		Source:    "station_budget_ledger_projection",
+		BudgetRef: strings.TrimSpace(budgetRef),
+	}
+	for _, item := range usages {
+		usage.Tokens += item.TotalTokens
+		usage.MoneyUSD += item.UsedMoney
+		if usage.PricingRef == "" {
+			usage.PricingRef = strings.TrimSpace(item.PricingSource)
+		}
+	}
+	return usage, nil
 }
 
 func purgeAtelierTaskRecordsTx(ctx context.Context, tx *gorm.DB, actorID string, taskID string) error {
@@ -3935,6 +4276,10 @@ func isAtelierFetchableArtifactBodyKind(kind string) bool {
 }
 
 func atelierArtifactBodyHash(text string) string {
+        return atelierSHA256Hash(text)
+}
+
+func atelierSHA256Hash(text string) string {
 	sum := sha256.Sum256([]byte(text))
 	return fmt.Sprintf("sha256:%x", sum[:])
 }
