@@ -1,0 +1,155 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+// ============================================================================
+// Station Signaling Envelope — Unified Reliable Channel (D-10)
+//
+// One protocol framework carrying typed payloads with distinct QoS.
+// Same-Station (local transport) and cross-Station (federation relay + JWT)
+// are two adapters of one contract. Per-domain private queues are eliminated.
+//
+// See docs/architecture/federated-im/decisions.md D-10.
+// ============================================================================
+
+// --- Envelope ---
+
+// StationEnvelope is the wire unit for all chat signaling between Stations
+// and between Station and device. Each envelope carries exactly one typed
+// payload and its routing + durability metadata.
+message StationEnvelope {
+  string envelope_id = 1;
+  string conversation_id = 2;
+
+  // Routing
+  string sender_actor_did = 3;
+  string sender_device_id = 4;
+  string sender_home_station_peer_id = 5;
+  string recipient_actor_did = 6;
+  string recipient_device_id = 7;
+  string recipient_home_station_peer_id = 8;
+
+  // Ordering & dedup
+  string idempotency_key = 9;
+  int64 membership_epoch = 10;
+
+  // Payload type determines QoS (durable/ordered vs droppable vs low-latency)
+  EnvelopePayloadType payload_type = 11;
+  bytes payload_bytes = 12;
+
+  // Signatures for federation authentication
+  bytes sender_signature = 13;
+  bytes home_station_signature = 14;
+
+  // Timestamps
+  google.protobuf.Timestamp issued_at = 15;
+  google.protobuf.Timestamp expires_at = 16;
+}
+
+// Typed QoS: each type has different persistence and delivery guarantees.
+enum EnvelopePayloadType {
+  ENVELOPE_PAYLOAD_TYPE_UNSPECIFIED = 0;
+
+  // Durable, ordered, persisted in outbox/inbox, cursor-tracked, retriable.
+  ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT = 1;
+
+  // Durable, device-targeted, retriable — MLS Welcome/Commit/KeyPackage (D-08).
+  ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY = 2;
+
+  // Durable, device-targeted, retriable — X3DH prekey bundle / initial message (D-09).
+  ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE = 3;
+
+  // Semi-durable: persisted briefly for offline, but not indefinitely.
+  ENVELOPE_PAYLOAD_TYPE_RECEIPT = 4;
+
+  // Ephemeral, droppable: not persisted, best-effort delivery.
+  ENVELOPE_PAYLOAD_TYPE_TYPING = 5;
+
+  // Low-latency, semi-durable: call signaling (SDP, ICE candidates).
+  ENVELOPE_PAYLOAD_TYPE_CALL_SIGNALING = 6;
+}
+
+// --- Device Inbox Item ---
+
+// Per-device durable inbox entry. Station persists these until ACK'd.
+message DeviceInboxItem {
+  string inbox_item_id = 1;
+  string recipient_actor_did = 2;
+  string recipient_device_id = 3;
+  StationEnvelope envelope = 4;
+  InboxItemStatus status = 5;
+  int32 delivery_attempts = 6;
+  google.protobuf.Timestamp first_queued_at = 7;
+  google.protobuf.Timestamp last_attempt_at = 8;
+  google.protobuf.Timestamp delivered_at = 9;
+}
+
+enum InboxItemStatus {
+  INBOX_ITEM_STATUS_UNSPECIFIED = 0;
+  INBOX_ITEM_STATUS_PENDING = 1;
+  INBOX_ITEM_STATUS_DELIVERED = 2;
+  INBOX_ITEM_STATUS_ACKED = 3;
+  INBOX_ITEM_STATUS_DEAD_LETTER = 4;
+}
+
+// --- Outbox Item ---
+
+// Per-Station durable outbox entry for cross-Station federation delivery.
+message OutboxItem {
+  string outbox_item_id = 1;
+  string target_station_peer_id = 2;
+  StationEnvelope envelope = 3;
+  OutboxItemStatus status = 4;
+  int32 retry_count = 5;
+  google.protobuf.Timestamp first_queued_at = 6;
+  google.protobuf.Timestamp next_retry_at = 7;
+  google.protobuf.Timestamp delivered_at = 8;
+  string last_error = 9;
+}
+
+enum OutboxItemStatus {
+  OUTBOX_ITEM_STATUS_UNSPECIFIED = 0;
+  OUTBOX_ITEM_STATUS_PENDING = 1;
+  OUTBOX_ITEM_STATUS_IN_FLIGHT = 2;
+  OUTBOX_ITEM_STATUS_DELIVERED = 3;
+  OUTBOX_ITEM_STATUS_DEAD_LETTER = 4;
+}
+
+// --- MLS Key Delivery (D-08) ---
+
+// Opaque MLS material (Welcome/Commit/KeyPackage) carried inside
+// a StationEnvelope with payload_type = MLS_KEY_DELIVERY.
+message MlsKeyDeliveryPayload {
+  string conversation_id = 1;
+  MlsDeliveryKind kind = 2;
+  int64 mls_epoch = 3;
+  bytes opaque_mls_bytes = 4;
+}
+
+enum MlsDeliveryKind {
+  MLS_DELIVERY_KIND_UNSPECIFIED = 0;
+  MLS_DELIVERY_KIND_WELCOME = 1;
+  MLS_DELIVERY_KIND_COMMIT = 2;
+  MLS_DELIVERY_KIND_KEY_PACKAGE = 3;
+}
+
+// --- Direct Key Exchange (D-09) ---
+
+// X3DH initial key exchange material carried inside a StationEnvelope
+// with payload_type = DIRECT_KEY_EXCHANGE.
+message DirectKeyExchangePayload {
+  string session_id = 1;
+  DirectKeyExchangeKind kind = 2;
+  bytes opaque_key_material = 3;
+}
+
+enum DirectKeyExchangeKind {
+  DIRECT_KEY_EXCHANGE_KIND_UNSPECIFIED = 0;
+  DIRECT_KEY_EXCHANGE_KIND_PREKEY_BUNDLE = 1;
+  DIRECT_KEY_EXCHANGE_KIND_INITIAL_MESSAGE = 2;
+  DIRECT_KEY_EXCHANGE_KIND_RATCHET_KEY_UPDATE = 3;
+}

@@ -2,20 +2,30 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-07-04 | **Updated**: 2026-07-04
+> **Created**: 2026-07-04 | **Updated**: 2026-07-11
 > **Owner**: Architecture Team
 > **Module**: `apps/station/app/subserver/group_chat/`, `apps/station/frame/touch/federation/`, `model/domain/chat/`, `model/domain/federation/`, `model/domain/realtime/`
+
+> **v1 unification update (2026-07-11)**: This design now reflects the approved
+> decisions D-08…D-12 (see `decisions.md`). Group E2EE is **MLS (RFC 9420)**, not
+> Sender Keys (D-06 superseded). Direct and group chat share one reliable
+> **Station signaling-envelope channel** with typed QoS (D-10). Direct chat uses
+> **X3DH + Double Ratchet** (D-09). Text always rides the envelope; **P2P is
+> audio/video and large files only** (D-12). Cutover is hard with legacy chat data
+> wiped (D-11). Where older passages below still said "SKDM / Sender Key", they
+> have been rewritten to the MLS key-delivery model carried over the same envelope.
 
 ---
 
 ## 1. Core Principles
 
-1. **Governance and chat traffic are separate.** Federation Ledger records Station/Federation governance. It must not carry chat messages, SKDM payloads, typing events, read receipts, or online presence.
-2. **Every federated group has one authority Station in the Foundation Profile.** The authority Station owns the group event log, membership epoch, message sequence, and lifecycle state.
+1. **Governance and chat traffic are separate.** Federation Ledger records Station/Federation governance. It must not carry chat messages, MLS key-delivery payloads, typing events, read receipts, or online presence.
+2. **Every federated group has one authority Station in the Foundation Profile.** The authority Station owns the group event log, membership epoch, message sequence, MLS Commit ordering, and lifecycle state.
 3. **Remote Stations submit signed proposals, not truth mutations.** A member's Home Station may propose messages or lifecycle commands, but the group authority validates and commits them.
-4. **E2EE key material stays on devices.** Stations may route encrypted SKDM envelopes, but must not store Sender Key chain keys or group plaintext.
-5. **Clients render projection and execute crypto.** Desktop/Mobile hydrate Station projections, install SKDM, decrypt locally, and display policy states.
+4. **E2EE key material stays on devices.** Stations route opaque MLS key-delivery envelopes (Welcome/Commit/KeyPackage) but must not store MLS group secrets, ratchet keys, or any plaintext.
+5. **Clients render projection and execute crypto.** Desktop/Mobile hydrate Station projections, process MLS Commits/Welcome, decrypt locally, and display policy states.
 6. **Family-scale reliability beats premature consensus.** Ordinary chat uses authority sequencing for latency and availability; quorum recovery is reserved for authority loss and future high-value groups.
+7. **One reliable envelope, typed QoS.** Direct and group chat share a single Station signaling-envelope channel (D-10) carrying committed events, key-delivery payloads, receipts, and low-latency signals; text never uses P2P (D-12).
 
 ## 2. System Architecture
 
@@ -57,8 +67,8 @@ The architecture intentionally has two logs:
 
 | Log | Owner | Frequency | Contains | Does Not Contain |
 | --- | --- | --- | --- | --- |
-| Federation Ledger | Federation sequencer | Low | Station governance and policy facts | Chat messages, SKDM, presence |
-| Group Event Log | Group authority Station | High | Group lifecycle, membership, message ciphertext references, mutations | Sender Key plaintext, message plaintext |
+| Federation Ledger | Federation sequencer | Low | Station governance and policy facts | Chat messages, MLS key-delivery, presence |
+| Group Event Log | Group authority Station | High | Group lifecycle, membership, MLS Commit ordering, message ciphertext references, mutations | MLS group secrets, message plaintext |
 
 ## 3. Scope / Non-Scope
 
@@ -68,7 +78,7 @@ In scope:
 - group authority model for ordinary groups;
 - signed remote message/lifecycle proposals;
 - group event log and follower replication;
-- membership epoch, authority epoch, and Sender Key rotation triggers;
+- membership epoch, authority epoch, and MLS epoch progression triggers;
 - family-scale pressure target: about 100-person groups and many private chats on a Home Station.
 
 Out of scope for the Foundation Profile:
@@ -88,9 +98,9 @@ Out of scope for the Foundation Profile:
 | Federated Actor identity | ActorRef / Home Station | Group authority and member Stations | Wire payload uses local actor ID as global identity |
 | Group lifecycle state | Group authority Station | Member Station projections | Remote Station mutates group state directly |
 | Group event ordering | Group authority Station | Follower Stations | Clients or followers allocate committed group seq |
-| Group membership epoch | Group authority Station | Clients and follower Stations | Sender Key rotation ignores epoch |
+| Group membership epoch | Group authority Station | Clients and follower Stations | MLS Commit ordering ignores or diverges from `membership_epoch` |
 | Group message plaintext | Sender/receiver devices | None | Any Station logs or persists plaintext body |
-| Sender Key material | Device local crypto store | None | Station stores chain key or sender signing private key |
+| MLS group state / key material | Device local crypto store | None | Station stores MLS group secrets or ratchet/signing private keys |
 | Local user notification | Home Station + client runtime | Client UI | Group authority pushes UI state directly to remote client |
 | Stress-test evidence | Quality/acceptance harness | PR/release review | Manual spot checks replace family-scale evidence |
 
@@ -173,7 +183,7 @@ Initial direct-add is allowed only if the group policy says so. Otherwise, membe
 
 ```text
 Bob@StationB sends to group owned by StationA
-  -> Bob client encrypts payload with Sender Key for current membership_epoch
+  -> Bob client encrypts payload as an MLS application message for the current MLS epoch
   -> StationB builds signed GroupMessageProposal
   -> StationB sends proposal to StationA
   -> StationA validates Federation membership, ActorRef, group member, role, mute, epoch
@@ -192,26 +202,26 @@ Owner/Admin issues add/remove/leave/update
   -> command reaches group authority
   -> authority validates role and Federation Station state
   -> authority increments membership_epoch
-  -> authority commits GroupMembershipChanged
+  -> authority commits GroupMembershipChanged and orders the corresponding MLS Commit
   -> member Stations refresh projection
-  -> clients rotate or request Sender Key distribution before post-change sends
+  -> clients process the MLS Commit / Welcome before post-change sends
 ```
 
-Removed or left members receive no new post-change SKDM.
+Removed or left members are removed from the MLS group by the Commit and receive no post-change group secrets. `membership_epoch` and the MLS epoch advance together (see D-08 consequence).
 
-### 6.4 Cross-Station SKDM
+### 6.4 Cross-Station MLS Key Delivery
 
-SKDM remains a client-to-client encrypted control payload. Foundation Profile routing:
+MLS key-delivery objects (Welcome for new members, Commit for existing members, KeyPackage publication) are opaque client-to-client encrypted payloads carried over the single Station signaling envelope (D-10). Foundation Profile routing:
 
 ```text
-Sender device
-  -> encrypt SKDM for recipient device key bundle
-  -> Home Station routes opaque SKDM envelope
-  -> recipient Home Station stores/delivers control event
-  -> recipient client installs Sender Key locally
+Sender/committer device
+  -> produce MLS Welcome/Commit for the target member devices
+  -> Home Station routes opaque key-delivery envelope
+  -> recipient Home Station stores/delivers the control event
+  -> recipient client applies Welcome/Commit into local MLS group state
 ```
 
-SKDM envelopes must bind:
+Key-delivery envelopes must bind:
 
 - `federation_id`
 - `group_ulid`
@@ -221,6 +231,8 @@ SKDM envelopes must bind:
 - `sender_device_id`
 - `recipient_actor_ref`
 - `recipient_device_id`
+
+The Station sees only opaque bytes plus this routing metadata; it never sees MLS group secrets.
 
 ### 6.5 Dissolve And History Retention
 
@@ -261,21 +273,21 @@ Any future recovery must prove:
 - Federation policy authority for handover;
 - new authority signature;
 - `authority_epoch` bump;
-- Sender Key rotation before new writes.
+- MLS epoch progression before new writes.
 
 ## 8. Security And Privacy Constraints
 
 Mandatory:
 
 - no group plaintext in Station logs, persistence, or diagnostics;
-- no Sender Key chain keys in Station persistence;
+- no MLS group secrets or ratchet/signing private keys in Station persistence;
 - every remote proposal carries actor and Station signatures;
 - receiver verifies source Station is active in the Federation scope;
 - direct private-group join is forbidden without valid invitation;
 - stale membership epoch send is rejected;
 - removed/suspended Station cannot publish or receive new group events;
 - transport retries must be idempotent;
-- metrics must not expose message plaintext, private keys, or raw SKDM.
+- metrics must not expose message plaintext, private keys, or raw MLS key-delivery bytes.
 
 ## 9. Component Relationships
 
@@ -287,7 +299,7 @@ Mandatory:
 | Group Follower Service | Local projection of remote group truth | committed group events | local query/SSE projection |
 | Federation Delivery Outbox | Reliable cross-Station delivery | proposals/events | retries, cursors, status |
 | Realtime Event Stream | Device-window notification | local projection events | SSE + resync |
-| Client Crypto Runtime | E2EE encrypt/decrypt/SKDM | key bundles, ciphertext, epoch | local plaintext projection |
+| Client Crypto Runtime | E2EE encrypt/decrypt, MLS group state, direct-chat ratchet | key bundles, ciphertext, epoch, MLS Commit/Welcome | local plaintext projection |
 | Stress Harness | Family-scale evidence | configured Stations/actors | latency/error/security reports |
 
 ## 10. Three-Round Architecture Self Review
@@ -330,5 +342,5 @@ Resolution:
 - Contracts: conceptual contracts are defined in this document and expanded in `data-model.md`.
 - Security: authorization, signatures, epoch checks, plaintext/key non-leakage, and diagnostics constraints are covered.
 - Decisions: ADR-lite alternatives are recorded in `decisions.md`.
-- Downstream constraint: platform implementations must not redefine authority, epoch, or Sender Key ownership.
+- Downstream constraint: platform implementations must not redefine authority, epoch, or MLS group-state ownership.
 
