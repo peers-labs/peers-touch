@@ -1,0 +1,7 @@
+PASS Desktop packaged applet assets gate
+PASS frontendDist: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/dist
+PASS packaged index: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/dist/applets-dist/index.json
+PASS packaged applets: agent-pilot, generic-complex-applet, hello-lynx, remote-cli, web-search
+PASS Desktop Lynx applets: generic-complex-applet, hello-lynx
+PASS Standalone applets retained but excluded from Desktop Lynx evidence: agent-pilot, remote-cli, web-search
+PASS integrity files checked: 363

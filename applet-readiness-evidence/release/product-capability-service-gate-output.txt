@@ -1,0 +1,12 @@
+PASS Product capability service executors
+Scope: Gateway-governed network/agent skill and task executors plus release-mode placeholder fallback rejection.
+Product executor mode: PEERS_APPLET_REQUIRE_PRODUCT_EXECUTORS or per-call productExecutorsOnly rejects skill/task fallback paths.
+
+Rust executor checks:
+- PASS applets::tests::executes_network_skill_through_gateway_service_policy
+- PASS applets::tests::executes_network_task_through_gateway_service_policy
+- PASS applets::tests::executes_agent_task_through_station_client
+- PASS applets::tests::rejects_placeholder_skill_when_product_executors_required
+- PASS applets::tests::rejects_placeholder_task_when_product_executors_required
+
+Live E2E evidence: PASS - Live E2E controlled upstream includes network/agent task and skill executor evidence.

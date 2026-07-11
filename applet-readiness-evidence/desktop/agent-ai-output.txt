@@ -1,0 +1,1 @@
+PASS agent.startSession/send/stream and ai.generate/chat permissions are manifest-gated and contract-shaped; live E2E uses a local controlled upstream fixture.
