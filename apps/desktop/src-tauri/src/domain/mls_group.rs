@@ -1,8 +1,11 @@
 use openmls::prelude::*;
+use openmls::key_packages::KeyPackageIn;
 use openmls_basic_credential::SignatureKeyPair;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::sync::Mutex;
+use tls_codec::{Serialize as TlsSerializeTrait, Deserialize as TlsDeserializeTrait};
 
 use super::mls::{create_credential, create_key_package, PeersMLSProvider, PEERS_CIPHERSUITE};
 
@@ -80,15 +83,17 @@ impl MlsGroupManager {
             let kps: Result<Vec<KeyPackage>, _> = member_key_packages
                 .iter()
                 .map(|b| {
-                    KeyPackage::tls_deserialize_exact(b)
-                        .map_err(|e| format!("deserialize kp: {e:?}"))
+                    let kp_in = KeyPackageIn::tls_deserialize(&mut Cursor::new(b))
+                        .map_err(|e| format!("deserialize kp: {e:?}"))?;
+                    kp_in
+                        .validate(provider.crypto(), ProtocolVersion::Mls10)
+                        .map_err(|e| format!("validate kp: {e:?}"))
                 })
                 .collect();
             let kps = kps?;
-            let kp_refs: Vec<&KeyPackage> = kps.iter().collect();
 
             let (mls_out, welcome, _group_info) = group
-                .add_members(&provider, &signer, &kp_refs)
+                .add_members(&provider, &signer, kps.as_slice())
                 .map_err(|e| format!("add members: {e:?}"))?;
 
             group
@@ -129,7 +134,7 @@ impl MlsGroupManager {
         drop(id);
 
         let provider = PeersMLSProvider::new();
-        let welcome = MlsMessageIn::tls_deserialize_exact(welcome_bytes)
+        let welcome = MlsMessageIn::tls_deserialize(&mut Cursor::new(welcome_bytes))
             .map_err(|e| format!("deserialize welcome: {e:?}"))?;
 
         let welcome = welcome
@@ -188,12 +193,16 @@ impl MlsGroupManager {
             .get_mut(conversation_id)
             .ok_or("no MLS session for this conversation")?;
 
-        let mls_msg = MlsMessageIn::tls_deserialize_exact(ciphertext)
+        let mls_msg = MlsMessageIn::tls_deserialize(&mut Cursor::new(ciphertext))
             .map_err(|e| format!("deserialize message: {e:?}"))?;
+
+        let protocol_msg = mls_msg
+            .into_protocol_message()
+            .ok_or("not a protocol message")?;
 
         let protocol_msg = session
             .group
-            .process_message(&session.provider, mls_msg)
+            .process_message(&session.provider, protocol_msg)
             .map_err(|e| format!("process message: {e:?}"))?;
 
         match protocol_msg.into_content() {
@@ -220,12 +229,16 @@ impl MlsGroupManager {
             .get_mut(conversation_id)
             .ok_or("no MLS session for this conversation")?;
 
-        let mls_msg = MlsMessageIn::tls_deserialize_exact(commit_bytes)
+        let mls_msg = MlsMessageIn::tls_deserialize(&mut Cursor::new(commit_bytes))
             .map_err(|e| format!("deserialize commit: {e:?}"))?;
+
+        let protocol_msg = mls_msg
+            .into_protocol_message()
+            .ok_or("commit is not a protocol message")?;
 
         let processed = session
             .group
-            .process_message(&session.provider, mls_msg)
+            .process_message(&session.provider, protocol_msg)
             .map_err(|e| format!("process commit: {e:?}"))?;
 
         match processed.into_content() {
@@ -250,8 +263,11 @@ impl MlsGroupManager {
             .get_mut(conversation_id)
             .ok_or("no MLS session for this conversation")?;
 
-        let kp = KeyPackage::tls_deserialize_exact(member_key_package_bytes)
+        let kp_in = KeyPackageIn::tls_deserialize(&mut Cursor::new(member_key_package_bytes))
             .map_err(|e| format!("deserialize kp: {e:?}"))?;
+        let kp = kp_in
+            .validate(session.provider.crypto(), ProtocolVersion::Mls10)
+            .map_err(|e| format!("validate kp: {e:?}"))?;
 
         let (mls_out, welcome, _group_info) = session
             .group
