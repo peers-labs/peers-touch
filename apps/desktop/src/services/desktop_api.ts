@@ -4889,8 +4889,6 @@ export const api = {
   // The Rust layer pins `content` to "" regardless of what the JS
   // layer passes; it is kept in the signature for source compat
   // with old callers but a non-empty value is silently dropped.
-  // See `modules/identity/groupSenderKeys.ts` for the only correct
-  // entry point.
   groupChatSendMessage: (
     groupUlid: string,
     content: string,
