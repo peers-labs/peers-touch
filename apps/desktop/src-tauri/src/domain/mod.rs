@@ -4,6 +4,8 @@ pub mod auth;
 pub mod chat;
 pub mod crypto;
 pub mod identity;
+pub mod mls;
+pub mod mls_group;
 pub mod pin_lock;
 pub mod presence;
 pub mod profile;
