@@ -1,10 +1,21 @@
 # Foundation Federated IM — Execution Plan
 
-> **Status**: draft
+> **Status**: superseded-by v1 unification (D-08…D-12, 2026-07-11)
 > **Version**: v0.1
-> **Created**: 2026-07-04 | **Updated**: 2026-07-05
+> **Created**: 2026-07-04 | **Updated**: 2026-07-11
 > **Owner**: Architecture Team
 > **Module**: `docs/architecture/federated-im/`, `model/domain/`, `apps/station/app/subserver/group_chat/`, `apps/desktop/src/store/socialChat.ts`
+
+> **SUPERSEDED (2026-07-11)**: This plan implemented the Sender Keys / SKDM group
+> E2EE model (D-06). The v1 unification review approved D-08 (group E2EE → MLS,
+> D-06 superseded), D-10 (single Station signaling-envelope channel), D-11 (hard
+> cutover, legacy chat data wiped), and D-12 (text-on-envelope, P2P for media).
+> Everything below describing Sender Keys, SKDM, friend-chat control type 50, and
+> the transitional dual-carrier is **historical evidence of the pre-unification
+> path**, retained for traceability. Do NOT treat it as current design or start
+> new work from it. The replacement execution plan will be produced under
+> `pt-architecture-execution-methodology` after G0 MLS verification. Current
+> decisions live in [`../decisions.md`](../decisions.md).
 
 ---
 

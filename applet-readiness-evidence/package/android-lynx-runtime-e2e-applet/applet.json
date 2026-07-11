@@ -1,0 +1,35 @@
+{
+  "id": "android-lynx-runtime-e2e-applet",
+  "name": "Android Lynx Runtime E2E Applet",
+  "version": "1.0.0",
+  "description": "Minimal SDK applet used by emulator runtime E2E to prove Android Lynx bridge execution.",
+  "author": "Peers Touch",
+  "targets": [
+    "android"
+  ],
+  "entries": {
+    "lynx": "main.lynx.bundle"
+  },
+  "load": {
+    "android": {
+      "type": "lynx-native",
+      "entry": "main.lynx.bundle"
+    }
+  },
+  "bridge": {
+    "protocol": "peers-touch.applet.bridge",
+    "version": "1.0.0"
+  },
+  "permissions": [
+    "storage.set",
+    "storage.get"
+  ],
+  "services": [],
+  "skills": [],
+  "integrity": {
+    "algorithm": "sha256",
+    "files": {
+      "main.lynx.bundle": "sha256:45be06ece6527fd3ae73bea1cee3cdc44a2296a4bd1ef4dd9a5ac3876b45eecd"
+    }
+  }
+}

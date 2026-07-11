@@ -1,0 +1,1 @@
+PASS executable Gateway tests deny missing manifest permissions, raw URL network requests, disallowed service paths, destroyed sessions, oversized payloads, exhausted quotas, and timed-out capabilities.

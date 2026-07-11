@@ -1,0 +1,32 @@
+PASS Applet platform check gate
+Scope: SDK check, Desktop TypeScript boundary/type checks, Desktop Rust Gateway cargo check, and Mobile web/native check.
+
+Step: Applet SDK typecheck
+Command: pnpm --filter @peers-touch/applet-sdk run check
+Started: 2026-06-10T15:43:02.232Z
+Finished: 2026-06-10T15:43:02.712Z
+Status: PASS
+
+
+
+Step: Desktop app typecheck and boundary checks
+Command: pnpm --filter @peers-touch/app-desktop run check
+Started: 2026-06-10T15:43:02.712Z
+Finished: 2026-06-10T15:43:09.850Z
+Status: PASS
+
+
+
+Step: Desktop Rust Gateway cargo check
+Command: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+Started: 2026-06-10T15:43:09.850Z
+Finished: 2026-06-10T15:43:24.418Z
+Status: PASS
+
+
+
+Step: Mobile web/native check
+Command: pnpm mobile:check
+Started: 2026-06-10T15:43:24.418Z
+Finished: 2026-06-10T15:43:40.682Z
+Status: PASS
