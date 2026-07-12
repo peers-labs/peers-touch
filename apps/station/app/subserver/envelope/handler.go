@@ -4,6 +4,7 @@ import (
 	"context"
 
 	auth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
@@ -103,11 +104,19 @@ func (s *subServer) handleFederationDeliver(ctx context.Context, req *federation
 		return nil, server.BadRequest("envelope is required")
 	}
 
+	verified := httpadapter.GetVerifiedClaims(ctx)
+	if verified == nil {
+		return nil, server.Unauthorized("federation token required")
+	}
+
 	claims := &FederationClaims{
-		AudienceStationPeerID: s.localStationID,
-		SenderActorDID:        req.Envelope.SenderActorDid,
-		ConversationID:        req.Envelope.ConversationId,
-		IdempotencyKey:        req.Envelope.IdempotencyKey,
+		IssuerStationPeerID:   verified.Issuer,
+		AudienceStationPeerID: verified.Audience,
+		SenderActorDID:        verified.Subject,
+		ConversationID:        verified.Custom["conversation_id"],
+		IdempotencyKey:        verified.Custom["idempotency_key"],
+		IssuedAt:              verified.IssuedAt,
+		ExpiresAt:             verified.ExpiresAt,
 	}
 
 	if err := s.service.Deliver(ctx, req.Envelope, claims); err != nil {
