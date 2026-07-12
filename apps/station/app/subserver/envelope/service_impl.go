@@ -11,18 +11,18 @@ import (
 
 // DefaultService implements Service with durable outbox/inbox semantics.
 type DefaultService struct {
-	repo             Repository
-	bus              DeviceBus
-	localStationID   string
+	repo                Repository
+	bus                 DeviceBus
+	localStationIDFunc  func() string
 	maxDeliveryAttempts int
 }
 
 // NewService creates the envelope application service.
-func NewService(repo Repository, bus DeviceBus, localStationID string) *DefaultService {
+func NewService(repo Repository, bus DeviceBus, localStationIDFunc func() string) *DefaultService {
 	return &DefaultService{
-		repo:             repo,
-		bus:              bus,
-		localStationID:   localStationID,
+		repo:                repo,
+		bus:                 bus,
+		localStationIDFunc:  localStationIDFunc,
 		maxDeliveryAttempts: 20,
 	}
 }
@@ -75,7 +75,7 @@ func (s *DefaultService) Resume(ctx context.Context, recipientDID, deviceID stri
 }
 
 func (s *DefaultService) isLocalRecipient(env *chat.StationEnvelope) bool {
-	return env.RecipientHomeStationPeerId == "" || env.RecipientHomeStationPeerId == s.localStationID
+	return env.RecipientHomeStationPeerId == "" || env.RecipientHomeStationPeerId == s.localStationIDFunc()
 }
 
 func (s *DefaultService) deliverLocal(ctx context.Context, env *chat.StationEnvelope) (string, error) {
@@ -125,8 +125,9 @@ func (s *DefaultService) enqueueForFederation(ctx context.Context, env *chat.Sta
 }
 
 func (s *DefaultService) validateFederationClaims(env *chat.StationEnvelope, claims *FederationClaims) error {
-	if claims.AudienceStationPeerID != s.localStationID {
-		return fmt.Errorf("audience mismatch: want %s got %s", s.localStationID, claims.AudienceStationPeerID)
+	localID := s.localStationIDFunc()
+	if claims.AudienceStationPeerID != localID {
+		return fmt.Errorf("audience mismatch: want %s got %s", localID, claims.AudienceStationPeerID)
 	}
 	if claims.SenderActorDID != env.SenderActorDid {
 		return fmt.Errorf("sender DID mismatch")
