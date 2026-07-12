@@ -215,6 +215,7 @@ Prototype Portal 支持 worktree / branch 切换：
 2. **原型不绑定最终运行时**：即使终态是 applet(Lynx) / Desktop 页面，原型也只用 web 栈（React+Vite+LobeUI）。不要为了"贴近运行时"把原型做成 ReactLynx 工程
 3. **禁止用原型当验收证据**：落地须由对应工程按其运行时重新实现
 4. **原型经确认后才落地**：总账中状态为 `confirmed` 才可以作为落地参照
+5. **Desktop 禁止新增独立模块卡片**：Portal desktop 区只允许**一张**可见原型入口（`packages/prototypes/desktop/shell/`）。所有 desktop 功能（Chat、Agent、Atelier、Orchestration、Call、Notes、Settings、Applets）必须在该唯一 Shell 内部通过路由接入，禁止在 `packages/prototypes/desktop/features/` 下新建独立可见卡片。已有的 feature 原型源码保留但必须设 `hidden: true`，其内容组件由 Shell 引用复用。违反此规则会导致 Portal 平铺多张卡 → 用户体验分裂（split-brain），历史上已多次发生。
 
 ---
 
