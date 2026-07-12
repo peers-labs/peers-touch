@@ -12,6 +12,7 @@ const manifest = {
   docs: 'docs/architecture/applet-runtime/prototype/README.md',
   description: 'Minimal Desktop Applet Box launcher with package import, running state, notifications, exit, and uninstall.',
   order: 24,
+  hidden: true,
   previewExport: 'AppletLifecyclePrototype',
   entry: () => import('./src/AppletLifecyclePrototype'),
 } satisfies PrototypeManifest;
