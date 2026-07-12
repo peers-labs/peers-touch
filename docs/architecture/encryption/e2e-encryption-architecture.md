@@ -95,9 +95,16 @@ This document does not define:
 | Chat Type | Protocol | Rationale |
 |-----------|----------|-----------|
 | Friend (1-on-1) | **X3DH + Double Ratchet** (Signal Protocol) | Proven, audited, perfect for 1-on-1. Forward secrecy + post-compromise security. |
-| Group | **Sender Keys** (Signal Groups v2) | Simpler than MLS for moderate group sizes. Each member maintains a sender key distributed to group members via pairwise channels. |
+| Group | **MLS (RFC 9420)** | Superseded Sender Keys on 2026-07-11 (federated-im D-08). Logarithmic re-key on membership change, unified device/member/epoch state, post-compromise security, no O(n²) key redistribution. |
 
-**Why not MLS (RFC 9420)?** MLS is architecturally superior for large groups but adds significant complexity (tree-based key agreement, commit/proposal protocol). Sender Keys is sufficient for groups up to ~1000 members and can be upgraded to MLS later without changing the wire format.
+> **Update (2026-07-11, federated-im D-08)**: Group E2EE moved from Sender Keys to
+> MLS (RFC 9420). The prior "why not MLS" reasoning below is retained for history;
+> the deciding factor changed once a single Station signaling-envelope channel
+> (D-10) existed to carry MLS Welcome/Commit, removing the Sender Keys cost/benefit
+> that originally justified deferring MLS. See
+> [`../federated-im/decisions.md`](../federated-im/decisions.md) (D-08).
+
+**Historical note — why Sender Keys was originally chosen over MLS (RFC 9420):** MLS is architecturally superior for large groups but adds significant complexity (tree-based key agreement, commit/proposal protocol). Sender Keys was judged sufficient for groups up to ~1000 members. This reasoning is superseded by D-08.
 
 ### 4.2 Primitive Selection
 
