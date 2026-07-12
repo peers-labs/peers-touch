@@ -4,12 +4,32 @@ import {
   PanelRightClose,
   PanelRightOpen,
 } from 'lucide-react';
+import type { CSSProperties } from 'react';
 
 const D = {
   textSecondary: '#595959',
   fillHover: '#f3f1fb',
   primary: '#6b5bd6',
 } as const;
+
+const DOCK: Record<'left' | 'right', CSSProperties> = {
+  left: {
+    position: 'absolute',
+    left: 10,
+    bottom: 14,
+    width: 28,
+    height: 28,
+    zIndex: 2,
+  },
+  right: {
+    position: 'absolute',
+    right: 10,
+    top: 14,
+    width: 28,
+    height: 28,
+    zIndex: 2,
+  },
+};
 
 export function PanelToggleButton({
   side,
@@ -55,5 +75,23 @@ export function PanelToggleButton({
     >
       <Icon size={15} strokeWidth={1.85} />
     </button>
+  );
+}
+
+export function PanelToggleDock({
+  side,
+  open,
+  title,
+  onClick,
+}: {
+  side: 'left' | 'right';
+  open: boolean;
+  title?: string;
+  onClick: () => void;
+}) {
+  return (
+    <div style={DOCK[side]} data-panel-toggle-dock={side}>
+      <PanelToggleButton side={side} open={open} title={title} onClick={onClick} />
+    </div>
   );
 }

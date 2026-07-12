@@ -6,7 +6,7 @@ const manifest = {
   site: 'desktop',
   host: 'desktop',
   kind: 'applet',
-  status: 'drafting',
+  status: 'superseded',
   module: 'atelier',
   path: 'packages/prototypes/desktop/applets/atelier/',
   docs: 'docs/architecture/atelier/prototype/README.md',
