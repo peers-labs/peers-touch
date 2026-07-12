@@ -11,8 +11,9 @@ const manifest = {
   path: 'packages/prototypes/desktop/features/agent-lobehub-parity/',
   docs: 'docs/architecture/agent/prototype-lobehub-parity/README.md',
   description:
-    'Source-backed LobeHub parity prototype ready for Owner review; product migration remains blocked until Owner confirmation.',
+    'Integrated Agent prototype: production-aligned Profile state and interactions, with existing Agent surfaces converging here for Owner review.',
   order: 45,
+  hidden: true,
   previewExport: 'AgentLobeHubParityPrototype',
   entry: () => import('./src/AgentLobeHubParityPrototype'),
 } satisfies PrototypeManifest;

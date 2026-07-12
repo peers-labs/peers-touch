@@ -36,9 +36,11 @@ import {
   Trash2,
   UploadCloud,
   Wand2,
+  Workflow,
 } from 'lucide-react';
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import './styles.css';
+import { PanelToggleButton } from '../../../shared/PanelToggleButton';
 
 type Surface =
   | 'home'
@@ -85,7 +87,7 @@ const sourceRefs = {
   chat:
     'agent/features/Conversation/ConversationArea.tsx + Conversation/ChatList/{VirtualizedList,AutoScroll,BackBottom} + Conversation/Messages/* + ChatMiniMap/* -> message virtualization, role-specific messages, context menu, minimap, runtime recovery and WorkingSidebar',
   profile:
-    'agent/profile/index.tsx -> Header + ProfileEditor + AgentSettings modal/content',
+    'apps/desktop/src/pages/AgentProfilePage.tsx + components/agent/AgentIconTile.tsx -> persistent roster + Agent-owned profile state + Configure/Activity + Builder',
   tasks:
     'AgentTasksPage + TaskWorkspaceLayout + TaskList + TaskDetailPage + AgentTaskManager -> nav/header/list/board/detail/right task agent',
   pages: 'page/_layout/index.tsx + page/[id]/index.tsx -> list/editor/version/export/delete reconciliation',
@@ -105,6 +107,73 @@ const modelOptions = [
   { provider: 'OpenAI', model: 'gpt-4.1', label: 'OpenAI / gpt-4.1' },
   { provider: 'DeepSeek', model: 'deepseek-chat', label: 'DeepSeek / deepseek-chat' },
   { provider: 'TRAE CLI', model: 'trae-agent-v1', label: 'TRAE CLI / trae-agent-v1' },
+];
+
+interface ProfileAgent {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  provider: string;
+  model: string;
+  effort: 'low' | 'medium' | 'high';
+  workspace: string;
+  pinned?: boolean;
+  icon: 'bot' | 'brain' | 'search' | 'file';
+  color: string;
+}
+
+const initialProfileAgents: ProfileAgent[] = [
+  {
+    id: 'architect',
+    name: 'Architect',
+    title: 'System Architect',
+    description: 'Owns architecture boundaries, contracts, tradeoffs, and implementation guidance.',
+    provider: 'Anthropic',
+    model: 'Claude Sonnet 4',
+    effort: 'high',
+    workspace: '/Workspace/peers-touch',
+    pinned: true,
+    icon: 'brain',
+    color: '#6b5bd6',
+  },
+  {
+    id: 'executor',
+    name: 'Executor',
+    title: 'Implementation Agent',
+    description: 'Turns approved plans into focused code changes and verification evidence.',
+    provider: 'OpenAI',
+    model: 'GPT-5.5',
+    effort: 'medium',
+    workspace: '/Workspace/peers-touch',
+    pinned: true,
+    icon: 'bot',
+    color: '#247b65',
+  },
+  {
+    id: 'research',
+    name: 'Research',
+    title: 'Research Analyst',
+    description: 'Collects source-backed evidence and turns it into concise decision material.',
+    provider: 'Google',
+    model: 'Gemini 2.5 Pro',
+    effort: 'medium',
+    workspace: '/Workspace/research',
+    icon: 'search',
+    color: '#3168a8',
+  },
+  {
+    id: 'historian',
+    name: 'Historian',
+    title: 'Project Historian',
+    description: 'Maintains durable project context, decisions, and completion evidence.',
+    provider: 'Station',
+    model: 'Station Agent',
+    effort: 'low',
+    workspace: '/Workspace/history',
+    icon: 'file',
+    color: '#9a6235',
+  },
 ];
 
 const topics = [
@@ -786,7 +855,7 @@ function ConversationHeader({ compact = false, setSurface }: { compact?: boolean
         {!compact && <button className="pt-quiet-action" type="button">History</button>}
         {!compact && <IconButton label="Share"><Share2 size={15} /></IconButton>}
         {!compact && <IconButton label="Copy link"><Copy size={15} /></IconButton>}
-        {!compact && <IconButton label="Agent profile" onClick={() => setSurface('profile')}><Settings size={15} /></IconButton>}
+        <IconButton label="Agent profile" onClick={() => setSurface('profile')}><Settings size={15} /></IconButton>
         <IconButton label="More"><MoreHorizontal size={15} /></IconButton>
         {compact && <IconButton label="Toggle Space and Params"><PanelRightClose size={15} /></IconButton>}
       </div>
@@ -1142,492 +1211,253 @@ function ChatSurface({
   );
 }
 
-function ProfileSurface() {
-  const profileState = reviewParam('state');
-  const isDeepProfileReview = profileState === 'deep-profile';
-  const isCompactProfile = !isDeepProfileReview && profileState !== 'legacy-profile';
-  const [settingsOpen, setSettingsOpen] = useState(profileState === 'profile-settings');
-  const [settingsTab, setSettingsTab] = useState<'opening' | 'iteration' | 'connectors'>('opening');
-  const [builderOpen, setBuilderOpen] = useState(isCompactProfile || isDeepProfileReview || profileState === 'builder-open');
-  const [avatarPickerOpen, setAvatarPickerOpen] = useState(isDeepProfileReview || profileState === 'avatar-picker');
-  const [modelMenuOpen, setModelMenuOpen] = useState(isDeepProfileReview || profileState === 'model-menu');
-  const [toolMenuOpen, setToolMenuOpen] = useState(isDeepProfileReview || profileState === 'tool-menu');
-  const [slashMenuOpen, setSlashMenuOpen] = useState(isDeepProfileReview || profileState === 'slash-menu');
-  const openSettingsButtonRef = useRef<HTMLButtonElement>(null);
-  const closeSettingsButtonRef = useRef<HTMLButtonElement>(null);
-  const closeSettings = () => {
-    setSettingsOpen(false);
-    openSettingsButtonRef.current?.focus();
-  };
+type ProfileTab = 'soul' | 'capabilities' | 'workspace' | 'tasks' | 'memories' | 'diagnostics';
+
+function ProfileAgentTile({ agent, size = 32 }: { agent: ProfileAgent; size?: number }) {
+  const Icon = agent.icon === 'brain' ? BrainCircuit : agent.icon === 'search' ? Search : agent.icon === 'file' ? FileText : Bot;
+  return (
+    <span className="pt-agent-profile-tile" style={{ width: size, height: size, borderRadius: Math.max(8, Math.round(size * 0.3)), background: agent.color }}>
+      <Icon size={Math.round(size * 0.48)} />
+    </span>
+  );
+}
+
+function ProfileSurface({
+  agents,
+  selectedAgentId,
+  onCreateAgent,
+  onOpenOrchestration,
+  onSelectAgent,
+  onUpdateAgent,
+}: {
+  agents: ProfileAgent[];
+  selectedAgentId: string;
+  onCreateAgent: () => void;
+  onOpenOrchestration?: () => void;
+  onSelectAgent: (id: string) => void;
+  onUpdateAgent: (id: string, patch: Partial<ProfileAgent>) => void;
+}) {
+  const agent = agents.find((item) => item.id === selectedAgentId) ?? agents[0];
+  const profileRef = useRef<HTMLElement>(null);
+  const [narrowProfile, setNarrowProfile] = useState(false);
+  const [rosterCollapsed, setRosterCollapsed] = useState(false);
+  const [builderOpen, setBuilderOpen] = useState(true);
+  const [searchValue, setSearchValue] = useState('');
+  const [mode, setMode] = useState<'configure' | 'activity'>('configure');
+  const [tab, setTab] = useState<ProfileTab>('soul');
+  const [builderText, setBuilderText] = useState('');
+  const [builderReply, setBuilderReply] = useState('');
+  const [soulByAgent, setSoulByAgent] = useState<Record<string, string>>({});
+  const [agentsByAgent, setAgentsByAgent] = useState<Record<string, string>>({});
+  const visibleAgents = agents.filter((item) => `${item.name} ${item.description}`.toLowerCase().includes(searchValue.toLowerCase()));
+  const tabs: { key: ProfileTab; label: string }[] = mode === 'configure'
+    ? [{ key: 'soul', label: 'SOUL / AGENTS' }, { key: 'capabilities', label: 'Capabilities' }, { key: 'workspace', label: 'Workspace' }]
+    : [{ key: 'tasks', label: 'Tasks' }, { key: 'memories', label: 'Memories' }, { key: 'diagnostics', label: 'Diagnostics' }];
 
   useEffect(() => {
-    if (!settingsOpen) return;
-    closeSettingsButtonRef.current?.focus();
-  }, [settingsOpen]);
+    const element = profileRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const narrow = entry.contentRect.width < 920;
+      setNarrowProfile(narrow);
+      if (narrow) {
+        setRosterCollapsed(true);
+        setBuilderOpen(false);
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
-  if (isCompactProfile) {
-    return (
-      <section className="pt-profile-shell is-compact-profile" aria-label="LobeHub Agent Profile parity baseline">
-        <div className={`pt-profile-compact-layout ${builderOpen ? 'has-builder' : ''}`} aria-label="Agent Profile compact editor">
-          <aside className="pt-profile-agent-rail" aria-label="Agent profile navigation">
-            <button className="pt-agent-switcher" type="button">
-              <span className="pt-agent-avatar">🤖</span>
-              <span><strong>Custom Agent</strong><small>Personal assistant</small></span>
-              <ChevronDown size={14} />
-            </button>
-            <div className="pt-topic-action-stack">
-              {[
-                ['Start New Topic', Plus],
-                ['Search', Search],
-                ['Agent Profile', Bot],
-                ['Topics', MessageSquare],
-                ['Channels', Bubbles],
-              ].map(([label, Icon]) => (
-                <button key={label as string} className={label === 'Agent Profile' ? 'is-active' : ''} type="button">
-                  <Icon size={15} />
-                  <span>{label as string}</span>
-                </button>
-              ))}
-            </div>
-            <div className="pt-profile-rail-section">
-              <span>Tasks</span>
-              <button type="button">Agent workspace plan</button>
-            </div>
-            <div className="pt-profile-rail-section">
-              <span>Topics</span>
-              <button type="button"><Plus size={14} /> Start New Topic</button>
-            </div>
-            <div className="pt-profile-upgrade-card" aria-label="Upgrade your plan">
-              <strong>Upgrade your plan</strong>
-              <span>Unlock more capacity and advanced features.</span>
-            </div>
-          </aside>
-
-          <main className="pt-profile-compact-main">
-            <header className="pt-profile-compact-header">
-              <div className="pt-profile-crumb-row">
-                <span>Custom Agent</span>
-                <ChevronDown size={13} />
-                <strong>Agent Profile</strong>
-                <span className="pt-profile-autosave"><CircleDashed size={13} /> Latest version loaded</span>
-              </div>
-              <div className="pt-header-actions">
-                <IconButton label="More"><MoreHorizontal size={15} /></IconButton>
-                <IconButton label="Agent builder" onClick={() => setBuilderOpen((open) => !open)}><Bot size={15} /></IconButton>
-              </div>
-            </header>
-
-            <section className="pt-profile-compact-editor" aria-label="Agent Profile compact editor canvas">
-              <button className="pt-profile-compact-avatar" type="button" aria-expanded={avatarPickerOpen} onClick={() => setAvatarPickerOpen((open) => !open)}>
-                <span className="pt-agent-avatar profile large">🤖</span>
-                <small>Edit avatar</small>
-              </button>
-              {avatarPickerOpen && (
-                <div className="pt-avatar-picker-popover compact" role="dialog" aria-label="Avatar picker">
-                  <div className="pt-popover-tabs" role="tablist" aria-label="Avatar picker tabs">
-                    {['Emoji', 'Model', 'Upload', 'Background'].map((tab, index) => (
-                      <button key={tab} className={index === 0 ? 'is-active' : ''} type="button">{tab}</button>
-                    ))}
-                  </div>
-                  <div className="pt-avatar-grid" aria-label="Emoji avatar options">
-                    {['🤖', '🧠', '✨', '📚', '🧩', '🔎'].map((emoji, index) => (
-                      <button key={emoji} className={index === 0 ? 'selected' : ''} type="button">{emoji}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <input className="pt-profile-title-input" aria-label="Enter agent name" placeholder="Enter agent name" />
-              <div className="pt-profile-model-tools" aria-label="Model and tools">
-                <span>Model &amp; Tools</span>
-                <button type="button" aria-expanded={modelMenuOpen} onClick={() => setModelMenuOpen((open) => !open)}>lobehub/claude-opus-4-7 <ChevronDown size={14} /></button>
-                <button type="button" aria-expanded={toolMenuOpen} onClick={() => setToolMenuOpen((open) => !open)}><Plus size={14} /> Add Skill</button>
-                {modelMenuOpen && (
-                  <div className="pt-model-popover compact" role="menu" aria-label="Agent model selector">
-                    {[
-                      ['LobeHub', 'claude-opus-4-7', 'Latest'],
-                      ['OpenAI', 'gpt-4.1', 'Peers projection'],
-                      ['Peers Local', 'station-agent-large', 'Requires Station'],
-                    ].map(([provider, model, meta]) => (
-                      <button key={model} type="button" role="menuitem">
-                        <span><strong>{provider}</strong><small>{model}</small></span>
-                        <em>{meta}</em>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {toolMenuOpen && (
-                  <div className="pt-agent-tool-popover compact" role="menu" aria-label="Agent tool selector">
-                    {[
-                      ['DeepSeek', 'Built-in', 'Enabled'],
-                      ['Workspace Files', 'Connector', 'Needs approval'],
-                      ['Tasks', 'Skill', 'Enabled'],
-                    ].map(([tool, source, state]) => (
-                      <button key={tool} type="button" role="menuitem">
-                        <span><strong>{tool}</strong><small>{source}</small></span>
-                        <em>{state}</em>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-core-instructions-block">
-                <h2>Core Instructions</h2>
-                <p>Defines who this agent is, what it is responsible for, and how it works and responds. It serves as a core instruction in every conversation.</p>
-                <div className="pt-core-instructions-editor" aria-label="Core instructions editor">
-                  <span>Enter core instructions, press / to open the Slash Menu</span>
-                  <button type="button" aria-expanded={slashMenuOpen} onClick={() => setSlashMenuOpen((open) => !open)}><Plus size={14} /> Slash</button>
-                  {slashMenuOpen && (
-                    <div className="pt-slash-menu compact" role="menu" aria-label="Slash command menu">
-                      {[
-                        ['h1', 'Heading 1'],
-                        ['tl', 'Task list'],
-                        ['table', 'Table'],
-                        ['codeblock', 'Code block'],
-                      ].map(([key, label]) => (
-                        <button key={key} type="button" role="menuitem"><strong>{label}</strong><code>{key}</code></button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-          </main>
-
-          {builderOpen && (
-            <aside className="pt-profile-compact-builder" aria-label="Agent Builder">
-              <div className="pt-profile-section-head">
-                <div>
-                  <strong>Agent Builder</strong>
-                  <span>Turn a use case into an agent profile.</span>
-                </div>
-                <button type="button" onClick={() => setBuilderOpen(false)}>Close</button>
-              </div>
-              <div className="pt-builder-prompt-card">
-                <strong>Tell me your use case.</strong>
-                <p>Writing, coding, or data analysis-anything works. You own the goal and standards; I'll break it down into collaborative, runnable Agents.</p>
-              </div>
-              <div className="pt-builder-suggestion-list" aria-label="Agent Builder suggestions">
-                {[
-                  ['Define the agent\'s system role', 'Help me write a clear system role for this agent so it knows what it is supposed to do and how to behave'],
-                  ['Enable tools for this agent', 'Show me what tools I can enable for this agent and help me pick the right ones based on what I want it to do'],
-                  ['Write an opening message', 'Help me craft an opening message so users know how to start interacting with this agent right away'],
-                ].map(([title, body]) => (
-                  <button key={title} className="pt-builder-suggestion-card" type="button">
-                    <strong>{title}</strong>
-                    <span>{body}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="pt-builder-switch-row">
-                <button type="button">Switch</button>
-              </div>
-              <div className="pt-builder-composer is-compact-builder" aria-label="Agent Builder composer">
-                <textarea placeholder="Ask, create, or start a task. @ to assign tasks to other agents." />
-                <button type="button" aria-label="Send builder message"><Sparkles size={14} /></button>
-              </div>
-            </aside>
-          )}
-        </div>
-      </section>
-    );
-  }
+  const update = (patch: Partial<ProfileAgent>) => onUpdateAgent(agent.id, patch);
+  const submitBuilder = () => {
+    const prompt = builderText.trim();
+    if (!prompt) return;
+    setBuilderReply(`Draft prepared for ${agent.name}: ${prompt}`);
+    setBuilderText('');
+  };
 
   return (
-    <section className="pt-profile-shell" aria-label="LobeHub Agent Profile parity baseline">
-      <div className="pt-profile-header">
-        <div className="pt-profile-title-row">
-          <div className="pt-agent-avatar profile">🤖</div>
-          <div>
-            <span className="pt-profile-breadcrumb">Agents / Lobe AI · autosaved</span>
-            <h1>Lobe AI</h1>
-            <p>Configure persona, model behavior, tools, memory and opening guidance for this assistant.</p>
-            {isDeepProfileReview && (
-              <div className="pt-profile-status-row" aria-label="Profile hydration and lock state">
-                <span><CheckCircle2 size={13} /> Config hydrated</span>
-                <span><Clock3 size={13} /> Edit lock peeked</span>
-                <span><Loader2 className="pt-inline-spin" size={13} /> Builder draft streaming</span>
-              </div>
-            )}
-          </div>
+    <section ref={profileRef} className={`pt-agent-profile ${narrowProfile ? 'is-narrow-profile' : ''} ${rosterCollapsed ? 'is-roster-collapsed' : ''} ${builderOpen ? 'has-builder' : ''}`} aria-label="Agent Profile">
+      <aside className="pt-agent-profile-roster" aria-label="My Agents">
+        <div className="pt-agent-profile-roster-head">
+          {!rosterCollapsed && <><Bot size={17} /><strong>My Agents</strong></>}
+          <button type="button" aria-label="Create agent" title="Create agent" onClick={onCreateAgent}><Plus size={16} /></button>
         </div>
-        <div className="pt-header-actions">
-          <button type="button" onClick={() => setBuilderOpen((open) => !open)}>Agent Builder</button>
-          <button ref={openSettingsButtonRef} type="button" onClick={() => setSettingsOpen(true)}>Open Agent Settings</button>
-          <IconButton label="Share agent"><Share2 size={15} /></IconButton>
-          <IconButton label="More"><MoreHorizontal size={15} /></IconButton>
+        {!rosterCollapsed && (
+          <label className="pt-agent-profile-search">
+            <Search size={14} />
+            <input value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="Search agents..." />
+          </label>
+        )}
+        <div className="pt-agent-profile-roster-list">
+          {!rosterCollapsed && agents.some((item) => item.pinned) && <span className="pt-agent-profile-section-label">PINNED</span>}
+          {visibleAgents.filter((item) => item.pinned).map((item) => (
+            <button key={item.id} className={item.id === agent.id ? 'is-active' : ''} type="button" onClick={() => onSelectAgent(item.id)} title={item.name}>
+              <ProfileAgentTile agent={item} />
+              {!rosterCollapsed && <span><strong>{item.name}</strong><small>{item.description}</small></span>}
+            </button>
+          ))}
+          {!rosterCollapsed && <span className="pt-agent-profile-section-label">ALL AGENTS</span>}
+          {visibleAgents.filter((item) => !item.pinned).map((item) => (
+            <button key={item.id} className={item.id === agent.id ? 'is-active' : ''} type="button" onClick={() => onSelectAgent(item.id)} title={item.name}>
+              <ProfileAgentTile agent={item} />
+              {!rosterCollapsed && <span><strong>{item.name}</strong><small>{item.description}</small></span>}
+            </button>
+          ))}
+          {!rosterCollapsed && visibleAgents.length === 0 && <span className="pt-agent-profile-empty">No matching agents</span>}
         </div>
-      </div>
-
-      <div className="pt-profile-grid">
-        <aside className="pt-profile-identity-card">
-          <button className="pt-avatar-editor" type="button" aria-expanded={avatarPickerOpen} onClick={() => setAvatarPickerOpen((open) => !open)}>
-            <span className="pt-agent-avatar profile large">🤖</span>
-            <small>Edit avatar</small>
-          </button>
-          {avatarPickerOpen && (
-            <div className="pt-avatar-picker-popover" role="dialog" aria-label="Avatar picker">
-              <div className="pt-popover-tabs" role="tablist" aria-label="Avatar picker tabs">
-                {['Emoji', 'Model', 'Upload', 'Background'].map((tab, index) => (
-                  <button key={tab} className={index === 0 ? 'is-active' : ''} type="button">{tab}</button>
-                ))}
-              </div>
-              <div className="pt-avatar-grid" aria-label="Emoji avatar options">
-                {['🤖', '🧠', '✨', '📚', '🧩', '🔎'].map((emoji, index) => (
-                  <button key={emoji} className={index === 0 ? 'selected' : ''} type="button">{emoji}</button>
-                ))}
-              </div>
-              <div className="pt-state-box">Upload is preserved here as an explicit prototype boundary; product upload still requires the store-backed flow.</div>
-            </div>
-          )}
-          <div className="pt-avatar-swatches" aria-label="Avatar background options">
-            {['#eef6ff', '#f6f2ff', '#fff4de', '#eafaf0'].map((color) => <span key={color} style={{ background: color }} />)}
-          </div>
-          <div className="pt-form-group">
-            <label>Display name</label>
-            <input defaultValue="Lobe AI" aria-label="Agent display name" />
-          </div>
-          <div className="pt-form-group">
-            <label>Description</label>
-            <textarea defaultValue="A calm assistant for planning, research, writing, resources and task follow-up." aria-label="Agent description" />
-          </div>
-          <div className="pt-profile-switch-list">
-            <button className="selected" type="button"><CheckCircle2 size={15} /> Private assistant</button>
-            <button type="button"><CircleDashed size={15} /> Publish to workspace</button>
-            <button type="button"><Sparkles size={15} /> Use as default agent</button>
-          </div>
-          <div className="pt-state-box">Private agents can use personal memory and selected workspace resources after you approve access.</div>
-        </aside>
-
-        <main className="pt-profile-editor">
-          <div className="pt-profile-section-head">
-            <div>
-              <strong>Profile editor</strong>
-              <span>System prompt, greeting and suggested questions · editing unlocked</span>
-            </div>
-            <button type="button">Reset</button>
-          </div>
-          {isDeepProfileReview && (
-            <div className="pt-profile-async-boundary" role="status">
-              <Loader2 className="pt-inline-spin" size={15} />
-              <span><strong>Profile config recovering</strong><small>AsyncBoundary keeps the editor rail stable while retry data resolves.</small></span>
-              <button type="button">Retry config</button>
-            </div>
-          )}
-          <div className="pt-profile-runtime-config" aria-label="Runtime model and tool config">
-            <div className="pt-runtime-config-card">
-              <span>ModelSelect</span>
-              <button type="button" aria-expanded={modelMenuOpen} onClick={() => setModelMenuOpen((open) => !open)}>OpenAI / gpt-4.1 <ChevronDown size={14} /></button>
-              {modelMenuOpen && (
-                <div className="pt-model-popover" role="menu" aria-label="Agent model selector">
-                  {[
-                    ['OpenAI', 'gpt-4.1', 'Current'],
-                    ['Anthropic', 'claude-3.7-sonnet', 'Reasoning'],
-                    ['Peers Local', 'station-agent-large', 'Requires Station'],
-                  ].map(([provider, model, meta]) => (
-                    <button key={model} type="button" role="menuitem">
-                      <span><strong>{provider}</strong><small>{model}</small></span>
-                      <em>{meta}</em>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="pt-runtime-config-card">
-              <span>AgentTool</span>
-              <button type="button" aria-expanded={toolMenuOpen} onClick={() => setToolMenuOpen((open) => !open)}>3 tools enabled <ChevronDown size={14} /></button>
-              {toolMenuOpen && (
-                <div className="pt-agent-tool-popover" role="menu" aria-label="Agent tool selector">
-                  {[
-                    ['Web Search', 'Built-in', 'Enabled'],
-                    ['Workspace Files', 'Connector', 'Needs approval'],
-                    ['Tasks', 'Skill', 'Enabled'],
-                    ['Local DevTools', 'MCP', 'Unavailable on web'],
-                  ].map(([tool, source, state]) => (
-                    <button key={tool} type="button" role="menuitem">
-                      <span><strong>{tool}</strong><small>{source}</small></span>
-                      <em>{state}</em>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="pt-editor-toolbar" aria-label="System role editor toolbar">
-            {['Bold', 'Italic', 'Task list', 'Quote', 'Math', 'Code'].map((item, index) => <button key={item} className={index < 2 ? 'is-active' : ''} type="button">{item}</button>)}
-            <button type="button" aria-expanded={slashMenuOpen} onClick={() => setSlashMenuOpen((open) => !open)}><Plus size={14} /> Slash</button>
-            {slashMenuOpen && (
-              <div className="pt-slash-menu" role="menu" aria-label="Slash command menu">
-                {[
-                  ['h1', 'Heading 1'],
-                  ['tl', 'Task list'],
-                  ['table', 'Table'],
-                  ['tex', 'Math'],
-                  ['codeblock', 'Code block'],
-                ].map(([key, label]) => (
-                  <button key={key} type="button" role="menuitem"><strong>{label}</strong><code>{key}</code></button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="pt-form-group">
-            <label>System role</label>
-            <div className="pt-editor-canvas" aria-label="Rich system prompt editor">
-              <textarea defaultValue="You are Lobe AI, a helpful assistant. Keep answers concise, use available tools when needed, cite workspace sources when they are attached, and ask before taking risky actions." />
-              {isDeepProfileReview && <span className="pt-edit-lock-indicator"><Clock3 size={13} /> Editing lock held by you · saved 2s ago</span>}
-            </div>
-          </div>
-          <div className="pt-form-row">
-            <div className="pt-form-group">
-              <label>Opening message</label>
-              <textarea defaultValue="Hi, I can help with planning, research, writing, and workspace resources. What should we work on first?" />
-            </div>
-            <div className="pt-form-group">
-              <label>Conversation guide</label>
-              <textarea defaultValue="Prefer actionable plans, call out assumptions, and keep follow-up tasks visible." />
-            </div>
-          </div>
-          <div className="pt-profile-section-head">
-            <div>
-              <strong>Opening questions</strong>
-              <span>Shown before the first message</span>
-            </div>
-            <button type="button"><Plus size={14} /> Add</button>
-          </div>
-          <div className="pt-question-list">
-            {['Summarize today', 'Create a scheduled task', 'Use workspace resources', 'Draft a research plan'].map((question) => (
-              <button key={question} type="button">{question}</button>
-            ))}
-          </div>
-          <div className="pt-profile-config-grid">
-            <section className="pt-profile-config-card">
-              <strong>Knowledge</strong>
-              <p>Allow selected pages and resources to be attached as conversation context.</p>
-              <div className="pt-tool-chip-row"><span>Pages</span><span>Resources</span><span>Uploads</span></div>
-            </section>
-            <section className="pt-profile-config-card">
-              <strong>Tools</strong>
-              <p>Web Search, Workspace Files and Task tools require visible approval before use.</p>
-              <div className="pt-tool-chip-row"><span>Web Search</span><span>Files</span><span>Tasks</span></div>
-            </section>
-          </div>
-        </main>
-
-        <aside className="pt-settings-modal-preview">
-          <div className="pt-modal-head">
-            <strong>Agent Settings</strong>
-            <span>Opening, iteration, connectors</span>
-          </div>
-          <div className="pt-settings-section">
-            <h3>Model</h3>
-            <p>OpenAI / gpt-4.1 with temperature, reasoning and context controls.</p>
-            <dl className="pt-profile-mini-meta">
-              <div><dt>Temperature</dt><dd>0.4</dd></div>
-              <div><dt>Reasoning</dt><dd>medium</dd></div>
-            </dl>
-          </div>
-          <div className="pt-settings-section">
-            <h3>Tools / Skills</h3>
-            <p>Enable workspace tools, web search, and approved skills for this agent.</p>
-            <div className="pt-tool-chip-row"><span>3 enabled</span><span>1 needs approval</span></div>
-          </div>
-          <div className="pt-settings-section">
-            <h3>Memory</h3>
-            <p>Memory behavior is summarized here; detailed memory management stays in the Memory surface.</p>
-          </div>
-        </aside>
-      </div>
-
-      {builderOpen && (
-        <div className="pt-profile-builder-panel" role="region" aria-label="Agent Builder">
-          <div className="pt-profile-section-head">
-            <div>
-              <strong>Agent Builder</strong>
-              <span>Use chat-like guidance to refine this profile before saving.</span>
-            </div>
-            <button type="button" onClick={() => setBuilderOpen(false)}>Close</button>
-          </div>
-          {isDeepProfileReview && (
-            <div className="pt-builder-topic-selector" aria-label="Agent Builder topic selector">
-              <button type="button"><Plus size={14} /> New builder topic</button>
-              {['Improve resource behavior · 2m ago', 'Opening prompt polish · Yesterday', 'Tool permission plan · Jun 28'].map((topic, index) => (
-                <button key={topic} className={index === 0 ? 'is-active' : ''} type="button">{topic}</button>
-              ))}
-            </div>
-          )}
-          <div className="pt-builder-message user">Make this agent more proactive when a resource is attached.</div>
-          <div className="pt-builder-message assistant">Suggested update: add a rule to summarize attached resources first, then ask before creating tasks.</div>
-          {isDeepProfileReview && (
-            <>
-              <div className="pt-builder-suggestion-row" aria-label="Builder suggestion feedback">
-                {['Apply to prompt', 'Use in follow-up', 'Manual edit', 'Reject'].map((action, index) => (
-                  <button key={action} className={index === 0 ? 'primary' : ''} type="button">{action}</button>
-                ))}
-              </div>
-              <div className="pt-builder-composer" aria-label="Agent Builder composer">
-                <textarea defaultValue="Also keep generated tasks visible until I approve them." />
-                <button type="button"><Sparkles size={14} /> Send to builder</button>
-              </div>
-            </>
-          )}
+        <div className="pt-agent-profile-collapse">
+          <PanelToggleButton
+            side="left"
+            open={!rosterCollapsed}
+            title={rosterCollapsed ? '展开 Agent 列表' : '折叠 Agent 列表'}
+            onClick={() => setRosterCollapsed((value) => !value)}
+          />
         </div>
-      )}
+      </aside>
 
-      {settingsOpen && (
-        <div
-          className="pt-modal-overlay"
-          role="dialog"
-          aria-label="Agent Settings modal"
-          onKeyDown={(event) => {
-            if (event.key !== 'Escape') return;
-            event.preventDefault();
-            closeSettings();
-          }}
-        >
-          <div className="pt-modal-card">
-            <div className="pt-modal-head">
-              <strong>Agent Settings</strong>
-              <button ref={closeSettingsButtonRef} type="button" onClick={closeSettings}>Close</button>
+      <main className="pt-agent-profile-main">
+        <div className="pt-agent-profile-scroll">
+          <div className="pt-agent-profile-content">
+            <div className="pt-agent-profile-title-row">
+              <input value={agent.title} onChange={(event) => update({ title: event.target.value })} aria-label="Agent title" />
+              <div className="pt-agent-profile-title-actions">
+                {onOpenOrchestration && (
+                  <button type="button" onClick={onOpenOrchestration}>
+                    <Workflow size={14} /> Orchestration
+                  </button>
+                )}
+                <button type="button" onClick={() => setBuilderOpen((value) => !value)}>
+                  <Bot size={14} /> {builderOpen ? 'Hide Builder' : 'Open Builder'}
+                </button>
+              </div>
             </div>
-            <div className="pt-toolbar modal-tabs">
-              {(['opening', 'iteration', 'connectors'] as const).map((tab) => (
-                <button key={tab} className={settingsTab === tab ? 'is-active' : ''} type="button" onClick={() => setSettingsTab(tab)}>
-                  {tab}
+            <div className="pt-agent-profile-hero">
+              <ProfileAgentTile agent={agent} size={64} />
+              <div>
+                <textarea value={agent.description} onChange={(event) => update({ description: event.target.value })} rows={3} aria-label="Agent description" />
+                <button type="button" aria-label="Rewrite description" title="Rewrite description" onClick={() => update({ description: `${agent.description.replace(/\.$/, '')}. Clear, source-backed, and action oriented.` })}>
+                  <Sparkles size={14} />
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-agent-profile-model-row" aria-label="Provider, model, and effort">
+              <select value={agent.provider} onChange={(event) => update({ provider: event.target.value })}>
+                {['Anthropic', 'OpenAI', 'Google', 'Station'].map((value) => <option key={value}>{value}</option>)}
+              </select>
+              <span>→</span>
+              <select value={agent.model} onChange={(event) => update({ model: event.target.value })}>
+                {['Claude Sonnet 4', 'Claude Opus 4', 'GPT-5.5', 'Gemini 2.5 Pro', 'Station Agent'].map((value) => <option key={value}>{value}</option>)}
+              </select>
+              <span>·</span>
+              <select value={agent.effort} onChange={(event) => update({ effort: event.target.value as ProfileAgent['effort'] })}>
+                {['low', 'medium', 'high'].map((value) => <option key={value}>{value}</option>)}
+              </select>
+            </div>
+
+            <div className="pt-agent-profile-mode" role="tablist" aria-label="Profile mode">
+              {(['configure', 'activity'] as const).map((item) => (
+                <button key={item} className={mode === item ? 'is-active' : ''} type="button" onClick={() => { setMode(item); setTab(item === 'configure' ? 'soul' : 'tasks'); }}>
+                  {item === 'configure' ? 'Configure' : 'Activity'}
                 </button>
               ))}
             </div>
-            <div className="pt-settings-section">
-              {settingsTab === 'opening' && (
-                <div className="pt-profile-settings-form">
-                  <label>Opening message <textarea defaultValue="Hi, I can help with planning, research, writing, and workspace resources." /></label>
-                  <div className="pt-profile-question-editor">
-                    {['Summarize today', 'Create a scheduled task', 'Use workspace resources'].map((question) => (
-                      <button key={question} type="button"><MoreHorizontal size={14} /> {question}</button>
-                    ))}
-                    <button type="button"><Plus size={14} /> Add question</button>
-                  </div>
+            <div className="pt-agent-profile-tabs" role="tablist">
+              {tabs.map((item) => <button key={item.key} className={tab === item.key ? 'is-active' : ''} type="button" onClick={() => setTab(item.key)}>{item.label}</button>)}
+            </div>
+
+            <div className="pt-agent-profile-tab-content">
+              {tab === 'soul' && (
+                <div className="pt-agent-profile-card-grid">
+                  <label className="pt-agent-profile-card"><strong>SOUL.md</strong><textarea value={soulByAgent[agent.id] ?? `# SOUL.md\n\n## Identity\nYou are ${agent.title}.\n\n## Behavior\n- Explain intent before acting\n- Prefer source-backed decisions\n- Keep work verifiable`} onChange={(event) => setSoulByAgent((value) => ({ ...value, [agent.id]: event.target.value }))} /></label>
+                  <label className="pt-agent-profile-card"><strong>AGENTS.md</strong><textarea value={agentsByAgent[agent.id] ?? '# AGENTS.md\n\n## Workflow\n- Architect validates design\n- Executor implements\n- Verifier confirms evidence\n\n## Delegation\nRisky operations require approval.'} onChange={(event) => setAgentsByAgent((value) => ({ ...value, [agent.id]: event.target.value }))} /></label>
                 </div>
               )}
-              {settingsTab === 'iteration' && (
-                <div className="pt-profile-settings-form">
-                  <button className="selected" type="button"><CheckCircle2 size={15} /> Self iteration suggestions enabled</button>
-                  <label>Iteration tone <select defaultValue="careful"><option value="careful">Careful</option><option value="fast">Fast draft</option></select></label>
-                  <div className="pt-state-box">Builder suggestions remain drafts until you apply them.</div>
+              {tab === 'capabilities' && (
+                <div className="pt-agent-profile-card-grid">
+                  <section className="pt-agent-profile-card"><strong>Skill Packages</strong>{['Architecture review', 'Implementation planning', 'Completion audit'].map((item) => <div key={item} className="pt-agent-profile-info-row"><span>{item}</span><small>enabled</small></div>)}</section>
+                  <section className="pt-agent-profile-card"><strong>Tools & MCP</strong>{['file_operations', 'shell_execute', 'github-server'].map((item) => <div key={item} className="pt-agent-profile-info-row"><span>{item}</span><small>bound</small></div>)}</section>
                 </div>
               )}
-              {settingsTab === 'connectors' && (
-                <div className="pt-profile-settings-form">
-                  {['Web Search', 'Workspace Files', 'Task'].map((tool) => (
-                    <button key={tool} type="button"><CheckCircle2 size={15} /> {tool}</button>
-                  ))}
-                  <div className="pt-state-box warning">External tools ask for approval before the agent runs them.</div>
+              {tab === 'workspace' && (
+                <div className="pt-agent-profile-card-grid">
+                  <section className="pt-agent-profile-card"><strong>Agent Workspace</strong><div className="pt-agent-profile-info-row"><span>Workspace Root</span><input value={agent.workspace} onChange={(event) => update({ workspace: event.target.value })} /></div><div className="pt-agent-profile-info-row"><span>Workspace Mode</span><small>agent</small></div><div className="pt-agent-profile-info-row"><span>Retention Days</span><small>7</small></div></section>
+                  <section className="pt-agent-profile-card"><strong>Access Boundary</strong><div className="pt-agent-profile-info-row"><span>Agent Workspace</span><small>Allowed</small></div><div className="pt-agent-profile-info-row"><span>Allowed Roots</span><small>{agent.workspace}</small></div></section>
                 </div>
               )}
+              {tab === 'tasks' && <ProfileActivityList items={[['Implement profile state ownership', 'completed'], ['Verify narrow-window layout', 'running'], ['Review Builder suggestions', 'waiting']]} />}
+              {tab === 'memories' && <ProfileActivityList items={[['Identity', `${agent.name} owns its own profile state`], ['Experience', 'Profile roster remains visible while editing'], ['Preference', 'Use square rounded identity tiles']]} />}
+              {tab === 'diagnostics' && <ProfileActivityList items={[['tool · completed', 'Read AgentProfilePage.tsx'], ['state · healthy', `Selected agent: ${agent.name}`], ['workspace · allowed', agent.workspace]]} />}
             </div>
           </div>
         </div>
-      )}
+      </main>
+
+      {builderOpen ? (
+        <aside className="pt-agent-profile-builder" aria-label="Agent Builder">
+          <div className="pt-agent-profile-builder-head"><div><strong>Agent Builder</strong><small>Refine the selected profile</small></div><button type="button" onClick={() => setBuilderOpen(false)} aria-label="Close builder">×</button></div>
+          <div className="pt-agent-profile-builder-context">
+            <div><span>Model</span><strong>{agent.provider} / {agent.model}</strong></div>
+            <div><span>Focus</span><strong>{agent.title}</strong></div>
+            <div><span>Workspace</span><strong>{agent.workspace}</strong></div>
+          </div>
+          <div className="pt-agent-profile-builder-suggestions">
+            {['Optimize the description for routing', 'Review capabilities for this role', 'Tighten workspace access boundaries'].map((prompt) => <button key={prompt} type="button" onClick={() => setBuilderText(prompt)}><Sparkles size={12} />{prompt}</button>)}
+          </div>
+          {builderReply && <div className="pt-agent-profile-builder-reply">{builderReply}</div>}
+          <div className="pt-agent-profile-builder-composer">
+            <textarea value={builderText} onChange={(event) => setBuilderText(event.target.value)} placeholder="Ask Builder to refine this agent..." />
+            <button type="button" disabled={!builderText.trim()} onClick={submitBuilder}><Sparkles size={14} /> Send</button>
+          </div>
+        </aside>
+      ) : null}
     </section>
+  );
+}
+
+function ProfileActivityList({ items }: { items: [string, string][] }) {
+  return <div className="pt-agent-profile-activity-list">{items.map(([title, detail]) => <article key={`${title}-${detail}`}><strong>{title}</strong><span>{detail}</span></article>)}</div>;
+}
+
+export function IntegratedAgentProfileSurface({
+  onOpenOrchestration,
+}: {
+  onOpenOrchestration?: () => void;
+}) {
+  const [agents, setAgents] = useState<ProfileAgent[]>(initialProfileAgents);
+  const [selectedAgentId, setSelectedAgentId] = useState(initialProfileAgents[0].id);
+
+  const createAgent = () => {
+    const index = agents.length + 1;
+    const next: ProfileAgent = {
+      id: `agent-${Date.now()}`,
+      name: `Agent ${index}`,
+      title: `New Agent ${index}`,
+      description: 'Describe what this agent owns and how it should work.',
+      provider: 'Station',
+      model: 'Station Agent',
+      effort: 'medium',
+      workspace: '/Workspace',
+      icon: 'bot',
+      color: '#596579',
+    };
+    setAgents((items) => [...items, next]);
+    setSelectedAgentId(next.id);
+  };
+
+  return (
+    <ProfileSurface
+      agents={agents}
+      selectedAgentId={selectedAgentId}
+      onCreateAgent={createAgent}
+      onOpenOrchestration={onOpenOrchestration}
+      onSelectAgent={setSelectedAgentId}
+      onUpdateAgent={(id, patch) => {
+        setAgents((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
+      }}
+    />
   );
 }
 
@@ -3900,6 +3730,8 @@ export function AgentLobeHubParityPrototype() {
   const [surface, setSurface] = useState<Surface>(initialSurface);
   const [handoffPrompt, setHandoffPrompt] = useState('');
   const [chatFocusKey, setChatFocusKey] = useState(0);
+  const [profileAgents, setProfileAgents] = useState<ProfileAgent[]>(initialProfileAgents);
+  const [selectedProfileAgentId, setSelectedProfileAgentId] = useState(initialProfileAgents[0].id);
   const theme = initialTheme();
   const reviewMode = isReviewMode();
   const activeSource = useMemo(() => sourceRefs[surface], [surface]);
@@ -3907,6 +3739,26 @@ export function AgentLobeHubParityPrototype() {
     setHandoffPrompt(prompt);
     setSurface('chat');
     setChatFocusKey((key) => key + 1);
+  };
+  const createProfileAgent = () => {
+    const index = profileAgents.length + 1;
+    const next: ProfileAgent = {
+      id: `agent-${Date.now()}`,
+      name: `Agent ${index}`,
+      title: `New Agent ${index}`,
+      description: 'Describe what this agent owns and how it should work.',
+      provider: 'Station',
+      model: 'Station Agent',
+      effort: 'medium',
+      workspace: '/Workspace',
+      icon: 'bot',
+      color: '#596579',
+    };
+    setProfileAgents((items) => [...items, next]);
+    setSelectedProfileAgentId(next.id);
+  };
+  const updateProfileAgent = (id: string, patch: Partial<ProfileAgent>) => {
+    setProfileAgents((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
   };
 
   return (
@@ -3932,7 +3784,15 @@ export function AgentLobeHubParityPrototype() {
         )}
         {surface === 'home' && <HomeSurface setSurface={setSurface} onSend={sendFromHome} />}
         {surface === 'chat' && <ChatSurface focusKey={chatFocusKey} handoffPrompt={handoffPrompt} setSurface={setSurface} />}
-        {surface === 'profile' && <ProfileSurface />}
+        {surface === 'profile' && (
+          <ProfileSurface
+            agents={profileAgents}
+            selectedAgentId={selectedProfileAgentId}
+            onCreateAgent={createProfileAgent}
+            onSelectAgent={setSelectedProfileAgentId}
+            onUpdateAgent={updateProfileAgent}
+          />
+        )}
         {surface === 'tasks' && <TasksSurface />}
         {surface === 'pages' && <PagesSurface />}
         {surface === 'resources' && <ResourcesSurface />}
