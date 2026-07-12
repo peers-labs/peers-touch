@@ -179,7 +179,7 @@ func (b *spyBus) PublishToActor(_ context.Context, _ string, env *chat.StationEn
 func TestSubmit_LocalRecipient_DeliverToInbox(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
-	svc := envelope.NewService(repo, bus, "station-A")
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-1",
@@ -215,7 +215,7 @@ func TestSubmit_LocalRecipient_DeliverToInbox(t *testing.T) {
 func TestSubmit_CrossStation_EnqueuesOutbox(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
-	svc := envelope.NewService(repo, bus, "station-A")
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-2",
@@ -247,7 +247,7 @@ func TestSubmit_CrossStation_EnqueuesOutbox(t *testing.T) {
 func TestSubmit_Idempotency(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
-	svc := envelope.NewService(repo, bus, "station-A")
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-dup",
@@ -273,7 +273,7 @@ func TestSubmit_Idempotency(t *testing.T) {
 func TestAck_MarksItemAcked(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
-	svc := envelope.NewService(repo, bus, "station-A")
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-ack",
@@ -302,7 +302,7 @@ func TestAck_MarksItemAcked(t *testing.T) {
 func TestResume_CursorBasedRecovery(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
-	svc := envelope.NewService(repo, bus, "station-A")
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
 
 	for i := 0; i < 5; i++ {
 		env := &chat.StationEnvelope{
@@ -331,7 +331,7 @@ func TestResume_CursorBasedRecovery(t *testing.T) {
 func TestSubmit_MlsKeyDelivery_LocalRouting(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
-	svc := envelope.NewService(repo, bus, "station-A")
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "mls-welcome-1",
@@ -380,7 +380,7 @@ func TestSubmit_MlsKeyDelivery_LocalRouting(t *testing.T) {
 func TestSubmit_MlsKeyDelivery_CrossStation(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
-	svc := envelope.NewService(repo, bus, "station-A")
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "mls-commit-fed-1",
@@ -418,7 +418,7 @@ func TestSubmit_MlsKeyDelivery_CrossStation(t *testing.T) {
 func TestSubmit_DirectKeyExchange_LocalRouting(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
-	svc := envelope.NewService(repo, bus, "station-A")
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "dkx-session-1:did:alice:PREKEY_BUNDLE",
@@ -451,7 +451,7 @@ func TestSubmit_DirectKeyExchange_LocalRouting(t *testing.T) {
 func TestC5_DuplicateSubmit_Idempotent(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
-	svc := envelope.NewService(repo, bus, "station-A")
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "c5-dup-test",
@@ -483,7 +483,7 @@ func TestC5_DuplicateSubmit_Idempotent(t *testing.T) {
 func TestC5_OutOfOrderSubmit_ConvergesToOrderedInbox(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
-	svc := envelope.NewService(repo, bus, "station-A")
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
 
 	for i := 5; i >= 1; i-- {
 		env := &chat.StationEnvelope{
@@ -516,7 +516,7 @@ func TestC5_OutOfOrderSubmit_ConvergesToOrderedInbox(t *testing.T) {
 func TestC5_ReconnectAfterPartialAck_ConsistentState(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
-	svc := envelope.NewService(repo, bus, "station-A")
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
 
 	for i := 0; i < 10; i++ {
 		env := &chat.StationEnvelope{
