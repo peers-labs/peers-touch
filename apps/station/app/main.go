@@ -13,9 +13,7 @@ import (
 	convsub "github.com/peers-labs/peers-touch/station/app/subserver/conversation"
 	envelopesub "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
-	friendchat "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat"
 	frontendtelemetry "github.com/peers-labs/peers-touch/station/app/subserver/frontend_telemetry"
-	groupchat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat"
 	keyexchange "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange"
 	notifsubserver "github.com/peers-labs/peers-touch/station/app/subserver/notification"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
@@ -53,9 +51,7 @@ func main() {
 		server.WithSubServer("envelope", envelopesub.NewEnvelopeSubServer),
 		server.WithSubServer("conversation", convsub.NewConversationSubServer),
 		server.WithSubServer("presence", presence.NewPresenceSubServer),
-		server.WithSubServer("friend_chat", friendchat.NewFriendChatSubServer),
 		server.WithSubServer("key_exchange", keyexchange.NewKeyExchangeSubServer),
-		server.WithSubServer("group_chat", groupchat.NewGroupChatSubServer),
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
 		server.WithSubServer("social", social.NewSocialSubServer),
 		server.WithSubServer("notification", notifsubserver.NewNotificationSubServer),
