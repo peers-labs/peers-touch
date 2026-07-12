@@ -6553,6 +6553,34 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
 
         // =================================================================
+        // Envelope submit (send encrypted payload to Station)
+        // =================================================================
+        "envelope_submit" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let body = json!({
+                "envelope": {
+                    "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
+                    "sender_actor_did": args.get("sender_actor_did").and_then(|v| v.as_str()).unwrap_or(""),
+                    "recipient_actor_did": args.get("recipient_actor_did").and_then(|v| v.as_str()).unwrap_or(""),
+                    "payload_type": args.get("payload_type").and_then(|v| v.as_i64()).unwrap_or(1),
+                    "payload_bytes": args.get("payload_bytes"),
+                    "idempotency_key": args.get("idempotency_key").and_then(|v| v.as_str()).unwrap_or(""),
+                }
+            });
+            match crate::infrastructure::station_client::request_json_auth(
+                reqwest::Method::POST, "/envelope/submit", &token, None, Some(&body),
+            ) {
+                Ok(resp) => to_json(AppResult::success(resp)),
+                Err(e) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError, &format!("envelope submit: {e}"), None,
+                )),
+            }
+        }
+
+        // =================================================================
         // Unknown command
         // =================================================================
         _ => to_json(AppResult::<StubPayload>::fail(
