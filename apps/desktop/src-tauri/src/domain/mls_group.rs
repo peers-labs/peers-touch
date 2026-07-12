@@ -30,6 +30,7 @@ pub struct MlsGroupSession {
 pub struct MlsGroupManager {
     sessions: Mutex<HashMap<String, MlsGroupSession>>,
     identity: Mutex<Option<(SignatureKeyPair, CredentialWithKey)>>,
+    pending_join_provider: Mutex<Option<PeersMLSProvider>>,
 }
 
 impl MlsGroupManager {
@@ -37,6 +38,7 @@ impl MlsGroupManager {
         Self {
             sessions: Mutex::new(HashMap::new()),
             identity: Mutex::new(None),
+            pending_join_provider: Mutex::new(None),
         }
     }
 
@@ -54,6 +56,8 @@ impl MlsGroupManager {
         let kp_bytes = kp
             .tls_serialize_detached()
             .map_err(|e| format!("serialize key package: {e:?}"))?;
+        let mut pending = self.pending_join_provider.lock().unwrap();
+        *pending = Some(provider);
         Ok(kp_bytes)
     }
 
@@ -133,7 +137,9 @@ impl MlsGroupManager {
         let (signer, _cwk) = id.as_ref().ok_or("identity not initialized")?.clone();
         drop(id);
 
-        let provider = PeersMLSProvider::new();
+        let provider = self.pending_join_provider.lock().unwrap().take()
+            .unwrap_or_else(PeersMLSProvider::new);
+
         let welcome = MlsMessageIn::tls_deserialize(&mut Cursor::new(welcome_bytes))
             .map_err(|e| format!("deserialize welcome: {e:?}"))?;
 
