@@ -12,6 +12,7 @@ const manifest = {
   docs: 'docs/architecture/realtime/prototype/README.md',
   description: 'Desktop Chat / voice-video call capability prototype.',
   order: 30,
+  hidden: true,
   previewExport: 'CallPrototype',
   entry: () => import('./src/CallPrototype'),
 } satisfies PrototypeManifest;
