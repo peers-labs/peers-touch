@@ -93,7 +93,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	)
 
 	bus := &noopDeviceBus{}
-	s.service = NewService(repo, bus, s.localStationID)
+	s.service = NewService(repo, bus, envelopeLocalAudience)
 
 	transport := NewHTTPFederationTransport(authfed.Singleton())
 	s.dispatcher = NewDispatcher(repo, transport)

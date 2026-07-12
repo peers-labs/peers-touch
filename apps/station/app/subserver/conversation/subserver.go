@@ -63,7 +63,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 
 	envRepo := envinf.NewPostgresRepository(rds)
 	envBus := &noopConvDeviceBus{}
-	envelopeService := envpkg.NewService(envRepo, envBus, s.localStationID)
+	envelopeService := envpkg.NewService(envRepo, envBus, conversationLocalAudience)
 	envelopeBridge := NewEnvelopeBridge(envelopeService)
 
 	s.envelopeService = envelopeService
