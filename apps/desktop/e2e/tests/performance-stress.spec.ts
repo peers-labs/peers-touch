@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures';
 import {
   runtimePreflight,
   warmAllSecondaryTabs,
+  collectLongTasksDuringInteraction,
   SCENARIO_SAMPLERS,
   type PerformanceRuntime,
 } from '../performanceHarness';
@@ -139,5 +140,89 @@ test.describe('P0c3 stress tests', () => {
 
     expect(sorted.length).toBeGreaterThanOrEqual(25);
     expect(p95).toBeLessThan(100);
+  });
+
+  test('disconnect: navigation stays responsive when backend is unreachable', async ({ tauriPage }) => {
+    test.setTimeout(60_000);
+    await runtimePreflight(tauriPage, EXPECTED_RUNTIME, EXPECTED_ACTOR);
+    await warmAllSecondaryTabs(tauriPage);
+
+    await tauriPage.evaluate<undefined>(`(() => {
+      const orig = window.__TAURI_INTERNALS__?.invoke;
+      if (!orig) return;
+      window.__ORIG_INVOKE_DISCONNECT__ = orig;
+      window.__TAURI_INTERNALS__.invoke = async function(cmd, ...args) {
+        if (cmd === 'frontend_telemetry_upload' || cmd === 'frontend_log') {
+          return window.__ORIG_INVOKE_DISCONNECT__.call(this, cmd, ...args);
+        }
+        throw new Error('network disconnected');
+      };
+    })()`);
+
+    const durations: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      const baseline = await tauriPage.evaluate<string[]>(
+        'window.__PT_FRONTEND_TELEMETRY__?.getEvents?.().map(e => e.id) ?? []',
+      );
+      const target = i % 2 === 0 ? 'settings' : 'chat';
+      await tauriPage.click(`[data-pt-primary-nav="${target}"] [role="button"]`);
+      const baselineLiteral = JSON.stringify(baseline);
+
+      try {
+        await tauriPage.waitForFunction(`
+          (() => {
+            const bl = new Set(${baselineLiteral});
+            const events = (window.__PT_FRONTEND_TELEMETRY__?.getEvents?.() ?? []).filter(e => !bl.has(e.id));
+            return events.some(e => e.kind === 'route.visible');
+          })()
+        `, 5_000);
+      } catch {
+        durations.push(5000);
+        continue;
+      }
+
+      const visible = await tauriPage.evaluate<number>(`
+        (() => {
+          const bl = new Set(${baselineLiteral});
+          const events = (window.__PT_FRONTEND_TELEMETRY__?.getEvents?.() ?? []).filter(e => !bl.has(e.id));
+          return events.find(e => e.kind === 'route.visible')?.durationMs ?? -1;
+        })()
+      `);
+      durations.push(visible);
+    }
+
+    await tauriPage.evaluate<undefined>(`(() => {
+      if (window.__ORIG_INVOKE_DISCONNECT__) {
+        window.__TAURI_INTERNALS__.invoke = window.__ORIG_INVOKE_DISCONNECT__;
+        delete window.__ORIG_INVOKE_DISCONNECT__;
+      }
+    })()`);
+
+    const valid = durations.filter((d) => d >= 0 && d < 5000);
+    const p95 = valid.sort((a, b) => a - b)[Math.ceil(valid.length * 0.95) - 1] ?? 0;
+
+    expect(valid.length).toBeGreaterThanOrEqual(8);
+    expect(p95).toBeLessThan(150);
+  });
+
+  test('longtask-gate: no >50ms long tasks during primary navigation', async ({ tauriPage }) => {
+    test.setTimeout(60_000);
+    await runtimePreflight(tauriPage, EXPECTED_RUNTIME, EXPECTED_ACTOR);
+    await warmAllSecondaryTabs(tauriPage);
+
+    const longTasks = await collectLongTasksDuringInteraction(tauriPage, async () => {
+      await tauriPage.click('[data-pt-primary-nav="chat"] [role="button"]');
+      await tauriPage.waitForSelector('[data-pt-context-menu-trigger]', 10_000);
+      await tauriPage.click('[data-pt-primary-nav="settings"] [role="button"]');
+      await tauriPage.waitForSelector('[data-pt-secondary-tab]', 10_000);
+      await tauriPage.click('[data-pt-primary-nav="chat"] [role="button"]');
+      await tauriPage.waitForSelector('[data-pt-context-menu-trigger]', 10_000);
+    });
+
+    const unexempted = longTasks.filter(
+      (t) => !t.data?.['exempted'] && (t.durationMs ?? 0) > 50,
+    );
+
+    expect(unexempted).toEqual([]);
   });
 });
