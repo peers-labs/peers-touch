@@ -74,8 +74,21 @@ Canonical widths:
 - The central conversation, editor, or canvas is always the dominant reading and action rail.
 - Chat and Atelier composers align to the central content rail and remain fully usable at narrow widths.
 - SOUL / AGENTS cards stack vertically when two columns would make editing cramped.
-- Orchestration moves engine, progress, and detail panels below the canvas on narrow containers.
+- Orchestration collapses secondary rails before the execution graph becomes cramped; opening one narrow rail closes the other.
 - No surface may preserve fixed side columns that leave the central rail clipped or narrower than its primary controls.
+
+## Orchestration Surface Contract
+
+- The left rail owns recent runs and participant selection. It must not become a separate template marketplace or duplicate Agent administration.
+- The center rail is lifecycle-owned: participant composition in `draft`, generated read-only execution graph from `plan_ready` through execution, and acceptance coverage in terminal states.
+- The generated graph is inspectable but not a generic manual workflow editor.
+- Runtime stages expose participant attribution, state, exit criteria, and evidence without showing long Agent transcripts by default.
+- `awaiting_human` appears inline at the blocked stage with reason, evidence, cost, rollback impact, recommendation, and explicit choices.
+- `replanning` shows a bounded graph patch that distinguishes retained, reset, and added work.
+- `resuming` identifies the accepted checkpoint and reused work; accepted nodes must not look as if they are executing again.
+- `completed`, `partially_completed`, `failed`, and `cancelled` replace the center work surface. A detached result dashboard must not be appended below the three-rail workspace.
+- The right rail is a contextual inspector for the selected run, stage, participant, evidence, decision, or coverage item.
+- Human-readable collaboration method and selection rationale may be shown. Internal engine ids, policy names, reducer configuration, and convergence rules are progressive technical detail, never the primary product model.
 
 ## Identity And Components
 
@@ -94,6 +107,9 @@ Each Agent surface must verify:
 | Narrow container | One dominant content rail; secondary panels are closed or drawers |
 | Panel open | Shared toggle at the stable anchor; layout column; no backdrop or content overlap |
 | Empty | Explains the surface and next available action |
+| Awaiting human | Blocking stage, evidence, impact, recommendation, and recoverable choices remain in one reading path |
+| Replan / Resume | Retained work and accepted checkpoint are explicit; accepted nodes do not appear to rerun |
+| Partial result | Missing acceptance evidence remains visible and completion is not implied |
 | Long labels/content | Truncates metadata without hiding the primary action |
 | Keyboard/focus | Icon controls are labeled; closing a drawer restores task context |
 
