@@ -4,12 +4,12 @@ import {
   CheckCircle2,
   ChevronDown,
   Cloud,
+  Compass,
   MoreHorizontal,
   Network,
   Plus,
   Search,
   Settings2,
-  Share2,
   Sparkles,
   List,
   X,
@@ -20,6 +20,8 @@ import {
 import { T } from './theme';
 import { PanelToggleDock } from '../../shared/PanelToggleButton';
 import { PromptComposer } from '../../shared/PromptComposer';
+import { AgentProfile } from '../../features/agent/src/panels/AgentProfile';
+import type { Agent as ProfileAgent } from '../../features/agent/src/types';
 
 interface AgentSummary {
   id: string;
@@ -39,9 +41,9 @@ interface Topic {
 const AGENTS: AgentSummary[] = [
   {
     id: 'devops',
-    name: 'DevOps Agent',
-    icon: Network,
-    desc: 'GDPA 智能助手，支持服务治理、监控查询、代码分析、环境管理等研发全流程。',
+    name: '旅游小助手',
+    icon: Compass,
+    desc: '旅行规划助手，帮你设计行程、发现当地体验、整理交通住宿与出行提醒。',
     pinned: true,
     active: true,
   },
@@ -84,21 +86,25 @@ const AGENTS: AgentSummary[] = [
 ];
 
 const TOPICS: Topic[] = [
-  { id: 'cursor-config', title: '怎么配置 cursor CLI', group: 'Today' },
-  { id: 'normal-use', title: '可以正常使用吗', group: 'Today' },
-  { id: 'cursor-check', title: '嗨，你现在是 cursor 吗', group: 'Today' },
-  { id: 'agent-use', title: '哨，现在我是不是可以使用 agent...', group: 'Today' },
-  { id: 'branch', title: '当前分支是哪个分支', group: 'Yesterday' },
+  { id: 'tokyo-plan', title: '东京五天怎么安排', group: 'Today' },
+  { id: 'family-hotel', title: '亲子酒店住在哪个区域', group: 'Today' },
+  { id: 'rail-pass', title: '需要购买 JR Pass 吗', group: 'Today' },
+  { id: 'food-map', title: '整理一份当地美食地图', group: 'Today' },
+  { id: 'packing-list', title: '出发前行李清单', group: 'Yesterday' },
 ];
 
-const QUICK_ACTIONS = ['查询服务 Metrics 监控数据', '查看服务日志和 Trace', '管理 BOE/PPE 环境', '查询 TCC 配置'];
+const QUICK_ACTIONS = ['规划 5 天游玩路线', '比较酒店与交通方案', '推荐当地特色体验', '整理出发前清单'];
 
 export function AgentChatPage({
   onOpenOrchestration,
+  profileOpen,
   onOpenProfile,
+  onCloseProfile,
 }: {
   onOpenOrchestration: () => void;
+  profileOpen: boolean;
   onOpenProfile: () => void;
+  onCloseProfile: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const narrowRef = useRef<boolean | null>(null);
@@ -107,6 +113,21 @@ export function AgentChatPage({
   const [narrow, setNarrow] = useState(false);
   const [topicsOpen, setTopicsOpen] = useState(false);
   const selectedAgent = AGENTS.find((agent) => agent.id === selectedAgentId) ?? AGENTS[0];
+  const isTravelAssistant = selectedAgent.id === 'devops';
+  const quickActions = isTravelAssistant
+    ? QUICK_ACTIONS
+    : ['开始一个新任务', '查看可用能力', '打开 Agent 工作区', '检查最近运行'];
+  const profileAgent: ProfileAgent = {
+    id: selectedAgent.id,
+    name: selectedAgent.name,
+    avatar: selectedAgent.id === 'devops' ? '#6b5bd6' : '#596579',
+    description: selectedAgent.desc,
+    model: selectedAgent.id === 'devops' ? 'GPT-5.5' : 'Station Agent',
+    provider: selectedAgent.id === 'devops' ? 'OpenAI' : 'Station',
+    pinned: Boolean(selectedAgent.pinned),
+    workspacePath: selectedAgent.id === 'devops' ? '/Workspace/travel-plans' : '/Workspace',
+    temperature: 0.7,
+  };
   const pinned = AGENTS.filter((agent) => agent.pinned);
   const others = AGENTS.filter((agent) => !agent.pinned);
 
@@ -143,7 +164,7 @@ export function AgentChatPage({
           <>
             <div style={styles.agentHeader}>
               <div style={styles.agentTitle}>My Agents</div>
-              <button style={styles.iconButton} title="新建 Agent">
+              <button style={styles.iconButton} title="新建 Agent" onClick={onOpenProfile}>
                 <Plus size={15} />
               </button>
               <button style={styles.iconButton} title="打开 Agent 编排" onClick={onOpenOrchestration}>
@@ -181,7 +202,7 @@ export function AgentChatPage({
           </>
         ) : (
           <>
-            <button style={styles.collapsedSearchButton} title="新建 Agent">
+            <button style={styles.collapsedSearchButton} title="新建 Agent" onClick={onOpenProfile}>
               <Plus size={16} />
             </button>
             <button
@@ -241,7 +262,7 @@ export function AgentChatPage({
         />
       </aside>
 
-      {(!narrow || topicsOpen) && <aside style={styles.topicList}>
+      {!profileOpen && (!narrow || topicsOpen) && <aside style={styles.topicList}>
         {narrow && (
           <button style={styles.overlayCloseButton} title="关闭 Topics" onClick={() => setTopicsOpen(false)}>
             <X size={15} />
@@ -249,7 +270,7 @@ export function AgentChatPage({
         )}
         <div style={styles.agentCard}>
           <AgentIcon agent={selectedAgent} size={44} />
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={styles.cardName}>{selectedAgent.name}</div>
             <div style={styles.cardDesc}>{selectedAgent.desc}</div>
           </div>
@@ -271,7 +292,9 @@ export function AgentChatPage({
 
         <div style={styles.topicHeader}>
           <span>Topic 5</span>
-          <Settings2 size={13} />
+          <button style={{ border: 0, background: 'transparent', color: T.textTertiary, cursor: 'pointer', padding: 2 }} title="会话管理">
+            <Settings2 size={13} />
+          </button>
         </div>
         {['Today', 'Yesterday'].map((group) => (
           <div key={group}>
@@ -289,67 +312,79 @@ export function AgentChatPage({
         ))}
       </aside>}
 
-      <main style={styles.chat}>
+      {profileOpen ? (
+        <main style={styles.profileMain}>
+          <AgentProfile key={profileAgent.id} agent={profileAgent} onBack={onCloseProfile} />
+        </main>
+      ) : <main style={styles.chat}>
         <header style={styles.chatHeader}>
           <AgentIcon agent={selectedAgent} size={40} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={styles.chatName}>
               {selectedAgent.name}
-              <span style={styles.badge}>composer-2-fast</span>
-              <span style={styles.badge}>Cursor CLI</span>
+              <span style={styles.badge}>{isTravelAssistant ? '行程规划' : 'Agent'}</span>
+              <span style={styles.badge}>{isTravelAssistant ? '实时攻略' : 'Station'}</span>
             </div>
             <div style={styles.chatDesc}>{selectedAgent.desc}</div>
           </div>
-          <Share2 size={15} color={T.textTertiary} />
           {narrow && (
-            <>
-              <button
-                style={styles.headerIconButton}
-                title="Topics"
-                onClick={() => {
-                  setAgentListOpen(false);
-                  setTopicsOpen(true);
-                }}
-              >
-                <List size={15} />
-              </button>
-              <button style={styles.headerIconButton} title="Agent Profile" onClick={onOpenProfile}><UserRound size={15} /></button>
-              <button style={styles.headerIconButton} title="Orchestration" onClick={onOpenOrchestration}><Workflow size={15} /></button>
-            </>
+            <button
+              style={{
+                ...styles.headerIconButton,
+                background: topicsOpen ? T.primaryWash : T.fillQuaternary,
+                color: topicsOpen ? T.primary : T.textSecondary,
+              }}
+              title={topicsOpen ? '收起会话列表' : '展开会话列表'}
+              onClick={() => {
+                if (!topicsOpen) setAgentListOpen(false);
+                setTopicsOpen((open) => !open);
+              }}
+            >
+              <List size={15} />
+            </button>
           )}
-          {!narrow && <Settings2 size={15} color={T.textTertiary} />}
-          {!narrow && <Cloud size={15} color={T.textTertiary} />}
+          {!narrow && <Settings2 size={15} color={T.textTertiary} style={{ cursor: 'pointer' }} title="Agent 设置" />}
         </header>
 
         <section style={styles.emptyChat}>
-          <div style={{ ...styles.welcomeCard, width: narrow ? 'calc(100% - 28px)' : 430 }}>
+          <div style={{ ...styles.welcomeCard, width: narrow ? 'calc(100% - 28px)' : 'min(620px, calc(100% - 36px))' }}>
             <AgentIcon agent={selectedAgent} size={48} />
             <div style={styles.welcomeTitle}>{selectedAgent.name}</div>
             <div style={styles.capabilityBar}>
-              <span><CheckCircle2 size={13} /> Tools enabled</span>
-              <span>Cursor CLI</span>
-              <span>Memory</span>
+              <span><CheckCircle2 size={13} /> {isTravelAssistant ? '行程规划' : 'Tools enabled'}</span>
+              <span>{isTravelAssistant ? '目的地攻略' : 'Station'}</span>
+              <span>{isTravelAssistant ? '偏好记忆' : 'Memory'}</span>
             </div>
             <p style={styles.welcomeText}>
-              你好，我是 {selectedAgent.name}。我可以帮你查询服务监控、排查问题、管理配置和环境、分析代码等。请告诉我你需要什么帮助？
+              {isTravelAssistant
+                ? `你好，我是${selectedAgent.name}。告诉我目的地、出行时间和同行人，我可以帮你规划路线、比较交通住宿，并整理一份随时可调整的旅行方案。`
+                : `你好，我是${selectedAgent.name}。${selectedAgent.desc} 请告诉我你现在想完成什么。`}
             </p>
-            <span style={styles.modelBadge}>composer-2-fast</span>
+            <span style={styles.modelBadge}>{isTravelAssistant ? '旅行方案已就绪' : 'Agent ready'}</span>
           </div>
 
-          <div style={{ ...styles.quickActions, width: narrow ? 'calc(100% - 28px)' : undefined }}>
-            {QUICK_ACTIONS.map((action) => (
+          <div style={{ ...styles.quickActions, width: narrow ? 'calc(100% - 28px)' : 'min(620px, calc(100% - 36px))' }}>
+            {quickActions.map((action) => (
               <button key={action} style={styles.quickAction}>
-                <Network size={13} />
+                <Compass size={13} />
                 {action}
               </button>
             ))}
           </div>
         </section>
 
-        <div style={{ margin: narrow ? '0 14px 18px' : '0 0 48px' }}>
-          <PromptComposer modelLabel="GPT-5.5" />
+        <div style={{ width: narrow ? 'calc(100% - 28px)' : 'min(620px, calc(100% - 36px))', margin: '0 auto 18px' }}>
+          <PromptComposer
+            density="compact"
+            minHeight={96}
+            maxWidth="100%"
+            modelLabel="GPT-5.5"
+            placeholder={isTravelAssistant
+              ? '告诉我想去哪里、什么时候出发，以及你偏好的旅行节奏...'
+              : '描述你希望这个 Agent 帮你完成的任务...'}
+          />
         </div>
-      </main>
+      </main>}
     </div>
   );
 }
@@ -554,11 +589,11 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: 'ellipsis',
   },
   topicList: {
-    width: 260,
+    width: 230,
     flexShrink: 0,
     borderRight: `1px solid ${T.border}`,
-    background: '#fff',
-    padding: '16px 14px',
+    background: '#fbfbfb',
+    padding: '12px 10px',
     boxSizing: 'border-box',
     overflow: 'auto',
     position: 'relative',
@@ -582,16 +617,21 @@ const styles: Record<string, React.CSSProperties> = {
   agentCard: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
-    padding: 14,
-    borderRadius: 22,
+    gap: 9,
+    minHeight: 58,
+    padding: '9px 10px',
+    border: `1px solid ${T.border}`,
+    borderRadius: 10,
     background: '#fff',
-    boxShadow: '0 14px 40px rgba(0,0,0,0.08)',
-    marginBottom: 12,
+    boxShadow: 'none',
+    marginBottom: 10,
   },
   cardName: {
-    fontSize: 24,
-    fontWeight: 850,
+    fontSize: 15,
+    fontWeight: 750,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
   },
   cardDesc: {
     marginTop: 3,
@@ -603,19 +643,22 @@ const styles: Record<string, React.CSSProperties> = {
   },
   topicAction: {
     width: '100%',
-    height: 30,
+    height: 32,
     border: 0,
+    borderRadius: 7,
     background: 'transparent',
     display: 'flex',
     alignItems: 'center',
     gap: 8,
     color: T.text,
-    fontSize: 12,
+    padding: '0 8px',
+    fontSize: 11,
     cursor: 'pointer',
     textAlign: 'left',
   },
   topicHeader: {
-    marginTop: 14,
+    marginTop: 12,
+    padding: '0 8px',
     display: 'flex',
     justifyContent: 'space-between',
     color: T.textSecondary,
@@ -623,7 +666,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
   },
   groupLine: {
-    marginTop: 10,
+    marginTop: 8,
+    padding: '0 6px',
     display: 'flex',
     alignItems: 'center',
     gap: 4,
@@ -631,11 +675,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
   },
   topicItem: {
-    height: 28,
+    height: 27,
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    paddingLeft: 12,
+    padding: '0 8px 0 14px',
     color: T.textSecondary,
     fontSize: 12,
   },
@@ -647,16 +691,28 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
   },
-  chatHeader: {
-    margin: '16px 18px 0',
-    height: 78,
-    borderRadius: 18,
+  profileMain: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    position: 'relative',
+    overflow: 'hidden',
     background: '#fff',
-    boxShadow: '0 12px 35px rgba(0,0,0,0.06)',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  chatHeader: {
+    width: 'min(620px, calc(100% - 36px))',
+    margin: '12px auto 0',
+    height: 66,
+    border: `1px solid ${T.border}`,
+    borderRadius: 12,
+    background: '#fff',
+    boxShadow: '0 4px 18px rgba(15,23,42,0.04)',
     display: 'flex',
     alignItems: 'center',
     gap: 12,
-    padding: '0 18px',
+    padding: '0 14px',
     boxSizing: 'border-box',
     minWidth: 0,
   },
@@ -687,44 +743,51 @@ const styles: Record<string, React.CSSProperties> = {
   },
   emptyChat: {
     flex: 1,
+    minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 18,
+    gap: 14,
+    padding: '18px 0 14px',
+    boxSizing: 'border-box',
+    overflow: 'auto',
   },
   welcomeCard: {
-    width: 430,
-    borderRadius: 18,
+    width: 620,
+    minHeight: 232,
+    border: `1px solid ${T.border}`,
+    borderRadius: 14,
     background: '#fff',
-    boxShadow: '0 24px 70px rgba(0,0,0,0.08)',
-    padding: 28,
+    boxShadow: '0 8px 28px rgba(15,23,42,0.05)',
+    padding: '24px 32px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     textAlign: 'center',
-    maxWidth: 'calc(100% - 28px)',
+    maxWidth: 'calc(100% - 36px)',
     boxSizing: 'border-box',
   },
   welcomeTitle: {
-    marginTop: 12,
-    fontSize: 18,
-    fontWeight: 900,
+    marginTop: 10,
+    fontSize: 17,
+    fontWeight: 800,
   },
   capabilityBar: {
-    marginTop: 12,
-    minHeight: 28,
+    marginTop: 10,
+    minHeight: 26,
     borderRadius: 8,
     background: T.fillQuaternary,
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    padding: '0 12px',
+    gap: 10,
+    padding: '0 10px',
     color: T.textTertiary,
     fontSize: 11,
   },
   welcomeText: {
-    maxWidth: 330,
+    maxWidth: 440,
+    margin: '14px 0 12px',
     color: T.textSecondary,
     fontSize: 13,
     lineHeight: 1.6,
@@ -740,8 +803,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 10,
-    maxWidth: 560,
+    gap: '6px 16px',
+    maxWidth: 620,
+    padding: '0 12px',
   },
   quickAction: {
     border: 0,
@@ -750,8 +814,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 5,
     color: T.text,
-    fontSize: 12,
-    fontWeight: 650,
+    fontSize: 11,
+    fontWeight: 600,
     cursor: 'pointer',
   },
   headerIconButton: {
