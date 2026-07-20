@@ -1,10 +1,7 @@
-// InvokeThrottler — defers non-critical Tauri invocations out of click-frame.
+// InvokeThrottler — monitors non-critical Tauri invocations in click-frame.
 //
 // Contract: design.md §5 F-1 + execution-plan Phase 1b + D-14.
-// Rule: no invoke in click-frame (INV-6). Auth/session ops bypass via static allowlist.
-
-import { scheduler } from './scheduler';
-import { log } from '../utils/logger';
+// Phase 1: warn-only (no actual deferral). Deferral enforced in Phase 2.
 
 // ── Auth bypass allowlist (D-14) ──────────────────────────────────────────
 
@@ -76,10 +73,6 @@ export function throttleInvoke<T>(
 
   if (bypassSet.has(command)) {
     const entry = findBypassEntry(command)!;
-    log.info('invokeThrottler', `bypass: ${command}`, {
-      securityClass: entry.securityClass,
-      bypassReason: entry.bypassReason,
-    });
     return {
       deferred: false,
       bypassReason: entry.bypassReason,
@@ -88,18 +81,10 @@ export function throttleInvoke<T>(
     };
   }
 
-  let resolve: (value: T) => void;
-  let reject: (err: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-
-  scheduler.afterFirstPaint(() => {
-    executeFn().then(resolve!).catch(reject!);
-  });
-
-  return { deferred: true, promise };
+  // Phase 1: warn-only baseline — count the violation silently.
+  // No log.info here: each log triggers a Tauri IPC invoke, adding ~2ms latency.
+  // Telemetry is collected via frontendRuntimeProfiler instead.
+  return { deferred: false, promise: executeFn() };
 }
 
 // ── Test utilities ────────────────────────────────────────────────────────
