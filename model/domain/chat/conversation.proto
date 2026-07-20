@@ -35,7 +35,7 @@ message Conversation {
   string name = 10;
   string description = 11;
   string avatar_cid = 12;
-  string owner_actor_did = 13;
+  string owner_ptid = 13;
   int32 max_members = 14;
   GroupVisibilityV1 visibility = 15;
 }
@@ -64,13 +64,13 @@ enum GroupVisibilityV1 {
 
 message ConversationMember {
   string conversation_id = 1;
-  string actor_did = 2;
+  string ptid = 2;
   MemberRole role = 3;
   MemberStatus member_status = 4;
   string actor_home_station_peer_id = 5;
   string actor_home_station_domain = 6;
   google.protobuf.Timestamp joined_at = 7;
-  string invited_by_actor_did = 8;
+  string invited_by_ptid = 8;
 
   // Per-member settings
   string nickname = 10;
@@ -116,7 +116,7 @@ enum MessageDeliveryState {
 message ConversationCommand {
   string command_id = 1;
   string conversation_id = 2;
-  string sender_actor_did = 3;
+  string sender_ptid = 3;
   string sender_device_id = 4;
   int64 observed_membership_epoch = 5;
   google.protobuf.Timestamp client_ts = 6;
@@ -156,13 +156,13 @@ message AddMembersCommand {
 }
 
 message MemberAddEntry {
-  string actor_did = 1;
+  string ptid = 1;
   string actor_home_station_peer_id = 2;
   MemberRole role = 3;
 }
 
 message RemoveMembersCommand {
-  repeated string actor_dids = 1;
+  repeated string ptids = 1;
 }
 
 message LeaveCommand {}
@@ -208,7 +208,7 @@ message CommittedConversationEvent {
 
 message MessageCommittedEvent {
   string message_id = 1;
-  string sender_actor_did = 2;
+  string sender_ptid = 2;
   string sender_device_id = 3;
   bytes encrypted_payload = 4;
   MessageContentType content_type = 5;
@@ -220,14 +220,14 @@ message MessageCommittedEvent {
 
 message MessageEditedEvent {
   string message_id = 1;
-  string editor_actor_did = 2;
+  string editor_ptid = 2;
   bytes encrypted_payload = 3;
   google.protobuf.Timestamp edited_at = 4;
 }
 
 message MessageRetractedEvent {
   string message_id = 1;
-  string retractor_actor_did = 2;
+  string retractor_ptid = 2;
   google.protobuf.Timestamp retracted_at = 3;
 }
 
@@ -237,7 +237,7 @@ message MembershipChangedEvent {
 }
 
 message MemberChange {
-  string actor_did = 1;
+  string ptid = 1;
   MemberChangeAction action = 2;
   MemberRole role = 3;
   string actor_home_station_peer_id = 4;
@@ -257,11 +257,11 @@ message ConversationCreatedEvent {
 }
 
 message ConversationDissolvedEvent {
-  string dissolved_by_actor_did = 1;
+  string dissolved_by_ptid = 1;
 }
 
 message SettingsChangedEvent {
-  string changed_by_actor_did = 1;
+  string changed_by_ptid = 1;
   optional string name = 2;
   optional string description = 3;
   optional string avatar_cid = 4;
@@ -299,7 +299,7 @@ message EncryptedAttachment {
 message MessageReceipt {
   string conversation_id = 1;
   string message_id = 2;
-  string actor_did = 3;
+  string ptid = 3;
   string device_id = 4;
   ReceiptType receipt_type = 5;
   google.protobuf.Timestamp ts = 6;
