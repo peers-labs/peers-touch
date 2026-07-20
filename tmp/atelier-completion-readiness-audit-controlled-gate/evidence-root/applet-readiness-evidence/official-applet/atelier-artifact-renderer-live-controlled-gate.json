@@ -1,0 +1,131 @@
+{
+  "ok": true,
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "gate": "atelier-artifact-renderer-live-controlled-gate",
+  "source": "controlled_headless_chrome_host_sandbox_harness",
+  "runId": "atelier-renderer-live-83537-1783534755445",
+  "runtimeEvidence": [
+    {
+      "rendererKind": "markdown",
+      "sourceLineCount": 5,
+      "renderedNodeCount": 5,
+      "blockedScriptTagCount": 2,
+      "blockedImageRefCount": 1,
+      "blockedLinkRefCount": 1,
+      "sandboxPolicy": {
+        "allowScripts": false,
+        "allowNetwork": false,
+        "allowExternalNavigation": false,
+        "allowFileAccess": false,
+        "allowPatchApply": false
+      },
+      "seq": 1,
+      "rendererOwner": "desktop_host",
+      "rendererMode": "host_sandbox_manifest",
+      "surfaceKind": "host_sandbox_visual_surface",
+      "appletRenderable": false
+    },
+    {
+      "rendererKind": "diff",
+      "sourceLineCount": 5,
+      "renderedNodeCount": 5,
+      "hunkCount": 1,
+      "additionCount": 1,
+      "deletionCount": 1,
+      "binaryPatchCount": 1,
+      "patchApplyAllowed": false,
+      "sandboxPolicy": {
+        "allowScripts": false,
+        "allowNetwork": false,
+        "allowExternalNavigation": false,
+        "allowFileAccess": false,
+        "allowPatchApply": false
+      },
+      "seq": 2,
+      "rendererOwner": "desktop_host",
+      "rendererMode": "host_sandbox_manifest",
+      "surfaceKind": "host_sandbox_visual_surface",
+      "appletRenderable": false
+    },
+    {
+      "rendererKind": "web",
+      "sourceLineCount": 1,
+      "renderedNodeCount": 1,
+      "blockedScriptTagCount": 2,
+      "blockedIframeTagCount": 2,
+      "blockedExternalUrlCount": 2,
+      "blockedInlineEventHandlerCount": 1,
+      "sandboxPolicy": {
+        "allowScripts": false,
+        "allowNetwork": false,
+        "allowExternalNavigation": false,
+        "allowFileAccess": false,
+        "allowPatchApply": false
+      },
+      "seq": 3,
+      "rendererOwner": "desktop_host",
+      "rendererMode": "host_sandbox_manifest",
+      "surfaceKind": "host_sandbox_visual_surface",
+      "appletRenderable": false
+    },
+    {
+      "rendererKind": "image",
+      "renderedNodeCount": 1,
+      "mime": "image/png",
+      "size": 2048,
+      "sha256": "sha256:controlled-image",
+      "width": 64,
+      "height": 32,
+      "forbiddenRawFields": [
+        "path",
+        "url",
+        "src",
+        "base64",
+        "bytes"
+      ],
+      "rawImageBytesExposedToApplet": false,
+      "sandboxPolicy": {
+        "allowScripts": false,
+        "allowNetwork": false,
+        "allowExternalNavigation": false,
+        "allowFileAccess": false,
+        "allowPatchApply": false
+      },
+      "seq": 4,
+      "rendererOwner": "desktop_host",
+      "rendererMode": "host_sandbox_manifest",
+      "surfaceKind": "host_sandbox_visual_surface",
+      "appletRenderable": false
+    }
+  ],
+  "forbiddenDomCounts": {
+    "script": 0,
+    "iframe": 0,
+    "image": 0,
+    "anchorWithHref": 0
+  },
+  "unexpectedScriptExecution": false,
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "controlled Host-owned live sandbox DOM render harness for markdown/web/image/diff preview kinds",
+      "live sandbox renderer emits metadata-only evidence without raw body/html/diff/image bytes",
+      "live sandbox renderer blocks script, iframe, external URL, inline event handler, file access, and patch apply surfaces",
+      "live sandbox renderer keeps rendered surfaces Host-owned and not applet-renderable"
+    ],
+    "doesNotProve": [
+      "real Desktop product-window webview renderer",
+      "real artifact blob fetch from Station storage",
+      "real Console Logs runtime stream",
+      "real attachment Host Storage runtime",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "notCovered": [
+    "real Desktop product-window webview renderer",
+    "real artifact blob fetch from Station storage",
+    "real Console Logs runtime stream",
+    "real attachment Host Storage runtime",
+    "complete Host + Station + applet E2E"
+  ]
+}

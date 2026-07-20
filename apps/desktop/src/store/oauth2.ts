@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { api, type OAuth2ProviderSummary, type OAuth2Connection } from '../services/desktop_api';
 import { EVENT, eventBus } from '../kernel/events';
 
@@ -16,7 +16,7 @@ interface OAuth2Store {
   startAuth: (id: string, environment?: string) => Promise<void>;
 }
 
-export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
+export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, get) => ({
   providers: [],
   connections: [],
   loading: false,

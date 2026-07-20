@@ -1,0 +1,323 @@
+{
+  "ok": true,
+  "evidenceClass": "READINESS_AUDIT",
+  "gate": "atelier:full-e2e-runtime-inputs-controlled-gate",
+  "readiness": "NOT_READY",
+  "globalReady": false,
+  "runtimeInputEnvs": [
+    "PEERS_ATELIER_FULL_E2E_STATION_URL",
+    "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+    "PEERS_ATELIER_FULL_E2E_IDE",
+    "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE"
+  ],
+  "scenarios": [
+    {
+      "name": "all missing inputs stay missing without inferring readiness",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "MISSING"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "MISSING"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "MISSING"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "MISSING"
+        }
+      ]
+    },
+    {
+      "name": "non-http Station URL is invalid",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "INVALID",
+          "reason": "PEERS_ATELIER_FULL_E2E_STATION_URL must be http(s)"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "PRESENT"
+        }
+      ]
+    },
+    {
+      "name": "Station URL with username is invalid",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "INVALID",
+          "reason": "PEERS_ATELIER_FULL_E2E_STATION_URL must not include username\n\n'operator' !== ''\n"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "PRESENT"
+        }
+      ]
+    },
+    {
+      "name": "Station URL with password is invalid",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "INVALID",
+          "reason": "PEERS_ATELIER_FULL_E2E_STATION_URL must not include username\n\n'operator' !== ''\n"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "PRESENT"
+        }
+      ]
+    },
+    {
+      "name": "Desktop cmd launch rejects shell metacharacters",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "INVALID",
+          "reason": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP cmd: value must not require shell metacharacters\n\ntrue !== false\n"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "PRESENT"
+        }
+      ]
+    },
+    {
+      "name": "blank IDE target is invalid",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "INVALID",
+          "reason": "PEERS_ATELIER_FULL_E2E_IDE must be non-empty"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "PRESENT"
+        }
+      ]
+    },
+    {
+      "name": "provider profile must be a JSON object",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "INVALID",
+          "reason": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE must be a JSON object\n\ntrue !== false\n"
+        }
+      ]
+    },
+    {
+      "name": "provider profile requires non-empty profileRef",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "INVALID",
+          "reason": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE must include non-empty profileRef"
+        }
+      ]
+    },
+    {
+      "name": "provider profile rejects syntheticOnly marker",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "INVALID",
+          "reason": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE must not be syntheticOnly"
+        }
+      ]
+    },
+    {
+      "name": "provider profile rejects controlledOnly marker",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "INVALID",
+          "reason": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE must not be controlledOnly"
+        }
+      ]
+    },
+    {
+      "name": "provider profile rejects controlled local evidence class",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "INVALID",
+          "reason": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE must not use controlled local evidence class"
+        }
+      ]
+    },
+    {
+      "name": "safe present inputs validate without launching Desktop",
+      "statuses": [
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_IDE",
+          "status": "PRESENT"
+        },
+        {
+          "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+          "status": "PRESENT"
+        }
+      ]
+    }
+  ],
+  "parserChecks": {
+    "safeDesktopLaunch": {
+      "kind": "cmd",
+      "command": "node",
+      "args": [
+        "--version"
+      ]
+    },
+    "providerProfileRef": "controlled-provider-profile",
+    "rejectsShellMetacharacters": true,
+    "rejectsProviderProfileArray": true,
+    "rejectsBlankProviderProfileRef": true,
+    "rejectsStationUrlUserinfo": true,
+    "rejectsControlledProfileMarkers": true,
+    "redactsRawRuntimeInputValues": true
+  },
+  "mutatesSharedFullE2EEvidence": false,
+  "mutatesSharedPreflightEvidence": false,
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "full E2E runtime input validation has an executable controlled matrix for missing, invalid, and present inputs",
+      "invalid Station URL, unsafe Desktop cmd launch specs, empty IDE targets, and malformed provider profiles fail closed before Desktop launch",
+      "Station URL userinfo and controlled/synthetic provider profile markers fail closed before Desktop launch",
+      "runtime input evidence records status and reason without persisting raw Station URL or provider profile values",
+      "Desktop cmd launch specs reject shell metacharacters and parse into non-shell command/args",
+      "provider runtime profiles must be JSON objects with non-empty profileRef"
+    ],
+    "doesNotProve": [
+      "real Desktop Host launch",
+      "real Station service binding",
+      "real IDE launch",
+      "production provider/model/runtime quality",
+      "full Host + Station + applet E2E",
+      "global Atelier readiness"
+    ]
+  },
+  "notCovered": [
+    "real Desktop Host launch",
+    "real Station service binding",
+    "real IDE launch",
+    "production provider/model/runtime quality",
+    "full Host + Station + applet E2E",
+    "global Atelier readiness"
+  ],
+  "completedAt": "2026-07-09T02:19:23.317Z"
+}

@@ -1,0 +1,22 @@
+{
+  "out": "tmp/agent-lobehub-l2-screenshots/resources-co-compact-explorer-scoped.png",
+  "domOut": "tmp/agent-lobehub-resources-co-dom.json",
+  "captureMethod": "cdp-card-click-scoped-layout-screenshot",
+  "chromeVersion": "Chrome/149.0.7827.201",
+  "clip": {
+    "x": 365,
+    "y": 443,
+    "width": 1320,
+    "height": 554,
+    "scale": 1
+  },
+  "info": {
+    "url": "http://localhost:3200/?surface=resources&state=compact-resources&check=co",
+    "root": true,
+    "compactResources": true,
+    "compactShell": true,
+    "scopedSelector": ".pt-resource-layout.is-compact-resources",
+    "portalChromeHit": false,
+    "bodyPortalChromeHit": true
+  }
+}

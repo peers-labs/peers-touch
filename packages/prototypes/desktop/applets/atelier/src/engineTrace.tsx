@@ -1,7 +1,7 @@
 /**
- * Atelier — multi-engine negotiation trace renderer.
+ * Atelier — prototype-only multi-engine negotiation trace renderer.
  *
- * Renders the output of `runSession` (engine.ts). The whole point is that the
+ * Renders the local demo output of `runSession` (engine.ts). The whole point is that the
  * SAME position pool, run through three different `EnginePolicy`s, produces
  * visibly different structures here:
  *   - Expert Hierarchy : a serial vertical chain + a terminal sign-off gate
@@ -104,9 +104,9 @@ function RoundView({ r }: { r: Round }) {
 }
 
 /**
- * The live, engine-driven negotiation block. Re-runs `runSession` on every
- * render with the current `engineId`, so switching engines in the composer
- * instantly re-shapes this trace.
+ * Prototype-only local negotiation trace. Re-runs `runSession` on every render
+ * with the current `engineId`, so switching engines in the composer reshapes
+ * the demo trace. Station remains the execution/orchestration source of truth.
  */
 export function EngineTrace({ input, engineId }: { input: CollaborationInput; engineId: string }) {
   const [open, setOpen] = useState(false);
@@ -164,6 +164,8 @@ export function EngineTrace({ input, engineId }: { input: CollaborationInput; en
             <span>收敛机制：{trace.convergenceMechanism}</span>
             <span>·</span>
             <span>终裁权：{trace.authority}</span>
+            <span>·</span>
+            <span>Prototype-only local trace；真实编排归 Station</span>
           </div>
 
           {trace.rounds.map((r) => (

@@ -1,0 +1,358 @@
+{
+  "ok": true,
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "gate": "atelier:full-e2e-final-evidence-controlled-gate",
+  "readiness": "NOT_READY",
+  "globalReady": false,
+  "scenarios": [
+    {
+      "name": "valid-final-evidence",
+      "status": "PASS",
+      "expectedFailureMode": "",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/valid-final-evidence/atelier-full-e2e.fixture.json",
+      "outputTail": [],
+      "runnerOk": true,
+      "failureMode": "",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "workspace-open-claims-real-ide-launch",
+      "status": "PASS",
+      "expectedFailureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/workspace-open-claims-real-ide-launch/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E applet UI actions not proven: workspace open action evidence must not claim real IDE launch",
+        "true !== false"
+      ],
+      "runnerOk": false,
+      "failureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "workspace-open-stale-launch",
+      "status": "PASS",
+      "expectedFailureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/workspace-open-stale-launch/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E applet UI actions not proven: workspace open action evidence must match current launchId",
+        "+ actual - expected",
+        "+ 'stale-launch'",
+        "- '933eb022-a259-4fd2-881b-a2dbe596e3b0'"
+      ],
+      "runnerOk": false,
+      "failureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "workspace-open-stale-session",
+      "status": "PASS",
+      "expectedFailureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/workspace-open-stale-session/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E applet UI actions not proven: workspace open action evidence must match Desktop ready sessionId",
+        "+ actual - expected",
+        "+ 'stale-session'",
+        "- 'controlled-session-workspace-open-stale-session'"
+      ],
+      "runnerOk": false,
+      "failureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "workspace-open-wrong-ide-target",
+      "status": "PASS",
+      "expectedFailureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/workspace-open-wrong-ide-target/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E applet UI actions not proven: workspace open action evidence must match configured IDE target by hash",
+        "+ actual - expected",
+        "+ 'sha256:bc2899171432245197e0e521c7f81f06426c8f2a5fcb6045abada4c767c9e2dc'",
+        "- 'sha256:8e471d32a41d4c31dd2fb30afd06dddad493422b00dda85128b3e783990acb9a'"
+      ],
+      "runnerOk": false,
+      "failureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "workspace-open-wrong-action",
+      "status": "PASS",
+      "expectedFailureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/workspace-open-wrong-action/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E applet UI actions not proven: workspace open action evidence must prove atelier.workspace.open action",
+        "+ actual - expected",
+        "+ 'provider.invoke'",
+        "- 'atelier.workspace.open'"
+      ],
+      "runnerOk": false,
+      "failureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "workspace-open-native-launch-mode",
+      "status": "PASS",
+      "expectedFailureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/workspace-open-native-launch-mode/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E applet UI actions not proven: workspace open action evidence must remain a Host intent",
+        "+ actual - expected",
+        "+ 'native_launch'",
+        "- 'host_intent'"
+      ],
+      "runnerOk": false,
+      "failureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "workspace-open-shell-side-effect",
+      "status": "PASS",
+      "expectedFailureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/workspace-open-shell-side-effect/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E applet UI actions not proven: workspace open action evidence must preserve Host intent side effect",
+        "+ actual - expected",
+        "+ 'shell_execute'",
+        "- 'workspace_open_intent'"
+      ],
+      "runnerOk": false,
+      "failureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "workspace-open-file-url",
+      "status": "PASS",
+      "expectedFailureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/workspace-open-file-url/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E applet UI actions not proven: workspace open action evidence must use pt-workspace URI",
+        "+ actual - expected",
+        "+ 'file:'",
+        "- 'pt-workspace:'"
+      ],
+      "runnerOk": false,
+      "failureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "workspace-open-task-mismatch",
+      "status": "PASS",
+      "expectedFailureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/workspace-open-task-mismatch/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E applet UI actions not proven: workspace open action evidence task path must match taskId",
+        "+ actual - expected",
+        "+ '/other-task'",
+        "- '/controlled-task'"
+      ],
+      "runnerOk": false,
+      "failureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "workspace-open-missing-workspace-query",
+      "status": "PASS",
+      "expectedFailureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/workspace-open-missing-workspace-query/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E applet UI actions not proven: workspace open action evidence must include workspace query",
+        "false !== true"
+      ],
+      "runnerOk": false,
+      "failureMode": "APPLET_UI_ACTIONS_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "desktop-ready-wrong-station-url-hash",
+      "status": "PASS",
+      "expectedFailureMode": "DESKTOP_HOST_LAUNCH_FAILED",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/desktop-ready-wrong-station-url-hash/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E Desktop Host launch failed: Desktop Host readiness evidence must prove the configured Station URL by hash",
+        "+ actual - expected",
+        "+ 'sha256:8cc33f6918321ed9ff096771180e7d767921c49ae52a07df96cb837f4a13465b'",
+        "- 'sha256:b925b85990ca9393d9a2194b7927ecfb94f5cefb038ceb1a2c26b36cb49435cf'"
+      ],
+      "runnerOk": false,
+      "failureMode": "DESKTOP_HOST_LAUNCH_FAILED",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "ide-launch-exposes-shell",
+      "status": "PASS",
+      "expectedFailureMode": "REAL_IDE_LAUNCH_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/ide-launch-exposes-shell/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E real IDE launch not proven: real IDE launch evidence must not expose file/shell/execute to applet",
+        "true !== false"
+      ],
+      "runnerOk": false,
+      "failureMode": "REAL_IDE_LAUNCH_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "ide-launch-wrong-owner",
+      "status": "PASS",
+      "expectedFailureMode": "REAL_IDE_LAUNCH_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/ide-launch-wrong-owner/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E real IDE launch not proven: real IDE launch evidence must be owned by Desktop Host",
+        "+ actual - expected",
+        "+ 'applet'",
+        "- 'desktop_host'"
+      ],
+      "runnerOk": false,
+      "failureMode": "REAL_IDE_LAUNCH_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "ide-launch-exposes-open-external-url",
+      "status": "PASS",
+      "expectedFailureMode": "REAL_IDE_LAUNCH_NOT_PROVEN",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/ide-launch-exposes-open-external-url/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E real IDE launch not proven: real IDE launch evidence must not expose openExternalUrl to applet",
+        "true !== false"
+      ],
+      "runnerOk": false,
+      "failureMode": "REAL_IDE_LAUNCH_NOT_PROVEN",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "provider-exposes-invoke",
+      "status": "PASS",
+      "expectedFailureMode": "REAL_RUNTIME_AUTOMATION_NOT_WIRED",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/provider-exposes-invoke/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E provider/runtime quality not proven: provider/runtime evidence must not expose provider invoke to applet",
+        "true !== false"
+      ],
+      "runnerOk": false,
+      "failureMode": "REAL_RUNTIME_AUTOMATION_NOT_WIRED",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "provider-wrong-owner",
+      "status": "PASS",
+      "expectedFailureMode": "REAL_RUNTIME_AUTOMATION_NOT_WIRED",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/provider-wrong-owner/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E provider/runtime quality not proven: provider/runtime evidence must be Station-owned",
+        "+ actual - expected",
+        "+ 'applet'",
+        "- 'station'"
+      ],
+      "runnerOk": false,
+      "failureMode": "REAL_RUNTIME_AUTOMATION_NOT_WIRED",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "provider-wrong-profile-ref-hash",
+      "status": "PASS",
+      "expectedFailureMode": "REAL_RUNTIME_AUTOMATION_NOT_WIRED",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/provider-wrong-profile-ref-hash/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E provider/runtime quality not proven: provider/runtime evidence must match provider profile ref by hash",
+        "+ actual - expected",
+        "+ 'sha256:beebc8dee851a682649db1ee80e7998ec8d22ef01f019e261e4a0d67be07e798'",
+        "- 'sha256:07bf0f45fa88d5ee53e6fc8fa119fc6887e73d34d0fec48bdd94474b82eb449b'"
+      ],
+      "runnerOk": false,
+      "failureMode": "REAL_RUNTIME_AUTOMATION_NOT_WIRED",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "provider-exposes-artifact-write",
+      "status": "PASS",
+      "expectedFailureMode": "REAL_RUNTIME_AUTOMATION_NOT_WIRED",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/provider-exposes-artifact-write/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E provider/runtime quality not proven: provider/runtime evidence must not expose artifact writes to applet",
+        "true !== false"
+      ],
+      "runnerOk": false,
+      "failureMode": "REAL_RUNTIME_AUTOMATION_NOT_WIRED",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    },
+    {
+      "name": "provider-exposes-trace-checkpoint-resume",
+      "status": "PASS",
+      "expectedFailureMode": "REAL_RUNTIME_AUTOMATION_NOT_WIRED",
+      "evidencePath": "tmp/atelier-full-e2e-final-evidence-controlled-gate/provider-exposes-trace-checkpoint-resume/atelier-full-e2e.fixture.json",
+      "outputTail": [
+        "Atelier full E2E provider/runtime quality not proven: provider/runtime evidence must not expose Trace/Checkpoint/Resume to applet",
+        "true !== false"
+      ],
+      "runnerOk": false,
+      "failureMode": "REAL_RUNTIME_AUTOMATION_NOT_WIRED",
+      "readiness": "NOT_READY",
+      "globalReady": false
+    }
+  ],
+  "isolatedWorkDir": "tmp/atelier-full-e2e-final-evidence-controlled-gate",
+  "mutatesSharedFullE2EEvidence": false,
+  "mutatesSharedPreflightEvidence": false,
+  "sharedEvidenceUnchanged": {
+    "fullE2E": true,
+    "preflight": true,
+    "workspaceOpen": true,
+    "ideLaunch": true,
+    "providerRuntime": true
+  },
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "full E2E runner validates current-launch Desktop ready, workspace open, IDE launch, and provider runtime evidence before ok=true",
+      "full E2E runner rejects workspace open evidence that tries to claim real IDE launch",
+      "full E2E runner rejects workspace open evidence that is stale or not bound to the current launch/session",
+      "full E2E runner rejects workspace open evidence that mutates Host-intent, IDE target, or pt-workspace URI shape",
+      "full E2E runner rejects Desktop ready evidence whose Station URL digest does not match runtime input",
+      "full E2E runner rejects IDE launch evidence that exposes file/shell/execute-like authority to the applet",
+      "full E2E runner rejects IDE launch evidence that is not owned by Desktop Host",
+      "full E2E runner rejects IDE launch evidence that exposes openExternalUrl to the applet",
+      "full E2E runner rejects provider/runtime evidence whose provider profile digest does not match runtime input",
+      "full E2E runner rejects provider/runtime evidence that exposes provider/runtime/artifact/trace authority to the applet",
+      "full E2E runner rejects provider/runtime evidence that is not owned by Station",
+      "controlled final evidence validation does not mutate shared atelier-full-e2e.json evidence",
+      "controlled final evidence validation does not mutate shared atelier-full-e2e-preflight.json evidence",
+      "controlled final evidence validation does not mutate shared workspace/IDE/provider side evidence"
+    ],
+    "doesNotProve": [
+      "real Desktop Host launch",
+      "real Station service binding",
+      "real applet UI actions",
+      "real IDE launch",
+      "production provider/model/runtime quality",
+      "full Host + Station + applet E2E",
+      "global Atelier readiness"
+    ]
+  },
+  "notCovered": [
+    "real Desktop Host launch",
+    "real Station service binding",
+    "real applet UI actions",
+    "real IDE launch",
+    "production provider/model/runtime quality",
+    "full Host + Station + applet E2E",
+    "global Atelier readiness"
+  ],
+  "completedAt": "2026-07-09T02:39:23.094Z"
+}

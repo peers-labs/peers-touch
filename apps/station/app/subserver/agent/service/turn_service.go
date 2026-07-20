@@ -130,6 +130,7 @@ type TurnService struct {
 	growthMetrics    *GrowthMetricsService
 	nudgeState       *domain.NudgeState
 	localToolBroker  *LocalToolBroker
+	liveResumeBroker *LiveResumeBroker
 	eventBus         domain.EventBus
 	eventWriter      *TaskEventWriter
 }
@@ -163,7 +164,12 @@ func NewTurnService(
 		growthMetrics:    growthMetrics,
 		nudgeState:       domain.NewNudgeState(),
 		localToolBroker:  NewLocalToolBroker(),
+		liveResumeBroker: NewLiveResumeBroker(),
 	}
+}
+
+func (s *TurnService) SetLiveResumeBroker(broker *LiveResumeBroker) {
+	s.liveResumeBroker = broker
 }
 
 func (s *TurnService) SetEventBus(eventBus domain.EventBus) {
@@ -204,6 +210,14 @@ func (s *TurnService) publishDomainEvent(ctx context.Context, agentID, turnID, t
 
 func (s *TurnService) SubmitLocalToolResult(result LocalToolResult) error {
 	return s.localToolBroker.Submit(result)
+}
+
+func (s *TurnService) AwaitLiveResume(ctx context.Context, taskID, stepID, turnID, interruptID string) (LiveResumeDecision, error) {
+	broker := s.liveResumeBroker
+	if broker == nil {
+		return LiveResumeDecision{}, fmt.Errorf("live resume broker is not configured")
+	}
+	return broker.Await(ctx, taskID, stepID, turnID, interruptID)
 }
 
 func (s *TurnService) emitTurnEvent(ctx context.Context, config *TurnConfig, turnID string, event TurnEvent) {
@@ -904,7 +918,9 @@ func (s *TurnService) processToolCalls(
 
 			// Delegation: handle delegate_task via DelegationService with
 			// recursive mini turn-loop executor.
-			if tc.ToolName == "local_mcp" {
+			if tc.ToolName == "station_human_decision_resume" {
+				toolResult, toolErr = s.executeStationHumanDecisionResumeTool(ctx, config, turnID, tc)
+			} else if tc.ToolName == "local_mcp" {
 				toolResult, toolErr = s.executeLocalMCPTool(ctx, config, turnID, callID, tc)
 			} else if isDesktopLocalBuiltinTool(tc.ToolName) {
 				toolResult, toolErr = s.executeDesktopLocalBuiltinTool(ctx, config, turnID, callID, tc)
@@ -1015,6 +1031,72 @@ func isDesktopLocalBuiltinTool(toolName string) bool {
 	default:
 		return false
 	}
+}
+
+func (s *TurnService) executeStationHumanDecisionResumeTool(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	tc toolCallEntry,
+) (string, error) {
+	if config == nil {
+		return "", fmt.Errorf("turn config is required")
+	}
+	taskID := strings.TrimSpace(config.TaskID)
+	stepID := strings.TrimSpace(config.StepID)
+	if taskID == "" || stepID == "" {
+		return "", fmt.Errorf("station_human_decision_resume requires task-bound turn config")
+	}
+
+	var args struct {
+		InterruptID      string `json:"interrupt_id"`
+		InterruptIDCamel string `json:"interruptId"`
+		TaskID           string `json:"task_id"`
+		TaskIDCamel      string `json:"taskId"`
+	}
+	if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
+		return "", fmt.Errorf("invalid station_human_decision_resume arguments: %w", err)
+	}
+	if candidate := strings.TrimSpace(args.TaskID); candidate != "" && candidate != taskID {
+		return "", fmt.Errorf("station_human_decision_resume task_id does not match bound task")
+	}
+	if candidate := strings.TrimSpace(args.TaskIDCamel); candidate != "" && candidate != taskID {
+		return "", fmt.Errorf("station_human_decision_resume taskId does not match bound task")
+	}
+	interruptID := strings.TrimSpace(args.InterruptID)
+	if interruptID == "" {
+		interruptID = strings.TrimSpace(args.InterruptIDCamel)
+	}
+	if interruptID == "" {
+		return "", fmt.Errorf("station_human_decision_resume requires interrupt_id")
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, localToolTimeout)
+	defer cancel()
+	decision, err := s.AwaitLiveResume(waitCtx, taskID, stepID, turnID, interruptID)
+	if err != nil {
+		return "", fmt.Errorf("station_human_decision_resume wait failed: %w", err)
+	}
+	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
+	if err != nil {
+		return "", fmt.Errorf("station_human_decision_resume db access failed: %w", err)
+	}
+	if err := markCollaborationResumeContextConsumed(ctx, db, interruptID, decision.StepID, decision.TurnID); err != nil {
+		return "", fmt.Errorf("station_human_decision_resume consume failed: %w", err)
+	}
+	payload := map[string]interface{}{
+		"interrupt_id":        decision.InterruptID,
+		"task_id":             decision.TaskID,
+		"step_id":             decision.StepID,
+		"turn_id":             decision.TurnID,
+		"event_id":            decision.EventID,
+		"event_seq":           decision.EventSeq,
+		"reason":              decision.Reason,
+		"resume_payload_json": decision.ResumePayloadJSON,
+		"resume_source":       "station.live_resume_broker",
+	}
+	encoded, _ := json.Marshal(payload)
+	return string(encoded), nil
 }
 
 func (s *TurnService) executeLocalMCPTool(

@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.atelier",
+  "service": "atelier",
+  "productPath": "Desktop Gateway network.request + atelier.events.subscribe -> Station-bundled Atelier official facade + Station agent event stream -> Station-owned AtelierProjectionService.LoadWorkspace + EventStreamService.ReplayTaskEvents -> sqlite-backed agent store",
+  "stationMountPath": "/applets/atelier/v1",
+  "stationEventPath": "/sub-agent/agent/events/subscribe",
+  "desktopPublicPath": "/v1",
+  "coveredPaths": [
+    "/v1/workspace",
+    "atelier.projection.event replay via /sub-agent/agent/events/subscribe",
+    "afterEventSeq cursor-filtered replay through Desktop Gateway and Station EventStreamService",
+    "controlled Station SSE close before first replay followed by Desktop Gateway reconnect with afterEventSeq=0",
+    "controlled Station SSE close after first replay followed by Desktop Gateway reconnect using persisted cursor"
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "/v1/workspace",
+      "atelier.projection.event replay via /sub-agent/agent/events/subscribe",
+      "afterEventSeq cursor-filtered replay through Desktop Gateway and Station EventStreamService",
+      "controlled Station SSE close before first replay followed by Desktop Gateway reconnect with afterEventSeq=0",
+      "controlled Station SSE close after first replay followed by Desktop Gateway reconnect using persisted cursor"
+    ],
+    "doesNotProve": [
+      "arbitrary network failure outside controlled pre-replay/post-replay Station SSE EOF",
+      "cross-restart cursor recovery in real Desktop product window UI",
+      "real Desktop product window UI"
+    ]
+  },
+  "notCovered": [
+    "arbitrary network failure outside controlled pre-replay/post-replay Station SSE EOF",
+    "cross-restart cursor recovery in real Desktop product window UI",
+    "real Desktop product window UI"
+  ],
+  "command": "cargo test --bin peers-touch-desktop atelier_gateway_reaches_station_bundled_atelier_workspace -- --nocapture",
+  "startedAt": "2026-07-08T18:41:50.149Z",
+  "completedAt": "2026-07-08T18:42:28.556Z"
+}

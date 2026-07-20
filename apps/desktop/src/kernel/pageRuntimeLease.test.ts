@@ -74,4 +74,36 @@ describe('page runtime lease dispatch', () => {
     expect(releasePage).toHaveBeenCalledWith('applet:peers.note', 'evict');
     expect(releasePage).toHaveBeenCalledWith('applet:peers.note', 'explicit-close');
   });
+
+  it('replays active page acquire after the runtime installs', async () => {
+    vi.useFakeTimers();
+    const acquirePage = vi.fn();
+    registerPage({
+      id: 'applet:*',
+      match: (pageId) => pageId.startsWith('applet:'),
+      factory: () => createElement('div'),
+      preload: 'on-visit',
+      keepAlive: 'forever',
+      runtimes: ['late-runtime'],
+    });
+
+    acquirePageRuntimeLease('applet:peers.atelier', 'activate');
+
+    registerRuntime({
+      id: 'late-runtime',
+      scope: 'app',
+      install: vi.fn(),
+      teardown: vi.fn(),
+      bootstrap: vi.fn(async () => undefined),
+      acquirePage,
+    });
+    expect(acquirePage).not.toHaveBeenCalled();
+
+    installRuntime('late-runtime');
+    await vi.runAllTimersAsync();
+    await Promise.resolve();
+
+    expect(acquirePage).toHaveBeenCalledTimes(1);
+    expect(acquirePage).toHaveBeenCalledWith('applet:peers.atelier', 'activate');
+  });
 });

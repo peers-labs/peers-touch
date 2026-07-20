@@ -14,7 +14,12 @@ import './modules';
 import './index.css';
 import { markPhaseEnd, markPhaseStart } from './kernel/boot';
 import { configureFrontendTelemetryUploader } from './kernel/frontendTelemetry';
-import { installFrontendRuntimeProfiler } from './kernel/frontendRuntimeProfiler';
+import {
+  installFrontendRuntimeProfiler,
+  markInvokeCompleted,
+  markInvokeFailed,
+  markInvokeStarted,
+} from './kernel/frontendRuntimeProfiler';
 import { uploadFrontendTelemetryEvents } from './services/desktop_api';
 
 // Register custom elements early — before any React component attempts to render <lynx-host>.
@@ -43,16 +48,32 @@ if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) {
   (window as any).__PT_GATEWAY_BASE__ = GATEWAY;
   (window as any).__TAURI_INTERNALS__ = {
     invoke: async (cmd: string, args?: Record<string, unknown>) => {
+      const startedAt = performance.now();
+      const interactionId = markInvokeStarted(cmd, { runtime: 'browser-gateway' });
       const gatewayArgs = args && Object.keys(args).length === 1 && 'input' in args
         ? args.input as Record<string, unknown>
         : args ?? {};
-      const res = await fetch(GATEWAY, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cmd, args: gatewayArgs }),
-      });
-      if (!res.ok) throw new Error(`Gateway ${res.status}: ${await res.text()}`);
-      return res.json();
+      try {
+        const res = await fetch(GATEWAY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cmd, args: gatewayArgs }),
+        });
+        if (!res.ok) throw new Error(`Gateway ${res.status}: ${await res.text()}`);
+        const result = await res.json();
+        markInvokeCompleted(cmd, performance.now() - startedAt, {
+          interactionId,
+          runtime: 'browser-gateway',
+        });
+        return result;
+      } catch (error) {
+        markInvokeFailed(cmd, performance.now() - startedAt, {
+          interactionId,
+          runtime: 'browser-gateway',
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
     },
     transformCallback: (callback?: (response: unknown) => void) => {
       const id = crypto.randomUUID();

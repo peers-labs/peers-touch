@@ -1,0 +1,4969 @@
+{
+  "evidenceId": "EVID-010-PROTOTYPE-REBUILD-L",
+  "url": "http://localhost:3111/",
+  "viewport": "1440x1100",
+  "method": "For each rendered review-state surface, compute visible focusable DOM order, focus body, dispatch real Tab key events, and compare visited activeElement indexes against expected DOM-order indexes.",
+  "results": [
+    {
+      "surface": "home",
+      "path": "?surface=home",
+      "focusableCount": 29,
+      "expected": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "🤖 Lobe AI",
+          "className": "pt-agent-select",
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "TEXTAREA",
+          "label": "Home prompt",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Agent mode",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Add context",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "SELECT",
+          "label": "OpenAI / gpt-4.1 DeepSeek / deepseek-chat TRAE CLI / trae-agent-v1",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Send",
+          "className": "pt-send-button",
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Create a task",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Summarize memory",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Use a resource",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "BUTTON",
+          "label": "Open image generation",
+          "className": null,
+          "type": "button"
+        }
+      ],
+      "visited": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "🤖 Lobe AI",
+          "className": "pt-agent-select",
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "TEXTAREA",
+          "label": "Home prompt",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Agent mode",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Add context",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "SELECT",
+          "label": "OpenAI / gpt-4.1 DeepSeek / deepseek-chat TRAE CLI / trae-agent-v1",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Send",
+          "className": "pt-send-button",
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Create a task",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Summarize memory",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Use a resource",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "BUTTON",
+          "label": "Open image generation",
+          "className": null,
+          "type": "button"
+        }
+      ],
+      "pass": true,
+      "missingIndexes": [],
+      "duplicateIndexes": [],
+      "firstMismatch": -1
+    },
+    {
+      "surface": "chat-review",
+      "path": "?surface=chat&working=review",
+      "focusableCount": 45,
+      "expected": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "🤖 Lobe AI",
+          "className": "pt-agent-switcher",
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Create topic",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Search topics",
+          "className": "pt-topic-search",
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Greetings Today",
+          "className": "pt-topic-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "Home 新会话测试 Today",
+          "className": "pt-topic-item ",
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "ArXiv daily picks Scheduled",
+          "className": "pt-topic-item ",
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Untitled Backlog",
+          "className": "pt-topic-item ",
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Share",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Copy link",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "BUTTON",
+          "label": "Agent profile",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 29,
+          "tag": "BUTTON",
+          "label": "More",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 30,
+          "tag": "BUTTON",
+          "label": "Stop",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 31,
+          "tag": "BUTTON",
+          "label": "Regenerate",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 32,
+          "tag": "BUTTON",
+          "label": "Branch",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 33,
+          "tag": "BUTTON",
+          "label": "Reject",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 34,
+          "tag": "BUTTON",
+          "label": "Approve",
+          "className": "primary",
+          "type": "button"
+        },
+        {
+          "index": 35,
+          "tag": "TEXTAREA",
+          "label": "Agent chat prompt",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 36,
+          "tag": "BUTTON",
+          "label": "Model",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 37,
+          "tag": "BUTTON",
+          "label": "Context",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 38,
+          "tag": "BUTTON",
+          "label": "Context window",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 39,
+          "tag": "BUTTON",
+          "label": "Send",
+          "className": "pt-send-button",
+          "type": "button"
+        },
+        {
+          "index": 40,
+          "tag": "BUTTON",
+          "label": "resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 41,
+          "tag": "BUTTON",
+          "label": "review",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 42,
+          "tag": "BUTTON",
+          "label": "files",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 43,
+          "tag": "BUTTON",
+          "label": "params",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 44,
+          "tag": "BUTTON",
+          "label": "Close panel",
+          "className": "pt-icon-button",
+          "type": "button"
+        }
+      ],
+      "visited": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "🤖 Lobe AI",
+          "className": "pt-agent-switcher",
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Create topic",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Search topics",
+          "className": "pt-topic-search",
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Greetings Today",
+          "className": "pt-topic-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "Home 新会话测试 Today",
+          "className": "pt-topic-item ",
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "ArXiv daily picks Scheduled",
+          "className": "pt-topic-item ",
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Untitled Backlog",
+          "className": "pt-topic-item ",
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Share",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Copy link",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "BUTTON",
+          "label": "Agent profile",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 29,
+          "tag": "BUTTON",
+          "label": "More",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 30,
+          "tag": "BUTTON",
+          "label": "Stop",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 31,
+          "tag": "BUTTON",
+          "label": "Regenerate",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 32,
+          "tag": "BUTTON",
+          "label": "Branch",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 33,
+          "tag": "BUTTON",
+          "label": "Reject",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 34,
+          "tag": "BUTTON",
+          "label": "Approve",
+          "className": "primary",
+          "type": "button"
+        },
+        {
+          "index": 35,
+          "tag": "TEXTAREA",
+          "label": "Agent chat prompt",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 36,
+          "tag": "BUTTON",
+          "label": "Model",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 37,
+          "tag": "BUTTON",
+          "label": "Context",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 38,
+          "tag": "BUTTON",
+          "label": "Context window",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 39,
+          "tag": "BUTTON",
+          "label": "Send",
+          "className": "pt-send-button",
+          "type": "button"
+        },
+        {
+          "index": 40,
+          "tag": "BUTTON",
+          "label": "resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 41,
+          "tag": "BUTTON",
+          "label": "review",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 42,
+          "tag": "BUTTON",
+          "label": "files",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 43,
+          "tag": "BUTTON",
+          "label": "params",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 44,
+          "tag": "BUTTON",
+          "label": "Close panel",
+          "className": "pt-icon-button",
+          "type": "button"
+        }
+      ],
+      "pass": true,
+      "missingIndexes": [],
+      "duplicateIndexes": [],
+      "firstMismatch": -1
+    },
+    {
+      "surface": "profile",
+      "path": "?surface=profile",
+      "focusableCount": 28,
+      "expected": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Open Agent Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Share agent",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "More",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "INPUT",
+          "label": "Lobe AI",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 23,
+          "tag": "TEXTAREA",
+          "label": "You are a helpful agent that can use tools, memory, resources and tasks with explicit approval boundaries.",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 24,
+          "tag": "TEXTAREA",
+          "label": "Hi, I can help with planning, research, coding tasks and workspace resources.",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Summarize today",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Create a scheduled task",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Use workspace resources",
+          "className": null,
+          "type": "button"
+        }
+      ],
+      "visited": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Open Agent Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Share agent",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "More",
+          "className": "pt-icon-button",
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "INPUT",
+          "label": "Lobe AI",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 23,
+          "tag": "TEXTAREA",
+          "label": "You are a helpful agent that can use tools, memory, resources and tasks with explicit approval boundaries.",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 24,
+          "tag": "TEXTAREA",
+          "label": "Hi, I can help with planning, research, coding tasks and workspace resources.",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Summarize today",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Create a scheduled task",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Use workspace resources",
+          "className": null,
+          "type": "button"
+        }
+      ],
+      "pass": true,
+      "missingIndexes": [],
+      "duplicateIndexes": [],
+      "firstMismatch": -1
+    },
+    {
+      "surface": "tasks-delete-confirm",
+      "path": "?surface=tasks&state=delete-confirm",
+      "focusableCount": 29,
+      "expected": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "List",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Board",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "INPUT",
+          "label": "on",
+          "className": null,
+          "type": "checkbox"
+        },
+        {
+          "index": 22,
+          "tag": "INPUT",
+          "label": "on",
+          "className": null,
+          "type": "checkbox"
+        },
+        {
+          "index": 23,
+          "tag": "INPUT",
+          "label": "on",
+          "className": null,
+          "type": "checkbox"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Reject",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Approve",
+          "className": "primary",
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Cancel",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": "danger",
+          "type": "button"
+        }
+      ],
+      "visited": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "List",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Board",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "INPUT",
+          "label": "on",
+          "className": null,
+          "type": "checkbox"
+        },
+        {
+          "index": 22,
+          "tag": "INPUT",
+          "label": "on",
+          "className": null,
+          "type": "checkbox"
+        },
+        {
+          "index": 23,
+          "tag": "INPUT",
+          "label": "on",
+          "className": null,
+          "type": "checkbox"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Reject",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Approve",
+          "className": "primary",
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Cancel",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": "danger",
+          "type": "button"
+        }
+      ],
+      "pass": true,
+      "missingIndexes": [],
+      "duplicateIndexes": [],
+      "firstMismatch": -1
+    },
+    {
+      "surface": "pages-actions-open",
+      "path": "?surface=pages&state=actions-open",
+      "focusableCount": 29,
+      "expected": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Actions",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Version History",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Copy",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Export",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": "danger",
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "INPUT",
+          "label": "Page title",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Version History",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Copy",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Export",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": "danger",
+          "type": "button"
+        }
+      ],
+      "visited": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Actions",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Version History",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Copy",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Export",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": "danger",
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "INPUT",
+          "label": "Page title",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Version History",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Copy",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Export",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": "danger",
+          "type": "button"
+        }
+      ],
+      "pass": true,
+      "missingIndexes": [],
+      "duplicateIndexes": [],
+      "firstMismatch": -1
+    },
+    {
+      "surface": "resources-add-upload",
+      "path": "?surface=resources&state=add-upload",
+      "focusableCount": 28,
+      "expected": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Add",
+          "className": "pt-wide-button",
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Upload file",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Import URL",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Batch actions no-visible-state",
+          "className": "pt-wide-button",
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "INPUT",
+          "label": "Resource search",
+          "className": "pt-search-input",
+          "type": null
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "generated-image.png Image generation output · download request proven",
+          "className": "pt-resource-tile",
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "msg_tkBFQp2tdTurb6.mp3 Visible in Agent picker · binding unresolved",
+          "className": "pt-resource-tile",
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "这是一篇Test Page resource",
+          "className": "pt-resource-tile",
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "image.png Uploaded/generated file boundary",
+          "className": "pt-resource-tile",
+          "type": "button"
+        }
+      ],
+      "visited": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Add",
+          "className": "pt-wide-button",
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Upload file",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Import URL",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Batch actions no-visible-state",
+          "className": "pt-wide-button",
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "INPUT",
+          "label": "Resource search",
+          "className": "pt-search-input",
+          "type": null
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "generated-image.png Image generation output · download request proven",
+          "className": "pt-resource-tile",
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "msg_tkBFQp2tdTurb6.mp3 Visible in Agent picker · binding unresolved",
+          "className": "pt-resource-tile",
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "这是一篇Test Page resource",
+          "className": "pt-resource-tile",
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "image.png Uploaded/generated file boundary",
+          "className": "pt-resource-tile",
+          "type": "button"
+        }
+      ],
+      "pass": true,
+      "missingIndexes": [],
+      "duplicateIndexes": [],
+      "firstMismatch": -1
+    },
+    {
+      "surface": "memory-preferences",
+      "path": "?surface=memory&tab=Preferences",
+      "focusableCount": 25,
+      "expected": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Overview",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Activities",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Contexts",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Experiences",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "Identities",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Preferences",
+          "className": "is-active",
+          "type": "button"
+        }
+      ],
+      "visited": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Overview",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Activities",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Contexts",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Experiences",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "Identities",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Preferences",
+          "className": "is-active",
+          "type": "button"
+        }
+      ],
+      "pass": true,
+      "missingIndexes": [],
+      "duplicateIndexes": [],
+      "firstMismatch": -1
+    },
+    {
+      "surface": "skills-import-failure",
+      "path": "?surface=skills&state=import-failure",
+      "focusableCount": 24,
+      "expected": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Connectors",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Built-in Tools",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Skill Store",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Import from URL",
+          "className": "pt-wide-button",
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "INPUT",
+          "label": "Skill import URL",
+          "className": "pt-search-input",
+          "type": null
+        }
+      ],
+      "visited": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Connectors",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Built-in Tools",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Skill Store",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Import from URL",
+          "className": "pt-wide-button",
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "INPUT",
+          "label": "Skill import URL",
+          "className": "pt-search-input",
+          "type": null
+        }
+      ],
+      "pass": true,
+      "missingIndexes": [],
+      "duplicateIndexes": [],
+      "firstMismatch": -1
+    },
+    {
+      "surface": "settings-about",
+      "path": "?surface=settings&tab=About",
+      "focusableCount": 35,
+      "expected": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Provider",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Storage",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Advanced",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "Service Model",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Statistics",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Appearance",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Devices",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "BUTTON",
+          "label": "Hotkeys",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 29,
+          "tag": "BUTTON",
+          "label": "Notifications",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 30,
+          "tag": "BUTTON",
+          "label": "Plans",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 31,
+          "tag": "BUTTON",
+          "label": "Usage",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 32,
+          "tag": "BUTTON",
+          "label": "Credits",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 33,
+          "tag": "BUTTON",
+          "label": "Billing",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 34,
+          "tag": "BUTTON",
+          "label": "About",
+          "className": "is-active",
+          "type": "button"
+        }
+      ],
+      "visited": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Provider",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Storage",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Advanced",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "Service Model",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Statistics",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Appearance",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Devices",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "BUTTON",
+          "label": "Hotkeys",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 29,
+          "tag": "BUTTON",
+          "label": "Notifications",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 30,
+          "tag": "BUTTON",
+          "label": "Plans",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 31,
+          "tag": "BUTTON",
+          "label": "Usage",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 32,
+          "tag": "BUTTON",
+          "label": "Credits",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 33,
+          "tag": "BUTTON",
+          "label": "Billing",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 34,
+          "tag": "BUTTON",
+          "label": "About",
+          "className": "is-active",
+          "type": "button"
+        }
+      ],
+      "pass": true,
+      "missingIndexes": [],
+      "duplicateIndexes": [],
+      "firstMismatch": -1
+    },
+    {
+      "surface": "image-copy-failure",
+      "path": "?surface=image&state=copy-failure",
+      "focusableCount": 28,
+      "expected": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "SELECT",
+          "label": "gpt-image-1 flux",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 20,
+          "tag": "INPUT",
+          "label": "2",
+          "className": null,
+          "type": "range"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Generate",
+          "className": "pt-send-button",
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Download",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "Copy prompt",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Download",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Copy prompt",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": null,
+          "type": "button"
+        }
+      ],
+      "visited": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "SELECT",
+          "label": "gpt-image-1 flux",
+          "className": null,
+          "type": null
+        },
+        {
+          "index": 20,
+          "tag": "INPUT",
+          "label": "2",
+          "className": null,
+          "type": "range"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Generate",
+          "className": "pt-send-button",
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Download",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "Copy prompt",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Download",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "Copy prompt",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Delete",
+          "className": null,
+          "type": "button"
+        }
+      ],
+      "pass": true,
+      "missingIndexes": [],
+      "duplicateIndexes": [],
+      "firstMismatch": -1
+    },
+    {
+      "surface": "community-workspace",
+      "path": "?surface=community&category=workspace",
+      "focusableCount": 44,
+      "expected": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Agent",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Group Agent",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Model",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Provider",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "MCP",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Skill",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Organization",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "User",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Workspace",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "INPUT",
+          "label": "Community search",
+          "className": "pt-search-input",
+          "type": null
+        },
+        {
+          "index": 29,
+          "tag": "BUTTON",
+          "label": "Trending",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 30,
+          "tag": "BUTTON",
+          "label": "Recently Updated",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 31,
+          "tag": "BUTTON",
+          "label": "Most Used",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 32,
+          "tag": "BUTTON",
+          "label": "Detail",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 33,
+          "tag": "BUTTON",
+          "label": "Install Method",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 34,
+          "tag": "BUTTON",
+          "label": "External",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 35,
+          "tag": "BUTTON",
+          "label": "Detail",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 36,
+          "tag": "BUTTON",
+          "label": "Install Method",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 37,
+          "tag": "BUTTON",
+          "label": "External",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 38,
+          "tag": "BUTTON",
+          "label": "Detail",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 39,
+          "tag": "BUTTON",
+          "label": "Install Method",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 40,
+          "tag": "BUTTON",
+          "label": "External",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 41,
+          "tag": "BUTTON",
+          "label": "Detail",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 42,
+          "tag": "BUTTON",
+          "label": "Install Method",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 43,
+          "tag": "BUTTON",
+          "label": "External",
+          "className": null,
+          "type": "button"
+        }
+      ],
+      "visited": [
+        {
+          "index": 0,
+          "tag": "BUTTON",
+          "label": "Search ⌘ K",
+          "className": "pt-search-row",
+          "type": "button"
+        },
+        {
+          "index": 1,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 2,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 3,
+          "tag": "BUTTON",
+          "label": "Pages",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 4,
+          "tag": "BUTTON",
+          "label": "Recents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 5,
+          "tag": "BUTTON",
+          "label": "Agents",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 6,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "pt-nav-item is-active",
+          "type": "button"
+        },
+        {
+          "index": 7,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 8,
+          "tag": "BUTTON",
+          "label": "Memory",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 9,
+          "tag": "BUTTON",
+          "label": "Image",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 10,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 11,
+          "tag": "BUTTON",
+          "label": "Skills",
+          "className": "pt-nav-item ",
+          "type": "button"
+        },
+        {
+          "index": 12,
+          "tag": "BUTTON",
+          "label": "Home",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 13,
+          "tag": "BUTTON",
+          "label": "Agent Chat",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 14,
+          "tag": "BUTTON",
+          "label": "Profile",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 15,
+          "tag": "BUTTON",
+          "label": "Tasks",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 16,
+          "tag": "BUTTON",
+          "label": "Resources",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 17,
+          "tag": "BUTTON",
+          "label": "Community",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 18,
+          "tag": "BUTTON",
+          "label": "Settings",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 19,
+          "tag": "BUTTON",
+          "label": "Agent",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 20,
+          "tag": "BUTTON",
+          "label": "Group Agent",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 21,
+          "tag": "BUTTON",
+          "label": "Model",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 22,
+          "tag": "BUTTON",
+          "label": "Provider",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 23,
+          "tag": "BUTTON",
+          "label": "MCP",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 24,
+          "tag": "BUTTON",
+          "label": "Skill",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 25,
+          "tag": "BUTTON",
+          "label": "Organization",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 26,
+          "tag": "BUTTON",
+          "label": "User",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 27,
+          "tag": "BUTTON",
+          "label": "Workspace",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 28,
+          "tag": "INPUT",
+          "label": "Community search",
+          "className": "pt-search-input",
+          "type": null
+        },
+        {
+          "index": 29,
+          "tag": "BUTTON",
+          "label": "Trending",
+          "className": "is-active",
+          "type": "button"
+        },
+        {
+          "index": 30,
+          "tag": "BUTTON",
+          "label": "Recently Updated",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 31,
+          "tag": "BUTTON",
+          "label": "Most Used",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 32,
+          "tag": "BUTTON",
+          "label": "Detail",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 33,
+          "tag": "BUTTON",
+          "label": "Install Method",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 34,
+          "tag": "BUTTON",
+          "label": "External",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 35,
+          "tag": "BUTTON",
+          "label": "Detail",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 36,
+          "tag": "BUTTON",
+          "label": "Install Method",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 37,
+          "tag": "BUTTON",
+          "label": "External",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 38,
+          "tag": "BUTTON",
+          "label": "Detail",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 39,
+          "tag": "BUTTON",
+          "label": "Install Method",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 40,
+          "tag": "BUTTON",
+          "label": "External",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 41,
+          "tag": "BUTTON",
+          "label": "Detail",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 42,
+          "tag": "BUTTON",
+          "label": "Install Method",
+          "className": null,
+          "type": "button"
+        },
+        {
+          "index": 43,
+          "tag": "BUTTON",
+          "label": "External",
+          "className": null,
+          "type": "button"
+        }
+      ],
+      "pass": true,
+      "missingIndexes": [],
+      "duplicateIndexes": [],
+      "firstMismatch": -1
+    }
+  ],
+  "pass": true,
+  "failures": []
+}
