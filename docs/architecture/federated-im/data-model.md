@@ -2,9 +2,15 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-07-04 | **Updated**: 2026-07-04
+> **Created**: 2026-07-04 | **Updated**: 2026-07-11
 > **Owner**: Architecture Team
 > **Module**: `model/domain/chat/`, `model/domain/federation/`, `model/domain/realtime/`, `apps/station/app/subserver/group_chat/`
+
+> **v1 unification update (2026-07-11)**: Per D-08…D-12 (see `decisions.md`), group
+> E2EE is MLS (RFC 9420), not Sender Keys. The "SKDM envelope" below is now the MLS
+> **key-delivery envelope** (Welcome/Commit/KeyPackage) carried over the single
+> Station signaling channel (D-10). Message ciphertext headers carry MLS
+> epoch/framing, not a Sender Key ID.
 
 ---
 
@@ -109,7 +115,7 @@ Rules:
 
 - A member's authority is group-local, not Federation governance authority.
 - Owner/admin role changes do not change `authority_station_peer_id`.
-- Removed and left members are not entitled to future event delivery or future Sender Keys.
+- Removed and left members are not entitled to future event delivery or future MLS group secrets (they are removed from the MLS group by the corresponding Commit).
 
 ## 5. Group Event Log
 
@@ -251,23 +257,24 @@ GroupMessageCommittedPayload
 Rules:
 
 - `ciphertext_bytes` is opaque to Station.
-- `ciphertext_header_bytes` may include version, sender key ID, counter, and signature, but not plaintext.
+- `ciphertext_header_bytes` may include MLS framing (group id, epoch, content type, sender leaf) and signature, but not plaintext.
 - attachment metadata must not carry encryption key material outside ciphertext.
 
-## 8. Cross-Station SKDM Envelope
+## 8. Cross-Station MLS Key-Delivery Envelope
 
 ```text
-FederatedSkdmEnvelope
+FederatedMlsKeyDeliveryEnvelope
   envelope_id
   federation_id
   group_ulid
   authority_station_peer_id
   membership_epoch
+  delivery_kind            # welcome | commit | key_package
   sender_actor_ref
   sender_device_id
   recipient_actor_ref
   recipient_device_id
-  encrypted_skdm_bytes
+  encrypted_mls_bytes
   sender_signature
   home_station_signature
   issued_at_unix_ms
@@ -275,8 +282,8 @@ FederatedSkdmEnvelope
 
 Rules:
 
-- `encrypted_skdm_bytes` is encrypted to the recipient device key bundle.
-- Station may store and route this envelope but cannot decrypt SKDM.
+- `encrypted_mls_bytes` carries the opaque MLS Welcome/Commit/KeyPackage for the recipient device.
+- Station may store and route this envelope but cannot decrypt MLS group secrets.
 - Receiver must reject envelopes for stale epochs, wrong group authority, wrong recipient, or inactive source Station.
 
 ## 9. Replication And Delivery Cursor
@@ -324,8 +331,8 @@ im_group_fanout_latency_ms
 im_group_replication_lag_seq
 im_group_sse_delivery_latency_ms
 im_group_resync_duration_ms
-im_group_skdm_delivery_success_total
-im_group_skdm_delivery_failed_total{cause}
+im_group_key_delivery_success_total
+im_group_key_delivery_failed_total{cause}
 im_group_decrypt_failed_total{cause}
 im_group_security_reject_total{cause}
 im_group_authority_degraded_total
@@ -336,8 +343,8 @@ Forbidden metric payload:
 
 - message plaintext;
 - raw ciphertext body;
-- Sender Key chain key;
-- SKDM plaintext;
+- MLS group secrets or ratchet keys;
+- MLS Welcome/Commit plaintext;
 - private keys;
 - full access tokens.
 

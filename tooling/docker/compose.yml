@@ -99,6 +99,8 @@ services:
       RELAY_CLIENT_RELAY_STREAM_ADDR: ${RELAY_CLIENT_RELAY_STREAM_ADDR:-}
       RELAY_CLIENT_INVITE_TOKEN: ${RELAY_CLIENT_INVITE_TOKEN:-}
       RELAY_CLIENT_LABEL: ${RELAY_CLIENT_LABEL:-${COMPOSE_PROJECT_NAME:-station}}
+      # Envelope federation peer map: peer_id=base_url pairs for cross-station delivery.
+      PEERS_FEDERATION_PEER_MAP: ${PEERS_FEDERATION_PEER_MAP:-}
       # Actor display_name pattern: replaces __NODE__ in actor.yml
       PEERS_NODE_LABEL: ${PEERS_NODE_LABEL:-}
     ports:
