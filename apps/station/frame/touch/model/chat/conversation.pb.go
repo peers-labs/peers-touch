@@ -534,7 +534,7 @@ type Conversation struct {
 	Name          string            `protobuf:"bytes,10,opt,name=name,proto3" json:"name,omitempty"`
 	Description   string            `protobuf:"bytes,11,opt,name=description,proto3" json:"description,omitempty"`
 	AvatarCid     string            `protobuf:"bytes,12,opt,name=avatar_cid,json=avatarCid,proto3" json:"avatar_cid,omitempty"`
-	OwnerActorDid string            `protobuf:"bytes,13,opt,name=owner_actor_did,json=ownerActorDid,proto3" json:"owner_actor_did,omitempty"`
+	OwnerPtid     string            `protobuf:"bytes,13,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
 	MaxMembers    int32             `protobuf:"varint,14,opt,name=max_members,json=maxMembers,proto3" json:"max_members,omitempty"`
 	Visibility    GroupVisibilityV1 `protobuf:"varint,15,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibilityV1" json:"visibility,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -641,9 +641,9 @@ func (x *Conversation) GetAvatarCid() string {
 	return ""
 }
 
-func (x *Conversation) GetOwnerActorDid() string {
+func (x *Conversation) GetOwnerPtid() string {
 	if x != nil {
-		return x.OwnerActorDid
+		return x.OwnerPtid
 	}
 	return ""
 }
@@ -665,13 +665,13 @@ func (x *Conversation) GetVisibility() GroupVisibilityV1 {
 type ConversationMember struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId         string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	ActorDid               string                 `protobuf:"bytes,2,opt,name=actor_did,json=actorDid,proto3" json:"actor_did,omitempty"`
+	Ptid                   string                 `protobuf:"bytes,2,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	Role                   MemberRole             `protobuf:"varint,3,opt,name=role,proto3,enum=peers_touch.model.chat.v1.MemberRole" json:"role,omitempty"`
 	MemberStatus           MemberStatus           `protobuf:"varint,4,opt,name=member_status,json=memberStatus,proto3,enum=peers_touch.model.chat.v1.MemberStatus" json:"member_status,omitempty"`
 	ActorHomeStationPeerId string                 `protobuf:"bytes,5,opt,name=actor_home_station_peer_id,json=actorHomeStationPeerId,proto3" json:"actor_home_station_peer_id,omitempty"`
 	ActorHomeStationDomain string                 `protobuf:"bytes,6,opt,name=actor_home_station_domain,json=actorHomeStationDomain,proto3" json:"actor_home_station_domain,omitempty"`
 	JoinedAt               *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
-	InvitedByActorDid      string                 `protobuf:"bytes,8,opt,name=invited_by_actor_did,json=invitedByActorDid,proto3" json:"invited_by_actor_did,omitempty"`
+	InvitedByPtid          string                 `protobuf:"bytes,8,opt,name=invited_by_ptid,json=invitedByPtid,proto3" json:"invited_by_ptid,omitempty"`
 	// Per-member settings
 	Nickname      string                 `protobuf:"bytes,10,opt,name=nickname,proto3" json:"nickname,omitempty"`
 	Muted         bool                   `protobuf:"varint,11,opt,name=muted,proto3" json:"muted,omitempty"`
@@ -717,9 +717,9 @@ func (x *ConversationMember) GetConversationId() string {
 	return ""
 }
 
-func (x *ConversationMember) GetActorDid() string {
+func (x *ConversationMember) GetPtid() string {
 	if x != nil {
-		return x.ActorDid
+		return x.Ptid
 	}
 	return ""
 }
@@ -759,9 +759,9 @@ func (x *ConversationMember) GetJoinedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-func (x *ConversationMember) GetInvitedByActorDid() string {
+func (x *ConversationMember) GetInvitedByPtid() string {
 	if x != nil {
-		return x.InvitedByActorDid
+		return x.InvitedByPtid
 	}
 	return ""
 }
@@ -794,7 +794,7 @@ type ConversationCommand struct {
 	state                   protoimpl.MessageState `protogen:"open.v1"`
 	CommandId               string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	ConversationId          string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	SenderActorDid          string                 `protobuf:"bytes,3,opt,name=sender_actor_did,json=senderActorDid,proto3" json:"sender_actor_did,omitempty"`
+	SenderPtid              string                 `protobuf:"bytes,3,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
 	SenderDeviceId          string                 `protobuf:"bytes,4,opt,name=sender_device_id,json=senderDeviceId,proto3" json:"sender_device_id,omitempty"`
 	ObservedMembershipEpoch int64                  `protobuf:"varint,5,opt,name=observed_membership_epoch,json=observedMembershipEpoch,proto3" json:"observed_membership_epoch,omitempty"`
 	ClientTs                *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=client_ts,json=clientTs,proto3" json:"client_ts,omitempty"`
@@ -858,9 +858,9 @@ func (x *ConversationCommand) GetConversationId() string {
 	return ""
 }
 
-func (x *ConversationCommand) GetSenderActorDid() string {
+func (x *ConversationCommand) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderActorDid
+		return x.SenderPtid
 	}
 	return ""
 }
@@ -1250,7 +1250,7 @@ func (x *AddMembersCommand) GetMembers() []*MemberAddEntry {
 
 type MemberAddEntry struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
-	ActorDid               string                 `protobuf:"bytes,1,opt,name=actor_did,json=actorDid,proto3" json:"actor_did,omitempty"`
+	Ptid                   string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	ActorHomeStationPeerId string                 `protobuf:"bytes,2,opt,name=actor_home_station_peer_id,json=actorHomeStationPeerId,proto3" json:"actor_home_station_peer_id,omitempty"`
 	Role                   MemberRole             `protobuf:"varint,3,opt,name=role,proto3,enum=peers_touch.model.chat.v1.MemberRole" json:"role,omitempty"`
 	unknownFields          protoimpl.UnknownFields
@@ -1287,9 +1287,9 @@ func (*MemberAddEntry) Descriptor() ([]byte, []int) {
 	return file_domain_chat_conversation_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *MemberAddEntry) GetActorDid() string {
+func (x *MemberAddEntry) GetPtid() string {
 	if x != nil {
-		return x.ActorDid
+		return x.Ptid
 	}
 	return ""
 }
@@ -1310,7 +1310,7 @@ func (x *MemberAddEntry) GetRole() MemberRole {
 
 type RemoveMembersCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorDids     []string               `protobuf:"bytes,1,rep,name=actor_dids,json=actorDids,proto3" json:"actor_dids,omitempty"`
+	Ptids         []string               `protobuf:"bytes,1,rep,name=ptids,proto3" json:"ptids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1345,9 +1345,9 @@ func (*RemoveMembersCommand) Descriptor() ([]byte, []int) {
 	return file_domain_chat_conversation_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *RemoveMembersCommand) GetActorDids() []string {
+func (x *RemoveMembersCommand) GetPtids() []string {
 	if x != nil {
-		return x.ActorDids
+		return x.Ptids
 	}
 	return nil
 }
@@ -1768,7 +1768,7 @@ func (*CommittedConversationEvent_SettingsChanged) isCommittedConversationEvent_
 type MessageCommittedEvent struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	MessageId           string                 `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
-	SenderActorDid      string                 `protobuf:"bytes,2,opt,name=sender_actor_did,json=senderActorDid,proto3" json:"sender_actor_did,omitempty"`
+	SenderPtid          string                 `protobuf:"bytes,2,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
 	SenderDeviceId      string                 `protobuf:"bytes,3,opt,name=sender_device_id,json=senderDeviceId,proto3" json:"sender_device_id,omitempty"`
 	EncryptedPayload    []byte                 `protobuf:"bytes,4,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
 	ContentType         MessageContentType     `protobuf:"varint,5,opt,name=content_type,json=contentType,proto3,enum=peers_touch.model.chat.v1.MessageContentType" json:"content_type,omitempty"`
@@ -1817,9 +1817,9 @@ func (x *MessageCommittedEvent) GetMessageId() string {
 	return ""
 }
 
-func (x *MessageCommittedEvent) GetSenderActorDid() string {
+func (x *MessageCommittedEvent) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderActorDid
+		return x.SenderPtid
 	}
 	return ""
 }
@@ -1876,7 +1876,7 @@ func (x *MessageCommittedEvent) GetClientTs() *timestamppb.Timestamp {
 type MessageEditedEvent struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	MessageId        string                 `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
-	EditorActorDid   string                 `protobuf:"bytes,2,opt,name=editor_actor_did,json=editorActorDid,proto3" json:"editor_actor_did,omitempty"`
+	EditorPtid       string                 `protobuf:"bytes,2,opt,name=editor_ptid,json=editorPtid,proto3" json:"editor_ptid,omitempty"`
 	EncryptedPayload []byte                 `protobuf:"bytes,3,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
 	EditedAt         *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=edited_at,json=editedAt,proto3" json:"edited_at,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -1920,9 +1920,9 @@ func (x *MessageEditedEvent) GetMessageId() string {
 	return ""
 }
 
-func (x *MessageEditedEvent) GetEditorActorDid() string {
+func (x *MessageEditedEvent) GetEditorPtid() string {
 	if x != nil {
-		return x.EditorActorDid
+		return x.EditorPtid
 	}
 	return ""
 }
@@ -1942,12 +1942,12 @@ func (x *MessageEditedEvent) GetEditedAt() *timestamppb.Timestamp {
 }
 
 type MessageRetractedEvent struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	MessageId         string                 `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
-	RetractorActorDid string                 `protobuf:"bytes,2,opt,name=retractor_actor_did,json=retractorActorDid,proto3" json:"retractor_actor_did,omitempty"`
-	RetractedAt       *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=retracted_at,json=retractedAt,proto3" json:"retracted_at,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MessageId     string                 `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	RetractorPtid string                 `protobuf:"bytes,2,opt,name=retractor_ptid,json=retractorPtid,proto3" json:"retractor_ptid,omitempty"`
+	RetractedAt   *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=retracted_at,json=retractedAt,proto3" json:"retracted_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MessageRetractedEvent) Reset() {
@@ -1987,9 +1987,9 @@ func (x *MessageRetractedEvent) GetMessageId() string {
 	return ""
 }
 
-func (x *MessageRetractedEvent) GetRetractorActorDid() string {
+func (x *MessageRetractedEvent) GetRetractorPtid() string {
 	if x != nil {
-		return x.RetractorActorDid
+		return x.RetractorPtid
 	}
 	return ""
 }
@@ -2055,7 +2055,7 @@ func (x *MembershipChangedEvent) GetNewMembershipEpoch() int64 {
 
 type MemberChange struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
-	ActorDid               string                 `protobuf:"bytes,1,opt,name=actor_did,json=actorDid,proto3" json:"actor_did,omitempty"`
+	Ptid                   string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	Action                 MemberChangeAction     `protobuf:"varint,2,opt,name=action,proto3,enum=peers_touch.model.chat.v1.MemberChangeAction" json:"action,omitempty"`
 	Role                   MemberRole             `protobuf:"varint,3,opt,name=role,proto3,enum=peers_touch.model.chat.v1.MemberRole" json:"role,omitempty"`
 	ActorHomeStationPeerId string                 `protobuf:"bytes,4,opt,name=actor_home_station_peer_id,json=actorHomeStationPeerId,proto3" json:"actor_home_station_peer_id,omitempty"`
@@ -2093,9 +2093,9 @@ func (*MemberChange) Descriptor() ([]byte, []int) {
 	return file_domain_chat_conversation_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *MemberChange) GetActorDid() string {
+func (x *MemberChange) GetPtid() string {
 	if x != nil {
-		return x.ActorDid
+		return x.Ptid
 	}
 	return ""
 }
@@ -2174,10 +2174,10 @@ func (x *ConversationCreatedEvent) GetInitialMembers() []*ConversationMember {
 }
 
 type ConversationDissolvedEvent struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	DissolvedByActorDid string                 `protobuf:"bytes,1,opt,name=dissolved_by_actor_did,json=dissolvedByActorDid,proto3" json:"dissolved_by_actor_did,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	DissolvedByPtid string                 `protobuf:"bytes,1,opt,name=dissolved_by_ptid,json=dissolvedByPtid,proto3" json:"dissolved_by_ptid,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ConversationDissolvedEvent) Reset() {
@@ -2210,22 +2210,22 @@ func (*ConversationDissolvedEvent) Descriptor() ([]byte, []int) {
 	return file_domain_chat_conversation_proto_rawDescGZIP(), []int{20}
 }
 
-func (x *ConversationDissolvedEvent) GetDissolvedByActorDid() string {
+func (x *ConversationDissolvedEvent) GetDissolvedByPtid() string {
 	if x != nil {
-		return x.DissolvedByActorDid
+		return x.DissolvedByPtid
 	}
 	return ""
 }
 
 type SettingsChangedEvent struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	ChangedByActorDid string                 `protobuf:"bytes,1,opt,name=changed_by_actor_did,json=changedByActorDid,proto3" json:"changed_by_actor_did,omitempty"`
-	Name              *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
-	Description       *string                `protobuf:"bytes,3,opt,name=description,proto3,oneof" json:"description,omitempty"`
-	AvatarCid         *string                `protobuf:"bytes,4,opt,name=avatar_cid,json=avatarCid,proto3,oneof" json:"avatar_cid,omitempty"`
-	Muted             *bool                  `protobuf:"varint,5,opt,name=muted,proto3,oneof" json:"muted,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ChangedByPtid string                 `protobuf:"bytes,1,opt,name=changed_by_ptid,json=changedByPtid,proto3" json:"changed_by_ptid,omitempty"`
+	Name          *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Description   *string                `protobuf:"bytes,3,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	AvatarCid     *string                `protobuf:"bytes,4,opt,name=avatar_cid,json=avatarCid,proto3,oneof" json:"avatar_cid,omitempty"`
+	Muted         *bool                  `protobuf:"varint,5,opt,name=muted,proto3,oneof" json:"muted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SettingsChangedEvent) Reset() {
@@ -2258,9 +2258,9 @@ func (*SettingsChangedEvent) Descriptor() ([]byte, []int) {
 	return file_domain_chat_conversation_proto_rawDescGZIP(), []int{21}
 }
 
-func (x *SettingsChangedEvent) GetChangedByActorDid() string {
+func (x *SettingsChangedEvent) GetChangedByPtid() string {
 	if x != nil {
-		return x.ChangedByActorDid
+		return x.ChangedByPtid
 	}
 	return ""
 }
@@ -2389,7 +2389,7 @@ type MessageReceipt struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	MessageId      string                 `protobuf:"bytes,2,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
-	ActorDid       string                 `protobuf:"bytes,3,opt,name=actor_did,json=actorDid,proto3" json:"actor_did,omitempty"`
+	Ptid           string                 `protobuf:"bytes,3,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	DeviceId       string                 `protobuf:"bytes,4,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	ReceiptType    ReceiptType            `protobuf:"varint,5,opt,name=receipt_type,json=receiptType,proto3,enum=peers_touch.model.chat.v1.ReceiptType" json:"receipt_type,omitempty"`
 	Ts             *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=ts,proto3" json:"ts,omitempty"`
@@ -2441,9 +2441,9 @@ func (x *MessageReceipt) GetMessageId() string {
 	return ""
 }
 
-func (x *MessageReceipt) GetActorDid() string {
+func (x *MessageReceipt) GetPtid() string {
 	if x != nil {
-		return x.ActorDid
+		return x.Ptid
 	}
 	return ""
 }
@@ -2557,7 +2557,7 @@ var File_domain_chat_conversation_proto protoreflect.FileDescriptor
 
 const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\n" +
-	"\x1edomain/chat/conversation.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x87\x05\n" +
+	"\x1edomain/chat/conversation.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfe\x04\n" +
 	"\fConversation\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12?\n" +
 	"\x04kind\x18\x02 \x01(\x0e2+.peers_touch.model.chat.v1.ConversationKindR\x04kind\x129\n" +
@@ -2572,32 +2572,34 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	" \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\v \x01(\tR\vdescription\x12\x1d\n" +
 	"\n" +
-	"avatar_cid\x18\f \x01(\tR\tavatarCid\x12&\n" +
-	"\x0fowner_actor_did\x18\r \x01(\tR\rownerActorDid\x12\x1f\n" +
+	"avatar_cid\x18\f \x01(\tR\tavatarCid\x12\x1d\n" +
+	"\n" +
+	"owner_ptid\x18\r \x01(\tR\townerPtid\x12\x1f\n" +
 	"\vmax_members\x18\x0e \x01(\x05R\n" +
 	"maxMembers\x12L\n" +
 	"\n" +
 	"visibility\x18\x0f \x01(\x0e2,.peers_touch.model.chat.v1.GroupVisibilityV1R\n" +
-	"visibility\"\xb3\x04\n" +
+	"visibility\"\xa1\x04\n" +
 	"\x12ConversationMember\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1b\n" +
-	"\tactor_did\x18\x02 \x01(\tR\bactorDid\x129\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x12\n" +
+	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x129\n" +
 	"\x04role\x18\x03 \x01(\x0e2%.peers_touch.model.chat.v1.MemberRoleR\x04role\x12L\n" +
 	"\rmember_status\x18\x04 \x01(\x0e2'.peers_touch.model.chat.v1.MemberStatusR\fmemberStatus\x12:\n" +
 	"\x1aactor_home_station_peer_id\x18\x05 \x01(\tR\x16actorHomeStationPeerId\x129\n" +
 	"\x19actor_home_station_domain\x18\x06 \x01(\tR\x16actorHomeStationDomain\x127\n" +
-	"\tjoined_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12/\n" +
-	"\x14invited_by_actor_did\x18\b \x01(\tR\x11invitedByActorDid\x12\x1a\n" +
+	"\tjoined_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12&\n" +
+	"\x0finvited_by_ptid\x18\b \x01(\tR\rinvitedByPtid\x12\x1a\n" +
 	"\bnickname\x18\n" +
 	" \x01(\tR\bnickname\x12\x14\n" +
 	"\x05muted\x18\v \x01(\bR\x05muted\x12;\n" +
 	"\vmuted_until\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"mutedUntil\"\x8d\b\n" +
+	"mutedUntil\"\x84\b\n" +
 	"\x13ConversationCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12'\n" +
-	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12(\n" +
-	"\x10sender_actor_did\x18\x03 \x01(\tR\x0esenderActorDid\x12(\n" +
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x1f\n" +
+	"\vsender_ptid\x18\x03 \x01(\tR\n" +
+	"senderPtid\x12(\n" +
 	"\x10sender_device_id\x18\x04 \x01(\tR\x0esenderDeviceId\x12:\n" +
 	"\x19observed_membership_epoch\x18\x05 \x01(\x03R\x17observedMembershipEpoch\x127\n" +
 	"\tclient_ts\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bclientTs\x12R\n" +
@@ -2625,14 +2627,13 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\x15RetractMessageCommand\x12*\n" +
 	"\x11target_message_id\x18\x01 \x01(\tR\x0ftargetMessageId\"X\n" +
 	"\x11AddMembersCommand\x12C\n" +
-	"\amembers\x18\x01 \x03(\v2).peers_touch.model.chat.v1.MemberAddEntryR\amembers\"\xa4\x01\n" +
-	"\x0eMemberAddEntry\x12\x1b\n" +
-	"\tactor_did\x18\x01 \x01(\tR\bactorDid\x12:\n" +
+	"\amembers\x18\x01 \x03(\v2).peers_touch.model.chat.v1.MemberAddEntryR\amembers\"\x9b\x01\n" +
+	"\x0eMemberAddEntry\x12\x12\n" +
+	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12:\n" +
 	"\x1aactor_home_station_peer_id\x18\x02 \x01(\tR\x16actorHomeStationPeerId\x129\n" +
-	"\x04role\x18\x03 \x01(\x0e2%.peers_touch.model.chat.v1.MemberRoleR\x04role\"5\n" +
-	"\x14RemoveMembersCommand\x12\x1d\n" +
-	"\n" +
-	"actor_dids\x18\x01 \x03(\tR\tactorDids\"\x0e\n" +
+	"\x04role\x18\x03 \x01(\x0e2%.peers_touch.model.chat.v1.MemberRoleR\x04role\",\n" +
+	"\x14RemoveMembersCommand\x12\x14\n" +
+	"\x05ptids\x18\x01 \x03(\tR\x05ptids\"\x0e\n" +
 	"\fLeaveCommand\"\x11\n" +
 	"\x0fDissolveCommand\"\xc8\x01\n" +
 	"\x15UpdateSettingsCommand\x12\x17\n" +
@@ -2665,44 +2666,46 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\x14conversation_created\x18\x0e \x01(\v23.peers_touch.model.chat.v1.ConversationCreatedEventH\x00R\x13conversationCreated\x12n\n" +
 	"\x16conversation_dissolved\x18\x0f \x01(\v25.peers_touch.model.chat.v1.ConversationDissolvedEventH\x00R\x15conversationDissolved\x12\\\n" +
 	"\x10settings_changed\x18\x10 \x01(\v2/.peers_touch.model.chat.v1.SettingsChangedEventH\x00R\x0fsettingsChangedB\t\n" +
-	"\apayload\"\xf8\x03\n" +
+	"\apayload\"\xef\x03\n" +
 	"\x15MessageCommittedEvent\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x01 \x01(\tR\tmessageId\x12(\n" +
-	"\x10sender_actor_did\x18\x02 \x01(\tR\x0esenderActorDid\x12(\n" +
+	"message_id\x18\x01 \x01(\tR\tmessageId\x12\x1f\n" +
+	"\vsender_ptid\x18\x02 \x01(\tR\n" +
+	"senderPtid\x12(\n" +
 	"\x10sender_device_id\x18\x03 \x01(\tR\x0esenderDeviceId\x12+\n" +
 	"\x11encrypted_payload\x18\x04 \x01(\fR\x10encryptedPayload\x12P\n" +
 	"\fcontent_type\x18\x05 \x01(\x0e2-.peers_touch.model.chat.v1.MessageContentTypeR\vcontentType\x12-\n" +
 	"\x13reply_to_message_id\x18\x06 \x01(\tR\x10replyToMessageId\x123\n" +
 	"\x16thread_root_message_id\x18\a \x01(\tR\x13threadRootMessageId\x12P\n" +
 	"\vattachments\x18\b \x03(\v2..peers_touch.model.chat.v1.EncryptedAttachmentR\vattachments\x127\n" +
-	"\tclient_ts\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\bclientTs\"\xc3\x01\n" +
+	"\tclient_ts\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\bclientTs\"\xba\x01\n" +
 	"\x12MessageEditedEvent\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x01 \x01(\tR\tmessageId\x12(\n" +
-	"\x10editor_actor_did\x18\x02 \x01(\tR\x0eeditorActorDid\x12+\n" +
+	"message_id\x18\x01 \x01(\tR\tmessageId\x12\x1f\n" +
+	"\veditor_ptid\x18\x02 \x01(\tR\n" +
+	"editorPtid\x12+\n" +
 	"\x11encrypted_payload\x18\x03 \x01(\fR\x10encryptedPayload\x127\n" +
-	"\tedited_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\beditedAt\"\xa5\x01\n" +
+	"\tedited_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\beditedAt\"\x9c\x01\n" +
 	"\x15MessageRetractedEvent\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x01 \x01(\tR\tmessageId\x12.\n" +
-	"\x13retractor_actor_did\x18\x02 \x01(\tR\x11retractorActorDid\x12=\n" +
+	"message_id\x18\x01 \x01(\tR\tmessageId\x12%\n" +
+	"\x0eretractor_ptid\x18\x02 \x01(\tR\rretractorPtid\x12=\n" +
 	"\fretracted_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\vretractedAt\"\x8d\x01\n" +
 	"\x16MembershipChangedEvent\x12A\n" +
 	"\achanges\x18\x01 \x03(\v2'.peers_touch.model.chat.v1.MemberChangeR\achanges\x120\n" +
-	"\x14new_membership_epoch\x18\x02 \x01(\x03R\x12newMembershipEpoch\"\xe9\x01\n" +
-	"\fMemberChange\x12\x1b\n" +
-	"\tactor_did\x18\x01 \x01(\tR\bactorDid\x12E\n" +
+	"\x14new_membership_epoch\x18\x02 \x01(\x03R\x12newMembershipEpoch\"\xe0\x01\n" +
+	"\fMemberChange\x12\x12\n" +
+	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12E\n" +
 	"\x06action\x18\x02 \x01(\x0e2-.peers_touch.model.chat.v1.MemberChangeActionR\x06action\x129\n" +
 	"\x04role\x18\x03 \x01(\x0e2%.peers_touch.model.chat.v1.MemberRoleR\x04role\x12:\n" +
 	"\x1aactor_home_station_peer_id\x18\x04 \x01(\tR\x16actorHomeStationPeerId\"\xbf\x01\n" +
 	"\x18ConversationCreatedEvent\x12K\n" +
 	"\fconversation\x18\x01 \x01(\v2'.peers_touch.model.chat.v1.ConversationR\fconversation\x12V\n" +
-	"\x0finitial_members\x18\x02 \x03(\v2-.peers_touch.model.chat.v1.ConversationMemberR\x0einitialMembers\"Q\n" +
-	"\x1aConversationDissolvedEvent\x123\n" +
-	"\x16dissolved_by_actor_did\x18\x01 \x01(\tR\x13dissolvedByActorDid\"\xf8\x01\n" +
-	"\x14SettingsChangedEvent\x12/\n" +
-	"\x14changed_by_actor_did\x18\x01 \x01(\tR\x11changedByActorDid\x12\x17\n" +
+	"\x0finitial_members\x18\x02 \x03(\v2-.peers_touch.model.chat.v1.ConversationMemberR\x0einitialMembers\"H\n" +
+	"\x1aConversationDissolvedEvent\x12*\n" +
+	"\x11dissolved_by_ptid\x18\x01 \x01(\tR\x0fdissolvedByPtid\"\xef\x01\n" +
+	"\x14SettingsChangedEvent\x12&\n" +
+	"\x0fchanged_by_ptid\x18\x01 \x01(\tR\rchangedByPtid\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12%\n" +
 	"\vdescription\x18\x03 \x01(\tH\x01R\vdescription\x88\x01\x01\x12\"\n" +
 	"\n" +
@@ -2721,12 +2724,12 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\rencrypted_key\x18\x05 \x01(\fR\fencryptedKey\x12\x1f\n" +
 	"\vstorage_ref\x18\x06 \x01(\tR\n" +
 	"storageRef\x12/\n" +
-	"\x13thumbnail_encrypted\x18\a \x01(\fR\x12thumbnailEncrypted\"\x89\x02\n" +
+	"\x13thumbnail_encrypted\x18\a \x01(\fR\x12thumbnailEncrypted\"\x80\x02\n" +
 	"\x0eMessageReceipt\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x02 \x01(\tR\tmessageId\x12\x1b\n" +
-	"\tactor_did\x18\x03 \x01(\tR\bactorDid\x12\x1b\n" +
+	"message_id\x18\x02 \x01(\tR\tmessageId\x12\x12\n" +
+	"\x04ptid\x18\x03 \x01(\tR\x04ptid\x12\x1b\n" +
 	"\tdevice_id\x18\x04 \x01(\tR\bdeviceId\x12I\n" +
 	"\freceipt_type\x18\x05 \x01(\x0e2&.peers_touch.model.chat.v1.ReceiptTypeR\vreceiptType\x12*\n" +
 	"\x02ts\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x02ts\"\xa3\x02\n" +
