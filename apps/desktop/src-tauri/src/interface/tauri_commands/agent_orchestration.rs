@@ -190,16 +190,3 @@ pub fn agent_collaboration_release_executor_lease(
     }
     application_agent_orchestration::agent_collaboration_release_executor_lease(input, &token)
 }
-
-#[tauri::command]
-pub fn agent_collaboration_resume_task(
-    input: AgentCollaborationCancelTaskInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    if token.trim().is_empty() {
-        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
-    }
-    application_agent_orchestration::agent_collaboration_cancel_task(input, &token)
-}
