@@ -47,6 +47,8 @@ import { getGroupMemberControlState } from './chatGroupPermissions';
 import { presentError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import { imServiceV1 } from '../../services/im-service';
+import { MlsDeliveryKind } from '../../services/im-service-contract';
 
 const { Text } = Typography;
 
@@ -67,7 +69,7 @@ interface DetailAttachmentItem {
 
 const RECENT_MEDIA_LIMIT = 6;
 const RECENT_FILE_LIMIT = 4;
-type GroupMemberLike = Pick<GroupMember, 'actorDid' | 'nickname' | 'role' | 'muted'>;
+type GroupMemberLike = Pick<GroupMember, 'ptid' | 'nickname' | 'role' | 'muted'>;
 
 interface GroupMemberDisplay extends GroupMemberLike {
   displayName: string;
@@ -617,7 +619,7 @@ export function ChatDetailPanel() {
     ? activeConversation?.peerDid || getFriendPeerDid(activeFriendSession, currentUserDid)
     : '';
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
-  const myGroupMember = currentUserDid ? members.find((member) => member.actorDid === currentUserDid) : undefined;
+  const myGroupMember = currentUserDid ? members.find((member) => member.ptid === currentUserDid) : undefined;
   const myGroupNickname = myGroupMember?.nickname?.trim() || '';
   const memberProfiles = useMemo(() => {
     const profiles = new Map<string, { name: string; avatar: string }>();
@@ -640,7 +642,7 @@ export function ChatDetailPanel() {
       ? members
       : activeGroup?.ownerDid
         ? [{
-            actorDid: activeGroup.ownerDid,
+            ptid: activeGroup.ownerDid,
             nickname: '',
             role: GroupRole.OWNER,
             muted: false,
@@ -648,7 +650,7 @@ export function ChatDetailPanel() {
         : [];
     return sourceMembers.map((member) => {
       const nickname = member.nickname?.trim() || '';
-      const profile = memberProfiles.get(member.actorDid);
+      const profile = memberProfiles.get(member.ptid);
       const profileName = profile?.name?.trim() || '';
       const displayName = nickname || profileName || t('chat.social.detail.unknownMember');
       return {
@@ -660,14 +662,14 @@ export function ChatDetailPanel() {
     });
   }, [activeGroup?.ownerDid, memberProfiles, members, t]);
   const memberDisplayByDid = useMemo(
-    () => new Map(displayMembers.map((member) => [member.actorDid, member])),
+    () => new Map(displayMembers.map((member) => [member.ptid, member])),
     [displayMembers],
   );
   const getMemberDisplayName = (member: GroupMember): string =>
-    memberDisplayByDid.get(member.actorDid)?.displayName
+    memberDisplayByDid.get(member.ptid)?.displayName
     || member.nickname?.trim()
     || t('chat.social.detail.unknownMember');
-  const memberDidSet = useMemo(() => new Set(members.map((member) => member.actorDid)), [members]);
+  const memberDidSet = useMemo(() => new Set(members.map((member) => member.ptid)), [members]);
   const inviteCandidates = useMemo(
     () => sessions
       .map((session) => ({
@@ -919,6 +921,23 @@ export function ChatDetailPanel() {
       setInviteDids([]);
       setInviteModalOpen(false);
       toast.success(t('chat.social.detail.addMemberSuccess'));
+
+      for (const did of inviteDids) {
+        try {
+          const { data: kpData } = await imServiceV1.keyPackage.fetch(did);
+          if (!kpData) continue;
+          const { commitBytes, welcomeBytes } = await imServiceV1.mlsGroup.addMember(activeUlid, kpData);
+          await imServiceV1.mlsGroup.save(activeUlid);
+          if (commitBytes.length > 0) {
+            await imServiceV1.mlsGroup.distribute(activeUlid, MlsDeliveryKind.COMMIT, 0, commitBytes);
+          }
+          if (welcomeBytes.length > 0) {
+            await imServiceV1.mlsGroup.distribute(activeUlid, MlsDeliveryKind.WELCOME, 0, welcomeBytes, [did]);
+          }
+        } catch (mlsErr) {
+          log.warn('chat', 'MLS add member failed (non-fatal)', { did, error: mlsErr });
+        }
+      }
     } catch (error) {
       log.error('chat', 'invite group members failed', { groupUlid: activeUlid, inviteeCount: inviteDids.length, error });
       toast.error(t('chat.social.detail.addMemberFailed'));
@@ -929,7 +948,7 @@ export function ChatDetailPanel() {
   };
 
   const confirmRemoveGroupMember = (member: GroupMember) => {
-    if (!activeUlid || !member.actorDid) return;
+    if (!activeUlid || !member.ptid) return;
     const memberName = getMemberDisplayName(member);
     Modal.confirm({
       title: t('chat.social.detail.removeMemberConfirmTitle'),
@@ -939,11 +958,11 @@ export function ChatDetailPanel() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await api.groupChatRemoveMember(activeUlid, member.actorDid);
+          await api.groupChatRemoveMember(activeUlid, member.ptid);
           await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
           toast.success(t('chat.social.detail.removeMemberSuccess'));
         } catch (error) {
-          log.error('chat', 'remove group member failed', { groupUlid: activeUlid, actorDid: member.actorDid, error });
+          log.error('chat', 'remove group member failed', { groupUlid: activeUlid, ptid: member.ptid, error });
           toast.error(t('chat.social.detail.removeMemberFailed'));
           throw error;
         }
@@ -952,13 +971,13 @@ export function ChatDetailPanel() {
   };
 
   const updateGroupMember = async (member: GroupMember, input: { role?: number; muted?: boolean }) => {
-    if (!activeUlid || !member.actorDid) return;
+    if (!activeUlid || !member.ptid) return;
     try {
-      await api.groupChatUpdateMember(activeUlid, member.actorDid, input);
+      await api.groupChatUpdateMember(activeUlid, member.ptid, input);
       await loadGroupMembers(activeUlid);
       toast.success(t('chat.social.detail.updateMemberSuccess'));
     } catch (error) {
-      log.error('chat', 'update group member failed', { groupUlid: activeUlid, actorDid: member.actorDid, input, error });
+      log.error('chat', 'update group member failed', { groupUlid: activeUlid, ptid: member.ptid, input, error });
       toast.error(t('chat.social.detail.updateMemberFailed'));
       throw error;
     }
@@ -982,7 +1001,7 @@ export function ChatDetailPanel() {
   };
 
   const confirmTransferGroupOwnership = (member: GroupMember) => {
-    if (!activeUlid || !member.actorDid) return;
+    if (!activeUlid || !member.ptid) return;
     const memberName = getMemberDisplayName(member);
     Modal.confirm({
       title: t('chat.social.detail.transferOwnerConfirmTitle'),
@@ -992,11 +1011,11 @@ export function ChatDetailPanel() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await api.groupChatTransferOwnership(activeUlid, member.actorDid);
+          await api.groupChatTransferOwnership(activeUlid, member.ptid);
           await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
           toast.success(t('chat.social.detail.transferOwnerSuccess'));
         } catch (error) {
-          log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerDid: member.actorDid, error });
+          log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerDid: member.ptid, error });
           toast.error(t('chat.social.detail.transferOwnerFailed'));
           throw error;
         }
@@ -1323,7 +1342,7 @@ export function ChatDetailPanel() {
             {displayMembers.length > 0 ? (
               <Flexbox horizontal gap={10} style={{ flexWrap: 'wrap', minWidth: 0 }}>
                 {(showAllMembers ? displayMembers : displayMembers.slice(0, 8)).map((member) => (
-                  <MemberPreviewCard key={member.actorDid} member={member} />
+                  <MemberPreviewCard key={member.ptid} member={member} />
                 ))}
               </Flexbox>
             ) : (
@@ -1602,7 +1621,7 @@ export function ChatDetailPanel() {
         <Flexbox gap={10} style={{ maxHeight: 'min(520px, 70vh)', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4 }}>
           {displayMembers.map((member) => {
             const memberRole = Number(member.role ?? GroupRole.MEMBER);
-            const targetIsSelf = member.actorDid === currentUserDid;
+            const targetIsSelf = member.ptid === currentUserDid;
             const controlState = getGroupMemberControlState({
               canManageGroupMembers,
               isSelf: targetIsSelf,
@@ -1610,11 +1629,11 @@ export function ChatDetailPanel() {
               myGroupRole,
               targetRole: memberRole,
             });
-            const managedMember = members.find((groupMember) => groupMember.actorDid === member.actorDid);
+            const managedMember = members.find((groupMember) => groupMember.ptid === member.ptid);
             const lockedReason = controlState.lockedReasonKey ? t(controlState.lockedReasonKey) : undefined;
             return (
               <MemberItem
-                key={member.actorDid}
+                key={member.ptid}
                 member={member}
                 lockedReason={lockedReason}
                 action={controlState.canManageTarget && managedMember ? (

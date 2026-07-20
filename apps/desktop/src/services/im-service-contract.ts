@@ -11,11 +11,21 @@ import type {
   DeviceInboxItem,
 } from '../gen/proto/domain/chat/envelope_pb'
 
+import {
+  MlsDeliveryKind,
+  DirectKeyExchangeKind,
+} from '../gen/proto/domain/chat/envelope_pb'
+
+import type { DeviceInfoView } from '../gen/proto/domain/chat/conversation_api_pb'
+
+export { MlsDeliveryKind, DirectKeyExchangeKind }
+export type DeviceInfo = DeviceInfoView
+
 // --- Conversation Service Contract (v1) ---
 
 export interface ConversationServiceContract {
-  createDirect(peerActorDid: string, peerStationPeerId?: string): Promise<Conversation>
-  createGroup(name: string, members: { actorDid: string; stationId?: string }[]): Promise<Conversation>
+  createDirect(peerPtid: string, peerStationPeerId?: string): Promise<Conversation>
+  createGroup(name: string, members: { ptid: string; stationId?: string }[]): Promise<Conversation>
   submitCommand(command: ConversationCommand): Promise<CommittedConversationEvent>
   submitReceipt(conversationId: string, messageId: string, receiptType: ReceiptType): Promise<void>
   getConversation(conversationId: string): Promise<Conversation>
@@ -36,7 +46,7 @@ export interface EnvelopeServiceContract {
 
 export interface KeyPackageServiceContract {
   upload(deviceId: string, data: Uint8Array): Promise<void>
-  fetch(actorDid: string): Promise<{ data: Uint8Array | null; available: boolean }>
+  fetch(ptid: string, homeStationPeerId?: string): Promise<{ data: Uint8Array | null; available: boolean }>
   countAvailable(): Promise<number>
 }
 
@@ -48,17 +58,10 @@ export interface DeviceServiceContract {
   revoke(deviceId: string): Promise<void>
 }
 
-export interface DeviceInfo {
-  deviceId: string
-  label: string
-  createdAt: string
-  revoked: boolean
-}
-
 // --- MLS Group Service Contract (v1, P3) ---
 
 export interface MlsGroupServiceContract {
-  initIdentity(actorDid: string): Promise<void>
+  initIdentity(ptid: string): Promise<void>
   generateKeyPackage(): Promise<Uint8Array>
   createGroup(conversationId: string, memberKeyPackages: Uint8Array[]): Promise<MlsGroupCreateResult>
   joinGroup(conversationId: string, welcomeBytes: Uint8Array): Promise<void>
@@ -83,22 +86,10 @@ export interface MlsMemberChangeResult {
   welcomeBytes: Uint8Array
 }
 
-export enum MlsDeliveryKind {
-  WELCOME = 1,
-  COMMIT = 2,
-  KEY_PACKAGE = 3,
-}
-
 // --- Direct Key Exchange Service Contract (v1, P2) ---
 
-export enum DirectKeyExchangeKind {
-  PREKEY_BUNDLE = 1,
-  INITIAL_MESSAGE = 2,
-  RATCHET_KEY_UPDATE = 3,
-}
-
 export interface DirectKeyExchangeServiceContract {
-  send(recipientActorDid: string, sessionId: string, kind: DirectKeyExchangeKind, opaqueKeyMaterial: Uint8Array, recipientStationPeerId?: string): Promise<string>
+  send(recipientPtid: string, sessionId: string, kind: DirectKeyExchangeKind, opaqueKeyMaterial: Uint8Array, recipientStationPeerId?: string): Promise<string>
 }
 
 // --- Unified IM Service (aggregates above contracts) ---
