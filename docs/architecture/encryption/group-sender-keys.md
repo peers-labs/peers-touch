@@ -1,5 +1,10 @@
 # Group Chat Sender Keys — Design
 
+> **SUPERSEDED (2026-07-11) by federated-im decision D-08 (group E2EE → MLS,
+> RFC 9420).** Sender Keys / SKDM are removed under the v1 IM unification. This
+> document is retained for history only; do not build new work on it. Current
+> group E2EE decision: [`../federated-im/decisions.md`](../federated-im/decisions.md) (D-08).
+>
 > Design document. **No code lands until this doc is reviewed.**
 >
 > Companion to `e2e-encryption-architecture.md` (parent E2E
