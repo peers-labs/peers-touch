@@ -85,11 +85,22 @@ class DesktopPerformanceCellCollectTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cell_dir = Path(tmp) / "cells"
             collect.write_evidence({"tauri-webview-dev": evidence}, cell_dir)
+            cohort_path = Path(tmp) / "desktop-performance-cohort-gate.json"
+            cohort_path.write_text(json.dumps({
+                "artifactKind": "desktop-performance-cohort-gate",
+                "phase": "P0c-3",
+                "planTask": "P0c3-R2",
+                "gate": "cohort identity proven",
+                "completionStatus": "DONE",
+                "proofStatus": "PROVEN",
+                "sampleEmissionAllowed": True,
+            }), encoding="utf-8")
             report = matrix.build_matrix(
                 argparse.Namespace(
                     live_gate_report=str(Path(tmp) / "missing-live-gate.json"),
                     events_report=str(Path(tmp) / "missing-events.json"),
                     cell_evidence_dir=str(cell_dir),
+                    cohort_report=str(cohort_path),
                 )
             )
 
