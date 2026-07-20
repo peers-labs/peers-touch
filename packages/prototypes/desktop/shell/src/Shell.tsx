@@ -44,12 +44,12 @@ import {
 import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
 import { AgentCanvasPage } from '@peers-touch/prototype-agent-canvas';
 import { AppletWorkspacePage } from '../../features/applet-workspace/src/AppletWorkspacePrototype';
-import { IntegratedAgentProfileSurface } from '../../features/agent-lobehub-parity/src/AgentLobeHubParityPrototype';
 import { Page as AgentFeaturePage } from '../../features/agent/src/Page';
 import { ChatPageBlock as CallChatPage } from '../../features/call/src/CallPrototype';
 import { AgentChatPage } from './AgentChatPage';
 import { SettingsPage } from './Settings';
 import { T } from './theme';
+import { ToastHost } from '../../shared/Toast';
 
 /** An installed applet (mirrors RuntimeAppletInfo.manifest + status). */
 interface AppletInfo {
@@ -620,7 +620,6 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
     const initialSurface = getAgentSurfaceId(initialPage ?? 'applets');
     return initialSurface ? new Set([initialSurface]) : new Set();
   });
-  const [agentProfileVisited, setAgentProfileVisited] = useState(initialPage === 'agent-profile');
 
   const navigate = (p: string) => {
     const surface = getAgentSurfaceId(p);
@@ -632,7 +631,6 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
         return next;
       });
     }
-    if (p === 'agent-profile') setAgentProfileVisited(true);
     setPage(p);
   };
 
@@ -735,21 +733,15 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
                 <>
                   <div
                     data-agent-surface="agent"
-                    style={{ position: 'absolute', inset: 0, display: page === 'agent' ? 'block' : 'none' }}
+                    style={{ position: 'absolute', inset: 0, display: page === 'agent' || page === 'agent-profile' ? 'block' : 'none' }}
                   >
                     <AgentChatPage
                       onOpenOrchestration={() => navigate('agent-orchestration')}
+                      profileOpen={page === 'agent-profile'}
                       onOpenProfile={() => navigate('agent-profile')}
+                      onCloseProfile={() => navigate('agent')}
                     />
                   </div>
-                  {agentProfileVisited && (
-                    <div
-                      data-agent-surface="agent-profile"
-                      style={{ position: 'absolute', inset: 0, display: page === 'agent-profile' ? 'block' : 'none' }}
-                    >
-                      <IntegratedAgentProfileSurface onOpenOrchestration={() => navigate('agent-orchestration')} />
-                    </div>
-                  )}
                 </>
               )}
               {visitedAgentSurfaces.has('agent-atelier') && (
@@ -781,6 +773,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
           setPaletteOpen(false);
         }}
       />
+      <ToastHost />
     </div>
   );
 }
