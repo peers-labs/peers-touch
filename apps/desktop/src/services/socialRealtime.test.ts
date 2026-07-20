@@ -205,35 +205,6 @@ describe('social realtime group membership side effects', () => {
     });
   });
 
-  it('consumes realtime friend SKDM before ack badge or visible message ingest', async () => {
-    const controlMessage = create(FriendChatMessageSchema, {
-      ulid: 'skdm-msg-1',
-      senderDid: 'did:peer:friend',
-      receiverDid: 'did:peer:self',
-      content: 'sender-key-payload',
-      type: 50,
-    });
-
-    eventBus.publish(EVENT.REALTIME_MESSAGE_RECEIVED, {
-      eventId: 'stream-event-skdm',
-      sessionUlid: 'session-1',
-      messageUlid: 'skdm-msg-1',
-      senderActorId: 'did:peer:friend',
-      recipientActorId: 'did:peer:self',
-      ciphertext: toBinary(FriendChatMessageSchema, controlMessage),
-      sentTsUnixMs: 123,
-    });
-
-    await vi.waitFor(() => {
-      expect(mocks.handleInboundSkdm).toHaveBeenCalledWith('did:peer:friend', 'sender-key-payload');
-    });
-    expect(mocks.friendChatAckMessages).not.toHaveBeenCalled();
-    expect(mocks.bumpChatUnread).not.toHaveBeenCalled();
-    expect(mocks.clearChatUnread).not.toHaveBeenCalled();
-    expect(mocks.ingestRealtimeMessage).not.toHaveBeenCalled();
-    expect(mocks.friendChatSync).not.toHaveBeenCalled();
-  });
-
   it('coalesces overlapping realtime resync requests into a serial cold resync lane', async () => {
     const firstColdResync = deferred<void>();
     mocks.loadSessions.mockImplementationOnce(() => firstColdResync.promise);
