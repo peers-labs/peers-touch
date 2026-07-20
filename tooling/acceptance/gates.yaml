@@ -223,7 +223,7 @@
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Generate fail-closed P0c-3 runtime-cell evidence templates for Tauri, prod-preview, and offline fixture cells."
+      "description": "Generate fail-closed P0c-3 runtime-cell evidence templates for dev and packaged Tauri WebView cells."
     },
     "desktop-performance-cell-collect-static-gate": {
       "command": "python3 tooling/scripts/desktop-performance-cell-collect-test.py",
@@ -238,6 +238,20 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Generate P0c-3 runtime-cell evidence from runtime sampler observations, failing closed when true runtime samples are missing."
+    },
+    "desktop-performance-cohort-static-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-cohort-gate-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate P0c3-R2 cohort identity and actual-actor mismatch failure semantics."
+    },
+    "desktop-performance-cohort-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-cohort-gate.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Require complete and identical browser, dev-native, and packaged-native cohort observations before matrix samples are admitted."
     },
     "desktop-local-telemetry-buffer-static-gate": {
       "command": "python3 tooling/scripts/desktop-local-telemetry-buffer-gate-test.py",

@@ -14,6 +14,7 @@
 #
 # Environment variables consumed:
 #   RESTART — If set to "1", kill existing Rust BFF and restart unconditionally.
+#   PT_DESKTOP_E2E — If "true", enable the opt-in native Playwright observer.
 #
 # Behavior:
 #   - If RESTART=1 → kill existing process and start fresh.
@@ -52,6 +53,7 @@ tauri_compute_fingerprint() {
   local gw_port="$3"
   local vite_port="$4"
   local station_url="${PEERS_STATION_URL:-}"
+  local e2e_testing="${PT_DESKTOP_E2E:-false}"
 
   local files=()
   files+=("$desktop_dir/src-tauri/Cargo.toml")
@@ -80,6 +82,7 @@ tauri_compute_fingerprint() {
     "gateway_port=${gw_port}" \
     "vite_port=${vite_port}" \
     "station_url=${station_url}" \
+    "e2e_testing=${e2e_testing}" \
     "files=${file_hashes}" \
     "src_rs=${rs_hashes}" \
     | shasum -a 256 | awk '{print $1}'
@@ -230,8 +233,13 @@ ensure_desktop_rust_ready() {
 
   local dev_url="http://localhost:${vite_port}"
   local tauri_config
-  if [[ "$headless" == "--headless" ]]; then
+  local e2e_testing="${PT_DESKTOP_E2E:-false}"
+  if [[ "$headless" == "--headless" && "$e2e_testing" == "true" ]]; then
+    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}],\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-playwright\",\"windows\":[\"*\"],\"permissions\":[\"playwright:default\"]}]}}}"
+  elif [[ "$headless" == "--headless" ]]; then
     tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}]}}"
+  elif [[ "$e2e_testing" == "true" ]]; then
+    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-playwright\",\"windows\":[\"*\"],\"permissions\":[\"playwright:default\"]}]}}}"
   else
     tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"}}"
   fi
@@ -272,13 +280,18 @@ ensure_desktop_rust_ready() {
   # to ensure devUrl, window visibility, and beforeDevCommand overrides are
   # applied correctly. The binary cannot accept runtime config overrides.
   # See docs/architecture/runtime/desktop-runtime-architecture.md §6.4.
+  local tauri_feature_args=()
+  if [[ "${PT_DESKTOP_E2E:-false}" == "true" ]]; then
+    tauri_feature_args=(--features e2e-testing)
+    echo "[INFO] Native Playwright observer enabled (e2e-testing feature)"
+  fi
   (
     cd "$desktop_dir"
     export PT_GATEWAY_PORT="$gw_port"
     export PT_PROFILE="$profile"
     export PEERS_STATION_URL="${PEERS_STATION_URL:-}"
     export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
-    pnpm tauri dev --config "$tauri_config"
+    pnpm tauri dev "${tauri_feature_args[@]}" --config "$tauri_config"
   ) &
   TAURI_PID=$!
 
@@ -289,6 +302,7 @@ TAURI_PROFILE='${profile}'
 TAURI_GATEWAY_PORT='${gw_port}'
 TAURI_VITE_PORT='${vite_port}'
 TAURI_STATION_URL='${PEERS_STATION_URL:-}'
+TAURI_E2E_TESTING='${PT_DESKTOP_E2E:-false}'
 TAURI_PID='${TAURI_PID}'
 EOF
   echo "[INFO] Rust BFF started (pid: $TAURI_PID), waiting for gateway..."
