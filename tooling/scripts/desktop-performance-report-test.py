@@ -433,7 +433,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                             ],
                             "blockedScopeCount": 8,
                             "blockedScopes": [
-                                "dom-anchor:tauri-webview",
+                                "dom-anchor:tauri-webview-dev",
                                 "station-mirror-source",
                                 "sampler:interaction-correlation",
                                 "sampler:react-commit",
@@ -444,7 +444,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                             ],
                             "domAnchorGateStatus": "diagnostic incomplete",
                             "domAnchorGateProofStatus": "UNPROVEN",
-                            "domAnchorBlockedBySteps": ["tauri-webview.dom_anchors"],
+                            "domAnchorBlockedBySteps": ["tauri-webview-dev.dom_anchors"],
                             "domAnchorBlockedDownstreamSteps": [
                                 "p0b.sampler_collection",
                                 "p0b.station_sampler_mirror",
@@ -499,9 +499,9 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                         "issue_breakdown": [
                             {
                                 "category": "dom-anchor-blocker",
-                                "failedStep": "dom-anchor:tauri-webview",
-                                "summary": "tauri-webview DOM anchors are not proven",
-                                "proofImpact": "P0b sampler gate remains PARTIAL/UNPROVEN until tauri-webview.dom_anchors is proven.",
+                                "failedStep": "dom-anchor:tauri-webview-dev",
+                                "summary": "tauri-webview-dev DOM anchors are not proven",
+                                "proofImpact": "P0b sampler gate remains PARTIAL/UNPROVEN until tauri-webview-dev.dom_anchors is proven.",
                             },
                             {
                                 "category": "sampler-evidence",
@@ -513,9 +513,9 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                         "issueBreakdown": [
                             {
                                 "category": "dom-anchor-blocker",
-                                "failedStep": "dom-anchor:tauri-webview",
-                                "summary": "tauri-webview DOM anchors are not proven",
-                                "proofImpact": "P0b sampler gate remains PARTIAL/UNPROVEN until tauri-webview.dom_anchors is proven.",
+                                "failedStep": "dom-anchor:tauri-webview-dev",
+                                "summary": "tauri-webview-dev DOM anchors are not proven",
+                                "proofImpact": "P0b sampler gate remains PARTIAL/UNPROVEN until tauri-webview-dev.dom_anchors is proven.",
                             },
                             {
                                 "category": "sampler-evidence",
@@ -613,10 +613,10 @@ class DesktopPerformanceReportTest(unittest.TestCase):
         self.assertEqual(report["samplerGate"]["unprovenSamplerCount"], 6)
         self.assertEqual(report["samplerGate"]["unprovenSamplers"][-1], "main-thread")
         self.assertEqual(report["samplerGate"]["blockedScopeCount"], 8)
-        self.assertEqual(report["samplerGate"]["blockedScopes"][0], "dom-anchor:tauri-webview")
+        self.assertEqual(report["samplerGate"]["blockedScopes"][0], "dom-anchor:tauri-webview-dev")
         self.assertEqual(report["samplerGate"]["domAnchorGateStatus"], "diagnostic incomplete")
         self.assertEqual(report["samplerGate"]["domAnchorGateProofStatus"], "UNPROVEN")
-        self.assertEqual(report["samplerGate"]["domAnchorBlockedBySteps"], ["tauri-webview.dom_anchors"])
+        self.assertEqual(report["samplerGate"]["domAnchorBlockedBySteps"], ["tauri-webview-dev.dom_anchors"])
         self.assertEqual(report["samplerGate"]["domAnchorBlockedDownstreamSteps"][-1], "p0c.red_line_proof")
         self.assertEqual(report["samplerGate"]["runtimeClosureProofStatus"], "UNPROVEN")
         self.assertFalse(report["samplerGate"]["runtimeClosureSampleEmissionAllowed"])
@@ -636,10 +636,10 @@ class DesktopPerformanceReportTest(unittest.TestCase):
         self.assertEqual(report["summary"]["unprovenSamplerCount"], 6)
         self.assertEqual(report["summary"]["unprovenSamplers"][-1], "main-thread")
         self.assertEqual(report["summary"]["samplerBlockedScopeCount"], 8)
-        self.assertEqual(report["summary"]["samplerBlockedScopes"][0], "dom-anchor:tauri-webview")
+        self.assertEqual(report["summary"]["samplerBlockedScopes"][0], "dom-anchor:tauri-webview-dev")
         self.assertEqual(report["summary"]["samplerDomAnchorGateStatus"], "diagnostic incomplete")
         self.assertEqual(report["summary"]["samplerDomAnchorGateProofStatus"], "UNPROVEN")
-        self.assertEqual(report["summary"]["samplerDomAnchorBlockedBySteps"], ["tauri-webview.dom_anchors"])
+        self.assertEqual(report["summary"]["samplerDomAnchorBlockedBySteps"], ["tauri-webview-dev.dom_anchors"])
         self.assertEqual(report["summary"]["samplerDomAnchorBlockedDownstreamSteps"][0], "p0b.sampler_collection")
         self.assertEqual(report["summary"]["samplerRuntimeClosureProofStatus"], "UNPROVEN")
         self.assertFalse(report["summary"]["samplerRuntimeClosureSampleEmissionAllowed"])
@@ -687,15 +687,15 @@ class DesktopPerformanceReportTest(unittest.TestCase):
         self.assertIn("- Local telemetry buffer sample emission allowed: `False`", markdown)
         self.assertIn("- Local telemetry buffer missing observation fields: `maxEvents,droppedByKind,droppedWithInteraction`", markdown)
         self.assertIn("- Local telemetry buffer observation template JSON: `tooling/acceptance/reports/desktop-local-telemetry-buffer-observations-template.json`", markdown)
-        self.assertIn("- Sampler DOM anchor blocked by steps: `tauri-webview.dom_anchors`", markdown)
+        self.assertIn("- Sampler DOM anchor blocked by steps: `tauri-webview-dev.dom_anchors`", markdown)
         self.assertIn("- DOM anchor blocked downstream steps: `p0b.sampler_collection,p0b.station_sampler_mirror,p0c.runtime_matrix_samples,p0c.red_line_proof`", markdown)
-        self.assertIn("- Blocked scopes: `dom-anchor:tauri-webview,station-mirror-source", markdown)
+        self.assertIn("- Blocked scopes: `dom-anchor:tauri-webview-dev,station-mirror-source", markdown)
         self.assertIn("reviewCommands=`make desktop,python3 tooling/scripts/desktop-performance-sampler-gate.py`", markdown)
         self.assertIn("- Unproven samplers: `6`", markdown)
         self.assertIn("- Unproven sampler ids: `interaction-correlation,react-commit,store-update,overlay-latency,invoke,main-thread`", markdown)
         self.assertIn("| `react-commit` | `diagnostic incomplete` | `UNPROVEN` | `P0b-3/P0c-5` | 0 | `react.commit` | no react.commit events in Station mirror |", markdown)
         self.assertIn("## Issue Breakdown", markdown)
-        self.assertIn("`dom-anchor-blocker` failedStep=`dom-anchor:tauri-webview`", markdown)
+        self.assertIn("`dom-anchor-blocker` failedStep=`dom-anchor:tauri-webview-dev`", markdown)
         self.assertIn("`sampler-evidence` failedStep=`sampler:react-commit`", markdown)
         self.assertIn("sourceKind=`desktop-performance-sampler-gate`", markdown)
         self.assertIn("sourcePhase=`P0b-2/P0b-3/P0b-4/P0b-5/P0b-6/P0b-7/P0c-5`", markdown)
@@ -1035,8 +1035,8 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                         "summary": {
                             "blockedRuntimeCells": [
                                 {
-                                    "runtimeCell": "tauri-webview",
-                                    "blockedByStep": "tauri-webview.dom_anchors",
+                                    "runtimeCell": "tauri-webview-dev",
+                                    "blockedByStep": "tauri-webview-dev.dom_anchors",
                                     "blockedByPhase": "P0b-1",
                                     "proofStatus": "UNPROVEN",
                                     "provenCount": 0,
@@ -1050,7 +1050,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                                     ],
                                 }
                             ],
-                            "blockedBySteps": ["tauri-webview.dom_anchors"],
+                            "blockedBySteps": ["tauri-webview-dev.dom_anchors"],
                             "blockedDownstreamSteps": [
                                 "p0b.sampler_collection",
                                 "p0b.station_sampler_mirror",
@@ -1250,7 +1250,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
         self.assertEqual(report["summary"]["anchorDomEvidenceTauriAnchorsProven"], 0)
         self.assertEqual(report["summary"]["anchorDomEvidenceTauriAnchorsRequired"], 9)
         self.assertEqual(report["summary"]["anchorDomEvidenceTauriMissingAnchors"], ["primary-nav", "secondary-tab"])
-        self.assertEqual(report["summary"]["anchorDomEvidenceBlockedBySteps"], ["tauri-webview.dom_anchors"])
+        self.assertEqual(report["summary"]["anchorDomEvidenceBlockedBySteps"], ["tauri-webview-dev.dom_anchors"])
         self.assertEqual(report["summary"]["anchorDomEvidenceBlockedStep"], "p0b.sampler_collection")
         self.assertEqual(
             report["summary"]["anchorDomEvidenceBlockedDownstreamSteps"],
@@ -1265,7 +1265,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
         self.assertIn("- DOM evidence browser anchors: `9/9`", markdown)
         self.assertIn("- DOM evidence Tauri anchors: `0/9`", markdown)
         self.assertIn("- DOM evidence Tauri missing anchors: `primary-nav,secondary-tab`", markdown)
-        self.assertIn("- DOM evidence blocked by steps: `tauri-webview.dom_anchors`", markdown)
+        self.assertIn("- DOM evidence blocked by steps: `tauri-webview-dev.dom_anchors`", markdown)
         self.assertIn("- DOM evidence blocked downstream steps: `p0b.sampler_collection,p0b.station_sampler_mirror,p0c.runtime_matrix_samples,p0c.red_line_proof`", markdown)
         self.assertIn("sourceArtifact=`/tmp/dom-evidence.json`", markdown)
         self.assertIn("sourceBom=`BOM-SMP-01`", markdown)
@@ -1563,31 +1563,31 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                                 },
                             },
                             {
-                                "cellId": "prod-preview",
+                                "cellId": "tauri-webview-packaged",
                                 "status": "diagnostic incomplete",
                                 "proofStatus": "UNPROVEN",
                                 "sampleEmissionAllowed": False,
                                 "reason": "runtime cell observation is incomplete",
                                 "evidence": {
-                                    "path": "/tmp/prod-preview.json",
+                                    "path": "/tmp/tauri-webview-packaged.json",
                                     "status": "loaded",
                                     "sourceStatus": "diagnostic incomplete",
                                     "completionStatus": "PARTIAL",
                                     "proofStatus": "UNPROVEN",
-                                    "sourceArtifact": "/tmp/prod-preview.json",
+                                    "sourceArtifact": "/tmp/tauri-webview-packaged.json",
                                     "sourcePhase": "P0c-3",
                                     "sourceBom": ["BOM-GATE-02", "BOM-CAP-04"],
                                     "sourceSpec": ["SPEC-GATE-02", "SPEC-RUN-01"],
                                     "sourceGate": "Runtime cell evidence required before matrix samples are accepted",
-                                    "failedStep": "prod-preview",
+                                    "failedStep": "tauri-webview-packaged",
                                     "validationDetails": [
                                         "missing runtime cell observation",
                                         "ready shell evidence is not proven",
                                         "telemetry sample evidence is not proven",
                                     ],
-                                    "sourceCellId": "prod-preview",
-                                    "sourceEntrypoint": "make desktop-web PREVIEW=1",
-                                    "sourceStartupMode": "prod-preview",
+                                    "sourceCellId": "tauri-webview-packaged",
+                                    "sourceEntrypoint": "pnpm --dir apps/desktop tauri build --features e2e-testing",
+                                    "sourceStartupMode": "packaged-tauri-webview",
                                     "summary": {
                                         "observationSourceStatus": "loaded",
                                         "observationSourcePath": "tooling/acceptance/reports/desktop-performance-cell-observations.json",
@@ -1942,18 +1942,18 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                         },
                         "cells": [
                             {
-                                "cellId": "tauri-webview",
+                                "cellId": "tauri-webview-dev",
                                 "status": "sampled",
                                 "proofStatus": "UNPROVEN",
                                 "sampleEmissionAllowed": False,
                                 "reason": "runtime cell evidence report did not allow sample emission",
                                 "evidence": {
-                                    "path": "/tmp/tauri-webview.json",
+                                    "path": "/tmp/tauri-webview-dev.json",
                                     "status": "preflight-denied",
                                     "sourceStatus": "sampled",
                                     "completionStatus": "DONE",
                                     "proofStatus": "PROVEN",
-                                "sourceArtifact": "/tmp/tauri-webview.json",
+                                "sourceArtifact": "/tmp/tauri-webview-dev.json",
                                     "sourcePhase": "P0c-3",
                                     "sourceBom": ["BOM-GATE-02", "BOM-CAP-04"],
                                     "sourceSpec": ["SPEC-GATE-02", "SPEC-RUN-01"],
@@ -1963,7 +1963,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                                     "issue_breakdown": [
                                         {
                                             "category": "runtime-cell-evidence",
-                                            "failedStep": "tauri-webview",
+                                            "failedStep": "tauri-webview-dev",
                                             "summary": "preflight sample emission denied",
                                             "proofImpact": "P0c-3 remains PARTIAL/UNPROVEN until this runtime cell emits proven evidence.",
                                         }
@@ -1971,7 +1971,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                                     "issueBreakdown": [
                                         {
                                             "category": "runtime-cell-evidence",
-                                            "failedStep": "tauri-webview",
+                                            "failedStep": "tauri-webview-dev",
                                             "summary": "preflight sample emission denied",
                                             "proofImpact": "P0c-3 remains PARTIAL/UNPROVEN until this runtime cell emits proven evidence.",
                                         }
@@ -1991,31 +1991,31 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                                 },
                             },
                             {
-                                "cellId": "prod-preview",
+                                "cellId": "tauri-webview-packaged",
                                 "status": "diagnostic incomplete",
                                 "proofStatus": "UNPROVEN",
                                 "sampleEmissionAllowed": False,
                                 "reason": "runtime cell observation is incomplete",
                                 "evidence": {
-                                    "path": "/tmp/prod-preview.json",
+                                    "path": "/tmp/tauri-webview-packaged.json",
                                     "status": "loaded",
                                     "sourceStatus": "diagnostic incomplete",
                                     "completionStatus": "PARTIAL",
                                     "proofStatus": "UNPROVEN",
-                                    "sourceArtifact": "/tmp/prod-preview.json",
+                                    "sourceArtifact": "/tmp/tauri-webview-packaged.json",
                                     "sourcePhase": "P0c-3",
                                     "sourceBom": ["BOM-GATE-02", "BOM-CAP-04"],
                                     "sourceSpec": ["SPEC-GATE-02", "SPEC-RUN-01"],
                                     "sourceGate": "Runtime cell evidence required before matrix samples are accepted",
-                                    "failedStep": "prod-preview",
+                                    "failedStep": "tauri-webview-packaged",
                                     "validationDetails": [
                                         "missing runtime cell observation",
                                         "ready shell evidence is not proven",
                                         "telemetry sample evidence is not proven",
                                     ],
-                                    "sourceCellId": "prod-preview",
-                                    "sourceEntrypoint": "make desktop-web PREVIEW=1",
-                                    "sourceStartupMode": "prod-preview",
+                                    "sourceCellId": "tauri-webview-packaged",
+                                    "sourceEntrypoint": "pnpm --dir apps/desktop tauri build --features e2e-testing",
+                                    "sourceStartupMode": "packaged-tauri-webview",
                                     "summary": {
                                         "observationSourceStatus": "loaded",
                                         "observationSourcePath": "tooling/acceptance/reports/desktop-performance-cell-observations.json",
@@ -2040,16 +2040,16 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                 )
             )
 
-        matrix_reasons = [item for item in report["blockedReasons"] if item["scope"] == "matrix:tauri-webview"]
+        matrix_reasons = [item for item in report["blockedReasons"] if item["scope"] == "matrix:tauri-webview-dev"]
         self.assertEqual(len(matrix_reasons), 1)
         self.assertEqual(matrix_reasons[0]["status"], "sampled")
         self.assertEqual(matrix_reasons[0]["reason"], "preflight sample emission denied")
-        self.assertEqual(matrix_reasons[0]["evidencePath"], "/tmp/tauri-webview.json")
+        self.assertEqual(matrix_reasons[0]["evidencePath"], "/tmp/tauri-webview-dev.json")
         self.assertEqual(matrix_reasons[0]["evidenceStatus"], "preflight-denied")
         self.assertEqual(matrix_reasons[0]["sourceStatus"], "sampled")
         self.assertEqual(matrix_reasons[0]["completionStatus"], "DONE")
         self.assertEqual(matrix_reasons[0]["sourceProofStatus"], "PROVEN")
-        self.assertEqual(matrix_reasons[0]["sourceArtifact"], "/tmp/tauri-webview.json")
+        self.assertEqual(matrix_reasons[0]["sourceArtifact"], "/tmp/tauri-webview-dev.json")
         self.assertEqual(matrix_reasons[0]["sourcePhase"], "P0c-3")
         self.assertEqual(matrix_reasons[0]["sourceBom"], ["BOM-GATE-02", "BOM-CAP-04"])
         self.assertEqual(matrix_reasons[0]["sourceSpec"], ["SPEC-GATE-02", "SPEC-RUN-01"])
@@ -2065,11 +2065,11 @@ class DesktopPerformanceReportTest(unittest.TestCase):
         self.assertFalse(matrix_reasons[0]["sampleEmissionAllowed"])
         self.assertEqual(report["summary"]["matrixDiagnosticIncompleteCells"], 1)
         self.assertEqual(report["summary"]["matrixUnprovenRuntimeCells"], 2)
-        self.assertEqual(report["summary"]["matrixRuntimeCellDetails"][0]["cellId"], "tauri-webview")
+        self.assertEqual(report["summary"]["matrixRuntimeCellDetails"][0]["cellId"], "tauri-webview-dev")
         self.assertEqual(report["summary"]["matrixRuntimeCellDetails"][0]["failedStep"], None)
         self.assertEqual(report["summary"]["matrixRuntimeCellDetails"][0]["details"], ["missing required BOM binding", "missing gate"])
-        self.assertEqual(report["summary"]["matrixRuntimeCellDetails"][1]["cellId"], "prod-preview")
-        self.assertEqual(report["summary"]["matrixRuntimeCellDetails"][1]["failedStep"], "prod-preview")
+        self.assertEqual(report["summary"]["matrixRuntimeCellDetails"][1]["cellId"], "tauri-webview-packaged")
+        self.assertEqual(report["summary"]["matrixRuntimeCellDetails"][1]["failedStep"], "tauri-webview-packaged")
         self.assertEqual(
             report["summary"]["matrixRuntimeCellDetails"][1]["details"],
             [

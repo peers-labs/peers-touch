@@ -15,6 +15,8 @@ run for a changed path, and which artifacts should be produced for human review.
 - `features/` contains product feature contracts.
 - `gates/` contains stable cross-system acceptance implementations.
 - `playbooks/` explains how agents should run, diagnose, and preserve acceptance flows.
+- `desktop-performance-cohort.json` is the canonical P0c-3 profile, account,
+  dataset, window, warmup, build, runtime, and scenario manifest.
 - `reports/` stores local or CI acceptance artifacts and is ignored by git.
 
 ## Federation Bootstrap Loop
@@ -66,6 +68,11 @@ not as point-to-point spot checks. The funnel answers one question per layer:
    impersonating another?
 4. Red-line: can matrix and report gates make a source-bound pass/fail judgment
    without hiding missing evidence?
+
+The runtime layer admits no samples until
+`desktop-performance-cohort-gate.py` proves that browser, dev native, and
+packaged native observations match `desktop-performance-cohort.json`, including
+the actual authenticated actor rather than only the requested profile name.
 
 The original Phase 0 bundle remains available as the pilot construction bundle:
 
