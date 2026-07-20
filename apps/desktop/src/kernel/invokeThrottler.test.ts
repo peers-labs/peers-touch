@@ -22,17 +22,14 @@ describe('InvokeThrottler', () => {
   });
 
   describe('inside interaction phase', () => {
-    it('defers non-allowlist commands', async () => {
+    it('executes non-allowlist commands immediately in warn-only phase 1', async () => {
       markInteractionStart();
-      const fn = vi.fn().mockResolvedValue('deferred-result');
+      const fn = vi.fn().mockResolvedValue('result');
       const { deferred, promise } = throttleInvoke('chat_list_conversations', fn);
 
-      expect(deferred).toBe(true);
-      expect(fn).not.toHaveBeenCalled();
-
-      await vi.advanceTimersByTimeAsync(0);
+      expect(deferred).toBe(false);
       expect(fn).toHaveBeenCalledTimes(1);
-      await expect(promise).resolves.toBe('deferred-result');
+      await expect(promise).resolves.toBe('result');
     });
 
     it('bypasses allowlisted auth commands immediately', async () => {
