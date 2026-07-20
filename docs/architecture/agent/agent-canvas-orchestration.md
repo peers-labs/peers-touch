@@ -59,7 +59,7 @@ Open Agent page
 
 - Selected agents on the canvas.
 - The collaboration prompt.
-- The automatically matched engine label.
+- A human-readable collaboration method and why it was selected.
 - High-level run status.
 - Final summarized result.
 - Per-agent contribution summary.
@@ -72,6 +72,53 @@ Open Agent page
 - Internal convergence rules.
 - Long agent chat transcripts by default.
 - Manual engine configuration as the main path.
+
+### 2.4 Product Surface Contract
+
+Orchestration remains one continuous three-rail workspace inside the Agent
+module:
+
+```text
+run / participant rail
+  + lifecycle-owned center work surface
+  + context inspector
+```
+
+- The left rail switches between recent runs and existing Agents. It does not
+  become a template marketplace or a second Agent administration surface.
+- Before execution, the center surface owns participant composition and the
+  collaboration goal.
+- After plan generation, the same center surface becomes a read-only execution
+  graph. The user inspects the generated plan but does not manually wire a
+  generic workflow editor.
+- During execution, the graph exposes stage state, parallel participants,
+  evidence, blocking objections, and the current acceptance boundary.
+- A human escalation appears inline at the blocked stage and includes the
+  reason, evidence, cost, rollback impact, recommendation, and available
+  decisions.
+- Replan is a bounded `TaskGraphPatch`: retained work, reset nodes, and added
+  verification are visibly distinct.
+- Resume identifies the accepted checkpoint and the work being reused. Accepted
+  work is not shown as running again.
+- Final and partial results replace the center work surface. They must not be
+  appended as a detached page-level dashboard below the three-rail workspace.
+- The right rail is a contextual inspector for the selected run, stage, Agent,
+  evidence, decision, or coverage item. It does not expose internal policy or
+  reducer configuration as the primary product model.
+
+The visible lifecycle is:
+
+```text
+draft
+  -> plan_ready
+  -> running
+  -> awaiting_human
+  -> replanning
+  -> resuming
+  -> completed | partially_completed | failed | cancelled
+```
+
+`completed` is legal only after final acceptance coverage passes.
 
 ---
 
@@ -510,3 +557,28 @@ GoalKeeper prevents false completion.
 ```
 
 The orchestration system is valid only when this chain runs end to end.
+
+---
+
+## 12. Current Prototype Expression
+
+The existing prototype is edited in place at:
+
+```text
+packages/prototypes/agent-canvas/
+```
+
+It is mounted by the Desktop Shell as the `Orchestration` sibling surface. The
+prototype uses controlled mock projections to express:
+
+- new collaboration composition;
+- goal and acceptance contract;
+- generated read-only execution graph;
+- running, awaiting-human, replanning, and resuming states;
+- checkpoint-preserving recovery;
+- completed, partially completed, failed, and cancelled outcomes;
+- evidence, participant contribution, and final coverage inspection.
+
+The prototype does not claim a live Station orchestration runtime, real Provider
+execution, durable checkpoints, or production evidence. Those remain runtime
+implementation and acceptance concerns.
