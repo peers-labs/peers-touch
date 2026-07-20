@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Activity,
   AlertTriangle,
@@ -739,28 +740,40 @@ function AgentCard({
   active: boolean;
   onInspect: () => void;
 }) {
-  const [hover, setHover] = useState(false);
+  const [tooltipPosition, setTooltipPosition] = useState<{ left: number; top: number } | null>(null);
   const Icon = agent.icon;
   return (
-    <button
-      style={{
-        ...styles.agentCard,
-        borderColor: active ? T.purple : selected ? T.green : T.line,
-        background: active ? T.purpleSoft : '#fff',
-      }}
-      onClick={onInspect}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-    >
-      <div style={{ ...styles.agentAvatar, background: agent.color }}>
-        <Icon size={17} />
-      </div>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={styles.agentName}>{agent.name}</div>
-      </div>
-      {selected ? <Check size={16} color={T.green} /> : <ChevronRight size={16} color={T.tertiary} />}
-      {hover && (
-        <div style={styles.agentTooltip}>
+    <>
+      <button
+        style={{
+          ...styles.agentCard,
+          borderColor: active ? T.purple : selected ? T.green : T.line,
+          background: active ? T.purpleSoft : '#fff',
+        }}
+        onClick={onInspect}
+        onMouseEnter={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const tooltipWidth = 240;
+          const left = window.innerWidth - rect.right >= tooltipWidth + 16
+            ? rect.right + 8
+            : Math.max(8, rect.left - tooltipWidth - 8);
+          setTooltipPosition({
+            left,
+            top: Math.min(Math.max(8, rect.top), window.innerHeight - 150),
+          });
+        }}
+        onMouseLeave={() => setTooltipPosition(null)}
+      >
+        <div style={{ ...styles.agentAvatar, background: agent.color }}>
+          <Icon size={17} />
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={styles.agentName}>{agent.name}</div>
+        </div>
+        {selected ? <Check size={16} color={T.green} /> : <ChevronRight size={16} color={T.tertiary} />}
+      </button>
+      {tooltipPosition && createPortal(
+        <div style={{ ...styles.agentTooltip, left: tooltipPosition.left, top: tooltipPosition.top }}>
           <div style={styles.tooltipTitle}>{agent.name}</div>
           <div style={styles.tooltipText}>{agent.desc}</div>
           <div style={styles.tagRow}>
@@ -770,9 +783,10 @@ function AgentCard({
               </span>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
-    </button>
+    </>
   );
 }
 
@@ -1135,11 +1149,10 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 3,
   },
   agentTooltip: {
-    position: 'absolute',
-    left: 46,
-    top: 42,
-    zIndex: 20,
-    width: 220,
+    position: 'fixed',
+    zIndex: 10000,
+    width: 240,
+    boxSizing: 'border-box',
     border: `1px solid ${T.lineStrong}`,
     borderRadius: 14,
     padding: 12,

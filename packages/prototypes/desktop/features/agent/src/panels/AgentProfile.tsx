@@ -6,9 +6,9 @@
 // - Tab bar: underline style (2px bottom border on active) with icons
 // - Tab content: SOUL/AGENTS (two monospace textareas side by side), Capabilities, Workspace
 
-import { type CSSProperties, useState } from 'react';
+import { type CSSProperties, useState, useCallback } from 'react';
 import {
-  Settings2,
+  Save,
   ArrowLeft,
   Sparkles,
   Wrench,
@@ -16,6 +16,7 @@ import {
   Cpu,
 } from 'lucide-react';
 import { T } from '../theme';
+import { toast } from '../../../../shared/Toast';
 import type { Agent } from '../types';
 
 // -- Tab definitions matching production TAB_KEYS --
@@ -40,41 +41,41 @@ const ACTIVITY_TABS: { key: ProfileTab; label: string; icon: typeof Wrench | nul
 const MOCK_SOUL_MD = `# SOUL.md
 
 ## Identity
-You are a DevOps automation agent specializing in CI/CD pipelines,
-infrastructure as code, and container orchestration.
+You are a travel planning assistant specializing in practical itineraries,
+local experiences, transportation, accommodation, and trip preparation.
 
 ## Behavior
-- Always explain what you are about to do before executing
-- Prefer declarative configurations over imperative scripts
-- Follow the principle of least privilege for all operations
+- Ask for destination, dates, companions, and travel pace
+- Balance must-see places with realistic travel time
+- Explain tradeoffs and keep every itinerary easy to adjust
 `;
 
 const MOCK_AGENTS_MD = `# AGENTS.md
 
 ## Workflow
-- Architect: validates infrastructure design
-- Executor: runs deployment scripts
-- Verifier: confirms health checks pass
+- Route Planner: drafts the day-by-day itinerary
+- Local Guide: recommends food and local experiences
+- Travel Checker: verifies transport time and opening hours
 
 ## Delegation Rules
-- Security-sensitive operations require Architect approval
-- Rollback triggers automatic Verifier re-check
+- Booking or payment always requires user confirmation
+- Conflicting schedules return to the planner for adjustment
 `;
 
 const MOCK_SKILLS = [
-  { id: 'sk-1', name: 'GitHub Actions', type: 'builtin' },
-  { id: 'sk-2', name: 'Docker Compose', type: 'builtin' },
-  { id: 'sk-3', name: 'Kubernetes Deploy', type: 'custom' },
+  { id: 'sk-1', name: 'Itinerary Planning', type: 'builtin' },
+  { id: 'sk-2', name: 'Destination Research', type: 'builtin' },
+  { id: 'sk-3', name: 'Packing Checklist', type: 'custom' },
 ];
 
 const MOCK_TOOLS = [
-  { id: 'tool-1', name: 'file_operations', kind: 'tool' },
-  { id: 'tool-2', name: 'shell_execute', kind: 'tool' },
+  { id: 'tool-1', name: 'maps_search', kind: 'tool' },
+  { id: 'tool-2', name: 'weather_lookup', kind: 'tool' },
 ];
 
 const MOCK_MCP = [
-  { id: 'mcp-1', name: 'github-server', kind: 'mcp' },
-  { id: 'mcp-2', name: 'docker-server', kind: 'mcp' },
+  { id: 'mcp-1', name: 'travel-guides', kind: 'mcp' },
+  { id: 'mcp-2', name: 'transit-planner', kind: 'mcp' },
 ];
 
 // -- Component --
@@ -89,8 +90,26 @@ export function AgentProfile({ agent, onBack }: AgentProfileProps) {
   const [description, setDescription] = useState(agent.description);
   const [activeMode, setActiveMode] = useState<ProfileMode>('configure');
   const [activeTab, setActiveTab] = useState<ProfileTab>('soul');
-  const [soulMd, setSoulMd] = useState(MOCK_SOUL_MD);
-  const [agentsMd, setAgentsMd] = useState(MOCK_AGENTS_MD);
+  const [soulMd, setSoulMd] = useState(() =>
+    agent.id === 'devops'
+      ? MOCK_SOUL_MD
+      : `# SOUL.md\n\n## Identity\nYou are ${agent.name}.\n\n${agent.description}\n\n## Behavior\n- Explain intent before acting\n- Keep work focused and verifiable\n- Ask before risky or irreversible actions\n`,
+  );
+  const [agentsMd, setAgentsMd] = useState(() =>
+    agent.id === 'devops'
+      ? MOCK_AGENTS_MD
+      : `# AGENTS.md\n\n## Workflow\n- Understand the user goal\n- Use the capabilities bound to this agent\n- Return evidence with the result\n\n## Delegation Rules\n- Delegate only when another agent has a clearer capability fit\n`,
+  );
+
+  const handleSave = useCallback(() => {
+    try {
+      const payload = { id: agent.id, title, description, soulMd, agentsMd };
+      localStorage.setItem(`agent-profile-${agent.id}`, JSON.stringify(payload));
+      toast.success('Saved');
+    } catch {
+      toast.error('Save failed');
+    }
+  }, [agent.id, title, description, soulMd, agentsMd]);
 
   return (
     <div style={S.shell}>
@@ -107,12 +126,11 @@ export function AgentProfile({ agent, onBack }: AgentProfileProps) {
                 style={S.titleInput}
               />
               <div style={S.titleActions}>
-                <button type="button" style={S.iconBtn} title="Settings">
-                  <Settings2 size={14} color={T.text.secondary} />
+                <button type="button" style={S.iconBtn} title="保存" onClick={handleSave}>
+                  <Save size={14} color={T.text.secondary} />
                 </button>
-                <button type="button" style={S.backBtn} onClick={onBack}>
+                <button type="button" style={S.iconBtn} title="返回" onClick={onBack}>
                   <ArrowLeft size={14} color={T.text.secondary} />
-                  <span>Back</span>
                 </button>
               </div>
             </div>
@@ -126,7 +144,7 @@ export function AgentProfile({ agent, onBack }: AgentProfileProps) {
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
+                  rows={2}
                   placeholder="Describe what this agent does..."
                   style={S.descriptionTextarea}
                 />
@@ -236,20 +254,24 @@ function SoulTab({
   return (
     <div style={S.soulGrid}>
       <ProfileCard title="SOUL.md">
-        <textarea
-          value={soulMd}
-          onChange={(e) => onSoulChange(e.target.value)}
-          placeholder="Define the agent's identity, behavior, and guidelines..."
-          style={S.codeTextarea}
-        />
+        <div style={S.textareaWrap}>
+          <textarea
+            value={soulMd}
+            onChange={(e) => onSoulChange(e.target.value)}
+            placeholder="Define the agent's identity, behavior, and guidelines..."
+            style={S.codeTextarea}
+          />
+        </div>
       </ProfileCard>
       <ProfileCard title="AGENTS.md">
-        <textarea
-          value={agentsMd}
-          onChange={(e) => onAgentsChange(e.target.value)}
-          placeholder="Define the agent's workflow and delegation rules..."
-          style={S.codeTextarea}
-        />
+        <div style={S.textareaWrap}>
+          <textarea
+            value={agentsMd}
+            onChange={(e) => onAgentsChange(e.target.value)}
+            placeholder="Define the agent's workflow and delegation rules..."
+            style={S.codeTextarea}
+          />
+        </div>
       </ProfileCard>
     </div>
   );
@@ -427,12 +449,15 @@ const S: Record<string, CSSProperties> = {
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
+    position: 'relative',
   },
   scrollContainer: {
     flex: 1,
     minHeight: 0,
-    padding: '0 32px 32px',
-    overflow: 'auto',
+    padding: '0 32px 0',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
   },
   centeredContent: {
     display: 'flex',
@@ -446,11 +471,11 @@ const S: Record<string, CSSProperties> = {
 
   // Hero
   hero: {
-    paddingTop: 18,
+    paddingTop: 8,
     flexShrink: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
+    gap: 8,
   },
   titleRow: {
     display: 'flex',
@@ -510,16 +535,16 @@ const S: Record<string, CSSProperties> = {
     minWidth: 0,
   },
   heroAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
+    width: 48,
+    height: 48,
+    borderRadius: 10,
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   heroAvatarLetter: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: 700,
     color: '#ffffff',
   },
@@ -530,8 +555,8 @@ const S: Record<string, CSSProperties> = {
   },
   descriptionTextarea: {
     width: '100%',
-    minHeight: 64,
-    maxHeight: 108,
+    minHeight: 44,
+    maxHeight: 80,
     resize: 'vertical' as const,
     border: `1px solid ${T.border.hairline}`,
     borderRadius: 12,
@@ -563,8 +588,8 @@ const S: Record<string, CSSProperties> = {
   // Model config card
   modelCard: {
     flexShrink: 0,
-    marginTop: 16,
-    marginBottom: 18,
+    marginTop: 10,
+    marginBottom: 8,
     display: 'grid',
     gridTemplateColumns: 'minmax(130px, 190px) auto minmax(160px, 1fr) auto minmax(96px, 120px)',
     alignItems: 'center',
@@ -629,7 +654,7 @@ const S: Record<string, CSSProperties> = {
     display: 'flex',
     gap: 2,
     padding: 3,
-    marginBottom: 18,
+    marginBottom: 8,
     borderRadius: 10,
     background: T.surface.subtle,
   },
@@ -649,7 +674,7 @@ const S: Record<string, CSSProperties> = {
     gap: 4,
     flexShrink: 0,
     borderBottom: `1px solid ${T.border.hairline}`,
-    marginBottom: 18,
+    marginBottom: 10,
     flexWrap: 'wrap' as const,
   },
   tabItem: {
@@ -677,21 +702,22 @@ const S: Record<string, CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     minHeight: 0,
-    overflow: 'auto',
+    overflow: 'hidden',
   },
 
   // SOUL tab: two columns
   soulGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gridTemplateRows: '1fr',
     gap: 12,
     minHeight: 0,
     flex: 1,
   },
   codeTextarea: {
     width: '100%',
-    flex: 1,
-    minHeight: 200,
+    height: '100%',
+    minHeight: 0,
     padding: '12px 16px',
     borderRadius: 8,
     border: `1px solid ${T.border.hairline}`,
@@ -699,10 +725,18 @@ const S: Record<string, CSSProperties> = {
     fontFamily: "'JetBrains Mono', 'Fira Code', SF Mono, Menlo, Consolas, monospace",
     fontSize: 13,
     lineHeight: 1.7,
-    resize: 'vertical' as const,
+    resize: 'none' as const,
     outline: 'none',
     color: T.text.primary,
     boxSizing: 'border-box' as const,
+    overflow: 'auto',
+    display: 'block',
+  },
+  textareaWrap: {
+    flex: 1,
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
   },
 
   // Capabilities tab
@@ -771,13 +805,15 @@ const S: Record<string, CSSProperties> = {
 
   // ProfileCard
   card: {
-    padding: 14,
+    padding: 10,
     borderRadius: 12,
     border: `1px solid ${T.border.hairline}`,
     background: T.surface.canvas,
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
+    gap: 6,
+    flex: 1,
+    minHeight: 0,
   },
   cardHeader: {
     display: 'flex',
