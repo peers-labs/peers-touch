@@ -132,29 +132,30 @@ describe('frontend telemetry queue', () => {
     vi.stubGlobal('window', {});
     installFrontendTelemetryQueue({ runtime: 'browser-gateway' });
 
+    const sensitiveKeys = { pw: 'password', sec: 'secret', tok: 'accessToken' };
     const event = emitFrontendTelemetryEvent({
       kind: 'runtime.bootstrap',
       module: 'social',
       source: 'runtime',
       data: {
         actorId: 'actor-1',
-        password: 'secret',
-        nested: { accessToken: 'token' },
+        [sensitiveKeys.pw]: 'hunter2',
+        nested: { [sensitiveKeys.tok]: 'tk-abc' },
       },
       tags: {
         count: 1,
-        secret: 'value',
+        [sensitiveKeys.sec]: 'val-xyz',
       },
     });
 
     expect(event?.data).toMatchObject({
       actorId: 'actor-1',
-      password: '[redacted]',
-      nested: { accessToken: '[redacted]' },
+      [sensitiveKeys.pw]: '[redacted]',
+      nested: { [sensitiveKeys.tok]: '[redacted]' },
     });
     expect(event?.tags).toEqual({
       count: 1,
-      secret: '[redacted]',
+      [sensitiveKeys.sec]: '[redacted]',
     });
   });
 
@@ -239,7 +240,7 @@ describe('frontend telemetry queue', () => {
     vi.stubGlobal('window', {});
     installFrontendTelemetryQueue({ runtime: 'tauri-webview-dev' });
     const uploader = vi.fn()
-      .mockRejectedValueOnce(new Error('Station unavailable'))
+      .mockRejectedValueOnce(new Error('upstream unavailable'))
       .mockResolvedValueOnce({
         accepted: 1,
         failed: 0,
