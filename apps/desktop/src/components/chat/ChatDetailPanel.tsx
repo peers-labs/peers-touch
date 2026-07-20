@@ -30,7 +30,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { groupAvatarRemoteUrl, useSocialChatStore } from '../../store/socialChat';
+import { groupAvatarRemoteUrl } from '../../store/socialChat';
 import { CHAT_BACKGROUND_OPTIONS, type DesktopIMMessageProjection } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
@@ -46,6 +46,7 @@ import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicPro
 import { getGroupMemberControlState } from './chatGroupPermissions';
 import { presentError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
+import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 
 const { Text } = Typography;
 
@@ -548,14 +549,40 @@ export function ChatDetailPanel() {
     conversationLocalState, updateConversationLocalState,
     getIMConversations,
     getIMMessages,
-  } = useSocialChatStore();
-  const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
-  const ownFingerprint = useSocialChatStore((s) => s.ownFingerprint);
-  const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
-  const currentUserProfile = useSocialChatStore((s) => s.currentUserProfile);
-  const peerOnline = useSocialChatStore((s) => s.peerOnline);
-  const peerProfiles = useSocialChatStore((s) => s.peerProfiles);
-  const loadPeerProfile = useSocialChatStore((s) => s.loadPeerProfile);
+    encryptionEnabled,
+    ownFingerprint,
+    currentUserDid,
+    currentUserProfile,
+    peerOnline,
+    peerProfiles,
+    loadPeerProfile,
+  } = useActiveSocialChatSlice((s) => ({
+    activeTab: s.activeTab,
+    activeSessionUlid: s.activeSessionUlid,
+    activeGroupUlid: s.activeGroupUlid,
+    sessions: s.sessions,
+    groups: s.groups,
+    groupMembers: s.groupMembers,
+    setShowDetail: s.setShowDetail,
+    loadSessions: s.loadSessions,
+    loadGroupMembers: s.loadGroupMembers,
+    loadGroups: s.loadGroups,
+    loadMessages: s.loadMessages,
+    loadConversationPreviews: s.loadConversationPreviews,
+    selectSession: s.selectSession,
+    selectGroup: s.selectGroup,
+    conversationLocalState: s.conversationLocalState,
+    updateConversationLocalState: s.updateConversationLocalState,
+    getIMConversations: s.getIMConversations,
+    getIMMessages: s.getIMMessages,
+    encryptionEnabled: s.encryptionEnabled,
+    ownFingerprint: s.ownFingerprint,
+    currentUserDid: s.currentUserDid,
+    currentUserProfile: s.currentUserProfile,
+    peerOnline: s.peerOnline,
+    peerProfiles: s.peerProfiles,
+    loadPeerProfile: s.loadPeerProfile,
+  }));
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const isGroup = activeTab === 'group';
