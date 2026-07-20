@@ -1,0 +1,35 @@
+{
+  "id": "ios-lynx-runtime-e2e-applet",
+  "name": "iOS Lynx Runtime E2E Applet",
+  "version": "1.0.0",
+  "description": "Minimal SDK applet used by simulator runtime E2E to prove iOS Lynx bridge execution.",
+  "author": "Peers Touch",
+  "targets": [
+    "ios"
+  ],
+  "entries": {
+    "lynx": "main.lynx.bundle"
+  },
+  "load": {
+    "ios": {
+      "type": "lynx-native",
+      "entry": "main.lynx.bundle"
+    }
+  },
+  "bridge": {
+    "protocol": "peers-touch.applet.bridge",
+    "version": "1.0.0"
+  },
+  "permissions": [
+    "storage.set",
+    "storage.get"
+  ],
+  "services": [],
+  "skills": [],
+  "integrity": {
+    "algorithm": "sha256",
+    "files": {
+      "main.lynx.bundle": "sha256:5bd8f03527130f4a8e776442d5cbbc8290ee5f87c5f2093925c7eadb5e67c9ee"
+    }
+  }
+}

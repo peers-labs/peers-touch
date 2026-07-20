@@ -1,0 +1,25 @@
+PASS generated developer package includes canonical manifest.json.
+PASS generated developer package build script rebuilds main.lynx.bundle.
+PASS generated developer source imports @peers-touch/applet-sdk.
+PASS generated developer source uses high-level SDK capability APIs.
+PASS generated developer source requires Host event bridge callback delivery.
+PASS generated developer source uses Gateway-governed network task executor input.
+PASS generated developer source uses Gateway-governed agent task executor input.
+PASS generated developer source uses Gateway-governed network skill executor input.
+PASS generated developer source uses Gateway-governed agent skill executor input.
+PASS generated Lynx bundle is a built JavaScript artifact, not raw TypeScript source.
+PASS generated developer source avoids legacy applets_action/search_query/raw URL/standalone mock paths.
+
+> @peers-touch/generic-complex-applet@1.0.0 build /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/applet-readiness-evidence/package/generic-complex-applet
+> node build.mjs
+
+
+
+> peers-touch-monorepo@ applet:validate /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet
+> pnpm --filter @peers-touch/applet-contract run build && node tooling/scripts/applet-validate.mjs "/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/applet-readiness-evidence/package/generic-complex-applet"
+
+
+> @peers-touch/applet-contract@0.1.0 build /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/packages/applet-contract
+> tsc
+
+PASS applet package validated: generic-complex-applet@1.0.0

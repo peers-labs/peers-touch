@@ -16,7 +16,7 @@ use ed25519_dalek::Signer;
 use rand::rngs::OsRng;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::contracts::*;
@@ -3082,7 +3082,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ))
         }
         "agent_collaboration_resume_task" => {
-            let input = match parse_args::<AgentCollaborationResumeTaskInput>(args) {
+            let input = match parse_args::<AgentCollaborationCancelTaskInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
@@ -3090,7 +3090,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_orchestration::agent_collaboration_resume_task(
+            to_json(app_agent_orchestration::agent_collaboration_cancel_task(
                 input, &token,
             ))
         }
@@ -6457,6 +6457,126 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     command: "station_probe".into(),
                     status: serde_json::to_string(&payload).unwrap_or_default(),
                 }))
+            }
+        }
+
+        // =================================================================
+        // MLS Group (E2E encryption — requires Tauri AppHandle for state)
+        // =================================================================
+        "mls_init_identity" => {
+            let actor_id = match actor_id_from_state(state) {
+                Some(id) if !id.trim().is_empty() => id,
+                _ => return to_json(AppResult::<StubPayload>::fail(ErrorCode::Unauthorized, "auth required", None)),
+            };
+            let app = match runtime.app_handle("mls_init_identity") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            mls.init_identity(&actor_id);
+            to_json(AppResult::success(json!({})))
+        }
+        "mls_generate_key_package" => {
+            let app = match runtime.app_handle("mls_generate_key_package") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            match mls.generate_key_package() {
+                Ok(kp_bytes) => to_json(AppResult::success(json!({ "key_package": kp_bytes }))),
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        "mls_group_create" => {
+            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupCreateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("mls_group_create") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            match mls.create_group(&input.conversation_id, &input.member_key_packages) {
+                Ok(result) => to_json(AppResult::success(json!({
+                    "group_id": result.group_id,
+                    "welcome_bytes": result.welcome_bytes,
+                    "commit_bytes": result.commit_bytes,
+                }))),
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        "mls_group_join" => {
+            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupJoinInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("mls_group_join") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            match mls.join_group(&input.conversation_id, &input.welcome_bytes) {
+                Ok(()) => to_json(AppResult::success(json!({}))),
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        "mls_group_encrypt" => {
+            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupEncryptInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("mls_group_encrypt") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            match mls.encrypt(&input.conversation_id, &input.plaintext) {
+                Ok(result) => to_json(AppResult::success(json!({ "ciphertext": result.ciphertext }))),
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        "mls_group_decrypt" => {
+            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupDecryptInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("mls_group_decrypt") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            match mls.decrypt(&input.conversation_id, &input.ciphertext) {
+                Ok(plaintext) => to_json(AppResult::success(json!({ "plaintext": plaintext }))),
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+
+        // =================================================================
+        // Envelope submit (send encrypted payload to Station)
+        // =================================================================
+        "envelope_submit" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let body = json!({
+                "envelope": {
+                    "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
+                    "sender_actor_did": args.get("sender_actor_did").and_then(|v| v.as_str()).unwrap_or(""),
+                    "recipient_actor_did": args.get("recipient_actor_did").and_then(|v| v.as_str()).unwrap_or(""),
+                    "payload_type": args.get("payload_type").and_then(|v| v.as_i64()).unwrap_or(1),
+                    "payload_bytes": args.get("payload_bytes"),
+                    "idempotency_key": args.get("idempotency_key").and_then(|v| v.as_str()).unwrap_or(""),
+                }
+            });
+            match crate::infrastructure::station_client::request_json_auth(
+                reqwest::Method::POST, "/envelope/submit", &token, None, Some(&body),
+            ) {
+                Ok(resp) => to_json(AppResult::success(resp)),
+                Err(e) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError, &format!("envelope submit: {e}"), None,
+                )),
             }
         }
 

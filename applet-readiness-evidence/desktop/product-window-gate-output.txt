@@ -1,0 +1,21 @@
+FAIL Desktop packaged product-window applet gate
+timed out waiting for /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/applet-readiness-evidence/desktop/product-window-gate/product-shell-evidence.json
+Controlled upstream: http://127.0.0.1:51895
+Controlled upstream requests: []
+Isolated storage root: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/.local/applet-product-window-gate/storage-92093-1782891452826
+Isolated profile: desktop-product-window-certification
+App stdout: [2m2026-07-01T07:39:35.829627Z[0m [32m INFO[0m [2mpeers_touch_desktop::bootstrap[0m[2m:[0m Storage initialized [3mapp[0m[2m=[0m"desktop-product-window-certification" [3mroot[0m[2m=[0m/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/.local/applet-product-window-gate/storage-92093-1782891452826/peers-touch [3msource[0m[2m=[0m"env"
+[2m2026-07-01T07:39:35.829672Z[0m [32m INFO[0m [2mpeers_touch_desktop::bootstrap[0m[2m:[0m Logger initialized [3mlog_dir[0m[2m=[0m/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/.local/applet-product-window-gate/storage-92093-1782891452826/peers-touch/desktop-product-window-certification/logs
+[2m2026-07-01T07:39:35.829739Z[0m [32m INFO[0m [2mpeers_touch_desktop::bootstrap[0m[2m:[0m StationRegistry initialized
+[2m2026-07-01T07:39:35.829751Z[0m [32m INFO[0m [2mpeers_touch_desktop::bootstrap[0m[2m:[0m I18nService initialized
+[2m2026-07-01T07:39:35.829771Z[0m [32m INFO[0m [2mpeers_touch_desktop::bootstrap[0m[2m:[0m Bootstrap complete
+[2m2026-07-01T07:39:35.829783Z[0m [32m INFO[0m [2mpeers_touch_desktop[0m[2m:[0m Launching Tauri application
+[2m2026-07-01T07:39:36.059700Z[0m [32m INFO[0m [2mpeers_touch_desktop::infrastructure::i18n[0m[2m:[0m Using dev source for i18n packs [3mpath[0m[2m=[0m/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/packages/locales
+[2m2026-07-01T07:39:36.060435Z[0m [32m INFO[0m [2mpeers_touch_desktop::infrastructure::i18n[0m[2m:[0m i18n version mismatch — deploying built-in packs [3msource[0m[2m=[0m"0.5.5" [3mdeployed[0m[2m=[0m"none"
+[2m2026-07-01T07:39:36.072958Z[0m [32m INFO[0m [2mpeers_touch_desktop::infrastructure::i18n[0m[2m:[0m Built-in language pack deployed [3mlang[0m[2m=[0men
+[2m2026-07-01T07:39:36.082701Z[0m [32m INFO[0m [2mpeers_touch_desktop::infrastructure::i18n[0m[2m:[0m Built-in language pack deployed [3mlang[0m[2m=[0mzh-CN
+[2m2026-07-01T07:39:36.083158Z[0m [32m INFO[0m [2mpeers_touch_desktop[0m[2m:[0m Tauri setup: i18n resources ready
+[2m2026-07-01T07:39:36.084021Z[0m [32m INFO[0m [2mpeers_touch_desktop[0m[2m:[0m Tauri setup: avatar asset scope ready [3mdir[0m[2m=[0m/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/.local/applet-product-window-gate/storage-92093-1782891452826/peers-touch/desktop/data/files/avatars
+[2m2026-07-01T07:39:36.084577Z[0m [32m INFO[0m [2mpeers_touch_desktop[0m[2m:[0m Tauri setup: attachment asset scope ready [3mdir[0m[2m=[0m/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/.local/applet-product-window-gate/storage-92093-1782891452826/peers-touch/desktop/cache/files/oss
+[2m2026-07-01T07:39:36.084702Z[0m [32m INFO[0m [2mpeers_touch_desktop[0m[2m:[0m Tauri setup: webview windows registered [3mwindows[0m[2m=[0m["main"]
+[2m2026-07-01T07:39:36.084705Z[0m [32m INFO[0m [2mpeers_touch_desktop[0m[2m:[0m Tauri setup complete
