@@ -1,8 +1,8 @@
 # Frontend Runtime Architecture — 数据模型
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-07-02 | **Updated**: 2026-07-02
+> **Version**: v1.1
+> **Created**: 2026-07-02 | **Updated**: 2026-07-11
 > **Owner**: Client Platform Team
 > **Module**: `apps/desktop/src/kernel/`, `docs/client/common/ui-identity/`
 
@@ -148,3 +148,131 @@ type FrontendRuntimeEvent =
 ```
 
 These events are dev-runtime evidence, not product telemetry by default. Production telemetry requires a separate privacy and sampling decision.
+
+## 6. Interaction Work
+
+`InteractionWork` 是 UI intent 之后进入 runtime/bridge/business 层的最小可治理工作。
+它描述语义，不绑定 Tauri invoke、HTTP、WebSocket 或其他 transport。
+
+```ts
+type InteractionWorkClass =
+  | 'visible'
+  | 'interactive-read'
+  | 'interactive-write'
+  | 'background'
+  | 'stream';
+
+interface InteractionWork {
+  id: string;
+  interactionId: string;
+  owner: string;
+  workClass: InteractionWorkClass;
+  supersessionKey?: string;
+  idempotency: 'read' | 'idempotent-write' | 'non-idempotent-write';
+  payloadClass: 'control' | 'stream' | 'large-binary';
+  deadlineMs: number;
+  createdAt: number;
+}
+```
+
+Rules:
+
+- `visible` work is local and synchronous-light; it cannot wait for business I/O.
+- `interactive-read` may use latest-wins and cancellation.
+- `interactive-write` must declare idempotency and may not be silently replayed.
+- `background` uses bounded admission and cannot preempt visible work.
+- `stream` and `large-binary` require independent flow control from control-plane work.
+
+## 7. Work Admission State
+
+```ts
+type WorkState =
+  | 'created'
+  | 'queued'
+  | 'admitted'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'rejected'
+  | 'timed-out'
+  | 'unknown-outcome';
+
+interface WorkTransition {
+  workId: string;
+  interactionId: string;
+  from: WorkState;
+  to: WorkState;
+  at: number;
+  reason?: string;
+}
+```
+
+`unknown-outcome` is required when a non-idempotent write may have executed but
+its response was lost. It must not be converted into an automatic replay.
+
+Admission bounds are runtime-wide. Per-component or per-window limits alone do
+not prove global backpressure.
+
+## 8. Native Evidence Cohort
+
+```ts
+interface NativeEvidenceCohort {
+  runtime: 'tauri-webview-dev' | 'tauri-webview-packaged' | 'browser-gateway';
+  profile: string;
+  account: string;
+  dataRevision: string;
+  scenario: 'text-input' | 'primary-nav' | 'secondary-tab' | 'overlay';
+  warmup: boolean;
+  buildRevision: string;
+}
+
+interface NativeInteractionEvidence {
+  cohort: NativeEvidenceCohort;
+  interactionId: string;
+  inputAt: number;
+  visibleAt?: number;
+  settledAt?: number;
+  reactCommitMs?: number;
+  storeFanout?: number | 'unknown';
+  longTasks: Array<{ durationMs: number; owner?: string }>;
+  bridgeCalls: Array<{
+    command: string;
+    payloadClass: InteractionWork['payloadClass'];
+    queuedMs?: number;
+    handlerMs?: number;
+    roundTripMs: number;
+    outcome: 'success' | 'failure' | 'cancelled' | 'timeout' | 'unknown';
+  }>;
+  nativeSamples?: Array<{
+    process: 'webview' | 'desktop-rust';
+    thread?: string;
+    blockedMs?: number;
+    stackCategory?: string;
+  }>;
+}
+```
+
+Comparison rules:
+
+- Cohorts are comparable only when profile, account, data revision, scenario,
+  warmup, and build revision match.
+- A runtime label without interaction-linked raw events is not root-cause evidence.
+- Rollups may summarize accepted raw evidence but cannot replace it.
+- Packaged native evidence is mandatory for claims about the shipped Desktop app.
+
+## 9. Native Responsiveness Gates
+
+| Gate | Target |
+|------|--------|
+| Text input intent-to-paint | P95 ≤ 50ms; P99 and MAX reported |
+| Primary navigation intent-to-visible | P95 ≤ 100ms |
+| Secondary tab intent-to-visible | P95 ≤ 80ms |
+| Interaction long task | No unwaived task > 50ms |
+| Work admission | Runtime-wide queues bounded; reject/cancel/supersede evidence present |
+| Slow dependency | Latest visible interaction is not queued behind stale replaceable work |
+| Disconnect | Non-idempotent write never auto-replayed; unknown outcome surfaced |
+| Large payload | Control-plane P95 remains within its budget during concurrent stream/binary load |
+
+Each runtime/scenario cell requires at least 30 post-warmup samples for P95.
+Missing native evidence fails closed as `UNPROVEN`; browser evidence is not a substitute.

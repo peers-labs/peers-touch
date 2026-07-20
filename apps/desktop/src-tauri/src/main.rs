@@ -42,9 +42,14 @@ fn main() {
 
     let presence_supervisor = Arc::new(application::presence::PresenceSupervisor::new());
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(desktop_capture::global_shortcut_plugin())
+        .plugin(desktop_capture::global_shortcut_plugin());
+
+    #[cfg(feature = "e2e-testing")]
+    let builder = builder.plugin(tauri_plugin_playwright::init());
+
+    builder
         .manage(app_state)
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
         .manage(presence_supervisor)

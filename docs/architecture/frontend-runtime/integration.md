@@ -1,8 +1,8 @@
 # Frontend Runtime Architecture — 集成与迁移
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-07-02 | **Updated**: 2026-07-02
+> **Version**: v1.1
+> **Created**: 2026-07-02 | **Updated**: 2026-07-11
 > **Owner**: Client Platform Team
 > **Module**: `docs/client/common/ui-identity/`, `docs/client/desktop/`, `apps/desktop/src/`
 
@@ -79,62 +79,71 @@ Required updates:
 - `AppletContainerShell` 应成为 applet 容器能力 owner。
 - Applet registry row 需要记录 `embedded / immersive / standalone` 三种模式 evidence。
 
-## 5. 与现有卡顿修复的关系
+## 5. 与现有卡顿实现的关系
 
-当前已做的修复应作为 Phase 0 的临时对齐，不视为最终架构闭环：
+当前实现只能按证据声明其局部作用，不视为最终架构闭环：
 
-| 已做修复 | 架构位置 | 后续正式化 |
-|----------|----------|------------|
-| 登录后 deferred runtime projections | Scheduler / RuntimeProjection | 用 FrontendScheduler + runtime budget 表达 |
-| `AppSideNav` 收窄 store selector | StoreSubscription | 加 hidden/shell broad subscription 检查 |
-| Settings section memo + delayed active content | SectionHost | 抽出通用 SectionHost |
-| Applet standalone/fullscreen UI | AppletContainerShell | 抽出 AppletContainerShell 并接入 window lifecycle |
+| 当前实现 | 架构位置 | 当前可声明范围 | 不可声明范围 |
+|----------|----------|----------------|----------------|
+| 登录后 deferred runtime projections | Scheduler / RuntimeProjection | 部分启动工作移出 visible path | packaged native 登录不卡 |
+| `AppSideNav` 收窄 store selector | StoreSubscription | 减少特定订阅 fanout | 全局输入/导航不卡 |
+| Settings section memo + delayed active content | SectionHost | 降低特定 section 重渲染 | native/web 等价 |
+| InvokeThrottler | Interaction boundary | 记录/调度部分 invoke | IPC 是已确认唯一根因 |
+| Applet standalone/fullscreen UI | AppletContainerShell | 容器交互语义 | native runtime 性能闭环 |
 
-## 6. 迁移策略
+## 6. Native evidence ledger
 
-### Phase A: 架构真源
+| Claim | Class | Evidence | Confidence | Missing proof |
+|-------|-------|----------|------------|---------------|
+| Desktop native 输入和标签切换明显慢于 desktop-web | `verified_fact` (user observation) | 多轮用户验收反馈 | medium | 同条件 paired trace |
+| 仓库存在大量同步 Tauri command wrapper | `verified_fact` | 2026-07-11 repository inventory: 420 command attributes, 411 sync | high | runtime thread attribution |
+| 同步 command 运行在 tokio worker | rejected prior claim | Tauri 2.5.5 macro `body_blocking` 直接调用 command function | high | 实际 host thread name |
+| `tauri-webview-dev` runtime cell 已证明输入/导航性能 | rejected prior claim | matrix cell is `diagnostic incomplete`; Playwright artifact only proves one overlay interaction | high | input/nav native samples |
+| Station 中存在标记为 `tauri-webview-dev` 的性能 rollup | `verified_fact` | Station mirror report | high | target interaction raw events are 0 |
+| WKWebView IPC 是唯一根因 | `hypothesis` | native/browser boundary difference only | low | interaction-linked bridge/thread trace |
+| WebSocket + 16 threads 是终态最优解 | `proposal` withdrawn pending evidence | no native comparative experiment | low | evidence-backed ADR |
 
-- 新增 `docs/architecture/frontend-runtime/`。
-- 更新 `docs/README.md` 真源导航。
-- 更新 frontend tree 文档引用上游架构。
+Evidence status:
 
-### Phase B: Observability first
+- `DESIGN_EVIDENCE_BLOCKED` for native transport topology.
+- Existing frontend runtime ownership, visible-lane, lifecycle, budget, and
+  evidence contracts remain active.
+- A transport or execution-pool ADR may be proposed only after raw evidence
+  links input/paint, React/store, bridge/handler/event, and native thread samples.
 
-- 增加 dev-only profiler。
-- 先测 `login -> ready`、主侧栏切换、Settings tabs、applet open。
-- registry evidence 从 `unproven` 更新为采样值。
+## 7. Target integration conditions
 
-### Phase C: SectionHost
+The target architecture requires these relationships, independent of delivery
+order:
 
-- 抽象 SectionDescriptor 和 SectionHost。
-- Settings 的 provider/model/logs/help/statistics 迁移到 SectionHost。
-- 移除页面内分散的隐藏 section lifecycle。
+- `NavigationShell`, login/PIN, Settings tabs, overlays, and text inputs emit a
+  common interaction boundary before visible state changes.
+- `InteractionAdmission` owns bounded queues, supersession, cancellation,
+  idempotency class, overload, and payload class across all frontend callers.
+- `FrontendRuntimeProfiler` correlates visible paint, React commit, store update,
+  hidden render, bridge, handler, event, and native process evidence.
+- `desktop_api` and any future bridge implement the same admission/evidence
+  contract; transport modules do not own business retry or page freshness.
+- RuntimeProjection remains the freshness owner after any bridge change.
+- Large binary/stream work has independent flow control from visible
+  control-plane work.
+- The native runtime cell is fail-closed until dev and packaged cells produce
+  interaction-linked evidence.
 
-### Phase D: AppletContainerShell
-
-- 抽象 embedded/immersive/standalone。
-- PageRuntime 只负责 route boundary 和 applet id 解析。
-- Standalone window 统一由 container shell 管理。
-
-### Phase E: Policy gates
-
-- 增加 registry 检查脚本。
-- CI 检查高频页面是否有 descriptor、budget、evidence。
-- 新页面不能绕过 PageHost。
-
-## 7. 兼容策略
-
-- Existing `PageHost` 保持兼容，先通过文档和 profiler 升级，不一次性重写。
-- Legacy `PageRouter` fallback 保留，但不得新增高频页面。
-- Settings 可分 section 迁移，避免一次性破坏所有设置面板。
-- Applet standalone 先保留现有路由模式，再逐步接入正式 window lifecycle。
+No compatibility or cutover strategy is defined here. Those choices belong to
+an execution plan generated after D-15/D-16 and the final transport ADR are
+accepted.
 
 ## 8. 验收映射
 
 | 验收项 | 证据 |
 |--------|------|
-| 主导航切换不卡 | route-to-visible 采样，long task < budget |
-| Settings tabs 不粘滞 | SectionHost evidence，隐藏 section render count |
-| 登录背景动画不停止 | login click frame + runtime bootstrap timing |
+| 主导航切换不卡 | 同 cohort 的 browser/dev-native/packaged-native route-to-visible P95/P99，long task < budget |
+| Settings tabs 不粘滞 | interaction-linked SectionHost、React commit、store fanout、bridge/handler evidence |
+| 任何文本/PIN 输入不卡 | input-to-paint P95 ≤50ms，并关联 native thread/bridge evidence |
+| 登录背景动画不停止 | login input/paint + runtime bootstrap + compositor/native evidence |
+| 用户狂点不积压 | bounded admission、latest-wins/cancel/reject evidence；无无界 queue |
+| 断线不重复副作用 | non-idempotent write unknown-outcome/idempotency evidence |
+| 大载荷不拖慢控制面 | concurrent binary/stream 下 control-plane P95 仍达预算 |
 | Applet 像小程序容器 | embedded/immersive/standalone screenshots + lifecycle lease logs |
 | 架构不是补丁 | docs 真源、registry、profiler、CI gate 都闭环 |

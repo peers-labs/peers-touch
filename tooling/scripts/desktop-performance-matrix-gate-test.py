@@ -131,7 +131,27 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        self.write_proven_cohort(tmp)
         return events_report
+
+    def write_proven_cohort(self, tmp: str) -> Path:
+        cohort_report = Path(tmp) / "desktop-performance-cohort-gate.json"
+        cohort_report.write_text(
+            json.dumps(
+                {
+                    "artifactKind": "desktop-performance-cohort-gate",
+                    "status": "pass",
+                    "completionStatus": "DONE",
+                    "proofStatus": "PROVEN",
+                    "sampleEmissionAllowed": True,
+                    "phase": "P0c-3",
+                    "planTask": "P0c3-R2",
+                    "gate": "All runtime cells share one proven cohort",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return cohort_report
 
     def write_cell_evidence(
         self,
@@ -250,7 +270,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
         self.assertEqual(browser["evidence"]["recommendedReviewCommands"][0]["command"], "make desktop")
         self.assertEqual(browser["evidence"]["recommended_review_commands"][0]["command"], "make desktop")
         self.assertEqual(report["summary"]["baselinePreflightFailure"], 1)
-        self.assertEqual(report["summary"]["diagnosticIncomplete"], 3)
+        self.assertEqual(report["summary"]["diagnosticIncomplete"], 2)
         self.assertEqual(report["status"], "diagnostic incomplete")
         self.assertEqual(report["completionStatus"], "PARTIAL")
         self.assertEqual(report["proofStatus"], "UNPROVEN")
@@ -414,7 +434,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
         )
 
         browser = next(cell for cell in report["cells"] if cell["cellId"] == "browser-gateway")
-        tauri = next(cell for cell in report["cells"] if cell["cellId"] == "tauri-webview")
+        tauri = next(cell for cell in report["cells"] if cell["cellId"] == "tauri-webview-dev")
         self.assertEqual(report["artifactKind"], "desktop-performance-matrix-gate")
         self.assertEqual(report["phase"], "P0c-3/P0c-4/P0c-5")
         self.assertIn("BOM-GATE-02", report["bom"])
@@ -454,13 +474,64 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
         self.assertEqual(policy["rawEvidence"]["path"], "/tmp/does-not-exist-events.json")
         markdown = module.render_markdown(report)
         self.assertIn("`missing` | `/tmp/does-not-exist-live-gate.json`", markdown)
-        self.assertIn("`missing` | `/tmp/does-not-exist-cell-evidence/tauri-webview.json`", markdown)
+        self.assertIn("`missing` | `/tmp/does-not-exist-cell-evidence/tauri-webview-dev.json`", markdown)
         self.assertIn("| Policy | Scope | Status | Proof | Matched interactions | Window count | Raw evidence status | Raw evidence path | Raw source artifact | Raw source kind | Raw source completion | Raw source proof | Raw source phase | Raw source BOM | Raw source Spec | Raw source Gate | Raw details | Reason |", markdown)
         self.assertIn("`missing` | `/tmp/does-not-exist-events.json`", markdown)
         self.assertIn("- Proof: `UNPROVEN`", markdown)
         self.assertIn(
             "| Cell | Runtime | Entrypoint | Status | Proof | Sample emission | Evidence status | Evidence path | Source artifact | Source kind | Source completion | Source proof | Source phase | Source BOM | Source Spec | Source Gate | Details | Reason |",
             markdown,
+        )
+
+    def test_failed_cohort_gate_blocks_every_runtime_cell(self) -> None:
+        module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            live_gate = self.write_sampled_live_gate(tmp)
+            events_report = self.write_events(tmp, self.baseline_events())
+            cohort_report = Path(tmp) / "desktop-performance-cohort-gate.json"
+            cohort_report.write_text(
+                json.dumps(
+                    {
+                        "artifactKind": "desktop-performance-cohort-gate",
+                        "status": "diagnostic incomplete",
+                        "completionStatus": "PARTIAL",
+                        "proofStatus": "UNPROVEN",
+                        "sampleEmissionAllowed": False,
+                        "phase": "P0c-3",
+                        "planTask": "P0c3-R2",
+                        "gate": "All runtime cells share one proven cohort",
+                        "failedStep": "cohort.tauri-webview-dev.actualActorId",
+                        "reason": "actual actor mismatch",
+                        "issue_breakdown": [
+                            {
+                                "category": "cohort-actual-actor",
+                                "failedStep": "cohort.tauri-webview-dev.actualActorId",
+                                "summary": "actual actor mismatch",
+                                "proofImpact": "Every runtime cell stays blocked.",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            report = module.build_matrix(
+                argparse.Namespace(
+                    live_gate_report=str(live_gate),
+                    events_report=str(events_report),
+                    cell_evidence_dir=str(Path(tmp) / "missing-cells"),
+                    cohort_report=str(cohort_report),
+                )
+            )
+
+        self.assertFalse(report["failClosed"]["cohortSampleEmissionAllowed"])
+        self.assertEqual(report["failClosed"]["blockedCellCount"], 3)
+        self.assertTrue(all(not cell["sampleEmissionAllowed"] for cell in report["cells"]))
+        self.assertEqual(report["redLinePolicy"]["status"], "diagnostic incomplete")
+        self.assertTrue(
+            any(
+                item["category"] == "cohort-actual-actor"
+                for item in report["issue_breakdown"]
+            )
         )
 
     def test_sampled_cell_with_missing_required_events_fails_red_line(self) -> None:
@@ -519,6 +590,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
             live_gate = self.write_sampled_live_gate(tmp)
             events_report = Path(tmp) / "events.json"
             events_report.write_text(json.dumps({"events": self.baseline_events()}), encoding="utf-8")
+            self.write_proven_cohort(tmp)
             report = module.build_matrix(
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
@@ -662,7 +734,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
             events_report = self.write_events(tmp, self.baseline_events())
             evidence_dir = self.write_cell_evidence(
                 tmp,
-                "tauri-webview",
+                "tauri-webview-dev",
                 {
                     "status": "sampled",
                     "artifactKind": "desktop-performance-runtime-cell",
@@ -672,8 +744,8 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                     "bom": ["BOM-GATE-02", "BOM-CAP-04"],
                     "spec": ["SPEC-GATE-02", "SPEC-RUN-01"],
                     "gate": "Tauri WebView runtime cell must pass preflight before samples are accepted",
-                    "cellId": "tauri-webview",
-                    "runtime": "tauri-webview",
+                    "cellId": "tauri-webview-dev",
+                    "runtime": "tauri-webview-dev",
                     "entrypoint": "make desktop",
                     "startupMode": "dev-tauri-webview",
                     "interactionId": "tauri-sample-1",
@@ -688,17 +760,17 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 )
             )
 
-        tauri = next(cell for cell in report["cells"] if cell["cellId"] == "tauri-webview")
+        tauri = next(cell for cell in report["cells"] if cell["cellId"] == "tauri-webview-dev")
         self.assertEqual(tauri["status"], "sampled")
         self.assertFalse(tauri["sampleEmissionAllowed"])
         self.assertEqual(tauri["evidence"]["status"], "loaded")
         self.assertEqual(tauri["evidence"]["sourceStatus"], "sampled")
         self.assertEqual(tauri["evidence"]["completionStatus"], "DONE")
         self.assertEqual(tauri["evidence"]["proofStatus"], "PROVEN")
-        self.assertEqual(tauri["evidence"]["sourceArtifact"], str(evidence_dir / "tauri-webview.json"))
+        self.assertEqual(tauri["evidence"]["sourceArtifact"], str(evidence_dir / "tauri-webview-dev.json"))
         self.assertEqual(tauri["evidence"]["sourceArtifactKind"], "desktop-performance-runtime-cell")
         self.assertEqual(tauri["evidence"]["sourcePhase"], "P0c-3")
-        self.assertEqual(tauri["evidence"]["sourceCellId"], "tauri-webview")
+        self.assertEqual(tauri["evidence"]["sourceCellId"], "tauri-webview-dev")
         self.assertEqual(tauri["evidence"]["sourceEntrypoint"], "make desktop")
         self.assertEqual(tauri["evidence"]["sourceStartupMode"], "dev-tauri-webview")
         self.assertEqual(tauri["evidence"]["sourceBom"], ["BOM-GATE-02", "BOM-CAP-04"])
@@ -710,11 +782,11 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
         self.assertEqual(tauri["evidence"]["issue_breakdown"][0]["category"], "runtime-cell-evidence")
         self.assertEqual(tauri["evidence"]["recommended_review_commands"][0]["command"], "make desktop")
         self.assertEqual(report["summary"]["sampled"], 1)
-        self.assertEqual(report["failClosed"]["blockedCellCount"], 3)
+        self.assertEqual(report["failClosed"]["blockedCellCount"], 2)
         self.assertEqual(report["status"], "diagnostic incomplete")
         markdown = module.render_markdown(report)
         self.assertIn("`loaded` |", markdown)
-        self.assertIn("tauri-webview.json", markdown)
+        self.assertIn("tauri-webview-dev.json", markdown)
 
     def test_runtime_cell_evidence_requires_source_metadata(self) -> None:
         module = load_gate_module()
@@ -723,10 +795,10 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
             events_report = self.write_events(tmp, self.baseline_events())
             evidence_dir = self.write_cell_evidence(
                 tmp,
-                "tauri-webview",
+                "tauri-webview-dev",
                 {
                     "status": "sampled",
-                    "runtime": "tauri-webview",
+                    "runtime": "tauri-webview-dev",
                     "interactionId": "tauri-sample-1",
                     "sampleEmissionAllowed": True,
                 },
@@ -739,7 +811,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 )
             )
 
-        tauri = next(cell for cell in report["cells"] if cell["cellId"] == "tauri-webview")
+        tauri = next(cell for cell in report["cells"] if cell["cellId"] == "tauri-webview-dev")
         self.assertEqual(tauri["status"], "blocked")
         self.assertFalse(tauri["sampleEmissionAllowed"])
         self.assertEqual(tauri["evidence"]["status"], "missing-source-metadata")
@@ -763,7 +835,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
             events_report = self.write_events(tmp, self.baseline_events())
             evidence_dir = self.write_cell_evidence(
                 tmp,
-                "tauri-webview",
+                "tauri-webview-dev",
                 {
                     "status": "sampled",
                     "artifactKind": "desktop-performance-runtime-cell",
@@ -773,8 +845,8 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                     "bom": ["BOM-GATE-02", "BOM-CAP-04"],
                     "spec": ["SPEC-GATE-02", "SPEC-RUN-01"],
                     "gate": "Tauri WebView runtime cell must pass preflight before samples are accepted",
-                    "cellId": "tauri-webview",
-                    "runtime": "tauri-webview",
+                    "cellId": "tauri-webview-dev",
+                    "runtime": "tauri-webview-dev",
                     "entrypoint": "make desktop",
                     "startupMode": "dev-tauri-webview",
                     "interactionId": "tauri-sample-1",
@@ -789,7 +861,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 )
             )
 
-        tauri = next(cell for cell in report["cells"] if cell["cellId"] == "tauri-webview")
+        tauri = next(cell for cell in report["cells"] if cell["cellId"] == "tauri-webview-dev")
         self.assertEqual(tauri["status"], "blocked")
         self.assertFalse(tauri["sampleEmissionAllowed"])
         self.assertEqual(tauri["evidence"]["status"], "missing-source-metadata")
@@ -803,7 +875,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
             events_report = self.write_events(tmp, self.baseline_events())
             evidence_dir = self.write_cell_evidence(
                 tmp,
-                "tauri-webview",
+                "tauri-webview-dev",
                 {
                     "status": "sampled",
                     "runtime": "browser-gateway",
@@ -818,7 +890,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 )
             )
 
-        tauri = next(cell for cell in report["cells"] if cell["cellId"] == "tauri-webview")
+        tauri = next(cell for cell in report["cells"] if cell["cellId"] == "tauri-webview-dev")
         self.assertEqual(tauri["status"], "blocked")
         self.assertFalse(tauri["sampleEmissionAllowed"])
         self.assertEqual(tauri["evidence"]["reason"], "runtime cell evidence report runtime mismatch")

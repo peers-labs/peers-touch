@@ -11,6 +11,8 @@ import {
   markOverlayVisible,
   markRouteRequested,
   markRouteVisible,
+  markTextInputIntent,
+  markTextInputVisible,
   recordLayoutShiftDetected,
   recordLongTaskDetected,
   recordPaintTimingDetected,
@@ -91,6 +93,39 @@ describe('frontend runtime profiler interaction correlation', () => {
           interactionId,
           kind: 'overlay.visible',
           module: 'context-menu:chat:friend:abc',
+        }),
+      ]),
+    );
+  });
+
+  it('correlates text input intent with the verified visible frame', () => {
+    vi.stubGlobal('window', {});
+    installFrontendRuntimeProfiler();
+
+    const interactionId = markTextInputIntent('chat-composer:group-1', {
+      pageId: 'chat',
+      valueLength: 1,
+    });
+    expect(interactionId).toBeTruthy();
+    markTextInputVisible('chat-composer:group-1', interactionId!, {
+      pageId: 'chat',
+      valueLength: 1,
+    });
+
+    expect(getFrontendRuntimeProfilerEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          interactionId,
+          kind: 'input.intent',
+          module: 'chat-composer:group-1',
+          source: 'input',
+        }),
+        expect.objectContaining({
+          durationMs: expect.any(Number),
+          interactionId,
+          kind: 'input.visible',
+          module: 'chat-composer:group-1',
+          source: 'input',
         }),
       ]),
     );
