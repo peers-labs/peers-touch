@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { captureChatScreenshot } from '../../../services/chatAttachments';
 import { RustCommandException, type ChatAttachmentInput } from '../../../services/desktop_api';
-import { useSettingsStore } from '../../../store/settings';
 import { chatScreenshotShortcutMatches } from '../../../utils/chatScreenshotShortcut';
 import { log } from '../../../utils/logger';
+import { useActiveChatSettingsSlice } from '../useActiveSocialChatStore';
 
 const CHAT_SCREENSHOT_SHORTCUT_EVENT = 'chat:screenshot-shortcut';
 
@@ -25,7 +25,7 @@ export function useChatScreenshotCapture({
   onCaptured,
   onFailed,
 }: UseChatScreenshotCaptureOptions) {
-  const shortcut = useSettingsStore((state) => state.chatScreenshotShortcut);
+  const shortcut = useActiveChatSettingsSlice((state) => state.chatScreenshotShortcut);
   const [capturing, setCapturing] = useState(false);
   const capturingRef = useRef(false);
 

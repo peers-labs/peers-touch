@@ -17,7 +17,6 @@ import {
   Database, Network,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useSettingsStore } from '../store/settings';
 import { useProviderStore } from '../store/provider';
 import { api, type Agent, type AppletInfo, type AvailableModel, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/desktop_api';
 import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
@@ -37,6 +36,7 @@ import {
   chatScreenshotShortcutFromKeyboardEvent,
   formatChatScreenshotShortcut,
 } from '../utils/chatScreenshotShortcut';
+import { useActiveSettingsSlice } from './useActiveSettingsStore';
 
 const { Text } = Typography;
 
@@ -329,6 +329,8 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
               tabIndex={0}
               aria-selected={isActive}
               data-group-key={group.key}
+              data-pt-secondary-tab={group.key}
+              data-pt-secondary-tab-id={group.key}
               onClick={() => handleGroupChange(group.key)}
               style={{
                 padding: '8px 16px',
@@ -373,6 +375,8 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
                   role="button"
                   tabIndex={0}
                   data-section-key={section.key}
+                  data-pt-section-item={section.key}
+                  data-pt-section-item-id={section.key}
                   onClick={() => handleSectionChange(section.key)}
                   style={{
                     padding: '8px 14px',
@@ -932,8 +936,10 @@ function SecuritySection() {
   // first paint of Settings happen without an extra `accountGetActive`
   // round-trip. PIN edits push canonical state through the runtime via
   // `refreshActiveAccount`.
-  const activeAccount = useSettingsStore((s) => s.activeAccount);
-  const refreshActiveAccount = useSettingsStore((s) => s.refreshActiveAccount);
+  const { activeAccount, refreshActiveAccount } = useActiveSettingsSlice((s) => ({
+    activeAccount: s.activeAccount,
+    refreshActiveAccount: s.refreshActiveAccount,
+  }));
   const hasPin = !!activeAccount?.has_pin;
   const accountId = activeAccount?.id ?? '';
   const loading = activeAccount === null;
@@ -1286,8 +1292,10 @@ function settingResultString(result: unknown): string {
 
 function ChatShortcutSettingsSection() {
   const { t } = useTranslation('settings');
-  const shortcut = useSettingsStore((s) => s.chatScreenshotShortcut);
-  const setShortcut = useSettingsStore((s) => s.setChatScreenshotShortcut);
+  const { shortcut, setShortcut } = useActiveSettingsSlice((s) => ({
+    shortcut: s.chatScreenshotShortcut,
+    setShortcut: s.setChatScreenshotShortcut,
+  }));
   const inputRef = useRef<InputRef>(null);
   const [recording, setRecording] = useState(false);
 
@@ -1352,7 +1360,7 @@ function GeneralTab() {
   // Agents are bootstrapped + reconciled by `runtimes/settingsRuntime.ts`;
   // the page reads them synchronously from the store. No mount-time
   // fetch — runtime ownership is single.
-  const agents = useSettingsStore((s) => s.agents);
+  const agents = useActiveSettingsSlice((s) => s.agents);
   const { t } = useTranslation('settings');
   const { value: modelResult } = usePrefetch('settings.agent.models', () => api.listAvailableModels());
   const models = modelResult?.models ?? [];
@@ -1499,9 +1507,11 @@ function ToolsTab() {
   // so the loader runs during the `pages:prewarm` idle window — by the
   // time the user clicks the Tools tab the cache is typically warm and
   // the panel paints synchronously.
-  const tools = useSettingsStore((s) => s.tools);
-  const error = useSettingsStore((s) => s.error);
-  const loadTools = useSettingsStore((s) => s.loadTools);
+  const { tools, error, loadTools } = useActiveSettingsSlice((s) => ({
+    tools: s.tools,
+    error: s.error,
+    loadTools: s.loadTools,
+  }));
   const { token } = theme.useToken();
   const { t } = useTranslation('settings');
   const { value: toolsCache } = usePrefetch('settings.tools', () => loadTools());
@@ -1876,7 +1886,10 @@ function AgentCard({
   const [editing, setEditing] = useState(false);
   const [desc, setDesc] = useState(agent.description);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const { setDefaultAgent, updateAgent } = useSettingsStore();
+  const { setDefaultAgent, updateAgent } = useActiveSettingsSlice((s) => ({
+    setDefaultAgent: s.setDefaultAgent,
+    updateAgent: s.updateAgent,
+  }));
   const { token } = theme.useToken();
   const { t } = useTranslation('settings');
 

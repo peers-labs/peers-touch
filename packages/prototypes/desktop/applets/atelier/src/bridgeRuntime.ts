@@ -1,11 +1,23 @@
 import type {
   AtelierRuntime,
+  AtelierProviderCapabilitiesResponse,
   AtelierRuntimeSnapshot,
+  AtelierRuntimeStatus,
   CreateProjectFromGoalInput,
+  ListProviderCapabilitiesInput,
+  OpenWorkspaceInput,
+  OpenWorkspaceResponse,
+  FetchArtifactBodyInput,
+  FetchArtifactBodyResponse,
   ResolveDecisionInput,
+  OpenArtifactPreviewInput,
+  OpenArtifactPreviewResponse,
   SendMessageInput,
   SetTaskStatusInput,
+  SubmitFeedbackInput,
+  SubmitFeedbackResponse,
 } from './runtime';
+import { readyStatus } from './runtime';
 import type {
   AtelierProjectionEvent,
   AtelierProjectionPatch,
@@ -13,15 +25,31 @@ import type {
   AtelierRuntimeCall,
   AtelierRuntimeMethod,
   AtelierRuntimePayloadByMethod,
+  AtelierRuntimeResponseByMethod,
 } from './projection';
-import { fromProjectionSnapshot } from './projection';
+import {
+  assertAtelierProjectionSnapshot,
+  fromProjectionSnapshot,
+  parseAtelierProjectionEvent,
+} from './projection';
 
 export interface AtelierRuntimeBridge {
   call<M extends AtelierRuntimeMethod>(
     request: AtelierRuntimeCall<M>,
-  ): Promise<AtelierProjectionSnapshot>;
-  subscribeProjection?(listener: (event: AtelierProjectionEvent) => void): () => void;
+  ): Promise<AtelierRuntimeResponseByMethod[M]>;
+  subscribeProjection?(listener: (event: unknown) => void): unknown;
 }
+
+type NonSnapshotAtelierRuntimeMethod =
+  | 'atelier.provider.capabilities'
+  | 'atelier.feedback.submit'
+  | 'atelier.memory.confirmCandidate'
+  | 'atelier.feedback.confirmRerun'
+  | 'atelier.workspace.open'
+  | 'atelier.artifact.body.fetch'
+  | 'atelier.artifact.preview.open';
+
+type SnapshotAtelierRuntimeMethod = Exclude<AtelierRuntimeMethod, NonSnapshotAtelierRuntimeMethod>;
 
 export function createBridgeAtelierRuntime({
   bridge,
@@ -30,41 +58,145 @@ export function createBridgeAtelierRuntime({
   bridge: AtelierRuntimeBridge;
   initialSnapshot: AtelierProjectionSnapshot;
 }): AtelierRuntime {
-  let snapshot = toRuntimeSnapshot(initialSnapshot);
+  let snapshot = withStatus(toRuntimeSnapshot(initialSnapshot), loadingStatus());
   const listeners = new Set<(snapshot: AtelierRuntimeSnapshot) => void>();
   const seenEventKeys = new Set<string>();
   const seenEventOrder: string[] = [];
+  const lastSeqByScope = new Map<string, number>();
   let unsubscribeBridge: (() => void) | undefined;
+  let latestCallStatusToken = 0;
+  let activeCallRestorableStatus: AtelierRuntimeStatus | undefined;
+  let latestSnapshotCallToken = 0;
 
   const emit = () => {
-    const next = cloneSnapshot(snapshot);
-    listeners.forEach((listener) => listener(next));
+    for (const listener of Array.from(listeners)) {
+      try {
+        listener(cloneSnapshot(snapshot));
+      } catch (error) {
+        console.warn('Atelier bridge runtime listener failed', error);
+      }
+    }
   };
 
   const setFromProjection = (projection: AtelierProjectionSnapshot) => {
-    snapshot = toRuntimeSnapshot(projection);
+    snapshot = withStatus(toRuntimeSnapshot(projection));
     emit();
     return cloneSnapshot(snapshot);
   };
 
   const ensureBridgeSubscription = () => {
     if (unsubscribeBridge || !bridge.subscribeProjection) return;
-    unsubscribeBridge = bridge.subscribeProjection((event) => {
-      if (!rememberProjectionEvent(event, seenEventKeys, seenEventOrder)) return;
-      snapshot = applyPatch(snapshot, event.patch);
+    snapshot = withStatus(snapshot, reconcilingStatus());
+    emit();
+    let cleanup: unknown;
+    try {
+      cleanup = bridge.subscribeProjection((incomingEvent) => {
+        try {
+          const event = parseAtelierProjectionEvent(incomingEvent);
+          if (!event) {
+            snapshot = withStatus(snapshot, statusFromBridgeError(new Error('invalid projection event')));
+            emit();
+            return;
+          }
+          if (!canApplyPatchToKnownTask(snapshot, event.patch)) {
+            snapshot = withStatus(snapshot, statusFromBridgeError(new Error('projection event references unknown task')));
+            emit();
+            return;
+          }
+          if (!rememberProjectionEvent(event, seenEventKeys, seenEventOrder)) return;
+          if (!rememberProjectionSeq(event, lastSeqByScope)) {
+            snapshot = withStatus(snapshot, degradedStatus(event.seq));
+            emit();
+            return;
+          }
+          snapshot = withStatus(applyPatch(snapshot, event.patch), eventStatus(event.seq));
+          emit();
+        } catch (error) {
+          snapshot = withStatus(snapshot, statusFromBridgeError(error));
+          emit();
+        }
+      });
+    } catch (error) {
+      unsubscribeBridge = undefined;
+      snapshot = withStatus(snapshot, statusFromBridgeError(error));
       emit();
-    });
+      return;
+    }
+
+    if (typeof cleanup !== 'function') {
+      unsubscribeBridge = undefined;
+      snapshot = withStatus(snapshot, statusFromBridgeError(new Error('projection stream returned malformed unsubscribe cleanup')));
+      emit();
+      return;
+    }
+
+    unsubscribeBridge = cleanup;
+    snapshot = withStatus(snapshot, readyStatus(snapshot.state));
+    emit();
   };
 
   const releaseBridgeSubscription = () => {
-    unsubscribeBridge?.();
+    const cleanup = unsubscribeBridge;
     unsubscribeBridge = undefined;
+    if (!cleanup) return;
+    try {
+      cleanup();
+    } catch (error) {
+      console.warn('Atelier bridge runtime cleanup failed', error);
+      snapshot = withStatus(snapshot, statusFromBridgeError(error));
+      emit();
+    }
   };
 
   const call = async <M extends AtelierRuntimeMethod>(
     method: M,
     payload: AtelierRuntimePayloadByMethod[M],
-  ) => setFromProjection(await bridge.call({ method, payload }));
+    options: { restoreStatusOnSuccess?: boolean } = {},
+  ): Promise<AtelierRuntimeResponseByMethod[M]> => {
+    const callStatusToken = ++latestCallStatusToken;
+    const currentStatus = snapshot.status ?? readyStatus(snapshot.state);
+    const previousStatus = currentStatus.kind === 'loading'
+      ? activeCallRestorableStatus ?? readyStatus(snapshot.state)
+      : currentStatus;
+    activeCallRestorableStatus = previousStatus;
+    snapshot = withStatus(snapshot, loadingStatus());
+    emit();
+    try {
+      const response = await bridge.call({ method, payload });
+      if (callStatusToken === latestCallStatusToken) {
+        activeCallRestorableStatus = undefined;
+        if (options.restoreStatusOnSuccess ?? true) {
+          snapshot = withStatus(snapshot, previousStatus);
+          emit();
+        }
+      }
+      return response;
+    } catch (error) {
+      if (callStatusToken === latestCallStatusToken) {
+        activeCallRestorableStatus = undefined;
+        snapshot = withStatus(snapshot, statusFromBridgeError(error));
+        emit();
+      }
+      throw error;
+    }
+  };
+
+  const callSnapshot = async <M extends SnapshotAtelierRuntimeMethod>(
+    method: M,
+    payload: AtelierRuntimePayloadByMethod[M],
+  ) => {
+    const snapshotCallToken = ++latestSnapshotCallToken;
+    try {
+      const projection = await call(method, payload, { restoreStatusOnSuccess: false }) as AtelierProjectionSnapshot;
+      if (snapshotCallToken !== latestSnapshotCallToken) return cloneSnapshot(snapshot);
+      return setFromProjection(projection);
+    } catch (error) {
+      if (snapshotCallToken !== latestSnapshotCallToken) return cloneSnapshot(snapshot);
+      snapshot = withStatus(snapshot, statusFromBridgeError(error));
+      emit();
+      return cloneSnapshot(snapshot);
+    }
+  };
 
   return {
     getSnapshot() {
@@ -79,22 +211,43 @@ export function createBridgeAtelierRuntime({
       };
     },
     loadWorkspace() {
-      return call('atelier.workspace.load', {});
+      return callSnapshot('atelier.workspace.load', {});
     },
     createProjectFromGoal(input: CreateProjectFromGoalInput) {
-      return call('atelier.project.createFromGoal', input);
+      return callSnapshot('atelier.project.createFromGoal', input);
     },
     sendMessage(input: SendMessageInput) {
-      return call('atelier.message.send', input);
+      return callSnapshot('atelier.message.send', input);
     },
     resolveDecision(input: ResolveDecisionInput) {
-      return call('atelier.escalation.resolve', input);
+      return callSnapshot('atelier.escalation.resolve', input);
     },
     setTaskStatus(input: SetTaskStatusInput) {
-      return call('atelier.task.setStatus', input);
+      return callSnapshot('atelier.task.setStatus', input);
     },
     purgeTask(taskId: string) {
-      return call('atelier.task.purge', { taskId });
+      return callSnapshot('atelier.task.purge', { taskId });
+    },
+    async listProviderCapabilities(input: ListProviderCapabilitiesInput = {}): Promise<AtelierProviderCapabilitiesResponse> {
+      return call('atelier.provider.capabilities', input);
+    },
+    async submitFeedback(input: SubmitFeedbackInput): Promise<SubmitFeedbackResponse> {
+      return call('atelier.feedback.submit', input);
+    },
+    async confirmMemoryCandidate(input) {
+      return call('atelier.memory.confirmCandidate', input);
+    },
+    async confirmRerun(input) {
+      return call('atelier.feedback.confirmRerun', input);
+    },
+    async openWorkspace(input: OpenWorkspaceInput): Promise<OpenWorkspaceResponse> {
+      return call('atelier.workspace.open', input);
+    },
+    async fetchArtifactBody(input: FetchArtifactBodyInput): Promise<FetchArtifactBodyResponse> {
+      return call('atelier.artifact.body.fetch', input);
+    },
+    async openArtifactPreview(input: OpenArtifactPreviewInput): Promise<OpenArtifactPreviewResponse> {
+      return call('atelier.artifact.preview.open', input);
     },
     async setModel(model: string) {
       snapshot = {
@@ -110,8 +263,15 @@ export function createBridgeAtelierRuntime({
   };
 }
 
-function toRuntimeSnapshot(projection: AtelierProjectionSnapshot): AtelierRuntimeSnapshot {
-  return fromProjectionSnapshot(projection);
+function toRuntimeSnapshot(projection: unknown): AtelierRuntimeSnapshot {
+  return fromProjectionSnapshot(assertAtelierProjectionSnapshot(projection));
+}
+
+function withStatus(
+  snapshot: AtelierRuntimeSnapshot,
+  status: AtelierRuntimeStatus = readyStatus(snapshot.state),
+): AtelierRuntimeSnapshot {
+  return { ...snapshot, status };
 }
 
 function applyPatch(snapshot: AtelierRuntimeSnapshot, patch: AtelierProjectionPatch): AtelierRuntimeSnapshot {
@@ -156,13 +316,24 @@ function applyPatch(snapshot: AtelierRuntimeSnapshot, patch: AtelierProjectionPa
     case 'todo.replace':
       state.todos[patch.taskId] = patch.todos;
       break;
+    default:
+      assertNever(patch);
   }
 
   return { state, selectedTaskId: state.selectedTaskId };
 }
 
+function canApplyPatchToKnownTask(snapshot: AtelierRuntimeSnapshot, patch: AtelierProjectionPatch): boolean {
+  if (patch.kind === 'snapshot' || patch.kind === 'task.upsert') return true;
+  return snapshot.state.tasks.some((task) => task.id === patch.taskId);
+}
+
 function cloneSnapshot(snapshot: AtelierRuntimeSnapshot): AtelierRuntimeSnapshot {
   return JSON.parse(JSON.stringify(snapshot)) as AtelierRuntimeSnapshot;
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled Atelier projection patch: ${JSON.stringify(value)}`);
 }
 
 const MAX_SEEN_EVENT_KEYS = 500;
@@ -183,6 +354,17 @@ function rememberProjectionEvent(
     if (stale) seenEventKeys.delete(stale);
   }
 
+  return true;
+}
+
+function rememberProjectionSeq(
+  event: AtelierProjectionEvent,
+  lastSeqByScope: Map<string, number>,
+): boolean {
+  const scope = event.taskId ?? 'workspace';
+  const lastSeq = lastSeqByScope.get(scope);
+  if (lastSeq !== undefined && event.seq <= lastSeq) return false;
+  lastSeqByScope.set(scope, event.seq);
   return true;
 }
 
@@ -209,4 +391,76 @@ function upsertById<TItem extends { id: string }>(current: TItem[], incoming: TI
   return exists
     ? current.map((item) => (item.id === incoming.id ? incoming : item))
     : [...current, incoming];
+}
+
+function loadingStatus(): AtelierRuntimeStatus {
+  return {
+    kind: 'loading',
+    title: '正在加载 Atelier projection',
+    detail: '等待 Desktop Host 通过 applet bridge 返回 Station workspace snapshot。',
+  };
+}
+
+function eventStatus(lastEventSeq: number): AtelierRuntimeStatus {
+  return {
+    kind: 'ready',
+    title: 'Projection 已连接',
+    detail: '正在消费 Station / Agent orchestration 投影事件。',
+    lastEventSeq,
+  };
+}
+
+function reconcilingStatus(): AtelierRuntimeStatus {
+  return {
+    kind: 'reconciling',
+    title: 'Projection 正在同步',
+    detail: '已保留当前 snapshot，正在连接 Desktop Host 的 Atelier projection event stream。',
+  };
+}
+
+function degradedStatus(lastEventSeq: number): AtelierRuntimeStatus {
+  return {
+    kind: 'degraded',
+    title: 'Projection 降级',
+    detail: '收到过期 projection event，已拒绝应用并保留最后一份有效 snapshot。',
+    retryable: true,
+    lastEventSeq,
+  };
+}
+
+function statusFromBridgeError(error: unknown): AtelierRuntimeStatus {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes('permission') ||
+    normalized.includes('unauthorized') ||
+    normalized.includes('forbidden') ||
+    normalized.includes('auth')
+  ) {
+    return {
+      kind: 'auth-denied',
+      title: 'Atelier 权限被拒绝',
+      detail: '当前 applet session 没有 Atelier projection capability，或登录身份已失效。',
+      retryable: false,
+    };
+  }
+  if (
+    normalized.includes('network') ||
+    normalized.includes('timeout') ||
+    normalized.includes('disconnect') ||
+    normalized.includes('stream')
+  ) {
+    return {
+      kind: 'disconnected',
+      title: 'Projection 连接中断',
+      detail: 'Desktop Host 暂时无法连接 Station projection stream；当前页面保留最后一次 snapshot。',
+      retryable: true,
+    };
+  }
+  return {
+    kind: 'error',
+    title: 'Projection 加载失败',
+    detail: message || 'Host bridge 返回了无法识别的 projection 响应。',
+    retryable: true,
+  };
 }

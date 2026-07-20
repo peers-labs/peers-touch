@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { api as desktopApi } from '../services/desktop_api';
 import { log } from '../utils/logger';
 
@@ -70,7 +70,7 @@ const initialState: Pick<
 
 let inFlightSearchToken = 0;
 
-export const useDiscoveryStore = create<DiscoveryState>((set, get) => ({
+export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery', (set, get) => ({
   ...initialState,
 
   searchUsers: async (q) => {

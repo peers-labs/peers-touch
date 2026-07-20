@@ -81,6 +81,7 @@ export interface FrontendTelemetryInspector {
   flush(): Promise<FrontendTelemetryUploadResult | null>;
   getDroppedCount(): number;
   getEvents(): ReadonlyArray<DesktopFrontendTelemetryEvent>;
+  snapshot(): FrontendTelemetrySnapshot;
 }
 
 export interface FrontendTelemetryUploadResult {
@@ -94,6 +95,21 @@ export type FrontendTelemetryUploader = (
   events: DesktopFrontendTelemetryEvent[],
 ) => Promise<FrontendTelemetryUploadResult>;
 
+export interface FrontendTelemetrySnapshot {
+  byKind: Record<string, number>;
+  droppedByKind: Record<string, number>;
+  droppedCount: number;
+  droppedWithInteraction: Record<string, number>;
+  eventCount: number;
+  events: DesktopFrontendTelemetryEvent[];
+  maxEvents: number;
+  readyState: string;
+  runtime: FrontendTelemetryRuntime;
+  source: 'window.__PT_FRONTEND_TELEMETRY__';
+  url: string;
+  withInteraction: Record<string, number>;
+}
+
 type FrontendTelemetryQueueOptions = {
   maxEvents?: number;
   runtime?: FrontendTelemetryRuntime;
@@ -104,6 +120,8 @@ const DEFAULT_MAX_EVENTS = 500;
 const DEFAULT_FLUSH_DELAY_MS = 2_000;
 const SENSITIVE_KEY_PATTERN = /password|passwd|pwd|token|secret|private.?key|message|body|content/i;
 const events: DesktopFrontendTelemetryEvent[] = [];
+const droppedByKind: Record<string, number> = {};
+const droppedWithInteraction: Record<string, number> = {};
 
 let installed = false;
 let maxEvents = DEFAULT_MAX_EVENTS;
@@ -122,7 +140,14 @@ declare global {
 }
 
 function nowMs(): number {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+  if (
+    typeof performance !== 'undefined' &&
+    typeof performance.timeOrigin === 'number' &&
+    typeof performance.now === 'function'
+  ) {
+    return performance.timeOrigin + performance.now();
+  }
+  return Date.now();
 }
 
 function createEventId(): string {
@@ -137,6 +162,10 @@ function resolveRuntime(): FrontendTelemetryRuntime {
   if ('__PT_GATEWAY_BASE__' in window) return 'browser-gateway';
   if (import.meta.env.PROD) return 'prod-preview';
   return 'unknown';
+}
+
+function incrementCounter(target: Record<string, number>, key: string): void {
+  target[key] = (target[key] ?? 0) + 1;
 }
 
 function sanitizeValue(value: unknown, depth: number): unknown {
@@ -178,6 +207,7 @@ function exposeInspector(): void {
     flush: flushFrontendTelemetryEvents,
     getDroppedCount: () => droppedCount,
     getEvents: () => events,
+    snapshot: snapshotFrontendTelemetry,
   };
 }
 
@@ -210,6 +240,8 @@ export function teardownFrontendTelemetryQueue(): void {
 export function clearFrontendTelemetryEvents(): void {
   events.length = 0;
   droppedCount = 0;
+  for (const key of Object.keys(droppedByKind)) delete droppedByKind[key];
+  for (const key of Object.keys(droppedWithInteraction)) delete droppedWithInteraction[key];
 }
 
 export function emitFrontendTelemetryEvent(
@@ -230,11 +262,38 @@ export function emitFrontendTelemetryEvent(
   events.push(event);
   if (events.length > maxEvents) {
     const removed = events.length - maxEvents;
-    events.splice(0, removed);
+    const dropped = events.splice(0, removed);
     droppedCount += removed;
+    for (const item of dropped) {
+      incrementCounter(droppedByKind, item.kind);
+      if (item.interactionId) incrementCounter(droppedWithInteraction, item.kind);
+    }
   }
   scheduleFrontendTelemetryFlush();
   return event;
+}
+
+export function snapshotFrontendTelemetry(): FrontendTelemetrySnapshot {
+  const byKind: Record<string, number> = {};
+  const withInteraction: Record<string, number> = {};
+  for (const event of events) {
+    incrementCounter(byKind, event.kind);
+    if (event.interactionId) incrementCounter(withInteraction, event.kind);
+  }
+  return {
+    byKind,
+    droppedByKind: { ...droppedByKind },
+    droppedCount,
+    droppedWithInteraction: { ...droppedWithInteraction },
+    eventCount: events.length,
+    events: events.slice(),
+    maxEvents,
+    readyState: typeof document === 'undefined' ? 'unknown' : document.readyState,
+    runtime: resolveRuntime(),
+    source: 'window.__PT_FRONTEND_TELEMETRY__',
+    url: typeof window === 'undefined' ? '' : window.location.href,
+    withInteraction,
+  };
 }
 
 export function getFrontendTelemetryEvents(): ReadonlyArray<DesktopFrontendTelemetryEvent> {

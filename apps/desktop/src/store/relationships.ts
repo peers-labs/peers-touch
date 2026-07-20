@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import {
   socialFollow,
   socialGetFollowers,
@@ -72,7 +72,7 @@ const initialState: Pick<
   followingByActor: {},
 };
 
-export const useRelationshipsStore = create<RelationshipsState>((set, get) => ({
+export const useRelationshipsStore = createDesktopStore<RelationshipsState>('relationships', (set, get) => ({
   ...initialState,
 
   loadRelationship: async (targetActorId) => {

@@ -42,6 +42,31 @@ enum VoteType {
   VOTE_TYPE_ABSTAIN = 3;
 }
 
+enum EnginePolicyStance {
+  ENGINE_POLICY_STANCE_UNSPECIFIED = 0;
+  ENGINE_POLICY_STANCE_PROPOSAL = 1;
+  ENGINE_POLICY_STANCE_OBJECTION = 2;
+  ENGINE_POLICY_STANCE_COUNTER = 3;
+  ENGINE_POLICY_STANCE_SIGNOFF = 4;
+}
+
+enum CollaborationSessionEventType {
+  COLLABORATION_SESSION_EVENT_TYPE_UNSPECIFIED = 0;
+  COLLABORATION_SESSION_EVENT_TYPE_ROUND_STARTED = 1;
+  COLLABORATION_SESSION_EVENT_TYPE_VOICE_RECORDED = 2;
+  COLLABORATION_SESSION_EVENT_TYPE_CONVERGENCE_EVALUATED = 3;
+  COLLABORATION_SESSION_EVENT_TYPE_AWAITING_HUMAN = 4;
+  COLLABORATION_SESSION_EVENT_TYPE_REACHED = 5;
+}
+
+enum CollaborationSessionPhase {
+  COLLABORATION_SESSION_PHASE_UNSPECIFIED = 0;
+  COLLABORATION_SESSION_PHASE_GATHERING = 1;
+  COLLABORATION_SESSION_PHASE_CONVERGING = 2;
+  COLLABORATION_SESSION_PHASE_AWAITING_HUMAN = 3;
+  COLLABORATION_SESSION_PHASE_REACHED = 4;
+}
+
 enum AcceptanceLevel {
   ACCEPTANCE_LEVEL_UNSPECIFIED = 0;
   ACCEPTANCE_LEVEL_L0 = 1;
@@ -100,6 +125,7 @@ enum TaskSurface {
   TASK_SURFACE_CANVAS = 2;
   TASK_SURFACE_API = 3;
   TASK_SURFACE_SCHEDULED = 4;
+  TASK_SURFACE_DIRECT_RUN = 5;
 }
 
 enum ExecutorKind {
@@ -125,6 +151,8 @@ enum TaskEventType {
   TASK_EVENT_TYPE_INTERRUPT_RESOLVED = 10;
   TASK_EVENT_TYPE_EXECUTOR_LEASED = 11;
   TASK_EVENT_TYPE_EXECUTOR_RELEASED = 12;
+  TASK_EVENT_TYPE_GATE_RESULT = 13;
+  TASK_EVENT_TYPE_FEEDBACK_RECORDED = 14;
 }
 
 enum ArtifactKind {
@@ -143,6 +171,41 @@ enum InterruptStatus {
   INTERRUPT_STATUS_RESOLVED = 2;
   INTERRUPT_STATUS_CANCELLED = 3;
   INTERRUPT_STATUS_EXPIRED = 4;
+}
+
+enum TaskGateBlockingLevel {
+  TASK_GATE_BLOCKING_LEVEL_UNSPECIFIED = 0;
+  TASK_GATE_BLOCKING_LEVEL_BLOCK = 1;
+  TASK_GATE_BLOCKING_LEVEL_WARN = 2;
+  TASK_GATE_BLOCKING_LEVEL_INFO = 3;
+}
+
+enum TaskGateType {
+  TASK_GATE_TYPE_UNSPECIFIED = 0;
+  TASK_GATE_TYPE_ACCEPTANCE = 1;
+  TASK_GATE_TYPE_POLICY = 2;
+  TASK_GATE_TYPE_CONTRACT = 3;
+  TASK_GATE_TYPE_QUALITY = 4;
+  TASK_GATE_TYPE_CUSTOM = 5;
+}
+
+enum TaskGateCheckType {
+  TASK_GATE_CHECK_TYPE_UNSPECIFIED = 0;
+  TASK_GATE_CHECK_TYPE_SCHEMA = 1;
+  TASK_GATE_CHECK_TYPE_TYPECHECK = 2;
+  TASK_GATE_CHECK_TYPE_CONTRACT_GATE = 3;
+  TASK_GATE_CHECK_TYPE_POLICY = 4;
+  TASK_GATE_CHECK_TYPE_ARTIFACT = 5;
+  TASK_GATE_CHECK_TYPE_CUSTOM = 6;
+}
+
+enum TaskGateEvaluatorKind {
+  TASK_GATE_EVALUATOR_KIND_UNSPECIFIED = 0;
+  TASK_GATE_EVALUATOR_KIND_DETERMINISTIC = 1;
+  TASK_GATE_EVALUATOR_KIND_PROVIDER = 2;
+  TASK_GATE_EVALUATOR_KIND_HUMAN = 3;
+  TASK_GATE_EVALUATOR_KIND_POLICY = 4;
+  TASK_GATE_EVALUATOR_KIND_CUSTOM = 5;
 }
 
 message TaskRun {
@@ -193,6 +256,8 @@ message TaskEvent {
   TaskEventType type = 6;
   string payload_json = 7;
   google.protobuf.Timestamp created_at = 8;
+  EnginePolicyTurn engine_policy_turn = 9;
+  CollaborationSessionEvent collaboration_session_event = 10;
 }
 
 message TaskArtifact {
@@ -207,6 +272,148 @@ message TaskArtifact {
   string summary = 9;
   string visibility = 10;
   google.protobuf.Timestamp created_at = 11;
+}
+
+message TaskArtifactRef {
+  string artifact_id = 1;
+  string kind = 2;
+  string name = 3;
+  string uri = 4;
+  string checksum = 5;
+  repeated string refs = 6;
+  repeated string paths = 7;
+  string markdown = 8;
+  string meta = 9;
+  string size = 10;
+}
+
+message EnginePolicyTurn {
+  string role = 1;
+  EnginePolicyStance stance = 2;
+  string text = 3;
+  string evidence_ref = 4;
+  bool escalates = 5;
+}
+
+message CollaborationSessionEvent {
+  CollaborationSessionEventType type = 1;
+  CollaborationSessionPhase phase = 2;
+  string role = 3;
+  CollaborationEngineType engine_type = 4;
+  int32 round_index = 5;
+  string convergence_mechanism = 6;
+  string evidence_ref = 7;
+  string summary = 8;
+  bool requires_human = 9;
+}
+
+message TaskGateCheck {
+  string name = 1;
+  string status = 2;
+  string detail = 3;
+}
+
+message TaskProviderSpec {
+  string provider_id = 1;
+  string model = 2;
+  string reasoning_effort = 3;
+  repeated string required_capabilities = 4;
+  map<string, string> options = 5;
+  string agent_id = 6;
+  string role = 7;
+}
+
+message TaskProviderPlan {
+  repeated TaskProviderSpec providers = 1;
+  string synthesizer_agent_id = 2;
+  string source = 3;
+  TaskOrchestrationPolicy orchestration_policy = 4;
+}
+
+enum TaskGraphParallelPolicy {
+  TASK_GRAPH_PARALLEL_POLICY_UNSPECIFIED = 0;
+  TASK_GRAPH_PARALLEL_POLICY_SERIAL_ONLY = 1;
+  TASK_GRAPH_PARALLEL_POLICY_INDEPENDENT_ONLY = 2;
+  TASK_GRAPH_PARALLEL_POLICY_INTEGRATOR_REQUIRED = 3;
+}
+
+enum SupervisorLoopKind {
+  SUPERVISOR_LOOP_KIND_UNSPECIFIED = 0;
+  SUPERVISOR_LOOP_KIND_STATION_EVENT_BUS = 1;
+}
+
+enum ReplanPolicyKind {
+  REPLAN_POLICY_KIND_UNSPECIFIED = 0;
+  REPLAN_POLICY_KIND_BEFORE_B10_FROM_RESUME_ANCHOR = 1;
+}
+
+enum ResumeAnchorPolicyKind {
+  RESUME_ANCHOR_POLICY_KIND_UNSPECIFIED = 0;
+  RESUME_ANCHOR_POLICY_KIND_LATEST_ACCEPTED_CHECKPOINT = 1;
+}
+
+message TaskOrchestrationPolicy {
+  TaskGraphParallelPolicy task_graph_parallel_policy = 1;
+  string integrator_agent_id = 2;
+  SupervisorLoopKind supervisor_loop = 3;
+  ReplanPolicyKind replan_policy = 4;
+  ResumeAnchorPolicyKind resume_anchor_policy = 5;
+  string workspace_ref = 6;
+}
+
+message TaskGateEvaluatorSpec {
+  TaskGateEvaluatorKind kind = 1;
+  string evaluator_id = 2;
+  TaskProviderSpec provider = 3;
+  string policy_id = 4;
+  repeated string required_capabilities = 5;
+}
+
+message TaskGateCheckSpec {
+  string check_id = 1;
+  string name = 2;
+  string check_type = 3;
+  string detail = 4;
+  repeated string artifact_ids = 5;
+  string config_json = 6;
+  TaskGateCheckType typed_check_type = 7;
+}
+
+message TaskGateSpec {
+  string gate_id = 1;
+  string name = 2;
+  TaskGateBlockingLevel blocking_level = 3;
+  repeated string artifact_ids = 4;
+  repeated TaskGateCheckSpec checks = 5;
+  string config_json = 6;
+  string gate_type = 7;
+  string evaluator = 8;
+  string level = 9;
+  TaskGateType typed_gate_type = 10;
+  TaskGateEvaluatorSpec evaluator_spec = 11;
+}
+
+message TaskGatePlan {
+  string gate_plan_id = 1;
+  string task_id = 2;
+  string step_id = 3;
+  string source = 4;
+  string status = 5;
+  repeated TaskGateSpec gates = 6;
+  string plan_json = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message TaskGateResult {
+  string gate_id = 1;
+  string name = 2;
+  string status = 3;
+  string summary = 4;
+  repeated TaskGateCheck checks = 5;
+  repeated string artifact_ids = 6;
+  bool blocking = 7;
+  string gate_plan_id = 8;
 }
 
 message TaskCheckpoint {
@@ -322,6 +529,7 @@ message CreateCollaborationTaskRequest {
   double budget_money = 7;
   int64 budget_time_ms = 8;
   map<string, string> meta = 9;
+  TaskProviderPlan provider_plan = 10;
 }
 
 message CreateCollaborationTaskResponse {
@@ -359,6 +567,25 @@ message UpdateCollaborationTaskRequest {
 
 message UpdateCollaborationTaskResponse {
   CollaborationTask task = 1;
+}
+
+message SubmitCollaborationNodeResultRequest {
+  string task_id = 1;
+  string node_id = 2;
+  string lease_id = 3;
+  string executor_id = 4;
+  string result_summary = 5;
+  string status = 6;
+  string turn_id = 7;
+  repeated TaskArtifactRef artifacts = 8;
+  repeated TaskGateResult gates = 9;
+  map<string, string> meta = 10;
+  EnginePolicyTurn engine_policy_turn = 11;
+}
+
+message SubmitCollaborationNodeResultResponse {
+  CollaborationTask task = 1;
+  repeated TaskNode nodes = 2;
 }
 
 message ClaimDesktopExecutorTaskRequest {

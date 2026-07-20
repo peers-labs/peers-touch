@@ -8,6 +8,7 @@ import { useOAuth2Store } from '../../store/oauth2';
 import { PlatformLogo } from '../common/PlatformLogo';
 import { useTranslation } from 'react-i18next';
 import { log } from '../../utils/logger';
+import { useActiveOAuth2Slice } from './useActiveSettingsStores';
 
 const { Text, Title } = Typography;
 
@@ -23,7 +24,10 @@ interface Props {
 export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Props) {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
-  const { startAuth, connections } = useOAuth2Store();
+  const { startAuth, connections } = useActiveOAuth2Slice((s) => ({
+    startAuth: s.startAuth,
+    connections: s.connections,
+  }));
   const [authState, setAuthState] = useState<AuthState>('idle');
   const [error, setError] = useState('');
 

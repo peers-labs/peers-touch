@@ -844,7 +844,7 @@ function Seg({ options, value, onChange }: { options: string[]; value: string; o
  * overlay laid on top. A reviewer toolbar sits above the page so the whole
  * call lifecycle is walkable without a backend.
  */
-function ChatPageBlock() {
+export function ChatPageBlock() {
   const [state, setState] = useState<CallState>('idle');
   const [media, setMedia] = useState<MediaKind>('video');
   const [reason, setReason] = useState<EndReason>('hangup');

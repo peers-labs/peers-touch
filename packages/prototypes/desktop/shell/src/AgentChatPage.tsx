@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   Bot,
   CheckCircle2,
@@ -11,12 +11,14 @@ import {
   Settings2,
   Share2,
   Sparkles,
+  List,
+  X,
   UserRound,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
 import { T } from './theme';
-import { PanelToggleButton } from '../../shared/PanelToggleButton';
+import { PanelToggleDock } from '../../shared/PanelToggleButton';
 import { PromptComposer } from '../../shared/PromptComposer';
 
 interface AgentSummary {
@@ -98,15 +100,45 @@ export function AgentChatPage({
   onOpenOrchestration: () => void;
   onOpenProfile: () => void;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const narrowRef = useRef<boolean | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState('devops');
   const [agentListOpen, setAgentListOpen] = useState(true);
+  const [narrow, setNarrow] = useState(false);
+  const [topicsOpen, setTopicsOpen] = useState(false);
   const selectedAgent = AGENTS.find((agent) => agent.id === selectedAgentId) ?? AGENTS[0];
   const pinned = AGENTS.filter((agent) => agent.pinned);
   const others = AGENTS.filter((agent) => !agent.pinned);
 
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const syncWidth = (width: number) => {
+      if (width <= 0) return;
+      const nextNarrow = width < 900;
+      const wasNarrow = narrowRef.current;
+      narrowRef.current = nextNarrow;
+      setNarrow(nextNarrow);
+      if (nextNarrow && wasNarrow !== true) {
+        setAgentListOpen(false);
+        setTopicsOpen(false);
+      }
+    };
+    syncWidth(root.getBoundingClientRect().width);
+    const observer = new ResizeObserver(([entry]) => syncWidth(entry.contentRect.width));
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <div style={styles.root}>
-      <aside style={{ ...styles.agentList, width: agentListOpen ? 230 : 48, padding: agentListOpen ? '14px 10px 58px' : '14px 0 58px' }}>
+    <div ref={rootRef} data-testid="desktop-shell-agent-chat" style={styles.root}>
+      <aside
+        style={{
+          ...styles.agentList,
+          width: agentListOpen ? 230 : 48,
+          padding: agentListOpen ? '14px 10px 58px' : '14px 0 58px',
+        }}
+      >
         {agentListOpen ? (
           <>
             <div style={styles.agentHeader}>
@@ -129,7 +161,9 @@ export function AgentChatPage({
                   key={agent.id}
                   agent={agent}
                   active={agent.id === selectedAgentId}
-                  onClick={() => setSelectedAgentId(agent.id)}
+                  onClick={() => {
+                    setSelectedAgentId(agent.id);
+                  }}
                 />
               ))}
               <RosterGroup label="All Agents" />
@@ -138,7 +172,9 @@ export function AgentChatPage({
                   key={agent.id}
                   agent={agent}
                   active={agent.id === selectedAgentId}
-                  onClick={() => setSelectedAgentId(agent.id)}
+                  onClick={() => {
+                    setSelectedAgentId(agent.id);
+                  }}
                 />
               ))}
             </div>
@@ -148,7 +184,14 @@ export function AgentChatPage({
             <button style={styles.collapsedSearchButton} title="新建 Agent">
               <Plus size={16} />
             </button>
-            <button style={{ ...styles.collapsedSearchButton, margin: '0 auto 2px' }} title="搜索 Agent" onClick={() => setAgentListOpen(true)}>
+            <button
+              style={{ ...styles.collapsedSearchButton, margin: '0 auto 2px' }}
+              title="搜索 Agent"
+              onClick={() => {
+                setTopicsOpen(false);
+                setAgentListOpen(true);
+              }}
+            >
               <Search size={16} />
             </button>
             <div style={styles.collapsedAgentRail}>
@@ -163,7 +206,6 @@ export function AgentChatPage({
                   title={agent.name}
                   onClick={() => {
                     setSelectedAgentId(agent.id);
-                    setAgentListOpen(true);
                   }}
                 >
                   <AgentIcon agent={agent} size={30} />
@@ -180,7 +222,6 @@ export function AgentChatPage({
                   title={agent.name}
                   onClick={() => {
                     setSelectedAgentId(agent.id);
-                    setAgentListOpen(true);
                   }}
                 >
                   <AgentIcon agent={agent} size={30} />
@@ -189,15 +230,23 @@ export function AgentChatPage({
             </div>
           </>
         )}
-        <div
-          style={styles.collapseButton}
+        <PanelToggleDock
+          side="left"
+          open={agentListOpen}
           title={agentListOpen ? '折叠 Agent 列表' : '展开 Agent 列表'}
-        >
-          <PanelToggleButton side="left" open={agentListOpen} onClick={() => setAgentListOpen((open) => !open)} />
-        </div>
+          onClick={() => {
+            if (!agentListOpen) setTopicsOpen(false);
+            setAgentListOpen((open) => !open);
+          }}
+        />
       </aside>
 
-      <aside style={styles.topicList}>
+      {(!narrow || topicsOpen) && <aside style={styles.topicList}>
+        {narrow && (
+          <button style={styles.overlayCloseButton} title="关闭 Topics" onClick={() => setTopicsOpen(false)}>
+            <X size={15} />
+          </button>
+        )}
         <div style={styles.agentCard}>
           <AgentIcon agent={selectedAgent} size={44} />
           <div style={{ minWidth: 0 }}>
@@ -238,7 +287,7 @@ export function AgentChatPage({
             ))}
           </div>
         ))}
-      </aside>
+      </aside>}
 
       <main style={styles.chat}>
         <header style={styles.chatHeader}>
@@ -252,12 +301,28 @@ export function AgentChatPage({
             <div style={styles.chatDesc}>{selectedAgent.desc}</div>
           </div>
           <Share2 size={15} color={T.textTertiary} />
-          <Settings2 size={15} color={T.textTertiary} />
-          <Cloud size={15} color={T.textTertiary} />
+          {narrow && (
+            <>
+              <button
+                style={styles.headerIconButton}
+                title="Topics"
+                onClick={() => {
+                  setAgentListOpen(false);
+                  setTopicsOpen(true);
+                }}
+              >
+                <List size={15} />
+              </button>
+              <button style={styles.headerIconButton} title="Agent Profile" onClick={onOpenProfile}><UserRound size={15} /></button>
+              <button style={styles.headerIconButton} title="Orchestration" onClick={onOpenOrchestration}><Workflow size={15} /></button>
+            </>
+          )}
+          {!narrow && <Settings2 size={15} color={T.textTertiary} />}
+          {!narrow && <Cloud size={15} color={T.textTertiary} />}
         </header>
 
         <section style={styles.emptyChat}>
-          <div style={styles.welcomeCard}>
+          <div style={{ ...styles.welcomeCard, width: narrow ? 'calc(100% - 28px)' : 430 }}>
             <AgentIcon agent={selectedAgent} size={48} />
             <div style={styles.welcomeTitle}>{selectedAgent.name}</div>
             <div style={styles.capabilityBar}>
@@ -271,7 +336,7 @@ export function AgentChatPage({
             <span style={styles.modelBadge}>composer-2-fast</span>
           </div>
 
-          <div style={styles.quickActions}>
+          <div style={{ ...styles.quickActions, width: narrow ? 'calc(100% - 28px)' : undefined }}>
             {QUICK_ACTIONS.map((action) => (
               <button key={action} style={styles.quickAction}>
                 <Network size={13} />
@@ -281,7 +346,7 @@ export function AgentChatPage({
           </div>
         </section>
 
-        <div style={{ margin: '0 0 48px' }}>
+        <div style={{ margin: narrow ? '0 14px 18px' : '0 0 48px' }}>
           <PromptComposer modelLabel="GPT-5.5" />
         </div>
       </main>
@@ -342,6 +407,9 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     height: '100%',
     display: 'flex',
+    minWidth: 0,
+    position: 'relative',
+    overflow: 'hidden',
     background: '#fff',
     color: T.text,
     fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -358,6 +426,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'stretch',
     position: 'relative',
+    zIndex: 4,
   },
   agentListScroll: {
     flex: 1,
@@ -387,23 +456,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
-  },
-  collapseButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    border: 0,
-    background: 'transparent',
-    color: T.textSecondary,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    boxShadow: 'none',
-    flexShrink: 0,
-    position: 'absolute',
-    left: 7,
-    bottom: 14,
   },
   collapsedSearchButton: {
     width: 40,
@@ -509,6 +561,23 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '16px 14px',
     boxSizing: 'border-box',
     overflow: 'auto',
+    position: 'relative',
+    zIndex: 3,
+  },
+  overlayCloseButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
+    border: 0,
+    borderRadius: 8,
+    background: T.fillQuaternary,
+    color: T.textSecondary,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
   },
   agentCard: {
     display: 'flex',
@@ -589,6 +658,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 12,
     padding: '0 18px',
     boxSizing: 'border-box',
+    minWidth: 0,
   },
   chatName: {
     display: 'flex',
@@ -596,6 +666,8 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     fontSize: 14,
     fontWeight: 850,
+    minWidth: 0,
+    flexWrap: 'wrap',
   },
   badge: {
     padding: '2px 7px',
@@ -631,6 +703,8 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     textAlign: 'center',
+    maxWidth: 'calc(100% - 28px)',
+    boxSizing: 'border-box',
   },
   welcomeTitle: {
     marginTop: 12,
@@ -678,6 +752,19 @@ const styles: Record<string, React.CSSProperties> = {
     color: T.text,
     fontSize: 12,
     fontWeight: 650,
+    cursor: 'pointer',
+  },
+  headerIconButton: {
+    width: 28,
+    height: 28,
+    flexShrink: 0,
+    border: 0,
+    borderRadius: 8,
+    background: T.fillQuaternary,
+    color: T.textSecondary,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     cursor: 'pointer',
   },
 };

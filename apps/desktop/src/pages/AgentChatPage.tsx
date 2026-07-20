@@ -3,12 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import type { ComponentProps } from 'react';
-import { ActionIcon, SearchBar } from '@lobehub/ui';
+import { ActionIcon, SearchBar, toast } from '@lobehub/ui';
 import { MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Search, Workflow } from 'lucide-react';
 import { AgentSidebar } from '../components/AgentSidebar';
 import { AgentIconTile } from '../components/agent/AgentIconTile';
 import { api, type Agent } from '../services/desktop_api';
-import { useAgentStore } from '../store/agent';
+import { useActiveAgentSlice } from '../components/agent/useActiveAgentStores';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
 import { ChatPage } from './ChatPage';
 
@@ -19,7 +19,23 @@ type AgentChatPageProps = ComponentProps<typeof ChatPage> & {
 export function AgentChatPage(props: AgentChatPageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const { agents, selectedAgent, setSelectedAgent, setAgentSurface, agentRosterOpen, setAgentRosterOpen } = useAgentStore();
+  const {
+    agents,
+    selectedAgent,
+    loadAgents,
+    setSelectedAgent,
+    setAgentSurface,
+    agentRosterOpen,
+    setAgentRosterOpen,
+  } = useActiveAgentSlice((s) => ({
+    agents: s.agents,
+    selectedAgent: s.selectedAgent,
+    loadAgents: s.loadAgents,
+    setSelectedAgent: s.setSelectedAgent,
+    setAgentSurface: s.setAgentSurface,
+    agentRosterOpen: s.agentRosterOpen,
+    setAgentRosterOpen: s.setAgentRosterOpen,
+  }));
   const agentListOpen = agentRosterOpen;
   const setAgentListOpen = setAgentRosterOpen;
   const [agentSearch, setAgentSearch] = useState('');
@@ -39,22 +55,27 @@ export function AgentChatPage(props: AgentChatPageProps) {
   }, [t]);
 
   const handleCreateAgent = useCallback(async () => {
-    const suffix = Date.now().toString(36);
-    const created = await api.createAgent({
-      name: `agent-${suffix}`,
-      title: t('agent.profile.identityTitlePlaceholder'),
-      description: '',
-      avatar: '',
-      soulMd: '# SOUL.md\n\n## Identity\n',
-      agentsMd: '# AGENTS.md\n\n## Workflow\n',
-      effort: 'medium',
-      visibility: 'private',
-      workspaceMode: 'agent',
-    });
-    setAgentSurface(created.name, 'profile');
-    setSelectedAgent(created.name);
-    props.onNavigateAgentProfile?.(created.name);
-  }, [props, setAgentSurface, setSelectedAgent, t]);
+    try {
+      const suffix = Date.now().toString(36);
+      const created = await api.createAgent({
+        name: `agent-${suffix}`,
+        title: t('agent.profile.identityTitlePlaceholder'),
+        description: '',
+        avatar: '',
+        soulMd: '# SOUL.md\n\n## Identity\n',
+        agentsMd: '# AGENTS.md\n\n## Workflow\n',
+        effort: 'medium',
+        visibility: 'private',
+        workspaceMode: 'agent',
+      });
+      await loadAgents();
+      setAgentSurface(created.name, 'profile');
+      setSelectedAgent(created.name);
+      props.onNavigateAgentProfile?.(created.name);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('agent.sidebar.toast.agentCreateFailed', { defaultValue: 'Failed to create Agent' }));
+    }
+  }, [loadAgents, props, setAgentSurface, setSelectedAgent, t]);
 
   const handleEditAgent = useCallback((agent: Agent) => {
     setAgentSurface(agent.name, 'profile');

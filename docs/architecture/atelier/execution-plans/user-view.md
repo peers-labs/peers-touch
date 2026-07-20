@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-20 | **Updated**: 2026-06-20
+> **Created**: 2026-06-20 | **Updated**: 2026-07-05
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -102,8 +102,8 @@
 - "调哪个工具"→ Provider 接入 + 路由 → `F-PR-01`、`F-PR-02`（coding）/`F-PR-03`（数据）、`F-CO-05`
 - "真实执行一次"→ Run + Run 状态机 → `F-CO-02`
 - "自动一条条跑"→ 执行循环 → `F-CO-06`、`F-CO-01`（Task 状态机）
-- "产物可看可下"→ Artifact 收集 → `F-CO-07`
-- "改代码改在哪、不乱动别的"→ 工作区/沙箱 → `F-PR-05` ⚠️（当前缺口）
+- "产物可看可下"→ Artifact metadata projection + Host sandbox intent → `F-CO-07a` / `F-CO-07b`（metadata-only 已落；focused product-window safe body fetch 已补且 evidence 不含 raw `text`；artifactRendererSurface / runtimeLogStream / hostStorageAttachment 均有 `controlledEvidence`，其中 `artifactRendererSurface.controlledEvidence.liveWebviewProven=false`；rich renderer / Console Logs / attachment runtime 仍待 Host runtime/E2E）
+- "改代码改在哪、不乱动别的"→ 工作区/沙箱 → `F-PR-05` ⚠️（WorkspaceOpenTarget / Host open intent 已接入；真实 IDE launch、workspace resolver、sandbox runtime 与 E2E 待验）
 - "全程能回看"→ Trace → `F-FD-01`
 
 ---
@@ -153,7 +153,7 @@
 - "花超了就停"→ Budget 熔断 → `F-FD-02`
 - "主观活交给人"→ L2 Verifier 强制人工 → `F-CO-10`
 - "升级条件"→ Human-in-loop 触发 → `F-HL-01`
-- "把决策信息讲清楚"→ 升级载荷（证据/成本/选项/推荐/回滚影响）→ `F-HL-02` ⚠️（当前缺口）
+- "把决策信息讲清楚"→ 升级载荷（证据/成本/选项/推荐/回滚影响）→ `F-HL-02` ✅（typed payload + route normalization service/static 已落；真实 E2E 未证明）
 - 用户做决策 → `F-UI-03`
 
 ---
@@ -171,11 +171,11 @@
 4. 里程碑逐个验收通过，项目逐步逼近完成。
 
 **底座怎么撑**：
-- "监工持续巡查推进"→ Supervisor Loop（+EventBus 驱动）→ `F-CL-07` ⚠️、`F-FD-05` ⚠️（当前缺口）
-- "计划过时就重规划"→ Replan 机制 → `F-CL-08` ⚠️（当前排期错位）
-- "断了从锚点接着干"→ Resume / 恢复锚点 + 幂等重放 → `F-CO-12` ⚠️、`F-CO-13`
+- "监工持续巡查推进"→ Supervisor Loop（+EventBus 驱动）→ `F-CL-07` / `F-FD-05` ⚠️（schema + supervisor tick/sweep + scheduler service/static 已落；真实运行时 E2E 待验）
+- "计划过时就重规划"→ Replan 机制 → `F-CL-08` ⚠️（已前移到 B9.5 并接入 supervisor replan interrupt；真实运行时/E2E 待验）
+- "断了从锚点接着干"→ Resume / 恢复锚点 + 幂等重放 → `F-CO-12` / `F-CO-13` ⚠️（已前移并绑定 accepted anchor；真实跨重启恢复 E2E 待验）
 - "里程碑逐个验收"→ Milestone/Project 状态机 + 验收 → `F-CO-03`、`F-CO-04`、`F-PJ-04`
-- "并行任务结果合并不打架"→ Integrator → `F-CL-09` ⚠️（当前缺口）
+- "并行任务结果合并不打架"→ Integrator → `F-CL-09` ⚠️（`integrator_required` + Station integrator identity 前置条件已定；真实 merge runtime/E2E 未落）
 
 ---
 
@@ -192,10 +192,10 @@
 
 **底座怎么撑**：
 - "项目验收完成"→ Project Verification/Acceptance + 完成谓词 → `F-PJ-05`、`F-CO-11`
-- "残余风险/后续待办"→ Residual Risk / Blocker → `F-PJ-06` ⚠️、`F-PJ-07` ⚠️（当前缺口）
+- "残余风险/后续待办"→ Residual Risk / Blocker → `F-PJ-06` / `F-PJ-07` ⚠️（formal proto + read-only projection 已补；Station governance runtime/E2E 待落）
 - "经验候选"→ Memory Candidate 生成 → `F-MM-01`
 - "确认才记住"→ 两阶段写入 → `F-MM-02`、`F-UI-04`
-- "下次更聪明"→ 失败记忆反哺 Planner/Risk → `F-MM-03` ⚠️（当前缺口）
+- "下次更聪明"→ 失败记忆反哺 Planner/Risk → `F-MM-03` ✅（feedback policy feeds 已输出；真实 Planner/Risk/Verifier 反哺消费 E2E 未验）
 
 ---
 

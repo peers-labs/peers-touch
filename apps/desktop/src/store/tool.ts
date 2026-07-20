@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { toolService, type ToolInfo } from '../services/tool-service';
 import { log } from '../utils/logger';
 import { toStoreError, type RevalidationState } from './revalidation';
@@ -8,7 +8,7 @@ interface ToolState extends RevalidationState {
   loadTools: () => Promise<void>;
 }
 
-export const useToolStore = create<ToolState>((set) => ({
+export const useToolStore = createDesktopStore<ToolState>('tool', (set) => ({
   tools: [],
   loading: false,
   error: null,

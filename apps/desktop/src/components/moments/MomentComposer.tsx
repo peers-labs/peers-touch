@@ -14,11 +14,10 @@ import {
 } from '../../gen/proto/domain/social/post_pb';
 import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
 import { AudiencePicker } from './AudiencePicker';
-import { useMomentsStore } from '../../store/moments';
-import { useDiscoveryStore } from '../../store/discovery';
 import { api, type SocialEncryptedMediaDescriptorWire } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { useActiveDiscoverySlice, useActiveMomentsSlice } from './useActiveMomentsStore';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -101,11 +100,13 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
 
-  const me = useDiscoveryStore((s) => s.me);
-  const draft = useMomentsStore((s) => s.composerDraft);
-  const setDraft = useMomentsStore((s) => s.setComposerDraft);
-  const clearDraft = useMomentsStore((s) => s.clearComposerDraft);
-  const createPost = useMomentsStore((s) => s.createPost);
+  const me = useActiveDiscoverySlice((s) => s.me);
+  const { draft, setDraft, clearDraft, createPost } = useActiveMomentsSlice((s) => ({
+    draft: s.composerDraft,
+    setDraft: s.setComposerDraft,
+    clearDraft: s.clearComposerDraft,
+    createPost: s.createPost,
+  }));
 
   const [text, setText] = useState<string>(() => draft?.text ?? '');
   const [audience, setAudience] = useState<Audience>(

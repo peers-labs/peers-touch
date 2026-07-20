@@ -7,13 +7,15 @@ import {
   Bot,
   ChartCandlestick,
   FileInput,
+  FlaskConical,
   NotebookPen,
   PackageOpen,
   Plus,
   Search,
   TerminalSquare,
 } from 'lucide-react';
-import { useAppletsStore, type RuntimeAppletInfo } from '../store/applets';
+import type { RuntimeAppletInfo } from '../store/applets';
+import { useActiveAppletsSlice } from './useActiveAppletsStore';
 
 const { Text } = Typography;
 
@@ -32,6 +34,7 @@ const IDENTITY_TINTS = [
 
 const OFFICIAL_IDENTITY: Record<string, { icon: ReactNode }> = {
   'peers.note': { icon: <NotebookPen size={30} strokeWidth={2} /> },
+  'peers.atelier': { icon: <FlaskConical size={30} strokeWidth={2} /> },
   'remote-cli': { icon: <TerminalSquare size={30} strokeWidth={2} /> },
   'web-search': { icon: <Search size={30} strokeWidth={2} /> },
   'agent-pilot': { icon: <Bot size={30} strokeWidth={2} /> },
@@ -87,10 +90,17 @@ function appletIdentity(info: RuntimeAppletInfo) {
 export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const { t } = useTranslation('applet');
   const { token } = theme.useToken();
-  const applets = useAppletsStore((state) => state.applets);
-  const loading = useAppletsStore((state) => state.loading);
-  const stationUnavailable = useAppletsStore((state) => state.stationUnavailable);
-  const importAppletDirectory = useAppletsStore((state) => state.importAppletDirectory);
+  const {
+    applets,
+    loading,
+    stationUnavailable,
+    importAppletDirectory,
+  } = useActiveAppletsSlice((state) => ({
+    applets: state.applets,
+    loading: state.loading,
+    stationUnavailable: state.stationUnavailable,
+    importAppletDirectory: state.importAppletDirectory,
+  }));
 
   const [query, setQuery] = useState('');
   const [importMenuOpen, setImportMenuOpen] = useState(false);

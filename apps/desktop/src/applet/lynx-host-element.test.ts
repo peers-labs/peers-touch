@@ -214,6 +214,41 @@ describe('LynxHostElement bridge integration', () => {
     }))
   })
 
+  it('routes topic event subscriptions to the Desktop Gateway instead of the local long-poll queue', async () => {
+    const { fakeView } = await createMountedHost()
+    mockAppletInvoke.mockResolvedValue({ ok: true, topic: 'atelier.projection.event', subscribed: true })
+
+    const response = await fakeView.onNativeModulesCall?.(
+      'invoke',
+      {
+        requestId: 'request-events-subscribe',
+        method: 'events.subscribe',
+        params: { topic: 'atelier.projection.event' },
+      },
+      'bridge',
+    )
+
+    expect(mockAppletInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'bridge-test',
+      sessionId: 'desktop-session-bridge-test',
+      capability: 'events',
+      action: 'subscribe',
+      params: { topic: 'atelier.projection.event' },
+      manifest: expect.objectContaining({
+        id: 'bridge-test',
+        permissions: ['network.request', 'lifecycle.destroy', 'events.poll'],
+      }),
+    }))
+    expect(response).toEqual(expect.objectContaining({
+      protocol: APPLET_BRIDGE_PROTOCOL,
+      appletId: 'bridge-test',
+      requestId: 'request-events-subscribe',
+      kind: 'response',
+      ok: true,
+      result: { ok: true, topic: 'atelier.projection.event', subscribed: true },
+    }))
+  })
+
   it('polls Gateway event outbox and dispatches background task events', async () => {
     vi.useFakeTimers()
     mockAppletInvoke.mockResolvedValue({
@@ -362,6 +397,101 @@ describe('LynxHostElement bridge integration', () => {
     expect(response?.result).toEqual({ confirmed: true, cancelled: false })
   })
 
+  it('executes Atelier artifact preview Host UI commands and hides command metadata from applet result', async () => {
+    const { host, fakeView } = await createMountedHost()
+    const uiHandler = vi.fn().mockResolvedValue({
+      ok: true,
+      accepted: true,
+      opened: true,
+      prepared: true,
+      taskId: 'task-1',
+      artifactId: 'artifact-1',
+      sandboxRef: 'atelier-sandbox://task-1/artifact-1/preview',
+      bodyRef: 'artifact://task-1/artifact-1/body',
+      kind: 'markdown',
+      mode: 'sandbox_manifest',
+      rendererSessionId: 'atelier-preview:task-1:artifact-1',
+      rendererOwner: 'desktop_host',
+      rendererMode: 'host_sandbox_manifest',
+      rendererStatus: 'rendered',
+      rendererCapabilities: ['host_owned_renderer_session', 'host_visual_renderer_surface'],
+      reason: 'Desktop Host rendered a validated Atelier sandbox preview surface.',
+    })
+    host.uiHandler = uiHandler
+    mockAppletInvoke.mockResolvedValue({
+      accepted: true,
+      opened: true,
+      prepared: true,
+      taskId: 'task-1',
+      artifactId: 'artifact-1',
+      sandboxRef: 'atelier-sandbox://task-1/artifact-1/preview',
+      bodyRef: 'artifact://task-1/artifact-1/body',
+      kind: 'markdown',
+      mode: 'sandbox_manifest',
+      rendererSessionId: 'atelier-preview:task-1:artifact-1',
+      rendererOwner: 'desktop_host',
+      rendererMode: 'host_sandbox_manifest',
+      rendererStatus: 'rendered',
+      rendererCapabilities: ['host_owned_renderer_session', 'host_visual_renderer_surface'],
+      reason: 'prepared',
+      __hostCommands: [
+        {
+          type: 'ui',
+          action: 'openAtelierArtifactPreview',
+          params: {
+            taskId: 'task-1',
+            artifactId: 'artifact-1',
+            sandboxRef: 'atelier-sandbox://task-1/artifact-1/preview',
+            bodyRef: 'artifact://task-1/artifact-1/body',
+            rendererSessionId: 'atelier-preview:task-1:artifact-1',
+            rendererOwner: 'desktop_host',
+            rendererMode: 'host_sandbox_manifest',
+            rendererStatus: 'rendered',
+            rendererCapabilities: ['host_owned_renderer_session', 'host_visual_renderer_surface'],
+          },
+          returnsResult: true,
+        },
+      ],
+    })
+
+    const response = await fakeView.onNativeModulesCall?.(
+      'invoke',
+      {
+        requestId: 'request-atelier-preview',
+        method: 'atelier.artifact.preview.open',
+        params: {
+          taskId: 'task-1',
+          artifactId: 'artifact-1',
+          sandboxRef: 'atelier-sandbox://task-1/artifact-1/preview',
+          bodyRef: 'artifact://task-1/artifact-1/body',
+        },
+      },
+      'bridge',
+    )
+
+    expect(uiHandler).toHaveBeenCalledWith({
+      action: 'openAtelierArtifactPreview',
+      params: expect.objectContaining({
+        rendererSessionId: 'atelier-preview:task-1:artifact-1',
+        rendererOwner: 'desktop_host',
+        rendererMode: 'host_sandbox_manifest',
+        rendererStatus: 'rendered',
+      }),
+      returnsResult: true,
+    })
+    expect(response?.result).toMatchObject({
+      accepted: true,
+      opened: true,
+      prepared: true,
+      rendererSessionId: 'atelier-preview:task-1:artifact-1',
+      rendererOwner: 'desktop_host',
+      rendererMode: 'host_sandbox_manifest',
+      rendererStatus: 'rendered',
+      rendererCapabilities: ['host_owned_renderer_session', 'host_visual_renderer_surface'],
+    })
+    expect((response?.result as Record<string, unknown>).__hostCommands).toBeUndefined()
+  })
+
   it('executes Gateway-authorized Host device commands and returns product viewport data', async () => {
     const { host, fakeView } = await createMountedHost()
     const deviceHandler = vi.fn().mockReturnValue({ width: 1440, height: 900, pixelRatio: 2 })
@@ -396,7 +526,7 @@ describe('LynxHostElement bridge integration', () => {
     expect(response?.result).toEqual({ width: 1440, height: 900, pixelRatio: 2 })
   })
 
-  it('emits Host-driven lifecycle ready/show after reportReady and hide before destroy', async () => {
+  it('emits Host-driven lifecycle ready/show after reportReady and hide on detach', async () => {
     const { host, fakeView } = await createMountedHost()
     mockAppletInvoke.mockResolvedValue({ ok: true, appletId: 'bridge-test', state: 'active' })
 
@@ -443,24 +573,17 @@ describe('LynxHostElement bridge integration', () => {
         sessionId: 'desktop-session-bridge-test',
         kind: 'event',
         topic: 'hide',
-        payload: { sessionId: 'desktop-session-bridge-test', reason: 'host-unmount' },
+        payload: { sessionId: 'desktop-session-bridge-test', reason: 'host-detach' },
       })],
     )
-    expect(fakeView.sendGlobalEvent).toHaveBeenCalledWith(
+    expect(fakeView.sendGlobalEvent).not.toHaveBeenCalledWith(
       'applet.event',
-      [expect.objectContaining({
-        protocol: APPLET_BRIDGE_PROTOCOL,
-        appletId: 'bridge-test',
-        sessionId: 'desktop-session-bridge-test',
-        kind: 'event',
-        topic: 'destroy',
-        payload: { sessionId: 'desktop-session-bridge-test' },
-      })],
+      [expect.objectContaining({ topic: 'destroy' })],
     )
   })
 
-  it('maps product document/window visibility to lifecycle pause/resume events', async () => {
-    const { fakeView, fakeDocument, fakeWindow } = await createMountedHost()
+  it('accepts kernel-driven surface pause/resume and ignores product visibility directly', async () => {
+    const { host, fakeView, fakeDocument, fakeWindow } = await createMountedHost()
     mockAppletInvoke.mockResolvedValue({ ok: true, appletId: 'bridge-test', state: 'active' })
 
     await fakeView.onNativeModulesCall?.(
@@ -473,9 +596,14 @@ describe('LynxHostElement bridge integration', () => {
       'bridge',
     )
 
+    ;(fakeView.sendGlobalEvent as ReturnType<typeof vi.fn>).mockClear()
     fakeDocument.hidden = true
     fakeDocument.visibilityState = 'hidden'
     fakeDocument.emit('visibilitychange')
+    fakeWindow.emit('blur')
+    expect(fakeView.sendGlobalEvent).not.toHaveBeenCalled()
+
+    ;(host as HostUnderTest & { surfacePause(): void }).surfacePause()
     expect(fakeView.sendGlobalEvent).toHaveBeenCalledWith(
       'applet.event',
       [expect.objectContaining({
@@ -484,13 +612,18 @@ describe('LynxHostElement bridge integration', () => {
         sessionId: 'desktop-session-bridge-test',
         kind: 'event',
         topic: 'pause',
-        payload: { sessionId: 'desktop-session-bridge-test', reason: 'document-hidden' },
+        payload: { sessionId: 'desktop-session-bridge-test', reason: 'kernel-pause' },
       })],
     )
 
+    ;(fakeView.sendGlobalEvent as ReturnType<typeof vi.fn>).mockClear()
     fakeDocument.hidden = false
     fakeDocument.visibilityState = 'visible'
     fakeDocument.emit('visibilitychange')
+    fakeWindow.emit('focus')
+    expect(fakeView.sendGlobalEvent).not.toHaveBeenCalled()
+
+    ;(host as HostUnderTest & { surfaceResume(): void }).surfaceResume()
     expect(fakeView.sendGlobalEvent).toHaveBeenCalledWith(
       'applet.event',
       [expect.objectContaining({
@@ -499,24 +632,7 @@ describe('LynxHostElement bridge integration', () => {
         sessionId: 'desktop-session-bridge-test',
         kind: 'event',
         topic: 'resume',
-        payload: { sessionId: 'desktop-session-bridge-test', reason: 'document-visible' },
-      })],
-    )
-
-    fakeWindow.emit('blur')
-    fakeWindow.emit('focus')
-    expect(fakeView.sendGlobalEvent).toHaveBeenCalledWith(
-      'applet.event',
-      [expect.objectContaining({
-        topic: 'pause',
-        payload: { sessionId: 'desktop-session-bridge-test', reason: 'window-blur' },
-      })],
-    )
-    expect(fakeView.sendGlobalEvent).toHaveBeenCalledWith(
-      'applet.event',
-      [expect.objectContaining({
-        topic: 'resume',
-        payload: { sessionId: 'desktop-session-bridge-test', reason: 'window-focus' },
+        payload: { sessionId: 'desktop-session-bridge-test', reason: 'kernel-resume' },
       })],
     )
   })
@@ -546,23 +662,16 @@ describe('LynxHostElement bridge integration', () => {
     expect(fakeView.sendGlobalEvent).not.toHaveBeenCalled()
   })
 
-  it('destroys the manager-owned Gateway session when the host unmounts', async () => {
+  it('releases render resources without destroying the manager-owned Gateway session when the host unmounts', async () => {
     const { host, fakeView } = await createMountedHost()
 
     ;(host as HostUnderTest & { disconnectedCallback(): void }).disconnectedCallback()
 
-    expect(fakeView.sendGlobalEvent).toHaveBeenCalledWith(
+    expect(fakeView.sendGlobalEvent).not.toHaveBeenCalledWith(
       'applet.event',
-      [expect.objectContaining({
-        protocol: APPLET_BRIDGE_PROTOCOL,
-        appletId: 'bridge-test',
-        sessionId: 'desktop-session-bridge-test',
-        kind: 'event',
-        topic: 'destroy',
-        payload: { sessionId: 'desktop-session-bridge-test' },
-      })],
+      [expect.objectContaining({ topic: 'destroy' })],
     )
-    expect(mockUnloadApplet).toHaveBeenCalledWith('bridge-test')
+    expect(mockUnloadApplet).not.toHaveBeenCalled()
     expect(fakeView.remove).toHaveBeenCalled()
   })
 

@@ -18,6 +18,7 @@
 // emit margins / paddings / line-height of its own so it composes
 // inside flex / grid rows without surprises.
 
+import type { CSSProperties, ReactElement } from 'react';
 import { Typography, theme } from 'antd';
 
 const { Text } = Typography;
@@ -30,7 +31,7 @@ export interface FederatedHandleProps {
   /** Override the default size (12px) for places that need a tighter or larger glyph. */
   fontSize?: number;
   /** Optional extra inline style; merged on top of the defaults. */
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }
 
 export function FederatedHandle({
@@ -38,7 +39,7 @@ export function FederatedHandle({
   home,
   fontSize = 12,
   style,
-}: FederatedHandleProps): JSX.Element | null {
+}: FederatedHandleProps): ReactElement | null {
   const { token } = theme.useToken();
   const trimmedLocal = localPart?.trim() ?? '';
   if (!trimmedLocal) return null;

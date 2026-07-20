@@ -11,6 +11,7 @@ const manifest = {
   path: 'packages/prototypes/desktop/features/social-chat/',
   description: 'Desktop private chat and group chat confirmation prototype.',
   order: 40,
+  hidden: true,
   previewExport: 'SocialChatPrototype',
   entry: () => import('./src/SocialChatPrototype'),
 } satisfies PrototypeManifest;

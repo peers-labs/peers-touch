@@ -71,6 +71,7 @@ Each module may define:
 
 Current module contracts:
 
+- [Agent](./modules/agent/README.md) — Agent, Atelier, and Orchestration shell, panel, identity, and responsive behavior.
 - [Social](./modules/social/README.md) — Human federated social activity, feed, detail, composer, reaction, comments, and moderation states.
 - [Auth](./modules/auth/README.md) — Sign-in, account selection, PIN, re-auth, and the federated mesh backdrop as ambient education.
 

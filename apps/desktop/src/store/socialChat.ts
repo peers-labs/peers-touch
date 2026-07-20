@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { create as createProto, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import {
@@ -1221,7 +1221,7 @@ const initialSocialState: Pick<
   typingPeers: {},
 };
 
-export const useSocialChatStore = create<SocialChatState>((set, get) => ({
+export const useSocialChatStore = createDesktopStore<SocialChatState>('socialChat', (set, get) => ({
   ...initialSocialState,
 
   reset: () => set({ ...initialSocialState }),
