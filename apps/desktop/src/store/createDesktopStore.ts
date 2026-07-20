@@ -1,8 +1,10 @@
 import { create, type StateCreator, type StoreApi, type UseBoundStore } from 'zustand';
 
 import { recordStoreUpdate } from '../kernel/frontendRuntimeProfiler';
+import { log } from '../utils/logger';
 
 const MAX_CHANGED_KEYS = 40;
+const FANOUT_WARN_THRESHOLD = 3;
 
 function stateKeys(value: unknown): string[] {
   if (!value || typeof value !== 'object') return [];
@@ -58,6 +60,14 @@ export function createDesktopStore<T>(
         owner: storeName,
         store: storeName,
       });
+      if (activeListenerCount > FANOUT_WARN_THRESHOLD) {
+        log.warn('storeFanoutGuard', 'dispatch fanout exceeds threshold', {
+          store: storeName,
+          fanout: activeListenerCount,
+          threshold: FANOUT_WARN_THRESHOLD,
+          changedKeys,
+        });
+      }
     }) as typeof set;
     return initializer(instrumentedSet, get, api);
   });
