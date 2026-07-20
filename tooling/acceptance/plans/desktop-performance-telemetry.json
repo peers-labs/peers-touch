@@ -1,0 +1,20 @@
+{
+  "id": "desktop-performance-telemetry",
+  "description": "Long-lived Desktop performance telemetry gates. This layer proves Desktop Gateway upload, Station ingest/query/rollup, local inspector diagnostics, and Station mirror sampler evidence.",
+  "logic": {
+    "layer": "telemetry",
+    "question": "Can Desktop performance events flow through the product telemetry sink and return as queryable Station mirror evidence?",
+    "invariant": "Local buffer evidence can diagnose sampler coverage, but Station raw query and rollup remain the product evidence source.",
+    "promote_from_phase0": true
+  },
+  "selected_gates": [
+    "desktop-telemetry-mirror-static-gate",
+    "desktop-telemetry-live-gate",
+    "desktop-telemetry-mirror-template-static-gate",
+    "desktop-telemetry-mirror-template-gate",
+    "desktop-local-telemetry-buffer-static-gate",
+    "desktop-local-telemetry-buffer-gate",
+    "desktop-performance-sampler-static-gate",
+    "desktop-performance-sampler-gate"
+  ]
+}

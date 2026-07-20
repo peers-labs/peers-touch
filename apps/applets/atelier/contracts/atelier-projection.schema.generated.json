@@ -1,0 +1,366 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "peers.atelier.projection.schema.generated.json",
+  "title": "Atelier Projection Contract",
+  "description": "Generated from atelier-projection.contract.json. Do not edit by hand.",
+  "type": "object",
+  "required": [
+    "id",
+    "seq",
+    "patch",
+    "receivedAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seq": {
+      "type": "number",
+      "minimum": 0
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "receivedAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "patch": {
+      "$ref": "#/$defs/patch"
+    }
+  },
+  "$defs": {
+    "patch": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/snapshotPatch"
+        },
+        {
+          "$ref": "#/$defs/taskUpsertPatch"
+        },
+        {
+          "$ref": "#/$defs/taskStatusPatch"
+        },
+        {
+          "$ref": "#/$defs/streamAppendPatch"
+        },
+        {
+          "$ref": "#/$defs/decisionResolvedPatch"
+        },
+        {
+          "$ref": "#/$defs/artifactUpsertPatch"
+        },
+        {
+          "$ref": "#/$defs/gateUpsertPatch"
+        },
+        {
+          "$ref": "#/$defs/contextReplacePatch"
+        },
+        {
+          "$ref": "#/$defs/todoReplacePatch"
+        }
+      ]
+    },
+    "snapshotPatch": {
+      "type": "object",
+      "required": [
+        "kind",
+        "snapshot"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "snapshot"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/snapshot"
+        }
+      }
+    },
+    "taskUpsertPatch": {
+      "type": "object",
+      "required": [
+        "kind",
+        "task"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "task.upsert"
+        },
+        "task": {
+          "type": "object"
+        },
+        "select": {
+          "type": "boolean"
+        }
+      }
+    },
+    "taskStatusPatch": {
+      "type": "object",
+      "required": [
+        "kind",
+        "taskId",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "task.status"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "archived",
+            "deleted"
+          ]
+        }
+      }
+    },
+    "streamAppendPatch": {
+      "type": "object",
+      "required": [
+        "kind",
+        "taskId",
+        "blocks"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "stream.append"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "decisionResolvedPatch": {
+      "type": "object",
+      "required": [
+        "kind",
+        "taskId",
+        "blockId",
+        "choice"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "decision.resolved"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "blockId": {
+          "type": "string"
+        },
+        "choice": {
+          "type": "string"
+        }
+      }
+    },
+    "artifactUpsertPatch": {
+      "type": "object",
+      "required": [
+        "kind",
+        "taskId",
+        "artifact"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "artifact.upsert"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "artifact": {
+          "$ref": "#/$defs/artifact"
+        }
+      }
+    },
+    "gateUpsertPatch": {
+      "type": "object",
+      "required": [
+        "kind",
+        "taskId",
+        "gate"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "gate.upsert"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "gate": {
+          "type": "object"
+        }
+      }
+    },
+    "contextReplacePatch": {
+      "type": "object",
+      "required": [
+        "kind",
+        "taskId",
+        "context"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "context.replace"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "context": {
+          "type": "object"
+        }
+      }
+    },
+    "todoReplacePatch": {
+      "type": "object",
+      "required": [
+        "kind",
+        "taskId",
+        "todos"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "todo.replace"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "todos": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "required": [
+        "version",
+        "selectedTaskId",
+        "workspace"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "atelier-projection/v0"
+        },
+        "selectedTaskId": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "object"
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "meta": {
+          "type": "string"
+        },
+        "previewHint": {
+          "enum": [
+            "markdown",
+            "web",
+            "image",
+            "diff",
+            "metadata",
+            "metadata_only"
+          ]
+        },
+        "bodyRef": {
+          "type": "string"
+        },
+        "bodyHash": {
+          "type": "string"
+        },
+        "bodySize": {
+          "type": "string"
+        },
+        "bodyKind": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "size": {
+          "type": "string"
+        },
+        "previewTarget": {
+          "$ref": "#/$defs/artifactPreviewTarget"
+        },
+        "markdown": false,
+        "content": false,
+        "body": false,
+        "html": false,
+        "diff": false,
+        "patch": false,
+        "url": false,
+        "src": false,
+        "iframe": false
+      }
+    },
+    "artifactPreviewTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "markdown",
+            "web",
+            "image",
+            "diff"
+          ]
+        },
+        "mode": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "sandboxRef": {
+          "type": "string"
+        },
+        "bodyRef": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

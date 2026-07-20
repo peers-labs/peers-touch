@@ -1,8 +1,8 @@
 # Frontend Runtime Architecture — 架构设计
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-07-02 | **Updated**: 2026-07-02
+> **Version**: v1.1
+> **Created**: 2026-07-02 | **Updated**: 2026-07-10
 > **Owner**: Client Platform Team
 > **Module**: `apps/desktop/src/kernel/`, `apps/desktop/src/runtimes/`, `docs/client/common/ui-identity/`
 
@@ -193,7 +193,18 @@ SectionHost 控制 section 是否 mounted、hidden、cached 或 evicted。Featur
 
 AppletContainerShell 管理容器模式、浮动控制、debug、window 形态和 page runtime lease。LynxHost 只负责渲染 applet view 和 bridge invocation。
 
-## 5. 端点 / API
+## 5. 禁止关系
+
+| # | 禁止关系 | 原因 | 决策来源 |
+|---|----------|------|----------|
+| F-1 | Page 在 click-frame 内发起普通 invoke | IPC / Rust 侧处理可能阻塞主线程，破坏点击帧优先原则 | D-10, D-14 |
+| F-2 | Page 通过 mount-time fetch 成为长期 freshness 真源 | 长期业务 freshness 属于 RuntimeProjection，页面只能渲染或做 one-shot prefetch | D-03 |
+| F-3 | Hidden section/tree 在 active switch frame 内同步 render | 隐藏树 render 会抢占可见内容上屏预算 | D-04, D-10 |
+| F-4 | Runtime bootstrap 同步阻塞 boot pipeline | Runtime bootstrap 必须异步化，超时进入降级模式，不能阻塞 shell first paint | D-09 |
+| F-5 | Store dispatch 触发超过 3 个组件重渲染并进入长期 blocking gate | Store fanout 必须通过 selector / batching 治理；该阈值在 D-08/D-12 accepted 前可先 warn-only | D-08, D-12 |
+| F-6 | 客户端本地聚合替代 Station mirror 验收/开发证据 | 验收/开发证据需要原始事件支持跨 runtime 归因；生产遥测策略另行 ADR | D-06, D-13 |
+
+## 6. 端点 / API
 
 本架构不新增 Station API。它要求客户端内部新增或标准化以下内核能力：
 

@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { api, type AccountIdentity, type Agent } from '../services/desktop_api';
 import { toolService, type ToolInfo } from '../services/tool-service';
 import { log } from '../utils/logger';
@@ -39,7 +39,7 @@ interface SettingsState extends RevalidationState {
   updateAgent: (name: string, data: Partial<Agent>) => Promise<void>;
 }
 
-export const useSettingsStore = create<SettingsState>((set, get) => ({
+export const useSettingsStore = createDesktopStore<SettingsState>('settings', (set, get) => ({
   agents: [],
   tools: [],
   currentAgent: 'assistant',
