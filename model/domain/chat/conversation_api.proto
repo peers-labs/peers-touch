@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+import "domain/chat/conversation.proto";
+import "domain/chat/envelope.proto";
+
+// ============================================================================
+// Conversation Subserver API Messages
+//
+// Service-layer request/response types for the unified conversation HTTP API.
+// All domain types (Conversation, ConversationMember, ConversationCommand,
+// CommittedConversationEvent, etc.) are defined in conversation.proto.
+// ============================================================================
+
+// --- Helper Types ---
+
+message CreateGroupMemberInput {
+  string ptid = 1;
+  string station_id = 2;
+}
+
+message DeviceInfoView {
+  string device_id = 1;
+  string label = 2;
+  string created_at = 3;
+  bool revoked = 4;
+}
+
+// --- Conversation Management ---
+
+message CreateDirectConversationRequest {
+  string peer_ptid = 1;
+  string peer_station_peer_id = 2;
+}
+
+message CreateDirectConversationResponse {
+  Conversation conversation = 1;
+}
+
+message CreateGroupConversationRequest {
+  string name = 1;
+  repeated CreateGroupMemberInput members = 2;
+}
+
+message CreateGroupConversationResponse {
+  Conversation conversation = 1;
+}
+
+message GetConversationRequest {
+  string conversation_id = 1;
+}
+
+message GetConversationResponse {
+  Conversation conversation = 1;
+}
+
+message ListConversationsRequest {}
+
+message ListConversationsResponse {
+  repeated Conversation conversations = 1;
+}
+
+message GetConversationMembersRequest {
+  string conversation_id = 1;
+}
+
+message GetConversationMembersResponse {
+  repeated ConversationMember members = 1;
+}
+
+// --- Commands & Events ---
+
+message SubmitConversationCommandRequest {
+  ConversationCommand command = 1;
+}
+
+message SubmitConversationCommandResponse {
+  CommittedConversationEvent event = 1;
+}
+
+message SubmitConversationReceiptRequest {
+  string conversation_id = 1;
+  string message_id = 2;
+  string device_id = 3;
+  ReceiptType receipt_type = 4;
+}
+
+message SubmitConversationReceiptResponse {}
+
+message ListConversationEventsRequest {
+  string conversation_id = 1;
+  int64 after_seq = 2;
+  int32 limit = 3;
+}
+
+message ListConversationEventsResponse {
+  repeated CommittedConversationEvent events = 1;
+}
+
+// --- KeyPackage ---
+
+message UploadKeyPackageRequest {
+  string device_id = 1;
+  bytes data = 2;
+}
+
+message UploadKeyPackageResponse {}
+
+message FetchKeyPackageRequest {
+  string ptid = 1;
+  string home_station_peer_id = 2;
+}
+
+message FetchKeyPackageResponse {
+  bytes data = 1;
+  bool available = 2;
+}
+
+message CountKeyPackagesRequest {}
+
+message CountKeyPackagesResponse {
+  int64 count = 1;
+}
+
+// --- Device Management ---
+
+message RegisterDeviceRequest {
+  string device_id = 1;
+  string label = 2;
+  bytes public_key = 3;
+}
+
+message RegisterDeviceResponse {}
+
+message ListDevicesRequest {}
+
+message ListDevicesResponse {
+  repeated DeviceInfoView devices = 1;
+}
+
+message RevokeDeviceRequest {
+  string device_id = 1;
+}
+
+message RevokeDeviceResponse {}
+
+// --- MLS Distribution ---
+
+message DistributeMlsRequest {
+  string conversation_id = 1;
+  MlsDeliveryKind kind = 2;
+  int64 mls_epoch = 3;
+  bytes opaque_bytes = 4;
+  repeated string recipients = 5;
+}
+
+message DistributeMlsResponse {
+  int32 delivered = 1;
+}
+
+// --- Direct Key Exchange ---
+
+message SendDkxRequest {
+  string recipient_ptid = 1;
+  string recipient_station_peer_id = 2;
+  string session_id = 3;
+  DirectKeyExchangeKind kind = 4;
+  bytes opaque_key_material = 5;
+}
+
+message SendDkxResponse {
+  string envelope_id = 1;
+}

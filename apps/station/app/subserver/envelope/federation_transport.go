@@ -96,7 +96,7 @@ func (t *HTTPFederationTransport) mintFederationToken(ctx context.Context, targe
 		Scope:    envelopeFederationScopeName,
 		Audience: targetPeerID,
 		Issuer:   issuer,
-		Subject:  env.SenderActorDid,
+		Subject:  env.SenderPtid,
 		Custom: map[string]string{
 			"conversation_id": env.ConversationId,
 			"idempotency_key": env.IdempotencyKey,

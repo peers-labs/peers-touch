@@ -272,7 +272,7 @@ export function SearchMessagesModal({
   const decoratedResults = useMemo<DecoratedSearchResult[]>(
     () => searchResults.map((result) => {
       const member = result.scope === 'group'
-        ? groupMembers[result.conversationId]?.find((item) => item.actorDid === result.senderDid)
+        ? groupMembers[result.conversationId]?.find((item) => item.ptid === result.senderDid)
         : undefined;
       const senderLabel = result.senderDid === currentUserDid
         ? t('chat.social.thread.you')

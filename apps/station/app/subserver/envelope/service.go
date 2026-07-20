@@ -24,18 +24,18 @@ type Service interface {
 
 	// Ack marks an inbox item as acknowledged by the device. The item may be
 	// garbage-collected after ACK.
-	Ack(ctx context.Context, recipientDID, deviceID, inboxItemID string) error
+	Ack(ctx context.Context, recipientPtid, deviceID, inboxItemID string) error
 
 	// Resume returns all unacknowledged inbox items for a device, ordered by
 	// queue time. Called on SSE reconnect / cold start with Last-Event-ID cursor.
-	Resume(ctx context.Context, recipientDID, deviceID string, afterCursor string) ([]*chat.DeviceInboxItem, error)
+	Resume(ctx context.Context, recipientPtid, deviceID string, afterCursor string) ([]*chat.DeviceInboxItem, error)
 }
 
 // FederationClaims carries the verified JWT claims from a relay-forward request.
 type FederationClaims struct {
 	IssuerStationPeerID   string
 	AudienceStationPeerID string
-	SenderActorDID        string
+	SenderPtid            string
 	SenderDeviceID        string
 	ConversationID        string
 	IdempotencyKey        string

@@ -201,7 +201,7 @@ export interface ChatThreadCount {
 }
 
 export interface GroupChatFederatedActorInput {
-  actorDid: string;
+  ptid: string;
   homeStationPeerId: string;
   homeStationDomain?: string;
   federatedHandle?: string;
@@ -500,7 +500,7 @@ function normalizeGroupChatFederatedActors(
     return undefined;
   }
   return actors.map((actor) => ({
-    actor_did: actor.actorDid,
+    actor_did: actor.ptid,
     home_station_peer_id: actor.homeStationPeerId,
     home_station_domain: actor.homeStationDomain,
     federated_handle: actor.federatedHandle,

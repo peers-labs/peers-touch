@@ -312,10 +312,10 @@ type StationEnvelope struct {
 	EnvelopeId     string                 `protobuf:"bytes,1,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
 	ConversationId string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	// Routing
-	SenderActorDid             string `protobuf:"bytes,3,opt,name=sender_actor_did,json=senderActorDid,proto3" json:"sender_actor_did,omitempty"`
+	SenderPtid                 string `protobuf:"bytes,3,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
 	SenderDeviceId             string `protobuf:"bytes,4,opt,name=sender_device_id,json=senderDeviceId,proto3" json:"sender_device_id,omitempty"`
 	SenderHomeStationPeerId    string `protobuf:"bytes,5,opt,name=sender_home_station_peer_id,json=senderHomeStationPeerId,proto3" json:"sender_home_station_peer_id,omitempty"`
-	RecipientActorDid          string `protobuf:"bytes,6,opt,name=recipient_actor_did,json=recipientActorDid,proto3" json:"recipient_actor_did,omitempty"`
+	RecipientPtid              string `protobuf:"bytes,6,opt,name=recipient_ptid,json=recipientPtid,proto3" json:"recipient_ptid,omitempty"`
 	RecipientDeviceId          string `protobuf:"bytes,7,opt,name=recipient_device_id,json=recipientDeviceId,proto3" json:"recipient_device_id,omitempty"`
 	RecipientHomeStationPeerId string `protobuf:"bytes,8,opt,name=recipient_home_station_peer_id,json=recipientHomeStationPeerId,proto3" json:"recipient_home_station_peer_id,omitempty"`
 	// Ordering & dedup
@@ -378,9 +378,9 @@ func (x *StationEnvelope) GetConversationId() string {
 	return ""
 }
 
-func (x *StationEnvelope) GetSenderActorDid() string {
+func (x *StationEnvelope) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderActorDid
+		return x.SenderPtid
 	}
 	return ""
 }
@@ -399,9 +399,9 @@ func (x *StationEnvelope) GetSenderHomeStationPeerId() string {
 	return ""
 }
 
-func (x *StationEnvelope) GetRecipientActorDid() string {
+func (x *StationEnvelope) GetRecipientPtid() string {
 	if x != nil {
-		return x.RecipientActorDid
+		return x.RecipientPtid
 	}
 	return ""
 }
@@ -480,7 +480,7 @@ func (x *StationEnvelope) GetExpiresAt() *timestamppb.Timestamp {
 type DeviceInboxItem struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	InboxItemId       string                 `protobuf:"bytes,1,opt,name=inbox_item_id,json=inboxItemId,proto3" json:"inbox_item_id,omitempty"`
-	RecipientActorDid string                 `protobuf:"bytes,2,opt,name=recipient_actor_did,json=recipientActorDid,proto3" json:"recipient_actor_did,omitempty"`
+	RecipientPtid     string                 `protobuf:"bytes,2,opt,name=recipient_ptid,json=recipientPtid,proto3" json:"recipient_ptid,omitempty"`
 	RecipientDeviceId string                 `protobuf:"bytes,3,opt,name=recipient_device_id,json=recipientDeviceId,proto3" json:"recipient_device_id,omitempty"`
 	Envelope          *StationEnvelope       `protobuf:"bytes,4,opt,name=envelope,proto3" json:"envelope,omitempty"`
 	Status            InboxItemStatus        `protobuf:"varint,5,opt,name=status,proto3,enum=peers_touch.model.chat.v1.InboxItemStatus" json:"status,omitempty"`
@@ -529,9 +529,9 @@ func (x *DeviceInboxItem) GetInboxItemId() string {
 	return ""
 }
 
-func (x *DeviceInboxItem) GetRecipientActorDid() string {
+func (x *DeviceInboxItem) GetRecipientPtid() string {
 	if x != nil {
-		return x.RecipientActorDid
+		return x.RecipientPtid
 	}
 	return ""
 }
@@ -830,15 +830,16 @@ var File_domain_chat_envelope_proto protoreflect.FileDescriptor
 
 const file_domain_chat_envelope_proto_rawDesc = "" +
 	"\n" +
-	"\x1adomain/chat/envelope.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb2\x06\n" +
+	"\x1adomain/chat/envelope.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa0\x06\n" +
 	"\x0fStationEnvelope\x12\x1f\n" +
 	"\venvelope_id\x18\x01 \x01(\tR\n" +
 	"envelopeId\x12'\n" +
-	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12(\n" +
-	"\x10sender_actor_did\x18\x03 \x01(\tR\x0esenderActorDid\x12(\n" +
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x1f\n" +
+	"\vsender_ptid\x18\x03 \x01(\tR\n" +
+	"senderPtid\x12(\n" +
 	"\x10sender_device_id\x18\x04 \x01(\tR\x0esenderDeviceId\x12<\n" +
-	"\x1bsender_home_station_peer_id\x18\x05 \x01(\tR\x17senderHomeStationPeerId\x12.\n" +
-	"\x13recipient_actor_did\x18\x06 \x01(\tR\x11recipientActorDid\x12.\n" +
+	"\x1bsender_home_station_peer_id\x18\x05 \x01(\tR\x17senderHomeStationPeerId\x12%\n" +
+	"\x0erecipient_ptid\x18\x06 \x01(\tR\rrecipientPtid\x12.\n" +
 	"\x13recipient_device_id\x18\a \x01(\tR\x11recipientDeviceId\x12B\n" +
 	"\x1erecipient_home_station_peer_id\x18\b \x01(\tR\x1arecipientHomeStationPeerId\x12'\n" +
 	"\x0fidempotency_key\x18\t \x01(\tR\x0eidempotencyKey\x12)\n" +
@@ -850,10 +851,10 @@ const file_domain_chat_envelope_proto_rawDesc = "" +
 	"\x16home_station_signature\x18\x0e \x01(\fR\x14homeStationSignature\x127\n" +
 	"\tissued_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x95\x04\n" +
+	"expires_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x8c\x04\n" +
 	"\x0fDeviceInboxItem\x12\"\n" +
-	"\rinbox_item_id\x18\x01 \x01(\tR\vinboxItemId\x12.\n" +
-	"\x13recipient_actor_did\x18\x02 \x01(\tR\x11recipientActorDid\x12.\n" +
+	"\rinbox_item_id\x18\x01 \x01(\tR\vinboxItemId\x12%\n" +
+	"\x0erecipient_ptid\x18\x02 \x01(\tR\rrecipientPtid\x12.\n" +
 	"\x13recipient_device_id\x18\x03 \x01(\tR\x11recipientDeviceId\x12F\n" +
 	"\benvelope\x18\x04 \x01(\v2*.peers_touch.model.chat.v1.StationEnvelopeR\benvelope\x12B\n" +
 	"\x06status\x18\x05 \x01(\x0e2*.peers_touch.model.chat.v1.InboxItemStatusR\x06status\x12+\n" +

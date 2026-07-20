@@ -32,9 +32,9 @@ func (b *EnvelopeBridge) SubmitEvent(ctx context.Context, conv *chat.Conversatio
 
 		env := &chat.StationEnvelope{
 			EnvelopeId:                 uuid.NewString(),
-			IdempotencyKey:             event.EventId + ":" + member.ActorDid,
-			SenderActorDid:             event.CommittedByStationPeerId,
-			RecipientActorDid:          member.ActorDid,
+			IdempotencyKey:             event.EventId + ":" + member.Ptid,
+			SenderPtid:                 event.CommittedByStationPeerId,
+			RecipientPtid:              member.Ptid,
 			RecipientHomeStationPeerId: member.ActorHomeStationPeerId,
 			ConversationId:             conv.ConversationId,
 			PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT,
@@ -48,7 +48,7 @@ func (b *EnvelopeBridge) SubmitEvent(ctx context.Context, conv *chat.Conversatio
 	return nil
 }
 
-func (b *EnvelopeBridge) SubmitReceipt(ctx context.Context, receipt *chat.MessageReceipt, recipientDID, recipientStation string) error {
+func (b *EnvelopeBridge) SubmitReceipt(ctx context.Context, receipt *chat.MessageReceipt, recipientPtid, recipientStation string) error {
 	receiptBytes, err := proto.Marshal(receipt)
 	if err != nil {
 		return err
@@ -56,9 +56,9 @@ func (b *EnvelopeBridge) SubmitReceipt(ctx context.Context, receipt *chat.Messag
 
 	env := &chat.StationEnvelope{
 		EnvelopeId:                 uuid.NewString(),
-		IdempotencyKey:             receipt.MessageId + ":" + receipt.ActorDid + ":" + receipt.ReceiptType.String(),
-		SenderActorDid:             receipt.ActorDid,
-		RecipientActorDid:          recipientDID,
+		IdempotencyKey:             receipt.MessageId + ":" + receipt.Ptid + ":" + receipt.ReceiptType.String(),
+		SenderPtid:                 receipt.Ptid,
+		RecipientPtid:              recipientPtid,
 		RecipientHomeStationPeerId: recipientStation,
 		ConversationId:             receipt.ConversationId,
 		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_RECEIPT,
