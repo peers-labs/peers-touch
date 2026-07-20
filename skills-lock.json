@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "skills": {
+    "habitat-usage": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/habitat-usage/SKILL.md",
+      "computedHash": "35d7376c32d00557670d90fa537b729da239b26391e9500a52ae2d4f9b55f9da"
+    },
+    "lynx-debug-info-remapping": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-debug-info-remapping/SKILL.md",
+      "computedHash": "318a1643ec21e2aa29c631d51de32326df296b6a419ace22afcfb50375a4e247"
+    },
+    "lynx-devtool": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-devtool/SKILL.md",
+      "computedHash": "729e7c7deb1467b7cdfe32de769c84ff0baf22b1099d97a4ee54ace7838ef745"
+    },
+    "lynx-trace-analysis": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-trace-analysis/SKILL.md",
+      "computedHash": "3c9147cc297ef100429d7a8ee0d61a391b9ce6738de7c61765f6c32f4ac24344"
+    },
+    "lynx-trace-record": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-trace-record/SKILL.md",
+      "computedHash": "384f81ec2291575cb3ec6899cc7b4858ffbe747d75a055446294371247406134"
+    },
+    "lynx-typescript": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-typescript/SKILL.md",
+      "computedHash": "15576a4f45dc2a117b54fd34e50649133ae5508a8d3544ca0d700d836ae5b3c8"
+    },
+    "lynx-ui": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-ui/SKILL.md",
+      "computedHash": "3fa2a7d9b55a225dc359dffe7f11a8a79b4cb597a3d7ecf00448a64f5c32fdb3"
+    },
+    "reactlynx-best-practices": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/reactlynx-best-practices/SKILL.md",
+      "computedHash": "70a2b3a395a551d5e6d601edd817279b85eb730617dddf55cad71a6d74dbfc14"
+    },
+    "rspeedy-bundle-size": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/rspeedy-bundle-size/SKILL.md",
+      "computedHash": "152f008895705b8add73f4e45e13a5310f68860c5cc61ac633aeec955e456b73"
+    },
+    "vanilla-lynx": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/vanilla-lynx/SKILL.md",
+      "computedHash": "4b772a2d7ef0af6250f3036e4b11b9411d38a17a2961f44a551765af9b3459f0"
+    }
+  }
+}

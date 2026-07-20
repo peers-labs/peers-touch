@@ -18,8 +18,8 @@ import {
   FileText,
   Loader2,
 } from 'lucide-react';
-import { useSearchStore } from '../store/search';
 import type { SearchResultItem, SearchSourceGroup } from '../services/desktop_api';
+import { useActiveSearchSlice } from './useActiveSearchStore';
 
 function useDebounce(callback: (value: string) => void, delay: number) {
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -124,7 +124,21 @@ export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void 
     query, activeSource, sources, sourceResults, loadingPerSource,
     aiAnswer, aiSources, aiLoading,
     setActiveSource, searchAll, search, aiSearch, reset,
-  } = useSearchStore();
+  } = useActiveSearchSlice((state) => ({
+    query: state.query,
+    activeSource: state.activeSource,
+    sources: state.sources,
+    sourceResults: state.sourceResults,
+    loadingPerSource: state.loadingPerSource,
+    aiAnswer: state.aiAnswer,
+    aiSources: state.aiSources,
+    aiLoading: state.aiLoading,
+    setActiveSource: state.setActiveSource,
+    searchAll: state.searchAll,
+    search: state.search,
+    aiSearch: state.aiSearch,
+    reset: state.reset,
+  }));
 
   const [inputValue, setInputValue] = useState(query);
   const SOURCE_TABS_ENABLED = true;
