@@ -229,6 +229,7 @@
 ### 4.3 规范层真源
 
 - 通用规范：`global/coding-guide/common/`
+- **API 字段放置标准**：`global/coding-guide/api-field-placement.md`
 - Desktop 规范：`global/coding-guide/desktop/`
 - Mobile 规范：`global/coding-guide/mobile/`
 - Station 规范：`global/coding-guide/station/`

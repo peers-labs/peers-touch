@@ -25,7 +25,7 @@ import (
 const (
 	envelopeFederationScopeName      = "envelope-federation-deliver"
 	envelopeFederationMaxTTL         = 60 * time.Second
-	envelopeFederationClaimSender    = "sender_actor_did"
+	envelopeFederationClaimSender    = "sender_ptid"
 	envelopeFederationClaimConv      = "conversation_id"
 	envelopeFederationClaimIdempKey  = "idempotency_key"
 )
@@ -121,13 +121,15 @@ func (s *subServer) Status() server.Status { return s.status }
 
 func (s *subServer) Handlers() []server.Handler {
 	logID := serverwrapper.LogID()
+	deviceIDWrapper := serverwrapper.DeviceID()
+	idempotencyWrapper := serverwrapper.IdempotencyKey()
 	return []server.Handler{
 		server.NewTypedHandler("env-submit", "/envelope/submit", server.POST,
-			s.handleSubmit, logID, s.jwtWrapper),
+			s.handleSubmit, logID, deviceIDWrapper, idempotencyWrapper, s.jwtWrapper),
 		server.NewTypedHandler("env-ack", "/envelope/ack", server.POST,
-			s.handleAck, logID, s.jwtWrapper),
+			s.handleAck, logID, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("env-resume", "/envelope/resume", server.GET,
-			s.handleResume, logID, s.jwtWrapper),
+			s.handleResume, logID, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("env-fed-deliver", "/envelope/federation/deliver", server.POST,
 			s.handleFederationDeliver, logID, s.federationWrapper),
 	}

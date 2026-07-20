@@ -71,6 +71,7 @@ pub struct KeyPackageUploadInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyPackageFetchInput {
     pub actor_did: String,
+    pub home_station_peer_id: Option<String>,
 }
 
 // --- Helper ---
@@ -345,7 +346,10 @@ pub fn keypackage_fetch(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let body = json!({ "actor_did": input.actor_did });
+    let mut body = json!({ "actor_did": input.actor_did });
+    if let Some(ref station_id) = input.home_station_peer_id {
+        body["home_station_peer_id"] = json!(station_id);
+    }
     match station_client::request_json_auth(Method::POST, "/keypackage/fetch", &token, None, Some(&body)) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "keypackage fetch failed"),

@@ -692,10 +692,10 @@ export function peerOfSession(
 
 function participantProfileOfSession(
   s: FriendChatSession,
-  actorDid: string,
+  ptid: string,
 ): ActorAvatarProfile | null {
-  if (!actorDid) return null;
-  if (s.participantADid === actorDid) {
+  if (!ptid) return null;
+  if (s.participantADid === ptid) {
     return {
       did: s.participantADid || '',
       name: s.participantADisplayName || s.participantADid || '',
@@ -716,10 +716,10 @@ function peerDisplayName(s: FriendChatSession, viewerDid: string | null): string
 export function actorProfileFromSessions(
   sessions: FriendChatSession[],
   viewerDid: string | null,
-  actorDid: string,
+  ptid: string,
   currentUserProfile?: CurrentUserProfile | null,
 ): ActorAvatarProfile {
-  const did = actorDid.trim();
+  const did = ptid.trim();
   const fromSession = sessions
     .map((s) => participantProfileOfSession(s, did))
     .find((p): p is ActorAvatarProfile => !!p);
@@ -752,7 +752,7 @@ function normalizeGroupMember(raw: unknown): GroupMember {
   return {
     ...(item as unknown as GroupMember),
     groupUlid: String(item.groupUlid ?? item.group_ulid ?? ''),
-    actorDid: String(item.actorDid ?? item.actor_did ?? ''),
+    ptid: String(item.ptid ?? item.actor_did ?? ''),
     invitedBy: String(item.invitedBy ?? item.invited_by ?? ''),
   };
 }
@@ -979,15 +979,15 @@ function searchThreadMetadata(
   };
 }
 
-function conversationStateStorageKey(actorDid: string | null): string {
-  return `socialChat:conversationLocalState:${actorDid || 'anonymous'}`;
+function conversationStateStorageKey(ptid: string | null): string {
+  return `socialChat:conversationLocalState:${ptid || 'anonymous'}`;
 }
 
-function loadConversationLocalState(actorDid: string | null): Record<string, ConversationLocalState> {
+function loadConversationLocalState(ptid: string | null): Record<string, ConversationLocalState> {
   try {
     const parsed = readDesktopDomainValueSync<Record<string, ConversationLocalState>>(
       'chat.conversation-settings',
-      conversationStateStorageKey(actorDid),
+      conversationStateStorageKey(ptid),
     );
     if (!parsed || typeof parsed !== 'object') return {};
     return parsed;
@@ -996,9 +996,9 @@ function loadConversationLocalState(actorDid: string | null): Record<string, Con
   }
 }
 
-function saveConversationLocalState(actorDid: string | null, state: Record<string, ConversationLocalState>): void {
+function saveConversationLocalState(ptid: string | null, state: Record<string, ConversationLocalState>): void {
   try {
-    writeDesktopDomainValueSync('chat.conversation-settings', conversationStateStorageKey(actorDid), state);
+    writeDesktopDomainValueSync('chat.conversation-settings', conversationStateStorageKey(ptid), state);
   } catch (error) {
     log.warn('socialChat', 'save conversation local state failed', error);
   }
@@ -1027,6 +1027,7 @@ async function decodeGroupMessage(
   try {
     const cipherBytes = Uint8Array.from(atob(payloadB64), c => c.charCodeAt(0));
     const plaintext = await imServiceV1.mlsGroup.decrypt(groupUlid, cipherBytes);
+    await imServiceV1.mlsGroup.save(groupUlid);
     const payload = decodeEncryptedChatPayloadBytes(plaintext);
     const result = payload
       ? applyDecodedChatPayload(message, payload)
@@ -1720,9 +1721,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const deviceId = localStorage.getItem('peers_im_device_id') ?? '';
       const envelope = createProto(StationEnvelopeSchema, {
         conversationId: sessionUlid,
-        senderActorDid: did,
+        senderPtid: did,
         senderDeviceId: deviceId,
-        recipientActorDid: receiverDid,
+        recipientPtid: receiverDid,
         payloadType: EnvelopePayloadType.COMMITTED_EVENT,
         payloadBytes,
         idempotencyKey: crypto.randomUUID(),
@@ -1754,11 +1755,12 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     try {
       const plaintextBytes = createEncryptedChatPayloadBytes(content, attachments ?? [], type);
       const ciphertext = await imServiceV1.mlsGroup.encrypt(groupUlid, plaintextBytes);
+      await imServiceV1.mlsGroup.save(groupUlid);
 
       const deviceId = localStorage.getItem('peers_im_device_id') ?? '';
       const envelope = createProto(StationEnvelopeSchema, {
         conversationId: groupUlid,
-        senderActorDid: did,
+        senderPtid: did,
         senderDeviceId: deviceId,
         payloadType: EnvelopePayloadType.COMMITTED_EVENT,
         payloadBytes: ciphertext,
@@ -2606,7 +2608,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       };
     }
 
-    const member = state.groupMembers[conversationUlid]?.find((item) => item.actorDid === did);
+    const member = state.groupMembers[conversationUlid]?.find((item) => item.ptid === did);
     const profile = actorProfileFromSessions(
       state.sessions,
       state.currentUserDid,

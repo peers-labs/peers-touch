@@ -16,7 +16,7 @@ type Service interface {
 
 	// CreateGroup creates a new group conversation. This Station becomes the authority.
 	// The membership_epoch starts at 1.
-	CreateGroup(ctx context.Context, name string, ownerDID string, ownerStation string, members []MemberEntry) (*chat.Conversation, error)
+	CreateGroup(ctx context.Context, name string, ownerPtid string, ownerStation string, members []MemberEntry) (*chat.Conversation, error)
 
 	// SubmitCommand validates and processes a ConversationCommand.
 	// For direct chats where this Station is authority: commits immediately.
@@ -31,7 +31,7 @@ type Service interface {
 	GetConversation(ctx context.Context, conversationID string) (*chat.Conversation, error)
 
 	// ListConversations returns all conversations for an actor.
-	ListConversations(ctx context.Context, actorDID string) ([]*chat.Conversation, error)
+	ListConversations(ctx context.Context, ptid string) ([]*chat.Conversation, error)
 
 	// GetMembers returns members for a conversation.
 	GetMembers(ctx context.Context, conversationID string) ([]*chat.ConversationMember, error)
@@ -42,7 +42,7 @@ type Service interface {
 
 // MemberEntry is used when creating a group to specify initial members.
 type MemberEntry struct {
-	ActorDID  string
+	Ptid      string
 	StationID string
 	Role      chat.MemberRole
 }
@@ -56,7 +56,7 @@ type Repository interface {
 	GetConversation(ctx context.Context, conversationID string) (*chat.Conversation, error)
 
 	// ListByActor returns all conversations where the actor is an active member.
-	ListByActor(ctx context.Context, actorDID string) ([]*chat.Conversation, error)
+	ListByActor(ctx context.Context, ptid string) ([]*chat.Conversation, error)
 
 	// UpsertMember creates or updates a conversation member.
 	UpsertMember(ctx context.Context, member *chat.ConversationMember) error
@@ -65,7 +65,7 @@ type Repository interface {
 	GetMembers(ctx context.Context, conversationID string) ([]*chat.ConversationMember, error)
 
 	// GetMember returns a specific member.
-	GetMember(ctx context.Context, conversationID, actorDID string) (*chat.ConversationMember, error)
+	GetMember(ctx context.Context, conversationID, ptid string) (*chat.ConversationMember, error)
 
 	// AppendEvent persists a committed event and updates group_seq.
 	AppendEvent(ctx context.Context, event *chat.CommittedConversationEvent) error
@@ -79,6 +79,11 @@ type Repository interface {
 	// BumpMembershipEpoch atomically sets the membership_epoch for a conversation.
 	// This binds the MLS epoch to the authority-sequenced membership change (C-4).
 	BumpMembershipEpoch(ctx context.Context, conversationID string, newEpoch int64) error
+
+	// HaveSharedConversation returns true if actorA and actorB are both active
+	// members of at least one common conversation. Used by the social gate for
+	// relationship-based access control.
+	HaveSharedConversation(ctx context.Context, actorA, actorB string) (bool, error)
 }
 
 // EnvelopeSubmitter routes committed events to recipients via the envelope service.
@@ -88,7 +93,7 @@ type EnvelopeSubmitter interface {
 	SubmitEvent(ctx context.Context, conv *chat.Conversation, members []*chat.ConversationMember, event *chat.CommittedConversationEvent) error
 
 	// SubmitReceipt routes a message receipt to the message sender.
-	SubmitReceipt(ctx context.Context, receipt *chat.MessageReceipt, senderDID, senderStation string) error
+	SubmitReceipt(ctx context.Context, receipt *chat.MessageReceipt, recipientPtid, recipientStation string) error
 }
 
 // DirectConversationIDFunc generates a deterministic conversation ID for a direct pair.

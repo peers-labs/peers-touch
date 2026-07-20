@@ -126,7 +126,7 @@ func (r *memRepo) MarkInboxAcked(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *memRepo) UnackedInboxItems(_ context.Context, recipientDID, deviceID string, afterCursor string, limit int) ([]*chat.DeviceInboxItem, error) {
+func (r *memRepo) UnackedInboxItems(_ context.Context, recipientPtid, deviceID string, afterCursor string, limit int) ([]*chat.DeviceInboxItem, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var result []*chat.DeviceInboxItem
@@ -138,7 +138,7 @@ func (r *memRepo) UnackedInboxItems(_ context.Context, recipientDID, deviceID st
 			}
 			continue
 		}
-		if item.RecipientActorDid == recipientDID &&
+		if item.RecipientPtid == recipientPtid &&
 			item.RecipientDeviceId == deviceID &&
 			item.Status != chat.InboxItemStatus_INBOX_ITEM_STATUS_ACKED {
 			result = append(result, item)
@@ -183,8 +183,8 @@ func TestSubmit_LocalRecipient_DeliverToInbox(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-1",
-		SenderActorDid:             "did:alice",
-		RecipientActorDid:          "did:bob",
+		SenderPtid:             "did:alice",
+		RecipientPtid:          "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		ConversationId:             "conv-1",
@@ -219,8 +219,8 @@ func TestSubmit_CrossStation_EnqueuesOutbox(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-2",
-		SenderActorDid:             "did:alice",
-		RecipientActorDid:          "did:bob",
+		SenderPtid:             "did:alice",
+		RecipientPtid:          "did:bob",
 		RecipientHomeStationPeerId: "station-B",
 		ConversationId:             "conv-1",
 		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT,
@@ -251,8 +251,8 @@ func TestSubmit_Idempotency(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-dup",
-		SenderActorDid:             "did:alice",
-		RecipientActorDid:          "did:bob",
+		SenderPtid:             "did:alice",
+		RecipientPtid:          "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		ConversationId:             "conv-1",
@@ -277,8 +277,8 @@ func TestAck_MarksItemAcked(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-ack",
-		SenderActorDid:             "did:alice",
-		RecipientActorDid:          "did:bob",
+		SenderPtid:             "did:alice",
+		RecipientPtid:          "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_RECEIPT,
@@ -307,8 +307,8 @@ func TestResume_CursorBasedRecovery(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		env := &chat.StationEnvelope{
 			IdempotencyKey:             "key-resume-" + string(rune('a'+i)),
-			SenderActorDid:             "did:alice",
-			RecipientActorDid:          "did:bob",
+			SenderPtid:             "did:alice",
+			RecipientPtid:          "did:bob",
 			RecipientDeviceId:          "device-1",
 			RecipientHomeStationPeerId: "station-A",
 			PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT,
@@ -335,8 +335,8 @@ func TestSubmit_MlsKeyDelivery_LocalRouting(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "mls-welcome-1",
-		SenderActorDid:             "did:alice",
-		RecipientActorDid:          "did:bob",
+		SenderPtid:             "did:alice",
+		RecipientPtid:          "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		ConversationId:             "group-1",
@@ -384,8 +384,8 @@ func TestSubmit_MlsKeyDelivery_CrossStation(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "mls-commit-fed-1",
-		SenderActorDid:             "did:alice",
-		RecipientActorDid:          "did:charlie",
+		SenderPtid:             "did:alice",
+		RecipientPtid:          "did:charlie",
 		RecipientHomeStationPeerId: "station-B",
 		ConversationId:             "group-1",
 		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY,
@@ -422,8 +422,8 @@ func TestSubmit_DirectKeyExchange_LocalRouting(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "dkx-session-1:did:alice:PREKEY_BUNDLE",
-		SenderActorDid:             "did:alice",
-		RecipientActorDid:          "did:bob",
+		SenderPtid:             "did:alice",
+		RecipientPtid:          "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE,
@@ -455,8 +455,8 @@ func TestC5_DuplicateSubmit_Idempotent(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "c5-dup-test",
-		SenderActorDid:             "did:alice",
-		RecipientActorDid:          "did:bob",
+		SenderPtid:             "did:alice",
+		RecipientPtid:          "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		ConversationId:             "conv-c5",
@@ -488,8 +488,8 @@ func TestC5_OutOfOrderSubmit_ConvergesToOrderedInbox(t *testing.T) {
 	for i := 5; i >= 1; i-- {
 		env := &chat.StationEnvelope{
 			IdempotencyKey:             "c5-order-" + string(rune('a'+i)),
-			SenderActorDid:             "did:alice",
-			RecipientActorDid:          "did:bob",
+			SenderPtid:             "did:alice",
+			RecipientPtid:          "did:bob",
 			RecipientDeviceId:          "device-1",
 			RecipientHomeStationPeerId: "station-A",
 			ConversationId:             "conv-c5-order",
@@ -521,8 +521,8 @@ func TestC5_ReconnectAfterPartialAck_ConsistentState(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		env := &chat.StationEnvelope{
 			IdempotencyKey:             "c5-reconnect-" + string(rune('a'+i)),
-			SenderActorDid:             "did:alice",
-			RecipientActorDid:          "did:bob",
+			SenderPtid:             "did:alice",
+			RecipientPtid:          "did:bob",
 			RecipientDeviceId:          "device-1",
 			RecipientHomeStationPeerId: "station-A",
 			ConversationId:             "conv-c5-reconnect",

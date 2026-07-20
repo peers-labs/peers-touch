@@ -165,6 +165,15 @@ Use domain-specific loggers only (see platform docs for specifics).
 
 Frontend-backend collaborative APIs: **NO MOCK** unless the user explicitly says so. Using mock = cheating.
 
+### No Unauthorized Version Bumps
+
+The project is at its **current stage (v1)**. Do not "upgrade" version numbers on your own initiative.
+
+- **Ask the user before bumping ANY version number** — framework, protocol/wire, proto message version, document, dependency/library, package, API, or schema. No exceptions.
+- Do not write speculative "v2 / next-gen / phase-next" version labels into project rules, design docs, or code as if they were the current stage. Describe the current stage as **v1**.
+- Third-party protocol names that happen to contain a version (e.g. an external spec's own "vN") are **references, not our version** — cite them as external names and never let them imply a bump to our own artifacts.
+- If a change genuinely needs a new version, STOP and get explicit approval first; then bump exactly the one artifact approved, and update its changelog/migration notes in the same change.
+
 ### Logging Security
 
 Never log tokens, passwords, secret keys, or PII. Error logs must include context + details.

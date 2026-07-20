@@ -81,7 +81,7 @@ func (s *DefaultService) isLocalRecipient(env *chat.StationEnvelope) bool {
 func (s *DefaultService) deliverLocal(ctx context.Context, env *chat.StationEnvelope) (string, error) {
 	item := &chat.DeviceInboxItem{
 		InboxItemId:      uuid.NewString(),
-		RecipientActorDid: env.RecipientActorDid,
+		RecipientPtid: env.RecipientPtid,
 		RecipientDeviceId: env.RecipientDeviceId,
 		Envelope:         env,
 		Status:           chat.InboxItemStatus_INBOX_ITEM_STATUS_PENDING,
@@ -94,12 +94,12 @@ func (s *DefaultService) deliverLocal(ctx context.Context, env *chat.StationEnve
 	}
 
 	if env.RecipientDeviceId != "" {
-		delivered := s.bus.PublishToDevice(ctx, env.RecipientActorDid, env.RecipientDeviceId, env)
+		delivered := s.bus.PublishToDevice(ctx, env.RecipientPtid, env.RecipientDeviceId, env)
 		if delivered {
 			_ = s.repo.MarkInboxDelivered(ctx, inboxID, time.Now())
 		}
 	} else {
-		count := s.bus.PublishToActor(ctx, env.RecipientActorDid, env)
+		count := s.bus.PublishToActor(ctx, env.RecipientPtid, env)
 		if count > 0 {
 			_ = s.repo.MarkInboxDelivered(ctx, inboxID, time.Now())
 		}
@@ -129,7 +129,7 @@ func (s *DefaultService) validateFederationClaims(env *chat.StationEnvelope, cla
 	if claims.AudienceStationPeerID != localID {
 		return fmt.Errorf("audience mismatch: want %s got %s", localID, claims.AudienceStationPeerID)
 	}
-	if claims.SenderActorDID != env.SenderActorDid {
+	if claims.SenderPtid != env.SenderPtid {
 		return fmt.Errorf("sender DID mismatch")
 	}
 	if claims.ConversationID != "" && claims.ConversationID != env.ConversationId {

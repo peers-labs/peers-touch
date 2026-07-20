@@ -30,9 +30,9 @@ async function cmd<TInput, TData>(command: string, input?: TInput): Promise<TDat
 }
 
 const conversationService: ConversationServiceContract = {
-  async createDirect(peerActorDid, peerStationPeerId) {
+  async createDirect(peerPtid, peerStationPeerId) {
     const resp = await cmd<any, { conversation: Conversation }>('conversation_create_direct', {
-      peer_actor_did: peerActorDid,
+      peer_actor_did: peerPtid,
       peer_station_peer_id: peerStationPeerId ?? '',
     })
     return resp.conversation
@@ -41,7 +41,7 @@ const conversationService: ConversationServiceContract = {
   async createGroup(name, members) {
     const resp = await cmd<any, { conversation: Conversation }>('conversation_create_group', {
       name,
-      members: members.map(m => ({ actor_did: m.actorDid, station_id: m.stationId ?? '' })),
+      members: members.map(m => ({ actor_did: m.ptid, station_id: m.stationId ?? '' })),
     })
     return resp.conversation
   },
@@ -112,9 +112,10 @@ const keyPackageService: KeyPackageServiceContract = {
     await cmd('keypackage_upload', { device_id: deviceId, data: Array.from(data) })
   },
 
-  async fetch(actorDid) {
+  async fetch(ptid, homeStationPeerId) {
     const resp = await cmd<any, { data: number[] | null; available: boolean }>('keypackage_fetch', {
-      actor_did: actorDid,
+      actor_did: ptid,
+      home_station_peer_id: homeStationPeerId ?? null,
     })
     return {
       data: resp.data ? new Uint8Array(resp.data) : null,
@@ -148,8 +149,8 @@ const deviceService: DeviceServiceContract = {
 }
 
 const mlsGroupService: MlsGroupServiceContract = {
-  async initIdentity(actorDid) {
-    await cmd('mls_init_identity', { actor_did: actorDid })
+  async initIdentity(ptid) {
+    await cmd('mls_init_identity', { actor_did: ptid })
   },
 
   async generateKeyPackage() {
@@ -245,9 +246,9 @@ const mlsGroupService: MlsGroupServiceContract = {
 }
 
 const dkxService: DirectKeyExchangeServiceContract = {
-  async send(recipientActorDid, sessionId, kind, opaqueKeyMaterial, recipientStationPeerId) {
+  async send(recipientPtid, sessionId, kind, opaqueKeyMaterial, recipientStationPeerId) {
     const resp = await cmd<any, { envelope_id: string }>('dkx_send', {
-      recipient_actor_did: recipientActorDid,
+      recipient_actor_did: recipientPtid,
       recipient_station_peer_id: recipientStationPeerId ?? '',
       session_id: sessionId,
       kind: kind as number,

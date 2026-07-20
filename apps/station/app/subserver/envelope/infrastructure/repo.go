@@ -171,7 +171,7 @@ func (r *PostgresRepository) EnqueueInbox(ctx context.Context, item *chat.Device
 	}
 	model := &InboxModel{
 		InboxItemID:       item.InboxItemId,
-		RecipientDID:      item.RecipientActorDid,
+		RecipientDID:      item.RecipientPtid,
 		RecipientDeviceID: item.RecipientDeviceId,
 		IdempotencyKey:    item.Envelope.IdempotencyKey,
 		EnvelopeBytes:     envBytes,
@@ -273,7 +273,7 @@ func (m *InboxModel) toProto() (*chat.DeviceInboxItem, error) {
 	}
 	return &chat.DeviceInboxItem{
 		InboxItemId:       m.InboxItemID,
-		RecipientActorDid: m.RecipientDID,
+		RecipientPtid: m.RecipientDID,
 		RecipientDeviceId: m.RecipientDeviceID,
 		Envelope:          env,
 		Status:            chat.InboxItemStatus(m.Status),

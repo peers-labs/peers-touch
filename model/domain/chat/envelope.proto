@@ -26,10 +26,10 @@ message StationEnvelope {
   string conversation_id = 2;
 
   // Routing
-  string sender_actor_did = 3;
+  string sender_ptid = 3;
   string sender_device_id = 4;
   string sender_home_station_peer_id = 5;
-  string recipient_actor_did = 6;
+  string recipient_ptid = 6;
   string recipient_device_id = 7;
   string recipient_home_station_peer_id = 8;
 
@@ -78,7 +78,7 @@ enum EnvelopePayloadType {
 // Per-device durable inbox entry. Station persists these until ACK'd.
 message DeviceInboxItem {
   string inbox_item_id = 1;
-  string recipient_actor_did = 2;
+  string recipient_ptid = 2;
   string recipient_device_id = 3;
   StationEnvelope envelope = 4;
   InboxItemStatus status = 5;

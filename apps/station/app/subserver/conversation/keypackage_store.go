@@ -14,7 +14,7 @@ import (
 // for group creation or member addition.
 type KeyPackage struct {
 	ID        uint      `gorm:"column:id;primaryKey"`
-	ActorDID  string    `gorm:"column:actor_did;size:255;index:idx_kp_actor"`
+	Ptid      string    `gorm:"column:ptid;size:255;index:idx_kp_actor"`
 	DeviceID  string    `gorm:"column:device_id;size:255;index:idx_kp_device"`
 	StationID string    `gorm:"column:station_id;size:255"`
 	Data      []byte    `gorm:"column:data;type:bytea"`
@@ -37,9 +37,9 @@ func (s *KeyPackageStore) AutoMigrate() error {
 }
 
 // Upload stores a new KeyPackage for the given actor/device.
-func (s *KeyPackageStore) Upload(ctx context.Context, actorDID, deviceID, stationID string, data []byte) error {
+func (s *KeyPackageStore) Upload(ctx context.Context, ptid, deviceID, stationID string, data []byte) error {
 	kp := &KeyPackage{
-		ActorDID:  actorDID,
+		Ptid:      ptid,
 		DeviceID:  deviceID,
 		StationID: stationID,
 		Data:      data,
@@ -50,11 +50,11 @@ func (s *KeyPackageStore) Upload(ctx context.Context, actorDID, deviceID, statio
 
 // FetchAndConsume atomically retrieves and deletes one KeyPackage for the actor.
 // Returns nil, nil if no packages are available.
-func (s *KeyPackageStore) FetchAndConsume(ctx context.Context, actorDID string) ([]byte, error) {
+func (s *KeyPackageStore) FetchAndConsume(ctx context.Context, ptid string) ([]byte, error) {
 	var kp KeyPackage
 	err := s.db.WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-		Where("actor_did = ?", actorDID).
+		Where("ptid = ?", ptid).
 		Order("created_at ASC").
 		First(&kp).Error
 	if err != nil {
@@ -71,27 +71,27 @@ func (s *KeyPackageStore) FetchAndConsume(ctx context.Context, actorDID string) 
 }
 
 // CountAvailable returns how many KeyPackages are stored for the actor.
-func (s *KeyPackageStore) CountAvailable(ctx context.Context, actorDID string) (int64, error) {
+func (s *KeyPackageStore) CountAvailable(ctx context.Context, ptid string) (int64, error) {
 	var count int64
 	err := s.db.WithContext(ctx).
 		Model(&KeyPackage{}).
-		Where("actor_did = ?", actorDID).
+		Where("ptid = ?", ptid).
 		Count(&count).Error
 	return count, err
 }
 
 // FetchForMultiple retrieves one KeyPackage per actor (for Welcome generation).
-// Consumed packages are deleted. Returns a map of actorDID -> keyPackageData.
+// Consumed packages are deleted. Returns a map of ptid -> keyPackageData.
 // Actors with no available packages are omitted from the result.
-func (s *KeyPackageStore) FetchForMultiple(ctx context.Context, actorDIDs []string) (map[string][]byte, error) {
-	result := make(map[string][]byte, len(actorDIDs))
-	for _, did := range actorDIDs {
-		data, err := s.FetchAndConsume(ctx, did)
+func (s *KeyPackageStore) FetchForMultiple(ctx context.Context, ptids []string) (map[string][]byte, error) {
+	result := make(map[string][]byte, len(ptids))
+	for _, ptid := range ptids {
+		data, err := s.FetchAndConsume(ctx, ptid)
 		if err != nil {
 			return nil, err
 		}
 		if data != nil {
-			result[did] = data
+			result[ptid] = data
 		}
 	}
 	return result, nil

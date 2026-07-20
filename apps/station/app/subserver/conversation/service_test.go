@@ -45,13 +45,13 @@ func (r *memConvRepo) GetConversation(_ context.Context, id string) (*chat.Conve
 	return nil, nil
 }
 
-func (r *memConvRepo) ListByActor(_ context.Context, actorDID string) ([]*chat.Conversation, error) {
+func (r *memConvRepo) ListByActor(_ context.Context, ptid string) ([]*chat.Conversation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var result []*chat.Conversation
 	for convID, members := range r.members {
 		for _, m := range members {
-			if m.ActorDid == actorDID && m.MemberStatus == chat.MemberStatus_MEMBER_STATUS_ACTIVE {
+			if m.Ptid == ptid && m.MemberStatus == chat.MemberStatus_MEMBER_STATUS_ACTIVE {
 				if conv, ok := r.convs[convID]; ok {
 					result = append(result, conv)
 				}
@@ -66,7 +66,7 @@ func (r *memConvRepo) UpsertMember(_ context.Context, member *chat.ConversationM
 	defer r.mu.Unlock()
 	members := r.members[member.ConversationId]
 	for i, m := range members {
-		if m.ActorDid == member.ActorDid {
+		if m.Ptid == member.Ptid {
 			members[i] = member
 			return nil
 		}
@@ -81,11 +81,11 @@ func (r *memConvRepo) GetMembers(_ context.Context, conversationID string) ([]*c
 	return r.members[conversationID], nil
 }
 
-func (r *memConvRepo) GetMember(_ context.Context, conversationID, actorDID string) (*chat.ConversationMember, error) {
+func (r *memConvRepo) GetMember(_ context.Context, conversationID, ptid string) (*chat.ConversationMember, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, m := range r.members[conversationID] {
-		if m.ActorDid == actorDID {
+		if m.Ptid == ptid {
 			return m, nil
 		}
 	}
@@ -128,6 +128,26 @@ func (r *memConvRepo) BumpMembershipEpoch(_ context.Context, conversationID stri
 		conv.MembershipEpoch = newEpoch
 	}
 	return nil
+}
+
+func (r *memConvRepo) HaveSharedConversation(_ context.Context, actorA, actorB string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, members := range r.members {
+		hasA, hasB := false, false
+		for _, m := range members {
+			if m.Ptid == actorA && m.MemberStatus == chat.MemberStatus_MEMBER_STATUS_ACTIVE {
+				hasA = true
+			}
+			if m.Ptid == actorB && m.MemberStatus == chat.MemberStatus_MEMBER_STATUS_ACTIVE {
+				hasB = true
+			}
+		}
+		if hasA && hasB {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 type spyEnvelope struct {
@@ -196,7 +216,7 @@ func TestSubmitCommand_SendMessage(t *testing.T) {
 
 	cmd := &chat.ConversationCommand{
 		ConversationId: convID,
-		SenderActorDid: "did:alice",
+		SenderPtid: "did:alice",
 		SenderDeviceId: "device-1",
 		ClientTs:       timestamppb.New(time.Now()),
 		Payload: &chat.ConversationCommand_SendMessage{
@@ -219,8 +239,8 @@ func TestSubmitCommand_SendMessage(t *testing.T) {
 	if msgEvent == nil {
 		t.Fatal("expected MessageCommittedEvent")
 	}
-	if msgEvent.SenderActorDid != "did:alice" {
-		t.Fatalf("expected sender did:alice, got %s", msgEvent.SenderActorDid)
+	if msgEvent.SenderPtid != "did:alice" {
+		t.Fatalf("expected sender did:alice, got %s", msgEvent.SenderPtid)
 	}
 	if string(msgEvent.EncryptedPayload) != "hello bob" {
 		t.Fatalf("payload mismatch")
@@ -241,7 +261,7 @@ func TestSubmitCommand_NonMember_Rejected(t *testing.T) {
 
 	cmd := &chat.ConversationCommand{
 		ConversationId: convID,
-		SenderActorDid: "did:charlie",
+		SenderPtid: "did:charlie",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
 				EncryptedPayload: []byte("intrusion"),
@@ -273,9 +293,9 @@ func TestCreateGroup_And_MembershipEpochBinding(t *testing.T) {
 	svc := conversation.NewConversationService(repo, spy, "station-A")
 
 	members := []conversation.MemberEntry{
-		{ActorDID: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
-		{ActorDID: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
-		{ActorDID: "did:charlie", StationID: "station-B", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
+		{Ptid: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
+		{Ptid: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
+		{Ptid: "did:charlie", StationID: "station-B", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
 	}
 
 	conv, err := svc.CreateGroup(context.Background(), "Test Group", "did:alice", "station-A", members)
@@ -291,11 +311,11 @@ func TestCreateGroup_And_MembershipEpochBinding(t *testing.T) {
 
 	addCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:alice",
+		SenderPtid: "did:alice",
 		Payload: &chat.ConversationCommand_AddMembers{
 			AddMembers: &chat.AddMembersCommand{
 				Members: []*chat.MemberAddEntry{
-					{ActorDid: "did:dave", ActorHomeStationPeerId: "station-C", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
+					{Ptid: "did:dave", ActorHomeStationPeerId: "station-C", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
 				},
 			},
 		},
@@ -319,10 +339,10 @@ func TestCreateGroup_And_MembershipEpochBinding(t *testing.T) {
 
 	removeCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:alice",
+		SenderPtid: "did:alice",
 		Payload: &chat.ConversationCommand_RemoveMembers{
 			RemoveMembers: &chat.RemoveMembersCommand{
-				ActorDids: []string{"did:bob"},
+				Ptids: []string{"did:bob"},
 			},
 		},
 	}
@@ -347,7 +367,7 @@ func TestSubmitReceipt_RoutesToOtherMembers(t *testing.T) {
 	receipt := &chat.MessageReceipt{
 		ConversationId: convID,
 		MessageId:      "msg-001",
-		ActorDid:       "did:bob",
+		Ptid:       "did:bob",
 		DeviceId:       "device-1",
 		ReceiptType:    chat.ReceiptType_RECEIPT_TYPE_READ,
 	}
@@ -376,7 +396,7 @@ func TestListEvents_PaginatedHistory(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		cmd := &chat.ConversationCommand{
 			ConversationId: convID,
-			SenderActorDid: "did:alice",
+			SenderPtid: "did:alice",
 			SenderDeviceId: "device-1",
 			Payload: &chat.ConversationCommand_SendMessage{
 				SendMessage: &chat.SendMessageCommand{
@@ -412,17 +432,17 @@ func TestRemovedMember_CannotSendMessage(t *testing.T) {
 	svc := conversation.NewConversationService(repo, spy, "station-A")
 
 	members := []conversation.MemberEntry{
-		{ActorDID: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
-		{ActorDID: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
+		{Ptid: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
+		{Ptid: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
 	}
 	conv, _ := svc.CreateGroup(context.Background(), "Test", "did:alice", "station-A", members)
 
 	removeCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:alice",
+		SenderPtid: "did:alice",
 		Payload: &chat.ConversationCommand_RemoveMembers{
 			RemoveMembers: &chat.RemoveMembersCommand{
-				ActorDids: []string{"did:bob"},
+				Ptids: []string{"did:bob"},
 			},
 		},
 	}
@@ -430,7 +450,7 @@ func TestRemovedMember_CannotSendMessage(t *testing.T) {
 
 	sendCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:bob",
+		SenderPtid: "did:bob",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
 				EncryptedPayload: []byte("should fail"),
@@ -451,21 +471,21 @@ func TestLeftMember_CannotSendMessage(t *testing.T) {
 	svc := conversation.NewConversationService(repo, spy, "station-A")
 
 	members := []conversation.MemberEntry{
-		{ActorDID: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
-		{ActorDID: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
+		{Ptid: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
+		{Ptid: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
 	}
 	conv, _ := svc.CreateGroup(context.Background(), "Test", "did:alice", "station-A", members)
 
 	leaveCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:bob",
+		SenderPtid: "did:bob",
 		Payload:        &chat.ConversationCommand_Leave{Leave: &chat.LeaveCommand{}},
 	}
 	svc.SubmitCommand(context.Background(), leaveCmd)
 
 	sendCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:bob",
+		SenderPtid: "did:bob",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
 				EncryptedPayload: []byte("should fail"),
@@ -486,8 +506,8 @@ func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
 	svc := conversation.NewConversationService(repo, spy, "station-A")
 
 	members := []conversation.MemberEntry{
-		{ActorDID: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
-		{ActorDID: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
+		{Ptid: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
+		{Ptid: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
 	}
 	conv, _ := svc.CreateGroup(context.Background(), "Epoch Test", "did:alice", "station-A", members)
 	if conv.MembershipEpoch != 1 {
@@ -496,11 +516,11 @@ func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
 
 	addCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:alice",
+		SenderPtid: "did:alice",
 		Payload: &chat.ConversationCommand_AddMembers{
 			AddMembers: &chat.AddMembersCommand{
 				Members: []*chat.MemberAddEntry{
-					{ActorDid: "did:charlie", ActorHomeStationPeerId: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
+					{Ptid: "did:charlie", ActorHomeStationPeerId: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
 				},
 			},
 		},
@@ -512,7 +532,7 @@ func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
 
 	leaveCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:charlie",
+		SenderPtid: "did:charlie",
 		Payload:        &chat.ConversationCommand_Leave{Leave: &chat.LeaveCommand{}},
 	}
 	ev2, _ := svc.SubmitCommand(context.Background(), leaveCmd)
@@ -522,10 +542,10 @@ func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
 
 	removeCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:alice",
+		SenderPtid: "did:alice",
 		Payload: &chat.ConversationCommand_RemoveMembers{
 			RemoveMembers: &chat.RemoveMembersCommand{
-				ActorDids: []string{"did:bob"},
+				Ptids: []string{"did:bob"},
 			},
 		},
 	}
@@ -537,7 +557,7 @@ func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
 	// Non-membership commands should NOT bump epoch
 	sendCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:alice",
+		SenderPtid: "did:alice",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
 				EncryptedPayload: []byte("hello"),
@@ -558,9 +578,9 @@ func TestEnvelopeFanout_OnlyActiveMembers(t *testing.T) {
 	svc := conversation.NewConversationService(repo, spy, "station-A")
 
 	members := []conversation.MemberEntry{
-		{ActorDID: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
-		{ActorDID: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
-		{ActorDID: "did:charlie", StationID: "station-B", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
+		{Ptid: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
+		{Ptid: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
+		{Ptid: "did:charlie", StationID: "station-B", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
 	}
 	conv, _ := svc.CreateGroup(context.Background(), "Fanout Test", "did:alice", "station-A", members)
 
@@ -571,10 +591,10 @@ func TestEnvelopeFanout_OnlyActiveMembers(t *testing.T) {
 	// Remove bob
 	removeCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:alice",
+		SenderPtid: "did:alice",
 		Payload: &chat.ConversationCommand_RemoveMembers{
 			RemoveMembers: &chat.RemoveMembersCommand{
-				ActorDids: []string{"did:bob"},
+				Ptids: []string{"did:bob"},
 			},
 		},
 	}
@@ -587,7 +607,7 @@ func TestEnvelopeFanout_OnlyActiveMembers(t *testing.T) {
 	// Send message — should only fan out to alice + charlie (bob removed)
 	sendCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderActorDid: "did:alice",
+		SenderPtid: "did:alice",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
 				EncryptedPayload: []byte("private post-removal"),
@@ -601,5 +621,79 @@ func TestEnvelopeFanout_OnlyActiveMembers(t *testing.T) {
 	defer spy.mu.Unlock()
 	if len(spy.events) != 1 {
 		t.Fatalf("expected 1 envelope submission event, got %d", len(spy.events))
+	}
+}
+
+func TestCrossStation_DirectMessage_E2E(t *testing.T) {
+	repo := newMemConvRepo()
+	spy := &spyEnvelope{}
+	svc := conversation.NewConversationService(repo, spy, "station-A")
+
+	conv, err := svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-B")
+	if err != nil {
+		t.Fatalf("CreateDirect cross-station failed: %v", err)
+	}
+
+	members, _ := svc.GetMembers(context.Background(), conv.ConversationId)
+	if len(members) != 2 {
+		t.Fatalf("expected 2 members, got %d", len(members))
+	}
+
+	var aliceMember, bobMember *chat.ConversationMember
+	for _, m := range members {
+		switch m.Ptid {
+		case "did:alice":
+			aliceMember = m
+		case "did:bob":
+			bobMember = m
+		}
+	}
+	if aliceMember == nil || bobMember == nil {
+		t.Fatal("expected both alice and bob as members")
+	}
+	if aliceMember.ActorHomeStationPeerId != "station-A" {
+		t.Fatalf("alice station expected station-A, got %s", aliceMember.ActorHomeStationPeerId)
+	}
+	if bobMember.ActorHomeStationPeerId != "station-B" {
+		t.Fatalf("bob station expected station-B, got %s", bobMember.ActorHomeStationPeerId)
+	}
+
+	spy.mu.Lock()
+	spy.events = nil
+	spy.mu.Unlock()
+
+	sendCmd := &chat.ConversationCommand{
+		ConversationId: conv.ConversationId,
+		SenderPtid: "did:alice",
+		Payload: &chat.ConversationCommand_SendMessage{
+			SendMessage: &chat.SendMessageCommand{
+				EncryptedPayload: []byte("encrypted-dm-payload"),
+				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+			},
+		},
+	}
+	event, err := svc.SubmitCommand(context.Background(), sendCmd)
+	if err != nil {
+		t.Fatalf("SubmitCommand failed: %v", err)
+	}
+	if event == nil {
+		t.Fatal("expected committed event from SubmitCommand")
+	}
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if len(spy.events) != 1 {
+		t.Fatalf("expected 1 event submission (message), got %d", len(spy.events))
+	}
+	committed := spy.events[0]
+	msgEvt := committed.GetMessageCommitted()
+	if msgEvt == nil {
+		t.Fatal("expected MessageCommittedEvent payload")
+	}
+	if string(msgEvt.EncryptedPayload) != "encrypted-dm-payload" {
+		t.Fatalf("payload mismatch: %s", string(msgEvt.EncryptedPayload))
+	}
+	if msgEvt.SenderPtid != "did:alice" {
+		t.Fatalf("sender expected did:alice, got %s", msgEvt.SenderPtid)
 	}
 }

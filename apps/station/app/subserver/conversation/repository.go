@@ -24,7 +24,7 @@ type conversationModel struct {
 	Name                   string    `gorm:"column:name;size:255"`
 	Description            string    `gorm:"column:description;type:text"`
 	AvatarCID              string    `gorm:"column:avatar_cid;size:255"`
-	OwnerActorDID          string    `gorm:"column:owner_actor_did;size:255"`
+	OwnerPtid              string    `gorm:"column:owner_ptid;size:255"`
 	MaxMembers             int32     `gorm:"column:max_members"`
 	Visibility             int32     `gorm:"column:visibility"`
 	CreatedAt              time.Time `gorm:"column:created_at"`
@@ -36,7 +36,7 @@ func (*conversationModel) TableName() string { return "conversations" }
 type conversationMemberModel struct {
 	ID                     uint       `gorm:"column:id;primaryKey"`
 	ConversationID         string     `gorm:"column:conversation_id;size:128;index:idx_member_conv;uniqueIndex:idx_member_conv_actor"`
-	ActorDID               string     `gorm:"column:actor_did;size:255;index:idx_member_actor;uniqueIndex:idx_member_conv_actor"`
+	Ptid                   string     `gorm:"column:ptid;size:255;index:idx_member_actor;uniqueIndex:idx_member_conv_actor"`
 	Role                   int32      `gorm:"column:role"`
 	MemberStatus           int32      `gorm:"column:member_status"`
 	ActorHomeStationPeerID string     `gorm:"column:actor_home_station_peer_id;size:255"`
@@ -45,7 +45,7 @@ type conversationMemberModel struct {
 	Muted                  bool       `gorm:"column:muted"`
 	MutedUntil             *time.Time `gorm:"column:muted_until"`
 	JoinedAt               time.Time  `gorm:"column:joined_at"`
-	InvitedByActorDID      string     `gorm:"column:invited_by_actor_did;size:255"`
+	InvitedByPtid          string     `gorm:"column:invited_by_ptid;size:255"`
 }
 
 func (*conversationMemberModel) TableName() string { return "conversation_members" }
@@ -81,7 +81,7 @@ func (r *postgresConversationRepo) UpsertConversation(ctx context.Context, conv 
 		Name:                   conv.Name,
 		Description:            conv.Description,
 		AvatarCID:              conv.AvatarCid,
-		OwnerActorDID:          conv.OwnerActorDid,
+		OwnerPtid:              conv.OwnerPtid,
 		MaxMembers:             conv.MaxMembers,
 		Visibility:             int32(conv.Visibility),
 		CreatedAt:              conv.CreatedAt.AsTime(),
@@ -103,10 +103,10 @@ func (r *postgresConversationRepo) GetConversation(ctx context.Context, conversa
 	return model.toProto(), nil
 }
 
-func (r *postgresConversationRepo) ListByActor(ctx context.Context, actorDID string) ([]*chat.Conversation, error) {
+func (r *postgresConversationRepo) ListByActor(ctx context.Context, ptid string) ([]*chat.Conversation, error) {
 	var members []conversationMemberModel
 	if err := r.db.WithContext(ctx).
-		Where("actor_did = ? AND member_status = ?", actorDID, int32(chat.MemberStatus_MEMBER_STATUS_ACTIVE)).
+		Where("ptid = ? AND member_status = ?", ptid, int32(chat.MemberStatus_MEMBER_STATUS_ACTIVE)).
 		Find(&members).Error; err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (r *postgresConversationRepo) ListByActor(ctx context.Context, actorDID str
 func (r *postgresConversationRepo) UpsertMember(ctx context.Context, member *chat.ConversationMember) error {
 	model := &conversationMemberModel{
 		ConversationID:         member.ConversationId,
-		ActorDID:               member.ActorDid,
+		Ptid:                   member.Ptid,
 		Role:                   int32(member.Role),
 		MemberStatus:           int32(member.MemberStatus),
 		ActorHomeStationPeerID: member.ActorHomeStationPeerId,
@@ -143,11 +143,11 @@ func (r *postgresConversationRepo) UpsertMember(ctx context.Context, member *cha
 		Nickname:               member.Nickname,
 		Muted:                  member.Muted,
 		JoinedAt:               member.JoinedAt.AsTime(),
-		InvitedByActorDID:      member.InvitedByActorDid,
+		InvitedByPtid:          member.InvitedByPtid,
 	}
 	return r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "conversation_id"}, {Name: "actor_did"}},
+			Columns:   []clause.Column{{Name: "conversation_id"}, {Name: "ptid"}},
 			DoUpdates: clause.AssignmentColumns([]string{"role", "member_status", "nickname", "muted"}),
 		}).
 		Create(model).Error
@@ -167,10 +167,10 @@ func (r *postgresConversationRepo) GetMembers(ctx context.Context, conversationI
 	return result, nil
 }
 
-func (r *postgresConversationRepo) GetMember(ctx context.Context, conversationID, actorDID string) (*chat.ConversationMember, error) {
+func (r *postgresConversationRepo) GetMember(ctx context.Context, conversationID, ptid string) (*chat.ConversationMember, error) {
 	var model conversationMemberModel
 	if err := r.db.WithContext(ctx).
-		Where("conversation_id = ? AND actor_did = ?", conversationID, actorDID).
+		Where("conversation_id = ? AND ptid = ?", conversationID, ptid).
 		First(&model).Error; err != nil {
 		return nil, err
 	}
@@ -228,6 +228,19 @@ func (r *postgresConversationRepo) BumpMembershipEpoch(ctx context.Context, conv
 		Update("membership_epoch", newEpoch).Error
 }
 
+// HaveSharedConversation checks whether actorA and actorB are both active members
+// of at least one common conversation using a self-join on the members table.
+func (r *postgresConversationRepo) HaveSharedConversation(ctx context.Context, actorA, actorB string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT COUNT(1) FROM conversation_members m1
+		JOIN conversation_members m2 ON m1.conversation_id = m2.conversation_id
+		WHERE m1.ptid = ? AND m2.ptid = ?
+		  AND m1.member_status = 1 AND m2.member_status = 1
+		LIMIT 1`, actorA, actorB).Count(&count).Error
+	return count > 0, err
+}
+
 // --- Proto converters ---
 
 func (m *conversationModel) toProto() *chat.Conversation {
@@ -240,7 +253,7 @@ func (m *conversationModel) toProto() *chat.Conversation {
 		Name:                   m.Name,
 		Description:            m.Description,
 		AvatarCid:              m.AvatarCID,
-		OwnerActorDid:          m.OwnerActorDID,
+		OwnerPtid:              m.OwnerPtid,
 		MaxMembers:             m.MaxMembers,
 		Visibility:             chat.GroupVisibilityV1(m.Visibility),
 		CreatedAt:              timestamppb.New(m.CreatedAt),
@@ -251,7 +264,7 @@ func (m *conversationModel) toProto() *chat.Conversation {
 func (m *conversationMemberModel) toProto() *chat.ConversationMember {
 	return &chat.ConversationMember{
 		ConversationId:         m.ConversationID,
-		ActorDid:               m.ActorDID,
+		Ptid:                   m.Ptid,
 		Role:                   chat.MemberRole(m.Role),
 		MemberStatus:           chat.MemberStatus(m.MemberStatus),
 		ActorHomeStationPeerId: m.ActorHomeStationPeerID,
@@ -259,6 +272,6 @@ func (m *conversationMemberModel) toProto() *chat.ConversationMember {
 		Nickname:               m.Nickname,
 		Muted:                  m.Muted,
 		JoinedAt:               timestamppb.New(m.JoinedAt),
-		InvitedByActorDid:      m.InvitedByActorDID,
+		InvitedByPtid:          m.InvitedByPtid,
 	}
 }

@@ -55,7 +55,7 @@ func (s *DefaultService) CreateDirect(ctx context.Context, actorA, actorB string
 
 	memberA := &chat.ConversationMember{
 		ConversationId:         convID,
-		ActorDid:               actorA,
+		Ptid:                   actorA,
 		Role:                   chat.MemberRole_MEMBER_ROLE_MEMBER,
 		MemberStatus:           chat.MemberStatus_MEMBER_STATUS_ACTIVE,
 		ActorHomeStationPeerId: actorAStation,
@@ -63,7 +63,7 @@ func (s *DefaultService) CreateDirect(ctx context.Context, actorA, actorB string
 	}
 	memberB := &chat.ConversationMember{
 		ConversationId:         convID,
-		ActorDid:               actorB,
+		Ptid:                   actorB,
 		Role:                   chat.MemberRole_MEMBER_ROLE_MEMBER,
 		MemberStatus:           chat.MemberStatus_MEMBER_STATUS_ACTIVE,
 		ActorHomeStationPeerId: actorBStation,
@@ -104,7 +104,7 @@ func (s *DefaultService) CreateDirect(ctx context.Context, actorA, actorB string
 	return conv, nil
 }
 
-func (s *DefaultService) CreateGroup(ctx context.Context, name string, ownerDID string, ownerStation string, members []MemberEntry) (*chat.Conversation, error) {
+func (s *DefaultService) CreateGroup(ctx context.Context, name string, ownerPtid string, ownerStation string, members []MemberEntry) (*chat.Conversation, error) {
 	convID := uuid.NewString()
 	now := s.clock()
 
@@ -115,7 +115,7 @@ func (s *DefaultService) CreateGroup(ctx context.Context, name string, ownerDID 
 		MembershipEpoch:        1,
 		Status:                 chat.ConversationStatus_CONVERSATION_STATUS_ACTIVE,
 		Name:                   name,
-		OwnerActorDid:          ownerDID,
+		OwnerPtid:              ownerPtid,
 		CreatedAt:              timestamppb.New(now),
 		UpdatedAt:              timestamppb.New(now),
 	}
@@ -127,19 +127,19 @@ func (s *DefaultService) CreateGroup(ctx context.Context, name string, ownerDID 
 	protoMembers := make([]*chat.ConversationMember, 0, len(members))
 	for _, entry := range members {
 		role := entry.Role
-		if entry.ActorDID == ownerDID {
+		if entry.Ptid == ownerPtid {
 			role = chat.MemberRole_MEMBER_ROLE_OWNER
 		}
 		member := &chat.ConversationMember{
 			ConversationId:         convID,
-			ActorDid:               entry.ActorDID,
+			Ptid:                   entry.Ptid,
 			Role:                   role,
 			MemberStatus:           chat.MemberStatus_MEMBER_STATUS_ACTIVE,
 			ActorHomeStationPeerId: entry.StationID,
 			JoinedAt:               timestamppb.New(now),
 		}
 		if err := s.repo.UpsertMember(ctx, member); err != nil {
-			return nil, fmt.Errorf("conversation: add initial member %s failed: %w", entry.ActorDID, err)
+			return nil, fmt.Errorf("conversation: add initial member %s failed: %w", entry.Ptid, err)
 		}
 		protoMembers = append(protoMembers, member)
 	}
@@ -183,7 +183,7 @@ func (s *DefaultService) SubmitCommand(ctx context.Context, cmd *chat.Conversati
 		return nil, fmt.Errorf("conversation: not active (status=%v)", conv.Status)
 	}
 
-	member, err := s.repo.GetMember(ctx, cmd.ConversationId, cmd.SenderActorDid)
+	member, err := s.repo.GetMember(ctx, cmd.ConversationId, cmd.SenderPtid)
 	if err != nil || member == nil {
 		return nil, fmt.Errorf("conversation: sender not a member")
 	}
@@ -212,8 +212,8 @@ func (s *DefaultService) GetConversation(ctx context.Context, conversationID str
 	return s.repo.GetConversation(ctx, conversationID)
 }
 
-func (s *DefaultService) ListConversations(ctx context.Context, actorDID string) ([]*chat.Conversation, error) {
-	return s.repo.ListByActor(ctx, actorDID)
+func (s *DefaultService) ListConversations(ctx context.Context, ptid string) ([]*chat.Conversation, error) {
+	return s.repo.ListByActor(ctx, ptid)
 }
 
 func (s *DefaultService) GetMembers(ctx context.Context, conversationID string) ([]*chat.ConversationMember, error) {
@@ -238,14 +238,14 @@ func (s *DefaultService) SubmitReceipt(ctx context.Context, receipt *chat.Messag
 	}
 
 	for _, member := range members {
-		if member.ActorDid == receipt.ActorDid {
+		if member.Ptid == receipt.Ptid {
 			continue
 		}
 		if member.MemberStatus != chat.MemberStatus_MEMBER_STATUS_ACTIVE {
 			continue
 		}
 		if s.envelope != nil {
-			_ = s.envelope.SubmitReceipt(ctx, receipt, member.ActorDid, member.ActorHomeStationPeerId)
+			_ = s.envelope.SubmitReceipt(ctx, receipt, member.Ptid, member.ActorHomeStationPeerId)
 		}
 	}
 	return nil
@@ -272,7 +272,7 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 		event.Payload = &chat.CommittedConversationEvent_MessageCommitted{
 			MessageCommitted: &chat.MessageCommittedEvent{
 				MessageId:            uuid.NewString(),
-				SenderActorDid:       cmd.SenderActorDid,
+				SenderPtid:          cmd.SenderPtid,
 				SenderDeviceId:       cmd.SenderDeviceId,
 				EncryptedPayload:     p.SendMessage.EncryptedPayload,
 				ContentType:          p.SendMessage.ContentType,
@@ -286,7 +286,7 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 		event.Payload = &chat.CommittedConversationEvent_MessageEdited{
 			MessageEdited: &chat.MessageEditedEvent{
 				MessageId:        p.EditMessage.TargetMessageId,
-				EditorActorDid:   cmd.SenderActorDid,
+				EditorPtid:      cmd.SenderPtid,
 				EncryptedPayload: p.EditMessage.EncryptedPayload,
 				EditedAt:         timestamppb.New(now),
 			},
@@ -294,8 +294,8 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 	case *chat.ConversationCommand_RetractMessage:
 		event.Payload = &chat.CommittedConversationEvent_MessageRetracted{
 			MessageRetracted: &chat.MessageRetractedEvent{
-				MessageId:          p.RetractMessage.TargetMessageId,
-				RetractorActorDid:  cmd.SenderActorDid,
+				MessageId:         p.RetractMessage.TargetMessageId,
+				RetractorPtid:    cmd.SenderPtid,
 				RetractedAt:        timestamppb.New(now),
 			},
 		}
@@ -308,18 +308,18 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 		for _, entry := range p.AddMembers.Members {
 			member := &chat.ConversationMember{
 				ConversationId:         conv.ConversationId,
-				ActorDid:               entry.ActorDid,
+				Ptid:                   entry.Ptid,
 				Role:                   entry.Role,
 				MemberStatus:           chat.MemberStatus_MEMBER_STATUS_ACTIVE,
 				ActorHomeStationPeerId: entry.ActorHomeStationPeerId,
 				JoinedAt:               timestamppb.New(now),
-				InvitedByActorDid:      cmd.SenderActorDid,
+				InvitedByPtid:          cmd.SenderPtid,
 			}
 			if err := s.repo.UpsertMember(ctx, member); err != nil {
-				return nil, fmt.Errorf("conversation: add member %s failed: %w", entry.ActorDid, err)
+				return nil, fmt.Errorf("conversation: add member %s failed: %w", entry.Ptid, err)
 			}
 			changes = append(changes, &chat.MemberChange{
-				ActorDid:               entry.ActorDid,
+				Ptid:                   entry.Ptid,
 				Action:                 chat.MemberChangeAction_MEMBER_CHANGE_ACTION_ADDED,
 				Role:                   entry.Role,
 				ActorHomeStationPeerId: entry.ActorHomeStationPeerId,
@@ -340,19 +340,19 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 			return nil, fmt.Errorf("conversation: remove_members only valid for group conversations")
 		}
 		newEpoch := conv.MembershipEpoch + 1
-		changes := make([]*chat.MemberChange, 0, len(p.RemoveMembers.ActorDids))
-		for _, actorDID := range p.RemoveMembers.ActorDids {
+		changes := make([]*chat.MemberChange, 0, len(p.RemoveMembers.Ptids))
+		for _, ptid := range p.RemoveMembers.Ptids {
 			removedMember := &chat.ConversationMember{
 				ConversationId: conv.ConversationId,
-				ActorDid:       actorDID,
+				Ptid:           ptid,
 				MemberStatus:   chat.MemberStatus_MEMBER_STATUS_REMOVED,
 			}
 			if err := s.repo.UpsertMember(ctx, removedMember); err != nil {
-				return nil, fmt.Errorf("conversation: remove member %s failed: %w", actorDID, err)
+				return nil, fmt.Errorf("conversation: remove member %s failed: %w", ptid, err)
 			}
 			changes = append(changes, &chat.MemberChange{
-				ActorDid: actorDID,
-				Action:   chat.MemberChangeAction_MEMBER_CHANGE_ACTION_REMOVED,
+				Ptid:   ptid,
+				Action: chat.MemberChangeAction_MEMBER_CHANGE_ACTION_REMOVED,
 			})
 		}
 		if err := s.repo.BumpMembershipEpoch(ctx, conv.ConversationId, newEpoch); err != nil {
@@ -369,7 +369,7 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 		newEpoch := conv.MembershipEpoch + 1
 		leftMember := &chat.ConversationMember{
 			ConversationId: conv.ConversationId,
-			ActorDid:       cmd.SenderActorDid,
+			Ptid:           cmd.SenderPtid,
 			MemberStatus:   chat.MemberStatus_MEMBER_STATUS_LEFT,
 		}
 		if err := s.repo.UpsertMember(ctx, leftMember); err != nil {
@@ -382,8 +382,8 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 		event.Payload = &chat.CommittedConversationEvent_MembershipChanged{
 			MembershipChanged: &chat.MembershipChangedEvent{
 				Changes: []*chat.MemberChange{{
-					ActorDid: cmd.SenderActorDid,
-					Action:   chat.MemberChangeAction_MEMBER_CHANGE_ACTION_LEFT,
+					Ptid:   cmd.SenderPtid,
+					Action: chat.MemberChangeAction_MEMBER_CHANGE_ACTION_LEFT,
 				}},
 				NewMembershipEpoch: newEpoch,
 			},
@@ -398,7 +398,7 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 		}
 		event.Payload = &chat.CommittedConversationEvent_ConversationDissolved{
 			ConversationDissolved: &chat.ConversationDissolvedEvent{
-				DissolvedByActorDid: cmd.SenderActorDid,
+				DissolvedByPtid: cmd.SenderPtid,
 			},
 		}
 	default:

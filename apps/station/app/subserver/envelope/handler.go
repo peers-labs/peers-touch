@@ -5,46 +5,15 @@ import (
 
 	auth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 )
 
-// --- Request/Response types ---
-
-type submitRequest struct {
-	Envelope *chat.StationEnvelope `json:"envelope"`
-}
-
-type submitResponse struct {
-	EnvelopeId string `json:"envelope_id"`
-}
-
-type ackRequest struct {
-	DeviceId    string `json:"device_id"`
-	InboxItemId string `json:"inbox_item_id"`
-}
-
-type ackResponse struct{}
-
-type resumeRequest struct {
-	DeviceId    string `json:"device_id"`
-	AfterCursor string `json:"after_cursor"`
-}
-
-type resumeResponse struct {
-	Items []*chat.DeviceInboxItem `json:"items"`
-}
-
-type federationDeliverRequest struct {
-	Envelope *chat.StationEnvelope `json:"envelope"`
-}
-
-type federationDeliverResponse struct{}
-
 // --- Handlers ---
 
-func (s *subServer) handleSubmit(ctx context.Context, req *submitRequest) (*submitResponse, error) {
+func (s *subServer) handleSubmit(ctx context.Context, req *chat.SubmitEnvelopeRequest) (*chat.SubmitEnvelopeResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -56,16 +25,22 @@ func (s *subServer) handleSubmit(ctx context.Context, req *submitRequest) (*subm
 		return nil, server.BadRequest("idempotency_key is required")
 	}
 
-	req.Envelope.SenderActorDid = subject.ID
+	req.Envelope.SenderPtid = subject.ID
+	if deviceID := serverwrapper.GetDeviceID(ctx); deviceID != "" {
+		req.Envelope.SenderDeviceId = deviceID
+	}
+	if idemKey := serverwrapper.GetIdempotencyKey(ctx); idemKey != "" {
+		req.Envelope.IdempotencyKey = idemKey
+	}
 
 	envID, err := s.service.Submit(ctx, req.Envelope)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("submit failed", err)
 	}
-	return &submitResponse{EnvelopeId: envID}, nil
+	return &chat.SubmitEnvelopeResponse{EnvelopeId: envID}, nil
 }
 
-func (s *subServer) handleAck(ctx context.Context, req *ackRequest) (*ackResponse, error) {
+func (s *subServer) handleAck(ctx context.Context, req *chat.AckEnvelopeRequest) (*chat.AckEnvelopeResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -73,33 +48,45 @@ func (s *subServer) handleAck(ctx context.Context, req *ackRequest) (*ackRespons
 	if req.InboxItemId == "" {
 		return nil, server.BadRequest("inbox_item_id is required")
 	}
-	if req.DeviceId == "" {
+
+	// Header takes precedence; fall back to body field for backwards compatibility.
+	deviceID := req.DeviceId
+	if headerDeviceID := serverwrapper.GetDeviceID(ctx); headerDeviceID != "" {
+		deviceID = headerDeviceID
+	}
+	if deviceID == "" {
 		return nil, server.BadRequest("device_id is required")
 	}
 
-	if err := s.service.Ack(ctx, subject.ID, req.DeviceId, req.InboxItemId); err != nil {
+	if err := s.service.Ack(ctx, subject.ID, deviceID, req.InboxItemId); err != nil {
 		return nil, server.InternalErrorWithCause("ack failed", err)
 	}
-	return &ackResponse{}, nil
+	return &chat.AckEnvelopeResponse{}, nil
 }
 
-func (s *subServer) handleResume(ctx context.Context, req *resumeRequest) (*resumeResponse, error) {
+func (s *subServer) handleResume(ctx context.Context, req *chat.ResumeEnvelopesRequest) (*chat.ResumeEnvelopesResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.DeviceId == "" {
+
+	// Header takes precedence; fall back to body field for backwards compatibility.
+	deviceID := req.DeviceId
+	if headerDeviceID := serverwrapper.GetDeviceID(ctx); headerDeviceID != "" {
+		deviceID = headerDeviceID
+	}
+	if deviceID == "" {
 		return nil, server.BadRequest("device_id is required")
 	}
 
-	items, err := s.service.Resume(ctx, subject.ID, req.DeviceId, req.AfterCursor)
+	items, err := s.service.Resume(ctx, subject.ID, deviceID, req.AfterCursor)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("resume failed", err)
 	}
-	return &resumeResponse{Items: items}, nil
+	return &chat.ResumeEnvelopesResponse{Items: items}, nil
 }
 
-func (s *subServer) handleFederationDeliver(ctx context.Context, req *federationDeliverRequest) (*federationDeliverResponse, error) {
+func (s *subServer) handleFederationDeliver(ctx context.Context, req *chat.FederationDeliverEnvelopeRequest) (*chat.FederationDeliverEnvelopeResponse, error) {
 	if req.Envelope == nil {
 		return nil, server.BadRequest("envelope is required")
 	}
@@ -112,7 +99,7 @@ func (s *subServer) handleFederationDeliver(ctx context.Context, req *federation
 	claims := &FederationClaims{
 		IssuerStationPeerID:   verified.Issuer,
 		AudienceStationPeerID: verified.Audience,
-		SenderActorDID:        verified.Subject,
+		SenderPtid:            verified.Subject,
 		ConversationID:        verified.Custom["conversation_id"],
 		IdempotencyKey:        verified.Custom["idempotency_key"],
 		IssuedAt:              verified.IssuedAt,
@@ -122,5 +109,5 @@ func (s *subServer) handleFederationDeliver(ctx context.Context, req *federation
 	if err := s.service.Deliver(ctx, req.Envelope, claims); err != nil {
 		return nil, server.InternalErrorWithCause("federation deliver failed", err)
 	}
-	return &federationDeliverResponse{}, nil
+	return &chat.FederationDeliverEnvelopeResponse{}, nil
 }
