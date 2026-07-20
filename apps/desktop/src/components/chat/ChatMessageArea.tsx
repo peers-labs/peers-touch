@@ -698,6 +698,7 @@ export function ChatMessageArea() {
             activeConversationId={activeUlid}
             activeKind={activeKind}
             currentUserDid={currentUserDid}
+            scrollContainerRef={scrollContainerRef}
             getSenderProfile={getIMSenderProfile}
             highlightedMessageUlid={highlightedMessageUlid}
             messages={mainTimelineMessages}
