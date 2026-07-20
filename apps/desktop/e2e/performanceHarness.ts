@@ -263,3 +263,14 @@ export const SCENARIO_SAMPLERS = {
   PerformanceScenario,
   (page: PerformancePage) => Promise<ScenarioSample>
 >;
+
+export async function collectLongTasksDuringInteraction(
+  page: PerformancePage,
+  interactionFn: () => Promise<void>,
+): Promise<TelemetryEvent[]> {
+  const baseline = await baselineEventIds(page);
+  await interactionFn();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const events = await eventsAfter(page, baseline);
+  return events.filter((e) => e.kind === 'longtask.detected');
+}
