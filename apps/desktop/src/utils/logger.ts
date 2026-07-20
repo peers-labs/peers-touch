@@ -2,6 +2,20 @@ import { invoke } from '@tauri-apps/api/core';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+interface LogEntry {
+  level: LogLevel;
+  tag: string;
+  message: string;
+  data?: string;
+}
+
+const FLUSH_INTERVAL_MS = 150;
+const MAX_BUFFER_SIZE = 64;
+
+let buffer: LogEntry[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let flushInFlight = false;
+
 function serializeForLog(data: unknown): string | undefined {
   if (data === undefined) return undefined;
   if (data instanceof Error) {
@@ -12,7 +26,6 @@ function serializeForLog(data: unknown): string | undefined {
     });
   }
   if (typeof data === 'object' && data !== null) {
-    // Ensure we don't lose Error fields nested inside objects.
     return JSON.stringify(data, (_k, v) => {
       if (v instanceof Error) {
         return { name: v.name, message: v.message, stack: v.stack };
@@ -23,18 +36,58 @@ function serializeForLog(data: unknown): string | undefined {
   return JSON.stringify(data);
 }
 
+function scheduleFlush(): void {
+  if (flushTimer !== null) return;
+  flushTimer = setTimeout(flush, FLUSH_INTERVAL_MS);
+}
+
+function flush(): void {
+  flushTimer = null;
+  if (buffer.length === 0 || flushInFlight) return;
+
+  const batch = buffer;
+  buffer = [];
+  flushInFlight = true;
+
+  try {
+    invoke('frontend_log_batch', { input: { entries: batch } })
+      .catch(() => {
+        // Fallback: send individually if batch command not available
+        for (const entry of batch) {
+          invoke('frontend_log', { input: entry }).catch(() => {});
+        }
+      })
+      .finally(() => {
+        flushInFlight = false;
+        if (buffer.length > 0) scheduleFlush();
+      });
+  } catch {
+    // Fallback for non-Tauri env
+    flushInFlight = false;
+    for (const entry of batch) {
+      try {
+        invoke('frontend_log', { input: entry }).catch(() => {});
+      } catch {
+        // noop
+      }
+    }
+  }
+}
+
 function send(level: LogLevel, tag: string, message: string, data?: unknown) {
-  // Project rule: do not use console.* for logging. Use the unified logger pipeline.
-  const payload = {
+  const entry: LogEntry = {
     level,
     tag,
     message,
     data: serializeForLog(data),
   };
-  try {
-    invoke('frontend_log', { input: payload }).catch(() => {});
-  } catch {
-    // noop: non-Tauri env or invoke not available
+
+  buffer.push(entry);
+
+  if (buffer.length >= MAX_BUFFER_SIZE) {
+    flush();
+  } else {
+    scheduleFlush();
   }
 }
 

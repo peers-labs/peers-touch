@@ -38,7 +38,8 @@ def load_inventory_module():
 def runtime_observations(observations: dict[str, Any], runtime_id: str) -> dict[str, Any]:
     aliases = {
         "browser-gateway": ("browser-gateway", "browser"),
-        "tauri-webview": ("tauri-webview", "tauri"),
+        "tauri-webview-dev": ("tauri-webview-dev", "tauriDev"),
+        "tauri-webview-packaged": ("tauri-webview-packaged", "tauriPackaged"),
     }
     for alias in aliases[runtime_id]:
         candidate = observations.get(alias)
@@ -87,10 +88,10 @@ def normalize_runtime(runtime_id: str, runtime: dict[str, Any], required_anchors
     }
 
 
-def issue_breakdown(browser: dict[str, Any], tauri: dict[str, Any], source_artifact: str) -> list[dict[str, Any]]:
+def issue_breakdown(runtimes: tuple[dict[str, Any], ...], source_artifact: str) -> list[dict[str, Any]]:
     inventory = load_inventory_module()
     issues: list[dict[str, Any]] = []
-    for runtime in (browser, tauri):
+    for runtime in runtimes:
         if runtime["status"] == "pass":
             continue
         missing = [
@@ -107,7 +108,7 @@ def issue_breakdown(browser: dict[str, Any], tauri: dict[str, Any], source_artif
                 "proofStatus": "UNPROVEN",
                 "sampleEmissionAllowed": False,
                 "summary": f"{runtime['runtime']} missing DOM anchor observations: {','.join(missing)}",
-                "proofImpact": "P0b-1 remains PARTIAL/UNPROVEN until browser and Tauri/WebView DOM evidence proves every required anchor.",
+                "proofImpact": "P0b-1 remains PARTIAL/UNPROVEN until browser, dev native, and packaged native DOM evidence proves every required anchor.",
                 "sourceArtifact": source_artifact,
                 "sourceArtifactKind": ARTIFACT_KIND,
                 "sourcePhase": inventory.DOM_EVIDENCE_PHASE,
@@ -151,12 +152,18 @@ def build_evidence(observations: dict[str, Any], source_artifact: str = DEFAULT_
         runtime_observations(observations, "browser-gateway"),
         inventory.REQUIRED_ANCHORS,
     )
-    tauri = normalize_runtime(
-        "tauri-webview",
-        runtime_observations(observations, "tauri-webview"),
+    tauri_dev = normalize_runtime(
+        "tauri-webview-dev",
+        runtime_observations(observations, "tauri-webview-dev"),
         inventory.REQUIRED_ANCHORS,
     )
-    proven = browser["status"] == "pass" and tauri["status"] == "pass"
+    tauri_packaged = normalize_runtime(
+        "tauri-webview-packaged",
+        runtime_observations(observations, "tauri-webview-packaged"),
+        inventory.REQUIRED_ANCHORS,
+    )
+    runtimes = (browser, tauri_dev, tauri_packaged)
+    proven = all(runtime["status"] == "pass" for runtime in runtimes)
     evidence = {
         "schemaVersion": 1,
         "artifactKind": ARTIFACT_KIND,
@@ -171,10 +178,11 @@ def build_evidence(observations: dict[str, Any], source_artifact: str = DEFAULT_
         "spec": list(inventory.DOM_EVIDENCE_SPEC),
         "gate": inventory.DOM_EVIDENCE_GATE,
         "browser": browser,
-        "tauri": tauri,
+        "tauriDev": tauri_dev,
+        "tauriPackaged": tauri_packaged,
     }
     if not proven:
-        issues = issue_breakdown(browser, tauri, source_artifact)
+        issues = issue_breakdown(runtimes, source_artifact)
         review_commands = recommended_review_commands()
         evidence["issue_breakdown"] = issues
         evidence["issueBreakdown"] = issues

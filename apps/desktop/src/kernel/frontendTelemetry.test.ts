@@ -168,7 +168,7 @@ describe('frontend telemetry queue', () => {
       source: 'shell',
     });
 
-    expect(nativeEvent?.runtime).toBe('tauri-webview');
+    expect(nativeEvent?.runtime).toBe('tauri-webview-dev');
 
     _resetFrontendTelemetryForTests();
     vi.stubGlobal('window', {
@@ -207,7 +207,8 @@ describe('frontend telemetry queue', () => {
     await vi.advanceTimersByTimeAsync(2_000);
 
     expect(uploader).toHaveBeenCalledTimes(1);
-    expect(getFrontendTelemetryEvents()).toHaveLength(0);
+    expect(getFrontendTelemetryEvents()).toHaveLength(1);
+    expect(window.__PT_FRONTEND_TELEMETRY__?.getEvents()).toHaveLength(1);
     vi.useRealTimers();
   });
 
@@ -230,13 +231,13 @@ describe('frontend telemetry queue', () => {
     const result = await flushFrontendTelemetryEvents();
 
     expect(result).toMatchObject({ accepted: 1, uploaded: true });
-    expect(getFrontendTelemetryEvents()).toHaveLength(0);
+    expect(getFrontendTelemetryEvents()).toHaveLength(1);
   });
 
   it('keeps queued events and retries after an upload failure', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('window', {});
-    installFrontendTelemetryQueue({ runtime: 'tauri-webview' });
+    installFrontendTelemetryQueue({ runtime: 'tauri-webview-dev' });
     const uploader = vi.fn()
       .mockRejectedValueOnce(new Error('Station unavailable'))
       .mockResolvedValueOnce({
@@ -257,7 +258,7 @@ describe('frontend telemetry queue', () => {
     await vi.advanceTimersByTimeAsync(2_000);
 
     expect(uploader).toHaveBeenCalledTimes(2);
-    expect(getFrontendTelemetryEvents()).toHaveLength(0);
+    expect(getFrontendTelemetryEvents()).toHaveLength(1);
     vi.useRealTimers();
   });
 });

@@ -1,14 +1,17 @@
 # Desktop Global Lag — Phase 1 Systematic Optimization
 
-> **Status**: draft
-> **Version**: v1.2
-> **Created**: 2026-07-10 | **Updated**: 2026-07-10
+> **Status**: superseded
+> **Version**: v1.3
+> **Created**: 2026-07-10 | **Updated**: 2026-07-20
 > **Owner**: @printfcoder
 > **Module**: `apps/desktop/src/kernel/`, `tooling/scripts/`
 > **Depends on**: Phase 0 evidence infrastructure (6/6 PROVEN, tauri-webview cell closed)
 > **Architecture source**: `docs/architecture/frontend-runtime/design.md`
 > **Based on decisions**: D-02, D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14
 > **Language note**: English (consistent with sibling execution-plans in this directory)
+> **Superseded by**: `20260713-desktop-native-evidence-matrix-plan.md`; this plan's
+> Phase 0 premise and runtime inventory were disproven. A new optimization plan
+> must be generated only after P0c3-R9 confirms the root cause and D-15/D-16 are accepted.
 
 ---
 

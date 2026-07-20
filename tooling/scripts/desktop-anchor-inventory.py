@@ -25,6 +25,7 @@ REQUIRED_ANCHORS = (
     AnchorRequirement("section-item", "data-pt-section-item", "Settings section item"),
     AnchorRequirement("section-item-id", "data-pt-section-item-id", "Settings section item identity"),
     AnchorRequirement("section-host", "data-pt-section-host", "SectionHost frame"),
+    AnchorRequirement("text-input", "data-pt-text-input", "Chat composer text input"),
     AnchorRequirement("context-menu-trigger", "data-pt-context-menu-trigger", "Context menu trigger"),
     AnchorRequirement("context-menu-kind", "data-pt-context-menu-kind", "Context menu trigger kind"),
     AnchorRequirement("context-menu-id", "data-pt-context-menu-id", "Context menu trigger identity"),
@@ -33,7 +34,7 @@ REQUIRED_ANCHORS = (
 DOM_EVIDENCE_PHASE = "P0b-1"
 DOM_EVIDENCE_BOM = ("BOM-SMP-01",)
 DOM_EVIDENCE_SPEC = ("SPEC-ANCHOR-01",)
-DOM_EVIDENCE_GATE = "Browser and Tauri/WebView DOM automation must prove every required anchor by selector and count"
+DOM_EVIDENCE_GATE = "Browser, dev native, and packaged native DOM automation must prove every required anchor by selector and count"
 DOM_EVIDENCE_ARTIFACT_KIND = "desktop-anchor-dom-evidence"
 ANCHOR_INVENTORY_ARTIFACT_KIND = "desktop-anchor-inventory"
 ANCHOR_INVENTORY_GATE = "Browser and Tauri/WebView target the same object identity"
@@ -84,11 +85,11 @@ def dom_issue_breakdown(dom: dict[str, Any]) -> list[dict[str, str]]:
             {
                 "category": "dom-automation-evidence",
                 "failedStep": evidence_status,
-                "summary": str(dom.get("reason") or "Browser/Tauri DOM anchor evidence is not proven."),
+                "summary": str(dom.get("reason") or "Browser/dev-native/packaged-native DOM anchor evidence is not proven."),
                 "proofImpact": "P0b-1 DOM automation remains PARTIAL/UNPROVEN.",
             }
         )
-    for runtime_id in ("browser", "tauri"):
+    for runtime_id in ("browser", "tauriDev", "tauriPackaged"):
         runtime = dom.get(runtime_id, {})
         if isinstance(runtime, dict) and runtime.get("status") != "pass":
             required = runtime.get("requiredCount", len(REQUIRED_ANCHORS))
@@ -104,11 +105,11 @@ def dom_issue_breakdown(dom: dict[str, Any]) -> list[dict[str, str]]:
     return issues
 
 
-def dom_evidence_reason(metadata_reasons: list[str], browser: dict[str, Any], tauri: dict[str, Any]) -> str:
+def dom_evidence_reason(metadata_reasons: list[str], runtimes: dict[str, dict[str, Any]]) -> str:
     reasons: list[str] = []
     if metadata_reasons:
         reasons.append("DOM evidence source metadata is incomplete")
-    for runtime_id, runtime in (("browser", browser), ("tauri", tauri)):
+    for runtime_id, runtime in runtimes.items():
         if runtime.get("status") == "pass":
             continue
         required = runtime.get("requiredCount", len(REQUIRED_ANCHORS))
@@ -260,7 +261,8 @@ def load_dom_evidence(path: Path) -> dict[str, Any]:
             "path": str(path),
             "evidenceStatus": "missing",
             "browser": {"status": "missing"},
-            "tauri": {"status": "missing"},
+            "tauriDev": {"status": "missing"},
+            "tauriPackaged": {"status": "missing"},
             },
             [
                 {
@@ -283,7 +285,8 @@ def load_dom_evidence(path: Path) -> dict[str, Any]:
             "evidenceStatus": "unreadable",
             "reason": str(exc),
             "browser": {"status": "missing"},
-            "tauri": {"status": "missing"},
+            "tauriDev": {"status": "missing"},
+            "tauriPackaged": {"status": "missing"},
             },
             [
                 {
@@ -297,8 +300,19 @@ def load_dom_evidence(path: Path) -> dict[str, Any]:
         )
     metadata_reasons = validate_dom_evidence_metadata(evidence)
     browser = normalize_dom_runtime("browser-gateway", evidence.get("browser", {}))
-    tauri = normalize_dom_runtime("tauri-webview", evidence.get("tauri", {}))
-    pass_status = not metadata_reasons and browser["status"] == "pass" and tauri["status"] == "pass"
+    tauri_dev = normalize_dom_runtime("tauri-webview-dev", evidence.get("tauriDev", {}))
+    tauri_packaged = normalize_dom_runtime(
+        "tauri-webview-packaged",
+        evidence.get("tauriPackaged", {}),
+    )
+    runtimes = {
+        "browser": browser,
+        "tauriDev": tauri_dev,
+        "tauriPackaged": tauri_packaged,
+    }
+    pass_status = not metadata_reasons and all(
+        runtime["status"] == "pass" for runtime in runtimes.values()
+    )
     dom_payload = {
         "status": "pass" if pass_status else "diagnostic incomplete",
         "proofStatus": "PROVEN" if pass_status else "UNPROVEN",
@@ -306,7 +320,7 @@ def load_dom_evidence(path: Path) -> dict[str, Any]:
         "sourceArtifact": str(path),
         "sourceArtifactKind": evidence.get("artifactKind") or DOM_EVIDENCE_ARTIFACT_KIND,
         "evidenceStatus": "loaded" if not metadata_reasons else "missing-source-metadata",
-        "reason": dom_evidence_reason(metadata_reasons, browser, tauri),
+        "reason": dom_evidence_reason(metadata_reasons, runtimes),
         "details": metadata_reasons,
         "sourcePhase": evidence.get("phase"),
         "sourceBom": evidence.get("bom", []),
@@ -317,9 +331,10 @@ def load_dom_evidence(path: Path) -> dict[str, Any]:
         "requiredCount": len(REQUIRED_ANCHORS),
         "provenCount": len(REQUIRED_ANCHORS)
         if pass_status
-        else min(browser.get("provenCount", 0), tauri.get("provenCount", 0)),
+        else min(runtime.get("provenCount", 0) for runtime in runtimes.values()),
         "browser": browser,
-        "tauri": tauri,
+        "tauriDev": tauri_dev,
+        "tauriPackaged": tauri_packaged,
     }
     if pass_status:
         return dom_payload
@@ -427,26 +442,33 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"- Source Gate: `{report['domAutomation'].get('sourceGate', 'n/a')}`",
             f"- Details: `{','.join(report['domAutomation'].get('details', []))}`",
             f"- Browser anchors proven: `{report['domAutomation'].get('browser', {}).get('provenCount', 0)}`",
-            f"- Tauri anchors proven: `{report['domAutomation'].get('tauri', {}).get('provenCount', 0)}`",
+            f"- Dev native anchors proven: `{report['domAutomation'].get('tauriDev', {}).get('provenCount', 0)}`",
+            f"- Packaged native anchors proven: `{report['domAutomation'].get('tauriPackaged', {}).get('provenCount', 0)}`",
             "",
-            "| Anchor | Browser | Tauri |",
-            "|---|---|---|",
+            "| Anchor | Browser | Dev native | Packaged native |",
+            "|---|---|---|---|",
         ]
     )
     browser_anchors = {
         anchor["anchorId"]: anchor for anchor in report["domAutomation"].get("browser", {}).get("anchors", [])
     }
-    tauri_anchors = {
-        anchor["anchorId"]: anchor for anchor in report["domAutomation"].get("tauri", {}).get("anchors", [])
+    tauri_dev_anchors = {
+        anchor["anchorId"]: anchor for anchor in report["domAutomation"].get("tauriDev", {}).get("anchors", [])
+    }
+    tauri_packaged_anchors = {
+        anchor["anchorId"]: anchor
+        for anchor in report["domAutomation"].get("tauriPackaged", {}).get("anchors", [])
     }
     for anchor in REQUIRED_ANCHORS:
         browser = browser_anchors.get(anchor.anchor_id, {})
-        tauri = tauri_anchors.get(anchor.anchor_id, {})
+        tauri_dev = tauri_dev_anchors.get(anchor.anchor_id, {})
+        tauri_packaged = tauri_packaged_anchors.get(anchor.anchor_id, {})
         lines.append(
-            "| `{anchor}` | `{browser}` | `{tauri}` |".format(
+            "| `{anchor}` | `{browser}` | `{tauri_dev}` | `{tauri_packaged}` |".format(
                 anchor=anchor.anchor_id,
                 browser=browser.get("status", "missing"),
-                tauri=tauri.get("status", "missing"),
+                tauri_dev=tauri_dev.get("status", "missing"),
+                tauri_packaged=tauri_packaged.get("status", "missing"),
             )
         )
     lines.extend(
@@ -455,7 +477,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "## Boundary",
             "",
             "- Source anchors prove selector inventory only.",
-            "- Browser and Tauri/WebView DOM automation evidence is still required before P0b-1 can pass.",
+            "- Browser, dev native, and packaged native DOM automation evidence is required before P0b-1 can pass.",
         ]
     )
     return "\n".join(lines) + "\n"

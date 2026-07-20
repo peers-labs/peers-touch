@@ -37,7 +37,10 @@ class DesktopPerformanceCellTemplateTest(unittest.TestCase):
         module = load_template_module()
         templates = module.build_templates()
 
-        self.assertEqual(set(templates), {"tauri-webview", "prod-preview", "offline-fixture"})
+        self.assertEqual(
+            set(templates),
+            {"tauri-webview-dev", "tauri-webview-packaged"},
+        )
         for cell_id, template in templates.items():
             self.assertEqual(template["artifactKind"], "desktop-performance-runtime-cell")
             self.assertEqual(template["status"], "diagnostic incomplete")
@@ -78,8 +81,18 @@ class DesktopPerformanceCellTemplateTest(unittest.TestCase):
         self.assertEqual(template["phase"], "P0c-3")
         self.assertEqual(template["bom"], ["BOM-GATE-02", "BOM-CAP-04"])
         self.assertEqual(template["spec"], ["SPEC-GATE-02", "SPEC-RUN-01"])
-        self.assertEqual(template["requiredCells"], ["tauri-webview", "prod-preview", "offline-fixture"])
-        self.assertEqual(template["cells"]["tauri-webview"]["readyShell"]["status"], "diagnostic incomplete")
+        self.assertEqual(
+            template["requiredCells"],
+            ["tauri-webview-dev", "tauri-webview-packaged"],
+        )
+        self.assertEqual(
+            template["cells"]["tauri-webview-dev"]["readyShell"]["status"],
+            "diagnostic incomplete",
+        )
+        self.assertEqual(
+            template["cells"]["tauri-webview-packaged"]["readyShell"]["status"],
+            "diagnostic incomplete",
+        )
 
     def test_main_writes_templates(self) -> None:
         module = load_template_module()
@@ -104,7 +117,11 @@ class DesktopPerformanceCellTemplateTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(
             written,
-            ["offline-fixture.json", "prod-preview.json", "runtime-cell-observations-template.json", "tauri-webview.json"],
+            [
+                "runtime-cell-observations-template.json",
+                "tauri-webview-dev.json",
+                "tauri-webview-packaged.json",
+            ],
         )
         self.assertEqual(observations_written["artifactKind"], "desktop-performance-cell-observations-template")
         self.assertFalse(observations_written["sampleEmissionAllowed"])
@@ -145,7 +162,7 @@ class DesktopPerformanceCellTemplateTest(unittest.TestCase):
             )
 
         runtime_cells = [cell for cell in report["cells"] if cell["cellId"] != "browser-gateway"]
-        self.assertEqual(len(runtime_cells), 3)
+        self.assertEqual(len(runtime_cells), 2)
         for cell in runtime_cells:
             self.assertEqual(cell["status"], "diagnostic incomplete")
             self.assertEqual(cell["proofStatus"], "UNPROVEN")

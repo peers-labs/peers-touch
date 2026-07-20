@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  Check,
   Eye,
   EyeOff,
   Github,
@@ -426,16 +427,12 @@ export const LoginFormView = memo(function LoginFormView({
                   loading={loading}
                   style={{
                     height: 44,
+                    width: 44,
                     borderRadius: 12,
-                    fontWeight: 500,
-                    padding: '0 16px',
                     flexShrink: 0,
                   }}
-                  icon={!loading ? <ArrowRight size={16} /> : undefined}
-                  iconPosition="end"
-                >
-                  {t('auth.login.submit')}
-                </Button>
+                  icon={!loading ? <Check size={18} /> : undefined}
+                />
               </Flexbox>
             </Flexbox>
           </form>

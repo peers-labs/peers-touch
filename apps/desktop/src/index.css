@@ -99,8 +99,9 @@ input, textarea, [contenteditable="true"] {
   position: absolute;
   inset: 0;
   z-index: 0;
-  /* The mesh is explorable: people and connections respond to hover. The
-   * decorative layers inside opt back out of pointer events themselves. */
+  contain: layout style paint;
+  will-change: transform;
+  pointer-events: none;
 }
 
 .login-card-region {

@@ -28,7 +28,12 @@ import { SettingsContainer, SettingsSection, SettingsItemCard, SettingsRow } fro
 import { FederationTab } from '../components/settings/FederationTab';
 import { ModelProviderSelect } from '../components/ModelProviderSelect';
 import { usePrefetch } from '../kernel/usePrefetch';
-import { markRouteRequested, markRouteVisible } from '../kernel/frontendRuntimeProfiler';
+import {
+  markInteractionStarted,
+  markRouteRequested,
+  markRouteVisible,
+  scheduleAfterPaint,
+} from '../kernel/frontendRuntimeProfiler';
 import { SectionHost } from '../kernel/SectionHost';
 import type { SectionDescriptor, SectionHostPolicy } from '../kernel/section';
 import {
@@ -59,18 +64,11 @@ function scrollAndHighlight(id: string) {
 }
 
 function scheduleSettingsSurfaceVisible(surfaceId: string, surface: 'settings-group' | 'settings-section') {
-  let reported = false;
-  const report = () => {
-    if (reported) return;
-    reported = true;
-    markRouteVisible(surfaceId, { surface });
-  };
-  const frame = window.requestAnimationFrame(report);
-  const fallback = window.setTimeout(report, 120);
-  return () => {
-    window.cancelAnimationFrame(frame);
-    window.clearTimeout(fallback);
-  };
+  let cancelled = false;
+  scheduleAfterPaint(() => {
+    if (!cancelled) markRouteVisible(surfaceId, { surface });
+  });
+  return () => { cancelled = true; };
 }
 
 interface SectionDef {
@@ -287,6 +285,11 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
   const handleGroupChange = useCallback((groupKey: string) => {
     if (groupKey === activeGroup) return;
     const surfaceId = `settings:group:${groupKey}`;
+    markInteractionStarted('shell', `secondary-tab:${groupKey}`, {
+      pageId: 'settings',
+      sectionId: groupKey,
+      surface: 'settings-group',
+    });
     markRouteRequested(surfaceId, { surface: 'settings-group' });
     setActiveGroup(groupKey);
   }, [activeGroup]);
