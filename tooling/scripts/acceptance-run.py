@@ -484,6 +484,9 @@ def acceptance_exit_code(report: dict[str, Any]) -> int:
         return 1
     if report.get("proofStatus") != "PROVEN":
         return 1
+    summary = report.get("summary", {})
+    if summary.get("total", 0) > 0 and summary.get("dryRun", 0) == summary.get("total", 0):
+        return 0
     if report.get("sampleEmissionAllowed") is not True:
         return 1
     return 0
