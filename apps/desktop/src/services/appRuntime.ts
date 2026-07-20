@@ -13,6 +13,7 @@ import { appletsRuntime } from '../runtimes/appletsRuntime';
 import { momentsRuntime } from '../runtimes/momentsRuntime';
 import { agentCapabilityRuntime } from '../runtimes/agentCapabilityRuntime';
 import { agentTopicRuntime } from '../runtimes/agentTopicRuntime';
+import { imRuntime } from '../runtimes/imRuntime';
 import { log } from '../utils/logger';
 
 // Register kernel-managed runtimes once. The legacy bridges
@@ -32,6 +33,7 @@ function registerKernelRuntimes(): void {
   registerRuntime(momentsRuntime);
   registerRuntime(agentCapabilityRuntime);
   registerRuntime(agentTopicRuntime);
+  registerRuntime(imRuntime);
 }
 
 let installed = false;
