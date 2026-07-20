@@ -2,6 +2,7 @@ package frontend_telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -223,6 +224,8 @@ func (row rawEventModel) toDTO() frontendTelemetryEvent {
 		Phase:         row.Phase,
 		Severity:      row.Severity,
 		DurationMS:    row.DurationMS,
+		Tags:          jsonMap(row.TagsJSON),
+		Data:          jsonMap(row.DataJSON),
 	}
 }
 
@@ -251,4 +254,15 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func jsonMap(value string) map[string]any {
+	if value == "" {
+		return nil
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(value), &result); err != nil {
+		return nil
+	}
+	return result
 }
