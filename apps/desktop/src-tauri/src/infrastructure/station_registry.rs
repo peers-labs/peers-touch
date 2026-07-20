@@ -39,26 +39,25 @@ impl StationRegistry {
         }
     }
 
-    /// Load persisted data from disk; falls back to env-var default on any error.
+    /// Load persisted data from disk.
+    /// `PEERS_STATION_URL` env var OVERRIDES persisted active_url (profile wins).
+    /// If env var is unset, the process refuses to start — no hardcoded fallback.
     /// Ensures the active URL always appears in the entries list.
     fn load(path: &std::path::Path) -> (Vec<StationEntry>, String) {
-        let default_url = std::env::var("PEERS_STATION_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:18080".to_string())
-            .trim_end_matches('/')
-            .to_string();
+        let env_url = std::env::var("PEERS_STATION_URL")
+            .ok()
+            .map(|u| u.trim_end_matches('/').to_string())
+            .filter(|u| !u.is_empty())
+            .expect("PEERS_STATION_URL must be set — start via `make desktop` or `make desktop-web`");
 
         let (mut entries, active) = if let Ok(content) = std::fs::read_to_string(path) {
             if let Ok(data) = serde_json::from_str::<PersistedData>(&content) {
-                let active = data
-                    .active_url
-                    .filter(|u| !u.trim().is_empty())
-                    .unwrap_or_else(|| default_url.clone());
-                (data.entries, active)
+                (data.entries, env_url.clone())
             } else {
-                (vec![], default_url.clone())
+                (vec![], env_url.clone())
             }
         } else {
-            (vec![], default_url.clone())
+            (vec![], env_url.clone())
         };
 
         // Ensure the active URL is always present in entries so the picker shows it.

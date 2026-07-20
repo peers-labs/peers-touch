@@ -55,12 +55,20 @@ func (h *OrchestrationHandlers) HandleCancelCollaborationTask(ctx context.Contex
 	return &model.UpdateCollaborationTaskResponse{Task: task}, nil
 }
 
-func (h *OrchestrationHandlers) HandleSubmitCollaborationNodeResult(ctx context.Context, req *model.UpdateCollaborationTaskRequest) (*model.UpdateCollaborationTaskResponse, error) {
-	task, _, err := h.orchestrationService.SubmitCollaborationNodeResult(ctx, subjectActorID(ctx), req)
+func (h *OrchestrationHandlers) HandleResumeCollaborationTask(ctx context.Context, req *model.ResumeTaskRequest) (*model.ResumeTaskResponse, error) {
+	task, _, err := h.orchestrationService.ResumeCollaborationTask(ctx, subjectActorID(ctx), req.GetTaskId(), "agent.collaboration.resume")
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
-	return &model.UpdateCollaborationTaskResponse{Task: task}, nil
+	return &model.ResumeTaskResponse{Task: task}, nil
+}
+
+func (h *OrchestrationHandlers) HandleSubmitCollaborationNodeResult(ctx context.Context, req *model.SubmitCollaborationNodeResultRequest) (*model.SubmitCollaborationNodeResultResponse, error) {
+	task, nodes, err := h.orchestrationService.SubmitCollaborationNodeResult(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.SubmitCollaborationNodeResultResponse{Task: task, Nodes: nodes}, nil
 }
 
 func (h *OrchestrationHandlers) HandleClaimDesktopExecutorTask(ctx context.Context, req *model.ClaimDesktopExecutorTaskRequest) (*model.ClaimDesktopExecutorTaskResponse, error) {

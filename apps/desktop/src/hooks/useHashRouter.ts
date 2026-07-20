@@ -1,6 +1,6 @@
 import { startTransition, useCallback, useEffect, useState } from 'react';
 import { getModule } from '../modules/registry';
-import { onWindowPopState } from '../kernel/events';
+import { onWindowLocationChange } from '../kernel/events';
 import { persistLastActivePage } from './useAppLifecycle';
 import type { HashRouter, Page } from '../types/navigation';
 import { CORE_PAGE_LIST, DEFAULT_READY_PAGE } from '../types/navigation';
@@ -57,7 +57,7 @@ export function useHashRouter(): HashRouter {
   }, []);
 
   useEffect(() => {
-    return onWindowPopState(() => {
+    return onWindowLocationChange(() => {
       const p = parsePageFromHash();
       startTransition(() => {
         setPageRaw(p);
