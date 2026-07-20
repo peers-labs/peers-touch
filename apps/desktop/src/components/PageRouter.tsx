@@ -1,10 +1,13 @@
+import { lazy, Suspense } from 'react';
+
 import { useChatStore } from '../store/chat';
-import { NotesPage } from '../pages/NotesPage';
-import { AgentCanvasPage } from '../pages/AgentCanvasPage';
-import { AgentProfilePage } from '../pages/AgentProfilePage';
 import { getModule } from '../modules/registry';
 import { getPage } from '../kernel/page';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
+
+const NotesPage = lazy(() => import('../pages/NotesPage').then((m) => ({ default: m.NotesPage })));
+const AgentCanvasPage = lazy(() => import('../pages/AgentCanvasPage').then((m) => ({ default: m.AgentCanvasPage })));
+const AgentProfilePage = lazy(() => import('../pages/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })));
 
 interface PageRouterProps {
   page: Page;
@@ -14,21 +17,19 @@ interface PageRouterProps {
 }
 
 export function PageRouter({ page, router, navigation }: PageRouterProps) {
-  // Pages owned by the kernel `PageDescriptor` registry are rendered by
-  // `<PageHost />`; this fallback router must avoid rendering them again.
   const isKernelOwned = Boolean(getPage(page));
 
   return (
     <>
-      {/* Legacy pages not yet moved to PageDescriptor render only when active. */}
       {!isKernelOwned && (
-        <EphemeralPage page={page} router={router} navigation={navigation} />
+        <Suspense fallback={<div style={{ minHeight: '100%' }} />}>
+          <EphemeralPage page={page} router={router} navigation={navigation} />
+        </Suspense>
       )}
     </>
   );
 }
 
-// Non-keep-alive pages that mount/unmount on navigation
 function EphemeralPage({ page, router, navigation }: Pick<PageRouterProps, 'page' | 'router' | 'navigation'>) {
   switch (page) {
     case 'notes':
