@@ -9,13 +9,13 @@ export type FrontendTelemetrySource =
   | 'invoke'
   | 'runtime'
   | 'applet'
+  | 'input'
   | 'acceptance';
 
 export type FrontendTelemetryRuntime =
   | 'browser-gateway'
-  | 'tauri-webview'
-  | 'prod-preview'
-  | 'offline-fixture'
+  | 'tauri-webview-dev'
+  | 'tauri-webview-packaged'
   | 'unknown';
 
 export type FrontendTelemetryPhase = 'startup' | 'interaction' | 'background' | 'acceptance';
@@ -34,6 +34,8 @@ export type FrontendTelemetryEventKind =
   | 'runtime.page-acquire'
   | 'runtime.page-release'
   | 'interaction.started'
+  | 'input.intent'
+  | 'input.visible'
   | 'contextmenu.intent'
   | 'overlay.visible'
   | 'overlay.hidden'
@@ -120,6 +122,7 @@ const DEFAULT_MAX_EVENTS = 500;
 const DEFAULT_FLUSH_DELAY_MS = 2_000;
 const SENSITIVE_KEY_PATTERN = /password|passwd|pwd|token|secret|private.?key|message|body|content/i;
 const events: DesktopFrontendTelemetryEvent[] = [];
+const pendingUploadEvents: DesktopFrontendTelemetryEvent[] = [];
 const droppedByKind: Record<string, number> = {};
 const droppedWithInteraction: Record<string, number> = {};
 
@@ -131,6 +134,7 @@ let sequence = 0;
 let runtimeOverride: FrontendTelemetryRuntime | undefined;
 let uploader: FrontendTelemetryUploader | undefined;
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
+const clearHooks = new Set<() => void>();
 
 declare global {
   interface Window {
@@ -158,9 +162,10 @@ function createEventId(): string {
 function resolveRuntime(): FrontendTelemetryRuntime {
   if (runtimeOverride) return runtimeOverride;
   if (typeof window === 'undefined') return 'unknown';
-  if ('__TAURI_INTERNALS__' in window && !('__PT_GATEWAY_BASE__' in window)) return 'tauri-webview';
+  if ('__TAURI_INTERNALS__' in window && !('__PT_GATEWAY_BASE__' in window)) {
+    return import.meta.env.PROD ? 'tauri-webview-packaged' : 'tauri-webview-dev';
+  }
   if ('__PT_GATEWAY_BASE__' in window) return 'browser-gateway';
-  if (import.meta.env.PROD) return 'prod-preview';
   return 'unknown';
 }
 
@@ -239,9 +244,18 @@ export function teardownFrontendTelemetryQueue(): void {
 
 export function clearFrontendTelemetryEvents(): void {
   events.length = 0;
+  pendingUploadEvents.length = 0;
   droppedCount = 0;
   for (const key of Object.keys(droppedByKind)) delete droppedByKind[key];
   for (const key of Object.keys(droppedWithInteraction)) delete droppedWithInteraction[key];
+  for (const hook of clearHooks) {
+    try { hook(); } catch { /* clear hooks must not throw */ }
+  }
+}
+
+export function registerFrontendTelemetryClearHook(hook: () => void): () => void {
+  clearHooks.add(hook);
+  return () => { clearHooks.delete(hook); };
 }
 
 export function emitFrontendTelemetryEvent(
@@ -260,6 +274,7 @@ export function emitFrontendTelemetryEvent(
   };
 
   events.push(event);
+  pendingUploadEvents.push(event);
   if (events.length > maxEvents) {
     const removed = events.length - maxEvents;
     const dropped = events.splice(0, removed);
@@ -268,6 +283,9 @@ export function emitFrontendTelemetryEvent(
       incrementCounter(droppedByKind, item.kind);
       if (item.interactionId) incrementCounter(droppedWithInteraction, item.kind);
     }
+  }
+  if (pendingUploadEvents.length > maxEvents) {
+    pendingUploadEvents.splice(0, pendingUploadEvents.length - maxEvents);
   }
   scheduleFrontendTelemetryFlush();
   return event;
@@ -305,14 +323,14 @@ export function getFrontendTelemetryDroppedCount(): number {
 }
 
 export async function flushFrontendTelemetryEvents(): Promise<FrontendTelemetryUploadResult | null> {
-  if (!installed || flushInFlight || events.length === 0 || !uploader) return null;
+  if (!installed || flushInFlight || pendingUploadEvents.length === 0 || !uploader) return null;
   clearScheduledFrontendTelemetryFlush();
   flushInFlight = true;
-  const batch = events.slice();
+  const batch = pendingUploadEvents.slice();
   try {
     const result = await uploader(batch);
     if (result.uploaded) {
-      events.splice(0, Math.min(result.accepted, events.length));
+      pendingUploadEvents.splice(0, Math.min(result.accepted, pendingUploadEvents.length));
     }
     return result;
   } finally {
@@ -322,7 +340,7 @@ export async function flushFrontendTelemetryEvents(): Promise<FrontendTelemetryU
 }
 
 function scheduleFrontendTelemetryFlush(): void {
-  if (!installed || !uploader || events.length === 0 || flushInFlight || flushTimer) return;
+  if (!installed || !uploader || pendingUploadEvents.length === 0 || flushInFlight || flushTimer) return;
   flushTimer = setTimeout(() => {
     flushTimer = undefined;
     void flushFrontendTelemetryEvents().catch(() => {
