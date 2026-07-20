@@ -1,7 +1,9 @@
-// InvokeThrottler — monitors non-critical Tauri invocations in click-frame.
+// InvokeThrottler — defers non-critical Tauri invocations out of click-frame.
 //
 // Contract: design.md §5 F-1 + execution-plan Phase 1b + D-14.
-// Phase 1: warn-only (no actual deferral). Deferral enforced in Phase 2.
+// Deferral via scheduler.afterFirstPaint for non-allowlist commands during interaction.
+
+import { scheduler } from './scheduler';
 
 // ── Auth bypass allowlist (D-14) ──────────────────────────────────────────
 
@@ -81,10 +83,12 @@ export function throttleInvoke<T>(
     };
   }
 
-  // Phase 1: warn-only baseline — count the violation silently.
-  // No log.info here: each log triggers a Tauri IPC invoke, adding ~2ms latency.
-  // Telemetry is collected via frontendRuntimeProfiler instead.
-  return { deferred: false, promise: executeFn() };
+  const promise = new Promise<T>((resolve, reject) => {
+    scheduler.afterFirstPaint(() => {
+      executeFn().then(resolve, reject);
+    });
+  });
+  return { deferred: true, promise };
 }
 
 // ── Test utilities ────────────────────────────────────────────────────────

@@ -18,14 +18,14 @@
 | D-04 | Settings/provider 使用 SectionHost 而不是页面内隐藏面板自管 | accepted |
 | D-05 | Applet 容器作为一级运行单元 | accepted |
 | D-06 | 性能证据内建，不依赖人工体感 | accepted |
-| D-07 | PageHost LRU 最大保留 5 个隐藏页面 | proposed |
-| D-08 | Store dispatch fanout 上限 3 个组件 | proposed |
+| D-07 | PageHost LRU 最大保留 5 个隐藏页面 | accepted |
+| D-08 | Store dispatch fanout 上限 3 个组件 | accepted |
 | D-09 | RuntimeProjection bootstrap 超时 5 秒，失败进入降级模式 | proposed |
-| D-10 | 性能预算不变量数值（INV-1~INV-6） | proposed |
-| D-11 | Red-line CI gate 使用 P95 阈值而非 MAX | proposed |
-| D-12 | 禁止 Store dispatch 触发超过 3 个组件重渲染（架构级禁止关系） | proposed |
+| D-10 | 性能预算不变量数值（INV-1~INV-6） | accepted |
+| D-11 | Red-line CI gate 使用 P95 阈值而非 MAX | accepted |
+| D-12 | 禁止 Store dispatch 触发超过 3 个组件重渲染（架构级禁止关系） | accepted |
 | D-13 | Station mirror 是验收/开发性能证据的真源 | proposed |
-| D-14 | InvokeThrottler 安全关键路径 bypass 必须静态 allowlist 化 | proposed |
+| D-14 | InvokeThrottler 安全关键路径 bypass 必须静态 allowlist 化 | accepted |
 | D-15 | Native transport topology 必须通过同条件 runtime evidence gate 后决策 | accepted |
 | D-16 | Native responsiveness 由有界工作准入和完整失败语义定义，而非由某种 transport 定义 | accepted |
 
