@@ -179,7 +179,7 @@ Required report fields:
 
 - `entrypoint`: e.g. `make desktop`, `make desktop-web`, `make station`, or dedicated performance gate.
 - `profile`: e.g. `one`.
-- `runtime`: `browser-gateway`, `tauri-webview`, `prod-preview`, `offline-fixture`, or `unknown`.
+- `runtime`: `browser-gateway`, `tauri-webview-dev`, `tauri-webview-packaged`, or `unknown`.
 - `startupMode`: `normal`, `diagnostic`, or `fixture`.
 - `preflightStatus`: `pass`, `baseline preflight failure`, `blocked`, or `diagnostic incomplete`.
 - `startupSideEffects`: explicit list of deploy/setup/build side effects that ran before sampling.
@@ -315,7 +315,7 @@ type DesktopFrontendTelemetryEvent = {
   pageId?: string;
   sectionId?: string;
   interactionId?: string;
-  runtime: 'browser-gateway' | 'tauri-webview' | 'prod-preview' | 'offline-fixture' | 'unknown';
+  runtime: 'browser-gateway' | 'tauri-webview-dev' | 'tauri-webview-packaged' | 'unknown';
   phase?: 'startup' | 'interaction' | 'background' | 'acceptance';
   severity?: 'debug' | 'info' | 'warn' | 'error';
   durationMs?: number;

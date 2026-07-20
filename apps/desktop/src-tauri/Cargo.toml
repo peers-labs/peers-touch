@@ -15,6 +15,7 @@ tauri-build = { version = "2.0.1", features = [] }
 tauri = { version = "2.0.1", features = ["protocol-asset"] }
 tauri-plugin-deep-link = "2.0.1"
 tauri-plugin-global-shortcut = "2.0.1"
+tauri-plugin-playwright = { version = "0.4.1", optional = true }
 tiny_http = "0.12"
 threadpool = "1.8"
 serde = { version = "1", features = ["derive"] }
@@ -51,3 +52,4 @@ ulid = "1.1"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+e2e-testing = ["dep:tauri-plugin-playwright"]

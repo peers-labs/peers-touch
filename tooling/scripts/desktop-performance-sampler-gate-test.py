@@ -380,8 +380,8 @@ class DesktopPerformanceSamplerGateTest(unittest.TestCase):
                         "summary": {
                             "blockedRuntimeCells": [
                                 {
-                                    "runtimeCell": "tauri-webview",
-                                    "blockedByStep": "tauri-webview.dom_anchors",
+                                    "runtimeCell": "tauri-webview-dev",
+                                    "blockedByStep": "tauri-webview-dev.dom_anchors",
                                     "blockedByGate": "Browser and Tauri/WebView DOM automation must prove every required anchor by selector and count",
                                     "proofStatus": "UNPROVEN",
                                     "provenCount": 0,
@@ -395,7 +395,7 @@ class DesktopPerformanceSamplerGateTest(unittest.TestCase):
                                     ],
                                 }
                             ],
-                            "blockedBySteps": ["tauri-webview.dom_anchors"],
+                            "blockedBySteps": ["tauri-webview-dev.dom_anchors"],
                             "blockedDownstreamSteps": [
                                 "p0b.sampler_collection",
                                 "p0b.station_sampler_mirror",
@@ -415,23 +415,23 @@ class DesktopPerformanceSamplerGateTest(unittest.TestCase):
         self.assertFalse(report["sampleEmissionAllowed"])
         self.assertEqual(report["summary"]["domAnchorGateStatus"], "diagnostic incomplete")
         self.assertEqual(report["summary"]["domAnchorGateProofStatus"], "UNPROVEN")
-        self.assertEqual(report["summary"]["domAnchorBlockedBySteps"], ["tauri-webview.dom_anchors"])
-        self.assertIn("dom-anchor:tauri-webview", report["summary"]["blockedScopes"])
-        self.assertIn("DOM anchor blockers prevent sampler collection: tauri-webview.dom_anchors", report["reason"])
-        dom_reason = next(item for item in report["blockedReasons"] if item["scope"] == "dom-anchor:tauri-webview")
+        self.assertEqual(report["summary"]["domAnchorBlockedBySteps"], ["tauri-webview-dev.dom_anchors"])
+        self.assertIn("dom-anchor:tauri-webview-dev", report["summary"]["blockedScopes"])
+        self.assertIn("DOM anchor blockers prevent sampler collection: tauri-webview-dev.dom_anchors", report["reason"])
+        dom_reason = next(item for item in report["blockedReasons"] if item["scope"] == "dom-anchor:tauri-webview-dev")
         self.assertEqual(dom_reason["sourceArtifact"], str(dom_gate))
         self.assertEqual(dom_reason["sourceArtifactKind"], "desktop-anchor-dom-evidence-gate")
         self.assertEqual(dom_reason["sourcePhase"], "P0b-1")
         self.assertEqual(dom_reason["sourceBom"], ["BOM-SMP-01"])
         self.assertEqual(dom_reason["sourceSpec"], ["SPEC-ANCHOR-01"])
-        self.assertEqual(dom_reason["blockedByStep"], "tauri-webview.dom_anchors")
+        self.assertEqual(dom_reason["blockedByStep"], "tauri-webview-dev.dom_anchors")
         self.assertEqual(dom_reason["blockedDownstreamSteps"][0], "p0b.sampler_collection")
         dom_issue = next(issue for issue in report["issue_breakdown"] if issue["category"] == "dom-anchor-blocker")
-        self.assertEqual(dom_issue["failedStep"], "dom-anchor:tauri-webview")
+        self.assertEqual(dom_issue["failedStep"], "dom-anchor:tauri-webview-dev")
         self.assertEqual(dom_issue["sourceArtifact"], str(dom_gate))
         markdown = module.render_markdown(report)
-        self.assertIn("DOM anchor blocked by steps: `tauri-webview.dom_anchors`", markdown)
-        self.assertIn("`dom-anchor:tauri-webview`", markdown)
+        self.assertIn("DOM anchor blocked by steps: `tauri-webview-dev.dom_anchors`", markdown)
+        self.assertIn("`dom-anchor:tauri-webview-dev`", markdown)
 
     def test_complete_station_mirror_proves_all_sampler_families(self) -> None:
         module = load_sampler_module()

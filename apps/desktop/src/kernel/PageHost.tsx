@@ -42,6 +42,7 @@ import { acquirePageRuntimeLease, releasePageRuntimeLease } from './pageRuntimeL
 import {
   markRouteRequested,
   markRouteVisible,
+  scheduleAfterPaint,
   isFrontendRuntimeProfilerEnabled,
   recordReactCommit,
   recordHiddenSurfaceRender,
@@ -57,18 +58,11 @@ interface PageHostProps {
 }
 
 function scheduleRouteVisible(pageId: string, data: Record<string, unknown>): () => void {
-  let reported = false;
-  const report = () => {
-    if (reported) return;
-    reported = true;
-    markRouteVisible(pageId, data);
-  };
-  const frame = window.requestAnimationFrame(report);
-  const fallback = window.setTimeout(report, 120);
-  return () => {
-    window.cancelAnimationFrame(frame);
-    window.clearTimeout(fallback);
-  };
+  let cancelled = false;
+  scheduleAfterPaint(() => {
+    if (!cancelled) markRouteVisible(pageId, data);
+  });
+  return () => { cancelled = true; };
 }
 
 function pickInitialMounted(activePage: string): Set<string> {

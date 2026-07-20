@@ -33,6 +33,7 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
         <button data-pt-secondary-tab="settings" data-pt-secondary-tab-id={group.key} />
         <button data-pt-section-item="settings" data-pt-section-item-id={section.key} />
         <section data-pt-section-host={descriptor.id} />
+        <textarea data-pt-text-input="chat-composer" />
         <div
           data-pt-context-menu-trigger="chat-conversation"
           data-pt-context-menu-kind={c.kind}
@@ -58,7 +59,8 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
             "completionStatus": "DONE",
             "proofStatus": "PROVEN",
             "browser": {"status": "pass", "anchors": anchors},
-            "tauri": {"status": "pass", "anchors": anchors},
+            "tauriDev": {"status": "pass", "anchors": anchors},
+            "tauriPackaged": {"status": "pass", "anchors": anchors},
         }
 
     def test_complete_source_without_dom_evidence_stays_unproven(self) -> None:
@@ -77,7 +79,7 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
         self.assertFalse(report["sampleEmissionAllowed"])
         self.assertFalse(report["summary"]["sampleEmissionAllowed"])
         self.assertEqual(report["sourceAnchors"]["status"], "loaded")
-        self.assertEqual(report["sourceAnchors"]["presentCount"], 9)
+        self.assertEqual(report["sourceAnchors"]["presentCount"], 10)
         self.assertEqual(report["domAutomation"]["status"], "missing")
         self.assertEqual(report["issue_breakdown"][0]["category"], "dom-automation-evidence")
         self.assertEqual(report["issue_breakdown"][0]["status"], "diagnostic incomplete")
@@ -133,8 +135,9 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
         self.assertTrue(report["sampleEmissionAllowed"])
         self.assertEqual(report["domAutomation"]["proofStatus"], "PROVEN")
         self.assertEqual(report["domAutomation"]["sourceArtifactKind"], "desktop-anchor-dom-evidence")
-        self.assertEqual(report["domAutomation"]["browser"]["provenCount"], 9)
-        self.assertEqual(report["domAutomation"]["tauri"]["provenCount"], 9)
+        self.assertEqual(report["domAutomation"]["browser"]["provenCount"], 10)
+        self.assertEqual(report["domAutomation"]["tauriDev"]["provenCount"], 10)
+        self.assertEqual(report["domAutomation"]["tauriPackaged"]["provenCount"], 10)
 
     def test_dom_evidence_requires_per_anchor_browser_and_tauri_matches(self) -> None:
         module = load_inventory_module()
@@ -145,7 +148,8 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
                 json.dumps(
                     {
                         "browser": {"status": "pass"},
-                        "tauri": {"status": "pass"},
+                        "tauriDev": {"status": "pass"},
+                        "tauriPackaged": {"status": "pass"},
                     }
                 ),
                 encoding="utf-8",
@@ -163,13 +167,15 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
         self.assertFalse(report["domAutomation"]["issue_breakdown"][0]["sampleEmissionAllowed"])
         self.assertEqual(report["domAutomation"]["issue_breakdown"][0]["sourceArtifactKind"], "desktop-anchor-dom-evidence")
         self.assertIn("DOM evidence source metadata is incomplete", report["domAutomation"]["reason"])
-        self.assertIn("browser DOM anchors are not fully proven (0/9 anchors proven)", report["domAutomation"]["reason"])
-        self.assertIn("tauri DOM anchors are not fully proven (0/9 anchors proven)", report["domAutomation"]["reason"])
-        self.assertIn("(0/9 anchors proven)", report["domAutomation"]["issue_breakdown"][1]["summary"])
+        self.assertIn("browser DOM anchors are not fully proven (0/10 anchors proven)", report["domAutomation"]["reason"])
+        self.assertIn("tauriDev DOM anchors are not fully proven (0/10 anchors proven)", report["domAutomation"]["reason"])
+        self.assertIn("tauriPackaged DOM anchors are not fully proven (0/10 anchors proven)", report["domAutomation"]["reason"])
+        self.assertIn("(0/10 anchors proven)", report["domAutomation"]["issue_breakdown"][1]["summary"])
         self.assertEqual(report["domAutomation"]["browser"]["provenCount"], 0)
-        self.assertEqual(report["domAutomation"]["tauri"]["provenCount"], 0)
+        self.assertEqual(report["domAutomation"]["tauriDev"]["provenCount"], 0)
+        self.assertEqual(report["domAutomation"]["tauriPackaged"]["provenCount"], 0)
         markdown = module.render_markdown(report)
-        self.assertIn("| Anchor | Browser | Tauri |", markdown)
+        self.assertIn("| Anchor | Browser | Dev native | Packaged native |", markdown)
         self.assertIn("`diagnostic incomplete`", markdown)
         self.assertIn("missing or invalid phase", markdown)
 

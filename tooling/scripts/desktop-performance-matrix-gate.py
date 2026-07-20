@@ -45,6 +45,9 @@ PREFLIGHT_REQUIRED_PHASE = "P0c-1/P0c-2"
 PREFLIGHT_REQUIRED_BOM = ("BOM-RUN-01", "BOM-CAP-04", "BOM-GATE-01")
 PREFLIGHT_REQUIRED_SPEC = ("SPEC-RUN-01", "SPEC-GATE-01")
 PREFLIGHT_REQUIRED_ARTIFACT_KIND = "desktop-performance-preflight"
+COHORT_REQUIRED_PHASE = "P0c-3"
+COHORT_REQUIRED_TASK = "P0c3-R2"
+COHORT_REQUIRED_ARTIFACT_KIND = "desktop-performance-cohort-gate"
 CELL_REQUIRED_PHASE = "P0c-3"
 CELL_REQUIRED_ARTIFACT_KIND = "desktop-performance-runtime-cell"
 RAW_EVENTS_REQUIRED_PHASE = "P0a-6/P0c-5"
@@ -95,31 +98,22 @@ DEFAULT_CELLS = (
         gate="browser/gateway preflight must pass before samples are accepted",
     ),
     MatrixCellSpec(
-        cell_id="tauri-webview",
-        runtime="tauri-webview",
+        cell_id="tauri-webview-dev",
+        runtime="tauri-webview-dev",
         entrypoint="make desktop",
         startup_mode="dev-tauri-webview",
         bom=("BOM-GATE-02", "BOM-CAP-04"),
         spec=("SPEC-GATE-02", "SPEC-RUN-01"),
-        gate="Tauri WebView runtime evidence required; browser samples are not substitutes",
+        gate="Dev Tauri WebView evidence required; browser samples are not substitutes",
     ),
     MatrixCellSpec(
-        cell_id="prod-preview",
-        runtime="browser-prod-preview",
-        entrypoint="make desktop-web PREVIEW=1",
-        startup_mode="prod-preview",
+        cell_id="tauri-webview-packaged",
+        runtime="tauri-webview-packaged",
+        entrypoint="pnpm --dir apps/desktop tauri build --features e2e-testing",
+        startup_mode="packaged-tauri-webview",
         bom=("BOM-GATE-02", "BOM-CAP-04"),
         spec=("SPEC-GATE-02", "SPEC-RUN-01"),
-        gate="production preview ready-shell evidence required before samples are accepted",
-    ),
-    MatrixCellSpec(
-        cell_id="offline-fixture",
-        runtime="browser-offline-fixture",
-        entrypoint="make desktop-web OFFLINE_FIXTURE=1",
-        startup_mode="offline-no-gateway",
-        bom=("BOM-GATE-02", "BOM-CAP-04"),
-        spec=("SPEC-GATE-02", "SPEC-RUN-01"),
-        gate="offline/no-gateway fixture must reach ready shell before samples are accepted",
+        gate="Packaged Tauri WebView evidence is mandatory for shipped Desktop claims",
     ),
 )
 
@@ -428,6 +422,76 @@ def preflight_source_state(path: Path) -> dict[str, Any]:
     if isinstance(review_commands, list):
         evidence["recommended_review_commands"] = review_commands
         evidence["recommendedReviewCommands"] = review_commands
+    return evidence
+
+
+def cohort_source_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        reason = f"missing Desktop performance cohort gate report: {path}"
+        issues = [
+            {
+                "category": "desktop-performance-cohort",
+                "failedStep": "desktop-performance-cohort",
+                "summary": reason,
+                "proofImpact": "P0c3-R2 remains PARTIAL/UNPROVEN and every runtime cell stays blocked.",
+            }
+        ]
+        return {
+            "path": str(path),
+            "sourceArtifact": str(path),
+            "status": "diagnostic incomplete",
+            "sourceStatus": "missing",
+            "completionStatus": "PARTIAL",
+            "proofStatus": "UNPROVEN",
+            "sourcePhase": COHORT_REQUIRED_PHASE,
+            "sourceTask": COHORT_REQUIRED_TASK,
+            "sourceGate": "Cohort gate evidence must exist before matrix samples are admitted",
+            "sourceArtifactKind": COHORT_REQUIRED_ARTIFACT_KIND,
+            "sampleEmissionAllowed": False,
+            "reason": reason,
+            "issue_breakdown": issues,
+            "issueBreakdown": issues,
+        }
+
+    report = read_json(path)
+    details: list[str] = []
+    if report.get("artifactKind") != COHORT_REQUIRED_ARTIFACT_KIND:
+        details.append("missing or invalid artifactKind")
+    if report.get("phase") != COHORT_REQUIRED_PHASE:
+        details.append("missing or invalid phase")
+    if report.get("planTask") != COHORT_REQUIRED_TASK:
+        details.append("missing or invalid planTask")
+    if not isinstance(report.get("gate"), str) or not report.get("gate"):
+        details.append("missing gate")
+    if report.get("completionStatus") != "DONE":
+        details.append("missing or incomplete completionStatus")
+    if report.get("proofStatus") != "PROVEN":
+        details.append("missing or invalid proofStatus")
+    if report.get("sampleEmissionAllowed") is not True:
+        details.append("sample emission is not allowed")
+    status = "pass" if not details else "diagnostic incomplete"
+    evidence = {
+        "path": str(path),
+        "sourceArtifact": str(path),
+        "status": status,
+        "sourceStatus": report.get("status", "diagnostic incomplete"),
+        "completionStatus": "DONE" if status == "pass" else "PARTIAL",
+        "proofStatus": "PROVEN" if status == "pass" else "UNPROVEN",
+        "sourcePhase": report.get("phase"),
+        "sourceTask": report.get("planTask"),
+        "sourceGate": report.get("gate"),
+        "sourceArtifactKind": report.get("artifactKind"),
+        "sampleEmissionAllowed": bool(report.get("sampleEmissionAllowed")) and status == "pass",
+        "reason": "Desktop performance cohort identity is proven"
+        if status == "pass"
+        else report.get("reason") or "Desktop performance cohort evidence is incomplete",
+        "failedStep": report.get("failedStep"),
+        "details": details,
+    }
+    source_issues = diagnostic_issue_breakdown(report)
+    if isinstance(source_issues, list):
+        evidence["issue_breakdown"] = source_issues
+        evidence["issueBreakdown"] = source_issues
     return evidence
 
 
@@ -952,6 +1016,10 @@ def matrix_review_commands() -> list[dict[str, str]]:
             "command": "python3 tooling/scripts/desktop-performance-cell-collect.py",
         },
         {
+            "purpose": "Prove all runtime cells share one cohort and actual actor.",
+            "command": "python3 tooling/scripts/desktop-performance-cohort-gate.py",
+        },
+        {
             "purpose": "Re-run the P0c matrix gate.",
             "command": "python3 tooling/scripts/desktop-performance-matrix-gate.py",
         },
@@ -966,6 +1034,7 @@ def matrix_issue_breakdown(
     cells: list[dict[str, Any]],
     red_lines: dict[str, Any],
     preflight: dict[str, Any],
+    cohort: dict[str, Any],
 ) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
 
@@ -1002,6 +1071,21 @@ def matrix_issue_breakdown(
                     "summary": str(preflight.get("reason") or "Desktop performance preflight evidence is incomplete"),
                     "proofImpact": "P0c-1/P0c-2 remains PARTIAL/UNPROVEN until Desktop runtime preflight evidence is proven.",
                 }, preflight)
+            )
+    if cohort.get("status") != "pass":
+        source_issues = cohort.get("issue_breakdown", cohort.get("issueBreakdown"))
+        if isinstance(source_issues, list) and source_issues:
+            for issue in source_issues:
+                if isinstance(issue, dict):
+                    issues.append(normalize_issue(issue, cohort))
+        else:
+            issues.append(
+                normalize_issue({
+                    "category": "desktop-performance-cohort",
+                    "failedStep": str(cohort.get("failedStep") or "desktop-performance-cohort"),
+                    "summary": str(cohort.get("reason") or "Desktop performance cohort evidence is incomplete"),
+                    "proofImpact": "P0c3-R2 remains PARTIAL/UNPROVEN and every runtime cell stays blocked.",
+                }, cohort)
             )
     for cell in cells:
         if cell.get("sampleEmissionAllowed"):
@@ -1046,10 +1130,11 @@ def build_cell(
     status: str,
     reason: str,
     evidence: dict[str, Any],
+    cohort_allowed: bool,
 ) -> dict[str, Any]:
     if status not in ALLOWED_STATUSES:
         raise ValueError(f"invalid cell status {status!r}")
-    sample_allowed = bool(evidence.get("sampleEmissionAllowed")) and status == "sampled"
+    sample_allowed = bool(evidence.get("sampleEmissionAllowed")) and status == "sampled" and cohort_allowed
     proof_status = "PROVEN" if sample_allowed else "UNPROVEN"
     completion_status = "DONE" if sample_allowed else "PARTIAL"
     return {
@@ -1062,6 +1147,7 @@ def build_cell(
         "proofStatus": proof_status,
         "reason": reason,
         "sampleEmissionAllowed": sample_allowed,
+        "cohortSampleEmissionAllowed": cohort_allowed,
         "bom": list(spec.bom),
         "spec": list(spec.spec),
         "gate": spec.gate,
@@ -1082,6 +1168,11 @@ def build_matrix(args: argparse.Namespace) -> dict[str, Any]:
     if preflight_report is None:
         preflight_report = str(Path(args.live_gate_report).with_name("desktop-performance-preflight.json"))
     preflight = preflight_source_state(Path(preflight_report))
+    cohort_report = getattr(args, "cohort_report", None)
+    if cohort_report is None:
+        cohort_report = str(Path(args.events_report).with_name("desktop-performance-cohort-gate.json"))
+    cohort = cohort_source_state(Path(cohort_report))
+    cohort_allowed = bool(cohort.get("sampleEmissionAllowed"))
     for spec in DEFAULT_CELLS:
         if spec.cell_id == "browser-gateway":
             status, evidence = status_from_live_gate(Path(args.live_gate_report))
@@ -1089,7 +1180,15 @@ def build_matrix(args: argparse.Namespace) -> dict[str, Any]:
         else:
             status, evidence = status_from_cell_evidence(spec, cell_evidence_dir)
             reason = "uses runtime-specific cell evidence report"
-        cells.append(build_cell(spec, status=status, reason=reason, evidence=evidence))
+        cells.append(
+            build_cell(
+                spec,
+                status=status,
+                reason=reason,
+                evidence=evidence,
+                cohort_allowed=cohort_allowed,
+            )
+        )
 
     sampled = [cell for cell in cells if cell["sampleEmissionAllowed"]]
     sample_blocked = [cell for cell in cells if not cell["sampleEmissionAllowed"]]
@@ -1119,10 +1218,13 @@ def build_matrix(args: argparse.Namespace) -> dict[str, Any]:
         "failClosed": {
             "sampleEmissionRequiresPreflightPass": True,
             "preflightSampleEmissionAllowed": bool(preflight.get("sampleEmissionAllowed")),
+            "sampleEmissionRequiresCohortPass": True,
+            "cohortSampleEmissionAllowed": cohort_allowed,
             "allowedStatuses": sorted(ALLOWED_STATUSES),
             "blockedCellCount": len(sample_blocked),
         },
         "preflightState": preflight,
+        "cohortState": cohort,
         "redLinePolicy": red_lines,
         "cells": cells,
         "summary": {
@@ -1137,7 +1239,7 @@ def build_matrix(args: argparse.Namespace) -> dict[str, Any]:
         },
     }
     if status != "pass":
-        issue_breakdown = matrix_issue_breakdown(cells, red_lines, preflight)
+        issue_breakdown = matrix_issue_breakdown(cells, red_lines, preflight, cohort)
         review_commands = matrix_review_commands()
         report["issue_breakdown"] = issue_breakdown
         report["issueBreakdown"] = issue_breakdown
@@ -1174,6 +1276,20 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Source Gate: `{report['preflightState'].get('sourceGate')}`",
         f"- Sample emission allowed: `{report['preflightState'].get('sampleEmissionAllowed')}`",
         f"- Reason: `{report['preflightState'].get('reason')}`",
+        "",
+        "## Cohort Preflight",
+        "",
+        f"- Status: `{report['cohortState']['status']}`",
+        f"- Completion: `{report['cohortState']['completionStatus']}`",
+        f"- Proof: `{report['cohortState']['proofStatus']}`",
+        f"- Source status: `{report['cohortState'].get('sourceStatus')}`",
+        f"- Source artifact: `{report['cohortState'].get('sourceArtifact')}`",
+        f"- Source kind: `{report['cohortState'].get('sourceArtifactKind')}`",
+        f"- Source phase: `{report['cohortState'].get('sourcePhase')}`",
+        f"- Source task: `{report['cohortState'].get('sourceTask')}`",
+        f"- Source Gate: `{report['cohortState'].get('sourceGate')}`",
+        f"- Sample emission allowed: `{report['cohortState'].get('sampleEmissionAllowed')}`",
+        f"- Reason: `{report['cohortState'].get('reason')}`",
         "",
         "## Matrix",
         "",
@@ -1304,6 +1420,10 @@ def main() -> int:
     parser.add_argument(
         "--preflight-report",
         default="tooling/acceptance/reports/desktop-performance-preflight.json",
+    )
+    parser.add_argument(
+        "--cohort-report",
+        default="tooling/acceptance/reports/desktop-performance-cohort-gate.json",
     )
     parser.add_argument(
         "--output-prefix",

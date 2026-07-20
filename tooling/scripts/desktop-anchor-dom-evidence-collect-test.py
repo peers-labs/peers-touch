@@ -43,7 +43,8 @@ class DesktopAnchorDomEvidenceCollectTest(unittest.TestCase):
         }
         return {
             "browser-gateway": {"anchors": anchors},
-            "tauri-webview": {"anchors": anchors},
+            "tauri-webview-dev": {"anchors": anchors},
+            "tauri-webview-packaged": {"anchors": anchors},
         }
 
     def test_complete_observations_emit_proven_contract_accepted_by_gate(self) -> None:
@@ -82,15 +83,25 @@ class DesktopAnchorDomEvidenceCollectTest(unittest.TestCase):
         self.assertEqual(evidence["completionStatus"], "PARTIAL")
         self.assertEqual(evidence["proofStatus"], "UNPROVEN")
         self.assertEqual(evidence["browser"]["status"], "pass")
-        self.assertEqual(evidence["tauri"]["status"], "diagnostic incomplete")
-        self.assertTrue(all(anchor["count"] == 0 for anchor in evidence["tauri"]["anchors"].values()))
+        self.assertEqual(evidence["tauriDev"]["status"], "diagnostic incomplete")
+        self.assertEqual(evidence["tauriPackaged"]["status"], "diagnostic incomplete")
+        self.assertTrue(
+            all(anchor["count"] == 0 for anchor in evidence["tauriDev"]["anchors"].values())
+        )
+        self.assertTrue(
+            all(anchor["count"] == 0 for anchor in evidence["tauriPackaged"]["anchors"].values())
+        )
         self.assertEqual(evidence["artifactKind"], "desktop-anchor-dom-evidence")
         self.assertFalse(evidence["sampleEmissionAllowed"])
         self.assertEqual(evidence["summary"]["completionStatus"], "PARTIAL")
         self.assertEqual(evidence["summary"]["proofStatus"], "UNPROVEN")
         self.assertFalse(evidence["summary"]["sampleEmissionAllowed"])
         self.assertEqual(evidence["issue_breakdown"][0]["category"], "dom-automation-evidence")
-        self.assertEqual(evidence["issue_breakdown"][0]["failedStep"], "tauri-webview")
+        self.assertEqual(evidence["issue_breakdown"][0]["failedStep"], "tauri-webview-dev")
+        self.assertEqual(
+            evidence["issue_breakdown"][1]["failedStep"],
+            "tauri-webview-packaged",
+        )
         self.assertEqual(evidence["issue_breakdown"][0]["sourceArtifactKind"], "desktop-anchor-dom-evidence")
         self.assertEqual(evidence["issue_breakdown"][0]["sourcePhase"], "P0b-1")
         self.assertEqual(evidence["issue_breakdown"][0]["sourceBom"], ["BOM-SMP-01"])

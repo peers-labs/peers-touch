@@ -776,19 +776,11 @@ export function LoginPage({
 
   if (embedded) return cardContent;
 
-  // Pause the heavy SVG backdrop during PIN-related states to eliminate
-  // compositing contention on WebKit's main thread (WKWebView).
-  const backdropHidden =
-    loginState === 'pin_entry' ||
-    loginState === 'relink_pin' ||
-    loginState === 'set_pin';
-
   return (
     <div className="login-network-shell">
       <div
         className="login-network-backdrop"
         aria-hidden="true"
-        style={backdropHidden ? { visibility: 'hidden' } : undefined}
       >
         <StationNetworkIntro labels={networkIntroLabels} />
       </div>

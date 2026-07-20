@@ -1,8 +1,8 @@
 # Frontend Runtime Architecture — 模块目录结构
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-07-02 | **Updated**: 2026-07-10
+> **Version**: v1.2
+> **Created**: 2026-07-02 | **Updated**: 2026-07-11
 > **Owner**: Client Platform Team
 > **Module**: `apps/desktop/src/kernel/`, `apps/desktop/src/runtimes/`
 
@@ -71,8 +71,8 @@ apps/desktop/src/
 | `docs/architecture/frontend-runtime/README.md` | 大前端运行时架构入口 |
 | `docs/architecture/frontend-runtime/design.md` | 上游架构、核心接口、组件关系 |
 | `docs/architecture/frontend-runtime/decisions.md` | 关键决策 ADR |
-| `docs/architecture/frontend-runtime/data-model.md` | surface lifecycle、budget、evidence 模型 |
-| `docs/architecture/frontend-runtime/integration.md` | 与现有 Desktop/UI/Applet 文档和代码的映射 |
+| `docs/architecture/frontend-runtime/data-model.md` | surface lifecycle、budget、interaction work/admission、native evidence cohort 模型 |
+| `docs/architecture/frontend-runtime/integration.md` | 与现有 Desktop/UI/Applet 文档和代码的映射、native evidence ledger 与目标集成条件 |
 | `docs/client/common/ui-identity/frontend-component-tree.md` | 下游组件树和 alive 标准 |
 | `docs/client/common/ui-identity/frontend-component-tree-registry.md` | 页面/section/container 生命周期登记表 |
 | `docs/client/desktop/runtime-projections.md` | Desktop Page/Runtime/Boot 内核契约 |
@@ -110,6 +110,8 @@ architecture/frontend-runtime
 | 目标模块 | 目标路径 | 说明 |
 |----------|----------|------|
 | Frontend runtime profiler | `apps/desktop/src/kernel/frontendRuntimeProfiler.ts` | dev-only route/mount/long-task/hidden-render 采样 |
+| Native evidence correlator | target path decided by platform design after D-15 evidence gate | 关联 input/paint、React/store、bridge/handler/event 和 native process evidence |
+| Interaction admission | target path decided by platform design after D-15 evidence gate | transport-neutral bounded admission、QoS、cancel、supersession、idempotency |
 | SectionHost | `apps/desktop/src/kernel/SectionHost.tsx` | selected-only/lazy/first-visit-cache section 生命周期 |
 | Section registry | `apps/desktop/src/kernel/section.ts` | SectionDescriptor 定义与 registry |
 | AppletContainerShell | `apps/desktop/src/applet/AppletContainerShell.tsx` | embedded/immersive/standalone 容器 shell |

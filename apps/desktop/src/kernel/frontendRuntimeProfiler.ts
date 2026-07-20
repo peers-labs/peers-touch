@@ -29,6 +29,7 @@ const BACKGROUND_MAINTENANCE_INVOKE_COMMANDS = new Set([
 ]);
 const routeStartedAt = new Map<string, number>();
 const routeInteractionIds = new Map<string, string>();
+const inputStartedAt = new Map<string, number>();
 const overlayStartedAt = new Map<string, number>();
 const overlayInteractionIds = new Map<string, string>();
 const overlayVisibleEventKeys = new Set<string>();
@@ -282,6 +283,21 @@ function hasVisibleOverlayMenu(): boolean {
   return Array.from(candidates).some(isVisibleOverlayElement);
 }
 
+export function scheduleAfterPaint(fn: () => void): void {
+  if (typeof window === 'undefined') return;
+  let done = false;
+  const execute = () => {
+    if (done) return;
+    done = true;
+    fn();
+  };
+  if (typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(execute));
+  }
+  const timer = typeof window.setTimeout === 'function' ? window.setTimeout.bind(window) : setTimeout;
+  timer(execute, 32);
+}
+
 function scheduleOverlayVisibleProbe(target: string, interactionId: string, data?: Record<string, unknown>): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   const scheduleTimeout =
@@ -355,6 +371,7 @@ export function teardownFrontendRuntimeProfiler(): void {
   recentRuntimeContext = null;
   routeStartedAt.clear();
   routeInteractionIds.clear();
+  inputStartedAt.clear();
   overlayStartedAt.clear();
   overlayInteractionIds.clear();
   overlayVisibleEventKeys.clear();
@@ -388,6 +405,45 @@ export function markInteractionStarted(
     source,
   });
   return interactionId;
+}
+
+export function markTextInputIntent(
+  target: string,
+  data?: Record<string, unknown>,
+): string | undefined {
+  if (!isEnabled()) return undefined;
+  const interactionId = markInteractionStarted('input', target, data);
+  inputStartedAt.set(interactionId, nowMs());
+  pushEvent({
+    data: { inputTarget: target, ...data },
+    interactionId,
+    kind: 'input.intent',
+    module: target,
+    owner: target,
+    phase: 'interaction',
+    source: 'input',
+  });
+  return interactionId;
+}
+
+export function markTextInputVisible(
+  target: string,
+  interactionId: string,
+  data?: Record<string, unknown>,
+): void {
+  if (!isEnabled()) return;
+  const startedAt = inputStartedAt.get(interactionId);
+  pushEvent({
+    data: { inputTarget: target, ...data },
+    durationMs: startedAt === undefined ? undefined : nowMs() - startedAt,
+    interactionId,
+    kind: 'input.visible',
+    module: target,
+    owner: target,
+    phase: 'interaction',
+    source: 'input',
+  });
+  inputStartedAt.delete(interactionId);
 }
 
 export function markOverlayIntent(target: string, data?: Record<string, unknown>): string {
@@ -627,7 +683,12 @@ export function markInvokeCompleted(
   data?: Record<string, unknown>,
 ): void {
   if (!isEnabled()) return;
-  const interactionId = typeof data?.interactionId === 'string' ? data.interactionId : undefined;
+  const interactionId =
+    typeof data?.interactionId === 'string'
+      ? data.interactionId
+      : SYSTEM_INVOKE_COMMANDS.has(command) || BACKGROUND_MAINTENANCE_INVOKE_COMMANDS.has(command)
+        ? undefined
+        : currentInteractionId();
   const phase = classifyInvokePhase(command, interactionId);
   rememberRuntimeContext(nowMs(), {
     interactionId,
@@ -654,7 +715,12 @@ export function markInvokeFailed(
   data?: Record<string, unknown>,
 ): void {
   if (!isEnabled()) return;
-  const interactionId = typeof data?.interactionId === 'string' ? data.interactionId : undefined;
+  const interactionId =
+    typeof data?.interactionId === 'string'
+      ? data.interactionId
+      : SYSTEM_INVOKE_COMMANDS.has(command) || BACKGROUND_MAINTENANCE_INVOKE_COMMANDS.has(command)
+        ? undefined
+        : currentInteractionId();
   const phase = classifyInvokePhase(command, interactionId);
   rememberRuntimeContext(nowMs(), {
     interactionId,

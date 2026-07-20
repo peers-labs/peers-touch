@@ -61,8 +61,8 @@ def issue_breakdown() -> list[dict[str, Any]]:
         {
             "category": "dom-automation-evidence",
             "failedStep": "dom-evidence-template",
-            "summary": "Browser and Tauri/WebView DOM automation has not populated runtime anchor observations.",
-            "proofImpact": "P0b-1 remains PARTIAL/UNPROVEN until browser and Tauri/WebView DOM evidence proves every required anchor.",
+            "summary": "Browser, dev native, and packaged native DOM automation has not populated runtime anchor observations.",
+            "proofImpact": "P0b-1 remains PARTIAL/UNPROVEN until all three runtime cells prove every required anchor.",
             "status": "diagnostic incomplete",
             "completionStatus": "PARTIAL",
             "proofStatus": "UNPROVEN",
@@ -88,7 +88,7 @@ def recommended_review_commands() -> list[dict[str, str]]:
             "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-template.py",
         },
         {
-            "purpose": "Collect browser/Tauri DOM anchor observations when runtimes are available.",
+            "purpose": "Collect browser/dev-native/packaged-native DOM anchor observations when runtimes are available.",
             "command": COLLECT_COMMAND,
         },
         {
@@ -123,7 +123,11 @@ def build_template() -> dict[str, Any]:
         "spec": list(inventory.DOM_EVIDENCE_SPEC),
         "gate": inventory.DOM_EVIDENCE_GATE,
         "browser": runtime_template("browser-gateway", inventory.REQUIRED_ANCHORS),
-        "tauri": runtime_template("tauri-webview", inventory.REQUIRED_ANCHORS),
+        "tauriDev": runtime_template("tauri-webview-dev", inventory.REQUIRED_ANCHORS),
+        "tauriPackaged": runtime_template(
+            "tauri-webview-packaged",
+            inventory.REQUIRED_ANCHORS,
+        ),
         "issue_breakdown": issues,
         "issueBreakdown": issues,
         "summary": {
@@ -132,7 +136,7 @@ def build_template() -> dict[str, Any]:
             "completionStatus": "PARTIAL",
             "proofStatus": "UNPROVEN",
             "sampleEmissionAllowed": False,
-            "reason": "Browser and Tauri/WebView DOM automation has not populated runtime anchor observations.",
+            "reason": "Browser, dev native, and packaged native DOM automation has not populated runtime anchor observations.",
         },
         "recommended_review_commands": review_commands,
         "recommendedReviewCommands": review_commands,
@@ -173,7 +177,7 @@ def build_observations_template() -> dict[str, Any]:
         }
         for anchor in inventory.REQUIRED_ANCHORS
     ]
-    reason = "Observation template only; replace count=0 with live browser/Tauri DOM match counts before collection."
+    reason = "Observation template only; replace count=0 with live browser/dev-native/packaged-native DOM match counts before collection."
     return {
         "schemaVersion": 1,
         "artifactKind": OBSERVATIONS_TEMPLATE_ARTIFACT_KIND,
@@ -187,10 +191,21 @@ def build_observations_template() -> dict[str, Any]:
         "spec": list(inventory.DOM_EVIDENCE_SPEC),
         "gate": inventory.DOM_EVIDENCE_GATE,
         "source": "dom-observations-template",
-        "requiredRuntimes": ["browser-gateway", "tauri-webview"],
+        "requiredRuntimes": [
+            "browser-gateway",
+            "tauri-webview-dev",
+            "tauri-webview-packaged",
+        ],
         "requiredAnchors": required_anchors,
         "browser-gateway": runtime_observation_template("browser-gateway", inventory.REQUIRED_ANCHORS),
-        "tauri-webview": runtime_observation_template("tauri-webview", inventory.REQUIRED_ANCHORS),
+        "tauri-webview-dev": runtime_observation_template(
+            "tauri-webview-dev",
+            inventory.REQUIRED_ANCHORS,
+        ),
+        "tauri-webview-packaged": runtime_observation_template(
+            "tauri-webview-packaged",
+            inventory.REQUIRED_ANCHORS,
+        ),
         "recommendedCollectionCommand": (
             "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py "
             "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json "

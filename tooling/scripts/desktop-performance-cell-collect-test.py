@@ -36,8 +36,8 @@ class DesktopPerformanceCellCollectTest(unittest.TestCase):
     def sampled_observations(self) -> dict[str, object]:
         return {
             "cells": {
-                "tauri-webview": {
-                    "runtime": "tauri-webview",
+                "tauri-webview-dev": {
+                    "runtime": "tauri-webview-dev",
                     "entrypoint": "make desktop",
                     "startupMode": "dev-tauri-webview",
                     "readyShell": {
@@ -66,8 +66,8 @@ class DesktopPerformanceCellCollectTest(unittest.TestCase):
         evidence = collect.build_evidence(
             self.sampled_observations(),
             {"status": "loaded", "path": "inline"},
-            ["tauri-webview"],
-        )["tauri-webview"]
+            ["tauri-webview-dev"],
+        )["tauri-webview-dev"]
 
         self.assertEqual(evidence["status"], "sampled")
         self.assertEqual(evidence["artifactKind"], "desktop-performance-runtime-cell")
@@ -84,7 +84,7 @@ class DesktopPerformanceCellCollectTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             cell_dir = Path(tmp) / "cells"
-            collect.write_evidence({"tauri-webview": evidence}, cell_dir)
+            collect.write_evidence({"tauri-webview-dev": evidence}, cell_dir)
             report = matrix.build_matrix(
                 argparse.Namespace(
                     live_gate_report=str(Path(tmp) / "missing-live-gate.json"),
@@ -93,7 +93,9 @@ class DesktopPerformanceCellCollectTest(unittest.TestCase):
                 )
             )
 
-        tauri = next(cell for cell in report["cells"] if cell["cellId"] == "tauri-webview")
+        tauri = next(
+            cell for cell in report["cells"] if cell["cellId"] == "tauri-webview-dev"
+        )
         self.assertEqual(tauri["status"], "sampled")
         self.assertEqual(tauri["proofStatus"], "PROVEN")
         self.assertTrue(tauri["sampleEmissionAllowed"])
@@ -110,8 +112,8 @@ class DesktopPerformanceCellCollectTest(unittest.TestCase):
                 "path": "tooling/acceptance/reports/desktop-performance-cell-observations.json",
                 "reason": "runtime cell observations file is missing",
             },
-            ["prod-preview"],
-        )["prod-preview"]
+            ["tauri-webview-packaged"],
+        )["tauri-webview-packaged"]
 
         self.assertEqual(evidence["status"], "diagnostic incomplete")
         self.assertEqual(evidence["completionStatus"], "PARTIAL")
@@ -121,19 +123,29 @@ class DesktopPerformanceCellCollectTest(unittest.TestCase):
         self.assertEqual(evidence["telemetry"]["proofStatus"], "UNPROVEN")
         self.assertIn("missing runtime cell observation", evidence["validationDetails"])
         self.assertEqual(evidence["issue_breakdown"][0]["category"], "runtime-cell-evidence")
-        self.assertEqual(evidence["issueBreakdown"][0]["failedStep"], "prod-preview")
-        self.assertEqual(evidence["recommended_review_commands"][0]["command"], "make desktop-web PREVIEW=1")
-        self.assertEqual(evidence["recommendedReviewCommands"][0]["command"], "make desktop-web PREVIEW=1")
+        self.assertEqual(
+            evidence["issueBreakdown"][0]["failedStep"],
+            "tauri-webview-packaged",
+        )
+        packaged_entrypoint = "pnpm --dir apps/desktop tauri build --features e2e-testing"
+        self.assertEqual(
+            evidence["recommended_review_commands"][0]["command"],
+            packaged_entrypoint,
+        )
+        self.assertEqual(
+            evidence["recommendedReviewCommands"][0]["command"],
+            packaged_entrypoint,
+        )
 
     def test_runtime_entrypoint_startup_mismatch_blocks_sample_emission(self) -> None:
         collect = load_collect_module()
         observations = self.sampled_observations()
-        observations["cells"]["tauri-webview"]["entrypoint"] = "make desktop-web"
+        observations["cells"]["tauri-webview-dev"]["entrypoint"] = "make desktop-web"
         evidence = collect.build_evidence(
             observations,
             {"status": "loaded", "path": "inline"},
-            ["tauri-webview"],
-        )["tauri-webview"]
+            ["tauri-webview-dev"],
+        )["tauri-webview-dev"]
 
         self.assertEqual(evidence["status"], "diagnostic incomplete")
         self.assertEqual(evidence["proofStatus"], "UNPROVEN")
@@ -160,10 +172,15 @@ class DesktopPerformanceCellCollectTest(unittest.TestCase):
                 sys.argv = old_argv
 
             written = sorted(path.name for path in output_dir.glob("*.json"))
-            tauri = json.loads((output_dir / "tauri-webview.json").read_text(encoding="utf-8"))
+            tauri = json.loads(
+                (output_dir / "tauri-webview-dev.json").read_text(encoding="utf-8")
+            )
 
         self.assertEqual(exit_code, 0)
-        self.assertEqual(written, ["offline-fixture.json", "prod-preview.json", "tauri-webview.json"])
+        self.assertEqual(
+            written,
+            ["tauri-webview-dev.json", "tauri-webview-packaged.json"],
+        )
         self.assertEqual(tauri["status"], "diagnostic incomplete")
         self.assertEqual(tauri["artifactKind"], "desktop-performance-runtime-cell")
         self.assertEqual(tauri["completionStatus"], "PARTIAL")
