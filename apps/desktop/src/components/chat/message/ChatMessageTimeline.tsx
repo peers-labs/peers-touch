@@ -1,7 +1,8 @@
-import { Fragment } from 'react';
+import { useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography } from 'antd';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   buildChatMessageSurfaceItems,
   countChatThreadReplies,
@@ -40,6 +41,7 @@ interface ChatMessageTimelineProps {
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
   resolveThreadStats: (message: ChatMessage) => ChatThreadStats;
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 function formatDateSeparator(date: Date, locale: string): string {
@@ -89,6 +91,8 @@ export function loadedThreadReplyCount(messages: ChatMessage[], rootUlid: string
   return countChatThreadReplies(messages, rootUlid);
 }
 
+const ESTIMATED_ROW_HEIGHT = 72;
+
 export function ChatMessageTimeline({
   activeConversationId,
   activeKind,
@@ -102,46 +106,91 @@ export function ChatMessageTimeline({
   onRecall,
   onReply,
   resolveThreadStats,
+  scrollContainerRef,
 }: ChatMessageTimelineProps) {
   const surfaceItems = buildChatMessageSurfaceItems({
     messages,
     resolveTimestampMs: messageTimestampMs,
   });
 
+  const measureRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  const virtualizer = useVirtualizer({
+    count: surfaceItems.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => ESTIMATED_ROW_HEIGHT,
+    overscan: 5,
+    measureElement: (el) => el.getBoundingClientRect().height,
+  });
+
+  const measureRef = useCallback(
+    (index: number) => (node: HTMLDivElement | null) => {
+      if (node) {
+        measureRefs.current.set(index, node);
+        virtualizer.measureElement(node);
+      } else {
+        measureRefs.current.delete(index);
+      }
+    },
+    [virtualizer],
+  );
+
+  const virtualItems = virtualizer.getVirtualItems();
+
   return (
     <>
       <ChatMessageRowInteractionStyle />
-      {surfaceItems.map((item) => {
-        const message = item.message;
-        const messageDate = item.timestampMs > 0 ? new Date(item.timestampMs) : null;
-        const threadStats = resolveThreadStats(message);
+      <div
+        style={{
+          height: virtualizer.getTotalSize(),
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualItems.map((virtualItem) => {
+          const item = surfaceItems[virtualItem.index];
+          const message = item.message;
+          const messageDate = item.timestampMs > 0 ? new Date(item.timestampMs) : null;
+          const threadStats = resolveThreadStats(message);
 
-        return (
-          <Fragment key={message.ulid}>
-            {item.showDateSeparator && messageDate && (
-              <DateSeparator date={messageDate} />
-            )}
-            <ChatMessageRow
-              activeConversationId={activeConversationId}
-              activeKind={activeKind}
-              currentUserDid={currentUserDid}
-              getSenderProfile={getSenderProfile}
-              highlighted={highlightedMessageUlid === message.ulid}
-              message={message}
-              messages={messages}
-              onDelete={onDelete}
-              onEdit={onEdit}
-              onOpenThread={onOpenThread}
-              onRecall={onRecall}
-              onReply={onReply}
-              threadReplyCount={threadStats.replyCount}
-              threadUnreadCount={threadStats.unreadCount}
-              threadPreviewMessages={threadStats.previewMessages}
-              timelineGap={item.timelineGap}
-            />
-          </Fragment>
-        );
-      })}
+          return (
+            <div
+              key={message.ulid}
+              ref={measureRef(virtualItem.index)}
+              data-index={virtualItem.index}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              {item.showDateSeparator && messageDate && (
+                <DateSeparator date={messageDate} />
+              )}
+              <ChatMessageRow
+                activeConversationId={activeConversationId}
+                activeKind={activeKind}
+                currentUserDid={currentUserDid}
+                getSenderProfile={getSenderProfile}
+                highlighted={highlightedMessageUlid === message.ulid}
+                message={message}
+                messages={messages}
+                onDelete={onDelete}
+                onEdit={onEdit}
+                onOpenThread={onOpenThread}
+                onRecall={onRecall}
+                onReply={onReply}
+                threadReplyCount={threadStats.replyCount}
+                threadUnreadCount={threadStats.unreadCount}
+                threadPreviewMessages={threadStats.previewMessages}
+                timelineGap={item.timelineGap}
+              />
+            </div>
+          );
+        })}
+      </div>
     </>
   );
 }
