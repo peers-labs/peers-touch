@@ -305,7 +305,7 @@ export function installChatAcceptanceHarness(): void {
         const { StationEnvelopeSchema, EnvelopePayloadType } = await import('../gen/proto/domain/chat/envelope_pb');
         const envelope = createProto(StationEnvelopeSchema, {
           conversationId: groupUlid,
-          senderActorDid: did,
+          senderPtid: did,
           payloadType: EnvelopePayloadType.COMMITTED_EVENT,
           payloadBytes: ciphertext,
           idempotencyKey: crypto.randomUUID(),

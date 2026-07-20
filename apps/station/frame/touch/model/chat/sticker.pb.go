@@ -267,7 +267,7 @@ func (x *Sticker) GetFileSize() int64 {
 // 用户贴纸收藏
 type UserStickerCollection struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
-	ActorDid           string                 `protobuf:"bytes,1,opt,name=actor_did,json=actorDid,proto3" json:"actor_did,omitempty"`
+	Ptid               string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	CollectedPackUlids []string               `protobuf:"bytes,2,rep,name=collected_pack_ulids,json=collectedPackUlids,proto3" json:"collected_pack_ulids,omitempty"` // 收藏的贴纸包ID列表
 	RecentStickers     []*RecentSticker       `protobuf:"bytes,3,rep,name=recent_stickers,json=recentStickers,proto3" json:"recent_stickers,omitempty"`               // 最近使用的贴纸
 	unknownFields      protoimpl.UnknownFields
@@ -304,9 +304,9 @@ func (*UserStickerCollection) Descriptor() ([]byte, []int) {
 	return file_domain_chat_sticker_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *UserStickerCollection) GetActorDid() string {
+func (x *UserStickerCollection) GetPtid() string {
 	if x != nil {
-		return x.ActorDid
+		return x.Ptid
 	}
 	return ""
 }
@@ -1254,9 +1254,9 @@ const file_domain_chat_sticker_proto_rawDesc = "" +
 	"\x05width\x18\x06 \x01(\x05R\x05width\x12\x16\n" +
 	"\x06height\x18\a \x01(\x05R\x06height\x12\x1b\n" +
 	"\tfile_type\x18\b \x01(\tR\bfileType\x12\x1b\n" +
-	"\tfile_size\x18\t \x01(\x03R\bfileSize\"\xb9\x01\n" +
-	"\x15UserStickerCollection\x12\x1b\n" +
-	"\tactor_did\x18\x01 \x01(\tR\bactorDid\x120\n" +
+	"\tfile_size\x18\t \x01(\x03R\bfileSize\"\xb0\x01\n" +
+	"\x15UserStickerCollection\x12\x12\n" +
+	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x120\n" +
 	"\x14collected_pack_ulids\x18\x02 \x03(\tR\x12collectedPackUlids\x12Q\n" +
 	"\x0frecent_stickers\x18\x03 \x03(\v2(.peers_touch.model.chat.v1.RecentStickerR\x0erecentStickers\"\x84\x01\n" +
 	"\rRecentSticker\x12!\n" +

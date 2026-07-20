@@ -9,10 +9,12 @@ import (
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/social_gate"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 
 	envpkg "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
@@ -24,11 +26,14 @@ import (
 type subServer struct {
 	status          server.Status
 	jwtWrapper      server.Wrapper
+	repo            Repository
 	service         Service
 	kpStore         *KeyPackageStore
 	deviceStore     *DeviceStore
 	envelopeService envpkg.Service
 	localStationID  string
+	fedKpFetcher    *FederatedKeyPackageFetcher
+	gateEval        *ConversationGateEvaluator
 }
 
 func NewConversationSubServer(opts ...option.Option) server.Subserver {
@@ -58,6 +63,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 
 	s.localStationID = conversationLocalAudience()
 	repo := newPostgresConversationRepo(rds)
+	s.repo = repo
 	s.kpStore = NewKeyPackageStore(rds)
 	s.deviceStore = NewDeviceStore(rds)
 
@@ -68,6 +74,12 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 
 	s.envelopeService = envelopeService
 	s.service = NewConversationService(repo, envelopeBridge, s.localStationID)
+	s.fedKpFetcher = NewFederatedKeyPackageFetcher(authfed.Singleton())
+
+	// Social gate: compose policy evaluator from repository-backed adapters.
+	relAdapter := NewConversationRelationshipAdapter(repo, rds)
+	roleAdapter := NewConversationGroupRoleAdapter(repo)
+	s.gateEval = NewConversationGateEvaluator(relAdapter, roleAdapter, nil)
 
 	return nil
 }
@@ -91,15 +103,24 @@ func (s *subServer) Status() server.Status { return s.status }
 
 func (s *subServer) Handlers() []server.Handler {
 	logID := serverwrapper.LogID()
+	deviceIDWrapper := serverwrapper.DeviceID()
+
+	// Social gate wrappers — applied AFTER jwtWrapper (auth must come first).
+	createDirectGate := social_gate.NewGateWrapper(s.gateEval, "create_direct", extractCreateDirectOp)
+	submitCmdGate := social_gate.NewGateWrapper(s.gateEval, "send_message", extractSubmitCommandOp)
+	fetchKpGate := social_gate.NewGateWrapper(s.gateEval, "fetch_key_package", extractFetchKeyPackageOp)
+	mlsDistributeGate := social_gate.NewGateWrapper(s.gateEval, "mls_distribute", extractMlsDistributeOp)
+	dkxSendGate := social_gate.NewGateWrapper(s.gateEval, "dkx_send", extractDkxSendOp)
+
 	return []server.Handler{
 		server.NewTypedHandler("conv-create-direct", "/conversation/direct", server.POST,
-			s.handleCreateDirect, logID, s.jwtWrapper),
+			s.handleCreateDirect, logID, createDirectGate, s.jwtWrapper),
 		server.NewTypedHandler("conv-create-group", "/conversation/group", server.POST,
 			s.handleCreateGroup, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-submit-cmd", "/conversation/command", server.POST,
-			s.handleSubmitCommand, logID, s.jwtWrapper),
+			s.handleSubmitCommand, logID, deviceIDWrapper, submitCmdGate, s.jwtWrapper),
 		server.NewTypedHandler("conv-receipt", "/conversation/receipt", server.POST,
-			s.handleSubmitReceipt, logID, s.jwtWrapper),
+			s.handleSubmitReceipt, logID, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("conv-get", "/conversation/get", server.GET,
 			s.handleGetConversation, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-list", "/conversation/list", server.GET,
@@ -109,89 +130,85 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("conv-events", "/conversation/events", server.GET,
 			s.handleListEvents, logID, s.jwtWrapper),
 		server.NewTypedHandler("kp-upload", "/keypackage/upload", server.POST,
-			s.handleUploadKeyPackage, logID, s.jwtWrapper),
+			s.handleUploadKeyPackage, logID, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("kp-fetch", "/keypackage/fetch", server.POST,
-			s.handleFetchKeyPackage, logID, s.jwtWrapper),
+			s.handleFetchKeyPackage, logID, fetchKpGate, s.jwtWrapper),
 		server.NewTypedHandler("kp-count", "/keypackage/count", server.GET,
 			s.handleCountKeyPackages, logID, s.jwtWrapper),
 		server.NewTypedHandler("device-register", "/device/register", server.POST,
-			s.handleDeviceRegister, logID, s.jwtWrapper),
+			s.handleDeviceRegister, logID, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("device-list", "/device/list", server.GET,
 			s.handleDeviceList, logID, s.jwtWrapper),
 		server.NewTypedHandler("device-revoke", "/device/revoke", server.POST,
-			s.handleDeviceRevoke, logID, s.jwtWrapper),
+			s.handleDeviceRevoke, logID, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("mls-distribute", "/mls/distribute", server.POST,
-			s.handleMlsDistribute, logID, s.jwtWrapper),
+			s.handleMlsDistribute, logID, deviceIDWrapper, mlsDistributeGate, s.jwtWrapper),
 		server.NewTypedHandler("dkx-send", "/dkx/send", server.POST,
-			s.handleDkxSend, logID, s.jwtWrapper),
+			s.handleDkxSend, logID, deviceIDWrapper, dkxSendGate, s.jwtWrapper),
 	}
-}
-
-// --- Request/Response types ---
-
-type createDirectRequest struct {
-	PeerActorDid     string `json:"peer_actor_did"`
-	PeerStationPeerID string `json:"peer_station_peer_id"`
-}
-
-type createDirectResponse struct {
-	Conversation *chat.Conversation `json:"conversation"`
-}
-
-type submitCommandRequest struct {
-	Command *chat.ConversationCommand `json:"command"`
-}
-
-type submitCommandResponse struct {
-	Event *chat.CommittedConversationEvent `json:"event"`
-}
-
-type getConversationRequest struct {
-	ConversationId string `json:"conversation_id"`
-}
-
-type getConversationResponse struct {
-	Conversation *chat.Conversation `json:"conversation"`
-}
-
-type listConversationsRequest struct{}
-
-type listConversationsResponse struct {
-	Conversations []*chat.Conversation `json:"conversations"`
-}
-
-type getMembersRequest struct {
-	ConversationId string `json:"conversation_id"`
-}
-
-type getMembersResponse struct {
-	Members []*chat.ConversationMember `json:"members"`
 }
 
 // --- Handlers ---
 
-func (s *subServer) handleCreateDirect(ctx context.Context, req *createDirectRequest) (*createDirectResponse, error) {
+func (s *subServer) handleCreateDirect(ctx context.Context, req *chat.CreateDirectConversationRequest) (*chat.CreateDirectConversationResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.PeerActorDid == "" {
-		return nil, server.BadRequest("peer_actor_did is required")
+	if req.PeerPtid == "" {
+		return nil, server.BadRequest("peer_ptid is required")
 	}
 
-	peerStation := req.PeerStationPeerID
+	peerStation := req.PeerStationPeerId
 	if peerStation == "" {
 		peerStation = s.localStationID
 	}
 
-	conv, err := s.service.CreateDirect(ctx, subject.ID, req.PeerActorDid, s.localStationID, peerStation)
+	conv, err := s.service.CreateDirect(ctx, subject.ID, req.PeerPtid, s.localStationID, peerStation)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("create direct conversation failed", err)
 	}
-	return &createDirectResponse{Conversation: conv}, nil
+	return &chat.CreateDirectConversationResponse{Conversation: conv}, nil
 }
 
-func (s *subServer) handleSubmitCommand(ctx context.Context, req *submitCommandRequest) (*submitCommandResponse, error) {
+func (s *subServer) handleCreateGroup(ctx context.Context, req *chat.CreateGroupConversationRequest) (*chat.CreateGroupConversationResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.Name == "" {
+		return nil, server.BadRequest("name is required")
+	}
+
+	entries := make([]MemberEntry, 0, len(req.Members)+1)
+	entries = append(entries, MemberEntry{
+		Ptid:      subject.ID,
+		StationID: s.localStationID,
+		Role:      chat.MemberRole_MEMBER_ROLE_OWNER,
+	})
+	for _, m := range req.Members {
+		if m.Ptid == subject.ID {
+			continue
+		}
+		station := m.StationId
+		if station == "" {
+			station = s.localStationID
+		}
+		entries = append(entries, MemberEntry{
+			Ptid:      m.Ptid,
+			StationID: station,
+			Role:      chat.MemberRole_MEMBER_ROLE_MEMBER,
+		})
+	}
+
+	conv, err := s.service.CreateGroup(ctx, req.Name, subject.ID, s.localStationID, entries)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("create group failed", err)
+	}
+	return &chat.CreateGroupConversationResponse{Conversation: conv}, nil
+}
+
+func (s *subServer) handleSubmitCommand(ctx context.Context, req *chat.SubmitConversationCommandRequest) (*chat.SubmitConversationCommandResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -200,25 +217,19 @@ func (s *subServer) handleSubmitCommand(ctx context.Context, req *submitCommandR
 		return nil, server.BadRequest("command is required")
 	}
 
-	req.Command.SenderActorDid = subject.ID
+	req.Command.SenderPtid = subject.ID
+	if deviceID := serverwrapper.GetDeviceID(ctx); deviceID != "" {
+		req.Command.SenderDeviceId = deviceID
+	}
 
 	event, err := s.service.SubmitCommand(ctx, req.Command)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("submit command failed", err)
 	}
-	return &submitCommandResponse{Event: event}, nil
+	return &chat.SubmitConversationCommandResponse{Event: event}, nil
 }
 
-type submitReceiptRequest struct {
-	ConversationId string `json:"conversation_id"`
-	MessageId      string `json:"message_id"`
-	DeviceId       string `json:"device_id"`
-	ReceiptType    int32  `json:"receipt_type"`
-}
-
-type submitReceiptResponse struct{}
-
-func (s *subServer) handleSubmitReceipt(ctx context.Context, req *submitReceiptRequest) (*submitReceiptResponse, error) {
+func (s *subServer) handleSubmitReceipt(ctx context.Context, req *chat.SubmitConversationReceiptRequest) (*chat.SubmitConversationReceiptResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -230,18 +241,18 @@ func (s *subServer) handleSubmitReceipt(ctx context.Context, req *submitReceiptR
 	receipt := &chat.MessageReceipt{
 		ConversationId: req.ConversationId,
 		MessageId:      req.MessageId,
-		ActorDid:       subject.ID,
+		Ptid:           subject.ID,
 		DeviceId:       req.DeviceId,
-		ReceiptType:    chat.ReceiptType(req.ReceiptType),
+		ReceiptType:    req.ReceiptType,
 	}
 
 	if err := s.service.SubmitReceipt(ctx, receipt); err != nil {
 		return nil, server.InternalErrorWithCause("submit receipt failed", err)
 	}
-	return &submitReceiptResponse{}, nil
+	return &chat.SubmitConversationReceiptResponse{}, nil
 }
 
-func (s *subServer) handleGetConversation(ctx context.Context, req *getConversationRequest) (*getConversationResponse, error) {
+func (s *subServer) handleGetConversation(ctx context.Context, req *chat.GetConversationRequest) (*chat.GetConversationResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -254,10 +265,10 @@ func (s *subServer) handleGetConversation(ctx context.Context, req *getConversat
 	if err != nil {
 		return nil, server.InternalErrorWithCause("get conversation failed", err)
 	}
-	return &getConversationResponse{Conversation: conv}, nil
+	return &chat.GetConversationResponse{Conversation: conv}, nil
 }
 
-func (s *subServer) handleListConversations(ctx context.Context, _ *listConversationsRequest) (*listConversationsResponse, error) {
+func (s *subServer) handleListConversations(ctx context.Context, _ *chat.ListConversationsRequest) (*chat.ListConversationsResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -267,10 +278,10 @@ func (s *subServer) handleListConversations(ctx context.Context, _ *listConversa
 	if err != nil {
 		return nil, server.InternalErrorWithCause("list conversations failed", err)
 	}
-	return &listConversationsResponse{Conversations: convs}, nil
+	return &chat.ListConversationsResponse{Conversations: convs}, nil
 }
 
-func (s *subServer) handleGetMembers(ctx context.Context, req *getMembersRequest) (*getMembersResponse, error) {
+func (s *subServer) handleGetMembers(ctx context.Context, req *chat.GetConversationMembersRequest) (*chat.GetConversationMembersResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -283,20 +294,10 @@ func (s *subServer) handleGetMembers(ctx context.Context, req *getMembersRequest
 	if err != nil {
 		return nil, server.InternalErrorWithCause("get members failed", err)
 	}
-	return &getMembersResponse{Members: members}, nil
+	return &chat.GetConversationMembersResponse{Members: members}, nil
 }
 
-type listEventsRequest struct {
-	ConversationId string `json:"conversation_id"`
-	AfterSeq       int64  `json:"after_seq"`
-	Limit          int    `json:"limit"`
-}
-
-type listEventsResponse struct {
-	Events []*chat.CommittedConversationEvent `json:"events"`
-}
-
-func (s *subServer) handleListEvents(ctx context.Context, req *listEventsRequest) (*listEventsResponse, error) {
+func (s *subServer) handleListEvents(ctx context.Context, req *chat.ListConversationEventsRequest) (*chat.ListConversationEventsResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -305,125 +306,66 @@ func (s *subServer) handleListEvents(ctx context.Context, req *listEventsRequest
 		return nil, server.BadRequest("conversation_id is required")
 	}
 
-	events, err := s.service.ListEvents(ctx, req.ConversationId, req.AfterSeq, req.Limit)
+	events, err := s.service.ListEvents(ctx, req.ConversationId, req.AfterSeq, int(req.Limit))
 	if err != nil {
 		return nil, server.InternalErrorWithCause("list events failed", err)
 	}
-	return &listEventsResponse{Events: events}, nil
-}
-
-// --- CreateGroup handler ---
-
-type createGroupRequest struct {
-	Name    string        `json:"name"`
-	Members []memberEntry `json:"members"`
-}
-
-type memberEntry struct {
-	ActorDid  string `json:"actor_did"`
-	StationID string `json:"station_id"`
-}
-
-type createGroupResponse struct {
-	Conversation *chat.Conversation `json:"conversation"`
-}
-
-func (s *subServer) handleCreateGroup(ctx context.Context, req *createGroupRequest) (*createGroupResponse, error) {
-	subject := coreauth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	if req.Name == "" {
-		return nil, server.BadRequest("name is required")
-	}
-
-	entries := make([]MemberEntry, 0, len(req.Members)+1)
-	entries = append(entries, MemberEntry{
-		ActorDID:  subject.ID,
-		StationID: s.localStationID,
-		Role:      chat.MemberRole_MEMBER_ROLE_OWNER,
-	})
-	for _, m := range req.Members {
-		if m.ActorDid == subject.ID {
-			continue
-		}
-		station := m.StationID
-		if station == "" {
-			station = s.localStationID
-		}
-		entries = append(entries, MemberEntry{
-			ActorDID:  m.ActorDid,
-			StationID: station,
-			Role:      chat.MemberRole_MEMBER_ROLE_MEMBER,
-		})
-	}
-
-	conv, err := s.service.CreateGroup(ctx, req.Name, subject.ID, s.localStationID, entries)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("create group failed", err)
-	}
-	return &createGroupResponse{Conversation: conv}, nil
+	return &chat.ListConversationEventsResponse{Events: events}, nil
 }
 
 // --- KeyPackage handlers ---
 
-type uploadKeyPackageRequest struct {
-	DeviceId string `json:"device_id"`
-	Data     []byte `json:"data"`
-}
-
-type uploadKeyPackageResponse struct{}
-
-type fetchKeyPackageRequest struct {
-	ActorDid string `json:"actor_did"`
-}
-
-type fetchKeyPackageResponse struct {
-	Data      []byte `json:"data"`
-	Available bool   `json:"available"`
-}
-
-type countKeyPackagesRequest struct{}
-
-type countKeyPackagesResponse struct {
-	Count int64 `json:"count"`
-}
-
-func (s *subServer) handleUploadKeyPackage(ctx context.Context, req *uploadKeyPackageRequest) (*uploadKeyPackageResponse, error) {
+func (s *subServer) handleUploadKeyPackage(ctx context.Context, req *chat.UploadKeyPackageRequest) (*chat.UploadKeyPackageResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.DeviceId == "" {
+
+	// Header takes precedence; fall back to body field for backwards compatibility.
+	deviceID := req.DeviceId
+	if headerDeviceID := serverwrapper.GetDeviceID(ctx); headerDeviceID != "" {
+		deviceID = headerDeviceID
+	}
+
+	if deviceID == "" {
 		return nil, server.BadRequest("device_id is required")
 	}
 	if len(req.Data) == 0 {
 		return nil, server.BadRequest("data is required")
 	}
 
-	if err := s.kpStore.Upload(ctx, subject.ID, req.DeviceId, s.localStationID, req.Data); err != nil {
+	if err := s.kpStore.Upload(ctx, subject.ID, deviceID, s.localStationID, req.Data); err != nil {
 		return nil, server.InternalErrorWithCause("upload keypackage failed", err)
 	}
-	return &uploadKeyPackageResponse{}, nil
+	return &chat.UploadKeyPackageResponse{}, nil
 }
 
-func (s *subServer) handleFetchKeyPackage(ctx context.Context, req *fetchKeyPackageRequest) (*fetchKeyPackageResponse, error) {
+func (s *subServer) handleFetchKeyPackage(ctx context.Context, req *chat.FetchKeyPackageRequest) (*chat.FetchKeyPackageResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.ActorDid == "" {
-		return nil, server.BadRequest("actor_did is required")
+	if req.Ptid == "" {
+		return nil, server.BadRequest("ptid is required")
 	}
 
-	data, err := s.kpStore.FetchAndConsume(ctx, req.ActorDid)
+	data, err := s.kpStore.FetchAndConsume(ctx, req.Ptid)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("fetch keypackage failed", err)
 	}
-	return &fetchKeyPackageResponse{Data: data, Available: data != nil}, nil
+
+	if data == nil && req.HomeStationPeerId != "" && req.HomeStationPeerId != s.localStationID {
+		remoteData, fetchErr := s.fedKpFetcher.FetchRemote(ctx, req.HomeStationPeerId, req.Ptid)
+		if fetchErr != nil {
+			return nil, server.InternalErrorWithCause("federated keypackage fetch failed", fetchErr)
+		}
+		data = remoteData
+	}
+
+	return &chat.FetchKeyPackageResponse{Data: data, Available: data != nil}, nil
 }
 
-func (s *subServer) handleCountKeyPackages(ctx context.Context, _ *countKeyPackagesRequest) (*countKeyPackagesResponse, error) {
+func (s *subServer) handleCountKeyPackages(ctx context.Context, _ *chat.CountKeyPackagesRequest) (*chat.CountKeyPackagesResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -433,20 +375,12 @@ func (s *subServer) handleCountKeyPackages(ctx context.Context, _ *countKeyPacka
 	if err != nil {
 		return nil, server.InternalErrorWithCause("count keypackages failed", err)
 	}
-	return &countKeyPackagesResponse{Count: count}, nil
+	return &chat.CountKeyPackagesResponse{Count: count}, nil
 }
 
 // --- Device handlers ---
 
-type deviceRegisterRequest struct {
-	DeviceId  string `json:"device_id"`
-	Label     string `json:"label"`
-	PublicKey []byte `json:"public_key"`
-}
-
-type deviceRegisterResponse struct{}
-
-func (s *subServer) handleDeviceRegister(ctx context.Context, req *deviceRegisterRequest) (*deviceRegisterResponse, error) {
+func (s *subServer) handleDeviceRegister(ctx context.Context, req *chat.RegisterDeviceRequest) (*chat.RegisterDeviceResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -458,23 +392,10 @@ func (s *subServer) handleDeviceRegister(ctx context.Context, req *deviceRegiste
 	if err := s.deviceStore.Register(ctx, subject.ID, req.DeviceId, req.Label, req.PublicKey); err != nil {
 		return nil, server.InternalErrorWithCause("device register failed", err)
 	}
-	return &deviceRegisterResponse{}, nil
+	return &chat.RegisterDeviceResponse{}, nil
 }
 
-type deviceListRequest struct{}
-
-type deviceListResponse struct {
-	Devices []deviceInfo `json:"devices"`
-}
-
-type deviceInfo struct {
-	DeviceID  string  `json:"device_id"`
-	Label     string  `json:"label"`
-	CreatedAt string  `json:"created_at"`
-	Revoked   bool    `json:"revoked"`
-}
-
-func (s *subServer) handleDeviceList(ctx context.Context, _ *deviceListRequest) (*deviceListResponse, error) {
+func (s *subServer) handleDeviceList(ctx context.Context, _ *chat.ListDevicesRequest) (*chat.ListDevicesResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -485,25 +406,19 @@ func (s *subServer) handleDeviceList(ctx context.Context, _ *deviceListRequest) 
 		return nil, server.InternalErrorWithCause("device list failed", err)
 	}
 
-	devices := make([]deviceInfo, 0, len(records))
+	devices := make([]*chat.DeviceInfoView, 0, len(records))
 	for _, r := range records {
-		devices = append(devices, deviceInfo{
-			DeviceID:  r.DeviceID,
+		devices = append(devices, &chat.DeviceInfoView{
+			DeviceId:  r.DeviceID,
 			Label:     r.Label,
 			CreatedAt: r.CreatedAt.Format("2006-01-02T15:04:05Z"),
 			Revoked:   r.Revoked,
 		})
 	}
-	return &deviceListResponse{Devices: devices}, nil
+	return &chat.ListDevicesResponse{Devices: devices}, nil
 }
 
-type deviceRevokeRequest struct {
-	DeviceId string `json:"device_id"`
-}
-
-type deviceRevokeResponse struct{}
-
-func (s *subServer) handleDeviceRevoke(ctx context.Context, req *deviceRevokeRequest) (*deviceRevokeResponse, error) {
+func (s *subServer) handleDeviceRevoke(ctx context.Context, req *chat.RevokeDeviceRequest) (*chat.RevokeDeviceResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -515,24 +430,12 @@ func (s *subServer) handleDeviceRevoke(ctx context.Context, req *deviceRevokeReq
 	if err := s.deviceStore.Revoke(ctx, subject.ID, req.DeviceId); err != nil {
 		return nil, server.InternalErrorWithCause("device revoke failed", err)
 	}
-	return &deviceRevokeResponse{}, nil
+	return &chat.RevokeDeviceResponse{}, nil
 }
 
 // --- MLS distribute handler (P3: C-8 envelope carrying MLS) ---
 
-type mlsDistributeRequest struct {
-	ConversationId string `json:"conversation_id"`
-	Kind           int32  `json:"kind"`
-	MlsEpoch       int64  `json:"mls_epoch"`
-	OpaqueBytes    []byte `json:"opaque_bytes"`
-	Recipients     []string `json:"recipients"`
-}
-
-type mlsDistributeResponse struct {
-	Delivered int `json:"delivered"`
-}
-
-func (s *subServer) handleMlsDistribute(ctx context.Context, req *mlsDistributeRequest) (*mlsDistributeResponse, error) {
+func (s *subServer) handleMlsDistribute(ctx context.Context, req *chat.DistributeMlsRequest) (*chat.DistributeMlsResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
@@ -551,20 +454,9 @@ func (s *subServer) handleMlsDistribute(ctx context.Context, req *mlsDistributeR
 		return nil, server.InternalErrorWithCause("get members failed", err)
 	}
 
-	senderIsMember := false
-	for _, m := range member {
-		if m.ActorDid == subject.ID && m.MemberStatus == chat.MemberStatus_MEMBER_STATUS_ACTIVE {
-			senderIsMember = true
-			break
-		}
-	}
-	if !senderIsMember {
-		return nil, server.Unauthorized("sender is not an active member")
-	}
-
 	mlsPayload := &chat.MlsKeyDeliveryPayload{
 		ConversationId: req.ConversationId,
-		Kind:           chat.MlsDeliveryKind(req.Kind),
+		Kind:           req.Kind,
 		MlsEpoch:      req.MlsEpoch,
 		OpaqueMlsBytes: req.OpaqueBytes,
 	}
@@ -578,15 +470,15 @@ func (s *subServer) handleMlsDistribute(ctx context.Context, req *mlsDistributeR
 		recipientSet[r] = true
 	}
 
-	delivered := 0
+	delivered := int32(0)
 	for _, m := range member {
-		if m.ActorDid == subject.ID {
+		if m.Ptid == subject.ID {
 			continue
 		}
 		if m.MemberStatus != chat.MemberStatus_MEMBER_STATUS_ACTIVE {
 			continue
 		}
-		if len(recipientSet) > 0 && !recipientSet[m.ActorDid] {
+		if len(recipientSet) > 0 && !recipientSet[m.Ptid] {
 			continue
 		}
 
@@ -594,8 +486,8 @@ func (s *subServer) handleMlsDistribute(ctx context.Context, req *mlsDistributeR
 			EnvelopeId:                 uuid.NewString(),
 			IdempotencyKey:             req.ConversationId + ":" + subject.ID + ":mls:" + uuid.NewString()[:8],
 			ConversationId:             req.ConversationId,
-			SenderActorDid:             subject.ID,
-			RecipientActorDid:          m.ActorDid,
+			SenderPtid:                 subject.ID,
+			RecipientPtid:              m.Ptid,
 			RecipientHomeStationPeerId: m.ActorHomeStationPeerId,
 			MembershipEpoch:            conv.MembershipEpoch,
 			PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY,
@@ -607,36 +499,24 @@ func (s *subServer) handleMlsDistribute(ctx context.Context, req *mlsDistributeR
 		}
 	}
 
-	return &mlsDistributeResponse{Delivered: delivered}, nil
+	return &chat.DistributeMlsResponse{Delivered: delivered}, nil
 }
 
 // --- Direct Key Exchange handler (P2: X3DH initial handshake routing) ---
 
-type dkxSendRequest struct {
-	RecipientActorDid     string `json:"recipient_actor_did"`
-	RecipientStationPeerId string `json:"recipient_station_peer_id"`
-	SessionId             string `json:"session_id"`
-	Kind                  int32  `json:"kind"`
-	OpaqueKeyMaterial     []byte `json:"opaque_key_material"`
-}
-
-type dkxSendResponse struct {
-	EnvelopeId string `json:"envelope_id"`
-}
-
-func (s *subServer) handleDkxSend(ctx context.Context, req *dkxSendRequest) (*dkxSendResponse, error) {
+func (s *subServer) handleDkxSend(ctx context.Context, req *chat.SendDkxRequest) (*chat.SendDkxResponse, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.RecipientActorDid == "" || req.SessionId == "" || len(req.OpaqueKeyMaterial) == 0 {
-		return nil, server.BadRequest("recipient_actor_did, session_id, and opaque_key_material are required")
+	if req.RecipientPtid == "" || req.SessionId == "" || len(req.OpaqueKeyMaterial) == 0 {
+		return nil, server.BadRequest("recipient_ptid, session_id, and opaque_key_material are required")
 	}
 
 	dkxPayload := &chat.DirectKeyExchangePayload{
-		SessionId:          req.SessionId,
-		Kind:               chat.DirectKeyExchangeKind(req.Kind),
-		OpaqueKeyMaterial:  req.OpaqueKeyMaterial,
+		SessionId:         req.SessionId,
+		Kind:              req.Kind,
+		OpaqueKeyMaterial: req.OpaqueKeyMaterial,
 	}
 	payloadBytes, err := proto.Marshal(dkxPayload)
 	if err != nil {
@@ -650,9 +530,9 @@ func (s *subServer) handleDkxSend(ctx context.Context, req *dkxSendRequest) (*dk
 
 	env := &chat.StationEnvelope{
 		EnvelopeId:                 uuid.NewString(),
-		IdempotencyKey:             req.SessionId + ":" + subject.ID + ":" + chat.DirectKeyExchangeKind(req.Kind).String(),
-		SenderActorDid:             subject.ID,
-		RecipientActorDid:          req.RecipientActorDid,
+		IdempotencyKey:             req.SessionId + ":" + subject.ID + ":" + req.Kind.String(),
+		SenderPtid:                 subject.ID,
+		RecipientPtid:              req.RecipientPtid,
 		RecipientHomeStationPeerId: recipientStation,
 		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE,
 		PayloadBytes:               payloadBytes,
@@ -663,7 +543,7 @@ func (s *subServer) handleDkxSend(ctx context.Context, req *dkxSendRequest) (*dk
 		return nil, server.InternalErrorWithCause("submit dkx envelope failed", err)
 	}
 
-	return &dkxSendResponse{EnvelopeId: envelopeId}, nil
+	return &chat.SendDkxResponse{EnvelopeId: envelopeId}, nil
 }
 
 func conversationLocalAudience() string {
