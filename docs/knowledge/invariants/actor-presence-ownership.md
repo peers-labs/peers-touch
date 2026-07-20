@@ -3,8 +3,7 @@ kind: invariant
 title: Actor presence is not owned by chat subservers
 status: active
 owns:
-  - apps/station/app/subserver/friend_chat/
-  - apps/station/app/subserver/group_chat/
+  - apps/station/app/subserver/conversation/
   - apps/station/app/subserver/presence/
   - model/domain/chat/
   - model/domain/presence/
