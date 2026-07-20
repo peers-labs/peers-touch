@@ -68,7 +68,7 @@ ssh "$REMOTE_HOST" "mkdir -p ${REMOTE_REPO}"
 
 echo "==> Pushing source (apps/station + tooling/docker)..."
 cd "$REPO_ROOT"
-tar czf - apps/station tooling/docker .dockerignore 2>/dev/null \
+tar czf - apps/station apps/applets tooling/docker .dockerignore 2>/dev/null \
   | ssh "$REMOTE_HOST" "cd ${REMOTE_REPO} && tar xzf -"
 
 echo "==> Source pushed."
