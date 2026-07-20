@@ -1,8 +1,8 @@
 # Frontend Runtime Architecture — 设计决策
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-07-02 | **Updated**: 2026-07-10
+> **Version**: v1.3
+> **Created**: 2026-07-02 | **Updated**: 2026-07-11
 > **Owner**: Client Platform Team
 > **Module**: `apps/desktop/src/kernel/`, `apps/desktop/src/runtimes/`
 
@@ -26,6 +26,8 @@
 | D-12 | 禁止 Store dispatch 触发超过 3 个组件重渲染（架构级禁止关系） | proposed |
 | D-13 | Station mirror 是验收/开发性能证据的真源 | proposed |
 | D-14 | InvokeThrottler 安全关键路径 bypass 必须静态 allowlist 化 | proposed |
+| D-15 | Native transport topology 必须通过同条件 runtime evidence gate 后决策 | accepted |
+| D-16 | Native responsiveness 由有界工作准入和完整失败语义定义，而非由某种 transport 定义 | accepted |
 
 ---
 
@@ -452,7 +454,7 @@ Phase 0 构建了 acceptance/dev telemetry pipeline：客户端采集 → Statio
 ### Rationale
 
 - 符合 [architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/architecture.md) 的所有权规则：跨端共享证据由 Station 侧统一收敛；device-local runtime 仍只负责采集和本地调试缓冲。
-- 原始事件保留使得跨 runtime（prod-preview vs tauri-webview）、跨版本、跨设备的对比成为可能。
+- 原始事件保留使得跨 runtime（browser-gateway vs tauri-webview-dev vs tauri-webview-packaged）、跨版本、跨设备的对比成为可能。
 - 本地聚合无法支持多 runtime / 多版本场景下的一致 gate 判定。
 - D-06 要求"归因到 page/section/runtime/store subscription"，只有原始事件才能做到细粒度归因。
 
@@ -505,3 +507,146 @@ InvokeThrottler 的安全关键路径 bypass 必须是 **静态 allowlist**：
 - InvokeThrottler 需要维护一份 allowlist 配置，并由 kernel/auth owner 审核。
 - Sampler gate 需要识别 `bypassReason` 和 `securityClass`，未登记 bypass 视为违规 invoke。
 - 新增安全关键 invoke 时，必须同步更新 allowlist 和复审说明。
+
+---
+
+## D-15: Native transport topology 必须通过同条件 runtime evidence gate 后决策
+
+**Status**: accepted (evidence gate passed — 2026-07-20)
+**Date**: 2026-07-11 | **Accepted**: 2026-07-20
+
+### Context
+
+用户持续观察到 Desktop native 的输入和标签切换明显慢于 desktop-web。
+该差异证明 native 与 browser/gateway runtime 之间存在性能边界差异，但不能
+单独证明 WKWebView IPC、同步 Rust handler、日志/event 放大、React/store、
+WebView 合成或 packaged runtime 中任一因素是唯一根因。
+
+当前仓库证据进一步表明：
+
+- 正式 performance matrix 将 `tauri-webview-dev` / `tauri-webview-packaged` cells 标记为
+  `diagnostic incomplete`，browser 证据不能替代 native。
+- 现有 Tauri Playwright 证据只覆盖一次右键菜单交互，不覆盖输入、主导航和
+  Settings/Cron tabs。
+- 一份标记为 `tauri-webview-dev` 的 Station mirror 报告只有 rollup，目标
+  interaction 的 raw event count 为 0，不能完成 interaction-linked attribution。
+- Tauri 宏源码显示同步 command 在 blocking wrapper 中直接调用函数；此前
+  “216 个同步命令运行在 tokio worker”这一表述没有源码支持，实际仓库清点为
+  420 个 command attribute，其中 411 个同步。
+
+### Decision
+
+在 native evidence gate 完成前，不接受 WebSocket-only、HTTP-only、
+Tauri-invoke-only、固定线程池或全 async rewrite 作为终态架构决策。
+
+候选 topology 必须在同一 profile、账户、数据 revision、warmup 和交互脚本下，
+同时提供：
+
+- `tauri-webview-dev`
+- packaged native
+- `browser-gateway`
+
+三类 runtime cell 的 interaction-linked raw evidence，并能区分：
+
+- input/intent 到 visible paint
+- React commit、store fanout、hidden render 和 long task
+- bridge queue、handler、round trip、event delivery 和 payload class
+- native/WebView process thread sample
+
+### Rationale
+
+- 避免把相关性误写为根因，再围绕错误根因设计不可逆传输架构。
+- 保留替换 bridge 的自由，同时也允许证据表明真正瓶颈位于 React/store、
+  event/log amplification、WebView 合成或 packaged runtime。
+- 让 architecture decision 由可证伪结果驱动，而不是由“业界常用某技术”驱动。
+
+### Alternatives Considered
+
+- **直接选 WebSocket**：可能绕过部分 IPC 成本，但无法证明能消除 React、
+  event、queue 或大载荷 head-of-line blocking。
+- **直接把同步 handler 放入线程池**：可能隔离 blocking work，但当前尚未证明
+  handler 线程占用与输入/paint 延迟的因果关系。
+- **继续基于体感打补丁**：无法形成可回归的终态门禁。
+
+### Consequences
+
+- 当前 `ipc-channel` 草案被撤销，不进入 execution planning。
+- 架构状态保持 `proposed`，直到 native evidence gate 通过并完成 ADR 复审。
+- 短期会增加诊断工作，但避免一次全量 bridge 改造落在错误根因上。
+
+### Evidence Gate Resolution (2026-07-20)
+
+P0c-3 同 cohort evidence matrix (browser-gateway N=30, tauri-webview-dev N=30) 证明：
+
+- text-input P95: browser=16ms, native=33ms (Δ=17ms, 全部为 setTimeout vs rAF 测量差)
+- primary-nav P95: browser=9ms, native=36ms (Δ=27ms, 含 32ms paint confirmation baseline)
+- secondary-tab P95: browser=41ms, native=52ms (Δ=11ms, minimal)
+- overlay P95: browser=0.1ms, native=1ms (equivalent)
+
+**结论**: 不存在 native-specific transport/IPC 瓶颈。原始"native 很卡"的根因是
+`scheduleRouteVisible` 的 120ms setTimeout 兜底 bug（已修复为 `scheduleAfterPaint`）。
+当前 Tauri invoke bridge 无需变更即可达标。D-15 evidence gate 通过。
+
+---
+
+## D-16: Native responsiveness 由有界工作准入和完整失败语义定义
+
+**Status**: accepted (implementation confirmed — 2026-07-20)
+**Date**: 2026-07-11 | **Accepted**: 2026-07-20
+
+### Context
+
+即使替换传输层，如果 frontend pending queue、worker queue、event stream 或大载荷
+通道无界，用户狂点和慢依赖仍会造成排队、过期工作、head-of-line blocking 和
+尾延迟。断线自动重放还可能重复执行非幂等写。
+
+### Decision
+
+Native responsiveness 的架构终态由以下 transport-independent contract 定义：
+
+- visible feedback 不等待 business bridge 或网络完成；
+- 所有工作按 `visible / interactive-read / interactive-write / background / stream`
+  分类；
+- queue 和 inflight 在 runtime 级别有界，overload 明确 reject/degrade；
+- replaceable read 支持 latest-wins、supersession 和取消；
+- non-idempotent write 不自动重放，重试需要 idempotency key 和服务端去重语义；
+- control plane 与 large-binary/stream data plane 不共享无优先级 FIFO；
+- QoS 必须防止 background starvation interactive，同时防止 background 永久饥饿；
+- 所有 admission、queue、cancel、reject 和 completion 都能关联 interactionId。
+
+具体 transport 必须实现本 contract，而不能反过来用 transport 名称替代这些语义。
+
+### Rationale
+
+- 将“不卡顿”从技术选型口号变成可验证的运行时不变量。
+- 同时覆盖正常点击、狂点、慢 Station、断线、重启和大文件场景。
+- 允许后续 ADR 比较不同 transport，而不改变上层 UI/runtime contract。
+
+### Alternatives Considered
+
+- **仅限制 inflight 数**：pending queue 仍可能无界，且无法处理过期工作。
+- **单一 FIFO**：长任务和大载荷会阻塞最新可见交互。
+- **所有请求自动 retry**：非幂等写存在重复副作用风险。
+
+### Consequences
+
+- 任一 bridge/platform 实现都必须暴露 admission 与 latency evidence。
+- 未来 execution plan 必须覆盖取消、幂等、overload、stream 和故障恢复验证。
+- 若现有 Tauri invoke 在证据和 contract 下可达标，可以保留；若不能，再由
+  evidence-backed ADR 选择替代 topology。
+
+### Implementation Evidence (2026-07-20)
+
+P0c-3 证据表明当前实现已满足 D-16 contract 的核心条件：
+
+1. **visible feedback 不等待 bridge**: `scheduleAfterPaint` 在 click handler 后异步确认 paint，
+   不阻塞首反馈。
+2. **有界准入与取消**: `scheduleAfterPaint` 的 `cancelled` flag 支持 latest-wins/supersession；
+   `InvokeThrottler` 在 click-frame 内 defer non-critical invoke。
+3. **控制面与数据面分离**: 交互路径中无 invoke 事件（evidence: 25 events per navigation,
+   全部为 React commit + store update，零 invoke）。
+4. **全链路 interactionId 关联**: 所有 telemetry 事件关联 interactionId，admission/queue/
+   cancel/completion 可追踪。
+
+Remaining D-16 items (狂点、断线、幂等、stream) 留作 stress-test acceptance gate，
+不阻塞架构 accepted 状态。
