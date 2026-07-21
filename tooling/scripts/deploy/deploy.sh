@@ -93,9 +93,22 @@ push_to_central() {
   git -C "$PROJECT_ROOT" push --force "$GIT_SERVER_SSH_URL" "HEAD:refs/heads/$BRANCH" 2>&1 | sed 's/^/       /'
 }
 
+# ─── Direct mode: push straight to target station ───
+push_direct() {
+  local remote_url="ssh://${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}/~/${PT_DEPLOY_PATH}"
+  echo "[INFO] Pushing directly to: ${PT_DEPLOY_HOST}:${PT_DEPLOY_PATH}"
+  # Ensure remote repo exists
+  ssh_run "mkdir -p \$HOME/$PT_DEPLOY_PATH && cd \$HOME/$PT_DEPLOY_PATH && git init --bare .bare.git 2>/dev/null || true"
+  git -C "$PROJECT_ROOT" push --force "ssh://${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}/home/${PT_DEPLOY_USER}/${PT_DEPLOY_PATH}/.bare.git" "HEAD:refs/heads/$BRANCH" 2>&1 | sed 's/^/       /'
+}
+
 # ─── Resolve fetch URL for the remote ───
 resolve_fetch_url() {
   case "$SOURCE" in
+    direct)
+      # Direct mode: fetch from the .bare.git we just pushed to on the same host
+      echo "\$HOME/$PT_DEPLOY_PATH/.bare.git"
+      ;;
     central)
       if [[ "$PT_DEPLOY_HOST" == "$PT_GIT_SERVER_HOST" ]]; then
         # Target IS the git server → local path fetch (fast)
@@ -156,10 +169,13 @@ case "$cmd" in
   *)
     # ═══ Deploy ═══
 
-    # Step 0: Push to central (if central mode)
+    # Step 0: Push code to target
     if [[ "$SOURCE" == "central" ]]; then
       echo "[0/4] Pushing to central git server ..."
       push_to_central
+    elif [[ "$SOURCE" == "direct" ]]; then
+      echo "[0/4] Pushing directly to target station ..."
+      push_direct
     else
       echo "[0/4] Resolving deploy source ..."
     fi
