@@ -59,6 +59,9 @@ func (s *LedgerService) AppendEvent(ctx context.Context, input *AppendEventInput
 	if err != nil {
 		return nil, err
 	}
+	if membership == nil {
+		return nil, policy.ErrNotActiveMember
+	}
 
 	p, ok := s.policyRegistry.Get(policy.Type(fed.PolicyType))
 	if !ok {
@@ -76,10 +79,15 @@ func (s *LedgerService) AppendEvent(ctx context.Context, input *AppendEventInput
 		return nil, err
 	}
 
-	newSeq := fed.HeadSeq + 1
-	prevHash := fed.HeadHash
-	if newSeq == 0 {
+	headEvent, _ := s.eventRepo.GetHead(ctx, input.FederationID)
+	var newSeq uint64
+	var prevHash []byte
+	if headEvent == nil {
+		newSeq = 0
 		prevHash = make([]byte, 32)
+	} else {
+		newSeq = headEvent.Seq + 1
+		prevHash = headEvent.EventHash
 	}
 
 	eventHashInput := &pb.EventHashInput{
