@@ -772,7 +772,7 @@ fn group_chat_federated_actor_input_to_proto(
     input: GroupChatFederatedActorInput,
 ) -> model::chat::FederatedActorRef {
     model::chat::FederatedActorRef {
-        actor_did: input.actor_did,
+        ptid: input.actor_did,
         home_station_peer_id: input.home_station_peer_id,
         home_station_domain: input.home_station_domain.unwrap_or_default(),
         federated_handle: input.federated_handle.unwrap_or_default(),
@@ -919,7 +919,7 @@ pub fn group_chat_add_federated_member(
         Some(json!({
             "group_ulid": input.group_ulid,
             "member": {
-                "actor_did": member.actor_did,
+                "ptid": member.ptid,
                 "home_station_peer_id": member.home_station_peer_id,
                 "home_station_domain": member.home_station_domain,
                 "federated_handle": member.federated_handle,
@@ -1019,7 +1019,7 @@ pub fn group_chat_remove_member(
     }
     let req = model::chat::RemoveMemberRequest {
         group_ulid: input.group_ulid,
-        actor_did: input.member_did,
+        ptid: input.member_did,
     };
     let resp = match station_client::request_proto::<
         model::chat::RemoveMemberRequest,
@@ -1063,7 +1063,7 @@ pub fn group_chat_update_member(
         });
     let req = model::chat::UpdateMemberRequest {
         group_ulid: input.group_ulid,
-        actor_did: input.member_did,
+        ptid: input.member_did,
         role: input.role,
         muted: input.muted,
         muted_until,
