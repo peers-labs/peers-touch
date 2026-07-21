@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpb";
+
+// federation_discovery.proto — Federation-scoped actor discovery.
+// Source of truth: docs/architecture/federation/wire-protocol.md §9
+//
+// All catalog/discovery queries MUST carry federation_id to scope results
+// to the correct federation's member stations and visibility policies.
+// Queries without federation_id are rejected or treated as legacy/advanced path.
+
+// FederationCatalogSearchRequest scopes an actor search to a specific federation.
+message FederationCatalogSearchRequest {
+  string federation_id = 1;
+  string prefix = 2;
+  string locale = 3;
+  string region = 4;
+  uint32 page_size = 5;
+  string page_token = 6;
+}
+
+message FederationCatalogSearchResponse {
+  repeated FederationCatalogEntry entries = 1;
+  string next_page_token = 2;
+  uint32 total_count = 3;
+}
+
+message FederationCatalogEntry {
+  string actor_id = 1;
+  string federated_handle = 2;
+  string display_name = 3;
+  string avatar_url = 4;
+  string home_station_peer_id = 5;
+  string home_station_name = 6;
+  string visibility = 7;
+}
+
+// ListFederationStations returns member stations for a specific federation.
+// Used by Desktop search UI to show which stations are in scope.
+message ListFederationStationsRequest {
+  string federation_id = 1;
+}
+
+message ListFederationStationsResponse {
+  repeated FederationStationEntry stations = 1;
+}
+
+message FederationStationEntry {
+  string station_peer_id = 1;
+  string station_name = 2;
+  string station_url = 3;
+  string status = 4;
+  uint32 visible_actor_count = 5;
+}
