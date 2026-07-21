@@ -3608,7 +3608,7 @@ export const api = {
           provider_name: p.name || p.id,
           type: model.type || 'chat',
           context_window: Number(model.context_window || 0),
-          enabled: Boolean(model.enabled !== false),
+          enabled: Boolean(model.enabled),
           function_call: Boolean(model.function_call),
           vision: Boolean(model.vision),
           reasoning: Boolean(model.reasoning),

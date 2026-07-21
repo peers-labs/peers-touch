@@ -27,6 +27,7 @@ import (
 	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
@@ -156,6 +157,12 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	)
 	turnSvc.SetEventBus(eventBus)
 
+	// CLI executor: enables routing turns to local CLI processes (e.g. codex, trae, claude).
+	// WorkspaceManager creates per-session git worktrees for isolation.
+	cliWorkspaceMgr := cli.NewWorkspaceManager("")
+	cliExec := cli.NewCliExecutor(cliWorkspaceMgr)
+	turnSvc.SetCliExecutor(cliExec)
+
 	// Dogfood self-verification service.
 	dogfoodSvc := service.NewDogfoodService(memorySvc, skillSvc, growthMetricsSvc)
 
@@ -186,6 +193,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 	growthHandlers := handler.NewGrowthHandlers(growthMetricsSvc, memorySvc, skillSvc, diagnosticSvc)
 
+	providerHandlers := handler.NewProviderHandlers()
+
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-list-get", "/agent/list", server.GET, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
@@ -199,6 +208,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-turn-local-tool-result", "/agent/turn/local-tool-result", server.POST, turnHandlers.HandleLocalToolResult, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-list", "/agent/turn/trace/list", server.POST, turnHandlers.HandleListTurnTraces, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
+
+		server.NewHTTPHandler("agent-provider-verify-cli", "/agent/provider/verify-cli", server.POST, providerHandlers.HandleVerifyCli, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-collaboration-create", "/agent/collaboration/create", server.POST, orchestrationHandlers.HandleCreateCollaborationTask, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-get", "/agent/collaboration/get", server.POST, orchestrationHandlers.HandleGetCollaborationTask, logIDWrapper, jwtWrapper),
