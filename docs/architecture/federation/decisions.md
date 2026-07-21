@@ -15,7 +15,7 @@
 | D-02 | Station 可以加入多个 Federation | accepted |
 | D-03 | 联邦治理权限和普通社交权限分离 | accepted |
 | D-04 | 采用 Federation Ledger 而不是完整区块链 | accepted |
-| D-05 | 联邦广场是一级入口 | accepted |
+| D-05 | 联邦是基础设施，不是产品入口 | accepted (supersedes original D-05) |
 | D-06 | 普通社交数据不上 Federation Ledger | accepted |
 | D-07 | v1 Ledger 采用 active sequencer，不引入完整共识 | accepted |
 | D-08 | Federation discovery 和 Catalog 查询必须显式带 Federation scope | accepted |
@@ -68,7 +68,7 @@ Station 与 Federation 是多对多关系。一个 Station 可以加入多个 Fe
 
 ### Rationale
 
-这允许 Station 在不同 Federation 中暴露不同策略、成员关系和治理状态。Desktop 联邦广场也可以按 Federation 分组展示 Station 和用户。
+这允许 Station 在不同 Federation 中暴露不同策略、成员关系和治理状态。Desktop Settings 和 Dashboard 也可以按 Federation 分组展示 Station 和用户。
 
 ### Alternatives Considered
 
@@ -138,31 +138,36 @@ Federation Ledger 保留区块链式的可审计和防篡改特性，但复杂�
 
 ---
 
-## D-05: 联邦广场是一级入口
+## D-05: 联邦是基础设施，不是产品入口
 
-**Status**: accepted
-**Date**: 2026-05-31
+**Status**: accepted (supersedes original D-05 "联邦广场是一级入口")
+**Date**: 2026-07-21
 
 ### Context
 
-让用户手动记忆 `@user@host` 是工程视角，不是产品视角。当前跨站找人入口隐藏在 Chat 的 Find People 中，无法承载 Federation、Station、治理记录和公开用户发现。
+原始 D-05 决定 Desktop 提供"联邦广场"作为一级导航入口。实际原型验证表明：联邦操作（创建/加入/离开/治理）频率极低，类似护照管理而非日常动作。为联邦设置独立一级页面过度拔高了用户对联邦的感知权重，偏离了"以人为中心"的产品心智。
 
 ### Decision
 
-Desktop 需要提供 `联邦广场` 作为一级入口。用户先选择 Federation，再选择 Station，再浏览公开用户。
+废弃"联邦广场"作为 Desktop 一级入口。联邦存在感通过以下方式渗透：
+
+1. **搜索/联系人/聊天**（日常入口）— 用户通过正常社交路径发现联邦内的人，联邦作为底层 scope 自然生效。
+2. **Settings → Federation**（低频配置）— 查看身份、调整 Actor 可见性、路由健康、加入/离开联邦。
+3. **Dashboard → Federation**（治理入口）— Station 管理员创建联邦、审批加入、管理 Ledger 和策略。
 
 ### Rationale
 
-这符合用户心智：用户加入的是网络/社区，再在其中找站点和人。Station Picker 仍只负责选择 Home Station，不承担联邦社交入口。
+联邦是底层网络拓扑——用户日常感知的一级入口是"人"，不是"联邦"。正如普通人不会天天意识到自己在哪个国家的互联网上，用户也不应频繁操作联邦。联邦上下文通过好友来源标注、搜索 scope 筛选、群聊跨站标识自然渗透。
 
 ### Alternatives Considered
 
-- 继续使用 handle 输入框：适合高级用户，不适合作为主路径。
-- 放在 Contacts 页内部：比 Chat 更合理，但仍不足以表达 Federation governance。
+- 保留联邦广场为一级入口：过度拔高联邦存在感，干扰日常社交路径。
+- 完全不提供联邦 UI：治理和配置无处落地，管理员无法操作。
+- 放在 Contacts 内部 Tab：治理能力（创建/审批/策略）不应混入联系人页面。
 
 ### Consequences
 
-Desktop 需要新增一级导航入口和对应 runtime/API 投影。Station 需要提供 Federation 列表、Station 列表、公开用户列表和权限信息。
+Desktop 无需新增一级导航入口。Station API 仍需提供 Federation 列表、成员 Station 列表、公开用户列表和权限信息——但消费方从"联邦广场页面"变为"Settings 配置面板 + Dashboard 治理控制台 + 搜索/联系人的底层 scope"。
 
 ---
 
@@ -234,7 +239,7 @@ Active sequencer 是 permissioned ledger 的最小可行一致性模型。它避
 
 ### Decision
 
-Federation Plaza、Station list、Catalog search、Public actor list、Resolver hydrate 等默认用户路径必须显式带 `federation_id`。没有 `federation_id` 的 handle resolve 只能作为高级或 legacy 路径，并且必须声明 resolve 语境。
+Federation Discovery、Station list、Catalog search、Public actor list、Resolver hydrate 等默认用户路径必须显式带 `federation_id`。没有 `federation_id` 的 handle resolve 只能作为高级或 legacy 路径，并且必须声明 resolve 语境。
 
 ### Rationale
 
@@ -243,11 +248,11 @@ Federation Plaza、Station list、Catalog search、Public actor list、Resolver 
 ### Alternatives Considered
 
 - 全局 Catalog：用户体验简单，但违背多 Federation 边界和隐私期望。
-- 只靠 handle resolve：适合已知地址，不适合作为联邦广场和公开发现入口。
+- 只靠 handle resolve：适合已知地址，不适合作为 Federation scoped 公开发现入口。
 
 ### Consequences
 
-Catalog proto 和 Station API 需要补充 `federation_id`。Actor visibility 需要支持 Federation scoped 降级层。联邦广场必须先选 Federation，再展示成员 Station 和公开 Actor。
+Catalog proto 和 Station API 需要补充 `federation_id`。Actor visibility 需要支持 Federation scoped 降级层。搜索和发现入口必须在 Federation scope 内展示成员 Station 和公开 Actor。
 
 ---
 
