@@ -1,274 +1,283 @@
-# Phase 1: Federation Ledger 最小闭环
+# Phase 1: Federation Ledger — Formal Execution Plan
 
-> **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-05-31 | **Updated**: 2026-05-31
+> **Status**: ready-for-execution
+> **Version**: v1.0
+> **Created**: 2026-07-21 | **Updated**: 2026-07-21
 > **Owner**: Architecture Team
+> **Architecture Sources**: design.md (v0.2), data-model.md (v0.2), wire-protocol.md (v0.1), decisions.md, integration.md
 
 ---
 
-## 1. 目标
+## 1. Architecture Traceability
 
-Phase 1 的目标是把 Federation 从概念实体落成可验证的治理真源：
-
-- 一个 Federation 可以通过 genesis event 创建。
-- 成员 Station 可以通过 ledger event 加入、退出、暂停和恢复。
-- 每个成员 Station 可以 replay 同一组 ledger events 并得到同一 materialized state。
-- v1 使用 active sequencer 形成唯一 head，非 sequencer Station 只能提交 proposal。
-- Federation Plaza 可以从 Station projection 读取 Federation、成员 Station 和当前 Actor capability。
-
-本阶段不是完整 Federation 产品，也不是 ActivityPub 互操作落地。
-
----
-
-## 2. 非目标
-
-- 不实现完整 BFT、PoW、PoS、token、gas 或通用区块链。
-- 不把聊天、点赞、评论、好友请求内容、在线状态写入 Federation Ledger。
-- 不实现完整 Desktop 联邦广场 UI，只定义和验证 Station projection。
-- 不实现外部 ActivityPub governance 互操作。
-- 不实现复杂多签治理，只预留 policy 和 handover 扩展位。
+| Plan requirement | Architecture source | Decision/invariant | Required evidence |
+|---|---|---|---|
+| Proto wire contracts for all governance messages | wire-protocol.md §4, §5, §12 | D-01, D-04 | `./model/build.sh` passes; canonical bytes conformance test |
+| Federation genesis lifecycle | design.md §5.1; wire-protocol.md §7.4 | D-01 | Integration test: create federation → genesis event persisted |
+| Active sequencer ordering | design.md §3.4; wire-protocol.md §5.3 | D-07 | Non-sequencer append rejected; proposal accepted |
+| Ledger event hash chain | wire-protocol.md §2; data-model.md §3 | D-04 | Cross-Station replay produces same head_hash |
+| Signature verification | wire-protocol.md §3 | D-04 | Invalid signature → event rejected |
+| Fork detection | design.md §3.4; wire-protocol.md §6.5 | D-07 | Injected fork → fork_detected state |
+| Ledger sync (pull + notify) | wire-protocol.md §6 | D-04 | 3-node sync: all nodes reach same head |
+| Projection API for clients | wire-protocol.md §5.5 | D-05 (superseded) | Settings/Dashboard can list federations and capabilities |
+| Catalog scoped by federation_id | design.md §6; wire-protocol.md §8.2 | D-08 | Catalog search requires federation_id |
+| Governance in app layer, not frame | integration.md §1; design.md §2.1 | D-10 | `go vet` shows no frame→app imports |
+| Testnet seed | data-model.md §11 | D-04 | 3-node seed produces verified genesis |
 
 ---
 
-## 3. 领域责任
+## 2. Current-State Inventory (Federation-specific)
 
-| 领域 | 责任 | 交付边界 |
-|------|------|----------|
-| Model / Proto | 定义跨 Station wire 契约和 deterministic bytes 语义 | proto 源文件，不包含生成物手写修改 |
-| Station Federation Service | 承载 lifecycle、append、proposal、replay、materialized state | Station app layer，不下沉到 frame |
-| Sequencer | 为正式 event 分配 `seq`、`prev_hash`、`event_hash` | v1 单 active sequencer |
-| Ledger Sync | 同步 event、检测 head drift 和 fork | 可先用 request/response，同步 transport 可替换 |
-| Catalog Scope | 让 discovery 默认带 `federation_id` | 不再把 Catalog 当全局目录 |
-| Plaza Projection | 给 Client 提供只读 view model 和 capability | Client 不保存 ledger 真源 |
-| Testnet Seed | 生成与正式流程同构的 genesis / membership events | 不直接写 materialized state |
+### 2.1 Already Exists (DO NOT REBUILD)
+
+| Asset | Location | Status |
+|---|---|---|
+| Federation auth/keys (Ed25519) | `frame/core/auth/federation/` | Production-ready, 13 files |
+| libp2p federation plugin | `frame/core/plugin/native/federation/` | Production-ready, 17 files |
+| Touch layer: resolver, cache, profile, invalidation, republisher | `frame/touch/federation/` | Production-ready, 16 files |
+| HTTP handlers: /me, /health, /resolve, /visibility, /profile | `frame/touch/` | Production-ready |
+| Proto: federation_self, federation_health, federation_resolve, locator, profile, invalidation | `model/domain/federation/` | 6 existing .proto files |
+| Desktop: store, runtime, FederationTab, Rust commands | `apps/desktop/` | Working |
+| Acceptance gates | `tooling/acceptance/gates/federation/` | Smoke + mutual validation |
+| Locales | `packages/locales/{en,zh-CN}/settings.json` | Working |
+
+### 2.2 Does NOT Exist (TO BUILD)
+
+| Asset | Target Location |
+|---|---|
+| Governance proto files (ledger, service, sync, projection) | `model/domain/federation/` (new files) |
+| Federation subserver (app layer DDD) | `apps/station/app/subserver/federation/` |
+| Database migrations (ledger, membership, roles, sync) | `apps/station/app/subserver/federation/migration/` |
+| Ledger sync protocol implementation | Within federation subserver |
+| Projection API handlers | Within federation subserver |
+| FederationSelfView extension | Extend existing proto + handler |
+| Catalog federation_id scoping | Extend existing Catalog proto |
+| Desktop Settings: joined federations list | Extend FederationTab.tsx |
+| Dashboard: federation management panel | Within dashboard subserver |
+| Testnet seed configuration | `apps/station/app/conf/` + seed scripts |
 
 ---
 
-## 4. 执行闭环
+## 3. Responsibility Workstreams
 
-标准闭环：
+### WS-1: Proto Contracts
+
+**Responsibility**: Define all wire-format messages for governance layer.
+
+- **Current assets**: 6 existing proto files (untouched, only extended).
+- **Target deliverables**:
+  - `federation_ledger.proto` — LedgerEvent, EventHashInput, all typed payloads (§4), signature inputs
+  - `federation_governance_service.proto` — SubmitProposal, FetchHead, FetchEvents
+  - `federation_membership_service.proto` — GetMembershipStatus, AcceptInvite
+  - `federation_projection_service.proto` — ListFederations, ListMemberStations, CreateFederation, JoinFederation, LeaveFederation
+  - `federation_sync.proto` — LedgerAdvanceNotification, SyncCursor
+  - Extend `federation_self.proto` — add JoinedFederationRef
+  - Extend `federation_health.proto` — add governance_sync_status
+- **Dependencies**: None (first in DAG).
+- **Architecture IDs**: D-01, D-04, D-08; wire-protocol.md §2-§6, §12.
+- **Deletion obligations**: None.
+- **Gate**: `./model/build.sh` passes; generated Go/Rust/TS code compiles; canonical bytes conformance test passes.
+
+### WS-2: Station Federation Subserver (Core Domain)
+
+**Responsibility**: Implement Federation governance domain logic in Station app layer.
+
+- **Current assets**: None (new subserver).
+- **Target deliverables**:
+  - `subserver.go` — DDD subserver registration, DI assembly
+  - `domain/` — Federation aggregate, LedgerEvent entity, Membership value object
+  - `domain/hash.go` — Canonical serialization + SHA-256 hash computation
+  - `domain/signature.go` — Ed25519 sign/verify with key hierarchy
+  - `domain/replay.go` — Ledger replay → materialized state
+  - `application/` — CreateFederation, AppendEvent, SubmitProposal, Replay, RoleCheck use cases
+  - `infrastructure/` — PostgreSQL repositories (federation, ledger_event, membership, role, sync_cursor)
+  - `interfaces/` — Hertz HTTP handlers for governance RPCs + projection APIs
+  - `migration/` — SQL migrations for governance tables
+- **Dependencies**: WS-1 (proto must exist first).
+- **Architecture IDs**: D-01, D-04, D-07, D-10; design.md §3-§5; wire-protocol.md §5, §7.
+- **Deletion obligations**: None.
+- **Gate**: `go test ./apps/station/app/subserver/federation/...` passes; Create→Replay→Projection lifecycle works; non-sequencer append rejected.
+
+### WS-3: Active Sequencer & Fork Detection
+
+**Responsibility**: Enforce single-sequencer ordering and detect forks.
+
+- **Current assets**: None.
+- **Target deliverables**:
+  - Sequencer gate in AppendEvent use case
+  - Proposal accept/reject flow in sequencer
+  - Fork detection in event application
+  - SequencerChanged event support (handover placeholder)
+  - Sequencer leave guard (must handover first)
+- **Dependencies**: WS-2 (domain model must exist).
+- **Architecture IDs**: D-07; design.md §3.4, §5.8; wire-protocol.md §7.3.
+- **Gate**: Non-sequencer direct append → error 40002; fork injection → fork_detected; sequencer leave without handover → rejected.
+
+### WS-4: Ledger Sync Protocol
+
+**Responsibility**: Enable multi-Station ledger replication.
+
+- **Current assets**: Relay infrastructure exists (`frame/core/plugin/native/federation/relay_client.go`).
+- **Target deliverables**:
+  - FetchHead RPC handler + client
+  - FetchEvents RPC handler + client (paginated)
+  - Sync scheduler (poll 30s fallback + relay notification trigger)
+  - Relay topic publisher (sequencer-only `fed.ledger.notify.v1`)
+  - Event batch verification during catch-up
+  - SyncCursor persistence + status tracking
+- **Dependencies**: WS-2 (event store), WS-3 (sequencer publishes notifications).
+- **Architecture IDs**: D-04; wire-protocol.md §6; data-model.md §10.
+- **Gate**: 3-node testnet: all nodes reach same head_hash; lagging node catches up; unreachable node recovers; fork injection halts sync.
+
+### WS-5: Testnet Seed
+
+**Responsibility**: Generate real genesis + membership events for test network.
+
+- **Current assets**: `apps/station/app/conf/federation.yml` exists (discovery layer config).
+- **Target deliverables**:
+  - Seed script/tool that creates a `peers-testnet` Federation
+  - Generates genesis event, 3 StationJoinApproved events
+  - Uses real signing with test keys
+  - Produces events that pass full verification
+- **Dependencies**: WS-2 (domain logic), WS-3 (sequencer logic).
+- **Architecture IDs**: data-model.md §11.
+- **Gate**: 3 nodes replay seed events → identical head; events pass signature + hash verification.
+
+### WS-6: Projection & Client Integration
+
+**Responsibility**: Expose governance state to Desktop/Dashboard clients.
+
+- **Current assets**: FederationTab.tsx, Dashboard prototype, existing store/runtime.
+- **Target deliverables**:
+  - Projection API handlers (ListFederations, ListMemberStations, GetDetail)
+  - CreateFederation handler (Dashboard only, requires station_owner/federation_admin role)
+  - JoinFederation + LeaveFederation handlers
+  - Extend existing `/actor/federation/me` to include joined_federations
+  - Desktop store extension: add joined federations list
+  - Desktop FederationTab: show joined federations (read-only v1)
+  - Dashboard: wire federation CRUD to real Station API (replaces mock data)
+- **Dependencies**: WS-2 (domain), WS-4 (sync status for health display).
+- **Architecture IDs**: D-05 (superseded); wire-protocol.md §5.5; integration.md §2.2.
+- **Gate**: Desktop Settings shows real federation list; Dashboard can create federation + list members; capability projection matches actual permissions.
+
+### WS-7: Catalog Federation Scope
+
+**Responsibility**: Add federation_id to Catalog discovery path.
+
+- **Current assets**: Existing Catalog proto (`identity/federation-catalog.md` grass draft).
+- **Target deliverables**:
+  - Add `federation_id` field to CatalogSearchRequest proto
+  - Station Catalog handler validates federation_id presence
+  - Legacy handle resolve still works but marked as advanced path
+  - Desktop search UI passes federation_id when user is in federation context
+- **Dependencies**: WS-1 (proto), WS-2 (membership check for authorization).
+- **Architecture IDs**: D-08; design.md §6.
+- **Gate**: Catalog search without federation_id → error or fallback warning; search with federation_id → returns only actors from that federation's member stations.
+
+---
+
+## 4. Dependency DAG
 
 ```text
-Create Federation
-  -> write genesis event by sequencer
-  -> replay into materialized state
-  -> expose Plaza projection
-  -> invite / join Station through proposal or direct sequencer append
-  -> sync events to member Stations
-  -> member Stations replay same head
-  -> Catalog / Plaza queries execute under federation_id
+WS-1 (Proto)
+  │
+  ├──→ WS-2 (Subserver Core) ──→ WS-3 (Sequencer/Fork) ──→ WS-4 (Sync) ──→ WS-5 (Seed)
+  │                                                                              │
+  │                              ┌─────────────────────────────────────────────────┘
+  │                              │
+  └──→ WS-7 (Catalog Scope) ◄───┤
+                                 │
+  WS-2 ──→ WS-6 (Projection) ◄──┘
 ```
 
-异常闭环：
+**Parallelizable**:
+- WS-7 (Catalog Scope) can start after WS-1, independent of WS-2/3/4.
+- WS-6 (Projection) can start after WS-2, parallel with WS-3/4.
 
-```text
-Receive ledger event
-  -> verify deterministic hash
-  -> verify actor / station / sequencer signatures
-  -> verify policy and membership authority
-  -> detect seq / prev_hash mismatch
-  -> enter fork_detected instead of advancing state
-```
-
-完成 Phase 1 时，正向闭环和异常闭环都必须可通过三节点测试网复现。
+**Sequential**:
+- WS-1 → WS-2 → WS-3 → WS-4 → WS-5 (critical path).
 
 ---
 
-## 5. 依赖顺序
+## 5. Atomic Cutovers
 
-### 5.1 P0: Proto 契约
+| Concern | New Source of Truth | Consumer Inventory | Cutover Condition | Old Path to Delete |
+|---|---|---|---|---|
+| Federation governance state | `app/subserver/federation/` ledger + replay | Desktop projection, Dashboard, Catalog | All projection APIs return real ledger data | None (new capability) |
+| `FederationSelfView` joined list | Extended proto + handler reading federation subserver | Desktop FederationTab, store | `/actor/federation/me` returns real joined_federations | Mock/empty field |
+| Catalog federation_id | CatalogSearchRequest.federation_id | Desktop search, public actor browser | Default search path requires federation_id | Implicit global catalog (becomes legacy) |
 
-先定义 wire 契约，避免 Station、Desktop、Catalog 各自发明模型。
-
-交付物：
-
-- `federation.proto`：Federation metadata、status、policy summary。
-- `federation_ledger.proto`：LedgerEvent、event payload oneof、Proposal、hash/signature fields。
-- `federation_membership.proto`：StationMembership、ActorRole、StationRole projection。
-- `federation_policy.proto`：policy type、sequencer、capability 判断输入。
-- `federation_manifest.proto`：DiscoveryManifest、genesis verification fields。
-- `federation_sync.proto`：FetchEvents、FetchHead、SyncCursor、ForkDetected。
-- `federation_plaza.proto`：ListFederations、ListMemberStations、GetCapabilities。
-
-验收标准：
-
-- 所有跨 Station payload 使用 protobuf，不使用 JSON 作为事实源。
-- Ledger event hash 的输入字段和 canonical bytes 规则明确。
-- Event payload 能表达 `FederationCreated`、`StationJoinApproved`、`StationLeft`、`StationSuspended`、`StationRemoved`、`AdminGranted`、`AdminRevoked`、`PolicyUpdated`、`SequencerChanged`。
-- Proposal 和正式 LedgerEvent 是不同消息，proposal 不能被当成 head event。
-
-### 5.2 P1: Station Federation Service
-
-在 Station app layer 落 Federation governance 真源。
-
-交付物：
-
-- Create federation：生成 genesis event、初始 policy、初始 sequencer。
-- Append event：只允许 sequencer 追加正式 event。
-- Submit proposal：非 sequencer Station 提交 signed proposal。
-- Replay：从 events 重建 materialized state。
-- Role check：基于 Station role、Federation actor role、membership、policy 判定 capability。
-- State projection：输出 Federation summary、head、sequencer、members、capabilities。
-
-验收标准：
-
-- materialized state 可完全由 ledger replay 重建。
-- 本地 DB projection 与 ledger head 不一致时，必须丢弃 projection 并 replay。
-- frame layer 不读取 Federation policy 表，不裁决治理权限。
-- 普通社交行为不会创建 ledger event。
-
-### 5.3 P2: Active Sequencer 与 Fork Detection
-
-确保 v1 head 唯一，避免多 Station 并发写入造成不可恢复分叉。
-
-交付物：
-
-- sequencer assignment：genesis event 指定 `sequencer_station_peer_id`。
-- event append gate：非 current sequencer 不能追加正式 event。
-- proposal accept / reject：sequencer 校验后生成正式 event 或拒绝 proposal。
-- handover placeholder：支持 `SequencerChanged` event，但复杂 quorum 可后续扩展。
-- fork detection：同一 `seq` 不同 `event_hash` 进入 `fork_detected`。
-
-验收标准：
-
-- 非 sequencer Station 直接 append 正式 event 被拒绝。
-- 同一 `seq` 不同 `event_hash` 不会推进 materialized state。
-- `fork_detected` 状态可在 Plaza projection 或运维接口中被看见。
-- sequencer 失联不会导致本地配置私自切换 head。
-
-### 5.4 P3: Ledger Sync 与 Testnet Seed
-
-让多个 Station 复制并验证同一 Federation governance state。
-
-交付物：
-
-- Fetch head：获取远端 `head_hash`、`head_seq`、sequencer。
-- Fetch events：按 `federation_id`、`from_seq` 拉取 events。
-- Apply events：校验后按序应用到本地 ledger store。
-- Sync cursor：记录 remote station、last seen head、last applied seq、sync status。
-- 三节点 testnet seed：生成真实 genesis 和 membership events。
-
-验收标准：
-
-- 三节点 replay 后得到同一 `head_hash` 和 `head_seq`。
-- seed 不直接写 materialized state。
-- 远端落后、不可达、fork 都有明确 sync status。
-- sync payload 不包含 token、password、private key、email 等 PII 或 secret。
-
-### 5.5 P4: Catalog Scope 与 Plaza Projection
-
-把 Federation Ledger 的治理状态投影到用户可理解的发现入口。
-
-交付物：
-
-- Catalog search request 默认携带 `federation_id`。
-- Station list 只返回 active member stations。
-- Actor visibility 使用 global visibility、federation scoped visibility、federation policy 合成。
-- Plaza projection 输出 Federation list、member station list、current actor capabilities。
-- Legacy handle resolve 标记为 advanced / explicit context 路径。
-
-验收标准：
-
-- 不存在默认全局 Catalog search 主路径。
-- `BY_HANDLE` actor 不会因为 Plaza 或 Catalog scope 被枚举。
-- Desktop / Client 只消费 projection，不保存 ledger truth。
-- capability projection 与 Station 端最终权限裁决一致。
+No compatibility shims or dual paths. Each workstream is internally complete when merged.
 
 ---
 
-## 6. 交付物
+## 6. Deliverables & Gates Summary
 
-Phase 1 完成时必须交付：
-
-- Proto 源文件：覆盖 Federation、Ledger、Membership、Policy、Manifest、Sync、Plaza。
-- Station app-layer Federation Service：支持 genesis、append、proposal、replay、projection。
-- Ledger sync 最小实现：支持三节点 head 同步和 fork detection。
-- Catalog scope 改造方案或实现：默认 discovery 带 `federation_id`。
-- Testnet seed：三节点生成真实 genesis / membership events。
-- 文档回链：如 proto 或接口命名发生变化，更新 `data-model.md` 和 `integration.md`。
-
----
-
-## 7. 验证标准
-
-### 7.1 功能验证
-
-- 创建 `peers-testnet` Federation 后，node-a / node-b / node-c replay 得到同一 head。
-- node-b 作为非 sequencer 直接 append 正式 event 会失败。
-- node-b 提交 proposal 后，node-a sequencer 可以 accept 并生成正式 event。
-- 人为制造同一 `seq` 不同 `event_hash` 时，receiver 进入 `fork_detected`。
-- Station list 只包含当前 Federation 的 active member stations。
-- Catalog search 必须携带 `federation_id`。
-
-### 7.2 安全验证
-
-- event hash 使用 deterministic protobuf canonical bytes。
-- actor signature、station signature、sequencer signature 任一无效时 event 被拒绝。
-- suspend / removed Station 不能继续作为 valid publisher 或 sequencer。
-- ledger event payload 不包含 token、password、private key、session、email。
-- BY_HANDLE actor 不会被 indexed catalog 枚举。
-
-### 7.3 架构验证
-
-- Federation governance 代码不落入 Station frame layer。
-- frame layer 只提供 relay、locator、resolver、signing、transport primitive。
-- Desktop 不保存 ledger head 或 membership 真源。
-- materialized state 可删除后通过 replay 完整恢复。
-
-### 7.4 推荐命令
-
-```bash
-./model/build.sh
-cd apps/station && gofmt -l . && go test ./...
-./tooling/scripts/check-go-style.sh
-```
-
-如果本阶段只提交文档，不要求执行代码验证，但后续实现 PR 必须通过上述命令。
+| WS | Key Deliverable | Gate Command | Evidence |
+|---|---|---|---|
+| WS-1 | Proto files compile | `./model/build.sh && cd apps/desktop && pnpm run check` | Zero errors |
+| WS-2 | Federation subserver | `cd apps/station && go test ./app/subserver/federation/...` | All green |
+| WS-3 | Sequencer enforcement | Integration test: reject non-sequencer append | Test log |
+| WS-4 | 3-node sync | `make seed-testnet && make verify-sync` | 3 nodes same head |
+| WS-5 | Testnet seed | Seed script produces verified genesis | Replay check log |
+| WS-6 | Client projection | Desktop shows real federation list via API | Screenshot / E2E |
+| WS-7 | Catalog scoped | Search without federation_id → 400 or warning | HTTP test |
 
 ---
 
-## 8. 依赖
+## 7. Final Readiness Gate
 
-前置依赖：
+Phase 1 is COMPLETE only when ALL conditions are met:
 
-- `docs/architecture/federation/design.md`
-- `docs/architecture/federation/data-model.md`
-- `docs/architecture/federation/integration.md`
-- `docs/architecture/identity/unified-actor-system.md`
-- `docs/architecture/identity/federation-catalog.md`
-- `docs/station/base.md`
-- `docs/global/domain-model.md`
-
-实现依赖：
-
-- Proto-First：先改 `model/domain/federation/*.proto`，再生成平台代码。
-- Station app/frame 分层：app layer 拥有 governance，frame layer 只提供 primitive。
-- Relay 纪律：新增 relay topic 必须 deny-by-default allow-list，并在 receiver 做 authority / replay / relevance gate。
+1. Three-node testnet can create and sync `peers-testnet` Federation.
+2. Three-node replay produces identical `head_hash` and `head_seq`.
+3. Non-sequencer direct append is rejected (error 40002).
+4. Proposal path works: submit → sequencer accepts → event appended → synced to members.
+5. Fork injection produces `fork_detected` state (does not advance head).
+6. Desktop Settings shows real joined federations from Station API.
+7. Dashboard can create a new Federation (writes real genesis event).
+8. Catalog search requires `federation_id` on default path.
+9. All proto files compile on all platforms (Go, Rust, TS).
+10. No governance code in `frame/` layer (`grep -r "subserver/federation" apps/station/frame/` returns empty).
+11. All existing tests continue to pass (`go test ./...`, `pnpm run check`).
 
 ---
 
-## 9. 风险与控制
+## 8. Risks & Anti-Regression
 
-| 风险 | 控制 |
-|------|------|
-| Ledger 变成普通 DB 复制 | 所有 materialized state 必须可由 ledger replay 重建 |
-| Sequencer 单点导致不可用 | v1 允许 read-only / orphaned，handover 通过 event 表达 |
-| Catalog 继续隐式全局搜索 | 默认用户路径强制 `federation_id` |
-| frame 积累 federation 业务规则 | D-10 约束，review 时检查 frame 不读取 policy / role 表 |
-| BY_HANDLE 被 Plaza 枚举 | effective visibility 规则和测试用例覆盖 |
-| relay topic 被滥用 | topic allow-list、origin authority、replay protection、local relevance gate |
+| Risk | Control |
+|---|---|
+| Canonical bytes drift between Go/Rust/TS | Conformance test: same input → same hash across implementations |
+| Ledger becomes ordinary DB table | Invariant test: delete materialized_state → replay → same head |
+| Sequencer single point → unavailability | v1 accepts read-only/orphaned; handover is a placeholder |
+| frame accumulates governance logic | CI grep gate: frame MUST NOT import subserver/federation |
+| Existing discovery layer regression | Existing acceptance gates (`surface_smoke.py`, `mutual_validation.py`) must pass |
+| BY_HANDLE actor enumerated by Catalog | Test: BY_HANDLE actor not in Catalog indexed results |
+| Relay notification spam | Topic allow-list + rate limit on sequencer publish |
 
 ---
 
-## 10. Phase 退出条件
+## 9. Execution Schedule (Recommended)
 
-全部条件满足后，Phase 1 才能视为完成：
+| Phase | Workstreams | Estimated Effort | Parallelism |
+|---|---|---|---|
+| Sprint 1 | WS-1 (Proto) | 1-2 days | Solo |
+| Sprint 2 | WS-2 (Subserver Core) + WS-7 (Catalog, parallel) | 3-5 days | WS-7 can parallel |
+| Sprint 3 | WS-3 (Sequencer) + WS-6 (Projection, parallel start) | 2-3 days | WS-6 starts |
+| Sprint 4 | WS-4 (Sync) + WS-6 (continue) | 3-4 days | Parallel |
+| Sprint 5 | WS-5 (Seed) + Final integration + Readiness gate | 2-3 days | Integration |
 
-- 三节点测试网能创建并同步 `peers-testnet` Federation。
-- 三节点 replay 后 head 一致。
-- 非 sequencer append 被拒绝，proposal 路径可用。
-- fork detection 可复现且不会推进错误 state。
-- Plaza projection 可以列出 Federation、member stations、current actor capabilities。
-- Catalog / Station list / Public actor list 主路径均带 `federation_id`。
-- 文档、proto、Station 实现之间没有并行模型或命名漂移。
+Total: ~12-17 working days for the complete Phase 1 governance layer.
+
+---
+
+## 10. Non-Claims
+
+This plan does NOT claim:
+
+- Mobile client integration (only Desktop and Dashboard).
+- ActivityPub interop.
+- Multi-sig or quorum policies (only single_admin).
+- Complete federation lifecycle UI polish.
+- Production deployment or performance benchmarking.
+- Actor independent key support (v1 is Station-delegated).
