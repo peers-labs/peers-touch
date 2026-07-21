@@ -93,6 +93,19 @@ message FederationSelfView {
   // Diagnostic field for the Settings federation panel ("Reachable
   // via …") — clients that don't render it ignore the field.
   repeated string inbox_relay_mounts = 11 [json_name = "inbox_relay_mounts"];
+
+  // Federations this actor's home station has joined.
+  // Populated from the governance subserver's materialized state.
+  repeated JoinedFederationRef joined_federations = 12 [json_name = "joined_federations"];
+}
+
+// JoinedFederationRef is a lightweight reference to a joined federation,
+// surfaced in FederationSelfView for the Desktop Settings panel.
+message JoinedFederationRef {
+  string federation_id = 1 [json_name = "federation_id"];
+  string federation_name = 2 [json_name = "federation_name"];
+  string my_role = 3 [json_name = "my_role"];
+  string status = 4;
 }
 
 // FederationVisibilityRequest is the body of PUT /actor/federation/visibility.

@@ -64,4 +64,8 @@ message FederationHealthView {
   // human-readable diagnostics.
   string boot_started_at = 9 [json_name = "boot_started_at"];
   int64 uptime_seconds = 10 [json_name = "uptime_seconds"];
+
+  // Governance layer sync status. Empty/unset when no federation
+  // subserver is running (pre-Phase-1 stations).
+  string governance_sync_status = 11 [json_name = "governance_sync_status"];
 }
