@@ -600,13 +600,13 @@ export function ProviderDetail() {
 
         {allModels.length > 0 && (
           <Input
-            size="small"
+            size="middle"
             placeholder={t('provider.model.searchModels')}
-            prefix={<Search size={12} style={{ color: token.colorTextQuaternary }} />}
+            prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
             value={modelSearchKeyword}
             onChange={(e) => setModelSearchKeyword(e.target.value)}
             allowClear
-            style={{ marginBottom: 8, maxWidth: 240, fontSize: 12 }}
+            style={{ marginBottom: 8 }}
           />
         )}
 

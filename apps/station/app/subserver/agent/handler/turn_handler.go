@@ -263,6 +263,10 @@ func (h *TurnHandlers) turnConfigFromRequest(req *model.ExecuteTurnRequest, sink
 		WorkspaceRoot:      req.GetWorkspaceRoot(),
 		KnowledgeResources: knowledgeResourcesFromRequest(req),
 		EventSink:          sink,
+		// CLI execution fields — pass through from proto request.
+		CliCommand:     req.GetCliCommand(),
+		RuntimeBackend: req.GetRuntimeBackend(),
+		AllowedRoots:   req.GetAllowedRoots(),
 	}
 }
 

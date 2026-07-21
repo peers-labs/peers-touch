@@ -303,6 +303,11 @@ message ExecuteTurnRequest {
   // Reasoning effort level: "low" | "medium" | "high".
   // Passed through to LLM providers as reasoning_effort where supported.
   optional string effort = 14;
+  // CLI execution fields — when cli_command is set, Station executes the CLI
+  // binary in an isolated workspace instead of routing to an LLM provider.
+  optional string cli_command = 15;
+  optional string runtime_backend = 16;
+  repeated string allowed_roots = 17;
 }
 
 message ExecuteTurnResponse {

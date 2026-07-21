@@ -17,10 +17,9 @@ DEPLOY_DIR="$LOCAL_ROOT/deploy"
 # Worktrees normally share one .local repo, but older worktrees may have a
 # partial .local directory. Bootstrap missing profile/deploy config from the
 # primary worktree without overwriting local edits.
-find_shared_local_root() {
+find_all_shared_local_roots() {
   if [[ -n "${PT_SHARED_LOCAL_DIR:-}" && -d "$PT_SHARED_LOCAL_DIR" ]]; then
     echo "$PT_SHARED_LOCAL_DIR"
-    return 0
   fi
 
   local workspace_root
@@ -34,12 +33,9 @@ find_shared_local_root() {
     if [[ "$candidate" != "$LOCAL_ROOT" && -d "$candidate" ]]; then
       if [[ -d "$candidate/deploy" || -d "$candidate/dev/profiles" ]]; then
         echo "$candidate"
-        return 0
       fi
     fi
   done
-
-  return 1
 }
 
 copy_missing_files() {
@@ -61,17 +57,21 @@ copy_missing_files() {
 }
 
 ensure_local_assets() {
-  local shared_root
-  shared_root="$(find_shared_local_root || true)"
-  [[ -n "$shared_root" ]] || return 0
+  local roots
+  roots="$(find_all_shared_local_roots)"
+  [[ -n "$roots" ]] || return 0
 
-  copy_missing_files "$shared_root/dev/profiles" "$PROFILES_DIR"
-  copy_missing_files "$shared_root/deploy/envs" "$DEPLOY_DIR/envs"
-  if [[ -f "$shared_root/deploy/git-server.env" && ! -f "$DEPLOY_DIR/git-server.env" ]]; then
-    mkdir -p "$DEPLOY_DIR"
-    cp "$shared_root/deploy/git-server.env" "$DEPLOY_DIR/git-server.env"
-    echo "[INFO] Bootstrapped deploy/git-server.env"
-  fi
+  local shared_root
+  while IFS= read -r shared_root; do
+    [[ -n "$shared_root" ]] || continue
+    copy_missing_files "$shared_root/dev/profiles" "$PROFILES_DIR"
+    copy_missing_files "$shared_root/deploy/envs" "$DEPLOY_DIR/envs"
+    if [[ -f "$shared_root/deploy/git-server.env" && ! -f "$DEPLOY_DIR/git-server.env" ]]; then
+      mkdir -p "$DEPLOY_DIR"
+      cp "$shared_root/deploy/git-server.env" "$DEPLOY_DIR/git-server.env"
+      echo "[INFO] Bootstrapped deploy/git-server.env"
+    fi
+  done <<< "$roots"
 }
 
 # Worktree ID for per-worktree active profile pointer
