@@ -8,7 +8,6 @@
 //
 // 2026-04-09: Initial creation. Full 1:1 mapping of all 237 tauri commands.
 
-use std::io::Read as _;
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -110,7 +109,7 @@ fn group_chat_federated_actor_input_to_proto(
     input: GroupChatFederatedActorInput,
 ) -> model::chat::FederatedActorRef {
     model::chat::FederatedActorRef {
-        actor_did: input.actor_did,
+        ptid: input.actor_did,
         home_station_peer_id: input.home_station_peer_id,
         home_station_domain: input.home_station_domain.unwrap_or_default(),
         federated_handle: input.federated_handle.unwrap_or_default(),
@@ -5665,7 +5664,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(json!({
                     "group_ulid": input.group_ulid,
                     "member": {
-                        "actor_did": member.actor_did,
+                        "ptid": member.ptid,
                         "home_station_peer_id": member.home_station_peer_id,
                         "home_station_domain": member.home_station_domain,
                         "federated_handle": member.federated_handle,
@@ -5770,7 +5769,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None,
                 Some(json!({
                     "group_ulid": input.group_ulid,
-                    "actor_did": input.member_did,
+                    "ptid": input.member_did,
                 })),
             ) {
                 Ok(data) => to_json(to_stub("group_chat_remove_member", data)),
@@ -5794,7 +5793,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 });
             let req = model::chat::UpdateMemberRequest {
                 group_ulid: input.group_ulid,
-                actor_did: input.member_did,
+                ptid: input.member_did,
                 role: input.role,
                 muted: input.muted,
                 muted_until,
