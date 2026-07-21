@@ -23,6 +23,8 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard"
 
+	federation "github.com/peers-labs/peers-touch/station/app/subserver/federation"
+
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/agent"
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
 
@@ -60,6 +62,7 @@ func main() {
 		server.WithSubServer("applet_store", appletstore.NewAppletStoreSubServer),
 		server.WithSubServer("frontend_telemetry", frontendtelemetry.NewFrontendTelemetrySubServer),
 		server.WithSubServer("dashboard", dashboard.NewDashboardSubServer),
+		server.WithSubServer("federation", federation.NewFederationSubServer),
 	)
 	if err != nil {
 		panic(err)
