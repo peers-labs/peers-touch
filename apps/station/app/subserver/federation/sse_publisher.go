@@ -2,29 +2,36 @@ package federation
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
+	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 )
 
-// LedgerEventPublisher bridges federation governance events into the
-// SSE event stream, notifying all connected clients on this station
-// that a new ledger event has been appended.
-type LedgerEventPublisher struct{}
-
-func NewLedgerEventPublisher() *LedgerEventPublisher {
-	return &LedgerEventPublisher{}
+type LedgerEventPublisher struct {
+	actorRoleRepo domain.ActorRoleRepository
 }
 
-// PublishToLocalActors broadcasts a ledger event to all actors connected
-// to this station's SSE stream. Federation governance state is station-wide
-// (all actors on the same station see the same federation membership), so
-// we publish to a broadcast actor ID that the events subserver fans out.
-func (p *LedgerEventPublisher) PublishToLocalActors(_ context.Context, event *pb.LedgerEvent) error {
+func NewLedgerEventPublisher(actorRoleRepo domain.ActorRoleRepository) *LedgerEventPublisher {
+	return &LedgerEventPublisher{actorRoleRepo: actorRoleRepo}
+}
+
+func (p *LedgerEventPublisher) PublishToLocalActors(ctx context.Context, event *pb.LedgerEvent) error {
 	bus := events.GetBus()
 	if bus == nil {
+		return nil
+	}
+
+	actors, err := p.actorRoleRepo.ListByFederation(ctx, event.FederationId)
+	if err != nil {
+		log.Warnf(ctx, "[federation] SSE publish: failed to list actors for %s: %v", event.FederationId, err)
+		return nil
+	}
+	if len(actors) == 0 {
 		return nil
 	}
 
@@ -51,8 +58,11 @@ func (p *LedgerEventPublisher) PublishToLocalActors(_ context.Context, event *pb
 		},
 	}
 
-	// Broadcast to all connected actors using the wildcard publish.
-	// The events bus delivers to every active SSE connection on this station.
-	_, err := bus.Publish("*", streamEvent)
-	return err
+	var errs []error
+	for _, actor := range actors {
+		if _, pubErr := bus.Publish(actor.ActorID, streamEvent); pubErr != nil {
+			errs = append(errs, pubErr)
+		}
+	}
+	return errors.Join(errs...)
 }
