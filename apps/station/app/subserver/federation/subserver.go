@@ -119,7 +119,11 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 
 	fedCache := federation.Singleton()
 	localStationFn := func() string {
-		defer func() { recover() }()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Warnf(context.Background(), "[federation] node.GetService() not ready: %v", r)
+			}
+		}()
 		return node.GetService().Options().Id
 	}
 
