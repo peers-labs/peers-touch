@@ -218,54 +218,50 @@ export const LoginFormView = memo(function LoginFormView({
           : t('auth.login.subtitle')}
       </Text>
 
-      {expiredAccount && (
-        <Alert
-          type={reauthReason === 'revoked' ? 'warning' : 'info'}
-          showIcon
-          icon={
-            reauthReason === 'revoked'
-              ? <AlertTriangle size={18} style={{ color: token.colorWarningText }} />
-              : <Lock size={18} style={{ color: token.colorInfoText }} />
-          }
-          style={{
-            width: '100%',
-            marginBottom: LOGIN_FORM_LAYOUT.reauthAlertBottom,
-            borderRadius: 12,
-            padding: '10px 12px',
-          }}
-          message={
-            <Text
-              strong
-              style={{
-                fontSize: 13,
-                color: reauthReason === 'revoked' ? token.colorWarningText : token.colorInfoText,
-              }}
-            >
-              {reauthReason === 'revoked'
-                ? t('auth.login.expiredAlertTitle', { defaultValue: 'Session expired' })
-                : t('auth.login.continueAlertTitle', { defaultValue: 'Sign in required' })}
-            </Text>
-          }
-          description={
-            <Flexbox horizontal gap={10} align="center" style={{ marginTop: 6 }}>
+      {expiredAccount && (() => {
+        const isRevoked = reauthReason === 'revoked';
+        const accentColor = isRevoked ? token.colorWarningText : token.colorPrimary;
+        const accentBg = isRevoked ? token.colorWarningBg : token.colorPrimaryBg;
+        const borderColor = isRevoked ? token.colorWarningBorder : token.colorPrimaryBorder;
+        const IconComp = isRevoked ? AlertTriangle : Lock;
+        return (
+          <div
+            style={{
+              width: '100%',
+              marginBottom: LOGIN_FORM_LAYOUT.reauthAlertBottom,
+              borderRadius: 10,
+              border: `1px solid ${borderColor}`,
+              background: accentBg,
+              padding: '10px 12px',
+            }}
+          >
+            <Flexbox horizontal gap={8} align="center">
+              <IconComp size={16} style={{ color: accentColor, flexShrink: 0 }} />
+              <Text strong style={{ fontSize: 13, color: accentColor, lineHeight: 1 }}>
+                {isRevoked
+                  ? t('auth.login.expiredAlertTitle', { defaultValue: 'Session expired' })
+                  : t('auth.login.continueAlertTitle', { defaultValue: 'Sign in required' })}
+              </Text>
+            </Flexbox>
+            <Flexbox horizontal gap={8} align="center" style={{ marginTop: 8, paddingLeft: 24 }}>
               <UserSquareAvatar
                 remoteUrl={expiredAccount.avatar}
                 name={expiredAccount.name}
-                size={32}
+                size={28}
                 radius={6}
               />
-              <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
-                <Text strong style={{ fontSize: 13 }}>{expiredAccount.name}</Text>
+              <Flexbox gap={0} style={{ flex: 1, minWidth: 0 }}>
+                <Text strong style={{ fontSize: 13, lineHeight: 1.2 }}>{expiredAccount.name}</Text>
                 {expiredAccount.email && (
-                  <Text type="secondary" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Text type="secondary" style={{ fontSize: 11, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {expiredAccount.email}
                   </Text>
                 )}
               </Flexbox>
             </Flexbox>
-          }
-        />
-      )}
+          </div>
+        );
+      })()}
 
       <div
         style={{
