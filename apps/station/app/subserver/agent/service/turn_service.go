@@ -746,8 +746,14 @@ func (s *TurnService) providerCallWithRetry(
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 
+		providerID := strings.TrimSpace(config.Provider)
+		if providerID == "" {
+			return "", providerCalls, false, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+				"provider is required in turn config", nil)
+		}
+
 		// Lease a credential for the provider.
-		credential, leaseErr := s.credentialPool.Lease(ctx, config.Provider, strategy)
+		credential, leaseErr := s.credentialPool.Lease(ctx, providerID, strategy)
 		if leaseErr != nil {
 			logger.Errorf(ctx, "credential lease failed: turn_id=%s attempt=%d err=%v",
 				turnID, attempt, leaseErr)

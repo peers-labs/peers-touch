@@ -3601,29 +3601,50 @@ export const api = {
       const normalizedRuntimeKind = runtimeKind === 'cli' || cliCommand ? 'cli' : 'direct';
       const providerModels = Array.isArray(p.models) ? p.models : [];
       if (providerModels.length > 0) {
-        return providerModels.map((model: any) => ({
-          id: model.id || p.check_model || `${p.id}:default`,
-          display_name: model.display_name || model.id || p.check_model || `${p.id}:default`,
-          provider_id: p.id,
-          provider_name: p.name || p.id,
-          type: model.type || 'chat',
-          context_window: Number(model.context_window || 0),
-          enabled: Boolean(model.enabled),
-          function_call: Boolean(model.function_call),
-          vision: Boolean(model.vision),
-          reasoning: Boolean(model.reasoning),
-          search: Boolean(model.search),
-          image_output: Boolean(model.image_output),
-          video: Boolean(model.video),
-          protocol_override: model.protocol_override || p.protocol_override || undefined,
-          runtime_kind: normalizedRuntimeKind,
-          cli_command: cliCommand || undefined,
-        }));
+        return providerModels
+          .map((model: any, idx: number) => {
+            const rawId = String(model.id || '').trim();
+            const displayName = String(model.display_name || '').trim();
+            let resolvedId = rawId;
+            if (!resolvedId) {
+              if (p.check_model) {
+                resolvedId = String(p.check_model).trim();
+              } else if (displayName) {
+                resolvedId = `${p.id}:${displayName.toLowerCase().replace(/\s+/g, '-')}`;
+              } else {
+                resolvedId = `${p.id}:model-${idx}`;
+              }
+            }
+            return { model, id: resolvedId, displayName };
+          })
+          .filter(({ id }) => id.length > 0)
+          .map(({ model, id: mid, displayName }) => {
+            return {
+              id: mid,
+              display_name: displayName || mid,
+              provider_id: p.id,
+              provider_name: p.name || p.id,
+              type: model.type || 'chat',
+              context_window: Number(model.context_window || 0),
+              enabled: Boolean(model.enabled),
+              function_call: Boolean(model.function_call),
+              vision: Boolean(model.vision),
+              reasoning: Boolean(model.reasoning),
+              search: Boolean(model.search),
+              image_output: Boolean(model.image_output),
+              video: Boolean(model.video),
+              protocol_override: model.protocol_override || p.protocol_override || undefined,
+              runtime_kind: normalizedRuntimeKind,
+              cli_command: cliCommand || undefined,
+            };
+          });
       }
-      const fallbackId = p.check_model || cfg.default_model || `${p.id}:default`;
+      const fallbackCheckModel = String(p.check_model || '').trim();
+      const cfgDefault = String(cfg.default_model || '').trim();
+      const fallbackId = fallbackCheckModel || cfgDefault || `${p.id}:default`;
       return [{
         id: fallbackId,
-        display_name: fallbackId,
+        display_name: fallbackId === `${p.id}:default` ? 'Default' : fallbackId,
         provider_id: p.id,
         provider_name: p.name || p.id,
         type: 'chat',
