@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
@@ -52,7 +53,7 @@ func (r *ReplayService) ReplayFromGenesis(ctx context.Context, federationID stri
 			prevHash = make([]byte, 32)
 		}
 
-		if !bytesEqual(event.PrevHash, prevHash) {
+		if subtle.ConstantTimeCompare(event.PrevHash, prevHash) != 1 {
 			return nil, ErrForkDetected
 		}
 		if event.Seq != uint64(i) {
