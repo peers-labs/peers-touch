@@ -2,7 +2,9 @@ package federation
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -10,25 +12,32 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/node"
 )
 
 var ErrSyncStopped = errors.New("sync stopped")
 
-// LedgerSyncManager manages sync connections to remote sequencer stations.
-// For each joined federation where this station is NOT the sequencer,
-// it maintains a polling loop that fetches new events and applies them locally.
-type LedgerSyncManager struct {
-	mu        sync.RWMutex
-	running   bool
-	stopCh    chan struct{}
-	interval  time.Duration
+type RemoteLedgerFetcher interface {
+	FetchHead(ctx context.Context, endpoint string, federationID string) (headHash []byte, headSeq uint64, err error)
+	FetchEvents(ctx context.Context, endpoint string, federationID string, fromSeq uint64, limit uint32) ([]*pb.LedgerEvent, error)
+}
 
-	ledgerSvc     *application.LedgerService
+type LedgerSyncManager struct {
+	mu       sync.Mutex
+	running  bool
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	interval time.Duration
+
+	ledgerSvc      *application.LedgerService
 	federationRepo domain.FederationRepository
 	eventRepo      domain.LedgerEventRepository
 	syncCursorRepo domain.SyncCursorRepository
+	membershipRepo domain.MembershipRepository
 	publisher      *LedgerEventPublisher
 	hashSvc        *domain.HashService
+	fetcher        RemoteLedgerFetcher
+	localStationID string
 }
 
 func NewLedgerSyncManager(
@@ -36,8 +45,11 @@ func NewLedgerSyncManager(
 	federationRepo domain.FederationRepository,
 	eventRepo domain.LedgerEventRepository,
 	syncCursorRepo domain.SyncCursorRepository,
+	membershipRepo domain.MembershipRepository,
 	publisher *LedgerEventPublisher,
 	hashSvc *domain.HashService,
+	fetcher RemoteLedgerFetcher,
+	localStationID string,
 ) *LedgerSyncManager {
 	return &LedgerSyncManager{
 		interval:       30 * time.Second,
@@ -45,8 +57,11 @@ func NewLedgerSyncManager(
 		federationRepo: federationRepo,
 		eventRepo:      eventRepo,
 		syncCursorRepo: syncCursorRepo,
+		membershipRepo: membershipRepo,
 		publisher:      publisher,
 		hashSvc:        hashSvc,
+		fetcher:        fetcher,
+		localStationID: localStationID,
 	}
 }
 
@@ -57,41 +72,62 @@ func (m *LedgerSyncManager) Start(ctx context.Context) {
 		return
 	}
 	m.running = true
-	m.stopCh = make(chan struct{})
+	runCtx, cancel := context.WithCancel(ctx)
+	m.cancel = cancel
+	m.wg.Add(1)
 	m.mu.Unlock()
 
-	go m.syncLoop(ctx)
+	go m.run(runCtx)
 	log.Infof(ctx, "[federation-sync] started, interval=%s", m.interval)
 }
 
 func (m *LedgerSyncManager) Stop() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if !m.running {
+		m.mu.Unlock()
 		return
 	}
 	m.running = false
-	close(m.stopCh)
+	m.cancel()
+	m.mu.Unlock()
+
+	m.wg.Wait()
 }
 
-func (m *LedgerSyncManager) syncLoop(ctx context.Context) {
+func (m *LedgerSyncManager) run(ctx context.Context) {
+	defer m.wg.Done()
 	ticker := time.NewTicker(m.interval)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-m.stopCh:
-			return
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			m.syncAllFederations(ctx)
+			m.safeTick(ctx)
 		}
 	}
 }
 
+func (m *LedgerSyncManager) safeTick(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf(ctx, "[federation-sync] panic recovered: %v", r)
+		}
+	}()
+	m.syncAllFederations(ctx)
+}
+
 func (m *LedgerSyncManager) syncAllFederations(ctx context.Context) {
-	// List all federations this station is a member of
+	if m.localStationID == "" {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Warnf(ctx, "[federation-sync] node not ready yet, skipping tick")
+			}
+		}()
+		m.localStationID = node.GetService().Options().Id
+	}
+
 	feds, err := m.federationRepo.ListByStation(ctx, "")
 	if err != nil {
 		log.Warnf(ctx, "[federation-sync] failed to list federations: %v", err)
@@ -106,87 +142,105 @@ func (m *LedgerSyncManager) syncAllFederations(ctx context.Context) {
 }
 
 func (m *LedgerSyncManager) syncFederation(ctx context.Context, fed *domain.FederationRecord) error {
-	// Get current local head
+	if fed.SequencerStationPeerID == m.localStationID {
+		return nil
+	}
+
+	if m.fetcher == nil {
+		return nil
+	}
+
+	sequencerMembership, err := m.membershipRepo.GetByStation(ctx, fed.FederationID, fed.SequencerStationPeerID)
+	if err != nil || sequencerMembership == nil {
+		return nil
+	}
+	endpoint := sequencerMembership.StationURL
+	if endpoint == "" {
+		return nil
+	}
+
+	remoteHeadHash, remoteHeadSeq, err := m.fetcher.FetchHead(ctx, endpoint, fed.FederationID)
+	if err != nil {
+		return fmt.Errorf("fetch head from %s: %w", endpoint, err)
+	}
+
 	headEvent, err := m.eventRepo.GetHead(ctx, fed.FederationID)
 	if err != nil {
 		return err
 	}
-
 	var localSeq uint64
 	if headEvent != nil {
 		localSeq = headEvent.Seq
 	}
 
-	// In a full implementation, this would call FetchHead on the remote sequencer
-	// to check if remote_head_seq > local_seq, then FetchEvents to pull missing events.
-	// For Phase 1 single-station MVP, sync is a no-op when this station IS the sequencer.
-	if fed.SequencerStationPeerID == "" {
+	if remoteHeadSeq <= localSeq {
+		m.updateCursor(ctx, fed, remoteHeadHash, remoteHeadSeq, localSeq, "healthy")
 		return nil
 	}
 
-	// Update sync cursor
+	events, err := m.fetcher.FetchEvents(ctx, endpoint, fed.FederationID, localSeq+1, 100)
+	if err != nil {
+		return fmt.Errorf("fetch events from %s: %w", endpoint, err)
+	}
+
+	for _, event := range events {
+		if err := m.ApplyRemoteEvent(ctx, event); err != nil {
+			m.updateCursor(ctx, fed, remoteHeadHash, remoteHeadSeq, localSeq, "fork_detected")
+			return fmt.Errorf("apply event seq=%d: %w", event.Seq, err)
+		}
+		localSeq = event.Seq
+	}
+
+	m.updateCursor(ctx, fed, remoteHeadHash, remoteHeadSeq, localSeq, "healthy")
+	log.Infof(ctx, "[federation-sync] synced %s: local_seq=%d remote_seq=%d", fed.FederationID, localSeq, remoteHeadSeq)
+	return nil
+}
+
+func (m *LedgerSyncManager) updateCursor(ctx context.Context, fed *domain.FederationRecord, headHash []byte, headSeq, appliedSeq uint64, status string) {
 	cursor := &domain.SyncCursorRecord{
 		FederationID:        fed.FederationID,
 		RemoteStationPeerID: fed.SequencerStationPeerID,
-		LastSeenHeadHash:    fed.HeadHash,
-		LastSeenHeadSeq:     fed.HeadSeq,
-		LastAppliedSeq:      localSeq,
-		Status:              "healthy",
+		LastSeenHeadHash:    headHash,
+		LastSeenHeadSeq:     headSeq,
+		LastAppliedSeq:      appliedSeq,
+		Status:              status,
 	}
-	return m.syncCursorRepo.Upsert(ctx, cursor)
+	if err := m.syncCursorRepo.Upsert(ctx, cursor); err != nil {
+		log.Warnf(ctx, "[federation-sync] failed to update cursor for %s: %v", fed.FederationID, err)
+	}
 }
 
-// ApplyRemoteEvent validates and applies a ledger event received from a remote sequencer.
-// Used both by the SSE receiver and the FetchEvents catch-up path.
 func (m *LedgerSyncManager) ApplyRemoteEvent(ctx context.Context, event *pb.LedgerEvent) error {
-	// Verify hash chain
 	fed, err := m.federationRepo.GetByID(ctx, event.FederationId)
 	if err != nil {
 		return err
 	}
 	if fed == nil {
-		return errors.New("federation not found")
+		return fmt.Errorf("federation not found: %s", event.FederationId)
 	}
 
-	expectedPrevHash := fed.HeadHash
-	if !bytesEqual(event.PrevHash, expectedPrevHash) {
-		// Fork detected
-		_ = m.federationRepo.UpdateStatus(ctx, event.FederationId, "fork_detected")
+	if subtle.ConstantTimeCompare(event.PrevHash, fed.HeadHash) != 1 {
+		if err := m.federationRepo.UpdateStatus(ctx, event.FederationId, "fork_detected"); err != nil {
+			log.Warnf(ctx, "[federation-sync] failed to update fork status for %s: %v", event.FederationId, err)
+		}
 		return domain.ErrForkDetected
 	}
 
-	// Verify event hash
-	payloadHash := event.PayloadHash
-	valid, err := m.hashSvc.VerifyEventHash(event, payloadHash)
+	valid, err := m.hashSvc.VerifyEventHash(event, event.PayloadHash)
 	if err != nil {
 		return err
 	}
 	if !valid {
-		return errors.New("event hash verification failed")
+		return fmt.Errorf("event hash verification failed for seq=%d federation=%s", event.Seq, event.FederationId)
 	}
 
-	// Append to local ledger
 	if err := m.eventRepo.Append(ctx, event); err != nil {
 		return err
 	}
 
-	// Update federation head
 	if err := m.federationRepo.UpdateHead(ctx, event.FederationId, event.EventHash, event.Seq); err != nil {
 		return err
 	}
 
-	// Publish to local actors via SSE
 	return m.publisher.PublishToLocalActors(ctx, event)
-}
-
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
