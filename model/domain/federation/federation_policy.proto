@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpb";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Federation Policy — Strategy types for sequencer selection and governance.
+// Source of truth: docs/architecture/federation/wire-protocol.md §8.5
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// PolicyType identifies the sequencer election and handover strategy.
+enum PolicyType {
+  POLICY_TYPE_UNSPECIFIED = 0;
+  SINGLE_ADMIN = 1;
+  OWNER_ADMIN = 2;
+  QUORUM = 3;
+  MULTI_SIG = 4;
+}
+
+// SingleAdminParams — v1 implemented policy.
+// Sequencer is the genesis creator; handover requires sequencer initiative.
+message SingleAdminParams {
+  // No additional params for v1. Sequencer = genesis creator.
+}
+
+// OwnerAdminParams — reserved for future use.
+message OwnerAdminParams {
+  string owner_actor_id = 1;
+  string owner_station_peer_id = 2;
+}
+
+// QuorumParams — reserved for future use.
+message QuorumParams {
+  uint32 required_signatures = 1;
+  uint32 total_admin_stations = 2;
+}
+
+// MultiSigParams — reserved for future use.
+message MultiSigParams {
+  repeated string admin_station_peer_ids = 1;
+}
+
+// PolicyParams wraps all policy-type-specific parameters.
+message PolicyParams {
+  PolicyType policy_type = 1;
+  oneof params {
+    SingleAdminParams single_admin = 10;
+    OwnerAdminParams  owner_admin = 11;
+    QuorumParams      quorum = 12;
+    MultiSigParams    multi_sig = 13;
+  }
+}
