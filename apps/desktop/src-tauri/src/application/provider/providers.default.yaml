@@ -13,7 +13,7 @@ providers:
     default_base_url: ${llm_provider_ark_base_url:-}
     api_key: ${llm_provider_ark_key}
     models:
-      - id: doubao-pro
+      - id: ${llm_model_doubao_chat:-ep-20251222201838-9j4nd}
         display_name: Doubao Pro
         type: chat
         enabled: true
