@@ -6,25 +6,43 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/application"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
+)
+
+var (
+	errNameRequired = errors.New("name is required")
+	errNameTooLong  = errors.New("name exceeds 255 characters")
 )
 
 type ListFederationsRequest struct{}
 
 func (s *subServer) handleListFederations(ctx context.Context, _ *ListFederationsRequest) (*pb.ListFederationsResponse, error) {
-	// TODO: extract actor_id and station_peer_id from JWT context
-	actorID := "placeholder"
-	stationPeerID := "placeholder"
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	actorID := subject.ID
+	stationPeerID := node.GetService().Options().Id
 
 	return s.projectionSvc.ListFederations(ctx, stationPeerID, actorID)
 }
 
 func (s *subServer) handleCreateFederation(ctx context.Context, req *pb.CreateFederationRequest) (*pb.CreateFederationResponse, error) {
-	// TODO: extract from JWT context
-	actorID := "placeholder"
-	actorHandle := "placeholder"
-	stationPeerID := "placeholder"
-	stationName := "placeholder"
-	stationURL := "placeholder"
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	actorID := subject.ID
+	stationPeerID := node.GetService().Options().Id
+
+	if req.Name == "" {
+		return nil, errNameRequired
+	}
+	if len(req.Name) > 255 {
+		return nil, errNameTooLong
+	}
 
 	policyType := req.PolicyType
 	if policyType == "" {
@@ -36,10 +54,10 @@ func (s *subServer) handleCreateFederation(ctx context.Context, req *pb.CreateFe
 		Description:   req.Description,
 		PolicyType:    policyType,
 		ActorID:       actorID,
-		ActorHandle:   actorHandle,
+		ActorHandle:   subject.ID,
 		StationPeerID: stationPeerID,
-		StationName:   stationName,
-		StationURL:    stationURL,
+		StationName:   node.GetService().Name(),
+		StationURL:    "",
 	})
 	if err != nil {
 		return nil, err
@@ -58,11 +76,52 @@ func (s *subServer) handleCreateFederation(ctx context.Context, req *pb.CreateFe
 }
 
 func (s *subServer) handleListMemberStations(ctx context.Context, req *pb.ListMemberStationsRequest) (*pb.ListMemberStationsResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.FederationId == "" {
+		return nil, errors.New("federation_id is required")
+	}
 	return s.projectionSvc.ListMemberStations(ctx, req.FederationId)
 }
 
-func (s *subServer) handleJoinFederation(_ context.Context, _ *pb.JoinFederationRequest) (*pb.JoinFederationResponse, error) {
-	return nil, errors.New("join federation not yet implemented")
+func (s *subServer) handleJoinFederation(ctx context.Context, req *pb.JoinFederationRequest) (*pb.JoinFederationResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.FederationId == "" {
+		return nil, errors.New("federation_id is required")
+	}
+
+	actorID := subject.ID
+	stationPeerID := node.GetService().Options().Id
+
+	actorPriv, err := s.actorKeySvc.GetPrivateKey(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+
+	membership, err := s.federationSvc.ApproveJoin(ctx, &application.ApproveJoinInput{
+		FederationID:          req.FederationId,
+		JoiningStationPeerID:  stationPeerID,
+		JoiningStationName:    node.GetService().Name(),
+		JoiningStationURL:     req.FederationEndpoint,
+		ApproverActorID:       actorID,
+		ApproverActorHandle:   actorID,
+		ApproverStationPeerID: stationPeerID,
+		ActorPrivateKey:       actorPriv,
+		StationPrivateKey:     actorPriv,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.JoinFederationResponse{
+		Status:     membership.Status,
+		ProposalId: membership.ApprovedByEventID,
+	}, nil
 }
 
 func (s *subServer) handleLeaveFederation(_ context.Context, _ *pb.LeaveFederationRequest) (*pb.LeaveFederationResponse, error) {

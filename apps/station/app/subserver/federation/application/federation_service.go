@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"crypto/ed25519"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
@@ -89,6 +90,7 @@ func (s *FederationService) CreateFederation(ctx context.Context, input *CreateF
 		Status:                 "active",
 		PolicyType:             input.PolicyType,
 		SequencerStationPeerID: input.StationPeerID,
+		GenesisHash:            make([]byte, 32),
 		HeadHash:               make([]byte, 32),
 		HeadSeq:                0,
 		CreatedByActorID:       input.ActorID,
@@ -152,6 +154,60 @@ func (s *FederationService) Replay(ctx context.Context, federationID string) (*d
 
 func (s *FederationService) GetFederation(ctx context.Context, federationID string) (*domain.FederationRecord, error) {
 	return s.federationRepo.GetByID(ctx, federationID)
+}
+
+type ApproveJoinInput struct {
+	FederationID       string
+	JoiningStationPeerID string
+	JoiningStationName   string
+	JoiningStationURL    string
+	ApproverActorID      string
+	ApproverActorHandle  string
+	ApproverStationPeerID string
+	ActorPrivateKey      ed25519.PrivateKey
+	StationPrivateKey    ed25519.PrivateKey
+}
+
+func (s *FederationService) ApproveJoin(ctx context.Context, input *ApproveJoinInput) (*domain.MembershipRecord, error) {
+	payload := &pb.StationJoinApprovedPayload{
+		ApprovedStationPeerId:          input.JoiningStationPeerID,
+		ApprovedByActorId:              input.ApproverActorID,
+		ApprovedByActorFederatedHandle: input.ApproverActorHandle,
+		Role:                           "member_station",
+	}
+	payloadBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	event, err := s.ledgerSvc.AppendEvent(ctx, &AppendEventInput{
+		FederationID:      input.FederationID,
+		EventType:         pb.EventType_STATION_JOIN_APPROVED,
+		PayloadBytes:      payloadBytes,
+		ActorID:           input.ApproverActorID,
+		ActorHandle:       input.ApproverActorHandle,
+		StationPeerID:     input.ApproverStationPeerID,
+		ActorPrivateKey:   input.ActorPrivateKey,
+		StationPrivateKey: input.StationPrivateKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	membership := &domain.MembershipRecord{
+		FederationID:      input.FederationID,
+		StationPeerID:     input.JoiningStationPeerID,
+		StationName:       input.JoiningStationName,
+		StationURL:        input.JoiningStationURL,
+		Role:              "member_station",
+		Status:            "active",
+		ApprovedByEventID: event.EventId,
+	}
+	if err := s.membershipRepo.Upsert(ctx, membership); err != nil {
+		return nil, err
+	}
+
+	return membership, nil
 }
 
 var _ = ulid.Make

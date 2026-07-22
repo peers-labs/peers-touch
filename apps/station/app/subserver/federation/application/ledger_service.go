@@ -11,6 +11,8 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
+type EventAppendedHook func(ctx context.Context, event *pb.LedgerEvent)
+
 type LedgerService struct {
 	federationRepo domain.FederationRepository
 	eventRepo      domain.LedgerEventRepository
@@ -18,6 +20,7 @@ type LedgerService struct {
 	hashSvc        *domain.HashService
 	sigSvc         *domain.SignatureService
 	policyRegistry *policy.Registry
+	onAppended     EventAppendedHook
 }
 
 func NewLedgerService(
@@ -36,6 +39,10 @@ func NewLedgerService(
 		sigSvc:         sigSvc,
 		policyRegistry: policyRegistry,
 	}
+}
+
+func (s *LedgerService) SetOnAppended(hook EventAppendedHook) {
+	s.onAppended = hook
 }
 
 type AppendEventInput struct {
@@ -79,7 +86,10 @@ func (s *LedgerService) AppendEvent(ctx context.Context, input *AppendEventInput
 		return nil, err
 	}
 
-	headEvent, _ := s.eventRepo.GetHead(ctx, input.FederationID)
+	headEvent, err := s.eventRepo.GetHead(ctx, input.FederationID)
+	if err != nil {
+		return nil, err
+	}
 	var newSeq uint64
 	var prevHash []byte
 	if headEvent == nil {
@@ -166,6 +176,10 @@ func (s *LedgerService) AppendEvent(ctx context.Context, input *AppendEventInput
 
 	if err := s.federationRepo.UpdateHead(ctx, input.FederationID, eventHash, newSeq); err != nil {
 		return nil, err
+	}
+
+	if s.onAppended != nil {
+		s.onAppended(ctx, event)
 	}
 
 	return event, nil

@@ -8,6 +8,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain/policy"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
+	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -29,6 +30,7 @@ type subServer struct {
 	federationSvc *application.FederationService
 	ledgerSvc     *application.LedgerService
 	projectionSvc *application.ProjectionService
+	actorKeySvc   *domain.ActorKeyService
 	syncManager   *LedgerSyncManager
 }
 
@@ -55,6 +57,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	hashSvc := domain.NewHashService()
 	sigSvc := domain.NewSignatureService()
 	actorKeySvc := domain.NewActorKeyService(repos.ActorSigningKey)
+	s.actorKeySvc = actorKeySvc
 	replaySvc := domain.NewReplayService(repos.LedgerEvent, hashSvc, sigSvc)
 
 	policyRegistry := policy.NewRegistry()
@@ -86,13 +89,22 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	)
 
 	publisher := NewLedgerEventPublisher()
+	s.ledgerSvc.SetOnAppended(func(ctx context.Context, event *pb.LedgerEvent) {
+		if err := publisher.PublishToLocalActors(ctx, event); err != nil {
+			log.Warnf(ctx, "[federation] SSE publish failed for event %s: %v", event.EventId, err)
+		}
+	})
+
 	s.syncManager = NewLedgerSyncManager(
 		s.ledgerSvc,
 		repos.Federation,
 		repos.LedgerEvent,
 		repos.SyncCursor,
+		repos.Membership,
 		publisher,
 		hashSvc,
+		NewHTTPLedgerFetcher(),
+		"",
 	)
 
 	log.Infof(ctx, "[federation] subserver initialized")
@@ -123,19 +135,15 @@ func (s *subServer) Address() server.SubserverAddress { return server.SubserverA
 func (s *subServer) Status() server.Status            { return s.status }
 
 func (s *subServer) Handlers() []server.Handler {
-	cw := s.commonWrapper
 	jw := s.jwtWrapper
 
 	return []server.Handler{
-		// Projection APIs (Desktop Settings / Dashboard)
-		server.NewTypedHandler("fed-list-federations", "/sub-federation/federations", server.GET, s.handleListFederations, cw, jw),
-		server.NewTypedHandler("fed-create-federation", "/sub-federation/federations", server.POST, s.handleCreateFederation, cw, jw),
-		server.NewTypedHandler("fed-list-members", "/sub-federation/federations/:federation_id/stations", server.GET, s.handleListMemberStations, cw, jw),
-		server.NewTypedHandler("fed-join", "/sub-federation/federations/join", server.POST, s.handleJoinFederation, cw, jw),
-		server.NewTypedHandler("fed-leave", "/sub-federation/federations/:federation_id/leave", server.POST, s.handleLeaveFederation, cw, jw),
-		// Governance RPCs (Station-to-Station, federation JWT auth)
-		server.NewTypedHandler("fed-fetch-head", "/fed/v1/ledger/head", server.POST, s.handleFetchHead, cw),
-		server.NewTypedHandler("fed-fetch-events", "/fed/v1/ledger/events", server.POST, s.handleFetchEvents, cw),
+		server.NewTypedHandler("fed-list-federations", "/sub-federation/federations", server.GET, s.handleListFederations, jw),
+		server.NewTypedHandler("fed-create-federation", "/sub-federation/federations", server.POST, s.handleCreateFederation, jw),
+		server.NewTypedHandler("fed-list-members", "/sub-federation/federations/:federation_id/stations", server.GET, s.handleListMemberStations, jw),
+		server.NewTypedHandler("fed-join", "/sub-federation/federations/join", server.POST, s.handleJoinFederation, jw),
+		server.NewTypedHandler("fed-leave", "/sub-federation/federations/:federation_id/leave", server.POST, s.handleLeaveFederation, jw),
+		server.NewTypedHandler("fed-fetch-head", "/fed/v1/ledger/head", server.POST, s.handleFetchHead, jw),
+		server.NewTypedHandler("fed-fetch-events", "/fed/v1/ledger/events", server.POST, s.handleFetchEvents, jw),
 	}
 }
-
