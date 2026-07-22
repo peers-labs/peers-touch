@@ -4,20 +4,19 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/application"
-	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
-	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"google.golang.org/protobuf/proto"
 )
 
-type TestnetSeedConfig struct {
+type testnetSeedConfig struct {
 	FederationName string
-	Stations       []SeedStation
+	Stations       []seedStation
 }
 
-type SeedStation struct {
+type seedStation struct {
 	PeerID  string
 	Name    string
 	URL     string
@@ -25,7 +24,8 @@ type SeedStation struct {
 	Handle  string
 }
 
-func SeedTestnet(ctx context.Context, cfg *TestnetSeedConfig, fedSvc *application.FederationService, ledgerSvc *application.LedgerService) error {
+func seedTestnet(t *testing.T, ctx context.Context, cfg *testnetSeedConfig, fedSvc *application.FederationService, ledgerSvc *application.LedgerService) error {
+	t.Helper()
 	if len(cfg.Stations) == 0 {
 		return fmt.Errorf("at least one station required for seed")
 	}
@@ -34,7 +34,7 @@ func SeedTestnet(ctx context.Context, cfg *TestnetSeedConfig, fedSvc *applicatio
 
 	fed, err := fedSvc.CreateFederation(ctx, &application.CreateFederationInput{
 		Name:          cfg.FederationName,
-		Description:   "Testnet federation seeded at boot",
+		Description:   "Testnet federation seeded for testing",
 		PolicyType:    "single_admin",
 		ActorID:       creator.ActorID,
 		ActorHandle:   creator.Handle,
@@ -46,7 +46,7 @@ func SeedTestnet(ctx context.Context, cfg *TestnetSeedConfig, fedSvc *applicatio
 		return fmt.Errorf("seed: create federation: %w", err)
 	}
 
-	log.Infof(ctx, "[federation-seed] created federation %s (%s)", fed.FederationID, fed.Name)
+	t.Logf("[seed] created federation %s (%s)", fed.FederationID, fed.Name)
 
 	for i := 1; i < len(cfg.Stations); i++ {
 		station := cfg.Stations[i]
@@ -62,8 +62,14 @@ func SeedTestnet(ctx context.Context, cfg *TestnetSeedConfig, fedSvc *applicatio
 			return fmt.Errorf("seed: marshal join payload for %s: %w", station.PeerID, err)
 		}
 
-		_, actorPriv, _ := ed25519.GenerateKey(nil)
-		_, stationPriv, _ := ed25519.GenerateKey(nil)
+		_, actorPriv, err := ed25519.GenerateKey(nil)
+		if err != nil {
+			return fmt.Errorf("seed: generate actor key: %w", err)
+		}
+		_, stationPriv, err := ed25519.GenerateKey(nil)
+		if err != nil {
+			return fmt.Errorf("seed: generate station key: %w", err)
+		}
 
 		_, err = ledgerSvc.AppendEvent(ctx, &application.AppendEventInput{
 			FederationID:      fed.FederationID,
@@ -79,7 +85,7 @@ func SeedTestnet(ctx context.Context, cfg *TestnetSeedConfig, fedSvc *applicatio
 			return fmt.Errorf("seed: join station %s: %w", station.PeerID, err)
 		}
 
-		log.Infof(ctx, "[federation-seed] station %s joined %s", station.PeerID, fed.FederationID)
+		t.Logf("[seed] station %s joined %s", station.PeerID, fed.FederationID)
 	}
 
 	state, err := fedSvc.Replay(ctx, fed.FederationID)
@@ -87,19 +93,17 @@ func SeedTestnet(ctx context.Context, cfg *TestnetSeedConfig, fedSvc *applicatio
 		return fmt.Errorf("seed: replay verification: %w", err)
 	}
 
-	log.Infof(ctx, "[federation-seed] verified: head_seq=%d, members=%d", state.HeadSeq, len(state.ActiveMemberStations))
+	t.Logf("[seed] verified: head_seq=%d, members=%d", state.HeadSeq, len(state.ActiveMemberStations))
 	return nil
 }
 
-func DefaultTestnetSeedConfig() *TestnetSeedConfig {
-	return &TestnetSeedConfig{
+func defaultTestnetSeedConfig() *testnetSeedConfig {
+	return &testnetSeedConfig{
 		FederationName: "Peers Testnet",
-		Stations: []SeedStation{
-			{PeerID: "node-a", Name: "Station One", URL: "http://10.37.94.156:18080", ActorID: "actor-a", Handle: "@a@one.peers.touch"},
-			{PeerID: "node-b", Name: "Station Two", URL: "http://10.37.118.48:18080", ActorID: "actor-b", Handle: "@a@two.peers.touch"},
-			{PeerID: "node-c", Name: "Station Three", URL: "http://10.37.246.80:18080", ActorID: "actor-c", Handle: "@a@three.peers.touch"},
+		Stations: []seedStation{
+			{PeerID: "node-a", Name: "Station One", URL: "http://localhost:18080", ActorID: "actor-a", Handle: "@a@one.peers.touch"},
+			{PeerID: "node-b", Name: "Station Two", URL: "http://localhost:18081", ActorID: "actor-b", Handle: "@a@two.peers.touch"},
+			{PeerID: "node-c", Name: "Station Three", URL: "http://localhost:18082", ActorID: "actor-c", Handle: "@a@three.peers.touch"},
 		},
 	}
 }
-
-var _ = domain.ErrForkDetected
