@@ -1,23 +1,31 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { theme } from 'antd';
+import { Flexbox } from 'react-layout-kit';
+import { ActionIcon, SearchBar, Tag } from '@lobehub/ui';
 import {
+  Archive,
   Bot,
   CheckCircle2,
+  CheckSquare,
   ChevronDown,
+  ChevronRight,
   Cloud,
   Compass,
+  List,
   MoreHorizontal,
   Network,
   Plus,
   Search,
   Settings2,
   Sparkles,
-  List,
-  X,
+  Square,
+  Trash2,
   UserRound,
   Workflow,
+  X,
   type LucideIcon,
 } from 'lucide-react';
-import { T } from './theme';
+import { PROTOTYPE_COLORS } from './theme';
 import { PanelToggleDock } from '../../shared/PanelToggleButton';
 import { PromptComposer } from '../../shared/PromptComposer';
 import { AgentProfile } from '../../features/agent/src/panels/AgentProfile';
@@ -39,61 +47,24 @@ interface Topic {
 }
 
 const AGENTS: AgentSummary[] = [
-  {
-    id: 'devops',
-    name: '旅游小助手',
-    icon: Compass,
-    desc: '旅行规划助手，帮你设计行程、发现当地体验、整理交通住宿与出行提醒。',
-    pinned: true,
-    active: true,
-  },
-  {
-    id: 'automation',
-    name: 'AI UI Automation',
-    icon: Sparkles,
-    desc: 'AI UI automation agent for the workspace.',
-  },
-  {
-    id: 'terminal',
-    name: 'Terminal',
-    icon: Settings2,
-    desc: 'Terminal 终端助手，帮助你在本地执行命令。',
-  },
-  {
-    id: 'mcp',
-    name: 'MCP-Tester',
-    icon: Cloud,
-    desc: '测试 MCP Server 是否可用。',
-  },
-  {
-    id: 'oncall',
-    name: 'Oncall Master',
-    icon: Network,
-    desc: 'Oncall 知识管理与智能助手。',
-  },
-  {
-    id: 'ui-test',
-    name: 'UI test',
-    icon: UserRound,
-    desc: 'UI test agent for mobile and Tiktok LIVE.',
-  },
-  {
-    id: 'codex',
-    name: 'UI test codex',
-    icon: Bot,
-    desc: 'TikTok LIVE mobile UI test engineer.',
-  },
+  { id: 'devops', name: 'Travel Assistant', icon: Compass, desc: 'Travel planning assistant that helps design itineraries, discover local experiences, and organize transport and accommodation.', pinned: true, active: true },
+  { id: 'automation', name: 'AI UI Automation', icon: Sparkles, desc: 'AI UI automation agent for the workspace.' },
+  { id: 'terminal', name: 'Terminal', icon: Settings2, desc: 'Terminal assistant for executing local commands.' },
+  { id: 'mcp', name: 'MCP-Tester', icon: Cloud, desc: 'Test MCP Server availability.' },
+  { id: 'oncall', name: 'Oncall Master', icon: Network, desc: 'Oncall knowledge management and smart assistant.' },
+  { id: 'ui-test', name: 'UI test', icon: UserRound, desc: 'UI test agent for mobile and TikTok LIVE.' },
+  { id: 'codex', name: 'UI test codex', icon: Bot, desc: 'TikTok LIVE mobile UI test engineer.' },
 ];
 
 const TOPICS: Topic[] = [
-  { id: 'tokyo-plan', title: '东京五天怎么安排', group: 'Today' },
-  { id: 'family-hotel', title: '亲子酒店住在哪个区域', group: 'Today' },
-  { id: 'rail-pass', title: '需要购买 JR Pass 吗', group: 'Today' },
-  { id: 'food-map', title: '整理一份当地美食地图', group: 'Today' },
-  { id: 'packing-list', title: '出发前行李清单', group: 'Yesterday' },
+  { id: 'tokyo-plan', title: '5-day Tokyo itinerary', group: 'Today' },
+  { id: 'family-hotel', title: 'Best area for family hotels', group: 'Today' },
+  { id: 'rail-pass', title: 'Need to buy JR Pass?', group: 'Today' },
+  { id: 'food-map', title: 'Local food map', group: 'Today' },
+  { id: 'packing-list', title: 'Pre-departure packing list', group: 'Yesterday' },
 ];
 
-const QUICK_ACTIONS = ['规划 5 天游玩路线', '比较酒店与交通方案', '推荐当地特色体验', '整理出发前清单'];
+const QUICK_ACTIONS = ['Plan 5-day itinerary', 'Compare hotels & transport', 'Recommend local experiences', 'Pre-departure checklist'];
 
 export function AgentChatPage({
   onOpenOrchestration,
@@ -106,23 +77,29 @@ export function AgentChatPage({
   onOpenProfile: () => void;
   onCloseProfile: () => void;
 }) {
+  const { token } = theme.useToken();
   const rootRef = useRef<HTMLDivElement>(null);
   const narrowRef = useRef<boolean | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState('devops');
   const [agentListOpen, setAgentListOpen] = useState(true);
   const [narrow, setNarrow] = useState(false);
   const [topicsOpen, setTopicsOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+  const [composerValue, setComposerValue] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [manageMode, setManageMode] = useState(false);
+  const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set());
   const selectedAgent = AGENTS.find((agent) => agent.id === selectedAgentId) ?? AGENTS[0];
   const isTravelAssistant = selectedAgent.id === 'devops';
   const quickActions = isTravelAssistant
     ? QUICK_ACTIONS
-    : ['开始一个新任务', '查看可用能力', '打开 Agent 工作区', '检查最近运行'];
+    : ['Start new task', 'View available capabilities', 'Open Agent workspace', 'Check recent runs'];
   const profileAgent: ProfileAgent = {
     id: selectedAgent.id,
     name: selectedAgent.name,
-    avatar: selectedAgent.id === 'devops' ? '#6b5bd6' : '#596579',
+    avatar: selectedAgent.id === 'devops' ? token.colorPrimary : token.colorTextSecondary,
     description: selectedAgent.desc,
-    model: selectedAgent.id === 'devops' ? 'GPT-5.5' : 'Station Agent',
+    model: selectedAgent.id === 'devops' ? 'GPT-5.5' : 'Default',
     provider: selectedAgent.id === 'devops' ? 'OpenAI' : 'Station',
     pinned: Boolean(selectedAgent.pinned),
     workspacePath: selectedAgent.id === 'devops' ? '/Workspace/travel-plans' : '/Workspace',
@@ -130,6 +107,15 @@ export function AgentChatPage({
   };
   const pinned = AGENTS.filter((agent) => agent.pinned);
   const others = AGENTS.filter((agent) => !agent.pinned);
+
+  const handleSelectAgent = (agentId: string) => {
+    setSelectedAgentId(agentId);
+    if (profileOpen) onCloseProfile();
+    setManageMode(false);
+    setSelectedTopics(new Set());
+    setCollapsedGroups(new Set());
+    setComposerValue('');
+  };
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -151,102 +137,82 @@ export function AgentChatPage({
     return () => observer.disconnect();
   }, []);
 
+  const contentWidth = narrow ? 'calc(100% - 28px)' : 'min(620px, calc(100% - 36px))';
+
   return (
-    <div ref={rootRef} data-testid="desktop-shell-agent-chat" style={styles.root}>
+    <div ref={rootRef} data-testid="desktop-shell-agent-chat" style={rootStyle(token)}>
       <aside
         style={{
-          ...styles.agentList,
+          ...asideStyle(token),
           width: agentListOpen ? 230 : 48,
           padding: agentListOpen ? '14px 10px 58px' : '14px 0 58px',
+          transition: 'width 0.18s ease, padding 0.18s ease',
         }}
       >
         {agentListOpen ? (
           <>
-            <div style={styles.agentHeader}>
-              <div style={styles.agentTitle}>My Agents</div>
-              <button style={styles.iconButton} title="新建 Agent" onClick={onOpenProfile}>
-                <Plus size={15} />
-              </button>
-              <button style={styles.iconButton} title="打开 Agent 编排" onClick={onOpenOrchestration}>
-                <Workflow size={15} />
-              </button>
+            <Flexbox horizontal align="center" gap={8} style={{ height: 40, marginBottom: 10 }}>
+              <span style={{ flex: 1, fontSize: 14, fontWeight: 800, color: token.colorText }}>My Agents</span>
+              <ActionIcon
+                icon={Plus}
+                title="New Agent"
+                size={{ blockSize: 34, size: 15 }}
+                onClick={onOpenProfile}
+                style={headerIconButtonStyle(token)}
+              />
+              <ActionIcon
+                icon={Workflow}
+                title="Open Agent Orchestration"
+                size={{ blockSize: 34, size: 15 }}
+                onClick={onOpenOrchestration}
+                style={headerIconButtonStyle(token)}
+              />
+            </Flexbox>
+            <div style={{ marginBottom: 8 }}>
+              <SearchBar
+                placeholder="Search agents..."
+                value={searchValue}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchValue(e.target.value)}
+                allowClear
+                size="small"
+                style={{ borderRadius: 7, height: 40 }}
+              />
             </div>
-            <div style={styles.agentListScroll}>
-              <div style={styles.searchBox}>
-                <Search size={14} />
-                <span>Search agents...</span>
-              </div>
+            <Flexbox flex={1} gap={0} style={{ minHeight: 0, overflow: 'auto' }}>
               <RosterGroup label="Pinned" />
               {pinned.map((agent) => (
-                <AgentRow
-                  key={agent.id}
-                  agent={agent}
-                  active={agent.id === selectedAgentId}
-                  onClick={() => {
-                    setSelectedAgentId(agent.id);
-                  }}
-                />
+                <AgentRow key={agent.id} agent={agent} active={agent.id === selectedAgentId} onClick={() => handleSelectAgent(agent.id)} token={token} />
               ))}
               <RosterGroup label="All Agents" />
               {others.map((agent) => (
-                <AgentRow
-                  key={agent.id}
-                  agent={agent}
-                  active={agent.id === selectedAgentId}
-                  onClick={() => {
-                    setSelectedAgentId(agent.id);
-                  }}
-                />
+                <AgentRow key={agent.id} agent={agent} active={agent.id === selectedAgentId} onClick={() => handleSelectAgent(agent.id)} token={token} />
               ))}
-            </div>
+            </Flexbox>
           </>
         ) : (
           <>
-            <button style={styles.collapsedSearchButton} title="新建 Agent" onClick={onOpenProfile}>
-              <Plus size={16} />
-            </button>
-            <button
-              style={{ ...styles.collapsedSearchButton, margin: '0 auto 2px' }}
-              title="搜索 Agent"
-              onClick={() => {
-                setTopicsOpen(false);
-                setAgentListOpen(true);
-              }}
-            >
-              <Search size={16} />
-            </button>
-            <div style={styles.collapsedAgentRail}>
-              <CollapsedRosterGroup />
+            <ActionIcon
+              icon={Plus}
+              title="New Agent"
+              size={{ blockSize: 40, size: 16 }}
+              onClick={onOpenProfile}
+              style={collapsedTopButtonStyle(token)}
+            />
+            <ActionIcon
+              icon={Search}
+              title="Search Agents"
+              size={{ blockSize: 40, size: 16 }}
+              onClick={() => { setTopicsOpen(false); setAgentListOpen(true); }}
+              style={{ ...collapsedTopButtonStyle(token), margin: '0 auto 2px' }}
+            />
+            <div style={collapsedRailStyle()}>
+              <CollapsedRosterDivider token={token} />
               {pinned.map((agent) => (
-                <button
-                  key={agent.id}
-                  style={{
-                    ...styles.collapsedAgentButton,
-                    background: agent.id === selectedAgentId ? '#eef4ff' : 'transparent',
-                  }}
-                  title={agent.name}
-                  onClick={() => {
-                    setSelectedAgentId(agent.id);
-                  }}
-                >
-                  <AgentIcon agent={agent} size={30} />
-                </button>
+                <CollapsedAgentButton key={agent.id} agent={agent} active={agent.id === selectedAgentId} onClick={() => handleSelectAgent(agent.id)} />
               ))}
-              <CollapsedRosterGroup />
+              <CollapsedRosterDivider token={token} />
               {others.map((agent) => (
-                <button
-                  key={agent.id}
-                  style={{
-                    ...styles.collapsedAgentButton,
-                    background: agent.id === selectedAgentId ? '#eef4ff' : 'transparent',
-                  }}
-                  title={agent.name}
-                  onClick={() => {
-                    setSelectedAgentId(agent.id);
-                  }}
-                >
-                  <AgentIcon agent={agent} size={30} />
-                </button>
+                <CollapsedAgentButton key={agent.id} agent={agent} active={agent.id === selectedAgentId} onClick={() => handleSelectAgent(agent.id)} />
               ))}
             </div>
           </>
@@ -254,167 +220,427 @@ export function AgentChatPage({
         <PanelToggleDock
           side="left"
           open={agentListOpen}
-          title={agentListOpen ? '折叠 Agent 列表' : '展开 Agent 列表'}
-          onClick={() => {
-            if (!agentListOpen) setTopicsOpen(false);
-            setAgentListOpen((open) => !open);
-          }}
+          title={agentListOpen ? 'Collapse agent list' : 'Expand agent list'}
+          onClick={() => { if (!agentListOpen) setTopicsOpen(false); setAgentListOpen((open) => !open); }}
         />
       </aside>
 
-      {!profileOpen && (!narrow || topicsOpen) && <aside style={styles.topicList}>
-        {narrow && (
-          <button style={styles.overlayCloseButton} title="关闭 Topics" onClick={() => setTopicsOpen(false)}>
-            <X size={15} />
-          </button>
-        )}
-        <div style={styles.agentCard}>
-          <AgentIcon agent={selectedAgent} size={44} />
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={styles.cardName}>{selectedAgent.name}</div>
-            <div style={styles.cardDesc}>{selectedAgent.desc}</div>
-          </div>
-          <Sparkles size={14} color="#faad14" />
-        </div>
-
-        <button style={styles.topicAction}>
-          <Plus size={15} />
-          Start New Topic
-        </button>
-        <button style={styles.topicAction} onClick={onOpenProfile}>
-          <UserRound size={15} />
-          Agent Profile
-        </button>
-        <button style={styles.topicAction}>
-          <Search size={15} />
-          Search
-        </button>
-
-        <div style={styles.topicHeader}>
-          <span>Topic 5</span>
-          <button style={{ border: 0, background: 'transparent', color: T.textTertiary, cursor: 'pointer', padding: 2 }} title="会话管理">
-            <Settings2 size={13} />
-          </button>
-        </div>
-        {['Today', 'Yesterday'].map((group) => (
-          <div key={group}>
-            <div style={styles.groupLine}>
-              <ChevronDown size={13} />
-              {group}
-            </div>
-            {TOPICS.filter((topic) => topic.group === group).map((topic) => (
-              <div key={topic.id} style={styles.topicItem}>
-                <span>#</span>
-                <span>{topic.title}</span>
-              </div>
-            ))}
-          </div>
-        ))}
-      </aside>}
-
-      {profileOpen ? (
-        <main style={styles.profileMain}>
-          <AgentProfile key={profileAgent.id} agent={profileAgent} onBack={onCloseProfile} />
-        </main>
-      ) : <main style={styles.chat}>
-        <header style={styles.chatHeader}>
-          <AgentIcon agent={selectedAgent} size={40} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={styles.chatName}>
-              {selectedAgent.name}
-              <span style={styles.badge}>{isTravelAssistant ? '行程规划' : 'Agent'}</span>
-              <span style={styles.badge}>{isTravelAssistant ? '实时攻略' : 'Station'}</span>
-            </div>
-            <div style={styles.chatDesc}>{selectedAgent.desc}</div>
-          </div>
+      {!profileOpen && (!narrow || topicsOpen) && (
+        <aside style={topicListStyle(token)}>
           {narrow && (
-            <button
-              style={{
-                ...styles.headerIconButton,
-                background: topicsOpen ? T.primaryWash : T.fillQuaternary,
-                color: topicsOpen ? T.primary : T.textSecondary,
-              }}
-              title={topicsOpen ? '收起会话列表' : '展开会话列表'}
-              onClick={() => {
-                if (!topicsOpen) setAgentListOpen(false);
-                setTopicsOpen((open) => !open);
-              }}
-            >
-              <List size={15} />
+            <button type="button" title="Close Topics" onClick={() => setTopicsOpen(false)} style={overlayCloseStyle(token)}>
+              <X size={15} />
             </button>
           )}
-          {!narrow && <Settings2 size={15} color={T.textTertiary} style={{ cursor: 'pointer' }} title="Agent 设置" />}
-        </header>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            <Flexbox horizontal align="center" gap={9} style={agentCardStyle(token)}>
+              <AgentIcon agent={selectedAgent} size={44} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={cardNameStyle(token)}>{selectedAgent.name}</div>
+                <div style={cardDescStyle(token)}>{selectedAgent.desc}</div>
+              </div>
+              <Sparkles size={14} color="#faad14" />
+            </Flexbox>
 
-        <section style={styles.emptyChat}>
-          <div style={{ ...styles.welcomeCard, width: narrow ? 'calc(100% - 28px)' : 'min(620px, calc(100% - 36px))' }}>
-            <AgentIcon agent={selectedAgent} size={48} />
-            <div style={styles.welcomeTitle}>{selectedAgent.name}</div>
-            <div style={styles.capabilityBar}>
-              <span><CheckCircle2 size={13} /> {isTravelAssistant ? '行程规划' : 'Tools enabled'}</span>
-              <span>{isTravelAssistant ? '目的地攻略' : 'Station'}</span>
-              <span>{isTravelAssistant ? '偏好记忆' : 'Memory'}</span>
-            </div>
-            <p style={styles.welcomeText}>
-              {isTravelAssistant
-                ? `你好，我是${selectedAgent.name}。告诉我目的地、出行时间和同行人，我可以帮你规划路线、比较交通住宿，并整理一份随时可调整的旅行方案。`
-                : `你好，我是${selectedAgent.name}。${selectedAgent.desc} 请告诉我你现在想完成什么。`}
-            </p>
-            <span style={styles.modelBadge}>{isTravelAssistant ? '旅行方案已就绪' : 'Agent ready'}</span>
+            {!manageMode && (
+              <>
+                <button type="button" style={topicActionStyle(token)}>
+                  <Plus size={15} />
+                  Start New Topic
+                </button>
+                <button type="button" style={topicActionStyle(token)} onClick={onOpenProfile}>
+                  <UserRound size={15} />
+                  Agent Profile
+                </button>
+                <button type="button" style={topicActionStyle(token)}>
+                  <Search size={15} />
+                  Search
+                </button>
+              </>
+            )}
+
+            <Flexbox horizontal justify="space-between" align="center" style={topicHeaderStyle(token)}>
+              <span>{manageMode ? `Manage Sessions (${selectedTopics.size})` : 'Topic 5'}</span>
+              {manageMode ? (
+                <button
+                  type="button"
+                  title="Done"
+                  onClick={() => { setManageMode(false); setSelectedTopics(new Set()); }}
+                  style={{ border: 0, background: 'transparent', color: token.colorPrimary, cursor: 'pointer', padding: 2, display: 'inline-flex', alignItems: 'center', fontSize: 11, fontWeight: 600 }}
+                >
+                  Done
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  title="Session management"
+                  onClick={() => setManageMode(true)}
+                  style={{ border: 0, background: 'transparent', color: token.colorTextTertiary, cursor: 'pointer', padding: 2, display: 'inline-flex', alignItems: 'center' }}
+                >
+                  <Settings2 size={13} />
+                </button>
+              )}
+            </Flexbox>
+            {['Today', 'Yesterday'].map((group) => {
+              const collapsed = collapsedGroups.has(group);
+              return (
+                <div key={group}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollapsedGroups((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(group)) next.delete(group);
+                        else next.add(group);
+                        return next;
+                      });
+                    }}
+                    style={{
+                      width: '100%',
+                      border: 0,
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      padding: 0,
+                      marginTop: 8,
+                      paddingInline: 6,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      color: token.colorTextTertiary,
+                      fontSize: 11,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                    {group}
+                  </button>
+                  {!collapsed && TOPICS.filter((topic) => topic.group === group).map((topic) => {
+                    const isSelected = selectedTopics.has(topic.id);
+                    return (
+                      <button
+                        key={topic.id}
+                        type="button"
+                        onClick={() => {
+                          if (manageMode) {
+                            setSelectedTopics((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(topic.id)) next.delete(topic.id);
+                              else next.add(topic.id);
+                              return next;
+                            });
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          border: 0,
+                          background: isSelected ? `${token.colorPrimary}14` : 'transparent',
+                          height: 27,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '0 8px 0 14px',
+                          color: isSelected ? token.colorPrimary : token.colorTextSecondary,
+                          fontSize: 12,
+                          cursor: manageMode ? 'pointer' : 'default',
+                          textAlign: 'left',
+                          borderRadius: 6,
+                        }}
+                      >
+                        {manageMode ? (
+                          isSelected ? <CheckSquare size={13} color={token.colorPrimary} /> : <Square size={13} color={token.colorTextTertiary} />
+                        ) : (
+                          <span>#</span>
+                        )}
+                        <span>{topic.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
-
-          <div style={{ ...styles.quickActions, width: narrow ? 'calc(100% - 28px)' : 'min(620px, calc(100% - 36px))' }}>
-            {quickActions.map((action) => (
-              <button key={action} style={styles.quickAction}>
-                <Compass size={13} />
-                {action}
+          {manageMode && (
+            <div style={{ paddingTop: 10, borderTop: `1px solid ${token.colorBorderSecondary}`, marginTop: 8, display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                disabled={selectedTopics.size === 0}
+                style={{
+                  flex: 1,
+                  height: 30,
+                  border: 0,
+                  borderRadius: 8,
+                  background: selectedTopics.size === 0 ? token.colorFillQuaternary : token.colorError,
+                  color: selectedTopics.size === 0 ? token.colorTextDisabled : '#fff',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: selectedTopics.size === 0 ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                }}
+              >
+                <Trash2 size={13} />
+                Delete
               </button>
-            ))}
-          </div>
-        </section>
+              <button
+                type="button"
+                disabled={selectedTopics.size === 0}
+                style={{
+                  flex: 1,
+                  height: 30,
+                  border: `1px solid ${selectedTopics.size === 0 ? token.colorBorderSecondary : token.colorBorder}`,
+                  borderRadius: 8,
+                  background: '#fff',
+                  color: selectedTopics.size === 0 ? token.colorTextDisabled : token.colorTextSecondary,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: selectedTopics.size === 0 ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                }}
+              >
+                <Archive size={13} />
+                Archive
+              </button>
+            </div>
+          )}
+        </aside>
+      )}
 
-        <div style={{ width: narrow ? 'calc(100% - 28px)' : 'min(620px, calc(100% - 36px))', margin: '0 auto 18px' }}>
-          <PromptComposer
-            density="compact"
-            minHeight={96}
-            maxWidth="100%"
-            modelLabel="GPT-5.5"
-            placeholder={isTravelAssistant
-              ? '告诉我想去哪里、什么时候出发，以及你偏好的旅行节奏...'
-              : '描述你希望这个 Agent 帮你完成的任务...'}
-          />
-        </div>
-      </main>}
+      {profileOpen ? (
+        <main style={profileMainStyle(token)}>
+          <AgentProfile key={profileAgent.id} agent={profileAgent} onBack={onCloseProfile} />
+        </main>
+      ) : (
+        <main style={chatMainStyle(token)}>
+          <Flexbox
+            horizontal
+            align="center"
+            gap={12}
+            style={{
+              width: contentWidth,
+              margin: '12px auto 0',
+              height: 66,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              borderRadius: 12,
+              background: '#fff',
+              boxShadow: '0 4px 18px rgba(15,23,42,0.04)',
+              padding: '0 14px',
+              boxSizing: 'border-box',
+              minWidth: 0,
+            }}
+          >
+            <AgentIcon agent={selectedAgent} size={40} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: 14, fontWeight: 850, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedAgent.name}
+                </strong>
+                <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11, padding: '2px 7px', fontWeight: 650 }}>
+                  {isTravelAssistant ? 'Itinerary' : 'Agent'}
+                </Tag>
+                <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11, padding: '2px 7px', fontWeight: 650 }}>
+                  {isTravelAssistant ? 'Real-time guide' : 'Station'}
+                </Tag>
+              </Flexbox>
+              <div style={{ marginTop: 4, color: token.colorTextSecondary, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {selectedAgent.desc}
+              </div>
+            </div>
+            {narrow ? (
+              <ActionIcon
+                icon={List}
+                title={topicsOpen ? 'Collapse topic list' : 'Expand topic list'}
+                size={{ blockSize: 28, size: 15 }}
+                onClick={() => { if (!topicsOpen) setAgentListOpen(false); setTopicsOpen((open) => !open); }}
+                style={{
+                  flexShrink: 0,
+                  borderRadius: 8,
+                  background: topicsOpen ? '#eceaf6' : token.colorFillQuaternary,
+                  color: topicsOpen ? token.colorPrimary : token.colorTextSecondary,
+                  border: 0,
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                title="Agent settings"
+                onClick={onOpenProfile}
+                style={{ border: 0, background: 'transparent', color: token.colorTextTertiary, cursor: 'pointer', padding: 2, display: 'inline-flex', alignItems: 'center', borderRadius: 6 }}
+              >
+                <Settings2 size={15} />
+              </button>
+            )}
+          </Flexbox>
+
+          <Flexbox
+            flex={1}
+            align="center"
+            justify="center"
+            gap={14}
+            style={{ minHeight: 0, overflow: 'auto', padding: '20px 0 20px', boxSizing: 'border-box' }}
+          >
+            <div
+              style={{
+                width: contentWidth,
+                minHeight: 232,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                borderRadius: 14,
+                background: '#fff',
+                boxShadow: '0 8px 28px rgba(15,23,42,0.05)',
+                padding: '24px 32px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                textAlign: 'center',
+                boxSizing: 'border-box',
+              }}
+            >
+              <AgentIcon agent={selectedAgent} size={48} />
+              <div style={{ marginTop: 10, fontSize: 17, fontWeight: 800, color: token.colorText }}>{selectedAgent.name}</div>
+              <Flexbox horizontal align="center" gap={10} style={{ marginTop: 10, minHeight: 26, borderRadius: 8, background: token.colorFillQuaternary, padding: '0 10px', color: token.colorTextTertiary, fontSize: 11 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: token.colorSuccess }}>
+                  <CheckCircle2 size={13} /> {isTravelAssistant ? 'Itinerary planning' : 'Tools enabled'}
+                </span>
+                <span>{isTravelAssistant ? 'Destination guide' : 'Station'}</span>
+                <span>{isTravelAssistant ? 'Preference memory' : 'Memory'}</span>
+              </Flexbox>
+              <p style={{ maxWidth: 440, margin: '14px 0 12px', color: token.colorTextSecondary, fontSize: 13, lineHeight: 1.6 }}>
+                {isTravelAssistant
+                  ? `Hello, I'm ${selectedAgent.name}. Tell me your destination, travel dates, and companions, and I'll help plan routes, compare transport and accommodation, and organize an adjustable travel plan.`
+                  : `Hello, I'm ${selectedAgent.name}. ${selectedAgent.desc} Tell me what you'd like to accomplish.`}
+              </p>
+              <Tag style={{ margin: 0, borderRadius: 6, fontSize: 11, padding: '4px 10px', background: token.colorFillQuaternary, color: token.colorTextTertiary, border: 0 }}>
+                {isTravelAssistant ? 'Travel plan ready' : 'Agent ready'}
+              </Tag>
+            </div>
+
+            <Flexbox horizontal gap="6px 16px" wrap="wrap" justify="center" style={{ width: contentWidth, padding: '0 12px' }}>
+              {quickActions.map((action) => (
+                <button
+                  key={action}
+                  type="button"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    border: 0,
+                    background: 'transparent',
+                    color: token.colorText,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                >
+                  <Compass size={13} />
+                  {action}
+                </button>
+              ))}
+            </Flexbox>
+          </Flexbox>
+
+          <div style={{ width: contentWidth, margin: '0 auto 18px' }}>
+            <PromptComposer
+              density="compact"
+              minHeight={96}
+              maxWidth="100%"
+              modelLabel={`${profileAgent.provider} · ${profileAgent.model}`}
+              value={composerValue}
+              onChange={setComposerValue}
+              placeholder={isTravelAssistant
+                ? 'Tell me where you want to go, when, and your preferred travel pace...'
+                : 'Describe what you want this Agent to help you with...'}
+              sendDisabled={!composerValue.trim()}
+              onSend={() => { setComposerValue(''); }}
+            />
+          </div>
+        </main>
+      )}
     </div>
   );
 }
 
 function RosterGroup({ label }: { label: string }) {
-  return <div style={styles.rosterGroup}>{label}</div>;
-}
-
-function CollapsedRosterGroup() {
+  const { token } = theme.useToken();
   return (
-    <div style={styles.collapsedRosterGroup}>
-      <span style={styles.collapsedRosterGroupLine} />
+    <div style={{ margin: '12px 0 6px', color: token.colorTextTertiary, fontSize: 12, fontWeight: 650, height: 18, lineHeight: '18px' }}>
+      {label}
     </div>
   );
 }
 
-function AgentRow({ agent, active, onClick }: { agent: AgentSummary; active: boolean; onClick: () => void }) {
+function CollapsedRosterDivider({ token }: { token: any }) {
   return (
-    <button style={{ ...styles.agentRow, background: active ? '#eef4ff' : 'transparent' }} onClick={onClick}>
+    <div style={{ width: 40, height: 18, margin: '12px auto 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <span style={{ width: 18, height: 1, background: token.colorBorderSecondary }} />
+    </div>
+  );
+}
+
+function AgentRow({ agent, active, onClick, token }: { agent: AgentSummary; active: boolean; onClick: () => void; token: any }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        width: '100%',
+        height: 48,
+        border: 0,
+        borderRadius: 10,
+        padding: '7px 8px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        cursor: 'pointer',
+        textAlign: 'left',
+        background: active ? PROTOTYPE_COLORS.activeRosterBg : 'transparent',
+        color: token.colorText,
+      }}
+    >
       <AgentIcon agent={agent} size={30} />
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={styles.rowName}>{agent.name}{agent.pinned ? ' ★' : ''}</span>
-        <span style={styles.rowDesc}>{agent.desc}</span>
+        <span style={{ display: 'block', fontSize: 12, fontWeight: 750, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {agent.name}{agent.pinned ? ' ★' : ''}
+        </span>
+        <span style={{ display: 'block', color: token.colorTextTertiary, fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {agent.desc}
+        </span>
       </span>
-      <MoreHorizontal size={14} color={T.textTertiary} />
+      <MoreHorizontal size={14} color={token.colorTextTertiary} />
+    </button>
+  );
+}
+
+function CollapsedAgentButton({ agent, active, onClick }: { agent: AgentSummary; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      title={agent.name}
+      onClick={onClick}
+      style={{
+        width: 40,
+        height: 48,
+        border: 0,
+        borderRadius: 12,
+        background: active ? PROTOTYPE_COLORS.activeRosterBg : 'transparent',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 0,
+      }}
+    >
+      <AgentIcon agent={agent} size={30} />
     </button>
   );
 }
 
 function AgentIcon({ agent, size }: { agent: AgentSummary; size: number }) {
+  const { token } = theme.useToken();
   const Icon = agent.icon;
   return (
     <span
@@ -422,13 +648,13 @@ function AgentIcon({ agent, size }: { agent: AgentSummary; size: number }) {
         width: size,
         height: size,
         borderRadius: Math.max(8, size / 4),
-        background: agent.active ? T.primaryWash : T.navBg,
+        background: agent.active ? token.colorPrimaryBg : token.colorFillQuaternary,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
         fontSize: size > 36 ? 20 : 13,
-        color: agent.active ? T.primary : T.textSecondary,
+        color: agent.active ? token.colorPrimary : token.colorTextSecondary,
         overflow: 'hidden',
       }}
     >
@@ -437,8 +663,8 @@ function AgentIcon({ agent, size }: { agent: AgentSummary; size: number }) {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  root: {
+function rootStyle(token: any): React.CSSProperties {
+  return {
     width: '100%',
     height: '100%',
     display: 'flex',
@@ -446,66 +672,48 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative',
     overflow: 'hidden',
     background: '#fff',
-    color: T.text,
+    color: token.colorText,
     fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  },
-  agentList: {
-    width: 230,
+  };
+}
+
+function asideStyle(token: any): React.CSSProperties {
+  return {
     flexShrink: 0,
-    borderRight: `1px solid ${T.border}`,
-    background: '#fbfbfb',
-    padding: '14px 10px',
-    boxSizing: 'border-box',
+    height: '100%',
+    borderRight: `1px solid ${token.colorBorderSecondary}`,
+    background: PROTOTYPE_COLORS.asideBg,
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'stretch',
     position: 'relative',
+    boxSizing: 'border-box',
     zIndex: 4,
-  },
-  agentListScroll: {
-    flex: 1,
-    minHeight: 0,
-    overflow: 'auto',
-  },
-  agentHeader: {
-    height: 40,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  agentTitle: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: 800,
-  },
-  iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    border: `1px solid ${T.border}`,
+  };
+}
+
+function headerIconButtonStyle(token: any): React.CSSProperties {
+  return {
+    borderRadius: 10,
+    border: `1px solid ${token.colorBorderSecondary}`,
     background: '#fff',
-    color: T.textSecondary,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-  },
-  collapsedSearchButton: {
-    width: 40,
-    height: 40,
-    border: 0,
+    color: token.colorTextSecondary,
+  };
+}
+
+function collapsedTopButtonStyle(token: any): React.CSSProperties {
+  return {
     borderRadius: 12,
     background: 'transparent',
-    color: T.textSecondary,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
     margin: '0 auto 10px',
-  },
-  collapsedAgentRail: {
+    border: 0,
+    color: token.colorTextSecondary,
+  };
+}
+
+function collapsedRailStyle(): React.CSSProperties {
+  return {
     flex: 1,
     minHeight: 0,
     overflow: 'auto',
@@ -514,92 +722,28 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 0,
     width: '100%',
-  },
-  collapsedAgentButton: {
-    width: 40,
-    height: 48,
-    border: 0,
-    borderRadius: 12,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-  },
-  searchBox: {
-    height: 40,
-    border: `1px solid ${T.border}`,
-    borderRadius: 7,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '0 8px',
-    color: T.textQuaternary,
-    fontSize: 12,
-    background: '#fff',
-  },
-  rosterGroup: {
-    margin: '12px 0 6px',
-    color: T.textTertiary,
-    fontSize: 12,
-    fontWeight: 650,
-    height: 18,
-    lineHeight: '18px',
-  },
-  collapsedRosterGroup: {
-    width: 40,
-    height: 18,
-    margin: '12px auto 6px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  collapsedRosterGroupLine: {
-    width: 18,
-    height: 1,
-    background: T.border,
-  },
-  agentRow: {
-    width: '100%',
-    height: 48,
-    border: 0,
-    borderRadius: 10,
-    padding: '7px 8px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    cursor: 'pointer',
-    textAlign: 'left',
-  },
-  rowName: {
-    display: 'block',
-    color: T.text,
-    fontSize: 12,
-    fontWeight: 750,
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  rowDesc: {
-    display: 'block',
-    color: T.textTertiary,
-    fontSize: 11,
-    marginTop: 2,
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  topicList: {
+  };
+}
+
+function topicListStyle(token: any): React.CSSProperties {
+  return {
     width: 230,
     flexShrink: 0,
-    borderRight: `1px solid ${T.border}`,
-    background: '#fbfbfb',
+    height: '100%',
+    borderRight: `1px solid ${token.colorBorderSecondary}`,
+    background: PROTOTYPE_COLORS.asideBg,
     padding: '12px 10px',
     boxSizing: 'border-box',
-    overflow: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
     position: 'relative',
     zIndex: 3,
-  },
-  overlayCloseButton: {
+    minHeight: 0,
+  };
+}
+
+function overlayCloseStyle(token: any): React.CSSProperties {
+  return {
     position: 'absolute',
     top: 8,
     right: 8,
@@ -607,41 +751,36 @@ const styles: Record<string, React.CSSProperties> = {
     height: 28,
     border: 0,
     borderRadius: 8,
-    background: T.fillQuaternary,
-    color: T.textSecondary,
+    background: token.colorFillQuaternary,
+    color: token.colorTextSecondary,
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
-  },
-  agentCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 9,
+  };
+}
+
+function agentCardStyle(token: any): React.CSSProperties {
+  return {
     minHeight: 58,
     padding: '9px 10px',
-    border: `1px solid ${T.border}`,
+    border: `1px solid ${token.colorBorderSecondary}`,
     borderRadius: 10,
     background: '#fff',
-    boxShadow: 'none',
     marginBottom: 10,
-  },
-  cardName: {
-    fontSize: 15,
-    fontWeight: 750,
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  cardDesc: {
-    marginTop: 3,
-    color: T.textTertiary,
-    fontSize: 11,
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  topicAction: {
+  };
+}
+
+function cardNameStyle(token: any): React.CSSProperties {
+  return { fontSize: 15, fontWeight: 750, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: token.colorText };
+}
+
+function cardDescStyle(token: any): React.CSSProperties {
+  return { marginTop: 3, color: token.colorTextTertiary, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+}
+
+function topicActionStyle(token: any): React.CSSProperties {
+  return {
     width: '100%',
     height: 32,
     border: 0,
@@ -650,48 +789,59 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    color: T.text,
+    color: token.colorText,
     padding: '0 8px',
     fontSize: 11,
     cursor: 'pointer',
     textAlign: 'left',
-  },
-  topicHeader: {
+  };
+}
+
+function topicHeaderStyle(token: any): React.CSSProperties {
+  return {
     marginTop: 12,
     padding: '0 8px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    color: T.textSecondary,
+    color: token.colorTextSecondary,
     fontSize: 12,
     fontWeight: 700,
-  },
-  groupLine: {
+  };
+}
+
+function groupLineStyle(token: any): React.CSSProperties {
+  return {
     marginTop: 8,
     padding: '0 6px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    color: T.textTertiary,
+    color: token.colorTextTertiary,
     fontSize: 11,
-  },
-  topicItem: {
+  };
+}
+
+function topicItemStyle(token: any): React.CSSProperties {
+  return {
     height: 27,
     display: 'flex',
     alignItems: 'center',
     gap: 8,
     padding: '0 8px 0 14px',
-    color: T.textSecondary,
+    color: token.colorTextSecondary,
     fontSize: 12,
-  },
-  chat: {
+  };
+}
+
+function chatMainStyle(_token: any): React.CSSProperties {
+  return {
     flex: 1,
     minWidth: 0,
+    minHeight: 0,
     position: 'relative',
     background: '#fff',
     display: 'flex',
     flexDirection: 'column',
-  },
-  profileMain: {
+  };
+}
+
+function profileMainStyle(_token: any): React.CSSProperties {
+  return {
     flex: 1,
     minWidth: 0,
     minHeight: 0,
@@ -700,135 +850,5 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#fff',
     display: 'flex',
     flexDirection: 'column',
-  },
-  chatHeader: {
-    width: 'min(620px, calc(100% - 36px))',
-    margin: '12px auto 0',
-    height: 66,
-    border: `1px solid ${T.border}`,
-    borderRadius: 12,
-    background: '#fff',
-    boxShadow: '0 4px 18px rgba(15,23,42,0.04)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    padding: '0 14px',
-    boxSizing: 'border-box',
-    minWidth: 0,
-  },
-  chatName: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    fontSize: 14,
-    fontWeight: 850,
-    minWidth: 0,
-    flexWrap: 'wrap',
-  },
-  badge: {
-    padding: '2px 7px',
-    borderRadius: 999,
-    border: `1px solid ${T.border}`,
-    color: T.textSecondary,
-    fontSize: 11,
-    fontWeight: 650,
-  },
-  chatDesc: {
-    marginTop: 4,
-    color: T.textSecondary,
-    fontSize: 12,
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  emptyChat: {
-    flex: 1,
-    minHeight: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-    padding: '18px 0 14px',
-    boxSizing: 'border-box',
-    overflow: 'auto',
-  },
-  welcomeCard: {
-    width: 620,
-    minHeight: 232,
-    border: `1px solid ${T.border}`,
-    borderRadius: 14,
-    background: '#fff',
-    boxShadow: '0 8px 28px rgba(15,23,42,0.05)',
-    padding: '24px 32px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    textAlign: 'center',
-    maxWidth: 'calc(100% - 36px)',
-    boxSizing: 'border-box',
-  },
-  welcomeTitle: {
-    marginTop: 10,
-    fontSize: 17,
-    fontWeight: 800,
-  },
-  capabilityBar: {
-    marginTop: 10,
-    minHeight: 26,
-    borderRadius: 8,
-    background: T.fillQuaternary,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    padding: '0 10px',
-    color: T.textTertiary,
-    fontSize: 11,
-  },
-  welcomeText: {
-    maxWidth: 440,
-    margin: '14px 0 12px',
-    color: T.textSecondary,
-    fontSize: 13,
-    lineHeight: 1.6,
-  },
-  modelBadge: {
-    borderRadius: 6,
-    background: T.fillQuaternary,
-    color: T.textTertiary,
-    fontSize: 11,
-    padding: '4px 10px',
-  },
-  quickActions: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: '6px 16px',
-    maxWidth: 620,
-    padding: '0 12px',
-  },
-  quickAction: {
-    border: 0,
-    background: 'transparent',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 5,
-    color: T.text,
-    fontSize: 11,
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  headerIconButton: {
-    width: 28,
-    height: 28,
-    flexShrink: 0,
-    border: 0,
-    borderRadius: 8,
-    background: T.fillQuaternary,
-    color: T.textSecondary,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-  },
-};
+  };
+}

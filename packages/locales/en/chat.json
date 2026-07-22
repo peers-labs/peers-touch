@@ -619,6 +619,7 @@
   "chat.social.sessionList.unnamedGroup": "Unnamed Group",
   "chat.social.sessionList.message": "Message",
   "chat.social.sessionList.yesterday": "Yesterday",
+  "chat.social.sessionList.loadFailed": "Failed to load conversations",
   "chat.social.contextMenu.pin": "Pin to top",
   "chat.social.contextMenu.unpin": "Unpin",
   "chat.social.contextMenu.mute": "Mute",

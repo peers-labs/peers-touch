@@ -128,6 +128,123 @@ struct AgentTurnStreamEventPayload {
     data: Value,
 }
 
+struct CollectedTurn {
+    text: String,
+    model: String,
+    done: bool,
+    error: Option<String>,
+}
+
+impl CollectedTurn {
+    fn new() -> Self {
+        Self {
+            text: String::new(),
+            model: String::new(),
+            done: false,
+            error: None,
+        }
+    }
+
+    fn apply_event(&mut self, event: &str, data: &Value) {
+        match event {
+            "text" => {
+                if let Some(text) = string_field(data, "text")
+                    .or_else(|| string_field(data, "content"))
+                    .or_else(|| string_field(data, "result"))
+                {
+                    self.text.push_str(&text);
+                }
+                if let Some(m) = string_field(data, "model") {
+                    self.model = m;
+                }
+            }
+            "thinking" => {}
+            "done" => {
+                if let Some(m) = string_field(data, "model") {
+                    self.model = m;
+                }
+                self.done = true;
+            }
+            "error" => {
+                self.error = Some(
+                    string_field(data, "error")
+                        .or_else(|| string_field(data, "message"))
+                        .unwrap_or_else(|| "Unknown stream error".to_string()),
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_turn_text_via_stream(body: &Value, token: &str) -> Result<(String, String), String> {
+    let url = format!(
+        "{}{}",
+        station_client::station_base_url(),
+        "/sub-agent/agent/turn/stream"
+    );
+    let client = Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|error| format!("failed to create Station stream client: {error}"))?;
+    let auth = format!("Bearer {}", token.trim());
+    let mut response = client
+        .post(&url)
+        .header(CONTENT_TYPE, "application/json")
+        .header(AUTHORIZATION, auth)
+        .header("Accept", "text/event-stream")
+        .json(body)
+        .send()
+        .map_err(|error| format!("Station turn stream request failed: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Station turn stream returned HTTP {}",
+            response.status()
+        ));
+    }
+
+    let mut bytes = [0_u8; 4096];
+    let mut buffer = String::new();
+    let mut collected = CollectedTurn::new();
+
+    loop {
+        let read = response
+            .read(&mut bytes)
+            .map_err(|error| format!("failed to read Station turn stream: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        buffer.push_str(&String::from_utf8_lossy(&bytes[..read]));
+        while let Some(frame_end) = buffer.find("\n\n") {
+            let frame = buffer[..frame_end].to_string();
+            buffer = buffer[frame_end + 2..].to_string();
+            if let Some((event, data)) = parse_sse_frame(&frame) {
+                collected.apply_event(&event, &data);
+            }
+        }
+        if collected.done {
+            break;
+        }
+    }
+
+    if !buffer.trim().is_empty() {
+        if let Some((event, data)) = parse_sse_frame(&buffer) {
+            collected.apply_event(&event, &data);
+        }
+    }
+
+    if let Some(err) = collected.error {
+        return Err(err);
+    }
+
+    if collected.text.is_empty() {
+        return Err("agent turn produced no text response".to_string());
+    }
+
+    Ok((collected.text, collected.model))
+}
+
 pub fn agent_execute_turn(
     mut input: AgentExecuteTurnInput,
     token: &str,
@@ -141,47 +258,59 @@ pub fn agent_execute_turn(
         command = "agent_execute_turn",
         agent_id = %input.agent_id,
         conversation_id = %input.conversation_id,
-        "Executing agent turn via Station"
+        "Executing agent turn via Station (streaming collect)"
     );
 
-    let body = json!({
-        "conversation_id": input.conversation_id,
-        "agent_id": input.agent_id,
-        "user_input": input.user_input,
-        "provider": input.provider.unwrap_or_default(),
-        "model": input.model.unwrap_or_default(),
-        "cliCommand": input.cli_command.unwrap_or_default(),
-        "runtimeBackend": input.runtime_backend.unwrap_or_default(),
-        "allowedRoots": input.allowed_roots.unwrap_or_default(),
-        "identity": input.identity.unwrap_or_default(),
-        "agentConfigPrompt": input.agent_config_prompt.unwrap_or_default(),
-        "effort": input.effort.unwrap_or_else(|| "medium".to_string()),
-        "platform": input.platform.unwrap_or("desktop".to_string()),
-        "workspace_root": input.workspace_root.unwrap_or_default(),
-        "context_window_size": input.context_window_size.unwrap_or(128000),
-        "max_retries": input.max_retries.unwrap_or(3),
-        "knowledge_resources": input.knowledge_resources.unwrap_or_default(),
-    });
+    let body = build_turn_request_body(input.clone(), true);
 
-    match station_client::request_json(
-        Method::POST,
-        "/sub-agent/agent/turn/execute",
-        token,
-        None,
-        Some(body),
-    ) {
-        Ok(result) => {
-            tracing::info!(command = "agent_execute_turn", "Turn execution succeeded");
-            let status =
-                serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+    match collect_turn_text_via_stream(&body, token) {
+        Ok((content, model_name)) => {
+            tracing::info!(command = "agent_execute_turn", content_len = content.len(), "Turn execution succeeded");
+            let result = json!({
+                "response_message": {
+                    "role": "assistant",
+                    "content": content,
+                },
+                "turn": {
+                    "agent_id": input.agent_id,
+                    "conversation_id": input.conversation_id,
+                    "final_response": content,
+                    "status": "TURN_STATUS_COMPLETED",
+                    "model": model_name,
+                },
+                "trace": {
+                    "model": model_name,
+                },
+            });
+            let status = serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
             AppResult::success(StubPayload {
                 command: "agent_execute_turn".to_string(),
                 status,
             })
         }
         Err(err) => {
-            tracing::error!(command = "agent_execute_turn", error = %err, "Turn execution failed");
-            err.into_app_result("Failed to execute agent turn")
+            tracing::error!(command = "agent_execute_turn", error = %err, "Turn execution failed, falling back to non-streaming");
+            let body_fallback = build_turn_request_body(input, false);
+            match station_client::request_json(
+                Method::POST,
+                "/sub-agent/agent/turn/execute",
+                token,
+                None,
+                Some(body_fallback),
+            ) {
+                Ok(result) => {
+                    let status =
+                        serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+                    AppResult::success(StubPayload {
+                        command: "agent_execute_turn".to_string(),
+                        status,
+                    })
+                }
+                Err(fb_err) => {
+                    tracing::error!(command = "agent_execute_turn", error = %fb_err, "Fallback also failed");
+                    fb_err.into_app_result("Failed to execute agent turn")
+                }
+            }
         }
     }
 }
@@ -427,26 +556,43 @@ pub fn agent_resolve_local_tool_request(
 }
 
 fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value {
-    json!({
+    let mut body = json!({
         "conversation_id": input.conversation_id,
         "agent_id": input.agent_id,
         "user_input": input.user_input,
         "attachments": input.attachments.unwrap_or_default(),
         "stream": stream,
-        "provider": input.provider.unwrap_or_default(),
-        "model": input.model.unwrap_or_default(),
-        "cliCommand": input.cli_command.unwrap_or_default(),
-        "runtimeBackend": input.runtime_backend.unwrap_or_default(),
-        "allowedRoots": input.allowed_roots.unwrap_or_default(),
-        "identity": input.identity.unwrap_or_default(),
-        "agentConfigPrompt": input.agent_config_prompt.unwrap_or_default(),
         "effort": input.effort.unwrap_or_else(|| "medium".to_string()),
         "platform": input.platform.unwrap_or("desktop".to_string()),
-        "workspace_root": input.workspace_root.unwrap_or_default(),
         "context_window_size": input.context_window_size.unwrap_or(128000),
         "max_retries": input.max_retries.unwrap_or(3),
         "knowledge_resources": input.knowledge_resources.unwrap_or_default(),
-    })
+    });
+    if let Some(provider) = input.provider.filter(|v| !v.trim().is_empty()) {
+        body["provider"] = json!(provider);
+    }
+    if let Some(model) = input.model.filter(|v| !v.trim().is_empty()) {
+        body["model"] = json!(model);
+    }
+    if let Some(cli_cmd) = input.cli_command.filter(|v| !v.trim().is_empty()) {
+        body["cliCommand"] = json!(cli_cmd);
+    }
+    if let Some(runtime) = input.runtime_backend.filter(|v| !v.trim().is_empty()) {
+        body["runtimeBackend"] = json!(runtime);
+    }
+    if let Some(roots) = input.allowed_roots.filter(|v| !v.is_empty()) {
+        body["allowedRoots"] = json!(roots);
+    }
+    if let Some(identity) = input.identity.filter(|v| !v.trim().is_empty()) {
+        body["identity"] = json!(identity);
+    }
+    if let Some(prompt) = input.agent_config_prompt.filter(|v| !v.trim().is_empty()) {
+        body["agentConfigPrompt"] = json!(prompt);
+    }
+    if let Some(ws_root) = input.workspace_root.filter(|v| !v.trim().is_empty()) {
+        body["workspace_root"] = json!(ws_root);
+    }
+    body
 }
 
 fn apply_resolved_agent_workspace(input: &mut AgentExecuteTurnInput) -> Result<(), String> {
@@ -469,6 +615,7 @@ fn stream_station_turn(
         "/sub-agent/agent/turn/stream"
     );
     let client = Client::builder()
+        .timeout(Duration::from_secs(120))
         .build()
         .map_err(|error| format!("failed to create Station stream client: {error}"))?;
     let auth = format!("Bearer {}", token.trim());
@@ -733,9 +880,8 @@ fn submit_local_tool_result(
 fn string_field(data: &Value, key: &str) -> Option<String> {
     data.get(key)
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
         .map(str::to_string)
+        .filter(|value| !value.is_empty())
 }
 
 fn string_array_field(data: &Value, key: &str) -> Option<Vec<String>> {

@@ -359,6 +359,7 @@ interface SocialChatState {
   messageLoadingMore: Record<string, boolean>;
   groupMembers: Record<string, GroupMember[]>;
   loading: boolean;
+  loadError: string | null;
   showDetail: boolean;
   currentUserProfile: CurrentUserProfile | null;
   /** Own DID for message ownership; prefer profile.id, may align with participant DIDs in sessions */
@@ -1161,6 +1162,7 @@ const initialSocialState: Pick<
   | 'messageLoadingMore'
   | 'groupMembers'
   | 'loading'
+  | 'loadError'
   | 'showDetail'
   | 'currentUserProfile'
   | 'currentUserDid'
@@ -1199,6 +1201,7 @@ const initialSocialState: Pick<
   messageLoadingMore: {},
   groupMembers: {},
   loading: false,
+  loadError: null,
   showDetail: false,
   currentUserProfile: null,
   currentUserDid: null,
@@ -1319,6 +1322,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       set((state) => ({
         sessions: clearActiveFriendUnread(list, state.activeSessionUlid, derivedDid || state.currentUserDid),
         loading: false,
+        loadError: null,
         ...(!state.currentUserDid && derivedDid
           ? { currentUserDid: derivedDid, conversationLocalState: loadConversationLocalState(derivedDid) }
           : {}),
@@ -1329,12 +1333,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }));
       set((state) => mergeRemoteConversationLocalState(state, settingsEntries));
     } catch (error) {
-      if (isUnauthorizedError(error)) {
-        set({ loading: false });
-        return;
-      }
-      log.error('socialChat', 'loadSessions failed', error);
       set({ loading: false });
+      if (isUnauthorizedError(error)) return;
+      const message = error instanceof Error ? error.message : String(error);
+      set({ loadError: message });
+      log.error('socialChat', 'loadSessions failed', error);
       throw error;
     }
   },
@@ -1352,6 +1355,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       set((state) => mergeRemoteConversationLocalState(state, settingsEntries));
     } catch (error) {
       if (isUnauthorizedError(error)) return;
+      const message = error instanceof Error ? error.message : String(error);
+      set((state) => ({ loadError: state.loadError || message }));
       log.error('socialChat', 'loadGroups failed', error);
       throw error;
     }
@@ -2041,6 +2046,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       });
     } catch (error) {
       if (isUnauthorizedError(error)) return;
+      const message = error instanceof Error ? error.message : String(error);
+      set((state) => ({ loadError: state.loadError || message }));
       log.error('socialChat', 'loadCurrentUserProfile failed', error);
       throw error;
     }
