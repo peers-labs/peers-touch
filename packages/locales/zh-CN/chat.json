@@ -617,6 +617,7 @@
   "chat.social.sessionList.unnamedGroup": "未命名群组",
   "chat.social.sessionList.message": "消息",
   "chat.social.sessionList.yesterday": "昨天",
+  "chat.social.sessionList.loadFailed": "加载会话失败",
   "chat.social.contextMenu.pin": "置顶",
   "chat.social.contextMenu.unpin": "取消置顶",
   "chat.social.contextMenu.mute": "消息免打扰",

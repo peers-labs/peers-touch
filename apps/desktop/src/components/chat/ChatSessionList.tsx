@@ -2,8 +2,8 @@ import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
-import { Badge, Empty, theme, Typography } from 'antd';
-import { BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff, Trash2 } from 'lucide-react';
+import { Alert, Badge, Empty, theme, Typography } from 'antd';
+import { RefreshCw, BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff, Trash2 } from 'lucide-react';
 import type { IMConversationProjection } from '@peers-touch/client-chat-core';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
@@ -36,7 +36,7 @@ function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) 
 
 export function ChatSessionList() {
   const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
+  const { t } = useTranslation(['chat', 'common']);
   const {
     sessions,
     groups,
@@ -48,6 +48,7 @@ export function ChatSessionList() {
     activeSessionUlid,
     activeGroupUlid,
     conversationLocalState,
+    loadError,
     setActiveTab,
     selectSession,
     selectGroup,
@@ -56,6 +57,8 @@ export function ChatSessionList() {
     hideConversation,
     deleteGroupContact,
     deleteFriendContact,
+    loadSessions,
+    loadGroups,
   } = useActiveSocialChatSlice((state) => ({
     sessions: state.sessions,
     groups: state.groups,
@@ -67,6 +70,7 @@ export function ChatSessionList() {
     activeSessionUlid: state.activeSessionUlid,
     activeGroupUlid: state.activeGroupUlid,
     conversationLocalState: state.conversationLocalState,
+    loadError: state.loadError,
     setActiveTab: state.setActiveTab,
     selectSession: state.selectSession,
     selectGroup: state.selectGroup,
@@ -75,6 +79,8 @@ export function ChatSessionList() {
     hideConversation: state.hideConversation,
     deleteGroupContact: state.deleteGroupContact,
     deleteFriendContact: state.deleteFriendContact,
+    loadSessions: state.loadSessions,
+    loadGroups: state.loadGroups,
   }));
 
   const [searchText, setSearchText] = useState('');
@@ -230,6 +236,11 @@ export function ChatSessionList() {
     return activeTab === 'group' && c.id === activeGroupUlid;
   };
 
+  const handleRetry = useCallback(() => {
+    loadSessions();
+    loadGroups();
+  }, [loadSessions, loadGroups]);
+
   return (
     <>
       <Flexbox
@@ -270,6 +281,23 @@ export function ChatSessionList() {
             </Dropdown>
           </Flexbox>
         </Flexbox>
+
+        {loadError && (
+          <div style={{ padding: '8px 12px 0' }}>
+            <Alert
+              type="error"
+              showIcon
+              message={t('chat.social.sessionList.loadFailed')}
+              description={loadError}
+              action={
+                <Button size="small" type="text" icon={<RefreshCw size={12} />} onClick={handleRetry}>
+                  {t('common.action.retry')}
+                </Button>
+              }
+              style={{ fontSize: 12 }}
+            />
+          </div>
+        )}
 
         <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 8px' }} gap={2}>
           {filteredItems.length === 0 ? (

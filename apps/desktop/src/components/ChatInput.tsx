@@ -4,22 +4,31 @@ import { ActionIcon } from '@lobehub/ui';
 import { ModelIcon } from '@lobehub/icons';
 import { Dropdown, theme } from 'antd';
 import type { MenuProps } from 'antd';
-import { ChevronDown, ImagePlus, Send, Slash, Square, X } from 'lucide-react';
+import { ArrowUp, ChevronDown, Image as ImageIcon, Slash, Square, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import { useChatAttachmentDrafts } from './chat/composer/useChatAttachmentDrafts';
 import type { AvailableModel } from '../services/desktop_api';
 
+const COMPOSER_COLORS = {
+  border: '#d1d1d1',
+  borderSoft: '#ececec',
+  primaryDisabled: '#d8d3fb',
+  textTertiary: '#9b9b9b',
+  toolButtonShadow: '0 1px 4px rgba(15,23,42,0.04)',
+} as const;
+
 export interface ChatInputProps {
   placeholder?: string;
+  minHeight?: number;
 }
 
 function modelMenuKey(model: AvailableModel): string {
   return `${encodeURIComponent(model.provider_id || '')}/${encodeURIComponent(model.id)}`;
 }
 
-export function ChatInput({ placeholder: customPlaceholder }: ChatInputProps) {
+export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: ChatInputProps) {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,7 +75,7 @@ export function ChatInput({ placeholder: customPlaceholder }: ChatInputProps) {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 190)}px`;
   }, []);
 
   useEffect(() => {
@@ -127,6 +136,12 @@ export function ChatInput({ placeholder: customPlaceholder }: ChatInputProps) {
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
   const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading;
 
+  const providerName = modelInfo?.provider_name || selectedProviderId || '';
+  const modelDisplayName = modelInfo?.display_name || modelInfo?.id || currentModelId;
+  const modelLabel = modelInfo
+    ? `${providerName} · ${modelDisplayName}`
+    : currentModelId || t('chat.model.select');
+
   const modelMenu = useMemo<MenuProps>(() => ({
     selectedKeys: currentModelKey ? [currentModelKey] : [],
     items: availableModels
@@ -151,22 +166,20 @@ export function ChatInput({ placeholder: customPlaceholder }: ChatInputProps) {
     },
   }), [availableModels, currentModelKey, setSelectedModel, token.colorTextTertiary]);
 
-  const circleButtonStyle = {
-    borderRadius: '50%',
-    background: token.colorFillTertiary,
-    color: token.colorTextSecondary,
-  } as const;
-
   return (
-    <Flexbox
-      gap={10}
+    <section
       style={{
         width: '100%',
+        minHeight,
+        border: `1px solid ${COMPOSER_COLORS.border}`,
+        borderRadius: 18,
+        background: '#ffffff',
+        boxSizing: 'border-box',
         padding: '12px 14px 10px',
-        borderRadius: 24,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorBgContainer,
-        boxShadow: '0 8px 32px rgba(15, 23, 42, 0.06)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        gap: 8,
       }}
     >
       {drafts.length > 0 && (
@@ -219,90 +232,110 @@ export function ChatInput({ placeholder: customPlaceholder }: ChatInputProps) {
           isComposingRef.current = false;
         }}
         placeholder={customPlaceholder || t('chat.input.placeholder')}
-        rows={1}
+        rows={2}
         style={{
           width: '100%',
-          resize: 'none',
-          border: 'none',
+          minHeight: 34,
+          maxHeight: 190,
+          border: 0,
           outline: 'none',
-          background: 'transparent',
+          resize: 'none',
           color: token.colorText,
-          fontFamily: 'inherit',
-          fontSize: 15,
+          fontSize: 14,
           lineHeight: 1.5,
-          minHeight: 28,
-          maxHeight: 200,
-          overflow: 'auto',
-          padding: '2px 4px',
+          fontFamily: 'inherit',
+          background: 'transparent',
+          boxSizing: 'border-box',
+          padding: 0,
         }}
       />
 
       <Flexbox horizontal align="center" gap={8}>
-        <ActionIcon
-          icon={Slash}
-          onClick={insertSlash}
-          title={t('chat.input.slashCommand')}
-          size={{ blockSize: 34, size: 16 }}
-          style={circleButtonStyle}
-        />
-        <ActionIcon
-          icon={ImagePlus}
-          onClick={handlePickImages}
-          title={t('chat.input.uploadFile')}
-          size={{ blockSize: 34, size: 18 }}
-          style={circleButtonStyle}
-        />
+        <Flexbox horizontal align="center" gap={8}>
+          <ActionIcon
+            icon={Slash}
+            onClick={insertSlash}
+            title={t('chat.input.slashCommand')}
+            size={{ blockSize: 28, size: 13 }}
+            style={{
+              borderRadius: 8,
+              border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
+              background: '#ffffff',
+              color: token.colorText,
+              boxShadow: COMPOSER_COLORS.toolButtonShadow,
+            }}
+          />
+          <ActionIcon
+            icon={ImageIcon}
+            onClick={handlePickImages}
+            title={t('chat.input.uploadFile')}
+            size={{ blockSize: 28, size: 13 }}
+            style={{
+              borderRadius: 8,
+              border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
+              background: '#ffffff',
+              color: token.colorText,
+              boxShadow: COMPOSER_COLORS.toolButtonShadow,
+            }}
+          />
+        </Flexbox>
 
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+        <div style={{ flex: 1, minWidth: 8 }} />
+
+        <div style={{ minWidth: 0, display: 'flex', justifyContent: 'flex-end', overflow: 'hidden' }}>
           <Dropdown menu={modelMenu} trigger={['click']} placement="top">
-            <Flexbox
-              horizontal
-              align="center"
-              gap={6}
+            <button
+              type="button"
               style={{
-                height: 34,
-                padding: '0 12px',
-                borderRadius: 999,
-                background: token.colorFillQuaternary,
+                height: 28,
+                border: 0,
+                background: 'transparent',
                 color: token.colorTextSecondary,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
                 fontSize: 13,
-                fontWeight: 600,
                 cursor: 'pointer',
-                maxWidth: 260,
+                padding: '0 4px',
+                maxWidth: '100%',
+                lineHeight: 1,
               }}
             >
-              <ModelIcon model={modelInfo?.id || currentModelId} size={16} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {modelInfo?.display_name || currentModelId || t('chat.model.select')}
-              </span>
-              <ChevronDown size={14} style={{ flexShrink: 0 }} />
-            </Flexbox>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1 }}>{modelLabel}</span>
+              <ChevronDown size={12} color={COMPOSER_COLORS.textTertiary} style={{ flexShrink: 0 }} />
+            </button>
           </Dropdown>
         </div>
 
-        {isStreaming ? (
-          <ActionIcon
-            icon={Square}
-            onClick={stopStreaming}
-            title={t('chat.input.stop')}
-            size={{ blockSize: 34, size: 16 }}
-            style={{ background: token.colorError, color: '#fff', borderRadius: '50%', flexShrink: 0 }}
-          />
-        ) : (
-          <ActionIcon
-            icon={Send}
-            onClick={handleSend}
-            disabled={sendDisabled}
-            title={t('chat.input.send')}
-            size={{ blockSize: 34, size: 16 }}
-            style={{
-              background: !sendDisabled ? token.colorPrimary : token.colorFillSecondary,
-              color: !sendDisabled ? '#fff' : token.colorTextQuaternary,
-              borderRadius: '50%',
-              flexShrink: 0,
-            }}
-          />
-        )}
+        <Flexbox horizontal align="center" gap={8} justify="flex-end">
+          {isStreaming ? (
+            <ActionIcon
+              icon={Square}
+              onClick={stopStreaming}
+              title={t('chat.input.stop')}
+              size={{ blockSize: 34, size: 16 }}
+              style={{
+                borderRadius: 10,
+                background: token.colorError,
+                color: '#ffffff',
+              }}
+            />
+          ) : (
+            <ActionIcon
+              icon={ArrowUp}
+              onClick={handleSend}
+              disabled={sendDisabled}
+              title={t('chat.input.send')}
+              size={{ blockSize: 34, size: 16 }}
+              style={{
+                borderRadius: 10,
+                background: sendDisabled ? COMPOSER_COLORS.primaryDisabled : token.colorPrimary,
+                color: sendDisabled ? COMPOSER_COLORS.textTertiary : '#ffffff',
+                cursor: sendDisabled ? 'default' : 'pointer',
+              }}
+            />
+          )}
+        </Flexbox>
       </Flexbox>
 
       <input
@@ -313,6 +346,6 @@ export function ChatInput({ placeholder: customPlaceholder }: ChatInputProps) {
         style={{ display: 'none' }}
         onChange={handleFilesSelected}
       />
-    </Flexbox>
+    </section>
   );
 }
