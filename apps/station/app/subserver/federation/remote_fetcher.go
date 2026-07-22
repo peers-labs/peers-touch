@@ -42,7 +42,7 @@ func (f *httpLedgerFetcher) mintToken(ctx context.Context, targetStationID strin
 	})
 }
 
-func (f *httpLedgerFetcher) FetchHead(ctx context.Context, endpoint string, federationID string) ([]byte, uint64, error) {
+func (f *httpLedgerFetcher) FetchHead(ctx context.Context, endpoint, targetPeerID, federationID string) ([]byte, uint64, error) {
 	req := &pb.FetchHeadRequest{FederationId: federationID}
 	body, err := protojson.Marshal(req)
 	if err != nil {
@@ -51,8 +51,7 @@ func (f *httpLedgerFetcher) FetchHead(ctx context.Context, endpoint string, fede
 
 	url := endpoint + "/fed/v1/ledger/head"
 
-	targetStationID := extractStationID(endpoint)
-	token, err := f.mintToken(ctx, targetStationID)
+	token, err := f.mintToken(ctx, targetPeerID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("mint federation token for %s: %w", url, err)
 	}
@@ -87,7 +86,7 @@ func (f *httpLedgerFetcher) FetchHead(ctx context.Context, endpoint string, fede
 	return result.HeadHash, result.HeadSeq, nil
 }
 
-func (f *httpLedgerFetcher) FetchEvents(ctx context.Context, endpoint string, federationID string, fromSeq uint64, limit uint32) ([]*pb.LedgerEvent, error) {
+func (f *httpLedgerFetcher) FetchEvents(ctx context.Context, endpoint, targetPeerID, federationID string, fromSeq uint64, limit uint32) ([]*pb.LedgerEvent, error) {
 	req := &pb.FetchEventsRequest{FederationId: federationID, FromSeq: fromSeq, Limit: limit}
 	body, err := protojson.Marshal(req)
 	if err != nil {
@@ -96,8 +95,7 @@ func (f *httpLedgerFetcher) FetchEvents(ctx context.Context, endpoint string, fe
 
 	url := endpoint + "/fed/v1/ledger/events"
 
-	targetStationID := extractStationID(endpoint)
-	token, err := f.mintToken(ctx, targetStationID)
+	token, err := f.mintToken(ctx, targetPeerID)
 	if err != nil {
 		return nil, fmt.Errorf("mint federation token for %s: %w", url, err)
 	}
@@ -130,8 +128,4 @@ func (f *httpLedgerFetcher) FetchEvents(ctx context.Context, endpoint string, fe
 		return nil, fmt.Errorf("decode fetch events response: %w", err)
 	}
 	return result.Events, nil
-}
-
-func extractStationID(endpoint string) string {
-	return endpoint
 }
