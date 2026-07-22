@@ -1,0 +1,231 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpb";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Federation Ledger — Core types for the append-only governance ledger.
+// Source of truth: docs/architecture/federation/wire-protocol.md §3-§5
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// EventType enumerates all governance actions that can appear in the ledger.
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  FEDERATION_CREATED = 1;
+  STATION_INVITED = 2;
+  STATION_JOIN_REQUESTED = 3;
+  STATION_JOIN_APPROVED = 4;
+  STATION_LEFT = 5;
+  STATION_SUSPENDED = 6;
+  STATION_REMOVED = 7;
+  ADMIN_GRANTED = 8;
+  ADMIN_REVOKED = 9;
+  POLICY_UPDATED = 10;
+  SEQUENCER_CHANGED = 11;
+  STATION_KEY_ROTATED = 12;
+  FEDERATION_ARCHIVED = 13;
+}
+
+// LedgerEvent is one immutable entry in the Federation governance ledger.
+message LedgerEvent {
+  string event_id = 1;
+  string federation_id = 2;
+  uint64 seq = 3;
+  bytes  prev_hash = 4;
+  bytes  event_hash = 5;
+  EventType event_type = 6;
+  bytes  payload_bytes = 7;
+  bytes  payload_hash = 8;
+  string actor_id = 9;
+  string actor_federated_handle = 10;
+  string station_peer_id = 11;
+  string sequencer_station_peer_id = 12;
+  bytes  actor_signature = 13;
+  bytes  station_signature = 14;
+  bytes  sequencer_signature = 15;
+  int64  created_at_unix_ms = 16;
+}
+
+// EventHashInput defines the canonical fields hashed to produce event_hash.
+// hash = SHA-256(canonical_proto_bytes(EventHashInput))
+message EventHashInput {
+  string    federation_id = 1;
+  uint64    seq = 2;
+  bytes     prev_hash = 3;
+  string    event_type_name = 4;
+  bytes     payload_hash = 5;
+}
+
+// ActorSignatureInput — signed by actor's own Ed25519 private key.
+message ActorSignatureInput {
+  string federation_id = 1;
+  string actor_id = 2;
+  string actor_federated_handle = 3;
+  string event_type_name = 4;
+  bytes  payload_hash = 5;
+  int64  timestamp_unix_ms = 6;
+}
+
+// StationSignatureInput — signed by originating station's Ed25519 key.
+message StationSignatureInput {
+  string federation_id = 1;
+  string station_peer_id = 2;
+  string event_type_name = 3;
+  bytes  payload_hash = 4;
+  uint64 seq = 5;
+  bytes  prev_hash = 6;
+  bytes  event_hash = 7;
+}
+
+// SequencerSignatureInput — signed by sequencer station's Ed25519 key.
+message SequencerSignatureInput {
+  string federation_id = 1;
+  uint64 seq = 2;
+  bytes  event_hash = 3;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Typed Payloads — one per EventType (wire-protocol.md §5)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+message FederationCreatedPayload {
+  string federation_id = 1;
+  string name = 2;
+  string description = 3;
+  string policy_type = 4;
+  string sequencer_station_peer_id = 5;
+  string creator_actor_id = 6;
+  string creator_actor_federated_handle = 7;
+  string creator_station_peer_id = 8;
+  bytes  creator_station_public_key = 9;
+  string creator_station_name = 10;
+  string creator_station_url = 11;
+  bytes  creator_actor_signing_public_key = 12;
+}
+
+message StationInvitedPayload {
+  string target_station_peer_id = 1;
+  string target_station_name = 2;
+  string target_station_url = 3;
+  string invited_by_actor_id = 4;
+  string invited_by_actor_federated_handle = 5;
+  string message = 6;
+  int64  expires_at_unix_ms = 7;
+}
+
+message StationJoinRequestedPayload {
+  string requesting_station_peer_id = 1;
+  string requesting_station_name = 2;
+  string requesting_station_url = 3;
+  bytes  requesting_station_public_key = 4;
+  string requesting_actor_id = 5;
+  string requesting_actor_federated_handle = 6;
+  string message = 7;
+}
+
+message StationJoinApprovedPayload {
+  string approved_station_peer_id = 1;
+  string approved_by_actor_id = 2;
+  string approved_by_actor_federated_handle = 3;
+  string role = 4;
+}
+
+message StationLeftPayload {
+  string leaving_station_peer_id = 1;
+  string leaving_actor_id = 2;
+  string leaving_actor_federated_handle = 3;
+  string reason = 4;
+}
+
+message StationSuspendedPayload {
+  string target_station_peer_id = 1;
+  string suspended_by_actor_id = 2;
+  string suspended_by_actor_federated_handle = 3;
+  string reason = 4;
+}
+
+message StationRemovedPayload {
+  string target_station_peer_id = 1;
+  string removed_by_actor_id = 2;
+  string removed_by_actor_federated_handle = 3;
+  string reason = 4;
+}
+
+message AdminGrantedPayload {
+  string target_actor_id = 1;
+  string target_actor_federated_handle = 2;
+  string target_station_peer_id = 3;
+  string role = 4;
+  string granted_by_actor_id = 5;
+  string granted_by_actor_federated_handle = 6;
+}
+
+message AdminRevokedPayload {
+  string target_actor_id = 1;
+  string target_actor_federated_handle = 2;
+  string target_station_peer_id = 3;
+  string revoked_role = 4;
+  string revoked_by_actor_id = 5;
+  string revoked_by_actor_federated_handle = 6;
+  string reason = 7;
+}
+
+message PolicyUpdatedPayload {
+  string old_policy_type = 1;
+  string new_policy_type = 2;
+  bytes  policy_params_bytes = 3;
+  string updated_by_actor_id = 4;
+  string updated_by_actor_federated_handle = 5;
+}
+
+message SequencerChangedPayload {
+  string old_sequencer_station_peer_id = 1;
+  string new_sequencer_station_peer_id = 2;
+  string reason = 3;
+  string initiated_by_actor_id = 4;
+  string initiated_by_actor_federated_handle = 5;
+}
+
+message StationKeyRotatedPayload {
+  string station_peer_id = 1;
+  bytes  old_public_key = 2;
+  bytes  new_public_key = 3;
+  uint64 new_key_valid_from_seq = 4;
+}
+
+message FederationArchivedPayload {
+  string archived_by_actor_id = 1;
+  string archived_by_actor_federated_handle = 2;
+  string reason = 3;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Proposal — pre-sequencer governance request
+// ═══════════════════════════════════════════════════════════════════════════════
+
+enum ProposalStatus {
+  PROPOSAL_STATUS_UNSPECIFIED = 0;
+  PROPOSAL_PENDING = 1;
+  PROPOSAL_ACCEPTED = 2;
+  PROPOSAL_REJECTED = 3;
+  PROPOSAL_EXPIRED = 4;
+}
+
+message LedgerProposal {
+  string proposal_id = 1;
+  string federation_id = 2;
+  EventType proposed_event_type = 3;
+  bytes  payload_bytes = 4;
+  bytes  payload_hash = 5;
+  string actor_id = 6;
+  string actor_federated_handle = 7;
+  string station_peer_id = 8;
+  bytes  actor_signature = 9;
+  bytes  station_signature = 10;
+  ProposalStatus status = 11;
+  string rejection_reason = 12;
+  string accepted_event_id = 13;
+  int64  proposed_at_unix_ms = 14;
+  int64  decided_at_unix_ms = 15;
+}

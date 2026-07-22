@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpb";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Federation Membership Service — RPCs exposed by all member Stations.
+// Source of truth: docs/architecture/federation/wire-protocol.md §6.4
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── GetMembershipStatus ────────────────────────────────────────────────────
+
+message GetMembershipStatusRequest {
+  string federation_id = 1;
+}
+
+message GetMembershipStatusResponse {
+  string federation_id = 1;
+  string station_peer_id = 2;
+  string role = 3;
+  string status = 4;
+  uint64 local_head_seq = 5;
+  bytes  local_head_hash = 6;
+}
+
+// ─── AcceptInvite ───────────────────────────────────────────────────────────
+
+message AcceptInviteRequest {
+  string federation_id = 1;
+  bytes  station_public_key = 2;
+  string station_name = 3;
+  string station_url = 4;
+  string accepting_actor_id = 5;
+  string accepting_actor_federated_handle = 6;
+}
+
+message AcceptInviteResponse {
+  bool   success = 1;
+  string error_message = 2;
+}
