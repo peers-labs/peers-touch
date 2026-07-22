@@ -18,8 +18,8 @@ import (
 var ErrSyncStopped = errors.New("sync stopped")
 
 type RemoteLedgerFetcher interface {
-	FetchHead(ctx context.Context, endpoint string, federationID string) (headHash []byte, headSeq uint64, err error)
-	FetchEvents(ctx context.Context, endpoint string, federationID string, fromSeq uint64, limit uint32) ([]*pb.LedgerEvent, error)
+	FetchHead(ctx context.Context, endpoint, targetPeerID, federationID string) (headHash []byte, headSeq uint64, err error)
+	FetchEvents(ctx context.Context, endpoint, targetPeerID, federationID string, fromSeq uint64, limit uint32) ([]*pb.LedgerEvent, error)
 }
 
 type LedgerSyncManager struct {
@@ -122,7 +122,7 @@ func (m *LedgerSyncManager) syncAllFederations(ctx context.Context) {
 	if m.localStationID == "" {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Warnf(ctx, "[federation-sync] node not ready yet, skipping tick")
+				log.Warnf(ctx, "[federation-sync] node not ready, skipping tick: %v", r)
 			}
 		}()
 		m.localStationID = node.GetService().Options().Id
@@ -159,7 +159,7 @@ func (m *LedgerSyncManager) syncFederation(ctx context.Context, fed *domain.Fede
 		return nil
 	}
 
-	remoteHeadHash, remoteHeadSeq, err := m.fetcher.FetchHead(ctx, endpoint, fed.FederationID)
+	remoteHeadHash, remoteHeadSeq, err := m.fetcher.FetchHead(ctx, endpoint, fed.SequencerStationPeerID, fed.FederationID)
 	if err != nil {
 		return fmt.Errorf("fetch head from %s: %w", endpoint, err)
 	}
@@ -178,7 +178,7 @@ func (m *LedgerSyncManager) syncFederation(ctx context.Context, fed *domain.Fede
 		return nil
 	}
 
-	events, err := m.fetcher.FetchEvents(ctx, endpoint, fed.FederationID, localSeq+1, 100)
+	events, err := m.fetcher.FetchEvents(ctx, endpoint, fed.SequencerStationPeerID, fed.FederationID, localSeq+1, 100)
 	if err != nil {
 		return fmt.Errorf("fetch events from %s: %w", endpoint, err)
 	}
