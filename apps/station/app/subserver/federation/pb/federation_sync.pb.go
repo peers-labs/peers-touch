@@ -79,132 +79,6 @@ func (SyncStatus) EnumDescriptor() ([]byte, []int) {
 	return file_domain_federation_federation_sync_proto_rawDescGZIP(), []int{0}
 }
 
-// LedgerEventDelivered is pushed via SSE (StreamEvent oneof arm 24).
-// Member Stations receive this from the sequencer's events endpoint.
-type LedgerEventDelivered struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	FederationId         string                 `protobuf:"bytes,1,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
-	Seq                  uint64                 `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
-	EventHash            []byte                 `protobuf:"bytes,3,opt,name=event_hash,json=eventHash,proto3" json:"event_hash,omitempty"`
-	EventType            EventType              `protobuf:"varint,4,opt,name=event_type,json=eventType,proto3,enum=peers_touch.model.federation.v1.EventType" json:"event_type,omitempty"`
-	PayloadBytes         []byte                 `protobuf:"bytes,5,opt,name=payload_bytes,json=payloadBytes,proto3" json:"payload_bytes,omitempty"`
-	ActorSignature       []byte                 `protobuf:"bytes,6,opt,name=actor_signature,json=actorSignature,proto3" json:"actor_signature,omitempty"`
-	StationSignature     []byte                 `protobuf:"bytes,7,opt,name=station_signature,json=stationSignature,proto3" json:"station_signature,omitempty"`
-	SequencerSignature   []byte                 `protobuf:"bytes,8,opt,name=sequencer_signature,json=sequencerSignature,proto3" json:"sequencer_signature,omitempty"`
-	ActorFederatedHandle string                 `protobuf:"bytes,9,opt,name=actor_federated_handle,json=actorFederatedHandle,proto3" json:"actor_federated_handle,omitempty"`
-	StationPeerId        string                 `protobuf:"bytes,10,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
-	CreatedAtUnixMs      int64                  `protobuf:"varint,11,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
-}
-
-func (x *LedgerEventDelivered) Reset() {
-	*x = LedgerEventDelivered{}
-	mi := &file_domain_federation_federation_sync_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LedgerEventDelivered) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LedgerEventDelivered) ProtoMessage() {}
-
-func (x *LedgerEventDelivered) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_federation_federation_sync_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LedgerEventDelivered.ProtoReflect.Descriptor instead.
-func (*LedgerEventDelivered) Descriptor() ([]byte, []int) {
-	return file_domain_federation_federation_sync_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *LedgerEventDelivered) GetFederationId() string {
-	if x != nil {
-		return x.FederationId
-	}
-	return ""
-}
-
-func (x *LedgerEventDelivered) GetSeq() uint64 {
-	if x != nil {
-		return x.Seq
-	}
-	return 0
-}
-
-func (x *LedgerEventDelivered) GetEventHash() []byte {
-	if x != nil {
-		return x.EventHash
-	}
-	return nil
-}
-
-func (x *LedgerEventDelivered) GetEventType() EventType {
-	if x != nil {
-		return x.EventType
-	}
-	return EventType_EVENT_TYPE_UNSPECIFIED
-}
-
-func (x *LedgerEventDelivered) GetPayloadBytes() []byte {
-	if x != nil {
-		return x.PayloadBytes
-	}
-	return nil
-}
-
-func (x *LedgerEventDelivered) GetActorSignature() []byte {
-	if x != nil {
-		return x.ActorSignature
-	}
-	return nil
-}
-
-func (x *LedgerEventDelivered) GetStationSignature() []byte {
-	if x != nil {
-		return x.StationSignature
-	}
-	return nil
-}
-
-func (x *LedgerEventDelivered) GetSequencerSignature() []byte {
-	if x != nil {
-		return x.SequencerSignature
-	}
-	return nil
-}
-
-func (x *LedgerEventDelivered) GetActorFederatedHandle() string {
-	if x != nil {
-		return x.ActorFederatedHandle
-	}
-	return ""
-}
-
-func (x *LedgerEventDelivered) GetStationPeerId() string {
-	if x != nil {
-		return x.StationPeerId
-	}
-	return ""
-}
-
-func (x *LedgerEventDelivered) GetCreatedAtUnixMs() int64 {
-	if x != nil {
-		return x.CreatedAtUnixMs
-	}
-	return 0
-}
-
 // SyncCursor tracks a member Station's replication progress with a remote.
 type SyncCursor struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
@@ -223,7 +97,7 @@ type SyncCursor struct {
 
 func (x *SyncCursor) Reset() {
 	*x = SyncCursor{}
-	mi := &file_domain_federation_federation_sync_proto_msgTypes[1]
+	mi := &file_domain_federation_federation_sync_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -235,7 +109,7 @@ func (x *SyncCursor) String() string {
 func (*SyncCursor) ProtoMessage() {}
 
 func (x *SyncCursor) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_federation_federation_sync_proto_msgTypes[1]
+	mi := &file_domain_federation_federation_sync_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -248,7 +122,7 @@ func (x *SyncCursor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncCursor.ProtoReflect.Descriptor instead.
 func (*SyncCursor) Descriptor() ([]byte, []int) {
-	return file_domain_federation_federation_sync_proto_rawDescGZIP(), []int{1}
+	return file_domain_federation_federation_sync_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *SyncCursor) GetFederationId() string {
@@ -318,22 +192,7 @@ var File_domain_federation_federation_sync_proto protoreflect.FileDescriptor
 
 const file_domain_federation_federation_sync_proto_rawDesc = "" +
 	"\n" +
-	"'domain/federation/federation_sync.proto\x12\x1fpeers_touch.model.federation.v1\x1a)domain/federation/federation_ledger.proto\"\xee\x03\n" +
-	"\x14LedgerEventDelivered\x12#\n" +
-	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12\x10\n" +
-	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x1d\n" +
-	"\n" +
-	"event_hash\x18\x03 \x01(\fR\teventHash\x12I\n" +
-	"\n" +
-	"event_type\x18\x04 \x01(\x0e2*.peers_touch.model.federation.v1.EventTypeR\teventType\x12#\n" +
-	"\rpayload_bytes\x18\x05 \x01(\fR\fpayloadBytes\x12'\n" +
-	"\x0factor_signature\x18\x06 \x01(\fR\x0eactorSignature\x12+\n" +
-	"\x11station_signature\x18\a \x01(\fR\x10stationSignature\x12/\n" +
-	"\x13sequencer_signature\x18\b \x01(\fR\x12sequencerSignature\x124\n" +
-	"\x16actor_federated_handle\x18\t \x01(\tR\x14actorFederatedHandle\x12&\n" +
-	"\x0fstation_peer_id\x18\n" +
-	" \x01(\tR\rstationPeerId\x12+\n" +
-	"\x12created_at_unix_ms\x18\v \x01(\x03R\x0fcreatedAtUnixMs\"\xa5\x03\n" +
+	"'domain/federation/federation_sync.proto\x12\x1fpeers_touch.model.federation.v1\"\xa5\x03\n" +
 	"\n" +
 	"SyncCursor\x12#\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x123\n" +
@@ -368,21 +227,18 @@ func file_domain_federation_federation_sync_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_federation_federation_sync_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_federation_federation_sync_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_domain_federation_federation_sync_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_domain_federation_federation_sync_proto_goTypes = []any{
-	(SyncStatus)(0),              // 0: peers_touch.model.federation.v1.SyncStatus
-	(*LedgerEventDelivered)(nil), // 1: peers_touch.model.federation.v1.LedgerEventDelivered
-	(*SyncCursor)(nil),           // 2: peers_touch.model.federation.v1.SyncCursor
-	(EventType)(0),               // 3: peers_touch.model.federation.v1.EventType
+	(SyncStatus)(0),    // 0: peers_touch.model.federation.v1.SyncStatus
+	(*SyncCursor)(nil), // 1: peers_touch.model.federation.v1.SyncCursor
 }
 var file_domain_federation_federation_sync_proto_depIdxs = []int32{
-	3, // 0: peers_touch.model.federation.v1.LedgerEventDelivered.event_type:type_name -> peers_touch.model.federation.v1.EventType
-	0, // 1: peers_touch.model.federation.v1.SyncCursor.status:type_name -> peers_touch.model.federation.v1.SyncStatus
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0, // 0: peers_touch.model.federation.v1.SyncCursor.status:type_name -> peers_touch.model.federation.v1.SyncStatus
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_domain_federation_federation_sync_proto_init() }
@@ -390,14 +246,13 @@ func file_domain_federation_federation_sync_proto_init() {
 	if File_domain_federation_federation_sync_proto != nil {
 		return
 	}
-	file_domain_federation_federation_ledger_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_federation_federation_sync_proto_rawDesc), len(file_domain_federation_federation_sync_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   2,
+			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

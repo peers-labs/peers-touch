@@ -2,9 +2,11 @@ package domain
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -52,7 +54,7 @@ func (r *ReplayService) ReplayFromGenesis(ctx context.Context, federationID stri
 			prevHash = make([]byte, 32)
 		}
 
-		if !bytesEqual(event.PrevHash, prevHash) {
+		if subtle.ConstantTimeCompare(event.PrevHash, prevHash) != 1 {
 			return nil, ErrForkDetected
 		}
 		if event.Seq != uint64(i) {
@@ -76,7 +78,10 @@ func (r *ReplayService) applyEvent(state *MaterializedState, event *pb.LedgerEve
 		state.ActiveMemberStations = append(state.ActiveMemberStations, event.StationPeerId)
 
 	case pb.EventType_STATION_JOIN_APPROVED:
-		state.ActiveMemberStations = append(state.ActiveMemberStations, event.StationPeerId)
+		var payload pb.StationJoinApprovedPayload
+		if err := proto.Unmarshal(event.PayloadBytes, &payload); err == nil {
+			state.ActiveMemberStations = append(state.ActiveMemberStations, payload.ApprovedStationPeerId)
+		}
 
 	case pb.EventType_STATION_LEFT, pb.EventType_STATION_REMOVED:
 		state.ActiveMemberStations = removeStation(state.ActiveMemberStations, event.StationPeerId)

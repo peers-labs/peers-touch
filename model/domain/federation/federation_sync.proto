@@ -7,25 +7,11 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/fed
 // ═══════════════════════════════════════════════════════════════════════════════
 // Federation Sync — Types for ledger replication between Stations.
 // Source of truth: docs/architecture/federation/wire-protocol.md §7
+//
+// The SSE delivery message (LedgerEventDelivered) lives in
+// model/domain/realtime/event.proto as StreamEvent oneof arm 24.
+// This file only defines sync-cursor and status types.
 // ═══════════════════════════════════════════════════════════════════════════════
-
-import "domain/federation/federation_ledger.proto";
-
-// LedgerEventDelivered is pushed via SSE (StreamEvent oneof arm 24).
-// Member Stations receive this from the sequencer's events endpoint.
-message LedgerEventDelivered {
-  string    federation_id = 1;
-  uint64    seq = 2;
-  bytes     event_hash = 3;
-  EventType event_type = 4;
-  bytes     payload_bytes = 5;
-  bytes     actor_signature = 6;
-  bytes     station_signature = 7;
-  bytes     sequencer_signature = 8;
-  string    actor_federated_handle = 9;
-  string    station_peer_id = 10;
-  int64     created_at_unix_ms = 11;
-}
 
 // SyncCursor tracks a member Station's replication progress with a remote.
 message SyncCursor {

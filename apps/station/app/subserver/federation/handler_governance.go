@@ -2,13 +2,15 @@ package federation
 
 import (
 	"context"
+	"errors"
 
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 )
 
-// Governance RPC handlers — called by remote member stations to sync ledger.
-
 func (s *subServer) handleFetchHead(ctx context.Context, req *pb.FetchHeadRequest) (*pb.FetchHeadResponse, error) {
+	if req.FederationId == "" {
+		return nil, errors.New("federation_id is required")
+	}
 	fed, err := s.federationSvc.GetFederation(ctx, req.FederationId)
 	if err != nil {
 		return nil, err
@@ -26,6 +28,9 @@ func (s *subServer) handleFetchHead(ctx context.Context, req *pb.FetchHeadReques
 }
 
 func (s *subServer) handleFetchEvents(ctx context.Context, req *pb.FetchEventsRequest) (*pb.FetchEventsResponse, error) {
+	if req.FederationId == "" {
+		return nil, errors.New("federation_id is required")
+	}
 	limit := req.Limit
 	if limit == 0 || limit > 100 {
 		limit = 100

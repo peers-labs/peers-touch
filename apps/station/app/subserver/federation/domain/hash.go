@@ -2,6 +2,7 @@ package domain
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 	"google.golang.org/protobuf/proto"
@@ -41,17 +42,5 @@ func (h *HashService) VerifyEventHash(event *pb.LedgerEvent, expectedPayloadHash
 	if err != nil {
 		return false, err
 	}
-	return bytesEqual(computed, event.EventHash), nil
-}
-
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return subtle.ConstantTimeCompare(computed, event.EventHash) == 1, nil
 }

@@ -36,8 +36,14 @@ func (s *ProjectionService) ListFederations(ctx context.Context, stationPeerID, 
 
 	resp := &pb.ListFederationsResponse{}
 	for _, fed := range feds {
-		members, _ := s.membershipRepo.ListByFederation(ctx, fed.FederationID)
-		role, _ := s.actorRoleRepo.GetByActor(ctx, fed.FederationID, actorID)
+		members, err := s.membershipRepo.ListByFederation(ctx, fed.FederationID)
+		if err != nil {
+			return nil, err
+		}
+		role, err := s.actorRoleRepo.GetByActor(ctx, fed.FederationID, actorID)
+		if err != nil {
+			return nil, err
+		}
 
 		summary := &pb.FederationSummary{
 			FederationId:           fed.FederationID,

@@ -2,18 +2,122 @@ package federation
 
 import (
 	"context"
+	"crypto/subtle"
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain/policy"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
-func TestSeedTestnet_CreatesAndReplaysConsistently(t *testing.T) {
-	ctx := context.Background()
+func setupTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
 
-	repos := infrastructure.NewRepos(nil)
+	sqlDB, _ := db.DB()
+	t.Cleanup(func() { sqlDB.Close() })
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS federation (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		federation_id VARCHAR(30) NOT NULL UNIQUE,
+		name VARCHAR(255) NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		status VARCHAR(20) NOT NULL DEFAULT 'active',
+		policy_type VARCHAR(30) NOT NULL DEFAULT 'single_admin',
+		sequencer_station_peer_id VARCHAR(128) NOT NULL,
+		genesis_hash BLOB NOT NULL,
+		head_hash BLOB NOT NULL,
+		head_seq INTEGER NOT NULL DEFAULT 0,
+		created_by_actor_id VARCHAR(64) NOT NULL,
+		created_by_station_peer_id VARCHAR(128) NOT NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS federation_ledger_event (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		event_id VARCHAR(30) NOT NULL UNIQUE,
+		federation_id VARCHAR(30) NOT NULL,
+		seq INTEGER NOT NULL,
+		prev_hash BLOB NOT NULL,
+		event_hash BLOB NOT NULL,
+		event_type INTEGER NOT NULL,
+		payload_bytes BLOB NOT NULL,
+		payload_hash BLOB NOT NULL,
+		actor_id VARCHAR(64) NOT NULL,
+		actor_federated_handle VARCHAR(255) NOT NULL DEFAULT '',
+		station_peer_id VARCHAR(128) NOT NULL,
+		sequencer_station_peer_id VARCHAR(128) NOT NULL,
+		actor_signature BLOB NOT NULL,
+		station_signature BLOB NOT NULL,
+		sequencer_signature BLOB NOT NULL,
+		created_at_unix_ms INTEGER NOT NULL,
+		UNIQUE(federation_id, seq)
+	)`)
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS federation_station_membership (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		federation_id VARCHAR(30) NOT NULL,
+		station_peer_id VARCHAR(128) NOT NULL,
+		station_name VARCHAR(255) NOT NULL DEFAULT '',
+		station_url VARCHAR(512) NOT NULL DEFAULT '',
+		role VARCHAR(30) NOT NULL DEFAULT 'member_station',
+		status VARCHAR(20) NOT NULL DEFAULT 'active',
+		joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		approved_by_event_id VARCHAR(30) NOT NULL DEFAULT '',
+		UNIQUE(federation_id, station_peer_id)
+	)`)
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS federation_actor_role (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		federation_id VARCHAR(30) NOT NULL,
+		actor_id VARCHAR(64) NOT NULL,
+		actor_federated_handle VARCHAR(255) NOT NULL DEFAULT '',
+		station_peer_id VARCHAR(128) NOT NULL,
+		role VARCHAR(30) NOT NULL,
+		granted_by_event_id VARCHAR(30) NOT NULL DEFAULT '',
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		revoked_at DATETIME,
+		UNIQUE(federation_id, actor_id)
+	)`)
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS actor_signing_key (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		actor_id VARCHAR(64) NOT NULL UNIQUE,
+		public_key BLOB NOT NULL,
+		encrypted_private_key BLOB NOT NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		rotated_at DATETIME
+	)`)
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS federation_sync_cursor (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		federation_id VARCHAR(30) NOT NULL,
+		remote_station_peer_id VARCHAR(128) NOT NULL,
+		last_seen_head_hash BLOB,
+		last_seen_head_seq INTEGER NOT NULL DEFAULT 0,
+		last_applied_seq INTEGER NOT NULL DEFAULT 0,
+		last_sync_at DATETIME,
+		status VARCHAR(30) NOT NULL DEFAULT 'healthy',
+		error_code INTEGER NOT NULL DEFAULT 0,
+		error_message TEXT NOT NULL DEFAULT '',
+		UNIQUE(federation_id, remote_station_peer_id)
+	)`)
+
+	return db
+}
+
+func setupTestServices(t *testing.T) (*application.FederationService, *application.LedgerService, *infrastructure.Repos) {
+	t.Helper()
+	db := setupTestDB(t)
+	repos := infrastructure.NewRepos(db)
+
 	hashSvc := domain.NewHashService()
 	sigSvc := domain.NewSignatureService()
 	actorKeySvc := domain.NewActorKeyService(repos.ActorSigningKey)
@@ -40,13 +144,18 @@ func TestSeedTestnet_CreatesAndReplaysConsistently(t *testing.T) {
 		replaySvc,
 	)
 
-	cfg := DefaultTestnetSeedConfig()
+	return fedSvc, ledgerSvc, repos
+}
 
-	if err := SeedTestnet(ctx, cfg, fedSvc, ledgerSvc); err != nil {
-		t.Fatalf("SeedTestnet failed: %v", err)
+func TestSeedTestnet_CreatesAndReplaysConsistently(t *testing.T) {
+	ctx := context.Background()
+	fedSvc, ledgerSvc, repos := setupTestServices(t)
+
+	cfg := defaultTestnetSeedConfig()
+	if err := seedTestnet(t, ctx, cfg, fedSvc, ledgerSvc); err != nil {
+		t.Fatalf("seedTestnet failed: %v", err)
 	}
 
-	// Verify federation was created
 	feds, err := repos.Federation.ListByStation(ctx, "")
 	if err != nil {
 		t.Fatalf("ListByStation failed: %v", err)
@@ -63,29 +172,23 @@ func TestSeedTestnet_CreatesAndReplaysConsistently(t *testing.T) {
 		t.Errorf("expected status 'active', got '%s'", fed.Status)
 	}
 
-	// Replay from genesis and verify consistency
 	state, err := fedSvc.Replay(ctx, fed.FederationID)
 	if err != nil {
 		t.Fatalf("Replay failed: %v", err)
 	}
 
-	// Genesis + 2 StationJoinApproved = 3 events, head_seq should be 2 (0-indexed)
 	if state.HeadSeq != 2 {
 		t.Errorf("expected head_seq=2 (3 events), got %d", state.HeadSeq)
 	}
 
-	// Should have 3 active member stations after seed
-	// (genesis creates 1, then 2 joins)
 	if len(state.ActiveMemberStations) != 3 {
 		t.Errorf("expected 3 active stations, got %d: %v", len(state.ActiveMemberStations), state.ActiveMemberStations)
 	}
 
-	// Verify head hash matches federation record
-	if !bytesEqual(state.HeadHash, fed.HeadHash) {
+	if subtle.ConstantTimeCompare(state.HeadHash, fed.HeadHash) != 1 {
 		t.Errorf("replay head_hash does not match federation record head_hash")
 	}
 
-	// Verify sequencer is the first station (creator)
 	if state.SequencerStationPeerID != "node-a" {
 		t.Errorf("expected sequencer 'node-a', got '%s'", state.SequencerStationPeerID)
 	}
@@ -96,60 +199,31 @@ func TestSeedTestnet_CreatesAndReplaysConsistently(t *testing.T) {
 
 func TestNonSequencerAppendRejected(t *testing.T) {
 	ctx := context.Background()
+	fedSvc, ledgerSvc, repos := setupTestServices(t)
 
-	repos := infrastructure.NewRepos(nil)
-	hashSvc := domain.NewHashService()
-	sigSvc := domain.NewSignatureService()
-	actorKeySvc := domain.NewActorKeyService(repos.ActorSigningKey)
-	replaySvc := domain.NewReplayService(repos.LedgerEvent, hashSvc, sigSvc)
-
-	policyRegistry := policy.NewRegistry()
-	policyRegistry.Register(policy.SingleAdmin, policy.NewSingleAdminPolicy())
-
-	ledgerSvc := application.NewLedgerService(
-		repos.Federation,
-		repos.LedgerEvent,
-		repos.Membership,
-		hashSvc,
-		sigSvc,
-		policyRegistry,
-	)
-
-	fedSvc := application.NewFederationService(
-		repos.Federation,
-		repos.Membership,
-		repos.ActorRole,
-		ledgerSvc,
-		actorKeySvc,
-		replaySvc,
-	)
-
-	cfg := DefaultTestnetSeedConfig()
-	if err := SeedTestnet(ctx, cfg, fedSvc, ledgerSvc); err != nil {
-		t.Fatalf("SeedTestnet failed: %v", err)
+	cfg := defaultTestnetSeedConfig()
+	if err := seedTestnet(t, ctx, cfg, fedSvc, ledgerSvc); err != nil {
+		t.Fatalf("seedTestnet failed: %v", err)
 	}
 
-	feds, _ := repos.Federation.ListByStation(ctx, "")
+	feds, err := repos.Federation.ListByStation(ctx, "")
+	if err != nil {
+		t.Fatalf("ListByStation failed: %v", err)
+	}
 	fed := feds[0]
 
-	// Try to append from node-b (not the sequencer)
-	_, err := ledgerSvc.AppendEvent(ctx, &application.AppendEventInput{
+	_, err = ledgerSvc.AppendEvent(ctx, &application.AppendEventInput{
 		FederationID:  fed.FederationID,
-		EventType:     4, // STATION_JOIN_APPROVED
+		EventType:     4,
 		PayloadBytes:  []byte("test"),
 		ActorID:       "actor-b",
 		ActorHandle:   "@b@two.peers.touch",
-		StationPeerID: "node-b", // NOT the sequencer
+		StationPeerID: "node-b",
 	})
 
 	if err == nil {
 		t.Fatal("expected error for non-sequencer append, got nil")
 	}
 
-	// node-b is a member but NOT the sequencer — should get "not active member"
-	// because the seed doesn't create a membership record for node-b in the
-	// in-memory repo (it only appends the ledger event, membership update
-	// happens at the replay/materialization layer, not at append time).
-	// This proves the policy gate works.
 	t.Logf("correctly rejected non-sequencer append: %v", err)
 }
