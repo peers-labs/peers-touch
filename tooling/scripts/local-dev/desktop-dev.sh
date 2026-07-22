@@ -30,9 +30,13 @@ export STATION_HEALTHCHECK_URL="${PT_STATION_HEALTH_URL:-$PEERS_STATION_URL/api/
 export PEERS_STATION_MODE="${PT_STATION_MODE:-local}"
 export STATION_PORT="${PT_STATION_PORT:-18080}"
 
-# Ensure Station
-if [[ "${PT_STATION_MODE:-local}" == "remote" && -z "${PT_STATION_DEPLOY_ENV:-}" ]]; then
-  bash "$SCRIPT_DIR/station-check.sh"
+# Ensure Station is reachable (don't redeploy if already running)
+if [[ "${PT_STATION_MODE:-local}" == "remote" ]]; then
+  if curl -fsS -m 3 "$STATION_HEALTHCHECK_URL" >/dev/null 2>&1; then
+    echo "[OK] Station already running: $PEERS_STATION_URL"
+  else
+    bash "$SCRIPT_DIR/station-dev.sh"
+  fi
 else
   bash "$SCRIPT_DIR/station-dev.sh"
 fi
