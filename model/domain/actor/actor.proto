@@ -75,6 +75,10 @@ message Actor {
   string home_station_domain = 14 [json_name = "home_station_domain"];   // DNS-style domain of the home station
   ActorVisibility visibility = 15;
   ActorOrigin origin = 16;
+
+  // Ed25519 public key for actor-initiated governance signing.
+  // Generated at account creation; used to verify actor_signature on ledger events.
+  bytes signing_public_key = 17 [json_name = "signing_public_key"];
 }
 
 message UserLink {
