@@ -5,21 +5,26 @@ import { Globe, Check, ChevronDown } from 'lucide-react';
 import { theme } from 'antd';
 import { getAvailableLanguages, changeLanguage } from '../../i18n';
 
+const LANG_PANEL_MIN_WIDTH = 160;
+
 export function LanguageSwitcher() {
   const { i18n } = useTranslation();
   const { token } = theme.useToken();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const [panelPos, setPanelPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number; openRight: boolean }>({ top: 0, left: 0, openRight: true });
   const languages = getAvailableLanguages();
 
   const updatePosition = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
+    const spaceRight = window.innerWidth - rect.right;
+    const openRight = spaceRight >= LANG_PANEL_MIN_WIDTH;
     setPanelPos({
       top: rect.top - 4,
-      left: rect.right,
+      left: openRight ? rect.left : rect.right,
+      openRight,
     });
   }, []);
 
@@ -94,8 +99,8 @@ export function LanguageSwitcher() {
             position: 'fixed',
             top: panelPos.top,
             left: panelPos.left,
-            transform: 'translate(-100%, -100%)',
-            minWidth: 160,
+            transform: panelPos.openRight ? 'translate(0, -100%)' : 'translate(-100%, -100%)',
+            minWidth: LANG_PANEL_MIN_WIDTH,
             background: token.colorBgElevated,
             borderRadius: 10,
             boxShadow: `0 4px 16px rgba(0,0,0,0.1), 0 0 0 1px ${token.colorBorderSecondary}`,

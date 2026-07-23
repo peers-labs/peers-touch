@@ -38,8 +38,16 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
 
-  const { sendMessage, stopStreaming, isStreaming, currentSessionKey } = useChatStore();
-  const { selectedModel, selectedProviderId, defaultModel, availableModels, loadModels, setSelectedModel } = useAgentStore();
+  const sendMessage = useChatStore(s => s.sendMessage);
+  const stopStreaming = useChatStore(s => s.stopStreaming);
+  const isStreaming = useChatStore(s => s.isStreaming);
+  const currentSessionKey = useChatStore(s => s.currentSessionKey);
+  const selectedModel = useAgentStore(s => s.selectedModel);
+  const selectedProviderId = useAgentStore(s => s.selectedProviderId);
+  const defaultModel = useAgentStore(s => s.defaultModel);
+  const availableModels = useAgentStore(s => s.availableModels);
+  const loadModels = useAgentStore(s => s.loadModels);
+  const setSelectedModel = useAgentStore(s => s.setSelectedModel);
 
   const {
     drafts,
