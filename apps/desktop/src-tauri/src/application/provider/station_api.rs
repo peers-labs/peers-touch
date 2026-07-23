@@ -297,6 +297,30 @@ pub fn credential_status(
         .map_err(|e| StationApiError::Internal(format!("decode credential status: {}", e)))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedCredential {
+    pub provider_id: String,
+    pub api_key: String,
+    pub base_url: String,
+    pub protocol: String,
+}
+
+pub fn resolve_credential(
+    token: &str,
+    provider_id: &str,
+) -> Result<ResolvedCredential, StationApiError> {
+    let resp = station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/credential/resolve",
+        token,
+        None,
+        Some(&json!({"provider_id": provider_id})),
+    )?;
+
+    serde_json::from_value(resp)
+        .map_err(|e| StationApiError::Internal(format!("decode resolved credential: {}", e)))
+}
+
 fn parse_provider_from_response(resp: Value) -> Result<StationProvider, StationApiError> {
     serde_json::from_value(
         resp.get("provider").cloned().unwrap_or_default(),
