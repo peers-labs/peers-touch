@@ -17,6 +17,8 @@ type AgentProvider struct {
 	ID          string          `gorm:"primaryKey;type:varchar(36)"`
 	ActorID     string          `gorm:"not null;type:varchar(36);default:'';uniqueIndex:idx_agent_providers_actor_provider"`
 	Name        string          `gorm:"not null;type:text;uniqueIndex:idx_agent_providers_actor_provider"`
+	DisplayName string          `gorm:"type:varchar(256)"`
+	BaseURL     string          `gorm:"type:text"`
 	KeyVaults   string          `gorm:"type:text"`
 	Config      json.RawMessage `gorm:"type:jsonb"`
 	SourceType  string          `gorm:"type:varchar(20)"`

@@ -1,8 +1,10 @@
 -- +migrate Up
 
--- Add actor_id and version to agent_providers
+-- Add actor_id, version, display_name, base_url to agent_providers
 ALTER TABLE agent_providers ADD COLUMN IF NOT EXISTS actor_id VARCHAR(36) NOT NULL DEFAULT '';
 ALTER TABLE agent_providers ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1;
+ALTER TABLE agent_providers ADD COLUMN IF NOT EXISTS display_name VARCHAR(256);
+ALTER TABLE agent_providers ADD COLUMN IF NOT EXISTS base_url TEXT;
 DROP INDEX IF EXISTS idx_agent_providers_actor_provider;
 CREATE UNIQUE INDEX idx_agent_providers_actor_provider ON agent_providers (actor_id, name);
 
@@ -41,3 +43,5 @@ ALTER TABLE agent_credential_pool DROP COLUMN IF EXISTS version;
 DROP INDEX IF EXISTS idx_agent_providers_actor_provider;
 ALTER TABLE agent_providers DROP COLUMN IF EXISTS actor_id;
 ALTER TABLE agent_providers DROP COLUMN IF EXISTS version;
+ALTER TABLE agent_providers DROP COLUMN IF EXISTS display_name;
+ALTER TABLE agent_providers DROP COLUMN IF EXISTS base_url;
