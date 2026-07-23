@@ -62,6 +62,7 @@ interface AgentProfilePageProps {
   agentName: string;
   onBack?: () => void;
   onOpenOrchestration?: () => void;
+  embedded?: boolean;
 }
 
 
@@ -877,6 +878,7 @@ export function AgentProfilePage({
   agentName,
   onBack,
   onOpenOrchestration,
+  embedded = false,
 }: AgentProfilePageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
@@ -1489,7 +1491,7 @@ export function AgentProfilePage({
 
   return (
     <Flexbox horizontal style={{ height: '100%', width: '100%', minWidth: 0, overflow: 'auto' }}>
-      <aside
+      {!embedded && <aside
         style={{
           width: agentListOpen ? 230 : 48,
           height: '100%',
@@ -1770,10 +1772,10 @@ export function AgentProfilePage({
         >
           {agentListOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
         </button>
-      </aside>
+      </aside>}
 
       {/* ── Center: Profile Editor ── */}
-      <Flexbox flex={1} style={{ minWidth: 680, minHeight: 0, overflow: 'hidden' }}>
+      <Flexbox flex={1} style={{ minWidth: embedded ? 0 : 680, minHeight: 0, overflow: 'hidden' }}>
         <div
           style={{
             display: 'flex',
