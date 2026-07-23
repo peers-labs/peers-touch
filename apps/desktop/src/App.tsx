@@ -19,8 +19,8 @@ import {
 import { installEventStreamBridge, teardownEventStreamBridge } from './services/eventStream';
 import type { AppState, AppLifecycle } from './types/navigation';
 
-const DevOverlay = import.meta.env.DEV
-  ? lazy(() => import('./dev/DevOverlay').then((m) => ({ default: m.DevOverlay })))
+const DevOverlayProvider = import.meta.env.DEV
+  ? lazy(() => import('./dev/DevOverlayProvider'))
   : null;
 
 // Critical session-scope runtimes installed during `runtime:critical`.
@@ -124,7 +124,7 @@ function App() {
   return (
     <>
       <View lifecycle={lifecycle} />
-      {DevOverlay && <Suspense fallback={null}><DevOverlay /></Suspense>}
+      {DevOverlayProvider && <Suspense fallback={null}><DevOverlayProvider /></Suspense>}
     </>
   );
 }
