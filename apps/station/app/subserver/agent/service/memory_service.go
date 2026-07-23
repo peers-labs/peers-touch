@@ -1726,7 +1726,7 @@ func (s *MemoryService) FlushMemories(
 	s.takeSnapshotQuiet(ctx, agentID, "flush", nil)
 
 	// Lease a credential for the flush LLM call (use first available via round-robin).
-	credential, err := credentialPool.Lease(ctx, providerType, domain.RotationRoundRobin)
+	credential, err := credentialPool.Lease(ctx, agentID, providerType, domain.RotationRoundRobin)
 	if err != nil {
 		logger.Warnf(ctx, "flush_memories: credential lease failed, skipping: agent_id=%s err=%v", agentID, err)
 		return nil

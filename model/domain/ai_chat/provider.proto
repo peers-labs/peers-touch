@@ -35,9 +35,10 @@ message Provider {
   google.protobuf.Timestamp accessed_at = 13;
   google.protobuf.Timestamp created_at = 14;
   google.protobuf.Timestamp updated_at = 15;
-  string runtime_kind = 16;            // 运行时类型：remote / local / cli。CLI 由 Desktop runtime 执行，Station 不执行本地命令。
-  string cli_command = 17;             // CLI provider 的非交互命令模板，仅作为配置同步字段。
+  string runtime_kind = 16;            // 运行时类型：http / cli / embedded。Station 是所有 runtime_kind 的唯一执行者。
+  string cli_command = 17;             // Station 预注册 CLI adapter 标识符（非任意命令）。客户端不可提交未注册值。
   string protocol = 18;                // openai / anthropic / ollama / cli 等协议标记。
+  int64 version = 19;                  // Monotonic version for optimistic concurrency control.
 }
 
 // =================================================
@@ -75,8 +76,8 @@ message CreateProviderRequest {
   string key_vaults = 4;
   string settings_json = 5;
   string config_json = 6;
-  string runtime_kind = 7;
-  string cli_command = 8;
+  reserved 7;  // runtime_kind: Station-derived from adapter registry, not client-writable.
+  reserved 8;  // cli_command: Station-derived from adapter registry, not client-writable.
   string protocol = 9;
 }
 
@@ -93,9 +94,10 @@ message UpdateProviderRequest {
   optional string key_vaults = 6;
   optional string settings_json = 7;
   optional string config_json = 8;
-  optional string runtime_kind = 9;
-  optional string cli_command = 10;
+  reserved 9;   // runtime_kind: not client-mutable.
+  reserved 10;  // cli_command: not client-writable.
   optional string protocol = 11;
+  int64 version = 12;
 }
 
 message UpdateProviderResponse {
@@ -104,6 +106,7 @@ message UpdateProviderResponse {
 
 message DeleteProviderRequest {
   string id = 1;
+  int64 version = 2;
 }
 
 message DeleteProviderResponse {
