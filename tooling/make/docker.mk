@@ -1,6 +1,6 @@
 # ─── Docker Deployment ───────────────────────────────────────────
 
-.PHONY: docker-station docker-relay docker-all docker-infra docker-up docker-down docker-logs docker-ps docker-remotes
+.PHONY: docker-station docker-relay docker-all docker-infra docker-up docker-down docker-logs docker-ps docker-remotes docker-warm-cache docker-warm-cache-local
 
 COMPOSE_FILE := tooling/docker/compose.yml
 DOCKER_CMD   := docker
@@ -23,8 +23,14 @@ endif
 
 COMPOSE := $(DOCKER_CMD) compose -f $(COMPOSE_FILE) --env-file $(ENV_FILE)
 
+docker-warm-cache:
+	@tooling/docker/warm-builder-cache.sh
+
+docker-warm-cache-local:
+	docker build -f tooling/docker/builder-base.Dockerfile -t peers-station-builder:go1.24.6 .
+
 docker-station:
-	$(COMPOSE) --profile station up -d --build
+	$(COMPOSE) --profile infra --profile station up -d --build
 
 docker-relay:
 	$(COMPOSE) --profile relay up -d --build

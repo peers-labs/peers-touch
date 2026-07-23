@@ -84,8 +84,13 @@ function SelectorRow({
 }
 
 function useSkillAppletState() {
-  const { skills, builtins, loadSkills, toggleSkill } = useSkillStore();
-  const { applets, enabledAppletIds, toggleApplet } = useAgentStore();
+  const skills = useSkillStore(s => s.skills);
+  const builtins = useSkillStore(s => s.builtins);
+  const loadSkills = useSkillStore(s => s.loadSkills);
+  const toggleSkill = useSkillStore(s => s.toggleSkill);
+  const applets = useAgentStore(s => s.applets);
+  const enabledAppletIds = useAgentStore(s => s.enabledAppletIds);
+  const toggleApplet = useAgentStore(s => s.toggleApplet);
 
   useEffect(() => {
     void loadSkills();

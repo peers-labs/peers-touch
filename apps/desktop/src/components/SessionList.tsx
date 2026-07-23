@@ -8,8 +8,12 @@ import { useState } from 'react';
 import { theme } from 'antd';
 
 export function SessionList() {
-  const { sessions, currentSessionKey, loadSessions, selectSession, newSession, deleteSession } =
-    useChatStore();
+  const sessions = useChatStore(s => s.sessions);
+  const currentSessionKey = useChatStore(s => s.currentSessionKey);
+  const loadSessions = useChatStore(s => s.loadSessions);
+  const selectSession = useChatStore(s => s.selectSession);
+  const newSession = useChatStore(s => s.newSession);
+  const deleteSession = useChatStore(s => s.deleteSession);
   const [search, setSearch] = useState('');
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');

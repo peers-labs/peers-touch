@@ -16,17 +16,13 @@ interface AgentListProps {
 }
 
 export function AgentList({ onCreateAgent, onEditAgent }: AgentListProps) {
-  const {
-    agents,
-    loadAgents,
-    selectedAgent,
-    setSelectedAgent,
-  } = useAgentStore();
-  const {
-    sessions,
-    currentSessionKey,
-    selectSession,
-  } = useChatStore();
+  const agents = useAgentStore(s => s.agents);
+  const loadAgents = useAgentStore(s => s.loadAgents);
+  const selectedAgent = useAgentStore(s => s.selectedAgent);
+  const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
+  const sessions = useChatStore(s => s.sessions);
+  const currentSessionKey = useChatStore(s => s.currentSessionKey);
+  const selectSession = useChatStore(s => s.selectSession);
 
   const [search, setSearch] = useState('');
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);

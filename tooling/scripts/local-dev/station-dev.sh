@@ -35,18 +35,30 @@ start_compose_station() {
     echo "        Run: make config"
     exit 1
   fi
+
+  local build_flag=""
+  local image_name="${COMPOSE_PROJECT_NAME_VALUE}-station"
+  if ! docker image inspect "$image_name" >/dev/null 2>&1; then
+    build_flag="--build"
+  fi
+
   echo "[INFO] Station mode: compose-managed local closure"
   echo "       URL        : $STATION_URL"
   echo "       Project    : $COMPOSE_PROJECT_NAME_VALUE"
   echo "       Compose    : $COMPOSE_FILE"
   echo "       Env        : $COMPOSE_ENV_FILE"
   echo "       Postgres DB: ${PT_STATION_DB_NAME:-peers_touch}"
+  if [[ -n "$build_flag" ]]; then
+    echo "       Build      : yes (image not cached)"
+  else
+    echo "       Build      : no (image cached, use 'make docker-station' to rebuild)"
+  fi
   compose_env docker compose \
     -f "$COMPOSE_FILE" \
     --env-file "$COMPOSE_ENV_FILE" \
     --profile infra \
     --profile station \
-    up -d --build postgres station
+    up -d $build_flag postgres station
 }
 
 if [[ "$STATION_MODE" == "remote" ]]; then

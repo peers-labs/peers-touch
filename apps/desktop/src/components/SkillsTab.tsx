@@ -35,7 +35,13 @@ const { Text, Title, Paragraph } = Typography;
 export function SkillsTab() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
-  const { skills, builtins, loading, error, loadSkills, toggleSkill, deleteSkill } = useSkillStore();
+  const skills = useSkillStore(s => s.skills);
+  const builtins = useSkillStore(s => s.builtins);
+  const loading = useSkillStore(s => s.loading);
+  const error = useSkillStore(s => s.error);
+  const loadSkills = useSkillStore(s => s.loadSkills);
+  const toggleSkill = useSkillStore(s => s.toggleSkill);
+  const deleteSkill = useSkillStore(s => s.deleteSkill);
   const [activeTab, setActiveTab] = useState('installed');
   const [query, setQuery] = useState('');
 
