@@ -47,6 +47,7 @@ type AiModel struct {
 	AccessedAt          *timestamppb.Timestamp `protobuf:"bytes,17,opt,name=accessed_at,json=accessedAt,proto3" json:"accessed_at,omitempty"`
 	CreatedAt           *timestamppb.Timestamp `protobuf:"bytes,18,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt           *timestamppb.Timestamp `protobuf:"bytes,19,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Version             int64                  `protobuf:"varint,20,opt,name=version,proto3" json:"version,omitempty"` // Monotonic version for optimistic concurrency control.
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -212,6 +213,13 @@ func (x *AiModel) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *AiModel) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
 }
 
 // =================================================
@@ -459,7 +467,7 @@ var File_domain_ai_chat_ai_models_proto protoreflect.FileDescriptor
 
 const file_domain_ai_chat_ai_models_proto_rawDesc = "" +
 	"\n" +
-	"\x1edomain/ai_chat/ai_models.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb2\x05\n" +
+	"\x1edomain/ai_chat/ai_models.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcc\x05\n" +
 	"\aAiModel\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12 \n" +
@@ -486,7 +494,8 @@ const file_domain_ai_chat_ai_models_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xb0\x02\n" +
+	"updated_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
+	"\aversion\x18\x14 \x01(\x03R\aversion\"\xb0\x02\n" +
 	"\vAiModelView\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12 \n" +

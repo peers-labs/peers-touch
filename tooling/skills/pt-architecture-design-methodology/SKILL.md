@@ -1,6 +1,10 @@
 ---
 name: "pt-architecture-design-methodology"
 description: "Designs evidence-backed architecture boundaries, ownership, contracts, topology, failure semantics, and decisions. Invoke before execution planning whenever the target architecture is not yet accepted."
+stage: "DESIGN"
+requires: ["user requirement or problem statement"]
+produces: ["accepted architecture docs (design.md, decisions.md, data-model.md)"]
+next: "pt-architecture-execution-methodology"
 ---
 
 # Architecture Design Methodology

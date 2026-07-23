@@ -6,6 +6,9 @@ description: >
   The agent is the primary reviewer; scripts, CI, pt-quality-check, and acceptance
   reports provide evidence, not a replacement for code reading and architectural
   judgment.
+stage: "DELIVER"
+requires: ["open PR"]
+produces: ["review feedback or merge decision"]
 ---
 
 # GitHub Review

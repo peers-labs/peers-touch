@@ -2,6 +2,8 @@
 
 > **Status**: draft
 > **Version**: v1.0
+> **Created**: 2026-07-23 | **Updated**: 2026-07-23
+> **Owner**: Agent Team
 
 ---
 
@@ -13,6 +15,22 @@
 4. **Version-gated writes** — Every config record carries a monotonic version. Stale mutations are rejected (optimistic concurrency). Prevents split-brain across multiple devices.
 5. **SSE-only AI delivery** — AI responses stream from Station to clients via Server-Sent Events. No polling, no WebSocket for this path.
 6. **Cache for speed, Station for truth** — Clients cache provider/model config locally. On conflict or freshness doubt, Station wins.
+7. **CLI-as-registered-adapter** — CLI providers are Station-registered runtime adapters, not user-submitted arbitrary commands. Clients select from a provider registry; they cannot submit binary paths, shell fragments, or unconstrained command templates.
+
+---
+
+## 1.1 Proto Source Contracts
+
+Cross-platform data contracts are defined in `model/domain/` proto files. This architecture's contracts map to:
+
+| Contract | Proto source | Notes |
+|---|---|---|
+| Provider domain model | `model/domain/ai_chat/provider.proto` :: `Provider` | `runtime_kind`, `cli_command`, `version` fields aligned with this design |
+| Provider CRUD | `model/domain/ai_chat/provider.proto` :: `Create/Update/Delete/List/GetProviderRequest` | `UpdateProviderRequest.version` and `DeleteProviderRequest.version` carry optimistic lock |
+| Model domain model | `model/domain/ai_chat/ai_models.proto` :: `AiModel` | Links to provider via `provider_id`; carries `version` for optimistic lock |
+| Turn execution | `model/domain/agent/agent.proto` :: `ExecuteTurnRequest` | `provider` field selects registered provider_id |
+
+JSON APIs in §5 and `data-model.md` are the protobuf JSON mapping representation, not independent contracts.
 
 ---
 
@@ -214,6 +232,35 @@ data: {"error": "[AGENT_5004] no credentials registered for provider \"trae-cli\
 3. A request for actor A must never return or mutate actor B's records.
 4. Global/shared providers (if any) are explicitly marked and read-only from client perspective.
 
+### 5.5 Turn-Time Revalidation Invariant
+
+Station MUST revalidate provider/model/credential state from DB at turn execution time. Client-submitted `provider` and `model` in the turn request are **selection intent only**, not execution authority. Specifically:
+1. Provider must exist, be enabled, and belong to requesting actor.
+2. Model must exist, be enabled, and belong to the specified provider.
+3. Credential must be in `active` status for that provider+actor.
+4. If any check fails, the turn is rejected with a typed error before execution begins.
+
+### 5.6 CLI Execution Safety Invariants
+
+1. Station MUST NOT execute any binary not present in its adapter registry.
+2. Every CLI adapter invocation MUST have a bounded timeout. Timeout expiry triggers process group termination.
+3. Station MUST be able to reclaim (kill) any spawned adapter process at any time (turn cancellation, shutdown, resource pressure).
+4. Adapter stdout/stderr MUST NOT be forwarded to clients without sanitization. Credential values, internal paths, and environment variables must be stripped.
+
+### 5.7 SSE Disconnect And Turn Lifecycle Invariant
+
+Station owns turn and subprocess lifecycle independent of client connection state:
+1. Client SSE disconnect triggers turn cancellation on Station.
+2. Turn cancellation triggers subprocess cleanup (SIGTERM → SIGKILL after grace period) for CLI providers.
+3. Station MUST NOT leave orphan subprocesses after turn completion, cancellation, or error.
+
+### 5.8 Runtime Kind Write Restriction
+
+`runtime_kind` for CLI-type providers is derived from Station's adapter registry, not freely assigned by clients:
+1. When a provider's `provider_id` maps to a registered CLI adapter, Station sets `runtime_kind = "cli"` regardless of client-submitted value.
+2. Clients MUST NOT change a non-CLI provider to `runtime_kind = "cli"` unless it corresponds to a registered adapter.
+3. Station rejects `runtime_kind = "cli"` for any provider_id not in the adapter registry.
+
 ---
 
 ## 6. Component Relationships
@@ -276,12 +323,13 @@ data: {"error": "[AGENT_5004] no credentials registered for provider \"trae-cli\
 
 ### 6.7 Station: Provider Execution Runtime
 
-- **Responsibility**: Call LLM vendor APIs or spawn CLI subprocesses.
+- **Responsibility**: Call LLM vendor APIs or invoke registered CLI adapters.
 - **Owner**: Agent subserver
 - **Inputs**: Resolved provider config + leased credential + request payload
 - **Outputs**: Raw LLM response stream
-- **Runtime kinds**: HTTP (OpenAI-compatible), CLI (subprocess), Embedded (future)
-- **Must NOT**: Be called directly by clients, retain state across turns
+- **Runtime kinds**: HTTP (OpenAI-compatible), CLI (Station-registered adapter), Embedded (future)
+- **CLI constraint**: Only pre-registered adapter binaries may execute. The adapter registry is Station-configured (code or config file), not client-writable. `cli_command` field stores the adapter identifier, not an arbitrary path or shell command.
+- **Must NOT**: Be called directly by clients, retain state across turns, execute unregistered binaries
 
 ---
 
@@ -296,6 +344,8 @@ data: {"error": "[AGENT_5004] no credentials registered for provider \"trae-cli\
 7. Client must NOT treat local cache as authoritative when version is stale.
 8. Client must NOT hardcode default provider/model lists.
 9. Station credential pool must NOT log credential values.
+10. Client must NOT submit arbitrary binary paths, shell fragments, or command templates as `cli_command`. Only Station-registered adapter identifiers are accepted.
+11. Station must NOT execute a CLI adapter identifier that is not present in its local adapter registry.
 
 ---
 

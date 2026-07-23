@@ -1,6 +1,10 @@
 ---
 name: "pt-execution-plan-guardian"
 description: "Executes an approved plan without architecture or scope drift, preserving dependency order, cutovers, gates, and evidence. Invoke only after a formal plan exists when implementing, continuing, merging, or reporting planned work."
+stage: "EXECUTE"
+requires: ["accepted execution plan with status table"]
+produces: ["code changes", "tests", "evidence", "updated plan status"]
+next: "pt-github-commit"
 ---
 
 # Execution Plan Guardian

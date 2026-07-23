@@ -1,6 +1,10 @@
 ---
 name: "pt-architecture-execution-methodology"
 description: "Transforms an accepted architecture into an ordered, dependency-backed execution plan with atomic cutovers, deliverables, gates, and evidence. Invoke for planning only; it must not redesign or execute."
+stage: "PLAN"
+requires: ["accepted architecture docs"]
+produces: ["dependency graph", "execution closures", "ordered step list"]
+next: "pt-plan-and-document"
 ---
 
 # Architecture Execution Methodology
