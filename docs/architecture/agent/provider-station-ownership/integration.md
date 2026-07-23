@@ -21,93 +21,136 @@
 
 ---
 
-## 2. Deletion List (Desktop)
+## 2. Deletion List (Desktop Rust)
 
-These Desktop Rust capabilities will be deleted or gutted:
+Files to be fully deleted:
 
-| Path | Current purpose | Action |
-|---|---|---|
-| `src-tauri/src/application/provider/state.rs` | Local provider persistence (SQLite) | Replace with Station-cache read/write |
-| `src-tauri/src/application/provider/mod.rs` `provider_create/update/delete` | Local CRUD | Rewrite as Station API proxy + cache update |
-| `src-tauri/src/application/models/mod.rs` CLI model fetch | Local CLI subprocess for model enumeration | Delete; Station handles |
-| Local `providers.json` / SQLite provider tables | Persist provider config | Replace with cache layer (can still use local storage as cache backend) |
+| Path (relative to `src-tauri/src/`) | Lines | Current purpose | Reason |
+|---|---|---|---|
+| `application/provider/state.rs` | 550 | In-memory + YAML file persistence for providers/models (NOT SQLite); `with_provider_store()`, `persist_provider_store()`, `ProviderRecord`, `ModelRecord` | Replaced by Station API; no local truth |
+| `application/provider/sync.rs` | 69 | Stub for bidirectional Station sync (both functions are TODOs) | Dead code; superseded by Phase 2 proxy |
+| `application/provider/providers.default.yaml` | 287 | Embedded seed data for 15+ providers (Ark, OpenAI, Anthropic, Ollama, CLI variants) via `include_str!` | Seed data moves to Station |
+| `application/provider/README.md` | 68 | Documents YAML config-file approach | Superseded |
+| `application/models/mod.rs` | 766 | Model CRUD + remote fetch + CLI subprocess model listing | All model catalog management moves to Station |
+| `interface/tauri_commands/models.rs` | 272 | Tauri commands for model add/update/delete/fetch/toggle | Replaced by Station API proxy |
 
----
-
-## 3. Retention List (Desktop)
-
-These remain but change semantics:
-
-| Path | Kept behavior | Changed semantics |
-|---|---|---|
-| `src-tauri/src/application/agent_turn/mod.rs` | Forward turn to Station SSE | No change |
-| `src-tauri/src/application/provider/mod.rs` `provider_list_available_models` | Return flattened model list to UI | Now reads from local cache (populated from Station) |
-| Desktop Web `store/agent.ts` | `selectedModel` + `selectedProviderId` | Selected model persisted to Station (per-actor); local state is cache |
-| Desktop Web `components/ChatInput.tsx` model picker | UI for selecting model | No change in UI; data source changes from local-only to Station-cached |
+Total deletable: ~2,012 lines.
 
 ---
 
-## 4. Station Changes
+## 3. Rewrite List (Desktop Rust)
 
-| Component | Change |
+Files that remain but are substantially rewritten:
+
+| Path (relative to `src-tauri/src/`) | Lines | Current purpose | Target behavior |
+|---|---|---|---|
+| `application/provider/mod.rs` | 615 | Local CRUD orchestrator (list, get, create, update, delete, check, apply_preset, list_available_models) | **Station API proxy**: all mutations forward to Station; reads return Station-cached data |
+| `application/provider/remote.rs` | 762 | Dual-purpose: (a) probe LLM for reachability UI, (b) `chat_completion` + `resolve_model_protocol` used by chat/applets | **Retain**: `chat_completion` + `resolve_model_protocol` (active inference path); **Delete**: `probe_provider`, `fetch_models` (moved to Station) |
+| `interface/tauri_commands/provider.rs` | 256 | Tauri command wrappers (8 commands) delegating to application layer | Keep same Tauri command names; implementation becomes Station proxy |
+| `interface/tauri_commands/model_config.rs` | 29 | Model-config slot assignment (default model for a service) | Proxy to Station or lightweight local cache |
+| `application/model_config/mod.rs` | 124 | In-memory map: service-key → provider+model pair | Proxy to Station per-actor model assignment |
+| `provider_models_lib.rs` | 64 | Lib crate re-exports for `cargo test --lib` | Remove provider/model re-exports |
+| `interface/contracts/mod.rs` (provider structs) | ~60 | Input/output types for Tauri commands | Reshape for Station API proxy semantics (add `version` field to mutations) |
+
+---
+
+## 4. Retention List (Desktop Rust — no change needed)
+
+| Path (relative to `src-tauri/src/`) | Current behavior | Why unchanged |
+|---|---|---|
+| `application/agent_turn/mod.rs` | Forward turn to Station `/sub-agent/agent/turn/stream` SSE | Already correct; Station owns execution |
+| `infrastructure/storage/key_provider.rs` | OS keychain key management (encryption keys) | Unrelated to LLM providers |
+
+---
+
+## 5. Consumer Impact (Desktop Rust)
+
+These files import from `application::provider` and need adaptation:
+
+| File | Lines | What it uses | Required change |
+|---|---|---|---|
+| `application/chat/mod.rs` | 866 | `with_provider_store()` (resolve provider base_url/api_key/protocol), `chat_completion()` | Replace `with_provider_store()` with new cache-reading API |
+| `application/chat/streaming.rs` | 460 | `with_provider_store()`, `resolve_model_protocol()` | Same as above |
+| `application/applets/mod.rs` | 9304 | `chat_completion()`, `with_provider_store()`, `ProviderRecord` | Applet gateway reads from new cache |
+| `interface/http_gateway/mod.rs` | 7032 | Provider/model command dispatch block (~80 lines) | Rewire to new proxy commands |
+
+---
+
+## 6. Desktop Web Impact
+
+| Path (relative to `apps/desktop/src/`) | Current behavior | Target behavior |
+|---|---|---|
+| `store/provider.ts` | Zustand store calling Rust Tauri commands | No change (Rust commands stay, backend changes) |
+| `modules/providers.ts` | Module registration for settings panel | No change |
+| `components/settings/Provider*.tsx` | Settings UI (CRUD, model management) | Handle 409 (version conflict) in UI; otherwise unchanged |
+| `services/agent-runtime-config.ts` | Build runtime config for agent turn | No change (already correct) |
+| `gen/proto/domain/ai_chat/provider_pb.ts` | Generated proto types | Regenerate after proto changes |
+
+---
+
+## 7. Station Changes (Phase 1 — DONE)
+
+| Component | Status |
 |---|---|
-| `agent_credential_pool` table | Add `actor_id` column; migrate existing rows to default actor |
-| `agent_providers` table (new or rename) | Store per-actor provider config with `version` column |
-| `agent_models` table (new or rename) | Store per-actor model config with `version` column |
-| Provider Config API handlers (new) | CRUD endpoints at `/sub-agent/agent/provider/*` and `/sub-agent/agent/model/*` and `/sub-agent/agent/credential/*` |
-| `CredentialPoolService.Lease()` | Add `actor_id` parameter to all queries |
-| `TurnHandler` | Extract actor_id from JWT; pass to credential pool |
-| CLI provider execution | New: Station spawns CLI subprocess for runtime_kind=cli providers |
+| `agent_providers` table: `actor_id`, `version`, `display_name`, `base_url` columns | ✅ Done |
+| `agent_models` table (new) | ✅ Done |
+| `agent_credential_pool`: `actor_id`, `version` columns | ✅ Done |
+| Provider/Model/Credential CRUD API endpoints | ✅ Done |
+| Version-gated mutations (optimistic lock) | ✅ Done |
+| CLI adapter registry | ✅ Done |
+| `CredentialPoolService.Lease()` with `actor_id` | ✅ Done |
+| Turn-time revalidation | ✅ Done |
 
 ---
 
-## 5. Migration Strategy
+## 8. Migration Strategy
 
-### Phase 1: Station API + Per-Actor (prerequisite)
+### Phase 1: Station API + Per-Actor ✅ COMPLETE
 
-1. Update `model/domain/ai_chat/provider.proto` and `ai_models.proto` (version fields, reserved, runtime_kind semantics — already done in this architecture change).
-2. Run `./model/build.sh` to regenerate Go types; Station handlers MUST bind to generated types, not hand-written structs.
-3. Add `actor_id` to credential pool queries.
-4. Create provider/model/credential CRUD API endpoints on Station, using generated proto types.
-5. Add version columns to all config tables.
-6. Implement version-gated mutation logic.
-7. Implement CLI adapter registry (code-level, not client-writable).
+Delivered: Station CRUD API with version-gated mutations, actor-scoped credential pool, CLI adapter registry. E2E verified on remote Station.
 
-### Phase 2: Desktop Rust Cache Layer
+### Phase 2: Desktop Rust — Station API Proxy + Cache
 
-1. Replace local provider store with Station-fetching cache.
-2. Provider CRUD commands become Station API proxies.
-3. Remove local CLI model enumeration (Station handles).
-4. Keep Tauri command interface unchanged for Desktop Web.
+Scope: Replace local provider persistence with Station-backed proxy layer.
+
+1. Create thin cache module: fetch provider/model/credential-status from Station, cache in memory with version tracking.
+2. Rewrite `application/provider/mod.rs`: all CRUD proxies to Station API; reads return cached data.
+3. Delete `state.rs`, `sync.rs`, `providers.default.yaml`, `README.md`.
+4. Delete `application/models/mod.rs` (catalog management on Station).
+5. Retain `remote.rs` inference functions (`chat_completion`, `resolve_model_protocol`); delete probe/model-list functions.
+6. Adapt consumers (`chat/mod.rs`, `chat/streaming.rs`, `applets/mod.rs`) to read from new cache instead of `with_provider_store()`.
+7. Reshape Tauri command contracts (add version fields).
+8. First-connect migration: seed Station from existing local YAML overrides if Station has no providers for this actor.
 
 ### Phase 3: Desktop Web Adaptation
 
-1. Settings UI calls same Rust commands (which now proxy to Station).
-2. Handle 409 (version conflict) in UI with re-fetch + retry.
+1. Settings UI handles 409 version conflict (re-fetch + retry or notify user).
+2. Regenerate proto TS types.
 3. Agent store `loadModels()` continues working (Rust cache returns same shape).
-4. Remove any remaining direct-credential-storage in local provider store.
 
 ### Phase 4: Verify + Clean
 
-1. E2E test: create provider on Desktop → credential set → send message → SSE response.
-2. E2E test: same actor on two devices → concurrent edit → 409 → resolution.
-3. Delete dead code (local CLI execution, local credential storage, orphan provider migration paths).
+1. E2E: create provider on Desktop → credential set → send message → SSE response.
+2. E2E: same actor on two devices → concurrent edit → 409 → resolution.
+3. Delete dead code (orphan YAML files, unused contract types, local override paths).
 
 ---
 
-## 6. Compatibility
+## 9. Compatibility
 
-- Desktop Web Tauri command interface (`provider_list_available_models`, `provider_create`, etc.) remains stable — implementation changes underneath.
+- Desktop Web Tauri command interface remains stable — implementation changes underneath.
 - Turn execution path (`agent_execute_turn_stream` → Station SSE) is already correct and unchanged.
 - Mobile can use Station API directly (no Rust BFF needed for provider config).
 
 ---
 
-## 7. Risk
+## 10. Risk
 
-| Risk | Mitigation |
-|---|---|
-| Station CLI subprocess security | Sandbox CLI execution on Station (container or restricted user) |
-| Latency increase for CLI providers | Acceptable; consistency > latency for config operations |
-| Migration breaks existing local-only users | Phase 2 must seed Station from existing local provider store on first connect |
-| Version conflict UX | Design clear "config was changed on another device" dialog |
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Station CLI subprocess security | High | Sandbox CLI execution on Station (container or restricted user) |
+| Latency increase for provider operations | Low | Acceptable; consistency > latency for config operations |
+| Migration breaks existing local-only users | Medium | Phase 2 step 8: first-connect migration seeds Station from local YAML |
+| Version conflict UX | Medium | Design clear "config was changed on another device" dialog |
+| `chat_completion` in remote.rs still needs credentials | Medium | New cache provides credentials; no direct local YAML access |
+| Applet AI calls (9304-line file) depend on provider resolution | High | Test thoroughly; applet gateway is critical path |
