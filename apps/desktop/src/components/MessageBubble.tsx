@@ -721,16 +721,16 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const editRef = useRef<any>(null);
 
-  const {
-    branchFromMessage,
-    deleteAndRegenerateMessage,
-    deleteMessage,
-    editMessage,
-    regenerateMessage,
-    retryMessage,
-    sendMessage,
-  } = useChatStore();
-  const { agents, availableModels, selectedAgent } = useAgentStore();
+  const branchFromMessage = useChatStore(s => s.branchFromMessage);
+  const deleteAndRegenerateMessage = useChatStore(s => s.deleteAndRegenerateMessage);
+  const deleteMessage = useChatStore(s => s.deleteMessage);
+  const editMessage = useChatStore(s => s.editMessage);
+  const regenerateMessage = useChatStore(s => s.regenerateMessage);
+  const retryMessage = useChatStore(s => s.retryMessage);
+  const sendMessage = useChatStore(s => s.sendMessage);
+  const agents = useAgentStore(s => s.agents);
+  const availableModels = useAgentStore(s => s.availableModels);
+  const selectedAgent = useAgentStore(s => s.selectedAgent);
   const activeAgent = agents.find((agent) => agent.name === selectedAgent);
   const activeChatConfig = activeAgent ? parseAgentChatConfig(activeAgent) : {};
   const messageModel = message.model ? availableModels.find((model) => model.id === message.model) : undefined;
