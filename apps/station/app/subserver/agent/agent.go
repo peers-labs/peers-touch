@@ -193,7 +193,11 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 	growthHandlers := handler.NewGrowthHandlers(growthMetricsSvc, memorySvc, skillSvc, diagnosticSvc)
 
-	providerHandlers := handler.NewProviderHandlers()
+	providerHandlers := handler.NewProviderHandlers(
+		service.NewProviderConfigService(service.NewCLIAdapterRegistry()),
+		service.NewModelConfigService(),
+		service.NewCredentialConfigService(),
+	)
 
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
@@ -210,6 +214,15 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
 
 		server.NewHTTPHandler("agent-provider-verify-cli", "/agent/provider/verify-cli", server.POST, providerHandlers.HandleVerifyCli, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-provider-list", "/agent/provider/list", server.POST, providerHandlers.HandleProviderList, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-provider-create", "/agent/provider/create", server.POST, providerHandlers.HandleProviderCreate, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-provider-update", "/agent/provider/update", server.POST, providerHandlers.HandleProviderUpdate, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-provider-delete", "/agent/provider/delete", server.POST, providerHandlers.HandleProviderDelete, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-model-list", "/agent/model/list", server.POST, providerHandlers.HandleModelList, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-model-update", "/agent/model/update", server.POST, providerHandlers.HandleModelUpdate, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-credential-set", "/agent/credential/set", server.POST, providerHandlers.HandleCredentialSet, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-credential-delete", "/agent/credential/delete", server.POST, providerHandlers.HandleCredentialDelete, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-credential-status", "/agent/credential/status", server.POST, providerHandlers.HandleCredentialStatus, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-collaboration-create", "/agent/collaboration/create", server.POST, orchestrationHandlers.HandleCreateCollaborationTask, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-get", "/agent/collaboration/get", server.POST, orchestrationHandlers.HandleGetCollaborationTask, logIDWrapper, jwtWrapper),
