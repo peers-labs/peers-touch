@@ -31,7 +31,9 @@ export function ModelProviderSelect({
 }: ModelProviderSelectProps) {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
-  const { availableModels, defaultModel, loadModels } = useAgentStore();
+  const availableModels = useAgentStore(s => s.availableModels);
+  const defaultModel = useAgentStore(s => s.defaultModel);
+  const loadModels = useAgentStore(s => s.loadModels);
   const [searchQuery, setSearchQuery] = useState('');
 
   const effectiveModels = models ?? availableModels;

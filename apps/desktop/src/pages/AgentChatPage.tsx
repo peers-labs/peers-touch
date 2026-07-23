@@ -53,7 +53,7 @@ function isToday(ts: number): boolean {
 }
 
 export function AgentChatPage({ onNavigateAgentProfile, onNavigateAgentCanvas }: { onNavigateAgentProfile?: (agentName: string) => void; onNavigateAgentCanvas?: () => void }) {
-  const { t } = useTranslation('agent');
+  const { t } = useTranslation(['agent', 'common']);
   const { token } = theme.useToken();
   const [leftOpen, setLeftOpen] = useState(true);
   const [search, setSearch] = useState('');
@@ -66,14 +66,16 @@ export function AgentChatPage({ onNavigateAgentProfile, onNavigateAgentCanvas }:
   const rootRef = useRef<HTMLDivElement>(null);
   const narrowRef = useRef<boolean | null>(null);
 
-  const {
-    agents,
-    selectedAgent,
-    setSelectedAgent,
-    loadAgents,
-  } = useAgentStore();
+  const agents = useAgentStore((s) => s.agents);
+  const selectedAgent = useAgentStore((s) => s.selectedAgent);
+  const setSelectedAgent = useAgentStore((s) => s.setSelectedAgent);
+  const loadAgents = useAgentStore((s) => s.loadAgents);
 
-  const { sessions, currentSessionKey, selectSession, newSession, deleteSession } = useChatStore();
+  const sessions = useChatStore((s) => s.sessions);
+  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const selectSession = useChatStore((s) => s.selectSession);
+  const newSession = useChatStore((s) => s.newSession);
+  const deleteSession = useChatStore((s) => s.deleteSession);
 
   useEffect(() => {
     if (agents.length > 0) {
