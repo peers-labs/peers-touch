@@ -149,6 +149,7 @@ needed, explain why the finding is not reusable.
 | `skill` | skill safety, freshness, self-growth, CODEOWNERS |
 | `review-system` | fail-closed scripts, fixtures, CI portability |
 | `ci` | GitHub Actions reliability, permissions, fork/range behavior |
+| `code-structure` | AGENTS.md §7 structural health: single responsibility, no inline classes in non-component files, no duplicate imports, effect grouping, composition over dump |
 
 ## Script vs Skill Boundary
 
@@ -190,6 +191,7 @@ Treat these as blocking unless the user explicitly asks for exploratory review:
 | `silent-error` | swallowed errors, ignored errors, empty catches, or missing context |
 | `logging-security` | logs tokens, passwords, secrets, or PII |
 | `architecture-boundary` | lower layer redefines architecture or platform ownership |
+| `duplicate-side-effect-import` | same dynamic import path appears 2+ times in a single file |
 
 Keywords intentionally present for freshness checks: hardcoded secrets, No mock,
 hardcoded-ui-string, silent error, generated, runtime projection, CODEOWNERS.
@@ -386,6 +388,6 @@ rule, refresh a hash, or delete a fixture without explaining the behavior change
 - Marking unrun acceptance gates as proven.
 - Refreshing hashes or fixtures as bookkeeping without explaining behavior.
 - Asking humans to re-review everything instead of escalating precise decisions.
-- Blocking on style preferences.
+- Blocking on cosmetic style (naming, spacing, import order) while ignoring structural violations (mixed responsibility, duplicate logic, inline definitions).
 - Ignoring missing evidence such as invalid range, unavailable CI, or failed
   knowledge/acceptance planning.
