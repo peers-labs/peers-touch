@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -43,6 +44,8 @@ type CredentialStatusResponse struct {
 
 // Set implements full-replacement upsert semantics for credentials.
 // No version required on set (per architecture: user re-enters full key each time).
+// Stores the key in agent_providers.key_vaults (used by provider_service for LLM calls)
+// and creates/updates metadata in agent_credential_pool.
 func (s *CredentialConfigService) Set(ctx context.Context, req CredentialSetRequest) (*CredentialStatusResponse, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -50,6 +53,19 @@ func (s *CredentialConfigService) Set(ctx context.Context, req CredentialSetRequ
 	}
 
 	now := time.Now()
+
+	keyVaultsJSON := fmt.Sprintf(`{"api_key":"%s"}`, req.APIKey)
+
+	if err := db.WithContext(ctx).
+		Model(&persistence.AgentProvider{}).
+		Where("actor_id = ? AND name = ?", req.ActorID, req.ProviderID).
+		Updates(map[string]interface{}{
+			"key_vaults": keyVaultsJSON,
+			"updated_at": now,
+		}).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to update provider key_vaults", err)
+	}
 
 	cred := persistence.Credential{
 		ID:       uuid.New().String(),
@@ -61,7 +77,7 @@ func (s *CredentialConfigService) Set(ctx context.Context, req CredentialSetRequ
 		Version:  1,
 	}
 
-	result := db.WithContext(ctx).
+	db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "actor_id"}, {Name: "provider"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{
@@ -71,11 +87,6 @@ func (s *CredentialConfigService) Set(ctx context.Context, req CredentialSetRequ
 			}),
 		}).
 		Create(&cred)
-
-	if result.Error != nil {
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to set credential", result.Error)
-	}
 
 	var current persistence.Credential
 	if err := db.WithContext(ctx).
@@ -156,6 +167,50 @@ func (s *CredentialConfigService) Status(ctx context.Context, actorID, providerI
 		Configured: true,
 		Status:     cred.Status,
 		Version:    cred.Version,
+	}, nil
+}
+
+type CredentialResolveResponse struct {
+	ProviderID string `json:"provider_id"`
+	APIKey     string `json:"api_key"`
+	BaseURL    string `json:"base_url"`
+	Protocol   string `json:"protocol"`
+}
+
+// Resolve returns the actual credentials for an authenticated actor's provider.
+// Only the owning actor can resolve their own credentials.
+func (s *CredentialConfigService) Resolve(ctx context.Context, actorID, providerID string) (*CredentialResolveResponse, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var provider persistence.AgentProvider
+	if err := db.WithContext(ctx).
+		Where("actor_id = ? AND name = ?", actorID, providerID).
+		First(&provider).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,
+				fmt.Sprintf("provider %q not found", providerID), nil)
+		}
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to query provider", err)
+	}
+
+	var kv map[string]interface{}
+	_ = json.Unmarshal([]byte(provider.KeyVaults), &kv)
+	apiKey := ""
+	if v, ok := kv["api_key"]; ok {
+		if s, ok := v.(string); ok {
+			apiKey = s
+		}
+	}
+
+	return &CredentialResolveResponse{
+		ProviderID: providerID,
+		APIKey:     apiKey,
+		BaseURL:    provider.BaseURL,
+		Protocol:   provider.Protocol,
 	}, nil
 }
 
