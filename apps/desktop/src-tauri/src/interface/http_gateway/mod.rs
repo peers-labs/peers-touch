@@ -2474,7 +2474,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_chat::chat_completion_once("", input))
+            to_json(app_chat::chat_completion_once("", "", input))
         }
 
         // Note: legacy `timeline_*` dev-HTTP routes were removed in P2. The
