@@ -248,6 +248,7 @@ export function ChatSessionList() {
         style={{
           width: 280,
           minWidth: 280,
+          flexShrink: 0,
           height: '100%',
           borderRight: `1px solid ${token.colorBorderSecondary}`,
           background: token.colorBgContainer,
