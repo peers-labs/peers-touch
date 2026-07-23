@@ -145,17 +145,13 @@ export function BuilderPanel({
   const [sessionKey, setSessionKey] = useState('');
   const isComposingRef = useRef(false);
 
-  const {
-    agents,
-    defaultModel,
-    selectedModel,
-    selectedProviderId,
-    availableModels,
-    setSelectedModel,
-  } = useAgentStore();
-  const {
-    sessions,
-  } = useChatStore();
+  const agents = useAgentStore(s => s.agents);
+  const defaultModel = useAgentStore(s => s.defaultModel);
+  const selectedModel = useAgentStore(s => s.selectedModel);
+  const selectedProviderId = useAgentStore(s => s.selectedProviderId);
+  const availableModels = useAgentStore(s => s.availableModels);
+  const setSelectedModel = useAgentStore(s => s.setSelectedModel);
+  const sessions = useChatStore(s => s.sessions);
 
   const currentModelId = selectedModel || defaultModel;
   const currentModelLabel = useMemo(() => {
