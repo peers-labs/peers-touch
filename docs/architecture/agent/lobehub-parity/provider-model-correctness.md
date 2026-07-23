@@ -52,8 +52,8 @@ This is a pre-execution spec. It does not modify product code and does not claim
 | Agent profile | `AgentProfilePage.tsx` stores `agent.provider` and `agent.model`, but lookup often starts with `models.find(model => model.id === agent.model)`. | Duplicate IDs can map to wrong provider before provider filter is applied. |
 | Desktop API projection | `desktop_api.ts` flattens enabled provider models into `AvailableModel` with `provider_id`. | Projection has enough data; consumers need compound identity helpers. |
 | Desktop Rust model store | `models/mod.rs` add/update/delete/toggle require `provider_id` and `model_id`; duplicate IDs are allowed across providers. | Rust store is mostly correct; UI/store must stop collapsing identity. |
-| CLI provider | Rust fetch supports CLI model enumeration/preset fallback; Station rejects CLI provider execution. | Boundary is correct; UI must surface Desktop-owned execution instead of routing CLI to Station. |
-| Station provider call | `ProviderService.Call` uses `ProviderID` + `Model`; TurnConfig uses loose strings. | Station needs M1 `AgentModelRef` compatibility to reject ambiguous/conflicting input. |
+| CLI provider | Rust fetch supports CLI model enumeration/preset fallback; Station executes all providers including CLI. | Desktop is a cache/display layer only; provider execution is Station-owned per `provider-station-authority.md`. |
+| Station provider call | `ProviderService.Call` uses `ProviderID` + `Model`; TurnConfig uses loose strings. | Station owns all provider execution (direct, CLI, embedded) with per-actor credential isolation. |
 
 ## 4. Target Identity Model
 
@@ -238,46 +238,45 @@ Acceptance:
 - Agent config save/load roundtrip preserves selected provider and model.
 - Shared model components do not regress other settings surfaces.
 
-### M3.7 Desktop Rust And CLI Provider Boundary
+### M3.7 Desktop Rust Provider Cache (was: CLI Provider Boundary)
 
 Target paths:
 
 - `apps/desktop/src-tauri/src/application/models/mod.rs`
 - `apps/desktop/src-tauri/src/application/provider/mod.rs`
-- `apps/desktop/src-tauri/src/interface/contracts/mod.rs`
 
 Required changes:
 
-1. Keep model lifecycle commands requiring both `provider_id` and `model_id`.
-2. Keep CLI remote-model fetch owned by Desktop Rust.
-3. Expose provider runtime kind in `AvailableModel` projection so UI can display CLI/Desktop-owned execution state.
-4. Add/keep tests for duplicate model IDs across providers.
+1. Transition Desktop Rust `ProviderStore` from local source-of-truth to a cache of Station's provider/model config.
+2. Provider/model CRUD operations must route through Station API, not persist locally as authority.
+3. Keep model list projection in Rust for UI speed; invalidate on Station sync.
+4. Remove any local provider execution paths (CLI spawn for AI turns is now Station-owned).
 
 Acceptance:
 
-- Rust tests prove duplicate model IDs in different providers do not conflict.
-- CLI providers can enumerate/fallback models without requiring base URL.
+- Desktop Rust provider store reflects Station's per-actor config.
+- No local provider execution for AI turns remains in Desktop Rust.
 
-### M3.8 Station Provider Boundary
+### M3.8 Station Provider Execution
 
 Target paths:
 
 - `apps/station/app/subserver/agent/service/provider_service.go`
+- `apps/station/app/subserver/agent/service/credential_pool_service.go`
 - `apps/station/app/subserver/agent/handler/turn_handler.go`
-- M1 generated model/domain consumers
 
 Required changes:
 
-1. Station direct provider calls must continue rejecting CLI runtime providers.
-2. Turn request mapping must use `AgentModelRef` when available.
-3. If both legacy and new model fields are provided and conflict, reject with typed invalid request.
-4. Fallback/rotation fields must be mapped explicitly before claiming provider fallback parity.
+1. Station executes ALL provider types (direct HTTP, CLI, embedded) — no provider type is rejected.
+2. Credential pool queries must be per-actor: `WHERE provider = ? AND actor_id = ?`.
+3. Turn request mapping must use `AgentModelRef` when available.
+4. If both legacy and new model fields are provided and conflict, reject with typed invalid request.
 
 Acceptance:
 
-- Station tests cover CLI provider rejection.
-- Station tests cover model ref vs legacy field compatibility/conflict.
-- Provider fallback mapping is either implemented and tested or explicitly marked partial.
+- Station tests cover all provider runtime kinds executing successfully with valid credentials.
+- Station tests cover per-actor credential isolation (Actor A's credential not used for Actor B).
+- Provider execution fallback/rotation is per-actor scoped.
 
 ## 6. Required Test Matrix
 
@@ -286,8 +285,8 @@ Acceptance:
 | Duplicate model IDs | Provider A and Provider B both expose `gpt-4.1`; UI select/store/send keeps the intended provider. |
 | Ambiguous legacy fallback | Legacy `selectedModel='gpt-4.1'` and no provider does not silently choose the first provider. |
 | Settings sync | Provider model fetch/toggle/update refreshes Agent available models through runtime/store projection. |
-| CLI provider | TRAE/Cursor model fetch works through Desktop Rust and is displayed as Desktop-owned execution. |
-| Direct provider | OpenAI-compatible/Ollama/Anthropic direct providers still route through Station where appropriate. |
+| CLI provider | TRAE/Cursor model config is fetched from Station; Station executes CLI providers server-side. Desktop is display/cache only. |
+| Direct provider | OpenAI-compatible/Ollama/Anthropic direct providers execute on Station with per-actor credentials. |
 | Chat runtime | Send/regenerate/branch/continue pass provider+model consistently. |
 | Agent profile | Save/load Agent model selection preserves provider+model. |
 | No hardcoded defaults | Search proves Agent model lists come from Settings Provider projection. |
@@ -300,9 +299,10 @@ M3 implementation must not:
 2. Validate selected model with `Set(model.id)`.
 3. Pick the first matching model by ID when provider is missing and duplicates exist.
 4. Add hardcoded default models to Agent UI or Agent store.
-5. Route CLI provider execution through Station provider calls.
+5. Execute any provider calls on Desktop/Mobile — all execution is Station-owned.
 6. Fix sync by adding more model-loading mount effects to ChatInput or picker components.
 7. Combine provider/model migration with unrelated Agent profile or Tool/Knowledge changes unless the Evidence row expands scope.
+8. Store credentials on Desktop/Mobile — credentials are Station-owned, per-actor.
 
 ## 8. Evidence Target
 

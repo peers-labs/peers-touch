@@ -19,6 +19,7 @@ import {
   markInvokeCompleted,
   markInvokeFailed,
   markInvokeStarted,
+  teardownFrontendRuntimeProfiler,
 } from './kernel/frontendRuntimeProfiler';
 import { uploadFrontendTelemetryEvents } from './services/desktop_api';
 
@@ -26,6 +27,12 @@ import { uploadFrontendTelemetryEvents } from './services/desktop_api';
 registerAppletElements();
 installFrontendRuntimeProfiler();
 configureFrontendTelemetryUploader(uploadFrontendTelemetryEvents);
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    teardownFrontendRuntimeProfiler();
+  });
+}
 
 if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
   void import('./acceptance/chatAcceptanceHarness').then(({ installChatAcceptanceHarness }) => {
