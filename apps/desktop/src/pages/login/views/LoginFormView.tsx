@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff,
   Github,
+  Loader2,
   Lock,
   Mail,
   ShieldCheck,
@@ -420,14 +421,19 @@ export const LoginFormView = memo(function LoginFormView({
                 <Button
                   type="primary"
                   htmlType="submit"
-                  loading={loading}
+                  disabled={loading}
                   style={{
                     height: 44,
                     width: 44,
                     borderRadius: 12,
                     flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
-                  icon={!loading ? <Check size={18} /> : undefined}
+                  icon={loading
+                    ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+                    : <Check size={18} />}
                 />
               </Flexbox>
             </Flexbox>

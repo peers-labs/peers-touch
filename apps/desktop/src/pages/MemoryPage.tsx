@@ -250,7 +250,8 @@ export function MemoryPage() {
 function BrowseTab({ onDelete }: { onDelete: () => void }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('memory');
-  const { agents, loadAgents } = useAgentStore();
+  const agents = useAgentStore(s => s.agents);
+  const loadAgents = useAgentStore(s => s.loadAgents);
   const [layer, setLayer] = useState<string | undefined>();
   const [agentFilter, setAgentFilter] = useState<string | undefined>();
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -508,7 +509,8 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
 /* ─── Search Tab ─── */
 
 function SearchTab() {
-  const { agents, loadAgents } = useAgentStore();
+  const agents = useAgentStore(s => s.agents);
+  const loadAgents = useAgentStore(s => s.loadAgents);
   const { t } = useTranslation('memory');
   const [query, setQuery] = useState('');
   const [agentFilter, setAgentFilter] = useState<string | undefined>();
@@ -689,7 +691,8 @@ function PersonaTab() {
 /* ─── Events Tab ─── */
 
 function EventsTab() {
-  const { agents, loadAgents } = useAgentStore();
+  const agents = useAgentStore(s => s.agents);
+  const loadAgents = useAgentStore(s => s.loadAgents);
   const { t } = useTranslation('memory');
   const [agentFilter, setAgentFilter] = useState<string | undefined>();
   const [timeWindow, setTimeWindow] = useState<TimeWindowValue>('24h');

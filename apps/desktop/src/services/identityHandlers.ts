@@ -9,12 +9,12 @@ import { createDesktopClientStorageRuntime } from '../storage/desktopClientStora
 
 registerIdentityHandler('clear-zustand-stores', async (payload) => {
   const actorId = payload.actorId ?? '';
-  useSessionStore.getState().reset();
-  useSocialChatStore.getState().reset();
-  useAccountIdentityStore.getState().reset();
-  useSidebarStore.getState().reset();
-  useGlobalContextStore.getState().reset();
   if (payload.reason === 'logout') {
+    useSessionStore.getState().reset();
+    useSocialChatStore.getState().reset();
+    useAccountIdentityStore.getState().reset();
+    useSidebarStore.getState().reset();
+    useGlobalContextStore.getState().reset();
     return;
   }
   await useSessionStore.getState().hydrate(actorId);

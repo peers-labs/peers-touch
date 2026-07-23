@@ -67,8 +67,13 @@ export function LoginPage({
 }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('auth');
-  const { providers, connections, loadAll, startAuth } = useOAuth2Store();
-  const { accessStart, accessSubmitInviteCode, accessSubmitLogin } = useSessionStore();
+  const providers = useOAuth2Store(s => s.providers);
+  const connections = useOAuth2Store(s => s.connections);
+  const loadAll = useOAuth2Store(s => s.loadAll);
+  const startAuth = useOAuth2Store(s => s.startAuth);
+  const accessStart = useSessionStore(s => s.accessStart);
+  const accessSubmitInviteCode = useSessionStore(s => s.accessSubmitInviteCode);
+  const accessSubmitLogin = useSessionStore(s => s.accessSubmitLogin);
 
   // ── Determine initial state ──
   const hasValidRestoredUser = !!(restoredUser && restoredUser.name && restoredUser.name !== 'User');

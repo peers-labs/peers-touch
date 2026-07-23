@@ -56,12 +56,8 @@ export async function runIdentityPipeline(payload: IdentityChangePayload): Promi
       failures.push({ handlerName: name, error, durationMs: ms });
     }
   }
-  const result: IdentityPipelineResult = {
+  return {
     ok: failures.length === 0,
     failures,
   };
-  if (failures.length > 0) {
-    throw new IdentityPipelineError(failures);
-  }
-  return result;
 }

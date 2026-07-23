@@ -231,12 +231,12 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
           />
         </div>
 
-        {/* Language switcher & Station picker — bottom right, above everything */}
+        {/* Language switcher & Station picker — bottom left, above everything */}
         <div
           style={{
             position: 'absolute',
             bottom: 20,
-            right: 20,
+            left: 20,
             zIndex: 100,
             opacity: isTransition ? 0 : 1,
             transition: `opacity ${TRANSITION_DURATION}ms ease`,
