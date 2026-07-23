@@ -126,10 +126,14 @@ verification, then restart affected Station/Desktop runtimes.
 
 1. Run focused checks for the files changed by the task.
 2. Decide deploy/restart scope using the rules above.
-3. Start/deploy with `make`, not direct scripts.
-4. Wait until the relevant ports/services are ready.
-5. Run the minimal smoke verification the agent can perform.
-6. Report exactly what is ready for user acceptance.
+3. If Station is `remote` mode and deploy is needed: run `git status` to check
+   for uncommitted changes in the deploy scope. If uncommitted changes exist,
+   commit them first (use `pt-github-commit` skill) — remote deploy pushes
+   HEAD, so uncommitted code will NOT reach the remote host.
+4. Start/deploy with `make`, not direct scripts.
+5. Wait until the relevant ports/services are ready.
+6. Run the minimal smoke verification the agent can perform.
+7. Report exactly what is ready for user acceptance.
 
 ## Dual Client Acceptance
 
