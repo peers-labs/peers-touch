@@ -96,6 +96,24 @@ export function isFrontendRuntimeProfilerEnabled(): boolean {
   return (import.meta.env.DEV || import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') && typeof window !== 'undefined';
 }
 
+export function isReactCommitProfilingEnabled(): boolean {
+  if (!isFrontendRuntimeProfilerEnabled()) return false;
+  try {
+    return window.localStorage.getItem('pt:react-profiler') === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function isStoreUpdateProfilingEnabled(): boolean {
+  if (!isFrontendRuntimeProfilerEnabled()) return false;
+  try {
+    return window.localStorage.getItem('pt:store-profiler') === '1';
+  } catch {
+    return false;
+  }
+}
+
 function isEnabled(): boolean {
   return isFrontendRuntimeProfilerEnabled();
 }
@@ -104,9 +122,31 @@ function nowMs(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
+const pendingEvents: DesktopFrontendTelemetryInput[] = [];
+let flushHandle: number | ReturnType<typeof setTimeout> | null = null;
+
+function drainPendingEvents(): void {
+  flushHandle = null;
+  if (pendingEvents.length === 0) return;
+  const batch = pendingEvents.splice(0, pendingEvents.length);
+  for (const event of batch) {
+    emitFrontendTelemetryEvent(event);
+  }
+}
+
+function scheduleFlush(): void {
+  if (flushHandle !== null) return;
+  if (typeof requestIdleCallback === 'function') {
+    flushHandle = requestIdleCallback(drainPendingEvents, { timeout: 2000 });
+  } else {
+    flushHandle = setTimeout(drainPendingEvents, 200);
+  }
+}
+
 function pushEvent(event: DesktopFrontendTelemetryInput): void {
   if (!isEnabled()) return;
-  emitFrontendTelemetryEvent(event);
+  pendingEvents.push(event);
+  scheduleFlush();
 }
 
 function createInteractionId(target: string): string {
@@ -365,6 +405,15 @@ export function teardownFrontendRuntimeProfiler(): void {
   for (const observer of performanceObservers) observer.disconnect();
   performanceObservers = [];
   installed = false;
+  if (flushHandle !== null) {
+    if (typeof cancelIdleCallback === 'function' && typeof flushHandle === 'number') {
+      cancelIdleCallback(flushHandle);
+    } else {
+      clearTimeout(flushHandle as ReturnType<typeof setTimeout>);
+    }
+    flushHandle = null;
+  }
+  pendingEvents.length = 0;
   teardownFrontendTelemetryQueue();
   activeInteraction = null;
   recentInteractionContext = null;
