@@ -17,17 +17,15 @@ function goToChat() {
 export function ContactsPage() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const {
-    sessions,
-    groups,
-    friendRequests,
-    currentUserDid,
-    selectSession,
-    selectGroup,
-    setActiveTab,
-    acceptFriendRequest,
-    rejectFriendRequest,
-  } = useSocialChatStore();
+  const sessions = useSocialChatStore(s => s.sessions);
+  const groups = useSocialChatStore(s => s.groups);
+  const friendRequests = useSocialChatStore(s => s.friendRequests);
+  const currentUserDid = useSocialChatStore(s => s.currentUserDid);
+  const selectSession = useSocialChatStore(s => s.selectSession);
+  const selectGroup = useSocialChatStore(s => s.selectGroup);
+  const setActiveTab = useSocialChatStore(s => s.setActiveTab);
+  const acceptFriendRequest = useSocialChatStore(s => s.acceptFriendRequest);
+  const rejectFriendRequest = useSocialChatStore(s => s.rejectFriendRequest);
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
 
