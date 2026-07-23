@@ -84,6 +84,8 @@ func (s *ProviderConfigService) Create(ctx context.Context, req ProviderCreateRe
 		ID:          uuid.New().String(),
 		ActorID:     req.ActorID,
 		Name:        req.ProviderID,
+		DisplayName: req.DisplayName,
+		BaseURL:     req.BaseURL,
 		Config:      req.ConfigJSON,
 		SourceType:  "custom",
 		RuntimeKind: runtimeKind,
@@ -125,15 +127,16 @@ func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRe
 			fmt.Sprintf("version conflict: current=%d, submitted=%d", provider.Version, req.Version), nil)
 	}
 
+	newVersion := provider.Version + 1
 	updates := map[string]interface{}{
-		"version":    provider.Version + 1,
+		"version":    newVersion,
 		"updated_at": time.Now(),
 	}
 	if req.DisplayName != nil {
-		updates["name"] = *req.DisplayName
+		updates["display_name"] = *req.DisplayName
 	}
 	if req.BaseURL != nil {
-		updates["check_model"] = *req.BaseURL
+		updates["base_url"] = *req.BaseURL
 	}
 	if req.Enabled != nil {
 		updates["enabled"] = *req.Enabled
@@ -149,7 +152,14 @@ func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRe
 			"failed to update provider", err)
 	}
 
-	provider.Version++
+	// Re-read to return authoritative state
+	if err := db.WithContext(ctx).
+		Where("actor_id = ? AND name = ?", req.ActorID, req.ProviderID).
+		First(&provider).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to re-read provider after update", err)
+	}
+
 	logger.Infof(ctx, "provider updated: actor=%s, provider=%s, version=%d", req.ActorID, req.ProviderID, provider.Version)
 	return &provider, nil
 }
