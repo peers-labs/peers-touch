@@ -3739,12 +3739,50 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
 
         // =================================================================
-        // Federation (public readiness probe)
+        // Federation
         // =================================================================
         "federation_health" => match app_federation::health() {
             Ok(view) => to_json(AppResult::success(app_federation::encode_health(&view))),
             Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_health failed")),
         },
+        "federation_get_self" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            match app_federation::get_self(&token) {
+                Ok(view) => to_json(AppResult::success(app_federation::encode_self(&view))),
+                Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_get_self failed")),
+            }
+        }
+        "federation_update_visibility" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let input = match parse_args::<FederationVisibilityInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match app_federation::set_visibility(&token, &input.visibility) {
+                Ok(view) => to_json(AppResult::success(app_federation::encode_self(&view))),
+                Err(e) => to_json(e.into_app_result_proto("federation_update_visibility failed")),
+            }
+        }
+        "federation_resolve" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let input = match parse_args::<FederationResolveInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match app_federation::resolve(&token, &input.handle) {
+                Ok(view) => to_json(AppResult::success(app_federation::encode_resolve(&view))),
+                Err(e) => to_json(e.into_app_result_proto("federation_resolve failed")),
+            }
+        }
 
         // =================================================================
         // Applet store (catalog/install — state-dependent)
