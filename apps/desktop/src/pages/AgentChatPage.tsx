@@ -71,9 +71,9 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
   const selectedAgent = useAgentStore((s) => s.selectedAgent);
   const setSelectedAgent = useAgentStore((s) => s.setSelectedAgent);
   const loadAgents = useAgentStore((s) => s.loadAgents);
-  const getAgentSurface = useAgentStore((s) => s.getAgentSurface);
+  const agentSurfaces = useAgentStore((s) => s.agentSurfaces);
   const setAgentSurface = useAgentStore((s) => s.setAgentSurface);
-  const currentSurface = getAgentSurface(selectedAgent);
+  const currentSurface = agentSurfaces[selectedAgent] || 'chat';
 
   const sessions = useChatStore((s) => s.sessions);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
