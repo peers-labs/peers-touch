@@ -131,45 +131,51 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
       const currentSelected = get().selectedModel;
       const currentProvider = get().selectedProviderId;
 
+      // Only synthesize an entry for a missing model if its provider is still
+      // present (enabled) in the backend response — this handles custom endpoint
+      // IDs that aren't in the standard model list. If the provider was disabled,
+      // do NOT synthesize; fall through to selection logic below.
       if (currentSelected && currentProvider && !modelIds.has(currentSelected)) {
         const providerModels = models.filter((m) => m.provider_id === currentProvider);
-        const providerName = providerModels[0]?.provider_name || currentProvider;
-        const isEndpointId = currentSelected.length > 20;
-        const resolvedDisplayName = isEndpointId && providerModels.length > 0
-          ? providerModels[0].display_name
-          : currentSelected;
-        const syntheticEntry = {
-          id: currentSelected,
-          display_name: resolvedDisplayName,
-          provider_id: currentProvider,
-          provider_name: providerName,
-          type: 'chat' as const,
-          context_window: providerModels[0]?.context_window ?? 0,
-          enabled: true,
-          function_call: providerModels[0]?.function_call ?? false,
-          vision: providerModels[0]?.vision ?? false,
-          reasoning: providerModels[0]?.reasoning ?? false,
-          search: providerModels[0]?.search ?? false,
-          image_output: providerModels[0]?.image_output ?? false,
-          video: providerModels[0]?.video ?? false,
-        };
-        models = [...models, syntheticEntry];
-        modelIds.add(currentSelected);
+        if (providerModels.length > 0) {
+          const providerName = providerModels[0].provider_name || currentProvider;
+          const isEndpointId = currentSelected.length > 20;
+          const resolvedDisplayName = isEndpointId
+            ? providerModels[0].display_name
+            : currentSelected;
+          const syntheticEntry = {
+            id: currentSelected,
+            display_name: resolvedDisplayName,
+            provider_id: currentProvider,
+            provider_name: providerName,
+            type: 'chat' as const,
+            context_window: providerModels[0].context_window ?? 0,
+            enabled: true,
+            function_call: providerModels[0].function_call ?? false,
+            vision: providerModels[0].vision ?? false,
+            reasoning: providerModels[0].reasoning ?? false,
+            search: providerModels[0].search ?? false,
+            image_output: providerModels[0].image_output ?? false,
+            video: providerModels[0].video ?? false,
+          };
+          models = [...models, syntheticEntry];
+          modelIds.add(currentSelected);
+        }
       }
 
+      const enabledModels = models.filter((m) => m.enabled);
       const nextSelected =
-        (currentSelected && modelIds.has(currentSelected) && currentSelected) ||
+        (currentSelected && modelIds.has(currentSelected) && enabledModels.some((m) => m.id === currentSelected) && currentSelected) ||
         preferredDefault ||
-        (currentSelected && currentSelected !== `${currentProvider || ''}:default` && currentSelected) ||
+        enabledModels[0]?.id ||
         models[0]?.id ||
         '';
       const nextProvider = models.find((m) => m.id === nextSelected)?.provider_id
-        || (currentSelected === nextSelected ? currentProvider : '')
         || models[0]?.provider_id
         || '';
       set({
         availableModels: models,
-        defaultModel: preferredDefault || models[0]?.id || '',
+        defaultModel: preferredDefault || enabledModels[0]?.id || models[0]?.id || '',
         selectedModel: nextSelected,
         selectedProviderId: nextProvider,
         lastLoadedAt: Date.now(),

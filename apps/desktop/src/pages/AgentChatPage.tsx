@@ -26,6 +26,7 @@ import {
 import { useChatStore, type Session } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import { ChatPage } from './ChatPage';
+import { AgentProfilePage } from './AgentProfilePage';
 
 const SIDEBAR_COLORS = {
   asideBg: '#fbfbfb',
@@ -52,7 +53,7 @@ function isToday(ts: number): boolean {
   return isSameDay(ts, Date.now());
 }
 
-export function AgentChatPage({ onNavigateAgentProfile, onNavigateAgentCanvas }: { onNavigateAgentProfile?: (agentName: string) => void; onNavigateAgentCanvas?: () => void }) {
+export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfile?: (agentName: string) => void; onNavigateAgentCanvas?: () => void }) {
   const { t } = useTranslation(['agent', 'common']);
   const { token } = theme.useToken();
   const [leftOpen, setLeftOpen] = useState(true);
@@ -70,6 +71,9 @@ export function AgentChatPage({ onNavigateAgentProfile, onNavigateAgentCanvas }:
   const selectedAgent = useAgentStore((s) => s.selectedAgent);
   const setSelectedAgent = useAgentStore((s) => s.setSelectedAgent);
   const loadAgents = useAgentStore((s) => s.loadAgents);
+  const getAgentSurface = useAgentStore((s) => s.getAgentSurface);
+  const setAgentSurface = useAgentStore((s) => s.setAgentSurface);
+  const currentSurface = getAgentSurface(selectedAgent);
 
   const sessions = useChatStore((s) => s.sessions);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
@@ -201,8 +205,10 @@ export function AgentChatPage({ onNavigateAgentProfile, onNavigateAgentCanvas }:
   }, [newSession]);
 
   const handleOpenProfile = useCallback(() => {
-    if (selectedAgent) onNavigateAgentProfile?.(selectedAgent);
-  }, [onNavigateAgentProfile, selectedAgent]);
+    if (selectedAgent) {
+      setAgentSurface(selectedAgent, 'profile');
+    }
+  }, [selectedAgent, setAgentSurface]);
 
   const handleToggleTopics = useCallback(() => {
     if (!topicsOpen) setLeftOpen(false);
@@ -582,7 +588,16 @@ export function AgentChatPage({ onNavigateAgentProfile, onNavigateAgentCanvas }:
       ) : null}
 
       <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', background: '#fff', display: 'flex', flexDirection: 'column' }}>
-        <ChatPage onOpenProfile={handleOpenProfile} onToggleTopics={handleToggleTopics} topicsOpen={topicsOpen} />
+        {currentSurface === 'profile' ? (
+          <AgentProfilePage
+            agentName={selectedAgent}
+            onBack={() => setAgentSurface(selectedAgent, 'chat')}
+            onOpenOrchestration={onNavigateAgentCanvas}
+            embedded
+          />
+        ) : (
+          <ChatPage onOpenProfile={handleOpenProfile} onToggleTopics={handleToggleTopics} topicsOpen={topicsOpen} />
+        )}
       </main>
 
       {contextMenu && (
