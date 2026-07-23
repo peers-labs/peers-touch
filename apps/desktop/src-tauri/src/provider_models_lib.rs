@@ -45,18 +45,9 @@ pub mod domain {
 pub mod interface {
     #[path = "contracts/mod.rs"]
     pub mod contracts;
-
-    pub mod tauri_commands {
-        #[path = "models.rs"]
-        pub mod models;
-        #[path = "provider.rs"]
-        pub mod provider;
-    }
 }
 
 pub mod application {
-    #[path = "models/mod.rs"]
-    pub mod models;
     #[path = "provider/mod.rs"]
     pub mod provider;
     #[path = "session_resolver/mod.rs"]
