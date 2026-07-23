@@ -42,6 +42,7 @@ func NewCredentialPoolService() *CredentialPoolService {
 
 func (s *CredentialPoolService) Lease(
 	ctx context.Context,
+	actorID string,
 	provider string,
 	strategy domain.RotationStrategy,
 ) (*domain.CredentialEntry, error) {
@@ -56,9 +57,9 @@ func (s *CredentialPoolService) Lease(
 
 	var rows []persistence.Credential
 	if err := db.WithContext(ctx).
-		Where("provider = ?", provider).
+		Where("actor_id = ? AND provider = ?", actorID, provider).
 		Find(&rows).Error; err != nil {
-		logger.Errorf(ctx, "credential pool query failed: provider=%s, err=%v", provider, err)
+		logger.Errorf(ctx, "credential pool query failed: actor=%s, provider=%s, err=%v", actorID, provider, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to query credential pool", err)
 	}
@@ -226,6 +227,7 @@ func (s *CredentialPoolService) RecoverCooledDown(ctx context.Context) (int, err
 
 func (s *CredentialPoolService) ListByProvider(
 	ctx context.Context,
+	actorID string,
 	provider string,
 ) ([]domain.CredentialEntry, error) {
 
@@ -236,10 +238,10 @@ func (s *CredentialPoolService) ListByProvider(
 
 	var rows []persistence.Credential
 	if err := db.WithContext(ctx).
-		Where("provider = ?", provider).
+		Where("actor_id = ? AND provider = ?", actorID, provider).
 		Order("priority ASC, created_at ASC").
 		Find(&rows).Error; err != nil {
-		logger.Errorf(ctx, "credential list query failed: provider=%s, err=%v", provider, err)
+		logger.Errorf(ctx, "credential list query failed: actor=%s, provider=%s, err=%v", actorID, provider, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to list credentials", err)
 	}
@@ -376,17 +378,17 @@ func (s *CredentialPoolService) getDB(ctx context.Context) (*gorm.DB, error) {
 
 func (s *CredentialPoolService) toDomain(row *persistence.Credential) domain.CredentialEntry {
 	entry := domain.CredentialEntry{
-		CredentialID: row.ID,
-		Provider:     row.Provider,
-		AuthType:     domain.AuthType(row.AuthType),
-		Priority:     row.Priority,
-		Source:       domain.CredentialSource(row.Source),
-		Status:       domain.CredentialStatus(row.Status),
-		RequestCount: row.RequestCount,
-		ExhaustedAt:  row.ExhaustedAt,
+		CredentialID:  row.ID,
+		Provider:      row.Provider,
+		AuthType:      domain.AuthType(row.AuthType),
+		Priority:      row.Priority,
+		Source:        domain.CredentialSource(row.Source),
+		Status:        domain.CredentialStatus(row.Status),
+		RequestCount:  row.RequestCount,
+		ExhaustedAt:   row.ExhaustedAt,
 		CooldownUntil: row.CooldownUntil,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
+		CreatedAt:     row.CreatedAt,
+		UpdatedAt:     row.UpdatedAt,
 	}
 
 	if row.Label != nil {
