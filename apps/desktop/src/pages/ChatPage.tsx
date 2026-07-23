@@ -12,8 +12,13 @@ import { MessageList } from '../components/MessageList';
 export function ChatPage({ onOpenProfile, onToggleTopics, topicsOpen }: { onOpenProfile?: () => void; onToggleTopics?: () => void; topicsOpen?: boolean }) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const { messages, currentSessionKey, sessions, selectSession, loadSessions } = useChatStore();
-  const { agents, selectedAgent } = useAgentStore();
+  const messages = useChatStore((s) => s.messages);
+  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const sessions = useChatStore((s) => s.sessions);
+  const selectSession = useChatStore((s) => s.selectSession);
+  const loadSessions = useChatStore((s) => s.loadSessions);
+  const agents = useAgentStore((s) => s.agents);
+  const selectedAgent = useAgentStore((s) => s.selectedAgent);
 
   const QUICK_ACTIONS = [
     t('agent.chat.quickActions.itinerary'),
