@@ -32,6 +32,7 @@ export type IdentityPhase =
   | { kind: 'booting'; reason: IdentityBootReason }
   | { kind: 'checkingLaunchContext'; reason: IdentityBootReason }
   | { kind: 'resolvingSession'; reason: IdentityBootReason; source: 'live' | 'disk' | 'applet' }
+  | { kind: 'accessGateChainPending'; user: SessionUser }
   | { kind: 'accountGate'; reason: IdentityAuthGateReason }
   | { kind: 'pinGate'; accountId: string }
   | {
@@ -54,6 +55,8 @@ export type IdentityEvent =
   | { type: 'SESSION_RESOLVE_STARTED'; source: 'live' | 'disk' | 'applet' }
   | { type: 'SESSION_RESTORED'; user: SessionUser; source: 'restore' | 'unlock' | 'switch' | 'applet' }
   | { type: 'SESSION_RESTORE_FAILED'; reason: IdentityAuthGateReason }
+  | { type: 'ACCESS_GATE_EVALUATING'; user: SessionUser }
+  | { type: 'ACCESS_GATE_GRANTED'; user: SessionUser; source: 'restore' | 'unlock' | 'switch' }
   | { type: 'ACCOUNT_GATE_READY'; reason: IdentityAuthGateReason }
   | { type: 'PIN_REQUIRED'; accountId: string }
   | { type: 'FRESH_LOGIN_AUTHENTICATED'; user: SessionUser }
@@ -241,6 +244,10 @@ export function identityReducer(state: IdentityPhase, event: IdentityEvent): Ide
         source: event.source,
       };
     case 'SESSION_RESTORED':
+      return authenticatedPhase(event.user, event.source);
+    case 'ACCESS_GATE_EVALUATING':
+      return { kind: 'accessGateChainPending', user: event.user };
+    case 'ACCESS_GATE_GRANTED':
       return authenticatedPhase(event.user, event.source);
     case 'SESSION_RESTORE_FAILED':
     case 'ACCOUNT_GATE_READY':
