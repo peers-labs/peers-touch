@@ -1,6 +1,6 @@
 pub mod streaming;
 
-use crate::application::provider::{remote as provider_remote, state as provider_state};
+use crate::application::provider::{cache as provider_cache, remote as provider_remote};
 use crate::contracts::{
     ChatCompletionInput, ChatConversationInput, ChatListMessagesInput, ChatMarkReadInput,
     ChatMessageInput, ChatRenameConversationInput, ChatSendMessageInput,
@@ -637,7 +637,7 @@ pub fn chat_stop(_actor_id: &str, input: ChatConversationInput) -> AppResult<Stu
     )
 }
 
-pub fn chat_completion_once(actor_id: &str, input: ChatCompletionInput) -> AppResult<StubPayload> {
+pub fn chat_completion_once(actor_id: &str, token: &str, input: ChatCompletionInput) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_completion_once", session_id = %input.session_id, model = ?input.model, "Starting completion");
     let session_id = input.session_id.trim().to_string();
     if session_id.is_empty() {
@@ -655,50 +655,27 @@ pub fn chat_completion_once(actor_id: &str, input: ChatCompletionInput) -> AppRe
         .to_string();
     let model_hint = input.model.as_deref().unwrap_or("").trim().to_string();
     let provider_id = if provider_id.is_empty() && !model_hint.is_empty() {
-        provider_state::with_provider_store(None, |store| {
-            store
-                .providers
-                .iter()
-                .find(|p| {
-                    p.enabled
-                        && (p.check_model == model_hint
-                            || p.models.iter().any(|m| m.id == model_hint))
-                })
-                .map(|p| p.id.clone())
-        })
-        .ok()
-        .flatten()
-        .unwrap_or_default()
+        provider_cache::get_providers(token, actor_id)
+            .ok()
+            .and_then(|providers| {
+                providers
+                    .iter()
+                    .find(|p| p.enabled)
+                    .map(|p| p.name.clone())
+            })
+            .unwrap_or_default()
     } else {
         provider_id
     };
     if provider_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "Provider ID is required", None);
     }
-    let provider_data = match provider_state::with_provider_store(None, |store| {
-        store
-            .providers
-            .iter()
-            .find(|p| p.id == provider_id)
-            .cloned()
-    }) {
-        Ok(Some(provider)) => provider,
-        _ => return AppResult::fail(ErrorCode::NotFound, "Provider not found", None),
+    let resolved = match provider_cache::resolve_credential(token, &provider_id) {
+        Ok(r) => r,
+        Err(_) => return AppResult::fail(ErrorCode::NotFound, "Provider not found or no credential", None),
     };
-    if !provider_data.enabled {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Provider is disabled", None);
-    }
-    let api_key = serde_json::from_str::<serde_json::Value>(&provider_data.key_vaults)
-        .ok()
-        .and_then(|v| v.get("api_key").and_then(|k| k.as_str()).map(String::from))
-        .unwrap_or_default();
-    let config: serde_json::Value =
-        serde_json::from_str(&provider_data.config_json).unwrap_or_default();
-    let base_url = config
-        .get("base_url")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let api_key = resolved.api_key;
+    let base_url = resolved.base_url;
     if base_url.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -706,22 +683,18 @@ pub fn chat_completion_once(actor_id: &str, input: ChatCompletionInput) -> AppRe
             None,
         );
     }
-    let provider_protocol = config
-        .get("protocol")
-        .and_then(|v| v.as_str())
-        .map(String::from);
+    let provider_protocol = Some(resolved.protocol.clone());
     let model_id = input.model.as_deref().unwrap_or("").trim().to_string();
     let model_id = if model_id.is_empty() {
-        provider_data.check_model.clone()
+        String::new()
     } else {
         model_id
     };
     if model_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "Model is required", None);
     }
-    let model_record = provider_data.models.iter().find(|m| m.id == model_id);
     let effective_protocol = provider_remote::resolve_model_protocol(
-        model_record.and_then(|m| m.protocol_override.as_deref()),
+        None,
         provider_protocol.as_deref(),
     );
     match provider_remote::chat_completion(
