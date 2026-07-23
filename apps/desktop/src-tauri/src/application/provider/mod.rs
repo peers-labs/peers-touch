@@ -7,8 +7,10 @@ use state::{find_seeded_provider, persist_provider_store, with_provider_store, P
 use std::env;
 use std::path::Path;
 
+pub(crate) mod cache;
 pub(crate) mod remote;
 pub(crate) mod state;
+pub(crate) mod station_api;
 pub(crate) mod sync;
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
