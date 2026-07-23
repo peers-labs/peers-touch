@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import type { InputRef } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon } from '@lobehub/ui';
-import { ModelIcon } from '@lobehub/icons';
-import { Dropdown, theme } from 'antd';
+import { Dropdown, Input, theme } from 'antd';
 import type { MenuProps } from 'antd';
-import { ArrowUp, ChevronDown, Image as ImageIcon, Slash, Square, X } from 'lucide-react';
+import { ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Square, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import { useChatAttachmentDrafts } from './chat/composer/useChatAttachmentDrafts';
 import type { AvailableModel } from '../services/desktop_api';
+import { ProviderIcon } from './settings/ProviderIcon';
 
 const COMPOSER_COLORS = {
   border: '#d1d1d1',
@@ -30,7 +31,10 @@ function modelMenuKey(model: AvailableModel): string {
 
 export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: ChatInputProps) {
   const [input, setInput] = useState('');
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [modelSearch, setModelSearch] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const searchInputRef = useRef<InputRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
   const topicDraftRef = useRef<Record<string, string>>({});
@@ -144,35 +148,97 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
   const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading;
 
-  const providerName = modelInfo?.provider_name || selectedProviderId || '';
   const modelDisplayName = modelInfo?.display_name || modelInfo?.id || currentModelId;
   const modelLabel = modelInfo
-    ? `${providerName} · ${modelDisplayName}`
+    ? modelDisplayName
     : currentModelId || t('chat.model.select');
 
-  const modelMenu = useMemo<MenuProps>(() => ({
-    selectedKeys: currentModelKey ? [currentModelKey] : [],
-    items: availableModels
-      .filter((model) => model.enabled)
-      .map((model) => ({
-        key: modelMenuKey(model),
+  const modelMenu = useMemo<MenuProps>(() => {
+    const search = modelSearch.trim().toLowerCase();
+    const groups = new Map<string, AvailableModel[]>();
+    for (const model of availableModels) {
+      if (!model.enabled) continue;
+      if (search) {
+        const name = (model.display_name || model.id).toLowerCase();
+        const provider = (model.provider_name || model.provider_id || '').toLowerCase();
+        if (!name.includes(search) && !provider.includes(search)) continue;
+      }
+      const key = model.provider_name || model.provider_id || 'Other';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(model);
+    }
+    return {
+      selectedKeys: currentModelKey ? [currentModelKey] : [],
+      style: { maxHeight: 320, minHeight: 320, overflowY: 'auto', padding: '4px 0', border: 'none', boxShadow: 'none', borderRadius: 0, background: 'transparent' },
+      items: Array.from(groups.entries()).map(([provider, items]) => ({
+        key: `group-${provider}`,
+        type: 'group' as const,
         label: (
-          <Flexbox horizontal align="center" gap={8} style={{ minWidth: 160 }}>
-            <ModelIcon model={model.id} size={16} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {model.display_name || model.id}
-            </span>
-            <span style={{ color: token.colorTextTertiary, fontSize: 11, marginLeft: 'auto' }}>
-              {model.provider_name || model.provider_id}
+          <Flexbox horizontal align="center" gap={6}>
+            <ProviderIcon
+              providerId={items[0]?.provider_id || ''}
+              providerName={provider}
+              size={14}
+            />
+            <span style={{ fontSize: 11, color: token.colorTextTertiary, fontWeight: 500 }}>
+              {provider}
             </span>
           </Flexbox>
         ),
+        children: items.map((model) => ({
+          key: modelMenuKey(model),
+          label: (
+            <Flexbox horizontal align="center" gap={8}>
+              <ProviderIcon
+                providerId={model.provider_id || ''}
+                providerName={model.provider_name}
+                size={18}
+              />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
+                {model.display_name || model.id}
+              </span>
+            </Flexbox>
+          ),
+        })),
       })),
-    onClick: ({ key }) => {
-      const next = availableModels.find((model) => modelMenuKey(model) === key);
-      if (next) setSelectedModel(next.id, next.provider_id);
-    },
-  }), [availableModels, currentModelKey, setSelectedModel, token.colorTextTertiary]);
+      onClick: ({ key }) => {
+        const next = availableModels.find((model) => modelMenuKey(model) === key);
+        if (next) {
+          setSelectedModel(next.id, next.provider_id);
+          setModelDropdownOpen(false);
+          setModelSearch('');
+        }
+      },
+    };
+  }, [availableModels, currentModelKey, setSelectedModel, token.colorTextTertiary, modelSearch]);
+
+  const dropdownRender = useCallback((menu: React.ReactNode) => (
+    <div
+      style={{
+        background: '#ffffff',
+        borderRadius: 12,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04)',
+        overflow: 'hidden',
+        width: 260,
+      }}
+    >
+      <div style={{ padding: '8px 10px 6px' }}>
+        <Input
+          ref={searchInputRef}
+          prefix={<Search size={14} color={token.colorTextQuaternary} />}
+          placeholder={t('chat.model.search', 'Search models...')}
+          value={modelSearch}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => setModelSearch(e.target.value)}
+          variant="borderless"
+          size="small"
+          autoFocus
+          style={{ fontSize: 13 }}
+        />
+      </div>
+      <div style={{ height: 1, background: token.colorFillQuaternary, margin: '0 10px' }} />
+      {menu}
+    </div>
+  ), [modelSearch, t, token.colorFillQuaternary, token.colorTextQuaternary]);
 
   return (
     <section
@@ -291,7 +357,20 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         <div style={{ flex: 1, minWidth: 8 }} />
 
         <div style={{ minWidth: 0, display: 'flex', justifyContent: 'flex-end', overflow: 'hidden' }}>
-          <Dropdown menu={modelMenu} trigger={['click']} placement="top">
+          <Dropdown
+            menu={modelMenu}
+            trigger={['click']}
+            placement="topRight"
+            arrow={false}
+            open={modelDropdownOpen}
+            onOpenChange={(open) => {
+              setModelDropdownOpen(open);
+              if (!open) setModelSearch('');
+              if (open) setTimeout(() => searchInputRef.current?.focus(), 50);
+            }}
+            dropdownRender={dropdownRender}
+            overlayStyle={{ padding: 0, border: 'none', borderRadius: 12, boxShadow: 'none' }}
+          >
             <button
               type="button"
               style={{
@@ -301,16 +380,27 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
                 color: token.colorTextSecondary,
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 3,
+                gap: 4,
                 fontSize: 13,
                 cursor: 'pointer',
                 padding: '0 4px',
                 maxWidth: '100%',
                 lineHeight: 1,
+                borderRadius: 6,
               }}
             >
+              {modelInfo && (
+                <ProviderIcon
+                  providerId={modelInfo.provider_id || ''}
+                  providerName={modelInfo.provider_name}
+                  size={16}
+                />
+              )}
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1 }}>{modelLabel}</span>
-              <ChevronDown size={12} color={COMPOSER_COLORS.textTertiary} style={{ flexShrink: 0 }} />
+              {modelDropdownOpen
+                ? <ChevronUp size={12} color={COMPOSER_COLORS.textTertiary} style={{ flexShrink: 0 }} />
+                : <ChevronDown size={12} color={COMPOSER_COLORS.textTertiary} style={{ flexShrink: 0 }} />
+              }
             </button>
           </Dropdown>
         </div>

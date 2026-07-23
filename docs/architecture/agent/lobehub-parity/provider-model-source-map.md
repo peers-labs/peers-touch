@@ -47,13 +47,14 @@ It is source audit and migration design evidence only. It does not implement GAT
 
 ## 4. Required Peers-Touch Ownership Mapping
 
-| Capability | Peers source of truth | Desktop responsibility | Station responsibility |
+| Capability | Peers source of truth | Desktop/Mobile responsibility | Station responsibility |
 | --- | --- | --- | --- |
-| Provider CRUD/config | Settings Provider / Desktop Rust + Station provider policy | Render/edit settings, project enabled provider/model state to Agent runtime. | Execute server-side providers and enforce policy/credential boundaries. |
-| Model CRUD/config | Settings Provider model store | Manage local model list, fetch remote/local models, expose projection to Agent. | Validate executable provider/model refs for Station-run providers. |
-| Agent model selection | Agent config + Settings Provider projection | Select/display `provider_id + model_id`, handle disabled/deleted recovery and duplicate IDs. | Persist and validate selected model ref when Agent/turn config is Station-owned. |
-| Capability gating | Provider/model projection | Gate tools/files/vision/reasoning/search UI affordances. | Reject unsupported tool/file/runtime usage at turn execution boundary. |
-| Runtime fetch boundary | Provider runtime config | Run Desktop/local/CLI model fetch and local execution paths. | Run server providers; reject Desktop-only CLI provider execution. |
+| Provider CRUD/config | Station (per-actor) | Cache for UI speed; settings UI routes mutations to Station API. | Store, validate, and serve provider config per actor. |
+| Credential storage | Station (`agent_credential_pool`, per-actor) | Never stored locally. Settings UI submits credentials to Station. | Store and rotate credentials; enforce per-actor isolation. |
+| Model CRUD/config | Station (per-actor) | Cache model list for picker display; mutations call Station. | Manage model list per provider per actor; enumerate remote models. |
+| Provider execution | Station | Never execute provider calls directly. Consume via SSE. | Execute all provider types (HTTP, CLI, embedded). |
+| Agent model selection | Agent config on Station + client cache | Select/display `provider_id + model_id`; handle disabled/deleted recovery. | Persist and validate selected model ref per actor. |
+| Capability gating | Station provider/model metadata | Gate tools/files/vision/reasoning/search UI affordances from cached metadata. | Reject unsupported tool/file/runtime usage at turn execution boundary. |
 
 ## 5. Contract Implications
 
@@ -64,7 +65,7 @@ It is source audit and migration design evidence only. It does not implement GAT
 | Runtime state can be stale | Projection must expose `loading`, `ready`, `error`, `stale` or equivalent states; chat execution must not silently fall back to a hardcoded model. |
 | Model capability drives tools/files/runtime | Tool, Knowledge, File, Vision, Reasoning and Search affordances must be derived from provider+model capability projection. |
 | Remote fetch mutates capability projection | Provider/model fetch/toggle/update/delete must refresh Agent projection once per mutation batch. |
-| Client/server provider boundary is first-class | Desktop-only providers and CLI providers cannot be routed through Station execution by accident. |
+| Client/server provider boundary is first-class | All provider execution is Station-owned. Desktop/Mobile never execute provider calls directly; they consume AI capability via SSE. |
 | Builtin/default list is a fallback source only | LobeHub uses builtin lists for non-login/runtime state; Peers Agent must not hardcode default model lists outside Settings Provider projection. |
 
 ## 6. Mapping To Migration Batches
@@ -82,7 +83,7 @@ It is source audit and migration design evidence only. It does not implement GAT
 1. Agent UI must not own provider/model CRUD.
 2. Agent runtime must not use model ID alone when provider is known or duplicates exist.
 3. Agent picker must not ship hardcoded default model lists.
-4. Station must not execute Desktop-only CLI/local providers.
+4. Desktop/Mobile must not execute any provider calls directly; all execution is Station-owned.
 5. Component mount effects must not be the primary provider/model projection refresh mechanism.
 6. Tool/function-call availability must not be inferred from provider name alone.
 
