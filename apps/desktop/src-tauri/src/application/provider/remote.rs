@@ -1,21 +1,7 @@
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde_json::Value;
-use std::collections::BTreeSet;
 use std::time::Duration;
-
-pub(crate) struct ProbeResult {
-    pub(crate) endpoint: String,
-    pub(crate) models: Vec<String>,
-}
-
-type ProbeFn = fn(&Client, &str, &str) -> Result<ProbeResult, String>;
-
-struct ProtocolAdapter {
-    key: &'static str,
-    aliases: &'static [&'static str],
-    probe: ProbeFn,
-}
 
 fn normalize_base_url(base_url: &str) -> String {
     base_url.trim().trim_end_matches('/').to_string()
@@ -28,82 +14,6 @@ fn redact_url(url: &str) -> String {
     } else {
         normalized
     }
-}
-
-fn build_openai_candidate_endpoints(base_url: &str) -> Vec<String> {
-    let normalized = normalize_base_url(base_url);
-    let mut endpoints = vec![format!("{}/models", normalized)];
-    if normalized.ends_with("/v1") {
-        endpoints.push(format!("{}/api/tags", normalized.trim_end_matches("/v1")));
-    } else {
-        endpoints.push(format!("{}/v1/models", normalized));
-        endpoints.push(format!("{}/api/tags", normalized));
-    }
-    let mut seen = BTreeSet::new();
-    endpoints
-        .into_iter()
-        .filter(|item| seen.insert(item.clone()))
-        .collect::<Vec<_>>()
-}
-
-fn extract_openai_models(payload: &Value) -> Vec<String> {
-    let mut models = vec![];
-    if let Some(items) = payload.get("data").and_then(Value::as_array) {
-        for item in items {
-            if let Some(id) = item.get("id").and_then(Value::as_str) {
-                let value = id.trim();
-                if !value.is_empty() {
-                    models.push(value.to_string());
-                }
-            }
-        }
-    }
-    if let Some(items) = payload.get("models").and_then(Value::as_array) {
-        for item in items {
-            if let Some(id) = item.as_str() {
-                let value = id.trim();
-                if !value.is_empty() {
-                    models.push(value.to_string());
-                }
-                continue;
-            }
-            if let Some(name) = item
-                .get("name")
-                .and_then(Value::as_str)
-                .or_else(|| item.get("id").and_then(Value::as_str))
-            {
-                let value = name.trim();
-                if !value.is_empty() {
-                    models.push(value.to_string());
-                }
-            }
-        }
-    }
-    let mut seen = BTreeSet::new();
-    models
-        .into_iter()
-        .filter(|item| seen.insert(item.clone()))
-        .collect::<Vec<_>>()
-}
-
-fn request_json(client: &Client, endpoint: &str, headers: &HeaderMap) -> Result<Value, String> {
-    let mut request = client
-        .get(endpoint)
-        .header(CONTENT_TYPE, "application/json");
-    request = request.headers(headers.clone());
-    let response = request
-        .send()
-        .map_err(|err| format!("request {} failed: {}", endpoint, err))?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "request {} failed with status {}",
-            endpoint,
-            response.status()
-        ));
-    }
-    response
-        .json()
-        .map_err(|err| format!("invalid response {}: {}", endpoint, err))
 }
 
 fn openai_headers(api_key: &str) -> HeaderMap {
@@ -135,153 +45,19 @@ fn google_headers() -> HeaderMap {
     HeaderMap::new()
 }
 
-fn request_openai_models(
-    client: &Client,
-    base_url: &str,
-    api_key: &str,
-) -> Result<ProbeResult, String> {
-    let headers = openai_headers(api_key);
-    let mut last_error = String::from("no endpoint available");
-    for endpoint in build_openai_candidate_endpoints(base_url) {
-        match request_json(client, &endpoint, &headers) {
-            Ok(payload) => {
-                let models = extract_openai_models(&payload);
-                return Ok(ProbeResult { endpoint, models });
-            }
-            Err(err) => last_error = err,
-        }
-    }
-    Err(last_error)
-}
-
-fn request_anthropic_models(
-    client: &Client,
-    base_url: &str,
-    api_key: &str,
-) -> Result<ProbeResult, String> {
-    let headers = anthropic_headers(api_key);
-    let base = normalize_base_url(base_url);
-    let mut endpoints = vec![format!("{}/v1/models", base), format!("{}/models", base)];
-    let mut seen = BTreeSet::new();
-    endpoints.retain(|item| seen.insert(item.clone()));
-    let mut last_error = String::from("no endpoint available");
-    for endpoint in endpoints {
-        match request_json(client, &endpoint, &headers) {
-            Ok(payload) => {
-                let models = extract_openai_models(&payload);
-                return Ok(ProbeResult { endpoint, models });
-            }
-            Err(err) => last_error = err,
-        }
-    }
-    Err(last_error)
-}
-
-fn extract_ollama_models(payload: &Value) -> Vec<String> {
-    payload
-        .get("models")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.get("name").and_then(Value::as_str))
-                .map(|name| name.trim().to_string())
-                .filter(|name| !name.is_empty())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default()
-}
-
-fn extract_gemini_models(payload: &Value) -> Vec<String> {
-    payload
-        .get("models")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.get("name").and_then(Value::as_str))
-                .map(|name| name.trim().trim_start_matches("models/").to_string())
-                .filter(|name| !name.is_empty())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default()
-}
-
-fn request_ollama_models(client: &Client, base_url: &str) -> Result<ProbeResult, String> {
-    let endpoint = format!("{}/api/tags", normalize_base_url(base_url));
-    let payload = request_json(client, &endpoint, &HeaderMap::new())?;
-    let models = extract_ollama_models(&payload);
-    Ok(ProbeResult { endpoint, models })
-}
-
-fn request_gemini_models(
-    client: &Client,
-    base_url: &str,
-    api_key: &str,
-) -> Result<ProbeResult, String> {
-    let base = normalize_base_url(base_url);
-    if base.contains("/openai") {
-        return request_openai_models(client, &base, api_key);
-    }
-    let endpoint = if api_key.trim().is_empty() {
-        format!("{}/models", base)
-    } else {
-        format!("{}/models?key={}", base, api_key.trim())
-    };
-    let payload = request_json(client, &endpoint, &google_headers())?;
-    let models = extract_gemini_models(&payload);
-    Ok(ProbeResult { endpoint, models })
-}
-
-fn model_matches(expected: &str, candidate: &str) -> bool {
-    candidate == expected || candidate.starts_with(&format!("{}:", expected))
-}
-
-fn protocol_adapters() -> &'static [ProtocolAdapter] {
-    static ADAPTERS: &[ProtocolAdapter] = &[
-        ProtocolAdapter {
-            key: "openai-compatible",
-            aliases: &["openai-compatible", "openai"],
-            probe: request_openai_models,
-        },
-        ProtocolAdapter {
-            key: "anthropic",
-            aliases: &["anthropic", "claude"],
-            probe: request_anthropic_models,
-        },
-        ProtocolAdapter {
-            key: "ollama",
-            aliases: &["ollama"],
-            probe: |client, base_url, _| request_ollama_models(client, base_url),
-        },
-        ProtocolAdapter {
-            key: "gemini",
-            aliases: &["gemini", "google"],
-            probe: request_gemini_models,
-        },
-    ];
-    ADAPTERS
-}
-
 fn resolve_protocol_key(protocol: Option<&str>) -> &'static str {
     let normalized = protocol
         .map(|value| value.trim().to_lowercase())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "openai-compatible".to_string());
-    for adapter in protocol_adapters() {
-        if adapter.aliases.iter().any(|alias| *alias == normalized) {
-            return adapter.key;
-        }
-    }
-    "openai-compatible"
-}
 
-fn resolve_protocol_adapter(protocol: Option<&str>) -> &'static ProtocolAdapter {
-    let key = resolve_protocol_key(protocol);
-    protocol_adapters()
-        .iter()
-        .find(|adapter| adapter.key == key)
-        .unwrap_or(&protocol_adapters()[0])
+    match normalized.as_str() {
+        "openai" | "openai-compatible" | "openai_compatible" => "openai-compatible",
+        "anthropic" | "claude" => "anthropic",
+        "gemini" | "google" => "gemini",
+        "ollama" => "ollama",
+        _ => "openai-compatible",
+    }
 }
 
 pub(crate) fn resolve_model_protocol<'a>(
@@ -292,40 +68,6 @@ pub(crate) fn resolve_model_protocol<'a>(
         .filter(|v| !v.trim().is_empty())
         .or(provider_protocol);
     resolve_protocol_key(effective)
-}
-
-pub(crate) fn probe_provider(
-    base_url: &str,
-    api_key: &str,
-    model: &str,
-    protocol: Option<&str>,
-) -> Result<ProbeResult, String> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(8))
-        .build()
-        .map_err(|err| format!("create http client failed: {}", err))?;
-    let adapter = resolve_protocol_adapter(protocol);
-    let result = (adapter.probe)(&client, base_url, api_key)?;
-    let expected = model.trim();
-    if !expected.is_empty() && !result.models.is_empty() {
-        let matched = result
-            .models
-            .iter()
-            .any(|item| model_matches(expected, item));
-        if !matched {
-            return Err(format!("model {} not found on provider", expected));
-        }
-    }
-    Ok(result)
-}
-
-pub(crate) fn fetch_models(
-    base_url: &str,
-    api_key: &str,
-    protocol: Option<&str>,
-) -> Result<Vec<String>, String> {
-    let result = probe_provider(base_url, api_key, "", protocol)?;
-    Ok(result.models)
 }
 
 pub(crate) struct CompletionResult {
@@ -548,7 +290,6 @@ fn completion_ollama(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn resolve_protocol_should_support_aliases() {
@@ -591,172 +332,8 @@ mod tests {
     }
 
     #[test]
-    fn extract_openai_models_from_data_array() {
-        let payload = json!({
-            "data": [
-                { "id": "gpt-4o", "object": "model" },
-                { "id": "gpt-4o-mini", "object": "model" },
-                { "id": "  " }
-            ]
-        });
-        let models = extract_openai_models(&payload);
-        assert_eq!(models, vec!["gpt-4o", "gpt-4o-mini"]);
-    }
-
-    #[test]
-    fn extract_openai_models_from_models_array_with_name_field() {
-        let payload = json!({
-            "models": [
-                { "name": "llama3:latest" },
-                { "id": "phi3" }
-            ]
-        });
-        let models = extract_openai_models(&payload);
-        assert_eq!(models, vec!["llama3:latest", "phi3"]);
-    }
-
-    #[test]
-    fn extract_openai_models_from_string_models_array() {
-        let payload = json!({
-            "models": ["model-a", "model-b", "model-a"]
-        });
-        let models = extract_openai_models(&payload);
-        assert_eq!(models, vec!["model-a", "model-b"]);
-    }
-
-    #[test]
-    fn extract_openai_models_deduplicates() {
-        let payload = json!({
-            "data": [
-                { "id": "gpt-4o" },
-                { "id": "gpt-4o" }
-            ]
-        });
-        let models = extract_openai_models(&payload);
-        assert_eq!(models, vec!["gpt-4o"]);
-    }
-
-    #[test]
-    fn extract_openai_models_empty_payload() {
-        let models = extract_openai_models(&json!({}));
-        assert!(models.is_empty());
-    }
-
-    #[test]
-    fn extract_ollama_models_from_tags_response() {
-        let payload = json!({
-            "models": [
-                { "name": "llama3:latest", "size": 4700000000_u64 },
-                { "name": "mistral:7b", "size": 4100000000_u64 },
-                { "name": "  " }
-            ]
-        });
-        let models = extract_ollama_models(&payload);
-        assert_eq!(models, vec!["llama3:latest", "mistral:7b"]);
-    }
-
-    #[test]
-    fn extract_ollama_models_empty_response() {
-        let models = extract_ollama_models(&json!({ "models": [] }));
-        assert!(models.is_empty());
-    }
-
-    #[test]
-    fn extract_gemini_models_strips_prefix() {
-        let payload = json!({
-            "models": [
-                { "name": "models/gemini-2.0-flash" },
-                { "name": "models/gemini-1.5-pro" },
-                { "name": "gemini-nano" }
-            ]
-        });
-        let models = extract_gemini_models(&payload);
-        assert_eq!(
-            models,
-            vec!["gemini-2.0-flash", "gemini-1.5-pro", "gemini-nano"]
-        );
-    }
-
-    #[test]
-    fn extract_gemini_models_empty_response() {
-        let models = extract_gemini_models(&json!({ "models": [] }));
-        assert!(models.is_empty());
-    }
-
-    #[test]
-    fn build_openai_endpoints_for_standard_url() {
-        let endpoints = build_openai_candidate_endpoints("https://api.openai.com/v1");
-        assert_eq!(endpoints[0], "https://api.openai.com/v1/models");
-        assert!(endpoints.iter().any(|e| e.contains("/api/tags")));
-    }
-
-    #[test]
-    fn build_openai_endpoints_for_non_v1_url() {
-        let endpoints = build_openai_candidate_endpoints("https://custom.example.com");
-        assert_eq!(endpoints[0], "https://custom.example.com/models");
-        assert!(endpoints.iter().any(|e| e.contains("/v1/models")));
-        assert!(endpoints.iter().any(|e| e.contains("/api/tags")));
-    }
-
-    #[test]
-    fn build_openai_endpoints_trims_trailing_slash() {
-        let endpoints = build_openai_candidate_endpoints("https://api.openai.com/v1/");
-        assert_eq!(endpoints[0], "https://api.openai.com/v1/models");
-    }
-
-    #[test]
-    fn openai_headers_include_bearer_token() {
-        let headers = openai_headers("sk-test-key");
-        let auth = headers
-            .get(AUTHORIZATION)
-            .expect("should have Authorization");
-        assert_eq!(auth.to_str().unwrap(), "Bearer sk-test-key");
-    }
-
-    #[test]
-    fn openai_headers_skip_empty_key() {
-        let headers = openai_headers("  ");
-        assert!(headers.get(AUTHORIZATION).is_none());
-    }
-
-    #[test]
-    fn anthropic_headers_include_api_key_and_version() {
-        let headers = anthropic_headers("ant-key");
-        let api_key = headers.get("x-api-key").expect("should have x-api-key");
-        assert_eq!(api_key.to_str().unwrap(), "ant-key");
-        let version = headers
-            .get("anthropic-version")
-            .expect("should have anthropic-version");
-        assert_eq!(version.to_str().unwrap(), "2023-06-01");
-    }
-
-    #[test]
-    fn anthropic_headers_skip_empty_key_but_keep_version() {
-        let headers = anthropic_headers("  ");
-        assert!(headers.get("x-api-key").is_none());
-        assert!(headers.get("anthropic-version").is_some());
-    }
-
-    #[test]
-    fn model_matches_exact() {
-        assert!(model_matches("gpt-4o", "gpt-4o"));
-    }
-
-    #[test]
-    fn model_matches_with_tag() {
-        assert!(model_matches("llama3", "llama3:latest"));
-    }
-
-    #[test]
-    fn model_matches_rejects_partial() {
-        assert!(!model_matches("gpt-4", "gpt-4o"));
-    }
-
-    #[test]
     fn normalize_base_url_trims_and_strips_slash() {
-        assert_eq!(
-            normalize_base_url("  https://api.example.com/v1/  "),
-            "https://api.example.com/v1"
-        );
+        assert_eq!(normalize_base_url("  https://api.openai.com/v1/  "), "https://api.openai.com/v1");
+        assert_eq!(normalize_base_url("http://localhost:11434/"), "http://localhost:11434");
     }
 }
