@@ -880,7 +880,14 @@ export function AgentProfilePage({
 }: AgentProfilePageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const { agents, availableModels, loadAgents, loadModels, setSelectedAgent, setAgentSurface, agentRosterOpen, setAgentRosterOpen } = useAgentStore();
+  const agents = useAgentStore(s => s.agents);
+  const availableModels = useAgentStore(s => s.availableModels);
+  const loadAgents = useAgentStore(s => s.loadAgents);
+  const loadModels = useAgentStore(s => s.loadModels);
+  const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
+  const setAgentSurface = useAgentStore(s => s.setAgentSurface);
+  const agentRosterOpen = useAgentStore(s => s.agentRosterOpen);
+  const setAgentRosterOpen = useAgentStore(s => s.setAgentRosterOpen);
 
   const [profileAgentName, setProfileAgentName] = useState(agentName);
   const agentListOpen = agentRosterOpen;
@@ -905,7 +912,9 @@ export function AgentProfilePage({
   const [persistedTraceCount, setPersistedTraceCount] = useState(0);
   const soulSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const agentsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const { skills, builtins, loadSkills } = useSkillStore();
+  const skills = useSkillStore(s => s.skills);
+  const builtins = useSkillStore(s => s.builtins);
+  const loadSkills = useSkillStore(s => s.loadSkills);
   const activityMessages = useChatStore((state) => state.messages);
   const activityCurrentSessionKey = useChatStore((state) => state.currentSessionKey);
   const activitySessions = useChatStore((state) => state.sessions);
