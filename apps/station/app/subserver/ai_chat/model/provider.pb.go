@@ -96,9 +96,10 @@ type Provider struct {
 	AccessedAt    *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=accessed_at,json=accessedAt,proto3" json:"accessed_at,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	RuntimeKind   string                 `protobuf:"bytes,16,opt,name=runtime_kind,json=runtimeKind,proto3" json:"runtime_kind,omitempty"` // 运行时类型：remote / local / cli。CLI 由 Desktop runtime 执行，Station 不执行本地命令。
-	CliCommand    string                 `protobuf:"bytes,17,opt,name=cli_command,json=cliCommand,proto3" json:"cli_command,omitempty"`    // CLI provider 的非交互命令模板，仅作为配置同步字段。
+	RuntimeKind   string                 `protobuf:"bytes,16,opt,name=runtime_kind,json=runtimeKind,proto3" json:"runtime_kind,omitempty"` // 运行时类型：http / cli / embedded。Station 是所有 runtime_kind 的唯一执行者。
+	CliCommand    string                 `protobuf:"bytes,17,opt,name=cli_command,json=cliCommand,proto3" json:"cli_command,omitempty"`    // Station 预注册 CLI adapter 标识符（非任意命令）。客户端不可提交未注册值。
 	Protocol      string                 `protobuf:"bytes,18,opt,name=protocol,proto3" json:"protocol,omitempty"`                          // openai / anthropic / ollama / cli 等协议标记。
+	Version       int64                  `protobuf:"varint,19,opt,name=version,proto3" json:"version,omitempty"`                           // Monotonic version for optimistic concurrency control.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -257,6 +258,13 @@ func (x *Provider) GetProtocol() string {
 		return x.Protocol
 	}
 	return ""
+}
+
+func (x *Provider) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
 }
 
 // =================================================
@@ -459,8 +467,6 @@ type CreateProviderRequest struct {
 	KeyVaults     string                 `protobuf:"bytes,4,opt,name=key_vaults,json=keyVaults,proto3" json:"key_vaults,omitempty"`
 	SettingsJson  string                 `protobuf:"bytes,5,opt,name=settings_json,json=settingsJson,proto3" json:"settings_json,omitempty"`
 	ConfigJson    string                 `protobuf:"bytes,6,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
-	RuntimeKind   string                 `protobuf:"bytes,7,opt,name=runtime_kind,json=runtimeKind,proto3" json:"runtime_kind,omitempty"`
-	CliCommand    string                 `protobuf:"bytes,8,opt,name=cli_command,json=cliCommand,proto3" json:"cli_command,omitempty"`
 	Protocol      string                 `protobuf:"bytes,9,opt,name=protocol,proto3" json:"protocol,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -538,20 +544,6 @@ func (x *CreateProviderRequest) GetConfigJson() string {
 	return ""
 }
 
-func (x *CreateProviderRequest) GetRuntimeKind() string {
-	if x != nil {
-		return x.RuntimeKind
-	}
-	return ""
-}
-
-func (x *CreateProviderRequest) GetCliCommand() string {
-	if x != nil {
-		return x.CliCommand
-	}
-	return ""
-}
-
 func (x *CreateProviderRequest) GetProtocol() string {
 	if x != nil {
 		return x.Protocol
@@ -613,9 +605,8 @@ type UpdateProviderRequest struct {
 	KeyVaults     *string                `protobuf:"bytes,6,opt,name=key_vaults,json=keyVaults,proto3,oneof" json:"key_vaults,omitempty"`
 	SettingsJson  *string                `protobuf:"bytes,7,opt,name=settings_json,json=settingsJson,proto3,oneof" json:"settings_json,omitempty"`
 	ConfigJson    *string                `protobuf:"bytes,8,opt,name=config_json,json=configJson,proto3,oneof" json:"config_json,omitempty"`
-	RuntimeKind   *string                `protobuf:"bytes,9,opt,name=runtime_kind,json=runtimeKind,proto3,oneof" json:"runtime_kind,omitempty"`
-	CliCommand    *string                `protobuf:"bytes,10,opt,name=cli_command,json=cliCommand,proto3,oneof" json:"cli_command,omitempty"`
 	Protocol      *string                `protobuf:"bytes,11,opt,name=protocol,proto3,oneof" json:"protocol,omitempty"`
+	Version       int64                  `protobuf:"varint,12,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -706,25 +697,18 @@ func (x *UpdateProviderRequest) GetConfigJson() string {
 	return ""
 }
 
-func (x *UpdateProviderRequest) GetRuntimeKind() string {
-	if x != nil && x.RuntimeKind != nil {
-		return *x.RuntimeKind
-	}
-	return ""
-}
-
-func (x *UpdateProviderRequest) GetCliCommand() string {
-	if x != nil && x.CliCommand != nil {
-		return *x.CliCommand
-	}
-	return ""
-}
-
 func (x *UpdateProviderRequest) GetProtocol() string {
 	if x != nil && x.Protocol != nil {
 		return *x.Protocol
 	}
 	return ""
+}
+
+func (x *UpdateProviderRequest) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
 }
 
 type UpdateProviderResponse struct {
@@ -774,6 +758,7 @@ func (x *UpdateProviderResponse) GetProvider() *Provider {
 type DeleteProviderRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Version       int64                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -813,6 +798,13 @@ func (x *DeleteProviderRequest) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *DeleteProviderRequest) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
 }
 
 type DeleteProviderResponse struct {
@@ -1175,7 +1167,7 @@ var File_domain_ai_chat_provider_proto protoreflect.FileDescriptor
 
 const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddomain/ai_chat/provider.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf0\x04\n" +
+	"\x1ddomain/ai_chat/provider.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8a\x05\n" +
 	"\bProvider\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\"\n" +
@@ -1203,7 +1195,8 @@ const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"\fruntime_kind\x18\x10 \x01(\tR\vruntimeKind\x12\x1f\n" +
 	"\vcli_command\x18\x11 \x01(\tR\n" +
 	"cliCommand\x12\x1a\n" +
-	"\bprotocol\x18\x12 \x01(\tR\bprotocol\"\xca\x01\n" +
+	"\bprotocol\x18\x12 \x01(\tR\bprotocol\x12\x18\n" +
+	"\aversion\x18\x13 \x01(\x03R\aversion\"\xca\x01\n" +
 	"\fProviderView\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1222,7 +1215,7 @@ const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"sourceType\x12\x18\n" +
 	"\aenabled\x18\x06 \x01(\bR\aenabled\x12\x1f\n" +
 	"\vschema_json\x18\a \x01(\tR\n" +
-	"schemaJson\"\xa6\x02\n" +
+	"schemaJson\"\xee\x01\n" +
 	"\x15CreateProviderRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x12\n" +
@@ -1231,13 +1224,10 @@ const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"key_vaults\x18\x04 \x01(\tR\tkeyVaults\x12#\n" +
 	"\rsettings_json\x18\x05 \x01(\tR\fsettingsJson\x12\x1f\n" +
 	"\vconfig_json\x18\x06 \x01(\tR\n" +
-	"configJson\x12!\n" +
-	"\fruntime_kind\x18\a \x01(\tR\vruntimeKind\x12\x1f\n" +
-	"\vcli_command\x18\b \x01(\tR\n" +
-	"cliCommand\x12\x1a\n" +
-	"\bprotocol\x18\t \x01(\tR\bprotocol\"\\\n" +
+	"configJson\x12\x1a\n" +
+	"\bprotocol\x18\t \x01(\tR\bprotocolJ\x04\b\a\x10\bJ\x04\b\b\x10\t\"\\\n" +
 	"\x16CreateProviderResponse\x12B\n" +
-	"\bprovider\x18\x01 \x01(\v2&.peers_touch.model.ai_chat.v1.ProviderR\bprovider\"\x8f\x04\n" +
+	"\bprovider\x18\x01 \x01(\v2&.peers_touch.model.ai_chat.v1.ProviderR\bprovider\"\xc6\x03\n" +
 	"\x15UpdateProviderRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12%\n" +
@@ -1248,12 +1238,9 @@ const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"key_vaults\x18\x06 \x01(\tH\x04R\tkeyVaults\x88\x01\x01\x12(\n" +
 	"\rsettings_json\x18\a \x01(\tH\x05R\fsettingsJson\x88\x01\x01\x12$\n" +
 	"\vconfig_json\x18\b \x01(\tH\x06R\n" +
-	"configJson\x88\x01\x01\x12&\n" +
-	"\fruntime_kind\x18\t \x01(\tH\aR\vruntimeKind\x88\x01\x01\x12$\n" +
-	"\vcli_command\x18\n" +
-	" \x01(\tH\bR\n" +
-	"cliCommand\x88\x01\x01\x12\x1f\n" +
-	"\bprotocol\x18\v \x01(\tH\tR\bprotocol\x88\x01\x01B\a\n" +
+	"configJson\x88\x01\x01\x12\x1f\n" +
+	"\bprotocol\x18\v \x01(\tH\aR\bprotocol\x88\x01\x01\x12\x18\n" +
+	"\aversion\x18\f \x01(\x03R\aversionB\a\n" +
 	"\x05_nameB\x0e\n" +
 	"\f_descriptionB\a\n" +
 	"\x05_logoB\n" +
@@ -1261,14 +1248,15 @@ const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"\b_enabledB\r\n" +
 	"\v_key_vaultsB\x10\n" +
 	"\x0e_settings_jsonB\x0e\n" +
-	"\f_config_jsonB\x0f\n" +
-	"\r_runtime_kindB\x0e\n" +
-	"\f_cli_commandB\v\n" +
-	"\t_protocol\"\\\n" +
+	"\f_config_jsonB\v\n" +
+	"\t_protocolJ\x04\b\t\x10\n" +
+	"J\x04\b\n" +
+	"\x10\v\"\\\n" +
 	"\x16UpdateProviderResponse\x12B\n" +
-	"\bprovider\x18\x01 \x01(\v2&.peers_touch.model.ai_chat.v1.ProviderR\bprovider\"'\n" +
+	"\bprovider\x18\x01 \x01(\v2&.peers_touch.model.ai_chat.v1.ProviderR\bprovider\"A\n" +
 	"\x15DeleteProviderRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"2\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\x03R\aversion\"2\n" +
 	"\x16DeleteProviderResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\"$\n" +
 	"\x12GetProviderRequest\x12\x0e\n" +
