@@ -1,4 +1,4 @@
-import { type ComponentType, useEffect, useRef } from 'react';
+import { type ComponentType, useEffect, useRef, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from 'antd';
 import { useAppLifecycle } from './hooks/useAppLifecycle';
@@ -18,6 +18,10 @@ import {
 } from './kernel/boot';
 import { installEventStreamBridge, teardownEventStreamBridge } from './services/eventStream';
 import type { AppState, AppLifecycle } from './types/navigation';
+
+const DevOverlay = import.meta.env.DEV
+  ? lazy(() => import('./dev/DevOverlay').then((m) => ({ default: m.DevOverlay })))
+  : null;
 
 // Critical session-scope runtimes installed during `runtime:critical`.
 // `social` is currently the only kernel-managed runtime; everything else
@@ -117,7 +121,12 @@ function App() {
     });
   }, [lifecycle.authenticated, t]);
 
-  return <View lifecycle={lifecycle} />;
+  return (
+    <>
+      <View lifecycle={lifecycle} />
+      {DevOverlay && <Suspense fallback={null}><DevOverlay /></Suspense>}
+    </>
+  );
 }
 
 export default App;
