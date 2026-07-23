@@ -69,5 +69,6 @@ func AllModels() []interface{} {
 		&ExecutionStep{},
 		&ExecutorLease{},
 		&TaskCheckpoint{},
+		&AgentModel{},
 	}
 }

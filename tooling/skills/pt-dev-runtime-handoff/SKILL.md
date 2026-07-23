@@ -9,6 +9,9 @@ description: >
 
 # Dev Runtime Handoff
 
+> **Source of truth for environment spec**: `docs/global/local-dev-environment.md`
+> This skill defines behavior (when to restart, what to run). The doc above defines semantics (what modes mean, what fields do, what deploy does).
+
 ## Goal
 
 After finishing code, the agent should prepare the right dev runtime so the

@@ -9,13 +9,28 @@
 
 ---
 
-## 1. Background
+## 1. Document Scope
+
+This module defines:
+- Ownership of provider config, credentials, models, and turn execution (Station vs Client)
+- Per-actor isolation boundaries
+- Version-gated mutation contract
+- CLI adapter execution model
+- SSE as sole AI response channel
+
+This module does NOT define:
+- Agent conversation / memory architecture (see `docs/architecture/agent/`)
+- Desktop UI component design (see `docs/client/desktop/`)
+- Station framework internals (see `docs/station/`)
+- Coding conventions (see `docs/global/coding-guide/`)
+
+## 2. Background
 
 Prior to this design, Desktop Rust owned provider configuration, credential storage, model enumeration, and (for CLI-type providers) local execution. Station's agent subserver acted as a second executor only for "direct" HTTP providers.
 
 2026-07-W30 decision: **Station is the sole authority and executor of all AI providers.** Desktop/Mobile are config editors and SSE consumers. This eliminates split execution paths, enables per-actor credential isolation, and allows Mobile to share the same AI capability without duplicating execution logic.
 
-## 2. Design Goals
+## 3. Design Goals
 
 1. Station executes all provider types (HTTP, CLI, embedded) for all actors.
 2. Desktop/Mobile edit provider/model/credential config and submit to Station.
@@ -24,14 +39,14 @@ Prior to this design, Desktop Rust owned provider configuration, credential stor
 5. Desktop/Mobile cache config locally for UI speed; Station is the source of truth.
 6. SSE streaming is the sole AI response delivery mechanism to clients.
 
-## 3. Non-Goals
+## 4. Non-Goals
 
 - Station admin UI for provider config (Desktop/Mobile are the only editing surfaces).
 - Offline AI execution on Desktop/Mobile.
 - Provider marketplace or discovery (out of scope for this architecture).
 - Credential sharing across actors.
 
-## 4. Upstream Constraints
+## 5. Upstream Constraints
 
 | Source | Constraint applied |
 |--------|-------------------|
@@ -41,7 +56,7 @@ Prior to this design, Desktop Rust owned provider configuration, credential stor
 | `docs/global/first-principles.md` L0.4 | No secrets in logs. Validate auth/ownership for all handlers. |
 | `docs/architecture/agent/README.md` §5 | "Station 承担全部后端能力, Tauri 承担通信桥接, Desktop 承担用户交互和成长可视化." |
 
-## 5. Navigation
+## 6. Navigation
 
 | Document | Purpose |
 |----------|---------|
@@ -49,3 +64,4 @@ Prior to this design, Desktop Rust owned provider configuration, credential stor
 | [decisions.md](./decisions.md) | Design decisions (ADR-lite format) |
 | [data-model.md](./data-model.md) | Provider/credential/model data contracts, versioning schema, SSE event protocol |
 | [integration.md](./integration.md) | Migration from Desktop-local provider to Station-owned: impact surface, deletion list, compatibility |
+| [execution-plans/20260723-phase1-station-api.md](./execution-plans/20260723-phase1-station-api.md) | Phase 1 execution plan: Station API + per-actor + version gate |

@@ -2,6 +2,8 @@
 
 > **Status**: draft
 > **Version**: v1.0
+> **Created**: 2026-07-23 | **Updated**: 2026-07-23
+> **Owner**: Agent Team
 
 ---
 
@@ -63,10 +65,13 @@ These remain but change semantics:
 
 ### Phase 1: Station API + Per-Actor (prerequisite)
 
-1. Add `actor_id` to credential pool queries.
-2. Create provider/model/credential CRUD API endpoints on Station.
-3. Add version columns to all config tables.
-4. Implement version-gated mutation logic.
+1. Update `model/domain/ai_chat/provider.proto` and `ai_models.proto` (version fields, reserved, runtime_kind semantics — already done in this architecture change).
+2. Run `./model/build.sh` to regenerate Go types; Station handlers MUST bind to generated types, not hand-written structs.
+3. Add `actor_id` to credential pool queries.
+4. Create provider/model/credential CRUD API endpoints on Station, using generated proto types.
+5. Add version columns to all config tables.
+6. Implement version-gated mutation logic.
+7. Implement CLI adapter registry (code-level, not client-writable).
 
 ### Phase 2: Desktop Rust Cache Layer
 

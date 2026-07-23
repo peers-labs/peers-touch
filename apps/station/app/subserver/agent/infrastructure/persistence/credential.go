@@ -5,7 +5,8 @@ import "time"
 // Credential maps to the agent_credential_pool table.
 type Credential struct {
 	ID            string     `gorm:"primaryKey;type:varchar(36)"`
-	Provider      string     `gorm:"not null;type:varchar(64);index:idx_credentials_provider"`
+	ActorID       string     `gorm:"not null;type:varchar(36);default:'';uniqueIndex:idx_credentials_actor_provider"`
+	Provider      string     `gorm:"not null;type:varchar(64);uniqueIndex:idx_credentials_actor_provider"`
 	Label         *string    `gorm:"type:varchar(255)"`
 	AuthType      string     `gorm:"not null;type:varchar(20)"`
 	Priority      int        `gorm:"not null;default:0"`
@@ -14,6 +15,7 @@ type Credential struct {
 	RequestCount  int        `gorm:"not null;default:0"`
 	ExhaustedAt   *time.Time `gorm:"type:timestamp"`
 	CooldownUntil *time.Time `gorm:"type:timestamp"`
+	Version       int64      `gorm:"not null;default:1"`
 	CreatedAt     time.Time  `gorm:"not null;autoCreateTime"`
 	UpdatedAt     time.Time  `gorm:"not null;autoUpdateTime"`
 }

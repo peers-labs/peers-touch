@@ -634,7 +634,7 @@ func (s *TurnService) runCompression(
 // produced by CompressionService.Compress and contains the conversation
 // text to summarize along with formatting instructions.
 func (s *TurnService) executeSummaryLLM(ctx context.Context, config *TurnConfig, summaryPrompt string) (string, error) {
-	credential, err := s.credentialPool.Lease(ctx, config.Provider, domain.RotationRoundRobin)
+	credential, err := s.credentialPool.Lease(ctx, config.AgentID, config.Provider, domain.RotationRoundRobin)
 	if err != nil {
 		return "", fmt.Errorf("no credential for summary: %w", err)
 	}
@@ -752,8 +752,15 @@ func (s *TurnService) providerCallWithRetry(
 				"provider is required in turn config", nil)
 		}
 
+		// Turn-time revalidation: verify provider and model are valid before execution.
+		if attempt == 0 {
+			if revalErr := s.revalidateProviderState(ctx, config.AgentID, providerID, config.Model); revalErr != nil {
+				return "", providerCalls, false, revalErr
+			}
+		}
+
 		// Lease a credential for the provider.
-		credential, leaseErr := s.credentialPool.Lease(ctx, providerID, strategy)
+		credential, leaseErr := s.credentialPool.Lease(ctx, config.AgentID, providerID, strategy)
 		if leaseErr != nil {
 			logger.Errorf(ctx, "credential lease failed: turn_id=%s attempt=%d err=%v",
 				turnID, attempt, leaseErr)
@@ -1784,6 +1791,42 @@ func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, ste
 // ---------------------------------------------------------------------------
 // Internal: getDB
 // ---------------------------------------------------------------------------
+
+// revalidateProviderState checks that the provider and model exist, are enabled,
+// and belong to the requesting actor before turn execution begins.
+func (s *TurnService) revalidateProviderState(ctx context.Context, actorID, providerID, modelID string) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	var provider persistence.AgentProvider
+	if err := db.WithContext(ctx).
+		Where("actor_id = ? AND name = ?", actorID, providerID).
+		First(&provider).Error; err != nil {
+		return errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
+			fmt.Sprintf("provider %q not found for actor", providerID), err)
+	}
+
+	if !provider.Enabled {
+		return errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
+			fmt.Sprintf("provider %q is disabled", providerID), nil)
+	}
+
+	if modelID != "" {
+		var model persistence.AgentModel
+		if err := db.WithContext(ctx).
+			Where("actor_id = ? AND provider_id = ? AND model_id = ?", actorID, providerID, modelID).
+			First(&model).Error; err == nil {
+			if !model.Enabled {
+				return errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
+					fmt.Sprintf("model %q is disabled for provider %q", modelID, providerID), nil)
+			}
+		}
+	}
+
+	return nil
+}
 
 func (s *TurnService) getDB(ctx context.Context) (*gorm.DB, error) {
 	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))

@@ -4,191 +4,190 @@ description: >
   Use when the user asks to start a complete development task, from planning
   through coding to PR creation. Drives the full Peers-Touch development
   lifecycle with status tracking and standardized outputs at each phase.
+stage: orchestrator
+requires: []
+produces: ["completed task with merged PR"]
 ---
 
-# Dev Workflow — Development Lifecycle Skill
+# Dev Workflow — Stage Orchestrator
 
-Drive a complete development task through a structured workflow with
-status tracking, confirmation checkpoints, and standardized deliverables.
+This skill is the **single entry point** for any non-trivial development task.
+It detects the current stage, dispatches to the correct skill, tracks progress,
+and manages cross-session continuity.
 
-## Workflow Phases
+## Stage Pipeline
 
 ```
-planning → coding → review → release → completion
+DESIGN → PLAN → EXECUTE → DELIVER
 ```
 
-| Phase | Description | Deliverable |
-|-------|-------------|-------------|
-| `planning` | Gather requirements, analyze scope, design solution | Execution plan |
-| `coding` | Implement changes, write tests | Code + commits |
-| `review` | Create PR, self-review, address feedback | Approved PR |
-| `release` | Merge PR, tag version (if needed) | Merged code |
-| `completion` | Verify, generate summary | Summary report |
+Each stage has a dedicated skill, a gate, and an artifact. See AGENTS.md §13.5
+for the authoritative dispatch table. This skill's job is to **detect + dispatch
++ track**, not to perform the work of individual stages.
 
-## Status Tracking
+---
 
-All workflow state is tracked in `.pt-dev-workflow/<session-id>/status.json`.
-See `status-schema.md` for the full schema.
+## 1. Entry Point
 
-### Four-Beat Rhythm (every step)
+This skill is invoked by `pt-god-view` after it determines the stage and selects
+a work item. It receives:
 
-1. **Read** status.json → know current phase and context
-2. **Execute** the operation for current phase
-3. **Write** deliverable artifacts
-4. **Update** status.json with results
+- The execution plan path
+- The current stage
+- The current step
 
-## Phase Details
+It then dispatches to the stage-specific skill (§3) and manages progress tracking (§5).
 
-### Phase 1: Planning
+If invoked directly by the user (without god-view), it assumes the user knows
+what they want to do and proceeds with task classification (§2).
 
-**Entry**: User describes a task or issue.
+---
 
-**Actions**:
-1. Analyze the request — what needs to change and why
-2. Identify affected platforms/modules (Station, Desktop, Mobile, Proto)
-3. Read relevant source code to understand current state
-4. Draft execution plan
+## 2. Task Classification
 
-**Confirmation Checkpoint**: Present the plan to the user and wait for approval.
+| Signal | Starting stage | Rationale |
+|--------|---------------|-----------|
+| User mentions new architecture / boundary / ownership / protocol | DESIGN | Needs design methodology |
+| Architecture exists, user says "plan" / "execute" / "implement" | PLAN | Needs execution breakdown |
+| Plan exists and is accepted, user says "start coding" / "do it" | EXECUTE | Plan already passed review |
+| Code is done, user says "PR" / "submit" / "deliver" | DELIVER | Needs commit + PR |
+| Single-file bug fix / cosmetic tweak / "just fix X" | EXECUTE (via `pt-small-fix-discipline`) | Skip DESIGN+PLAN |
+
+If ambiguous, ask: "Is this a new architecture decision, or implementation of something already planned?"
+
+---
+
+## 3. Stage Dispatch
+
+Based on current `active_work.stage`, invoke the appropriate skill:
+
+### Stage: DESIGN
+
+```
+Invoke: pt-architecture-design-methodology
+Gate:   Architecture review prompt generated + review passes
+Output: docs/architecture/<module>/ (design.md, decisions.md, etc.)
+Next:   → PLAN
+```
+
+### Stage: PLAN
+
+```
+Invoke: pt-architecture-execution-methodology (dependency analysis)
+Then:   pt-plan-and-document (落盘 + review prompt generation)
+Gate:   Plan review prompt generated + review passes
+Output: execution-plans/<plan>.md
+Next:   → EXECUTE
+```
+
+### Stage: EXECUTE
+
+```
+Invoke: pt-execution-plan-guardian (keeps work on plan rails)
+Also:   pt-read-before-edit (before any file edit)
+        pt-desktop-runtime-projections (if touching Desktop kernel)
+Gate:   All completion criteria in plan checked + pt-completion-auditor passes
+Output: Code + tests + evidence
+Next:   → DELIVER
+```
+
+### Stage: DELIVER
+
+```
+Invoke: pt-github-commit (standardized commits)
+Then:   pt-github-pr (create PR with template)
+Then:   pt-github-review (self-review or request review)
+Gate:   PR merged
+Output: Merged PR
+Next:   → complete
+```
+
+---
+
+## 4. Gate Protocol
+
+Every stage gate follows the same pattern:
+
+1. Generate a structured review prompt (per skill's template)
+2. Present prompt to user
+3. User decides: send to reviewer, iterate, or accept
+4. If review returns "needs modification" → iterate within current stage
+5. If review passes → update `active_work.stage` → move to next stage
+
+**Agent MUST NOT auto-advance past a gate.** Gate passage requires either:
+- User explicitly says "pass" / "approved" / "move on"
+- A review result says "通过" / "有条件通过" (conditions resolved)
+
+---
+
+## 5. Progress Tracking
+
+### active_work registry (project_memory.md)
+
+Maintained as a table — one row per in-flight task:
 
 ```markdown
-## Execution Plan / 执行计划
+## active_work
 
-### Goal / 目标
-EN: <what we're building>
-CN: <我们要做什么>
-
-### Scope / 范围
-- Files to modify: <list>
-- New files: <list>
-- Platform: <Station|Desktop|Mobile|Proto>
-
-### Approach / 方案
-EN: <how we'll implement it>
-CN: <如何实现>
-
-### Risks / 风险
-- <potential issues>
+| id | plan | stage | current_step | branch | blocked | last_session |
+|----|------|-------|--------------|--------|---------|--------------|
+| 1 | docs/.../20260723-phase1-station-api.md | EXECUTE | Step 1 | main | false | 2026-07-23 |
 ```
 
-**Wait for user approval before proceeding.**
+**Update rules:**
+- Stage transition → update `stage` + `current_step`
+- Session end → update `last_session`
+- All phases complete → set `stage: complete`
+- Branch merged with remaining phases → update `branch` to merge target
+- User says "close this" → set `stage: complete`
+- Stale (>14 days idle) → ask user on next session
 
-### Phase 2: Coding
+### Execution plan status table
 
-**Entry**: Plan approved by user.
-
-**Actions**:
-1. Implement changes following the approved plan
-2. Follow platform-specific conventions (see `docs/.agent/<platform>.md`)
-3. Write tests if applicable
-4. Create standardized commits using `pt-github-commit` skill
-5. Push to feature branch
-
-**Branch naming**: `<type>/<scope>-<short-description>`
-
-**Commit convention**: Use `pt-github-commit` skill for every commit.
-
-### Phase 3: Review
-
-**Entry**: Coding complete, branch pushed.
-
-**Actions**:
-1. Run submit-time review pipeline:
-
-   ```bash
-   make review-submit REVIEW_BASE=origin/master
-   ```
-
-2. Self-review the diff and evidence:
-   - `git diff origin/master..HEAD`
-   - `tooling/acceptance/reports/latest-quality-evidence.md`
-   - `tooling/acceptance/reports/latest-report.md`
-3. Run additional platform verification commands when the submit pipeline or route profile requires them:
-   - Desktop: `cd apps/desktop && pnpm run check && pnpm run test`
-   - Station: `cd apps/station && go test ./...`
-   - Go style: `./tooling/scripts/check-go-style.sh`
-4. Create PR using `pt-github-pr` skill (bilingual description with quality evidence and growth opportunities)
-5. Address any CI failures
-
-**Deliverable**: Open PR with passing checks.
-
-### Phase 4: Release (optional)
-
-**Entry**: PR approved and merged.
-
-Only if the user requests a release:
-1. Determine version bump from commits using `pt-github-release` skill
-2. Create tag and GitHub Release with bilingual changelog
-
-### Phase 5: Completion
-
-**Entry**: PR merged (and optionally released).
-
-**Actions**:
-1. Generate summary report
-2. Clean up feature branch
-3. Update status.json to completed
-
-**Summary template**:
+Each execution plan has an "Implementation Status" table at the bottom.
+Update individual step status as work progresses:
 
 ```markdown
-## Development Summary / 开发总结
-
-### Task / 任务
-EN: <what was done>
-CN: <做了什么>
-
-### Changes / 变更
-- <list of changes>
-
-### PR
-- PR #<number>: <title>
-- Status: Merged
-
-### Verification / 验证
-- [ ] Lint: passed
-- [ ] Tests: passed
-- [ ] Build: passed
-
-### AI Traceability / AI 溯源
-- Tool: <tool>
-- Model: <model>
+| Step | Status | Completed | Notes |
+|------|--------|-----------|-------|
+| Step 1 | ✅ done | 2026-07-23 | commit abc123 |
+| Step 2 | 🔄 in progress | — | |
+| Step 3 | ⬜ pending | — | |
 ```
 
-## Skill Dependencies
+---
 
-This workflow orchestrates other skills:
+## 6. Cross-Session Resume
 
-| Phase | Skills Used |
-|-------|------------|
-| coding | `pt-github-commit` |
-| review | `pt-github-pr`, `pt-github-review` |
-| release | `pt-github-release` |
+When resuming a previous session:
 
-## Session Management
+1. Read `active_work` from project memory
+2. Read the referenced execution plan
+3. Find the first non-complete step in the status table
+4. Report to user: "Resuming {plan name}, currently at {step}. Last session: {date}."
+5. Dispatch to the correct stage skill
 
-- Each task gets a unique session: `YYYYMMDD-HHmmss`
-- Status file: `.pt-dev-workflow/<session-id>/status.json`
-- Artifacts: `.pt-dev-workflow/<session-id>/plan.md`, `summary.md`
-- Sessions are local (gitignored)
+**Key principle**: The execution plan's status table is ground truth for "what's done".
+Project memory's `active_work` is just an index pointing to it.
 
-Add to `.gitignore`:
-```
-.pt-dev-workflow/
-```
+---
 
-## Interruption & Resume
+## 7. Skill Dependencies (Dispatch Map)
 
-If a session is interrupted:
-1. Read the latest `status.json`
-2. Resume from `current_phase`
-3. Re-read any existing artifacts
-4. Continue from where it left off
+| Stage | Primary skill | Supporting skills |
+|-------|--------------|-------------------|
+| DESIGN | `pt-architecture-design-methodology` | `pt-plan-and-document` (for doc落盘) |
+| PLAN | `pt-architecture-execution-methodology` + `pt-plan-and-document` | — |
+| EXECUTE | `pt-execution-plan-guardian` | `pt-read-before-edit`, `pt-desktop-runtime-projections`, `pt-small-fix-discipline`, `pt-completion-auditor` |
+| DELIVER | `pt-github-commit` + `pt-github-pr` + `pt-github-review` | `pt-quality-check` |
 
-## Anti-Patterns
+---
 
-- **Never** skip the planning checkpoint — always get user approval
-- **Never** proceed to review without running verification commands
-- **Never** create a PR with empty or template-only description
-- **Never** fabricate test results or verification outcomes
-- **Never** merge without at least self-review of the full diff
+## 8. Anti-Patterns
+
+- **Skip a gate** — never advance to next stage without explicit gate passage
+- **Work without active_work** — always initialize tracking before starting
+- **Forget to update status** — every step completion / stage transition must be recorded
+- **Resume without reading plan** — always re-read execution plan status table before continuing
+- **Invoke stage skill without context** — always tell the skill what plan you're executing and what step you're on
+- **Self-approve a review** — agent generates prompts, user decides whether to send; agent never marks its own review as "passed"

@@ -4,6 +4,10 @@ description: >
   Use when the user asks to commit changes, create a commit, or when you need
   to generate a standardized commit message. Enforces Conventional Commits
   format with AI traceability for the Peers-Touch project.
+stage: "DELIVER"
+requires: ["code changes ready to commit"]
+produces: ["conventional commit"]
+next: "pt-github-pr"
 ---
 
 # GitHub Commit — Standardized Commit Skill
