@@ -66,9 +66,9 @@ function useSessionRevocationNotice(lifecycle: AppLifecycle): void {
 
   useEffect(() => {
     return onSessionRevoked((payload) => {
-      const { authenticated } = useSessionStore.getState();
-      const sessionVisible = authenticated || lifecycle.authenticated;
-      if (!sessionVisible) return;
+      const session = useSessionStore.getState();
+      if (session.authenticated) return;
+      if (!lifecycle.authenticated) return;
 
       if (sessionEndedRef.current) return;
       sessionEndedRef.current = true;
