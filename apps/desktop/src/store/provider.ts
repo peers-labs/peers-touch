@@ -1,6 +1,7 @@
 import { createDesktopStore } from './createDesktopStore';
 import { api, type ProviderListItem, type ProviderDetail } from '../services/desktop_api';
 import { log } from '../utils/logger';
+import { useAgentStore } from './agent';
 
 interface ProviderState {
   providers: ProviderListItem[];
@@ -65,6 +66,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     if (get().selectedId === id) {
       await get().selectProvider(id, true);
     }
+    useAgentStore.getState().loadModels();
   },
 
   toggleProvider: async (id: string, enabled: boolean) => {
@@ -86,6 +88,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     if (get().selectedId === id) {
       await get().selectProvider(id, true);
     }
+    useAgentStore.getState().loadModels();
   },
 
   checkProvider: async (id: string, apiKey?: string, baseUrl?: string, model?: string) => {
@@ -103,6 +106,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     await api.deleteProvider(id);
     set({ selectedId: null, detail: null });
     await get().loadProviders();
+    useAgentStore.getState().loadModels();
   },
 
   addModel: async (providerId: string, data: { id: string; display_name?: string; type?: string; context_window?: number; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean; enabled?: boolean }) => {
@@ -110,6 +114,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     if (get().selectedId === providerId) {
       await get().selectProvider(providerId, true);
     }
+    useAgentStore.getState().loadModels();
   },
 
   updateModel: async (providerId: string, modelId: string, data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) => {
@@ -117,6 +122,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     if (get().selectedId === providerId) {
       await get().selectProvider(providerId, true);
     }
+    useAgentStore.getState().loadModels();
   },
 
   deleteModel: async (providerId: string, modelId: string) => {
@@ -124,6 +130,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     if (get().selectedId === providerId) {
       await get().selectProvider(providerId, true);
     }
+    useAgentStore.getState().loadModels();
   },
 
   fetchRemoteModels: async (providerId: string, apiKey?: string, baseUrl?: string) => {
@@ -135,6 +142,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     if (get().selectedId === providerId) {
       await get().selectProvider(providerId, true);
     }
+    useAgentStore.getState().loadModels();
   },
 
   toggleAllModels: async (providerId: string, enabled: boolean) => {
@@ -142,5 +150,6 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     if (get().selectedId === providerId) {
       await get().selectProvider(providerId, true);
     }
+    useAgentStore.getState().loadModels();
   },
 }));
