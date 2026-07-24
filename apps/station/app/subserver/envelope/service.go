@@ -54,8 +54,8 @@ type OutboxDispatcher interface {
 type DeviceBus interface {
 	// PublishToDevice delivers an envelope to a specific device's SSE stream.
 	// Returns true if the device is currently connected and received the frame.
-	PublishToDevice(ctx context.Context, recipientDID, deviceID string, env *chat.StationEnvelope) bool
+	PublishToDevice(ctx context.Context, recipientPtid, deviceID, inboxItemID string, env *chat.StationEnvelope) bool
 
 	// PublishToActor delivers an envelope to all connected devices of an actor.
-	PublishToActor(ctx context.Context, recipientDID string, env *chat.StationEnvelope) int
+	PublishToActor(ctx context.Context, recipientPtid, inboxItemID string, env *chat.StationEnvelope) int
 }
