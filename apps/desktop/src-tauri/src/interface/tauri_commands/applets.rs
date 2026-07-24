@@ -1,6 +1,6 @@
 use crate::application::applet_store;
 use crate::application::applets as application_applets;
-use crate::application::provider::state as provider_state;
+
 use crate::application::session_resolver;
 use crate::contracts::{
     AppletActionInput, AppletConfigSetInput, AppletCreateSessionInput, AppletIdInput,
@@ -137,47 +137,9 @@ fn seed_product_window_e2e_provider() {
     if base_url.trim().is_empty() {
         return;
     }
-
-    let _ = provider_state::with_provider_store(None, |store| {
-        store
-            .providers
-            .retain(|provider| provider.id != "applet-product-window-e2e");
-        store.providers.insert(
-            0,
-            provider_state::ProviderRecord {
-                id: "applet-product-window-e2e".to_string(),
-                name: "Applet Product Window E2E".to_string(),
-                description: "Controlled local provider for packaged applet readiness".to_string(),
-                logo: "".to_string(),
-                enabled: true,
-                key_vaults: json!({ "api_key": "applet-product-window-e2e-key" }).to_string(),
-                config_json: json!({
-                    "base_url": base_url,
-                    "default_model": "e2e-model-openai",
-                    "protocol": "openai-compatible"
-                })
-                .to_string(),
-                check_model: "e2e-model-openai".to_string(),
-                models: vec![provider_state::ModelRecord {
-                    id: "e2e-model-openai".to_string(),
-                    display_name: "E2E OpenAI-Compatible".to_string(),
-                    r#type: "chat".to_string(),
-                    enabled: true,
-                    context_window: 8192,
-                    function_call: false,
-                    vision: false,
-                    reasoning: false,
-                    search: false,
-                    image_output: false,
-                    video: false,
-                    protocol_override: Some("openai-compatible".to_string()),
-                }],
-                builtin: false,
-                show_checker: false,
-                show_api_key: false,
-            },
-        );
-    });
+    // E2E provider now managed via Station. The env var signals that a Station
+    // with the appropriate provider is expected to be available.
+    tracing::info!(base_url = %base_url, "Product window E2E provider expected on Station");
 }
 
 fn bind_product_window_e2e_session(
