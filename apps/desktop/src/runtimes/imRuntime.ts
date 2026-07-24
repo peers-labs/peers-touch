@@ -6,12 +6,14 @@ import { useSocialChatStore } from '../store/socialChat'
 import type { RuntimeDescriptor } from '../kernel/runtime'
 import { log } from '../utils/logger'
 import { EVENT, eventBus } from '../kernel/events'
+import { api } from '../services/desktop_api'
 
 interface IMState {
   initialized: boolean
   deviceId: string | null
   conversations: Map<string, ConversationProjection>
   pendingResume: boolean
+  sseConnected: boolean
 }
 
 interface ConversationProjection {
@@ -26,6 +28,22 @@ const state: IMState = {
   deviceId: null,
   conversations: new Map(),
   pendingResume: false,
+  sseConnected: false,
+}
+
+const DEDUP_MAX_SIZE = 2000
+const processedInboxItemIds = new Set<string>()
+const processedOrder: string[] = []
+
+function markProcessed(inboxItemId: string): boolean {
+  if (processedInboxItemIds.has(inboxItemId)) return false
+  processedInboxItemIds.add(inboxItemId)
+  processedOrder.push(inboxItemId)
+  while (processedOrder.length > DEDUP_MAX_SIZE) {
+    const oldest = processedOrder.shift()!
+    processedInboxItemIds.delete(oldest)
+  }
+  return true
 }
 
 let resumeIntervalId: ReturnType<typeof setInterval> | null = null
@@ -36,8 +54,18 @@ function triggerImmediateResume(): void {
   resumeEnvelopes()
 }
 
-function getDeviceId(): string {
+async function getDeviceId(): Promise<string> {
   if (state.deviceId) return state.deviceId
+  try {
+    const result = await api.accountGetDeviceId()
+    const id = (result as { device_id: string }).device_id
+    if (id) {
+      state.deviceId = id
+      return id
+    }
+  } catch {
+    // Fallback to localStorage for browser-dev-gateway mode
+  }
   let id = localStorage.getItem('peers_im_device_id')
   if (!id) {
     id = crypto.randomUUID()
@@ -48,7 +76,7 @@ function getDeviceId(): string {
 }
 
 async function registerDevice(_actorId: string): Promise<void> {
-  const deviceId = getDeviceId()
+  const deviceId = await getDeviceId()
   try {
     await imServiceV1.device.register(deviceId, navigator.userAgent)
     log.info('im-runtime', 'device registered', { deviceId })
@@ -73,7 +101,7 @@ async function uploadKeyPackages(): Promise<void> {
     const count = await imServiceV1.keyPackage.countAvailable()
     if (count >= KEY_PACKAGE_TARGET) return
     const toGenerate = KEY_PACKAGE_TARGET - count
-    const deviceId = getDeviceId()
+    const deviceId = await getDeviceId()
     for (let i = 0; i < toGenerate; i++) {
       const kpBytes = await imServiceV1.mlsGroup.generateKeyPackage()
       await imServiceV1.keyPackage.upload(deviceId, kpBytes)
@@ -113,47 +141,22 @@ async function restoreMlsSessions(): Promise<void> {
   }
 }
 
-async function resumeEnvelopes(): Promise<void> {
-  if (state.pendingResume) return
-  state.pendingResume = true
-  try {
-    const deviceId = getDeviceId()
-    const items = await imServiceV1.envelope.resume(deviceId)
-    if (items.length === 0) return
+// ---------------------------------------------------------------------------
+// Envelope payload processing (shared between SSE push and resume poll paths)
+// ---------------------------------------------------------------------------
 
-    log.info('im-runtime', 'envelope resume', { count: items.length })
-    const dirtyConversations = new Set<string>()
-
-    for (const item of items) {
-      await processInboxItem(item, dirtyConversations)
-      await imServiceV1.envelope.ack(deviceId, item.inboxItemId)
-    }
-
-    if (dirtyConversations.size > 0) {
-      await refreshDirtyConversations(dirtyConversations)
-    }
-  } catch (err) {
-    log.warn('im-runtime', 'envelope resume failed', { err })
-  } finally {
-    state.pendingResume = false
-  }
-}
-
-async function processInboxItem(item: any, dirtyConversations: Set<string>): Promise<void> {
-  const env = item.envelope
-  if (!env) return
-
-  switch (env.payloadType) {
-    case 1: { // COMMITTED_EVENT — mark conversation for refresh
-      const conversationId: string = env.conversationId ?? ''
+async function processEnvelopePayload(
+  payloadType: number,
+  payloadBytes: Uint8Array,
+  conversationId: string,
+  dirtyConversations: Set<string>,
+): Promise<void> {
+  switch (payloadType) {
+    case 1: { // COMMITTED_EVENT
       if (conversationId) dirtyConversations.add(conversationId)
       break
     }
-
-    case 2: { // MLS_KEY_DELIVERY — process Welcome/Commit immediately
-      const payloadBytes = env.payloadBytes instanceof Uint8Array
-        ? env.payloadBytes
-        : new Uint8Array(env.payloadBytes ?? [])
+    case 2: { // MLS_KEY_DELIVERY
       if (payloadBytes.length === 0) break
       try {
         const delivery = fromBinary(MlsKeyDeliveryPayloadSchema, payloadBytes)
@@ -169,17 +172,104 @@ async function processInboxItem(item: any, dirtyConversations: Set<string>): Pro
           log.info('im-runtime', 'MLS commit processed', { convId })
         }
       } catch (err) {
-        log.warn('im-runtime', 'processInboxItem MLS_KEY_DELIVERY failed', { err })
+        log.warn('im-runtime', 'MLS_KEY_DELIVERY processing failed', { err })
       }
       break
     }
-
     case 3: // DIRECT_KEY_EXCHANGE
       break
     case 4: // RECEIPT
       break
     default:
       break
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SSE push handler — processes envelopes delivered in real-time via SSE
+// ---------------------------------------------------------------------------
+
+async function handleEnvelopeDelivered(data: {
+  inboxItemId: string
+  envelopeId: string
+  conversationId: string
+  payloadType: number
+  payloadBytes: Uint8Array
+  senderPtid: string
+  senderDeviceId: string
+  recipientDeviceId: string
+  membershipEpoch: number
+  queuedTsUnixMs: number
+}): Promise<void> {
+  if (!markProcessed(data.inboxItemId)) return
+
+  const dirtyConversations = new Set<string>()
+  const payloadBytes = data.payloadBytes instanceof Uint8Array
+    ? data.payloadBytes
+    : new Uint8Array(data.payloadBytes ?? [])
+
+  await processEnvelopePayload(
+    data.payloadType,
+    payloadBytes,
+    data.conversationId,
+    dirtyConversations,
+  )
+
+  const deviceId = await getDeviceId()
+  try {
+    await imServiceV1.envelope.ack(deviceId, data.inboxItemId)
+  } catch (err) {
+    log.warn('im-runtime', 'SSE envelope ACK failed', { inboxItemId: data.inboxItemId, err })
+  }
+
+  if (dirtyConversations.size > 0) {
+    await refreshDirtyConversations(dirtyConversations)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Resume poll path (fallback when SSE is disconnected, or cold catch-up)
+// ---------------------------------------------------------------------------
+
+async function resumeEnvelopes(): Promise<void> {
+  if (state.pendingResume) return
+  state.pendingResume = true
+  try {
+    const deviceId = await getDeviceId()
+    const items = await imServiceV1.envelope.resume(deviceId)
+    if (items.length === 0) return
+
+    log.info('im-runtime', 'envelope resume', { count: items.length })
+    const dirtyConversations = new Set<string>()
+
+    for (const item of items) {
+      if (!markProcessed(item.inboxItemId)) {
+        await imServiceV1.envelope.ack(deviceId, item.inboxItemId)
+        continue
+      }
+
+      const env = item.envelope
+      if (env) {
+        const payloadBytes = env.payloadBytes instanceof Uint8Array
+          ? env.payloadBytes
+          : new Uint8Array(env.payloadBytes ?? [])
+        await processEnvelopePayload(
+          env.payloadType,
+          payloadBytes,
+          env.conversationId ?? '',
+          dirtyConversations,
+        )
+      }
+      await imServiceV1.envelope.ack(deviceId, item.inboxItemId)
+    }
+
+    if (dirtyConversations.size > 0) {
+      await refreshDirtyConversations(dirtyConversations)
+    }
+  } catch (err) {
+    log.warn('im-runtime', 'envelope resume failed', { err })
+  } finally {
+    state.pendingResume = false
   }
 }
 
@@ -196,6 +286,10 @@ async function refreshDirtyConversations(conversationIds: Set<string>): Promise<
   await store.loadConversationPreviews?.()
 }
 
+// ---------------------------------------------------------------------------
+// Polling lifecycle — degrades based on SSE connection state
+// ---------------------------------------------------------------------------
+
 function startResumePolling(): void {
   if (resumeIntervalId) return
   resumeIntervalId = setInterval(() => {
@@ -210,6 +304,20 @@ function stopResumePolling(): void {
   }
 }
 
+function handleConnectionStateChange(payload: { connected: boolean }): void {
+  state.sseConnected = payload.connected
+  if (payload.connected) {
+    stopResumePolling()
+    triggerImmediateResume()
+  } else {
+    startResumePolling()
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Runtime descriptor
+// ---------------------------------------------------------------------------
+
 export const imRuntime: RuntimeDescriptor = {
   id: 'im',
   scope: 'session',
@@ -220,6 +328,8 @@ export const imRuntime: RuntimeDescriptor = {
       eventBus.subscribe(EVENT.REALTIME_RESYNC, triggerImmediateResume),
       eventBus.subscribe(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, triggerImmediateResume),
       eventBus.subscribe(EVENT.REALTIME_GROUP_FEDERATION_EVENT, triggerImmediateResume),
+      eventBus.subscribe(EVENT.REALTIME_ENVELOPE_DELIVERED, handleEnvelopeDelivered),
+      eventBus.subscribe(EVENT.REALTIME_CONNECTION_STATE, handleConnectionStateChange),
     ]
   },
 
@@ -229,7 +339,10 @@ export const imRuntime: RuntimeDescriptor = {
     eventUnsubscribers = []
     state.initialized = false
     state.deviceId = null
+    state.sseConnected = false
     state.conversations.clear()
+    processedInboxItemIds.clear()
+    processedOrder.length = 0
   },
 
   async bootstrap(actorId: string | null): Promise<void> {

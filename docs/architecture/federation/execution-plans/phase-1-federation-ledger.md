@@ -66,15 +66,18 @@
 
 - **Current assets**: 6 existing proto files (untouched, only extended).
 - **Target deliverables**:
-  - `federation_ledger.proto` — LedgerEvent, EventHashInput, all typed payloads (§4), signature inputs
+  - `federation_ledger.proto` — LedgerEvent, EventHashInput, all typed payloads (§5), signature inputs
   - `federation_governance_service.proto` — SubmitProposal, FetchHead, FetchEvents
   - `federation_membership_service.proto` — GetMembershipStatus, AcceptInvite
   - `federation_projection_service.proto` — ListFederations, ListMemberStations, CreateFederation, JoinFederation, LeaveFederation
-  - `federation_sync.proto` — LedgerAdvanceNotification, SyncCursor
-  - Extend `federation_self.proto` — add JoinedFederationRef
+  - `federation_sync.proto` — SyncCursor, FetchEvents pagination types
+  - `federation_policy.proto` — PolicyType enum, policy params per type (v1: SingleAdminParams)
+  - Extend `federation_self.proto` — add JoinedFederationRef + `actor_signing_public_key` field
   - Extend `federation_health.proto` — add governance_sync_status
+  - Extend `realtime/event.proto` — add `LedgerEventDelivered` arm to StreamEvent oneof
+  - Extend `actor/actor.proto` — add `signing_public_key` field (Actor 独立签名密钥)
 - **Dependencies**: None (first in DAG).
-- **Architecture IDs**: D-01, D-04, D-08; wire-protocol.md §2-§6, §12.
+- **Architecture IDs**: D-01, D-04, D-08; wire-protocol.md §2-§7, §13.
 - **Deletion obligations**: None.
 - **Gate**: `./model/build.sh` passes; generated Go/Rust/TS code compiles; canonical bytes conformance test passes.
 
@@ -87,47 +90,53 @@
   - `subserver.go` — DDD subserver registration, DI assembly
   - `domain/` — Federation aggregate, LedgerEvent entity, Membership value object
   - `domain/hash.go` — Canonical serialization + SHA-256 hash computation
-  - `domain/signature.go` — Ed25519 sign/verify with key hierarchy
+  - `domain/signature.go` — Ed25519 sign/verify for Actor key + Station key + Sequencer key
+  - `domain/actor_key.go` — Actor signing key pair 生成、存储（加密）、同步到设备
   - `domain/replay.go` — Ledger replay → materialized state
   - `application/` — CreateFederation, AppendEvent, SubmitProposal, Replay, RoleCheck use cases
-  - `infrastructure/` — PostgreSQL repositories (federation, ledger_event, membership, role, sync_cursor)
+  - `infrastructure/` — PostgreSQL repositories (federation, ledger_event, membership, role, sync_cursor, actor_signing_key)
   - `interfaces/` — Hertz HTTP handlers for governance RPCs + projection APIs
-  - `migration/` — SQL migrations for governance tables
+  - `migration/` — SQL migrations for governance tables + actor_signing_key table
 - **Dependencies**: WS-1 (proto must exist first).
-- **Architecture IDs**: D-01, D-04, D-07, D-10; design.md §3-§5; wire-protocol.md §5, §7.
+- **Architecture IDs**: D-01, D-04, D-07, D-10; design.md §3-§5; wire-protocol.md §4, §6.
 - **Deletion obligations**: None.
-- **Gate**: `go test ./apps/station/app/subserver/federation/...` passes; Create→Replay→Projection lifecycle works; non-sequencer append rejected.
+- **Gate**: `go test ./apps/station/app/subserver/federation/...` passes; Create→Replay→Projection lifecycle works; Actor signature verified with actor's own key; non-sequencer append rejected.
 
-### WS-3: Active Sequencer & Fork Detection
+### WS-3: Sequencer Policy & Fork Detection
 
-**Responsibility**: Enforce single-sequencer ordering and detect forks.
+**Responsibility**: Implement strategy-based sequencer ordering and detect forks.
 
 - **Current assets**: None.
 - **Target deliverables**:
-  - Sequencer gate in AppendEvent use case
-  - Proposal accept/reject flow in sequencer
-  - Fork detection in event application
-  - SequencerChanged event support (handover placeholder)
-  - Sequencer leave guard (must handover first)
+  - `domain/policy/policy.go` — `SequencerPolicy` interface definition (ValidateAppend, ValidateProposal, HandleSequencerUnreachable, ValidateHandover)
+  - `domain/policy/single_admin.go` — v1 `single_admin` 策略实现
+  - `domain/policy/registry.go` — policy_type → implementation 注册表
+  - Sequencer gate in AppendEvent use case (delegates to policy.ValidateAppend)
+  - Proposal accept/reject flow in sequencer (delegates to policy.ValidateProposal)
+  - Fork detection in event application (hash chain + prev_hash mismatch)
+  - SequencerChanged event support (policy.ValidateHandover)
+  - Sequencer leave guard (must handover first, enforced by policy)
 - **Dependencies**: WS-2 (domain model must exist).
-- **Architecture IDs**: D-07; design.md §3.4, §5.8; wire-protocol.md §7.3.
-- **Gate**: Non-sequencer direct append → error 40002; fork injection → fork_detected; sequencer leave without handover → rejected.
+- **Architecture IDs**: D-07; design.md §3.4, §5.8; wire-protocol.md §8.3, §8.5.
+- **Gate**: Non-sequencer direct append → error 40002; fork injection → fork_detected; sequencer leave without handover → rejected; policy interface can be swapped without changing callers.
 
-### WS-4: Ledger Sync Protocol
+### WS-4: Ledger Sync Protocol (SSE Unified)
 
-**Responsibility**: Enable multi-Station ledger replication.
+**Responsibility**: Enable multi-Station ledger replication via SSE push + HTTP pull, unified with existing realtime architecture.
 
-- **Current assets**: Relay infrastructure exists (`frame/core/plugin/native/federation/relay_client.go`).
+- **Current assets**: events subserver with SSE infrastructure already exists; `EnvelopeDelivered` pattern already implemented for chat.
 - **Target deliverables**:
-  - FetchHead RPC handler + client
-  - FetchEvents RPC handler + client (paginated)
-  - Sync scheduler (poll 30s fallback + relay notification trigger)
-  - Relay topic publisher (sequencer-only `fed.ledger.notify.v1`)
-  - Event batch verification during catch-up
-  - SyncCursor persistence + status tracking
-- **Dependencies**: WS-2 (event store), WS-3 (sequencer publishes notifications).
-- **Architecture IDs**: D-04; wire-protocol.md §6; data-model.md §10.
-- **Gate**: 3-node testnet: all nodes reach same head_hash; lagging node catches up; unreachable node recovers; fork injection halts sync.
+  - `LedgerEventDelivered` SSE push — Sequencer publishes to connected member Stations via events subserver StreamEvent oneof
+  - Station-to-Station SSE client — member Station connects to sequencer's events endpoint with Federation JWT (`federation_governance` scope)
+  - Per-federation ring buffer in events subserver — supports cursor replay on reconnect
+  - FetchHead RPC handler + client (HTTP/Protobuf)
+  - FetchEvents RPC handler + client (HTTP/Protobuf, paginated, cursor-based)
+  - Lagging catch-up flow: CURSOR_EXPIRED → batch FetchEvents → resume SSE
+  - Event batch verification during catch-up (hash chain + all 3 signatures)
+  - SyncCursor persistence + status tracking (healthy / lagging / fork_detected / unreachable)
+- **Dependencies**: WS-2 (event store), WS-3 (sequencer assigns seq before push).
+- **Architecture IDs**: D-04; wire-protocol.md §7; data-model.md §10.
+- **Gate**: 3-node testnet: all nodes reach same head_hash via SSE; lagging node catches up via FetchEvents; unreachable node recovers on reconnect; fork injection halts sync.
 
 ### WS-5: Testnet Seed
 
@@ -181,13 +190,13 @@
 ```text
 WS-1 (Proto)
   │
-  ├──→ WS-2 (Subserver Core) ──→ WS-3 (Sequencer/Fork) ──→ WS-4 (Sync) ──→ WS-5 (Seed)
-  │                                                                              │
-  │                              ┌─────────────────────────────────────────────────┘
-  │                              │
-  └──→ WS-7 (Catalog Scope) ◄───┤
-                                 │
-  WS-2 ──→ WS-6 (Projection) ◄──┘
+  ├──→ WS-2 (Subserver + Actor Key) ──→ WS-3 (Sequencer Policy) ──→ WS-4 (SSE Sync) ──→ WS-5 (Seed)
+  │                                                                                          │
+  │                                     ┌────────────────────────────────────────────────────┘
+  │                                     │
+  └──→ WS-7 (Catalog Scope) ◄──────────┤
+                                        │
+  WS-2 ──→ WS-6 (Projection) ◄─────────┘
 ```
 
 **Parallelizable**:
