@@ -92,7 +92,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		envelopeAudienceResolver(),
 	)
 
-	bus := &noopDeviceBus{}
+	bus := NewSSEDeviceBus()
 	s.service = NewService(repo, bus, envelopeLocalAudience)
 
 	transport := NewHTTPFederationTransport(authfed.Singleton())
@@ -150,17 +150,6 @@ func envelopeAudienceResolver() httpadapter.AudienceResolver {
 	return func(_ *http.Request) (string, error) {
 		return envelopeLocalAudience(), nil
 	}
-}
-
-// noopDeviceBus is a placeholder until P4 wires the real SSE bus.
-type noopDeviceBus struct{}
-
-func (*noopDeviceBus) PublishToDevice(_ context.Context, _, _ string, _ *chat.StationEnvelope) bool {
-	return false
-}
-
-func (*noopDeviceBus) PublishToActor(_ context.Context, _ string, _ *chat.StationEnvelope) int {
-	return 0
 }
 
 // noopFederationTransport is a placeholder until federation relay is wired.
