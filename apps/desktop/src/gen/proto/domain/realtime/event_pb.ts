@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/realtime/event.proto.
  */
 export const file_domain_realtime_event: GenFile = /*@__PURE__*/
-  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIusHCgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSAASQgoIbXV0YXRpb24YESABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb25IABJXChdncm91cF9tZW1iZXJzaGlwX2NoYW5nZRgSIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZUgAEmMKHWNvbnZlcnNhdGlvbl9zZXR0aW5nc19jaGFuZ2VkGBMgASgLMjoucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkSAASPAoGbW9tZW50GBQgASgLMioucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTW9tZW50RXZlbnRIABJVChZncm91cF9mZWRlcmF0aW9uX2V2ZW50GBUgASgLMjMucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuR3JvdXBGZWRlcmF0aW9uRXZlbnRIABJiCh1ncm91cF9za2RtX2VudmVsb3BlX2RlbGl2ZXJlZBgWIAEoCzI5LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwU2tkbUVudmVsb3BlRGVsaXZlcmVkSABCBgoEa2luZCIjCglIZWFydGJlYXQSFgoOZmxvb3JfZXZlbnRfaWQYASABKAkilwEKD01lc3NhZ2VFbnZlbG9wZRIXCg9zZW5kZXJfYWN0b3JfaWQYASABKAkSGgoScmVjaXBpZW50X2FjdG9yX2lkGAIgASgJEhQKDHNlc3Npb25fdWxpZBgDIAEoCRIMCgR1bGlkGAQgASgJEhIKCmNpcGhlcnRleHQYBSABKAwSFwoPc2VudF90c191bml4X21zGAYgASgDIsQBCg5NZXNzYWdlUmVjZWlwdBIUCgxzZXNzaW9uX3VsaWQYASABKAkSDAoEdWxpZBgCIAEoCRJACgRraW5kGAMgASgOMjIucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTWVzc2FnZVJlY2VpcHQuS2luZBIVCg1mcm9tX2FjdG9yX2lkGAQgASgJIjUKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEg0KCURFTElWRVJFRBABEggKBFJFQUQQAiJKCgtUeXBpbmdTdGF0ZRIUCgxzZXNzaW9uX3VsaWQYASABKAkSFQoNZnJvbV9hY3Rvcl9pZBgCIAEoCRIOCgZ0eXBpbmcYAyABKAgiMAoMUHJlc2VuY2VGbGlwEhAKCGFjdG9yX2lkGAEgASgJEg4KBm9ubGluZRgCIAEoCCKbAgoKQ2FsbFNpZ25hbBIUCgxzZXNzaW9uX3VsaWQYASABKAkSFQoNZnJvbV9hY3Rvcl9pZBgCIAEoCRI8CgRraW5kGAMgASgOMi4ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ2FsbFNpZ25hbC5LaW5kEg8KB3BheWxvYWQYBCABKAwikAEKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgkKBU9GRkVSEAESCgoGQU5TV0VSEAISDQoJQ0FORElEQVRFEAMSCgoGSEFOR1VQEAQSEAoMQ0FMTF9SRVFVRVNUEAUSDwoLQ0FMTF9BQ0NFUFQQBhIPCgtDQUxMX1JFSkVDVBAHEgwKCENBTExfRU5EEAgimAIKD01lc3NhZ2VNdXRhdGlvbhIUCgxzZXNzaW9uX3VsaWQYASABKAkSDAoEdWxpZBgCIAEoCRIVCg1mcm9tX2FjdG9yX2lkGAMgASgJEkEKBGtpbmQYBCABKA4yMy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb24uS2luZBIWCg5uZXdfY2lwaGVydGV4dBgFIAEoDBITCgtuZXdfY29udGVudBgGIAEoCRIaChJtdXRhdGVkX3RzX3VuaXhfbXMYByABKAMiPgoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCgoGUkVDQUxMEAESCAoERURJVBACEgoKBkRFTEVURRADIsECChVHcm91cE1lbWJlcnNoaXBDaGFuZ2USEAoIZXZlbnRfaWQYASABKAkSEgoKZ3JvdXBfdWxpZBgCIAEoCRIRCglhY3Rvcl9kaWQYAyABKAkSRwoEa2luZBgEIAEoDjI5LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZS5LaW5kEhoKEmNoYW5nZWRfdHNfdW5peF9tcxgFIAEoAyKJAQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASDgoKS0lORF9BRERFRBABEhAKDEtJTkRfUkVNT1ZFRBACEg0KCUtJTkRfTEVGVBADEhAKDEtJTkRfVVBEQVRFRBAEEhQKEEtJTkRfVFJBTlNGRVJSRUQQBRISCg5LSU5EX0RJU1NPTFZFRBAGIucBChtDb252ZXJzYXRpb25TZXR0aW5nc0NoYW5nZWQSFgoOY29udGFpbmVyX3VsaWQYASABKAkSTQoEa2luZBgCIAEoDjI/LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkNvbnZlcnNhdGlvblNldHRpbmdzQ2hhbmdlZC5LaW5kEhAKCGFjdG9yX2lkGAMgASgJEhoKEmNoYW5nZWRfdHNfdW5peF9tcxgEIAEoAyIzCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIKCgZGUklFTkQQARIJCgVHUk9VUBACIscCCgtNb21lbnRFdmVudBI9CgRraW5kGAEgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTW9tZW50RXZlbnQuS2luZBIPCgdwb3N0X2lkGAIgASgJEhcKD2F1dGhvcl9hY3Rvcl9pZBgDIAEoCRIQCghhY3Rvcl9pZBgEIAEoCRISCgpjb21tZW50X2lkGAUgASgJEhUKDXJlYWN0aW9uX2tpbmQYBiABKAkSDwoHcmVtb3ZlZBgHIAEoCBIQCghhdWRpZW5jZRgIIAEoCRIbChNvY2N1cnJlZF90c191bml4X21zGAkgASgDIlIKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgsKB0NSRUFURUQQARILCgdERUxFVEVEEAISDQoJQ09NTUVOVEVEEAMSCwoHUkVBQ1RFRBAEIpACChRHcm91cEZlZGVyYXRpb25FdmVudBISCgpncm91cF91bGlkGAEgASgJEhIKCmV2ZW50X3VsaWQYAiABKAkSCwoDc2VxGAMgASgDEhIKCmV2ZW50X3R5cGUYBCABKAkSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgFIAEoCRIXCg9hdXRob3JpdHlfZXBvY2gYBiABKAMSEgoKZXZlbnRfaGFzaBgHIAEoCRIUCgxtZXNzYWdlX3VsaWQYCCABKAkSGAoQbWVtYmVyc2hpcF9lcG9jaBgJIAEoAxIcChRjb21taXR0ZWRfdHNfdW5peF9tcxgKIAEoAxIRCglhY3Rvcl9kaWQYCyABKAkioAIKGkdyb3VwU2tkbUVudmVsb3BlRGVsaXZlcmVkEhIKCmdyb3VwX3VsaWQYASABKAkSGAoQbWVtYmVyc2hpcF9lcG9jaBgCIAEoAxISCgpzZW5kZXJfZGlkGAMgASgJEhUKDXNlbmRlcl9rZXlfaWQYBCABKA0SFQoNcmVjaXBpZW50X2RpZBgFIAEoCRIbChNyZWNpcGllbnRfZGV2aWNlX2lkGAYgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgHIAEoCRIZChFlbmNyeXB0ZWRfcGF5bG9hZBgIIAEoDBIcChRkZWxpdmVyZWRfdHNfdW5peF9tcxgJIAEoAxIjChtzZW5kZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYCiABKAkiMQoGUmVzeW5jEhcKD25ld2VzdF9ldmVudF9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAlCT1pNZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvcmVhbHRpbWU7cmVhbHRpbWViBnByb3RvMw");
+  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIpIJCgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSAASQgoIbXV0YXRpb24YESABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb25IABJXChdncm91cF9tZW1iZXJzaGlwX2NoYW5nZRgSIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZUgAEmMKHWNvbnZlcnNhdGlvbl9zZXR0aW5nc19jaGFuZ2VkGBMgASgLMjoucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkSAASPAoGbW9tZW50GBQgASgLMioucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTW9tZW50RXZlbnRIABJVChZncm91cF9mZWRlcmF0aW9uX2V2ZW50GBUgASgLMjMucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuR3JvdXBGZWRlcmF0aW9uRXZlbnRIABJiCh1ncm91cF9za2RtX2VudmVsb3BlX2RlbGl2ZXJlZBgWIAEoCzI5LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwU2tkbUVudmVsb3BlRGVsaXZlcmVkSAASTgoSZW52ZWxvcGVfZGVsaXZlcmVkGBcgASgLMjAucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuRW52ZWxvcGVEZWxpdmVyZWRIABJVChZsZWRnZXJfZXZlbnRfZGVsaXZlcmVkGBggASgLMjMucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTGVkZ2VyRXZlbnREZWxpdmVyZWRIAEIGCgRraW5kIiMKCUhlYXJ0YmVhdBIWCg5mbG9vcl9ldmVudF9pZBgBIAEoCSKXAQoPTWVzc2FnZUVudmVsb3BlEhcKD3NlbmRlcl9hY3Rvcl9pZBgBIAEoCRIaChJyZWNpcGllbnRfYWN0b3JfaWQYAiABKAkSFAoMc2Vzc2lvbl91bGlkGAMgASgJEgwKBHVsaWQYBCABKAkSEgoKY2lwaGVydGV4dBgFIAEoDBIXCg9zZW50X3RzX3VuaXhfbXMYBiABKAMixAEKDk1lc3NhZ2VSZWNlaXB0EhQKDHNlc3Npb25fdWxpZBgBIAEoCRIMCgR1bGlkGAIgASgJEkAKBGtpbmQYAyABKA4yMi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdC5LaW5kEhUKDWZyb21fYWN0b3JfaWQYBCABKAkiNQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASDQoJREVMSVZFUkVEEAESCAoEUkVBRBACIkoKC1R5cGluZ1N0YXRlEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIVCg1mcm9tX2FjdG9yX2lkGAIgASgJEg4KBnR5cGluZxgDIAEoCCIwCgxQcmVzZW5jZUZsaXASEAoIYWN0b3JfaWQYASABKAkSDgoGb25saW5lGAIgASgIIpsCCgpDYWxsU2lnbmFsEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIVCg1mcm9tX2FjdG9yX2lkGAIgASgJEjwKBGtpbmQYAyABKA4yLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsLktpbmQSDwoHcGF5bG9hZBgEIAEoDCKQAQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCQoFT0ZGRVIQARIKCgZBTlNXRVIQAhINCglDQU5ESURBVEUQAxIKCgZIQU5HVVAQBBIQCgxDQUxMX1JFUVVFU1QQBRIPCgtDQUxMX0FDQ0VQVBAGEg8KC0NBTExfUkVKRUNUEAcSDAoIQ0FMTF9FTkQQCCKYAgoPTWVzc2FnZU11dGF0aW9uEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIMCgR1bGlkGAIgASgJEhUKDWZyb21fYWN0b3JfaWQYAyABKAkSQQoEa2luZBgEIAEoDjIzLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VNdXRhdGlvbi5LaW5kEhYKDm5ld19jaXBoZXJ0ZXh0GAUgASgMEhMKC25ld19jb250ZW50GAYgASgJEhoKEm11dGF0ZWRfdHNfdW5peF9tcxgHIAEoAyI+CgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIKCgZSRUNBTEwQARIICgRFRElUEAISCgoGREVMRVRFEAMiwQIKFUdyb3VwTWVtYmVyc2hpcENoYW5nZRIQCghldmVudF9pZBgBIAEoCRISCgpncm91cF91bGlkGAIgASgJEhEKCWFjdG9yX2RpZBgDIAEoCRJHCgRraW5kGAQgASgOMjkucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuR3JvdXBNZW1iZXJzaGlwQ2hhbmdlLktpbmQSGgoSY2hhbmdlZF90c191bml4X21zGAUgASgDIokBCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIOCgpLSU5EX0FEREVEEAESEAoMS0lORF9SRU1PVkVEEAISDQoJS0lORF9MRUZUEAMSEAoMS0lORF9VUERBVEVEEAQSFAoQS0lORF9UUkFOU0ZFUlJFRBAFEhIKDktJTkRfRElTU09MVkVEEAYi5wEKG0NvbnZlcnNhdGlvblNldHRpbmdzQ2hhbmdlZBIWCg5jb250YWluZXJfdWxpZBgBIAEoCRJNCgRraW5kGAIgASgOMj8ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkLktpbmQSEAoIYWN0b3JfaWQYAyABKAkSGgoSY2hhbmdlZF90c191bml4X21zGAQgASgDIjMKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgoKBkZSSUVORBABEgkKBUdST1VQEAIixwIKC01vbWVudEV2ZW50Ej0KBGtpbmQYASABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5Nb21lbnRFdmVudC5LaW5kEg8KB3Bvc3RfaWQYAiABKAkSFwoPYXV0aG9yX2FjdG9yX2lkGAMgASgJEhAKCGFjdG9yX2lkGAQgASgJEhIKCmNvbW1lbnRfaWQYBSABKAkSFQoNcmVhY3Rpb25fa2luZBgGIAEoCRIPCgdyZW1vdmVkGAcgASgIEhAKCGF1ZGllbmNlGAggASgJEhsKE29jY3VycmVkX3RzX3VuaXhfbXMYCSABKAMiUgoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCwoHQ1JFQVRFRBABEgsKB0RFTEVURUQQAhINCglDT01NRU5URUQQAxILCgdSRUFDVEVEEAQikAIKFEdyb3VwRmVkZXJhdGlvbkV2ZW50EhIKCmdyb3VwX3VsaWQYASABKAkSEgoKZXZlbnRfdWxpZBgCIAEoCRILCgNzZXEYAyABKAMSEgoKZXZlbnRfdHlwZRgEIAEoCRIhChlhdXRob3JpdHlfc3RhdGlvbl9wZWVyX2lkGAUgASgJEhcKD2F1dGhvcml0eV9lcG9jaBgGIAEoAxISCgpldmVudF9oYXNoGAcgASgJEhQKDG1lc3NhZ2VfdWxpZBgIIAEoCRIYChBtZW1iZXJzaGlwX2Vwb2NoGAkgASgDEhwKFGNvbW1pdHRlZF90c191bml4X21zGAogASgDEhEKCWFjdG9yX2RpZBgLIAEoCSKgAgoaR3JvdXBTa2RtRW52ZWxvcGVEZWxpdmVyZWQSEgoKZ3JvdXBfdWxpZBgBIAEoCRIYChBtZW1iZXJzaGlwX2Vwb2NoGAIgASgDEhIKCnNlbmRlcl9kaWQYAyABKAkSFQoNc2VuZGVyX2tleV9pZBgEIAEoDRIVCg1yZWNpcGllbnRfZGlkGAUgASgJEhsKE3JlY2lwaWVudF9kZXZpY2VfaWQYBiABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAcgASgJEhkKEWVuY3J5cHRlZF9wYXlsb2FkGAggASgMEhwKFGRlbGl2ZXJlZF90c191bml4X21zGAkgASgDEiMKG3NlbmRlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgKIAEoCSIxCgZSZXN5bmMSFwoPbmV3ZXN0X2V2ZW50X2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSKGAgoRRW52ZWxvcGVEZWxpdmVyZWQSFQoNaW5ib3hfaXRlbV9pZBgBIAEoCRITCgtlbnZlbG9wZV9pZBgCIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAyABKAkSFAoMcGF5bG9hZF90eXBlGAQgASgFEhUKDXBheWxvYWRfYnl0ZXMYBSABKAwSEwoLc2VuZGVyX3B0aWQYBiABKAkSGAoQc2VuZGVyX2RldmljZV9pZBgHIAEoCRIbChNyZWNpcGllbnRfZGV2aWNlX2lkGAggASgJEhgKEG1lbWJlcnNoaXBfZXBvY2gYCSABKAMSGQoRcXVldWVkX3RzX3VuaXhfbXMYCiABKAMi/QIKFExlZGdlckV2ZW50RGVsaXZlcmVkEhUKDWZlZGVyYXRpb25faWQYASABKAkSCwoDc2VxGAIgASgEEhIKCmV2ZW50X2hhc2gYAyABKAwSEQoJcHJldl9oYXNoGAQgASgMEhIKCmV2ZW50X3R5cGUYBSABKAkSFQoNcGF5bG9hZF9ieXRlcxgGIAEoDBIUCgxwYXlsb2FkX2hhc2gYByABKAwSFwoPYWN0b3Jfc2lnbmF0dXJlGAggASgMEhkKEXN0YXRpb25fc2lnbmF0dXJlGAkgASgMEhsKE3NlcXVlbmNlcl9zaWduYXR1cmUYCiABKAwSEAoIYWN0b3JfaWQYCyABKAkSHgoWYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgMIAEoCRIXCg9zdGF0aW9uX3BlZXJfaWQYDSABKAkSIQoZc2VxdWVuY2VyX3N0YXRpb25fcGVlcl9pZBgOIAEoCRIaChJjcmVhdGVkX2F0X3VuaXhfbXMYDyABKANCT1pNZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvcmVhbHRpbWU7cmVhbHRpbWViBnByb3RvMw");
 
 /**
  * StreamEvent is the single envelope every realtime frame uses.
@@ -121,6 +121,18 @@ export type StreamEvent = Message<"peers_touch.model.realtime.v1.StreamEvent"> &
      */
     value: GroupSkdmEnvelopeDelivered;
     case: "groupSkdmEnvelopeDelivered";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.realtime.v1.EnvelopeDelivered envelope_delivered = 23;
+     */
+    value: EnvelopeDelivered;
+    case: "envelopeDelivered";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.realtime.v1.LedgerEventDelivered ledger_event_delivered = 24;
+     */
+    value: LedgerEventDelivered;
+    case: "ledgerEventDelivered";
   } | { case: undefined; value?: undefined };
 };
 
@@ -981,4 +993,167 @@ export type Resync = Message<"peers_touch.model.realtime.v1.Resync"> & {
  */
 export const ResyncSchema: GenMessage<Resync> = /*@__PURE__*/
   messageDesc(file_domain_realtime_event, 13);
+
+/**
+ * EnvelopeDelivered notifies a device that a new StationEnvelope has
+ * been written to its durable inbox and is available for immediate
+ * processing. Fat-push: the full payload is embedded so clients can
+ * process without a round-trip fetch. Clients MUST still ACK via
+ * POST /envelope/ack after successful processing.
+ *
+ * Deduplication: inbox_item_id is the canonical dedup key. A device
+ * receiving the same inbox_item_id from both SSE push and resume poll
+ * MUST process at-most-once and ACK idempotently.
+ *
+ * @generated from message peers_touch.model.realtime.v1.EnvelopeDelivered
+ */
+export type EnvelopeDelivered = Message<"peers_touch.model.realtime.v1.EnvelopeDelivered"> & {
+  /**
+   * @generated from field: string inbox_item_id = 1;
+   */
+  inboxItemId: string;
+
+  /**
+   * @generated from field: string envelope_id = 2;
+   */
+  envelopeId: string;
+
+  /**
+   * @generated from field: string conversation_id = 3;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: int32 payload_type = 4;
+   */
+  payloadType: number;
+
+  /**
+   * @generated from field: bytes payload_bytes = 5;
+   */
+  payloadBytes: Uint8Array;
+
+  /**
+   * @generated from field: string sender_ptid = 6;
+   */
+  senderPtid: string;
+
+  /**
+   * @generated from field: string sender_device_id = 7;
+   */
+  senderDeviceId: string;
+
+  /**
+   * @generated from field: string recipient_device_id = 8;
+   */
+  recipientDeviceId: string;
+
+  /**
+   * @generated from field: int64 membership_epoch = 9;
+   */
+  membershipEpoch: bigint;
+
+  /**
+   * @generated from field: int64 queued_ts_unix_ms = 10;
+   */
+  queuedTsUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.realtime.v1.EnvelopeDelivered.
+ * Use `create(EnvelopeDeliveredSchema)` to create a new message.
+ */
+export const EnvelopeDeliveredSchema: GenMessage<EnvelopeDelivered> = /*@__PURE__*/
+  messageDesc(file_domain_realtime_event, 14);
+
+/**
+ * LedgerEventDelivered pushes a new Federation governance event to connected
+ * member Stations via SSE. The receiving Station verifies hash chain and
+ * signatures before applying to local ledger. See wire-protocol.md §7.2.
+ *
+ * @generated from message peers_touch.model.realtime.v1.LedgerEventDelivered
+ */
+export type LedgerEventDelivered = Message<"peers_touch.model.realtime.v1.LedgerEventDelivered"> & {
+  /**
+   * @generated from field: string federation_id = 1;
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: uint64 seq = 2;
+   */
+  seq: bigint;
+
+  /**
+   * @generated from field: bytes event_hash = 3;
+   */
+  eventHash: Uint8Array;
+
+  /**
+   * @generated from field: bytes prev_hash = 4;
+   */
+  prevHash: Uint8Array;
+
+  /**
+   * @generated from field: string event_type = 5;
+   */
+  eventType: string;
+
+  /**
+   * @generated from field: bytes payload_bytes = 6;
+   */
+  payloadBytes: Uint8Array;
+
+  /**
+   * @generated from field: bytes payload_hash = 7;
+   */
+  payloadHash: Uint8Array;
+
+  /**
+   * @generated from field: bytes actor_signature = 8;
+   */
+  actorSignature: Uint8Array;
+
+  /**
+   * @generated from field: bytes station_signature = 9;
+   */
+  stationSignature: Uint8Array;
+
+  /**
+   * @generated from field: bytes sequencer_signature = 10;
+   */
+  sequencerSignature: Uint8Array;
+
+  /**
+   * @generated from field: string actor_id = 11;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string actor_federated_handle = 12;
+   */
+  actorFederatedHandle: string;
+
+  /**
+   * @generated from field: string station_peer_id = 13;
+   */
+  stationPeerId: string;
+
+  /**
+   * @generated from field: string sequencer_station_peer_id = 14;
+   */
+  sequencerStationPeerId: string;
+
+  /**
+   * @generated from field: int64 created_at_unix_ms = 15;
+   */
+  createdAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.realtime.v1.LedgerEventDelivered.
+ * Use `create(LedgerEventDeliveredSchema)` to create a new message.
+ */
+export const LedgerEventDeliveredSchema: GenMessage<LedgerEventDelivered> = /*@__PURE__*/
+  messageDesc(file_domain_realtime_event, 15);
 

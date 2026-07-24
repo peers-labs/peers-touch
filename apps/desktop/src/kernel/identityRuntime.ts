@@ -1,7 +1,6 @@
 import { useAccountIdentityStore } from '../store/accountIdentity';
 import { useOAuth2Store } from '../store/oauth2';
 import { useSessionStore } from '../store/session';
-import { isAccessGranted } from '../services/accessGate';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
 import { readDesktopPreferenceSync, removeDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
@@ -270,7 +269,7 @@ class IdentityRuntime {
         await this.loadAuthGate('session_missing', false);
         return;
       }
-      await this.evaluateAccessGateChain(user, source === 'applet' ? 'restore' : 'restore');
+      await this.acceptAuthenticatedEdgeFromCurrentSession(source === 'applet' ? 'applet_launch' : 'restored_session');
     } catch (error) {
       await this.loadAuthGate(classifyRestoreFailure(error), false);
     }
@@ -325,9 +324,7 @@ class IdentityRuntime {
       loginMethod: restored.login_method ?? null,
     });
     await useAccountIdentityStore.getState().load();
-    const user = currentSessionUser();
-    if (!user) return;
-    await this.evaluateAccessGateChain(user, 'switch');
+    await this.acceptAuthenticatedEdgeFromCurrentSession('account_switch');
   };
 
   unlockWithPin = async (accountId: string, pin: string): Promise<void> => {
@@ -339,9 +336,7 @@ class IdentityRuntime {
       loginMethod: resp.login_method ?? null,
     });
     await useAccountIdentityStore.getState().load();
-    const user = currentSessionUser();
-    if (!user) return;
-    await this.evaluateAccessGateChain(user, 'unlock');
+    await this.acceptAuthenticatedEdgeFromCurrentSession('pin_unlock');
   };
 
   refreshCurrentProfile = async (fallbackAvatar?: string): Promise<void> => {
@@ -460,33 +455,6 @@ class IdentityRuntime {
         error: String(error),
       });
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_FAILED' });
-    }
-  };
-
-  private evaluateAccessGateChain = async (
-    user: SessionUser,
-    source: 'restore' | 'unlock' | 'switch',
-  ): Promise<void> => {
-    this.dispatch({ type: 'ACCESS_GATE_EVALUATING', user });
-    try {
-      const decision = await useSessionStore.getState().accessStart();
-      if (isAccessGranted(decision)) {
-        markRendererAuthenticated();
-        restoreLastActivePage();
-        this.restoredUser = user;
-        this.knownAccounts = [user];
-        this.dataReady = true;
-        this.dispatch({ type: 'ACCESS_GATE_GRANTED', user, source });
-        const edgeKind = source === 'unlock' ? 'pin_unlock'
-          : source === 'switch' ? 'account_switch'
-          : 'restored_session';
-        await this.reconcileAuthenticatedIdentity(user, edgeKind);
-        return;
-      }
-      await this.loadAuthGate('session_missing', false);
-    } catch (error) {
-      log.warn('identity', 'access gate chain evaluation failed', { error: String(error) });
-      await this.loadAuthGate('restore_failed', false);
     }
   };
 
