@@ -1,0 +1,56 @@
+{
+  "out": "tmp/agent-lobehub-l2-screenshots/tasks-de-compact-tasks-scoped.png",
+  "captureMethod": "cdp-scoped-isolated-task-shell",
+  "captureMode": "scoped-isolated-task-shell",
+  "url": "http://localhost:3201/?surface=tasks&check=de",
+  "info": {
+    "url": "http://localhost:3201/?surface=tasks&check=de",
+    "root": true,
+    "compactTasks": true,
+    "compactShell": true,
+    "inlineComposer": true,
+    "inlineComposerPlaceholder": "What needs to be done?",
+    "inlineControls": [
+      "Create task",
+      "No priority",
+      "Research Agent",
+      "Private",
+      "Attach",
+      "Create task"
+    ],
+    "allTasks": true,
+    "scheduledGroup": true,
+    "awaitingInputGroup": true,
+    "pausedGroup": true,
+    "taskRows": 3,
+    "selectedTask": "Scheduled\nARXIV\nArXiv daily picks\nDaily at 09:00\n09:12",
+    "hiddenFooter": true,
+    "rightPanel": true,
+    "rightPanelToolbarActions": 3,
+    "taskAgentConversation": true,
+    "taskAgentWelcome": true,
+    "taskComposer": true,
+    "taskComposerPlaceholder": "Ask, create, or start a task. @ to assign tasks to other agents.",
+    "modelButton": true,
+    "searchButton": true,
+    "createTaskButton": true,
+    "viewSettingsCollapsedByDefault": true,
+    "rightPanelVisibleInViewport": true,
+    "taskComposerVisible": true,
+    "forbiddenHits": [],
+    "box": {
+      "x": 365,
+      "y": 470,
+      "width": 1644,
+      "height": 649
+    },
+    "viewport": {
+      "width": 1720,
+      "height": 920
+    }
+  },
+  "portalChromeHit": false,
+  "isolatedTextIncludesInlineComposer": true,
+  "isolatedTextIncludesTaskAgent": true,
+  "isolatedTextIncludesHiddenFooter": true
+}

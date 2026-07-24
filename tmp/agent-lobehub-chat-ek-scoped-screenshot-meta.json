@@ -1,0 +1,14 @@
+{
+  "evidenceId": "EVID-011-EK-pre",
+  "surface": "chat",
+  "state": "chat-execution-contract",
+  "check": "ek",
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=chat&state=chat-execution-contract&check=ek",
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/chat-ek-source-interaction-scoped.png",
+  "width": 740,
+  "height": 5545,
+  "sha256": "a2020ff3c442f5914349c9df5025880ac56f5655b9cd516845e329bf26571393",
+  "capturedBy": "Google Chrome headless new with isolated user-data-dir and CDP scoped clip via page target",
+  "visualInspection": "opened with view_image; confirmed Chat EK source-interaction closure map, source/runtime mutation/merge resume/replay columns, execution matrix and fail-closed warning are visible and readable",
+  "portalChromeHit": false
+}

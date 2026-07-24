@@ -1,0 +1,67 @@
+{
+  "url": "http://localhost:3200/?surface=profile&state=profile-runtime-contract&check=dw",
+  "root": true,
+  "marker": "profile-runtime-contract-dw",
+  "runtimeContractShell": true,
+  "normalRuntimeBranch": true,
+  "providerModelIdentity": true,
+  "modelAbilityTagsVisible": true,
+  "runtimeRows": [
+    "Permission gate",
+    "Provider + model",
+    "Editor save",
+    "Edit lock"
+  ],
+  "permissionGate": true,
+  "editLockStates": [
+    "lock pending",
+    "locked by teammate",
+    "debounced save queued"
+  ],
+  "debouncedSaveTrace": true,
+  "agentToolSearchMode": true,
+  "agentToolBuiltinGroup": true,
+  "agentToolCustomConnectorGroup": true,
+  "availableInWebFilterVisible": true,
+  "stalePluginCleanupState": true,
+  "localHeterogeneousBranch": true,
+  "heterogeneousTabs": [
+    "cloud",
+    "desktop"
+  ],
+  "cliDetectStates": [
+    "detecting",
+    "available",
+    "unavailable"
+  ],
+  "cloudTokenState": true,
+  "githubCredentialState": true,
+  "repoListMutationState": true,
+  "remoteHeterogeneousBranch": true,
+  "remoteDeviceStates": [
+    "none",
+    "offline",
+    "checking",
+    "available",
+    "unavailable"
+  ],
+  "editorCanvasHiddenForHeterogeneous": true,
+  "modelMenuItems": [
+    "OpenAI",
+    "Anthropic",
+    "Peers Local"
+  ],
+  "toolMenuItems": [
+    "Web Browsing",
+    "Workspace Files",
+    "Local DevTools",
+    "Hidden MCP"
+  ],
+  "sourceAnchors": [
+    "ProfileEditor/index.tsx",
+    "ProfileEditor/AgentTool.tsx",
+    "features/store/action.ts"
+  ],
+  "forbiddenHits": [],
+  "portalChromeHit": false
+}

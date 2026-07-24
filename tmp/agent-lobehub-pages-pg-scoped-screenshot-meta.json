@@ -1,0 +1,32 @@
+{
+  "evidenceId": "EVID-011-PG-pre",
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=pages&state=page-runtime-contract&check=pg",
+  "markerSelector": "[data-review-marker=\"pages-runtime-contract-pg\"]",
+  "screenshotPath": "tmp/agent-lobehub-l2-screenshots/pages-pg-runtime-contract-scoped.png",
+  "domPath": "tmp/agent-lobehub-pages-pg-dom.json",
+  "captureMode": "headless-chrome-preview-only",
+  "image": {
+    "width": 1280,
+    "height": 1500,
+    "sha256": "6d479c127036eb521bf862932bd14024348a250793430014108cef52454a39e8"
+  },
+  "visualInspection": {
+    "openedByAgent": true,
+    "portalChromeHit": false,
+    "portalTitlePresent": true,
+    "readable": true,
+    "statesVisible": [
+      "route scope",
+      "list fetch boundary",
+      "private/workspace bucket owner",
+      "load more drawer",
+      "visibility permission guard",
+      "meta autosave",
+      "edit lock",
+      "history restore",
+      "import/export",
+      "delete rollback",
+      "Page Agent sidecar"
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "found": true,
+  "marker": "settings-provider-runtime-ec",
+  "evidenceId": "EVID-011-EC-pre",
+  "runtimeContractShell": true,
+  "providerModelIdentity": "openai/gpt-4.1",
+  "providerConfigState": "draft-secret|save-error|checker-json|fetch-policy",
+  "modelTitleToolbarState": "sticky-search|fetch-remote|clear-remote|add-model|reset-confirm",
+  "enabledModelListState": "all-tab|chat-tab-empty|batch-disable|sort-modal|permission-disabled",
+  "runtimeOwner": "base-settings provider registry / Desktop projection / Station future sync truth",
+  "contractRowCount": 6,
+  "providerConfigPanel": true,
+  "modelListPanel": true,
+  "modelTitleToolbar": true,
+  "toolbarButtons": [
+    "Fetch models",
+    "Clear remote",
+    "Add custom",
+    "Reset all"
+  ],
+  "modelSearchValue": "gpt",
+  "enabledModelActions": true,
+  "disabledActionReasons": [
+    "Missing manage_provider_key permission",
+    "Missing manage_provider_key permission"
+  ],
+  "tabs": [
+    "all",
+    "chat",
+    "embedding",
+    "image"
+  ],
+  "modelRows": [
+    "gpt-4.1chat \u00b7 128k \u00b7 check model enabled",
+    "gpt-4ochat \u00b7 128k \u00b7 recent enabled",
+    "text-embedding-3-largeembedding \u00b7 8k \u00b7 cannot be disabled by chat-only toggle enabled",
+    "pt-local-visionimage \u00b7 workspace \u00b7 custom model disabled"
+  ],
+  "emptyTabStateVisible": true,
+  "checkerJsonHasStructuredError": true,
+  "oauthDeviceFlow": true,
+  "forbiddenHits": [],
+  "portalChromeHit": false
+}

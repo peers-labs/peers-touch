@@ -1,6 +1,6 @@
 import { create, type StateCreator, type StoreApi, type UseBoundStore } from 'zustand';
 
-import { recordStoreUpdate } from '../kernel/frontendRuntimeProfiler';
+import { recordStoreUpdate, isStoreUpdateProfilingEnabled } from '../kernel/frontendRuntimeProfiler';
 import { log } from '../utils/logger';
 
 const MAX_CHANGED_KEYS = 40;
@@ -46,29 +46,32 @@ export function createDesktopStore<T>(
       };
     }) as typeof api.subscribe;
 
-    const instrumentedSet: typeof set = ((...args: Parameters<typeof set>) => {
-      const before = get();
-      const start = nowMs();
-      (set as (...nextArgs: Parameters<typeof set>) => void)(...args);
-      const changedKeys = changedStateKeys(before, get());
-      if (changedKeys.length === 0) return;
-      recordStoreUpdate({
-        changedKeys,
-        durationMs: nowMs() - start,
-        fanout: activeListenerCount,
-        listenerCount: activeListenerCount,
-        owner: storeName,
-        store: storeName,
-      });
-      if (activeListenerCount > FANOUT_WARN_THRESHOLD) {
-        log.warn('storeFanoutGuard', 'dispatch fanout exceeds threshold', {
-          store: storeName,
-          fanout: activeListenerCount,
-          threshold: FANOUT_WARN_THRESHOLD,
-          changedKeys,
-        });
-      }
-    }) as typeof set;
+    const profilingEnabled = isStoreUpdateProfilingEnabled();
+    const instrumentedSet: typeof set = profilingEnabled
+      ? ((...args: Parameters<typeof set>) => {
+          const before = get();
+          const start = nowMs();
+          (set as (...nextArgs: Parameters<typeof set>) => void)(...args);
+          const changedKeys = changedStateKeys(before, get());
+          if (changedKeys.length === 0) return;
+          recordStoreUpdate({
+            changedKeys,
+            durationMs: nowMs() - start,
+            fanout: activeListenerCount,
+            listenerCount: activeListenerCount,
+            owner: storeName,
+            store: storeName,
+          });
+          if (activeListenerCount > FANOUT_WARN_THRESHOLD) {
+            log.warn('storeFanoutGuard', 'dispatch fanout exceeds threshold', {
+              store: storeName,
+              fanout: activeListenerCount,
+              threshold: FANOUT_WARN_THRESHOLD,
+              changedKeys,
+            });
+          }
+        }) as typeof set
+      : set;
     return initializer(instrumentedSet, get, api);
   });
 }

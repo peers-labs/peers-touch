@@ -1,0 +1,30 @@
+{
+  "evidenceId": "EVID-011-TF-pre",
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=tasks&state=task-runtime-contract&check=tf",
+  "markerSelector": "[data-review-marker=\"task-runtime-contract-tf\"]",
+  "screenshotPath": "tmp/agent-lobehub-l2-screenshots/tasks-tf-runtime-contract-scoped.png",
+  "domPath": "tmp/agent-lobehub-tasks-tf-dom.json",
+  "captureMode": "headless-chrome-preview-only",
+  "image": {
+    "width": 1280,
+    "height": 1500,
+    "sha256": "de6920750f0d63091931c6d7147973643bef23cef79d5403126b818916ee5d1a"
+  },
+  "visualInspection": {
+    "openedByAgent": true,
+    "portalChromeHit": false,
+    "portalTitlePresent": true,
+    "readable": true,
+    "statesVisible": [
+      "route scope contract",
+      "list fetch boundary states",
+      "scope reset",
+      "per-scope draft restore",
+      "detail transient error versus TASK_NOT_FOUND",
+      "assignee hydration",
+      "scheduler heartbeat and cron contract",
+      "task-agent sidecar",
+      "topic drawer and gateway reconnect"
+    ]
+  }
+}

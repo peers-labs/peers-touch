@@ -44,6 +44,7 @@ import {
   markRouteVisible,
   scheduleAfterPaint,
   isFrontendRuntimeProfilerEnabled,
+  isReactCommitProfilingEnabled,
   recordReactCommit,
   recordHiddenSurfaceRender,
   recordSurfaceRender,
@@ -348,7 +349,7 @@ function PageFrameCommitProfiler({
   pageId: string;
   pageKey: string;
 }): ReactElement {
-  if (!isFrontendRuntimeProfilerEnabled()) return <>{children}</>;
+  if (!isReactCommitProfilingEnabled()) return <>{children}</>;
   const owner = `page-frame:${pageKey}`;
   const onRender: ProfilerOnRenderCallback = (
     id,

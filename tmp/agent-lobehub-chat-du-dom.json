@@ -1,0 +1,41 @@
+{
+  "url": "http://localhost:3200/?surface=chat&state=chat-input-contract&check=du",
+  "root": true,
+  "marker": "chat-input-contract-du",
+  "compactChat": true,
+  "inputContractShell": true,
+  "chatInputNotice": true,
+  "contextContainer": true,
+  "contextSelections": [
+    "Product brief.md",
+    "Resource: Meeting notes",
+    "Skill: Web Search"
+  ],
+  "actionContract": true,
+  "sendMenu": true,
+  "sendMenuItems": [
+    "Send with Enter",
+    "Send with Cmd + Enter",
+    "Add AI Message",
+    "Add User Message"
+  ],
+  "heteroGuard": true,
+  "workspaceControl": true,
+  "inputHeader": true,
+  "inputHeaderText": "Drag files, local paths or skill cards hereHistory",
+  "composerTypo": true,
+  "promptTransform": true,
+  "modelButton": true,
+  "footerButtons": [
+    "Agent",
+    "No device",
+    "Allow List",
+    ""
+  ],
+  "sideTabs": [
+    "Space",
+    "Params"
+  ],
+  "forbiddenHits": [],
+  "portalChromeHit": false
+}

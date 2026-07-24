@@ -1,0 +1,44 @@
+{
+  "url": "http://localhost:3200/?surface=chat&state=chat-runtime-contract&check=dx",
+  "previewOnlyUrl": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=chat&state=chat-runtime-contract&check=dx",
+  "root": true,
+  "marker": "chat-runtime-contract-dx",
+  "runtimeContractShell": true,
+  "streamingChunkTaxonomy": true,
+  "streamRows": [
+    "text",
+    "reasoning",
+    "tool_calls",
+    "grounding",
+    "stop"
+  ],
+  "lifecycleSeparation": true,
+  "lifecycleRows": [
+    "running",
+    "waiting_for_human",
+    "waiting_for_async_tool",
+    "transport_closed",
+    "done/error/abort"
+  ],
+  "thinkingStreamVisible": true,
+  "toolCallDeltaVisible": true,
+  "parkedHumanApprovalVisible": true,
+  "resumeLineageVisible": true,
+  "gatewayTransportClosedVisible": true,
+  "stopLocalStreamAction": true,
+  "retryWithLineageAction": true,
+  "branchFromParentAction": true,
+  "stationDurableTruthAuthority": true,
+  "desktopTransientProjectionAuthority": true,
+  "transportCloseNotSemanticSuccess": true,
+  "sourceAnchors": [
+    "StreamingHandler.ts",
+    "conversationControl.ts",
+    "pendingInterventions.ts",
+    "buildRunLifecycle.ts",
+    "chat-runtime-source-map.md"
+  ],
+  "forbiddenHits": [],
+  "portalChromeHit": false,
+  "portalTitlePresent": true
+}

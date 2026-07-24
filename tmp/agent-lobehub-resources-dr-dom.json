@@ -1,0 +1,42 @@
+{
+  "url": "http://localhost:3200/?surface=resources&state=resource-list-contract&check=dr",
+  "root": true,
+  "marker": "resources-list-contract-dr",
+  "compactResources": true,
+  "scopedSelector": "[data-review-marker=\"resources-list-contract-dr\"]",
+  "activeState": "resource-list-contract",
+  "layoutWidth": 1824,
+  "layoutHeight": 526,
+  "selectedActions": true,
+  "selectedCountText": true,
+  "asyncErrorPrecedence": true,
+  "retryButton": true,
+  "searchInputExpanded": true,
+  "listHeaderHasCheckbox": true,
+  "selectAllHint": true,
+  "selectAllCopy": true,
+  "virtualizedBoundary": true,
+  "uploaderColumn": true,
+  "createdAtColumn": true,
+  "tableHeaderCells": [
+    "",
+    "",
+    "Name",
+    "Created at",
+    "Uploader",
+    "Size",
+    ""
+  ],
+  "batchActions": [
+    "Move",
+    "Chunk",
+    "Delete"
+  ],
+  "rows": 4,
+  "tableRows": 4,
+  "checkedRowAffordances": 4,
+  "forbiddenHits": [],
+  "portalChromeHit": false,
+  "visibleTop": 437,
+  "visibleLeft": 168
+}
