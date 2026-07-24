@@ -5,7 +5,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import { recordReactCommit } from './frontendRuntimeProfiler';
+import { recordReactCommit, isReactCommitProfilingEnabled } from './frontendRuntimeProfiler';
 
 interface OverlayCommitProfilerProps {
   readonly children: ReactNode;
@@ -18,7 +18,7 @@ export function OverlayCommitProfiler({
   owner,
   surface,
 }: OverlayCommitProfilerProps): ReactElement {
-  if (!import.meta.env.DEV) return <>{children}</>;
+  if (!isReactCommitProfilingEnabled()) return <>{children}</>;
   const profilerId = `overlay-host:${owner}`;
   const onRender: ProfilerOnRenderCallback = (
     id,

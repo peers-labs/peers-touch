@@ -119,7 +119,7 @@ type FrontendTelemetryQueueOptions = {
 };
 
 const DEFAULT_MAX_EVENTS = 500;
-const DEFAULT_FLUSH_DELAY_MS = 2_000;
+const DEFAULT_FLUSH_DELAY_MS = 10_000;
 const SENSITIVE_KEY_PATTERN = /password|passwd|pwd|token|secret|private.?key|message|body|content/i;
 const events: DesktopFrontendTelemetryEvent[] = [];
 const pendingUploadEvents: DesktopFrontendTelemetryEvent[] = [];
