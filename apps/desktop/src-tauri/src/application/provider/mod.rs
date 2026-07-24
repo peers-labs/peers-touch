@@ -6,7 +6,6 @@ use serde_json::json;
 
 pub(crate) mod cache;
 pub(crate) mod remote;
-pub(crate) mod state;
 pub(crate) mod station_api;
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
