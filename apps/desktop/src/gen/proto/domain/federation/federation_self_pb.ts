@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/federation/federation_self.proto.
  */
 export const file_domain_federation_federation_self: GenFile = /*@__PURE__*/
-  fileDesc("Cidkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX3NlbGYucHJvdG8SH3BlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEi8QMKEkZlZGVyYXRpb25TZWxmVmlldxIaCghhY3Rvcl9pZBgBIAEoCVIIYWN0b3JfaWQSJAoNYWN0b3JfaWRfdWludBgCIAEoBFINYWN0b3JfaWRfdWludBIuChJwcmVmZXJyZWRfdXNlcm5hbWUYAyABKAlSEnByZWZlcnJlZF91c2VybmFtZRIqChBmZWRlcmF0ZWRfaGFuZGxlGAQgASgJUhBmZWRlcmF0ZWRfaGFuZGxlEjIKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAUgASgJUhRob21lX3N0YXRpb25fcGVlcl9pZBIwChNob21lX3N0YXRpb25fZG9tYWluGAYgASgJUhNob21lX3N0YXRpb25fZG9tYWluEkkKCnZpc2liaWxpdHkYByABKA4yNS5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkZlZGVyYXRpb25WaXNpYmlsaXR5EioKEHZpc2liaWxpdHlfbGFiZWwYCCABKAlSEHZpc2liaWxpdHlfbGFiZWwSIAoLbG9jYXRvcl9zZXEYCSABKARSC2xvY2F0b3Jfc2VxEg4KBm9yaWdpbhgKIAEoCRIuChJpbmJveF9yZWxheV9tb3VudHMYCyADKAlSEmluYm94X3JlbGF5X21vdW50cyIxChtGZWRlcmF0aW9uVmlzaWJpbGl0eVJlcXVlc3QSEgoKdmlzaWJpbGl0eRgBIAEoCSqnAQoURmVkZXJhdGlvblZpc2liaWxpdHkSJQohRkVERVJBVElPTl9WSVNJQklMSVRZX1VOU1BFQ0lGSUVEEAASIAocRkVERVJBVElPTl9WSVNJQklMSVRZX0hJRERFThABEiMKH0ZFREVSQVRJT05fVklTSUJJTElUWV9CWV9IQU5ETEUQAhIhCh1GRURFUkFUSU9OX1ZJU0lCSUxJVFlfSU5ERVhFRBADQkxaSmdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL2ZlZGVyYXRpb24vYXBpL3BiO3BiYgZwcm90bzM");
+  fileDesc("Cidkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX3NlbGYucHJvdG8SH3BlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEi1wQKEkZlZGVyYXRpb25TZWxmVmlldxIaCghhY3Rvcl9pZBgBIAEoCVIIYWN0b3JfaWQSJAoNYWN0b3JfaWRfdWludBgCIAEoBFINYWN0b3JfaWRfdWludBIuChJwcmVmZXJyZWRfdXNlcm5hbWUYAyABKAlSEnByZWZlcnJlZF91c2VybmFtZRIqChBmZWRlcmF0ZWRfaGFuZGxlGAQgASgJUhBmZWRlcmF0ZWRfaGFuZGxlEjIKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAUgASgJUhRob21lX3N0YXRpb25fcGVlcl9pZBIwChNob21lX3N0YXRpb25fZG9tYWluGAYgASgJUhNob21lX3N0YXRpb25fZG9tYWluEkkKCnZpc2liaWxpdHkYByABKA4yNS5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkZlZGVyYXRpb25WaXNpYmlsaXR5EioKEHZpc2liaWxpdHlfbGFiZWwYCCABKAlSEHZpc2liaWxpdHlfbGFiZWwSIAoLbG9jYXRvcl9zZXEYCSABKARSC2xvY2F0b3Jfc2VxEg4KBm9yaWdpbhgKIAEoCRIuChJpbmJveF9yZWxheV9tb3VudHMYCyADKAlSEmluYm94X3JlbGF5X21vdW50cxJkChJqb2luZWRfZmVkZXJhdGlvbnMYDCADKAsyNC5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkpvaW5lZEZlZGVyYXRpb25SZWZSEmpvaW5lZF9mZWRlcmF0aW9ucyKPAQoTSm9pbmVkRmVkZXJhdGlvblJlZhIkCg1mZWRlcmF0aW9uX2lkGAEgASgJUg1mZWRlcmF0aW9uX2lkEigKD2ZlZGVyYXRpb25fbmFtZRgCIAEoCVIPZmVkZXJhdGlvbl9uYW1lEhgKB215X3JvbGUYAyABKAlSB215X3JvbGUSDgoGc3RhdHVzGAQgASgJIjEKG0ZlZGVyYXRpb25WaXNpYmlsaXR5UmVxdWVzdBISCgp2aXNpYmlsaXR5GAEgASgJKqcBChRGZWRlcmF0aW9uVmlzaWJpbGl0eRIlCiFGRURFUkFUSU9OX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIgChxGRURFUkFUSU9OX1ZJU0lCSUxJVFlfSElEREVOEAESIwofRkVERVJBVElPTl9WSVNJQklMSVRZX0JZX0hBTkRMRRACEiEKHUZFREVSQVRJT05fVklTSUJJTElUWV9JTkRFWEVEEANCTFpKZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvZmVkZXJhdGlvbi9hcGkvcGI7cGJiBnByb3RvMw");
 
 /**
  * FederationSelfView is the Desktop-facing snapshot of an actor's
@@ -108,6 +108,14 @@ export type FederationSelfView = Message<"peers_touch.model.federation.v1.Federa
    * @generated from field: repeated string inbox_relay_mounts = 11 [json_name = "inbox_relay_mounts"];
    */
   inboxRelayMounts: string[];
+
+  /**
+   * Federations this actor's home station has joined.
+   * Populated from the governance subserver's materialized state.
+   *
+   * @generated from field: repeated peers_touch.model.federation.v1.JoinedFederationRef joined_federations = 12 [json_name = "joined_federations"];
+   */
+  joinedFederations: JoinedFederationRef[];
 };
 
 /**
@@ -116,6 +124,41 @@ export type FederationSelfView = Message<"peers_touch.model.federation.v1.Federa
  */
 export const FederationSelfViewSchema: GenMessage<FederationSelfView> = /*@__PURE__*/
   messageDesc(file_domain_federation_federation_self, 0);
+
+/**
+ * JoinedFederationRef is a lightweight reference to a joined federation,
+ * surfaced in FederationSelfView for the Desktop Settings panel.
+ *
+ * @generated from message peers_touch.model.federation.v1.JoinedFederationRef
+ */
+export type JoinedFederationRef = Message<"peers_touch.model.federation.v1.JoinedFederationRef"> & {
+  /**
+   * @generated from field: string federation_id = 1 [json_name = "federation_id"];
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: string federation_name = 2 [json_name = "federation_name"];
+   */
+  federationName: string;
+
+  /**
+   * @generated from field: string my_role = 3 [json_name = "my_role"];
+   */
+  myRole: string;
+
+  /**
+   * @generated from field: string status = 4;
+   */
+  status: string;
+};
+
+/**
+ * Describes the message peers_touch.model.federation.v1.JoinedFederationRef.
+ * Use `create(JoinedFederationRefSchema)` to create a new message.
+ */
+export const JoinedFederationRefSchema: GenMessage<JoinedFederationRef> = /*@__PURE__*/
+  messageDesc(file_domain_federation_federation_self, 1);
 
 /**
  * FederationVisibilityRequest is the body of PUT /actor/federation/visibility.
@@ -137,7 +180,7 @@ export type FederationVisibilityRequest = Message<"peers_touch.model.federation.
  * Use `create(FederationVisibilityRequestSchema)` to create a new message.
  */
 export const FederationVisibilityRequestSchema: GenMessage<FederationVisibilityRequest> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_self, 1);
+  messageDesc(file_domain_federation_federation_self, 2);
 
 /**
  * FederationVisibility mirrors the int16 enum in the touch_actor table.
