@@ -94,12 +94,12 @@ func (s *DefaultService) deliverLocal(ctx context.Context, env *chat.StationEnve
 	}
 
 	if env.RecipientDeviceId != "" {
-		delivered := s.bus.PublishToDevice(ctx, env.RecipientPtid, env.RecipientDeviceId, env)
+		delivered := s.bus.PublishToDevice(ctx, env.RecipientPtid, env.RecipientDeviceId, inboxID, env)
 		if delivered {
 			_ = s.repo.MarkInboxDelivered(ctx, inboxID, time.Now())
 		}
 	} else {
-		count := s.bus.PublishToActor(ctx, env.RecipientPtid, env)
+		count := s.bus.PublishToActor(ctx, env.RecipientPtid, inboxID, env)
 		if count > 0 {
 			_ = s.repo.MarkInboxDelivered(ctx, inboxID, time.Now())
 		}

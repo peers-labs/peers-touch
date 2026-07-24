@@ -1,0 +1,27 @@
+# G0 MLS verification spike — THROWAWAY.
+#
+# Isolation contract (see docs/architecture/federated-im/execution-plans/
+# 20260712-g0-mls-verification.md §5): this crate is NOT part of any product
+# build. It exists only to produce G0 evidence for D-08 and is deleted once the
+# §7 result matrix is filled. It must not be depended on by apps/* or model/*.
+#
+# Empty [workspace] table keeps this crate standalone even if an ancestor
+# directory later gains a workspace manifest.
+[workspace]
+
+[package]
+name = "mls-g0-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Approved by user 2026-07-12; version locked (see §4/§6 of the G0 plan).
+openmls = { version = "0.8.1", features = ["test-utils"] }
+openmls_rust_crypto = "0.5.1"
+openmls_traits = "0.5.0"
+openmls_basic_credential = "0.5.0"
+
+[[bin]]
+name = "mls_g0"
+path = "src/main.rs"
