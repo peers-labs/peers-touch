@@ -174,6 +174,20 @@ export interface RealtimeGroupSkdmEnvelopeDeliveredPayload {
   deliveredTsUnixMs: number;
 }
 
+export interface RealtimeEnvelopeDeliveredPayload {
+  eventId: string;
+  inboxItemId: string;
+  envelopeId: string;
+  conversationId: string;
+  payloadType: number;
+  payloadBytes: Uint8Array;
+  senderPtid: string;
+  senderDeviceId: string;
+  recipientDeviceId: string;
+  membershipEpoch: number;
+  queuedTsUnixMs: number;
+}
+
 export interface RealtimeConversationSettingsChangedPayload {
   eventId: string;
   conversationKind: 'friend' | 'group';
@@ -291,6 +305,7 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE]: RealtimeGroupMembershipChangePayload;
   [EVENT.REALTIME_GROUP_FEDERATION_EVENT]: RealtimeGroupFederationEventPayload;
     [EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED]: RealtimeGroupSkdmEnvelopeDeliveredPayload;
+  [EVENT.REALTIME_ENVELOPE_DELIVERED]: RealtimeEnvelopeDeliveredPayload;
   [EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED]: RealtimeConversationSettingsChangedPayload;
   [EVENT.MOMENT_CREATED]: MomentCreatedPayload;
   [EVENT.MOMENT_DELETED]: MomentDeletedPayload;
