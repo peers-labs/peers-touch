@@ -121,19 +121,26 @@ genesis.event_type = "FEDERATION_CREATED"
 ### 4.2 Key Hierarchy
 
 ```text
+Actor Key Pair (Ed25519)
+  ├─ actor_public_key: identifies the Actor's signing identity
+  ├─ Generated at: account creation on Home Station
+  ├─ Private key stored: encrypted in Station DB + synced to Actor's devices
+  ├─ Used for: actor_signature (Actor signs their own governance actions)
+  └─ Rotation: via StationKeyRotated-style event (future)
+
 Station Key Pair (Ed25519)
   ├─ station_public_key: identifies the Station across the federation
   ├─ Used for: station_signature, sequencer_signature
   └─ Managed by: frame/core/auth/federation/local_key.go
-
-Actor Signing (v1: Station-delegated)
-  ├─ In v1, Actor does NOT hold an independent key pair
-  ├─ actor_signature = Station key signing actor-scoped content
-  ├─ The signature proves: "Station vouches that Actor X authorized this action"
-  └─ Future: Actor may hold device-bound keys (WebAuthn / passkey)
 ```
 
-**v1 Constraint**: `actor_signature` and `station_signature` use the same Ed25519 key but sign **different inputs** (§3.3). The field separation allows future key-hierarchy upgrades without wire-format changes.
+**Actor 独立签名**: Actor 持有自己的 Ed25519 key pair。Actor 的消息、数据和治理动作由 Actor 自己的私钥签名，不由 Station 代签。Station 只签自己的 station_signature（证明"本站转发了这个 event"），不替 Actor 做决定。
+
+**Key 生命周期**:
+- 创建：Actor 注册时生成 Ed25519 key pair，public key 存入 Actor profile。
+- 存储：私钥加密存于 Station DB，同时同步到 Actor 的设备（Desktop/Mobile 通过 Tauri secure storage 保存）。
+- 签名场景：Actor 在设备上发起治理动作时，设备端用本地私钥签名；Station 收到后验证 actor_signature，再附加 station_signature 转发给 sequencer。
+- 轮换：通过 ledger event 表达（类似 StationKeyRotated），历史 events 保持在旧 key 下有效。
 
 ### 4.3 Signing Inputs
 
@@ -141,10 +148,10 @@ Each signature covers a distinct scope:
 
 #### actor_signature
 
-Proves the actor authorized the governance action:
+Proves the actor authorized the governance action (signed by Actor's own private key):
 
 ```text
-actor_signature = Ed25519_Sign(station_private_key, canonical_proto_bytes(ActorSignatureInput {
+actor_signature = Ed25519_Sign(actor_private_key, canonical_proto_bytes(ActorSignatureInput {
   federation_id:          string
   actor_id:               string
   actor_federated_handle: string
@@ -192,7 +199,7 @@ Receivers MUST verify in this order:
 2. Recompute `event_hash` from EventHashInput → reject if mismatch.
 3. Verify `sequencer_signature` using known sequencer public key → reject if invalid.
 4. Verify `station_signature` using originating station's public key → reject if invalid.
-5. Verify `actor_signature` using originating station's public key (v1) → reject if invalid.
+5. Verify `actor_signature` using actor's public key (from Actor profile on originating Station) → reject if invalid.
 6. Verify policy: does actor have permission for event_type? → reject if unauthorized.
 7. Verify seq continuity: `prev_hash == local head hash` and `seq == local head seq + 1` → fork_detected if mismatch.
 
@@ -662,47 +669,63 @@ message LeaveFederationResponse {
 
 ## 7. Sync Protocol
 
-### 7.1 Sync Model: Pull + Relay Notification
+### 7.1 Sync Model: SSE Push + HTTP Pull (Unified Architecture)
+
+与群聊消息投递（EnvelopeDelivered via SSE）同架构，联邦 ledger sync 也走 SSE：
 
 ```text
 Sequencer appends event
-  → broadcasts lightweight notification via relay topic "fed.ledger.notify.v1"
-  → notification contains: federation_id, new_head_seq, new_head_hash (no payload)
-  → member Stations receiving notification trigger pull via FetchEvents RPC
-  → member Stations without relay connectivity fall back to polling (interval: 30s)
+  → Sequencer Station 通过 events subserver 的 SSE 向所有在线成员 Station 推送 LedgerEventDelivered
+  → 成员 Station 收到后验证并应用 event
+  → 离线或断连的成员 Station 重连后通过 FetchEvents HTTP RPC 拉取缺失的 events（cursor-based）
 ```
 
-This hybrid model avoids relay carrying full ledger payloads while providing near-realtime sync.
+**统一架构**: SSE 是项目的全局实时投递方式（chat envelope、federation ledger、presence 等都走同一 events subserver 的 StreamEvent oneof）。不搞单独的 relay notify 或自建 push 通道。
 
-### 7.2 Relay Notification Message
+### 7.2 SSE StreamEvent Arm
+
+在现有 `realtime/event.proto` 的 StreamEvent oneof 中新增：
 
 ```protobuf
-message LedgerAdvanceNotification {
+// 在 StreamEvent oneof 中追加:
+LedgerEventDelivered ledger_event_delivered = <next_field_number>;
+
+message LedgerEventDelivered {
   string federation_id = 1;
-  uint64 new_head_seq = 2;
-  bytes  new_head_hash = 3;
-  string sequencer_station_peer_id = 4;
-  int64  timestamp_unix_ms = 5;
+  uint64 seq = 2;
+  bytes  event_hash = 3;
+  string event_type = 4;
+  bytes  payload_bytes = 5;
+  bytes  actor_signature = 6;
+  bytes  station_signature = 7;
+  bytes  sequencer_signature = 8;
+  string actor_federated_handle = 9;
+  string station_peer_id = 10;
+  int64  created_at_unix_ms = 11;
 }
 ```
 
-Relay topic: `fed.ledger.notify.v1`. Deny-by-default allow-list. Only sequencer stations may publish.
+成员 Station 的 SSE 连接收到此 event 后，执行完整验证（hash chain + signatures + policy），通过后应用到本地 ledger。
 
-### 7.3 Lagging Station Catch-up
+### 7.3 Station-to-Station SSE 连接
 
-When a Station detects it is behind (local_head_seq < remote_head_seq):
+成员 Station 作为 SSE client 连接到 sequencer Station 的 events 端点：
 
-1. Fetch events in batches of 100 starting from `local_head_seq + 1`.
-2. Verify each event in order (hash chain + signatures).
-3. Apply to local ledger store and update materialized state.
-4. Continue until `has_more == false`.
-5. Update sync_cursor status to `healthy`.
+- 使用 Federation JWT（scope: `federation_governance`）认证。
+- 连接参数携带 `federation_id` + `last_seen_seq`，用于断线重连时 replay 缺失的 events。
+- Sequencer Station 的 events subserver 维护 per-federation ring buffer，支持 cursor replay。
+
+### 7.4 Lagging Station Catch-up
+
+当 Station 断连较久，ring buffer 已滚动超过其 cursor 时：
+
+1. SSE 连接返回 `CURSOR_EXPIRED` 信号。
+2. Station 通过 FetchEvents HTTP RPC 批量拉取（每批 100，cursor-based）。
+3. 验证每个 event（hash chain + signatures）。
+4. 追赶完毕后恢复 SSE 实时接收。
+5. 更新 sync_cursor status 为 `healthy`。
 
 If batch verification fails mid-stream, mark `fork_detected` and stop.
-
-### 7.4 Polling Fallback
-
-Stations that cannot receive relay notifications poll `FetchHead` every 30 seconds. If `remote_head_seq > local_head_seq`, trigger catch-up.
 
 ### 7.5 Fork Detection
 
@@ -774,9 +797,9 @@ Receive event with seq == local_next_expected_seq
 
 **Rule**: If the current sequencer Station initiates `StationLeft`, the event MUST be preceded by a `SequencerChanged` event in the same proposal batch. Sequencer cannot leave without first handing over.
 
-If sequencer is unreachable and cannot produce a handover event:
-- Under `single_admin` policy: Federation enters `orphaned` (read-only, no new events).
-- Under future `quorum` policy: remaining admin stations may produce a `SequencerChanged` event with quorum signatures.
+If sequencer is unreachable and cannot produce a handover event, behavior depends on policy（见 §8.5）:
+- `single_admin`: Federation enters `orphaned` (read-only, no new events).
+- `quorum`（future）: remaining admin stations may produce a `SequencerChanged` event with quorum signatures.
 
 ### 8.4 Genesis Atomicity
 
@@ -790,6 +813,76 @@ Genesis creation is atomic within a single Station (the creator):
 6. If transaction fails, federation does not exist — no partial state.
 
 **Concurrent creation guard**: `federation_id` is a ULID (globally unique). No two Stations can create the same federation_id. If by protocol error a duplicate is detected, the second one is rejected at FetchEvents verification.
+
+### 8.5 Sequencer Policy（策略化设计）
+
+Sequencer 选举和 handover 不写死某一种方式，而是通过 `policy_type` 策略化：
+
+#### 策略接口
+
+```go
+type SequencerPolicy interface {
+    // ValidateAppend 检查当前 Station 是否有权追加正式 event
+    ValidateAppend(ctx context.Context, federation *Federation, station *StationMembership) error
+
+    // ValidateProposal 检查 proposal 是否满足策略要求
+    ValidateProposal(ctx context.Context, federation *Federation, proposal *Proposal) error
+
+    // HandleSequencerUnreachable 当 sequencer 不可达时的策略行为
+    HandleSequencerUnreachable(ctx context.Context, federation *Federation) (PolicyAction, error)
+
+    // ValidateHandover 检查 handover 请求是否合法
+    ValidateHandover(ctx context.Context, federation *Federation, request *HandoverRequest) error
+}
+```
+
+#### 已定义的策略类型
+
+| policy_type | 描述 | Sequencer 选举 | Handover 条件 | 失联行为 |
+|---|---|---|---|---|
+| `single_admin` | **v1 实现** — 最简单 | Genesis 创建者指定 | 当前 sequencer 主动发起 `SequencerChanged` | 进入 `orphaned`，等恢复 |
+| `owner_admin` | 预留 — Owner 可指定 | Federation owner 通过 `PolicyUpdated` 指定 | Owner 或当前 sequencer 发起 | 进入 `read_only`，owner 可在线时恢复 |
+| `quorum` | 预留 — 多签投票 | M-of-N admin stations 签名选举 | M-of-N admin stations 签名同意 | 自动选举（如果足够 admin 在线） |
+| `multi_sig` | 预留 — 全签 | 所有 admin stations 签名 | 所有 admin stations 同意 | 任一缺席则冻结 |
+
+#### v1 实现：`single_admin`
+
+```text
+创建联邦时：
+  → 创建者 Station 成为 sequencer
+  → policy_type = "single_admin"
+  → sequencer_station_peer_id 写入 genesis event
+
+正常运行：
+  → 只有 sequencer Station 可以追加正式 event（非 sequencer → error 40002）
+  → 其他 Station 通过 SubmitProposal 提交，sequencer 验证后追加
+
+主动 Handover：
+  → 当前 sequencer 发起 SequencerChanged event
+  → 新 sequencer 必须是 active member station
+  → 新 sequencer 从下一个 seq 开始分配
+
+Sequencer 失联：
+  → 其他 Station 检测到 SSE 断连 + FetchHead 超时
+  → Federation 标记为 orphaned
+  → 不能追加新 event，但可以读取历史和已有 materialized state
+  → Sequencer 恢复后自动恢复正常
+
+Sequencer 永久下线：
+  → 需要人工介入（通过 Dashboard 运维操作）
+  → 未来升级到 quorum policy 后可自动选举
+```
+
+#### 策略扩展规则
+
+新增 policy_type 时：
+1. 实现 `SequencerPolicy` 接口
+2. 在 `federation_policy.proto` 中新增 policy params message
+3. 通过 `PolicyUpdated` ledger event 切换策略（不可回滚到更弱策略）
+4. 添加对应的验证测试
+5. 更新本文档
+
+策略切换本身也是 ledger event，必须由当前 policy 允许的角色发起。
 
 ---
 
@@ -890,7 +983,7 @@ All RPC errors use the standard `ErrorResponse` proto format with federation err
 1. Ledger event payload MUST NOT contain tokens, passwords, private keys, sessions, emails, or PII.
 2. All signatures MUST be verified before applying an event to local state.
 3. A suspended/removed Station's future events MUST be rejected, but its historical events remain valid.
-4. Relay notification topic MUST be deny-by-default; only current sequencer may publish.
+4. SSE federation sync 连接 MUST 使用 Federation JWT 认证，scope 为 `federation_governance`。
 5. FetchEvents response MUST NOT include events beyond what the requesting Station's membership permits.
 6. Proposal dedup MUST prevent replay attacks within the dedup window.
 7. Fork detection MUST halt state advancement — never silently accept a forked event.
@@ -903,7 +996,6 @@ These are explicitly deferred and do NOT block Phase 1 implementation:
 
 | Topic | v1 Behavior | Future Path |
 |---|---|---|
-| Actor independent keys | Station signs on behalf | WebAuthn / device-bound keys |
 | Multi-sig proposals | Immediate accept/reject | PENDING state + quorum collection |
 | Ledger snapshot/checkpoint | Full replay from genesis | Periodic snapshot at seq N |
 | Cross-federation discovery | Not supported | Explicit federation bridge events |
@@ -922,8 +1014,9 @@ This specification maps to the following proto files (to be created in `model/do
 | `federation_governance_service.proto` | SubmitProposal, FetchHead, FetchEvents RPCs (§5.3) |
 | `federation_membership_service.proto` | GetMembershipStatus, AcceptInvite RPCs (§5.4) |
 | `federation_projection_service.proto` | ListFederations, ListMemberStations, CreateFederation, JoinFederation, LeaveFederation (§5.5) |
-| `federation_sync.proto` | LedgerAdvanceNotification, SyncCursor (§6) |
+| `federation_sync.proto` | SyncCursor, FetchEvents pagination types (§7) |
 
 Existing files to extend:
+- `realtime/event.proto`: Add `LedgerEventDelivered` arm to StreamEvent oneof (§7.2)
 - `federation_self.proto`: Add `JoinedFederationRef` and field to `FederationSelfView`
 - `federation_health.proto`: Add `governance_sync_status` field
