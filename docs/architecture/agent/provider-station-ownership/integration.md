@@ -1,40 +1,58 @@
 # Provider Station Ownership — Integration
 
-> **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-07-23 | **Updated**: 2026-07-23
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-07-23 | **Updated**: 2026-07-24
 > **Owner**: Agent Team
 
 ---
 
-## 1. Current State (To Be Replaced)
+## 0. Core Ownership Model
 
-| Component | Current behavior | Target behavior |
-|---|---|---|
-| Desktop Rust `ProviderStore` | Local SQLite source of truth for providers/models/credentials | Versioned cache of Station config; mutations route to Station API |
-| Desktop Rust `agent_execute_turn_stream` | Always forwards to Station `/sub-agent/agent/turn/stream` | No change (already correct) |
-| Desktop Rust CLI model fetch | Spawns CLI subprocess locally to enumerate models | Removed; Station handles model enumeration for CLI providers |
-| Desktop Web `store/provider.ts` | Calls Rust commands for provider CRUD (local storage) | Calls Rust commands that proxy to Station API |
-| Desktop Web `store/agent.ts` `loadModels()` | Reads from local Rust `ProviderStore` | Reads from Station-synced cache (same Rust command, different backend) |
-| Station `CredentialPoolService.Lease()` | Queries `agent_credential_pool WHERE provider = ?` | Queries `WHERE provider = ? AND actor_id = ?` |
-| Station `agent_credential_pool` table | No actor_id column (implicit single-actor) | Add `actor_id` column; all queries actor-scoped |
+| Concept | Owner | Location | Mutability |
+|---------|-------|----------|------------|
+| **Provider Catalog** (what providers the product supports: protocol, base_url, models, discovery) | Product (client-shipped) | `apps/desktop/src-tauri/src/application/provider/providers.default.yaml` embedded at compile time | Read-only; updated via product release |
+| **User Credentials** (API keys, secrets) | Station | `agent_providers.key_vaults` + `credential/set` / `credential/resolve` API | Per-actor, mutable |
+| **User Preferences** (enabled/disabled, custom base_url override) | Station | `agent_providers` row per actor+provider | Per-actor, version-gated |
+| **Custom Providers** (user-added providers not in catalog) | Station | Same table, no catalog counterpart | Per-actor, mutable |
+
+**Invariant**: The catalog is a product-level asset that ships with the client. It is never empty, never depends on Station connectivity, and never needs to be "seeded" to Station. Station stores only user-specific data (credentials + preferences). The UI always shows the full catalog; credential status from Station overlays on top.
 
 ---
 
-## 2. Deletion List (Desktop Rust)
+## 1. Current State (Post Phase 2)
 
-Files to be fully deleted:
+| Component | Behavior |
+|---|---|
+| Desktop Rust `catalog.rs` | Loads embedded `providers.default.yaml` at compile time via `include_str!`; provides `list_catalog()` and `find_in_catalog()` |
+| Desktop Rust `provider_list` | Returns catalog entries; overlays Station credential status (best-effort, graceful fallback if Station unreachable) |
+| Desktop Rust `provider_get` | Merges catalog entry + Station state (enabled, version, credential) |
+| Desktop Rust `cache.rs` | In-memory TTL cache for Station provider state + credential status |
+| Desktop Rust `station_api.rs` | Typed HTTP client for 10+ Station agent endpoints |
+| Desktop Rust `remote.rs` | Inference-only: `chat_completion` + `resolve_model_protocol` |
+| Desktop Web `store/provider.ts` | Calls Rust Tauri commands (unchanged interface) |
+| Station `agent_providers` | Per-actor provider preferences + credential storage |
+| Station `credential/resolve` | Returns decrypted api_key + base_url + protocol for authenticated actor |
 
-| Path (relative to `src-tauri/src/`) | Lines | Current purpose | Reason |
-|---|---|---|---|
-| `application/provider/state.rs` | 550 | In-memory + YAML file persistence for providers/models (NOT SQLite); `with_provider_store()`, `persist_provider_store()`, `ProviderRecord`, `ModelRecord` | Replaced by Station API; no local truth |
-| `application/provider/sync.rs` | 69 | Stub for bidirectional Station sync (both functions are TODOs) | Dead code; superseded by Phase 2 proxy |
-| `application/provider/providers.default.yaml` | 287 | Embedded seed data for 15+ providers (Ark, OpenAI, Anthropic, Ollama, CLI variants) via `include_str!` | Seed data moves to Station |
-| `application/provider/README.md` | 68 | Documents YAML config-file approach | Superseded |
-| `application/models/mod.rs` | 766 | Model CRUD + remote fetch + CLI subprocess model listing | All model catalog management moves to Station |
-| `interface/tauri_commands/models.rs` | 272 | Tauri commands for model add/update/delete/fetch/toggle | Replaced by Station API proxy |
+---
 
-Total deletable: ~2,012 lines.
+## 2. Deletion List (Desktop Rust) — COMPLETED
+
+Files deleted in Phase 2:
+
+| Path (relative to `src-tauri/src/`) | Lines | Reason |
+|---|---|---|
+| `application/provider/state.rs` | 550 | Replaced by Station API proxy; local YAML persistence removed |
+| `application/provider/sync.rs` | 69 | Dead stub; superseded by cache.rs + station_api.rs |
+| `application/provider/README.md` | 68 | Superseded by this document |
+| `application/models/mod.rs` | 766 | Model catalog now from embedded YAML + Station user models |
+| `interface/tauri_commands/models.rs` | 272 | Commands replaced by Station proxy |
+
+**NOT deleted** (corrected from v1.0):
+
+| Path | Lines | Reason retained |
+|---|---|---|
+| `application/provider/providers.default.yaml` | 287 | **Product catalog** — defines supported providers. This is a product-level asset, not user state. Ships with the client, loaded at compile time by `catalog.rs`. |
 
 ---
 
@@ -109,30 +127,34 @@ These files import from `application::provider` and need adaptation:
 
 Delivered: Station CRUD API with version-gated mutations, actor-scoped credential pool, CLI adapter registry. E2E verified on remote Station.
 
-### Phase 2: Desktop Rust — Station API Proxy + Cache
+### Phase 2: Desktop Rust — Catalog + Station Proxy ✅ COMPLETE
 
-Scope: Replace local provider persistence with Station-backed proxy layer.
+Delivered:
 
-1. Create thin cache module: fetch provider/model/credential-status from Station, cache in memory with version tracking.
-2. Rewrite `application/provider/mod.rs`: all CRUD proxies to Station API; reads return cached data.
-3. Delete `state.rs`, `sync.rs`, `providers.default.yaml`, `README.md`.
-4. Delete `application/models/mod.rs` (catalog management on Station).
-5. Retain `remote.rs` inference functions (`chat_completion`, `resolve_model_protocol`); delete probe/model-list functions.
-6. Adapt consumers (`chat/mod.rs`, `chat/streaming.rs`, `applets/mod.rs`) to read from new cache instead of `with_provider_store()`.
-7. Reshape Tauri command contracts (add version fields).
-8. First-connect migration: seed Station from existing local YAML overrides if Station has no providers for this actor.
+1. `catalog.rs` — embedded provider catalog loaded at compile time.
+2. `cache.rs` — in-memory TTL cache for Station credential/preference state.
+3. `station_api.rs` — typed HTTP client for all Station agent endpoints.
+4. `mod.rs` rewritten — `provider_list` / `provider_get` / `provider_list_available_models` return catalog as base, overlay Station state.
+5. Deleted `state.rs`, `sync.rs`, `README.md`, `models/mod.rs`, `tauri_commands/models.rs`.
+6. Retained `providers.default.yaml` as product catalog (not user state).
+7. `remote.rs` retained inference path only; deleted probe/model-list functions.
+8. Consumers (`chat`, `streaming`, `applets`) migrated to `cache::resolve_credential`.
+
+**Architectural correction (v1.1)**: v1.0 incorrectly planned to "seed Station from local YAML". This was wrong. The catalog is a product asset that always ships with the client. Station never needs to know "what providers exist in the world" — it only stores what the user configured (credentials + enabled/disabled preferences).
 
 ### Phase 3: Desktop Web Adaptation
 
 1. Settings UI handles 409 version conflict (re-fetch + retry or notify user).
 2. Regenerate proto TS types.
 3. Agent store `loadModels()` continues working (Rust cache returns same shape).
+4. Provider list UI renders catalog entries with credential_status overlay.
 
 ### Phase 4: Verify + Clean
 
-1. E2E: create provider on Desktop → credential set → send message → SSE response.
-2. E2E: same actor on two devices → concurrent edit → 409 → resolution.
-3. Delete dead code (orphan YAML files, unused contract types, local override paths).
+1. E2E: open Settings → see all 15 catalog providers → configure key → send message → SSE response.
+2. E2E: same actor on two devices → concurrent credential edit → 409 → resolution.
+3. E2E: Station unreachable → provider list still shows (catalog) → credential status shows "unknown".
+4. Delete orphan contract types and unused local override paths.
 
 ---
 
@@ -150,7 +172,8 @@ Scope: Replace local provider persistence with Station-backed proxy layer.
 |---|---|---|
 | Station CLI subprocess security | High | Sandbox CLI execution on Station (container or restricted user) |
 | Latency increase for provider operations | Low | Acceptable; consistency > latency for config operations |
-| Migration breaks existing local-only users | Medium | Phase 2 step 8: first-connect migration seeds Station from local YAML |
+| Station unreachable on first launch | Low | Catalog always available offline; credential status shows "unknown" until Station responds |
 | Version conflict UX | Medium | Design clear "config was changed on another device" dialog |
-| `chat_completion` in remote.rs still needs credentials | Medium | New cache provides credentials; no direct local YAML access |
+| `chat_completion` in remote.rs still needs credentials | Medium | `cache::resolve_credential` fetches from Station; graceful error if not configured |
 | Applet AI calls (9304-line file) depend on provider resolution | High | Test thoroughly; applet gateway is critical path |
+| Catalog staleness across client versions | Low | Catalog updates ship with product releases; not a runtime concern |
