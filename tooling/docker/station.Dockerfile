@@ -1,24 +1,11 @@
-# Station Dockerfile — multi-stage build (offline-capable)
+# Station Dockerfile — multi-stage build
 # Build: from project root, e.g. docker build -f tooling/docker/station.Dockerfile .
-#
-# Speed tip: run `make docker-warm-cache` once per host to pre-build the
-# builder base image. Pass BUILDER_IMAGE=peers-station-builder:go1.24.6
-# to skip the apt+Go install steps entirely.
 
-ARG BUILDER_IMAGE=ubuntu:22.04
+ARG BUILDER_IMAGE=golang:1.24
 ARG BASE_IMAGE=ubuntu:22.04
-ARG GO_VERSION=1.24.6
-ARG BUILD_COMMIT=unknown
-ARG BUILD_LABEL=dev
-ARG BUILD_TIME=unknown
 
 # ─── Stage 1: Builder ─────────────────────────────────────────────────────────
 FROM ${BUILDER_IMAGE} AS builder
-
-ARG GO_VERSION
-ARG BUILD_COMMIT
-ARG BUILD_LABEL
-ARG BUILD_TIME
 
 RUN if ! command -v go >/dev/null 2>&1; then \
       sed -i \
@@ -64,8 +51,12 @@ COPY apps/station/app/ ./station/app/
 COPY apps/station/frame/ ./station/frame/
 COPY apps/applets/ ./applets/
 
-# Build
+# Build — ARGs declared here so changing commit/time only invalidates this layer,
+# not the expensive apt-get / go-mod-download layers above.
 WORKDIR /src/station/app
+ARG BUILD_COMMIT=unknown
+ARG BUILD_LABEL=dev
+ARG BUILD_TIME=unknown
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w \
       -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildCommit=${BUILD_COMMIT} \
