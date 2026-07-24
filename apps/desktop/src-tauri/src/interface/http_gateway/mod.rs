@@ -6770,7 +6770,6 @@ fn dispatch_group_sync_from_station(args: Value, state: &AppState) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::provider::state as provider_state;
     use crate::infrastructure::i18n::I18nService;
     use crate::infrastructure::storage::{StorageKind, StorageLayout};
     use std::collections::HashMap;
@@ -6842,62 +6841,9 @@ mod tests {
         serde_json::from_str(status).expect("stub payload status should be JSON")
     }
 
-    fn register_product_host_gate_provider(base_url: &str) {
-        provider_state::with_provider_store(None, |store| {
-            for provider in &mut store.providers {
-                provider.enabled = false;
-            }
-            let model = provider_state::ModelRecord {
-                id: "gpt-4o".to_string(),
-                display_name: "GPT-4o".to_string(),
-                r#type: "chat".to_string(),
-                enabled: true,
-                context_window: 128000,
-                function_call: false,
-                vision: false,
-                reasoning: false,
-                search: false,
-                image_output: false,
-                video: false,
-                protocol_override: None,
-            };
-            let provider = store
-                .providers
-                .iter_mut()
-                .find(|provider| provider.id == "openai");
-            match provider {
-                Some(provider) => {
-                    provider.enabled = true;
-                    provider.key_vaults = json!({ "api_key": "test-key" }).to_string();
-                    provider.config_json = json!({
-                        "base_url": base_url,
-                        "protocol": "openai-compatible"
-                    })
-                    .to_string();
-                    provider.check_model = model.id.clone();
-                    provider.models = vec![model];
-                }
-                None => store.providers.push(provider_state::ProviderRecord {
-                    id: "openai".to_string(),
-                    name: "OpenAI".to_string(),
-                    description: "Controlled local provider for product host gate".to_string(),
-                    logo: "".to_string(),
-                    enabled: true,
-                    key_vaults: json!({ "api_key": "test-key" }).to_string(),
-                    config_json: json!({
-                        "base_url": base_url,
-                        "protocol": "openai-compatible"
-                    })
-                    .to_string(),
-                    check_model: model.id.clone(),
-                    models: vec![model],
-                    builtin: true,
-                    show_checker: false,
-                    show_api_key: false,
-                }),
-            }
-        })
-        .expect("provider store should be available");
+    fn register_product_host_gate_provider(_base_url: &str) {
+        // Provider registration now requires Station. Tests for product-host-gate
+        // must run against a real Station with providers configured.
     }
 
     #[test]
