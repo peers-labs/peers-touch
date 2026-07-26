@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input, toast } from '@lobehub/ui';
 import { Alert, Spin, Tag, theme, Modal, Typography } from 'antd';
-import { Search, ShieldCheck } from 'lucide-react';
-import { api, type FederationResolveView } from '../../services/desktop_api';
+import { Search, ShieldCheck, Globe, Server } from 'lucide-react';
+import { api, type FederationResolveView, type FederationCatalogEntry } from '../../services/desktop_api';
 import {
   useActiveChatFederationSlice,
   useActiveSocialChatSlice,
@@ -24,7 +24,6 @@ interface ActorSearchResult {
   username: string;
   displayName: string;
   avatar: string;
-  /** Set when the row was produced by /actor/federation/resolve. */
   federation?: {
     handle: string;
     homeStationDomain: string;
@@ -32,6 +31,7 @@ interface ActorSearchResult {
     isLocal: boolean;
     locatorSeq: number;
   };
+  homeStationName?: string;
 }
 
 interface Props {
@@ -39,20 +39,14 @@ interface Props {
   onClose: () => void;
 }
 
-// `@user` or `@user@host` — host segment is optional. The local-part
-// rules mirror the Station-side validator (alphanumerics + `_-.`),
-// kept loose enough that a typo still falls through to the local
-// search path rather than getting swallowed by the federation gate.
+type SearchScope = 'all' | 'federation' | 'station';
+
 const FEDERATED_HANDLE_RE = /^@?([a-zA-Z0-9._-]+)(?:@([a-zA-Z0-9.-]+(?::\d+)?))?$/;
 
 interface ParsedHandle {
-  /** Whether the input parses as a federated handle. */
   isFederated: boolean;
-  /** Whether the parse includes an explicit `@host` segment. */
   hasHost: boolean;
-  /** Canonical "@user@host" — only set when `hasHost`. */
   canonical: string;
-  /** Bare username (no `@`) — set whenever `isFederated`. */
   localPart: string;
 }
 
@@ -61,9 +55,6 @@ function parseHandleInput(raw: string): ParsedHandle {
   if (!trimmed) {
     return { isFederated: false, hasHost: false, canonical: '', localPart: '' };
   }
-  // Only treat as federated when the user actively typed an `@`. A bare
-  // word still routes through the legacy local search to keep username
-  // discovery on the same station fast.
   const match = trimmed.startsWith('@')
     ? FEDERATED_HANDLE_RE.exec(trimmed)
     : null;
@@ -117,6 +108,29 @@ function profileToResult(view: FederationResolveView): ActorSearchResult | null 
   };
 }
 
+function catalogEntryToResult(entry: FederationCatalogEntry): ActorSearchResult {
+  const handle = entry.federatedHandle || '';
+  const parts = handle.replace(/^@/, '').split('@');
+  const localPart = parts[0] || '';
+  const host = parts[1] || '';
+
+  return {
+    id: entry.actorId,
+    actorId: entry.actorId,
+    username: localPart,
+    displayName: entry.displayName || localPart,
+    avatar: entry.avatarUrl || '',
+    federation: {
+      handle,
+      homeStationDomain: host,
+      fromCache: false,
+      isLocal: false,
+      locatorSeq: 0,
+    },
+    homeStationName: entry.homeStationName,
+  };
+}
+
 export function FindPeopleModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -125,36 +139,54 @@ export function FindPeopleModal({ open, onClose }: Props) {
   }));
   const currentUserDid = useActiveSocialChatStore((s) => s.currentUserDid);
   const federationReady = useActiveChatFederationSlice(selectFederationReady);
+  const federationSelf = useActiveChatFederationSlice((s) => s.self);
+  const joinedFederations = federationSelf?.joinedFederations ?? [];
 
   const [searchText, setSearchText] = useState('');
   const [results, setResults] = useState<ActorSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [sentIds, setSentIds] = useState<Set<string>>(() => new Set());
+  const [searchScope, setSearchScope] = useState<SearchScope>('all');
+  const [selectedFederationId, setSelectedFederationId] = useState<string>('');
 
   const parsed = useMemo(() => parseHandleInput(searchText), [searchText]);
   const blockedByGate = parsed.isFederated && parsed.hasHost && !federationReady;
+
+  const activeFederationId = useMemo(() => {
+    if (searchScope === 'all') return '';
+    if (selectedFederationId) return selectedFederationId;
+    return joinedFederations[0]?.federationId ?? '';
+  }, [searchScope, selectedFederationId, joinedFederations]);
 
   const handleSearch = async () => {
     const trimmed = searchText.trim();
     if (!trimmed) return;
     setSearching(true);
     try {
-      if (parsed.isFederated && parsed.hasHost) {
+      if (parsed.isFederated && parsed.hasHost && searchScope === 'all') {
         if (!federationReady) {
           toast.error(t('chat.social.findPeople.resolveNotReady'));
           setResults([]);
           return;
         }
-        // Cross-station handle — resolve via DHT-backed federation API.
         const view = await api.federationResolve(parsed.canonical);
         const item = profileToResult(view);
         setResults(item ? [item] : []);
         return;
       }
-      // Local search path — either a bare word or `@user` without a
-      // host. Strip any leading `@` so the username matcher behaves
-      // the same as before the federation work.
+
+      if ((searchScope === 'federation' || searchScope === 'station') && activeFederationId) {
+        const resp = await api.federationCatalogSearch({
+          federation_id: activeFederationId,
+          prefix: parsed.localPart || trimmed.replace(/^@/, ''),
+          station_id: searchScope === 'station' ? undefined : undefined,
+          page_size: 20,
+        });
+        setResults((resp.entries || []).map(catalogEntryToResult));
+        return;
+      }
+
       const query = parsed.localPart || trimmed;
       const resp = await api.actorSearchActors(query);
       setResults(
@@ -200,7 +232,16 @@ export function FindPeopleModal({ open, onClose }: Props) {
     setSearchText('');
     setResults([]);
     setSentIds(new Set());
+    setSearchScope('all');
+    setSelectedFederationId('');
     onClose();
+  };
+
+  const handleScopeChange = (scope: SearchScope, federationId?: string) => {
+    setSearchScope(scope);
+    if (federationId) setSelectedFederationId(federationId);
+    else if (scope === 'all') setSelectedFederationId('');
+    setResults([]);
   };
 
   return (
@@ -213,10 +254,6 @@ export function FindPeopleModal({ open, onClose }: Props) {
       destroyOnHidden
     >
       <Flexbox gap={12}>
-        {/* A2 — federation readiness banner. Kept as an inline Alert
-            instead of disabling the input outright so a user typing a
-            local username can still hit search; only the cross-station
-            resolve path is gated below. */}
         {!federationReady && (
           <Alert
             type="info"
@@ -253,6 +290,36 @@ export function FindPeopleModal({ open, onClose }: Props) {
           }
         />
 
+        {/* Scope chips */}
+        <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
+          <Tag.CheckableTag
+            checked={searchScope === 'all'}
+            onChange={() => handleScopeChange('all')}
+          >
+            {t('chat.social.findPeople.scopeAll')}
+          </Tag.CheckableTag>
+
+          {joinedFederations.map((fed) => (
+            <Tag.CheckableTag
+              key={fed.federationId}
+              checked={searchScope === 'federation' && selectedFederationId === fed.federationId}
+              onChange={(checked) => {
+                if (checked) handleScopeChange('federation', fed.federationId);
+                else handleScopeChange('all');
+              }}
+            >
+              <Globe size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
+              {fed.federationName || fed.federationId.slice(0, 8)}
+            </Tag.CheckableTag>
+          ))}
+
+          {joinedFederations.length === 0 && federationReady && (
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {t('chat.social.findPeople.catalogNoFederation')}
+            </Text>
+          )}
+        </Flexbox>
+
         <Flexbox
           gap={2}
           style={{
@@ -263,11 +330,13 @@ export function FindPeopleModal({ open, onClose }: Props) {
           {searching ? (
             <Flexbox align="center" gap={8} style={{ padding: 24 }}>
               <Spin size="small" />
-              {parsed.isFederated && parsed.hasHost && (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('chat.social.findPeople.resolving')}
-                </Text>
-              )}
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {searchScope !== 'all'
+                  ? t('chat.social.findPeople.catalogSearching')
+                  : parsed.isFederated && parsed.hasHost
+                    ? t('chat.social.findPeople.resolving')
+                    : undefined}
+              </Text>
             </Flexbox>
           ) : results.length === 0 ? (
             <Text type="secondary" style={{ textAlign: 'center', padding: 24, fontSize: 13 }}>
@@ -321,6 +390,14 @@ export function FindPeopleModal({ open, onClose }: Props) {
                           style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 5px' }}
                         >
                           {t('chat.social.findPeople.tagLocal')}
+                        </Tag>
+                      )}
+                      {r.homeStationName && (
+                        <Tag
+                          icon={<Server size={10} />}
+                          style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 5px' }}
+                        >
+                          {r.homeStationName}
                         </Tag>
                       )}
                     </Flexbox>
