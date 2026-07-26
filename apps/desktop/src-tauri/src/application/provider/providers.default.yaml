@@ -10,16 +10,15 @@ providers:
     discovery: openai-models
     home_url: https://www.volcengine.com/product/ark
     api_key_url: https://console.volcengine.com/ark
-    default_base_url: ${llm_provider_ark_base_url:-}
-    api_key: ${llm_provider_ark_key}
+    default_base_url: https://ark.cn-beijing.volces.com/api/v3
     models:
-      - id: ${llm_model_doubao_chat:-ep-20251222201838-9j4nd}
+      - id: doubao-pro-256k
         display_name: Doubao Pro
         type: chat
         enabled: true
-        context_window: 128000
-      - id: ${llm_model_doubao_embedding}
-        display_name: Doubao Embedding Vision
+        context_window: 256000
+      - id: doubao-embedding
+        display_name: Doubao Embedding
         type: embedding
         enabled: true
         context_window: 8192
