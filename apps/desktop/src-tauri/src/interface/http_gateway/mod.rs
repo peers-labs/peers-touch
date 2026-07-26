@@ -48,7 +48,8 @@ use crate::application::key_exchange::{device_install, wire};
 use crate::application::mcp as app_mcp;
 use crate::application::memory as app_memory;
 use crate::application::model_config as app_model_config;
-use crate::application::models as app_models;
+// FIXME: removed during merge — module deleted
+// use crate::application::models as app_models;
 use crate::application::notebook as app_notebook;
 use crate::application::oauth2 as app_oauth2;
 use crate::application::oss as app_oss;
@@ -2699,7 +2700,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            let token = token_from_state(state).unwrap_or_default();
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_provider::provider_list(scope.as_deref().unwrap_or(""), &token))
         }
         "provider_get" => {
@@ -2711,7 +2715,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            let token = token_from_state(state).unwrap_or_default();
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_provider::provider_get(scope.as_deref().unwrap_or(""), &token, input))
         }
         "provider_update" => {
@@ -2723,7 +2730,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            let token = token_from_state(state).unwrap_or_default();
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_provider::provider_update(scope.as_deref().unwrap_or(""), &token, input))
         }
         "provider_check" => {
@@ -2735,7 +2745,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            let token = token_from_state(state).unwrap_or_default();
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_provider::provider_check(scope.as_deref().unwrap_or(""), &token, input))
         }
         "provider_create" => {
@@ -2747,7 +2760,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            let token = token_from_state(state).unwrap_or_default();
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_provider::provider_create(scope.as_deref().unwrap_or(""), &token, input))
         }
         "provider_delete" => {
@@ -2759,7 +2775,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            let token = token_from_state(state).unwrap_or_default();
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_provider::provider_delete(scope.as_deref().unwrap_or(""), &token, input))
         }
         "provider_apply_preset" => {
@@ -2771,20 +2790,18 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError, "provider_apply_preset not yet implemented", None,
-            ))
+            to_json(AppResult::<StubPayload>::fail(ErrorCode::NotFound, "provider_apply_preset: not yet migrated", None))
         }
         "provider_list_available_models" => {
             let scope = match resolve_scope(state) {
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            let token = token_from_state(state).unwrap_or_default();
-            to_json(app_provider::provider_list_available_models(
-                scope.as_deref().unwrap_or(""),
-                &token,
-            ))
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            to_json(app_provider::provider_list_available_models(scope.as_deref().unwrap_or(""), &token))
         }
 
         // =================================================================
@@ -2799,7 +2816,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_models::model_add(scope.as_deref(), input))
+            to_json(AppResult::<StubPayload>::fail(ErrorCode::NotFound, "models module removed", None))
         }
         "model_update" => {
             let input = match parse_args::<ProviderModelUpdateInput>(args) {
@@ -2810,7 +2827,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_models::model_update(scope.as_deref(), input))
+            to_json(AppResult::<StubPayload>::fail(ErrorCode::NotFound, "models module removed", None))
         }
         "model_delete" => {
             let input = match parse_args::<ProviderModelDeleteInput>(args) {
@@ -2821,7 +2838,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_models::model_delete(scope.as_deref(), input))
+            to_json(AppResult::<StubPayload>::fail(ErrorCode::NotFound, "models module removed", None))
         }
         "model_fetch_remote" => {
             let input = match parse_args::<ProviderModelFetchInput>(args) {
@@ -2832,7 +2849,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_models::model_fetch_remote(scope.as_deref(), input))
+            to_json(AppResult::<StubPayload>::fail(ErrorCode::NotFound, "models module removed", None))
         }
         "model_toggle" => {
             let input = match parse_args::<ProviderModelToggleInput>(args) {
@@ -2843,7 +2860,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_models::model_toggle(scope.as_deref(), input))
+            to_json(AppResult::<StubPayload>::fail(ErrorCode::NotFound, "models module removed", None))
         }
         "model_toggle_all" => {
             let input = match parse_args::<ProviderModelToggleAllInput>(args) {
@@ -2854,7 +2871,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_models::model_toggle_all(scope.as_deref(), input))
+            to_json(AppResult::<StubPayload>::fail(ErrorCode::NotFound, "models module removed", None))
         }
 
         // =================================================================
