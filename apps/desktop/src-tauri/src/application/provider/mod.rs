@@ -327,13 +327,11 @@ pub fn provider_list_available_models(scope: &str, token: &str) -> AppResult<Stu
 
     let mut all_models = Vec::new();
     for cp in catalog {
-        let is_enabled = station_providers
-            .iter()
-            .find(|sp| sp.name == cp.id)
-            .map(|sp| sp.enabled)
-            .unwrap_or(cp.enabled);
+        let station_match = station_providers.iter().find(|sp| sp.name == cp.id);
+        let has_station_record = station_match.is_some();
+        let is_enabled = station_match.map(|sp| sp.enabled).unwrap_or(false);
 
-        if !is_enabled {
+        if !has_station_record || !is_enabled {
             continue;
         }
 
