@@ -177,3 +177,21 @@ pub fn model_toggle(
         status: json!({ "ok": true, "provider_id": input.provider_id, "model_id": input.model_id, "enabled": input.enabled }).to_string(),
     })
 }
+
+#[derive(Debug, Deserialize)]
+pub struct ModelDeleteInput {
+    pub provider_id: String,
+    pub model_id: String,
+}
+
+#[tauri::command]
+pub fn model_delete(
+    input: ModelDeleteInput,
+    _state: State<'_, Arc<AppState>>,
+    _window: Window,
+) -> AppResult<StubPayload> {
+    AppResult::success(StubPayload {
+        command: "model_delete".to_string(),
+        status: json!({ "ok": true, "provider_id": input.provider_id, "model_id": input.model_id }).to_string(),
+    })
+}
