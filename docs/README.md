@@ -218,6 +218,7 @@
 - 表单控件 UX 契约：`client/common/form-control-ux-contract.md`
 - Desktop 平台总纲：`client/desktop/base.md`
 - Desktop 登录态状态机：`client/desktop/identity-lifecycle.md`
+- Desktop PIN 恢复：`client/desktop/pin-recovery.md`
 - Desktop 页面 / 运行时 / 启动契约：`client/desktop/runtime-projections.md`
 - Desktop GlobalContext 内核：`client/desktop/global-context-kernel.md`
 - 跨端 Chat UX 契约：`client/chat/chat-ux-contract.md`
