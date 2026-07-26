@@ -1813,7 +1813,9 @@ export interface ModelServiceConfig {
 }
 
 export interface ModelServiceReference {
-  slot: string;
+  slot?: string;
+  service?: string;
+  key?: string;
   model: string;
 }
 
@@ -3600,7 +3602,19 @@ export const api = {
     }),
 
   listAvailableModels: async () => {
-    const r = await invokeRustDataFromStatus<void, { providers?: any[] }>('provider_list_available_models');
+    const r = await invokeRustDataFromStatus<void, { providers?: any[]; models?: any[] }>('provider_list_available_models');
+    if (r.models && Array.isArray(r.models)) {
+      return r.models.map((m: any) => ({
+        id: String(m.id || ''),
+        display_name: String(m.display_name || m.id || ''),
+        provider_id: String(m.provider_id || ''),
+        provider_name: String(m.provider_name || m.provider_id || ''),
+        type: String(m.type || 'chat'),
+        context_window: Number(m.context_window || 0),
+        enabled: Boolean(m.enabled ?? true),
+        runtime_kind: String(m.runtime_kind || 'direct'),
+      } as AvailableModel));
+    }
     const models: AvailableModel[] = (r.providers || []).flatMap((p) => {
       const cfg = parseJSONSafe(p.config_json);
       const runtimeKind = String(cfg.runtime_kind || cfg.runtimeKind || cfg.runtime || '').trim().toLowerCase();
