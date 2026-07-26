@@ -22,6 +22,7 @@ pub mod key_exchange;
 pub mod mcp;
 pub mod memory;
 pub mod model_config;
+pub mod models;
 pub mod notebook;
 pub mod oauth2;
 pub mod oss;
