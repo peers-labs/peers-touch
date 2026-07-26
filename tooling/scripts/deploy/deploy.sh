@@ -206,7 +206,7 @@ case "$cmd" in
       if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
         git add -A >/dev/null 2>&1 || true
       fi
-      git fetch \"$FETCH_URL\" $BRANCH:refs/remotes/deploy/$BRANCH
+      git fetch \"$FETCH_URL\" +$BRANCH:refs/remotes/deploy/$BRANCH
       git checkout -f -B $BRANCH refs/remotes/deploy/$BRANCH
       git reset --hard refs/remotes/deploy/$BRANCH
       echo '[remote] HEAD:'
