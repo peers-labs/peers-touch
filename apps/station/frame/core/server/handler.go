@@ -138,6 +138,8 @@ func NewHandlerWithURL(url RouterURL, h interface{}, opts ...HandlerOption) Hand
 	return handler
 }
 
+// MUST: use NewTypedHandler by default. NewHTTPHandler is only for legacy
+// handlers or cases where proto does not fit well (e.g. streaming, file upload).
 func NewHTTPHandler(name, path string, method Method, h EndpointHandler, wrappers ...Wrapper) Handler {
 	return &handler{
 		name:     name,
