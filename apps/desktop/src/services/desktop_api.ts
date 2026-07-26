@@ -5588,8 +5588,9 @@ function parseJSONSafe(input?: string): Record<string, any> {
 function mapAIChatProviderToListItem(item: any): ProviderListItem {
   const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
-  const runtimeKind = String(cfg.runtime_kind || cfg.runtimeKind || cfg.runtime || '').trim().toLowerCase();
-  const hasCliCommand = Boolean(String(cfg.cli_command || cfg.cliCommand || '').trim());
+  const runtimeKind = String(item.runtime_kind || cfg.runtime_kind || cfg.runtimeKind || '').trim().toLowerCase();
+  const hasCliCommand = Boolean(String(item.cli_command || cfg.cli_command || cfg.cliCommand || '').trim());
+  const hasKey = item.credential_status === 'configured' || Boolean(keyVaults.api_key || keyVaults.key || '');
   return {
     id: item.id,
     name: item.name || '',
@@ -5597,7 +5598,7 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     logo: item.logo || undefined,
     enabled: Boolean(item.enabled),
     builtin: Boolean(item.builtin),
-    has_api_key: Boolean(keyVaults.api_key || keyVaults.key || ''),
+    has_api_key: hasKey,
     runtime_kind: runtimeKind === 'cli' || hasCliCommand ? 'cli' : 'direct',
   };
 }
@@ -5632,14 +5633,14 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     .filter((model: ModelItem | null): model is ModelItem => Boolean(model));
   return {
     ...mapAIChatProviderToListItem(item),
-    home_url: cfg.home_url || '',
-    api_key_url: cfg.api_key_url || '',
+    home_url: item.home_url || cfg.home_url || '',
+    api_key_url: item.api_key_url || cfg.api_key_url || '',
     api_key: keyVaults.api_key || '',
-    base_url: cfg.base_url || '',
-    default_base_url: cfg.default_base_url || cfg.base_url || '',
-    cli_command: cfg.cli_command || cfg.cliCommand || '',
-    show_api_key: cfg.show_api_key ?? cfg.showApiKey,
-    show_checker: true,
+    base_url: item.base_url || cfg.base_url || '',
+    default_base_url: item.base_url || cfg.default_base_url || cfg.base_url || '',
+    cli_command: item.cli_command || cfg.cli_command || cfg.cliCommand || '',
+    show_api_key: item.show_api_key ?? cfg.show_api_key ?? cfg.showApiKey,
+    show_checker: item.show_checker ?? true,
     check_model: checkModel,
     models: models.length > 0
       ? models
