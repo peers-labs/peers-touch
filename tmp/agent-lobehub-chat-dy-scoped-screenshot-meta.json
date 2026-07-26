@@ -1,0 +1,15 @@
+{
+  "evidenceId": "EVID-011-DY-pre",
+  "surface": "Chat",
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=chat&state=chat-execution-contract&check=dy",
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/chat-dy-execution-contract-scoped.png",
+  "dom": "tmp/agent-lobehub-chat-dy-dom.json",
+  "sha256": "8bf2bfc7679e9ed4478b0270ee4d6eec762d3a8358398e5ca34324785ead8be3",
+  "pixelWidth": 900,
+  "pixelHeight": 2345,
+  "capturedWith": "Isolated Google Chrome DevTools Protocol headless element screenshot",
+  "visualInspection": "opened with view_image; DY execution-contract page is visible and readable with provider execution, stream persistence/replay, store mutation safety and fail-closed scenario panels",
+  "prototypeShellVisible": false,
+  "portalChromeHit": false,
+  "forbiddenHits": []
+}

@@ -3,6 +3,7 @@
 # deploy.sh — Remote deployment via pull model
 #
 # Source modes (PT_DEPLOY_SOURCE):
+#   direct  — Push straight to target station's .bare.git via SSH (simplest)
 #   central — Push to central bare repo, remote fetches from it (recommended)
 #   local   — Remote fetches from local git daemon via SSH reverse tunnel
 #   github  — Remote fetches from GitHub origin
@@ -97,7 +98,6 @@ push_to_central() {
 push_direct() {
   local remote_url="ssh://${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}/~/${PT_DEPLOY_PATH}"
   echo "[INFO] Pushing directly to: ${PT_DEPLOY_HOST}:${PT_DEPLOY_PATH}"
-  # Ensure remote repo exists
   ssh_run "mkdir -p \$HOME/$PT_DEPLOY_PATH && cd \$HOME/$PT_DEPLOY_PATH && git init --bare .bare.git 2>/dev/null || true"
   git -C "$PROJECT_ROOT" push --force "ssh://${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}/home/${PT_DEPLOY_USER}/${PT_DEPLOY_PATH}/.bare.git" "HEAD:refs/heads/$BRANCH" 2>&1 | sed 's/^/       /'
 }
@@ -106,7 +106,6 @@ push_direct() {
 resolve_fetch_url() {
   case "$SOURCE" in
     direct)
-      # Direct mode: fetch from the .bare.git we just pushed to on the same host
       echo "\$HOME/$PT_DEPLOY_PATH/.bare.git"
       ;;
     central)

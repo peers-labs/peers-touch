@@ -1,0 +1,22 @@
+{
+  "evidenceId": "EVID-011-DT-pre",
+  "captureMode": "cdp-card-click-tall-viewport-page-coordinate-scoped-layout-screenshot",
+  "url": "http://localhost:3200/?surface=settings&state=category-gates&check=dt",
+  "selector": ".pt-settings-compact-layout",
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/settings-dt-category-gates-scoped.png",
+  "dom": "tmp/agent-lobehub-settings-dt-dom.json",
+  "viewport": {
+    "width": 1900,
+    "height": 1700,
+    "deviceScaleFactor": 1
+  },
+  "clip": {
+    "x": 365.0,
+    "y": 444.0,
+    "width": 1320.0,
+    "height": 1039.140625,
+    "scale": 1.0
+  },
+  "portalChromeHit": false,
+  "sha256": "36f24321ffd0c61a7ecbfa95b4c894950d8144a5179ef26326743ce1937443db"
+}

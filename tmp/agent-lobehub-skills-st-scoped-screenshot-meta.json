@@ -1,0 +1,14 @@
+{
+  "evidenceId": "EVID-011-ST-pre",
+  "surface": "skills",
+  "state": "skills-runtime-contract",
+  "check": "st",
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=skills&state=skills-runtime-contract&check=st",
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/skills-st-source-interaction-scoped.png",
+  "width": 1524,
+  "height": 1400,
+  "sha256": "563a306abfc5906c5d286110db7f9821cf9bf3d682deb3b346657fa419d330a7",
+  "capturedBy": "Google Chrome headless new with isolated user-data-dir and CDP created target scoped clip",
+  "visualInspection": "opened with view_image; confirmed Skills ST source-interaction closure, tool cache / mutation recovery / agent consumer map, runtime contract rows, source-level interaction columns and product migration blocked warning are visible and readable",
+  "portalChromeHit": false
+}

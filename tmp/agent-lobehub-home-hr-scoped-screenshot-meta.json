@@ -1,0 +1,15 @@
+{
+  "evidenceId": "EVID-011-HR-pre",
+  "surface": "Home",
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=home&state=home-runtime-contract&check=hr",
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/home-hr-runtime-contract-scoped.png",
+  "dom": "tmp/agent-lobehub-home-hr-dom.json",
+  "sha256": "12e32e161774ecf203d298b25200b1b38515df1bb0b1629ab9c3eca58921603c",
+  "pixelWidth": 1244,
+  "pixelHeight": 1500,
+  "capturedWith": "Isolated Google Chrome DevTools Protocol headless element screenshot",
+  "visualInspection": "opened with view_image; HR runtime-contract page is visible with source composition, input/send runtime, ownership boundary and fail-closed warning",
+  "prototypeShellVisible": false,
+  "portalChromeHit": false,
+  "forbiddenHits": []
+}

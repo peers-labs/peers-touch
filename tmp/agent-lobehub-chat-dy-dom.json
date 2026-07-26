@@ -1,0 +1,39 @@
+{
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=chat&state=chat-execution-contract&check=dy",
+  "found": true,
+  "marker": "chat-execution-contract-dy",
+  "evidenceId": "EVID-011-DY-pre",
+  "runtimeContractShell": true,
+  "providerExecutionState": "settings-provider-model|agent-config|no-local-fallback|child-runtime-operation",
+  "streamPersistenceState": "optimistic-topic|assistant-temp-row|swr-guard|merge-local-state|stable-references",
+  "toolExecutionState": "approval-pending|resume-approval|resume-tool-result|paused-op-retire-after-success|audit-parent-message",
+  "gatewayReplayState": "transport-degraded|replay-required|terminal-reconcile|operation-lineage",
+  "virtualizedPersistenceState": "pinned-stream-row|branch-row|scroll-intent|recycled-row-safe",
+  "chatStoreMutationState": "topic-create|message-append|branch-switch|delete-regenerate|stop-restore-draft|failure-preserve",
+  "runtimeOwner": "Station owns durable turn/topic/tool truth / Desktop owns transient stream, scroll and draft projection / Settings owns provider-model identity",
+  "executionPanels": [
+    "Execution entrypoints",
+    "Stream persistence and replay",
+    "Store mutation safety"
+  ],
+  "flowSteps": [
+    "Draft to user row",
+    "Provider runtime",
+    "Stream projection",
+    "Resume/replay"
+  ],
+  "timelineSteps": [
+    "branch switch",
+    "SWR blocked",
+    "tool parked",
+    "gateway replay",
+    "failure preserve"
+  ],
+  "swrGuard": true,
+  "deleteRegenerate": true,
+  "gatewayReplay": true,
+  "noLocalFallback": true,
+  "portalChromeHit": false,
+  "portalTitlePresent": false,
+  "forbiddenHits": []
+}

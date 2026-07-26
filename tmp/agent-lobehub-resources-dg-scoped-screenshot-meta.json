@@ -1,0 +1,38 @@
+{
+  "out": "tmp/agent-lobehub-l2-screenshots/resources-dg-compact-explorer-scoped.png",
+  "domOut": "tmp/agent-lobehub-resources-dg-dom.json",
+  "captureMethod": "cdp-card-click-scoped-layout-screenshot",
+  "clip": {
+    "x": 365,
+    "y": 470,
+    "width": 1320,
+    "height": 495,
+    "scale": 1
+  },
+  "info": {
+    "ready": true,
+    "compactResources": true,
+    "compactShell": true,
+    "sidebar": true,
+    "sidebarHeaderAddAbsent": true,
+    "sidebarSearchAbsent": true,
+    "visibilityTabs": 2,
+    "categories": 5,
+    "knowledgeBaseList": true,
+    "explorer": true,
+    "navHeader": true,
+    "toolbarButtons": 6,
+    "addMenuAbsentByDefault": true,
+    "searchOverlayAbsentByDefault": true,
+    "drawerAbsentByDefault": true,
+    "chunkDrawerAbsentByDefault": true,
+    "uploadDockAbsentByDefault": true,
+    "dragOverlayAbsentByDefault": true,
+    "previewPanelAbsentByDefault": true,
+    "stateBoxAbsentByDefault": true,
+    "resourceRows": 4,
+    "tableHead": true,
+    "forbiddenHits": [],
+    "portalChromeHit": false
+  }
+}

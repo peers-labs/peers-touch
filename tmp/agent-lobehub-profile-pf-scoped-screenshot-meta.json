@@ -1,0 +1,14 @@
+{
+  "evidenceId": "EVID-011-PF-pre",
+  "surface": "profile",
+  "state": "profile-runtime-contract",
+  "check": "pf",
+  "url": "http://localhost:4173/?prototype=agent-lobehub-parity&preview=only&surface=profile&state=profile-runtime-contract&check=pf",
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/profile-pf-source-interaction-scoped.png",
+  "width": 1204,
+  "height": 2600,
+  "sha256": "950267ac246bc579a5b17ef24139f242cbf79bab097cb8606d180a5120000894",
+  "capturedBy": "Google Chrome headless new with isolated user-data-dir and viewport-height scoped clip via page target",
+  "visualInspection": "opened with view_image; confirmed Profile PF source-interaction closure map, source/provider mutation/binding builder/runtime columns, runtime contract panels, tool/model popovers and fail-closed warning are visible and readable",
+  "portalChromeHit": false
+}

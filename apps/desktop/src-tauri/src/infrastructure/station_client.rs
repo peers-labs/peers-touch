@@ -3,6 +3,7 @@ use crate::infrastructure::station_registry::StationRegistry;
 use crate::model::common::PeersResponse;
 use prost::Message;
 use reqwest::blocking::Client;
+use reqwest::blocking::RequestBuilder;
 use reqwest::header::HeaderMap;
 use reqwest::Method;
 use serde::Serialize;
@@ -15,6 +16,27 @@ use std::sync::OnceLock;
 // ---------------------------------------------------------------------------
 
 static STATION_REGISTRY: OnceLock<StationRegistry> = OnceLock::new();
+
+// ---------------------------------------------------------------------------
+// Device ID — canonical per-actor identifier injected as X-Device-ID
+// ---------------------------------------------------------------------------
+
+static DEVICE_ID: OnceLock<String> = OnceLock::new();
+
+pub(crate) fn set_device_id(id: String) {
+    let _ = DEVICE_ID.set(id);
+}
+
+pub(crate) fn device_id() -> Option<&'static str> {
+    DEVICE_ID.get().map(|s| s.as_str())
+}
+
+fn with_device_id(req: RequestBuilder) -> RequestBuilder {
+    match DEVICE_ID.get() {
+        Some(id) => req.header("X-Device-ID", id.as_str()),
+        None => req,
+    }
+}
 
 /// Initialize the global station registry. Must be called once during bootstrap
 /// after the config directory is resolved.
@@ -219,7 +241,8 @@ pub(crate) fn post_json_with_auth(
         .bearer_auth(token)
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
-        .json(&body)
+        .json(&body);
+    let resp = with_device_id(resp)
         .send()
         .map_err(|e| {
             let elapsed = start.elapsed().as_millis();
@@ -343,7 +366,7 @@ pub(crate) fn request_peers_proto_no_body<Payload: Message + Default>(
     let start = std::time::Instant::now();
     let client = build_client()?;
 
-    let mut req = client.request(method.clone(), &url).bearer_auth(token);
+    let mut req = with_device_id(client.request(method.clone(), &url).bearer_auth(token));
 
     if let Some(q) = query {
         req = req.query(q);
@@ -416,7 +439,7 @@ pub(crate) fn request_peers_proto_no_payload<Req: Message>(
     let start = std::time::Instant::now();
     let client = build_client()?;
 
-    let mut req = client.request(method.clone(), &url).bearer_auth(token);
+    let mut req = with_device_id(client.request(method.clone(), &url).bearer_auth(token));
 
     if let Some(q) = query {
         req = req.query(q);
@@ -504,7 +527,7 @@ where
     let start = std::time::Instant::now();
     let client = build_client()?;
 
-    let mut req = client.request(method.clone(), &url).bearer_auth(token);
+    let mut req = with_device_id(client.request(method.clone(), &url).bearer_auth(token));
 
     if let Some(q) = query {
         req = req.query(q);
@@ -631,7 +654,7 @@ pub(crate) fn request_json(
     let start = std::time::Instant::now();
     let client = build_client()?;
 
-    let mut req = client.request(method.clone(), &url).bearer_auth(token);
+    let mut req = with_device_id(client.request(method.clone(), &url).bearer_auth(token));
 
     if let Some(q) = query {
         req = req.query(q);
@@ -713,7 +736,7 @@ fn request_json_response_url(
 
     let start = std::time::Instant::now();
     let client = build_client()?;
-    let mut req = client.request(method.clone(), url).bearer_auth(token);
+    let mut req = with_device_id(client.request(method.clone(), url).bearer_auth(token));
 
     if let Some(q) = query {
         req = req.query(q);
@@ -789,7 +812,7 @@ where
     let start = std::time::Instant::now();
     let client = build_client()?;
 
-    let mut req = client.request(method.clone(), &url).bearer_auth(token);
+    let mut req = with_device_id(client.request(method.clone(), &url).bearer_auth(token));
 
     if let Some(q) = query {
         req = req.query(q);
@@ -876,10 +899,12 @@ pub(crate) fn request_json_auth(
     let start = std::time::Instant::now();
     let client = build_client()?;
 
-    let mut req = client
-        .request(method.clone(), &url)
-        .bearer_auth(token)
-        .header("Accept", "application/json");
+    let mut req = with_device_id(
+        client
+            .request(method.clone(), &url)
+            .bearer_auth(token)
+            .header("Accept", "application/json"),
+    );
 
     if let Some(q) = query {
         req = req.query(q);
@@ -973,9 +998,11 @@ pub(crate) fn upload_multipart(
         form = form.text("chat_session_id", sid.to_string());
     }
 
-    let resp = client
-        .post(&url)
-        .bearer_auth(token)
+    let resp = with_device_id(
+        client
+            .post(&url)
+            .bearer_auth(token),
+    )
         .multipart(form)
         .send()
         .map_err(|e| {

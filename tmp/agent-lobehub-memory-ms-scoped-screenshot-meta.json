@@ -1,0 +1,14 @@
+{
+  "evidenceId": "EVID-011-MS-pre",
+  "surface": "memory",
+  "state": "memory-runtime-contract",
+  "check": "ms",
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=memory&state=memory-runtime-contract&check=ms",
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/memory-ms-source-interaction-scoped.png",
+  "width": 1600,
+  "height": 1900,
+  "sha256": "ed2d224eb174ebec4493dd864ea0c5ee8986d47e188a5a6481ebc984b73e109c",
+  "capturedBy": "Google Chrome headless new with isolated user-data-dir",
+  "visualInspection": "opened with view_image; confirmed Memory MS source-interaction closure, SWR/store/agent-consumer source map, runtime contract rows, source-level interaction columns, owner boundary cards and product migration blocked warning are visible and readable",
+  "portalChromeHit": false
+}

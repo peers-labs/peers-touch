@@ -1,0 +1,22 @@
+{
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=resources&state=resources-runtime-contract&check=rr",
+  "found": true,
+  "marker": "resources-runtime-contract-rr",
+  "evidenceId": "EVID-011-RR-pre",
+  "runtimeContractShell": true,
+  "resourceRouteState": "mode|file|library|folder|visibility|category|search|sort|view",
+  "resourceDataState": "loading|validating|error-before-empty|empty|data|retry",
+  "resourceUploadState": "drag-active|pending|uploading|success|error|cancel|auto-dismiss",
+  "resourceImportState": "url|notion|input-preserved|failure-no-row",
+  "resourcePreviewState": "explorer|file-editor-overlay|page-editor-overlay|file-detail-modal|back-removes-file-query",
+  "resourceIndexState": "chunking|embedding|failed|retry|similarity-search|chunk-drawer",
+  "resourceAgentState": "visible-unbound|attached-context|queued-message-restore|public-agent-restricted",
+  "runtimeOwner": "base-resource inventory and indexing / agent-domain binding refs / Station durable audit truth",
+  "sourceContract": true,
+  "lifecycleContract": true,
+  "runtimeBoundaryContract": true,
+  "failClosedWarning": true,
+  "forbiddenHits": [],
+  "portalChromeHit": false,
+  "portalTitlePresent": false
+}

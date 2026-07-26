@@ -1,0 +1,14 @@
+{
+  "evidenceId": "EVID-011-EC-pre",
+  "surface": "settings",
+  "state": "provider-runtime-contract",
+  "check": "ec",
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=settings&state=provider-runtime-contract&check=ec",
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/settings-ec-provider-runtime-scoped.png",
+  "width": 1400,
+  "height": 1500,
+  "sha256": "8d53b574dac3381b48e5ac83ae148fd1672896053ba18b92ab6b19c79a9a647c",
+  "capturedBy": "Google Chrome headless new",
+  "visualInspection": "opened with view_image; confirmed Settings EC provider runtime contract, ModelTitle toolbar, remote model actions, permission-disabled batch actions, empty tab state, ProviderConfig checker and OAuth device-flow are visible and readable",
+  "portalChromeHit": false
+}

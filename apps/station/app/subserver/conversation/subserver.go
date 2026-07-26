@@ -68,7 +68,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.deviceStore = NewDeviceStore(rds)
 
 	envRepo := envinf.NewPostgresRepository(rds)
-	envBus := &noopConvDeviceBus{}
+	envBus := envpkg.NewSSEDeviceBus()
 	envelopeService := envpkg.NewService(envRepo, envBus, conversationLocalAudience)
 	envelopeBridge := NewEnvelopeBridge(envelopeService)
 
@@ -555,15 +555,4 @@ func conversationLocalAudience() string {
 		return strings.TrimSpace(identity.StationDomain)
 	}
 	return ""
-}
-
-// noopConvDeviceBus is a placeholder until P4 wires the real SSE bus.
-type noopConvDeviceBus struct{}
-
-func (*noopConvDeviceBus) PublishToDevice(_ context.Context, _, _ string, _ *chat.StationEnvelope) bool {
-	return false
-}
-
-func (*noopConvDeviceBus) PublishToActor(_ context.Context, _ string, _ *chat.StationEnvelope) int {
-	return 0
 }
