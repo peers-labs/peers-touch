@@ -42,10 +42,13 @@ pub fn account_get_device_id(
         }
     };
     match device_install::get_or_create_device_id(actor_id.as_str()) {
-        Ok(device_id) => AppResult::success(StubPayload {
-            command: "account_get_device_id".to_string(),
-            status: serde_json::json!({ "device_id": device_id }).to_string(),
-        }),
+        Ok(device_id) => {
+            crate::infrastructure::station_client::set_device_id(device_id.clone());
+            AppResult::success(StubPayload {
+                command: "account_get_device_id".to_string(),
+                status: serde_json::json!({ "device_id": device_id }).to_string(),
+            })
+        }
         Err(e) => AppResult::fail(ErrorCode::InternalError, format!("device_id: {e}"), None),
     }
 }

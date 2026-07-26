@@ -162,14 +162,14 @@ type spyBus struct {
 	published []*chat.StationEnvelope
 }
 
-func (b *spyBus) PublishToDevice(_ context.Context, _, _ string, env *chat.StationEnvelope) bool {
+func (b *spyBus) PublishToDevice(_ context.Context, _, _, _ string, env *chat.StationEnvelope) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.published = append(b.published, env)
 	return true
 }
 
-func (b *spyBus) PublishToActor(_ context.Context, _ string, env *chat.StationEnvelope) int {
+func (b *spyBus) PublishToActor(_ context.Context, _, _ string, env *chat.StationEnvelope) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.published = append(b.published, env)
