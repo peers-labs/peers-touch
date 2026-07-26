@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+// Provider API contract — wire types for the agent provider management surface.
+
+message AgentProviderInfo {
+  string id = 1;
+  string actor_id = 2;
+  string name = 3;
+  string display_name = 4;
+  string base_url = 5;
+  string protocol = 6;
+  string runtime_kind = 7;
+  string cli_command = 8;
+  bool enabled = 9;
+  int64 version = 10;
+  bytes config = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message AgentModelInfo {
+  string id = 1;
+  string actor_id = 2;
+  string provider_id = 3;
+  string model_id = 4;
+  string display_name = 5;
+  bool enabled = 6;
+  int64 version = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message CredentialStatusInfo {
+  string provider_id = 1;
+  bool configured = 2;
+  string status = 3;
+  int64 version = 4;
+}
+
+message CredentialResolveInfo {
+  string provider_id = 1;
+  string api_key = 2;
+  string base_url = 3;
+  string protocol = 4;
+}
+
+// VerifyCli
+message VerifyCliRequest { string cli_command = 1; }
+message VerifyCliResponse {
+  bool available = 1;
+  string program = 2;
+  string path = 3;
+  string error = 4;
+  string install_hint = 5;
+}
+
+// Provider CRUD
+message ListProvidersRequest {}
+message ListProvidersResponse { repeated AgentProviderInfo providers = 1; }
+
+message CreateProviderRequest {
+  string provider_id = 1;
+  string display_name = 2;
+  string base_url = 3;
+  string protocol = 4;
+  bytes config_json = 5;
+}
+message CreateProviderResponse { AgentProviderInfo provider = 1; }
+
+message UpdateProviderRequest {
+  string provider_id = 1;
+  int64 version = 2;
+  optional string display_name = 3;
+  optional string base_url = 4;
+  optional bool enabled = 5;
+  bytes config_json = 6;
+}
+message UpdateProviderResponse { AgentProviderInfo provider = 1; }
+
+message DeleteProviderRequest {
+  string provider_id = 1;
+  int64 version = 2;
+}
+message DeleteProviderResponse { bool deleted = 1; }
+
+// Model CRUD
+message ListModelsRequest { string provider_id = 1; }
+message ListModelsResponse { repeated AgentModelInfo models = 1; }
+
+message UpdateModelRequest {
+  string provider_id = 1;
+  string model_id = 2;
+  int64 version = 3;
+  optional string display_name = 4;
+  optional bool enabled = 5;
+}
+message UpdateModelResponse { AgentModelInfo model = 1; }
+
+// Credential
+message SetCredentialRequest {
+  string provider_id = 1;
+  string api_key = 2;
+}
+message SetCredentialResponse { CredentialStatusInfo status = 1; }
+
+message DeleteCredentialRequest {
+  string provider_id = 1;
+  int64 version = 2;
+}
+message DeleteCredentialResponse { bool deleted = 1; }
+
+message GetCredentialStatusRequest { string provider_id = 1; }
+message GetCredentialStatusResponse { CredentialStatusInfo status = 1; }
+
+message ResolveCredentialRequest { string provider_id = 1; }
+message ResolveCredentialResponse { CredentialResolveInfo credential = 1; }
