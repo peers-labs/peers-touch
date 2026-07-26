@@ -363,6 +363,24 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         });
         return;
       }
+    case 'envelopeDelivered': {
+      const d = kind.value;
+      if (!d.inboxItemId || !d.payloadBytes || d.payloadBytes.byteLength === 0) return;
+      eventBus.publish(EVENT.REALTIME_ENVELOPE_DELIVERED, {
+        eventId,
+        inboxItemId: d.inboxItemId,
+        envelopeId: d.envelopeId,
+        conversationId: d.conversationId,
+        payloadType: d.payloadType,
+        payloadBytes: d.payloadBytes,
+        senderPtid: d.senderPtid,
+        senderDeviceId: d.senderDeviceId,
+        recipientDeviceId: d.recipientDeviceId,
+        membershipEpoch: Number(d.membershipEpoch),
+        queuedTsUnixMs: Number(d.queuedTsUnixMs),
+      });
+      return;
+    }
     case 'conversationSettingsChanged': {
       const c = kind.value;
       const conversationKind = conversationSettingsKindFromEnum(c.kind);

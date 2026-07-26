@@ -16,7 +16,7 @@ import { notifyActiveAppletPage } from '../runtimes/appletsRuntime';
 import { PageHost } from '../kernel/PageHost';
 import { PageContextProvider } from '../kernel/PageContext';
 import { markPhaseEnd, markPhaseStart } from '../kernel/boot';
-import { recordReactCommit } from '../kernel/frontendRuntimeProfiler';
+import { recordReactCommit, isReactCommitProfilingEnabled } from '../kernel/frontendRuntimeProfiler';
 import { registerKernelPages } from '../pages/registry';
 import { useNavigationBadgeStore } from '../store/navigationBadges';
 import type { AppLifecycle } from '../types/navigation';
@@ -114,7 +114,7 @@ function ShellCommitProfiler({
   owner: string;
   surface: string;
 }): ReactElement {
-  if (!import.meta.env.DEV) return <>{children}</>;
+  if (!isReactCommitProfilingEnabled()) return <>{children}</>;
   const onRender: ProfilerOnRenderCallback = (
     id,
     phase,
@@ -143,7 +143,7 @@ function ShellCommitProfiler({
 }
 
 function wrapReadyShellCommitProfiler(content: ReactElement): ReactElement {
-  if (!import.meta.env.DEV) return content;
+  if (!isReactCommitProfilingEnabled()) return content;
   const onRender: ProfilerOnRenderCallback = (
     id,
     phase,
