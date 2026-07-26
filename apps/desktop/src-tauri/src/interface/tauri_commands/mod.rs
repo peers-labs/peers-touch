@@ -27,6 +27,7 @@ pub mod mcp;
 pub mod memory;
 pub mod mls;
 pub mod model_config;
+pub mod models;
 pub mod notebook;
 pub mod notification;
 pub mod oauth2;
