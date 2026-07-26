@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
-use super::station_api::{self, CredentialStatus, StationApiError, StationModel, StationProvider};
+use super::station_api::{self, CredentialStatus, ResolvedCredential, StationApiError, StationModel, StationProvider};
 
 const CACHE_TTL: Duration = Duration::from_secs(60);
 
@@ -118,6 +118,13 @@ pub fn find_provider(
 ) -> Result<Option<StationProvider>, StationApiError> {
     let providers = get_providers(token, scope)?;
     Ok(providers.into_iter().find(|p| p.name == provider_id))
+}
+
+pub fn resolve_credential(
+    token: &str,
+    provider_id: &str,
+) -> Result<ResolvedCredential, StationApiError> {
+    station_api::resolve_credential(token, provider_id)
 }
 
 fn ensure_fresh(token: &str, scope: &str) -> Result<(), StationApiError> {

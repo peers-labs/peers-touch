@@ -2,7 +2,6 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, Tag, Dropdown, TextArea, toast } from '@lobehub/ui';
-import { ModelIcon } from '@lobehub/icons';
 import type { MenuProps } from '@lobehub/ui';
 import { theme } from 'antd';
 import {
@@ -46,6 +45,7 @@ import { AgentIconTile } from './agent/AgentIconTile';
 import { parseDeepLink } from '../utils/deeplink';
 import { EVENT, eventBus } from '../kernel/events';
 import { useTranslation } from 'react-i18next';
+import { ProviderIcon } from './settings/ProviderIcon';
 
 interface Props {
   message: ChatMessage;
@@ -1226,12 +1226,18 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
           </Flexbox>
         )}
 
-        {/* Model tag — assistant messages only, show user-configured display_name */}
+        {/* Model tag — assistant messages only, show provider logo + display_name */}
         {!isUser && message.model && !message.loading && (
           <Flexbox horizontal align="center" gap={4}>
-            <ModelIcon model={message.model} size={12} type="mono" />
+            {messageModel && (
+              <ProviderIcon
+                providerId={messageModel.provider_id || ''}
+                providerName={messageModel.provider_name}
+                size={12}
+              />
+            )}
             <span style={{ fontSize: 11, color: token.colorTextQuaternary }}>
-              {availableModels?.find((m) => m.id === message.model)?.display_name || message.model}
+              {messageModel?.display_name || message.model}
             </span>
           </Flexbox>
         )}

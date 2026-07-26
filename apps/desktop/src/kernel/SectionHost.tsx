@@ -7,7 +7,7 @@ import {
   type ReactElement,
 } from 'react';
 
-import { recordHiddenSurfaceRender, recordReactCommit, recordSurfaceRender } from './frontendRuntimeProfiler';
+import { recordHiddenSurfaceRender, recordReactCommit, recordSurfaceRender, isReactCommitProfilingEnabled } from './frontendRuntimeProfiler';
 import { SectionActivityProvider } from './SectionActivityContext';
 import { nextMountedSectionIds, shouldRenderSection, type SectionDescriptor } from './section';
 
@@ -115,7 +115,7 @@ const SectionFrame = memo(function SectionFrame({
       </SectionActivityProvider>
     </div>
   );
-  if (!import.meta.env.DEV) return frame;
+  if (!isReactCommitProfilingEnabled()) return frame;
   return (
     <Profiler id={owner} onRender={onRender}>
       {frame}

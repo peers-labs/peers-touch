@@ -2474,7 +2474,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_chat::chat_completion_once("", input))
+            to_json(app_chat::chat_completion_once("", "", input))
         }
 
         // Note: legacy `timeline_*` dev-HTTP routes were removed in P2. The
@@ -3739,12 +3739,50 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
 
         // =================================================================
-        // Federation (public readiness probe)
+        // Federation
         // =================================================================
         "federation_health" => match app_federation::health() {
             Ok(view) => to_json(AppResult::success(app_federation::encode_health(&view))),
             Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_health failed")),
         },
+        "federation_get_self" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            match app_federation::get_self(&token) {
+                Ok(view) => to_json(AppResult::success(app_federation::encode_self(&view))),
+                Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_get_self failed")),
+            }
+        }
+        "federation_update_visibility" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let input = match parse_args::<FederationVisibilityInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match app_federation::set_visibility(&token, &input.visibility) {
+                Ok(view) => to_json(AppResult::success(app_federation::encode_self(&view))),
+                Err(e) => to_json(e.into_app_result_proto("federation_update_visibility failed")),
+            }
+        }
+        "federation_resolve" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let input = match parse_args::<FederationResolveInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match app_federation::resolve(&token, &input.handle) {
+                Ok(view) => to_json(AppResult::success(app_federation::encode_resolve(&view))),
+                Err(e) => to_json(e.into_app_result_proto("federation_resolve failed")),
+            }
+        }
 
         // =================================================================
         // Applet store (catalog/install — state-dependent)
@@ -6770,7 +6808,6 @@ fn dispatch_group_sync_from_station(args: Value, state: &AppState) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::provider::state as provider_state;
     use crate::infrastructure::i18n::I18nService;
     use crate::infrastructure::storage::{StorageKind, StorageLayout};
     use std::collections::HashMap;
@@ -6842,62 +6879,9 @@ mod tests {
         serde_json::from_str(status).expect("stub payload status should be JSON")
     }
 
-    fn register_product_host_gate_provider(base_url: &str) {
-        provider_state::with_provider_store(None, |store| {
-            for provider in &mut store.providers {
-                provider.enabled = false;
-            }
-            let model = provider_state::ModelRecord {
-                id: "gpt-4o".to_string(),
-                display_name: "GPT-4o".to_string(),
-                r#type: "chat".to_string(),
-                enabled: true,
-                context_window: 128000,
-                function_call: false,
-                vision: false,
-                reasoning: false,
-                search: false,
-                image_output: false,
-                video: false,
-                protocol_override: None,
-            };
-            let provider = store
-                .providers
-                .iter_mut()
-                .find(|provider| provider.id == "openai");
-            match provider {
-                Some(provider) => {
-                    provider.enabled = true;
-                    provider.key_vaults = json!({ "api_key": "test-key" }).to_string();
-                    provider.config_json = json!({
-                        "base_url": base_url,
-                        "protocol": "openai-compatible"
-                    })
-                    .to_string();
-                    provider.check_model = model.id.clone();
-                    provider.models = vec![model];
-                }
-                None => store.providers.push(provider_state::ProviderRecord {
-                    id: "openai".to_string(),
-                    name: "OpenAI".to_string(),
-                    description: "Controlled local provider for product host gate".to_string(),
-                    logo: "".to_string(),
-                    enabled: true,
-                    key_vaults: json!({ "api_key": "test-key" }).to_string(),
-                    config_json: json!({
-                        "base_url": base_url,
-                        "protocol": "openai-compatible"
-                    })
-                    .to_string(),
-                    check_model: model.id.clone(),
-                    models: vec![model],
-                    builtin: true,
-                    show_checker: false,
-                    show_api_key: false,
-                }),
-            }
-        })
-        .expect("provider store should be available");
+    fn register_product_host_gate_provider(_base_url: &str) {
+        // Provider registration now requires Station. Tests for product-host-gate
+        // must run against a real Station with providers configured.
     }
 
     #[test]
