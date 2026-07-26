@@ -191,6 +191,7 @@ fn main() {
             federation::federation_update_visibility,
             federation::federation_resolve,
             federation::federation_health,
+            federation::federation_catalog_search,
             admin::admin_health,
             admin::admin_network_probe,
             admin::admin_execute_action,

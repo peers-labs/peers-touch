@@ -23,13 +23,15 @@ const (
 
 // FederationCatalogSearchRequest scopes an actor search to a specific federation.
 type FederationCatalogSearchRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FederationId  string                 `protobuf:"bytes,1,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
-	Prefix        string                 `protobuf:"bytes,2,opt,name=prefix,proto3" json:"prefix,omitempty"`
-	Locale        string                 `protobuf:"bytes,3,opt,name=locale,proto3" json:"locale,omitempty"`
-	Region        string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
-	PageSize      uint32                 `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken     string                 `protobuf:"bytes,6,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	FederationId string                 `protobuf:"bytes,1,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	Prefix       string                 `protobuf:"bytes,2,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	Locale       string                 `protobuf:"bytes,3,opt,name=locale,proto3" json:"locale,omitempty"`
+	Region       string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
+	PageSize     uint32                 `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken    string                 `protobuf:"bytes,6,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// Optional: narrow results to a single station within the federation.
+	StationId     string `protobuf:"bytes,7,opt,name=station_id,json=stationId,proto3" json:"station_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -102,6 +104,13 @@ func (x *FederationCatalogSearchRequest) GetPageSize() uint32 {
 func (x *FederationCatalogSearchRequest) GetPageToken() string {
 	if x != nil {
 		return x.PageToken
+	}
+	return ""
+}
+
+func (x *FederationCatalogSearchRequest) GetStationId() string {
+	if x != nil {
+		return x.StationId
 	}
 	return ""
 }
@@ -428,7 +437,7 @@ var File_domain_federation_federation_discovery_proto protoreflect.FileDescripto
 
 const file_domain_federation_federation_discovery_proto_rawDesc = "" +
 	"\n" +
-	",domain/federation/federation_discovery.proto\x12\x1fpeers_touch.model.federation.v1\"\xc9\x01\n" +
+	",domain/federation/federation_discovery.proto\x12\x1fpeers_touch.model.federation.v1\"\xe8\x01\n" +
 	"\x1eFederationCatalogSearchRequest\x12#\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12\x16\n" +
 	"\x06prefix\x18\x02 \x01(\tR\x06prefix\x12\x16\n" +
@@ -436,7 +445,9 @@ const file_domain_federation_federation_discovery_proto_rawDesc = "" +
 	"\x06region\x18\x04 \x01(\tR\x06region\x12\x1b\n" +
 	"\tpage_size\x18\x05 \x01(\rR\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x06 \x01(\tR\tpageToken\"\xbd\x01\n" +
+	"page_token\x18\x06 \x01(\tR\tpageToken\x12\x1d\n" +
+	"\n" +
+	"station_id\x18\a \x01(\tR\tstationId\"\xbd\x01\n" +
 	"\x1fFederationCatalogSearchResponse\x12Q\n" +
 	"\aentries\x18\x01 \x03(\v27.peers_touch.model.federation.v1.FederationCatalogEntryR\aentries\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x1f\n" +
