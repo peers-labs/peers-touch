@@ -90,6 +90,7 @@ Regardless of whether it's a tracked project or standalone task, the agent MUST:
 | Before | Standard | How |
 |--------|----------|-----|
 | Before editing any file | Check operational knowledge | `pt-read-before-edit` |
+| Before fixing a bug | Layer-ownership audit | Ask: "Which layer owns this state?" — if the fix targets a different layer than the owner, STOP and redesign. See §3.3.1 |
 | Before editing Desktop kernel | Check runtime contracts | `pt-desktop-runtime-projections` |
 | Before writing UI strings | Use i18n | `packages/locales/` — never hardcode |
 | Before committing | Conventional format | `pt-github-commit` |
@@ -97,6 +98,24 @@ Regardless of whether it's a tracked project or standalone task, the agent MUST:
 | While writing Go | DDD + Go style | `./tooling/scripts/check-go-style.sh` |
 | While writing TS | No debug statements, proper typing | `pnpm run check` |
 | After implementation | Verify | Platform verification commands (§10 of AGENTS.md) |
+
+#### 3.3.1 Layer-Ownership Audit (mandatory before bug fixes)
+
+Before writing ANY fix, the agent MUST answer these three questions internally:
+
+1. **What state is broken?** (e.g., "deleted model reappears")
+2. **Who owns that state?** (per architecture docs: Station / Rust BFF / Frontend)
+3. **Does my fix write to the owning layer?**
+
+If the answer to #3 is NO — the fix is a **patch** and MUST be rejected. The agent
+reports: "This requires a change at [owning layer]. Here's what's needed." and
+proposes the correct-layer fix instead.
+
+**Patch indicators** (auto-reject if detected in own output):
+- Frontend filtering/hiding data that should be persisted server-side
+- Adding local state for something that belongs in Station
+- Stubbing a command that should have real backend logic
+- Using `setTimeout`/polling to mask a missing event/notification
 
 ### 3.4 Core Principles (always in effect)
 
