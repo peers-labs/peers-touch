@@ -6,45 +6,28 @@ use crate::infrastructure::station_client::{self, StationClientError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StationProvider {
-    #[serde(rename = "ID")]
     pub id: String,
-    #[serde(rename = "ActorID")]
     pub actor_id: String,
-    #[serde(rename = "Name")]
     pub name: String,
-    #[serde(rename = "DisplayName")]
     pub display_name: String,
-    #[serde(rename = "BaseURL")]
     pub base_url: String,
-    #[serde(rename = "Protocol")]
     pub protocol: String,
-    #[serde(rename = "RuntimeKind")]
     pub runtime_kind: String,
-    #[serde(rename = "CliCommand")]
     pub cli_command: String,
-    #[serde(rename = "Enabled")]
     pub enabled: bool,
-    #[serde(rename = "Version")]
     pub version: i64,
-    #[serde(rename = "Config")]
+    #[serde(default)]
     pub config: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StationModel {
-    #[serde(rename = "ID")]
     pub id: String,
-    #[serde(rename = "ActorID")]
     pub actor_id: String,
-    #[serde(rename = "ProviderID")]
     pub provider_id: String,
-    #[serde(rename = "ModelID")]
     pub model_id: String,
-    #[serde(rename = "DisplayName")]
     pub display_name: String,
-    #[serde(rename = "Enabled")]
     pub enabled: bool,
-    #[serde(rename = "Version")]
     pub version: i64,
 }
 
@@ -259,8 +242,10 @@ pub fn set_credential(
         })),
     )?;
 
-    serde_json::from_value(resp)
-        .map_err(|e| StationApiError::Internal(format!("decode credential status: {}", e)))
+    serde_json::from_value(
+        resp.get("status").cloned().unwrap_or_default(),
+    )
+    .map_err(|e| StationApiError::Internal(format!("decode credential status: {}", e)))
 }
 
 pub fn delete_credential(
@@ -293,8 +278,10 @@ pub fn credential_status(
         Some(&json!({"provider_id": provider_id})),
     )?;
 
-    serde_json::from_value(resp)
-        .map_err(|e| StationApiError::Internal(format!("decode credential status: {}", e)))
+    serde_json::from_value(
+        resp.get("status").cloned().unwrap_or_default(),
+    )
+    .map_err(|e| StationApiError::Internal(format!("decode credential status: {}", e)))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,8 +304,10 @@ pub fn resolve_credential(
         Some(&json!({"provider_id": provider_id})),
     )?;
 
-    serde_json::from_value(resp)
-        .map_err(|e| StationApiError::Internal(format!("decode resolved credential: {}", e)))
+    serde_json::from_value(
+        resp.get("credential").cloned().unwrap_or_default(),
+    )
+    .map_err(|e| StationApiError::Internal(format!("decode resolved credential: {}", e)))
 }
 
 fn parse_provider_from_response(resp: Value) -> Result<StationProvider, StationApiError> {
