@@ -256,6 +256,24 @@ func (h *ProviderHandlers) HandleCredentialStatus(ctx context.Context, req serve
 	return writeJSON(resp, http.StatusOK, status)
 }
 
+func (h *ProviderHandlers) HandleCredentialResolve(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID := auth.GetSubject(ctx).ID
+
+	var input struct {
+		ProviderID string `json:"provider_id"`
+	}
+	if err := json.Unmarshal(req.Body(), &input); err != nil {
+		return writeError(resp, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "invalid request body", err))
+	}
+
+	resolved, err := h.credentialCfg.Resolve(ctx, actorID, input.ProviderID)
+	if err != nil {
+		return writeError(resp, err)
+	}
+
+	return writeJSON(resp, http.StatusOK, resolved)
+}
+
 func writeJSON(resp server.Response, status int, data interface{}) error {
 	resp.SetHeader("Content-Type", "application/json")
 	resp.WriteHeader(status)

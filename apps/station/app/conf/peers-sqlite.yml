@@ -1,0 +1,20 @@
+peers:
+  version: 0.0.1
+  touch:
+    routers:
+      management: true
+      wellknown: true
+      user: true
+  run-mode: 2
+  includes: store.sqlite.yml, sub_agent.yml, log.yml, actor.yml, server.host.local.yml, oauth.yml
+  config:
+    hierarchy-merge: true
+  node:
+    transport:
+      name: native
+      native:
+        enable-relay: false
+        libp2p-identity-key-file: /tmp/peers-libp2p.key
+    server:
+      name: hertz
+      address: :18080

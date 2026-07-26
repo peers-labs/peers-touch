@@ -1,4 +1,4 @@
-use crate::application::provider::{remote as provider_remote, state as provider_state};
+use crate::application::provider::{cache as provider_cache, remote as provider_remote};
 use crate::contracts::ChatCompletionInput;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::Serialize;
@@ -93,8 +93,8 @@ struct StreamConfig {
     message: String,
 }
 
-pub async fn chat_completion_stream(app: AppHandle, stream_id: String, input: ChatCompletionInput) {
-    let config = match resolve_stream_config(&input) {
+pub async fn chat_completion_stream(app: AppHandle, stream_id: String, token: String, input: ChatCompletionInput) {
+    let config = match resolve_stream_config(&token, &input) {
         Ok(config) => config,
         Err(err) => {
             let _ = app.emit(
@@ -124,7 +124,7 @@ pub async fn chat_completion_stream(app: AppHandle, stream_id: String, input: Ch
     );
 }
 
-fn resolve_stream_config(input: &ChatCompletionInput) -> Result<StreamConfig, String> {
+fn resolve_stream_config(token: &str, input: &ChatCompletionInput) -> Result<StreamConfig, String> {
     let message = input.message.trim().to_string();
     if message.is_empty() {
         return Err("Message is required".to_string());
@@ -139,20 +139,15 @@ fn resolve_stream_config(input: &ChatCompletionInput) -> Result<StreamConfig, St
     let model_hint = input.model.as_deref().unwrap_or("").trim().to_string();
 
     let provider_id = if provider_id.is_empty() && !model_hint.is_empty() {
-        provider_state::with_provider_store(None, |store| {
-            store
-                .providers
-                .iter()
-                .find(|p| {
-                    p.enabled
-                        && (p.check_model == model_hint
-                            || p.models.iter().any(|m| m.id == model_hint))
-                })
-                .map(|p| p.id.clone())
-        })
-        .ok()
-        .flatten()
-        .unwrap_or_default()
+        provider_cache::get_providers(token, "")
+            .ok()
+            .and_then(|providers| {
+                providers
+                    .iter()
+                    .find(|p| p.enabled)
+                    .map(|p| p.name.clone())
+            })
+            .unwrap_or_default()
     } else {
         provider_id
     };
@@ -161,45 +156,16 @@ fn resolve_stream_config(input: &ChatCompletionInput) -> Result<StreamConfig, St
         return Err("Provider ID is required".to_string());
     }
 
-    let provider_data = provider_state::with_provider_store(None, |store| {
-        store
-            .providers
-            .iter()
-            .find(|p| p.id == provider_id)
-            .cloned()
-    })
-    .map_err(|_| "Failed to access provider store".to_string())?
-    .ok_or_else(|| "Provider not found".to_string())?;
+    let resolved = provider_cache::resolve_credential(token, &provider_id)
+        .map_err(|_| "Provider not found or no credential".to_string())?;
 
-    if !provider_data.enabled {
-        return Err("Provider is disabled".to_string());
-    }
-
-    let api_key = serde_json::from_str::<Value>(&provider_data.key_vaults)
-        .ok()
-        .and_then(|v| v.get("api_key").and_then(|k| k.as_str()).map(String::from))
-        .unwrap_or_default();
-
-    let config: Value = serde_json::from_str(&provider_data.config_json).unwrap_or_default();
-    let base_url = config
-        .get("base_url")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .trim_end_matches('/')
-        .to_string();
-
+    let base_url = resolved.base_url.trim().trim_end_matches('/').to_string();
     if base_url.is_empty() {
         return Err("Provider base URL is required".to_string());
     }
 
-    let provider_protocol = config
-        .get("protocol")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-
     let model_id = if model_hint.is_empty() {
-        provider_data.check_model.clone()
+        String::new()
     } else {
         model_hint
     };
@@ -208,16 +174,15 @@ fn resolve_stream_config(input: &ChatCompletionInput) -> Result<StreamConfig, St
         return Err("Model is required".to_string());
     }
 
-    let model_record = provider_data.models.iter().find(|m| m.id == model_id);
     let protocol = provider_remote::resolve_model_protocol(
-        model_record.and_then(|m| m.protocol_override.as_deref()),
-        provider_protocol.as_deref(),
+        None,
+        Some(&resolved.protocol),
     )
     .to_string();
 
     Ok(StreamConfig {
         base_url,
-        api_key,
+        api_key: resolved.api_key,
         model_id,
         protocol,
         message,
