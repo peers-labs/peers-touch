@@ -3821,6 +3821,22 @@ export const api = {
       pin,
     }),
 
+  accountBeginPinRecovery: (accountId: string) =>
+    invokeRustDataFromStatus<{ id: string }, { recovery_id: string; provider: string }>('account_begin_pin_recovery', {
+      id: accountId,
+    }),
+
+  accountAuthorizePinRecovery: (recoveryId: string) =>
+    invokeRustDataFromStatus<{ recovery_id: string }, { ok: boolean }>('account_authorize_pin_recovery', {
+      recovery_id: recoveryId,
+    }),
+
+  accountResetPin: (recoveryId: string, newPin: string) =>
+    invokeRustDataFromStatus<{ recovery_id: string; new_pin: string }, { ok: boolean; local_account_id: string }>('account_reset_pin', {
+      recovery_id: recoveryId,
+      new_pin: newPin,
+    }),
+
   // Notebook / Documents
   listDocuments: (topicId: string) =>
     invokeRustDataFromStatus<TopicIdInput, { documents: NotebookDocument[] }>('notebook_list_documents', { topic_id: topicId }).then(r => r.documents),

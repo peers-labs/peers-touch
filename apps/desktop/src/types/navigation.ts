@@ -52,6 +52,9 @@ export interface AppLifecycle {
   switchAccount: (accountId: string) => Promise<void>;
   unlockWithPin: (accountId: string, pin: string) => Promise<void>;
   refreshCurrentProfile: (fallbackAvatar?: string) => Promise<void>;
+  beginPinRecovery: (recoveryId: string, targetLocalAccountId: string, provider: string) => void;
+  cancelPinRecovery: () => void;
+  completePinRecovery: () => Promise<void>;
 }
 
 export interface HashRouter {
