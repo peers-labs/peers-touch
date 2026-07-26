@@ -205,6 +205,7 @@ fn main() {
             provider::provider_list_available_models,
             provider::model_fetch_remote,
             provider::model_toggle,
+            provider::model_delete,
             agents::agents_list,
             agents::agents_get_selected,
             agents::agents_set_selected,
