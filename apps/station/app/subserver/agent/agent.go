@@ -224,6 +224,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-credential-delete", "/agent/credential/delete", server.POST, providerHandlers.HandleCredentialDelete, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-credential-status", "/agent/credential/status", server.POST, providerHandlers.HandleCredentialStatus, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-credential-resolve", "/agent/credential/resolve", server.POST, providerHandlers.HandleCredentialResolve, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-model-hide", "/agent/provider/model/hide", server.POST, providerHandlers.HandleModelHide, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-model-hidden-list", "/agent/provider/model/hidden", server.POST, providerHandlers.HandleModelHiddenList, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-collaboration-create", "/agent/collaboration/create", server.POST, orchestrationHandlers.HandleCreateCollaborationTask, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-get", "/agent/collaboration/get", server.POST, orchestrationHandlers.HandleGetCollaborationTask, logIDWrapper, jwtWrapper),
