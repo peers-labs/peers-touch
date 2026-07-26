@@ -274,6 +274,45 @@ func (h *ProviderHandlers) HandleCredentialResolve(ctx context.Context, req serv
 	return writeJSON(resp, http.StatusOK, resolved)
 }
 
+func (h *ProviderHandlers) HandleModelHide(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID := auth.GetSubject(ctx).ID
+
+	var input struct {
+		ProviderID string `json:"provider_id"`
+		ModelID    string `json:"model_id"`
+	}
+	if err := json.Unmarshal(req.Body(), &input); err != nil {
+		return writeError(resp, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "invalid request body", err))
+	}
+	if input.ProviderID == "" || input.ModelID == "" {
+		return writeError(resp, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "provider_id and model_id required", nil))
+	}
+
+	if err := h.providerConfig.HideModel(ctx, actorID, input.ProviderID, input.ModelID); err != nil {
+		return writeError(resp, err)
+	}
+
+	return writeJSON(resp, http.StatusOK, map[string]interface{}{"ok": true})
+}
+
+func (h *ProviderHandlers) HandleModelHiddenList(ctx context.Context, req server.Request, resp server.Response) error {
+	actorID := auth.GetSubject(ctx).ID
+
+	var input struct {
+		ProviderID string `json:"provider_id"`
+	}
+	if err := json.Unmarshal(req.Body(), &input); err != nil {
+		return writeError(resp, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "invalid request body", err))
+	}
+
+	hidden, err := h.providerConfig.GetHiddenModels(ctx, actorID, input.ProviderID)
+	if err != nil {
+		return writeError(resp, err)
+	}
+
+	return writeJSON(resp, http.StatusOK, map[string]interface{}{"hidden_models": hidden})
+}
+
 func writeJSON(resp server.Response, status int, data interface{}) error {
 	resp.SetHeader("Content-Type", "application/json")
 	resp.WriteHeader(status)

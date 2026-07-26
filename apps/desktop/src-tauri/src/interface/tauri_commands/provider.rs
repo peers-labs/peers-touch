@@ -187,11 +187,12 @@ pub struct ModelDeleteInput {
 #[tauri::command]
 pub fn model_delete(
     input: ModelDeleteInput,
-    _state: State<'_, Arc<AppState>>,
-    _window: Window,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
 ) -> AppResult<StubPayload> {
-    AppResult::success(StubPayload {
-        command: "model_delete".to_string(),
-        status: json!({ "ok": true, "provider_id": input.provider_id, "model_id": input.model_id }).to_string(),
-    })
+    let (_scope, token) = match resolve_auth(&state, &window) {
+        Ok(auth) => auth,
+        Err(error) => return error,
+    };
+    application_provider::model_delete(&token, &input.provider_id, &input.model_id)
 }
