@@ -327,3 +327,31 @@ fn parse_provider_from_response(resp: Value) -> Result<StationProvider, StationA
     )
     .map_err(|e| StationApiError::Internal(format!("decode provider: {}", e)))
 }
+
+pub fn hide_model(token: &str, provider_id: &str, model_id: &str) -> Result<(), StationApiError> {
+    station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/provider/model/hide",
+        token,
+        None,
+        Some(&json!({ "provider_id": provider_id, "model_id": model_id })),
+    )?;
+    Ok(())
+}
+
+pub fn get_hidden_models(token: &str, provider_id: &str) -> Result<Vec<String>, StationApiError> {
+    let resp = station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/provider/model/hidden",
+        token,
+        None,
+        Some(&json!({ "provider_id": provider_id })),
+    )?;
+
+    let hidden: Vec<String> = serde_json::from_value(
+        resp.get("hidden_models").cloned().unwrap_or(Value::Array(vec![])),
+    )
+    .unwrap_or_default();
+
+    Ok(hidden)
+}
