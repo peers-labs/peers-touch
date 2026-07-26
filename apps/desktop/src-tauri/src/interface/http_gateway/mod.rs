@@ -3783,6 +3783,26 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => to_json(e.into_app_result_proto("federation_resolve failed")),
             }
         }
+        "federation_catalog_search" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let input = match parse_args::<FederationCatalogSearchInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match app_federation::catalog_search(
+                &token,
+                &input.federation_id,
+                &input.prefix,
+                input.station_id.as_deref(),
+                input.page_size,
+            ) {
+                Ok(view) => to_json(AppResult::success(app_federation::encode_catalog_search(&view))),
+                Err(e) => to_json(e.into_app_result_proto("federation_catalog_search failed")),
+            }
+        }
 
         // =================================================================
         // Applet store (catalog/install — state-dependent)
