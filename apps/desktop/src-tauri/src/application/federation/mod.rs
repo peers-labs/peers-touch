@@ -27,13 +27,15 @@ use reqwest::Method;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::model::federation::v1::{
-    FederationHealthView, FederationResolveView, FederationSelfView, FederationVisibilityRequest,
+    FederationCatalogSearchRequest, FederationCatalogSearchResponse, FederationHealthView,
+    FederationResolveView, FederationSelfView, FederationVisibilityRequest,
 };
 
 const ROUTE_ME: &str = "/actor/federation/me";
 const ROUTE_VISIBILITY: &str = "/actor/federation/visibility";
 const ROUTE_RESOLVE: &str = "/actor/federation/resolve";
 const ROUTE_HEALTH: &str = "/actor/federation/health";
+const ROUTE_CATALOG_SEARCH: &str = "/sub-federation/catalog/search";
 
 /// GET /actor/federation/me — authenticated.
 pub fn get_self(token: &str) -> Result<FederationSelfView, station_client::StationClientError> {
@@ -144,5 +146,44 @@ pub fn encode_resolve(view: &FederationResolveView) -> Vec<u8> {
 }
 
 pub fn encode_health(view: &FederationHealthView) -> Vec<u8> {
+    view.encode_to_vec()
+}
+
+/// POST /sub-federation/catalog/search — authenticated.
+pub fn catalog_search(
+    token: &str,
+    federation_id: &str,
+    prefix: &str,
+    station_id: Option<&str>,
+    page_size: Option<u32>,
+) -> Result<FederationCatalogSearchResponse, FederationGatewayError> {
+    if federation_id.trim().is_empty() {
+        return Err(FederationGatewayError::InvalidArgument(
+            "federation_id is required",
+        ));
+    }
+    if prefix.trim().is_empty() {
+        return Err(FederationGatewayError::InvalidArgument(
+            "prefix is required",
+        ));
+    }
+    let body = FederationCatalogSearchRequest {
+        federation_id: federation_id.to_string(),
+        prefix: prefix.to_string(),
+        station_id: station_id.unwrap_or_default().to_string(),
+        page_size: page_size.unwrap_or(20),
+        ..Default::default()
+    };
+    station_client::request_peers_proto::<FederationCatalogSearchRequest, FederationCatalogSearchResponse>(
+        Method::POST,
+        ROUTE_CATALOG_SEARCH,
+        token,
+        None,
+        Some(&body),
+    )
+    .map_err(FederationGatewayError::Station)
+}
+
+pub fn encode_catalog_search(view: &FederationCatalogSearchResponse) -> Vec<u8> {
     view.encode_to_vec()
 }

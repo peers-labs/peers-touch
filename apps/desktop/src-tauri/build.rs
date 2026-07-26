@@ -63,6 +63,7 @@ fn compile_protos() {
         "domain/federation/federation_self.proto",
         "domain/federation/federation_resolve.proto",
         "domain/federation/federation_health.proto",
+        "domain/federation/federation_discovery.proto",
     ]
     .iter()
     .map(|p| proto_root.join(p))
