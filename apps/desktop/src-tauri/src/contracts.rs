@@ -1915,3 +1915,13 @@ pub struct FederationVisibilityInput {
 pub struct FederationResolveInput {
     pub handle: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationCatalogSearchInput {
+    pub federation_id: String,
+    pub prefix: String,
+    #[serde(default)]
+    pub station_id: Option<String>,
+    #[serde(default)]
+    pub page_size: Option<u32>,
+}
