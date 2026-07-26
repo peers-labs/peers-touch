@@ -1,4 +1,4 @@
-use crate::application::provider::{remote as provider_remote, state as provider_state};
+use crate::application::provider::{cache as provider_cache, remote as provider_remote};
 use crate::contracts::{
     AppletActionInput, AppletConfigSetInput, AppletCreateSessionInput, AppletGatewayManifest,
     AppletGatewayService, AppletGatewaySkill, AppletIdInput, AppletInvokeInput, StubPayload,
@@ -1145,7 +1145,7 @@ fn dispatch_applet_capability(
         ),
         "agent" => handle_agent(context, applet_id, session_id, request_id, action, params),
         "atelier" => handle_atelier(context, applet_id, session_id, action, params, data_dir),
-        "ai" => handle_ai(request_id, action, params),
+        "ai" => handle_ai(context, request_id, action, params),
         "telemetry" => handle_telemetry(applet_id, session_id, action, params),
         other => Err(format!("Unsupported applet capability: {}", other)),
     }
@@ -4592,18 +4592,19 @@ fn atelier_projection_event_text(data: &Value, payload: &Value) -> String {
 }
 
 fn handle_ai(
+    context: &AccessContext,
     request_id: &str,
     action: Option<&str>,
     params: Option<Value>,
 ) -> Result<Value, String> {
     match action.ok_or_else(|| "ai capability requires an action".to_string())? {
-        "generate" => invoke_ai_generate(request_id, params),
-        "chat" => invoke_ai_chat(request_id, params),
+        "generate" => invoke_ai_generate(&context.token, request_id, params),
+        "chat" => invoke_ai_chat(&context.token, request_id, params),
         other => Err(format!("Unsupported ai action: {}", other)),
     }
 }
 
-fn invoke_ai_generate(request_id: &str, params: Option<Value>) -> Result<Value, String> {
+fn invoke_ai_generate(token: &str, request_id: &str, params: Option<Value>) -> Result<Value, String> {
     let params = params.ok_or_else(|| "ai.generate requires params".to_string())?;
     let prompt = params
         .get("prompt")
@@ -4613,7 +4614,7 @@ fn invoke_ai_generate(request_id: &str, params: Option<Value>) -> Result<Value, 
         "messages": [{ "role": "user", "content": prompt }],
         "metadata": params.get("metadata").cloned().unwrap_or_else(|| json!({}))
     });
-    let result = invoke_ai_chat(request_id, Some(chat))?;
+    let result = invoke_ai_chat(token, request_id, Some(chat))?;
     let content = result
         .get("message")
         .and_then(|message| message.get("content"))
@@ -4622,7 +4623,7 @@ fn invoke_ai_generate(request_id: &str, params: Option<Value>) -> Result<Value, 
     Ok(json!({ "requestId": request_id, "content": content }))
 }
 
-fn invoke_ai_chat(request_id: &str, params: Option<Value>) -> Result<Value, String> {
+fn invoke_ai_chat(token: &str, request_id: &str, params: Option<Value>) -> Result<Value, String> {
     let params = params.ok_or_else(|| "ai.chat requires params".to_string())?;
     let messages = params
         .get("messages")
@@ -4636,40 +4637,48 @@ fn invoke_ai_chat(request_id: &str, params: Option<Value>) -> Result<Value, Stri
         .and_then(|value| value.as_str())
         .ok_or_else(|| "ai.chat requires at least one user message".to_string())?;
 
-    let provider_data = resolve_ai_provider(&params)?;
-    let model_id = resolve_ai_model(&params, &provider_data)?;
+    let requested_provider = params
+        .get("metadata")
+        .and_then(|m| m.get("providerId").or_else(|| m.get("provider_id")))
+        .or_else(|| params.get("providerId"))
+        .or_else(|| params.get("provider_id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
 
-    if !provider_data.enabled {
-        return Err(format!("AI provider is disabled: {}", provider_data.id));
+    let provider_id = if requested_provider.is_empty() {
+        provider_cache::get_providers(token, "")
+            .ok()
+            .and_then(|providers| providers.iter().find(|p| p.enabled).map(|p| p.name.clone()))
+            .ok_or_else(|| "AI provider not found: no enabled provider is configured".to_string())?
+    } else {
+        requested_provider
+    };
+
+    let resolved = provider_cache::resolve_credential(token, &provider_id)
+        .map_err(|_| format!("AI provider not found or no credential: {}", provider_id))?;
+
+    let model_id = params
+        .get("metadata")
+        .and_then(|m| m.get("model"))
+        .or_else(|| params.get("model"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if model_id.is_empty() {
+        return Err("ai.chat requires a model".to_string());
     }
 
-    let api_key = serde_json::from_str::<Value>(&provider_data.key_vaults)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("api_key")
-                .and_then(|key| key.as_str())
-                .map(String::from)
-        })
-        .unwrap_or_default();
-    let config: Value = serde_json::from_str(&provider_data.config_json).unwrap_or_default();
-    let base_url = config
-        .get("base_url")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| format!("AI provider base_url is missing: {}", provider_data.id))?;
-    let provider_protocol = config.get("protocol").and_then(|value| value.as_str());
-    let model_record = provider_data
-        .models
-        .iter()
-        .find(|model| model.id == model_id.as_str());
     let effective_protocol = provider_remote::resolve_model_protocol(
-        model_record.and_then(|model| model.protocol_override.as_deref()),
-        provider_protocol,
+        None,
+        Some(&resolved.protocol),
     );
 
     let result = provider_remote::chat_completion(
-        base_url,
-        &api_key,
+        &resolved.base_url,
+        &resolved.api_key,
         &model_id,
         Some(effective_protocol),
         content,
@@ -4681,63 +4690,7 @@ fn invoke_ai_chat(request_id: &str, params: Option<Value>) -> Result<Value, Stri
     )
 }
 
-fn resolve_ai_provider(params: &Value) -> Result<provider_state::ProviderRecord, String> {
-    let requested_provider = params
-        .get("metadata")
-        .and_then(|metadata| {
-            metadata
-                .get("providerId")
-                .or_else(|| metadata.get("provider_id"))
-        })
-        .or_else(|| params.get("providerId"))
-        .or_else(|| params.get("provider_id"))
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
 
-    provider_state::with_provider_store(None, |store| {
-        store
-            .providers
-            .iter()
-            .find(|provider| {
-                provider.enabled
-                    && (requested_provider.is_empty() || provider.id == requested_provider)
-            })
-            .cloned()
-    })
-    .map_err(|_| "AI provider store is unavailable".to_string())?
-    .ok_or_else(|| {
-        if requested_provider.is_empty() {
-            "AI provider not found: no enabled provider is configured".to_string()
-        } else {
-            format!("AI provider not found: {}", requested_provider)
-        }
-    })
-}
-
-fn resolve_ai_model(
-    params: &Value,
-    provider_data: &provider_state::ProviderRecord,
-) -> Result<String, String> {
-    let requested_model = params
-        .get("metadata")
-        .and_then(|metadata| metadata.get("model"))
-        .or_else(|| params.get("model"))
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let model_id = if requested_model.is_empty() {
-        provider_data.check_model.clone()
-    } else {
-        requested_model
-    };
-    if model_id.trim().is_empty() {
-        return Err("AI model not found: provider has no default model".to_string());
-    }
-    Ok(model_id)
-}
 
 fn handle_telemetry(
     applet_id: &str,
@@ -6671,40 +6624,9 @@ mod tests {
         assert_eq!(evidence["productWindow"]["mounted"], true);
     }
 
-    fn register_e2e_provider(provider_id: &str, protocol: &str, model_id: &str, base_url: &str) {
-        provider_state::with_provider_store(None, |store| {
-            store
-                .providers
-                .retain(|provider| provider.id != provider_id);
-            store.providers.push(provider_state::ProviderRecord {
-                id: provider_id.to_string(),
-                name: format!("Applet E2E Provider {}", protocol),
-                description: "Controlled local provider for applet e2e".to_string(),
-                logo: "".to_string(),
-                enabled: true,
-                key_vaults: json!({ "api_key": "test-key" }).to_string(),
-                config_json: json!({ "base_url": base_url, "protocol": protocol }).to_string(),
-                check_model: model_id.to_string(),
-                models: vec![provider_state::ModelRecord {
-                    id: model_id.to_string(),
-                    display_name: format!("E2E Model {}", protocol),
-                    r#type: "chat".to_string(),
-                    enabled: true,
-                    context_window: 4096,
-                    function_call: false,
-                    vision: false,
-                    reasoning: false,
-                    search: false,
-                    image_output: false,
-                    video: false,
-                    protocol_override: Some(protocol.to_string()),
-                }],
-                builtin: false,
-                show_checker: false,
-                show_api_key: false,
-            });
-        })
-        .expect("provider store should be available");
+    fn register_e2e_provider(_provider_id: &str, _protocol: &str, _model_id: &str, _base_url: &str) {
+        // Provider registration now requires Station. E2E tests for ai.chat
+        // capability must run against a real Station with providers configured.
     }
 
     #[test]

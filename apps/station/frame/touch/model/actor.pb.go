@@ -297,8 +297,11 @@ type Actor struct {
 	HomeStationDomain string          `protobuf:"bytes,14,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`   // DNS-style domain of the home station
 	Visibility        ActorVisibility `protobuf:"varint,15,opt,name=visibility,proto3,enum=peers_touch.model.actor.v1.ActorVisibility" json:"visibility,omitempty"`
 	Origin            ActorOrigin     `protobuf:"varint,16,opt,name=origin,proto3,enum=peers_touch.model.actor.v1.ActorOrigin" json:"origin,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Ed25519 public key for actor-initiated governance signing.
+	// Generated at account creation; used to verify actor_signature on ledger events.
+	SigningPublicKey []byte `protobuf:"bytes,17,opt,name=signing_public_key,proto3" json:"signing_public_key,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Actor) Reset() {
@@ -441,6 +444,13 @@ func (x *Actor) GetOrigin() ActorOrigin {
 		return x.Origin
 	}
 	return ActorOrigin_ACTOR_ORIGIN_UNSPECIFIED
+}
+
+func (x *Actor) GetSigningPublicKey() []byte {
+	if x != nil {
+		return x.SigningPublicKey
+	}
+	return nil
 }
 
 type UserLink struct {
@@ -1074,7 +1084,7 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\bactor_id\x18\x01 \x01(\x04R\bactor_id\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x12\n" +
 	"\x04acct\x18\x03 \x01(\tR\x04acct\x129\n" +
-	"\x04kind\x18\x04 \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kind\"\xdb\x05\n" +
+	"\x04kind\x18\x04 \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kind\"\x8b\x06\n" +
 	"\x05Actor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12!\n" +
@@ -1094,7 +1104,8 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\n" +
 	"visibility\x18\x0f \x01(\x0e2+.peers_touch.model.actor.v1.ActorVisibilityR\n" +
 	"visibility\x12?\n" +
-	"\x06origin\x18\x10 \x01(\x0e2'.peers_touch.model.actor.v1.ActorOriginR\x06origin\x1a<\n" +
+	"\x06origin\x18\x10 \x01(\x0e2'.peers_touch.model.actor.v1.ActorOriginR\x06origin\x12.\n" +
+	"\x12signing_public_key\x18\x11 \x01(\fR\x12signing_public_key\x1a<\n" +
 	"\x0eEndpointsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"2\n" +
