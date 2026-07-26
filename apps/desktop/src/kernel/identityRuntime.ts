@@ -339,6 +339,24 @@ class IdentityRuntime {
     await this.acceptAuthenticatedEdgeFromCurrentSession('pin_unlock');
   };
 
+  beginPinRecovery = (recoveryId: string, targetLocalAccountId: string, provider: string): void => {
+    this.dispatch({ type: 'PIN_RECOVERY_REQUESTED', recoveryId, targetLocalAccountId, provider });
+  };
+
+  cancelPinRecovery = (): void => {
+    this.dispatch({ type: 'PIN_RECOVERY_CANCELLED' });
+  };
+
+  completePinRecovery = async (): Promise<void> => {
+    const user = currentSessionUser();
+    if (!user) {
+      this.dispatch({ type: 'PIN_RECOVERY_COMMIT_FAILED' });
+      return;
+    }
+    this.dispatch({ type: 'PIN_RECOVERY_COMMITTED', user });
+    await this.reconcileAuthenticatedIdentity(user, 'completed_login');
+  };
+
   refreshCurrentProfile = async (fallbackAvatar?: string): Promise<void> => {
     const user = currentSessionUser();
     if (!user) return;
@@ -521,6 +539,9 @@ class IdentityRuntime {
       switchAccount: this.switchAccount,
       unlockWithPin: this.unlockWithPin,
       refreshCurrentProfile: this.refreshCurrentProfile,
+      beginPinRecovery: this.beginPinRecovery,
+      cancelPinRecovery: this.cancelPinRecovery,
+      completePinRecovery: this.completePinRecovery,
     };
     return {
       phase: this.phase,

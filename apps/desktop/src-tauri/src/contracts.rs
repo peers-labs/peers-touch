@@ -808,6 +808,17 @@ pub struct AccountRemovePinInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountAuthorizePinRecoveryInput {
+    pub recovery_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountResetPinInput {
+    pub recovery_id: String,
+    pub new_pin: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthResourceInput {
     pub id: String,
     pub resource: String,
