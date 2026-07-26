@@ -19,6 +19,8 @@ message FederationCatalogSearchRequest {
   string region = 4;
   uint32 page_size = 5;
   string page_token = 6;
+  // Optional: narrow results to a single station within the federation.
+  string station_id = 7;
 }
 
 message FederationCatalogSearchResponse {

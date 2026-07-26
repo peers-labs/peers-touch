@@ -82,6 +82,9 @@ import {
 import {
   FederationHealthViewSchema,
 } from '../gen/proto/domain/federation/federation_health_pb';
+import {
+  FederationCatalogSearchResponseSchema,
+} from '../gen/proto/domain/federation/federation_discovery_pb';
 import type {
   GetTurnTraceResponse,
   ListTurnTracesResponse,
@@ -108,6 +111,10 @@ export type {
 export type {
   FederationHealthView,
 } from '../gen/proto/domain/federation/federation_health_pb';
+export type {
+  FederationCatalogSearchResponse,
+  FederationCatalogEntry,
+} from '../gen/proto/domain/federation/federation_discovery_pb';
 export type {
   Friend,
 } from '../gen/proto/domain/chat/chat_pb';
@@ -4513,6 +4520,14 @@ export const api = {
 
   federationHealth: () =>
     invokeRustProto('federation_health', FederationHealthViewSchema),
+
+  federationCatalogSearch: (params: {
+    federation_id: string;
+    prefix: string;
+    station_id?: string;
+    page_size?: number;
+  }) =>
+    invokeRustProto('federation_catalog_search', FederationCatalogSearchResponseSchema, params),
 
   friendChatListSessions: (limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_sessions', GetSessionsResponseSchema, { limit, offset }),

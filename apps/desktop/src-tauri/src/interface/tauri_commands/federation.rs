@@ -23,7 +23,7 @@ use tauri::{State, Window};
 
 use crate::application::federation;
 use crate::application::session_resolver;
-use crate::contracts::{FederationResolveInput, FederationVisibilityInput};
+use crate::contracts::{FederationCatalogSearchInput, FederationResolveInput, FederationVisibilityInput};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::state::AppState;
@@ -101,4 +101,26 @@ pub fn federation_health() -> AppResult<Vec<u8>> {
 
 fn map_station_error(err: station_client::StationClientError, context: &str) -> AppResult<Vec<u8>> {
     err.into_app_result(context)
+}
+
+#[tauri::command]
+pub fn federation_catalog_search(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: FederationCatalogSearchInput,
+) -> AppResult<Vec<u8>> {
+    let token = match token_or_unauthorized(&state, &window) {
+        Ok(t) => t,
+        Err(err) => return err,
+    };
+    match federation::catalog_search(
+        &token,
+        &input.federation_id,
+        &input.prefix,
+        input.station_id.as_deref(),
+        input.page_size,
+    ) {
+        Ok(view) => AppResult::success(federation::encode_catalog_search(&view)),
+        Err(e) => e.into_app_result_proto("federation_catalog_search failed"),
+    }
 }
