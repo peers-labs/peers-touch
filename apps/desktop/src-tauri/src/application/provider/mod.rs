@@ -359,6 +359,22 @@ pub fn provider_list_available_models(scope: &str, token: &str) -> AppResult<Stu
     )
 }
 
+pub fn model_fetch_remote(_scope: &str, _token: &str, provider_id: &str) -> AppResult<StubPayload> {
+    let models: Vec<serde_json::Value> = catalog::find_in_catalog(provider_id)
+        .map(|cp| {
+            cp.models
+                .iter()
+                .map(|m| json!({ "id": m.id, "display_name": m.display_name }))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    success_payload(
+        "model_fetch_remote",
+        json!({ "ok": true, "models": models }),
+    )
+}
+
 fn parse_key_vault_api_key(key_vaults: &str) -> Option<String> {
     serde_json::from_str::<serde_json::Value>(key_vaults)
         .ok()
