@@ -14,8 +14,7 @@ docs/context/
 ├── implementation-reports/ # Technical implementation reports
 ├── evolution/              # Development history and daily logs
 ├── mobile/                 # Mobile proposal-stage architecture notes
-├── features/               # Feature planning and archived roadmaps
-└── test-resources.md       # Reusable test accounts and E2E material references
+└── features/               # Feature planning and archived roadmaps
 ```
 
 ---
@@ -24,10 +23,7 @@ docs/context/
 
 ### 🧪 Test Resources
 
-**Location**: [`test-resources.md`](./test-resources.md)
-
-- Desktop 常用测试账号、PIN、E2E/性能排查测试物料。
-- 仅用于测试/验收环境，不是生产凭据或安全策略真源。
+**Moved to**: [`docs/knowledge/playbooks/dev-test-accounts.md`](../knowledge/playbooks/dev-test-accounts.md)
 
 ### 🧭 Historical Architecture Notes
 
