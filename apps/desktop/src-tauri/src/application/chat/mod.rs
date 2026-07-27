@@ -1,6 +1,6 @@
 pub mod streaming;
 
-use crate::application::provider::{cache as provider_cache, remote as provider_remote};
+use crate::application::provider::{station_api as provider_cache, remote as provider_remote};
 use crate::contracts::{
     ChatCompletionInput, ChatConversationInput, ChatListMessagesInput, ChatMarkReadInput,
     ChatMessageInput, ChatRenameConversationInput, ChatSendMessageInput,
