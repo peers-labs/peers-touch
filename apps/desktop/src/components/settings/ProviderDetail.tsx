@@ -230,17 +230,23 @@ export function ProviderDetail() {
     try {
       const result = await fetchRemoteModels(detail.id, apiKey || undefined, baseUrl || undefined);
       if (result.ok && result.models) {
-        const existingIds = new Set((detail.models || []).map((m) => m.id));
-        const newModels = result.models.filter((id) => !existingIds.has(id));
-        if (newModels.length > 0) {
-          for (const id of newModels) {
-            await addModel(detail.id, { id, display_name: '', type: 'chat', context_window: 128000 });
+        if (detail.runtime_kind === 'cli') {
+          if (!silent) {
+            message.success(t('provider.model.fetchedCliModels', { count: result.models.length }));
           }
-          message.success(t('provider.model.fetchedNew', { count: newModels.length }));
-        } else if (!silent) {
-          message.info(t('provider.model.noNewModels'));
+        } else {
+          const existingIds = new Set((detail.models || []).map((m) => m.id));
+          const newModels = result.models.filter((id) => !existingIds.has(id));
+          if (newModels.length > 0) {
+            for (const id of newModels) {
+              await addModel(detail.id, { id, display_name: '', type: 'chat', context_window: 128000 });
+            }
+            message.success(t('provider.model.fetchedNew', { count: newModels.length }));
+          } else if (!silent) {
+            message.info(t('provider.model.noNewModels'));
+          }
+          await selectProvider(detail.id);
         }
-        await selectProvider(detail.id);
       } else if (!silent) {
         message.error(result.error || t('provider.model.failedToFetch'));
       }
