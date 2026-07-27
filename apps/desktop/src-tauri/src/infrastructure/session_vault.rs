@@ -124,6 +124,10 @@ pub fn load_raw_session_for_account(
     Ok(Some(blob))
 }
 
+pub fn load_raw_token_for_recovery(account_id: &str) -> Option<String> {
+    session_store::load(account_id).map(|s| s.token)
+}
+
 pub fn save_encrypted_session_and_purge_raw(
     account_id: &str,
     pin: &str,

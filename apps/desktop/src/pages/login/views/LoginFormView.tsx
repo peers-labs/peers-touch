@@ -61,6 +61,7 @@ export interface LoginFormViewProps {
   onTabChange: (tab: LoginTab) => void;
   gateState?: GateState | null;
   backContent?: React.ReactNode;
+  title?: string;
 }
 
 export const LoginFormView = memo(function LoginFormView({
@@ -77,6 +78,7 @@ export const LoginFormView = memo(function LoginFormView({
   onTabChange,
   gateState,
   backContent,
+  title: titleOverride,
 }: LoginFormViewProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('auth');
@@ -194,9 +196,11 @@ export const LoginFormView = memo(function LoginFormView({
       )}
 
       <h2 style={{ fontSize: 22, fontWeight: 700, color: token.colorText, margin: '0 0 4px' }}>
-        {expiredAccount
-          ? t('auth.login.welcomeBackTitle', { defaultValue: 'Welcome back' })
-          : t('auth.login.title')}
+        {titleOverride
+          ? titleOverride
+          : expiredAccount
+            ? t('auth.login.welcomeBackTitle', { defaultValue: 'Welcome back' })
+            : t('auth.login.title')}
       </h2>
       <Text
         type="secondary"
