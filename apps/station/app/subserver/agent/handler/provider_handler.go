@@ -459,7 +459,12 @@ func (h *ProviderHandlers) HandleModelHide(ctx context.Context, req *model.HideM
 		return nil, server.NewHandlerError(http.StatusBadRequest, "provider_id and model_id required")
 	}
 
-	if err := h.providerConfig.HideModel(ctx, actorID, req.GetProviderId(), req.GetModelId()); err != nil {
+	providerID := req.GetProviderId()
+	if err := h.ensureProviderRecord(ctx, actorID, providerID); err != nil {
+		return nil, toHandlerError(err)
+	}
+
+	if err := h.providerConfig.HideModel(ctx, actorID, providerID, req.GetModelId()); err != nil {
 		return nil, toHandlerError(err)
 	}
 
@@ -562,4 +567,35 @@ func parseKeyVaultAPIKey(kv string) string {
 		return v
 	}
 	return ""
+}
+
+// ensureProviderRecord creates a DB record for the provider if one doesn't
+// exist yet. This handles the first-activation case for catalog providers
+// that appear enabled by default but have no user-specific DB state.
+func (h *ProviderHandlers) ensureProviderRecord(ctx context.Context, actorID, providerID string) error {
+	providers, _ := h.providerConfig.List(ctx, actorID)
+	for i := range providers {
+		if providers[i].Name == providerID {
+			return nil
+		}
+	}
+
+	cp := catalog.Find(providerID)
+	displayName := providerID
+	protocol := "openai-compatible"
+	baseURL := ""
+	if cp != nil {
+		displayName = cp.Name
+		protocol = cp.Protocol
+		baseURL = cp.DefaultBaseURL
+	}
+
+	_, err := h.providerConfig.Create(ctx, service.ProviderCreateRequest{
+		ActorID:     actorID,
+		ProviderID:  providerID,
+		DisplayName: displayName,
+		BaseURL:     baseURL,
+		Protocol:    protocol,
+	})
+	return err
 }

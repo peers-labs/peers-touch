@@ -73,6 +73,7 @@ pub fn provider_update(
         input.enabled,
         input.config_json.as_deref(),
         input.key_vaults.as_deref(),
+        input.version,
     ) {
         Ok(v) => v,
         Err(e) => return station_error_to_result(e),
