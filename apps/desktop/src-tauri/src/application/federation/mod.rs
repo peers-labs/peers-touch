@@ -200,11 +200,12 @@ pub fn encode_catalog_search(view: &FederationCatalogSearchResponse) -> Vec<u8> 
 pub fn list_federations(
     token: &str,
 ) -> Result<ListFederationsResponse, station_client::StationClientError> {
-    station_client::request_peers_proto_no_body::<ListFederationsResponse>(
+    station_client::request_proto::<(), ListFederationsResponse>(
         Method::GET,
         ROUTE_LIST_FEDERATIONS,
         token,
         None,
+        None::<&()>,
     )
 }
 
@@ -228,7 +229,7 @@ pub fn create_federation(
             policy_type.to_string()
         },
     };
-    station_client::request_peers_proto::<CreateFederationRequest, CreateFederationResponse>(
+    station_client::request_proto::<CreateFederationRequest, CreateFederationResponse>(
         Method::POST,
         ROUTE_CREATE_FEDERATION,
         token,
@@ -255,7 +256,7 @@ pub fn join_federation(
         federation_id: federation_id.trim().to_string(),
         message: message.to_string(),
     };
-    station_client::request_peers_proto::<JoinFederationRequest, JoinFederationResponse>(
+    station_client::request_proto::<JoinFederationRequest, JoinFederationResponse>(
         Method::POST,
         ROUTE_JOIN_FEDERATION,
         token,
@@ -282,7 +283,7 @@ pub fn leave_federation(
         federation_id: fid.to_string(),
         reason: reason.to_string(),
     };
-    station_client::request_peers_proto::<LeaveFederationRequest, LeaveFederationResponse>(
+    station_client::request_proto::<LeaveFederationRequest, LeaveFederationResponse>(
         Method::POST,
         &route,
         token,
@@ -304,11 +305,12 @@ pub fn list_member_stations(
         ));
     }
     let route = format!("/sub-federation/federations/{}/stations", fid);
-    station_client::request_peers_proto_no_body::<ListMemberStationsResponse>(
+    station_client::request_proto::<(), ListMemberStationsResponse>(
         Method::GET,
         &route,
         token,
         None,
+        None::<&()>,
     )
     .map_err(FederationGatewayError::Station)
 }
