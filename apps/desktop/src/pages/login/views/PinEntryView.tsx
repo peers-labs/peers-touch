@@ -16,6 +16,7 @@ export interface PinEntryViewProps {
   error: string;
   onBack: () => void;
   onSubmit: (pin: string) => void;
+  onForgotPin?: () => void;
 }
 
 export const PinEntryView = memo(function PinEntryView({
@@ -25,6 +26,7 @@ export const PinEntryView = memo(function PinEntryView({
   error,
   onBack,
   onSubmit,
+  onForgotPin,
 }: PinEntryViewProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('auth');
@@ -128,13 +130,31 @@ export const PinEntryView = memo(function PinEntryView({
           <Spin size="small" />
         </Flexbox>
       ) : (
-        <PinInput
-          onComplete={handleComplete}
-          disabled={loading}
-          error={error}
-          resetKey={resetKey}
-          autoFocus
-        />
+        <>
+          <PinInput
+            onComplete={handleComplete}
+            disabled={loading}
+            error={error}
+            resetKey={resetKey}
+            autoFocus
+          />
+          {onForgotPin && !loading && (
+            <button
+              onClick={onForgotPin}
+              style={{
+                marginTop: 16,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: token.colorTextTertiary,
+                fontSize: 12,
+                textDecoration: 'underline',
+              }}
+            >
+              {t('auth.pin.forgot', { defaultValue: 'Forgot PIN?' })}
+            </button>
+          )}
+        </>
       )}
     </>
   );
