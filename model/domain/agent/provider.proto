@@ -35,6 +35,7 @@ message AgentProviderInfo {
   string source = 16;
   string cli_command = 17;
   repeated ProviderModelInfo models = 18;
+  string models_command = 19;
 }
 
 message AgentModelInfo {

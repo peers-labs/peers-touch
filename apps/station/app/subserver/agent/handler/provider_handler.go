@@ -123,6 +123,7 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 			Version:          version,
 			Source:           "catalog",
 			CliCommand:       cp.CliCommand,
+			ModelsCommand:    cp.ModelsCommand,
 			Models:           models,
 		})
 	}
@@ -222,6 +223,7 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 			Version:          version,
 			Source:           "catalog",
 			CliCommand:       cp.CliCommand,
+			ModelsCommand:    cp.ModelsCommand,
 			Models:           models,
 		}}, nil
 	}

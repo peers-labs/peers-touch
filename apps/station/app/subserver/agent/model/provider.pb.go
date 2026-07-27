@@ -118,6 +118,7 @@ type AgentProviderInfo struct {
 	Source           string                 `protobuf:"bytes,16,opt,name=source,proto3" json:"source,omitempty"`
 	CliCommand       string                 `protobuf:"bytes,17,opt,name=cli_command,json=cliCommand,proto3" json:"cli_command,omitempty"`
 	Models           []*ProviderModelInfo   `protobuf:"bytes,18,rep,name=models,proto3" json:"models,omitempty"`
+	ModelsCommand    string                 `protobuf:"bytes,19,opt,name=models_command,json=modelsCommand,proto3" json:"models_command,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -276,6 +277,13 @@ func (x *AgentProviderInfo) GetModels() []*ProviderModelInfo {
 		return x.Models
 	}
 	return nil
+}
+
+func (x *AgentProviderInfo) GetModelsCommand() string {
+	if x != nil {
+		return x.ModelsCommand
+	}
+	return ""
 }
 
 type AgentModelInfo struct {
@@ -1924,7 +1932,7 @@ const file_domain_agent_provider_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x12\n" +
 	"\x04type\x18\x03 \x01(\tR\x04type\x12\x18\n" +
 	"\aenabled\x18\x04 \x01(\bR\aenabled\x12%\n" +
-	"\x0econtext_window\x18\x05 \x01(\x05R\rcontextWindow\"\xcc\x04\n" +
+	"\x0econtext_window\x18\x05 \x01(\x05R\rcontextWindow\"\xf3\x04\n" +
 	"\x11AgentProviderInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1946,7 +1954,8 @@ const file_domain_agent_provider_proto_rawDesc = "" +
 	"\x06source\x18\x10 \x01(\tR\x06source\x12\x1f\n" +
 	"\vcli_command\x18\x11 \x01(\tR\n" +
 	"cliCommand\x12E\n" +
-	"\x06models\x18\x12 \x03(\v2-.peers_touch.model.agent.v1.ProviderModelInfoR\x06models\"\xc4\x02\n" +
+	"\x06models\x18\x12 \x03(\v2-.peers_touch.model.agent.v1.ProviderModelInfoR\x06models\x12%\n" +
+	"\x0emodels_command\x18\x13 \x01(\tR\rmodelsCommand\"\xc4\x02\n" +
 	"\x0eAgentModelInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1f\n" +
