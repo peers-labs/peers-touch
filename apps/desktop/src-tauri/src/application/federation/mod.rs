@@ -27,8 +27,11 @@ use reqwest::Method;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::model::federation::v1::{
-    FederationCatalogSearchRequest, FederationCatalogSearchResponse, FederationHealthView,
-    FederationResolveView, FederationSelfView, FederationVisibilityRequest,
+    CreateFederationRequest, CreateFederationResponse, FederationCatalogSearchRequest,
+    FederationCatalogSearchResponse, FederationHealthView, FederationResolveView,
+    FederationSelfView, FederationVisibilityRequest, JoinFederationRequest,
+    JoinFederationResponse, LeaveFederationRequest, LeaveFederationResponse,
+    ListFederationsResponse, ListMemberStationsResponse,
 };
 
 const ROUTE_ME: &str = "/actor/federation/me";
@@ -36,6 +39,9 @@ const ROUTE_VISIBILITY: &str = "/actor/federation/visibility";
 const ROUTE_RESOLVE: &str = "/actor/federation/resolve";
 const ROUTE_HEALTH: &str = "/actor/federation/health";
 const ROUTE_CATALOG_SEARCH: &str = "/sub-federation/catalog/search";
+const ROUTE_LIST_FEDERATIONS: &str = "/sub-federation/federations";
+const ROUTE_CREATE_FEDERATION: &str = "/sub-federation/federations";
+const ROUTE_JOIN_FEDERATION: &str = "/sub-federation/federations/join";
 
 /// GET /actor/federation/me — authenticated.
 pub fn get_self(token: &str) -> Result<FederationSelfView, station_client::StationClientError> {
@@ -185,5 +191,144 @@ pub fn catalog_search(
 }
 
 pub fn encode_catalog_search(view: &FederationCatalogSearchResponse) -> Vec<u8> {
+    view.encode_to_vec()
+}
+
+// ─── Federation Lifecycle (Governance Subserver) ────────────────────────────
+
+/// GET /sub-federation/federations — list all federations this station belongs to.
+pub fn list_federations(
+    token: &str,
+) -> Result<ListFederationsResponse, station_client::StationClientError> {
+    station_client::request_peers_proto_no_body::<ListFederationsResponse>(
+        Method::GET,
+        ROUTE_LIST_FEDERATIONS,
+        token,
+        None,
+    )
+}
+
+/// POST /sub-federation/federations — create a new federation (this station becomes sequencer).
+pub fn create_federation(
+    token: &str,
+    name: &str,
+    description: &str,
+    policy_type: &str,
+) -> Result<CreateFederationResponse, FederationGatewayError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(FederationGatewayError::InvalidArgument("name is required"));
+    }
+    let body = CreateFederationRequest {
+        name: name.to_string(),
+        description: description.trim().to_string(),
+        policy_type: if policy_type.is_empty() {
+            "single_admin".to_string()
+        } else {
+            policy_type.to_string()
+        },
+    };
+    station_client::request_peers_proto::<CreateFederationRequest, CreateFederationResponse>(
+        Method::POST,
+        ROUTE_CREATE_FEDERATION,
+        token,
+        None,
+        Some(&body),
+    )
+    .map_err(FederationGatewayError::Station)
+}
+
+/// POST /sub-federation/federations/join — request to join an existing federation.
+pub fn join_federation(
+    token: &str,
+    federation_endpoint: &str,
+    federation_id: &str,
+    message: &str,
+) -> Result<JoinFederationResponse, FederationGatewayError> {
+    if federation_id.trim().is_empty() && federation_endpoint.trim().is_empty() {
+        return Err(FederationGatewayError::InvalidArgument(
+            "federation_id or federation_endpoint is required",
+        ));
+    }
+    let body = JoinFederationRequest {
+        federation_endpoint: federation_endpoint.trim().to_string(),
+        federation_id: federation_id.trim().to_string(),
+        message: message.to_string(),
+    };
+    station_client::request_peers_proto::<JoinFederationRequest, JoinFederationResponse>(
+        Method::POST,
+        ROUTE_JOIN_FEDERATION,
+        token,
+        None,
+        Some(&body),
+    )
+    .map_err(FederationGatewayError::Station)
+}
+
+/// POST /sub-federation/federations/:federation_id/leave — leave a federation.
+pub fn leave_federation(
+    token: &str,
+    federation_id: &str,
+    reason: &str,
+) -> Result<LeaveFederationResponse, FederationGatewayError> {
+    let fid = federation_id.trim();
+    if fid.is_empty() {
+        return Err(FederationGatewayError::InvalidArgument(
+            "federation_id is required",
+        ));
+    }
+    let route = format!("/sub-federation/federations/{}/leave", fid);
+    let body = LeaveFederationRequest {
+        federation_id: fid.to_string(),
+        reason: reason.to_string(),
+    };
+    station_client::request_peers_proto::<LeaveFederationRequest, LeaveFederationResponse>(
+        Method::POST,
+        &route,
+        token,
+        None,
+        Some(&body),
+    )
+    .map_err(FederationGatewayError::Station)
+}
+
+/// GET /sub-federation/federations/:federation_id/stations — list member stations.
+pub fn list_member_stations(
+    token: &str,
+    federation_id: &str,
+) -> Result<ListMemberStationsResponse, FederationGatewayError> {
+    let fid = federation_id.trim();
+    if fid.is_empty() {
+        return Err(FederationGatewayError::InvalidArgument(
+            "federation_id is required",
+        ));
+    }
+    let route = format!("/sub-federation/federations/{}/stations", fid);
+    station_client::request_peers_proto_no_body::<ListMemberStationsResponse>(
+        Method::GET,
+        &route,
+        token,
+        None,
+    )
+    .map_err(FederationGatewayError::Station)
+}
+
+pub fn encode_list_federations(view: &ListFederationsResponse) -> Vec<u8> {
+    view.encode_to_vec()
+}
+
+pub fn encode_create_federation(view: &CreateFederationResponse) -> Vec<u8> {
+    view.encode_to_vec()
+}
+
+pub fn encode_join_federation(view: &JoinFederationResponse) -> Vec<u8> {
+    view.encode_to_vec()
+}
+
+pub fn encode_leave_federation(view: &LeaveFederationResponse) -> Vec<u8> {
+    view.encode_to_vec()
+}
+
+pub fn encode_list_member_stations(view: &ListMemberStationsResponse) -> Vec<u8> {
     view.encode_to_vec()
 }
