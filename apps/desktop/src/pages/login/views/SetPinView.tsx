@@ -12,6 +12,7 @@ export interface SetPinViewProps {
   error: string;
   onComplete: (pin: string) => void;
   onSkip: () => void;
+  title?: string;
 }
 
 export const SetPinView = memo(function SetPinView({
@@ -20,6 +21,7 @@ export const SetPinView = memo(function SetPinView({
   error,
   onComplete,
   onSkip,
+  title: titleOverride,
 }: SetPinViewProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('auth');
@@ -75,7 +77,7 @@ export const SetPinView = memo(function SetPinView({
 
       <h2 style={{ fontSize: 20, fontWeight: 700, color: token.colorText, margin: '0 0 4px' }}>
         {step === 'create'
-          ? t('auth.pin.setTitle', { defaultValue: 'Set a PIN' })
+          ? (titleOverride || t('auth.pin.setTitle', { defaultValue: 'Set a PIN' }))
           : t('auth.pin.confirmTitle', { defaultValue: 'Confirm PIN' })
         }
       </h2>
