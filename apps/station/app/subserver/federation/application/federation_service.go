@@ -210,4 +210,51 @@ func (s *FederationService) ApproveJoin(ctx context.Context, input *ApproveJoinI
 	return membership, nil
 }
 
+type LeaveFederationInput struct {
+	FederationID      string
+	ActorID           string
+	ActorHandle       string
+	StationPeerID     string
+	Reason            string
+	ActorPrivateKey   ed25519.PrivateKey
+	StationPrivateKey ed25519.PrivateKey
+}
+
+func (s *FederationService) LeaveFederation(ctx context.Context, input *LeaveFederationInput) error {
+	payload := &pb.StationLeftPayload{
+		LeavingStationPeerId:        input.StationPeerID,
+		LeavingActorId:              input.ActorID,
+		LeavingActorFederatedHandle: input.ActorHandle,
+		Reason:                      input.Reason,
+	}
+	payloadBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.ledgerSvc.AppendEvent(ctx, &AppendEventInput{
+		FederationID:      input.FederationID,
+		EventType:         pb.EventType_STATION_LEFT,
+		PayloadBytes:      payloadBytes,
+		ActorID:           input.ActorID,
+		ActorHandle:       input.ActorHandle,
+		StationPeerID:     input.StationPeerID,
+		ActorPrivateKey:   input.ActorPrivateKey,
+		StationPrivateKey: input.StationPrivateKey,
+	})
+	if err != nil {
+		return err
+	}
+
+	membership, err := s.membershipRepo.GetByStation(ctx, input.FederationID, input.StationPeerID)
+	if err != nil {
+		return err
+	}
+	if membership != nil {
+		membership.Status = "left"
+		return s.membershipRepo.Upsert(ctx, membership)
+	}
+	return nil
+}
+
 var _ = ulid.Make
