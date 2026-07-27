@@ -85,6 +85,13 @@ import {
 import {
   FederationCatalogSearchResponseSchema,
 } from '../gen/proto/domain/federation/federation_discovery_pb';
+import {
+  CreateFederationResponseSchema,
+  JoinFederationResponseSchema,
+  LeaveFederationResponseSchema,
+  ListFederationsResponseSchema,
+  ListMemberStationsResponseSchema,
+} from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
   GetTurnTraceResponse,
   ListTurnTracesResponse,
@@ -115,6 +122,16 @@ export type {
   FederationCatalogSearchResponse,
   FederationCatalogEntry,
 } from '../gen/proto/domain/federation/federation_discovery_pb';
+export type {
+  ListFederationsResponse,
+  FederationSummary,
+  ActorCapability,
+  CreateFederationResponse,
+  JoinFederationResponse,
+  LeaveFederationResponse,
+  ListMemberStationsResponse,
+  MemberStationView,
+} from '../gen/proto/domain/federation/federation_projection_service_pb';
 export type {
   Friend,
 } from '../gen/proto/domain/chat/chat_pb';
@@ -4558,6 +4575,28 @@ export const api = {
     page_size?: number;
   }) =>
     invokeRustProto('federation_catalog_search', FederationCatalogSearchResponseSchema, params),
+
+  // Federation Lifecycle (Governance Subserver)
+  federationListFederations: () =>
+    invokeRustProto('federation_list_federations', ListFederationsResponseSchema),
+
+  federationCreate: (params: { name: string; description?: string; policy_type?: string }) =>
+    invokeRustProto('federation_create', CreateFederationResponseSchema, params),
+
+  federationJoin: (params: {
+    federation_endpoint?: string;
+    federation_id?: string;
+    message?: string;
+  }) =>
+    invokeRustProto('federation_join', JoinFederationResponseSchema, params),
+
+  federationLeave: (params: { federation_id: string; reason?: string }) =>
+    invokeRustProto('federation_leave', LeaveFederationResponseSchema, params),
+
+  federationListMemberStations: (federationId: string) =>
+    invokeRustProto('federation_list_member_stations', ListMemberStationsResponseSchema, {
+      federation_id: federationId,
+    }),
 
   friendChatListSessions: (limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_sessions', GetSessionsResponseSchema, { limit, offset }),
