@@ -196,3 +196,20 @@ pub fn model_delete(
     };
     application_provider::model_delete(&token, &input.provider_id, &input.model_id)
 }
+
+#[derive(Debug, Deserialize)]
+pub struct ModelAddInput {
+    pub provider_id: String,
+    pub model_id: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+}
+
+#[tauri::command]
+pub fn model_add(
+    _input: ModelAddInput,
+    _state: State<'_, Arc<AppState>>,
+    _window: Window,
+) -> AppResult<StubPayload> {
+    AppResult::fail(crate::error::ErrorCode::InternalError, "model_add not yet implemented", None)
+}

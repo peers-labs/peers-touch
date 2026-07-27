@@ -1,8 +1,8 @@
 # Provider Station Ownership — Integration
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-07-23 | **Updated**: 2026-07-24
+> **Version**: v1.2
+> **Created**: 2026-07-23 | **Updated**: 2026-07-27
 > **Owner**: Agent Team
 
 ---
@@ -11,12 +11,14 @@
 
 | Concept | Owner | Location | Mutability |
 |---------|-------|----------|------------|
-| **Provider Catalog** (what providers the product supports: protocol, base_url, models, discovery) | Product (client-shipped) | `apps/desktop/src-tauri/src/application/provider/providers.default.yaml` embedded at compile time | Read-only; updated via product release |
+| **Provider Catalog** (what providers the product supports: protocol, base_url, models, discovery) | Station | `apps/station/app/subserver/agent/catalog/providers.default.yaml` loaded at boot | Read-only at runtime; updated via Station release |
 | **User Credentials** (API keys, secrets) | Station | `agent_providers.key_vaults` + `credential/set` / `credential/resolve` API | Per-actor, mutable |
 | **User Preferences** (enabled/disabled, custom base_url override) | Station | `agent_providers` row per actor+provider | Per-actor, version-gated |
 | **Custom Providers** (user-added providers not in catalog) | Station | Same table, no catalog counterpart | Per-actor, mutable |
 
-**Invariant**: The catalog is a product-level asset that ships with the client. It is never empty, never depends on Station connectivity, and never needs to be "seeded" to Station. Station stores only user-specific data (credentials + preferences). The UI always shows the full catalog; credential status from Station overlays on top.
+**Invariant**: Station is the single source of truth for both the provider catalog and user state. Desktop is a pure renderer — it depends on Station for the provider list and cannot function without connectivity. The catalog is seeded into Station's in-memory registry at boot from an embedded YAML asset. `HandleProviderList` merges catalog + user state (credentials, preferences, hidden_models) and returns the unified view. Desktop never ships or interprets the catalog locally.
+
+**Superseded (v1.1)**: The v1.1 invariant ("catalog ships with the client, never needs to be seeded to Station") is superseded. The architectural decision to make Station the sole owner simplifies the client to a pure renderer and eliminates dual-source merging logic on Desktop.
 
 ---
 
@@ -153,8 +155,26 @@ Delivered:
 
 1. E2E: open Settings → see all 15 catalog providers → configure key → send message → SSE response.
 2. E2E: same actor on two devices → concurrent credential edit → 409 → resolution.
-3. E2E: Station unreachable → provider list still shows (catalog) → credential status shows "unknown".
+3. ~~E2E: Station unreachable → provider list still shows (catalog) → credential status shows "unknown".~~ (Superseded: Station is now required.)
 4. Delete orphan contract types and unused local override paths.
+
+### Phase 5: Station-Owned Catalog (v1.2)
+
+Move the provider catalog from Desktop to Station. Desktop becomes a pure renderer.
+
+**Steps**:
+
+1. Move `providers.default.yaml` from `apps/desktop/src-tauri/src/application/provider/` to `apps/station/app/subserver/agent/catalog/`.
+2. Create `catalog.go` in Station: parse YAML at boot, hold in-memory registry.
+3. Rewrite `HandleProviderList`: merge catalog + actor's `agent_providers` rows (credentials, enabled, hidden_models). Return unified list.
+4. Rewrite `HandleProviderGet`: merge single catalog entry + actor state.
+5. Simplify Desktop Rust `provider_list` / `provider_get`: just call Station API, return result directly. Remove `catalog.rs`, `cache.rs` overlay logic.
+6. Desktop `provider_list_available_models`: call Station (Station filters catalog models by enabled providers + hidden_models).
+7. Update `HandleModelHide` / `HandleModelHiddenList`: filter against catalog models (Station now knows the catalog).
+8. Delete Desktop `catalog.rs` (no longer needed).
+9. Update architecture doc §0, §1, risk table.
+
+**Acceptance**: Desktop Settings page shows all catalog providers (with correct credential status) by calling Station only. No local YAML parsing on Desktop.
 
 ---
 
@@ -172,8 +192,8 @@ Delivered:
 |---|---|---|
 | Station CLI subprocess security | High | Sandbox CLI execution on Station (container or restricted user) |
 | Latency increase for provider operations | Low | Acceptable; consistency > latency for config operations |
-| Station unreachable on first launch | Low | Catalog always available offline; credential status shows "unknown" until Station responds |
+| Station unreachable | High | Accepted: Desktop cannot function without Station. Show connection error state. |
 | Version conflict UX | Medium | Design clear "config was changed on another device" dialog |
 | `chat_completion` in remote.rs still needs credentials | Medium | `cache::resolve_credential` fetches from Station; graceful error if not configured |
 | Applet AI calls (9304-line file) depend on provider resolution | High | Test thoroughly; applet gateway is critical path |
-| Catalog staleness across client versions | Low | Catalog updates ship with product releases; not a runtime concern |
+| Catalog staleness across Station versions | Low | Catalog updates ship with Station releases; version-gated seed logic if needed |

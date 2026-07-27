@@ -3,6 +3,7 @@ import { T } from '../theme';
 import { SessionList } from '../components/SessionList';
 import { ChatArea } from '../components/ChatArea';
 import { DetailPanel } from '../components/DetailPanel';
+import { FindPeopleModal } from '../components/FindPeopleModal';
 import { useChatState } from '../state';
 
 export function SocialChatPage() {
@@ -33,6 +34,8 @@ export function SocialChatPage() {
     transferOwnership,
   } = useChatState();
 
+  const [findPeopleOpen, setFindPeopleOpen] = useState(false);
+
   useEffect(() => {
     if (!rootRef.current) return undefined;
     const update = () => setRootWidth(rootRef.current?.clientWidth ?? 0);
@@ -58,6 +61,7 @@ export function SocialChatPage() {
         onMarkAsRead={markAsRead}
         onHide={hideConversation}
         onDelete={deleteConversation}
+        onFindPeople={() => setFindPeopleOpen(true)}
       />
       {listOnly && (
         <div
@@ -96,6 +100,7 @@ export function SocialChatPage() {
           onTransferOwnership={transferOwnership}
         />
       )}
+      <FindPeopleModal open={findPeopleOpen} onClose={() => setFindPeopleOpen(false)} />
     </div>
   );
 }

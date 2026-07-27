@@ -19,28 +19,8 @@ fn not_implemented(cmd: &str) -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn model_add(_window: Window, _input: ModelInput) -> AppResult<StubPayload> {
-    not_implemented("model_add")
-}
-
-#[tauri::command]
 pub fn model_update(_window: Window, _input: ModelInput) -> AppResult<StubPayload> {
     not_implemented("model_update")
-}
-
-#[tauri::command]
-pub fn model_delete(_window: Window, _input: ModelInput) -> AppResult<StubPayload> {
-    not_implemented("model_delete")
-}
-
-#[tauri::command]
-pub fn model_fetch_remote(_window: Window, _input: ModelInput) -> AppResult<StubPayload> {
-    not_implemented("model_fetch_remote")
-}
-
-#[tauri::command]
-pub fn model_toggle(_window: Window, _input: ModelInput) -> AppResult<StubPayload> {
-    not_implemented("model_toggle")
 }
 
 #[tauri::command]
