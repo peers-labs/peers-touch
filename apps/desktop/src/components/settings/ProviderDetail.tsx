@@ -16,6 +16,7 @@ import { UpdateProviderModal } from './UpdateProviderModal';
 import { api } from '../../services/desktop_api';
 import { useTranslation } from 'react-i18next';
 import { useActiveProviderSlice } from './useActiveSettingsStores';
+import { useProviderStore } from '../../store/provider';
 
 const { Text, Title, Link } = Typography;
 
@@ -229,10 +230,22 @@ export function ProviderDetail() {
     setFetching(true);
     try {
       const result = await fetchRemoteModels(detail.id, apiKey || undefined, baseUrl || undefined);
-      if (result.ok && result.models) {
+      if (result.ok && result.models && result.models.length > 0) {
         if (detail.runtime_kind === 'cli') {
+          useProviderStore.setState({
+            detail: {
+              ...detail,
+              models: result.models.map((id) => ({
+                id,
+                display_name: id,
+                type: 'chat' as const,
+                enabled: true,
+                context_window: 0,
+              })),
+            },
+          });
           if (!silent) {
-            message.success(t('provider.model.fetchedCliModels', { count: result.models.length }));
+            message.success(t('provider.model.fetchedNew', { count: result.models.length }));
           }
         } else {
           const existingIds = new Set((detail.models || []).map((m) => m.id));
