@@ -139,8 +139,19 @@ export function FederationTab() {
 
   const visibilityHint = t(`settings.federation.visibility.${visibility}.hint`);
 
+  const FEDERATION_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9 \-]{0,62}[a-zA-Z0-9]$/;
+
   const handleCreate = async () => {
-    if (!createName.trim() || actionLoading) return;
+    const name = createName.trim();
+    if (!name || actionLoading) return;
+    if (!FEDERATION_NAME_RE.test(name)) {
+      message.error(t('settings.federation.create.invalidName', { defaultValue: 'Name must be 2-64 characters: letters, numbers, spaces, and hyphens only' }));
+      return;
+    }
+    if (federations.some((f) => f.name.toLowerCase() === name.toLowerCase())) {
+      message.error(t('settings.federation.create.duplicateName', { defaultValue: 'A federation with this name already exists' }));
+      return;
+    }
     setActionLoading(true);
     try {
       await createFederation(createName.trim(), createDesc.trim());
@@ -470,6 +481,8 @@ export function FederationTab() {
             value={createName}
             onChange={(e) => setCreateName(e.target.value)}
             onPressEnter={handleCreate}
+            maxLength={64}
+            showCount
           />
           <Input.TextArea
             placeholder={t('settings.federation.create.descriptionPlaceholder')}
