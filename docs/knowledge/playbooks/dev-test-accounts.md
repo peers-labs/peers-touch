@@ -1,8 +1,19 @@
-# Test Resources
+---
+kind: playbook
+title: Dev Test Accounts
+status: active
+owns:
+  - apps/station/app/conf/actor.yml
+  - apps/station/frame/touch/actor/seed.go
+  - apps/station/frame/touch/actor/seed_dev_friends.go
+  - apps/station/frame/touch/setup.go
+---
+
+# Dev Test Accounts
 
 > **Status**: active
 > **Version**: v2.0
-> **Created**: 2026-07-06 | **Updated**: 2026-07-24
+> **Created**: 2026-07-06 | **Updated**: 2026-07-26
 > **Owner**: Peers-Touch Engineering
 
 ---

@@ -2699,7 +2699,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_provider::provider_list(scope.as_deref()))
+            let token = token_from_state(state).unwrap_or_default();
+            to_json(app_provider::provider_list(scope.as_deref().unwrap_or(""), &token))
         }
         "provider_get" => {
             let input = match parse_args::<ProviderIdInput>(args) {
@@ -2710,7 +2711,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_provider::provider_get(scope.as_deref(), input))
+            let token = token_from_state(state).unwrap_or_default();
+            to_json(app_provider::provider_get(scope.as_deref().unwrap_or(""), &token, input))
         }
         "provider_update" => {
             let input = match parse_args::<ProviderUpdateInput>(args) {
@@ -2721,7 +2723,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_provider::provider_update(scope.as_deref(), input))
+            let token = token_from_state(state).unwrap_or_default();
+            to_json(app_provider::provider_update(scope.as_deref().unwrap_or(""), &token, input))
         }
         "provider_check" => {
             let input = match parse_args::<ProviderCheckInput>(args) {
@@ -2732,7 +2735,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_provider::provider_check(scope.as_deref(), input))
+            let token = token_from_state(state).unwrap_or_default();
+            to_json(app_provider::provider_check(scope.as_deref().unwrap_or(""), &token, input))
         }
         "provider_create" => {
             let input = match parse_args::<ProviderCreateInput>(args) {
@@ -2743,7 +2747,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_provider::provider_create(scope.as_deref(), input))
+            let token = token_from_state(state).unwrap_or_default();
+            to_json(app_provider::provider_create(scope.as_deref().unwrap_or(""), &token, input))
         }
         "provider_delete" => {
             let input = match parse_args::<ProviderIdInput>(args) {
@@ -2754,26 +2759,31 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_provider::provider_delete(scope.as_deref(), input))
+            let token = token_from_state(state).unwrap_or_default();
+            to_json(app_provider::provider_delete(scope.as_deref().unwrap_or(""), &token, input))
         }
         "provider_apply_preset" => {
             let input = match parse_args::<ProviderIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let scope = match resolve_scope(state) {
+            let _scope = match resolve_scope(state) {
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(app_provider::provider_apply_preset(scope.as_deref(), input))
+            to_json(AppResult::<StubPayload>::fail(
+                ErrorCode::InternalError, "provider_apply_preset not yet implemented", None,
+            ))
         }
         "provider_list_available_models" => {
             let scope = match resolve_scope(state) {
                 Ok(s) => s,
                 Err(e) => return e,
             };
+            let token = token_from_state(state).unwrap_or_default();
             to_json(app_provider::provider_list_available_models(
-                scope.as_deref(),
+                scope.as_deref().unwrap_or(""),
+                &token,
             ))
         }
 
