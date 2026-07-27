@@ -208,13 +208,44 @@ fn execute_cli_models_command(command: &str) -> Vec<String> {
 
     match output {
         Ok(out) if out.status.success() => {
-            String::from_utf8_lossy(&out.stdout)
-                .lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect()
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let trimmed = stdout.trim();
+
+            if trimmed.starts_with('{') || trimmed.starts_with('[') {
+                parse_json_models(trimmed)
+            } else {
+                trimmed.lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect()
+            }
         }
         _ => vec![],
+    }
+}
+
+fn parse_json_models(json_str: &str) -> Vec<String> {
+    let val: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+
+    let models_array = val.get("models")
+        .and_then(|m| m.as_array())
+        .or_else(|| val.as_array());
+
+    match models_array {
+        Some(arr) => arr.iter().filter_map(|item| {
+            if let Some(s) = item.as_str() {
+                return Some(s.to_string());
+            }
+            item.get("slug").and_then(|v| v.as_str())
+                .or_else(|| item.get("id").and_then(|v| v.as_str()))
+                .or_else(|| item.get("name").and_then(|v| v.as_str()))
+                .or_else(|| item.get("model_id").and_then(|v| v.as_str()))
+                .map(|s| s.to_string())
+        }).collect(),
+        None => vec![],
     }
 }
 
