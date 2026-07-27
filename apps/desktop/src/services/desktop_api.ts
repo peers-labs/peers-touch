@@ -1213,6 +1213,7 @@ export interface ProviderListItem {
   builtin: boolean;
   has_api_key: boolean;
   runtime_kind: 'cli' | 'direct';
+  version: number;
 }
 
 export interface ModelItem {
@@ -2335,6 +2336,7 @@ export interface ProviderUpdateInput {
   runtime_kind?: string;
   cli_command?: string;
   protocol?: string;
+  version?: number;
 }
 
 export interface ProviderCheckInput {
@@ -3705,12 +3707,13 @@ export const api = {
       mapAIChatProviderToDetail(r.provider || {}),
     ),
 
-  updateProvider: (id: string, data: { api_key: string; base_url: string; enabled: boolean }) =>
+  updateProvider: (id: string, data: { api_key: string; base_url: string; enabled: boolean; version?: number }) =>
     invokeRustDataFromStatus<ProviderUpdateInput, { provider: any }>('provider_update', {
         id,
         enabled: data.enabled,
         key_vaults: JSON.stringify({ api_key: data.api_key || '' }),
         config_json: JSON.stringify({ base_url: data.base_url || '' }),
+        version: data.version ?? 0,
     }),
 
   checkProvider: (id: string, data: { api_key?: string; base_url?: string; model?: string }) =>
@@ -5653,6 +5656,7 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     builtin: Boolean(item.builtin),
     has_api_key: hasKey,
     runtime_kind: runtimeKind === 'cli' || hasCliCommand ? 'cli' : 'direct',
+    version: Number(item.version || 0),
   };
 }
 

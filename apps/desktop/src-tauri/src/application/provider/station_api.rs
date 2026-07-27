@@ -122,10 +122,11 @@ pub fn update_provider_full(
     enabled: bool,
     config_json: Option<&str>,
     key_vaults: Option<&str>,
+    version: i64,
 ) -> Result<Value, StationApiError> {
     let mut body = json!({
         "provider_id": provider_id,
-        "version": 0,
+        "version": version,
         "enabled": enabled,
     });
     if let Some(cfg) = config_json {
