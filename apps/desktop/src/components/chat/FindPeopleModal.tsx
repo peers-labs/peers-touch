@@ -291,31 +291,58 @@ export function FindPeopleModal({ open, onClose }: Props) {
         />
 
         {/* Scope chips */}
-        <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
+        <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap', alignItems: 'center' }}>
           <Tag.CheckableTag
             checked={searchScope === 'all'}
             onChange={() => handleScopeChange('all')}
+            style={searchScope === 'all' ? {
+              background: token.colorPrimaryBg,
+              color: token.colorPrimary,
+              borderColor: token.colorPrimary,
+            } : {
+              background: 'transparent',
+              color: token.colorTextSecondary,
+              borderColor: token.colorBorder,
+            }}
           >
             {t('chat.social.findPeople.scopeAll')}
           </Tag.CheckableTag>
 
-          {joinedFederations.map((fed) => (
-            <Tag.CheckableTag
-              key={fed.federationId}
-              checked={searchScope === 'federation' && selectedFederationId === fed.federationId}
-              onChange={(checked) => {
-                if (checked) handleScopeChange('federation', fed.federationId);
-                else handleScopeChange('all');
-              }}
-            >
-              <Globe size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
-              {fed.federationName || fed.federationId.slice(0, 8)}
-            </Tag.CheckableTag>
-          ))}
+          {joinedFederations.map((fed) => {
+            const isActive = searchScope === 'federation' && selectedFederationId === fed.federationId;
+            return (
+              <Tag.CheckableTag
+                key={fed.federationId}
+                checked={isActive}
+                onChange={(checked) => {
+                  if (checked) handleScopeChange('federation', fed.federationId);
+                  else handleScopeChange('all');
+                }}
+                style={isActive ? {
+                  background: token.colorPrimaryBg,
+                  color: token.colorPrimary,
+                  borderColor: token.colorPrimary,
+                } : {
+                  background: 'transparent',
+                  color: token.colorTextSecondary,
+                  borderColor: token.colorBorder,
+                }}
+              >
+                <Globe size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
+                {fed.federationName || fed.federationId.slice(0, 8)}
+              </Tag.CheckableTag>
+            );
+          })}
 
           {joinedFederations.length === 0 && federationReady && (
             <Text type="secondary" style={{ fontSize: 11 }}>
               {t('chat.social.findPeople.catalogNoFederation')}
+            </Text>
+          )}
+
+          {joinedFederations.length === 0 && !federationReady && (
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {t('chat.social.findPeople.joinFederation', { defaultValue: 'Join a federation to enable catalog search' })}
             </Text>
           )}
         </Flexbox>
