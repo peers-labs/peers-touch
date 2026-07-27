@@ -74,6 +74,10 @@ message VerifyCliResponse {
   string install_hint = 5;
 }
 
+// FetchCliModels
+message FetchCliModelsRequest { string provider_id = 1; }
+message FetchCliModelsResponse { repeated string models = 1; }
+
 // Provider CRUD
 message ListProvidersRequest {}
 message ListProvidersResponse { repeated AgentProviderInfo providers = 1; }

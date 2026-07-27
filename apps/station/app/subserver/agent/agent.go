@@ -214,6 +214,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-provider-verify-cli", "/agent/provider/verify-cli", server.POST, providerHandlers.HandleVerifyCli, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-fetch-cli-models", "/agent/provider/fetch-cli-models", server.POST, providerHandlers.HandleFetchCliModels, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-list", "/agent/provider/list", server.POST, providerHandlers.HandleProviderList, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-get", "/agent/provider/get", server.POST, providerHandlers.HandleProviderGet, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-create", "/agent/provider/create", server.POST, providerHandlers.HandleProviderCreate, logIDWrapper, jwtWrapper),
