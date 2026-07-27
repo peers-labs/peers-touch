@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Input, toast } from '@lobehub/ui';
-import { Alert, Spin, Tag, theme, Modal, Typography } from 'antd';
+import { Button, Input } from '@lobehub/ui';
+import { Alert, Spin, Tag, theme, Modal, Typography, message } from 'antd';
 import { Search, ShieldCheck, Globe, Server } from 'lucide-react';
 import { api, type FederationResolveView, type FederationCatalogEntry } from '../../services/desktop_api';
 import {
@@ -166,7 +166,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
     try {
       if (parsed.isFederated && parsed.hasHost && searchScope === 'all') {
         if (!federationReady) {
-          toast.error(t('chat.social.findPeople.resolveNotReady'));
+          message.error(t('chat.social.findPeople.resolveNotReady'));
           setResults([]);
           return;
         }
@@ -202,7 +202,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
       const fallback = parsed.isFederated && parsed.hasHost
         ? t('chat.social.findPeople.resolveFailed', { handle: parsed.canonical })
         : t('chat.social.findPeople.searchFailed');
-      toast.error((e as { message?: string })?.message || fallback);
+      message.error((e as { message?: string })?.message || fallback);
       setResults([]);
     } finally {
       setSearching(false);
@@ -217,9 +217,9 @@ export function FindPeopleModal({ open, onClose }: Props) {
     try {
       await sendFriendRequest(receiverDid, '');
       setSentIds((prev) => new Set(prev).add(receiverDid));
-      toast.success(t('chat.social.findPeople.requestSent'));
+      message.success(t('chat.social.findPeople.requestSent'));
     } catch (e: unknown) {
-      toast.error(
+      message.error(
         (e as { message?: string })?.message ||
           t('chat.social.findPeople.addFailed'),
       );
@@ -435,7 +435,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
                     />
                   </Flexbox>
                   <Button
-                    type="primary"
+                    type={alreadySent ? 'default' : 'primary'}
                     size="small"
                     loading={addingId === receiverDid}
                     disabled={alreadySent || isSelf}
@@ -443,11 +443,12 @@ export function FindPeopleModal({ open, onClose }: Props) {
                       event.stopPropagation();
                       void handleSendRequest(r);
                     }}
+                    style={alreadySent ? { color: token.colorSuccess, borderColor: token.colorSuccess } : undefined}
                   >
                     {isSelf
                       ? t('chat.social.findPeople.self')
                       : alreadySent
-                        ? t('chat.social.findPeople.sent')
+                        ? `✓ ${t('chat.social.findPeople.sent')}`
                         : t('chat.social.findPeople.sendRequest')}
                   </Button>
                 </Flexbox>
