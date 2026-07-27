@@ -34,6 +34,14 @@ type CliExecutor struct {
 	Timeout      time.Duration
 }
 
+type CliVerifyResult struct {
+	Available   bool
+	Program     string
+	Path        string
+	Error       string
+	InstallHint string
+}
+
 func NewCliExecutor(workspaceMgr *WorkspaceManager) *CliExecutor {
 	return &CliExecutor{
 		WorkspaceMgr: workspaceMgr,
@@ -154,28 +162,28 @@ func (e *CliExecutor) Execute(ctx context.Context, req *CliTurnRequest, actorID 
 	return nil
 }
 
-func VerifyCliBinary(cliCommand string) map[string]any {
+func VerifyCliBinary(cliCommand string) CliVerifyResult {
 	cmd, err := NormalizeCommand(cliCommand)
 	if err != nil {
-		return map[string]any{
-			"available": false,
-			"error":     err.Error(),
+		return CliVerifyResult{
+			Available: false,
+			Error:     err.Error(),
 		}
 	}
 
 	path, lookErr := exec.LookPath(cmd.Program)
 	if lookErr != nil {
-		return map[string]any{
-			"available":    false,
-			"program":      cmd.Program,
-			"install_hint": installHint(cmd.AdapterName),
+		return CliVerifyResult{
+			Available:  false,
+			Program:    cmd.Program,
+			InstallHint: installHint(cmd.AdapterName),
 		}
 	}
 
-	return map[string]any{
-		"available": true,
-		"program":   cmd.Program,
-		"path":      path,
+	return CliVerifyResult{
+		Available: true,
+		Program:   cmd.Program,
+		Path:      path,
 	}
 }
 
