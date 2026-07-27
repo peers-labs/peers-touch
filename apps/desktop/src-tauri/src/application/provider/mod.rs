@@ -183,11 +183,14 @@ pub fn model_fetch_remote(_scope: &str, token: &str, provider_id: &str) -> AppRe
 
     let provider = resp.get("provider").cloned().unwrap_or(json!({}));
     let runtime_kind = provider.get("runtime_kind").and_then(|v| v.as_str()).unwrap_or("");
-    let models_command = provider.get("models_command").and_then(|v| v.as_str()).unwrap_or("");
+    let has_models_command = provider.get("models_command").and_then(|v| v.as_str()).unwrap_or("").len() > 0;
 
-    if runtime_kind == "cli" && !models_command.is_empty() {
-        let models = execute_cli_models_command(models_command);
-        return success_payload("model_fetch_remote", json!({ "ok": true, "models": models }));
+    if runtime_kind == "cli" && has_models_command {
+        let cli_resp = station_api::fetch_cli_models(token, provider_id);
+        match cli_resp {
+            Ok(v) => return success_payload("model_fetch_remote", json!({ "ok": true, "models": v })),
+            Err(_) => return success_payload("model_fetch_remote", json!({ "ok": false, "models": [], "error": "CLI model fetch failed on Station" })),
+        }
     }
 
     let models = provider.get("models").cloned().unwrap_or(json!([]));
