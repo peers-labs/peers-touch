@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -216,4 +217,61 @@ func (s *ProviderConfigService) getDB(ctx context.Context) (*gorm.DB, error) {
 			"database unavailable", err)
 	}
 	return db, nil
+}
+
+// HideModel appends a model ID to the provider's hidden_models list.
+func (s *ProviderConfigService) HideModel(ctx context.Context, actorID, providerID, modelID string) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	var provider persistence.AgentProvider
+	if err := db.WithContext(ctx).
+		Where("actor_id = ? AND name = ?", actorID, providerID).
+		First(&provider).Error; err != nil {
+		return errcode.New(errcode.AgentNotFound, http.StatusNotFound,
+			fmt.Sprintf("provider %q not found", providerID), err)
+	}
+
+	hidden := parseHiddenModels(provider.HiddenModels)
+	for _, h := range hidden {
+		if h == modelID {
+			return nil
+		}
+	}
+	hidden = append(hidden, modelID)
+	hiddenJSON, _ := json.Marshal(hidden)
+
+	if err := db.WithContext(ctx).Model(&provider).
+		Update("hidden_models", string(hiddenJSON)).Error; err != nil {
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to update hidden_models", err)
+	}
+	return nil
+}
+
+// GetHiddenModels returns the list of hidden model IDs for a provider.
+func (s *ProviderConfigService) GetHiddenModels(ctx context.Context, actorID, providerID string) ([]string, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var provider persistence.AgentProvider
+	if err := db.WithContext(ctx).
+		Where("actor_id = ? AND name = ?", actorID, providerID).
+		First(&provider).Error; err != nil {
+		return nil, nil
+	}
+	return parseHiddenModels(provider.HiddenModels), nil
+}
+
+func parseHiddenModels(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var models []string
+	_ = json.Unmarshal([]byte(raw), &models)
+	return models
 }

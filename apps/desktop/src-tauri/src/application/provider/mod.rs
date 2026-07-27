@@ -105,17 +105,21 @@ pub fn provider_get(scope: &str, token: &str, input: ProviderIdInput) -> AppResu
         return AppResult::fail(ErrorCode::NotFound, "Provider not found", None);
     }
 
+    let hidden_models = station_api::get_hidden_models(token, id).unwrap_or_default();
+
     let (name, description, protocol, base_url, runtime_kind, enabled, version, home_url, api_key_url, show_checker, show_api_key, models) =
         if let Some(cp) = catalog_entry {
             let enabled = station_entry.as_ref().map(|sp| sp.enabled).unwrap_or(cp.enabled);
             let version = station_entry.as_ref().map(|sp| sp.version).unwrap_or(0);
-            let models: Vec<serde_json::Value> = cp.models.iter().map(|m| json!({
-                "id": m.id,
-                "display_name": m.display_name,
-                "type": m.model_type,
-                "enabled": m.enabled,
-                "context_window": m.context_window,
-            })).collect();
+            let models: Vec<serde_json::Value> = cp.models.iter()
+                .filter(|m| !hidden_models.contains(&m.id))
+                .map(|m| json!({
+                    "id": m.id,
+                    "display_name": m.display_name,
+                    "type": m.model_type,
+                    "enabled": m.enabled,
+                    "context_window": m.context_window,
+                })).collect();
             (
                 cp.name.clone(), cp.description.clone(), cp.protocol.clone(),
                 cp.default_base_url.clone(), cp.runtime_kind.clone().unwrap_or_default(),
@@ -327,13 +331,11 @@ pub fn provider_list_available_models(scope: &str, token: &str) -> AppResult<Stu
 
     let mut all_models = Vec::new();
     for cp in catalog {
-        let is_enabled = station_providers
-            .iter()
-            .find(|sp| sp.name == cp.id)
-            .map(|sp| sp.enabled)
-            .unwrap_or(cp.enabled);
+        let station_match = station_providers.iter().find(|sp| sp.name == cp.id);
+        let has_station_record = station_match.is_some();
+        let is_enabled = station_match.map(|sp| sp.enabled).unwrap_or(false);
 
-        if !is_enabled {
+        if !has_station_record || !is_enabled {
             continue;
         }
 
@@ -359,6 +361,29 @@ pub fn provider_list_available_models(scope: &str, token: &str) -> AppResult<Stu
             "total": all_models.len()
         }),
     )
+}
+
+pub fn model_fetch_remote(_scope: &str, _token: &str, provider_id: &str) -> AppResult<StubPayload> {
+    let models: Vec<serde_json::Value> = catalog::find_in_catalog(provider_id)
+        .map(|cp| {
+            cp.models
+                .iter()
+                .map(|m| json!({ "id": m.id, "display_name": m.display_name }))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    success_payload(
+        "model_fetch_remote",
+        json!({ "ok": true, "models": models }),
+    )
+}
+
+pub fn model_delete(token: &str, provider_id: &str, model_id: &str) -> AppResult<StubPayload> {
+    if let Err(e) = station_api::hide_model(token, provider_id, model_id) {
+        return station_error_to_result(e);
+    }
+    success_payload("model_delete", json!({ "ok": true }))
 }
 
 fn parse_key_vault_api_key(key_vaults: &str) -> Option<String> {

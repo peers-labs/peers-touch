@@ -391,7 +391,7 @@ export function ProviderDetail() {
                   try {
                     const refs = await api.getProviderReferences(detail.id);
                     if (refs.length > 0) {
-                      const slotNames = refs.map((r) => `• ${r.slot} (${r.model})`).join('\n');
+                      const slotNames = refs.map((r) => `• ${r.slot || r.service || r.key || 'default'} (${r.model})`).join('\n');
                       Modal.confirm({
                         title: t('provider.detail.disableConfirm.title'),
                         content: (

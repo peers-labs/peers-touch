@@ -321,7 +321,7 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
               icon={Search}
               size={{ blockSize: 40, size: 16 }}
               style={{ borderRadius: 12, border: 0, background: 'transparent', margin: '0 auto 2px', color: token.colorTextSecondary }}
-              title={t('common.action.search')}
+              title={t('common.action.search', { ns: 'common' })}
               onClick={() => { setLeftOpen(true); }}
             />
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
@@ -442,7 +442,7 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
                 </button>
                 <button type="button" style={topicActionStyle(token)}>
                   <Search size={15} />
-                  {t('common.action.search')}
+                  {t('common.action.search', { ns: 'common' })}
                 </button>
               </>
             )}
@@ -455,7 +455,7 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
                   onClick={toggleManageMode}
                   style={{ border: 0, background: 'transparent', color: token.colorPrimary, cursor: 'pointer', padding: 2, display: 'inline-flex', alignItems: 'center', fontSize: 11, fontWeight: 600 }}
                 >
-                  {t('common.action.done')}
+                  {t('common.action.done', { ns: 'common' })}
                 </button>
               ) : (
                 <button
@@ -541,6 +541,7 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
               <button
                 type="button"
                 disabled={selectedSessions.size === 0}
+                onClick={handleDeleteSelected}
                 style={{
                   flex: 1,
                   height: 30,
@@ -558,11 +559,12 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
                 }}
               >
                 <Trash2 size={13} />
-                {t('common.action.delete')}
+                {t('common.action.delete', { ns: 'common' })}
               </button>
               <button
                 type="button"
                 disabled={selectedSessions.size === 0}
+                onClick={handleDeleteSelected}
                 style={{
                   flex: 1,
                   height: 30,
