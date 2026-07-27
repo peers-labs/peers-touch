@@ -1,6 +1,7 @@
 use crate::contracts::{
-    AccountIdInput, AccountRemovePinInput, AccountSetPinInput, AccountUnlockInput,
-    AccountUpsertOAuthInput, AuthSessionPayload, StubPayload,
+    AccountAuthorizePinRecoveryInput, AccountIdInput, AccountRemovePinInput,
+    AccountResetPinInput, AccountSetPinInput, AccountUnlockInput, AccountUpsertOAuthInput,
+    AuthSessionPayload, StubPayload,
 };
 use crate::domain::identity::{ActiveSession, ActorRef};
 use crate::error::{AppResult, ErrorCode};
@@ -386,6 +387,27 @@ pub fn account_clear_session(input: AccountIdInput) -> AppResult<StubPayload> {
 #[tauri::command]
 pub fn account_remove_pin(input: AccountRemovePinInput) -> AppResult<StubPayload> {
     application_account::account_remove_pin(input)
+}
+
+#[tauri::command]
+pub fn account_authorize_pin_recovery(
+    window: Window,
+    input: AccountAuthorizePinRecoveryInput,
+) -> AppResult<StubPayload> {
+    application_account::account_authorize_pin_recovery(&input.recovery_id, &window.label())
+}
+
+#[tauri::command]
+pub fn account_begin_pin_recovery(
+    window: Window,
+    input: AccountIdInput,
+) -> AppResult<StubPayload> {
+    application_account::account_begin_pin_recovery(&input.id, &window.label())
+}
+
+#[tauri::command]
+pub fn account_reset_pin(window: Window, input: AccountResetPinInput) -> AppResult<StubPayload> {
+    application_account::account_reset_pin(input, &window.label())
 }
 
 /// Extract actor_id from account_id format like "password:abc" or "github:123".
