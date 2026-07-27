@@ -181,13 +181,41 @@ pub fn model_fetch_remote(_scope: &str, token: &str, provider_id: &str) -> AppRe
         Err(_) => return success_payload("model_fetch_remote", json!({ "ok": true, "models": [] })),
     };
 
-    let models = resp
-        .get("provider")
-        .and_then(|p| p.get("models"))
-        .cloned()
-        .unwrap_or(json!([]));
+    let provider = resp.get("provider").cloned().unwrap_or(json!({}));
+    let runtime_kind = provider.get("runtime_kind").and_then(|v| v.as_str()).unwrap_or("");
+    let models_command = provider.get("models_command").and_then(|v| v.as_str()).unwrap_or("");
 
+    if runtime_kind == "cli" && !models_command.is_empty() {
+        let models = execute_cli_models_command(models_command);
+        return success_payload("model_fetch_remote", json!({ "ok": true, "models": models }));
+    }
+
+    let models = provider.get("models").cloned().unwrap_or(json!([]));
     success_payload("model_fetch_remote", json!({ "ok": true, "models": models }))
+}
+
+fn execute_cli_models_command(command: &str) -> Vec<String> {
+    use std::process::Command;
+
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    if parts.is_empty() {
+        return vec![];
+    }
+
+    let output = Command::new(parts[0])
+        .args(&parts[1..])
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        }
+        _ => vec![],
+    }
 }
 
 pub fn model_delete(token: &str, provider_id: &str, model_id: &str) -> AppResult<StubPayload> {
