@@ -127,8 +127,9 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
 
   deleteModel: async (providerId: string, modelId: string) => {
     await api.deleteModel(providerId, modelId);
-    if (get().selectedId === providerId) {
-      await get().selectProvider(providerId, true);
+    const detail = get().detail;
+    if (detail && detail.id === providerId) {
+      set({ detail: { ...detail, models: detail.models.filter((m) => m.id !== modelId) } });
     }
     useAgentStore.getState().loadModels();
   },

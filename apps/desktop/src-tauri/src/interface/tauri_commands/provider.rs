@@ -5,6 +5,8 @@ use crate::contracts::{
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
+use serde::Deserialize;
+use serde_json::json;
 use std::sync::Arc;
 use tauri::{State, Window};
 
@@ -136,4 +138,61 @@ pub fn provider_list_available_models(
         Err(error) => return error,
     };
     application_provider::provider_list_available_models(&scope, &token)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ModelFetchRemoteInput {
+    pub provider_id: String,
+    pub data: Option<serde_json::Value>,
+}
+
+#[tauri::command]
+pub fn model_fetch_remote(
+    input: ModelFetchRemoteInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let (scope, token) = match resolve_auth(&state, &window) {
+        Ok(auth) => auth,
+        Err(error) => return error,
+    };
+    application_provider::model_fetch_remote(&scope, &token, &input.provider_id)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ModelToggleInput {
+    pub provider_id: String,
+    pub model_id: String,
+    pub enabled: bool,
+}
+
+#[tauri::command]
+pub fn model_toggle(
+    input: ModelToggleInput,
+    _state: State<'_, Arc<AppState>>,
+    _window: Window,
+) -> AppResult<StubPayload> {
+    AppResult::success(StubPayload {
+        command: "model_toggle".to_string(),
+        status: json!({ "ok": true, "provider_id": input.provider_id, "model_id": input.model_id, "enabled": input.enabled }).to_string(),
+    })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ModelDeleteInput {
+    pub provider_id: String,
+    pub model_id: String,
+}
+
+#[tauri::command]
+pub fn model_delete(
+    input: ModelDeleteInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let (_scope, token) = match resolve_auth(&state, &window) {
+        Ok(auth) => auth,
+        Err(error) => return error,
+    };
+    application_provider::model_delete(&token, &input.provider_id, &input.model_id)
 }
