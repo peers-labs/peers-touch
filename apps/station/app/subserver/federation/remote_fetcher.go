@@ -21,7 +21,7 @@ type httpLedgerFetcher struct {
 	localStationFn func() string
 }
 
-func NewHTTPLedgerFetcher(fedCache *federation.KeyCache, localStationFn func() string) RemoteLedgerFetcher {
+func NewHTTPLedgerFetcher(fedCache *federation.KeyCache, localStationFn func() string) *httpLedgerFetcher {
 	return &httpLedgerFetcher{
 		client:         &http.Client{Timeout: 10 * time.Second},
 		fedCache:       fedCache,
@@ -128,4 +128,41 @@ func (f *httpLedgerFetcher) FetchEvents(ctx context.Context, endpoint, targetPee
 		return nil, fmt.Errorf("decode fetch events response: %w", err)
 	}
 	return result.Events, nil
+}
+
+func (f *httpLedgerFetcher) SubmitProposal(ctx context.Context, endpoint, _ string, req *pb.SubmitProposalRequest) (*pb.SubmitProposalResponse, error) {
+	body, err := protojson.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	url := endpoint + "/fed/v1/governance/submit-proposal"
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := f.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("http request to %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("submit proposal %s returned %d: %s", url, resp.StatusCode, string(respBody))
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read submit proposal response: %w", err)
+	}
+
+	var result pb.SubmitProposalResponse
+	if err := protojson.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("decode submit proposal response: %w", err)
+	}
+	return &result, nil
 }
