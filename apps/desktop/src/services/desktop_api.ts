@@ -85,6 +85,13 @@ import {
 import {
   FederationCatalogSearchResponseSchema,
 } from '../gen/proto/domain/federation/federation_discovery_pb';
+import {
+  CreateFederationResponseSchema,
+  JoinFederationResponseSchema,
+  LeaveFederationResponseSchema,
+  ListFederationsResponseSchema,
+  ListMemberStationsResponseSchema,
+} from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
   GetTurnTraceResponse,
   ListTurnTracesResponse,
@@ -115,6 +122,16 @@ export type {
   FederationCatalogSearchResponse,
   FederationCatalogEntry,
 } from '../gen/proto/domain/federation/federation_discovery_pb';
+export type {
+  ListFederationsResponse,
+  FederationSummary,
+  ActorCapability,
+  CreateFederationResponse,
+  JoinFederationResponse,
+  LeaveFederationResponse,
+  ListMemberStationsResponse,
+  MemberStationView,
+} from '../gen/proto/domain/federation/federation_projection_service_pb';
 export type {
   Friend,
 } from '../gen/proto/domain/chat/chat_pb';
@@ -1196,6 +1213,7 @@ export interface ProviderListItem {
   builtin: boolean;
   has_api_key: boolean;
   runtime_kind: 'cli' | 'direct';
+  version: number;
 }
 
 export interface ModelItem {
@@ -2318,6 +2336,7 @@ export interface ProviderUpdateInput {
   runtime_kind?: string;
   cli_command?: string;
   protocol?: string;
+  version?: number;
 }
 
 export interface ProviderCheckInput {
@@ -3688,12 +3707,13 @@ export const api = {
       mapAIChatProviderToDetail(r.provider || {}),
     ),
 
-  updateProvider: (id: string, data: { api_key: string; base_url: string; enabled: boolean }) =>
+  updateProvider: (id: string, data: { api_key: string; base_url: string; enabled: boolean; version?: number }) =>
     invokeRustDataFromStatus<ProviderUpdateInput, { provider: any }>('provider_update', {
         id,
         enabled: data.enabled,
         key_vaults: JSON.stringify({ api_key: data.api_key || '' }),
         config_json: JSON.stringify({ base_url: data.base_url || '' }),
+        version: data.version ?? 0,
     }),
 
   checkProvider: (id: string, data: { api_key?: string; base_url?: string; model?: string }) =>
@@ -4558,6 +4578,28 @@ export const api = {
     page_size?: number;
   }) =>
     invokeRustProto('federation_catalog_search', FederationCatalogSearchResponseSchema, params),
+
+  // Federation Lifecycle (Governance Subserver)
+  federationListFederations: () =>
+    invokeRustProto('federation_list_federations', ListFederationsResponseSchema),
+
+  federationCreate: (params: { name: string; description?: string; policy_type?: string }) =>
+    invokeRustProto('federation_create', CreateFederationResponseSchema, params),
+
+  federationJoin: (params: {
+    federation_endpoint?: string;
+    federation_id?: string;
+    message?: string;
+  }) =>
+    invokeRustProto('federation_join', JoinFederationResponseSchema, params),
+
+  federationLeave: (params: { federation_id: string; reason?: string }) =>
+    invokeRustProto('federation_leave', LeaveFederationResponseSchema, params),
+
+  federationListMemberStations: (federationId: string) =>
+    invokeRustProto('federation_list_member_stations', ListMemberStationsResponseSchema, {
+      federation_id: federationId,
+    }),
 
   friendChatListSessions: (limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_sessions', GetSessionsResponseSchema, { limit, offset }),
@@ -5614,6 +5656,7 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     builtin: Boolean(item.builtin),
     has_api_key: hasKey,
     runtime_kind: runtimeKind === 'cli' || hasCliCommand ? 'cli' : 'direct',
+    version: Number(item.version || 0),
   };
 }
 

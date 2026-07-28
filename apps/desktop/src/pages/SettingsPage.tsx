@@ -169,7 +169,13 @@ function useTabGroups(): TabGroupDef[] {
         key: 'general',
         label: t('settings.group.general'),
         icon: Settings,
-        sectionKeys: ['account', 'federation', 'general'],
+        sectionKeys: ['account', 'general'],
+      },
+      {
+        key: 'federation',
+        label: t('settings.group.federation', { defaultValue: 'Federation' }),
+        icon: Globe,
+        sectionKeys: ['federation'],
       },
       {
         key: 'ai',
