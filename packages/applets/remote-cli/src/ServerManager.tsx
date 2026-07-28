@@ -33,7 +33,7 @@ export interface ServerManagerProps {
   onConnect: (conn: Connection) => void;
 }
 
-const authIcon: Record<string, JSX.Element> = {
+const authIcon: Record<string, React.ReactNode> = {
   key_file: <KeyRound size={13} />,
   key: <KeyRound size={13} />,
   password: <Lock size={13} />,

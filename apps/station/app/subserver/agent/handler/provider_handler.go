@@ -346,11 +346,21 @@ func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *mod
 				break
 			}
 		}
-		if userMatch == nil || !userMatch.Enabled {
+
+		enabled := cp.Enabled
+		if userMatch != nil {
+			enabled = userMatch.Enabled
+		}
+		if !enabled {
 			continue
 		}
 
-		hidden := parseHiddenModels(userMatch.HiddenModels)
+		hidden := parseHiddenModels(func() string {
+			if userMatch != nil {
+				return userMatch.HiddenModels
+			}
+			return ""
+		}())
 		for _, m := range cp.Models {
 			if !m.Enabled || contains(hidden, m.ID) {
 				continue
