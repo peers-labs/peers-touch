@@ -2090,11 +2090,17 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  loadFriendRequests: async (_status, _limit, _offset) => {
-    // Friend requests are managed by the social subserver, not conversation subserver.
-    // Currently no active backend endpoint — gracefully skip.
+  loadFriendRequests: async (status, limit, offset) => {
     if (!hasAuthenticatedActor()) return;
-    set({ friendRequests: [] });
+    try {
+      const data = await api.friendChatListFriendRequests(status, limit, offset);
+      const requests = normalizeFriendRequests(
+        (data as Record<string, unknown>)?.requests ?? [],
+      );
+      set({ friendRequests: requests });
+    } catch {
+      set({ friendRequests: [] });
+    }
   },
 
   sendFriendRequest: async (receiverDid, message) => {
