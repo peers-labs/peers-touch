@@ -354,6 +354,9 @@ func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *mod
 		if !enabled {
 			continue
 		}
+		if cp.RuntimeKind == "cli" {
+			continue
+		}
 
 		hidden := parseHiddenModels(func() string {
 			if userMatch != nil {
