@@ -9,9 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@lobehub/ui": "^5.3.0",
+    "antd": "^6.3.1",
     "lucide-react": "^0.577.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-layout-kit": "^2.0.1"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
