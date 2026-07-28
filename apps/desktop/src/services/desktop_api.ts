@@ -5663,6 +5663,8 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
 function mapAIChatProviderToDetail(item: any): ProviderDetail {
   const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
+  const runtimeKind = String(item.runtime_kind || cfg.runtime_kind || cfg.runtimeKind || '').trim().toLowerCase();
+  const hasCliCommand = Boolean(String(item.cli_command || cfg.cli_command || cfg.cliCommand || '').trim());
   const checkModel = item.check_model || cfg.default_model || 'default';
   const providerModels = Array.isArray(item.models)
     ? item.models

@@ -2849,7 +2849,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(s) => s,
                 Err(e) => return e,
             };
-            to_json(AppResult::<StubPayload>::fail(ErrorCode::NotFound, "models module removed", None))
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            to_json(app_provider::model_fetch_remote(scope.as_deref().unwrap_or(""), &token, &input.provider_id))
         }
         "model_toggle" => {
             let input = match parse_args::<ProviderModelToggleInput>(args) {

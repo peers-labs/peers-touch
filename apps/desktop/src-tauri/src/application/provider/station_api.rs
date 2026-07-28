@@ -116,23 +116,6 @@ pub fn list_available_models(token: &str) -> Result<Value, StationApiError> {
     )?)
 }
 
-pub fn fetch_cli_models(token: &str, provider_id: &str) -> Result<Vec<String>, StationApiError> {
-    let resp = station_client::request_json_auth(
-        Method::POST,
-        "/sub-agent/agent/provider/fetch-cli-models",
-        token,
-        None,
-        Some(&json!({"provider_id": provider_id})),
-    )?;
-
-    let models: Vec<String> = resp
-        .get("models")
-        .and_then(|m| m.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-        .unwrap_or_default();
-
-    Ok(models)
-}
 
 pub fn update_provider_full(
     token: &str,
