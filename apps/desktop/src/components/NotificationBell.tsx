@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActionIcon } from '@lobehub/ui';
 import { Bell, Check, CheckCheck, Trash2, UserPlus, UserCheck } from 'lucide-react';
-import { Badge, Dropdown, Empty, Spin, Tooltip, theme } from 'antd';
+import { Badge, Empty, Popover, Spin, Tooltip, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { useNotificationStore } from '../store/notification';
 import { useSessionStore } from '../store/session';
@@ -253,12 +253,15 @@ export function NotificationBell() {
   );
 
   return (
-    <Dropdown
+    <Popover
       open={open}
       onOpenChange={setOpen}
-      trigger={['click']}
-      placement="bottomRight"
-      popupRender={() => dropdownContent}
+      trigger="click"
+      placement="rightBottom"
+      content={dropdownContent}
+      arrow={false}
+      overlayInnerStyle={{ padding: 0 }}
+      align={{ offset: [8, 0] }}
     >
       <div>
         <Badge count={unreadTotal} size="small" offset={[-2, 2]}>
@@ -270,6 +273,6 @@ export function NotificationBell() {
           />
         </Badge>
       </div>
-    </Dropdown>
+    </Popover>
   );
 }
