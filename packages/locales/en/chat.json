@@ -646,6 +646,7 @@
   "chat.social.findPeople.sendRequest": "Send Request",
   "chat.social.findPeople.requestSent": "Friend request sent",
   "chat.social.findPeople.sent": "Sent",
+  "chat.social.findPeople.awaitingApproval": "Awaiting approval",
   "chat.social.findPeople.self": "You",
   "chat.social.findPeople.searchPlaceholderFederated": "Search @user or @user@host…",
   "chat.social.findPeople.federationJoining": "Joining the federation — cross-station search will be available shortly.",
