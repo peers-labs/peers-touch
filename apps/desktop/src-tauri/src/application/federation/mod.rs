@@ -27,11 +27,12 @@ use reqwest::Method;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::model::federation::v1::{
-    CreateFederationRequest, CreateFederationResponse, FederationCatalogSearchRequest,
-    FederationCatalogSearchResponse, FederationHealthView, FederationResolveView,
-    FederationSelfView, FederationVisibilityRequest, JoinFederationRequest,
-    JoinFederationResponse, LeaveFederationRequest, LeaveFederationResponse,
-    ListFederationsResponse, ListMemberStationsResponse,
+    CreateFederationRequest, CreateFederationResponse, DeleteFederationRequest,
+    DeleteFederationResponse, FederationCatalogSearchRequest, FederationCatalogSearchResponse,
+    FederationHealthView, FederationResolveView, FederationSelfView,
+    FederationVisibilityRequest, JoinFederationRequest, JoinFederationResponse,
+    LeaveFederationRequest, LeaveFederationResponse, ListFederationsResponse,
+    ListMemberStationsResponse,
 };
 
 const ROUTE_ME: &str = "/actor/federation/me";
@@ -293,6 +294,31 @@ pub fn leave_federation(
     .map_err(FederationGatewayError::Station)
 }
 
+/// POST /sub-federation/federations/:federation_id/delete — archive (delete) a federation.
+pub fn delete_federation(
+    token: &str,
+    federation_id: &str,
+) -> Result<DeleteFederationResponse, FederationGatewayError> {
+    let fid = federation_id.trim();
+    if fid.is_empty() {
+        return Err(FederationGatewayError::InvalidArgument(
+            "federation_id is required",
+        ));
+    }
+    let route = format!("/sub-federation/federations/{}/delete", fid);
+    let body = DeleteFederationRequest {
+        federation_id: fid.to_string(),
+    };
+    station_client::request_proto::<DeleteFederationRequest, DeleteFederationResponse>(
+        Method::POST,
+        &route,
+        token,
+        None,
+        Some(&body),
+    )
+    .map_err(FederationGatewayError::Station)
+}
+
 /// GET /sub-federation/federations/:federation_id/stations — list member stations.
 pub fn list_member_stations(
     token: &str,
@@ -328,6 +354,10 @@ pub fn encode_join_federation(view: &JoinFederationResponse) -> Vec<u8> {
 }
 
 pub fn encode_leave_federation(view: &LeaveFederationResponse) -> Vec<u8> {
+    view.encode_to_vec()
+}
+
+pub fn encode_delete_federation(view: &DeleteFederationResponse) -> Vec<u8> {
     view.encode_to_vec()
 }
 

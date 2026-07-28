@@ -33,7 +33,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Alert, Button, Card, Input, Modal, Select, Tag, Tooltip, Typography, message, theme } from 'antd';
-import { Copy, Globe, Info, Link2, Plus, Server, UserPlus } from 'lucide-react';
+import { Copy, Globe, Info, Link2, Plus, Server, Trash2, UserPlus } from 'lucide-react';
 
 import {
   selectFederationReady,
@@ -88,7 +88,7 @@ export function FederationTab() {
 
   const {
     self, health, lastError, ready, visibility, setVisibility,
-    federations, createFederation, joinFederation, leaveFederation,
+    federations, createFederation, joinFederation, leaveFederation, deleteFederation,
   } = useActiveFederationSlice((s) => ({
     self: s.self,
     health: s.health,
@@ -100,6 +100,7 @@ export function FederationTab() {
     createFederation: s.createFederation,
     joinFederation: s.joinFederation,
     leaveFederation: s.leaveFederation,
+    deleteFederation: s.deleteFederation,
   }));
 
   const [saving, setSaving] = useState(false);
@@ -197,6 +198,22 @@ export function FederationTab() {
           message.success(t('settings.federation.myFederations.left'));
         } catch (e: unknown) {
           message.error((e as { message?: string })?.message || 'Failed to leave federation');
+        }
+      },
+    });
+  };
+
+  const handleDelete = (fed: FederationSummary) => {
+    Modal.confirm({
+      title: t('settings.federation.myFederations.delete', { defaultValue: 'Delete Federation' }),
+      content: t('settings.federation.myFederations.deleteConfirm', { name: fed.name, defaultValue: `Are you sure you want to permanently delete "${fed.name}"? This action cannot be undone.` }),
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await deleteFederation(fed.federationId);
+          message.success(t('settings.federation.myFederations.deleted', { defaultValue: 'Federation deleted' }));
+        } catch (e: unknown) {
+          message.error((e as { message?: string })?.message || 'Failed to delete federation');
         }
       },
     });
@@ -394,14 +411,26 @@ export function FederationTab() {
                         onClick={() => handleCopyInvite(fed)}
                       />
                     </Tooltip>
-                    <Button
-                      type="text"
-                      danger
-                      size="small"
-                      onClick={() => handleLeave(fed)}
-                    >
-                      {t('settings.federation.myFederations.leave')}
-                    </Button>
+                    {fed.myRole === 'federation_owner' ? (
+                      <Tooltip title={t('settings.federation.myFederations.delete', { defaultValue: 'Delete Federation' })}>
+                        <Button
+                          type="text"
+                          danger
+                          size="small"
+                          icon={<Trash2 size={13} />}
+                          onClick={() => handleDelete(fed)}
+                        />
+                      </Tooltip>
+                    ) : (
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        onClick={() => handleLeave(fed)}
+                      >
+                        {t('settings.federation.myFederations.leave')}
+                      </Button>
+                    )}
                   </Flexbox>
                 </Flexbox>
               </Card>
