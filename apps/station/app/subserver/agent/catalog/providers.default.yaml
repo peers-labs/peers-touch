@@ -5,7 +5,7 @@ providers:
     enabled: true
     builtin: true
     show_checker: false
-    show_api_key: false
+    show_api_key: true
     protocol: openai-compatible
     discovery: openai-models
     home_url: https://www.volcengine.com/product/ark
