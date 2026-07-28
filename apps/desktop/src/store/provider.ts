@@ -61,7 +61,9 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
   },
 
   updateProvider: async (id: string, apiKey: string, baseUrl: string, enabled: boolean) => {
-    await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled });
+    const detail = get().detail;
+    const version = detail?.id === id ? detail.version : 0;
+    await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled, version });
     await get().loadProviders();
     if (get().selectedId === id) {
       await get().selectProvider(id, true);
@@ -73,17 +75,20 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     const currentDetail = get().detail;
     let apiKey = '';
     let baseUrl = '';
+    let version = 0;
 
     if (currentDetail && currentDetail.id === id) {
       apiKey = currentDetail.api_key || '';
       baseUrl = currentDetail.base_url || '';
+      version = currentDetail.version;
     } else {
       const d = await api.getProvider(id);
       apiKey = d.api_key || '';
       baseUrl = d.base_url || '';
+      version = d.version;
     }
 
-    await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled });
+    await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled, version });
     await get().loadProviders();
     if (get().selectedId === id) {
       await get().selectProvider(id, true);
