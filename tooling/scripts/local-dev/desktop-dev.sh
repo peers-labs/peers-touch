@@ -8,16 +8,21 @@ source "$SCRIPT_DIR/env.sh"
 
 MODE="${1:-app}"
 
+# Derive a stable port offset from WORKTREE_ID so each worktree gets
+# deterministic, non-conflicting ports without explicit configuration.
+# Range: 0–99, giving base+offset within safe ephemeral territory.
+_wt_offset=$(printf '%s' "${WORKTREE_ID}" | cksum | awk '{print $1 % 100}')
+
 case "$MODE" in
   app)
     export PT_PROFILE="${PT_DEV_PROFILE:-desktop}-app"
-    export GATEWAY_PORT="${PT_DESKTOP_APP_GATEWAY_PORT:-3030}"
-    export WEB_PORT="${PT_DESKTOP_APP_WEB_PORT:-3210}"
+    export GATEWAY_PORT="${PT_DESKTOP_APP_GATEWAY_PORT:-$((3030 + _wt_offset))}"
+    export WEB_PORT="${PT_DESKTOP_APP_WEB_PORT:-$((3210 + _wt_offset))}"
     ;;
   web)
     export PT_PROFILE="${PT_DEV_PROFILE:-desktop}-web"
-    export GATEWAY_PORT="${PT_DESKTOP_WEB_GATEWAY_PORT:-3031}"
-    export WEB_PORT="${PT_DESKTOP_WEB_WEB_PORT:-3211}"
+    export GATEWAY_PORT="${PT_DESKTOP_WEB_GATEWAY_PORT:-$((3031 + _wt_offset))}"
+    export WEB_PORT="${PT_DESKTOP_WEB_WEB_PORT:-$((3211 + _wt_offset))}"
     ;;
   *)
     echo "[ERROR] Usage: desktop-dev.sh [app|web]"

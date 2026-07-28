@@ -196,6 +196,7 @@ fn main() {
             federation::federation_create,
             federation::federation_join,
             federation::federation_leave,
+            federation::federation_delete,
             federation::federation_list_member_stations,
             admin::admin_health,
             admin::admin_network_probe,

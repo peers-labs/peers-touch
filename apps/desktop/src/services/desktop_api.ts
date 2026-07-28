@@ -87,6 +87,7 @@ import {
 } from '../gen/proto/domain/federation/federation_discovery_pb';
 import {
   CreateFederationResponseSchema,
+  DeleteFederationResponseSchema,
   JoinFederationResponseSchema,
   LeaveFederationResponseSchema,
   ListFederationsResponseSchema,
@@ -127,6 +128,7 @@ export type {
   FederationSummary,
   ActorCapability,
   CreateFederationResponse,
+  DeleteFederationResponse,
   JoinFederationResponse,
   LeaveFederationResponse,
   ListMemberStationsResponse,
@@ -3623,7 +3625,7 @@ export const api = {
   listAvailableModels: async () => {
     const r = await invokeRustDataFromStatus<void, { providers?: any[]; models?: any[] }>('provider_list_available_models');
     if (r.models && Array.isArray(r.models)) {
-      return r.models.map((m: any) => ({
+      const models = r.models.map((m: any) => ({
         id: String(m.id || ''),
         display_name: String(m.display_name || m.id || ''),
         provider_id: String(m.provider_id || ''),
@@ -3633,6 +3635,7 @@ export const api = {
         enabled: Boolean(m.enabled ?? true),
         runtime_kind: String(m.runtime_kind || 'direct'),
       } as AvailableModel));
+      return { models, default: models[0]?.id || '' };
     }
     const models: AvailableModel[] = (r.providers || []).flatMap((p) => {
       const cfg = parseJSONSafe(p.config_json);
@@ -4595,6 +4598,9 @@ export const api = {
 
   federationLeave: (params: { federation_id: string; reason?: string }) =>
     invokeRustProto('federation_leave', LeaveFederationResponseSchema, params),
+
+  federationDelete: (params: { federation_id: string }) =>
+    invokeRustProto('federation_delete', DeleteFederationResponseSchema, params),
 
   federationListMemberStations: (federationId: string) =>
     invokeRustProto('federation_list_member_stations', ListMemberStationsResponseSchema, {
@@ -5663,6 +5669,8 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
 function mapAIChatProviderToDetail(item: any): ProviderDetail {
   const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
+  const runtimeKind = String(item.runtime_kind || cfg.runtime_kind || cfg.runtimeKind || '').trim().toLowerCase();
+  const hasCliCommand = Boolean(String(item.cli_command || cfg.cli_command || cfg.cliCommand || '').trim());
   const checkModel = item.check_model || cfg.default_model || 'default';
   const providerModels = Array.isArray(item.models)
     ? item.models

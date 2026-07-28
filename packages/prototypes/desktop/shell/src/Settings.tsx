@@ -428,7 +428,7 @@ function FederationSection() {
 
   return (
     <SettingsContainer>
-      {/* Basic Info — identity + health + discovery merged into one compact section */}
+      {/* Basic Info — identity + health + discovery merged */}
       <SettingsSection icon={Globe} title="Basic Info" subtitle="Your federation identity, routing status, and discovery settings.">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 20px', fontSize: 13 }}>
           <div>

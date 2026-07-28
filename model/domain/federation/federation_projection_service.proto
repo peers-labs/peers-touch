@@ -96,3 +96,13 @@ message LeaveFederationRequest {
 message LeaveFederationResponse {
   bool success = 1;
 }
+
+// ─── DeleteFederation (archive) ─────────────────────────────────────────────
+
+message DeleteFederationRequest {
+  string federation_id = 1;
+}
+
+message DeleteFederationResponse {
+  bool success = 1;
+}

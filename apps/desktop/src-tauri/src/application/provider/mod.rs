@@ -183,14 +183,18 @@ pub fn model_fetch_remote(_scope: &str, token: &str, provider_id: &str) -> AppRe
 
     let provider = resp.get("provider").cloned().unwrap_or(json!({}));
     let runtime_kind = provider.get("runtime_kind").and_then(|v| v.as_str()).unwrap_or("");
-    let has_models_command = provider.get("models_command").and_then(|v| v.as_str()).unwrap_or("").len() > 0;
+    let models_command = provider.get("models_command").and_then(|v| v.as_str()).unwrap_or("").trim();
 
-    if runtime_kind == "cli" && has_models_command {
-        let cli_resp = station_api::fetch_cli_models(token, provider_id);
-        match cli_resp {
-            Ok(v) => return success_payload("model_fetch_remote", json!({ "ok": true, "models": v })),
-            Err(_) => return success_payload("model_fetch_remote", json!({ "ok": false, "models": [], "error": "CLI model fetch failed on Station" })),
+    if runtime_kind == "cli" && !models_command.is_empty() {
+        let models = execute_cli_models_command(models_command);
+        if models.is_empty() {
+            return success_payload("model_fetch_remote", json!({
+                "ok": false,
+                "models": [],
+                "error": format!("CLI command returned no models: {}", models_command)
+            }));
         }
+        return success_payload("model_fetch_remote", json!({ "ok": true, "models": models }));
     }
 
     let models = provider.get("models").cloned().unwrap_or(json!([]));
@@ -205,8 +209,10 @@ fn execute_cli_models_command(command: &str) -> Vec<String> {
         return vec![];
     }
 
+    let path_env = enriched_path();
     let output = Command::new(parts[0])
         .args(&parts[1..])
+        .env("PATH", &path_env)
         .output();
 
     match output {
@@ -225,6 +231,20 @@ fn execute_cli_models_command(command: &str) -> Vec<String> {
         }
         _ => vec![],
     }
+}
+
+fn enriched_path() -> String {
+    let base = std::env::var("PATH").unwrap_or_default();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/unknown".to_string());
+    let extra = [
+        format!("{home}/.local/bin"),
+        format!("{home}/.cargo/bin"),
+        "/usr/local/bin".to_string(),
+        "/opt/homebrew/bin".to_string(),
+    ];
+    let mut paths: Vec<&str> = extra.iter().map(|s| s.as_str()).collect();
+    paths.extend(base.split(':'));
+    paths.join(":")
 }
 
 fn parse_json_models(json_str: &str) -> Vec<String> {

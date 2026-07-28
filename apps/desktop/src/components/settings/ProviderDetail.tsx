@@ -129,6 +129,7 @@ export function ProviderDetail() {
   // Whether the displayed detail matches the currently selected provider.
   // When switching, detail still holds old provider data until the new one loads.
   const isStale = detail != null && selectedId != null && detail.id !== selectedId;
+  const isCli = detail?.runtime_kind === 'cli';
 
   useEffect(() => {
     if (detail && !isStale) {
@@ -602,9 +603,11 @@ export function ProviderDetail() {
                 </Button>
               </>
             )}
-            <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-              {t('provider.model.addModel')}
-            </Button>
+            {!isCli && (
+              <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
+                {t('provider.model.addModel')}
+              </Button>
+            )}
             <Button
               size="small"
               type="primary"
@@ -751,9 +754,11 @@ export function ProviderDetail() {
                 </Text>
               </Flexbox>
               <Flexbox horizontal gap={12}>
-                <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-                  {t('provider.model.addModel')}
-                </Button>
+                {!isCli && (
+                  <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
+                    {t('provider.model.addModel')}
+                  </Button>
+                )}
                 <Button
                   type="primary"
                   icon={<RefreshCw size={14} />}
