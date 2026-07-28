@@ -35,6 +35,7 @@ message AgentProviderInfo {
   string source = 16;
   string cli_command = 17;
   repeated ProviderModelInfo models = 18;
+  string models_command = 19;
 }
 
 message AgentModelInfo {
@@ -72,6 +73,10 @@ message VerifyCliResponse {
   string error = 4;
   string install_hint = 5;
 }
+
+// FetchCliModels
+message FetchCliModelsRequest { string provider_id = 1; }
+message FetchCliModelsResponse { repeated string models = 1; }
 
 // Provider CRUD
 message ListProvidersRequest {}

@@ -162,6 +162,73 @@ func (e *CliExecutor) Execute(ctx context.Context, req *CliTurnRequest, actorID 
 	return nil
 }
 
+// FetchModels executes a provider's models_command and parses the output.
+// Supports both plain-text (one model per line) and JSON ({"models":[{"slug":...}]}).
+func FetchModels(modelsCommand string) ([]string, error) {
+	parts := splitCommandLine(modelsCommand)
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("models_command is empty")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+	cmd.Env = os.Environ()
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("execute models_command %q: %w", modelsCommand, err)
+	}
+
+	return parseModelsOutput(string(out)), nil
+}
+
+func parseModelsOutput(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+
+	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+		return parseModelsJSON(trimmed)
+	}
+
+	var models []string
+	for _, line := range strings.Split(trimmed, "\n") {
+		m := strings.TrimSpace(line)
+		if m != "" {
+			models = append(models, m)
+		}
+	}
+	return models
+}
+
+func parseModelsJSON(raw string) []string {
+	// Lightweight JSON parsing without importing encoding/json into this package:
+	// Look for "slug":"<value>" or "id":"<value>" patterns.
+	// For a robust implementation, the handler layer should parse with encoding/json.
+	// This function is a fallback; prefer handler-level JSON parsing.
+	var models []string
+	for _, line := range strings.Split(raw, "\"slug\":\"") {
+		if len(models) == 0 && !strings.Contains(line, "\"") {
+			continue
+		}
+		if idx := strings.Index(line, "\""); idx > 0 {
+			models = append(models, line[:idx])
+		}
+	}
+	if len(models) > 0 {
+		return models
+	}
+	// Fallback: try "id" field
+	for _, line := range strings.Split(raw, "\"id\":\"") {
+		if idx := strings.Index(line, "\""); idx > 0 {
+			models = append(models, line[:idx])
+		}
+	}
+	return models
+}
+
 func VerifyCliBinary(cliCommand string) CliVerifyResult {
 	cmd, err := NormalizeCommand(cliCommand)
 	if err != nil {
