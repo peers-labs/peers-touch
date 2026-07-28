@@ -644,6 +644,7 @@
   "chat.social.findPeople.sendRequest": "发送请求",
   "chat.social.findPeople.requestSent": "好友请求已发送",
   "chat.social.findPeople.sent": "已发送",
+  "chat.social.findPeople.awaitingApproval": "等待通过",
   "chat.social.findPeople.self": "自己",
   "chat.social.findPeople.searchPlaceholderFederated": "搜索 @用户名 或 @user@host…",
   "chat.social.findPeople.federationJoining": "正在加入联邦——跨 Station 搜索稍后可用。",
