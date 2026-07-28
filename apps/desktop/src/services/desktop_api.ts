@@ -3625,7 +3625,7 @@ export const api = {
   listAvailableModels: async () => {
     const r = await invokeRustDataFromStatus<void, { providers?: any[]; models?: any[] }>('provider_list_available_models');
     if (r.models && Array.isArray(r.models)) {
-      return r.models.map((m: any) => ({
+      const models = r.models.map((m: any) => ({
         id: String(m.id || ''),
         display_name: String(m.display_name || m.id || ''),
         provider_id: String(m.provider_id || ''),
@@ -3635,6 +3635,7 @@ export const api = {
         enabled: Boolean(m.enabled ?? true),
         runtime_kind: String(m.runtime_kind || 'direct'),
       } as AvailableModel));
+      return { models, default: models[0]?.id || '' };
     }
     const models: AvailableModel[] = (r.providers || []).flatMap((p) => {
       const cfg = parseJSONSafe(p.config_json);

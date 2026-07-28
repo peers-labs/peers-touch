@@ -110,15 +110,25 @@ pub fn model_config_provider_references(input: ProviderIdInputV2) -> AppResult<S
     if provider_id.is_empty() {
         return invalid_argument("provider_id is required");
     }
+    let guard = match model_config_store().lock() {
+        Ok(guard) => guard,
+        Err(_) => return internal_error(),
+    };
+    let mut references: Vec<Value> = Vec::new();
+    for (key, val) in guard.config.iter() {
+        let p = val.get("provider").and_then(|v| v.as_str()).unwrap_or("");
+        if p == provider_id {
+            let model = val.get("model").and_then(|v| v.as_str()).unwrap_or("");
+            references.push(json!({
+                "service": "chat",
+                "key": key,
+                "provider": provider_id,
+                "model": model
+            }));
+        }
+    }
     success_payload(
         "model_config_provider_references",
-        json!({
-            "references": [{
-                "service":"chat",
-                "key":"default",
-                "provider":provider_id,
-                "model":"gpt-4o-mini"
-            }]
-        }),
+        json!({ "references": references }),
     )
 }
