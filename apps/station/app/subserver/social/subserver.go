@@ -25,14 +25,15 @@ type subServer struct {
 	jwtWrapper    server.Wrapper
 
 	// Application services
-	momentSvc       *application.MomentService
-	commentSvc      *application.CommentService
-	reactionSvc     *application.ReactionService
-	circleSvc       *application.CircleService
-	timelineSvc     *application.TimelineService
-	relationshipSvc *application.RelationshipService
-	statsSvc        *application.StatsService
-	moderationSvc   *application.ModerationService
+	momentSvc        *application.MomentService
+	commentSvc       *application.CommentService
+	reactionSvc      *application.ReactionService
+	circleSvc        *application.CircleService
+	timelineSvc      *application.TimelineService
+	relationshipSvc  *application.RelationshipService
+	friendRequestSvc *application.FriendRequestService
+	statsSvc         *application.StatsService
+	moderationSvc    *application.ModerationService
 }
 
 func NewSocialSubServer(_ ...option.Option) server.Subserver {
@@ -79,6 +80,8 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.circleSvc = application.NewCircleService(repos)
 	s.timelineSvc = application.NewTimelineService(repos, s.momentSvc, resolver, groups)
 	s.relationshipSvc = application.NewRelationshipService(repos.Follows, repos.Blocks, repos.Moderation)
+	friendRequestRepo := infrastructure.NewFriendRequestRepository(rds)
+	s.friendRequestSvc = application.NewFriendRequestService(friendRequestRepo, repos.Blocks, s.relationshipSvc)
 	s.statsSvc = application.NewStatsService(rds, repos)
 	s.moderationSvc = application.NewModerationService(repos)
 
