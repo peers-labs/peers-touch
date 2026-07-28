@@ -257,4 +257,40 @@ func (s *FederationService) LeaveFederation(ctx context.Context, input *LeaveFed
 	return nil
 }
 
+type DeleteFederationInput struct {
+	FederationID      string
+	ActorID           string
+	ActorHandle       string
+	StationPeerID     string
+	ActorPrivateKey   ed25519.PrivateKey
+	StationPrivateKey ed25519.PrivateKey
+}
+
+func (s *FederationService) DeleteFederation(ctx context.Context, input *DeleteFederationInput) error {
+	payload := &pb.FederationArchivedPayload{
+		ArchivedByActorId:              input.ActorID,
+		ArchivedByActorFederatedHandle: input.ActorHandle,
+	}
+	payloadBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.ledgerSvc.AppendEvent(ctx, &AppendEventInput{
+		FederationID:      input.FederationID,
+		EventType:         pb.EventType_FEDERATION_ARCHIVED,
+		PayloadBytes:      payloadBytes,
+		ActorID:           input.ActorID,
+		ActorHandle:       input.ActorHandle,
+		StationPeerID:     input.StationPeerID,
+		ActorPrivateKey:   input.ActorPrivateKey,
+		StationPrivateKey: input.StationPrivateKey,
+	})
+	if err != nil {
+		return err
+	}
+
+	return s.federationRepo.UpdateStatus(ctx, input.FederationID, "archived")
+}
+
 var _ = ulid.Make
