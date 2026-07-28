@@ -24,9 +24,9 @@ use tauri::{State, Window};
 use crate::application::federation;
 use crate::application::session_resolver;
 use crate::contracts::{
-    FederationCatalogSearchInput, FederationCreateInput, FederationJoinInput,
-    FederationLeaveInput, FederationListMemberStationsInput, FederationResolveInput,
-    FederationVisibilityInput,
+    FederationCatalogSearchInput, FederationCreateInput, FederationDeleteInput,
+    FederationJoinInput, FederationLeaveInput, FederationListMemberStationsInput,
+    FederationResolveInput, FederationVisibilityInput,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -201,6 +201,22 @@ pub fn federation_leave(
     match federation::leave_federation(&token, &input.federation_id, &input.reason) {
         Ok(view) => AppResult::success(federation::encode_leave_federation(&view)),
         Err(e) => e.into_app_result_proto("federation_leave failed"),
+    }
+}
+
+#[tauri::command]
+pub fn federation_delete(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: FederationDeleteInput,
+) -> AppResult<Vec<u8>> {
+    let token = match token_or_unauthorized(&state, &window) {
+        Ok(t) => t,
+        Err(err) => return err,
+    };
+    match federation::delete_federation(&token, &input.federation_id) {
+        Ok(view) => AppResult::success(federation::encode_delete_federation(&view)),
+        Err(e) => e.into_app_result_proto("federation_delete failed"),
     }
 }
 

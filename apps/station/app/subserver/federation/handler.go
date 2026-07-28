@@ -199,3 +199,52 @@ func (s *subServer) handleLeaveFederation(ctx context.Context, req *pb.LeaveFede
 
 	return &pb.LeaveFederationResponse{Success: true}, nil
 }
+
+func (s *subServer) handleDeleteFederation(ctx context.Context, req *pb.DeleteFederationRequest) (*pb.DeleteFederationResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.FederationId == "" {
+		return nil, errors.New("federation_id is required")
+	}
+
+	actorID := subject.ID
+	stationPeerID := node.GetService().Options().Id
+
+	fed, err := s.federationSvc.GetFederation(ctx, req.FederationId)
+	if err != nil {
+		return nil, err
+	}
+	if fed == nil {
+		return nil, errors.New("federation not found")
+	}
+	if fed.SequencerStationPeerID != stationPeerID {
+		return nil, errors.New("only the sequencer station can delete a federation")
+	}
+	if fed.CreatedByActorID != actorID {
+		return nil, errors.New("only the federation owner can delete it")
+	}
+
+	_, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, actorID)
+	if err != nil {
+		actorPriv, err = s.actorKeySvc.GetPrivateKey(ctx, actorID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = s.federationSvc.DeleteFederation(ctx, &application.DeleteFederationInput{
+		FederationID:      req.FederationId,
+		ActorID:           actorID,
+		ActorHandle:       actorID,
+		StationPeerID:     stationPeerID,
+		ActorPrivateKey:   actorPriv,
+		StationPrivateKey: actorPriv,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.DeleteFederationResponse{Success: true}, nil
+}

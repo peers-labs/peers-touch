@@ -87,6 +87,7 @@ import {
 } from '../gen/proto/domain/federation/federation_discovery_pb';
 import {
   CreateFederationResponseSchema,
+  DeleteFederationResponseSchema,
   JoinFederationResponseSchema,
   LeaveFederationResponseSchema,
   ListFederationsResponseSchema,
@@ -127,6 +128,7 @@ export type {
   FederationSummary,
   ActorCapability,
   CreateFederationResponse,
+  DeleteFederationResponse,
   JoinFederationResponse,
   LeaveFederationResponse,
   ListMemberStationsResponse,
@@ -4595,6 +4597,9 @@ export const api = {
 
   federationLeave: (params: { federation_id: string; reason?: string }) =>
     invokeRustProto('federation_leave', LeaveFederationResponseSchema, params),
+
+  federationDelete: (params: { federation_id: string }) =>
+    invokeRustProto('federation_delete', DeleteFederationResponseSchema, params),
 
   federationListMemberStations: (federationId: string) =>
     invokeRustProto('federation_list_member_stations', ListMemberStationsResponseSchema, {
