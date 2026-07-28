@@ -98,9 +98,12 @@ func (s *subServer) handleJoinFederation(ctx context.Context, req *pb.JoinFedera
 	actorID := subject.ID
 	stationPeerID := node.GetService().Options().Id
 
-	actorPriv, err := s.actorKeySvc.GetPrivateKey(ctx, actorID)
+	_, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, actorID)
 	if err != nil {
-		return nil, err
+		actorPriv, err = s.actorKeySvc.GetPrivateKey(ctx, actorID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	membership, err := s.federationSvc.ApproveJoin(ctx, &application.ApproveJoinInput{
@@ -124,6 +127,38 @@ func (s *subServer) handleJoinFederation(ctx context.Context, req *pb.JoinFedera
 	}, nil
 }
 
-func (s *subServer) handleLeaveFederation(_ context.Context, _ *pb.LeaveFederationRequest) (*pb.LeaveFederationResponse, error) {
-	return nil, errors.New("leave federation not yet implemented")
+func (s *subServer) handleLeaveFederation(ctx context.Context, req *pb.LeaveFederationRequest) (*pb.LeaveFederationResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.FederationId == "" {
+		return nil, errors.New("federation_id is required")
+	}
+
+	actorID := subject.ID
+	stationPeerID := node.GetService().Options().Id
+
+	_, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, actorID)
+	if err != nil {
+		actorPriv, err = s.actorKeySvc.GetPrivateKey(ctx, actorID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = s.federationSvc.LeaveFederation(ctx, &application.LeaveFederationInput{
+		FederationID:      req.FederationId,
+		ActorID:           actorID,
+		ActorHandle:       actorID,
+		StationPeerID:     stationPeerID,
+		Reason:            req.Reason,
+		ActorPrivateKey:   actorPriv,
+		StationPrivateKey: actorPriv,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.LeaveFederationResponse{Success: true}, nil
 }

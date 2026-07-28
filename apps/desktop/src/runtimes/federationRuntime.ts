@@ -79,9 +79,8 @@ export const federationRuntime: RuntimeDescriptor = {
       lastActorId = nextActorId;
 
       if (nextActorId) {
-        // Login edge: refresh self snapshot. Health is independent and
-        // already polling.
         void useFederationStore.getState().refreshSelf();
+        void useFederationStore.getState().refreshFederations();
       } else {
         // Logout edge: drop session-scoped state so the splash returns
         // to its pre-login projection. Health survives.
@@ -119,6 +118,7 @@ export const federationRuntime: RuntimeDescriptor = {
       : null);
     if (restoredActor) {
       tasks.push(store.refreshSelf());
+      tasks.push(store.refreshFederations());
       lastActorId = restoredActor;
     }
     await Promise.allSettled(tasks);
