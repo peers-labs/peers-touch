@@ -6,6 +6,8 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
+	notifapp "github.com/peers-labs/peers-touch/station/app/subserver/notification/application"
+	notifinfra "github.com/peers-labs/peers-touch/station/app/subserver/notification/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -81,7 +83,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.timelineSvc = application.NewTimelineService(repos, s.momentSvc, resolver, groups)
 	s.relationshipSvc = application.NewRelationshipService(repos.Follows, repos.Blocks, repos.Moderation)
 	friendRequestRepo := infrastructure.NewFriendRequestRepository(rds)
-	s.friendRequestSvc = application.NewFriendRequestService(friendRequestRepo, repos.Blocks, s.relationshipSvc)
+	notifRepo := notifinfra.NewGormRepo(rds)
+	notifSvc := notifapp.NewService(notifRepo)
+	s.friendRequestSvc = application.NewFriendRequestService(friendRequestRepo, repos.Blocks, s.relationshipSvc, &notifAdapter{svc: notifSvc})
 	s.statsSvc = application.NewStatsService(rds, repos)
 	s.moderationSvc = application.NewModerationService(repos)
 
@@ -110,3 +114,14 @@ func (s *subServer) Name() string                     { return "social" }
 func (s *subServer) Type() server.SubserverType       { return server.SubserverTypeHTTP }
 func (s *subServer) Address() server.SubserverAddress { return server.SubserverAddress{} }
 func (s *subServer) Status() server.Status            { return s.status }
+
+// notifAdapter bridges the notification application service to the
+// NotificationProducer interface expected by FriendRequestService.
+type notifAdapter struct {
+	svc *notifapp.Service
+}
+
+func (a *notifAdapter) Produce(recipientID, actorID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) error {
+	_, err := a.svc.Produce(recipientID, actorID, notifType, category, targetType, targetID, title, body, groupKey, metadata)
+	return err
+}

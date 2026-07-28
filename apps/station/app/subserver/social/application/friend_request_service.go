@@ -13,6 +13,13 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// NotificationProducer abstracts the notification subsystem so friend
+// request events can push real-time notifications without importing the
+// notification subserver directly.
+type NotificationProducer interface {
+	Produce(recipientID, actorID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) error
+}
+
 var (
 	ErrFriendRequestSelf     = errors.New("cannot send friend request to yourself")
 	ErrFriendRequestBlocked  = errors.New("blocked relationship")
@@ -25,17 +32,20 @@ type FriendRequestService struct {
 	repo            infrastructure.FriendRequestRepository
 	blocks          infrastructure.BlockGraphRepository
 	relationshipSvc *RelationshipService
+	notif           NotificationProducer
 }
 
 func NewFriendRequestService(
 	repo infrastructure.FriendRequestRepository,
 	blocks infrastructure.BlockGraphRepository,
 	relationshipSvc *RelationshipService,
+	notif NotificationProducer,
 ) *FriendRequestService {
 	return &FriendRequestService{
 		repo:            repo,
 		blocks:          blocks,
 		relationshipSvc: relationshipSvc,
+		notif:           notif,
 	}
 }
 
@@ -57,6 +67,21 @@ func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderID, 
 			return nil, ErrAlreadyFriends
 		}
 		return nil, err
+	}
+
+	if s.notif != nil {
+		receiverDID := strconv.FormatUint(receiverID, 10)
+		senderDID := strconv.FormatUint(senderID, 10)
+		if err := s.notif.Produce(
+			receiverDID, senderDID,
+			200, 1,
+			"friend_request", fr.ID,
+			"", message,
+			"friend_request:"+senderDID,
+			nil,
+		); err != nil {
+			logger.Error(ctx, "friend request notification failed", "error", err)
+		}
 	}
 
 	return domainToProtoFriendRequest(fr), nil
