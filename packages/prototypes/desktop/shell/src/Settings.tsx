@@ -428,8 +428,8 @@ function FederationSection() {
 
   return (
     <SettingsContainer>
-      {/* Identity — compact inline grid + copy handle */}
-      <SettingsSection icon={Globe} title="Federation Identity" subtitle="Your identity across the federated network.">
+      {/* Basic Info — identity + health + discovery merged */}
+      <SettingsSection icon={Globe} title="Basic Info" subtitle="Your federation identity, routing status, and discovery settings.">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 20px', fontSize: 13 }}>
           <div>
             <span style={{ color: T.textTertiary, fontSize: 11 }}>Handle</span>
@@ -442,41 +442,8 @@ function FederationSection() {
           <div><span style={{ color: T.textTertiary, fontSize: 11 }}>Locator Seq</span><div style={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12, color: T.textSecondary }}>seq:00000142</div></div>
           <div><span style={{ color: T.textTertiary, fontSize: 11 }}>Relay Mounts</span><div style={{ display: 'flex', gap: 4, marginTop: 2 }}><Tag text="relay:east" color="#1677ff" /><Tag text="relay:lab" color="#13a8a8" /><Tag text="mount:social" color="#722ed1" /></div></div>
         </div>
-      </SettingsSection>
 
-      {/* Visibility — radio buttons, controls THIS ACTOR's visibility */}
-      <SettingsSection icon={Eye} title="Actor Discovery" subtitle="Control how YOUR actor profile is discoverable within joined federations.">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {(['hidden', 'by_handle', 'indexed'] as const).map((v) => {
-            const active = v === visibility;
-            const labels: Record<string, { title: string; desc: string }> = {
-              hidden: { title: 'Hidden', desc: 'Invisible to all nodes. Others must have your exact handle to contact you.' },
-              by_handle: { title: 'By Handle', desc: 'Discoverable only when others search your exact handle. Not listed in any directory.' },
-              indexed: { title: 'Indexed', desc: 'Listed in the federation public directory. Anyone can find you by keyword search.' },
-            };
-            const item = labels[v];
-            return (
-              <div
-                key={v}
-                onClick={() => setVisibility(v)}
-                style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 10px', borderRadius: 8, cursor: 'pointer', backgroundColor: active ? T.primaryWash : 'transparent' }}
-              >
-                <div style={{ width: 16, height: 16, borderRadius: '50%', border: `2px solid ${active ? T.primary : T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1, flexShrink: 0 }}>
-                  {active ? <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: T.primary }} /> : null}
-                </div>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: active ? 600 : 500, color: active ? T.primary : T.text }}>{item.title}</div>
-                  <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 1 }}>{item.desc}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </SettingsSection>
-
-      {/* Health — compact inline */}
-      <SettingsSection icon={Activity} title="Routing Health" subtitle="Current federation routing status.">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20, fontSize: 13 }}>
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.borderSoft}`, display: 'flex', alignItems: 'center', gap: 20, fontSize: 13 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <CheckCircle2 size={14} color="#10b981" />
             <span style={{ fontWeight: 600, color: '#10b981' }}>Ready</span>
@@ -485,6 +452,22 @@ function FederationSection() {
           <span style={{ color: T.textSecondary }}><strong style={{ color: T.text }}>24</strong> peers in routing table</span>
           <span style={{ color: T.textTertiary }}>·</span>
           <span style={{ color: T.textSecondary }}>Seeds <strong style={{ color: T.text }}>3</strong>/4 connected</span>
+        </div>
+
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.borderSoft}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <span style={{ fontSize: 13, fontWeight: 500, color: T.text }}>Discoverable as</span>
+            <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 1 }}>{visibilityDesc[visibility]}</div>
+          </div>
+          <select
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value)}
+            style={{ height: 30, padding: '0 28px 0 10px', borderRadius: 6, border: `1px solid ${T.border}`, backgroundColor: T.bg, fontSize: 12, color: T.text, cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
+          >
+            <option value="hidden">Hidden</option>
+            <option value="by_handle">By Handle</option>
+            <option value="indexed">Indexed</option>
+          </select>
         </div>
       </SettingsSection>
 
