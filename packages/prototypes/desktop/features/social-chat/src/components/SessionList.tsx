@@ -13,6 +13,7 @@ interface SessionListProps {
   onMarkAsRead: (id: string) => void;
   onHide: (id: string) => void;
   onDelete: (id: string) => void;
+  onFindPeople?: () => void;
   compact?: boolean;
   fill?: boolean;
 }
@@ -36,6 +37,7 @@ export function SessionList({
   onMarkAsRead,
   onHide,
   onDelete,
+  onFindPeople,
   compact = false,
   fill = false,
 }: SessionListProps) {
@@ -65,6 +67,7 @@ export function SessionList({
       >
         <span style={{ fontSize: compact ? T.fontXl : T.fontHeading, fontWeight: 600, color: T.text }}>Messages</span>
         <button
+          onClick={onFindPeople}
           style={{
             width: 28,
             height: 28,

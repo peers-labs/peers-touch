@@ -227,7 +227,7 @@ export function ServerManager({
                         bordered={false}
                         style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 3 }}
                       >
-                        {authIcon[conn.auth_type] as unknown as JSX.Element}
+                        {authIcon[conn.auth_type]}
                         {authLabel[conn.auth_type] || conn.auth_type}
                       </Tag>
                     </Flexbox>
