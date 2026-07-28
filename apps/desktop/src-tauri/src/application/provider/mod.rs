@@ -181,13 +181,75 @@ pub fn model_fetch_remote(_scope: &str, token: &str, provider_id: &str) -> AppRe
         Err(_) => return success_payload("model_fetch_remote", json!({ "ok": true, "models": [] })),
     };
 
-    let models = resp
-        .get("provider")
-        .and_then(|p| p.get("models"))
-        .cloned()
-        .unwrap_or(json!([]));
+    let provider = resp.get("provider").cloned().unwrap_or(json!({}));
+    let runtime_kind = provider.get("runtime_kind").and_then(|v| v.as_str()).unwrap_or("");
+    let has_models_command = provider.get("models_command").and_then(|v| v.as_str()).unwrap_or("").len() > 0;
 
+    if runtime_kind == "cli" && has_models_command {
+        let cli_resp = station_api::fetch_cli_models(token, provider_id);
+        match cli_resp {
+            Ok(v) => return success_payload("model_fetch_remote", json!({ "ok": true, "models": v })),
+            Err(_) => return success_payload("model_fetch_remote", json!({ "ok": false, "models": [], "error": "CLI model fetch failed on Station" })),
+        }
+    }
+
+    let models = provider.get("models").cloned().unwrap_or(json!([]));
     success_payload("model_fetch_remote", json!({ "ok": true, "models": models }))
+}
+
+fn execute_cli_models_command(command: &str) -> Vec<String> {
+    use std::process::Command;
+
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    if parts.is_empty() {
+        return vec![];
+    }
+
+    let output = Command::new(parts[0])
+        .args(&parts[1..])
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let trimmed = stdout.trim();
+
+            if trimmed.starts_with('{') || trimmed.starts_with('[') {
+                parse_json_models(trimmed)
+            } else {
+                trimmed.lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect()
+            }
+        }
+        _ => vec![],
+    }
+}
+
+fn parse_json_models(json_str: &str) -> Vec<String> {
+    let val: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+
+    let models_array = val.get("models")
+        .and_then(|m| m.as_array())
+        .or_else(|| val.as_array());
+
+    match models_array {
+        Some(arr) => arr.iter().filter_map(|item| {
+            if let Some(s) = item.as_str() {
+                return Some(s.to_string());
+            }
+            item.get("slug").and_then(|v| v.as_str())
+                .or_else(|| item.get("id").and_then(|v| v.as_str()))
+                .or_else(|| item.get("name").and_then(|v| v.as_str()))
+                .or_else(|| item.get("model_id").and_then(|v| v.as_str()))
+                .map(|s| s.to_string())
+        }).collect(),
+        None => vec![],
+    }
 }
 
 pub fn model_delete(token: &str, provider_id: &str, model_id: &str) -> AppResult<StubPayload> {
