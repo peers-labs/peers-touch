@@ -69,7 +69,17 @@ impl From<StationClientError> for StationApiError {
     }
 }
 
-pub fn list_providers(token: &str) -> Result<Vec<StationProvider>, StationApiError> {
+pub fn list_providers(token: &str) -> Result<Value, StationApiError> {
+    Ok(station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/provider/list",
+        token,
+        None,
+        Some(&json!({})),
+    )?)
+}
+
+pub fn get_providers(token: &str, _scope: &str) -> Result<Vec<StationProvider>, StationApiError> {
     let resp = station_client::request_json_auth(
         Method::POST,
         "/sub-agent/agent/provider/list",
@@ -84,6 +94,60 @@ pub fn list_providers(token: &str) -> Result<Vec<StationProvider>, StationApiErr
     .unwrap_or_default();
 
     Ok(providers)
+}
+
+pub fn get_provider(token: &str, provider_id: &str) -> Result<Value, StationApiError> {
+    Ok(station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/provider/get",
+        token,
+        None,
+        Some(&json!({"provider_id": provider_id})),
+    )?)
+}
+
+pub fn list_available_models(token: &str) -> Result<Value, StationApiError> {
+    Ok(station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/model/available",
+        token,
+        None,
+        Some(&json!({})),
+    )?)
+}
+
+
+pub fn update_provider_full(
+    token: &str,
+    provider_id: &str,
+    enabled: bool,
+    config_json: Option<&str>,
+    key_vaults: Option<&str>,
+    version: i64,
+) -> Result<Value, StationApiError> {
+    let mut body = json!({
+        "provider_id": provider_id,
+        "version": version,
+        "enabled": enabled,
+    });
+    if let Some(cfg) = config_json {
+        if let Ok(v) = serde_json::from_str::<Value>(cfg) {
+            if let Some(base_url) = v.get("base_url").and_then(|u| u.as_str()) {
+                body["base_url"] = json!(base_url);
+            }
+        }
+    }
+    if let Some(kv) = key_vaults {
+        body["key_vaults"] = json!(kv);
+    }
+
+    Ok(station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/provider/update",
+        token,
+        None,
+        Some(&body),
+    )?)
 }
 
 pub fn create_provider(

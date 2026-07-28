@@ -8,20 +8,34 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/age
 
 // Provider API contract — wire types for the agent provider management surface.
 
+message ProviderModelInfo {
+  string id = 1;
+  string display_name = 2;
+  string type = 3;
+  bool enabled = 4;
+  int32 context_window = 5;
+}
+
 message AgentProviderInfo {
   string id = 1;
-  string actor_id = 2;
-  string name = 3;
-  string display_name = 4;
-  string base_url = 5;
+  string name = 2;
+  string description = 3;
+  bool enabled = 4;
+  bool builtin = 5;
   string protocol = 6;
-  string runtime_kind = 7;
-  string cli_command = 8;
-  bool enabled = 9;
-  int64 version = 10;
-  bytes config = 11;
-  google.protobuf.Timestamp created_at = 12;
-  google.protobuf.Timestamp updated_at = 13;
+  string discovery = 7;
+  string runtime_kind = 8;
+  string base_url = 9;
+  string home_url = 10;
+  string api_key_url = 11;
+  bool show_checker = 12;
+  bool show_api_key = 13;
+  string credential_status = 14;
+  int64 version = 15;
+  string source = 16;
+  string cli_command = 17;
+  repeated ProviderModelInfo models = 18;
+  string models_command = 19;
 }
 
 message AgentModelInfo {
@@ -60,9 +74,29 @@ message VerifyCliResponse {
   string install_hint = 5;
 }
 
+// FetchCliModels
+message FetchCliModelsRequest { string provider_id = 1; }
+message FetchCliModelsResponse { repeated string models = 1; }
+
 // Provider CRUD
 message ListProvidersRequest {}
 message ListProvidersResponse { repeated AgentProviderInfo providers = 1; }
+
+message GetProviderRequest { string provider_id = 1; }
+message GetProviderResponse { AgentProviderInfo provider = 1; }
+
+message ListAvailableModelsRequest {}
+message ListAvailableModelsResponse { repeated AvailableModelInfo models = 1; }
+
+message AvailableModelInfo {
+  string id = 1;
+  string provider_id = 2;
+  string provider_name = 3;
+  string display_name = 4;
+  string type = 5;
+  bool enabled = 6;
+  int32 context_window = 7;
+}
 
 message CreateProviderRequest {
   string provider_id = 1;
@@ -80,6 +114,7 @@ message UpdateProviderRequest {
   optional string base_url = 4;
   optional bool enabled = 5;
   bytes config_json = 6;
+  string key_vaults = 7;
 }
 message UpdateProviderResponse { AgentProviderInfo provider = 1; }
 

@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Input, toast } from '@lobehub/ui';
-import { Alert, Spin, Tag, theme, Modal, Typography } from 'antd';
+import { Button, Input } from '@lobehub/ui';
+import { Alert, Spin, Tag, theme, Modal, Typography, message } from 'antd';
 import { Search, ShieldCheck, Globe, Server } from 'lucide-react';
 import { api, type FederationResolveView, type FederationCatalogEntry } from '../../services/desktop_api';
 import {
@@ -134,8 +134,10 @@ function catalogEntryToResult(entry: FederationCatalogEntry): ActorSearchResult 
 export function FindPeopleModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sendFriendRequest } = useActiveSocialChatSlice((s) => ({
+  const { sendFriendRequest, loadFriendRequests, friendRequests } = useActiveSocialChatSlice((s) => ({
     sendFriendRequest: s.sendFriendRequest,
+    loadFriendRequests: s.loadFriendRequests,
+    friendRequests: s.friendRequests,
   }));
   const currentUserDid = useActiveSocialChatStore((s) => s.currentUserDid);
   const federationReady = useActiveChatFederationSlice(selectFederationReady);
@@ -147,8 +149,25 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const [searching, setSearching] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [sentIds, setSentIds] = useState<Set<string>>(() => new Set());
+  const sentTimestamps = useRef<Map<string, number>>(new Map());
   const [searchScope, setSearchScope] = useState<SearchScope>('all');
   const [selectedFederationId, setSelectedFederationId] = useState<string>('');
+
+  const RESEND_COOLDOWN_MS = 5 * 60 * 1000;
+
+  useEffect(() => {
+    if (open) loadFriendRequests();
+  }, [open, loadFriendRequests]);
+
+  const pendingReceiverIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const req of friendRequests) {
+      if (req.status === 0 && req.senderId === currentUserDid) {
+        ids.add(req.receiverId);
+      }
+    }
+    return ids;
+  }, [friendRequests, currentUserDid]);
 
   const parsed = useMemo(() => parseHandleInput(searchText), [searchText]);
   const blockedByGate = parsed.isFederated && parsed.hasHost && !federationReady;
@@ -166,7 +185,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
     try {
       if (parsed.isFederated && parsed.hasHost && searchScope === 'all') {
         if (!federationReady) {
-          toast.error(t('chat.social.findPeople.resolveNotReady'));
+          message.error(t('chat.social.findPeople.resolveNotReady'));
           setResults([]);
           return;
         }
@@ -202,7 +221,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
       const fallback = parsed.isFederated && parsed.hasHost
         ? t('chat.social.findPeople.resolveFailed', { handle: parsed.canonical })
         : t('chat.social.findPeople.searchFailed');
-      toast.error((e as { message?: string })?.message || fallback);
+      message.error((e as { message?: string })?.message || fallback);
       setResults([]);
     } finally {
       setSearching(false);
@@ -217,9 +236,10 @@ export function FindPeopleModal({ open, onClose }: Props) {
     try {
       await sendFriendRequest(receiverDid, '');
       setSentIds((prev) => new Set(prev).add(receiverDid));
-      toast.success(t('chat.social.findPeople.requestSent'));
+      sentTimestamps.current.set(receiverDid, Date.now());
+      message.success(t('chat.social.findPeople.requestSent'));
     } catch (e: unknown) {
-      toast.error(
+      message.error(
         (e as { message?: string })?.message ||
           t('chat.social.findPeople.addFailed'),
       );
@@ -291,31 +311,58 @@ export function FindPeopleModal({ open, onClose }: Props) {
         />
 
         {/* Scope chips */}
-        <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
+        <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap', alignItems: 'center' }}>
           <Tag.CheckableTag
             checked={searchScope === 'all'}
             onChange={() => handleScopeChange('all')}
+            style={searchScope === 'all' ? {
+              background: token.colorPrimaryBg,
+              color: token.colorPrimary,
+              borderColor: token.colorPrimary,
+            } : {
+              background: 'transparent',
+              color: token.colorTextSecondary,
+              borderColor: token.colorBorder,
+            }}
           >
             {t('chat.social.findPeople.scopeAll')}
           </Tag.CheckableTag>
 
-          {joinedFederations.map((fed) => (
-            <Tag.CheckableTag
-              key={fed.federationId}
-              checked={searchScope === 'federation' && selectedFederationId === fed.federationId}
-              onChange={(checked) => {
-                if (checked) handleScopeChange('federation', fed.federationId);
-                else handleScopeChange('all');
-              }}
-            >
-              <Globe size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
-              {fed.federationName || fed.federationId.slice(0, 8)}
-            </Tag.CheckableTag>
-          ))}
+          {joinedFederations.map((fed) => {
+            const isActive = searchScope === 'federation' && selectedFederationId === fed.federationId;
+            return (
+              <Tag.CheckableTag
+                key={fed.federationId}
+                checked={isActive}
+                onChange={(checked) => {
+                  if (checked) handleScopeChange('federation', fed.federationId);
+                  else handleScopeChange('all');
+                }}
+                style={isActive ? {
+                  background: token.colorPrimaryBg,
+                  color: token.colorPrimary,
+                  borderColor: token.colorPrimary,
+                } : {
+                  background: 'transparent',
+                  color: token.colorTextSecondary,
+                  borderColor: token.colorBorder,
+                }}
+              >
+                <Globe size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
+                {fed.federationName || fed.federationId.slice(0, 8)}
+              </Tag.CheckableTag>
+            );
+          })}
 
           {joinedFederations.length === 0 && federationReady && (
             <Text type="secondary" style={{ fontSize: 11 }}>
               {t('chat.social.findPeople.catalogNoFederation')}
+            </Text>
+          )}
+
+          {joinedFederations.length === 0 && !federationReady && (
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {t('chat.social.findPeople.joinFederation', { defaultValue: 'Join a federation to enable catalog search' })}
             </Text>
           )}
         </Flexbox>
@@ -345,7 +392,9 @@ export function FindPeopleModal({ open, onClose }: Props) {
           ) : (
             results.map((r) => {
               const receiverDid = r.actorId || r.id;
-              const alreadySent = sentIds.has(receiverDid);
+              const isPending = pendingReceiverIds.has(receiverDid) || sentIds.has(receiverDid);
+              const sentAt = sentTimestamps.current.get(receiverDid);
+              const cooldownActive = isPending && (!sentAt || Date.now() - sentAt < RESEND_COOLDOWN_MS);
               const isSelf = !!currentUserDid && receiverDid === currentUserDid;
               return (
                 <Flexbox
@@ -408,19 +457,20 @@ export function FindPeopleModal({ open, onClose }: Props) {
                     />
                   </Flexbox>
                   <Button
-                    type="primary"
+                    type={cooldownActive ? 'default' : 'primary'}
                     size="small"
                     loading={addingId === receiverDid}
-                    disabled={alreadySent || isSelf}
+                    disabled={cooldownActive || isSelf}
                     onClick={(event) => {
                       event.stopPropagation();
                       void handleSendRequest(r);
                     }}
+                    style={cooldownActive ? { color: token.colorSuccess, borderColor: token.colorSuccess } : undefined}
                   >
                     {isSelf
                       ? t('chat.social.findPeople.self')
-                      : alreadySent
-                        ? t('chat.social.findPeople.sent')
+                      : cooldownActive
+                        ? t('chat.social.findPeople.awaitingApproval')
                         : t('chat.social.findPeople.sendRequest')}
                   </Button>
                 </Flexbox>
