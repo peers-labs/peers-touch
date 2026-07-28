@@ -83,6 +83,62 @@ mkdir -p "$PROFILES_DIR" "$ACTIVE_DIR"
 cmd="${1:-}"
 name="${2:-}"
 
+ENV_REPO_HINT_FILE="$LOCAL_DEV_DIR/.env-repo-path"
+
+resolve_env_repo() {
+  if [[ -n "${PT_ENV_REPO:-}" && -d "$PT_ENV_REPO" ]]; then
+    echo "$PT_ENV_REPO"
+    return 0
+  fi
+  if [[ -f "$ENV_REPO_HINT_FILE" ]]; then
+    local saved
+    saved="$(cat "$ENV_REPO_HINT_FILE")"
+    if [[ -d "$saved" ]]; then
+      echo "$saved"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+import_profile_from_env_repo() {
+  local profile_name="$1"
+  local env_repo="$2"
+  local env_profile_dir="$env_repo/peers-touch/$profile_name"
+
+  if [[ ! -d "$env_profile_dir" ]]; then
+    echo "[ERROR] Profile '$profile_name' not found in env repo at: $env_profile_dir"
+    echo "        Available in env repo:"
+    ls "$env_repo/peers-touch/" 2>/dev/null | grep -v '^0-tpl$' | sed 's/^/          /'
+    return 1
+  fi
+
+  local profile_src="$env_profile_dir/profile.env.example"
+  if [[ ! -f "$profile_src" ]]; then
+    echo "[ERROR] No profile.env.example in: $env_profile_dir"
+    return 1
+  fi
+
+  mkdir -p "$PROFILES_DIR"
+  cp "$profile_src" "$PROFILES_DIR/$profile_name.env"
+  echo "[OK] Imported profile: $profile_name → $PROFILES_DIR/$profile_name.env"
+
+  if [[ -d "$env_profile_dir/deploy" ]]; then
+    mkdir -p "$DEPLOY_DIR/envs"
+    for deploy_env in "$env_profile_dir/deploy"/*.env.example; do
+      [[ -f "$deploy_env" ]] || continue
+      local deploy_name
+      deploy_name="$(basename "$deploy_env" .env.example)"
+      cp "$deploy_env" "$DEPLOY_DIR/envs/$deploy_name.env"
+      echo "[OK] Imported deploy env: $deploy_name → $DEPLOY_DIR/envs/$deploy_name.env"
+    done
+  fi
+
+  # Remember the env repo path for next time
+  echo "$env_repo" > "$ENV_REPO_HINT_FILE"
+  return 0
+}
+
 case "$cmd" in
   activate)
     if [[ -z "$name" ]]; then
@@ -92,10 +148,34 @@ case "$cmd" in
     ensure_local_assets
     src="$PROFILES_DIR/$name.env"
     if [[ ! -f "$src" ]]; then
-      echo "[ERROR] Profile '$name' not found at: $src"
-      echo "        Available:"
-      ls "$PROFILES_DIR"/*.env 2>/dev/null | xargs -I{} basename {} .env | sed 's/^/          /'
-      exit 1
+      echo "[INFO] Profile '$name' not found locally. Attempting import from env repo..."
+      env_repo=""
+      if resolved="$(resolve_env_repo)"; then
+        env_repo="$resolved"
+        echo "[INFO] Using env repo: $env_repo"
+      else
+        echo ""
+        echo "  The env repo contains deployable profiles."
+        echo "  Enter the path to your local 'env' repo clone:"
+        echo "  (e.g., ~/Documents/Projects/peers-touch/env)"
+        echo ""
+        printf "  env repo path: "
+        read -r user_path
+        user_path="${user_path/#\~/$HOME}"
+        if [[ ! -d "$user_path" ]]; then
+          echo "[ERROR] Directory not found: $user_path"
+          exit 1
+        fi
+        if [[ ! -d "$user_path/peers-touch" ]]; then
+          echo "[ERROR] Not a valid env repo (missing peers-touch/ subdirectory): $user_path"
+          exit 1
+        fi
+        env_repo="$user_path"
+      fi
+      if ! import_profile_from_env_repo "$name" "$env_repo"; then
+        exit 1
+      fi
+      src="$PROFILES_DIR/$name.env"
     fi
     # Symlink: active/<worktree-id>.env → ../profiles/<name>.env
     ln -sfn "../profiles/$name.env" "$ACTIVE_FILE"

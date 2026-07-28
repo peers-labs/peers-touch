@@ -3,10 +3,12 @@ package federation
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/application"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
@@ -98,32 +100,102 @@ func (s *subServer) handleJoinFederation(ctx context.Context, req *pb.JoinFedera
 	actorID := subject.ID
 	stationPeerID := node.GetService().Options().Id
 
-	actorPriv, err := s.actorKeySvc.GetPrivateKey(ctx, actorID)
+	_, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, actorID)
 	if err != nil {
-		return nil, err
+		actorPriv, err = s.actorKeySvc.GetPrivateKey(ctx, actorID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	membership, err := s.federationSvc.ApproveJoin(ctx, &application.ApproveJoinInput{
-		FederationID:          req.FederationId,
-		JoiningStationPeerID:  stationPeerID,
-		JoiningStationName:    node.GetService().Name(),
-		JoiningStationURL:     req.FederationEndpoint,
-		ApproverActorID:       actorID,
-		ApproverActorHandle:   actorID,
-		ApproverStationPeerID: stationPeerID,
-		ActorPrivateKey:       actorPriv,
-		StationPrivateKey:     actorPriv,
+	fed, _ := s.federationSvc.GetFederation(ctx, req.FederationId)
+	isLocalSequencer := fed != nil && fed.SequencerStationPeerID == stationPeerID
+
+	if isLocalSequencer {
+		membership, err := s.federationSvc.ApproveJoin(ctx, &application.ApproveJoinInput{
+			FederationID:          req.FederationId,
+			JoiningStationPeerID:  stationPeerID,
+			JoiningStationName:    node.GetService().Name(),
+			JoiningStationURL:     req.FederationEndpoint,
+			ApproverActorID:       actorID,
+			ApproverActorHandle:   actorID,
+			ApproverStationPeerID: stationPeerID,
+			ActorPrivateKey:       actorPriv,
+			StationPrivateKey:     actorPriv,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &pb.JoinFederationResponse{
+			Status:     membership.Status,
+			ProposalId: membership.ApprovedByEventID,
+		}, nil
+	}
+
+	if req.FederationEndpoint == "" {
+		return nil, errors.New("federation_endpoint is required for remote join")
+	}
+
+	remoteEndpoint := fmt.Sprintf("http://%s", req.FederationEndpoint)
+
+	proposalReq := &pb.SubmitProposalRequest{
+		FederationId:         req.FederationId,
+		ProposedEventType:    pb.EventType_STATION_JOIN_APPROVED,
+		ActorId:              actorID,
+		ActorFederatedHandle: actorID,
+		StationPeerId:        stationPeerID,
+	}
+
+	log.Infof(ctx, "[federation] submitting join proposal to remote sequencer %s for federation %s", remoteEndpoint, req.FederationId)
+
+	resp, err := s.govClient.SubmitProposal(ctx, remoteEndpoint, "", proposalReq)
+	if err != nil {
+		return nil, fmt.Errorf("remote join failed: %w", err)
+	}
+
+	status := "pending"
+	if resp.Decision == pb.ProposalDecision_DECISION_ACCEPTED {
+		status = "active"
+	}
+
+	return &pb.JoinFederationResponse{
+		Status:     status,
+		ProposalId: resp.ProposalId,
+	}, nil
+}
+
+func (s *subServer) handleLeaveFederation(ctx context.Context, req *pb.LeaveFederationRequest) (*pb.LeaveFederationResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.FederationId == "" {
+		return nil, errors.New("federation_id is required")
+	}
+
+	actorID := subject.ID
+	stationPeerID := node.GetService().Options().Id
+
+	_, actorPriv, err := s.actorKeySvc.GenerateKeyPair(ctx, actorID)
+	if err != nil {
+		actorPriv, err = s.actorKeySvc.GetPrivateKey(ctx, actorID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = s.federationSvc.LeaveFederation(ctx, &application.LeaveFederationInput{
+		FederationID:      req.FederationId,
+		ActorID:           actorID,
+		ActorHandle:       actorID,
+		StationPeerID:     stationPeerID,
+		Reason:            req.Reason,
+		ActorPrivateKey:   actorPriv,
+		StationPrivateKey: actorPriv,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &pb.JoinFederationResponse{
-		Status:     membership.Status,
-		ProposalId: membership.ApprovedByEventID,
-	}, nil
-}
-
-func (s *subServer) handleLeaveFederation(_ context.Context, _ *pb.LeaveFederationRequest) (*pb.LeaveFederationResponse, error) {
-	return nil, errors.New("leave federation not yet implemented")
+	return &pb.LeaveFederationResponse{Success: true}, nil
 }

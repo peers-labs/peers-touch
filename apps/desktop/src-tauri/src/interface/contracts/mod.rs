@@ -153,6 +153,8 @@ pub struct ProviderUpdateInput {
     pub runtime_kind: Option<String>,
     pub cli_command: Option<String>,
     pub protocol: Option<String>,
+    #[serde(default)]
+    pub version: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

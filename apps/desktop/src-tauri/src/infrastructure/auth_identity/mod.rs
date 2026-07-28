@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use crate::domain::pin_lock::{self, EncryptedSession, PinProtection};
 use crate::infrastructure::avatar_cache;
 use crate::infrastructure::local_scope;
@@ -34,16 +35,21 @@ pub struct AccountIdentity {
     /// Encrypted session token (None = no saved session).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub encrypted_session: Option<EncryptedSession>,
+    /// Cleartext expiry epoch (seconds) of the encrypted session token.
+    /// Used by the account picker to detect expired sessions without requiring PIN decryption.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_expires_at: Option<u64>,
     /// Whether this account has an active (restorable) session, regardless of PIN.
     #[serde(default)]
     pub has_session: bool,
 }
 
 pub fn account_identity_path() -> Result<PathBuf, String> {
+    let station_scope = crate::infrastructure::local_scope::active_station_scope();
     storage::app_file_path(
         "desktop",
         StorageKind::Data,
-        &["account", "identities.json"],
+        &["account", &station_scope, "identities.json"],
     )
     .map_err(|err| format!("failed to resolve account identity path: {err:?}"))
 }
@@ -115,6 +121,7 @@ pub fn upsert_oauth(
             last_login_at: now,
             pin_protection: None,
             encrypted_session: None,
+            session_expires_at: None,
             has_session: false,
         });
     }
@@ -175,6 +182,7 @@ pub fn upsert_password(
             last_login_at: now,
             pin_protection: None,
             encrypted_session: None,
+            session_expires_at: None,
             has_session: false,
         });
     }
@@ -288,6 +296,7 @@ pub fn save_encrypted_session(account_id: &str, pin: &str, token: &str) -> Resul
 
     let encrypted = pin_lock::encrypt_session(pin, &protection.enc_salt, account_id, token)?;
     account.encrypted_session = Some(encrypted);
+    account.session_expires_at = extract_jwt_exp(token);
     account.has_session = true;
     write_state(&state)
 }
@@ -489,4 +498,11 @@ pub fn get_avatar_local_path(account_id: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+fn extract_jwt_exp(token: &str) -> Option<u64> {
+    let payload_b64 = token.split('.').nth(1)?;
+    let decoded = URL_SAFE_NO_PAD.decode(payload_b64).ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+    v.get("exp").and_then(|e| e.as_u64())
 }

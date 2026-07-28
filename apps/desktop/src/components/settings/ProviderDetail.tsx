@@ -16,6 +16,7 @@ import { UpdateProviderModal } from './UpdateProviderModal';
 import { api } from '../../services/desktop_api';
 import { useTranslation } from 'react-i18next';
 import { useActiveProviderSlice } from './useActiveSettingsStores';
+import { useProviderStore } from '../../store/provider';
 
 const { Text, Title, Link } = Typography;
 
@@ -36,15 +37,12 @@ function FormRow({
   return (
     <>
       <Flexbox
-        horizontal
-        justify="space-between"
-        align="center"
-        gap={24}
+        gap={8}
         style={{ padding: '16px 0', minHeight: 56 }}
       >
-        <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
+        <Flexbox gap={2}>
           <Flexbox horizontal align="center" gap={4}>
-            <Text strong style={{ fontSize: 14 }}>{label}</Text>
+            <Text strong style={{ fontSize: 14, whiteSpace: 'nowrap' }}>{label}</Text>
             {extra}
           </Flexbox>
           {desc && (
@@ -53,9 +51,9 @@ function FormRow({
             </Text>
           )}
         </Flexbox>
-        <Flexbox style={{ flexShrink: 0, maxWidth: '55%', minWidth: 200 }} align="flex-end">
+        <div>
           {children}
-        </Flexbox>
+        </div>
       </Flexbox>
       {!last && <Divider style={{ margin: 0, borderColor: token.colorBorderSecondary }} />}
     </>
@@ -131,6 +129,7 @@ export function ProviderDetail() {
   // Whether the displayed detail matches the currently selected provider.
   // When switching, detail still holds old provider data until the new one loads.
   const isStale = detail != null && selectedId != null && detail.id !== selectedId;
+  const isCli = detail?.runtime_kind === 'cli';
 
   useEffect(() => {
     if (detail && !isStale) {
@@ -232,18 +231,36 @@ export function ProviderDetail() {
     setFetching(true);
     try {
       const result = await fetchRemoteModels(detail.id, apiKey || undefined, baseUrl || undefined);
-      if (result.ok && result.models) {
-        const existingIds = new Set((detail.models || []).map((m) => m.id));
-        const newModels = result.models.filter((id) => !existingIds.has(id));
-        if (newModels.length > 0) {
-          for (const id of newModels) {
-            await addModel(detail.id, { id, display_name: '', type: 'chat', context_window: 128000 });
+      if (result.ok && result.models && result.models.length > 0) {
+        if (detail.runtime_kind === 'cli') {
+          useProviderStore.setState({
+            detail: {
+              ...detail,
+              models: result.models.map((id) => ({
+                id,
+                display_name: id,
+                type: 'chat' as const,
+                enabled: true,
+                context_window: 0,
+              })),
+            },
+          });
+          if (!silent) {
+            message.success(t('provider.model.fetchedNew', { count: result.models.length }));
           }
-          message.success(t('provider.model.fetchedNew', { count: newModels.length }));
-        } else if (!silent) {
-          message.info(t('provider.model.noNewModels'));
+        } else {
+          const existingIds = new Set((detail.models || []).map((m) => m.id));
+          const newModels = result.models.filter((id) => !existingIds.has(id));
+          if (newModels.length > 0) {
+            for (const id of newModels) {
+              await addModel(detail.id, { id, display_name: '', type: 'chat', context_window: 128000 });
+            }
+            message.success(t('provider.model.fetchedNew', { count: newModels.length }));
+          } else if (!silent) {
+            message.info(t('provider.model.noNewModels'));
+          }
+          await selectProvider(detail.id);
         }
-        await selectProvider(detail.id);
       } else if (!silent) {
         message.error(result.error || t('provider.model.failedToFetch'));
       }
@@ -320,19 +337,21 @@ export function ProviderDetail() {
             style={{
               ...(enabled ? {} : { filter: 'grayscale(100%)', opacity: 0.66 }),
               transition: 'all 0.2s',
+              minWidth: 0,
+              flex: 1,
             }}
           >
             {detail.logo ? (
-              <Avatar src={detail.logo} shape="circle" size={32} />
+              <Avatar src={detail.logo} shape="circle" size={32} style={{ flexShrink: 0 }} />
             ) : (
               <ProviderIcon providerId={detail.id} providerName={detail.name} size={32} />
             )}
-            <Flexbox horizontal align="center" gap={8}>
-              <Title level={5} style={{ margin: 0, fontSize: 16 }}>{detail.name}</Title>
+            <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, flex: 1 }}>
+              <Title level={5} style={{ margin: 0, fontSize: 16, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{detail.name}</Title>
               <Tag
                 bordered={false}
                 color={detail.runtime_kind === 'cli' ? 'purple' : 'blue'}
-                style={{ margin: 0, fontSize: 11, lineHeight: '16px', paddingInline: 6 }}
+                style={{ margin: 0, fontSize: 11, lineHeight: '16px', paddingInline: 6, flexShrink: 0 }}
               >
                 {t(`provider.runtime.${detail.runtime_kind}`)}
               </Tag>
@@ -346,6 +365,7 @@ export function ProviderDetail() {
                     lineHeight: '16px',
                     paddingInline: 6,
                     color: token.colorTextTertiary,
+                    flexShrink: 0,
                   }}
                 >
                   {t('provider.detail.notConfigured')}
@@ -353,7 +373,7 @@ export function ProviderDetail() {
               )}
             </Flexbox>
           </Flexbox>
-          <Flexbox horizontal align="center" gap={8}>
+          <Flexbox horizontal align="center" gap={8} style={{ flexShrink: 0 }}>
             <Tooltip title={t('provider.detail.providerSettings')}>
               <Button
                 type="text"
@@ -542,13 +562,13 @@ export function ProviderDetail() {
       {/* Model List - takes remaining space with independent scroll */}
       <Flexbox gap={12} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         <Flexbox horizontal justify="space-between" align="center" style={{ flexShrink: 0 }}>
-          <Flexbox horizontal align="center" gap={8}>
-            <Title level={5} style={{ margin: 0 }}>{t('provider.model.title')}</Title>
-            <Text type="secondary" style={{ fontSize: 13 }}>
+          <Flexbox horizontal align="center" gap={8} style={{ flexShrink: 0 }}>
+            <Title level={5} style={{ margin: 0, whiteSpace: 'nowrap' }}>{t('provider.model.title')}</Title>
+            <Text type="secondary" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
               {t('provider.model.count', { filtered: filteredModels.length, total: allModels.length })}
             </Text>
           </Flexbox>
-          <Flexbox horizontal gap={8} align="center">
+          <Flexbox horizontal gap={8} align="center" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {filteredModels.length > 0 && (
               <>
                 <Button
@@ -583,9 +603,11 @@ export function ProviderDetail() {
                 </Button>
               </>
             )}
-            <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-              {t('provider.model.addModel')}
-            </Button>
+            {!isCli && (
+              <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
+                {t('provider.model.addModel')}
+              </Button>
+            )}
             <Button
               size="small"
               type="primary"
@@ -732,9 +754,11 @@ export function ProviderDetail() {
                 </Text>
               </Flexbox>
               <Flexbox horizontal gap={12}>
-                <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-                  {t('provider.model.addModel')}
-                </Button>
+                {!isCli && (
+                  <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
+                    {t('provider.model.addModel')}
+                  </Button>
+                )}
                 <Button
                   type="primary"
                   icon={<RefreshCw size={14} />}

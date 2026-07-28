@@ -506,6 +506,8 @@ pub struct ProviderUpdateInput {
     pub runtime_kind: Option<String>,
     pub cli_command: Option<String>,
     pub protocol: Option<String>,
+    #[serde(default)]
+    pub version: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1935,4 +1937,37 @@ pub struct FederationCatalogSearchInput {
     pub station_id: Option<String>,
     #[serde(default)]
     pub page_size: Option<u32>,
+}
+
+// ─── Federation Lifecycle Inputs ────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationCreateInput {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub policy_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationJoinInput {
+    #[serde(default)]
+    pub federation_endpoint: String,
+    #[serde(default)]
+    pub federation_id: String,
+    #[serde(default)]
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationLeaveInput {
+    pub federation_id: String,
+    #[serde(default)]
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationListMemberStationsInput {
+    pub federation_id: String,
 }

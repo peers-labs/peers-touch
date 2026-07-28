@@ -47,6 +47,7 @@
   "provider.model.addModel": "Add Model",
   "provider.model.fetchModels": "Fetch models",
   "provider.model.fetchedNew": "Fetched {{count}} new model(s)",
+  "provider.model.fetchedCliModels": "{{count}} model(s) available via CLI",
   "provider.model.noNewModels": "No new models found",
   "provider.model.failedToFetch": "Failed to fetch models",
   "provider.model.removed": "Model removed",

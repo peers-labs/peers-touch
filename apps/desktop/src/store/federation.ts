@@ -28,6 +28,11 @@ import { api } from '../services/desktop_api';
 import type {
   FederationHealthView,
   FederationSelfView,
+  FederationSummary,
+  CreateFederationResponse,
+  JoinFederationResponse,
+  LeaveFederationResponse,
+  MemberStationView,
 } from '../services/desktop_api';
 import { log } from '../utils/logger';
 
@@ -45,10 +50,17 @@ export interface FederationState {
   loading: boolean;
   /** Last error surface; rendered by Settings when non-empty. */
   lastError: string | null;
+  /** Detailed federation list from governance subserver. */
+  federations: FederationSummary[];
 
   refreshSelf: () => Promise<void>;
   refreshHealth: () => Promise<void>;
+  refreshFederations: () => Promise<void>;
   setVisibility: (label: FederationVisibilityLabel) => Promise<void>;
+  createFederation: (name: string, description?: string, policyType?: string) => Promise<CreateFederationResponse>;
+  joinFederation: (params: { federationEndpoint?: string; federationId?: string; message?: string }) => Promise<JoinFederationResponse>;
+  leaveFederation: (federationId: string, reason?: string) => Promise<LeaveFederationResponse>;
+  listMemberStations: (federationId: string) => Promise<MemberStationView[]>;
   /** Drop session-bound state (called by FederationRuntime on logout). */
   clearSession: () => void;
 }
@@ -58,6 +70,7 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
   health: null,
   loading: false,
   lastError: null,
+  federations: [],
 
   refreshSelf: async () => {
     const wasLoaded = get().self != null;
@@ -70,8 +83,6 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
       log.warn('federation', 'refreshSelf failed', { error: msg });
       set((state) => ({
         loading: false,
-        // Don't clobber a previously-good snapshot on a transient failure;
-        // the UI keeps rendering the last-known identity until next tick.
         lastError: msg,
         self: state.self,
       }));
@@ -84,16 +95,23 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
       set({ health: view });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Health failures are normal during boot before Station is ready;
-      // we keep the last successful snapshot and just log.
       log.debug('federation', 'refreshHealth failed', { error: msg });
+    }
+  },
+
+  refreshFederations: async () => {
+    try {
+      const resp = await api.federationListFederations();
+      set({ federations: resp.federations ?? [] });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn('federation', 'refreshFederations failed', { error: msg });
     }
   },
 
   setVisibility: async (label) => {
     const prev = get().self;
     if (prev) {
-      // Optimistic UI: render the new label immediately.
       set({
         self: {
           ...prev,
@@ -108,11 +126,46 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn('federation', 'setVisibility failed', { error: msg, label });
-      // Roll back the optimistic update so the dropdown returns to its
-      // previous state and the error is surfaced.
       set({ self: prev, lastError: msg });
       throw err;
     }
+  },
+
+  createFederation: async (name, description, policyType) => {
+    const resp = await api.federationCreate({
+      name,
+      description: description ?? '',
+      policy_type: policyType ?? 'single_admin',
+    });
+    await get().refreshSelf();
+    await get().refreshFederations();
+    return resp;
+  },
+
+  joinFederation: async (params) => {
+    const resp = await api.federationJoin({
+      federation_endpoint: params.federationEndpoint ?? '',
+      federation_id: params.federationId ?? '',
+      message: params.message ?? '',
+    });
+    await get().refreshSelf();
+    await get().refreshFederations();
+    return resp;
+  },
+
+  leaveFederation: async (federationId, reason) => {
+    const resp = await api.federationLeave({
+      federation_id: federationId,
+      reason: reason ?? '',
+    });
+    await get().refreshSelf();
+    await get().refreshFederations();
+    return resp;
+  },
+
+  listMemberStations: async (federationId) => {
+    const resp = await api.federationListMemberStations(federationId);
+    return resp.stations ?? [];
   },
 
   clearSession: () =>
@@ -120,8 +173,7 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
       self: null,
       loading: false,
       lastError: null,
-      // Health is not session-bound — the routing table is the same
-      // pre/post login. Keep it warm.
+      federations: [],
     }),
 }));
 

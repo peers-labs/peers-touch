@@ -4,7 +4,7 @@ import { registerModule } from './registry';
 import { ProviderLayout } from '../components/settings/ProviderLayout';
 
 function ProvidersPanel() {
-  return createElement('div', { style: { height: '100%', overflow: 'hidden' } },
+  return createElement('div', { style: { height: '100%', width: '100%', overflow: 'hidden' } },
     createElement(ProviderLayout));
 }
 
