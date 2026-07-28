@@ -5170,7 +5170,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             match station_request_json(
                 Method::POST,
-                "/friend-chat/friend-request/send",
+                "/api/v1/social/friend-request/send",
                 &token,
                 None,
                 Some(json!({
@@ -5193,7 +5193,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             match station_request_json(
                 Method::POST,
-                "/friend-chat/friend-request/accept",
+                "/api/v1/social/friend-request/accept",
                 &token,
                 None,
                 Some(json!({"request_id": input.request_id})),
@@ -5213,7 +5213,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             match station_request_json(
                 Method::POST,
-                "/friend-chat/friend-request/reject",
+                "/api/v1/social/friend-request/reject",
                 &token,
                 None,
                 Some(json!({"request_id": input.request_id})),
@@ -5241,7 +5241,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             query.push(("offset", offset.to_string()));
             match station_request_json(
                 Method::GET,
-                "/friend-chat/friend-requests",
+                "/api/v1/social/friend-requests",
                 &token,
                 Some(&query),
                 None,

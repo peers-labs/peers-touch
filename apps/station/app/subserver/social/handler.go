@@ -12,6 +12,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 )
 
 // Route constants. The legacy `/api/v1/social/posts*` routes are
@@ -67,6 +68,12 @@ const (
 	routeSocialCircles      = "/api/v1/social/circles"
 	routeSocialCircle       = "/api/v1/social/circles/:id"
 	routeSocialCircleMember = "/api/v1/social/circles/:id/members"
+
+	// Friend Requests
+	routeSocialFriendRequestSend   = "/api/v1/social/friend-request/send"
+	routeSocialFriendRequestAccept = "/api/v1/social/friend-request/accept"
+	routeSocialFriendRequestReject = "/api/v1/social/friend-request/reject"
+	routeSocialFriendRequests      = "/api/v1/social/friend-requests"
 )
 
 func (s *subServer) Handlers() []server.Handler {
@@ -126,6 +133,12 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-add-circle-member", routeSocialCircleMember, server.POST, s.handleAddCircleMembers, cw, jw),
 		server.NewTypedHandler("social-remove-circle-member", routeSocialCircleMember, server.DELETE, s.handleRemoveCircleMembers, cw, jw),
 		server.NewTypedHandler("social-list-circle-members", routeSocialCircleMember, server.GET, s.handleListCircleMembers, cw, jw),
+
+		// Friend Requests
+		server.NewTypedHandler("social-send-friend-request", routeSocialFriendRequestSend, server.POST, s.handleSendFriendRequest, cw, jw),
+		server.NewTypedHandler("social-accept-friend-request", routeSocialFriendRequestAccept, server.POST, s.handleAcceptFriendRequest, cw, jw),
+		server.NewTypedHandler("social-reject-friend-request", routeSocialFriendRequestReject, server.POST, s.handleRejectFriendRequest, cw, jw),
+		server.NewTypedHandler("social-list-friend-requests", routeSocialFriendRequests, server.GET, s.handleListFriendRequests, cw, jw),
 	}
 }
 
@@ -809,4 +822,92 @@ func audienceFromLegacyVisibility(v model.PostVisibility) *model.Audience {
 	default:
 		return &model.Audience{Kind: model.Audience_PUBLIC}
 	}
+}
+
+// --- Friend Request handlers -------------------------------------------------
+
+func (s *subServer) handleSendFriendRequest(ctx context.Context, req *chat.SendFriendRequestRequest) (*chat.SendFriendRequestResponse, error) {
+	userID, ok := getUserID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.ReceiverDid == "" {
+		return nil, server.BadRequest("receiver_did is required")
+	}
+	receiverID, err := strconv.ParseUint(req.ReceiverDid, 10, 64)
+	if err != nil {
+		return nil, server.BadRequest("invalid receiver_did")
+	}
+	fr, err := s.friendRequestSvc.SendFriendRequest(ctx, userID, receiverID, req.Message)
+	if err != nil {
+		switch err {
+		case application.ErrFriendRequestSelf:
+			return nil, server.BadRequest(err.Error())
+		case application.ErrFriendRequestBlocked:
+			return nil, server.Forbidden(err.Error())
+		case application.ErrAlreadyFriends:
+			return nil, server.BadRequest(err.Error())
+		default:
+			return nil, server.InternalErrorWithCause("failed to send friend request", err)
+		}
+	}
+	return &chat.SendFriendRequestResponse{Request: fr}, nil
+}
+
+func (s *subServer) handleAcceptFriendRequest(ctx context.Context, req *chat.AcceptFriendRequestRequest) (*chat.AcceptFriendRequestResponse, error) {
+	userID, ok := getUserID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.RequestId == "" {
+		return nil, server.BadRequest("request_id is required")
+	}
+	fr, err := s.friendRequestSvc.AcceptFriendRequest(ctx, userID, req.RequestId)
+	if err != nil {
+		switch err {
+		case application.ErrFriendRequestNotFound:
+			return nil, server.NotFound(err.Error())
+		case application.ErrNotRequestReceiver:
+			return nil, server.Forbidden(err.Error())
+		case application.ErrFriendRequestBlocked:
+			return nil, server.Forbidden(err.Error())
+		default:
+			return nil, server.InternalErrorWithCause("failed to accept friend request", err)
+		}
+	}
+	return &chat.AcceptFriendRequestResponse{Request: fr}, nil
+}
+
+func (s *subServer) handleRejectFriendRequest(ctx context.Context, req *chat.RejectFriendRequestRequest) (*chat.RejectFriendRequestResponse, error) {
+	userID, ok := getUserID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.RequestId == "" {
+		return nil, server.BadRequest("request_id is required")
+	}
+	fr, err := s.friendRequestSvc.RejectFriendRequest(ctx, userID, req.RequestId)
+	if err != nil {
+		switch err {
+		case application.ErrFriendRequestNotFound:
+			return nil, server.NotFound(err.Error())
+		case application.ErrNotRequestReceiver:
+			return nil, server.Forbidden(err.Error())
+		default:
+			return nil, server.InternalErrorWithCause("failed to reject friend request", err)
+		}
+	}
+	return &chat.RejectFriendRequestResponse{Request: fr}, nil
+}
+
+func (s *subServer) handleListFriendRequests(ctx context.Context, req *chat.ListFriendRequestsRequest) (*chat.ListFriendRequestsResponse, error) {
+	userID, ok := getUserID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authentication required")
+	}
+	requests, total, err := s.friendRequestSvc.ListFriendRequests(ctx, userID, int32(req.Status), int(req.Limit), int(req.Offset))
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to list friend requests", err)
+	}
+	return &chat.ListFriendRequestsResponse{Requests: requests, Total: int32(total)}, nil
 }
