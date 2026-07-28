@@ -178,7 +178,11 @@ func resolveProfiles(ctx context.Context, ids []uint64) map[uint64]actorProfile 
 		return out
 	}
 	for id, a := range actors {
-		out[id] = actorProfile{Name: a.Name, Avatar: a.Icon}
+		name := a.Name
+		if name == "" {
+			name = a.PreferredUsername
+		}
+		out[id] = actorProfile{Name: name, Avatar: a.Icon}
 	}
 	return out
 }
