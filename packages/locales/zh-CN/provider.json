@@ -47,6 +47,7 @@
   "provider.model.addModel": "添加模型",
   "provider.model.fetchModels": "拉取模型",
   "provider.model.fetchedNew": "已拉取 {{count}} 个新模型",
+  "provider.model.fetchedCliModels": "CLI 可用 {{count}} 个模型",
   "provider.model.noNewModels": "未发现新模型",
   "provider.model.failedToFetch": "拉取模型失败",
   "provider.model.removed": "模型已移除",

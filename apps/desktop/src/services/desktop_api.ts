@@ -5701,13 +5701,15 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     check_model: checkModel,
     models: models.length > 0
       ? models
-      : [{
-        id: checkModel,
-        display_name: checkModel,
-        type: 'chat',
-        enabled: true,
-        context_window: 0,
-      }],
+      : runtimeKind === 'cli' || hasCliCommand
+        ? []
+        : [{
+          id: checkModel,
+          display_name: checkModel,
+          type: 'chat',
+          enabled: true,
+          context_window: 0,
+        }],
   };
 }
 
