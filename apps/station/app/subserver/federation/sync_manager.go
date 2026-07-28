@@ -22,6 +22,10 @@ type RemoteLedgerFetcher interface {
 	FetchEvents(ctx context.Context, endpoint, targetPeerID, federationID string, fromSeq uint64, limit uint32) ([]*pb.LedgerEvent, error)
 }
 
+type RemoteGovernanceClient interface {
+	SubmitProposal(ctx context.Context, endpoint, targetPeerID string, req *pb.SubmitProposalRequest) (*pb.SubmitProposalResponse, error)
+}
+
 type LedgerSyncManager struct {
 	mu       sync.Mutex
 	running  bool
