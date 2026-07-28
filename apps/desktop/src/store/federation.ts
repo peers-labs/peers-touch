@@ -30,6 +30,7 @@ import type {
   FederationSelfView,
   FederationSummary,
   CreateFederationResponse,
+  DeleteFederationResponse,
   JoinFederationResponse,
   LeaveFederationResponse,
   MemberStationView,
@@ -60,6 +61,7 @@ export interface FederationState {
   createFederation: (name: string, description?: string, policyType?: string) => Promise<CreateFederationResponse>;
   joinFederation: (params: { federationEndpoint?: string; federationId?: string; message?: string }) => Promise<JoinFederationResponse>;
   leaveFederation: (federationId: string, reason?: string) => Promise<LeaveFederationResponse>;
+  deleteFederation: (federationId: string) => Promise<DeleteFederationResponse>;
   listMemberStations: (federationId: string) => Promise<MemberStationView[]>;
   /** Drop session-bound state (called by FederationRuntime on logout). */
   clearSession: () => void;
@@ -157,6 +159,15 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
     const resp = await api.federationLeave({
       federation_id: federationId,
       reason: reason ?? '',
+    });
+    await get().refreshSelf();
+    await get().refreshFederations();
+    return resp;
+  },
+
+  deleteFederation: async (federationId) => {
+    const resp = await api.federationDelete({
+      federation_id: federationId,
     });
     await get().refreshSelf();
     await get().refreshFederations();
