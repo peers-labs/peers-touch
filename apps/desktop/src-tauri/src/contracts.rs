@@ -1971,3 +1971,8 @@ pub struct FederationLeaveInput {
 pub struct FederationListMemberStationsInput {
     pub federation_id: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationDeleteInput {
+    pub federation_id: String,
+}
