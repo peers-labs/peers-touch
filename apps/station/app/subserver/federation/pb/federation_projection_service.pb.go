@@ -781,6 +781,94 @@ func (x *LeaveFederationResponse) GetSuccess() bool {
 	return false
 }
 
+type DeleteFederationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FederationId  string                 `protobuf:"bytes,1,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteFederationRequest) Reset() {
+	*x = DeleteFederationRequest{}
+	mi := &file_domain_federation_federation_projection_service_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteFederationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteFederationRequest) ProtoMessage() {}
+
+func (x *DeleteFederationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_federation_federation_projection_service_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteFederationRequest.ProtoReflect.Descriptor instead.
+func (*DeleteFederationRequest) Descriptor() ([]byte, []int) {
+	return file_domain_federation_federation_projection_service_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *DeleteFederationRequest) GetFederationId() string {
+	if x != nil {
+		return x.FederationId
+	}
+	return ""
+}
+
+type DeleteFederationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteFederationResponse) Reset() {
+	*x = DeleteFederationResponse{}
+	mi := &file_domain_federation_federation_projection_service_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteFederationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteFederationResponse) ProtoMessage() {}
+
+func (x *DeleteFederationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_federation_federation_projection_service_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteFederationResponse.ProtoReflect.Descriptor instead.
+func (*DeleteFederationResponse) Descriptor() ([]byte, []int) {
+	return file_domain_federation_federation_projection_service_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DeleteFederationResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
 var File_domain_federation_federation_projection_service_proto protoreflect.FileDescriptor
 
 const file_domain_federation_federation_projection_service_proto_rawDesc = "" +
@@ -850,6 +938,10 @@ const file_domain_federation_federation_projection_service_proto_rawDesc = "" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"3\n" +
 	"\x17LeaveFederationResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\">\n" +
+	"\x17DeleteFederationRequest\x12#\n" +
+	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\"4\n" +
+	"\x18DeleteFederationResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccessBTZRgithub.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpbb\x06proto3"
 
 var (
@@ -864,7 +956,7 @@ func file_domain_federation_federation_projection_service_proto_rawDescGZIP() []
 	return file_domain_federation_federation_projection_service_proto_rawDescData
 }
 
-var file_domain_federation_federation_projection_service_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_domain_federation_federation_projection_service_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_domain_federation_federation_projection_service_proto_goTypes = []any{
 	(*ListFederationsResponse)(nil),    // 0: peers_touch.model.federation.v1.ListFederationsResponse
 	(*FederationSummary)(nil),          // 1: peers_touch.model.federation.v1.FederationSummary
@@ -878,6 +970,8 @@ var file_domain_federation_federation_projection_service_proto_goTypes = []any{
 	(*JoinFederationResponse)(nil),     // 9: peers_touch.model.federation.v1.JoinFederationResponse
 	(*LeaveFederationRequest)(nil),     // 10: peers_touch.model.federation.v1.LeaveFederationRequest
 	(*LeaveFederationResponse)(nil),    // 11: peers_touch.model.federation.v1.LeaveFederationResponse
+	(*DeleteFederationRequest)(nil),    // 12: peers_touch.model.federation.v1.DeleteFederationRequest
+	(*DeleteFederationResponse)(nil),   // 13: peers_touch.model.federation.v1.DeleteFederationResponse
 }
 var file_domain_federation_federation_projection_service_proto_depIdxs = []int32{
 	1, // 0: peers_touch.model.federation.v1.ListFederationsResponse.federations:type_name -> peers_touch.model.federation.v1.FederationSummary
@@ -902,7 +996,7 @@ func file_domain_federation_federation_projection_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_federation_federation_projection_service_proto_rawDesc), len(file_domain_federation_federation_projection_service_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
