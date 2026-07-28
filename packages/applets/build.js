@@ -107,6 +107,16 @@ function sleep(ms) {
 
 async function acquireBuildLock() {
   await fs.mkdir(path.dirname(buildLockPath), { recursive: true })
+
+  // Remove stale lock left by a crashed process
+  try {
+    const raw = await fs.readFile(buildLockPath, 'utf-8')
+    const { pid } = JSON.parse(raw)
+    if (pid && !isProcessAlive(pid)) {
+      await fs.rm(buildLockPath, { force: true })
+    }
+  } catch { /* no lock or unreadable — proceed normally */ }
+
   const deadline = Date.now() + 120000
   while (Date.now() < deadline) {
     try {
@@ -122,6 +132,10 @@ async function acquireBuildLock() {
     }
   }
   throw new Error(`Timed out waiting for applet build lock: ${buildLockPath}`)
+}
+
+function isProcessAlive(pid) {
+  try { process.kill(pid, 0); return true } catch { return false }
 }
 
 async function collectFiles(dir, base = dir) {

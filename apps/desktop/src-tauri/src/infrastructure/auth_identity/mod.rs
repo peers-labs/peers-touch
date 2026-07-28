@@ -45,10 +45,11 @@ pub struct AccountIdentity {
 }
 
 pub fn account_identity_path() -> Result<PathBuf, String> {
+    let station_scope = crate::infrastructure::local_scope::active_station_scope();
     storage::app_file_path(
         "desktop",
         StorageKind::Data,
-        &["account", "identities.json"],
+        &["account", &station_scope, "identities.json"],
     )
     .map_err(|err| format!("failed to resolve account identity path: {err:?}"))
 }

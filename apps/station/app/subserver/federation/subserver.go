@@ -34,6 +34,7 @@ type subServer struct {
 	projectionSvc *application.ProjectionService
 	actorKeySvc   *domain.ActorKeyService
 	syncManager   *LedgerSyncManager
+	govClient     RemoteGovernanceClient
 }
 
 func NewFederationSubServer(_ ...option.Option) server.Subserver {
@@ -127,6 +128,8 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		return node.GetService().Options().Id
 	}
 
+	fetcher := NewHTTPLedgerFetcher(fedCache, localStationFn)
+
 	s.syncManager = NewLedgerSyncManager(
 		s.ledgerSvc,
 		repos.Federation,
@@ -135,9 +138,10 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		repos.Membership,
 		publisher,
 		hashSvc,
-		NewHTTPLedgerFetcher(fedCache, localStationFn),
+		fetcher,
 		"",
 	)
+	s.govClient = fetcher
 
 	log.Infof(ctx, "[federation] subserver initialized")
 	return nil
@@ -176,8 +180,10 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("fed-list-members", "/sub-federation/federations/:federation_id/stations", server.GET, s.handleListMemberStations, jw),
 		server.NewTypedHandler("fed-join", "/sub-federation/federations/join", server.POST, s.handleJoinFederation, jw),
 		server.NewTypedHandler("fed-leave", "/sub-federation/federations/:federation_id/leave", server.POST, s.handleLeaveFederation, jw),
+		server.NewTypedHandler("fed-delete", "/sub-federation/federations/:federation_id/delete", server.POST, s.handleDeleteFederation, jw),
 		server.NewTypedHandler("fed-catalog-search", "/sub-federation/catalog/search", server.POST, s.handleCatalogSearch, jw),
 		server.NewTypedHandler("fed-fetch-head", "/fed/v1/ledger/head", server.POST, s.handleFetchHead, fw),
 		server.NewTypedHandler("fed-fetch-events", "/fed/v1/ledger/events", server.POST, s.handleFetchEvents, fw),
+		server.NewTypedHandler("fed-submit-proposal", "/fed/v1/governance/submit-proposal", server.POST, s.handleSubmitProposal),
 	}
 }
