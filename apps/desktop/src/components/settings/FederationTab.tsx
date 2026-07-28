@@ -33,7 +33,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Alert, Button, Card, Input, Modal, Select, Tag, Tooltip, Typography, message, theme } from 'antd';
-import { Copy, Globe, Info, Link2, Network, Plus, Server, UserPlus, Wifi, WifiOff } from 'lucide-react';
+import { Copy, Globe, Info, Link2, Plus, Server, UserPlus } from 'lucide-react';
 
 import {
   selectFederationReady,
@@ -45,7 +45,6 @@ import { useActiveFederationSlice } from './useActiveSettingsStores';
 import {
   SettingsContainer,
   SettingsItemCard,
-  SettingsRow,
   SettingsSection,
 } from './SettingsLayout';
 import { FederatedHandle } from '../FederatedHandle';
@@ -219,7 +218,6 @@ export function FederationTab() {
   };
 
   const peersInRoutingTable = health?.peersInRoutingTable ?? 0;
-  const minDhtPeers = health?.minDhtPeers ?? 0;
   const seedsConnected = health?.seedsConnected ?? 0;
   const seedsConfigured = health?.seedsConfigured ?? 0;
   const homeStation = self?.homeStationDomain ?? '';
@@ -242,137 +240,85 @@ export function FederationTab() {
         />
       )}
 
-      <SettingsSection
-        icon={<Network size={18} />}
-        title={t('settings.federation.identity.title')}
-        subtitle={t('settings.federation.identity.subtitle')}
-      >
-        <SettingsItemCard>
-          <Flexbox gap={12}>
-            <SettingsRow label={t('settings.federation.identity.handle')}>
-              {username ? (
-                <FederatedHandle
-                  localPart={username}
-                  home={homeStation}
-                  fontSize={13}
-                />
-              ) : (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('settings.federation.identity.empty')}
-                </Text>
-              )}
-            </SettingsRow>
-            <SettingsRow
-              label={t('settings.federation.identity.homeStation')}
-              description={t('settings.federation.identity.homeStationHint')}
-            >
-              <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>
-                {homeStation || '—'}
-              </Text>
-            </SettingsRow>
-            <SettingsRow
-              label={t('settings.federation.identity.locatorSeq')}
-              description={t('settings.federation.identity.locatorSeqHint')}
-            >
-              <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>
-                {locatorSeq || '—'}
-              </Text>
-            </SettingsRow>
-            <SettingsRow
-              label={t('settings.federation.identity.relayMounts')}
-              description={t('settings.federation.identity.relayMountsHint')}
-              vertical
-            >
-              {relayMounts.length > 0 ? (
-                <Flexbox horizontal wrap="wrap" gap={6}>
-                  {relayMounts.map((mount) => (
-                    <Tag
-                      key={mount}
-                      icon={<Network size={11} style={{ marginRight: 2 }} />}
-                      style={{ fontSize: 12 }}
-                    >
-                      {mount}
-                    </Tag>
-                  ))}
-                </Flexbox>
-              ) : (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('settings.federation.identity.relayMountsEmpty')}
-                </Text>
-              )}
-            </SettingsRow>
-          </Flexbox>
-        </SettingsItemCard>
-      </SettingsSection>
-
+      {/* ─── Basic Info (identity + health + discovery merged) ───── */}
       <SettingsSection
         icon={<Globe size={18} />}
-        title={t('settings.federation.visibility.title')}
-        subtitle={t('settings.federation.visibility.subtitle')}
+        title={t('settings.federation.basicInfo.title', { defaultValue: 'Basic Info' })}
+        subtitle={t('settings.federation.basicInfo.subtitle', { defaultValue: 'Your federation identity, routing status, and discovery settings.' })}
       >
         <SettingsItemCard>
-          <Flexbox gap={12}>
-            <Flexbox horizontal align="center" justify="space-between" gap={12}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 13 }}>
+            <div>
+              <Text type="secondary" style={{ fontSize: 11 }}>{t('settings.federation.identity.handle')}</Text>
+              <div>
+                {username ? (
+                  <FederatedHandle localPart={username} home={homeStation} fontSize={13} />
+                ) : (
+                  <Text type="secondary" style={{ fontSize: 12 }}>—</Text>
+                )}
+              </div>
+            </div>
+            <div>
+              <Text type="secondary" style={{ fontSize: 11 }}>{t('settings.federation.identity.homeStation')}</Text>
+              <div><Text style={{ fontSize: 13 }}>{homeStation || '—'}</Text></div>
+            </div>
+            <div>
+              <Text type="secondary" style={{ fontSize: 11 }}>{t('settings.federation.identity.locatorSeq')}</Text>
+              <div><Text code style={{ fontSize: 12 }}>{locatorSeq || '—'}</Text></div>
+            </div>
+            <div>
+              <Text type="secondary" style={{ fontSize: 11 }}>{t('settings.federation.identity.relayMounts')}</Text>
+              <Flexbox horizontal wrap="wrap" gap={4} style={{ marginTop: 2 }}>
+                {relayMounts.length > 0 ? relayMounts.map((mount) => (
+                  <Tag key={mount} style={{ fontSize: 11 }}>{mount}</Tag>
+                )) : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>}
+              </Flexbox>
+            </div>
+          </div>
+
+          {/* Health status line */}
+          <Flexbox
+            horizontal
+            align="center"
+            gap={16}
+            style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${token.colorBorderSecondary}`, fontSize: 13 }}
+          >
+            <Tag color={ready ? 'success' : 'warning'} style={{ margin: 0 }}>
+              {ready ? t('settings.federation.health.ready') : t('settings.federation.health.joining')}
+            </Tag>
+            <Text type="secondary">
+              <Text strong>{peersInRoutingTable}</Text> {t('settings.federation.health.peersInRoutingTable')}
+            </Text>
+            <Text type="secondary">
+              {t('settings.federation.health.seedsConnected')} <Text strong>{seedsConnected}/{seedsConfigured}</Text>
+            </Text>
+          </Flexbox>
+
+          {/* Discovery select */}
+          <Flexbox
+            horizontal
+            align="center"
+            justify="space-between"
+            style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${token.colorBorderSecondary}` }}
+          >
+            <Flexbox gap={2}>
               <Flexbox horizontal align="center" gap={6}>
-                <Text strong style={{ fontSize: 13 }}>
-                  {t('settings.federation.visibility.label')}
-                </Text>
-                <Tooltip
-                  title={t('settings.federation.visibility.tooltip')}
-                  placement="right"
-                >
+                <Text strong style={{ fontSize: 13 }}>{t('settings.federation.visibility.label')}</Text>
+                <Tooltip title={t('settings.federation.visibility.tooltip')} placement="right">
                   <Info size={13} style={{ color: token.colorTextTertiary }} />
                 </Tooltip>
               </Flexbox>
-              <Select<FederationVisibilityLabel>
-                value={visibility}
-                options={visibilityOptions}
-                onChange={handleVisibilityChange}
-                disabled={!self || saving}
-                loading={saving}
-                style={{ minWidth: 160 }}
-                popupMatchSelectWidth={false}
-              />
+              <Text type="secondary" style={{ fontSize: 11 }}>{visibilityHint}</Text>
             </Flexbox>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {visibilityHint}
-            </Text>
-          </Flexbox>
-        </SettingsItemCard>
-      </SettingsSection>
-
-      <SettingsSection
-        icon={ready ? <Wifi size={18} /> : <WifiOff size={18} />}
-        title={t('settings.federation.health.title')}
-        subtitle={t('settings.federation.health.subtitle')}
-        extra={
-          <Tag color={ready ? 'success' : 'warning'}>
-            {ready
-              ? t('settings.federation.health.ready')
-              : t('settings.federation.health.joining')}
-          </Tag>
-        }
-      >
-        <SettingsItemCard>
-          <Flexbox gap={8}>
-            <SettingsRow
-              label={t('settings.federation.health.peersInRoutingTable')}
-              description={t('settings.federation.health.peersHint', {
-                min: minDhtPeers,
-              })}
-            >
-              <Text strong style={{ fontSize: 13 }}>
-                {peersInRoutingTable}
-              </Text>
-            </SettingsRow>
-            <SettingsRow
-              label={t('settings.federation.health.seedsConnected')}
-              description={t('settings.federation.health.seedsHint')}
-            >
-              <Text strong style={{ fontSize: 13 }}>
-                {seedsConnected} / {seedsConfigured}
-              </Text>
-            </SettingsRow>
+            <Select<FederationVisibilityLabel>
+              value={visibility}
+              options={visibilityOptions}
+              onChange={handleVisibilityChange}
+              disabled={!self || saving}
+              loading={saving}
+              style={{ minWidth: 140 }}
+              popupMatchSelectWidth={false}
+            />
           </Flexbox>
         </SettingsItemCard>
       </SettingsSection>
