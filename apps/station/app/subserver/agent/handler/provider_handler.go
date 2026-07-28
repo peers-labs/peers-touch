@@ -48,6 +48,28 @@ func (h *ProviderHandlers) HandleVerifyCli(_ context.Context, req *model.VerifyC
 	}, nil
 }
 
+func (h *ProviderHandlers) HandleFetchCliModels(_ context.Context, req *model.FetchCliModelsRequest) (*model.FetchCliModelsResponse, error) {
+	providerID := req.GetProviderId()
+	if providerID == "" {
+		return nil, server.NewHandlerError(http.StatusBadRequest, "provider_id is required")
+	}
+
+	cp := catalog.Find(providerID)
+	if cp == nil {
+		return nil, server.NewHandlerError(http.StatusNotFound, "provider not found in catalog")
+	}
+	if cp.ModelsCommand == "" {
+		return nil, server.NewHandlerError(http.StatusBadRequest, "provider has no models_command")
+	}
+
+	models, err := cli.FetchModels(cp.ModelsCommand)
+	if err != nil {
+		return nil, server.NewHandlerError(http.StatusInternalServerError, err.Error())
+	}
+
+	return &model.FetchCliModelsResponse{Models: models}, nil
+}
+
 func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.ListProvidersRequest) (*model.ListProvidersResponse, error) {
 	actorID := subjectActorID(ctx)
 
@@ -123,6 +145,7 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 			Version:          version,
 			Source:           "catalog",
 			CliCommand:       cp.CliCommand,
+			ModelsCommand:    cp.ModelsCommand,
 			Models:           models,
 		})
 	}
@@ -222,6 +245,7 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 			Version:          version,
 			Source:           "catalog",
 			CliCommand:       cp.CliCommand,
+			ModelsCommand:    cp.ModelsCommand,
 			Models:           models,
 		}}, nil
 	}
