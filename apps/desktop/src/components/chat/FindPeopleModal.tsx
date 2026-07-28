@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input } from '@lobehub/ui';
@@ -134,8 +134,10 @@ function catalogEntryToResult(entry: FederationCatalogEntry): ActorSearchResult 
 export function FindPeopleModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sendFriendRequest } = useActiveSocialChatSlice((s) => ({
+  const { sendFriendRequest, loadFriendRequests, friendRequests } = useActiveSocialChatSlice((s) => ({
     sendFriendRequest: s.sendFriendRequest,
+    loadFriendRequests: s.loadFriendRequests,
+    friendRequests: s.friendRequests,
   }));
   const currentUserDid = useActiveSocialChatStore((s) => s.currentUserDid);
   const federationReady = useActiveChatFederationSlice(selectFederationReady);
@@ -147,8 +149,25 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const [searching, setSearching] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [sentIds, setSentIds] = useState<Set<string>>(() => new Set());
+  const sentTimestamps = useRef<Map<string, number>>(new Map());
   const [searchScope, setSearchScope] = useState<SearchScope>('all');
   const [selectedFederationId, setSelectedFederationId] = useState<string>('');
+
+  const RESEND_COOLDOWN_MS = 5 * 60 * 1000;
+
+  useEffect(() => {
+    if (open) loadFriendRequests();
+  }, [open, loadFriendRequests]);
+
+  const pendingReceiverIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const req of friendRequests) {
+      if (req.status === 0 && req.senderId === currentUserDid) {
+        ids.add(req.receiverId);
+      }
+    }
+    return ids;
+  }, [friendRequests, currentUserDid]);
 
   const parsed = useMemo(() => parseHandleInput(searchText), [searchText]);
   const blockedByGate = parsed.isFederated && parsed.hasHost && !federationReady;
@@ -217,6 +236,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
     try {
       await sendFriendRequest(receiverDid, '');
       setSentIds((prev) => new Set(prev).add(receiverDid));
+      sentTimestamps.current.set(receiverDid, Date.now());
       message.success(t('chat.social.findPeople.requestSent'));
     } catch (e: unknown) {
       message.error(
@@ -372,7 +392,9 @@ export function FindPeopleModal({ open, onClose }: Props) {
           ) : (
             results.map((r) => {
               const receiverDid = r.actorId || r.id;
-              const alreadySent = sentIds.has(receiverDid);
+              const isPending = pendingReceiverIds.has(receiverDid) || sentIds.has(receiverDid);
+              const sentAt = sentTimestamps.current.get(receiverDid);
+              const cooldownActive = isPending && (!sentAt || Date.now() - sentAt < RESEND_COOLDOWN_MS);
               const isSelf = !!currentUserDid && receiverDid === currentUserDid;
               return (
                 <Flexbox
@@ -435,20 +457,20 @@ export function FindPeopleModal({ open, onClose }: Props) {
                     />
                   </Flexbox>
                   <Button
-                    type={alreadySent ? 'default' : 'primary'}
+                    type={cooldownActive ? 'default' : 'primary'}
                     size="small"
                     loading={addingId === receiverDid}
-                    disabled={alreadySent || isSelf}
+                    disabled={cooldownActive || isSelf}
                     onClick={(event) => {
                       event.stopPropagation();
                       void handleSendRequest(r);
                     }}
-                    style={alreadySent ? { color: token.colorSuccess, borderColor: token.colorSuccess } : undefined}
+                    style={cooldownActive ? { color: token.colorSuccess, borderColor: token.colorSuccess } : undefined}
                   >
                     {isSelf
                       ? t('chat.social.findPeople.self')
-                      : alreadySent
-                        ? `✓ ${t('chat.social.findPeople.sent')}`
+                      : cooldownActive
+                        ? t('chat.social.findPeople.awaitingApproval')
                         : t('chat.social.findPeople.sendRequest')}
                   </Button>
                 </Flexbox>
