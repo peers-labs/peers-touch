@@ -133,7 +133,7 @@ func (s *subServer) Handlers() []server.Handler {
 			s.handleGroupJoin, logID, s.jwtWrapper),
 		server.NewTypedHandler("compat-gc-remove-member", "/group-chat/member/remove", server.POST,
 			s.handleGroupRemoveMember, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-update-member", "/group-chat/member/update", server.PUT,
+		server.NewTypedHandler("compat-gc-update-member", "/group-chat/member/update", server.POST,
 			s.handleGroupUpdateMember, logID, s.jwtWrapper),
 		server.NewTypedHandler("compat-gc-transfer-ownership", "/group-chat/ownership/transfer", server.POST,
 			s.handleGroupTransferOwnership, logID, s.jwtWrapper),
