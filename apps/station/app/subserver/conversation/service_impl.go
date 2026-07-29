@@ -401,6 +401,21 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 				DissolvedByPtid: cmd.SenderPtid,
 			},
 		}
+
+	case *chat.ConversationCommand_React:
+		if p.React.MessageId == "" || p.React.Emoji == "" {
+			return nil, fmt.Errorf("conversation: react requires message_id and emoji")
+		}
+		event.Payload = &chat.CommittedConversationEvent_Reaction{
+			Reaction: &chat.ReactionEvent{
+				MessageId: p.React.MessageId,
+				ActorPtid: cmd.SenderPtid,
+				Emoji:     p.React.Emoji,
+				Removed:   p.React.Remove,
+				Ts:        event.CommittedAt,
+			},
+		}
+
 	default:
 		return nil, fmt.Errorf("conversation: unsupported command type")
 	}
