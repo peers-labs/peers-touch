@@ -222,10 +222,39 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 			})
 		}
 
+		// Merge user-added models from DB (e.g. CLI-fetched models)
+		catalogIDs := make(map[string]bool, len(models))
+		for _, m := range models {
+			catalogIDs[m.Id] = true
+		}
+		dbModels, _ := h.modelConfig.List(ctx, actorID, providerID)
+		for i := range dbModels {
+			if catalogIDs[dbModels[i].ModelID] || contains(hidden, dbModels[i].ModelID) {
+				continue
+			}
+			models = append(models, &model.ProviderModelInfo{
+				Id:            dbModels[i].ModelID,
+				DisplayName:   dbModels[i].DisplayName,
+				Type:          "chat",
+				Enabled:       dbModels[i].Enabled,
+				ContextWindow: int32(dbModels[i].ContextWindow),
+			})
+		}
+
 		showAPIKey := true
 		if cp.ShowAPIKey != nil {
 			showAPIKey = *cp.ShowAPIKey
 		}
+
+		baseURL := cp.DefaultBaseURL
+		apiKey := ""
+		if userMatch != nil {
+			if userMatch.BaseURL != "" {
+				baseURL = userMatch.BaseURL
+			}
+			apiKey = parseKeyVaultAPIKey(userMatch.KeyVaults)
+		}
+		_ = apiKey
 
 		return &model.GetProviderResponse{Provider: &model.AgentProviderInfo{
 			Id:               cp.ID,
@@ -236,7 +265,7 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 			Protocol:         cp.Protocol,
 			Discovery:        cp.Discovery,
 			RuntimeKind:      cp.RuntimeKind,
-			BaseUrl:          cp.DefaultBaseURL,
+			BaseUrl:          baseURL,
 			HomeUrl:          cp.HomeURL,
 			ApiKeyUrl:        cp.APIKeyURL,
 			ShowChecker:      cp.ShowChecker,
@@ -361,7 +390,10 @@ func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *mod
 			}
 			return ""
 		}())
+
+		catalogIDs := make(map[string]bool, len(cp.Models))
 		for _, m := range cp.Models {
+			catalogIDs[m.ID] = true
 			if !m.Enabled || contains(hidden, m.ID) {
 				continue
 			}
@@ -373,6 +405,22 @@ func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *mod
 				Type:          m.Type,
 				Enabled:       m.Enabled,
 				ContextWindow: int32(m.ContextWindow),
+			})
+		}
+
+		dbModels, _ := h.modelConfig.List(ctx, actorID, cp.ID)
+		for i := range dbModels {
+			if !dbModels[i].Enabled || catalogIDs[dbModels[i].ModelID] || contains(hidden, dbModels[i].ModelID) {
+				continue
+			}
+			resp.Models = append(resp.Models, &model.AvailableModelInfo{
+				Id:            dbModels[i].ModelID,
+				ProviderId:    cp.ID,
+				ProviderName:  cp.Name,
+				DisplayName:   dbModels[i].DisplayName,
+				Type:          "chat",
+				Enabled:       dbModels[i].Enabled,
+				ContextWindow: int32(dbModels[i].ContextWindow),
 			})
 		}
 	}

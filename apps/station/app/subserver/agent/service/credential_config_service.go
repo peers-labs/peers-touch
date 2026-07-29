@@ -67,8 +67,22 @@ func (s *CredentialConfigService) Set(ctx context.Context, req CredentialSetRequ
 			"failed to update provider key_vaults", err)
 	}
 
+	// Use the provider's own ID so ProviderService.loadProvider can find it.
+	var providerRecord persistence.AgentProvider
+	if err := db.WithContext(ctx).
+		Where("actor_id = ? AND name = ?", req.ActorID, req.ProviderID).
+		First(&providerRecord).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"provider record not found for credential registration", err)
+	}
+
+	poolID := providerRecord.ID
+	if poolID == "" {
+		poolID = uuid.New().String()
+	}
+
 	cred := persistence.Credential{
-		ID:       uuid.New().String(),
+		ID:       poolID,
 		ActorID:  req.ActorID,
 		Provider: req.ProviderID,
 		AuthType: "api_key",
@@ -81,6 +95,7 @@ func (s *CredentialConfigService) Set(ctx context.Context, req CredentialSetRequ
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "actor_id"}, {Name: "provider"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{
+				"id":         poolID,
 				"status":     "active",
 				"version":    gorm.Expr("agent_credential_pool.version + 1"),
 				"updated_at": now,
