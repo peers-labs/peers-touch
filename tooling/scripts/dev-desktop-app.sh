@@ -34,6 +34,9 @@ fi
 ensure_station_ready "$PROJECT_ROOT"
 
 # ── 2. Vite (frontend dev server) ────────────────────────────
+if [[ "${PT_DESKTOP_E2E:-false}" == "true" ]]; then
+  export VITE_ACCEPTANCE_HARNESS=1
+fi
 ensure_desktop_vite_ready "$DESKTOP_DIR" "$WEB_PORT" "$GATEWAY_PORT" "$PROFILE"
 
 # ── 3. Desktop Rust BFF (via Tauri — includes App window) ────

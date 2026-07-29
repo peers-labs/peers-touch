@@ -21,6 +21,10 @@ docs/context/
 
 ## 📋 Contents
 
+### 🧪 Test Resources
+
+**Moved to**: [`docs/knowledge/playbooks/dev-test-accounts.md`](../knowledge/playbooks/dev-test-accounts.md)
+
 ### 🧭 Historical Architecture Notes
 
 **Location**: [`architecture/`](./architecture/)
@@ -59,6 +63,11 @@ docs/context/
 **Location**: [`implementation-reports/`](./implementation-reports/)
 
 Technical reports documenting completed feature implementations:
+
+- [**Desktop Global Lag Diagnosis**](./implementation-reports/20260706-desktop-global-lag-diagnosis.md)
+  - Desktop 一级导航、二级 tab、右键菜单全局卡顿的框架级诊断报告
+  - 包含 Vite browser、Tauri bridge、production build/preview、offline/no-gateway 基线边界
+  - 对应执行计划见 [`docs/architecture/frontend-runtime/execution-plans/20260706-desktop-global-lag-framework-plan.md`](../architecture/frontend-runtime/execution-plans/20260706-desktop-global-lag-framework-plan.md)
 
 - [**ActivityPub Implementation Report**](./implementation-reports/ACTIVITYPUB_IMPLEMENTATION_REPORT.zh.md) (32KB)
   - ActivityPub 协议集成的完整实现报告

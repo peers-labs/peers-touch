@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import {
   applyAllChatNotificationsRead,
   applyChatNotificationsRead,
@@ -34,7 +34,7 @@ interface NotificationStore {
   stopPolling: () => void;
 }
 
-export const useNotificationStore = create<NotificationStore>((set, get) => ({
+export const useNotificationStore = createDesktopStore<NotificationStore>('notification', (set, get) => ({
   notifications: [],
   unreadTotal: 0,
   unreadByCategory: {},

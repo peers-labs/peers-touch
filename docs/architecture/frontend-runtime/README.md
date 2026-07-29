@@ -1,8 +1,8 @@
 # Frontend Runtime Architecture
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-07-02 | **Updated**: 2026-07-02
+> **Version**: v1.2
+> **Created**: 2026-07-02 | **Updated**: 2026-07-11
 > **Owner**: Client Platform Team
 > **Module**: `apps/desktop/src/kernel/`, `apps/desktop/src/runtimes/`, `docs/client/common/ui-identity/`
 
@@ -34,8 +34,11 @@ Peers Touch Desktop 已经具备 `PageHost`、`PageDescriptor`、`RuntimeDescrip
 - 主侧栏和 Settings tabs 切换粘滞，说明隐藏 alive tree、宽 store 订阅或重 section 挂载在同一帧竞争。
 - Applet runtime 页面能跑，但容器产品语义不足，缺少独立运行、容器内全屏和浮动退出/隐藏控制的正式宿主模型。
 - 性能问题只能靠人工截图和体感反馈定位，缺少 route-to-visible、long task、hidden render、mount cost 等内建证据。
+- Desktop native 明显慢于 desktop-web 是已观察到的 runtime 差异，但当前 Tauri WebView matrix cell 仍是 `UNPROVEN`；它不能直接证明 WKWebView IPC、Rust handler、React/store 或日志/event 放大中的任何一项是唯一根因。
 
 这些问题不是传统 JS 层面的局部优化问题，而是大前端运行时问题：Shell、页面实例、业务投影、嵌入式运行容器、资源 lease、预热、保活、回收和观测必须由同一个架构模型管理。
+
+Native 卡顿的技术拓扑仍处于 evidence gate：在 packaged/native 交互 trace 能区分 WebView 主线程、React commit、store fanout、device bridge、Rust handler、日志/event 和大载荷影响之前，不接受以 WebSocket、HTTP、Tauri invoke 或固定线程池为名的不可逆终态设计。
 
 ## 3. 设计目标
 
@@ -45,6 +48,8 @@ Peers Touch Desktop 已经具备 `PageHost`、`PageDescriptor`、`RuntimeDescrip
 4. 让每个页面、section、overlay、applet runtime 都有声明化 lifetime 与预算。
 5. 内建性能证据，要求卡顿问题能够归因到 page、section、runtime 或 store subscription。
 6. 约束 Applet 容器作为小程序宿主，而不是普通页面内嵌区域。
+7. 对 native/runtime 性能问题实行 evidence-first：比较差异只能生成假设，不能替代同条件 trace 和 packaged-runtime gate。
+8. 所有交互后工作必须具备有界准入、取消/合并、优先级、公平性和失败语义；“换传输”本身不视为性能闭环。
 
 ## 4. 文档导航
 
@@ -56,6 +61,11 @@ Peers Touch Desktop 已经具备 `PageHost`、`PageDescriptor`、`RuntimeDescrip
 | [module-layout.md](./module-layout.md) | 文档与代码模块映射 |
 | [integration.md](./integration.md) | 与现有 UI Identity、Desktop Runtime、Applet Runtime 的集成 |
 | [execution-plans/20260702-frontend-runtime-upgrade.md](./execution-plans/20260702-frontend-runtime-upgrade.md) | 分阶段升级执行计划 |
+| [execution-plans/20260706-desktop-global-lag-framework-plan.md](./execution-plans/20260706-desktop-global-lag-framework-plan.md) | Desktop 全局卡顿框架级治理计划 |
+| [execution-plans/20260706-desktop-global-lag-bom-spec-trace.md](./execution-plans/20260706-desktop-global-lag-bom-spec-trace.md) | Desktop 卡顿治理 BOM / Spec / Gate / Trace 试点 |
+| [execution-plans/20260706-desktop-global-lag-phase0-construction-plan.md](./execution-plans/20260706-desktop-global-lag-phase0-construction-plan.md) | Desktop 卡顿治理 Phase 0 施工图 |
+| [execution-plans/20260713-desktop-native-evidence-matrix-plan.md](./execution-plans/20260713-desktop-native-evidence-matrix-plan.md) | P0c-3 修订计划：同 cohort browser/dev-native/packaged-native 证据矩阵 |
+| [execution-plans/20260710-desktop-global-lag-phase1-optimization.md](./execution-plans/20260710-desktop-global-lag-phase1-optimization.md) | 已废弃：其 Phase 0 完成前提与旧 runtime inventory 已被证伪；不得执行 |
 
 ## 5. 下游真源
 

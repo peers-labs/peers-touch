@@ -6,6 +6,7 @@ import {
   type ChangeEvent,
   type CSSProperties,
   type DragEvent,
+  type FormEvent,
   type KeyboardEvent,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -52,10 +53,15 @@ import {
 } from './composer/useChatAttachmentDrafts';
 import { useChatScreenshotCapture } from './composer/useChatScreenshotCapture';
 import { useChatVoiceRecorder } from './composer/useChatVoiceRecorder';
-import { useSettingsStore } from '../../store/settings';
+import { useActiveChatSettingsSlice } from './useActiveSocialChatStore';
 import { formatChatScreenshotShortcut } from '../../utils/chatScreenshotShortcut';
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
 import { uploadChatAttachmentFile } from '../../services/chatAttachments';
+import {
+  markTextInputIntent,
+  markTextInputVisible,
+  scheduleAfterPaint,
+} from '../../kernel/frontendRuntimeProfiler';
 
 export type { ChatComposerCapabilities } from '@peers-touch/client-chat-core';
 
@@ -151,12 +157,31 @@ export function ChatComposer({
   const [inputExpanded, setInputExpanded] = useState(false);
   const [voiceSending, setVoiceSending] = useState(false);
   const [recentEmojis, setRecentEmojis] = useState<string[]>(() => loadRecentEmojis());
-  const screenshotShortcut = useSettingsStore((state) => state.chatScreenshotShortcut);
+  const screenshotShortcut = useActiveChatSettingsSlice((state) => state.chatScreenshotShortcut);
   const activeCapabilities = resolveChatComposerCapabilities(
     CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
     capabilities,
   );
   const visualLayout = chatVisualLayoutForSurface(visualSurface);
+  const handleTextInputObserved = (event: FormEvent<HTMLTextAreaElement>) => {
+    const nextValue = event.currentTarget.value;
+    const target = `chat-composer:${activeConversationId || 'none'}`;
+    const interactionId = markTextInputIntent(target, {
+      conversationId: activeConversationId,
+      pageId: 'chat',
+      valueLength: nextValue.length,
+    });
+    if (!interactionId) return;
+
+    scheduleAfterPaint(() => {
+      if (textareaRef.current?.value !== nextValue) return;
+      markTextInputVisible(target, interactionId, {
+        conversationId: activeConversationId,
+        pageId: 'chat',
+        valueLength: nextValue.length,
+      });
+    });
+  };
   const {
     drafts,
     readyAttachments,
@@ -608,10 +633,12 @@ export function ChatComposer({
 
         <textarea
           ref={textareaRef}
+          data-pt-text-input="chat-composer"
           value={value}
           disabled={disabled || sending || recording || voiceSending}
           rows={3}
-          onChange={(event) => onChange(event.target.value)}
+          onInput={handleTextInputObserved}
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onChange(event.target.value)}
           onCompositionStart={() => {
             composingRef.current = true;
           }}

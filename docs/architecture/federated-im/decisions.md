@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-07-04 | **Updated**: 2026-07-04
+> **Created**: 2026-07-04 | **Updated**: 2026-07-11
 > **Owner**: Architecture Team
 
 ---
@@ -16,8 +16,16 @@
 | D-03 | Remote Stations submit proposals, authority commits events | accepted |
 | D-04 | Do not run consensus for every ordinary chat message | accepted |
 | D-05 | Authority loss degrades groups to read-only before recovery exists | accepted |
-| D-06 | Sender Keys remain device-local across federation | accepted |
+| D-06 | Sender Keys remain device-local across federation | superseded-by: D-08 |
 | D-07 | Foundation Profile targets family-scale pressure, not cloud-scale operation | accepted |
+| D-08 | Group E2EE uses MLS (RFC 9420); Sender Keys removed | accepted (pending G0 verification) |
+| D-09 | Direct chat E2EE uses X3DH + Double Ratchet, per-device sessions | accepted |
+| D-10 | One Station signaling-envelope channel with typed QoS; no per-domain queues | accepted |
+| D-11 | Hard cutover with no compatibility bridge; legacy chat data wiped | accepted |
+| D-12 | Text always flows through the Station envelope; P2P only for audio/video and large files | accepted |
+
+> **Approval**: D-08/09/10/11/12 approved by user on 2026-07-11 (worktree `peers-group-chat`).
+> Proposal source: [`proposals/20260711-im-unification-review.md`](proposals/20260711-im-unification-review.md).
 
 ---
 
@@ -168,8 +176,14 @@ Some groups become temporarily unwritable during authority outage. The tradeoff 
 
 ## D-06: Sender Keys Remain Device-Local Across Federation
 
-**Status**: accepted
+**Status**: superseded-by D-08 (2026-07-11)
 **Date**: 2026-07-04
+
+> **Superseded**: The Station signaling envelope (D-10) now provides the opaque,
+> retriable, device-targeted routing this decision was created to justify, so the
+> "device-local Sender Keys" mechanism no longer earns its cost. Group E2EE moves
+> to MLS under D-08. This entry is retained for history per the append-only
+> knowledge rule; do not build new work on it.
 
 ### Context
 
@@ -226,4 +240,129 @@ This matches the product positioning and prevents over-engineering cloud-scale p
 ### Consequences
 
 Stress harness and metrics become first-class deliverables before larger federation profiles are considered.
+
+---
+
+## D-08: Group E2EE Uses MLS (RFC 9420); Sender Keys Removed
+
+**Status**: accepted (pending G0 verification)
+**Date**: 2026-07-11
+**Supersedes**: D-06
+
+### Context
+
+Sender Keys were chosen when no general signaling-envelope channel existed, so SKDM piggybacked on the friend-chat control channel. That produced a dual-channel split-brain (friend-chat control type 50 *and* a Station SKDM envelope), O(n²) SKDM redistribution on every membership change, and a "wait for each sender to come online and rotate" window for post-removal forward secrecy. The two client copies of `sender_keys.rs` have already diverged.
+
+### Decision
+
+Group E2EE uses MLS (RFC 9420). Membership changes, cryptographic epochs, device membership, Welcome, and Commit are unified under MLS TreeKEM. The group authority Station only orders MLS Commits; it never holds group plaintext or MLS group secrets. Sender Keys, SKDM, and friend-chat control type 50 are removed entirely.
+
+### Verification Gate (G0)
+
+MLS is PROPOSED until a two-platform (Desktop + Mobile Rust) minimum prototype proves: group create / add device / add member / remove member / offline Commit / state recovery; 3-Station Commit ordering under duplicate/out-of-order/disconnect; multi-device; security negatives (forged Commit, stale epoch, removed member continued decryption); and 100-member / 200-device pressure. A specific MLS library and exact version require separate user approval before introduction.
+
+### Rationale
+
+MLS gives logarithmic re-key on membership change, unifies device and member state, and provides post-compromise security without the Sender Keys redistribution cost — while keeping Stations blind to content.
+
+### Alternatives Considered
+
+- Keep Sender Keys, only unify SKDM onto the envelope: smaller change, but retains O(n²) redistribution and the rotation-window weakness.
+- Defer decision: leaves the split-brain in place.
+
+### Consequences
+
+MLS Commit ordering must be atomically bound to the authority's `membership_epoch` to avoid business-vs-crypto membership fork. Mobile needs durable MLS group-state storage beyond today's KV secure storage.
+
+---
+
+## D-09: Direct Chat E2EE Uses X3DH + Double Ratchet, Per-Device Sessions
+
+**Status**: accepted
+**Date**: 2026-07-11
+
+### Context
+
+`double_ratchet.rs` exists but self-documents as an M1 skeleton not wired into any send/recv path; direct chat has no live end-to-end ratchet.
+
+### Decision
+
+Direct chat uses X3DH for initial key agreement and Double Ratchet for message progression, with independent per-device sessions managed by an explicit multi-device session manager. All chain-only fallbacks are removed and the ratchet is wired into the real send/receive path.
+
+### Rationale
+
+This is the standard, well-audited pairwise E2EE construction and matches the existing crypto dependency stack.
+
+### Consequences
+
+A per-device session manager, device add/revoke/loss recovery, and safety-number / identity-change surfacing become required work.
+
+---
+
+## D-10: One Station Signaling-Envelope Channel With Typed QoS
+
+**Status**: accepted
+**Date**: 2026-07-11
+
+### Context
+
+Reliability mechanisms are fragmented: friend-chat in-process pending map, group offline dual-track, duplicate friend/group outboxes, a realtime durable store, and separate proposal/event/SKDM outboxes.
+
+### Decision
+
+All chat transport converges on one Station signaling-envelope protocol and routing framework carrying typed payloads with distinct persistence/QoS: committed message events (durable, ordered), key-agreement payloads, receipts, lightweight signals (typing, droppable), and call signaling (low-latency). "Unify" means one protocol + framework, not one undifferentiated table or queue. Per-domain private queues are deleted.
+
+### Rationale
+
+A single durable outbox/inbox/cursor with idempotency and ACK removes duplicated, drift-prone reliability code and gives one recovery story.
+
+### Consequences
+
+The envelope must express per-type QoS and durability; same-Station (local transport) and cross-Station (federation relay + JWT) are two adapters of one contract.
+
+---
+
+## D-11: Hard Cutover With No Compatibility Bridge; Legacy Chat Data Wiped
+
+**Status**: accepted
+**Date**: 2026-07-11
+
+### Context
+
+The project is at v1 development stage. Preserving old chat data or old protocol paths would require compatibility bridges that reintroduce the split-brain this refactor removes.
+
+### Decision
+
+The migration is an atomic cutover: introduce the new contracts, migrate every consumer, then delete old entrypoints, tables, protos, and crypto in the same change. Legacy chat data is wiped rather than migrated. No dual-write, feature flag, compatibility adapter, or `_legacy` path is retained. Rollback relies on Git / deployment rollback only.
+
+### Rationale
+
+At v1 the cost of a clean single-truth cutover is far lower than carrying a bridge forever; wiping dev-stage chat data avoids migration debt.
+
+### Consequences
+
+A tree-wide search for old symbols must return zero live references at G4. Users lose pre-cutover chat history by design (dev-stage decision).
+
+---
+
+## D-12: Text Always Flows Through The Station Envelope; P2P Only For Audio/Video And Large Files
+
+**Status**: accepted
+**Date**: 2026-07-11
+
+### Context
+
+Text delivery must be reliable, ordered, and offline-recoverable; WebRTC data channels are best-effort and connection-dependent.
+
+### Decision
+
+Text messages, receipts, and control always flow through the reliable Station envelope (D-10). P2P (WebRTC) is used only for real-time audio/video and, in the future, large-file direct transfer. Text is never carried over a P2P data channel.
+
+### Rationale
+
+This keeps the durability/ordering guarantees on the reliable path and confines best-effort transport to media where it fits.
+
+### Consequences
+
+Call signaling still rides the envelope; media SRTP/data paths are established peer-to-peer with the envelope as the signaling channel.
 

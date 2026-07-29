@@ -12,6 +12,7 @@ const manifest = {
   docs: 'docs/architecture/applet-runtime/prototype/README.md',
   description: 'Browser-like Desktop applet workspace with pinned home, multi-instance tabs, pin-to-system, detach, and immersive modes.',
   order: 25,
+  hidden: true,
   previewExport: 'AppletWorkspacePrototype',
   entry: () => import('./src/AppletWorkspaceStandalone'),
 } satisfies PrototypeManifest;

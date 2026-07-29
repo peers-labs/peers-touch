@@ -1338,6 +1338,191 @@ func (x *DeleteAgentMcpBindingResponse) GetSuccess() bool {
 	return false
 }
 
+// Provider model visibility preferences.
+type HideModelRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ModelId       string                 `protobuf:"bytes,2,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HideModelRequest) Reset() {
+	*x = HideModelRequest{}
+	mi := &file_domain_agent_agent_config_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HideModelRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HideModelRequest) ProtoMessage() {}
+
+func (x *HideModelRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_agent_config_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HideModelRequest.ProtoReflect.Descriptor instead.
+func (*HideModelRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *HideModelRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *HideModelRequest) GetModelId() string {
+	if x != nil {
+		return x.ModelId
+	}
+	return ""
+}
+
+type HideModelResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HideModelResponse) Reset() {
+	*x = HideModelResponse{}
+	mi := &file_domain_agent_agent_config_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HideModelResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HideModelResponse) ProtoMessage() {}
+
+func (x *HideModelResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_agent_config_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HideModelResponse.ProtoReflect.Descriptor instead.
+func (*HideModelResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *HideModelResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+type GetHiddenModelsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetHiddenModelsRequest) Reset() {
+	*x = GetHiddenModelsRequest{}
+	mi := &file_domain_agent_agent_config_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetHiddenModelsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetHiddenModelsRequest) ProtoMessage() {}
+
+func (x *GetHiddenModelsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_agent_config_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetHiddenModelsRequest.ProtoReflect.Descriptor instead.
+func (*GetHiddenModelsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *GetHiddenModelsRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+type GetHiddenModelsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	HiddenModels  []string               `protobuf:"bytes,1,rep,name=hidden_models,json=hiddenModels,proto3" json:"hidden_models,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetHiddenModelsResponse) Reset() {
+	*x = GetHiddenModelsResponse{}
+	mi := &file_domain_agent_agent_config_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetHiddenModelsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetHiddenModelsResponse) ProtoMessage() {}
+
+func (x *GetHiddenModelsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_agent_config_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetHiddenModelsResponse.ProtoReflect.Descriptor instead.
+func (*GetHiddenModelsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *GetHiddenModelsResponse) GetHiddenModels() []string {
+	if x != nil {
+		return x.HiddenModels
+	}
+	return nil
+}
+
 var File_domain_agent_agent_config_proto protoreflect.FileDescriptor
 
 const file_domain_agent_agent_config_proto_rawDesc = "" +
@@ -1420,7 +1605,18 @@ const file_domain_agent_agent_config_proto_rawDesc = "" +
 	"\x1cDeleteAgentMcpBindingRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"9\n" +
 	"\x1dDeleteAgentMcpBindingResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccessBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"N\n" +
+	"\x10HideModelRequest\x12\x1f\n" +
+	"\vprovider_id\x18\x01 \x01(\tR\n" +
+	"providerId\x12\x19\n" +
+	"\bmodel_id\x18\x02 \x01(\tR\amodelId\"#\n" +
+	"\x11HideModelResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"9\n" +
+	"\x16GetHiddenModelsRequest\x12\x1f\n" +
+	"\vprovider_id\x18\x01 \x01(\tR\n" +
+	"providerId\">\n" +
+	"\x17GetHiddenModelsResponse\x12#\n" +
+	"\rhidden_models\x18\x01 \x03(\tR\fhiddenModelsBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
 
 var (
 	file_domain_agent_agent_config_proto_rawDescOnce sync.Once
@@ -1434,7 +1630,7 @@ func file_domain_agent_agent_config_proto_rawDescGZIP() []byte {
 	return file_domain_agent_agent_config_proto_rawDescData
 }
 
-var file_domain_agent_agent_config_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_domain_agent_agent_config_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_domain_agent_agent_config_proto_goTypes = []any{
 	(*AgentKnowledgeBinding)(nil),               // 0: peers_touch.model.agent.v1.AgentKnowledgeBinding
 	(*AgentSkillBinding)(nil),                   // 1: peers_touch.model.agent.v1.AgentSkillBinding
@@ -1463,15 +1659,19 @@ var file_domain_agent_agent_config_proto_goTypes = []any{
 	(*UpdateAgentMcpBindingResponse)(nil),       // 24: peers_touch.model.agent.v1.UpdateAgentMcpBindingResponse
 	(*DeleteAgentMcpBindingRequest)(nil),        // 25: peers_touch.model.agent.v1.DeleteAgentMcpBindingRequest
 	(*DeleteAgentMcpBindingResponse)(nil),       // 26: peers_touch.model.agent.v1.DeleteAgentMcpBindingResponse
-	(*timestamppb.Timestamp)(nil),               // 27: google.protobuf.Timestamp
+	(*HideModelRequest)(nil),                    // 27: peers_touch.model.agent.v1.HideModelRequest
+	(*HideModelResponse)(nil),                   // 28: peers_touch.model.agent.v1.HideModelResponse
+	(*GetHiddenModelsRequest)(nil),              // 29: peers_touch.model.agent.v1.GetHiddenModelsRequest
+	(*GetHiddenModelsResponse)(nil),             // 30: peers_touch.model.agent.v1.GetHiddenModelsResponse
+	(*timestamppb.Timestamp)(nil),               // 31: google.protobuf.Timestamp
 }
 var file_domain_agent_agent_config_proto_depIdxs = []int32{
-	27, // 0: peers_touch.model.agent.v1.AgentKnowledgeBinding.created_at:type_name -> google.protobuf.Timestamp
-	27, // 1: peers_touch.model.agent.v1.AgentKnowledgeBinding.updated_at:type_name -> google.protobuf.Timestamp
-	27, // 2: peers_touch.model.agent.v1.AgentSkillBinding.created_at:type_name -> google.protobuf.Timestamp
-	27, // 3: peers_touch.model.agent.v1.AgentSkillBinding.updated_at:type_name -> google.protobuf.Timestamp
-	27, // 4: peers_touch.model.agent.v1.AgentMcpBinding.created_at:type_name -> google.protobuf.Timestamp
-	27, // 5: peers_touch.model.agent.v1.AgentMcpBinding.updated_at:type_name -> google.protobuf.Timestamp
+	31, // 0: peers_touch.model.agent.v1.AgentKnowledgeBinding.created_at:type_name -> google.protobuf.Timestamp
+	31, // 1: peers_touch.model.agent.v1.AgentKnowledgeBinding.updated_at:type_name -> google.protobuf.Timestamp
+	31, // 2: peers_touch.model.agent.v1.AgentSkillBinding.created_at:type_name -> google.protobuf.Timestamp
+	31, // 3: peers_touch.model.agent.v1.AgentSkillBinding.updated_at:type_name -> google.protobuf.Timestamp
+	31, // 4: peers_touch.model.agent.v1.AgentMcpBinding.created_at:type_name -> google.protobuf.Timestamp
+	31, // 5: peers_touch.model.agent.v1.AgentMcpBinding.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 6: peers_touch.model.agent.v1.ListAgentKnowledgeBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
 	0,  // 7: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
 	0,  // 8: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
@@ -1505,7 +1705,7 @@ func file_domain_agent_agent_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_agent_config_proto_rawDesc), len(file_domain_agent_agent_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   27,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

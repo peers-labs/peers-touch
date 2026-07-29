@@ -39,7 +39,7 @@ message Sticker {
 
 // 用户贴纸收藏
 message UserStickerCollection {
-  string actor_did = 1;
+  string ptid = 1;
   repeated string collected_pack_ulids = 2;   // 收藏的贴纸包ID列表
   repeated RecentSticker recent_stickers = 3; // 最近使用的贴纸
 }

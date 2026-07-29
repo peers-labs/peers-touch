@@ -55,7 +55,7 @@ enum GroupStatus {
 // 群成员
 message GroupMember {
   string group_ulid = 1;
-  string actor_did = 2;
+  string ptid = 2;
   GroupRole role = 3;                        // 角色
   string nickname = 4;                       // 群内昵称
   bool muted = 5;                            // 是否被禁言
@@ -303,7 +303,7 @@ enum GroupInvitationStatus {
 // ==================== 联邦群权威事件 ====================
 
 message FederatedActorRef {
-  string actor_did = 1;
+  string ptid = 1;
   string home_station_peer_id = 2;
   string home_station_domain = 3;
   string federated_handle = 4;
@@ -340,7 +340,7 @@ message GroupMemberJoinCommandPayload {
   FederatedActorRef member = 1;
   GroupRole role = 2;
   string nickname = 3;
-  string invited_by_actor_did = 4;
+  string invited_by_ptid = 4;
 }
 
 message GroupMemberRemoveCommandPayload {
@@ -484,7 +484,7 @@ message GetGroupMembersResponse {
 // 更新成员信息（管理员操作）
 message UpdateMemberRequest {
   string group_ulid = 1;
-  string actor_did = 2;
+  string ptid = 2;
   optional GroupRole role = 3;
   optional bool muted = 4;
   optional google.protobuf.Timestamp muted_until = 5;
@@ -497,7 +497,7 @@ message UpdateMemberResponse {
 // 移除成员
 message RemoveMemberRequest {
   string group_ulid = 1;
-  string actor_did = 2;
+  string ptid = 2;
 }
 
 message RemoveMemberResponse {

@@ -4,7 +4,7 @@
   "checks": [
     {
       "name": "skill-file",
-      "path": "tooling/skills/pt-official-applet-development/SKILL.md",
+      "path": "tooling/skills/official-applet-development/SKILL.md",
       "exists": true,
       "missingTerms": []
     },

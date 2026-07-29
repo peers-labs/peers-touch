@@ -62,6 +62,7 @@ interface AgentProfilePageProps {
   agentName: string;
   onBack?: () => void;
   onOpenOrchestration?: () => void;
+  embedded?: boolean;
 }
 
 
@@ -227,6 +228,7 @@ function AgentWorkbenchHero({
   onTitleBlur,
   onDescriptionBlur,
   onRewriteDescription,
+  onAvatarChange,
   descriptionGenerating,
 }: {
   agent: Agent;
@@ -235,12 +237,14 @@ function AgentWorkbenchHero({
   onTitleBlur: (value: string) => void;
   onDescriptionBlur: (value: string) => void;
   onRewriteDescription: () => void;
+  onAvatarChange?: (emoji: string) => void;
   descriptionGenerating: boolean;
 }) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const [title, setTitle] = useState(agent.title || agent.name);
   const [description, setDescription] = useState(agent.description || '');
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const titleRef = useRef(title);
   const descriptionRef = useRef(description);
 
@@ -257,7 +261,7 @@ function AgentWorkbenchHero({
     <Flexbox
       gap={12}
       style={{
-        paddingTop: 18,
+        paddingTop: 10,
         flexShrink: 0,
         color: token.colorText,
       }}
@@ -303,7 +307,54 @@ function AgentWorkbenchHero({
       </Flexbox>
 
       <Flexbox horizontal align="flex-start" gap={14} style={{ minWidth: 0 }}>
-        <AgentIconTile agent={agent} size={64} />
+        <div style={{ position: 'relative' }}>
+          <AgentIconTile agent={agent} size={64} onClick={() => setEmojiPickerOpen((o) => !o)} />
+          {emojiPickerOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 68,
+                left: 0,
+                zIndex: 100,
+                background: token.colorBgElevated,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                borderRadius: 12,
+                padding: 8,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(6, 1fr)',
+                gap: 4,
+                boxShadow: token.boxShadowSecondary,
+              }}
+            >
+              {['🤖', '💻', '🧑‍💻', '🧠', '🎯', '🚀', '⚡', '🔬', '📊', '🎨', '🛠️', '📝', '🌐', '🔐', '💡', '🤝', '🎓', '🏗️'].map(
+                (e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    onClick={() => {
+                      onAvatarChange?.(e);
+                      setEmojiPickerOpen(false);
+                    }}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      border: 0,
+                      borderRadius: 6,
+                      background: agent.avatar === e ? token.colorPrimaryBg : 'transparent',
+                      fontSize: 18,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {e}
+                  </button>
+                ),
+              )}
+            </div>
+          )}
+        </div>
         <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
           <textarea
             value={description}
@@ -877,10 +928,18 @@ export function AgentProfilePage({
   agentName,
   onBack,
   onOpenOrchestration,
+  embedded = false,
 }: AgentProfilePageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const { agents, availableModels, loadAgents, loadModels, setSelectedAgent, setAgentSurface, agentRosterOpen, setAgentRosterOpen } = useAgentStore();
+  const agents = useAgentStore(s => s.agents);
+  const availableModels = useAgentStore(s => s.availableModels);
+  const loadAgents = useAgentStore(s => s.loadAgents);
+  const loadModels = useAgentStore(s => s.loadModels);
+  const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
+  const setAgentSurface = useAgentStore(s => s.setAgentSurface);
+  const agentRosterOpen = useAgentStore(s => s.agentRosterOpen);
+  const setAgentRosterOpen = useAgentStore(s => s.setAgentRosterOpen);
 
   const [profileAgentName, setProfileAgentName] = useState(agentName);
   const agentListOpen = agentRosterOpen;
@@ -905,7 +964,9 @@ export function AgentProfilePage({
   const [persistedTraceCount, setPersistedTraceCount] = useState(0);
   const soulSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const agentsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const { skills, builtins, loadSkills } = useSkillStore();
+  const skills = useSkillStore(s => s.skills);
+  const builtins = useSkillStore(s => s.builtins);
+  const loadSkills = useSkillStore(s => s.loadSkills);
   const activityMessages = useChatStore((state) => state.messages);
   const activityCurrentSessionKey = useChatStore((state) => state.currentSessionKey);
   const activitySessions = useChatStore((state) => state.sessions);
@@ -1198,6 +1259,21 @@ export function AgentProfilePage({
     [agent, loadAgents, t],
   );
 
+  const handleAvatarChange = useCallback(
+    async (emoji: string) => {
+      if (!agent) return;
+      try {
+        const updated = await api.updateAgent(agent.id, { avatar: emoji });
+        setAgent(updated);
+        await loadAgents();
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
   const handleSettingsSaved = useCallback(
     (updated: Agent) => {
       setAgent(updated);
@@ -1480,7 +1556,7 @@ export function AgentProfilePage({
 
   return (
     <Flexbox horizontal style={{ height: '100%', width: '100%', minWidth: 0, overflow: 'auto' }}>
-      <aside
+      {!embedded && <aside
         style={{
           width: agentListOpen ? 230 : 48,
           height: '100%',
@@ -1761,17 +1837,17 @@ export function AgentProfilePage({
         >
           {agentListOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
         </button>
-      </aside>
+      </aside>}
 
       {/* ── Center: Profile Editor ── */}
-      <Flexbox flex={1} style={{ minWidth: 680, minHeight: 0, overflow: 'hidden' }}>
+      <Flexbox flex={1} style={{ minWidth: embedded ? 0 : 680, minHeight: 0, overflow: 'hidden' }}>
         <div
           style={{
             display: 'flex',
             flexDirection: 'column',
             flex: 1,
             minHeight: 0,
-            padding: '0 32px 32px',
+            padding: '0 20px 20px',
             overflow: 'hidden',
           }}
         >
@@ -1781,7 +1857,7 @@ export function AgentProfilePage({
               flexDirection: 'column',
               flex: 1,
               minHeight: 0,
-              maxWidth: 980,
+              maxWidth: 760,
               margin: '0 auto',
               width: '100%',
             }}
@@ -1796,6 +1872,7 @@ export function AgentProfilePage({
                 onTitleBlur={handleTitleBlur}
                 onDescriptionBlur={handleDescriptionBlur}
                 onRewriteDescription={handleInlineRewriteDescription}
+                onAvatarChange={handleAvatarChange}
                 descriptionGenerating={descriptionGenerating}
               />
             </div>
@@ -1803,8 +1880,8 @@ export function AgentProfilePage({
             <div
               style={{
                 flexShrink: 0,
-                marginTop: 16,
-                marginBottom: 18,
+                marginTop: 10,
+                marginBottom: 10,
                 display: 'grid',
                 gridTemplateColumns: 'minmax(130px, 190px) auto minmax(160px, 1fr) auto minmax(96px, 120px)',
                 alignItems: 'center',
@@ -1822,6 +1899,7 @@ export function AgentProfilePage({
                 placeholder={t('agent.profile.routing.providerPlaceholder')}
                 allowClear
                 showSearch
+                size="middle"
                 options={providerOptions}
                 style={{ width: '100%' }}
                 filterOption={(input, option) =>
@@ -1844,6 +1922,7 @@ export function AgentProfilePage({
                 value={agent.effort || 'medium'}
                 onChange={handleEffortChange}
                 placeholder={t('agent.profile.routing.effortPlaceholder')}
+                size="middle"
                 style={{ width: '100%' }}
                 options={[
                   { value: 'low', label: t('agent.profile.effort.low') },
@@ -1862,7 +1941,7 @@ export function AgentProfilePage({
                 alignSelf: 'flex-start',
                 flexShrink: 0,
                 padding: 3,
-                marginBottom: 18,
+                marginBottom: 12,
                 borderRadius: 10,
                 background: token.colorFillQuaternary,
               }}
@@ -1894,7 +1973,7 @@ export function AgentProfilePage({
             </Flexbox>
 
             {/* ── Tab bar (no font-weight change to prevent wobble) ── */}
-            <div style={{ display: 'flex', gap: 4, flexShrink: 0, borderBottom: `1px solid ${token.colorBorderSecondary}`, marginBottom: 18, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 4, flexShrink: 0, borderBottom: `1px solid ${token.colorBorderSecondary}`, marginBottom: 12, flexWrap: 'wrap' }}>
               {visibleTabs.map((tab) => (
                 <div
                   key={tab.key}

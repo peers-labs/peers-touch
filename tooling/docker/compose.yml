@@ -48,6 +48,10 @@ services:
     build:
       context: ../..
       dockerfile: tooling/docker/station.Dockerfile
+      args:
+        BUILD_COMMIT: ${PEERS_TOUCH_BUILD_COMMIT:-unknown}
+        BUILD_LABEL: ${PEERS_TOUCH_BUILD_LABEL:-dev}
+        BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
     profiles: [station]
     environment:
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
@@ -95,6 +99,8 @@ services:
       RELAY_CLIENT_RELAY_STREAM_ADDR: ${RELAY_CLIENT_RELAY_STREAM_ADDR:-}
       RELAY_CLIENT_INVITE_TOKEN: ${RELAY_CLIENT_INVITE_TOKEN:-}
       RELAY_CLIENT_LABEL: ${RELAY_CLIENT_LABEL:-${COMPOSE_PROJECT_NAME:-station}}
+      # Envelope federation peer map: peer_id=base_url pairs for cross-station delivery.
+      PEERS_FEDERATION_PEER_MAP: ${PEERS_FEDERATION_PEER_MAP:-}
       # Actor display_name pattern: replaces __NODE__ in actor.yml
       PEERS_NODE_LABEL: ${PEERS_NODE_LABEL:-}
     ports:
@@ -127,6 +133,10 @@ services:
     build:
       context: ../..
       dockerfile: tooling/docker/station.Dockerfile
+      args:
+        BUILD_COMMIT: ${PEERS_TOUCH_BUILD_COMMIT:-unknown}
+        BUILD_LABEL: ${PEERS_TOUCH_BUILD_LABEL:-dev}
+        BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
     profiles: [relay]
     environment:
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}

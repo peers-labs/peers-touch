@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { log } from '../utils/logger';
 import i18n, { resolveI18nValue } from '../i18n/index';
 import {
@@ -17,6 +17,7 @@ import { useAgentStore } from './agent';
 import { useAgentTopicStore } from './agentTopics';
 
 export { useAgentStore } from './agent';
+export type { Session } from '../services/desktop_api';
 
 export type ToolCallStatus = 'queued' | 'approval_required' | 'approved' | 'denied' | 'pending' | 'success' | 'error' | 'cancelled';
 export type DelegationTaskStatus = 'completed' | 'failed' | 'timeout' | 'unknown';
@@ -605,7 +606,7 @@ function findRegenerationPrompt(messages: ChatMessage[], messageId: string): {
   return { userMsg, msgIndex, responseIds };
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
+export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => ({
   sessions: [],
   currentSessionKey: 'main',
   messages: [],
@@ -841,6 +842,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
+      const localUserCount = currentMessages.filter((m) => m.role !== 'system').length;
+      const mergedUserCount = merged.filter((m) => m.role !== 'system').length;
+      if (localUserCount > mergedUserCount) {
+        const hasCompletedContent = currentMessages.some(
+          (m) => m.role === 'assistant' && !m.loading && m.content,
+        );
+        if (hasCompletedContent) {
+          set({ messages: currentMessages });
+          return;
+        }
+      }
+
       set({ messages: merged });
     } catch {
     }
@@ -862,9 +875,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sendMessage: (content: string, attachments: ChatComposerAttachment[] = []) => {
     log.info('chat', 'Sending message', { sessionKey: get().currentSessionKey, contentLength: content.length });
     const { currentSessionKey } = get();
-    const { selectedAgent, selectedModel, selectedProviderId, defaultModel } = useAgentStore.getState();
+    const agentState = useAgentStore.getState();
+    const { selectedAgent, selectedModel, selectedProviderId, defaultModel, availableModels } = agentState;
     const agentName = selectedAgent || 'assistant';
     const runtimeConfig = getAgentRuntimeConfig(agentName);
+
+    const resolvedModel = selectedModel || defaultModel || availableModels[0]?.id;
+    const effectiveModel = resolvedModel || runtimeConfig.model;
+    const effectiveProvider = (effectiveModel && availableModels.find((m) => m.id === effectiveModel)?.provider_id) || selectedProviderId || runtimeConfig.provider || availableModels[0]?.provider_id || '';
 
     const imageUrls = attachments
       .filter((item) => item.mime_type.startsWith('image/'))
@@ -880,8 +898,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       timestamp: Date.now(),
     };
 
-    const modelOverride = selectedModel && selectedModel !== defaultModel ? selectedModel : undefined;
-    const usedModel = modelOverride || selectedModel || defaultModel;
+    const usedModel = effectiveModel;
 
     const assistantMsg: ChatMessage = {
       id: tempId(),
@@ -906,8 +923,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         agentName,
         content,
         attachments,
-        selectedProviderId,
-        modelOverride,
+        effectiveProvider,
+        effectiveModel,
         runtimeConfig,
       ),
       (event: StreamEvent) => {
@@ -951,10 +968,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!prompt) return;
 
     const { currentSessionKey } = get();
-    const { selectedAgent, selectedModel, selectedProviderId, defaultModel } = useAgentStore.getState();
+    const agentState = useAgentStore.getState();
+    const { selectedAgent, selectedModel, selectedProviderId, defaultModel, availableModels } = agentState;
     const agentName = selectedAgent || 'assistant';
     const runtimeConfig = getAgentRuntimeConfig(agentName);
-    const modelOverride = selectedModel && selectedModel !== defaultModel ? selectedModel : undefined;
+    const resolvedModel = selectedModel || defaultModel || availableModels[0]?.id;
+    const resolvedProviderId = selectedProviderId
+      || availableModels.find((m) => m.id === resolvedModel)?.provider_id
+      || availableModels[0]?.provider_id
+      || '';
+    const modelOverride = resolvedModel && resolvedModel !== defaultModel ? resolvedModel : undefined;
+    const effectiveModel = resolvedModel || runtimeConfig.model;
+    const effectiveProvider = (effectiveModel && availableModels.find((m) => m.id === effectiveModel)?.provider_id) || resolvedProviderId || runtimeConfig.provider || '';
     const replacedId = prompt.responseIds[prompt.responseIds.length - 1] || messageId;
 
     const assistantMsg: ChatMessage = {
@@ -963,7 +988,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       content: '',
       loading: true,
       timestamp: Date.now(),
-      model: modelOverride || selectedModel || defaultModel || undefined,
+      model: modelOverride || resolvedModel || runtimeConfig.model || undefined,
       operation: 'regenerate',
       replacementOf: replacedId,
     };
@@ -984,8 +1009,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         agentName,
         prompt.userMsg.content,
         prompt.userMsg.attachments || [],
-        selectedProviderId,
-        modelOverride,
+        effectiveProvider,
+        effectiveModel,
         runtimeConfig,
       ),
       (event: StreamEvent) => {
@@ -1023,10 +1048,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!prompt) return;
 
     const { currentSessionKey } = get();
-    const { selectedAgent, selectedModel, selectedProviderId, defaultModel } = useAgentStore.getState();
+    const agentState = useAgentStore.getState();
+    const { selectedAgent, selectedModel, selectedProviderId, defaultModel, availableModels } = agentState;
     const agentName = selectedAgent || 'assistant';
     const runtimeConfig = getAgentRuntimeConfig(agentName);
-    const modelOverride = selectedModel && selectedModel !== defaultModel ? selectedModel : undefined;
+    const resolvedModel = selectedModel || defaultModel || availableModels[0]?.id;
+    const resolvedProviderId = selectedProviderId
+      || availableModels.find((m) => m.id === resolvedModel)?.provider_id
+      || availableModels[0]?.provider_id
+      || '';
+    const modelOverride = resolvedModel && resolvedModel !== defaultModel ? resolvedModel : undefined;
+    const effectiveModel = resolvedModel || runtimeConfig.model;
+    const effectiveProvider = (effectiveModel && availableModels.find((m) => m.id === effectiveModel)?.provider_id) || resolvedProviderId || runtimeConfig.provider || '';
     const replacedId = prompt.responseIds[prompt.responseIds.length - 1] || messageId;
 
     const assistantMsg: ChatMessage = {
@@ -1035,7 +1068,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       content: '',
       loading: true,
       timestamp: Date.now(),
-      model: modelOverride || selectedModel || defaultModel || undefined,
+      model: modelOverride || resolvedModel || runtimeConfig.model || undefined,
       operation: 'retry',
       replacementOf: replacedId,
     };
@@ -1056,8 +1089,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         agentName,
         prompt.userMsg.content,
         prompt.userMsg.attachments || [],
-        selectedProviderId,
-        modelOverride,
+        effectiveProvider,
+        effectiveModel,
         runtimeConfig,
       ),
       (event: StreamEvent) => {

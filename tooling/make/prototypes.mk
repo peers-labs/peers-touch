@@ -72,7 +72,7 @@ run-prototype:
 	      echo "run-prototype is already running for this worktree."; \
 	      echo "worktree: $$worktree"; \
 	      echo "pid: $$existing_pid"; \
-	      echo "Use 'make -w run-prototype' to reuse this worktree's stable prototype port."; \
+	      echo "Stop that process before starting another prototype from the same worktree, or use: make -w run-prototype"; \
 	      exit 1; \
 	    fi; \
 	    echo "Removing stale run-prototype lock for $$worktree"; \
@@ -87,5 +87,5 @@ run-prototype:
 	echo "  branch:   $$branch"; \
 	echo "  worktree: $$worktree"; \
 	echo "  port:     $$port"; \
-	if [ "$$worktree_mode" = "1" ]; then echo "  mode:     worktree stable (-w)"; fi; \
+	if [ "$$worktree_mode" = "1" ]; then echo "  mode:     worktree parallel"; else echo "  mode:     exclusive"; fi; \
 	VITE_PROTOTYPE_BRANCH="$$branch" VITE_PROTOTYPE_WORKTREE_PATH="$$worktree" VITE_PROTOTYPE_PORT="$$port" pnpm --filter @peers-touch/prototype-portal run dev --port "$$port"
