@@ -1191,6 +1191,7 @@ const initialSocialState: Pick<
   | 'friendP2pStatus'
   | 'peerOnline'
   | 'typingPeers'
+  | 'reactions'
   | 'conversations'
   | 'conversationMembers'
 > = {
