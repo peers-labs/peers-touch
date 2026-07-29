@@ -364,7 +364,7 @@ pub fn parse_cli_execution_output(stdout: &str) -> CLIResponse {
     }
 }
 
-fn enriched_path() -> String {
+pub fn enriched_path() -> String {
     let base = std::env::var("PATH").unwrap_or_default();
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/unknown".to_string());
     let extra = [
