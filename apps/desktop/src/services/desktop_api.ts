@@ -3710,11 +3710,11 @@ export const api = {
       mapAIChatProviderToDetail(r.provider || {}),
     ),
 
-  updateProvider: (id: string, data: { api_key: string; base_url: string; enabled: boolean; version?: number }) =>
+  updateProvider: (id: string, data: { api_key?: string; base_url: string; enabled: boolean; version?: number }) =>
     invokeRustDataFromStatus<ProviderUpdateInput, { provider: any }>('provider_update', {
         id,
         enabled: data.enabled,
-        key_vaults: JSON.stringify({ api_key: data.api_key || '' }),
+        ...(data.api_key ? { key_vaults: JSON.stringify({ api_key: data.api_key }) } : {}),
         config_json: JSON.stringify({ base_url: data.base_url || '' }),
         version: data.version ?? 0,
     }),

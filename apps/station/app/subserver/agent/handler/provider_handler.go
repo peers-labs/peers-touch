@@ -411,6 +411,33 @@ func (h *ProviderHandlers) HandleModelList(ctx context.Context, req *model.ListM
 	return resp, nil
 }
 
+func (h *ProviderHandlers) HandleModelCreate(ctx context.Context, req *model.CreateModelRequest) (*model.CreateModelResponse, error) {
+	actorID := subjectActorID(ctx)
+	providerID := req.GetProviderId()
+	modelID := req.GetModelId()
+
+	if providerID == "" {
+		return nil, server.NewHandlerError(http.StatusBadRequest, "provider_id is required")
+	}
+	if modelID == "" {
+		return nil, server.NewHandlerError(http.StatusBadRequest, "model_id is required")
+	}
+
+	m, err := h.modelConfig.Create(ctx, service.ModelCreateRequest{
+		ActorID:       actorID,
+		ProviderID:    providerID,
+		ModelID:       modelID,
+		DisplayName:   req.GetDisplayName(),
+		Enabled:       req.GetEnabled(),
+		ContextWindow: int(req.GetContextWindow()),
+	})
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+
+	return &model.CreateModelResponse{Model: modelToProto(m)}, nil
+}
+
 func (h *ProviderHandlers) HandleModelUpdate(ctx context.Context, req *model.UpdateModelRequest) (*model.UpdateModelResponse, error) {
 	actorID := subjectActorID(ctx)
 

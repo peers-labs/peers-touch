@@ -128,6 +128,15 @@ message DeleteProviderResponse { bool deleted = 1; }
 message ListModelsRequest { string provider_id = 1; }
 message ListModelsResponse { repeated AgentModelInfo models = 1; }
 
+message CreateModelRequest {
+  string provider_id = 1;
+  string model_id = 2;
+  string display_name = 3;
+  bool enabled = 4;
+  int32 context_window = 5;
+}
+message CreateModelResponse { AgentModelInfo model = 1; }
+
 message UpdateModelRequest {
   string provider_id = 1;
   string model_id = 2;
