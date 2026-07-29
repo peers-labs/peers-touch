@@ -44,7 +44,7 @@ export function StationPicker() {
   const panelRef = useRef<HTMLDivElement>(null);
   const probeRequestRef = useRef(0);
   const copyResetTimerRef = useRef<number | null>(null);
-  const [panelPos, setPanelPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number; openRight: boolean }>({ top: 0, left: 0, openRight: true });
 
   const probeStations = useCallback(async (
     stationEntries: StationEntry[],
@@ -119,9 +119,12 @@ export function StationPicker() {
   const updatePosition = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
+    const spaceRight = window.innerWidth - rect.right;
+    const openRight = spaceRight >= PANEL_WIDTH;
     setPanelPos({
       top: rect.top - 4,
-      left: rect.right,
+      left: openRight ? rect.left : rect.right,
+      openRight,
     });
   }, []);
 
@@ -253,7 +256,7 @@ export function StationPicker() {
             position: 'fixed',
             top: panelPos.top,
             left: panelPos.left,
-            transform: 'translate(-100%, -100%)',
+            transform: panelPos.openRight ? 'translate(0, -100%)' : 'translate(-100%, -100%)',
             width: PANEL_WIDTH,
             background: token.colorBgElevated,
             borderRadius: 18,
@@ -634,9 +637,7 @@ function StationRow(props: {
             ? <Check size={13} />
             : <Copy size={13} />}
         />
-        {isActive ? (
-          <Check size={15} style={{ flexShrink: 0, color: token.colorPrimary }} />
-        ) : (
+        {!isActive && (
           <StationIconAction
             token={token}
             visible={showRemove}

@@ -24,10 +24,10 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
-    applets, auth, channels, chat, cron, crypto, desktop_capture, federation, friend_chat,
-    frontend_log, group_chat, host_events, i18n, ice, key_exchange, mcp, memory, model_config,
-    models, notebook, notification, oauth2, oss, presence, profile, provider, realtime, search,
-    settings, skills, skills_market, social, station, system, tools, tts,
+    applets, auth, channels, chat, conversation, cron, crypto, desktop_capture, federation,
+    friend_chat, frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice, key_exchange,
+    mcp, memory, mls, model_config, notebook, notification, oauth2, oss, presence, profile,
+    provider, realtime, search, settings, skills, skills_market, social, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -41,13 +41,20 @@ fn main() {
     let app_state = Arc::new(ctx.app_state);
 
     let presence_supervisor = Arc::new(application::presence::PresenceSupervisor::new());
+    let mls_group_manager = Arc::new(domain::mls_group::MlsGroupManager::new());
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(desktop_capture::global_shortcut_plugin())
+        .plugin(desktop_capture::global_shortcut_plugin());
+
+    #[cfg(feature = "e2e-testing")]
+    let builder = builder.plugin(tauri_plugin_playwright::init());
+
+    builder
         .manage(app_state)
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
         .manage(presence_supervisor)
+        .manage(mls_group_manager)
         .setup(|app| {
             let resource_dir = app.path()
                 .resource_dir()
@@ -111,6 +118,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             interface::tauri_commands::meta_contract_version,
             frontend_log::frontend_log,
+            frontend_telemetry::frontend_telemetry_upload,
             i18n::i18n_load_resources,
             actor::actor_search_actors,
             actor::actor_get_my_profile,
@@ -183,6 +191,13 @@ fn main() {
             federation::federation_update_visibility,
             federation::federation_resolve,
             federation::federation_health,
+            federation::federation_catalog_search,
+            federation::federation_list_federations,
+            federation::federation_create,
+            federation::federation_join,
+            federation::federation_leave,
+            federation::federation_delete,
+            federation::federation_list_member_stations,
             admin::admin_health,
             admin::admin_network_probe,
             admin::admin_execute_action,
@@ -194,12 +209,10 @@ fn main() {
             provider::provider_delete,
             provider::provider_apply_preset,
             provider::provider_list_available_models,
-            models::model_add,
-            models::model_update,
-            models::model_delete,
-            models::model_fetch_remote,
-            models::model_toggle,
-            models::model_toggle_all,
+            provider::model_fetch_remote,
+            provider::model_toggle,
+            provider::model_delete,
+            provider::model_add,
             agents::agents_list,
             agents::agents_get_selected,
             agents::agents_set_selected,
@@ -228,6 +241,7 @@ fn main() {
             agent_orchestration::agent_collaboration_subscribe,
             agent_orchestration::agent_collaboration_cancel_stream,
             agent_orchestration::agent_collaboration_cancel_task,
+            agent_orchestration::agent_collaboration_resume_task,
             agent_orchestration::agent_collaboration_submit_node_result,
             agent_orchestration::agent_collaboration_claim_executor_task,
             agent_orchestration::agent_collaboration_heartbeat_executor_lease,
@@ -376,6 +390,9 @@ fn main() {
             account::account_list_restorable,
             account::account_clear_session,
             account::account_remove_pin,
+            account::account_authorize_pin_recovery,
+            account::account_begin_pin_recovery,
+            account::account_reset_pin,
             account::account_get_device_id,
             presence::presence_notify,
             oss::oss_pick_attachment_chat,
@@ -517,7 +534,41 @@ fn main() {
             station::station_set_active,
             station::station_add,
             station::station_remove,
-            station::station_probe
+            station::station_probe,
+            // v1 conversation commands (P2)
+            conversation::conversation_create_direct,
+            conversation::conversation_create_group,
+            conversation::conversation_submit_command,
+            conversation::conversation_react,
+            conversation::conversation_submit_receipt,
+            conversation::conversation_list,
+            conversation::conversation_list_events,
+            conversation::conversation_get_members,
+            conversation::envelope_submit,
+            conversation::envelope_ack,
+            conversation::envelope_resume,
+            conversation::keypackage_upload,
+            conversation::keypackage_fetch,
+            conversation::keypackage_count,
+            conversation::conversation_send_encrypted,
+            conversation::conversation_decrypt_message,
+            conversation::device_register,
+            conversation::device_list,
+            conversation::device_revoke,
+            conversation::dkx_send,
+            // v1 MLS group commands (P3)
+            mls::mls_init_identity,
+            mls::mls_generate_key_package,
+            mls::mls_group_create,
+            mls::mls_group_join,
+            mls::mls_group_encrypt,
+            mls::mls_group_decrypt,
+            mls::mls_group_process_commit,
+            mls::mls_group_add_member,
+            mls::mls_group_remove_member,
+            mls::mls_group_save,
+            mls::mls_group_load,
+            mls::mls_distribute
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

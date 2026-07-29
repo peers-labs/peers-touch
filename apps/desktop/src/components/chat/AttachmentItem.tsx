@@ -338,6 +338,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             <img
               src={src}
               alt={filename}
+              loading="lazy"
               style={{
                 display: 'block',
                 width: 'auto',

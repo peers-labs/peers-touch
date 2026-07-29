@@ -2,13 +2,15 @@ import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
-import { Badge, Empty, theme, Typography } from 'antd';
-import { BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff, Trash2 } from 'lucide-react';
+import { Alert, Badge, Empty, theme, Typography } from 'antd';
+import { RefreshCw, BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff, Trash2 } from 'lucide-react';
 import type { IMConversationProjection } from '@peers-touch/client-chat-core';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { useSocialChatStore } from '../../store/socialChat';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError } from '../../services/errorPresenter';
+import { markOverlayIntent, markOverlayVisible } from '../../kernel/frontendRuntimeProfiler';
+import { OverlayCommitProfiler } from '../../kernel/OverlayCommitProfiler';
+import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
 
@@ -34,7 +36,7 @@ function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) 
 
 export function ChatSessionList() {
   const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
+  const { t } = useTranslation(['chat', 'common']);
   const {
     sessions,
     groups,
@@ -46,7 +48,7 @@ export function ChatSessionList() {
     activeSessionUlid,
     activeGroupUlid,
     conversationLocalState,
-    setActiveTab,
+    loadError,
     selectSession,
     selectGroup,
     getIMConversations,
@@ -54,7 +56,30 @@ export function ChatSessionList() {
     hideConversation,
     deleteGroupContact,
     deleteFriendContact,
-  } = useSocialChatStore();
+    loadSessions,
+    loadGroups,
+  } = useActiveSocialChatSlice((state) => ({
+    sessions: state.sessions,
+    groups: state.groups,
+    groupUnreadCounts: state.groupUnreadCounts,
+    lastPreviews: state.lastPreviews,
+    currentUserDid: state.currentUserDid,
+    messages: state.messages,
+    activeTab: state.activeTab,
+    activeSessionUlid: state.activeSessionUlid,
+    activeGroupUlid: state.activeGroupUlid,
+    conversationLocalState: state.conversationLocalState,
+    loadError: state.loadError,
+    selectSession: state.selectSession,
+    selectGroup: state.selectGroup,
+    getIMConversations: state.getIMConversations,
+    updateConversationLocalState: state.updateConversationLocalState,
+    hideConversation: state.hideConversation,
+    deleteGroupContact: state.deleteGroupContact,
+    deleteFriendContact: state.deleteFriendContact,
+    loadSessions: state.loadSessions,
+    loadGroups: state.loadGroups,
+  }));
 
   const [searchText, setSearchText] = useState('');
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -103,10 +128,8 @@ export function ChatSessionList() {
   const handleSelect = (c: IMConversationProjection) => {
     if (c.kind === 'friend') {
       selectSession(c.id);
-      setActiveTab('friend');
     } else {
       selectGroup(c.id);
-      setActiveTab('group');
     }
   };
 
@@ -209,6 +232,11 @@ export function ChatSessionList() {
     return activeTab === 'group' && c.id === activeGroupUlid;
   };
 
+  const handleRetry = useCallback(() => {
+    loadSessions();
+    loadGroups();
+  }, [loadSessions, loadGroups]);
+
   return (
     <>
       <Flexbox
@@ -216,6 +244,7 @@ export function ChatSessionList() {
         style={{
           width: 280,
           minWidth: 280,
+          flexShrink: 0,
           height: '100%',
           borderRight: `1px solid ${token.colorBorderSecondary}`,
           background: token.colorBgContainer,
@@ -249,6 +278,22 @@ export function ChatSessionList() {
             </Dropdown>
           </Flexbox>
         </Flexbox>
+
+        {loadError && (
+          <div style={{ padding: '8px 12px 0', overflow: 'hidden' }}>
+            <Alert
+              type="error"
+              showIcon
+              message={t('chat.social.sessionList.loadFailed')}
+              action={
+                <Button size="small" type="text" icon={<RefreshCw size={12} />} onClick={handleRetry}>
+                  {t('common.action.retry')}
+                </Button>
+              }
+              style={{ fontSize: 12 }}
+            />
+          </div>
+        )}
 
         <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 8px' }} gap={2}>
           {filteredItems.length === 0 ? (
@@ -291,8 +336,21 @@ export function ChatSessionList() {
                 }
               }
 
+              const contextMenuTarget = `context-menu:chat:${c.kind}:${c.id}`;
+
               return (
-                <Dropdown key={`${c.kind}-${c.id}`} menu={buildContextMenu(c)} trigger={['contextMenu']}>
+                <Dropdown
+                  key={`${c.kind}-${c.id}`}
+                  menu={buildContextMenu(c)}
+                  trigger={['contextMenu']}
+                  onOpenChange={(open) => {
+                    markOverlayVisible(contextMenuTarget, open, {
+                      conversationId: c.id,
+                      conversationKind: c.kind,
+                      surface: 'chat-conversation-context-menu',
+                    });
+                  }}
+                >
                   <Flexbox
                     horizontal
                     align="center"
@@ -300,6 +358,17 @@ export function ChatSessionList() {
                     data-chat-conversation-kind={c.kind}
                     data-chat-session-ulid={c.kind === 'friend' ? c.id : undefined}
                     data-chat-group-ulid={c.kind === 'group' ? c.id : undefined}
+                    data-testid={`pt-context-menu-trigger-chat-${c.kind}-${c.id}`}
+                    data-pt-context-menu-trigger="chat-conversation"
+                    data-pt-context-menu-kind={c.kind}
+                    data-pt-context-menu-id={c.id}
+                    onContextMenuCapture={() => {
+                      markOverlayIntent(contextMenuTarget, {
+                        conversationId: c.id,
+                        conversationKind: c.kind,
+                        surface: 'chat-conversation-context-menu',
+                      });
+                    }}
                     onClick={() => handleSelect(c)}
                     style={{
                       padding: '10px 12px',
@@ -309,38 +378,42 @@ export function ChatSessionList() {
                       transition: 'background 0.15s',
                     }}
                   >
-                  <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
+                    <OverlayCommitProfiler owner={contextMenuTarget} surface="chat-conversation-context-menu">
+                      <>
+                          <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
 
-                  <Flexbox flex={1} style={{ minWidth: 0 }}>
-                    <Flexbox horizontal align="center" justify="space-between" gap={6}>
-                      <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
-                        {c.kind === 'group' && (
-                          <Users size={12} style={{ color: token.colorTextSecondary, flexShrink: 0 }} aria-hidden />
-                        )}
-                        <Text strong ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
-                          {name}
-                        </Text>
-                        {localState?.sticky ? (
-                          <Pin size={11} style={{ color: token.colorPrimary, flexShrink: 0 }} aria-label={t('chat.social.detail.stateSticky')} />
-                        ) : null}
-                        {localState?.muted || localState?.alertEnabled === false ? (
-                          <BellOff size={11} style={{ color: token.colorTextTertiary, flexShrink: 0 }} aria-label={t('chat.social.detail.stateMuted')} />
-                        ) : null}
-                      </Flexbox>
-                      <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
-                        {timeStr}
-                      </Text>
-                    </Flexbox>
-                    <Flexbox horizontal align="center" justify="space-between">
-                      <Text type="secondary" ellipsis style={{ fontSize: 12, flex: 1, minWidth: 0 }}>
-                        {subtitle}
-                      </Text>
-                      {unread > 0 && (
-                        <Badge count={unread} size="small" style={{ marginLeft: 8 }} />
-                      )}
-                    </Flexbox>
+                          <Flexbox flex={1} style={{ minWidth: 0 }}>
+                            <Flexbox horizontal align="center" justify="space-between" gap={6}>
+                              <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
+                                {c.kind === 'group' && (
+                                  <Users size={12} style={{ color: token.colorTextSecondary, flexShrink: 0 }} aria-hidden />
+                                )}
+                                <Text strong ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
+                                  {name}
+                                </Text>
+                                {localState?.sticky ? (
+                                  <Pin size={11} style={{ color: token.colorPrimary, flexShrink: 0 }} aria-label={t('chat.social.detail.stateSticky')} />
+                                ) : null}
+                                {localState?.muted || localState?.alertEnabled === false ? (
+                                  <BellOff size={11} style={{ color: token.colorTextTertiary, flexShrink: 0 }} aria-label={t('chat.social.detail.stateMuted')} />
+                                ) : null}
+                            </Flexbox>
+                              <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+                                {timeStr}
+                              </Text>
+                          </Flexbox>
+                            <Flexbox horizontal align="center" justify="space-between">
+                              <Text type="secondary" ellipsis style={{ fontSize: 12, flex: 1, minWidth: 0 }}>
+                                {subtitle}
+                              </Text>
+                              {unread > 0 && (
+                                <Badge count={unread} size="small" style={{ marginLeft: 8 }} />
+                              )}
+                          </Flexbox>
+                          </Flexbox>
+                      </>
+                    </OverlayCommitProfiler>
                   </Flexbox>
-                </Flexbox>
                 </Dropdown>
               );
             })

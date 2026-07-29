@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpb";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Federation Sync — Types for ledger replication between Stations.
+// Source of truth: docs/architecture/federation/wire-protocol.md §7
+//
+// The SSE delivery message (LedgerEventDelivered) lives in
+// model/domain/realtime/event.proto as StreamEvent oneof arm 24.
+// This file only defines sync-cursor and status types.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// SyncCursor tracks a member Station's replication progress with a remote.
+message SyncCursor {
+  string federation_id = 1;
+  string remote_station_peer_id = 2;
+  bytes  last_seen_head_hash = 3;
+  uint64 last_seen_head_seq = 4;
+  uint64 last_applied_seq = 5;
+  int64  last_sync_at_unix_ms = 6;
+  SyncStatus status = 7;
+  int32  error_code = 8;
+  string error_message = 9;
+}
+
+enum SyncStatus {
+  SYNC_STATUS_UNSPECIFIED = 0;
+  SYNC_HEALTHY = 1;
+  SYNC_LAGGING = 2;
+  SYNC_FORK_DETECTED = 3;
+  SYNC_REMOTE_UNREACHABLE = 4;
+  SYNC_POLICY_REJECTED = 5;
+}

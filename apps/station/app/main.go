@@ -10,9 +10,11 @@ import (
 
 	appmeta "github.com/peers-labs/peers-touch/station/app/subserver/app_meta"
 	appletstore "github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
+	compatchat "github.com/peers-labs/peers-touch/station/app/subserver/compat_chat"
+	convsub "github.com/peers-labs/peers-touch/station/app/subserver/conversation"
+	envelopesub "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
-	friendchat "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat"
-	groupchat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat"
+	frontendtelemetry "github.com/peers-labs/peers-touch/station/app/subserver/frontend_telemetry"
 	keyexchange "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange"
 	notifsubserver "github.com/peers-labs/peers-touch/station/app/subserver/notification"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
@@ -22,8 +24,10 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard"
 
-	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
+	federation "github.com/peers-labs/peers-touch/station/app/subserver/federation"
+
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/agent"
+	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
 
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
@@ -47,16 +51,20 @@ func main() {
 		server.WithSubServer("app_meta", appmeta.NewAppMetaSubServer),
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("/debug")),
 		server.WithSubServer("events", events.NewEventsSubServer),
+		server.WithSubServer("envelope", envelopesub.NewEnvelopeSubServer),
+		server.WithSubServer("conversation", convsub.NewConversationSubServer),
 		server.WithSubServer("presence", presence.NewPresenceSubServer),
-		server.WithSubServer("friend_chat", friendchat.NewFriendChatSubServer),
 		server.WithSubServer("key_exchange", keyexchange.NewKeyExchangeSubServer),
-		server.WithSubServer("group_chat", groupchat.NewGroupChatSubServer),
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
 		server.WithSubServer("social", social.NewSocialSubServer),
 		server.WithSubServer("notification", notifsubserver.NewNotificationSubServer),
 		server.WithSubServer("official_applet_note", officialapplets.NewNoteSubServer),
+		server.WithSubServer("official_applet_atelier", officialapplets.NewAtelierSubServer),
 		server.WithSubServer("applet_store", appletstore.NewAppletStoreSubServer),
+		server.WithSubServer("frontend_telemetry", frontendtelemetry.NewFrontendTelemetrySubServer),
 		server.WithSubServer("dashboard", dashboard.NewDashboardSubServer),
+		server.WithSubServer("federation", federation.NewFederationSubServer),
+		server.WithSubServer("compat_chat", compatchat.NewCompatChatSubServer),
 	)
 	if err != nil {
 		panic(err)

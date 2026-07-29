@@ -1,4 +1,10 @@
-import { useEffect } from 'react';
+import {
+  Profiler,
+  useEffect,
+  type ProfilerOnRenderCallback,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 
 import { GlobalLayout } from '../components/GlobalLayout';
 import { AppSideNav } from '../components/AppSideNav';
@@ -10,6 +16,7 @@ import { notifyActiveAppletPage } from '../runtimes/appletsRuntime';
 import { PageHost } from '../kernel/PageHost';
 import { PageContextProvider } from '../kernel/PageContext';
 import { markPhaseEnd, markPhaseStart } from '../kernel/boot';
+import { recordReactCommit, isReactCommitProfilingEnabled } from '../kernel/frontendRuntimeProfiler';
 import { registerKernelPages } from '../pages/registry';
 import { useNavigationBadgeStore } from '../store/navigationBadges';
 import type { AppLifecycle } from '../types/navigation';
@@ -66,31 +73,101 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
     notifyActiveAppletPage(router.page);
   }, [router.page]);
 
-  return (
+  const sideNav = standaloneApplet ? null : (
+    <ShellCommitProfiler owner="shell:side-nav" surface="side-nav">
+      <AppSideNav
+        page={router.page}
+        router={router}
+        navigation={navigation}
+        appletPins={appletPins}
+      />
+    </ShellCommitProfiler>
+  );
+
+  return wrapReadyShellCommitProfiler(
     <PageContextProvider value={{ router, navigation, appletPins }}>
-      <GlobalLayout
-        sideNav={standaloneApplet ? null : (
-          <AppSideNav
+      <GlobalLayout sideNav={sideNav}>
+        <ShellCommitProfiler owner="shell:page-host" surface="page-host">
+          <PageHost
             page={router.page}
-            router={router}
-            navigation={navigation}
-            appletPins={appletPins}
+            fallback={
+              <PageRouter
+                page={router.page}
+                router={router}
+                navigation={navigation}
+                appletPins={appletPins}
+              />
+            }
           />
-        )}
-      >
-        <PageHost
-          page={router.page}
-          fallback={
-            <PageRouter
-              page={router.page}
-              router={router}
-              navigation={navigation}
-              appletPins={appletPins}
-            />
-          }
-        />
+        </ShellCommitProfiler>
       </GlobalLayout>
-    </PageContextProvider>
+    </PageContextProvider>,
+  );
+}
+
+function ShellCommitProfiler({
+  children,
+  owner,
+  surface,
+}: {
+  children: ReactNode;
+  owner: string;
+  surface: string;
+}): ReactElement {
+  if (!isReactCommitProfilingEnabled()) return <>{children}</>;
+  const onRender: ProfilerOnRenderCallback = (
+    id,
+    phase,
+    actualDuration,
+    baseDuration,
+    startTime,
+    commitTime,
+  ) => {
+    recordReactCommit({
+      actualDuration,
+      baseDuration,
+      commitTime,
+      data: { surface },
+      id,
+      owner,
+      phase,
+      source: 'shell',
+      startTime,
+    });
+  };
+  return (
+    <Profiler id={owner} onRender={onRender}>
+      {children}
+    </Profiler>
+  );
+}
+
+function wrapReadyShellCommitProfiler(content: ReactElement): ReactElement {
+  if (!isReactCommitProfilingEnabled()) return content;
+  const onRender: ProfilerOnRenderCallback = (
+    id,
+    phase,
+    actualDuration,
+    baseDuration,
+    startTime,
+    commitTime,
+  ) => {
+    recordReactCommit({
+      actualDuration,
+      baseDuration,
+      commitTime,
+      data: { surface: 'ready-shell' },
+      id,
+      owner: 'ready-shell',
+      phase,
+      source: 'shell',
+      startTime,
+    });
+  };
+  return (
+    <Profiler id="ready-shell" onRender={onRender}>
+      {content}
+    </Profiler>
   );
 }
 

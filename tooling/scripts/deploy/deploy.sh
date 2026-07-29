@@ -3,6 +3,7 @@
 # deploy.sh — Remote deployment via pull model
 #
 # Source modes (PT_DEPLOY_SOURCE):
+#   direct  — Push straight to target station's .bare.git via SSH (simplest)
 #   central — Push to central bare repo, remote fetches from it (recommended)
 #   local   — Remote fetches from local git daemon via SSH reverse tunnel
 #   github  — Remote fetches from GitHub origin
@@ -93,9 +94,20 @@ push_to_central() {
   git -C "$PROJECT_ROOT" push --force "$GIT_SERVER_SSH_URL" "HEAD:refs/heads/$BRANCH" 2>&1 | sed 's/^/       /'
 }
 
+# ─── Direct mode: push straight to target station ───
+push_direct() {
+  local remote_url="ssh://${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}/~/${PT_DEPLOY_PATH}"
+  echo "[INFO] Pushing directly to: ${PT_DEPLOY_HOST}:${PT_DEPLOY_PATH}"
+  ssh_run "mkdir -p \$HOME/$PT_DEPLOY_PATH && cd \$HOME/$PT_DEPLOY_PATH && git init --bare .bare.git 2>/dev/null || true"
+  git -C "$PROJECT_ROOT" push --force "ssh://${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}/home/${PT_DEPLOY_USER}/${PT_DEPLOY_PATH}/.bare.git" "HEAD:refs/heads/$BRANCH" 2>&1 | sed 's/^/       /'
+}
+
 # ─── Resolve fetch URL for the remote ───
 resolve_fetch_url() {
   case "$SOURCE" in
+    direct)
+      echo "\$HOME/$PT_DEPLOY_PATH/.bare.git"
+      ;;
     central)
       if [[ "$PT_DEPLOY_HOST" == "$PT_GIT_SERVER_HOST" ]]; then
         # Target IS the git server → local path fetch (fast)
@@ -156,10 +168,13 @@ case "$cmd" in
   *)
     # ═══ Deploy ═══
 
-    # Step 0: Push to central (if central mode)
+    # Step 0: Push code to target
     if [[ "$SOURCE" == "central" ]]; then
       echo "[0/4] Pushing to central git server ..."
       push_to_central
+    elif [[ "$SOURCE" == "direct" ]]; then
+      echo "[0/4] Pushing directly to target station ..."
+      push_direct
     else
       echo "[0/4] Resolving deploy source ..."
     fi
@@ -191,7 +206,7 @@ case "$cmd" in
       if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
         git add -A >/dev/null 2>&1 || true
       fi
-      git fetch \"$FETCH_URL\" $BRANCH:refs/remotes/deploy/$BRANCH
+      git fetch \"$FETCH_URL\" +$BRANCH:refs/remotes/deploy/$BRANCH
       git checkout -f -B $BRANCH refs/remotes/deploy/$BRANCH
       git reset --hard refs/remotes/deploy/$BRANCH
       echo '[remote] HEAD:'
@@ -200,7 +215,7 @@ case "$cmd" in
 
     echo "[2/4] Building ..."
     if [[ -n "${PT_DEPLOY_BUILD_CMD:-}" ]]; then
-      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && $PT_DEPLOY_BUILD_CMD"
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && PEERS_TOUCH_BUILD_COMMIT=\$(git rev-parse --short=12 HEAD) PEERS_TOUCH_BUILD_LABEL=$BRANCH PEERS_TOUCH_BUILD_TIME=\$(date -u +%Y-%m-%dT%H:%M:%SZ) $PT_DEPLOY_BUILD_CMD"
     else
       case "$PT_DEPLOY_ROLE" in
         station)

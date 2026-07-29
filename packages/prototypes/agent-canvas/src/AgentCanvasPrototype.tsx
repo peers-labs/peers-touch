@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Activity,
   AlertTriangle,
@@ -15,8 +16,6 @@ import {
   Layers3,
   MessageSquareText,
   MousePointer2,
-  PanelLeftClose,
-  PanelLeftOpen,
   Play,
   Plus,
   RotateCcw,
@@ -27,6 +26,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import { PanelToggleDock } from '../../desktop/shared/PanelToggleButton';
 
 type Engine = 'parallel_analysis' | 'review_gate' | 'relay_chain' | 'debate_judge' | 'synthesis' | 'design_to_implementation';
 type RunState = 'idle' | 'matched' | 'running' | 'completed' | 'failed';
@@ -218,6 +218,8 @@ function matchEngine(nodes: CanvasNode[], prompt: string): EngineMatch {
 }
 
 function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => void; embedded?: boolean }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const narrowRef = useRef<boolean | null>(null);
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [prompt, setPrompt] = useState('');
   const [runState, setRunState] = useState<RunState>('idle');
@@ -225,6 +227,8 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(AGENTS[0]?.id ?? null);
   const [libraryOpen, setLibraryOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
+  const [narrow, setNarrow] = useState(false);
 
   const engineMatch = useMemo(() => {
     if (!nodes.length || !prompt.trim()) return null;
@@ -233,6 +237,26 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
 
   const selectedNode = nodes.find((node) => node.nodeId === selectedNodeId) ?? null;
   const activeAgent = AGENTS.find((agent) => agent.id === activeAgentId) ?? null;
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const syncWidth = (width: number) => {
+      if (width <= 0) return;
+      const nextNarrow = width < 820;
+      const wasNarrow = narrowRef.current;
+      narrowRef.current = nextNarrow;
+      setNarrow(nextNarrow);
+      if (nextNarrow && wasNarrow !== true) {
+        setLibraryOpen(false);
+        setRightOpen(false);
+      }
+    };
+    syncWidth(root.getBoundingClientRect().width);
+    const observer = new ResizeObserver(([entry]) => syncWidth(entry.contentRect.width));
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
 
   function addAgent(agent: Agent) {
     if (nodes.some((node) => node.id === agent.id)) return;
@@ -311,7 +335,11 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
   }
 
   return (
-    <div style={{ ...styles.root, width: embedded ? '100%' : '100vw', height: embedded ? '100%' : '100vh' }}>
+    <div
+      ref={rootRef}
+      data-testid="desktop-shell-agent-canvas"
+      style={{ ...styles.root, width: embedded ? '100%' : '100vw', height: embedded ? '100%' : '100vh' }}
+    >
       {!embedded && (
         <aside style={styles.rail}>
           <div style={styles.logo}>P</div>
@@ -326,84 +354,92 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
       )}
 
       <main style={styles.page}>
-        <header style={styles.header}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-            {onBack && (
-              <button style={styles.backButton} onClick={onBack} title="返回" aria-label="返回">
-                <ArrowLeft size={16} />
-              </button>
-            )}
-            <div>
-              <div style={styles.eyebrow}>Agent / Orchestration</div>
-              <h1 style={styles.title}>Agent Canvas</h1>
-              <p style={styles.subtitle}>从 Agent 页进入：选已有 Agent，输入目标，系统自动匹配工作引擎。</p>
+        {!embedded && (
+          <header style={styles.header}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              {onBack && (
+                <button style={styles.backButton} onClick={onBack} title="返回" aria-label="返回">
+                  <ArrowLeft size={16} />
+                </button>
+              )}
+              <div>
+                <div style={styles.eyebrow}>Agent / Orchestration</div>
+                <h1 style={styles.title}>Agent Canvas</h1>
+                <p style={styles.subtitle}>从 Agent 页进入：选已有 Agent，输入目标，系统自动匹配工作引擎。</p>
+              </div>
             </div>
-          </div>
-          <div style={styles.headerActions}>
-            <Pill tone="purple">当前：Canvas 编排</Pill>
-            <Pill tone="green">GoalKeeper 已启用</Pill>
-          </div>
-        </header>
+            <div style={styles.headerActions}>
+              <Pill tone="purple">当前：Canvas 编排</Pill>
+              <Pill tone="green">GoalKeeper 已启用</Pill>
+            </div>
+          </header>
+        )}
 
-        <section style={{ ...styles.workspace, gridTemplateColumns: `${libraryOpen ? '250px' : '56px'} minmax(520px, 1fr) 320px` }}>
-          <aside style={{ ...styles.leftPanel, padding: libraryOpen ? 14 : '12px 0', alignItems: libraryOpen ? 'stretch' : 'center' }}>
+        <section
+          style={{
+            ...styles.workspace,
+            gridTemplateColumns: `${libraryOpen ? '230px' : '48px'} minmax(0, 1fr) ${rightOpen ? '230px' : '48px'}`,
+          }}
+        >
+          <aside
+            style={{
+              ...styles.leftPanel,
+              padding: libraryOpen ? '14px 12px 56px' : '12px 0 14px',
+              alignItems: libraryOpen ? 'stretch' : 'center',
+            }}
+          >
             {libraryOpen ? (
               <>
-                <div style={styles.panelHeader}>
-                  <div>
-                    <div style={styles.panelTitle}>已有 Agent</div>
-                    <div style={styles.panelHint}>点击看详情，详情卡片里加入画板</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                <div style={styles.leftScrollContent}>
+                  <div style={styles.panelHeader}>
+                    <div>
+                      <div style={styles.panelTitle}>已有 Agent</div>
+                      <div style={styles.panelHint}>点击查看详情并加入画板</div>
+                    </div>
                     <button style={styles.iconButton} title="新建 Agent">
                       <Plus size={16} />
                     </button>
-                    <button style={styles.iconButton} title="折叠 Agent Library" onClick={() => setLibraryOpen(false)}>
-                      <PanelLeftClose size={16} />
-                    </button>
+                  </div>
+
+                  <div style={styles.searchBox}>
+                    <Search size={15} />
+                    搜索 Agent / 能力
+                  </div>
+
+                  <div style={styles.agentList}>
+                    {AGENTS.map((agent) => (
+                      <AgentCard
+                        key={agent.id}
+                        agent={agent}
+                        selected={nodes.some((node) => node.id === agent.id)}
+                        active={activeAgentId === agent.id}
+                        onInspect={() => {
+                          setActiveAgentId(agent.id);
+                          setSelectedNodeId(null);
+                        }}
+                      />
+                    ))}
+                  </div>
+
+                  <div style={styles.templateBox}>
+                    <div style={styles.panelTitle}>快速模板</div>
+                    {TEMPLATES.map((template) => (
+                      <button key={template.id} style={styles.templateButton} onClick={() => applyTemplate(template.id)}>
+                        <span>
+                          <b>{template.name}</b>
+                          <small>{template.desc}</small>
+                        </span>
+                        <ChevronRight size={15} />
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                <div style={styles.searchBox}>
-                  <Search size={15} />
-                  搜索 Agent / 能力
-                </div>
-
-                <div style={styles.agentList}>
-                  {AGENTS.map((agent) => (
-                    <AgentCard
-                      key={agent.id}
-                      agent={agent}
-                      selected={nodes.some((node) => node.id === agent.id)}
-                      active={activeAgentId === agent.id}
-                      onInspect={() => {
-                        setActiveAgentId(agent.id);
-                        setSelectedNodeId(null);
-                      }}
-                    />
-                  ))}
-                </div>
-
-                <div style={styles.templateBox}>
-                  <div style={styles.panelTitle}>快速模板</div>
-                  {TEMPLATES.map((template) => (
-                    <button key={template.id} style={styles.templateButton} onClick={() => applyTemplate(template.id)}>
-                      <span>
-                        <b>{template.name}</b>
-                        <small>{template.desc}</small>
-                      </span>
-                      <ChevronRight size={15} />
-                    </button>
-                  ))}
-                </div>
+                <PanelToggleDock side="left" open title="折叠 Agent Library" onClick={() => setLibraryOpen(false)} />
               </>
             ) : (
               <>
-                <button style={styles.iconButton} title="展开 Agent Library" onClick={() => setLibraryOpen(true)}>
-                  <PanelLeftOpen size={16} />
-                </button>
-                <div style={{ width: 28, height: 1, background: T.line }} />
-                <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
                   {AGENTS.map((agent) => {
                     const Icon = agent.icon;
                     const selected = nodes.some((node) => node.id === agent.id);
@@ -428,6 +464,15 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
                     );
                   })}
                 </div>
+                <PanelToggleDock
+                  side="left"
+                  open={false}
+                  title="展开 Agent Library"
+                  onClick={() => {
+                    if (narrow) setRightOpen(false);
+                    setLibraryOpen(true);
+                  }}
+                />
               </>
             )}
           </aside>
@@ -435,7 +480,7 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
           <section style={styles.canvasColumn}>
             <div style={styles.canvasHeader}>
               <div>
-                <div style={styles.panelTitle}>协作画板</div>
+                <div style={styles.panelTitle}>Orchestration Canvas</div>
                 <div style={styles.panelHint}>Canvas 是入口，真正的编排由 GoalKeeper + RunPlan 在后台完成。</div>
               </div>
               <button style={styles.iconButton} onClick={resetCanvas} title="清空" aria-label="清空">
@@ -447,8 +492,8 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
               {nodes.length === 0 ? (
                 <div style={styles.emptyCanvas}>
                   <MousePointer2 size={28} />
-                  <h2>拖入几个 Agent，输入一个目标，让它们协作。</h2>
-                  <p>不需要配置流程，不需要选择角色。系统会自动匹配工作引擎。</p>
+                  <div style={styles.emptyTitle}>加入 Agent，开始协作</div>
+                  <div style={styles.emptyDescription}>选择 Agent 并描述目标，系统会自动匹配工作引擎。</div>
                 </div>
               ) : (
                 <div style={styles.nodeGrid}>
@@ -474,12 +519,13 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
                 </div>
                 <button
                   style={styles.secondaryButton}
+                  title="填入示例"
                   onClick={() =>
                     setPrompt('请一起设计并实现 Agent Canvas 编排内核，要求保留现有 Agent 页、自动匹配工作引擎，并且不要让我反复说继续。')
                   }
                 >
                   <Sparkles size={15} />
-                  填入示例
+                  {!narrow && '填入示例'}
                 </button>
               </div>
               <textarea
@@ -494,9 +540,13 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
             </div>
           </section>
 
-          <aside style={styles.rightPanel}>
-            <section style={styles.card}>
-              <div style={styles.panelTitle}>工作引擎</div>
+          <aside style={{ ...styles.rightPanel, ...(rightOpen ? {} : styles.collapsedRightRail) }}>
+            {rightOpen ? (
+              <>
+                <PanelToggleDock side="right" open title="折叠详情面板" onClick={() => setRightOpen(false)} />
+
+                <section style={styles.card}>
+                  <div style={styles.panelTitle}>工作引擎</div>
               {engineMatch ? (
                 <div style={styles.engineCard}>
                   <div style={styles.engineIcon}>
@@ -585,9 +635,22 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
                 <div style={styles.placeholderCard}>点击左侧 Agent 查看详情，或点击画板节点补充局部 Prompt。</div>
               )}
             </section>
+              </>
+            ) : (
+              <PanelToggleDock
+                side="right"
+                open={false}
+                title="展开详情面板"
+                onClick={() => {
+                  if (narrow) setLibraryOpen(false);
+                  setRightOpen(true);
+                }}
+              />
+            )}
           </aside>
         </section>
 
+        {runState !== 'idle' && runState !== 'matched' && (
         <section style={styles.resultPanel}>
           <div style={styles.resultHeader}>
             <div>
@@ -646,6 +709,7 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
             </div>
           )}
         </section>
+        )}
       </main>
     </div>
   );
@@ -676,28 +740,40 @@ function AgentCard({
   active: boolean;
   onInspect: () => void;
 }) {
-  const [hover, setHover] = useState(false);
+  const [tooltipPosition, setTooltipPosition] = useState<{ left: number; top: number } | null>(null);
   const Icon = agent.icon;
   return (
-    <button
-      style={{
-        ...styles.agentCard,
-        borderColor: active ? T.purple : selected ? T.green : T.line,
-        background: active ? T.purpleSoft : '#fff',
-      }}
-      onClick={onInspect}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-    >
-      <div style={{ ...styles.agentAvatar, background: agent.color }}>
-        <Icon size={17} />
-      </div>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={styles.agentName}>{agent.name}</div>
-      </div>
-      {selected ? <Check size={16} color={T.green} /> : <ChevronRight size={16} color={T.tertiary} />}
-      {hover && (
-        <div style={styles.agentTooltip}>
+    <>
+      <button
+        style={{
+          ...styles.agentCard,
+          borderColor: active ? T.purple : selected ? T.green : T.line,
+          background: active ? T.purpleSoft : '#fff',
+        }}
+        onClick={onInspect}
+        onMouseEnter={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const tooltipWidth = 240;
+          const left = window.innerWidth - rect.right >= tooltipWidth + 16
+            ? rect.right + 8
+            : Math.max(8, rect.left - tooltipWidth - 8);
+          setTooltipPosition({
+            left,
+            top: Math.min(Math.max(8, rect.top), window.innerHeight - 150),
+          });
+        }}
+        onMouseLeave={() => setTooltipPosition(null)}
+      >
+        <div style={{ ...styles.agentAvatar, background: agent.color }}>
+          <Icon size={17} />
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={styles.agentName}>{agent.name}</div>
+        </div>
+        {selected ? <Check size={16} color={T.green} /> : <ChevronRight size={16} color={T.tertiary} />}
+      </button>
+      {tooltipPosition && createPortal(
+        <div style={{ ...styles.agentTooltip, left: tooltipPosition.left, top: tooltipPosition.top }}>
           <div style={styles.tooltipTitle}>{agent.name}</div>
           <div style={styles.tooltipText}>{agent.desc}</div>
           <div style={styles.tagRow}>
@@ -707,9 +783,10 @@ function AgentCard({
               </span>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
-    </button>
+    </>
   );
 }
 
@@ -856,7 +933,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100vw',
     height: '100vh',
     display: 'flex',
-    background: T.bg,
+    background: T.panelStrong,
     color: T.text,
     fontFamily:
       '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
@@ -898,49 +975,53 @@ const styles: Record<string, React.CSSProperties> = {
   },
   page: {
     flex: 1,
-    padding: 18,
     display: 'flex',
     flexDirection: 'column',
-    gap: 14,
     minWidth: 0,
+    minHeight: 0,
+    overflow: 'hidden',
+    background: T.panelStrong,
   },
   header: {
-    minHeight: 72,
-    background: T.panel,
-    border: `1px solid ${T.line}`,
-    borderRadius: 24,
-    padding: '16px 22px',
+    height: 58,
+    minHeight: 58,
+    background: T.panelStrong,
+    borderBottom: `1px solid ${T.line}`,
+    padding: '0 16px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    boxShadow: '0 18px 45px rgba(15, 23, 42, 0.06)',
+    boxSizing: 'border-box',
   },
   eyebrow: {
     color: T.purple,
-    fontSize: 12,
-    fontWeight: 800,
-    letterSpacing: 0.4,
+    fontSize: 11,
+    fontWeight: 600,
   },
   title: {
-    margin: '2px 0',
-    fontSize: 24,
+    margin: '1px 0',
+    fontSize: 16,
+    fontWeight: 600,
     lineHeight: 1.1,
   },
   subtitle: {
     margin: 0,
     color: T.secondary,
-    fontSize: 13,
+    fontSize: 11,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
   },
   headerActions: {
     display: 'flex',
     gap: 8,
   },
   backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    border: `1px solid ${T.line}`,
-    background: '#fff',
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    border: 0,
+    background: T.purpleSoft,
     color: T.secondary,
     display: 'flex',
     alignItems: 'center',
@@ -951,28 +1032,42 @@ const styles: Record<string, React.CSSProperties> = {
   workspace: {
     flex: 1,
     display: 'grid',
-    gridTemplateColumns: '250px minmax(520px, 1fr) 320px',
-    gap: 14,
+    gridTemplateColumns: '230px minmax(0, 1fr) 230px',
+    position: 'relative',
     minHeight: 0,
+    overflow: 'hidden',
   },
   leftPanel: {
-    background: T.panel,
-    border: `1px solid ${T.line}`,
-    borderRadius: 24,
+    background: T.panelStrong,
+    borderRight: `1px solid ${T.line}`,
     padding: 14,
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
+    gap: 10,
     minHeight: 0,
+    position: 'relative',
+    overflow: 'hidden',
+    boxSizing: 'border-box',
+  },
+  leftScrollContent: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
   },
   panelHeader: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: 32,
+    flexShrink: 0,
   },
   panelTitle: {
-    fontSize: 14,
-    fontWeight: 800,
+    fontSize: 13,
+    fontWeight: 600,
     color: T.text,
   },
   panelHint: {
@@ -981,20 +1076,20 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 3,
   },
   iconButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    border: `1px solid ${T.line}`,
-    background: '#fff',
+    width: 28,
+    height: 28,
+    borderRadius: 7,
+    border: 0,
+    background: 'transparent',
     color: T.purple,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchBox: {
-    height: 38,
+    height: 36,
     border: `1px solid ${T.line}`,
-    borderRadius: 12,
+    borderRadius: 8,
     background: '#fff',
     color: T.tertiary,
     fontSize: 13,
@@ -1004,18 +1099,17 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0 12px',
   },
   agentList: {
-    overflow: 'auto',
     display: 'flex',
     flexDirection: 'column',
-    gap: 6,
-    paddingRight: 2,
+    gap: 3,
+    flexShrink: 0,
   },
   agentCard: {
     width: '100%',
     border: `1px solid ${T.line}`,
     background: '#fff',
-    borderRadius: 13,
-    padding: '8px 9px',
+    borderRadius: 8,
+    padding: '7px 8px',
     display: 'flex',
     alignItems: 'center',
     gap: 10,
@@ -1045,7 +1139,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
   },
   agentName: {
-    fontWeight: 800,
+    fontWeight: 600,
     fontSize: 13,
   },
   agentDesc: {
@@ -1055,11 +1149,10 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 3,
   },
   agentTooltip: {
-    position: 'absolute',
-    left: 46,
-    top: 42,
-    zIndex: 20,
-    width: 220,
+    position: 'fixed',
+    zIndex: 10000,
+    width: 240,
+    boxSizing: 'border-box',
     border: `1px solid ${T.lineStrong}`,
     borderRadius: 14,
     padding: 12,
@@ -1069,7 +1162,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   tooltipTitle: {
     fontSize: 13,
-    fontWeight: 850,
+    fontWeight: 600,
     color: T.text,
   },
   tooltipText: {
@@ -1093,16 +1186,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
   templateBox: {
     borderTop: `1px solid ${T.line}`,
-    paddingTop: 12,
+    paddingTop: 10,
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
+    gap: 4,
+    flexShrink: 0,
   },
   templateButton: {
     border: `1px solid ${T.line}`,
     background: '#fff',
-    borderRadius: 14,
-    padding: 11,
+    borderRadius: 8,
+    padding: '8px 9px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1112,40 +1206,58 @@ const styles: Record<string, React.CSSProperties> = {
   },
   canvasColumn: {
     minWidth: 0,
+    minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: 14,
+    overflow: 'hidden',
+    background: T.panelStrong,
   },
   canvasHeader: {
-    background: T.panel,
-    border: `1px solid ${T.line}`,
-    borderRadius: 20,
-    padding: '14px 16px',
+    minHeight: 50,
+    background: T.panelStrong,
+    borderBottom: `1px solid ${T.line}`,
+    padding: '8px 14px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
+    boxSizing: 'border-box',
+    flexShrink: 0,
   },
   canvas: {
     flex: 1,
-    minHeight: 320,
+    minHeight: 0,
     background:
       'radial-gradient(circle at 1px 1px, rgba(15,23,42,0.06) 1px, transparent 0), rgba(255,255,255,0.72)',
     backgroundSize: '22px 22px',
-    border: `1px dashed ${T.lineStrong}`,
-    borderRadius: 26,
+    border: 0,
     position: 'relative',
     overflow: 'hidden',
-    padding: 22,
+    padding: 18,
   },
   emptyCanvas: {
     height: '100%',
-    minHeight: 320,
+    minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     textAlign: 'center',
     color: T.secondary,
+    gap: 8,
+    padding: 16,
+    boxSizing: 'border-box',
+  },
+  emptyTitle: {
+    color: T.text,
+    fontSize: 15,
+    fontWeight: 600,
+    lineHeight: 1.35,
+  },
+  emptyDescription: {
+    maxWidth: 360,
+    color: T.tertiary,
+    fontSize: 12,
+    lineHeight: 1.5,
   },
   nodeGrid: {
     height: '100%',
@@ -1157,9 +1269,9 @@ const styles: Record<string, React.CSSProperties> = {
   nodeCard: {
     background: 'rgba(255,255,255,0.92)',
     border: `1px solid ${T.line}`,
-    borderRadius: 16,
+    borderRadius: 10,
     padding: 10,
-    boxShadow: '0 12px 26px rgba(15, 23, 42, 0.06)',
+    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
@@ -1188,7 +1300,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   nodeName: {
     fontSize: 13,
-    fontWeight: 850,
+    fontWeight: 600,
     marginTop: 3,
     whiteSpace: 'nowrap',
     overflow: 'hidden',
@@ -1227,48 +1339,66 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '5px 8px',
   },
   promptPanel: {
-    background: T.panel,
-    border: `1px solid ${T.line}`,
-    borderRadius: 22,
-    padding: 16,
+    background: T.panelStrong,
+    borderTop: `1px solid ${T.line}`,
+    padding: '10px 14px 12px',
+    flexShrink: 0,
   },
   promptHeader: {
     display: 'flex',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 7,
   },
   textarea: {
     width: '100%',
-    minHeight: 116,
+    minHeight: 58,
     resize: 'none',
     border: `1px solid ${T.line}`,
     outline: 'none',
-    borderRadius: 16,
+    borderRadius: 10,
     background: '#fff',
     color: T.text,
-    padding: 13,
+    padding: '10px 12px',
     boxSizing: 'border-box',
     fontSize: 13,
-    lineHeight: 1.6,
+    lineHeight: 1.5,
     fontFamily: 'inherit',
   },
   rightPanel: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 14,
     minHeight: 0,
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    position: 'relative',
+    background: T.panelStrong,
+    borderLeft: `1px solid ${T.line}`,
+    paddingTop: 44,
+    boxSizing: 'border-box',
+  },
+  collapsedRightRail: {
+    width: 48,
+    minWidth: 48,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 14,
+    border: 0,
+    borderLeft: `1px solid ${T.line}`,
+    background: T.panelStrong,
+    overflow: 'visible',
   },
   card: {
-    background: T.panel,
-    border: `1px solid ${T.line}`,
-    borderRadius: 22,
-    padding: 16,
+    background: T.panelStrong,
+    borderBottom: `1px solid ${T.line}`,
+    padding: '12px 14px',
+    flexShrink: 0,
   },
   engineCard: {
-    marginTop: 12,
-    border: `1px solid ${T.lineStrong}`,
-    borderRadius: 18,
-    padding: 13,
+    marginTop: 8,
+    border: 0,
+    borderRadius: 8,
+    padding: 10,
     display: 'flex',
     alignItems: 'center',
     gap: 11,
@@ -1277,7 +1407,7 @@ const styles: Record<string, React.CSSProperties> = {
   engineIcon: {
     width: 42,
     height: 42,
-    borderRadius: 14,
+    borderRadius: 10,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1285,8 +1415,8 @@ const styles: Record<string, React.CSSProperties> = {
     background: T.purpleSoft,
   },
   engineName: {
-    fontWeight: 850,
-    fontSize: 14,
+    fontWeight: 600,
+    fontSize: 13,
   },
   reasonList: {
     marginTop: 10,
@@ -1302,24 +1432,24 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
   },
   runButton: {
-    marginTop: 14,
+    marginTop: 10,
     width: '100%',
-    height: 44,
-    border: 0,
-    borderRadius: 14,
-    background: `linear-gradient(135deg, ${T.purple}, #9478ff)`,
-    color: '#fff',
-    fontWeight: 850,
+    height: 36,
+    border: `1px solid ${T.line}`,
+    borderRadius: 10,
+    background: T.purpleSoft,
+    color: T.purple,
+    fontWeight: 600,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
   stepList: {
-    marginTop: 12,
+    marginTop: 8,
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
+    gap: 7,
   },
   stepItem: {
     display: 'grid',
@@ -1334,15 +1464,15 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 999,
   },
   selectedName: {
-    fontWeight: 850,
+    fontWeight: 600,
     margin: '12px 0 8px',
   },
   agentDetailCard: {
-    marginTop: 12,
-    border: `1px solid ${T.lineStrong}`,
-    borderRadius: 16,
-    padding: 14,
-    background: '#fff',
+    marginTop: 8,
+    border: 0,
+    borderRadius: 8,
+    padding: 10,
+    background: T.purpleSoft,
   },
   agentAvatarLarge: {
     width: 42,
@@ -1361,21 +1491,22 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.55,
   },
   placeholderCard: {
-    marginTop: 12,
+    marginTop: 8,
     border: `1px dashed ${T.lineStrong}`,
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 8,
+    padding: 10,
     color: T.tertiary,
     fontSize: 12,
     lineHeight: 1.55,
     background: 'rgba(255,255,255,0.62)',
   },
   resultPanel: {
-    minHeight: 190,
-    background: T.panel,
-    border: `1px solid ${T.line}`,
-    borderRadius: 24,
-    padding: 16,
+    maxHeight: 180,
+    overflow: 'auto',
+    background: T.panelStrong,
+    borderTop: `1px solid ${T.line}`,
+    padding: 12,
+    flexShrink: 0,
   },
   resultHeader: {
     display: 'flex',
@@ -1391,12 +1522,12 @@ const styles: Record<string, React.CSSProperties> = {
   resultCard: {
     background: '#fff',
     border: `1px solid ${T.line}`,
-    borderRadius: 18,
+    borderRadius: 10,
     padding: 14,
     minHeight: 120,
   },
   resultTitle: {
-    fontWeight: 850,
+    fontWeight: 600,
     display: 'flex',
     alignItems: 'center',
     gap: 7,
@@ -1437,25 +1568,25 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
   },
   secondaryButton: {
-    height: 34,
+    height: 32,
     border: `1px solid ${T.line}`,
-    borderRadius: 11,
+    borderRadius: 8,
     background: '#fff',
     color: T.secondary,
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    padding: '0 11px',
+    padding: '0 10px',
     cursor: 'pointer',
-    fontWeight: 750,
+    fontWeight: 500,
     fontSize: 12,
   },
   pill: {
     borderRadius: 999,
-    padding: '7px 11px',
-    fontSize: 12,
-    fontWeight: 800,
+    padding: '5px 10px',
+    fontSize: 11,
+    fontWeight: 500,
   },
 };
 

@@ -1,0 +1,166 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+// Provider API contract — wire types for the agent provider management surface.
+
+message ProviderModelInfo {
+  string id = 1;
+  string display_name = 2;
+  string type = 3;
+  bool enabled = 4;
+  int32 context_window = 5;
+}
+
+message AgentProviderInfo {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  bool enabled = 4;
+  bool builtin = 5;
+  string protocol = 6;
+  string discovery = 7;
+  string runtime_kind = 8;
+  string base_url = 9;
+  string home_url = 10;
+  string api_key_url = 11;
+  bool show_checker = 12;
+  bool show_api_key = 13;
+  string credential_status = 14;
+  int64 version = 15;
+  string source = 16;
+  string cli_command = 17;
+  repeated ProviderModelInfo models = 18;
+  string models_command = 19;
+}
+
+message AgentModelInfo {
+  string id = 1;
+  string actor_id = 2;
+  string provider_id = 3;
+  string model_id = 4;
+  string display_name = 5;
+  bool enabled = 6;
+  int64 version = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message CredentialStatusInfo {
+  string provider_id = 1;
+  bool configured = 2;
+  string status = 3;
+  int64 version = 4;
+}
+
+message CredentialResolveInfo {
+  string provider_id = 1;
+  string api_key = 2;
+  string base_url = 3;
+  string protocol = 4;
+}
+
+// VerifyCli
+message VerifyCliRequest { string cli_command = 1; }
+message VerifyCliResponse {
+  bool available = 1;
+  string program = 2;
+  string path = 3;
+  string error = 4;
+  string install_hint = 5;
+}
+
+// FetchCliModels
+message FetchCliModelsRequest { string provider_id = 1; }
+message FetchCliModelsResponse { repeated string models = 1; }
+
+// Provider CRUD
+message ListProvidersRequest {}
+message ListProvidersResponse { repeated AgentProviderInfo providers = 1; }
+
+message GetProviderRequest { string provider_id = 1; }
+message GetProviderResponse { AgentProviderInfo provider = 1; }
+
+message ListAvailableModelsRequest {}
+message ListAvailableModelsResponse { repeated AvailableModelInfo models = 1; }
+
+message AvailableModelInfo {
+  string id = 1;
+  string provider_id = 2;
+  string provider_name = 3;
+  string display_name = 4;
+  string type = 5;
+  bool enabled = 6;
+  int32 context_window = 7;
+}
+
+message CreateProviderRequest {
+  string provider_id = 1;
+  string display_name = 2;
+  string base_url = 3;
+  string protocol = 4;
+  bytes config_json = 5;
+}
+message CreateProviderResponse { AgentProviderInfo provider = 1; }
+
+message UpdateProviderRequest {
+  string provider_id = 1;
+  int64 version = 2;
+  optional string display_name = 3;
+  optional string base_url = 4;
+  optional bool enabled = 5;
+  bytes config_json = 6;
+  string key_vaults = 7;
+}
+message UpdateProviderResponse { AgentProviderInfo provider = 1; }
+
+message DeleteProviderRequest {
+  string provider_id = 1;
+  int64 version = 2;
+}
+message DeleteProviderResponse { bool deleted = 1; }
+
+// Model CRUD
+message ListModelsRequest { string provider_id = 1; }
+message ListModelsResponse { repeated AgentModelInfo models = 1; }
+
+message CreateModelRequest {
+  string provider_id = 1;
+  string model_id = 2;
+  string display_name = 3;
+  bool enabled = 4;
+  int32 context_window = 5;
+}
+message CreateModelResponse { AgentModelInfo model = 1; }
+
+message UpdateModelRequest {
+  string provider_id = 1;
+  string model_id = 2;
+  int64 version = 3;
+  optional string display_name = 4;
+  optional bool enabled = 5;
+}
+message UpdateModelResponse { AgentModelInfo model = 1; }
+
+// Credential
+message SetCredentialRequest {
+  string provider_id = 1;
+  string api_key = 2;
+}
+message SetCredentialResponse { CredentialStatusInfo status = 1; }
+
+message DeleteCredentialRequest {
+  string provider_id = 1;
+  int64 version = 2;
+}
+message DeleteCredentialResponse { bool deleted = 1; }
+
+message GetCredentialStatusRequest { string provider_id = 1; }
+message GetCredentialStatusResponse { CredentialStatusInfo status = 1; }
+
+message ResolveCredentialRequest { string provider_id = 1; }
+message ResolveCredentialResponse { CredentialResolveInfo credential = 1; }
