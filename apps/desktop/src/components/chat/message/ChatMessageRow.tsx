@@ -10,6 +10,7 @@ import {
   MessagesSquare,
   Pencil,
   RotateCcw,
+  SmilePlus,
   Trash2,
 } from 'lucide-react';
 import {
@@ -64,8 +65,10 @@ interface ChatMessageRowProps {
   onDelete: (message: ChatMessage) => void;
   onEdit: (message: ChatMessage) => void;
   onOpenThread: (rootUlid: string) => void;
+  onReact: (message: ChatMessage) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
+  reactions?: { actorId: string; emoji: string }[];
   showHoverActions?: boolean;
   showThreadSummary?: boolean;
   threadPreviewMessages: ChatMessage[];
@@ -105,6 +108,7 @@ interface HoverActionsProps {
   onDelete: () => void;
   onEdit: () => void;
   onOpenThread: () => void;
+  onReact: () => void;
   onRecall: () => void;
   onReply: () => void;
 }
@@ -120,6 +124,7 @@ function HoverActions({
   onDelete,
   onEdit,
   onOpenThread,
+  onReact,
   onRecall,
   onReply,
 }: HoverActionsProps) {
@@ -174,6 +179,15 @@ function HoverActions({
           />
         </Tooltip>
       )}
+      <Tooltip title="React">
+        <Button
+          type="text"
+          size="small"
+          icon={<SmilePlus size={14} />}
+          onClick={onReact}
+          style={actionButtonStyle}
+        />
+      </Tooltip>
       {canReply && (
         <Tooltip title={t('chat.social.messageArea.actionReply')}>
           <Button
@@ -467,8 +481,10 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   onDelete,
   onEdit,
   onOpenThread,
+  onReact,
   onRecall,
   onReply,
+  reactions,
   showHoverActions = true,
   showThreadSummary = true,
   threadPreviewMessages,
@@ -555,7 +571,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           maxWidth: `calc(100% - ${avatarSize + avatarGap}px)`,
         }}
       >
-        {showHoverActions && (canOpenThread || canReply || canEdit || canRecall || canDelete) && (
+        {showHoverActions && (
           <HoverActions
             isOwn={isOwn}
             canDelete={canDelete}
@@ -565,6 +581,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             canEdit={canEdit}
             layout={layout}
             onOpenThread={() => onOpenThread(threadRootUlid)}
+            onReact={() => onReact(message)}
             onReply={() => onReply(message.ulid)}
             onDelete={() => onDelete(message)}
             onRecall={() => onRecall(message)}
@@ -618,6 +635,36 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             ) : undefined}
           />
         </Flexbox>
+
+        {reactions && reactions.length > 0 && (
+          <Flexbox
+            horizontal
+            wrap="wrap"
+            gap={4}
+            style={{ marginTop: 2, paddingLeft: isOwn ? 0 : 4, paddingRight: isOwn ? 4 : 0 }}
+          >
+            {Object.entries(
+              reactions.reduce<Record<string, number>>((acc, r) => {
+                acc[r.emoji] = (acc[r.emoji] ?? 0) + 1;
+                return acc;
+              }, {}),
+            ).map(([emoji, count]) => (
+              <span
+                key={emoji}
+                style={{
+                  fontSize: 12,
+                  padding: '1px 5px',
+                  borderRadius: 10,
+                  background: token.colorFillTertiary,
+                  cursor: 'pointer',
+                }}
+                onClick={() => onReact(message)}
+              >
+                {emoji} {count > 1 ? count : ''}
+              </span>
+            ))}
+          </Flexbox>
+        )}
 
         {showThreadSummary && threadReplyCount > 0 && !isRecalled && (
           <ThreadReplyPreviewList
