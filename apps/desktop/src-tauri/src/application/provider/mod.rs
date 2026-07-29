@@ -3,6 +3,8 @@ use crate::contracts::{
 };
 use crate::error::{AppResult, ErrorCode};
 use serde_json::json;
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 pub(crate) mod remote;
 pub(crate) mod station_api;
@@ -54,7 +56,27 @@ pub fn provider_get(_scope: &str, token: &str, input: ProviderIdInput) -> AppRes
         Ok(v) => v,
         Err(e) => return station_error_to_result(e),
     };
-    success_payload("provider_get", resp)
+
+    let mut result = resp.clone();
+    if let Some(provider) = result.get_mut("provider") {
+        let is_configured = provider.get("credential_status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("not_configured") == "configured";
+        provider["has_api_key"] = json!(is_configured);
+
+        if is_configured {
+            if let Ok(cred) = station_api::resolve_credential(token, id) {
+                if !cred.api_key.is_empty() {
+                    provider["api_key"] = json!(cred.api_key);
+                }
+                if !cred.base_url.is_empty() && provider.get("base_url").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                    provider["base_url"] = json!(cred.base_url);
+                }
+            }
+        }
+    }
+
+    success_payload("provider_get", result)
 }
 
 pub fn provider_update(
@@ -175,7 +197,7 @@ pub fn provider_list_available_models(_scope: &str, token: &str) -> AppResult<St
     success_payload("provider_list_available_models", resp)
 }
 
-pub fn model_fetch_remote(_scope: &str, token: &str, provider_id: &str) -> AppResult<StubPayload> {
+pub fn model_fetch_remote(scope: &str, token: &str, provider_id: &str) -> AppResult<StubPayload> {
     let resp = match station_api::get_provider(token, provider_id) {
         Ok(v) => v,
         Err(_) => return success_payload("model_fetch_remote", json!({ "ok": true, "models": [] })),
@@ -186,7 +208,7 @@ pub fn model_fetch_remote(_scope: &str, token: &str, provider_id: &str) -> AppRe
     let models_command = provider.get("models_command").and_then(|v| v.as_str()).unwrap_or("").trim();
 
     if runtime_kind == "cli" && !models_command.is_empty() {
-        let models = execute_cli_models_command(models_command);
+        let models = execute_cli_models_command(models_command, scope, provider_id);
         if models.is_empty() {
             return success_payload("model_fetch_remote", json!({
                 "ok": false,
@@ -201,35 +223,144 @@ pub fn model_fetch_remote(_scope: &str, token: &str, provider_id: &str) -> AppRe
     success_payload("model_fetch_remote", json!({ "ok": true, "models": models }))
 }
 
-fn execute_cli_models_command(command: &str) -> Vec<String> {
-    use std::process::Command;
+fn execute_cli_models_command(command: &str, actor_id: &str, provider_id: &str) -> Vec<String> {
+    let cred_key = credential_env_key_for_provider(provider_id);
+    let env = build_cli_env(actor_id, provider_id, "", cred_key);
+    let workspace = ensure_actor_workspace(actor_id, provider_id);
+    let output = run_cli_subprocess(command, &env, &workspace, None);
+    match output {
+        Some(stdout) => parse_cli_model_list(&stdout),
+        None => vec![],
+    }
+}
+
+fn credential_env_key_for_provider(provider_id: &str) -> Option<&'static str> {
+    match provider_id {
+        "codex-cli" => Some("OPENAI_API_KEY"),
+        "claude-cli" => Some("ANTHROPIC_API_KEY"),
+        _ => None,
+    }
+}
+
+// --- WS-2: Actor Workspace ---
+
+fn ensure_actor_workspace(actor_id: &str, provider_id: &str) -> PathBuf {
+    let base = app_data_dir();
+    let workspace = base.join("actors").join(actor_id).join("cli").join(provider_id).join("workspace");
+    if !workspace.exists() {
+        let _ = std::fs::create_dir_all(&workspace);
+    }
+    workspace
+}
+
+fn app_data_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home).join(".peers-touch")
+}
+
+// --- WS-3: CLI Env Injection ---
+
+fn build_cli_env(actor_id: &str, provider_id: &str, token: &str, credential_env_key: Option<&str>) -> HashMap<String, String> {
+    let workspace = ensure_actor_workspace(actor_id, provider_id);
+    let station_url = std::env::var("PEERS_STATION_URL").unwrap_or_default();
+
+    let mut env = HashMap::new();
+    env.insert("PATH".to_string(), enriched_path());
+    env.insert("PEERS_ACTOR_ID".to_string(), actor_id.to_string());
+    env.insert("PEERS_PROVIDER_ID".to_string(), provider_id.to_string());
+    env.insert("PEERS_WORKSPACE".to_string(), workspace.to_string_lossy().to_string());
+    if !station_url.is_empty() {
+        env.insert("PEERS_STATION_URL".to_string(), station_url);
+    }
+    if !token.is_empty() {
+        env.insert("PEERS_AUTH_TOKEN".to_string(), token.to_string());
+    }
+
+    // WS-4: Credential injection
+    if let Some(env_key) = credential_env_key {
+        if !env_key.is_empty() && !token.is_empty() {
+            if let Ok(cred) = station_api::resolve_credential(token, provider_id) {
+                if !cred.api_key.is_empty() {
+                    env.insert(env_key.to_string(), cred.api_key);
+                }
+            }
+        }
+    }
+
+    env
+}
+
+fn run_cli_subprocess(command: &str, env: &HashMap<String, String>, cwd: &PathBuf, stdin_input: Option<&str>) -> Option<String> {
+    use std::process::{Command, Stdio};
+    use std::io::Write;
 
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.is_empty() {
-        return vec![];
+        return None;
     }
 
-    let path_env = enriched_path();
-    let output = Command::new(parts[0])
-        .args(&parts[1..])
-        .env("PATH", &path_env)
-        .output();
+    let mut cmd = Command::new(parts[0]);
+    cmd.args(&parts[1..])
+        .current_dir(cwd)
+        .envs(env)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
-    match output {
-        Ok(out) if out.status.success() => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            let trimmed = stdout.trim();
+    if stdin_input.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
 
-            if trimmed.starts_with('{') || trimmed.starts_with('[') {
-                parse_json_models(trimmed)
-            } else {
-                trimmed.lines()
-                    .map(|l| l.trim().to_string())
-                    .filter(|l| !l.is_empty())
-                    .collect()
+    let mut child = cmd.spawn().ok()?;
+
+    if let Some(input) = stdin_input {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(input.as_bytes());
+        }
+    }
+
+    let output = child.wait_with_output().ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        None
+    }
+}
+
+// --- WS-5: Output Format Normalization ---
+
+fn parse_cli_model_list(stdout: &str) -> Vec<String> {
+    let trimmed = stdout.trim();
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        parse_json_models(trimmed)
+    } else {
+        trimmed.lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect()
+    }
+}
+
+#[derive(Debug)]
+pub struct CLIResponse {
+    pub content: String,
+    pub model: Option<String>,
+}
+
+pub fn parse_cli_execution_output(stdout: &str) -> CLIResponse {
+    let trimmed = stdout.trim();
+    if trimmed.starts_with('{') {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
+                return CLIResponse {
+                    content: content.to_string(),
+                    model: val.get("model").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                };
             }
         }
-        _ => vec![],
+    }
+    CLIResponse {
+        content: trimmed.to_string(),
+        model: None,
     }
 }
 
@@ -270,6 +401,21 @@ fn parse_json_models(json_str: &str) -> Vec<String> {
         }).collect(),
         None => vec![],
     }
+}
+
+pub fn model_toggle(token: &str, provider_id: &str, model_id: &str, enabled: bool) -> AppResult<StubPayload> {
+    let models = match station_api::list_models(token, provider_id) {
+        Ok(m) => m,
+        Err(e) => return station_error_to_result(e),
+    };
+    let model = match models.iter().find(|m| m.model_id == model_id) {
+        Some(m) => m,
+        None => return AppResult::fail(ErrorCode::NotFound, "Model not found", None),
+    };
+    if let Err(e) = station_api::update_model(token, provider_id, model_id, model.version, None, Some(enabled)) {
+        return station_error_to_result(e);
+    }
+    success_payload("model_toggle", json!({ "ok": true, "enabled": enabled }))
 }
 
 pub fn model_delete(token: &str, provider_id: &str, model_id: &str) -> AppResult<StubPayload> {
