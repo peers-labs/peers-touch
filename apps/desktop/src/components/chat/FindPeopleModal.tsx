@@ -162,12 +162,6 @@ export function FindPeopleModal({ open, onClose }: Props) {
     if (open) loadFriendRequests();
   }, [open, loadFriendRequests]);
 
-  useEffect(() => {
-    if (!open) return;
-    const interval = setInterval(() => loadFriendRequests(), 10_000);
-    return () => clearInterval(interval);
-  }, [open, loadFriendRequests]);
-
   const pendingReceiverIds = useMemo(() => {
     const ids = new Set<string>();
     for (const req of friendRequests) {
