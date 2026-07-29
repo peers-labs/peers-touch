@@ -5700,7 +5700,7 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     ...mapAIChatProviderToListItem(item),
     home_url: item.home_url || cfg.home_url || '',
     api_key_url: item.api_key_url || cfg.api_key_url || '',
-    api_key: keyVaults.api_key || '',
+    api_key: item.api_key || keyVaults.api_key || '',
     base_url: item.base_url || cfg.base_url || '',
     default_base_url: item.base_url || cfg.default_base_url || cfg.base_url || '',
     cli_command: item.cli_command || cfg.cli_command || cfg.cliCommand || '',
