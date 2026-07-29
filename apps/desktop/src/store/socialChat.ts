@@ -398,6 +398,9 @@ interface SocialChatState {
   /** Root message ULID for the currently-open social chat thread panel. */
   openThreadRootUlid: string | null;
 
+  /** Per-message reactions: messageId → list of {actorId, emoji}. */
+  reactions: Record<string, { actorId: string; emoji: string }[]>;
+
   encryptionEnabled: boolean;
   ownFingerprint: string | null;
   /** sessionUlid → whether E2E is active for that conversation (future key-exchange wiring). */
@@ -557,6 +560,8 @@ interface SocialChatState {
     newContent?: string,
     newCiphertext?: Uint8Array,
   ) => Promise<void>;
+  /** React to a message with an emoji. Works for both DM and group conversations. */
+  reactToMessage: (conversationId: string, messageId: string, emoji: string, remove?: boolean) => Promise<void>;
   /**
    * Apply an inbound `MessageMutation` from the realtime stream.
    * Idempotent: re-applying the same RECALL/EDIT/DELETE on a row
@@ -1223,6 +1228,8 @@ const initialSocialState: Pick<
   searchLoading: false,
   scrollToMessageUlid: null,
   openThreadRootUlid: null,
+
+  reactions: {},
 
   encryptionEnabled: false,
   ownFingerprint: null,
@@ -2036,6 +2043,27 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const next = applyMessageMutationToList(state.messages[sessionUlid], messageUlid, { kind, ...payload });
       return next ? { messages: { ...state.messages, [sessionUlid]: next } } : {};
     });
+  },
+
+  reactToMessage: async (conversationId, messageId, emoji, remove = false) => {
+    try {
+      await imServiceV1.conversation.react(conversationId, messageId, emoji, remove);
+      set((state) => {
+        const existing = state.reactions[messageId] ?? [];
+        const currentUserDid = state.currentUserDid ?? '';
+        let updated: { actorId: string; emoji: string }[];
+        if (remove) {
+          updated = existing.filter((r) => !(r.actorId === currentUserDid && r.emoji === emoji));
+        } else {
+          const alreadyReacted = existing.some((r) => r.actorId === currentUserDid && r.emoji === emoji);
+          updated = alreadyReacted ? existing : [...existing, { actorId: currentUserDid, emoji }];
+        }
+        return { reactions: { ...state.reactions, [messageId]: updated } };
+      });
+    } catch (error) {
+      log.error('socialChat', 'reactToMessage failed', error);
+      throw error;
+    }
   },
 
   loadCurrentUserProfile: async () => {
