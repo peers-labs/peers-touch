@@ -646,3 +646,56 @@ func toInt(v interface{}) int {
 	}
 	return 0
 }
+
+func TestF3_GroupAdmin(t *testing.T) {
+	owner := setupTestActor(t, "owner_adm_", "owner_admin@test.local", "TestPass1!")
+	member := setupTestActor(t, "memb_adm_x", "member_admin@test.local", "TestPass1!")
+
+	groupUlid := setupGroup(t, owner, member, member)
+	if groupUlid == "" {
+		t.Skip("group setup failed")
+	}
+
+	// Owner promotes member to admin
+	promoteResp := httpPost(t, "/group-chat/member/update", &owner.token, map[string]interface{}{
+		"group_ulid": groupUlid,
+		"ptid":       member.actorID,
+		"role":       2,
+	})
+	assertSuccess(t, promoteResp, "promote member")
+	t.Log("[S] Owner promoted member to ADMIN")
+
+	// Verify member is now admin
+	membersResp := httpGet(t, fmt.Sprintf("/group-chat/members?group_ulid=%s", groupUlid), &owner.token)
+	membersList := extractList(t, membersResp, "members")
+	adminFound := false
+	for _, m := range membersList {
+		mem, _ := m.(map[string]interface{})
+		if fmt.Sprintf("%v", mem["ptid"]) == member.actorID {
+			role := fmt.Sprintf("%v", mem["role"])
+			if role == "GROUP_ROLE_ADMIN" || role == "2" {
+				adminFound = true
+			}
+		}
+	}
+	if adminFound {
+		t.Log("[R] Member role confirmed as ADMIN")
+	} else {
+		t.Error("[R] Member role not updated to ADMIN")
+	}
+
+	// Non-admin cannot remove (create a third user)
+	nonAdmin := setupTestActor(t, "nonadm_xxx", "nonadmin@test.local", "TestPass1!")
+	// Try to update without being admin — should fail
+	failResp := httpPost(t, "/group-chat/member/update", &nonAdmin.token, map[string]interface{}{
+		"group_ulid": groupUlid,
+		"ptid":       member.actorID,
+		"role":       1,
+	})
+	code := fmt.Sprintf("%v", failResp["code"])
+	if code == "500" || code == "403" {
+		t.Log("[D] Non-admin correctly rejected from updating members")
+	} else {
+		t.Errorf("[D] Non-admin update should fail, got: %v", failResp)
+	}
+}
