@@ -133,6 +133,7 @@ message ConversationCommand {
     TypingCommand typing = 18;
     ReactCommand react = 19;
     UpdateMemberCommand update_member = 20;
+    PinMessageCommand pin_message = 21;
   }
 }
 
@@ -195,6 +196,11 @@ message UpdateMemberCommand {
   bool muted = 3;
 }
 
+message PinMessageCommand {
+  string message_id = 1;
+  bool unpin = 2;
+}
+
 // --- Committed Conversation Event (authority -> followers) ---
 
 // Events are what the authority Station produces after validating a command.
@@ -218,6 +224,7 @@ message CommittedConversationEvent {
     ConversationDissolvedEvent conversation_dissolved = 15;
     SettingsChangedEvent settings_changed = 16;
     ReactionEvent reaction = 17;
+    PinEvent pin = 18;
   }
 }
 
@@ -289,6 +296,13 @@ message ReactionEvent {
   string emoji = 3;
   bool removed = 4;
   google.protobuf.Timestamp ts = 5;
+}
+
+message PinEvent {
+  string message_id = 1;
+  string actor_ptid = 2;
+  bool unpinned = 3;
+  google.protobuf.Timestamp ts = 4;
 }
 
 // --- Message Content Types ---
