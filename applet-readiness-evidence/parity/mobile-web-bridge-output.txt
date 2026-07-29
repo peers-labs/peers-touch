@@ -1,0 +1,7 @@
+PASS SDK Lynx adapter unwraps JSON string contract envelopes.
+PASS SDK WebHost adapter unwraps contract envelopes and exposes protocol context.
+PASS Android Lynx bridge emits peers-touch.applet.bridge response envelopes with ok/result/error.
+PASS Android Lynx bridge converts malformed native calls into canonical error envelopes.
+PASS Android and iOS manifest parsers model canonical targets, entries, services, skills, and integrity fields.
+PASS Android and iOS dispatcher errors use canonical applet error codes, including the legacy iOS Lynx bridge path.
+PASS Android and iOS permission checks include full capability method grants.
