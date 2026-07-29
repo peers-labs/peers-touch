@@ -254,6 +254,15 @@ pub fn agent_execute_turn(
         return AppResult::fail(ErrorCode::InternalError, error, None);
     }
 
+    let provider = input.provider.as_deref().unwrap_or("").trim();
+    let is_cli = matches!(provider, "trae-cli" | "codex-cli" | "claude-cli")
+        || input.runtime_backend.as_deref().unwrap_or("") == "cli"
+        || input.cli_command.is_some();
+
+    if is_cli {
+        return execute_cli_turn_blocking(&input);
+    }
+
     tracing::info!(
         command = "agent_execute_turn",
         agent_id = %input.agent_id,
@@ -395,6 +404,28 @@ pub fn agent_execute_turn_stream(
         );
         return;
     }
+
+    let provider = input.provider.as_deref().unwrap_or("").trim();
+    let is_cli_provider = matches!(provider, "trae-cli" | "codex-cli" | "claude-cli")
+        || input.runtime_backend.as_deref().unwrap_or("") == "cli"
+        || input.cli_command.is_some();
+
+    if is_cli_provider {
+        let result = stream_cli_turn(&app, &stream_id, &input, &cancel_flag);
+        if let Err(error) = result {
+            emit_turn_stream_event(
+                &app,
+                &stream_id,
+                "error",
+                json!({
+                    "type": "error",
+                    "error": error
+                }),
+            );
+        }
+        return;
+    }
+
     let agent_allowed_roots = input.allowed_roots.clone();
     let body = build_turn_request_body(input, true);
     let result = stream_station_turn(
@@ -934,6 +965,232 @@ fn local_tool_result_content(value: &Value) -> String {
             .unwrap_or_else(|| content.to_string());
     }
     output.to_string()
+}
+
+fn extract_content_from_cli_jsonl(stdout: &str) -> String {
+    let mut content = String::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || !trimmed.starts_with('{') {
+            continue;
+        }
+        if let Ok(event) = serde_json::from_str::<Value>(trimmed) {
+            let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            if let Some(text) = event.get("content").and_then(|v| v.as_str()) {
+                if event_type == "message" || event_type == "" || event_type == "text" {
+                    content.push_str(text);
+                }
+            }
+        }
+    }
+    if content.is_empty() {
+        stdout.lines()
+            .filter(|l| !l.trim().is_empty() && !l.contains("INFO") && !l.contains("WARN"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        content
+    }
+}
+
+fn execute_cli_turn_blocking(input: &AgentExecuteTurnInput) -> AppResult<StubPayload> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let model = input.model.as_deref().unwrap_or("").trim();
+    let user_input = input.user_input.trim();
+    if user_input.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "user_input is empty", None);
+    }
+
+    let cli_command = input.cli_command.as_deref()
+        .filter(|c| !c.trim().is_empty())
+        .unwrap_or("traecli exec --skip-git-repo-check -");
+
+    let mut args: Vec<&str> = cli_command.split_whitespace().collect();
+    if args.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "CLI command is empty", None);
+    }
+
+    let program = args.remove(0);
+    let has_json_flag = args.iter().any(|a| *a == "--json");
+    let has_model_flag = args.iter().any(|a| *a == "--model" || *a == "-m");
+
+    let mut cmd_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    if !has_json_flag {
+        cmd_args.insert(0, "--json".to_string());
+    }
+    if !has_model_flag && !model.is_empty() {
+        cmd_args.insert(0, model.to_string());
+        cmd_args.insert(0, "--model".to_string());
+    }
+    if cmd_args.last().map(|s| s.as_str()) == Some("-") {
+        cmd_args.pop();
+    }
+    cmd_args.push("-".to_string());
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let path = crate::application::provider::enriched_path();
+    let workspace = input.workspace_root.as_deref().unwrap_or(&home);
+
+    let mut cmd = Command::new(program);
+    cmd.args(&cmd_args)
+        .current_dir(workspace)
+        .env("PATH", &path)
+        .env("HOME", &home)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, format!("Failed to spawn CLI: {e}"), None),
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(user_input.as_bytes());
+    }
+
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, format!("CLI execution failed: {e}"), None),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let content = extract_content_from_cli_jsonl(&stdout);
+
+    let result = json!({
+        "response_message": {
+            "role": "assistant",
+            "content": content,
+        },
+        "turn": {
+            "agent_id": input.agent_id,
+            "conversation_id": input.conversation_id,
+            "final_response": content,
+            "status": "TURN_STATUS_COMPLETED",
+            "model": model,
+        },
+        "trace": { "model": model },
+    });
+    let status = serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+    AppResult::success(StubPayload {
+        command: "agent_execute_turn".to_string(),
+        status,
+    })
+}
+
+fn stream_cli_turn(
+    app: &AppHandle,
+    stream_id: &str,
+    input: &AgentExecuteTurnInput,
+    cancel_flag: &AtomicBool,
+) -> Result<(), String> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+
+    let model = input.model.as_deref().unwrap_or("").trim();
+    let user_input = input.user_input.trim();
+    if user_input.is_empty() {
+        return Err("user_input is empty".to_string());
+    }
+
+    let cli_command = input.cli_command.as_deref()
+        .filter(|c| !c.trim().is_empty())
+        .unwrap_or("traecli exec --skip-git-repo-check -");
+
+    let mut args: Vec<&str> = cli_command.split_whitespace().collect();
+    if args.is_empty() {
+        return Err("CLI command is empty".to_string());
+    }
+
+    let program = args.remove(0);
+    let has_json_flag = args.iter().any(|a| *a == "--json");
+    let has_model_flag = args.iter().any(|a| *a == "--model" || *a == "-m");
+
+    let mut cmd_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    if !has_json_flag {
+        cmd_args.insert(0, "--json".to_string());
+    }
+    if !has_model_flag && !model.is_empty() {
+        cmd_args.insert(0, model.to_string());
+        cmd_args.insert(0, "--model".to_string());
+    }
+
+    // Remove trailing "-" (stdin marker) since we pipe input
+    if cmd_args.last().map(|s| s.as_str()) == Some("-") {
+        cmd_args.pop();
+    }
+    cmd_args.push("-".to_string());
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let path = crate::application::provider::enriched_path();
+    let workspace = input.workspace_root.as_deref().unwrap_or(&home);
+
+    let mut cmd = Command::new(program);
+    cmd.args(&cmd_args)
+        .current_dir(workspace)
+        .env("PATH", &path)
+        .env("HOME", &home)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn CLI: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(user_input.as_bytes());
+    }
+
+    let stdout = child.stdout.take().ok_or("Failed to capture CLI stdout")?;
+    let reader = BufReader::new(stdout);
+
+    emit_turn_stream_event(app, stream_id, "start", json!({"type": "start"}));
+
+    for line in reader.lines() {
+        if cancel_flag.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            emit_turn_stream_event(app, stream_id, "done", json!({"type": "done", "reason": "cancelled"}));
+            return Ok(());
+        }
+
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Ok(event) = serde_json::from_str::<Value>(trimmed) {
+            let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            match event_type {
+                "message" => {
+                    if let Some(content) = event.get("content").and_then(|v| v.as_str()) {
+                        emit_turn_stream_event(app, stream_id, "text_delta", json!({"type": "text_delta", "text": content}));
+                    }
+                }
+                "error" => {
+                    let msg = event.get("message").or(event.get("error")).and_then(|v| v.as_str()).unwrap_or("CLI error");
+                    emit_turn_stream_event(app, stream_id, "error", json!({"type": "error", "error": msg}));
+                    return Ok(());
+                }
+                _ => {
+                    if let Some(content) = event.get("content").and_then(|v| v.as_str()) {
+                        emit_turn_stream_event(app, stream_id, "text_delta", json!({"type": "text_delta", "text": content}));
+                    }
+                }
+            }
+        } else {
+            emit_turn_stream_event(app, stream_id, "text_delta", json!({"type": "text_delta", "text": trimmed}));
+        }
+    }
+
+    let _ = child.wait();
+    emit_turn_stream_event(app, stream_id, "done", json!({"type": "done"}));
+    Ok(())
 }
 
 fn parse_sse_frame(frame: &str) -> Option<(String, Value)> {
