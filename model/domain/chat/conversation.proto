@@ -38,6 +38,7 @@ message Conversation {
   string owner_ptid = 13;
   int32 max_members = 14;
   GroupVisibilityV1 visibility = 15;
+  uint32 disappear_timer_seconds = 16;
 }
 
 enum ConversationKind {
@@ -178,6 +179,7 @@ message UpdateSettingsCommand {
   optional string description = 2;
   optional string avatar_cid = 3;
   optional bool muted = 4;
+  optional uint32 disappear_timer_seconds = 5;
 }
 
 message TypingCommand {
