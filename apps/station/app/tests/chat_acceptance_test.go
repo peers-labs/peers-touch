@@ -415,36 +415,39 @@ func setupFriendship(t *testing.T, a, b *testClient) string {
 	for _, r := range requests {
 		req, _ := r.(map[string]interface{})
 		if fmt.Sprintf("%v", req["sender_id"]) == a.actorID {
-			requestID = fmt.Sprintf("%v", req["id"])
+			status := fmt.Sprintf("%v", req["status"])
+			if status == "FRIEND_REQUEST_STATUS_PENDING" || status == "1" {
+				requestID = fmt.Sprintf("%v", req["id"])
+			}
 			break
 		}
 	}
-	if requestID == "" {
-		t.Log("setupFriendship: no pending request found (may already be friends)")
-		sessions := httpGet(t, "/friend-chat/sessions", &a.token)
-		sList := extractList(t, sessions, "sessions")
-		if len(sList) > 0 {
-			s, _ := sList[0].(map[string]interface{})
-			return fmt.Sprintf("%v", s["ulid"])
-		}
-		return ""
+
+	if requestID != "" {
+		httpPost(t, "/api/v1/social/friend-request/accept", &b.token, map[string]string{
+			"request_id": requestID,
+		})
+		time.Sleep(300 * time.Millisecond)
 	}
 
-	acceptResp := httpPost(t, "/api/v1/social/friend-request/accept", &b.token, map[string]string{
-		"request_id": requestID,
-	})
-	data, _ := acceptResp["data"].(map[string]interface{})
-	session, _ := data["session"].(map[string]interface{})
-	if session != nil {
-		return fmt.Sprintf("%v", session["ulid"])
-	}
-
-	time.Sleep(300 * time.Millisecond)
+	// Look for existing DM session; create one if missing (users already friends).
 	sessions := httpGet(t, "/friend-chat/sessions", &a.token)
 	sList := extractList(t, sessions, "sessions")
-	if len(sList) > 0 {
-		s, _ := sList[0].(map[string]interface{})
-		return fmt.Sprintf("%v", s["ulid"])
+	for _, s := range sList {
+		sess, _ := s.(map[string]interface{})
+		ulid := fmt.Sprintf("%v", sess["ulid"])
+		if ulid != "" {
+			return ulid
+		}
+	}
+
+	// No session exists — create one explicitly.
+	createResp := httpPost(t, "/friend-chat/session/create", &a.token, map[string]string{
+		"participant_did": b.actorID,
+	})
+	sess, _ := createResp["session"].(map[string]interface{})
+	if sess != nil {
+		return fmt.Sprintf("%v", sess["ulid"])
 	}
 	return ""
 }
