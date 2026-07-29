@@ -53,7 +53,7 @@ impl From<StationClientError> for StationApiError {
         match e.kind {
             station_client::StationClientErrorKind::SessionRevoked => StationApiError::Unauthorized,
             station_client::StationClientErrorKind::HttpStatus(409) => {
-                StationApiError::VersionConflict { current: 0, submitted: 0 }
+                StationApiError::VersionConflict { current: -1, submitted: -1 }
             }
             station_client::StationClientErrorKind::HttpStatus(404) => {
                 StationApiError::NotFound(e.message)
@@ -144,6 +144,30 @@ pub fn update_provider_full(
     Ok(station_client::request_json_auth(
         Method::POST,
         "/sub-agent/agent/provider/update",
+        token,
+        None,
+        Some(&body),
+    )?)
+}
+
+pub fn create_model(
+    token: &str,
+    provider_id: &str,
+    model_id: &str,
+    display_name: &str,
+    enabled: bool,
+    context_window: i32,
+) -> Result<Value, StationApiError> {
+    let body = json!({
+        "provider_id": provider_id,
+        "model_id": model_id,
+        "display_name": display_name,
+        "enabled": enabled,
+        "context_window": context_window,
+    });
+    Ok(station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/model/create",
         token,
         None,
         Some(&body),

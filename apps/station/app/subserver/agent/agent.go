@@ -221,6 +221,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-provider-update", "/agent/provider/update", server.POST, providerHandlers.HandleProviderUpdate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-delete", "/agent/provider/delete", server.POST, providerHandlers.HandleProviderDelete, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-list", "/agent/model/list", server.POST, providerHandlers.HandleModelList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-model-create", "/agent/model/create", server.POST, providerHandlers.HandleModelCreate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-update", "/agent/model/update", server.POST, providerHandlers.HandleModelUpdate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-available", "/agent/model/available", server.POST, providerHandlers.HandleListAvailableModels, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-credential-set", "/agent/credential/set", server.POST, providerHandlers.HandleCredentialSet, logIDWrapper, jwtWrapper),
