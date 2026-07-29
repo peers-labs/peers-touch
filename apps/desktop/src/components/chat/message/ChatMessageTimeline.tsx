@@ -37,7 +37,9 @@ interface ChatMessageTimelineProps {
   messages: ChatMessage[];
   onDelete: (message: ChatMessage) => void;
   onEdit: (message: ChatMessage) => void;
+  onForward: (message: ChatMessage) => void;
   onOpenThread: (rootUlid: string) => void;
+  onReact: (message: ChatMessage) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
   resolveThreadStats: (message: ChatMessage) => ChatThreadStats;
@@ -102,7 +104,9 @@ export function ChatMessageTimeline({
   messages,
   onDelete,
   onEdit,
+  onForward,
   onOpenThread,
+  onReact,
   onRecall,
   onReply,
   resolveThreadStats,
@@ -179,7 +183,9 @@ export function ChatMessageTimeline({
                 messages={messages}
                 onDelete={onDelete}
                 onEdit={onEdit}
+                onForward={onForward}
                 onOpenThread={onOpenThread}
+                onReact={onReact}
                 onRecall={onRecall}
                 onReply={onReply}
                 threadReplyCount={threadStats.replyCount}
