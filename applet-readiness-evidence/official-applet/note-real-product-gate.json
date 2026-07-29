@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.note",
+  "service": "note",
+  "productPath": "Desktop Gateway network.request -> Station-bundled Note service -> SQLite/GORM",
+  "stationMountPath": "/applets/note/v1",
+  "desktopPublicPath": "/v1",
+  "command": "cargo test --bin peers-touch-desktop note_gateway_reaches_station_bundled_note_service -- --nocapture",
+  "startedAt": "2026-07-01T12:09:39.816Z",
+  "completedAt": "2026-07-01T12:09:42.090Z"
+}

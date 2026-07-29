@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v1.0
-> **Created**: 2026-07-02 | **Updated**: 2026-07-02
+> **Created**: 2026-07-02 | **Updated**: 2026-07-08
 > **Owner**: Chat / Social
 > **Module**: `packages/prototypes/desktop/features/social-chat/`
 
@@ -12,7 +12,7 @@
 
 `packages/prototypes/desktop/features/social-chat/`
 
-这是 Desktop 站点下的 Chat 局部能力原型，不是一级站点，也不是最终产品代码。
+这是 Desktop 站点下的 Chat 局部能力原型，不是一级站点，也不是最终产品代码。可预览入口收敛到 `packages/prototypes/desktop/shell/`：Social Chat 作为 Desktop Shell 内的 `chat` 页面承载，不再作为 Prototype Portal 顶层独立卡片展示。
 
 ## 落地目标
 
@@ -20,6 +20,8 @@
 
 - 私聊会话列表、消息阅读流、composer、私聊详情。
 - 群聊会话列表、群聊消息阅读流、群详情、成员管理与权限差异。
+- Chat 模块内的 `Chat` / `Contacts` 竖向二级 tab。
+- stream call：从 Chat 会话头部的语音 / 视频按钮进入，以会话内浮层、HUD、toast 和紧凑状态 chip 展示。
 - Conversation action surface：静音、置顶、背景、搜索、清空历史、退出/解散/删除。
 
 原型只用于确认终态交互形态；确认后仍需在 Desktop 真实工程按运行时、store、i18n 和权限模型重新实现。
@@ -30,7 +32,9 @@
 make run-prototype desktop
 ```
 
-也可在原型包内单独运行：
+进入 `Desktop Shell` 后，从左侧「聊天」入口打开 Social Chat。
+
+也可在原型包内单独运行，仅用于开发调试：
 
 ```bash
 pnpm --filter @peers-touch/prototype-desktop-social-chat dev
@@ -45,6 +49,7 @@ pnpm --filter @peers-touch/prototype-desktop-social-chat dev
 - 私聊详情：身份验证、安全号入口、背景、搜索、清空历史、删除/屏蔽类风险动作。
 - 群聊详情：成员预览、添加成员、管理成员、owner/admin/member 权限差异、退出/解散。
 - Trust state：稳定加密/验证状态压缩为 quiet chip；群详情不展示原始加密指纹。
+- Stream call state：idle / outgoing / incoming / active / reconnecting / ended / failed，评审状态切换折叠在 Chat header 的 `...` action menu 内。
 
 ## 总账状态
 
@@ -58,6 +63,7 @@ pnpm --filter @peers-touch/prototype-desktop-social-chat dev
 - 群聊样本：当前用户为群主、管理员、普通成员三种权限态。
 - 消息样本：文本、系统消息、图片、文件、失败发送状态。
 - 操作样本：发送 mock 消息、打开详情、成员管理、角色调整、禁言、转让群主、清空历史、退出/解散确认。
+- 通话样本：语音/视频呼出、来电、接通、弱网重连、结束、失败提示。
 
 ## 已知差异 / 待补
 

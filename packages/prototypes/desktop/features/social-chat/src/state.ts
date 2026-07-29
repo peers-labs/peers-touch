@@ -144,6 +144,82 @@ export function useChatState() {
     }));
   }, []);
 
+  const createFriendConversation = useCallback((name: string, peerId: string) => {
+    const displayName = name.trim() || peerId.trim() || 'New Friend';
+    const id = `friend-${Date.now()}`;
+    const next: MockConversation = {
+      id,
+      type: 'friend',
+      name: displayName,
+      avatar: '',
+      lastMessage: 'Friend session created. Say hello when ready.',
+      lastMessageTime: Date.now(),
+      unread: 0,
+      muted: false,
+      pinned: false,
+      online: false,
+      trustLabel: 'Pending verification',
+      trustTone: 'attention',
+      detailHint: `Maps to Friend create/list flow · peer: ${peerId.trim() || 'station/user id pending'}`,
+      background: 'Default',
+    };
+    setConversations((prev) => [next, ...prev]);
+    setMessagesByConversation((prev) => ({
+      ...prev,
+      [id]: [{
+        id: `system-${Date.now()}`,
+        senderId: 'system',
+        content: 'Friend chat session is ready. Production maps this to /friend-chat/create before messaging.',
+        timestamp: Date.now(),
+        type: 'system',
+      }],
+    }));
+    setActiveId(id);
+    setShowDetail(false);
+  }, []);
+
+  const createGroupConversation = useCallback((name: string, invitees: string[]) => {
+    const groupName = name.trim() || 'New Group';
+    const id = `group-${Date.now()}`;
+    const invited = invitees.map((value) => value.trim()).filter(Boolean);
+    const next: MockConversation = {
+      id,
+      type: 'group',
+      name: groupName,
+      avatar: '',
+      lastMessage: invited.length > 0 ? `Invited ${invited.length} member${invited.length > 1 ? 's' : ''}` : 'Group created',
+      lastMessageTime: Date.now(),
+      unread: 0,
+      muted: false,
+      pinned: false,
+      memberCount: 1 + invited.length,
+      trustLabel: 'Owner controls available',
+      trustTone: 'verified',
+      detailHint: 'Maps to Group create, then invite selected members.',
+      myNickname: CURRENT_USER.name,
+      background: 'Default',
+    };
+    setConversations((prev) => [next, ...prev]);
+    setGroupMembers((prev) => ({
+      ...prev,
+      [id]: [{ userId: CURRENT_USER.id, role: 'owner', muted: false, joinedAt: Date.now() }],
+    }));
+    setMessagesByConversation((prev) => ({
+      ...prev,
+      [id]: [{
+        id: `system-${Date.now()}`,
+        senderId: 'system',
+        content: invited.length > 0
+          ? `Group created. Invites queued for ${invited.join(', ')}.`
+          : 'Group created. Invite members from group details.',
+        timestamp: Date.now(),
+        type: 'system',
+      }],
+    }));
+    setActiveId(id);
+    setShowDetail(false);
+  }, []);
+
   // Sort: pinned first, then by time
   const sortedConversations = [...conversations].sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
@@ -173,5 +249,7 @@ export function useChatState() {
     toggleMemberMute,
     setMemberRole,
     transferOwnership,
+    createFriendConversation,
+    createGroupConversation,
   };
 }

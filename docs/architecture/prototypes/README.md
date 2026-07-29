@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-06-22 | **Updated**: 2026-06-24
+> **Created**: 2026-06-22 | **Updated**: 2026-07-08
 > **Owner**: Architecture Team
 
 ---
@@ -52,14 +52,12 @@
 
 | 站点 | 原型 ID | 归属层级 | 原型路径 | 落地目标 | 对应设计版本 | 状态 | 入口文档 |
 |------|---------|----------|---------|---------|------------|------|---------|
-| desktop | `desktop-shell` | Desktop 一级站点外壳 | `packages/prototypes/desktop/shell/` | Desktop 容器外壳（apps/desktop）；原型为 React web 展示 | runtime/desktop-runtime-architecture | drafting | [prototype/README.md](../desktop/prototype/README.md) |
+| desktop | `desktop-shell` | Desktop 一级站点外壳，承载 Chat / Agent / Applet 表面 | `packages/prototypes/desktop/shell/` | Desktop 容器外壳（apps/desktop）；Social Chat 作为 Shell 内页面承载，stream call 作为 Chat 会话内状态与浮层呈现，原型为 React web 展示 | runtime/desktop-runtime-architecture + client/chat + voice-video-calls | drafting | [prototype/README.md](../desktop/prototype/README.md) |
 | desktop | `agent-canvas` | Desktop Agent 页内编排入口 | `packages/prototypes/agent-canvas/` | Agent 页内编排入口（由 `packages/prototypes/desktop/shell/` 的 Agent 页图标打开）；原型为 React web 展示 | agent/agent-canvas-orchestration | drafting | [agent-canvas-orchestration.md](../agent/agent-canvas-orchestration.md) |
 | desktop | `atelier` | Desktop 内的 applet 原型，不是一级模块 | `packages/prototypes/desktop/applets/atelier/` | Applet（Lynx），运行在 Desktop 容器内；原型为 React+LobeUI web 展示 | atelier/functional-modules §1 | drafting | [prototype/README.md](../atelier/prototype/README.md) |
 | desktop | `applet-lifecycle` | Desktop Applet Box 极简 launcher 原型，不是一级模块 | `packages/prototypes/desktop/features/applet-lifecycle/` | Desktop Applet Box 安装包导入、展示、打开、运行、通知、退出、卸载；原型为 React web 展示 | applet-runtime/official-applet-architecture-contract + applet-launcher-ux-contract | landed | [prototype/README.md](../applet-runtime/prototype/README.md) |
 | desktop | `applet-workspace` | Desktop Applet 多实例容器原型，不是一级模块 | `packages/prototypes/desktop/features/applet-workspace/` | Desktop Applet Workspace：固定 Home tab、多实例小程序 tabs、Pin to System、detach、immersive；原型为 React web 展示 | applet-runtime/browser-like-workspace + applet-launcher-ux-contract + frontend-runtime/AppletContainerShell | drafting | [prototype/README.md](../applet-runtime/prototype/README.md) |
-| desktop | `call` | Desktop Chat/通话能力原型，不是一级模块 | `packages/prototypes/desktop/features/call/` | Desktop 好友聊天通话（apps/desktop，CallSurface）；原型为 React web 展示 | voice-video-calls | confirmed | [prototype/README.md](../realtime/prototype/README.md)（历史路径，归属 desktop） |
-| desktop | `social-chat` | Desktop Chat 能力原型，不是一级模块 | `packages/prototypes/desktop/features/social-chat/` | Desktop 私聊 / 群聊体验；原型为 React web 展示 | client/chat + social-runtime | pending-review | [prototype/README.md](../social/prototype/README.md) |
-| mobile | `mobile-chat` | Mobile 一级站点会话体验基准 | `packages/prototypes/mobile/chat/` | Mobile Chat / 跨设备会话体验；原型为 React web 展示 | client/mobile + client/chat | drafting | [base.md](../../client/mobile/base.md) |
+| mobile | `mobile-chat` | Mobile Shell source-backed 一级站点原型 | `packages/prototypes/mobile/chat/` | Mobile LaunchState / AccessGateHost / MobileShell / Chat / Contacts / Moments / Settings；原型为 React web 展示，结构和 class 语义对齐 `apps/mobile` 当前实现 | apps/mobile + client/chat + social-runtime | drafting | [prototype/README.md](../mobile/prototype/README.md) |
 | dashboard | `station-dashboard` | Station Dashboard 一级站点运维台体验基准 | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard / 管理台 / 运维台体验；原型为 React web 展示 | station/base | drafting | [base.md](../../station/base.md) |
 
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。

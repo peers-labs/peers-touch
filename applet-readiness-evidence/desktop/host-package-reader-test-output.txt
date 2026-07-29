@@ -1,0 +1,11 @@
+> @peers-touch/app-desktop@0.1.0 test:applet /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop
+> vitest run src/applet/*.test.ts
+
+
+ RUN  v4.1.8 /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop
+
+
+ Test Files  2 passed (2)
+      Tests  20 passed (20)
+   Start at  16:42:56
+   Duration  177ms (transform 110ms, setup 0ms, import 125ms, tests 39ms, environment 0ms)

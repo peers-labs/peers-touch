@@ -1,0 +1,62 @@
+FAIL Applet L3 candidate readiness audit
+Mode: candidate-only
+Candidate checks: FAIL
+Release checks: FAIL
+
+Candidate evidence checks:
+- PASS Canonical contract schema and validation (contract/schema-source.txt) - Evidence markers are present.
+- PASS Contract JSON Schema generation (contract/schema-generation-output.txt) - Evidence markers are present.
+- PASS Contract schema consumer evidence (contract/schema-consumers.txt) - Evidence markers are present.
+- PASS Contract executable envelope tests (sdk/contract-test-output.txt) - Evidence markers are present.
+- PASS Platform check gate (checks/platform-check-output.txt) - Evidence markers are present.
+- FAIL Platform check current source freshness (checks/platform-check-output.txt) - platform check evidence is older than relevant source inputs: evidence 2026-06-10T15:43:40.682Z, source newest 2026-07-03T17:06:56.032Z
+- PASS Package manifest validation (contract/validation-output.txt) - Evidence markers are present.
+- PASS Desktop applet package distribution gate (desktop/package-gate-output.txt) - Evidence markers are present.
+- PASS Desktop packaged frontendDist assets gate (desktop/packaged-assets-gate-output.txt) - Evidence markers are present.
+- PASS Desktop packaged assets current filesystem freshness (apps/desktop/dist/applets-dist) - Desktop dist applet assets match current source applets-dist.
+- PASS Desktop Tauri bundle freshness gate (desktop/tauri-bundle-gate-output.txt) - Evidence markers are present.
+- FAIL Desktop Tauri bundle current filesystem freshness (/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/src-tauri/target/release/bundle/macos/Peers Touch Desktop.app/Contents/MacOS/peers-touch-desktop) - Tauri app executable is older than Desktop packaged applet assets: executable 2026-06-10T16:13:23.975Z, newest applet asset 2026-07-03T07:31:30.666Z
+- PASS Desktop HTTP Gateway command dispatch gate (desktop/http-gateway-gate-output.txt) - Evidence markers are present.
+- FAIL Desktop HTTP Gateway current source freshness (desktop/http-gateway-gate-output.txt) - Desktop HTTP Gateway evidence is older than relevant Gateway command dispatch inputs: evidence 2026-06-10T15:27:06.176Z, source newest 2026-07-01T12:05:09.067Z
+- FAIL Desktop Lynx runtime gate (desktop/runtime-gate-output.txt) - Evidence file does not contain all required markers: Runtime status: PASS, task\.event
+- FAIL Desktop Lynx runtime current source freshness (desktop/runtime-gate-output.txt) - Desktop Lynx runtime evidence is older than relevant runtime inputs: evidence 2026-06-24T08:20:52.218Z, source newest 2026-07-03T01:44:28.024Z
+- FAIL Desktop product Host real Gateway gate (desktop/product-host-real-gateway-gate-output.txt) - Evidence file does not contain all required markers: Product host status: PASS, task-agent, skill-agent, Controlled upstream requests
+- FAIL Desktop product Host real Gateway current source freshness (desktop/product-host-real-gateway-gate-output.txt) - Desktop product Host real Gateway evidence is older than relevant product Host/Gateway inputs: evidence 2026-06-24T08:24:44.311Z, source newest 2026-07-03T06:33:54.620Z
+- PASS Desktop product shell real Gateway gate (desktop/product-shell-real-gateway-gate-output.txt) - Evidence markers are present.
+- FAIL Desktop product shell real Gateway current source freshness (desktop/product-shell-real-gateway-gate-output.txt) - Desktop product shell real Gateway evidence is older than relevant product shell/Gateway inputs: evidence 2026-06-24T08:30:05.838Z, source newest 2026-07-03T06:33:54.620Z
+- FAIL Desktop packaged product-window gate (desktop/product-window-gate-output.txt) - Evidence file does not contain all required markers: PASS Desktop packaged product-window applet gate, "productShell":true, \/agent\/turn\/execute
+- FAIL Desktop packaged product-window current source freshness (desktop/product-window-gate-output.txt) - Desktop packaged product-window evidence is older than relevant packaged product-window inputs: evidence 2026-07-01T07:45:50.813Z, source newest 2026-07-03T06:33:54.620Z
+- PASS Desktop live E2E controlled upstream (desktop/live-e2e-output.txt) - Evidence markers are present.
+- FAIL Desktop live E2E current source freshness (desktop/live-e2e-output.txt) - Desktop live E2E evidence is older than relevant live Gateway inputs: evidence 2026-06-10T16:11:03.798Z, source newest 2026-07-02T15:13:42.203Z
+- PASS Product capability service executor gate (release/product-capability-service-gate-output.txt) - Evidence markers are present.
+- FAIL Product capability service executor current source freshness (release/product-capability-service-gate-output.txt) - Product capability service executor evidence is older than relevant executor/live E2E inputs: evidence 2026-06-10T16:11:07.702Z, source newest 2026-06-24T14:35:08.249Z
+- PASS Developer SDK package flow (developer-flow/sdk-package-flow-output.txt) - Evidence markers are present.
+- FAIL Developer SDK package flow current source freshness (developer-flow/sdk-package-flow-output.txt) - developer-flow evidence is older than relevant SDK/package inputs: evidence 2026-06-10T16:09:32.067Z, source newest 2026-07-02T15:13:42.203Z
+- PASS Producer independence forbidden-path scan (producer-independence/forbidden-producer-scan-output.txt) - Evidence markers are present.
+- PASS Host package input smoke (producer-independence/host-package-input-output.txt) - Evidence markers are present.
+- PASS SDK adapter surface gate (sdk/adapter-test-output.txt) - Evidence markers are present.
+- FAIL SDK adapter current source freshness (sdk/adapter-test-output.txt) - SDK adapter evidence is older than relevant SDK inputs: evidence 2026-06-10T14:59:50.846Z, source newest 2026-07-02T15:13:42.203Z
+- FAIL Mobile native plugin parity evidence (NOT_IMPLEMENTED) - Old standalone Android/iOS parity gate was removed. Rebuild parity evidence against the Tauri Mobile native plugin host before claiming Mobile parity.
+- FAIL Mobile native manifest Tauri plugin evidence (NOT_IMPLEMENTED) - Old standalone mobile native manifest gate was removed. Rebuild this gate against the Tauri Mobile native plugin target.
+- FAIL Android Tauri plugin Lynx runtime E2E (NOT_IMPLEMENTED) - Old standalone Android Lynx runtime E2E was removed. Rebuild against Tauri Android app/plugin before claiming Android runtime readiness.
+- FAIL iOS Tauri plugin Lynx runtime E2E (NOT_IMPLEMENTED) - Old standalone iOS Lynx runtime E2E was removed. Rebuild against Tauri iOS app/plugin before claiming iOS runtime readiness.
+- PASS Web Host runtime gate (web/web-host-runtime-gate-output.txt) - Evidence markers are present.
+- FAIL Web Host runtime current source freshness (web/web-host-runtime-gate-output.txt) - Web Host runtime evidence is older than relevant Web Host inputs: evidence 2026-06-10T15:03:08.591Z, source newest 2026-07-02T15:13:42.203Z
+- PASS Production Web Host shell integration (web/production-web-host-runtime-output.txt) - Evidence markers are present.
+- FAIL Production Web Host shell current source freshness (web/production-web-host-runtime-output.txt) - Production Web Host evidence is older than relevant production Web Host inputs: evidence 2026-06-10T15:03:21.047Z, source newest 2026-07-02T15:13:42.203Z
+- PASS Repo-external synthetic certification chain (external-producer/certification-output.txt) - Evidence markers are present.
+- FAIL Repo-external synthetic certification current package check (/tmp/peers-touch-external-l3-cert) - certification package path does not exist: /tmp/peers-touch-external-l3-cert
+
+Release evidence checks:
+- PENDING Real independently authored third-party producer attestation (release/third-party-producer-attestation.json) - Missing evidence file: release/third-party-producer-attestation.json
+- PENDING Manual normal-user product acceptance (release/manual-product-acceptance.json) - Missing evidence file: release/manual-product-acceptance.json
+
+Release evidence templates:
+- release/third-party-producer-attestation.json must attest real independent authorship, point at an outside-repository package whose manifest id matches appletId, reference a passing non-dry-run external-producer certification output for the same package path and manifest id, include authorshipEvidenceFiles, and avoid known Peers-Touch generated certification fixture packages.
+- release/manual-product-acceptance.json must reference the third-party attestation, record a non-synthetic normal-user manual product-shell run for the same appletId, and list supporting artifacts containing product-shell, normal-user, and applet-id evidence.
+- release reviewedAt/acceptedAt fields must be canonical UTC ISO-8601 timestamps; reviewedAt must be at or after certificationOutput file mtime, and acceptedAt must be at or after thirdPartyAttestation.reviewedAt.
+
+Automated candidate evidence constraints:
+- Mobile native runtime evidence must come from the Tauri Mobile native plugin host. Old standalone Android/iOS runtime E2E evidence is invalid.
+- web/production-web-host-runtime-output.txt must come from the Production Web Host shell gate, not only the adapter/runtime harness.
+- release/product-capability-service-gate-output.txt must prove product-backed task/skill executors where registry/timer-backed placeholders are not release-final.

@@ -323,7 +323,6 @@ export function DetailPanel({
       || member.role.toLowerCase().includes(query),
     );
   }, [memberSearch, members]);
-
   useEffect(() => {
     if (!canRestoreHistory) return undefined;
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -336,6 +335,7 @@ export function DetailPanel({
     if (isOwner) return true;
     return isAdmin && target.role === 'member';
   };
+  const ownerTransferCandidates = members.filter(({ member }) => canManageTarget(member));
 
   const commitRename = () => {
     const nextName = groupName.trim();
@@ -386,6 +386,9 @@ export function DetailPanel({
       >
         <span style={{ fontSize: T.fontLg, fontWeight: 600, color: T.text }}>Details</span>
         <button
+          type="button"
+          title="Close details"
+          aria-label="Close details"
           onClick={onClose}
           style={{
             width: 28, height: 28, border: 'none', background: 'transparent',
@@ -573,10 +576,13 @@ export function DetailPanel({
                 ))}
                 {/* Add member button */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48 }}>
-                  <div
+                  <button
+                    type="button"
+                    disabled={!canManageMembers}
                     onClick={() => {
                       if (canManageMembers) setMemberManagerOpen(true);
                     }}
+                    aria-label={canManageMembers ? 'Invite member' : 'Only owner or admin can invite members'}
                     style={{
                       width: 36, height: 36, borderRadius: T.radiusFull,
                       border: `1.5px dashed ${canManageMembers ? T.textQuaternary : T.border}`,
@@ -587,8 +593,8 @@ export function DetailPanel({
                     }}
                     title={canManageMembers ? 'Invite member' : 'Only owner/admin can invite members'}
                   >
-                    +
-                  </div>
+                    <UserPlus size={16} />
+                  </button>
                   <span style={{ fontSize: T.fontXs, color: T.textTertiary, marginTop: 2 }}>
                     {canManageMembers ? 'Add' : 'Locked'}
                   </span>
@@ -772,16 +778,17 @@ export function DetailPanel({
         >
           <div
             style={{
-              height: T.headerHeight,
-              padding: `0 ${T.space4}px`,
+              minHeight: 72,
+              padding: `${T.space3}px ${T.space4}px`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               borderBottom: `1px solid ${T.border}`,
+              gap: T.space3,
             }}
           >
-            <div>
-              <div style={{ fontSize: T.fontLg, fontWeight: 700, color: T.text }}>Manage Members</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: T.fontLg, fontWeight: 800, color: T.text, lineHeight: 1.2 }}>Manage Members</div>
               <div style={{ fontSize: T.fontXs, color: T.textTertiary }}>
                 {roleLabel(currentRole)} permissions · {members.length} members
               </div>
@@ -789,28 +796,33 @@ export function DetailPanel({
             <div style={{ display: 'flex', alignItems: 'center', gap: T.space2 }}>
               {canManageMembers && (
                 <button
+                  title="Invite members"
                   onClick={() => requestConfirm({
                     title: 'Invite members?',
                     body: 'Production should open a contact picker, then show selected people and role impact before sending invites.',
                     confirmLabel: 'Open picker',
                     run: () => {},
                   })}
-                  style={managerButtonStyle()}
+                  style={managerToolbarButtonStyle()}
                 >
-                  <UserPlus size={13} />
+                  <UserPlus size={15} />
                   Invite
                 </button>
               )}
               <button
+                title="Close member manager"
                 onClick={() => setMemberManagerOpen(false)}
                 style={{
-                  width: 28,
-                  height: 28,
-                  border: 'none',
+                  width: 34,
+                  height: 34,
+                  border: `1px solid ${T.border}`,
                   borderRadius: T.radiusMd,
-                  background: 'transparent',
+                  background: T.bg,
                   cursor: 'pointer',
                   color: T.textSecondary,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
                 <X size={18} />
@@ -901,66 +913,55 @@ export function DetailPanel({
                   key={member.userId}
                   style={{
                     border: `1px solid ${T.borderSubtle}`,
-                    borderRadius: T.radiusLg,
-                    padding: T.space3,
+                    borderRadius: T.radiusMd,
+                    padding: `${T.space2}px ${T.space3}px`,
                     background: T.bgSubtle,
+                    display: 'grid',
+                    gridTemplateColumns: '40px minmax(0, 1fr) auto',
+                    alignItems: 'center',
+                    gap: T.space3,
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: T.space3 }}>
-                    <Avatar name={user.name} size={40} online={user.online} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: T.space2 }}>
-                        <span style={{ fontSize: T.fontBase, fontWeight: 700, color: T.text }}>{user.name}</span>
-                        <span style={{ fontSize: T.fontXs, color: roleColor(member.role), fontWeight: 700 }}>
-                          {roleLabel(member.role)}
-                        </span>
-                        {member.muted && (
-                          <span style={{ fontSize: T.fontXs, color: T.warning, fontWeight: 700 }}>Muted</span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: T.fontXs, color: T.textTertiary }}>
-                        {member.userId === currentUserId ? 'You' : `Joined ${Math.round((Date.now() - member.joinedAt) / 3_600_000)}h ago`}
-                      </div>
+                  <Avatar name={user.name} size={40} online={user.online} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: T.space2, minWidth: 0 }}>
+                      <span style={{ fontSize: T.fontBase, fontWeight: 800, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</span>
+                      <span style={{ fontSize: T.fontXs, color: roleColor(member.role), fontWeight: 800, flexShrink: 0 }}>
+                        {roleLabel(member.role)}
+                      </span>
+                      {member.muted && (
+                        <span style={{ fontSize: T.fontXs, color: T.warning, fontWeight: 800, flexShrink: 0 }}>Muted</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: T.fontXs, color: T.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {member.userId === currentUserId ? 'You' : `Joined ${Math.round((Date.now() - member.joinedAt) / 3_600_000)}h ago`}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: T.space2, flexWrap: 'wrap', marginTop: T.space3 }}>
+                  <div style={{ display: 'flex', gap: T.space1, justifyContent: 'flex-end', alignItems: 'center' }}>
                     {targetManageable ? (
                       <>
                         <button
+                          title={member.muted ? 'Unmute member' : 'Mute member'}
                           onClick={() => onToggleMemberMute(conversation.id, member.userId)}
-                          style={managerButtonStyle()}
+                          style={managerIconButtonStyle()}
                         >
-                          {member.muted ? <Volume2 size={13} /> : <VolumeX size={13} />}
-                          {member.muted ? 'Unmute' : 'Mute'}
+                          {member.muted ? <Volume2 size={15} /> : <VolumeX size={15} />}
                         </button>
                         {isOwner && (
                           <button
+                            title={member.role === 'admin' ? 'Remove admin' : 'Make admin'}
                             onClick={() => onSetMemberRole(
                               conversation.id,
                               member.userId,
                               member.role === 'admin' ? 'member' : 'admin',
                             )}
-                            style={managerButtonStyle()}
+                            style={managerIconButtonStyle()}
                           >
-                            <UserCog size={13} />
-                            {member.role === 'admin' ? 'Remove admin' : 'Make admin'}
-                          </button>
-                        )}
-                        {isOwner && (
-                          <button
-                            onClick={() => requestConfirm({
-                              title: `Transfer ownership to ${user.name}?`,
-                              body: 'You will become an admin. Only the new owner can dissolve the group or transfer ownership again.',
-                              confirmLabel: 'Transfer',
-                              run: () => onTransferOwnership(conversation.id, member.userId),
-                            })}
-                            style={managerButtonStyle()}
-                          >
-                            <Crown size={13} />
-                            Transfer owner
+                            <UserCog size={15} />
                           </button>
                         )}
                         <button
+                          title="Kick out"
                           onClick={() => requestConfirm({
                             title: `Remove ${user.name}?`,
                             body: 'This member will lose access to new group messages. Existing local history remains on their device.',
@@ -968,10 +969,9 @@ export function DetailPanel({
                             danger: true,
                             run: () => onRemoveMember(conversation.id, member.userId),
                           })}
-                          style={managerButtonStyle(true)}
+                          style={managerIconButtonStyle(true)}
                         >
-                          <UserMinus size={13} />
-                          Kick out
+                          <UserMinus size={15} />
                         </button>
                       </>
                     ) : (
@@ -987,6 +987,58 @@ export function DetailPanel({
                 </div>
               );
             })}
+            {isOwner && ownerTransferCandidates.length > 0 && (
+              <div
+                style={{
+                  marginTop: T.space2,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: T.radiusLg,
+                  background: T.bg,
+                  padding: T.space3,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: T.space2, marginBottom: T.space2 }}>
+                  <Crown size={15} color={T.warning} />
+                  <div>
+                    <div style={{ fontSize: T.fontSm, fontWeight: 800, color: T.text }}>Transfer ownership</div>
+                    <div style={{ fontSize: T.fontXs, color: T.textTertiary }}>Owner-only action lives here, not on every member row.</div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gap: T.space1 }}>
+                  {ownerTransferCandidates.map(({ member, user }) => (
+                    <button
+                      key={member.userId}
+                      title={`Transfer ownership to ${user.name}`}
+                      onClick={() => requestConfirm({
+                        title: `Transfer ownership to ${user.name}?`,
+                        body: 'You will become an admin. Only the new owner can dissolve the group or transfer ownership again.',
+                        confirmLabel: 'Transfer',
+                        run: () => onTransferOwnership(conversation.id, member.userId),
+                      })}
+                      style={{
+                        height: 34,
+                        border: `1px solid ${T.borderSubtle}`,
+                        borderRadius: T.radiusMd,
+                        background: T.bgSubtle,
+                        color: T.text,
+                        cursor: 'pointer',
+                        display: 'grid',
+                        gridTemplateColumns: '1fr auto',
+                        alignItems: 'center',
+                        gap: T.space2,
+                        padding: `0 ${T.space3}px`,
+                        textAlign: 'left',
+                        fontSize: T.fontSm,
+                        fontWeight: 700,
+                      }}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</span>
+                      <Crown size={14} color={T.warning} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1018,6 +1070,39 @@ function managerButtonStyle(danger?: boolean): React.CSSProperties {
     padding: `0 ${T.space2}px`,
     fontSize: T.fontXs,
     fontWeight: 700,
+  };
+}
+
+function managerToolbarButtonStyle(): React.CSSProperties {
+  return {
+    height: 34,
+    border: `1px solid ${T.border}`,
+    borderRadius: T.radiusMd,
+    background: T.bg,
+    color: T.text,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: T.space1,
+    padding: `0 ${T.space3}px`,
+    fontSize: T.fontSm,
+    fontWeight: 800,
+  };
+}
+
+function managerIconButtonStyle(danger?: boolean): React.CSSProperties {
+  return {
+    width: 30,
+    height: 30,
+    border: `1px solid ${danger ? 'rgba(229,62,62,0.22)' : T.border}`,
+    borderRadius: T.radiusMd,
+    background: danger ? T.dangerBg : T.bg,
+    color: danger ? T.textDanger : T.textSecondary,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
   };
 }
 
