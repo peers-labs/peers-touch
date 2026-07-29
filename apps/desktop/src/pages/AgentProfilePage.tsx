@@ -1899,6 +1899,7 @@ export function AgentProfilePage({
                 placeholder={t('agent.profile.routing.providerPlaceholder')}
                 allowClear
                 showSearch
+                size="middle"
                 options={providerOptions}
                 style={{ width: '100%' }}
                 filterOption={(input, option) =>
@@ -1921,6 +1922,7 @@ export function AgentProfilePage({
                 value={agent.effort || 'medium'}
                 onChange={handleEffortChange}
                 placeholder={t('agent.profile.routing.effortPlaceholder')}
+                size="middle"
                 style={{ width: '100%' }}
                 options={[
                   { value: 'low', label: t('agent.profile.effort.low') },

@@ -125,6 +125,7 @@ export function ProviderDetail() {
   const [editModel, setEditModel] = useState<{ id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean } | null>(null);
   const { token } = theme.useToken();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const keyDirtyRef = useRef(false);
 
   // Whether the displayed detail matches the currently selected provider.
   // When switching, detail still holds old provider data until the new one loads.
@@ -133,7 +134,15 @@ export function ProviderDetail() {
 
   useEffect(() => {
     if (detail && !isStale) {
-      setApiKey(detail.api_key || '');
+      if (detail.api_key) {
+        setApiKey(detail.api_key);
+        keyDirtyRef.current = false;
+      } else if (!detail.has_api_key) {
+        setApiKey('');
+        keyDirtyRef.current = false;
+      }
+      // When has_api_key=true but api_key='' (server withholds raw secret),
+      // preserve the user's in-progress input (keyDirty) or leave as-is after reload
       setBaseUrl(detail.base_url || detail.default_base_url || '');
       setEnabled(detail.enabled);
       setCheckModel(detail.check_model || detail.models?.[0]?.id || '');
@@ -162,8 +171,14 @@ export function ProviderDetail() {
     };
   }, []);
 
+  useEffect(() => {
+    keyDirtyRef.current = false;
+    setApiKey('');
+  }, [selectedId]);
+
   const handleApiKeyChange = useCallback(
     (val: string) => {
+      keyDirtyRef.current = true;
       setApiKey(val);
       debouncedSave(val, baseUrl);
     },
@@ -292,7 +307,7 @@ export function ProviderDetail() {
   };
 
   const isCliProvider = detail.runtime_kind === 'cli';
-  const isUnconfigured = !isCliProvider && apiKey.trim().length === 0;
+  const isUnconfigured = !isCliProvider && !detail.has_api_key && apiKey.trim().length === 0;
   const modelOptions = allModels.map((m) => ({
     value: m.id,
     label: m.display_name || m.id,
@@ -480,7 +495,7 @@ export function ProviderDetail() {
                   <InputPassword
                     value={apiKey}
                     onChange={(e) => handleApiKeyChange(e.target.value)}
-                    placeholder={t('provider.detail.apiKeyPlaceholder')}
+                    placeholder={detail.has_api_key && !apiKey ? '••••••••••••••••' : t('provider.detail.apiKeyPlaceholder')}
                     autoComplete="new-password"
                     style={{ width: '100%' }}
                   />
