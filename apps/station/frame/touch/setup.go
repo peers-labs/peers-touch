@@ -51,6 +51,17 @@ func onAfterStart() error {
 		if err := actor.SeedPresetActors(ctx, configs); err != nil {
 			log.Warnf(ctx, "seed preset actors: %v", err)
 		}
+
+		// Auto-friend the first 3 preset users (alice, bob, carol).
+		if len(presets) >= 3 {
+			devFriends := make([]string, 3)
+			for i := 0; i < 3; i++ {
+				devFriends[i] = presets[i].Username
+			}
+			if err := actor.SeedDevFriendships(ctx, devFriends); err != nil {
+				log.Warnf(ctx, "seed dev friendships: %v", err)
+			}
+		}
 	}
 	return nil
 }

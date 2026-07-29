@@ -952,7 +952,7 @@ pub fn friend_chat_send_friend_request(
         model::chat::SendFriendRequestResponse,
     >(
         Method::POST,
-        "/friend-chat/friend-request/send",
+        "/api/v1/social/friend-request/send",
         &token,
         None,
         Some(&req),
@@ -984,7 +984,7 @@ pub fn friend_chat_accept_friend_request(
         model::chat::AcceptFriendRequestResponse,
     >(
         Method::POST,
-        "/friend-chat/friend-request/accept",
+        "/api/v1/social/friend-request/accept",
         &token,
         None,
         Some(&req),
@@ -1016,7 +1016,7 @@ pub fn friend_chat_reject_friend_request(
         model::chat::RejectFriendRequestResponse,
     >(
         Method::POST,
-        "/friend-chat/friend-request/reject",
+        "/api/v1/social/friend-request/reject",
         &token,
         None,
         Some(&req),
@@ -1046,7 +1046,7 @@ pub fn friend_chat_list_friend_requests(
 
     let resp = match station_client::request_proto::<(), model::chat::ListFriendRequestsResponse>(
         Method::GET,
-        "/friend-chat/friend-requests",
+        "/api/v1/social/friend-requests",
         &token,
         Some(&query),
         None::<&()>,

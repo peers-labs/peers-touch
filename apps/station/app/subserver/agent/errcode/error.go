@@ -8,11 +8,13 @@ const (
 	AgentInvalidRequest    Code = "AGENT_4001"
 	AgentUnauthorized      Code = "AGENT_4002"
 	AgentNotFound          Code = "AGENT_4004"
+	AgentVersionConflict   Code = "AGENT_4009"
 	AgentProviderFailed    Code = "AGENT_5001"
 	AgentCompressionFailed Code = "AGENT_5002"
 	AgentDelegationFailed  Code = "AGENT_5003"
 	AgentCredentialFailed  Code = "AGENT_5004"
-	AgentSecurityViolation Code = "AGENT_4003" // Added: 2026-04-11 — sandbox / security constraint violation
+	AgentProviderDisabled  Code = "AGENT_5005"
+	AgentSecurityViolation Code = "AGENT_4003"
 	AgentInternal          Code = "AGENT_5000"
 )
 

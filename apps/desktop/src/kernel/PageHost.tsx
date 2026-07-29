@@ -16,9 +16,20 @@
 // the BootPipeline + RuntimeRegistry; this component only orchestrates
 // DOM presence and visibility.
 
-import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import {
+  Profiler,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ProfilerOnRenderCallback,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 
 import { scheduleIdle, markPhaseEnd, markPhaseStart } from './boot';
+import { scheduler } from './scheduler';
 import {
   getExactPage,
   listIdlePreloadPages,
@@ -31,9 +42,14 @@ import { acquirePageRuntimeLease, releasePageRuntimeLease } from './pageRuntimeL
 import {
   markRouteRequested,
   markRouteVisible,
+  scheduleAfterPaint,
+  isFrontendRuntimeProfilerEnabled,
+  isReactCommitProfilingEnabled,
+  recordReactCommit,
   recordHiddenSurfaceRender,
   recordSurfaceRender,
 } from './frontendRuntimeProfiler';
+import { PageActivityProvider } from './PageActivityContext';
 import { log } from '../utils/logger';
 
 interface PageHostProps {
@@ -43,18 +59,11 @@ interface PageHostProps {
 }
 
 function scheduleRouteVisible(pageId: string, data: Record<string, unknown>): () => void {
-  let reported = false;
-  const report = () => {
-    if (reported) return;
-    reported = true;
-    markRouteVisible(pageId, data);
-  };
-  const frame = window.requestAnimationFrame(report);
-  const fallback = window.setTimeout(report, 120);
-  return () => {
-    window.cancelAnimationFrame(frame);
-    window.clearTimeout(fallback);
-  };
+  let cancelled = false;
+  scheduleAfterPaint(() => {
+    if (!cancelled) markRouteVisible(pageId, data);
+  });
+  return () => { cancelled = true; };
 }
 
 function pickInitialMounted(activePage: string): Set<string> {
@@ -201,6 +210,43 @@ export function PageHost({ page, fallback }: PageHostProps): ReactElement {
     }
   }, [activeDescriptor, activePageKey]);
 
+  // Global LRU cap (D-07 Phase 1c): max 5 hidden pages total.
+  // When total hidden pages exceed PAGE_HOST_LRU_CAP, evict the oldest
+  // via scheduler.teardown lane and emit page.evict telemetry.
+  const PAGE_HOST_LRU_CAP = 5;
+  useEffect(() => {
+    if (!activePageKey) return;
+    const hiddenPages = Array.from(mounted).filter((k) => k !== activePageKey);
+    if (hiddenPages.length <= PAGE_HOST_LRU_CAP) return;
+
+    const recent = recentRef.current;
+    const hiddenByRecency = hiddenPages.sort((a, b) => {
+      const ai = recent.indexOf(a);
+      const bi = recent.indexOf(b);
+      return (bi === -1 ? Infinity : bi) - (ai === -1 ? Infinity : ai);
+    });
+    const toEvict = hiddenByRecency.slice(PAGE_HOST_LRU_CAP);
+    if (toEvict.length === 0) return;
+
+    scheduler.teardown('pagehost:global-lru-evict', () => {
+      for (const evictKey of toEvict) {
+        releasePageRuntimeLease(evictKey, 'evict');
+        log.info('pageHost', `page.evict: ${evictKey}`, { reason: 'global-lru-cap', cap: PAGE_HOST_LRU_CAP });
+      }
+      setMounted((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const evictKey of toEvict) {
+          if (next.has(evictKey) && evictKey !== activePageKey) {
+            next.delete(evictKey);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    });
+  }, [activePageKey, mounted]);
+
   const registeredOrder = useMemo(() => listPages(), []);
   const dynamicPages = Array.from(mounted)
     .filter((pageKey) => !getExactPage(pageKey))
@@ -265,7 +311,11 @@ const RegisteredPageFrame = memo(function RegisteredPageFrame({
     if (!isActive) return null;
     return (
       <div key={pageKey} data-page={pageId} data-page-descriptor={desc.id} style={{ display: 'contents' }}>
-        {renderFactory(desc, pageId)}
+        <PageFrameCommitProfiler active={isActive} descriptorId={desc.id} pageId={pageId} pageKey={pageKey}>
+          <PageActivityProvider active={isActive} descriptorId={desc.id} pageId={pageId}>
+            {renderFactory(desc, pageId, isActive)}
+          </PageActivityProvider>
+        </PageFrameCommitProfiler>
       </div>
     );
   }
@@ -277,15 +327,62 @@ const RegisteredPageFrame = memo(function RegisteredPageFrame({
       data-page-descriptor={desc.id}
       style={{ display: isActive ? 'contents' : 'none' }}
     >
-      {renderFactory(desc, pageId)}
+      <PageFrameCommitProfiler active={isActive} descriptorId={desc.id} pageId={pageId} pageKey={pageKey}>
+        <PageActivityProvider active={isActive} descriptorId={desc.id} pageId={pageId}>
+          {renderFactory(desc, pageId, isActive)}
+        </PageActivityProvider>
+      </PageFrameCommitProfiler>
     </div>
   );
 });
 
-function renderFactory(desc: PageDescriptor, pageId: string): ReactElement | null {
+function PageFrameCommitProfiler({
+  active,
+  children,
+  descriptorId,
+  pageId,
+  pageKey,
+}: {
+  active: boolean;
+  children: ReactNode;
+  descriptorId: string;
+  pageId: string;
+  pageKey: string;
+}): ReactElement {
+  if (!isReactCommitProfilingEnabled()) return <>{children}</>;
+  const owner = `page-frame:${pageKey}`;
+  const onRender: ProfilerOnRenderCallback = (
+    id,
+    phase,
+    actualDuration,
+    baseDuration,
+    startTime,
+    commitTime,
+  ) => {
+    recordReactCommit({
+      actualDuration,
+      baseDuration,
+      commitTime,
+      data: { active, descriptorId, surface: 'page-frame' },
+      id,
+      owner,
+      pageId,
+      phase,
+      source: 'shell',
+      startTime,
+    });
+  };
+  return (
+    <Profiler id={owner} onRender={onRender}>
+      {children}
+    </Profiler>
+  );
+}
+
+function renderFactory(desc: PageDescriptor, pageId: string, active: boolean): ReactElement | null {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   try {
-    const result = desc.factory({ pageId, descriptorId: desc.id });
+    const result = desc.factory({ pageId, descriptorId: desc.id, active });
     const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     recordSurfaceRender(pageId, ms, { descriptorId: desc.id });
     return result;

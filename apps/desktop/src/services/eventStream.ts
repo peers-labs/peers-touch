@@ -31,7 +31,7 @@ import { fromBinary } from '@bufbuild/protobuf';
 
 import { eventBus } from '../kernel/events';
 import { EVENT } from '../kernel/events/catalog';
-import type { RealtimeCallSignalKind } from '../kernel/events/types';
+import type { RealtimeCallSignalKind, RealtimeSocialGraphEventPayload } from '../kernel/events/types';
 import {
   ConversationSettingsChanged_Kind,
   MomentEvent_Kind,
@@ -43,7 +43,7 @@ import { log } from '../utils/logger';
 
 const REALTIME_EVENT = 'realtime:event';
 const REALTIME_CONNECTION_STATE = 'realtime:connection-state';
-const BROWSER_GATEWAY_RESYNC_INTERVAL_MS = 1_000;
+const BROWSER_GATEWAY_RESYNC_INTERVAL_MS = 30_000;
 
 interface RawRealtimeEnvelope {
   event_id?: string;
@@ -143,7 +143,8 @@ function startBrowserGatewayResyncFallback(): void {
   // Browser desktop-web talks to the Rust HTTP gateway outside a Tauri WebView,
   // so `@tauri-apps/api/event.listen` has no native event channel to receive
   // Rust `emit` frames. Keep the fallback inside the runtime bridge and reuse
-  // the canonical cold-resync path instead of letting pages poll data.
+  // the canonical cold-resync path as a low-frequency missed-event safety net
+  // instead of turning full runtime reconciliation into a per-second poll.
   browserGatewayResyncTimer = window.setInterval(() => {
     eventBus.publish(EVENT.REALTIME_RESYNC, {
       newestEventId: '',
@@ -362,6 +363,24 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         });
         return;
       }
+    case 'envelopeDelivered': {
+      const d = kind.value;
+      if (!d.inboxItemId || !d.payloadBytes || d.payloadBytes.byteLength === 0) return;
+      eventBus.publish(EVENT.REALTIME_ENVELOPE_DELIVERED, {
+        eventId,
+        inboxItemId: d.inboxItemId,
+        envelopeId: d.envelopeId,
+        conversationId: d.conversationId,
+        payloadType: d.payloadType,
+        payloadBytes: d.payloadBytes,
+        senderPtid: d.senderPtid,
+        senderDeviceId: d.senderDeviceId,
+        recipientDeviceId: d.recipientDeviceId,
+        membershipEpoch: Number(d.membershipEpoch),
+        queuedTsUnixMs: Number(d.queuedTsUnixMs),
+      });
+      return;
+    }
     case 'conversationSettingsChanged': {
       const c = kind.value;
       const conversationKind = conversationSettingsKindFromEnum(c.kind);
@@ -375,6 +394,21 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         containerUlid: c.containerUlid,
         actorId: c.actorId,
         changedTsUnixMs: Number(c.changedTsUnixMs),
+      });
+      return;
+    }
+    case 'socialGraphEvent': {
+      const s = kind.value;
+      const kindStr = socialGraphKindFromEnum(s.kind);
+      if (!kindStr) return;
+      eventBus.publish(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, {
+        eventId,
+        kind: kindStr,
+        actorDid: s.actorDid,
+        targetDid: s.targetDid,
+        requestId: s.requestId,
+        conversationId: s.conversationId,
+        actorDisplayName: s.actorDisplayName,
       });
       return;
     }
@@ -485,6 +519,17 @@ function receiptKindFromEnum(value: number): 'DELIVERED' | 'READ' | null {
   switch (value) {
     case 1: return 'DELIVERED';
     case 2: return 'READ';
+    default: return null;
+  }
+}
+
+function socialGraphKindFromEnum(value: number): RealtimeSocialGraphEventPayload['kind'] | null {
+  switch (value) {
+    case 1: return 'friend_request_received';
+    case 2: return 'friend_request_accepted';
+    case 3: return 'friend_request_rejected';
+    case 4: return 'conversation_created';
+    case 5: return 'unfriended';
     default: return null;
   }
 }

@@ -61,3 +61,13 @@ message UpdateAgentMcpBindingResponse { AgentMcpBinding binding = 1; }
 message DeleteAgentMcpBindingRequest { string id = 1; }
 message DeleteAgentMcpBindingResponse { bool success = 1; }
 
+// Provider model visibility preferences.
+message HideModelRequest {
+  string provider_id = 1;
+  string model_id = 2;
+}
+message HideModelResponse { bool ok = 1; }
+
+message GetHiddenModelsRequest { string provider_id = 1; }
+message GetHiddenModelsResponse { repeated string hidden_models = 1; }
+

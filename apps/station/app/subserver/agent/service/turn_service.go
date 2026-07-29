@@ -53,6 +53,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
@@ -85,6 +86,12 @@ type TurnConfig struct {
 	// source of truth) in addition to the realtime event bus.
 	TaskID string
 	StepID string
+
+	// CLI execution fields — when CliCommand is non-empty, the turn is routed
+	// to the CliExecutor instead of the standard LLM provider call path.
+	CliCommand     string   // Full CLI command (e.g. "trae", "codex", "claude")
+	RuntimeBackend string   // Backend identifier for the CLI runtime
+	AllowedRoots   []string // Filesystem roots the CLI process may access
 }
 
 type TurnEventSink func(ctx context.Context, event TurnEvent)
@@ -128,8 +135,10 @@ type TurnService struct {
 	toolRegistry     *ToolRegistryService
 	reviewService    *ReviewService
 	growthMetrics    *GrowthMetricsService
+	cliExecutor      *cli.CliExecutor
 	nudgeState       *domain.NudgeState
 	localToolBroker  *LocalToolBroker
+	liveResumeBroker *LiveResumeBroker
 	eventBus         domain.EventBus
 	eventWriter      *TaskEventWriter
 }
@@ -163,7 +172,16 @@ func NewTurnService(
 		growthMetrics:    growthMetrics,
 		nudgeState:       domain.NewNudgeState(),
 		localToolBroker:  NewLocalToolBroker(),
+		liveResumeBroker: NewLiveResumeBroker(),
 	}
+}
+
+func (s *TurnService) SetLiveResumeBroker(broker *LiveResumeBroker) {
+	s.liveResumeBroker = broker
+}
+
+func (s *TurnService) SetCliExecutor(executor *cli.CliExecutor) {
+	s.cliExecutor = executor
 }
 
 func (s *TurnService) SetEventBus(eventBus domain.EventBus) {
@@ -204,6 +222,14 @@ func (s *TurnService) publishDomainEvent(ctx context.Context, agentID, turnID, t
 
 func (s *TurnService) SubmitLocalToolResult(result LocalToolResult) error {
 	return s.localToolBroker.Submit(result)
+}
+
+func (s *TurnService) AwaitLiveResume(ctx context.Context, taskID, stepID, turnID, interruptID string) (LiveResumeDecision, error) {
+	broker := s.liveResumeBroker
+	if broker == nil {
+		return LiveResumeDecision{}, fmt.Errorf("live resume broker is not configured")
+	}
+	return broker.Await(ctx, taskID, stepID, turnID, interruptID)
 }
 
 func (s *TurnService) emitTurnEvent(ctx context.Context, config *TurnConfig, turnID string, event TurnEvent) {
@@ -259,6 +285,12 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 			fmt.Sprintf("delegation depth %d exceeds maximum %d", config.Depth, domain.MaxDelegationDepth),
 			nil)
+	}
+
+	// CLI routing: when CliCommand is set, delegate the entire turn to the CLI
+	// executor which spawns a local CLI process instead of calling the LLM provider.
+	if config.CliCommand != "" {
+		return s.executeCLITurn(ctx, config, turnID, userInput)
 	}
 
 	logger.Infof(ctx, "turn started: turn_id=%s agent_id=%s conversation_id=%s",
@@ -602,7 +634,7 @@ func (s *TurnService) runCompression(
 // produced by CompressionService.Compress and contains the conversation
 // text to summarize along with formatting instructions.
 func (s *TurnService) executeSummaryLLM(ctx context.Context, config *TurnConfig, summaryPrompt string) (string, error) {
-	credential, err := s.credentialPool.Lease(ctx, config.Provider, domain.RotationRoundRobin)
+	credential, err := s.credentialPool.Lease(ctx, config.AgentID, config.Provider, domain.RotationRoundRobin)
 	if err != nil {
 		return "", fmt.Errorf("no credential for summary: %w", err)
 	}
@@ -714,8 +746,21 @@ func (s *TurnService) providerCallWithRetry(
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 
+		providerID := strings.TrimSpace(config.Provider)
+		if providerID == "" {
+			return "", providerCalls, false, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+				"provider is required in turn config", nil)
+		}
+
+		// Turn-time revalidation: verify provider and model are valid before execution.
+		if attempt == 0 {
+			if revalErr := s.revalidateProviderState(ctx, config.AgentID, providerID, config.Model); revalErr != nil {
+				return "", providerCalls, false, revalErr
+			}
+		}
+
 		// Lease a credential for the provider.
-		credential, leaseErr := s.credentialPool.Lease(ctx, config.Provider, strategy)
+		credential, leaseErr := s.credentialPool.Lease(ctx, config.AgentID, providerID, strategy)
 		if leaseErr != nil {
 			logger.Errorf(ctx, "credential lease failed: turn_id=%s attempt=%d err=%v",
 				turnID, attempt, leaseErr)
@@ -904,7 +949,9 @@ func (s *TurnService) processToolCalls(
 
 			// Delegation: handle delegate_task via DelegationService with
 			// recursive mini turn-loop executor.
-			if tc.ToolName == "local_mcp" {
+			if tc.ToolName == "station_human_decision_resume" {
+				toolResult, toolErr = s.executeStationHumanDecisionResumeTool(ctx, config, turnID, tc)
+			} else if tc.ToolName == "local_mcp" {
 				toolResult, toolErr = s.executeLocalMCPTool(ctx, config, turnID, callID, tc)
 			} else if isDesktopLocalBuiltinTool(tc.ToolName) {
 				toolResult, toolErr = s.executeDesktopLocalBuiltinTool(ctx, config, turnID, callID, tc)
@@ -1015,6 +1062,72 @@ func isDesktopLocalBuiltinTool(toolName string) bool {
 	default:
 		return false
 	}
+}
+
+func (s *TurnService) executeStationHumanDecisionResumeTool(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	tc toolCallEntry,
+) (string, error) {
+	if config == nil {
+		return "", fmt.Errorf("turn config is required")
+	}
+	taskID := strings.TrimSpace(config.TaskID)
+	stepID := strings.TrimSpace(config.StepID)
+	if taskID == "" || stepID == "" {
+		return "", fmt.Errorf("station_human_decision_resume requires task-bound turn config")
+	}
+
+	var args struct {
+		InterruptID      string `json:"interrupt_id"`
+		InterruptIDCamel string `json:"interruptId"`
+		TaskID           string `json:"task_id"`
+		TaskIDCamel      string `json:"taskId"`
+	}
+	if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
+		return "", fmt.Errorf("invalid station_human_decision_resume arguments: %w", err)
+	}
+	if candidate := strings.TrimSpace(args.TaskID); candidate != "" && candidate != taskID {
+		return "", fmt.Errorf("station_human_decision_resume task_id does not match bound task")
+	}
+	if candidate := strings.TrimSpace(args.TaskIDCamel); candidate != "" && candidate != taskID {
+		return "", fmt.Errorf("station_human_decision_resume taskId does not match bound task")
+	}
+	interruptID := strings.TrimSpace(args.InterruptID)
+	if interruptID == "" {
+		interruptID = strings.TrimSpace(args.InterruptIDCamel)
+	}
+	if interruptID == "" {
+		return "", fmt.Errorf("station_human_decision_resume requires interrupt_id")
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, localToolTimeout)
+	defer cancel()
+	decision, err := s.AwaitLiveResume(waitCtx, taskID, stepID, turnID, interruptID)
+	if err != nil {
+		return "", fmt.Errorf("station_human_decision_resume wait failed: %w", err)
+	}
+	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
+	if err != nil {
+		return "", fmt.Errorf("station_human_decision_resume db access failed: %w", err)
+	}
+	if err := markCollaborationResumeContextConsumed(ctx, db, interruptID, decision.StepID, decision.TurnID); err != nil {
+		return "", fmt.Errorf("station_human_decision_resume consume failed: %w", err)
+	}
+	payload := map[string]interface{}{
+		"interrupt_id":        decision.InterruptID,
+		"task_id":             decision.TaskID,
+		"step_id":             decision.StepID,
+		"turn_id":             decision.TurnID,
+		"event_id":            decision.EventID,
+		"event_seq":           decision.EventSeq,
+		"reason":              decision.Reason,
+		"resume_payload_json": decision.ResumePayloadJSON,
+		"resume_source":       "station.live_resume_broker",
+	}
+	encoded, _ := json.Marshal(payload)
+	return string(encoded), nil
 }
 
 func (s *TurnService) executeLocalMCPTool(
@@ -1679,6 +1792,42 @@ func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, ste
 // Internal: getDB
 // ---------------------------------------------------------------------------
 
+// revalidateProviderState checks that the provider and model exist, are enabled,
+// and belong to the requesting actor before turn execution begins.
+func (s *TurnService) revalidateProviderState(ctx context.Context, actorID, providerID, modelID string) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	var provider persistence.AgentProvider
+	if err := db.WithContext(ctx).
+		Where("actor_id = ? AND name = ?", actorID, providerID).
+		First(&provider).Error; err != nil {
+		return errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
+			fmt.Sprintf("provider %q not found for actor", providerID), err)
+	}
+
+	if !provider.Enabled {
+		return errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
+			fmt.Sprintf("provider %q is disabled", providerID), nil)
+	}
+
+	if modelID != "" {
+		var model persistence.AgentModel
+		if err := db.WithContext(ctx).
+			Where("actor_id = ? AND provider_id = ? AND model_id = ?", actorID, providerID, modelID).
+			First(&model).Error; err == nil {
+			if !model.Enabled {
+				return errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
+					fmt.Sprintf("model %q is disabled for provider %q", modelID, providerID), nil)
+			}
+		}
+	}
+
+	return nil
+}
+
 func (s *TurnService) getDB(ctx context.Context) (*gorm.DB, error) {
 	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
 	if err != nil {
@@ -1686,6 +1835,120 @@ func (s *TurnService) getDB(ctx context.Context) (*gorm.DB, error) {
 			"failed to open agent db", err)
 	}
 	return db, nil
+}
+
+// ---------------------------------------------------------------------------
+// executeCLITurn — route the turn through the CLI executor instead of LLM
+// ---------------------------------------------------------------------------
+
+// executeCLITurn handles turns where the client specifies a CLI command (e.g.
+// "codex", "trae", "claude"). Instead of the standard LLM call path, the turn
+// delegates execution to a local CLI process via CliExecutor.
+func (s *TurnService) executeCLITurn(ctx context.Context, config *TurnConfig, turnID, userInput string) (*domain.Turn, error) {
+	if s.cliExecutor == nil {
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "CLI executor not configured")
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"CLI executor is not configured on this Station", nil)
+	}
+
+	logger.Infof(ctx, "CLI turn started: turn_id=%s agent_id=%s cli_command=%s",
+		turnID, config.AgentID, config.CliCommand)
+	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+		Type:  "progress",
+		Stage: "cli_turn_started",
+	})
+	s.publishDomainEvent(ctx, config.AgentID, turnID, config.TaskID, config.StepID, string(domain.EventTypeAgentTurnStarted), map[string]interface{}{
+		"turn_id":         turnID,
+		"conversation_id": config.ConversationID,
+		"cli_command":     config.CliCommand,
+	})
+
+	// Build the CliTurnRequest from TurnConfig.
+	cliReq := &cli.CliTurnRequest{
+		ConversationID:    config.ConversationID,
+		AgentID:           config.AgentID,
+		UserInput:         userInput,
+		CliCommand:        config.CliCommand,
+		Identity:          config.Identity,
+		AgentConfigPrompt: config.AgentConfigPrompt,
+		Provider:          config.Provider,
+		Model:             config.Model,
+		Effort:            config.Effort,
+		RuntimeBackend:    config.RuntimeBackend,
+		AllowedRoots:      config.AllowedRoots,
+	}
+
+	// Collect streamed output through the event sink adapter.
+	var responseBuilder strings.Builder
+	cliSink := func(eventType string, data map[string]any) {
+		// Forward CLI events to the turn event sink so the client receives streaming data.
+		turnEvent := TurnEvent{
+			Type:  eventType,
+			Stage: "cli_execution",
+		}
+		if text, ok := data["content"].(string); ok {
+			turnEvent.Text = text
+			responseBuilder.WriteString(text)
+		}
+		s.emitTurnEvent(ctx, config, turnID, turnEvent)
+	}
+
+	// Derive actorID from context subject for workspace scoping.
+	actorID := config.AgentID
+
+	cliErr := s.cliExecutor.Execute(ctx, cliReq, actorID, cliSink)
+	if cliErr != nil {
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID,
+			fmt.Sprintf("CLI execution failed: %v", cliErr))
+		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+			Type:  "error",
+			Error: cliErr.Error(),
+		})
+		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
+			fmt.Sprintf("CLI provider execution failed: %v", cliErr), cliErr)
+	}
+
+	finalResponse := responseBuilder.String()
+
+	// Persist assistant response and complete the turn record.
+	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleAssistant), finalResponse); err != nil {
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist CLI assistant message")
+		return nil, err
+	}
+
+	if err := s.completeTurn(ctx, turnID, finalResponse, 0); err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	turn := &domain.Turn{
+		TurnID:         turnID,
+		ConversationID: config.ConversationID,
+		AgentID:        config.AgentID,
+		UserInput:      userInput,
+		FinalResponse:  finalResponse,
+		ToolIterations: 0,
+		Status:         domain.TurnStatusCompleted,
+		StartedAt:      now,
+		EndedAt:        &now,
+	}
+
+	logger.Infof(ctx, "CLI turn completed: turn_id=%s", turnID)
+	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+		Type:  "progress",
+		Stage: "turn_completed",
+	})
+	s.publishDomainEvent(ctx, config.AgentID, turnID, config.TaskID, config.StepID, string(domain.EventTypeAgentTurnCompleted), map[string]interface{}{
+		"turn_id":         turnID,
+		"conversation_id": config.ConversationID,
+		"cli_command":     config.CliCommand,
+	})
+
+	if s.growthMetrics != nil {
+		s.growthMetrics.RecordEvent(ctx, config.AgentID, EventTurnCompleted, CategoryTurn, turnID, "cli_turn", "success")
+	}
+
+	return turn, nil
 }
 
 // generateID creates a unique identifier with the given prefix (e.g. "turn", "msg", "trace").

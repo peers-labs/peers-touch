@@ -1,270 +1,291 @@
 ---
 name: "pt-architecture-design-methodology"
-description: "Guides source-backed architecture design. Invoke when defining system boundaries, ownership, contracts, topology, or design decisions."
+description: "Designs evidence-backed architecture boundaries, ownership, contracts, topology, failure semantics, and decisions. Invoke before execution planning whenever the target architecture is not yet accepted."
+stage: "DESIGN"
+requires: ["user requirement or problem statement"]
+produces: ["accepted architecture docs (design.md, decisions.md, data-model.md)"]
+next: "pt-architecture-execution-methodology"
 ---
 
 # Architecture Design Methodology
 
-## Purpose
+## Stage Contract
 
-Use this skill to design architecture before turning it into an execution plan.
+This skill owns **DESIGN** only.
 
-This skill answers:
+```text
+evidence-backed problem
+  -> target architecture
+  -> accepted design
+  -> pt-architecture-execution-methodology
+  -> formal execution plan
+  -> pt-execution-plan-guardian
+  -> implementation and evidence
+```
 
-- What system relationships are allowed or forbidden.
-- Which runtime units exist and who owns them.
-- Which source of truth owns business state, contracts, and local runtime state.
-- Which contracts, component relationships, and architecture decisions must be documented.
-- Whether the proposed design belongs in architecture, platform, specification, or historical context.
+It answers:
 
-This skill does not answer:
+- What problem is verified, inferred, or still unknown.
+- What runtime units, trust boundaries, owners, and sources of truth exist.
+- What calls, dependencies, state transitions, and failure behaviors are
+  allowed or forbidden.
+- What contracts and invariants define the target state.
+- Which alternative is selected and what negative consequences it carries.
+- What evidence will prove the architecture meets its claimed quality outcome.
 
-- How to split implementation phases.
-- How to migrate files in dependency order.
-- How to track task status.
-- How to write coding style rules.
-- How to invent a domain-specific architecture without reading that domain's sources.
+It does **not**:
 
-For architecture landing, migration, dependency ordering, and verifiable delivery, use `pt-architecture-execution-methodology` after this skill.
+- Split work into phases, tasks, owners, or dependency order.
+- Select implementation sequencing or migration batches.
+- Track progress or execute code.
+- Turn an unverified diagnosis into an architecture fact.
+- Preserve compatibility merely to make implementation easier.
+
+Use `pt-architecture-execution-methodology` only after the architecture is
+accepted. Use `pt-execution-plan-guardian` only after a formal execution plan
+exists.
 
 ## Source Basis
 
-This skill is a packaging of existing repository guidance. Do not treat it as an invented universal framework.
-
-Required source documents:
+Read these before designing:
 
 - `docs/README.md`
-  - Architecture layer source-of-truth defines relationships, boundaries, sources of truth, owners, and allowed or forbidden calls.
-  - If the question is "what relationships does the system allow?", it belongs to architecture.
 - `docs/global/architecture-document-standard.md`
-  - Defines the required architecture document set, file responsibilities, metadata, diagrams, interfaces, component relationships, and ADR-lite decision format.
-  - It explicitly does not define every domain's concrete design content.
 - `docs/global/architecture.md`
-  - Defines source-of-truth and ownership rules: Station owns cross-end business truth, Model owns contract semantics, clients own device-local UI and runtime orchestration.
-  - Defines global design principles such as separation of concerns, dependency injection, proto-first contracts, modularity, and platform-specific runtime direction.
 - `docs/global/first-principles.md`
-  - Defines non-negotiable architecture principles: proto-first domain modeling, current repo boundaries, command path consistency, logging, and security.
 - `docs/knowledge/playbooks/documenting-large-requirements.md`
-  - Defines how large requirements promote durable design into formal docs and keep them discoverable.
+- The nearest domain and platform sources for every path in scope.
+- Relevant `docs/knowledge/` invariants, pitfalls, and playbooks.
 
-If a proposed rule is not supported by one of these sources or a domain-specific source document, label it as a proposal, not a repository rule.
+Repository sources constrain the design. External documentation and runtime
+evidence may establish platform behavior. Unsupported rules remain proposals,
+not repository facts.
 
-## Invoke When
+## Evidence Discipline
 
-Invoke this skill when the user asks for any of the following:
+Every material statement must be classified:
 
-- Architecture design.
-- System design.
-- Runtime architecture.
-- Service topology.
-- Domain ownership or source-of-truth definition.
-- Cross-layer, cross-runtime, or cross-platform boundaries.
-- Contract, protocol, state machine, or data model architecture.
-- Allowed and forbidden dependency or call relationships.
-- Architecture decisions and tradeoff analysis.
-- Formal architecture documents under `docs/architecture/<domain>/`.
+| Class | Meaning | May constrain the target architecture? |
+|---|---|---|
+| `verified_fact` | Confirmed by source code, official docs, trace, benchmark, or reproducible test | Yes |
+| `inference` | Reasonable conclusion from verified facts, with reasoning shown | Yes, but must retain uncertainty |
+| `hypothesis` | Plausible explanation not yet verified | No; requires an evidence gate |
+| `proposal` | New relationship, contract, invariant, or policy | Yes, as a proposed decision |
+| `accepted_decision` | Proposal explicitly approved by the owner/reviewer | Yes; downstream plans must conform |
 
-Do not invoke this skill for:
+For performance, reliability, concurrency, security, or data-loss architecture:
 
-- Pure execution planning after the architecture is already defined.
-- Code-only refactors that do not change architecture.
-- UI design methodology, unless the UI design changes architecture-level boundaries.
-- Documentation formatting only.
+- A comparative symptom such as "web is fast, native is slow" is evidence of a
+  boundary difference, not proof of a specific root cause.
+- Root-cause claims require runtime evidence at the affected runtime boundary.
+- If evidence cannot be collected yet, design the diagnostic contract first and
+  keep irreversible topology decisions in `proposed` status.
+- Quantitative claims require a measurement method, workload, runtime profile,
+  sample policy, and acceptance threshold.
 
 ## Method
 
-### Step 1. Classify the Design Level
-
-Start by deciding which layer owns the question.
-
-Use the repository rule:
-
-- Architecture layer: answers what system relationships are allowed.
-- Platform layer: answers how one platform implements those relationships.
-- Specification layer: answers how code should be written.
-- Historical context: records past research and non-current designs.
+### Step 1. Classify The Design Level
 
 Output:
 
-- Target layer.
-- Reason the decision belongs there.
-- Documents that must constrain the design.
-- Documents that are downstream and must not redefine the boundary.
+- Target documentation layer and why it owns the decision.
+- Upstream sources that constrain it.
+- Downstream documents and code that must conform.
+- Decisions that belong to another layer and are out of scope.
 
-### Step 2. Define Scope And Non-Scope
+Architecture defines allowed relationships and target-state truth. Platform
+documents refine implementation without redefining those boundaries.
 
-Architecture must define the possible space before details.
+### Step 2. Establish The Evidence Ledger
+
+Before selecting a topology, create a compact ledger:
+
+| Claim | Class | Evidence | Confidence | Missing proof |
+|---|---|---|---|---|
+
+Required actions:
+
+- Inspect the current implementation rather than relying on remembered counts or
+  framework folklore.
+- Use official framework/runtime sources for platform semantics.
+- For runtime incidents, identify the trace or benchmark that can falsify the
+  leading hypothesis.
+- Correct conflicting evidence before continuing.
+
+Stop with `DESIGN_EVIDENCE_BLOCKED` when a central root-cause claim is only a
+hypothesis and the target design would be expensive or irreversible.
+
+### Step 3. Define Scope And Non-Scope
 
 Output:
 
-- What this architecture defines.
-- What it explicitly does not define.
-- Which runtime units, layers, or platforms are in scope.
-- Which current source documents remain upstream.
-- Which downstream docs or code paths must conform to it.
+- Capabilities and quality outcomes this architecture defines.
+- Explicit non-goals.
+- Runtime units, layers, platforms, and trust boundaries in scope.
+- Current sources that remain upstream.
+- Existing paths that will be replaced, retained, or deleted in the target
+  state.
 
-### Step 3. Establish Sources Of Truth And Ownership
+Do not introduce phases or task sequencing here.
 
-Apply the repository ownership rule before designing APIs or modules.
+### Step 4. Establish Sources Of Truth And Ownership
 
-Default ownership rule:
+Default repository ownership:
 
-- Cross-end business state is owned by `Station`.
-- Contract semantics are owned by `Model`.
-- Device-local UI and runtime orchestration are owned by the corresponding client runtime.
+- Station owns cross-end business truth.
+- Model owns shared contract semantics.
+- Each client owns device-local UI state and runtime orchestration.
 
 Output:
 
 - Source-of-truth table.
-- Owner for each capability.
-- State that must not be duplicated locally.
-- Contract files or model roots that must become canonical.
-- Ownership exceptions, with rationale and consequences.
+- Capability owner and mutation authority.
+- State that must not be duplicated.
+- Canonical contract roots.
+- Exceptions with rationale and consequences.
 
-### Step 4. Identify Runtime Units And Boundaries
-
-Define the structural model before implementation paths.
+### Step 5. Define Runtime Units And Boundaries
 
 Output:
 
-- Runtime units.
-- Process or runtime boundaries.
-- Trust boundaries.
-- Local-only versus shared responsibilities.
-- Allowed calls.
-- Forbidden calls.
+- Runtime/process units and lifecycle owners.
 - Data flow and control flow.
-- Lifecycle boundaries if the architecture owns runtime behavior.
+- Trust and authentication boundaries.
+- Local-only versus shared responsibilities.
+- Allowed calls and dependencies.
+- Forbidden calls and dependencies.
 
-Do not skip forbidden relationships. Architecture is incomplete if it only says what exists and does not say what must not happen.
+Architecture is incomplete without forbidden relationships.
 
-### Step 5. Define Contracts And Invariants
+### Step 6. Define Contracts And Operational Semantics
 
-Architecture must produce stable contracts, not only prose.
+Contracts must cover happy paths and failure paths.
 
-Output:
+Required where applicable:
 
-- Proto, API, SDK, bridge, event, or storage contracts.
-- State machine or lifecycle states, when applicable.
-- Invariants that must remain true across implementations.
-- Validation and authorization responsibilities.
-- Compatibility expectations.
+- Request, response, event, stream, storage, and bootstrap contracts.
+- Lifecycle or state-machine transitions.
+- Ordering, delivery, replay, and deduplication semantics.
+- Idempotency rules for reads and writes.
+- Cancellation, timeout, disconnect, and retry behavior.
+- Authentication bootstrap and credential rotation.
+- Backpressure, bounded admission, overload rejection, and fairness/QoS.
+- Multi-window, multi-client, and shutdown behavior.
+- Control-plane versus data-plane separation and large-payload limits.
+- Versioning and compatibility expectations.
+- Schema validation and typed errors.
 
-Apply first principles:
+Use proto-first contracts for cross-platform/inter-app semantics. Do not replace
+typed contracts with unversioned `string + unknown` envelopes unless the
+architecture records why and how validation remains canonical.
 
-- Use proto-first domain modeling for cross-platform data contracts.
-- Do not manually duplicate domain models across clients and Station.
-- Keep contracts explicit and version-safe.
-- Validate auth and ownership checks for read/write handlers.
-- Do not leak secrets through logs or diagnostics.
+### Step 7. Design Component Relationships
 
-### Step 6. Design Component Relationships
+Every component definition must include:
 
-Use the architecture document standard as the minimum required shape.
-
-Every `design.md` must include:
-
-- Core principles.
-- System architecture diagram.
-- Core interfaces or contracts.
-- Component relationships.
-- Endpoints or APIs when applicable.
-
-For each component, define:
-
-- Responsibility.
-- Owner.
+- Responsibility and owner.
 - Inputs and outputs.
 - Dependencies.
 - Source of truth it may read or mutate.
-- What it must not know or import.
+- Lifecycle.
+- Resource and concurrency model.
+- What it must not know, import, or execute.
 
-### Step 7. Record Decisions And Alternatives
+Every `design.md` includes core principles, a system diagram, contracts,
+component relationships, and endpoints/APIs when applicable.
 
-Architecture must preserve decision context.
+### Step 8. Define Quality Outcomes And Architecture Gates
 
-For each important decision, write ADR-lite content:
+The architecture must define how its central claim becomes falsifiable.
 
-- Context.
+Output:
+
+- Product/runtime scenarios that represent real use.
+- Baseline and target metrics.
+- P50/P95/P99 or equivalent policy.
+- Load, spam-click, slow dependency, disconnect, restart, and large-payload
+  scenarios where relevant.
+- Required runtime cells, including packaged/native cells for native claims.
+- Fail-closed behavior when evidence is missing.
+- Observability needed to attribute failures to components.
+
+"Uses WebSocket", "uses async", "has a thread pool", or "tests pass" are
+implementation facts, not proof of responsiveness or reliability.
+
+### Step 9. Record Decisions And Alternatives
+
+Each ADR-lite decision includes:
+
+- Context, with evidence classes preserved.
 - Decision.
 - Rationale.
-- Alternatives considered.
-- Consequences, including negative consequences.
+- Alternatives and why they were rejected.
+- Positive and negative consequences.
+- Reversal trigger or review condition for uncertain decisions.
 
-Do not hide tradeoffs. If a decision has operational cost, compatibility cost, performance cost, or security risk, record it.
+Do not cite industry adoption as proof that an option fits this workload.
 
-### Step 8. Select The Document Set
+### Step 10. Select The Required Document Set
 
-Use the repository architecture document set.
+Always:
 
-Required:
+- `README.md`
+- `design.md`
+- `decisions.md`
 
-- `README.md`: scope, background, design goals, navigation.
-- `design.md`: principles, system diagram, interfaces, component relationships.
-- `decisions.md`: ADR-lite decisions.
+Mandatory, not optional, when triggered:
 
-Optional, based on module complexity:
+- `data-model.md`: protocol, state machine, delivery semantics, persistence, or
+  type mapping is material.
+- `integration.md`: replacing or restructuring an existing system, or crossing
+  multiple modules/runtimes.
+- `module-layout.md`: the target module tree or single registration/source-of-
+  truth structure is necessary to prevent duplication.
 
-- `data-model.md`: protocols, state machines, persistence schema, type mapping.
-- `module-layout.md`: directory tree, file responsibilities, dependencies.
-- `integration.md`: existing-module mapping, impact surface, migration strategy.
-- `prototype/`: runnable prototype for UI or interaction-heavy architecture.
-- `execution-plans/`: phased implementation, only after the architecture exists.
+`execution-plans/` is not authored by this skill.
 
-### Step 9. Check Architecture Completeness
+### Step 11. Run The Design Acceptance Gate
 
-Before presenting or writing the design, verify:
+Return `DESIGN_READY_FOR_REVIEW` only when:
 
-- The design states why it is architecture-level, not platform-level or coding-level.
-- The design defines allowed and forbidden relationships.
-- Sources of truth and owners are explicit.
-- Runtime units and boundaries are explicit.
-- Contracts are explicit and version-safe.
-- Component responsibilities do not overlap.
-- State ownership is not duplicated without a documented exception.
-- Security, authorization, logging, and diagnostics constraints are covered.
-- Decisions include alternatives and consequences.
-- Downstream implementation docs cannot silently redefine the architecture.
+- Evidence ledger distinguishes fact, inference, hypothesis, and proposal.
+- Central root-cause claims are verified or explicitly deferred behind a
+  diagnostic gate.
+- Scope, ownership, runtime boundaries, allowed/forbidden relationships, and
+  target deletions are explicit.
+- Contracts cover overload, retry, idempotency, cancellation, ordering,
+  lifecycle, security, and large payloads where relevant.
+- Quality outcomes have executable evidence requirements.
+- Required document set is complete and discoverable.
+- Decisions include negative consequences and alternatives.
+- No execution phases or implementation status are disguised as architecture.
 
-## Output Standard
+The owner/reviewer must explicitly accept the architecture. Until then, its
+status remains `draft` or `proposed`.
 
-When responding without writing files, use this structure:
+## Handoff To Execution Planning
 
-- Source Basis.
-- Architecture Level.
-- Scope / Non-Scope.
-- Sources Of Truth And Ownership.
-- Runtime Units And Boundaries.
-- Contracts And Invariants.
-- Component Relationships.
-- Decisions And Alternatives.
-- Completeness Check.
-- Next Step: execution planning only if architecture is accepted.
+The handoff package to `pt-architecture-execution-methodology` is:
 
-When writing files, follow `docs/global/architecture-document-standard.md` and keep generated content in English.
+- Accepted architecture document paths.
+- Accepted decision IDs.
+- Invariant and forbidden-relationship IDs.
+- Target-state deletion/retention list.
+- Required quality gates and evidence.
+- Open risks explicitly accepted by the owner.
 
-## Composition With Other Skills
-
-Use this skill before:
-
-- `pt-architecture-execution-methodology`, when the user wants a landing plan after the design is accepted.
-- `pt-plan-and-document`, when the design must be written into formal repository docs.
-- `pt-prototype-design`, when architecture needs a runnable UI or interaction prototype.
-
-Use `pt-architecture-execution-methodology` instead of this skill when:
-
-- The architecture is already decided.
-- The task is to split implementation work.
-- The task is migration sequencing, phase planning, or verification planning.
+The execution-planning skill may decompose this package. It may not redesign it.
 
 ## Anti-Patterns
 
-- Starting with files or phases before ownership and boundaries are clear.
-- Treating platform implementation details as architecture-level truth.
-- Defining a new local business truth when Station already owns the business state.
-- Creating manual models instead of proto-first contracts.
-- Writing `design.md` without a system diagram.
-- Listing components without forbidden dependencies.
-- Recording only the selected design and omitting alternatives.
-- Turning a proposal into a rule without a cited source.
-- Using this skill to justify execution plans instead of designing architecture.
+Never:
+
+- Treat correlation as causation or a comparison as root-cause proof.
+- Start with files, phases, or tasks before target ownership and contracts.
+- Mix execution sequencing into architecture design.
+- Leave retry, replay, overload, cancellation, or auth bootstrap undefined.
+- Use unbounded queues while claiming backpressure.
+- Claim responsiveness without a packaged-runtime performance gate.
+- Mark protocol/integration documents optional when their trigger applies.
+- Turn a proposal into a repository rule without acceptance.

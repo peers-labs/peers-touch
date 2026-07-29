@@ -1,0 +1,362 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+// ============================================================================
+// v1 Unified Conversation Contract
+//
+// Single source of truth for the IM data model per D-08...D-12.
+// Both direct (1:1) and group conversations share this skeleton;
+// business projections (group membership, direct session) are separate.
+//
+// See docs/architecture/federated-im/data-model.md for the governing design.
+// See docs/architecture/federated-im/decisions.md D-10 (one envelope channel),
+// D-11 (hard cutover), D-12 (text on envelope, P2P for media only).
+// ============================================================================
+
+// --- Conversation ---
+
+// A conversation is the durable identity of a chat — direct or group.
+// It does NOT hold messages; it holds metadata and lifecycle.
+message Conversation {
+  string conversation_id = 1;
+  ConversationKind kind = 2;
+  string authority_station_peer_id = 3;
+  int64 membership_epoch = 4;
+  ConversationStatus status = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+
+  // Group-only fields (empty for direct).
+  string name = 10;
+  string description = 11;
+  string avatar_cid = 12;
+  string owner_ptid = 13;
+  int32 max_members = 14;
+  GroupVisibilityV1 visibility = 15;
+  uint32 disappear_timer_seconds = 16;
+}
+
+enum ConversationKind {
+  CONVERSATION_KIND_UNSPECIFIED = 0;
+  CONVERSATION_KIND_DIRECT = 1;
+  CONVERSATION_KIND_GROUP = 2;
+}
+
+enum ConversationStatus {
+  CONVERSATION_STATUS_UNSPECIFIED = 0;
+  CONVERSATION_STATUS_ACTIVE = 1;
+  CONVERSATION_STATUS_DISSOLVED = 2;
+  CONVERSATION_STATUS_DEGRADED_READ_ONLY = 3;
+  CONVERSATION_STATUS_ORPHANED_READ_ONLY = 4;
+}
+
+enum GroupVisibilityV1 {
+  GROUP_VISIBILITY_V1_UNSPECIFIED = 0;
+  GROUP_VISIBILITY_V1_PUBLIC = 1;
+  GROUP_VISIBILITY_V1_PRIVATE = 2;
+}
+
+// --- Conversation Member ---
+
+message ConversationMember {
+  string conversation_id = 1;
+  string ptid = 2;
+  MemberRole role = 3;
+  MemberStatus member_status = 4;
+  string actor_home_station_peer_id = 5;
+  string actor_home_station_domain = 6;
+  google.protobuf.Timestamp joined_at = 7;
+  string invited_by_ptid = 8;
+
+  // Per-member settings
+  string nickname = 10;
+  bool muted = 11;
+  google.protobuf.Timestamp muted_until = 12;
+}
+
+enum MemberRole {
+  MEMBER_ROLE_UNSPECIFIED = 0;
+  MEMBER_ROLE_MEMBER = 1;
+  MEMBER_ROLE_ADMIN = 2;
+  MEMBER_ROLE_OWNER = 3;
+}
+
+enum MemberStatus {
+  MEMBER_STATUS_UNSPECIFIED = 0;
+  MEMBER_STATUS_ACTIVE = 1;
+  MEMBER_STATUS_LEFT = 2;
+  MEMBER_STATUS_REMOVED = 3;
+  MEMBER_STATUS_INVITED = 4;
+}
+
+// --- Message State Machine ---
+
+// Canonical message delivery states (D-10).
+// local_queued -> submitted -> committed -> home_delivered -> device_delivered -> read
+enum MessageDeliveryState {
+  MESSAGE_DELIVERY_STATE_UNSPECIFIED = 0;
+  MESSAGE_DELIVERY_STATE_LOCAL_QUEUED = 1;
+  MESSAGE_DELIVERY_STATE_SUBMITTED = 2;
+  MESSAGE_DELIVERY_STATE_COMMITTED = 3;
+  MESSAGE_DELIVERY_STATE_HOME_DELIVERED = 4;
+  MESSAGE_DELIVERY_STATE_DEVICE_DELIVERED = 5;
+  MESSAGE_DELIVERY_STATE_READ = 6;
+  MESSAGE_DELIVERY_STATE_FAILED = 7;
+}
+
+// --- Conversation Command (client -> Station) ---
+
+// Commands are what clients submit to their Home Station. The Station
+// validates and either commits locally (if authority) or proposes to
+// the authority Station (D-03).
+message ConversationCommand {
+  string command_id = 1;
+  string conversation_id = 2;
+  string sender_ptid = 3;
+  string sender_device_id = 4;
+  int64 observed_membership_epoch = 5;
+  google.protobuf.Timestamp client_ts = 6;
+
+  oneof payload {
+    SendMessageCommand send_message = 10;
+    EditMessageCommand edit_message = 11;
+    RetractMessageCommand retract_message = 12;
+    AddMembersCommand add_members = 13;
+    RemoveMembersCommand remove_members = 14;
+    LeaveCommand leave = 15;
+    DissolveCommand dissolve = 16;
+    UpdateSettingsCommand update_settings = 17;
+    TypingCommand typing = 18;
+    ReactCommand react = 19;
+    UpdateMemberCommand update_member = 20;
+    PinMessageCommand pin_message = 21;
+  }
+}
+
+message SendMessageCommand {
+  bytes encrypted_payload = 1;
+  MessageContentType content_type = 2;
+  string reply_to_message_id = 3;
+  string thread_root_message_id = 4;
+  repeated EncryptedAttachment attachments = 5;
+}
+
+message EditMessageCommand {
+  string target_message_id = 1;
+  bytes encrypted_payload = 2;
+}
+
+message RetractMessageCommand {
+  string target_message_id = 1;
+}
+
+message AddMembersCommand {
+  repeated MemberAddEntry members = 1;
+}
+
+message MemberAddEntry {
+  string ptid = 1;
+  string actor_home_station_peer_id = 2;
+  MemberRole role = 3;
+}
+
+message RemoveMembersCommand {
+  repeated string ptids = 1;
+}
+
+message LeaveCommand {}
+
+message DissolveCommand {}
+
+message UpdateSettingsCommand {
+  // Only set fields are applied.
+  optional string name = 1;
+  optional string description = 2;
+  optional string avatar_cid = 3;
+  optional bool muted = 4;
+  optional uint32 disappear_timer_seconds = 5;
+}
+
+message TypingCommand {
+  bool is_typing = 1;
+}
+
+message ReactCommand {
+  string message_id = 1;
+  string emoji = 2;
+  bool remove = 3;
+}
+
+message UpdateMemberCommand {
+  string target_ptid = 1;
+  MemberRole new_role = 2;
+  bool muted = 3;
+}
+
+message PinMessageCommand {
+  string message_id = 1;
+  bool unpin = 2;
+}
+
+// --- Committed Conversation Event (authority -> followers) ---
+
+// Events are what the authority Station produces after validating a command.
+// They are the single source of truth for group state progression.
+message CommittedConversationEvent {
+  string event_id = 1;
+  string conversation_id = 2;
+  int64 group_seq = 3;
+  int64 membership_epoch = 4;
+  string committed_by_station_peer_id = 5;
+  google.protobuf.Timestamp committed_at = 6;
+  bytes event_hash = 7;
+  bytes prev_event_hash = 8;
+
+  oneof payload {
+    MessageCommittedEvent message_committed = 10;
+    MessageEditedEvent message_edited = 11;
+    MessageRetractedEvent message_retracted = 12;
+    MembershipChangedEvent membership_changed = 13;
+    ConversationCreatedEvent conversation_created = 14;
+    ConversationDissolvedEvent conversation_dissolved = 15;
+    SettingsChangedEvent settings_changed = 16;
+    ReactionEvent reaction = 17;
+    PinEvent pin = 18;
+  }
+}
+
+message MessageCommittedEvent {
+  string message_id = 1;
+  string sender_ptid = 2;
+  string sender_device_id = 3;
+  bytes encrypted_payload = 4;
+  MessageContentType content_type = 5;
+  string reply_to_message_id = 6;
+  string thread_root_message_id = 7;
+  repeated EncryptedAttachment attachments = 8;
+  google.protobuf.Timestamp client_ts = 9;
+}
+
+message MessageEditedEvent {
+  string message_id = 1;
+  string editor_ptid = 2;
+  bytes encrypted_payload = 3;
+  google.protobuf.Timestamp edited_at = 4;
+}
+
+message MessageRetractedEvent {
+  string message_id = 1;
+  string retractor_ptid = 2;
+  google.protobuf.Timestamp retracted_at = 3;
+}
+
+message MembershipChangedEvent {
+  repeated MemberChange changes = 1;
+  int64 new_membership_epoch = 2;
+}
+
+message MemberChange {
+  string ptid = 1;
+  MemberChangeAction action = 2;
+  MemberRole role = 3;
+  string actor_home_station_peer_id = 4;
+}
+
+enum MemberChangeAction {
+  MEMBER_CHANGE_ACTION_UNSPECIFIED = 0;
+  MEMBER_CHANGE_ACTION_ADDED = 1;
+  MEMBER_CHANGE_ACTION_REMOVED = 2;
+  MEMBER_CHANGE_ACTION_LEFT = 3;
+  MEMBER_CHANGE_ACTION_ROLE_CHANGED = 4;
+}
+
+message ConversationCreatedEvent {
+  Conversation conversation = 1;
+  repeated ConversationMember initial_members = 2;
+}
+
+message ConversationDissolvedEvent {
+  string dissolved_by_ptid = 1;
+}
+
+message SettingsChangedEvent {
+  string changed_by_ptid = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional string avatar_cid = 4;
+  optional bool muted = 5;
+}
+
+message ReactionEvent {
+  string message_id = 1;
+  string actor_ptid = 2;
+  string emoji = 3;
+  bool removed = 4;
+  google.protobuf.Timestamp ts = 5;
+}
+
+message PinEvent {
+  string message_id = 1;
+  string actor_ptid = 2;
+  bool unpinned = 3;
+  google.protobuf.Timestamp ts = 4;
+}
+
+// --- Message Content Types ---
+
+enum MessageContentType {
+  MESSAGE_CONTENT_TYPE_UNSPECIFIED = 0;
+  MESSAGE_CONTENT_TYPE_TEXT = 1;
+  MESSAGE_CONTENT_TYPE_IMAGE = 2;
+  MESSAGE_CONTENT_TYPE_FILE = 3;
+  MESSAGE_CONTENT_TYPE_AUDIO = 4;
+  MESSAGE_CONTENT_TYPE_VIDEO = 5;
+  MESSAGE_CONTENT_TYPE_LOCATION = 6;
+  MESSAGE_CONTENT_TYPE_STICKER = 7;
+  MESSAGE_CONTENT_TYPE_SYSTEM = 8;
+}
+
+// --- Encrypted Attachment ---
+
+message EncryptedAttachment {
+  string attachment_id = 1;
+  string filename = 2;
+  int64 size_bytes = 3;
+  string mime_type = 4;
+  bytes encrypted_key = 5;
+  string storage_ref = 6;
+  bytes thumbnail_encrypted = 7;
+}
+
+// --- Message Receipt ---
+
+message MessageReceipt {
+  string conversation_id = 1;
+  string message_id = 2;
+  string ptid = 3;
+  string device_id = 4;
+  ReceiptType receipt_type = 5;
+  google.protobuf.Timestamp ts = 6;
+}
+
+enum ReceiptType {
+  RECEIPT_TYPE_UNSPECIFIED = 0;
+  RECEIPT_TYPE_DELIVERED = 1;
+  RECEIPT_TYPE_READ = 2;
+}
+
+// --- Delivery Cursor ---
+
+message DeliveryCursor {
+  string conversation_id = 1;
+  string station_peer_id = 2;
+  int64 last_delivered_group_seq = 3;
+  int64 last_ack_group_seq = 4;
+  int32 retry_count = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}

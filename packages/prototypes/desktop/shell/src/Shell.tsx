@@ -37,16 +37,19 @@ import {
   Globe,
   Wrench,
   ChevronRight,
+  Zap,
+  Workflow as WorkflowIcon,
   type LucideIcon,
 } from 'lucide-react';
 import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
 import { AgentCanvasPage } from '@peers-touch/prototype-agent-canvas';
 import { AppletWorkspacePage } from '../../features/applet-workspace/src/AppletWorkspacePrototype';
 import { SocialChatPage } from '../../features/social-chat/src/pages/SocialChatPage';
+import { Page as AgentFeaturePage } from '../../features/agent/src/Page';
 import { AgentChatPage } from './AgentChatPage';
-import { AgentProfilePage } from './AgentProfilePage';
 import { SettingsPage } from './Settings';
 import { T } from './theme';
+import { ToastHost } from '../../shared/Toast';
 
 /** An installed applet (mirrors RuntimeAppletInfo.manifest + status). */
 interface AppletInfo {
@@ -116,6 +119,7 @@ const COMMANDS: { id: string; label: string; desc: string; shortcut: string; tar
   { id: 'search', label: '搜索', desc: '全局搜索', shortcut: '⌘K', target: 'search' },
   { id: 'chat', label: '聊天', desc: '打开 Social Chat', shortcut: '⌘⇧C', target: 'chat' },
   { id: 'agent', label: 'Agent', desc: '打开 Agent', shortcut: '⌘J', target: 'agent' },
+  { id: 'agent-atelier', label: 'Atelier', desc: '打开 Agent 工作台', shortcut: '⌘⇧A', target: 'agent-atelier' },
   { id: 'agent-orchestration', label: 'Agent 编排', desc: '从 Agent 页进入编排画板', shortcut: '⌘⇧J', target: 'agent-orchestration' },
   { id: 'applets', label: 'Applets', desc: '打开 Applets 中心', shortcut: '⌘⇧E', target: 'applets' },
   { id: 'atelier', label: '打开 Atelier', desc: '进入 Atelier applet', shortcut: '⌘⇧A', target: 'applet:atelier' },
@@ -605,14 +609,38 @@ export interface DesktopShellProps {
   initialPage?: string;
 }
 
+type AgentSurfaceId = 'agent' | 'agent-atelier' | 'agent-orchestration';
+
+function getAgentSurfaceId(page: string): AgentSurfaceId | null {
+  if (page === 'agent' || page === 'agent-profile') return 'agent';
+  if (page === 'agent-atelier') return 'agent-atelier';
+  if (page === 'agent-orchestration') return 'agent-orchestration';
+  return null;
+}
+
 export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   // page mirrors the real router: kernel ids (search/chat/agent/notes/settings),
   // `applets` for the applets center, or `applet:<id>` for an applet surface.
   // Default lands on the applets center to show: rail ▦ → list → enter applet.
   const [page, setPage] = useState(initialPage ?? 'applets');
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [visitedAgentSurfaces, setVisitedAgentSurfaces] = useState<Set<AgentSurfaceId>>(() => {
+    const initialSurface = getAgentSurfaceId(initialPage ?? 'applets');
+    return initialSurface ? new Set([initialSurface]) : new Set();
+  });
 
-  const navigate = (p: string) => setPage(p);
+  const navigate = (p: string) => {
+    const surface = getAgentSurfaceId(p);
+    if (surface) {
+      setVisitedAgentSurfaces((current) => {
+        if (current.has(surface)) return current;
+        const next = new Set(current);
+        next.add(surface);
+        return next;
+      });
+    }
+    setPage(p);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -670,7 +698,89 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
         paletteOpen={paletteOpen}
       />
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-        {body}
+        {visitedAgentSurfaces.size > 0 && (
+          <div
+            data-testid="desktop-agent-module-host"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              minHeight: 0,
+              display: page.startsWith('agent') ? 'flex' : 'none',
+              flexDirection: 'column',
+            }}
+          >
+            <div style={{ height: 42, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '0 10px', borderBottom: `1px solid ${T.border}`, background: T.bg }}>
+              {[
+                { id: 'agent', label: 'Agent', icon: Bot },
+                { id: 'agent-atelier', label: 'Atelier', icon: Zap },
+                { id: 'agent-orchestration', label: 'Orchestration', icon: WorkflowIcon },
+              ].map((item) => {
+                const Icon = item.icon;
+                const active = item.id === 'agent'
+                  ? page === 'agent' || page === 'agent-profile'
+                  : page === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => navigate(item.id)}
+                    style={{
+                      height: 30,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '0 10px',
+                      border: 0,
+                      borderRadius: 8,
+                      color: active ? T.primary : T.textSecondary,
+                      background: active ? T.primaryWash : 'transparent',
+                      fontSize: 12,
+                      fontWeight: active ? 700 : 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Icon size={14} />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+              {visitedAgentSurfaces.has('agent') && (
+                <>
+                  <div
+                    data-agent-surface="agent"
+                    style={{ position: 'absolute', inset: 0, display: page === 'agent' || page === 'agent-profile' ? 'block' : 'none' }}
+                  >
+                    <AgentChatPage
+                      onOpenOrchestration={() => navigate('agent-orchestration')}
+                      profileOpen={page === 'agent-profile'}
+                      onOpenProfile={() => navigate('agent-profile')}
+                      onCloseProfile={() => navigate('agent')}
+                    />
+                  </div>
+                </>
+              )}
+              {visitedAgentSurfaces.has('agent-atelier') && (
+                <div
+                  data-agent-surface="agent-atelier"
+                  style={{ position: 'absolute', inset: 0, display: page === 'agent-atelier' ? 'block' : 'none' }}
+                >
+                  <AgentFeaturePage initialSurface="atelier" showGlobalNav={false} />
+                </div>
+              )}
+              {visitedAgentSurfaces.has('agent-orchestration') && (
+                <div
+                  data-agent-surface="agent-orchestration"
+                  style={{ position: 'absolute', inset: 0, display: page === 'agent-orchestration' ? 'block' : 'none' }}
+                >
+                  <AgentCanvasPage embedded onBack={() => navigate('agent')} />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {!page.startsWith('agent') && body}
       </div>
       <CommandPalette
         open={paletteOpen}
@@ -680,6 +790,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
           setPaletteOpen(false);
         }}
       />
+      <ToastHost />
     </div>
   );
 }

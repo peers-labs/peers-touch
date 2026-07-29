@@ -8,6 +8,28 @@ source "$SCRIPT_DIR/env.sh"
 
 target="${1:-all}"
 
+compose_stop_station() {
+  local mode="${PT_STATION_MODE:-local}"
+  if [[ "$mode" != "local" && "$mode" != "compose" ]]; then
+    return 0
+  fi
+  local compose_file="$PROJECT_ROOT/tooling/docker/compose.yml"
+  local compose_env_file="${PT_STATION_COMPOSE_ENV_FILE:-$PROJECT_ROOT/tooling/docker/.env}"
+  if [[ ! -f "$compose_file" || ! -f "$compose_env_file" ]]; then
+    return 0
+  fi
+  COMPOSE_PROJECT_NAME="${PT_STATION_COMPOSE_PROJECT:-pt-${PT_DEV_PROFILE}}" \
+  STATION_PORT="${PT_STATION_PORT:-18080}" \
+  POSTGRES_DB="${PT_STATION_DB_NAME:-peers_touch}" \
+  PEERS_NODE_LABEL="${PT_STATION_NAME:-local}" \
+  docker compose \
+    -f "$compose_file" \
+    --env-file "$compose_env_file" \
+    --profile station \
+    stop station >/dev/null 2>&1 || true
+  echo "[OK] Stopped compose Station for profile ${PT_DEV_PROFILE}"
+}
+
 stop_pid() {
   local name="$1" file="$2"
   if [[ -f "$file" ]]; then
@@ -27,6 +49,7 @@ stop_pid() {
 
 case "$target" in
   station)
+    compose_stop_station
     stop_pid "Station" "$PT_DEV_PIDS/station.pid"
     ;;
   relay)
@@ -42,6 +65,7 @@ case "$target" in
     stop_pid "Mobile" "$PT_DEV_PIDS/mobile-ios-sim.pid"
     ;;
   all)
+    compose_stop_station
     stop_pid "Station" "$PT_DEV_PIDS/station.pid"
     stop_pid "Relay" "$PT_DEV_PIDS/relay.pid"
     stop_pid "Desktop App Vite" "$PT_DEV_PIDS/desktop-app-vite.pid"

@@ -27,7 +27,7 @@ export interface DesktopClientStorageRuntime {
 
 export interface DesktopStorageSessionScope {
   readonly stationUrl?: string | null;
-  readonly actorDid?: string | null;
+  readonly ptid?: string | null;
   readonly deviceId?: string | null;
   readonly sessionId?: string | null;
 }
@@ -112,7 +112,7 @@ export function desktopStorageScope(scope: DesktopStorageSessionScope): ClientSt
   return {
     app: 'desktop',
     station: scope.stationUrl ?? null,
-    actor: scope.actorDid ?? null,
+    actor: scope.ptid ?? null,
     device: scope.deviceId ?? null,
     session: scope.sessionId ?? null,
   };

@@ -64,7 +64,19 @@ pub fn account_requires_pin(account_id: &str) -> bool {
 
 pub fn account_has_restorable_session(account: &AccountIdentity) -> bool {
     if account.pin_protection.is_some() {
-        account.has_session && account.encrypted_session.is_some()
+        if !account.has_session || account.encrypted_session.is_none() {
+            return false;
+        }
+        if let Some(exp) = account.session_expires_at {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            if exp <= now {
+                return false;
+            }
+        }
+        true
     } else {
         account.has_session
     }
@@ -122,6 +134,10 @@ pub fn load_raw_session_for_account(
         }
     }
     Ok(Some(blob))
+}
+
+pub fn load_raw_token_for_recovery(account_id: &str) -> Option<String> {
+    session_store::load(account_id).map(|s| s.token)
 }
 
 pub fn save_encrypted_session_and_purge_raw(

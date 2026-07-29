@@ -102,3 +102,49 @@ jobs:
             if (!typeChecked) {
               core.setFailed('Please check at least one Type in the PR description.');
             }
+
+  # Desktop performance red-line gate — blocks merge when P95 regresses
+  perf-gate:
+    if: contains(github.event.pull_request.labels.*.name, 'perf') || contains(github.event.pull_request.changed_files_paths || '', 'apps/desktop/src/')
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/desktop
+      - name: Run performance stress tests (N=30, P95 gate)
+        working-directory: apps/desktop
+        env:
+          PT_PERFORMANCE_RUNTIME: browser-gateway
+          PT_PERF_GATE_SAMPLES: 30
+          PT_PERF_GATE_P95_NAV_MS: 100
+          PT_PERF_GATE_P95_INPUT_MS: 50
+        run: |
+          pnpm exec playwright install chromium
+          pnpm exec playwright test e2e/tests/performance-stress.spec.ts --reporter=json --output=perf-gate-results.json || true
+      - name: Evaluate P95 thresholds
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const resultsPath = path.join(process.env.GITHUB_WORKSPACE, 'apps/desktop/perf-gate-results.json');
+            if (!fs.existsSync(resultsPath)) {
+              core.setFailed('Performance gate: no results file produced. Tests may have crashed.');
+              return;
+            }
+            const results = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
+            const suites = results.suites ?? [];
+            const failures = suites.flatMap(s => (s.specs ?? []).filter(sp => sp.ok === false));
+            if (failures.length > 0) {
+              const names = failures.map(f => f.title).join(', ');
+              core.setFailed(`Performance gate FAILED: ${names}`);
+            } else {
+              core.info('Performance gate PASSED: all P95 thresholds met.');
+            }

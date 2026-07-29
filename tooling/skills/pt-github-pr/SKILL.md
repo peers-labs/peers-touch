@@ -4,6 +4,10 @@ description: >
   Use when the user asks to create a pull request, update a PR, or when you
   need to manage GitHub PRs. Handles PR creation with standardized templates,
   labels, and issue linking for the Peers-Touch project.
+stage: "DELIVER"
+requires: ["commits pushed to feature branch"]
+produces: ["open PR with passing checks"]
+next: "pt-github-review"
 ---
 
 # GitHub PR — Pull Request Management Skill

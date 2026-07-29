@@ -140,6 +140,7 @@ export function PrototypePortal() {
 }
 
 function isEntryPrototype(prototype: PrototypeManifest): boolean {
+  if (prototype.hidden) return false;
   if (prototype.site !== 'desktop') return true;
   if (prototype.kind === 'applet') return false;
   return prototype.kind === 'shell' || prototype.module !== 'applet-runtime';

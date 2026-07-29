@@ -133,7 +133,7 @@ function activateAppletProductWindowLaunch(context: AppletProductWindowLaunchCon
     ? '#/applets'
     : `#/applet:${context.appletId}`;
   if (window.location.hash !== targetHash) {
-    window.history.replaceState(null, '', targetHash);
+    window.location.hash = targetHash;
   }
   return true;
 }
@@ -164,7 +164,7 @@ function userWithSyncedProfile(
 
 function appStateFromIdentity(phase: IdentityPhase): AppState {
   if (identityPhaseAllowsReady(phase)) return 'ready';
-  if (phase.kind === 'resolvingSession') return 'resuming';
+  if (phase.kind === 'resolvingSession' || phase.kind === 'accessGateChainPending') return 'resuming';
   return 'onboarding';
 }
 
@@ -269,7 +269,7 @@ class IdentityRuntime {
         await this.loadAuthGate('session_missing', false);
         return;
       }
-      await this.acceptAuthenticatedEdge(identityAuthenticatedEdge('restored_session', user));
+      await this.acceptAuthenticatedEdgeFromCurrentSession(source === 'applet' ? 'applet_launch' : 'restored_session');
     } catch (error) {
       await this.loadAuthGate(classifyRestoreFailure(error), false);
     }
@@ -324,9 +324,7 @@ class IdentityRuntime {
       loginMethod: restored.login_method ?? null,
     });
     await useAccountIdentityStore.getState().load();
-    const user = currentSessionUser();
-    if (!user) return;
-    await this.acceptAuthenticatedEdge(identityAuthenticatedEdge('account_switch', user));
+    await this.acceptAuthenticatedEdgeFromCurrentSession('account_switch');
   };
 
   unlockWithPin = async (accountId: string, pin: string): Promise<void> => {
@@ -338,9 +336,25 @@ class IdentityRuntime {
       loginMethod: resp.login_method ?? null,
     });
     await useAccountIdentityStore.getState().load();
+    await this.acceptAuthenticatedEdgeFromCurrentSession('pin_unlock');
+  };
+
+  beginPinRecovery = (recoveryId: string, targetLocalAccountId: string, provider: string): void => {
+    this.dispatch({ type: 'PIN_RECOVERY_REQUESTED', recoveryId, targetLocalAccountId, provider });
+  };
+
+  cancelPinRecovery = (): void => {
+    this.dispatch({ type: 'PIN_RECOVERY_CANCELLED' });
+  };
+
+  completePinRecovery = async (): Promise<void> => {
     const user = currentSessionUser();
-    if (!user) return;
-    await this.acceptAuthenticatedEdge(identityAuthenticatedEdge('pin_unlock', user));
+    if (!user) {
+      this.dispatch({ type: 'PIN_RECOVERY_COMMIT_FAILED' });
+      return;
+    }
+    this.dispatch({ type: 'PIN_RECOVERY_COMMITTED', user });
+    await this.reconcileAuthenticatedIdentity(user, 'completed_login');
   };
 
   refreshCurrentProfile = async (fallbackAvatar?: string): Promise<void> => {
@@ -525,6 +539,9 @@ class IdentityRuntime {
       switchAccount: this.switchAccount,
       unlockWithPin: this.unlockWithPin,
       refreshCurrentProfile: this.refreshCurrentProfile,
+      beginPinRecovery: this.beginPinRecovery,
+      cancelPinRecovery: this.cancelPinRecovery,
+      completePinRecovery: this.completePinRecovery,
     };
     return {
       phase: this.phase,

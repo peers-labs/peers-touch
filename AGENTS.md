@@ -135,6 +135,7 @@ Example:
 6. **Page / Runtime / Boot contracts** — When adding or refactoring a Desktop page, projection owner, or startup step, conform to the Page / Runtime / Boot kernel contracts in `docs/client/desktop/runtime-projections.md §6`. Pages are pure renderers (no mount-time fetches); long-lived projections live in `RuntimeDescriptor`s; one-shot section data uses `kernel/usePrefetch`; startup is observable through `kernel/boot.ts` phases.
 7. **Desktop debug uses Make** — During investigation, lifecycle debugging, browser/app E2E, applet runtime debugging, or acceptance triage, start Desktop through `make desktop` (or `make desktop-web` only when the task explicitly needs the browser shell). Do **not** switch to hard packaged `.app` / `tauri build` / release bundle flows unless the user explicitly asks for packaging, release validation, installer validation, or a package-only acceptance gate. See `docs/knowledge/playbooks/desktop-debug-runtime.md`.
 8. **UI Identity first** — For any UI/UX design, visual refactor, screenshot review, layout issue, button/style issue, or client UI code change, first read `docs/client/common/ux-design-methodology.md`, `docs/client/common/ui-identity/README.md`, and the closest module contract under `docs/client/common/ui-identity/modules/`. Do not rely on ad-hoc component-library defaults.
+9. **Service coordination first** — For cross-service issues (relay mount, DHT bootstrap, federation resolve failures, Station↔Relay↔Desktop connectivity), consult `docs/architecture/service-coordination.md` before debugging. It defines the dependency DAG, credential lifecycle, and troubleshooting index.
 
 ---
 
@@ -164,6 +165,15 @@ Use domain-specific loggers only (see platform docs for specifics).
 ### No Mocking
 
 Frontend-backend collaborative APIs: **NO MOCK** unless the user explicitly says so. Using mock = cheating.
+
+### No Unauthorized Version Bumps
+
+The project is at its **current stage (v1)**. Do not "upgrade" version numbers on your own initiative.
+
+- **Ask the user before bumping ANY version number** — framework, protocol/wire, proto message version, document, dependency/library, package, API, or schema. No exceptions.
+- Do not write speculative "v2 / next-gen / phase-next" version labels into project rules, design docs, or code as if they were the current stage. Describe the current stage as **v1**.
+- Third-party protocol names that happen to contain a version (e.g. an external spec's own "vN") are **references, not our version** — cite them as external names and never let them imply a bump to our own artifacts.
+- If a change genuinely needs a new version, STOP and get explicit approval first; then bump exactly the one artifact approved, and update its changelog/migration notes in the same change.
 
 ### Logging Security
 
@@ -304,6 +314,7 @@ Current project skills:
 | Skill | Purpose |
 |-------|---------|
 | `pt-dev-workflow` | Drive a complete development task from planning to PR |
+| `pt-god-view` | God view: explicitly invoked to show global work status, route to correct stage skill, manage work lifecycle |
 | `pt-dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
 | `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
 | `pt-architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
@@ -354,6 +365,63 @@ This keeps `tooling/skills/` as the single git-tracked truth and prevents skill 
 4. Add the skill to the table in §13.1.
 5. If the skill enforces rules tied to a specific source-of-truth doc (e.g. `pt-desktop-runtime-projections` ↔ `docs/client/desktop/runtime-projections.md`), reverse-link both ways.
 6. Do **not** also add the same content under `.cursor/rules/` etc. — the agent will sync it on startup per §13.2.
+
+### 13.5 Stage Dispatch Protocol
+
+Any non-trivial development task (cross-module, new feature, architecture change) progresses through ordered stages. **Agent MUST detect the current stage and dispatch to the correct skill.**
+
+| Stage | Entry condition | Skill(s) to invoke | Gate (exit condition) | Artifact |
+|-------|----------------|--------------------|-----------------------|----------|
+| **DESIGN** | New architecture / boundary / ownership decision needed | `pt-architecture-design-methodology` | Architecture review prompt generated → user initiates review → review passes | `docs/architecture/<module>/` |
+| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (analysis) → `pt-plan-and-document` (落盘 + review prompt) | Plan review prompt generated → user initiates review → review passes | `execution-plans/<plan>.md` |
+| **EXECUTE** | Plan accepted | `pt-execution-plan-guardian` | `pt-completion-auditor` passes OR completion criteria in plan all checked | Code + tests + evidence |
+| **DELIVER** | Code complete, tests pass | `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
+
+**Dispatch rules:**
+
+1. Each stage MUST pass its gate before entering the next. No skipping gates.
+2. Review pattern is uniform across stages: generate structured review prompt → user decides whether to send → iterate if needed → pass.
+3. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN, enter directly at EXECUTE via `pt-small-fix-discipline`.
+4. **Stage detection**: check `active_work` in project memory → read the referenced execution plan status table → determine current stage.
+5. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?"
+
+### 13.6 Session Continuity Protocol
+
+**This protocol is triggered explicitly via `pt-god-view` skill, not automatically on every session start.**
+
+When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状态" / "resume" etc.):
+
+1. Read `project_memory.md` → check `active_work` registry.
+2. If one entry with `stage != complete`:
+   - Report in one sentence: current plan, stage, step.
+   - Suggest the next action (which skill to invoke).
+   - Wait for user confirmation.
+3. If multiple entries with `stage != complete`:
+   - List all active entries (plan name, stage, branch).
+   - Ask: "Which work do you want to continue?"
+   - Wait for user selection.
+4. If all entries are `complete` or registry is empty → offer to start new task.
+5. Dispatch to the correct stage skill per §13.5.
+
+**active_work registry schema** (maintained in `project_memory.md`):
+
+```markdown
+## active_work
+
+| id | plan | stage | current_step | branch | blocked | last_session |
+|----|------|-------|--------------|--------|---------|--------------|
+| 1 | docs/.../execution-plans/20260723-phase1.md | EXECUTE | Step 3 | main | false | 2026-07-23 |
+| 2 | docs/.../federation-phase2.md | PLAN | — | feat/federation | false | 2026-07-22 |
+```
+
+**Lifecycle rules:**
+
+- **New work** → append row with `stage` set to entry stage.
+- **Stage transition** → update `stage` + `current_step` in corresponding row.
+- **Session end** → update `last_session` date.
+- **Branch merged** → if all phases complete, set `stage: complete`; if subsequent phases remain, update `branch` to target branch (e.g. `main`).
+- **User explicitly closes** → set `stage: complete` regardless of plan status.
+- **Stale detection** → if `last_session` is >14 days old and user hasn't mentioned it, ask on next session: "This work has been idle for N days — still active or should I close it?"
 
 ---
 

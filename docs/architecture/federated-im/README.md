@@ -2,9 +2,15 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-07-04 | **Updated**: 2026-07-04
+> **Created**: 2026-07-04 | **Updated**: 2026-07-11
 > **Owner**: Architecture Team
 > **Module**: `apps/station/app/subserver/group_chat/`, `apps/station/frame/touch/federation/`, `model/domain/chat/`, `model/domain/federation/`, `model/domain/realtime/`, `apps/desktop/src/store/socialChat.ts`
+
+> **v1 unification update (2026-07-11)**: Decisions D-08…D-12 (see `decisions.md`)
+> set group E2EE to MLS (RFC 9420, D-06 superseded), one Station signaling-envelope
+> channel (D-10), direct-chat X3DH + Double Ratchet (D-09), text-only-on-envelope
+> with P2P for media (D-12), and a hard cutover wiping legacy chat data (D-11).
+> Review source: [`proposals/20260711-im-unification-review.md`](./proposals/20260711-im-unification-review.md).
 
 ---
 
@@ -13,7 +19,7 @@
 This document set defines:
 
 - the architecture for high-quality Peers-Touch IM across Home Station and Federation boundaries;
-- how local Station group truth, Federation governance, cross-Station delivery, E2EE Sender Keys, and client projections compose;
+- how local Station group truth, Federation governance, cross-Station delivery, MLS group E2EE, and client projections compose;
 - the Foundation Profile for family-scale deployment: roughly 100-person groups, multi-device users, and private Station-to-Station federation;
 - the boundary between low-frequency Federation governance and high-frequency IM business events.
 
@@ -32,7 +38,7 @@ The current group lifecycle source of truth defines local Station group behavior
 - who owns a federated group event log;
 - how remote actors join and speak in a group;
 - how group messages are ordered without putting every message into Federation Ledger;
-- how Sender Keys are distributed across Stations without exposing keys to any Station;
+- how MLS group key material (Welcome/Commit/KeyPackage) is delivered across Stations without exposing group secrets to any Station;
 - how a family-scale Station can prove quality with 100-person group and private-chat stress tests.
 
 ## 3. Design Goals
@@ -40,7 +46,7 @@ The current group lifecycle source of truth defines local Station group behavior
 1. Support local and federated IM through one conceptual architecture.
 2. Keep Federation Ledger focused on governance, not chat message traffic.
 3. Give every federated group a clear authority Station and signed group event log.
-4. Preserve E2EE: Station stores and routes ciphertext, never group message plaintext or Sender Key material.
+4. Preserve E2EE: Station stores and routes ciphertext, never group message plaintext or MLS group secrets.
 5. Preserve decentralized ownership: each actor is hosted by a Home Station and represented by ActorRef in wire contracts.
 6. Prefer low-latency authority sequencing for ordinary groups; reserve quorum recovery for authority loss and high-value groups.
 7. Provide measurable family-scale quality: 100-person group, cross-Station delivery, inactive recovery, and security gates.
@@ -53,7 +59,11 @@ The current group lifecycle source of truth defines local Station group behavior
 | [design.md](./design.md) | Architecture, ownership, runtime units, trust boundaries, core flows |
 | [data-model.md](./data-model.md) | Conceptual contracts, event log, ActorRef membership, epochs, delivery cursors |
 | [decisions.md](./decisions.md) | ADR-lite decisions and alternatives |
-| [execution-plans/20260704-foundation-federated-im.md](./execution-plans/20260704-foundation-federated-im.md) | Foundation Profile landing plan and verification |
+| [proposals/20260711-im-unification-review.md](./proposals/20260711-im-unification-review.md) | v1 IM unification review (approved decisions D-08…D-12) |
+| [execution-plans/20260712-v1-im-execution-plan.md](./execution-plans/20260712-v1-im-execution-plan.md) | v1 IM dependency-ordered execution plan (P0…P7) |
+| [execution-plans/20260712-g0-mls-verification.md](./execution-plans/20260712-g0-mls-verification.md) | G0 MLS two-platform verification plan (unblocks D-08 / P3) |
+| [execution-plans/20260729-signal-level-chat-modernization.md](./execution-plans/20260729-signal-level-chat-modernization.md) | Signal-level UX modernization (read receipts, media, reactions, calls) |
+| [execution-plans/20260704-foundation-federated-im.md](./execution-plans/20260704-foundation-federated-im.md) | **Superseded (D-08…D-12).** Historical Sender Keys landing plan |
 
 ## 5. Related Sources
 
@@ -61,7 +71,7 @@ The current group lifecycle source of truth defines local Station group behavior
 | --- | --- |
 | `docs/architecture/federation/README.md` | Federation entity, governance ledger, Station membership |
 | `docs/architecture/social-runtime/group-lifecycle.md` | Local group lifecycle and current implementation gap review |
-| `docs/architecture/encryption/group-sender-keys.md` | Group E2EE Sender Keys and SKDM distribution |
+| `docs/architecture/encryption/group-sender-keys.md` | **Superseded by D-08 (MLS).** Retained for history; do not build new work on it |
 | `docs/architecture/realtime/event-stream.md` | Reliable event stream and recovery model |
 | `docs/global/architecture.md` | Station/Model/Client ownership rule |
 | `docs/global/first-principles.md` | Proto-first contracts and auth/security constraints |

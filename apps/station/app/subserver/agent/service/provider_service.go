@@ -34,6 +34,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -62,6 +63,8 @@ const (
 	providerHTTPTimeout = 120 * time.Second
 )
 
+var apiVersionSuffix = regexp.MustCompile(`/v\d+$`)
+
 // ---------------------------------------------------------------------------
 // Request / Response types
 // ---------------------------------------------------------------------------
@@ -88,14 +91,17 @@ type ProviderDelta struct {
 // ProviderCallResponse captures the structured result of an LLM call,
 // including token usage and cache hit status.
 type ProviderCallResponse struct {
-	Content      string
-	Model        string
-	Provider     string
-	InputTokens  int
-	OutputTokens int
-	CacheHit     bool
-	FinishReason string
-	Streamed     bool
+	Content         string
+	Model           string
+	Provider        string
+	InputTokens     int
+	OutputTokens    int
+	BilledMoney     float64
+	BillingSource   string
+	BillingCurrency string
+	CacheHit        bool
+	FinishReason    string
+	Streamed        bool
 }
 
 // ProviderHTTPError wraps HTTP-level errors from LLM provider APIs,
@@ -529,12 +535,15 @@ func (s *ProviderService) callOpenAI(
 	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 
-	// Build endpoint URL, append /v1/chat/completions if not already present.
-	// Handles base URLs that already include the full path (Bug 3 fix, 2026-04-11).
+	// Build endpoint URL, append /chat/completions if not already present.
+	// Handles base URLs that already include the full path (Bug 3 fix, 2026-04-11),
+	// end with /v1 (OpenAI standard), or end with any /vN version prefix
+	// (e.g. Ark /api/v3, custom gateways).
 	endpointBase := strings.TrimRight(baseURL, "/")
 	if strings.HasSuffix(endpointBase, "/chat/completions") {
 		// Already a full endpoint URL — use as-is.
-	} else if strings.HasSuffix(endpointBase, "/v1") {
+	} else if apiVersionSuffix.MatchString(endpointBase) {
+		// Ends with a version segment like /v1, /v3, /api/v3 → append /chat/completions.
 		endpointBase += "/chat/completions"
 	} else {
 		endpointBase += "/v1/chat/completions"
@@ -610,13 +619,19 @@ func (s *ProviderService) callOpenAI(
 		return nil, err
 	}
 
-	if len(data.Choices) == 0 || strings.TrimSpace(data.Choices[0].Message.Content) == "" {
+	if len(data.Choices) == 0 {
+		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
+			"empty openai-compatible response", nil)
+	}
+
+	content := data.Choices[0].Message.Content
+	if strings.TrimSpace(content) == "" {
 		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 			"empty openai-compatible response", nil)
 	}
 
 	return &ProviderCallResponse{
-		Content:      data.Choices[0].Message.Content,
+		Content:      content,
 		Model:        data.Model,
 		InputTokens:  data.Usage.PromptTokens,
 		OutputTokens: data.Usage.CompletionTokens,

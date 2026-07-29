@@ -623,7 +623,7 @@ func (x *Group) GetMembershipEpoch() int64 {
 type GroupMember struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	GroupUlid              string                 `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	ActorDid               string                 `protobuf:"bytes,2,opt,name=actor_did,json=actorDid,proto3" json:"actor_did,omitempty"`
+	Ptid                   string                 `protobuf:"bytes,2,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	Role                   GroupRole              `protobuf:"varint,3,opt,name=role,proto3,enum=peers_touch.model.chat.v1.GroupRole" json:"role,omitempty"` // 角色
 	Nickname               string                 `protobuf:"bytes,4,opt,name=nickname,proto3" json:"nickname,omitempty"`                                   // 群内昵称
 	Muted                  bool                   `protobuf:"varint,5,opt,name=muted,proto3" json:"muted,omitempty"`                                        // 是否被禁言
@@ -673,9 +673,9 @@ func (x *GroupMember) GetGroupUlid() string {
 	return ""
 }
 
-func (x *GroupMember) GetActorDid() string {
+func (x *GroupMember) GetPtid() string {
 	if x != nil {
-		return x.ActorDid
+		return x.Ptid
 	}
 	return ""
 }
@@ -1717,7 +1717,7 @@ func (x *GroupInvitation) GetCreatedAt() *timestamppb.Timestamp {
 
 type FederatedActorRef struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
-	ActorDid               string                 `protobuf:"bytes,1,opt,name=actor_did,json=actorDid,proto3" json:"actor_did,omitempty"`
+	Ptid                   string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	HomeStationPeerId      string                 `protobuf:"bytes,2,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
 	HomeStationDomain      string                 `protobuf:"bytes,3,opt,name=home_station_domain,json=homeStationDomain,proto3" json:"home_station_domain,omitempty"`
 	FederatedHandle        string                 `protobuf:"bytes,4,opt,name=federated_handle,json=federatedHandle,proto3" json:"federated_handle,omitempty"`
@@ -1758,9 +1758,9 @@ func (*FederatedActorRef) Descriptor() ([]byte, []int) {
 	return file_domain_chat_group_chat_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *FederatedActorRef) GetActorDid() string {
+func (x *FederatedActorRef) GetPtid() string {
 	if x != nil {
-		return x.ActorDid
+		return x.Ptid
 	}
 	return ""
 }
@@ -1940,13 +1940,13 @@ func (x *GroupProposal) GetCreatedAt() *timestamppb.Timestamp {
 }
 
 type GroupMemberJoinCommandPayload struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	Member            *FederatedActorRef     `protobuf:"bytes,1,opt,name=member,proto3" json:"member,omitempty"`
-	Role              GroupRole              `protobuf:"varint,2,opt,name=role,proto3,enum=peers_touch.model.chat.v1.GroupRole" json:"role,omitempty"`
-	Nickname          string                 `protobuf:"bytes,3,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	InvitedByActorDid string                 `protobuf:"bytes,4,opt,name=invited_by_actor_did,json=invitedByActorDid,proto3" json:"invited_by_actor_did,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Member        *FederatedActorRef     `protobuf:"bytes,1,opt,name=member,proto3" json:"member,omitempty"`
+	Role          GroupRole              `protobuf:"varint,2,opt,name=role,proto3,enum=peers_touch.model.chat.v1.GroupRole" json:"role,omitempty"`
+	Nickname      string                 `protobuf:"bytes,3,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	InvitedByPtid string                 `protobuf:"bytes,4,opt,name=invited_by_ptid,json=invitedByPtid,proto3" json:"invited_by_ptid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GroupMemberJoinCommandPayload) Reset() {
@@ -2000,9 +2000,9 @@ func (x *GroupMemberJoinCommandPayload) GetNickname() string {
 	return ""
 }
 
-func (x *GroupMemberJoinCommandPayload) GetInvitedByActorDid() string {
+func (x *GroupMemberJoinCommandPayload) GetInvitedByPtid() string {
 	if x != nil {
-		return x.InvitedByActorDid
+		return x.InvitedByPtid
 	}
 	return ""
 }
@@ -3305,7 +3305,7 @@ func (x *GetGroupMembersResponse) GetTotal() int32 {
 type UpdateMemberRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GroupUlid     string                 `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	ActorDid      string                 `protobuf:"bytes,2,opt,name=actor_did,json=actorDid,proto3" json:"actor_did,omitempty"`
+	Ptid          string                 `protobuf:"bytes,2,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	Role          *GroupRole             `protobuf:"varint,3,opt,name=role,proto3,enum=peers_touch.model.chat.v1.GroupRole,oneof" json:"role,omitempty"`
 	Muted         *bool                  `protobuf:"varint,4,opt,name=muted,proto3,oneof" json:"muted,omitempty"`
 	MutedUntil    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=muted_until,json=mutedUntil,proto3,oneof" json:"muted_until,omitempty"`
@@ -3350,9 +3350,9 @@ func (x *UpdateMemberRequest) GetGroupUlid() string {
 	return ""
 }
 
-func (x *UpdateMemberRequest) GetActorDid() string {
+func (x *UpdateMemberRequest) GetPtid() string {
 	if x != nil {
-		return x.ActorDid
+		return x.Ptid
 	}
 	return ""
 }
@@ -3426,7 +3426,7 @@ func (x *UpdateMemberResponse) GetMember() *GroupMember {
 type RemoveMemberRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GroupUlid     string                 `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	ActorDid      string                 `protobuf:"bytes,2,opt,name=actor_did,json=actorDid,proto3" json:"actor_did,omitempty"`
+	Ptid          string                 `protobuf:"bytes,2,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3468,9 +3468,9 @@ func (x *RemoveMemberRequest) GetGroupUlid() string {
 	return ""
 }
 
-func (x *RemoveMemberRequest) GetActorDid() string {
+func (x *RemoveMemberRequest) GetPtid() string {
 	if x != nil {
-		return x.ActorDid
+		return x.Ptid
 	}
 	return ""
 }
@@ -5756,11 +5756,11 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\x10membership_epoch\x18\x10 \x01(\x03R\x0fmembershipEpoch\x1a;\n" +
 	"\rSettingsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc1\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb8\x03\n" +
 	"\vGroupMember\x12\x1d\n" +
 	"\n" +
-	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x1b\n" +
-	"\tactor_did\x18\x02 \x01(\tR\bactorDid\x128\n" +
+	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x12\n" +
+	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x128\n" +
 	"\x04role\x18\x03 \x01(\x0e2$.peers_touch.model.chat.v1.GroupRoleR\x04role\x12\x1a\n" +
 	"\bnickname\x18\x04 \x01(\tR\bnickname\x12\x14\n" +
 	"\x05muted\x18\x05 \x01(\bR\x05muted\x12;\n" +
@@ -5871,9 +5871,9 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\x06status\x18\x05 \x01(\x0e20.peers_touch.model.chat.v1.GroupInvitationStatusR\x06status\x127\n" +
 	"\texpire_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bexpireAt\x129\n" +
 	"\n" +
-	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xc5\x02\n" +
-	"\x11FederatedActorRef\x12\x1b\n" +
-	"\tactor_did\x18\x01 \x01(\tR\bactorDid\x12/\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xbc\x02\n" +
+	"\x11FederatedActorRef\x12\x12\n" +
+	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12/\n" +
 	"\x14home_station_peer_id\x18\x02 \x01(\tR\x11homeStationPeerId\x12.\n" +
 	"\x13home_station_domain\x18\x03 \x01(\tR\x11homeStationDomain\x12)\n" +
 	"\x10federated_handle\x18\x04 \x01(\tR\x0ffederatedHandle\x129\n" +
@@ -5895,12 +5895,12 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	" \x01(\tR\fsigningKeyId\x12\x1c\n" +
 	"\tsignature\x18\v \x01(\fR\tsignature\x129\n" +
 	"\n" +
-	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xec\x01\n" +
+	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xe3\x01\n" +
 	"\x1dGroupMemberJoinCommandPayload\x12D\n" +
 	"\x06member\x18\x01 \x01(\v2,.peers_touch.model.chat.v1.FederatedActorRefR\x06member\x128\n" +
 	"\x04role\x18\x02 \x01(\x0e2$.peers_touch.model.chat.v1.GroupRoleR\x04role\x12\x1a\n" +
-	"\bnickname\x18\x03 \x01(\tR\bnickname\x12/\n" +
-	"\x14invited_by_actor_did\x18\x04 \x01(\tR\x11invitedByActorDid\"g\n" +
+	"\bnickname\x18\x03 \x01(\tR\bnickname\x12&\n" +
+	"\x0finvited_by_ptid\x18\x04 \x01(\tR\rinvitedByPtid\"g\n" +
 	"\x1fGroupMemberRemoveCommandPayload\x12D\n" +
 	"\x06member\x18\x01 \x01(\v2,.peers_touch.model.chat.v1.FederatedActorRefR\x06member\"o\n" +
 	" GroupOwnerTransferCommandPayload\x12K\n" +
@@ -6009,11 +6009,11 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\x06offset\x18\x03 \x01(\x05R\x06offset\"q\n" +
 	"\x17GetGroupMembersResponse\x12@\n" +
 	"\amembers\x18\x01 \x03(\v2&.peers_touch.model.chat.v1.GroupMemberR\amembers\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\x05R\x05total\"\x90\x02\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"\x87\x02\n" +
 	"\x13UpdateMemberRequest\x12\x1d\n" +
 	"\n" +
-	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x1b\n" +
-	"\tactor_did\x18\x02 \x01(\tR\bactorDid\x12=\n" +
+	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x12\n" +
+	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12=\n" +
 	"\x04role\x18\x03 \x01(\x0e2$.peers_touch.model.chat.v1.GroupRoleH\x00R\x04role\x88\x01\x01\x12\x19\n" +
 	"\x05muted\x18\x04 \x01(\bH\x01R\x05muted\x88\x01\x01\x12@\n" +
 	"\vmuted_until\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampH\x02R\n" +
@@ -6022,11 +6022,11 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\x06_mutedB\x0e\n" +
 	"\f_muted_until\"V\n" +
 	"\x14UpdateMemberResponse\x12>\n" +
-	"\x06member\x18\x01 \x01(\v2&.peers_touch.model.chat.v1.GroupMemberR\x06member\"Q\n" +
+	"\x06member\x18\x01 \x01(\v2&.peers_touch.model.chat.v1.GroupMemberR\x06member\"H\n" +
 	"\x13RemoveMemberRequest\x12\x1d\n" +
 	"\n" +
-	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x1b\n" +
-	"\tactor_did\x18\x02 \x01(\tR\bactorDid\"0\n" +
+	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x12\n" +
+	"\x04ptid\x18\x02 \x01(\tR\x04ptid\"0\n" +
 	"\x14RemoveMemberResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xeb\x03\n" +
 	"\x17SendGroupMessageRequest\x12\x1d\n" +

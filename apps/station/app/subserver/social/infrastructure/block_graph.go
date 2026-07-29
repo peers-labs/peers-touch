@@ -4,9 +4,10 @@ import (
 	"context"
 	"strconv"
 
-	friendDomain "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
 	"gorm.io/gorm"
 )
+
+const friendshipStatusBlocked = 3
 
 type BlockGraphRepository interface {
 	IsBlockedBetween(ctx context.Context, actorID, peerID uint64) (bool, error)
@@ -30,7 +31,7 @@ func (r *blockGraphRepository) IsBlockedBetween(ctx context.Context, actorID, pe
 		Table("friend_chat_friendships").
 		Select("1").
 		Where("status = ? AND ((actor_did = ? AND peer_did = ?) OR (actor_did = ? AND peer_did = ?))",
-			friendDomain.FriendshipStatusBlocked,
+			friendshipStatusBlocked,
 			strconv.FormatUint(actorID, 10),
 			strconv.FormatUint(peerID, 10),
 			strconv.FormatUint(peerID, 10),
@@ -71,7 +72,7 @@ func (r *blockGraphRepository) BlockedActorIDs(ctx context.Context, actorID uint
 		Table("friend_chat_friendships").
 		Select("actor_did, peer_did").
 		Where("status = ? AND ((actor_did = ? AND peer_did IN ?) OR (peer_did = ? AND actor_did IN ?))",
-			friendDomain.FriendshipStatusBlocked,
+			friendshipStatusBlocked,
 			actorValue,
 			peerValues,
 			actorValue,

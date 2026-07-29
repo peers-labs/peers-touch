@@ -9,9 +9,10 @@
 1. [base.md](./base.md) — 平台总纲、目录基线、交付检查
 2. [lifecycle.md](./lifecycle.md) — Desktop 顶层生命周期：boot、identity/auth gate、runtime bootstrap、steady reconcile
 3. [identity-lifecycle.md](./identity-lifecycle.md) — Desktop 登录态、profile、account cache、avatar cache 的状态机闭环
-4. [runtime-projections.md](./runtime-projections.md) — `desktop-web` 内部 Page / Runtime / Boot 三组契约的**单点真源**
-5. [global-context-kernel.md](./global-context-kernel.md) — 全局上下文内核（与 Page/Runtime/Boot 正交）
-6. [chat-layout-contract.md](./chat-layout-contract.md) — Desktop Chat 布局、pane、hover、右键菜单、Composer 边界契约
+4. [pin-recovery.md](./pin-recovery.md) — 忘记本地 PIN 后的交互式重新认证、账号绑定与原子 rekey 契约
+5. [runtime-projections.md](./runtime-projections.md) — `desktop-web` 内部 Page / Runtime / Boot 三组契约的**单点真源**
+6. [global-context-kernel.md](./global-context-kernel.md) — 全局上下文内核（与 Page/Runtime/Boot 正交）
+7. [chat-layout-contract.md](./chat-layout-contract.md) — Desktop Chat 布局、pane、hover、右键菜单、Composer 边界契约
 
 ## 架构层真源（跨进程）
 
@@ -23,6 +24,7 @@ Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关
 
 ## 相关子主题
 
+- [dev-overlay-system.md](./dev-overlay-system.md) — Dev Overlay 插槽系统：开发模式下的 worktree/分支/profile 运行时信息展示架构
 - [applet-launcher-ux-contract.md](./applet-launcher-ux-contract.md)
 - [applet-runtime-lifecycle.md](./applet-runtime-lifecycle.md) — Desktop applet 运行时生命周期落地（Kernel 单一权威、lease/active-page/pause 事件流、单一 unload 路径、定时器与阈值）
 - [provider-model-target-architecture.md](./provider-model-target-architecture.md)

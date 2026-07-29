@@ -352,9 +352,7 @@ button {
   grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
   align-content: start;
   gap: 22px 32px;
-  max-height: min(238px, 46%);
-  padding: 34px 34px 0;
-  overflow: auto;
+  padding: 34px 34px 24px;
 }
 
 .ios-applet-icon {

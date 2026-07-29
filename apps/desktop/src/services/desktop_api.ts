@@ -3,9 +3,14 @@ import { fromBinary, fromJsonString } from '@bufbuild/protobuf';
 import type { Message as ProtoMessage } from '@bufbuild/protobuf';
 import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
+import { throttleInvoke } from '../kernel/invokeThrottler';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import { readDesktopPreferenceSync } from '../storage/desktopClientStorage';
+import type {
+  DesktopFrontendTelemetryEvent,
+  FrontendTelemetryUploadResult,
+} from '../kernel/frontendTelemetry';
 import type {
   AgentTurnStreamEventPayload,
   RealtimeCallSignalKind,
@@ -77,6 +82,17 @@ import {
 import {
   FederationHealthViewSchema,
 } from '../gen/proto/domain/federation/federation_health_pb';
+import {
+  FederationCatalogSearchResponseSchema,
+} from '../gen/proto/domain/federation/federation_discovery_pb';
+import {
+  CreateFederationResponseSchema,
+  DeleteFederationResponseSchema,
+  JoinFederationResponseSchema,
+  LeaveFederationResponseSchema,
+  ListFederationsResponseSchema,
+  ListMemberStationsResponseSchema,
+} from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
   GetTurnTraceResponse,
   ListTurnTracesResponse,
@@ -103,6 +119,21 @@ export type {
 export type {
   FederationHealthView,
 } from '../gen/proto/domain/federation/federation_health_pb';
+export type {
+  FederationCatalogSearchResponse,
+  FederationCatalogEntry,
+} from '../gen/proto/domain/federation/federation_discovery_pb';
+export type {
+  ListFederationsResponse,
+  FederationSummary,
+  ActorCapability,
+  CreateFederationResponse,
+  DeleteFederationResponse,
+  JoinFederationResponse,
+  LeaveFederationResponse,
+  ListMemberStationsResponse,
+  MemberStationView,
+} from '../gen/proto/domain/federation/federation_projection_service_pb';
 export type {
   Friend,
 } from '../gen/proto/domain/chat/chat_pb';
@@ -196,7 +227,7 @@ export interface ChatThreadCount {
 }
 
 export interface GroupChatFederatedActorInput {
-  actorDid: string;
+  ptid: string;
   homeStationPeerId: string;
   homeStationDomain?: string;
   federatedHandle?: string;
@@ -237,6 +268,7 @@ const ALWAYS_QUIET_COMMANDS = new Set([
   'ice_session_answer_get',
   'ice_session_answer_post',
   'ice_peer_register',
+  'frontend_telemetry_upload',
   'notification_list',
   'applets_action',
   'applets_invoke',
@@ -345,29 +377,34 @@ async function invokeRustCommand<TInput, TData>(
   if (!quiet) {
     log.info('api', `→ ${command}`, input != null ? { req: input } : undefined);
   }
-  try {
+
+  const executeFn = async (): Promise<RustCommandResult<TData>> => {
     const payload = input === undefined ? undefined : { input };
-    const result = await invoke<RustCommandResult<TData>>(command, payload);
+    return invoke<RustCommandResult<TData>>(command, payload);
+  };
+
+  try {
+    const { deferred, promise } = throttleInvoke<RustCommandResult<TData>>(command, executeFn);
+    const result = await promise;
     const elapsed = Date.now() - start;
     if (!result.ok) {
       const revoked = extractSessionRevoked(result.error);
       if (revoked) {
         publishSessionRevoked(revoked);
         if (!quiet) {
-          log.info('api', `← ${command} UNAUTHORIZED (${elapsed}ms)`, { reason: revoked.reason });
+          log.info('api', `← ${command} UNAUTHORIZED (${elapsed}ms)`, { reason: revoked.reason, deferred });
         }
         return result;
       }
-      // Surface `details.reason` from the Rust side so we don't have to
-      // round-trip to the binary just to read why a command failed.
       const detailsReason = (result.error?.details as any)?.reason;
       log.warn('api', `← ${command} FAIL (${elapsed}ms)`, {
         error: result.error?.message,
         code: result.error?.code,
+        deferred,
         ...(detailsReason ? { reason: detailsReason } : {}),
       });
     } else if (!quiet) {
-      log.info('api', `← ${command} OK (${elapsed}ms)`);
+      log.info('api', `← ${command} OK (${elapsed}ms)${deferred ? ' [deferred]' : ''}`);
     }
     scheduleAppletAuditFlush(command);
     return result;
@@ -448,6 +485,18 @@ async function invokeRustDataFromStatus<TInput, TOut>(
   throw err;
 }
 
+export async function uploadFrontendTelemetryEvents(
+  events: DesktopFrontendTelemetryEvent[],
+): Promise<FrontendTelemetryUploadResult> {
+  if (events.length === 0) {
+    return { accepted: 0, failed: 0, rejected: 0, uploaded: false };
+  }
+  return invokeRustDataFromStatus<{ events: DesktopFrontendTelemetryEvent[] }, FrontendTelemetryUploadResult>(
+    'frontend_telemetry_upload',
+    { events },
+  );
+}
+
 export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
   command: string,
   schema: GenMessage<TMsg>,
@@ -477,7 +526,7 @@ function normalizeGroupChatFederatedActors(
     return undefined;
   }
   return actors.map((actor) => ({
-    actor_did: actor.actorDid,
+    actor_did: actor.ptid,
     home_station_peer_id: actor.homeStationPeerId,
     home_station_domain: actor.homeStationDomain,
     federated_handle: actor.federatedHandle,
@@ -1028,6 +1077,10 @@ export interface AgentCollaborationCancelTaskInput {
   task_id: string;
 }
 
+export interface AgentCollaborationResumeTaskInput {
+  task_id: string;
+}
+
 export interface AgentCollaborationSubmitNodeResultInput {
   task_id: string;
   node_id: string;
@@ -1162,6 +1215,7 @@ export interface ProviderListItem {
   builtin: boolean;
   has_api_key: boolean;
   runtime_kind: 'cli' | 'direct';
+  version: number;
 }
 
 export interface ModelItem {
@@ -1779,7 +1833,9 @@ export interface ModelServiceConfig {
 }
 
 export interface ModelServiceReference {
-  slot: string;
+  slot?: string;
+  service?: string;
+  key?: string;
   model: string;
 }
 
@@ -2282,6 +2338,7 @@ export interface ProviderUpdateInput {
   runtime_kind?: string;
   cli_command?: string;
   protocol?: string;
+  version?: number;
 }
 
 export interface ProviderCheckInput {
@@ -2764,6 +2821,8 @@ export interface AppletProductWindowLaunchContext {
   mode?: 'product-shell' | 'lifecycle-smoothness';
   secondaryAppletId?: string;
   startPage?: string;
+  closeAfterRender?: boolean;
+  closeAfterRenderDelayMs?: number;
 }
 
 export interface AppletProductWindowRenderedInput {
@@ -3522,6 +3581,12 @@ export const api = {
       { task_id: taskId },
     ),
 
+  resumeAgentCollaborationTask: (taskId: string) =>
+    invokeRustDataFromStatus<AgentCollaborationResumeTaskInput, { task?: CollaborationTask }>(
+      'agent_collaboration_resume_task',
+      { task_id: taskId },
+    ),
+
   submitAgentCollaborationNodeResult: (input: AgentCollaborationSubmitNodeResultInput) =>
     invokeRustDataFromStatus<AgentCollaborationSubmitNodeResultInput, { task?: CollaborationTask }>(
       'agent_collaboration_submit_node_result',
@@ -3558,7 +3623,20 @@ export const api = {
     }),
 
   listAvailableModels: async () => {
-    const r = await invokeRustDataFromStatus<void, { providers?: any[] }>('provider_list_available_models');
+    const r = await invokeRustDataFromStatus<void, { providers?: any[]; models?: any[] }>('provider_list_available_models');
+    if (r.models && Array.isArray(r.models)) {
+      const models = r.models.map((m: any) => ({
+        id: String(m.id || ''),
+        display_name: String(m.display_name || m.id || ''),
+        provider_id: String(m.provider_id || ''),
+        provider_name: String(m.provider_name || m.provider_id || ''),
+        type: String(m.type || 'chat'),
+        context_window: Number(m.context_window || 0),
+        enabled: Boolean(m.enabled ?? true),
+        runtime_kind: String(m.runtime_kind || 'direct'),
+      } as AvailableModel));
+      return { models, default: models[0]?.id || '' };
+    }
     const models: AvailableModel[] = (r.providers || []).flatMap((p) => {
       const cfg = parseJSONSafe(p.config_json);
       const runtimeKind = String(cfg.runtime_kind || cfg.runtimeKind || cfg.runtime || '').trim().toLowerCase();
@@ -3566,29 +3644,50 @@ export const api = {
       const normalizedRuntimeKind = runtimeKind === 'cli' || cliCommand ? 'cli' : 'direct';
       const providerModels = Array.isArray(p.models) ? p.models : [];
       if (providerModels.length > 0) {
-        return providerModels.map((model: any) => ({
-          id: model.id || p.check_model || `${p.id}:default`,
-          display_name: model.display_name || model.id || p.check_model || `${p.id}:default`,
-          provider_id: p.id,
-          provider_name: p.name || p.id,
-          type: model.type || 'chat',
-          context_window: Number(model.context_window || 0),
-          enabled: Boolean(model.enabled !== false),
-          function_call: Boolean(model.function_call),
-          vision: Boolean(model.vision),
-          reasoning: Boolean(model.reasoning),
-          search: Boolean(model.search),
-          image_output: Boolean(model.image_output),
-          video: Boolean(model.video),
-          protocol_override: model.protocol_override || p.protocol_override || undefined,
-          runtime_kind: normalizedRuntimeKind,
-          cli_command: cliCommand || undefined,
-        }));
+        return providerModels
+          .map((model: any, idx: number) => {
+            const rawId = String(model.id || '').trim();
+            const displayName = String(model.display_name || '').trim();
+            let resolvedId = rawId;
+            if (!resolvedId) {
+              if (p.check_model) {
+                resolvedId = String(p.check_model).trim();
+              } else if (displayName) {
+                resolvedId = `${p.id}:${displayName.toLowerCase().replace(/\s+/g, '-')}`;
+              } else {
+                resolvedId = `${p.id}:model-${idx}`;
+              }
+            }
+            return { model, id: resolvedId, displayName };
+          })
+          .filter(({ id }) => id.length > 0)
+          .map(({ model, id: mid, displayName }) => {
+            return {
+              id: mid,
+              display_name: displayName || mid,
+              provider_id: p.id,
+              provider_name: p.name || p.id,
+              type: model.type || 'chat',
+              context_window: Number(model.context_window || 0),
+              enabled: Boolean(model.enabled),
+              function_call: Boolean(model.function_call),
+              vision: Boolean(model.vision),
+              reasoning: Boolean(model.reasoning),
+              search: Boolean(model.search),
+              image_output: Boolean(model.image_output),
+              video: Boolean(model.video),
+              protocol_override: model.protocol_override || p.protocol_override || undefined,
+              runtime_kind: normalizedRuntimeKind,
+              cli_command: cliCommand || undefined,
+            };
+          });
       }
-      const fallbackId = p.check_model || cfg.default_model || `${p.id}:default`;
+      const fallbackCheckModel = String(p.check_model || '').trim();
+      const cfgDefault = String(cfg.default_model || '').trim();
+      const fallbackId = fallbackCheckModel || cfgDefault || `${p.id}:default`;
       return [{
         id: fallbackId,
-        display_name: fallbackId,
+        display_name: fallbackId === `${p.id}:default` ? 'Default' : fallbackId,
         provider_id: p.id,
         provider_name: p.name || p.id,
         type: 'chat',
@@ -3611,12 +3710,13 @@ export const api = {
       mapAIChatProviderToDetail(r.provider || {}),
     ),
 
-  updateProvider: (id: string, data: { api_key: string; base_url: string; enabled: boolean }) =>
+  updateProvider: (id: string, data: { api_key?: string; base_url: string; enabled: boolean; version?: number }) =>
     invokeRustDataFromStatus<ProviderUpdateInput, { provider: any }>('provider_update', {
         id,
         enabled: data.enabled,
-        key_vaults: JSON.stringify({ api_key: data.api_key || '' }),
+        ...(data.api_key ? { key_vaults: JSON.stringify({ api_key: data.api_key }) } : {}),
         config_json: JSON.stringify({ base_url: data.base_url || '' }),
+        version: data.version ?? 0,
     }),
 
   checkProvider: (id: string, data: { api_key?: string; base_url?: string; model?: string }) =>
@@ -3756,6 +3856,22 @@ export const api = {
     invokeRustDataFromStatus<AccountUnlockInput, { ok: boolean; account_id: string }>('account_relink_pin', {
       account_id: accountId,
       pin,
+    }),
+
+  accountBeginPinRecovery: (accountId: string) =>
+    invokeRustDataFromStatus<{ id: string }, { recovery_id: string; provider: string }>('account_begin_pin_recovery', {
+      id: accountId,
+    }),
+
+  accountAuthorizePinRecovery: (recoveryId: string) =>
+    invokeRustDataFromStatus<{ recovery_id: string }, { ok: boolean }>('account_authorize_pin_recovery', {
+      recovery_id: recoveryId,
+    }),
+
+  accountResetPin: (recoveryId: string, newPin: string) =>
+    invokeRustDataFromStatus<{ recovery_id: string; new_pin: string }, { ok: boolean; local_account_id: string }>('account_reset_pin', {
+      recovery_id: recoveryId,
+      new_pin: newPin,
     }),
 
   // Notebook / Documents
@@ -4458,6 +4574,39 @@ export const api = {
   federationHealth: () =>
     invokeRustProto('federation_health', FederationHealthViewSchema),
 
+  federationCatalogSearch: (params: {
+    federation_id: string;
+    prefix: string;
+    station_id?: string;
+    page_size?: number;
+  }) =>
+    invokeRustProto('federation_catalog_search', FederationCatalogSearchResponseSchema, params),
+
+  // Federation Lifecycle (Governance Subserver)
+  federationListFederations: () =>
+    invokeRustProto('federation_list_federations', ListFederationsResponseSchema),
+
+  federationCreate: (params: { name: string; description?: string; policy_type?: string }) =>
+    invokeRustProto('federation_create', CreateFederationResponseSchema, params),
+
+  federationJoin: (params: {
+    federation_endpoint?: string;
+    federation_id?: string;
+    message?: string;
+  }) =>
+    invokeRustProto('federation_join', JoinFederationResponseSchema, params),
+
+  federationLeave: (params: { federation_id: string; reason?: string }) =>
+    invokeRustProto('federation_leave', LeaveFederationResponseSchema, params),
+
+  federationDelete: (params: { federation_id: string }) =>
+    invokeRustProto('federation_delete', DeleteFederationResponseSchema, params),
+
+  federationListMemberStations: (federationId: string) =>
+    invokeRustProto('federation_list_member_stations', ListMemberStationsResponseSchema, {
+      federation_id: federationId,
+    }),
+
   friendChatListSessions: (limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_sessions', GetSessionsResponseSchema, { limit, offset }),
 
@@ -4860,8 +5009,6 @@ export const api = {
   // The Rust layer pins `content` to "" regardless of what the JS
   // layer passes; it is kept in the signature for source compat
   // with old callers but a non-empty value is silently dropped.
-  // See `modules/identity/groupSenderKeys.ts` for the only correct
-  // entry point.
   groupChatSendMessage: (
     groupUlid: string,
     content: string,
@@ -5503,8 +5650,9 @@ function parseJSONSafe(input?: string): Record<string, any> {
 function mapAIChatProviderToListItem(item: any): ProviderListItem {
   const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
-  const runtimeKind = String(cfg.runtime_kind || cfg.runtimeKind || cfg.runtime || '').trim().toLowerCase();
-  const hasCliCommand = Boolean(String(cfg.cli_command || cfg.cliCommand || '').trim());
+  const runtimeKind = String(item.runtime_kind || cfg.runtime_kind || cfg.runtimeKind || '').trim().toLowerCase();
+  const hasCliCommand = Boolean(String(item.cli_command || cfg.cli_command || cfg.cliCommand || '').trim());
+  const hasKey = item.credential_status === 'configured' || Boolean(keyVaults.api_key || keyVaults.key || '');
   return {
     id: item.id,
     name: item.name || '',
@@ -5512,14 +5660,17 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     logo: item.logo || undefined,
     enabled: Boolean(item.enabled),
     builtin: Boolean(item.builtin),
-    has_api_key: Boolean(keyVaults.api_key || keyVaults.key || ''),
+    has_api_key: hasKey,
     runtime_kind: runtimeKind === 'cli' || hasCliCommand ? 'cli' : 'direct',
+    version: Number(item.version || 0),
   };
 }
 
 function mapAIChatProviderToDetail(item: any): ProviderDetail {
   const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
+  const runtimeKind = String(item.runtime_kind || cfg.runtime_kind || cfg.runtimeKind || '').trim().toLowerCase();
+  const hasCliCommand = Boolean(String(item.cli_command || cfg.cli_command || cfg.cliCommand || '').trim());
   const checkModel = item.check_model || cfg.default_model || 'default';
   const providerModels = Array.isArray(item.models)
     ? item.models
@@ -5547,24 +5698,26 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     .filter((model: ModelItem | null): model is ModelItem => Boolean(model));
   return {
     ...mapAIChatProviderToListItem(item),
-    home_url: cfg.home_url || '',
-    api_key_url: cfg.api_key_url || '',
-    api_key: keyVaults.api_key || '',
-    base_url: cfg.base_url || '',
-    default_base_url: cfg.default_base_url || cfg.base_url || '',
-    cli_command: cfg.cli_command || cfg.cliCommand || '',
-    show_api_key: cfg.show_api_key ?? cfg.showApiKey,
-    show_checker: true,
+    home_url: item.home_url || cfg.home_url || '',
+    api_key_url: item.api_key_url || cfg.api_key_url || '',
+    api_key: item.api_key || keyVaults.api_key || '',
+    base_url: item.base_url || cfg.base_url || '',
+    default_base_url: item.base_url || cfg.default_base_url || cfg.base_url || '',
+    cli_command: item.cli_command || cfg.cli_command || cfg.cliCommand || '',
+    show_api_key: item.show_api_key ?? cfg.show_api_key ?? cfg.showApiKey,
+    show_checker: item.show_checker ?? true,
     check_model: checkModel,
     models: models.length > 0
       ? models
-      : [{
-        id: checkModel,
-        display_name: checkModel,
-        type: 'chat',
-        enabled: true,
-        context_window: 0,
-      }],
+      : runtimeKind === 'cli' || hasCliCommand
+        ? []
+        : [{
+          id: checkModel,
+          display_name: checkModel,
+          type: 'chat',
+          enabled: true,
+          context_window: 0,
+        }],
   };
 }
 

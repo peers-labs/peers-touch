@@ -1,6 +1,10 @@
 ---
 name: "pt-execution-plan-guardian"
-description: "Keeps work tied to plan sources, scope, architecture rules, gates, and evidence, and governs HOW to execute: parallelize with subagents for speed, stay architecture-conformant, and fix root causes instead of patching. Invoke when executing, continuing (继续), accelerating (加速/多 subagent), fixing, merging, or reporting planned work."
+description: "Executes an approved plan without architecture or scope drift, preserving dependency order, cutovers, gates, and evidence. Invoke only after a formal plan exists when implementing, continuing, merging, or reporting planned work."
+stage: "EXECUTE"
+requires: ["accepted execution plan with status table"]
+produces: ["code changes", "tests", "evidence", "updated plan status"]
+next: "pt-github-commit"
 ---
 
 # Execution Plan Guardian
@@ -8,6 +12,32 @@ description: "Keeps work tied to plan sources, scope, architecture rules, gates,
 Use this skill to prevent plan drift. It is mandatory whenever a task is expected
 to follow an existing design, execution plan, acceptance checklist, migration
 plan, bug-fix protocol, or readiness gate.
+
+## Stage Contract
+
+This skill owns **EXECUTE** only.
+
+```text
+accepted architecture
+  -> pt-architecture-execution-methodology
+  -> approved formal execution plan
+  -> pt-execution-plan-guardian
+  -> implementation, verification, cutover, and evidence
+```
+
+It consumes a plan; it does not create or redesign one.
+
+For architecture-level or cross-layer work:
+
+- Missing accepted architecture -> `EXECUTION_BLOCKED_BY_DESIGN`.
+- Accepted architecture but missing approved plan -> `EXECUTION_BLOCKED_BY_PLAN`.
+- Plan execution exposes an undefined architecture semantic ->
+  `DESIGN_AMENDMENT_REQUIRED`.
+- Code reality invalidates plan inventory/dependencies but not architecture ->
+  `PLAN_AMENDMENT_REQUIRED`.
+
+Stop and route to the owning skill. Do not repair DESIGN or PLAN inside an
+execution turn.
 
 ## Invoke When
 
@@ -29,6 +59,10 @@ plan, bug-fix protocol, or readiness gate.
 Do not use this skill for isolated one-file edits that have no plan/spec source,
 unless the user asks for completion status or readiness.
 
+Do not treat a design document as an execution plan. Architecture says what the
+target state permits; an execution plan supplies workstream IDs, dependencies,
+cutovers, gates, and evidence.
+
 ## Required Discipline
 
 The agent must not say "done", "completed", "ready", or "usable" without naming
@@ -43,7 +77,9 @@ Every execution or progress report must distinguish:
 - Unverified or explicitly not implemented behavior.
 
 If an existing plan document cannot be found, say so before executing and treat
-the current work as an ad hoc task with a temporary acceptance checklist.
+an isolated, non-architectural task as ad hoc with a temporary acceptance
+checklist. Architecture migrations and cross-layer refactors must stop with
+`EXECUTION_BLOCKED_BY_PLAN`; they may not proceed ad hoc.
 
 ## Standing Directive
 
@@ -67,6 +103,18 @@ the user only says "继续" / "continue" without repeating the details:
 
 ## Workflow
 
+### 0. Validate Stage Preconditions
+
+Before any code edit, verify:
+
+- Architecture status is accepted/active where architecture is required.
+- A formal execution plan exists and is approved.
+- Requested work maps to a plan workstream/task ID.
+- Dependencies for that task are complete.
+- Required cutover, deletion, gates, and evidence are defined.
+
+If not, return the matching blocked/amendment state from the Stage Contract.
+
 ### 1. Find Plan Sources
 
 Before execution or readiness reporting, identify the authoritative sources in
@@ -80,12 +128,14 @@ this order:
 5. User-confirmed decisions from the current conversation.
 
 Output a `Plan Source` list with paths or explicitly state `No formal plan
-source found`.
+source found`. For architecture work, `No formal plan source found` blocks
+execution.
 
 ### 2. Bind Scope
 
 Map the requested work to the plan:
 
+- `Workstream / Task ID`: the exact plan unit being executed.
 - `In Scope`: plan items or user decisions this task is allowed to change.
 - `Out of Scope`: plan items that remain untouched.
 - `Local Decision`: choices made for this task that are not yet in the formal
@@ -95,12 +145,18 @@ Map the requested work to the plan:
 If the task uses informal phase names, explicitly say whether those phases are
 local to the conversation or belong to the formal plan.
 
+A local decision may choose implementation detail only within the accepted
+architecture and plan. It may not change topology, ownership, contracts,
+invariants, thresholds, cutover policy, or compatibility strategy.
+
 ### 3. Define Acceptance
 
 Before coding, define acceptance criteria from the plan:
 
 - Required behavior.
 - Required failure behavior.
+- Required architecture IDs and plan task IDs.
+- Required old-path deletion/search result.
 - Required evidence files or commands.
 - Required docs/progress updates, if the plan requires them.
 
@@ -128,10 +184,17 @@ independent units and check whether they can run concurrently:
 **During implementation:**
 
 - Do not broaden scope silently.
+- Execute only dependency-ready task IDs.
 - Fix root causes at the architecture-assigned layer. Do not patch: no
   compatibility shims, silent fallbacks, error-swallowing, or special-case hacks
   to force a pass. If a real fix is blocked, stop and surface it instead of
   papering over it.
+- If implementation reveals missing retry, replay, ordering, cancellation,
+  overload, auth, lifecycle, or data-plane semantics, stop with
+  `DESIGN_AMENDMENT_REQUIRED`.
+- If the architecture remains valid but current inventory, dependency order,
+  deliverables, or gates are wrong/incomplete, stop with
+  `PLAN_AMENDMENT_REQUIRED`.
 - Do not replace planned architecture with a local shortcut without calling it
   out as `Local-only` + `Risk`.
 - Do not rename ad hoc work as formal plan completion.
@@ -149,7 +212,7 @@ non-trivial:
 - User decision: <if applicable>
 
 **Scope Completed**
-- <formal workstream or local task>: <what was actually completed>
+- `<workstream/task ID>`: <what was actually completed>
 
 **Evidence**
 - `<command>`: PASS/FAIL/NOT RUN
@@ -176,11 +239,18 @@ readiness document instead of a free-form claim.
 - "Local-only" means the implementation does not yet satisfy the planned
   production architecture, such as Station Store, policy distribution, revoke,
   rollback, audit ingestion, or cross-host parity.
+- "Plan ready" is never a Guardian claim; plan readiness belongs to
+  `pt-architecture-execution-methodology`.
+- "Architecture accepted" is never a Guardian claim; architecture acceptance
+  belongs to the owner/reviewer after `pt-architecture-design-methodology`.
 
 ## Anti-Patterns
 
 Never:
 
+- Execute an architecture migration from `design.md` alone.
+- Author missing architecture decisions or execution-plan phases while coding.
+- Continue after `DESIGN_AMENDMENT_REQUIRED` or `PLAN_AMENDMENT_REQUIRED`.
 - Say "Phase 3 completed" without specifying which plan owns Phase 3.
 - Use a local task phase name that collides with a formal plan phase without
   clarification.

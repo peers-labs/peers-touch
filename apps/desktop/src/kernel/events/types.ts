@@ -174,12 +174,36 @@ export interface RealtimeGroupSkdmEnvelopeDeliveredPayload {
   deliveredTsUnixMs: number;
 }
 
+export interface RealtimeEnvelopeDeliveredPayload {
+  eventId: string;
+  inboxItemId: string;
+  envelopeId: string;
+  conversationId: string;
+  payloadType: number;
+  payloadBytes: Uint8Array;
+  senderPtid: string;
+  senderDeviceId: string;
+  recipientDeviceId: string;
+  membershipEpoch: number;
+  queuedTsUnixMs: number;
+}
+
 export interface RealtimeConversationSettingsChangedPayload {
   eventId: string;
   conversationKind: 'friend' | 'group';
   containerUlid: string;
   actorId: string;
   changedTsUnixMs: number;
+}
+
+export interface RealtimeSocialGraphEventPayload {
+  eventId: string;
+  kind: 'friend_request_received' | 'friend_request_accepted' | 'friend_request_rejected' | 'conversation_created' | 'unfriended';
+  actorDid: string;
+  targetDid: string;
+  requestId: string;
+  conversationId: string;
+  actorDisplayName: string;
 }
 
 export interface RealtimeMessageMutationPayload {
@@ -291,7 +315,9 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE]: RealtimeGroupMembershipChangePayload;
   [EVENT.REALTIME_GROUP_FEDERATION_EVENT]: RealtimeGroupFederationEventPayload;
     [EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED]: RealtimeGroupSkdmEnvelopeDeliveredPayload;
+  [EVENT.REALTIME_ENVELOPE_DELIVERED]: RealtimeEnvelopeDeliveredPayload;
   [EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED]: RealtimeConversationSettingsChangedPayload;
+  [EVENT.REALTIME_SOCIAL_GRAPH_EVENT]: RealtimeSocialGraphEventPayload;
   [EVENT.MOMENT_CREATED]: MomentCreatedPayload;
   [EVENT.MOMENT_DELETED]: MomentDeletedPayload;
   [EVENT.MOMENT_COMMENTED]: MomentCommentedPayload;

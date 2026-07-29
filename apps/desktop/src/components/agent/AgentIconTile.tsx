@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import type { Agent } from '../../services/desktop_api';
 
-export type AgentIconSource = Partial<Pick<Agent, 'title' | 'name' | 'description' | 'tags'>>;
+export type AgentIconSource = Partial<Pick<Agent, 'title' | 'name' | 'description' | 'tags' | 'avatar'>>;
 
 export function getAgentIcon(agent?: AgentIconSource | null): LucideIcon {
   const source = [agent?.title, agent?.name, agent?.description, agent?.tags].join(' ').toLowerCase();
@@ -22,23 +22,30 @@ export function getAgentIcon(agent?: AgentIconSource | null): LucideIcon {
   return Bot;
 }
 
+const EMOJI_RE = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u;
+
 export function AgentIconTile({
   agent,
   size,
   selected = false,
   subtle = false,
+  onClick,
 }: {
   agent?: AgentIconSource | null;
   size: number;
   selected?: boolean;
   subtle?: boolean;
+  onClick?: () => void;
 }) {
   const { token } = theme.useToken();
+  const emoji = agent?.avatar && EMOJI_RE.test(agent.avatar) ? agent.avatar : null;
   const Icon = getAgentIcon(agent);
   const color = selected ? token.colorPrimary : token.colorTextSecondary;
 
   return (
     <span
+      role={onClick ? 'button' : undefined}
+      onClick={onClick}
       style={{
         width: size,
         height: size,
@@ -49,9 +56,12 @@ export function AgentIconTile({
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
+        cursor: onClick ? 'pointer' : undefined,
+        fontSize: Math.max(14, Math.round(size * 0.5)),
+        lineHeight: 1,
       }}
     >
-      <Icon size={Math.max(14, Math.round(size * 0.5))} />
+      {emoji || <Icon size={Math.max(14, Math.round(size * 0.5))} />}
     </span>
   );
 }

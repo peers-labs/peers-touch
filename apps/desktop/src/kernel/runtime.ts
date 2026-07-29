@@ -61,6 +61,7 @@ interface RuntimeRecord {
 }
 
 const records = new Map<string, RuntimeRecord>();
+const pendingPageAcquires = new Map<string, Map<string, RuntimePageAcquireReason>>();
 
 function nowMs(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -77,6 +78,49 @@ export function registerRuntime(desc: RuntimeDescriptor): void {
     bootstrapSequence: 0,
     bootstrappedActorId: null,
   });
+}
+
+function queuePendingPageAcquire(id: string, pageId: string, reason: RuntimePageAcquireReason): void {
+  let pending = pendingPageAcquires.get(id);
+  if (!pending) {
+    pending = new Map();
+    pendingPageAcquires.set(id, pending);
+  }
+  pending.set(pageId, reason);
+}
+
+function clearPendingPageAcquire(id: string, pageId: string): void {
+  const pending = pendingPageAcquires.get(id);
+  if (!pending) return;
+  pending.delete(pageId);
+  if (pending.size === 0) pendingPageAcquires.delete(id);
+}
+
+function runRuntimePageAcquire(
+  rec: RuntimeRecord,
+  pageId: string,
+  reason: RuntimePageAcquireReason,
+): void {
+  if (!rec.desc.acquirePage) return;
+  const t0 = nowMs();
+  Promise.resolve(rec.desc.acquirePage(pageId, reason))
+    .then(() => {
+      const ms = nowMs() - t0;
+      log.info('runtime', `${rec.desc.id}:page-acquire`, { pageId, reason, ms: Math.round(ms) });
+      recordRuntimePageLease(rec.desc.id, pageId, reason, ms, 'acquire');
+    })
+    .catch((err) => {
+      log.warn('runtime', `${rec.desc.id}:page-acquire failed`, { pageId, reason, err });
+    });
+}
+
+function replayPendingPageAcquires(id: string, rec: RuntimeRecord): void {
+  const pending = pendingPageAcquires.get(id);
+  if (!pending || !rec.installed || !rec.desc.acquirePage) return;
+  pendingPageAcquires.delete(id);
+  for (const [pageId, reason] of pending) {
+    runRuntimePageAcquire(rec, pageId, reason);
+  }
 }
 
 export function listRuntimes(scope?: RuntimeScope): RuntimeDescriptor[] {
@@ -97,6 +141,7 @@ export function installRuntime(id: string): void {
     const ms = nowMs() - t0;
     log.info('runtime', `${id}:install`, { ms: Math.round(ms) });
     recordRuntimeInstall(id, ms);
+    replayPendingPageAcquires(id, rec);
   } catch (err) {
     log.error('runtime', `${id}:install failed`, err);
   }
@@ -154,21 +199,16 @@ export async function reconcileRuntime(id: string, reason: string): Promise<void
 
 export function acquireRuntimePage(id: string, pageId: string, reason: RuntimePageAcquireReason): void {
   const rec = records.get(id);
-  if (!rec || !rec.installed || !rec.desc.acquirePage) return;
-  const t0 = nowMs();
-  Promise.resolve(rec.desc.acquirePage(pageId, reason))
-    .then(() => {
-      const ms = nowMs() - t0;
-      log.info('runtime', `${id}:page-acquire`, { pageId, reason, ms: Math.round(ms) });
-      recordRuntimePageLease(id, pageId, reason, ms, 'acquire');
-    })
-    .catch((err) => {
-      log.warn('runtime', `${id}:page-acquire failed`, { pageId, reason, err });
-    });
+  if (!rec || !rec.installed) {
+    queuePendingPageAcquire(id, pageId, reason);
+    return;
+  }
+  runRuntimePageAcquire(rec, pageId, reason);
 }
 
 export function releaseRuntimePage(id: string, pageId: string, reason: RuntimePageReleaseReason): void {
   const rec = records.get(id);
+  clearPendingPageAcquire(id, pageId);
   if (!rec || !rec.installed || !rec.desc.releasePage) return;
   const t0 = nowMs();
   Promise.resolve(rec.desc.releasePage(pageId, reason))

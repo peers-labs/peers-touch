@@ -4,8 +4,8 @@ use crate::contracts::{
     AgentCollaborationClaimExecutorInput, AgentCollaborationCreateInput,
     AgentCollaborationGetInput, AgentCollaborationHeartbeatLeaseInput,
     AgentCollaborationListEventsInput, AgentCollaborationListInput,
-    AgentCollaborationReleaseLeaseInput, AgentCollaborationSubmitNodeResultInput,
-    AgentCollaborationSubscribeInput, StubPayload,
+    AgentCollaborationReleaseLeaseInput, AgentCollaborationResumeTaskInput,
+    AgentCollaborationSubmitNodeResultInput, AgentCollaborationSubscribeInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -313,6 +313,26 @@ pub fn agent_collaboration_cancel_task(
     }
 }
 
+pub fn agent_collaboration_resume_task(
+    input: AgentCollaborationResumeTaskInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let task_id = input.task_id.trim();
+    if task_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "task_id is required", None);
+    }
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/collaboration/resume",
+        token,
+        None,
+        Some(json!({ "taskId": task_id })),
+    ) {
+        Ok(result) => success_payload("agent_collaboration_resume_task", result),
+        Err(err) => err.into_app_result("Failed to resume collaboration task"),
+    }
+}
+
 pub fn agent_collaboration_submit_node_result(
     input: AgentCollaborationSubmitNodeResultInput,
     token: &str,
@@ -336,13 +356,13 @@ pub fn agent_collaboration_submit_node_result(
     }
     let body = json!({
         "taskId": task_id,
+        "nodeId": node_id,
+        "resultSummary": input.result_summary.trim(),
+        "status": input.status.unwrap_or_else(|| "completed".to_string()),
+        "turnId": input.turn_id.unwrap_or_default(),
+        "leaseId": lease_id,
+        "executorId": executor_id,
         "meta": {
-            "node_id": node_id,
-            "result_summary": input.result_summary.trim(),
-            "status": input.status.unwrap_or_else(|| "completed".to_string()),
-            "turn_id": input.turn_id.unwrap_or_default(),
-            "lease_id": lease_id,
-            "executor_id": executor_id,
             "source": "desktop.executor"
         }
     });

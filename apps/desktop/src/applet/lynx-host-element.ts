@@ -443,8 +443,10 @@ export class LynxHostElement extends HTMLElement {
       })
     }
 
-    // Local handler: events.subscribe — SDK long-polls for host→applet events
-    if (method === 'events.subscribe') {
+    // Local handler: events.subscribe without a topic is the Lynx host-event
+    // long-poll. Calls with params.topic must route to the Gateway so topic
+    // registration and unsubscribe state stay authoritative there.
+    if (method === 'events.subscribe' && !this.hasEventTopicParam(params)) {
       this.emitDebug('bridge.invoke.events.subscribe', { requestId }, 'debug')
       return this.handleEventSubscribe(requestId)
     }
@@ -534,6 +536,12 @@ export class LynxHostElement extends HTMLElement {
       return data as NativeModulesPayload
     }
     return {}
+  }
+
+  private hasEventTopicParam(params: unknown): boolean {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) return false
+    const topic = (params as { topic?: unknown }).topic
+    return typeof topic === 'string' && topic.trim().length > 0
   }
 
   private createBridgeResponse(options: BridgeResponseOptions): Record<string, unknown> {

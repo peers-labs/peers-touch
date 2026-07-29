@@ -210,7 +210,7 @@ func (s *ReviewService) runReview(
 	logger.Infof(ctx, "review goroutine started: turn_id=%s type=%s", turnID, reviewType)
 
 	// --- Step 1: Lease credential ----------------------------------------
-	credential, leaseErr := s.credentialPool.Lease(ctx, provider, domain.RotationRoundRobin)
+	credential, leaseErr := s.credentialPool.Lease(ctx, agentID, provider, domain.RotationRoundRobin)
 	if leaseErr != nil {
 		errorReason = fmt.Sprintf("credential lease failed: %v", leaseErr)
 		logger.Warnf(ctx, "review aborted (credential): turn_id=%s err=%v", turnID, leaseErr)
@@ -254,7 +254,7 @@ func (s *ReviewService) runReview(
 					_ = s.credentialPool.MarkError(ctx, credential.CredentialID)
 				}
 
-				retryCred, retryLeaseErr := s.credentialPool.Lease(ctx, provider, domain.RotationRoundRobin)
+				retryCred, retryLeaseErr := s.credentialPool.Lease(ctx, agentID, provider, domain.RotationRoundRobin)
 				if retryLeaseErr != nil {
 					errorReason = fmt.Sprintf("retry credential lease failed: %v", retryLeaseErr)
 					logger.Warnf(ctx, "review retry aborted (credential): turn_id=%s err=%v", turnID, retryLeaseErr)

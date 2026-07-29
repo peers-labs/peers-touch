@@ -506,6 +506,8 @@ pub struct ProviderUpdateInput {
     pub runtime_kind: Option<String>,
     pub cli_command: Option<String>,
     pub protocol: Option<String>,
+    #[serde(default)]
+    pub version: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -805,6 +807,17 @@ pub struct AccountUnlockInput {
 pub struct AccountRemovePinInput {
     pub account_id: String,
     pub pin: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountAuthorizePinRecoveryInput {
+    pub recovery_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountResetPinInput {
+    pub recovery_id: String,
+    pub new_pin: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1224,6 +1237,11 @@ pub struct AgentCollaborationCancelInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCollaborationCancelTaskInput {
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationResumeTaskInput {
     pub task_id: String,
 }
 
@@ -1909,4 +1927,52 @@ pub struct FederationVisibilityInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FederationResolveInput {
     pub handle: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationCatalogSearchInput {
+    pub federation_id: String,
+    pub prefix: String,
+    #[serde(default)]
+    pub station_id: Option<String>,
+    #[serde(default)]
+    pub page_size: Option<u32>,
+}
+
+// ─── Federation Lifecycle Inputs ────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationCreateInput {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub policy_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationJoinInput {
+    #[serde(default)]
+    pub federation_endpoint: String,
+    #[serde(default)]
+    pub federation_id: String,
+    #[serde(default)]
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationLeaveInput {
+    pub federation_id: String,
+    #[serde(default)]
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationListMemberStationsInput {
+    pub federation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationDeleteInput {
+    pub federation_id: String,
 }

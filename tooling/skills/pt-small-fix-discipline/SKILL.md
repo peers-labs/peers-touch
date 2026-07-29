@@ -41,6 +41,11 @@ layer owns this change and read it before editing:
 - Ask *why* the symptom is possible, not just *how* to silence it.
 - Identify the layer that should own this concern (ownership, persistence,
   contract, boundary). Fix it there, once, for all callers.
+- **Layer-ownership audit** (mandatory — same as `pt-god-view §3.3.1`):
+  1. What state is broken?
+  2. Who owns that state? (Station / Rust BFF / Frontend)
+  3. Does my proposed fix write to the owning layer?
+  If #3 is NO → reject the fix, propose the correct-layer solution.
 - If the same bug could recur in a sibling branch/runtime/path, you are at the
   wrong layer — go up.
 - Remove dead code the defect exposed as part of the root fix (AGENTS.md §6.1).

@@ -42,6 +42,9 @@ message StreamEvent {
     MomentEvent           moment                   = 20;
     GroupFederationEvent  group_federation_event   = 21;
       GroupSkdmEnvelopeDelivered group_skdm_envelope_delivered = 22;
+    EnvelopeDelivered         envelope_delivered               = 23;
+    LedgerEventDelivered      ledger_event_delivered           = 24;
+    SocialGraphEvent          social_graph_event               = 25;
   }
 }
 
@@ -300,4 +303,70 @@ message Resync {
 
   // Human-readable reason, for client logs only. Not parsed.
   string reason = 2;
+}
+
+// EnvelopeDelivered notifies a device that a new StationEnvelope has
+// been written to its durable inbox and is available for immediate
+// processing. Fat-push: the full payload is embedded so clients can
+// process without a round-trip fetch. Clients MUST still ACK via
+// POST /envelope/ack after successful processing.
+//
+// Deduplication: inbox_item_id is the canonical dedup key. A device
+// receiving the same inbox_item_id from both SSE push and resume poll
+// MUST process at-most-once and ACK idempotently.
+message EnvelopeDelivered {
+  string inbox_item_id = 1;
+  string envelope_id = 2;
+  string conversation_id = 3;
+  int32 payload_type = 4;
+  bytes payload_bytes = 5;
+  string sender_ptid = 6;
+  string sender_device_id = 7;
+  string recipient_device_id = 8;
+  int64 membership_epoch = 9;
+  int64 queued_ts_unix_ms = 10;
+}
+
+// LedgerEventDelivered pushes a new Federation governance event to connected
+// member Stations via SSE. The receiving Station verifies hash chain and
+// signatures before applying to local ledger. See wire-protocol.md §7.2.
+message LedgerEventDelivered {
+  string federation_id = 1;
+  uint64 seq = 2;
+  bytes  event_hash = 3;
+  bytes  prev_hash = 4;
+  string event_type = 5;
+  bytes  payload_bytes = 6;
+  bytes  payload_hash = 7;
+  bytes  actor_signature = 8;
+  bytes  station_signature = 9;
+  bytes  sequencer_signature = 10;
+  string actor_id = 11;
+  string actor_federated_handle = 12;
+  string station_peer_id = 13;
+  string sequencer_station_peer_id = 14;
+  int64  created_at_unix_ms = 15;
+}
+
+// SocialGraphEvent signals a change in the social relationship graph:
+// friend requests sent/accepted/rejected, new conversations created by
+// the social layer, or unfriend actions. Clients use this to refresh
+// the friend request list and conversation list immediately, replacing
+// indirect notification-based polling.
+message SocialGraphEvent {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    FRIEND_REQUEST_RECEIVED = 1;
+    FRIEND_REQUEST_ACCEPTED = 2;
+    FRIEND_REQUEST_REJECTED = 3;
+    CONVERSATION_CREATED = 4;
+    UNFRIENDED = 5;
+  }
+
+  Kind   kind = 1;
+  string actor_did = 2;
+  string target_did = 3;
+  string request_id = 4;
+  string conversation_id = 5;
+  string actor_display_name = 6;
 }

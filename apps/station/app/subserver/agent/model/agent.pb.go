@@ -2419,9 +2419,14 @@ type ExecuteTurnRequest struct {
 	KnowledgeResources []*KnowledgeResource `protobuf:"bytes,13,rep,name=knowledge_resources,json=knowledgeResources,proto3" json:"knowledge_resources,omitempty"`
 	// Reasoning effort level: "low" | "medium" | "high".
 	// Passed through to LLM providers as reasoning_effort where supported.
-	Effort        *string `protobuf:"bytes,14,opt,name=effort,proto3,oneof" json:"effort,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Effort *string `protobuf:"bytes,14,opt,name=effort,proto3,oneof" json:"effort,omitempty"`
+	// CLI execution fields — when cli_command is set, Station executes the CLI
+	// binary in an isolated workspace instead of routing to an LLM provider.
+	CliCommand     *string  `protobuf:"bytes,15,opt,name=cli_command,json=cliCommand,proto3,oneof" json:"cli_command,omitempty"`
+	RuntimeBackend *string  `protobuf:"bytes,16,opt,name=runtime_backend,json=runtimeBackend,proto3,oneof" json:"runtime_backend,omitempty"`
+	AllowedRoots   []string `protobuf:"bytes,17,rep,name=allowed_roots,json=allowedRoots,proto3" json:"allowed_roots,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ExecuteTurnRequest) Reset() {
@@ -2550,6 +2555,27 @@ func (x *ExecuteTurnRequest) GetEffort() string {
 		return *x.Effort
 	}
 	return ""
+}
+
+func (x *ExecuteTurnRequest) GetCliCommand() string {
+	if x != nil && x.CliCommand != nil {
+		return *x.CliCommand
+	}
+	return ""
+}
+
+func (x *ExecuteTurnRequest) GetRuntimeBackend() string {
+	if x != nil && x.RuntimeBackend != nil {
+		return *x.RuntimeBackend
+	}
+	return ""
+}
+
+func (x *ExecuteTurnRequest) GetAllowedRoots() []string {
+	if x != nil {
+		return x.AllowedRoots
+	}
+	return nil
 }
 
 type ExecuteTurnResponse struct {
@@ -3867,7 +3893,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xd5\x05\n" +
+	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xf2\x06\n" +
 	"\x12ExecuteTurnRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1d\n" +
@@ -3885,7 +3911,12 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\vmax_retries\x18\f \x01(\x05H\aR\n" +
 	"maxRetries\x88\x01\x01\x12^\n" +
 	"\x13knowledge_resources\x18\r \x03(\v2-.peers_touch.model.agent.v1.KnowledgeResourceR\x12knowledgeResources\x12\x1b\n" +
-	"\x06effort\x18\x0e \x01(\tH\bR\x06effort\x88\x01\x01B\b\n" +
+	"\x06effort\x18\x0e \x01(\tH\bR\x06effort\x88\x01\x01\x12$\n" +
+	"\vcli_command\x18\x0f \x01(\tH\tR\n" +
+	"cliCommand\x88\x01\x01\x12,\n" +
+	"\x0fruntime_backend\x18\x10 \x01(\tH\n" +
+	"R\x0eruntimeBackend\x88\x01\x01\x12#\n" +
+	"\rallowed_roots\x18\x11 \x03(\tR\fallowedRootsB\b\n" +
 	"\x06_modelB\v\n" +
 	"\t_providerB\v\n" +
 	"\t_identityB\x16\n" +
@@ -3894,7 +3925,9 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x0f_workspace_rootB\x16\n" +
 	"\x14_context_window_sizeB\x0e\n" +
 	"\f_max_retriesB\t\n" +
-	"\a_effort\"\xf6\x01\n" +
+	"\a_effortB\x0e\n" +
+	"\f_cli_commandB\x12\n" +
+	"\x10_runtime_backend\"\xf6\x01\n" +
 	"\x13ExecuteTurnResponse\x124\n" +
 	"\x04turn\x18\x01 \x01(\v2 .peers_touch.model.agent.v1.TurnR\x04turn\x12;\n" +
 	"\x05trace\x18\x02 \x01(\v2%.peers_touch.model.agent.v1.TurnTraceR\x05trace\x12S\n" +

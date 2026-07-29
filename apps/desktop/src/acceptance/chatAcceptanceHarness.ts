@@ -2,10 +2,10 @@ import { identityRuntime } from '../kernel/identityRuntime';
 import { api } from '../services/desktop_api';
 import type { GroupChatFederatedActorInput } from '../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../services/eventStream';
-import { ensureSkdmDistributed, encryptBytesForGroup } from '../modules/identity/groupSenderKeys';
+import { imServiceV1 } from '../services/im-service';
 import { useSessionStore } from '../store/session';
 import { createEncryptedChatPayloadBytes, decodeGroupMessages, useSocialChatStore } from '../store/socialChat';
-import type { GroupMessage, GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
+import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 
 interface LoginInput {
   account: string;
@@ -294,39 +294,23 @@ export function installChatAcceptanceHarness(): void {
       const social = useSocialChatStore.getState();
       await social.loadGroups();
       await social.loadGroupMembers(groupUlid);
-      const current = useSocialChatStore.getState();
-      const members = (current.groupMembers[groupUlid] || []) as GroupMember[];
-      const group = current.groups.find((item) => item.ulid === groupUlid);
-      const observedMembershipEpoch = group?.membershipEpoch ?? 0n;
-      const memberDids = members.map((member) => member.actorDid).filter((actorDid): actorDid is string => Boolean(actorDid));
-      await ensureSkdmDistributed(did, groupUlid, memberDids, {
-        membershipEpoch: observedMembershipEpoch,
-        members: members.map((member) => ({
-          actorDid: member.actorDid,
-          actorHomeStationPeerId: member.actorHomeStationPeerId,
-        })),
-      });
 
       const startedAt = Date.now();
       const lastIndex = startIndex + count - 1;
       for (let index = startIndex; index <= lastIndex; index += 1) {
         const content = `${prefix}-${String(index).padStart(4, '0')}`;
-        const encryptedPayloadB64 = await encryptBytesForGroup(
-          groupUlid,
-          createEncryptedChatPayloadBytes(content, [], type),
-        );
-        await api.groupChatSendMessage(
-          groupUlid,
-          '',
-          type,
-          undefined,
-          undefined,
-          undefined,
-          [],
-          encryptedPayloadB64,
-          undefined,
-          observedMembershipEpoch,
-        );
+        const plaintextBytes = createEncryptedChatPayloadBytes(content, [], type);
+        const ciphertext = await imServiceV1.mlsGroup.encrypt(groupUlid, plaintextBytes);
+        const { create: createProto } = await import('@bufbuild/protobuf');
+        const { StationEnvelopeSchema, EnvelopePayloadType } = await import('../gen/proto/domain/chat/envelope_pb');
+        const envelope = createProto(StationEnvelopeSchema, {
+          conversationId: groupUlid,
+          senderPtid: did,
+          payloadType: EnvelopePayloadType.COMMITTED_EVENT,
+          payloadBytes: ciphertext,
+          idempotencyKey: crypto.randomUUID(),
+        });
+        await imServiceV1.envelope.submit(envelope);
       }
       await social.loadMessages(groupUlid, 'group').catch(() => {});
       return {

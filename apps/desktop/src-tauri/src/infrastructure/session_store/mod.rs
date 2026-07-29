@@ -65,17 +65,19 @@ fn now_unix_secs() -> u64 {
 }
 
 fn sessions_dir() -> Result<PathBuf, SessionStoreError> {
-    storage::app_file_path("desktop", StorageKind::Data, &["auth", "sessions"])
+    let station_scope = crate::infrastructure::local_scope::active_station_scope();
+    storage::app_file_path("desktop", StorageKind::Data, &["auth", "sessions", &station_scope])
         .map_err(SessionStoreError::from)
 }
 
 /// Returns the on-disk path for a given local account id.
 fn session_file_path(account_id: &str) -> Result<PathBuf, SessionStoreError> {
+    let station_scope = crate::infrastructure::local_scope::active_station_scope();
     let file_name = format!("{}.json", storage::resolve_user_scope(Some(account_id)));
     storage::app_file_path(
         "desktop",
         StorageKind::Data,
-        &["auth", "sessions", &file_name],
+        &["auth", "sessions", &station_scope, &file_name],
     )
     .map_err(SessionStoreError::from)
 }

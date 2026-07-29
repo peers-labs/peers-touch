@@ -1,0 +1,34 @@
+peers:
+  store:
+    rds:
+      gorm:
+        - name: sqlite
+          driver: sqlite
+          enable: true
+          default: true
+          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1
+        - name: agent
+          driver: sqlite
+          enable: true
+          default: false
+          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1
+        - name: oss
+          driver: sqlite
+          enable: true
+          default: false
+          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1
+        - name: ai_chat
+          driver: sqlite
+          enable: true
+          default: false
+          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1
+        - name: applet_store
+          driver: sqlite
+          enable: true
+          default: false
+          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1
+        - name: launcher
+          driver: sqlite
+          enable: true
+          default: false
+          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1

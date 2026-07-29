@@ -89,6 +89,23 @@ export function getBootTrace(): ReadonlyArray<PhaseEntry> {
 
 // ── Critical runtime install ──────────────────────────────────────────────
 
+const BOOTSTRAP_TIMEOUT_MS = 5000;
+
+async function bootstrapWithTimeout(runtimeId: string, actorId: string | null): Promise<void> {
+  const timeout = new Promise<'timeout'>((resolve) =>
+    setTimeout(() => resolve('timeout'), BOOTSTRAP_TIMEOUT_MS),
+  );
+  const bootstrap = bootstrapRuntime(runtimeId, actorId).then(() => 'done' as const);
+
+  const result = await Promise.race([bootstrap, timeout]);
+  if (result === 'timeout') {
+    log.warn('boot', `bootstrap.timeout: ${runtimeId} exceeded ${BOOTSTRAP_TIMEOUT_MS}ms — entering degraded mode`, {
+      runtimeId,
+      timeoutMs: BOOTSTRAP_TIMEOUT_MS,
+    });
+  }
+}
+
 /**
  * Install all `app`-scope runtimes immediately and the `session`-scope
  * runtimes whose ids appear in `criticalSessionRuntimes`. The pipeline
@@ -102,12 +119,12 @@ export async function installCriticalRuntimes(
   markPhaseStart('runtime:critical');
   for (const desc of listRuntimes('app')) {
     installRuntime(desc.id);
-    await bootstrapRuntime(desc.id, null);
+    await bootstrapWithTimeout(desc.id, null);
   }
   if (actorId) {
     for (const id of criticalSessionRuntimes) {
       installRuntime(id);
-      await bootstrapRuntime(id, actorId);
+      await bootstrapWithTimeout(id, actorId);
     }
   }
   markPhaseEnd('runtime:critical', { actorId, critical: criticalSessionRuntimes });
@@ -128,7 +145,7 @@ export async function installIdleRuntimes(
   for (const desc of listRuntimes('session')) {
     if (criticalSessionRuntimes.includes(desc.id)) continue;
     installRuntime(desc.id);
-    await bootstrapRuntime(desc.id, actorId);
+    await bootstrapWithTimeout(desc.id, actorId);
     installed.push(desc.id);
   }
   markPhaseEnd('runtime:idle', { installed });
@@ -143,26 +160,12 @@ export function tearDownSessionRuntimes(): void {
 
 // ── Idle scheduling ──────────────────────────────────────────────────────
 
-type IdleCallback = (deadline: { didTimeout: boolean; timeRemaining(): number }) => void;
-type RequestIdleCallback = (cb: IdleCallback, opts?: { timeout?: number }) => number;
-type CancelIdleCallback = (handle: number) => void;
+// Legacy bridge: existing consumers import scheduleIdle from boot.ts.
+// Phase 1a migration: new code should import { scheduler } from './scheduler'.
+// This re-export uses the scheduler's idleChunk lane internally.
 
-interface IdleCapableWindow {
-  requestIdleCallback?: RequestIdleCallback;
-  cancelIdleCallback?: CancelIdleCallback;
-}
+import { scheduler } from './scheduler';
 
 export function scheduleIdle(callback: () => void, timeout = 1500): () => void {
-  if (typeof window === 'undefined') {
-    return () => undefined;
-  }
-  const w = window as unknown as IdleCapableWindow;
-  if (typeof w.requestIdleCallback === 'function') {
-    const handle = w.requestIdleCallback(() => callback(), { timeout });
-    return () => {
-      if (typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(handle);
-    };
-  }
-  const handle = window.setTimeout(callback, 200);
-  return () => window.clearTimeout(handle);
+  return scheduler.idleChunk('legacy:scheduleIdle', callback, timeout);
 }

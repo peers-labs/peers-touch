@@ -1,8 +1,8 @@
 # Federation Architecture — 数据模型
 
-> **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-05-31 | **Updated**: 2026-05-31
+> **Status**: accepted
+> **Version**: v0.2
+> **Created**: 2026-05-31 | **Updated**: 2026-07-21
 > **Owner**: Architecture Team
 
 ---
@@ -420,7 +420,7 @@ model/domain/federation/federation_membership.proto
 model/domain/federation/federation_policy.proto
 model/domain/federation/federation_manifest.proto
 model/domain/federation/federation_sync.proto
-model/domain/federation/federation_plaza.proto
+model/domain/federation/federation_discovery.proto
 ```
 
 跨 Station 同步 API 使用 proto bytes，不使用 JSON。
@@ -437,4 +437,4 @@ FederationCatalogSearchRequest
   pagination
 ```
 
-没有 `federation_id` 的 Catalog API 只能作为 legacy / advanced handle discovery，不能作为联邦广场的默认发现入口。
+没有 `federation_id` 的 Catalog API 只能作为 legacy / advanced handle discovery，不能作为 Federation scoped 发现的默认入口。

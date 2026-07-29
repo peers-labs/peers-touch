@@ -60,8 +60,11 @@ type FederationHealthView struct {
 	// human-readable diagnostics.
 	BootStartedAt string `protobuf:"bytes,9,opt,name=boot_started_at,proto3" json:"boot_started_at,omitempty"`
 	UptimeSeconds int64  `protobuf:"varint,10,opt,name=uptime_seconds,proto3" json:"uptime_seconds,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Governance layer sync status. Empty/unset when no federation
+	// subserver is running (pre-Phase-1 stations).
+	GovernanceSyncStatus string `protobuf:"bytes,11,opt,name=governance_sync_status,proto3" json:"governance_sync_status,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *FederationHealthView) Reset() {
@@ -164,11 +167,18 @@ func (x *FederationHealthView) GetUptimeSeconds() int64 {
 	return 0
 }
 
+func (x *FederationHealthView) GetGovernanceSyncStatus() string {
+	if x != nil {
+		return x.GovernanceSyncStatus
+	}
+	return ""
+}
+
 var File_domain_federation_federation_health_proto protoreflect.FileDescriptor
 
 const file_domain_federation_federation_health_proto_rawDesc = "" +
 	"\n" +
-	")domain/federation/federation_health.proto\x12\x1fpeers_touch.model.federation.v1\"\xae\x03\n" +
+	")domain/federation/federation_health.proto\x12\x1fpeers_touch.model.federation.v1\"\xe6\x03\n" +
 	"\x14FederationHealthView\x12\x14\n" +
 	"\x05ready\x18\x01 \x01(\bR\x05ready\x126\n" +
 	"\x16peers_in_routing_table\x18\x02 \x01(\x05R\x16peers_in_routing_table\x12(\n" +
@@ -180,7 +190,8 @@ const file_domain_federation_federation_health_proto_rawDesc = "" +
 	"\x0estation_domain\x18\b \x01(\tR\x0estation_domain\x12(\n" +
 	"\x0fboot_started_at\x18\t \x01(\tR\x0fboot_started_at\x12&\n" +
 	"\x0euptime_seconds\x18\n" +
-	" \x01(\x03R\x0euptime_secondsBLZJgithub.com/peers-labs/peers-touch/station/frame/touch/federation/api/pb;pbb\x06proto3"
+	" \x01(\x03R\x0euptime_seconds\x126\n" +
+	"\x16governance_sync_status\x18\v \x01(\tR\x16governance_sync_statusBLZJgithub.com/peers-labs/peers-touch/station/frame/touch/federation/api/pb;pbb\x06proto3"
 
 var (
 	file_domain_federation_federation_health_proto_rawDescOnce sync.Once

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@lobehub/ui';
 import { message } from 'antd';
 import { UserMinus, UserPlus } from 'lucide-react';
-import { useRelationshipsStore } from '../../store/relationships';
+import { useActiveRelationshipsSlice } from './useActiveMomentsStore';
 
 // Follow button — three rendered states:
 //   1. Loading (initial relation fetch in flight) → spinner button.
@@ -28,11 +28,13 @@ interface FollowButtonProps {
 
 export function FollowButton({ targetActorId, viewerActorId, compact }: FollowButtonProps) {
   const { t } = useTranslation('moments');
-  const relation = useRelationshipsStore((s) => s.relations[targetActorId]);
-  const loadingMap = useRelationshipsStore((s) => s.loading);
-  const loadRelationship = useRelationshipsStore((s) => s.loadRelationship);
-  const follow = useRelationshipsStore((s) => s.follow);
-  const unfollow = useRelationshipsStore((s) => s.unfollow);
+  const { relation, loadingMap, loadRelationship, follow, unfollow } = useActiveRelationshipsSlice((s) => ({
+    relation: s.relations[targetActorId],
+    loadingMap: s.loading,
+    loadRelationship: s.loadRelationship,
+    follow: s.follow,
+    unfollow: s.unfollow,
+  }));
 
   const [hovering, setHovering] = useState(false);
   const [submitting, setSubmitting] = useState(false);

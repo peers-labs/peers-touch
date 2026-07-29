@@ -12,7 +12,7 @@ import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
 import { CallSurface } from '../components/chat/CallSurface';
 import { api } from '../services/desktop_api';
 import { scheduleIdle } from '../kernel/boot';
-import { useSocialChatStore } from '../store/socialChat';
+import { useActiveSocialChatSlice } from '../components/chat/useActiveSocialChatStore';
 import { log } from '../utils/logger';
 import { readFeatureFlags } from '../modules/settings/featureFlags';
 import { friendChatP2p } from '../modules/p2p/friendChatP2p';
@@ -43,7 +43,15 @@ export function SocialChatPage() {
     activeSessionUlid,
     activeTab,
     currentUserDid,
-  } = useSocialChatStore();
+  } = useActiveSocialChatSlice((state) => ({
+    showDetail: state.showDetail,
+    openThreadRootUlid: state.openThreadRootUlid,
+    setFriendP2pStatus: state.setFriendP2pStatus,
+    sessions: state.sessions,
+    activeSessionUlid: state.activeSessionUlid,
+    activeTab: state.activeTab,
+    currentUserDid: state.currentUserDid,
+  }));
 
   // --- Refs for values used inside effects without re-triggering subscriptions ---
   const activeSessionRef = useRef(activeSessionUlid);

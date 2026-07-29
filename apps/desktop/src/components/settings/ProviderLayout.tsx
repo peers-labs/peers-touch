@@ -7,12 +7,12 @@ export function ProviderLayout() {
   const { token } = theme.useToken();
 
   return (
-    <Flexbox horizontal style={{ height: '100%', overflow: 'hidden' }}>
+    <Flexbox horizontal style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
       {/* Left panel - provider list */}
       <Flexbox
         style={{
-          width: 260,
-          minWidth: 260,
+          width: 220,
+          minWidth: 220,
           borderRight: `1px solid ${token.colorBorderSecondary}`,
           height: '100%',
           overflow: 'hidden',
@@ -22,7 +22,7 @@ export function ProviderLayout() {
       </Flexbox>
 
       {/* Right panel - provider detail */}
-      <Flexbox flex={1} style={{ height: '100%', overflow: 'hidden' }}>
+      <Flexbox flex={1} style={{ height: '100%', overflow: 'hidden', minWidth: 0 }}>
         <ProviderDetail />
       </Flexbox>
     </Flexbox>

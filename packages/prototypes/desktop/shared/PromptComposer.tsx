@@ -1,22 +1,23 @@
 import type { ReactNode } from 'react';
-import { ArrowUp, Image as ImageIcon, Slash } from 'lucide-react';
+import { theme } from 'antd';
+import { Flexbox } from 'react-layout-kit';
+import { ActionIcon } from '@lobehub/ui';
+import { ArrowUp, ChevronDown, Image as ImageIcon, Slash, Square } from 'lucide-react';
 
-const D = {
-  text: '#262626',
-  textSecondary: '#595959',
-  textTertiary: '#9b9b9b',
+const COMPOSER_COLORS = {
   border: '#d1d1d1',
   borderSoft: '#ececec',
-  fill: '#ffffff',
-  fillSubtle: '#fafafa',
-  primary: '#6b5bd6',
   primaryDisabled: '#d8d3fb',
+  textTertiary: '#9b9b9b',
+  toolButtonShadow: '0 1px 4px rgba(15,23,42,0.04)',
 } as const;
 
 export interface PromptComposerProps {
   value?: string;
   onChange?: (value: string) => void;
   onSend?: () => void;
+  onStop?: () => void;
+  isStreaming?: boolean;
   placeholder?: string;
   modelLabel?: string;
   modelNode?: ReactNode;
@@ -31,6 +32,8 @@ export function PromptComposer({
   value,
   onChange,
   onSend,
+  onStop,
+  isStreaming = false,
   placeholder = 'Help you write code, debugs, optimize performance and other development work, deliver production-ready code.',
   modelLabel = 'GPT-5.5',
   modelNode,
@@ -40,29 +43,33 @@ export function PromptComposer({
   sendDisabled = !value,
   density = 'comfortable',
 }: PromptComposerProps) {
+  const { token } = theme.useToken();
   const compact = density === 'compact';
   const resolvedMinHeight = minHeight ?? (compact ? 92 : 124);
   const toolSize = compact ? 28 : 38;
   const sendSize = compact ? 34 : 42;
   const iconSize = compact ? 13 : 17;
+  const sendIconSize = compact ? 16 : 20;
   const modelControl = modelNode ?? (
     <button
+      type="button"
       style={{
         height: compact ? 28 : 34,
         border: 0,
         background: 'transparent',
-        color: D.textSecondary,
+        color: token.colorTextSecondary,
         display: 'inline-flex',
         alignItems: 'center',
-        gap: compact ? 4 : 7,
-        fontSize: compact ? 13 : 18,
+        gap: compact ? 3 : 5,
+        fontSize: compact ? 13 : 15,
         cursor: 'pointer',
         padding: compact ? '0 4px' : '0 8px',
         maxWidth: '100%',
+        lineHeight: 1,
       }}
     >
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{modelLabel}</span>
-      <span style={{ fontSize: 17, color: D.textTertiary }}>⌄</span>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1 }}>{modelLabel}</span>
+      <ChevronDown size={compact ? 12 : 14} color={COMPOSER_COLORS.textTertiary} style={{ flexShrink: 0 }} />
     </button>
   );
 
@@ -72,9 +79,9 @@ export function PromptComposer({
         width: typeof maxWidth === 'number' ? `min(${maxWidth}px, 100%)` : maxWidth,
         minHeight: resolvedMinHeight,
         margin: '0 auto',
-        border: `1px solid ${D.border}`,
+        border: `1px solid ${COMPOSER_COLORS.border}`,
         borderRadius: compact ? 18 : 22,
-        background: D.fill,
+        background: '#ffffff',
         boxSizing: 'border-box',
         padding: compact ? '12px 14px 10px' : '18px 18px 14px',
         display: 'flex',
@@ -86,7 +93,7 @@ export function PromptComposer({
       <style>
         {`
           .pt-prompt-composer-input::placeholder {
-            color: ${D.textTertiary};
+            color: ${COMPOSER_COLORS.textTertiary};
             opacity: 1;
             font-weight: 400;
           }
@@ -97,7 +104,7 @@ export function PromptComposer({
         value={value}
         onChange={(event) => onChange?.(event.target.value)}
         onKeyDown={(event) => {
-          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !sendDisabled) {
+          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !sendDisabled && !isStreaming) {
             event.preventDefault();
             onSend?.();
           }
@@ -111,7 +118,7 @@ export function PromptComposer({
           border: 0,
           outline: 'none',
           resize: 'none',
-          color: D.text,
+          color: token.colorText,
           fontSize: compact ? 14 : 16,
           lineHeight: 1.5,
           fontFamily: 'inherit',
@@ -121,15 +128,33 @@ export function PromptComposer({
         }}
       />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 8 : 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 8 : 10 }}>
-          <ComposerToolButton title="斜杠命令" size={toolSize}>
-            <Slash size={iconSize} strokeWidth={2.1} />
-          </ComposerToolButton>
-          <ComposerToolButton title="添加图片" size={toolSize}>
-            <ImageIcon size={iconSize} strokeWidth={2} />
-          </ComposerToolButton>
-        </div>
+      <Flexbox horizontal align="center" gap={compact ? 8 : 16}>
+        <Flexbox horizontal align="center" gap={compact ? 8 : 10}>
+          <ActionIcon
+            icon={Slash}
+            title="Slash commands"
+            size={{ blockSize: toolSize, size: iconSize }}
+            style={{
+              borderRadius: toolSize <= 28 ? 8 : 10,
+              border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
+              background: '#ffffff',
+              color: token.colorText,
+              boxShadow: COMPOSER_COLORS.toolButtonShadow,
+            }}
+          />
+          <ActionIcon
+            icon={ImageIcon}
+            title="Add image"
+            size={{ blockSize: toolSize, size: iconSize }}
+            style={{
+              borderRadius: toolSize <= 28 ? 8 : 10,
+              border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
+              background: '#ffffff',
+              color: token.colorText,
+              boxShadow: COMPOSER_COLORS.toolButtonShadow,
+            }}
+          />
+        </Flexbox>
 
         <div style={{ flex: 1, minWidth: compact ? 8 : 20 }} />
 
@@ -137,54 +162,39 @@ export function PromptComposer({
           {modelControl}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 8 : 18, justifyContent: 'flex-end' }}>
+        <Flexbox horizontal align="center" gap={compact ? 8 : 18} justify="flex-end">
           {trailingTools}
-          <button
-            title="发送"
-            onClick={() => {
-              if (!sendDisabled) onSend?.();
-            }}
-            style={{
-              width: sendSize,
-              height: sendSize,
-              border: 0,
-              borderRadius: compact ? 10 : 12,
-              background: sendDisabled ? D.primaryDisabled : D.primary,
-              color: sendDisabled ? D.textTertiary : '#ffffff',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: sendDisabled ? 'default' : 'pointer',
-              flexShrink: 0,
-            }}
-          >
-            <ArrowUp size={compact ? 16 : 20} strokeWidth={2.1} />
-          </button>
-        </div>
-      </div>
+          {isStreaming ? (
+            <ActionIcon
+              icon={Square}
+              title="Stop"
+              onClick={onStop}
+              size={{ blockSize: sendSize, size: sendIconSize }}
+              style={{
+                borderRadius: compact ? 10 : 12,
+                background: token.colorError,
+                color: '#ffffff',
+              }}
+            />
+          ) : (
+            <ActionIcon
+              icon={ArrowUp}
+              title="Send"
+              onClick={() => {
+                if (!sendDisabled) onSend?.();
+              }}
+              size={{ blockSize: sendSize, size: sendIconSize }}
+              disabled={sendDisabled}
+              style={{
+                borderRadius: compact ? 10 : 12,
+                background: sendDisabled ? COMPOSER_COLORS.primaryDisabled : token.colorPrimary,
+                color: sendDisabled ? COMPOSER_COLORS.textTertiary : '#ffffff',
+                cursor: sendDisabled ? 'default' : 'pointer',
+              }}
+            />
+          )}
+        </Flexbox>
+      </Flexbox>
     </section>
-  );
-}
-
-function ComposerToolButton({ title, children, size }: { title: string; children: ReactNode; size: number }) {
-  return (
-    <button
-      title={title}
-      style={{
-        width: size,
-        height: size,
-        border: `1px solid ${D.borderSoft}`,
-        borderRadius: size <= 28 ? 8 : 10,
-        background: D.fill,
-        color: D.text,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: 'pointer',
-        boxShadow: '0 1px 4px rgba(15,23,42,0.04)',
-      }}
-    >
-      {children}
-    </button>
   );
 }

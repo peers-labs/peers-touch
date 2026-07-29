@@ -1,8 +1,8 @@
 # Federation Architecture
 
-> **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-05-31 | **Updated**: 2026-05-31
+> **Status**: accepted
+> **Version**: v0.2
+> **Created**: 2026-05-31 | **Updated**: 2026-07-21
 > **Owner**: Architecture Team
 
 ---
@@ -14,7 +14,7 @@
 - Federation 作为 Peers-Touch 持久虚拟网络实体的架构边界。
 - Actor、Station、Federation、Federation Ledger 的关系。
 - Station 加入多个 Federation 的治理模型。
-- 联邦广场的产品心智和系统职责边界。
+- 联邦的产品心智：基础设施渗透而非独立入口。
 - Federation Ledger 的可验证、可复制、追加式治理账本模型。
 - Federation discovery、scope、security、Station 分层和现有 Catalog / Locator 的关系。
 
@@ -49,7 +49,7 @@
 3. Actor / Account 是 Federation 内的参与者，但普通用户默认不能管理联邦拓扑。
 4. 联邦治理事实由可验证的 Federation Ledger 承载。
 5. 普通社交行为不上账本，避免把联邦治理账本变成业务流水账。
-6. 用户通过联邦广场浏览 Federation、Station 和公开用户，不需要记 `@user@host`。
+6. 用户通过搜索、联系人等日常入口自然接触联邦内的人，不需要记 `@user@host`。
 7. 第一阶段采用 permissioned append-only ledger，不引入完整区块链复杂度。
 8. 第一阶段采用单 Federation active sequencer 模型，避免在未引入完整共识前出现并发 head 分叉。
 9. 所有 Catalog、Resolver、Station list、Public actor list 查询必须显式带 Federation 语境。
@@ -61,9 +61,10 @@
 
 | 文档 | 说明 |
 |------|------|
-| [design.md](./design.md) | 核心架构设计、角色边界、联邦广场、生命周期 |
+| [design.md](./design.md) | 核心架构设计、角色边界、用户感知模型、生命周期 |
 | [decisions.md](./decisions.md) | 关键设计决策与替代方案 |
 | [data-model.md](./data-model.md) | Federation、ledger、membership、role、scope、sync 的概念数据模型 |
+| [wire-protocol.md](./wire-protocol.md) | Wire Protocol：hash/签名规范、RPC 定义、payload schema、sync 协议 |
 | [integration.md](./integration.md) | 与 Station、Catalog、Resolver、ActivityPub、Client projection 的映射 |
 | [execution-plans/phase-1-federation-ledger.md](./execution-plans/phase-1-federation-ledger.md) | Federation Ledger 最小闭环落地计划 |
 | [../federated-im/README.md](../federated-im/README.md) | 联邦 IM 架构：跨 Station 群/私聊、group authority、事件日志、Sender Key 边界 |

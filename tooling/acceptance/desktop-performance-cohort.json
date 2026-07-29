@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "desktop-performance-cohort-manifest",
+  "phase": "P0c-3",
+  "planTask": "P0c3-R2",
+  "cohortId": "p0c3-native-evidence-20260720",
+  "profile": "one",
+  "account": "345662927891595266",
+  "expectedActorId": "345662927891595266",
+  "station": "http://10.37.246.80:18080",
+  "dataRevision": "actor-345662927891595266-group-gcg-1783870022296784951-20260720-v1",
+  "window": {
+    "width": 1200,
+    "height": 800
+  },
+  "warmupRuns": 5,
+  "postWarmupSamplesPerScenario": 30,
+  "buildRevision": "8ad3d3d9376b2c29922c5a6f64d887b85306a10b+worktree-p0c3-r2",
+  "runtimes": [
+    "browser-gateway",
+    "tauri-webview-dev",
+    "tauri-webview-packaged"
+  ],
+  "scenarios": [
+    "text-input",
+    "primary-nav",
+    "secondary-tab",
+    "overlay"
+  ]
+}

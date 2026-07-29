@@ -4,15 +4,21 @@ import { Flexbox } from 'react-layout-kit';
 import { Typography, Modal, Form, theme, Divider, Avatar } from 'antd';
 import { Input, Button, TextArea, InputPassword, Tag, toast } from '@lobehub/ui';
 import { Search, Plus, Brain } from 'lucide-react';
-import { useProviderStore } from '../../store/provider';
 import { ProviderIcon } from './ProviderIcon';
 import { useTranslation } from 'react-i18next';
+import { useActiveProviderSlice } from './useActiveSettingsStores';
 
 const { Text } = Typography;
 
 export function ProviderMenu() {
   const { t } = useTranslation('provider');
-  const { providers, selectedId, loadProviders, selectProvider, createProvider } = useProviderStore();
+  const { providers, selectedId, loadProviders, selectProvider, createProvider } = useActiveProviderSlice((s) => ({
+    providers: s.providers,
+    selectedId: s.selectedId,
+    loadProviders: s.loadProviders,
+    selectProvider: s.selectProvider,
+    createProvider: s.createProvider,
+  }));
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const { token } = theme.useToken();
@@ -101,7 +107,7 @@ export function ProviderMenu() {
         />
       </Flexbox>
 
-      <Flexbox flex={1} gap={4} style={{ overflow: 'auto' }}>
+      <Flexbox flex={1} gap={4} style={{ overflow: 'auto', paddingRight: 4 }}>
         {enabledList.length > 0 && (
           <>
             <Text type="secondary" style={{ fontSize: 11, fontWeight: 600, padding: '8px 14px 2px', textTransform: 'uppercase', letterSpacing: 0.5 }}>

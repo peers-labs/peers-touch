@@ -7,24 +7,17 @@ import {
 
 import { EVENT, eventBus } from '../kernel/events';
 import type {
-  GroupSkdmInstalledPayload,
   RealtimeConversationSettingsChangedPayload,
   RealtimeGroupFederationEventPayload,
   RealtimeGroupMembershipChangePayload,
-  RealtimeGroupSkdmEnvelopeDeliveredPayload,
   RealtimeMessageMutationPayload,
   RealtimeMessageReceiptPayload,
   RealtimeMessageReceivedPayload,
   RealtimePresenceFlipPayload,
   RealtimeResyncPayload,
+  RealtimeSocialGraphEventPayload,
   RealtimeTypingStatePayload,
 } from '../kernel/events/types';
-import {
-  FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION,
-  handleInboundSkdm,
-  retrySkdmDistributionFor,
-  rotateGroupSenderChain,
-} from '../modules/identity/groupSenderKeys';
 import { useMediaRuntimeStore } from './mediaRuntime';
 import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
 import { api, type NotificationData } from './desktop_api';
@@ -62,6 +55,8 @@ let bootstrapSequence = 0;
 let realtimeStreamActorId: string | null = null;
 let realtimeStreamTransition: Promise<void> = Promise.resolve();
 let socialRefreshInFlight: Promise<void> | null = null;
+let coldResyncInFlight = false;
+let pendingColdResyncPayload: RealtimeResyncPayload | null = null;
 const seenRealtimeMessageKeys = new Set<string>();
 const seenSocialNotificationIds = new Set<string>();
 const seenGroupFederationEventKeys = new Set<string>();
@@ -342,16 +337,6 @@ async function projectRealtimeMessage(
   return decoded.kind;
 }
 
-function consumeRealtimeFriendControlMessage(message: FriendChatMessage, myDid?: string | null): boolean {
-  if (Number(message.type ?? 0) !== FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION) return false;
-  if (message.senderDid && (!myDid || message.senderDid !== myDid) && message.content) {
-    runDetached('realtime friend SKDM install', async () => {
-      await handleInboundSkdm(message.senderDid, message.content);
-    });
-  }
-  return true;
-}
-
 function onMessageReceived(payload: RealtimeMessageReceivedPayload): void {
   if (!payload.sessionUlid) return;
   const messageKey = payload.messageUlid || payload.eventId;
@@ -362,12 +347,6 @@ function onMessageReceived(payload: RealtimeMessageReceivedPayload): void {
   const store = useSocialChatStore.getState();
   const isKnownGroup = store.groups.some((group) => group.ulid === payload.sessionUlid);
   const decodedMessage = decodeRealtimeMessage(payload, isKnownGroup);
-  if (
-    decodedMessage?.kind === 'friend'
-    && consumeRealtimeFriendControlMessage(decodedMessage.message, store.currentUserDid)
-  ) {
-    return;
-  }
   const isSelfEcho = Boolean(store.currentUserDid && payload.senderActorId === store.currentUserDid);
   const isActiveConversation = isVisibleConversation(store, payload.sessionUlid, isKnownGroup);
 
@@ -442,17 +421,7 @@ function onGroupMembershipChange(payload: RealtimeGroupMembershipChangePayload):
     } else if (payload.kind === 'REMOVED' || payload.kind === 'LEFT') {
       if (did && payload.actorDid === did) {
         store.selectGroup('');
-      } else if (did) {
-        await rotateGroupSenderChain(did, payload.groupUlid).catch((error) => {
-          log.warn('socialRealtime', 'rotateGroupSenderChain failed', error);
-        });
       }
-    }
-
-    if (payload.kind === 'TRANSFERRED' && did) {
-      await rotateGroupSenderChain(did, payload.groupUlid).catch((error) => {
-        log.warn('socialRealtime', 'rotateGroupSenderChain failed after ownership transfer', error);
-      });
     }
 
     await Promise.allSettled([
@@ -491,40 +460,25 @@ function onPresenceFlip(payload: RealtimePresenceFlipPayload): void {
   if (!payload.actorId) return;
   const store = useSocialChatStore.getState();
   store.setPeerOnline(payload.actorId, payload.online);
-
-  if (!payload.online) return;
-  const did = store.currentUserDid;
-  if (!did || payload.actorId === did) return;
-  retrySkdmDistributionFor(did, payload.actorId).catch((error) => {
-    log.warn('socialRealtime', 'retrySkdmDistributionFor failed', error);
-  });
 }
 
-function onGroupSkdmInstalled(payload: GroupSkdmInstalledPayload): void {
-  useSocialChatStore.getState()
-    .redecryptGroupMessages(payload.groupUlid, payload.senderDid)
-    .catch((error) => log.warn('socialRealtime', 'redecryptGroupMessages failed', error));
-}
-
-function onGroupSkdmEnvelopeDelivered(payload: RealtimeGroupSkdmEnvelopeDeliveredPayload): void {
-  runDetached('group skdm envelope install', async () => {
-    const store = useSocialChatStore.getState();
-    if (store.currentUserDid && payload.recipientDid !== store.currentUserDid) return;
-
-    const localDevice = await api.accountGetDeviceId().catch((error) => {
-      log.warn('socialRealtime', 'accountGetDeviceId failed for SKDM envelope', error);
-      return null;
-    });
-    const localDeviceId = String(localDevice?.device_id ?? '').trim();
-    if (!localDeviceId || localDeviceId !== payload.recipientDeviceId) return;
-
-    await handleInboundSkdm(payload.senderDid, payload.encryptedPayloadB64, {
-      groupUlid: payload.groupUlid,
-      senderKeyId: payload.senderKeyId,
-      senderHomeStationPeerId: payload.senderHomeStationPeerId,
-      recipientDeviceId: payload.recipientDeviceId,
-    });
-  });
+function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
+  const store = useSocialChatStore.getState();
+  switch (payload.kind) {
+    case 'friend_request_received':
+    case 'friend_request_rejected':
+      store.loadFriendRequests().catch(() => {});
+      break;
+    case 'friend_request_accepted':
+      Promise.allSettled([store.loadFriendRequests(), store.loadSessions()]).catch(() => {});
+      break;
+    case 'conversation_created':
+      store.loadSessions().catch(() => {});
+      break;
+    case 'unfriended':
+      Promise.allSettled([store.loadFriendRequests(), store.loadSessions()]).catch(() => {});
+      break;
+  }
 }
 
 async function syncKnownConversations(): Promise<void> {
@@ -545,35 +499,65 @@ async function syncKnownConversations(): Promise<void> {
   }
 }
 
-function onResync(payload: RealtimeResyncPayload): void {
+async function executeColdResync(payload: RealtimeResyncPayload): Promise<void> {
+  log.info('socialRealtime', 'cold resync started', payload);
+
+  const chat = useSocialChatStore.getState();
+  const notifications = useNotificationStore.getState();
+
+  await Promise.allSettled([
+    chat.loadSessions(),
+    chat.loadGroups(),
+    chat.loadFriendRequests(),
+    notifications.loadNotifications(),
+    notifications.refreshUnreadCounts(),
+  ]);
+
+  await syncKnownConversations();
+
+  const refreshed = useSocialChatStore.getState();
+  if (refreshed.activeTab === 'friend' && refreshed.activeSessionUlid) {
+    await refreshed.loadMessages(refreshed.activeSessionUlid, 'friend');
+  } else if (refreshed.activeTab === 'group' && refreshed.activeGroupUlid) {
+    await refreshed.loadMessages(refreshed.activeGroupUlid, 'group');
+  }
+  await Promise.allSettled([
+    refreshed.loadGroupUnreadCounts(),
+    refreshed.loadConversationPreviews(),
+  ]);
+  useMediaRuntimeStore.getState().prewarmMessages(refreshed.messages);
+}
+
+function scheduleColdResync(payload: RealtimeResyncPayload): void {
+  if (coldResyncInFlight) {
+    pendingColdResyncPayload = payload;
+    return;
+  }
+
+  coldResyncInFlight = true;
   runDetached('cold resync', async () => {
-    log.info('socialRealtime', 'cold resync started', payload);
-
-    const chat = useSocialChatStore.getState();
-    const notifications = useNotificationStore.getState();
-
-    await Promise.allSettled([
-      chat.loadSessions(),
-      chat.loadGroups(),
-      chat.loadFriendRequests(),
-      notifications.loadNotifications(),
-      notifications.refreshUnreadCounts(),
-    ]);
-
-    await syncKnownConversations();
-
-    const refreshed = useSocialChatStore.getState();
-    if (refreshed.activeTab === 'friend' && refreshed.activeSessionUlid) {
-      await refreshed.loadMessages(refreshed.activeSessionUlid, 'friend');
-    } else if (refreshed.activeTab === 'group' && refreshed.activeGroupUlid) {
-      await refreshed.loadMessages(refreshed.activeGroupUlid, 'group');
+    try {
+      let current: RealtimeResyncPayload | null = payload;
+      while (current) {
+        const next = current;
+        current = null;
+        await executeColdResync(next);
+        current = pendingColdResyncPayload;
+        pendingColdResyncPayload = null;
+      }
+    } finally {
+      coldResyncInFlight = false;
+      if (pendingColdResyncPayload) {
+        const pending = pendingColdResyncPayload;
+        pendingColdResyncPayload = null;
+        scheduleColdResync(pending);
+      }
     }
-    await Promise.allSettled([
-      refreshed.loadGroupUnreadCounts(),
-      refreshed.loadConversationPreviews(),
-    ]);
-    useMediaRuntimeStore.getState().prewarmMessages(refreshed.messages);
   });
+}
+
+function onResync(payload: RealtimeResyncPayload): void {
+  scheduleColdResync(payload);
 }
 
 function scheduleGroupFederationRefresh(groupUlid: string, shouldLoadMessages: boolean): void {
@@ -681,11 +665,10 @@ export function installSocialRealtimeBridge(): void {
     eventBus.subscribe(EVENT.REALTIME_MESSAGE_MUTATION, onMessageMutation),
     eventBus.subscribe(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, onGroupMembershipChange),
     eventBus.subscribe(EVENT.REALTIME_GROUP_FEDERATION_EVENT, onGroupFederationEvent),
-    eventBus.subscribe(EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED, onGroupSkdmEnvelopeDelivered),
     eventBus.subscribe(EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED, onConversationSettingsChanged),
     eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, onPresenceFlip),
     eventBus.subscribe(EVENT.REALTIME_RESYNC, onResync),
-    eventBus.subscribe(EVENT.GROUP_SKDM_INSTALLED, onGroupSkdmInstalled),
+    eventBus.subscribe(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, onSocialGraphEvent),
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 
@@ -700,6 +683,8 @@ export function installSocialRealtimeBridge(): void {
       window.clearTimeout(externalHostReconcileTimer);
       externalHostReconcileTimer = null;
     }
+    pendingColdResyncPayload = null;
+    coldResyncInFlight = false;
     teardownBridge = null;
   };
 

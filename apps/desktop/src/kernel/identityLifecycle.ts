@@ -32,8 +32,11 @@ export type IdentityPhase =
   | { kind: 'booting'; reason: IdentityBootReason }
   | { kind: 'checkingLaunchContext'; reason: IdentityBootReason }
   | { kind: 'resolvingSession'; reason: IdentityBootReason; source: 'live' | 'disk' | 'applet' }
+  | { kind: 'accessGateChainPending'; user: SessionUser }
   | { kind: 'accountGate'; reason: IdentityAuthGateReason }
   | { kind: 'pinGate'; accountId: string }
+  | { kind: 'pinRecoveryAuthenticating'; recoveryId: string; targetLocalAccountId: string; provider: string }
+  | { kind: 'pinRecoveryPendingPin'; recoveryId: string; targetLocalAccountId: string; user: SessionUser; readiness: IdentityReadiness }
   | {
     kind: 'authenticatedPendingCompletion';
     user: SessionUser;
@@ -54,6 +57,8 @@ export type IdentityEvent =
   | { type: 'SESSION_RESOLVE_STARTED'; source: 'live' | 'disk' | 'applet' }
   | { type: 'SESSION_RESTORED'; user: SessionUser; source: 'restore' | 'unlock' | 'switch' | 'applet' }
   | { type: 'SESSION_RESTORE_FAILED'; reason: IdentityAuthGateReason }
+  | { type: 'ACCESS_GATE_EVALUATING'; user: SessionUser }
+  | { type: 'ACCESS_GATE_GRANTED'; user: SessionUser; source: 'restore' | 'unlock' | 'switch' }
   | { type: 'ACCOUNT_GATE_READY'; reason: IdentityAuthGateReason }
   | { type: 'PIN_REQUIRED'; accountId: string }
   | { type: 'FRESH_LOGIN_AUTHENTICATED'; user: SessionUser }
@@ -66,7 +71,13 @@ export type IdentityEvent =
   | { type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED'; user?: SessionUser }
   | { type: 'ACCOUNT_CACHE_REFRESH_FAILED' }
   | { type: 'SESSION_REVOKED'; reason: IdentityAuthGateReason }
-  | { type: 'LOGOUT_REQUESTED' };
+  | { type: 'LOGOUT_REQUESTED' }
+  | { type: 'PIN_RECOVERY_REQUESTED'; recoveryId: string; targetLocalAccountId: string; provider: string }
+  | { type: 'PIN_RECOVERY_CANCELLED' }
+  | { type: 'PIN_RECOVERY_AUTHENTICATED'; recoveryId: string; targetLocalAccountId: string; user: SessionUser }
+  | { type: 'PIN_RECOVERY_AUTH_FAILED' }
+  | { type: 'PIN_RECOVERY_COMMITTED'; user: SessionUser }
+  | { type: 'PIN_RECOVERY_COMMIT_FAILED' };
 
 export interface IdentityPolicy {
   coldLaunch: IdentityBootSessionPolicy;
@@ -242,6 +253,10 @@ export function identityReducer(state: IdentityPhase, event: IdentityEvent): Ide
       };
     case 'SESSION_RESTORED':
       return authenticatedPhase(event.user, event.source);
+    case 'ACCESS_GATE_EVALUATING':
+      return { kind: 'accessGateChainPending', user: event.user };
+    case 'ACCESS_GATE_GRANTED':
+      return authenticatedPhase(event.user, event.source);
     case 'SESSION_RESTORE_FAILED':
     case 'ACCOUNT_GATE_READY':
       return { kind: 'accountGate', reason: event.reason };
@@ -288,6 +303,41 @@ export function identityReducer(state: IdentityPhase, event: IdentityEvent): Ide
       return { kind: 'revoked', reason: event.reason };
     case 'LOGOUT_REQUESTED':
       return { kind: 'accountGate', reason: 'logout' };
+    case 'PIN_RECOVERY_REQUESTED':
+      if (state.kind === 'pinGate') {
+        return {
+          kind: 'pinRecoveryAuthenticating',
+          recoveryId: event.recoveryId,
+          targetLocalAccountId: event.targetLocalAccountId,
+          provider: event.provider,
+        };
+      }
+      return state;
+    case 'PIN_RECOVERY_CANCELLED':
+      if (state.kind === 'pinRecoveryAuthenticating' || state.kind === 'pinRecoveryPendingPin') {
+        return { kind: 'pinGate', accountId: state.targetLocalAccountId };
+      }
+      return state;
+    case 'PIN_RECOVERY_AUTHENTICATED':
+      if (state.kind === 'pinRecoveryAuthenticating') {
+        return {
+          kind: 'pinRecoveryPendingPin',
+          recoveryId: event.recoveryId,
+          targetLocalAccountId: event.targetLocalAccountId,
+          user: event.user,
+          readiness: initialReadiness,
+        };
+      }
+      return state;
+    case 'PIN_RECOVERY_AUTH_FAILED':
+      return state;
+    case 'PIN_RECOVERY_COMMITTED':
+      if (state.kind === 'pinRecoveryPendingPin') {
+        return authenticatedPhase(event.user, 'login');
+      }
+      return state;
+    case 'PIN_RECOVERY_COMMIT_FAILED':
+      return state;
     default:
       return state;
   }
@@ -298,5 +348,6 @@ export function identityPhaseAllowsReady(phase: IdentityPhase): boolean {
 }
 
 export function identityPhaseNeedsAuthGate(phase: IdentityPhase): boolean {
-  return phase.kind === 'accountGate' || phase.kind === 'pinGate' || phase.kind === 'revoked';
+  return phase.kind === 'accountGate' || phase.kind === 'pinGate' || phase.kind === 'revoked'
+    || phase.kind === 'pinRecoveryAuthenticating' || phase.kind === 'pinRecoveryPendingPin';
 }

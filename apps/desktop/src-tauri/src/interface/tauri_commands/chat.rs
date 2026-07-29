@@ -151,8 +151,9 @@ pub async fn chat_completion_once(
 ) -> AppResult<StubPayload> {
     let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
     let actor_id = session_resolver::actor_id_for_window(&state, &window).unwrap_or_default();
+    let token = session_resolver::token_for_window(&state, &window).unwrap_or_default();
     match tauri::async_runtime::spawn_blocking(move || {
-        application_chat::chat_completion_once(&actor_id, input)
+        application_chat::chat_completion_once(&actor_id, &token, input)
     })
     .await
     {
@@ -172,11 +173,14 @@ pub async fn chat_completion_once(
 pub async fn chat_completion_stream(
     app: tauri::AppHandle,
     input: ChatCompletionInput,
+    window: Window,
 ) -> AppResult<StubPayload> {
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = session_resolver::token_for_window(&state, &window).unwrap_or_default();
     let stream_id = format!("stream-{}", ulid::Ulid::new().to_string());
     let stream_id_clone = stream_id.clone();
     tauri::async_runtime::spawn(async move {
-        application_chat::streaming::chat_completion_stream(app, stream_id_clone, input).await;
+        application_chat::streaming::chat_completion_stream(app, stream_id_clone, token, input).await;
     });
     AppResult::success(StubPayload {
         command: "chat_completion_stream".to_string(),

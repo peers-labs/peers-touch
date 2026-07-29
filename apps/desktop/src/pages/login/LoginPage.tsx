@@ -48,8 +48,10 @@ interface Props {
 }
 
 function loginCardMinHeight(loginState: LoginState, hasExpiredAccount: boolean): number {
-  if (loginState !== 'logged_out') return CARD_MIN_HEIGHT;
-  return hasExpiredAccount ? REAUTH_CARD_MIN_HEIGHT : LOGIN_CARD_MIN_HEIGHT;
+  if (loginState === 'logged_out' || loginState === 'pin_recovery_auth') {
+    return hasExpiredAccount ? REAUTH_CARD_MIN_HEIGHT : LOGIN_CARD_MIN_HEIGHT;
+  }
+  return CARD_MIN_HEIGHT;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -67,8 +69,13 @@ export function LoginPage({
 }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('auth');
-  const { providers, connections, loadAll, startAuth } = useOAuth2Store();
-  const { accessStart, accessSubmitInviteCode, accessSubmitLogin } = useSessionStore();
+  const providers = useOAuth2Store(s => s.providers);
+  const connections = useOAuth2Store(s => s.connections);
+  const loadAll = useOAuth2Store(s => s.loadAll);
+  const startAuth = useOAuth2Store(s => s.startAuth);
+  const accessStart = useSessionStore(s => s.accessStart);
+  const accessSubmitInviteCode = useSessionStore(s => s.accessSubmitInviteCode);
+  const accessSubmitLogin = useSessionStore(s => s.accessSubmitLogin);
 
   // ── Determine initial state ──
   const hasValidRestoredUser = !!(restoredUser && restoredUser.name && restoredUser.name !== 'User');
@@ -95,6 +102,12 @@ export function LoginPage({
   const [relinkPinError, setRelinkPinError] = useState('');
   const [pinSetLoading, setPinSetLoading] = useState(false);
   const [pinSetError, setPinSetError] = useState('');
+
+  // ── PIN recovery state ──
+  const [recoveryId, setRecoveryId] = useState<string | null>(null);
+  const [recoveryNewPinLoading, setRecoveryNewPinLoading] = useState(false);
+  const [recoveryNewPinError, setRecoveryNewPinError] = useState('');
+  const recoveryIdRef = useRef<string | null>(null);
 
   // ── OAuth drawer state ──
   const [connectProvider, setConnectProvider] = useState<OAuth2ProviderSummary | null>(null);
@@ -165,6 +178,24 @@ export function LoginPage({
   // ── Post-auth flow ──
 
   const continueAfterFreshAuth = useCallback(async () => {
+    if (recoveryIdRef.current) {
+      try {
+        await api.accountAuthorizePinRecovery(recoveryIdRef.current);
+        setLoginState('pin_recovery_new_pin');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : '';
+        const isMismatch = msg.includes('mismatch');
+        message.error(isMismatch
+          ? t('auth.pin.recovery.mismatch')
+          : t('auth.pin.recovery.authFailed', { defaultValue: 'Recovery authorization failed. Please try again.' }),
+        );
+        setLoginState('pin_entry');
+        recoveryIdRef.current = null;
+        setRecoveryId(null);
+      }
+      return;
+    }
+
     try {
       const active = await api.accountGetActive();
       if (active?.id) {
@@ -183,7 +214,7 @@ export function LoginPage({
       // Fall through to first-time PIN prompt
     }
     setLoginState('set_pin');
-  }, [clearAccountSessionless]);
+  }, [clearAccountSessionless, t]);
 
   // ── Gate chain ──
 
@@ -335,6 +366,53 @@ export function LoginPage({
     setExpiredAccount(null);
     setLoginState(hasMultipleAccounts ? 'account_picker' : 'logged_out');
   }, [hasMultipleAccounts]);
+
+  // ── PIN Recovery ──
+
+  const handleForgotPin = useCallback(async () => {
+    if (!selectedAccount?.accountId) return;
+    try {
+      const result = await api.accountBeginPinRecovery(selectedAccount.accountId);
+      setRecoveryId(result.recovery_id);
+      recoveryIdRef.current = result.recovery_id;
+
+      const provider = (result.provider || '').toLowerCase();
+      if (provider === 'password' || provider === '' || provider === 'email') {
+        setTab('email');
+        emailRef.current = selectedAccount.email || '';
+      } else {
+        setTab('quick');
+      }
+      setExpiredAccount(selectedAccount);
+      setReauthReason('continue');
+      setLoginState('pin_recovery_auth');
+    } catch (err: unknown) {
+      message.error(errorMessage(err, t('auth.pin.recovery.error', { defaultValue: 'Could not start PIN recovery' })));
+    }
+  }, [selectedAccount, t]);
+
+  const handleRecoveryNewPinSubmit = useCallback(async (pin: string) => {
+    if (!recoveryId) return;
+    setRecoveryNewPinLoading(true);
+    setRecoveryNewPinError('');
+    try {
+      await api.accountResetPin(recoveryId, pin);
+      recoveryIdRef.current = null;
+      setRecoveryId(null);
+      onComplete();
+    } catch (err: unknown) {
+      setRecoveryNewPinError(errorMessage(err, t('auth.pin.recovery.error', { defaultValue: 'Failed to reset PIN' })));
+    } finally {
+      setRecoveryNewPinLoading(false);
+    }
+  }, [recoveryId, onComplete, t]);
+
+  const handleRecoveryCancel = useCallback(() => {
+    recoveryIdRef.current = null;
+    setRecoveryId(null);
+    setRecoveryNewPinError('');
+    setLoginState('pin_entry');
+  }, []);
 
   // ── Re-link PIN ──
 
@@ -517,7 +595,7 @@ export function LoginPage({
   }, []);
 
   // ── Panel positioning ──
-  const panelOpen = !!connectProvider && loginState === 'logged_out';
+  const panelOpen = !!connectProvider && (loginState === 'logged_out' || loginState === 'pin_recovery_auth');
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -637,6 +715,7 @@ export function LoginPage({
             error={pinError}
             onBack={handlePinBack}
             onSubmit={handlePinSubmit}
+            onForgotPin={handleForgotPin}
           />
         );
 
@@ -657,6 +736,46 @@ export function LoginPage({
             error={pinSetError}
             onComplete={handleSetPinComplete}
             onSkip={handleSkipPin}
+          />
+        );
+
+      case 'pin_recovery_auth':
+        return (
+          <LoginFormView
+            embedded={embedded}
+            tab={tab}
+            expiredAccount={expiredAccount}
+            reauthReason={reauthReason}
+            hasBackButton={true}
+            oauth2Providers={providers}
+            connections={connections}
+            highlightProviderId={connectProvider?.id}
+            onBack={handleRecoveryCancel}
+            onEmailLogin={handleEmailLogin}
+            onOAuthLogin={handleOAuthConnect}
+            onTabChange={handleTabChange}
+            gateState={gateStateProp}
+            backContent={
+              <>
+                <ArrowLeft size={14} style={{ color: token.colorTextTertiary }} />
+                <Text style={{ fontSize: 11, color: token.colorTextSecondary }}>
+                  {t('auth.pin.recovery.cancel')}
+                </Text>
+              </>
+            }
+            title={t('auth.pin.recovery.authenticating')}
+          />
+        );
+
+      case 'pin_recovery_new_pin':
+        return (
+          <SetPinView
+            canSkip={false}
+            loading={recoveryNewPinLoading}
+            error={recoveryNewPinError}
+            onComplete={handleRecoveryNewPinSubmit}
+            onSkip={handleRecoveryCancel}
+            title={t('auth.pin.recovery.newPin')}
           />
         );
 
@@ -776,19 +895,11 @@ export function LoginPage({
 
   if (embedded) return cardContent;
 
-  // Pause the heavy SVG backdrop during PIN-related states to eliminate
-  // compositing contention on WebKit's main thread (WKWebView).
-  const backdropHidden =
-    loginState === 'pin_entry' ||
-    loginState === 'relink_pin' ||
-    loginState === 'set_pin';
-
   return (
     <div className="login-network-shell">
       <div
         className="login-network-backdrop"
         aria-hidden="true"
-        style={backdropHidden ? { visibility: 'hidden' } : undefined}
       >
         <StationNetworkIntro labels={networkIntroLabels} />
       </div>

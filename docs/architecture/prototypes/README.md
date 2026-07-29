@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-06-22 | **Updated**: 2026-07-08
+> **Created**: 2026-06-22 | **Updated**: 2026-06-24
 > **Owner**: Architecture Team
 
 ---
@@ -52,12 +52,15 @@
 
 | 站点 | 原型 ID | 归属层级 | 原型路径 | 落地目标 | 对应设计版本 | 状态 | 入口文档 |
 |------|---------|----------|---------|---------|------------|------|---------|
-| desktop | `desktop-shell` | Desktop 一级站点外壳，承载 Chat / Agent / Applet 表面 | `packages/prototypes/desktop/shell/` | Desktop 容器外壳（apps/desktop）；Social Chat 作为 Shell 内页面承载，stream call 作为 Chat 会话内状态与浮层呈现，原型为 React web 展示 | runtime/desktop-runtime-architecture + client/chat + voice-video-calls | drafting | [prototype/README.md](../desktop/prototype/README.md) |
+| desktop | `desktop-shell` | Desktop 一级站点外壳 | `packages/prototypes/desktop/shell/` | Desktop 容器外壳（apps/desktop）；原型为 React web 展示 | runtime/desktop-runtime-architecture | drafting | [prototype/README.md](../desktop/prototype/README.md) |
 | desktop | `agent-canvas` | Desktop Agent 页内编排入口 | `packages/prototypes/agent-canvas/` | Agent 页内编排入口（由 `packages/prototypes/desktop/shell/` 的 Agent 页图标打开）；原型为 React web 展示 | agent/agent-canvas-orchestration | drafting | [agent-canvas-orchestration.md](../agent/agent-canvas-orchestration.md) |
 | desktop | `atelier` | Desktop 内的 applet 原型，不是一级模块 | `packages/prototypes/desktop/applets/atelier/` | Applet（Lynx），运行在 Desktop 容器内；原型为 React+LobeUI web 展示 | atelier/functional-modules §1 | drafting | [prototype/README.md](../atelier/prototype/README.md) |
 | desktop | `applet-lifecycle` | Desktop Applet Box 极简 launcher 原型，不是一级模块 | `packages/prototypes/desktop/features/applet-lifecycle/` | Desktop Applet Box 安装包导入、展示、打开、运行、通知、退出、卸载；原型为 React web 展示 | applet-runtime/official-applet-architecture-contract + applet-launcher-ux-contract | landed | [prototype/README.md](../applet-runtime/prototype/README.md) |
 | desktop | `applet-workspace` | Desktop Applet 多实例容器原型，不是一级模块 | `packages/prototypes/desktop/features/applet-workspace/` | Desktop Applet Workspace：固定 Home tab、多实例小程序 tabs、Pin to System、detach、immersive；原型为 React web 展示 | applet-runtime/browser-like-workspace + applet-launcher-ux-contract + frontend-runtime/AppletContainerShell | drafting | [prototype/README.md](../applet-runtime/prototype/README.md) |
-| mobile | `mobile-chat` | Mobile Shell source-backed 一级站点原型 | `packages/prototypes/mobile/chat/` | Mobile LaunchState / AccessGateHost / MobileShell / Chat / Contacts / Moments / Settings；原型为 React web 展示，结构和 class 语义对齐 `apps/mobile` 当前实现 | apps/mobile + client/chat + social-runtime | drafting | [prototype/README.md](../mobile/prototype/README.md) |
+| desktop | `agent-lobehub-parity` | Desktop Agent LobeHub source-backed parity prototype，不是一级模块 | `packages/prototypes/desktop/features/agent-lobehub-parity/` | Desktop Agent workbench；原型为 React web 展示 | agent/lobehub-parity source-backed owner review | pending-review | [prototype-lobehub-parity/README.md](../agent/prototype-lobehub-parity/README.md) |
+| desktop | `call` | Desktop Chat/通话能力原型，不是一级模块 | `packages/prototypes/desktop/features/call/` | Desktop 好友聊天通话（apps/desktop，CallSurface）；原型为 React web 展示 | voice-video-calls | confirmed | [prototype/README.md](../realtime/prototype/README.md)（历史路径，归属 desktop） |
+| desktop | `social-chat` | Desktop Chat 能力原型，不是一级模块 | `packages/prototypes/desktop/features/social-chat/` | Desktop 私聊 / 群聊体验；原型为 React web 展示 | client/chat + social-runtime | pending-review | [prototype/README.md](../social/prototype/README.md) |
+| mobile | `mobile-chat` | Mobile Shell 一级站点基准 | `packages/prototypes/mobile/chat/` | Mobile Shell / Access Gate / Chat / Moments / Contacts / Settings / Friend & Group flows；原型为 React web 展示 | apps/mobile MobileShell + client/chat + social-runtime | drafting | [prototype/README.md](../mobile/prototype/README.md) |
 | dashboard | `station-dashboard` | Station Dashboard 一级站点运维台体验基准 | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard / 管理台 / 运维台体验；原型为 React web 展示 | station/base | drafting | [base.md](../../station/base.md) |
 
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。
@@ -76,11 +79,30 @@ drafting → pending-review → confirmed → landed
 规则：
 
 1. 新原型登记进本表，初始状态 `drafting`。
-2. 原型「能跑能点」、可对回设计编号后，置 `pending-review`，提请 Owner 确认。
-3. 经 Owner 确认后置 `confirmed`——**只有 `confirmed` 的原型才允许进入对应功能的实现落地**。
+2. 原型「能跑能点」、可对回设计编号，并完成 L1 Static + 必要 L2 Visual 截图证据后，置 `pending-review`，提请 Owner 确认。
+3. 经 Owner 确认且无 L2 阻断项后置 `confirmed`——**只有 `confirmed` 的原型才允许进入对应功能的实现落地**。
 4. 功能落地后置 `landed`；设计大改导致原型失效时置 `superseded`，并新建原型重新走门。
 
 未登记或未 `confirmed` 的原型，不得作为落地依据。
+
+### 4.1 LobeHub-style Visual Evidence Gate
+
+客户端 UI 原型确认门借鉴 LobeHub `ux-audit` 的 L1/L2/L3 分层：
+
+| Layer | 证据 | 可判定内容 | 准入规则 |
+|------|------|------------|----------|
+| L1 Static | 源码 / `file:line` | 组件选型、状态分支、token role、empty/loading/error/retry 是否存在 | 每个客户端 UI 原型必须完成 |
+| L2 Visual | 已打开确认过的截图 | 主按钮是否真为视觉主操作、边距/密度/对齐、层级、截断、dark/light、窄宽度表现 | 进入 `pending-review` 前必须提供；进入 `confirmed` 前必须无阻断项 |
+| L3 Dynamic | 真实点击 / 录屏 / runtime capture | focus/keyboard、流程推进、错误态注入、动效与卡顿 | 复杂交互流或 Owner 对行为有疑问时必跑 |
+
+L2 截图要求：
+
+- 截图必须来自 Prototype Portal 或目标原型页面的真实渲染。
+- 截图必须被 agent 实际打开确认后才能作为 Evidence；只保存路径不算证据。
+- 默认覆盖 default、关键 empty/loading/error 态、desktop 宽度、窄宽度或 mobile 宽度；如支持 dark/light，至少覆盖两种主题。
+- Evidence 必须记录截图路径、状态、视口、主题、判定项。
+- 按钮主次、按钮类型、边距、密度、视觉层级、截断、空/加载/错误态等视觉结论必须来自 L2，不得只从代码推断。
+- 无法触达的视觉状态必须标记 `L2 blocked` 或 `L3 required`，不得默认为通过。
 
 **版本快照随开发分支**：原型本质是一个前端工程，"当时版本快照"由 git 仓库本身承载——与当前开发分支保持一致即可，不另堆 tag、也不复制 `v1/ v2/` 目录副本。回看历史形态用 git 历史；本表只记当前对应的设计版本与状态。
 

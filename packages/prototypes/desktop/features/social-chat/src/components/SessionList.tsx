@@ -16,6 +16,7 @@ interface SessionListProps {
   onDelete: (id: string) => void;
   onCreateFriend: (name: string, peerId: string) => void;
   onCreateGroup: (name: string, invitees: string[]) => void;
+  onFindPeople?: () => void;
   compact?: boolean;
   fill?: boolean;
 }
@@ -130,6 +131,7 @@ export function SessionList({
   onDelete,
   onCreateFriend,
   onCreateGroup,
+  onFindPeople,
   compact = false,
   fill = false,
 }: SessionListProps) {

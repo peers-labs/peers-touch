@@ -3,6 +3,7 @@ import { T } from '../theme';
 import { SessionList } from '../components/SessionList';
 import { ChatArea } from '../components/ChatArea';
 import { DetailPanel } from '../components/DetailPanel';
+import { FindPeopleModal } from '../components/FindPeopleModal';
 import { useChatState } from '../state';
 import { Contact, MessageCircle } from 'lucide-react';
 
@@ -114,6 +115,8 @@ export function SocialChatPage() {
     createGroupConversation,
   } = useChatState();
 
+  const [findPeopleOpen, setFindPeopleOpen] = useState(false);
+
   useEffect(() => {
     if (!rootRef.current) return undefined;
     const update = () => setRootWidth(rootRef.current?.clientWidth ?? 0);
@@ -147,6 +150,7 @@ export function SocialChatPage() {
           onDelete={deleteConversation}
           onCreateFriend={createFriendConversation}
           onCreateGroup={createGroupConversation}
+          onFindPeople={() => setFindPeopleOpen(true)}
         />
       )}
         <ChatArea
@@ -194,6 +198,7 @@ export function SocialChatPage() {
       )}
         </>
       )}
+      <FindPeopleModal open={findPeopleOpen} onClose={() => setFindPeopleOpen(false)} />
     </div>
   );
 }

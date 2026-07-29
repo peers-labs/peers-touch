@@ -62,6 +62,35 @@ description: "原型设计规范与工作流。当用户要求创建、修改、
 - **边界先于样式**：先声明 page canvas、content rail、action rail、floating layer、recovery layer，再决定搜索框、菜单、弹窗、tile 的视觉。
 - **模块合同优先**：若存在模块 UI ID 或平台 UX contract，原型必须实现其信息层级和禁用模式；若没有，必须在 README 的“已知差异 / 待补”里写明。
 
+### 3.2 LobeHub-style Visual Evidence Gate
+
+借鉴 LobeHub `ux-audit` 的 L1/L2/L3 分层：原型确认前，凡涉及按钮主次、边距、密度、视觉层级、暗色/亮色、响应式、空/加载/错误态的结论，**不能只从代码或口头判断**，必须有渲染截图证据。
+
+分层要求：
+
+| Layer | 证据 | 可判定内容 | 何时必跑 |
+|-------|------|------------|----------|
+| L1 Static | 源码 / `file:line` | 组件选型、状态分支、token role、是否存在 empty/loading/error/retry | 每个客户端 UI 原型 |
+| L2 Visual | 已打开确认过的截图 | 按钮是否真为视觉主操作、边距/对齐/密度、层级、截断、dark/light、窄宽度表现 | 进入 `pending-review` 前；进入 `confirmed` 前必须无阻断项 |
+| L3 Dynamic | 真实点击 / 录屏 / runtime capture | 键盘/focus、流程推进、错误态注入、动效与卡顿 | 复杂交互流、状态机密集、或 Owner 对行为有疑问时 |
+
+截图纪律：
+
+- 截图必须来自 Prototype Portal 或目标原型页面的真实渲染，不接受只看源码推断视觉结论。
+- 截图必须被 agent 实际打开检查后才能作为 Evidence；只保存路径、未查看内容，不算证据。
+- 默认截图集合：default、关键 empty/loading/error 态、desktop 宽度、一个窄宽度或 mobile 宽度；如支持 dark/light，至少覆盖两种主题。
+- 每个视觉结论必须写清：截图路径 / 状态 / 视口 / 主题 / 判定项。
+- 若某状态无法触达，不能默认为通过；在原型 README 的“已知差异 / 待补”标记 `L2 blocked` 或 `L3 required`。
+
+L2 可直接判定的问题：
+
+- 主操作是否唯一且视觉权重最高。
+- 按钮类型是否匹配动作语义：primary / secondary / text / icon / destructive。
+- card、list、rail、toolbar 的 spacing 是否成组且符合 UI Identity token role。
+- border、shadow、radius、accent 是否克制，是否偏离 Quiet Protocol Minimalism。
+- empty/loading/error/retry 是否像真实页面状态，而不是空白、占位或调试态。
+- 长文案、长标题、数字、列表是否截断或溢出。
+
 ---
 
 ## 4. 目录与文件约定
@@ -159,8 +188,8 @@ drafting → pending-review → confirmed → landed
 
 规则：
 1. 新原型登记进总账，初始 `drafting`
-2. 原型「能跑能点」、可对回设计编号后 → `pending-review`，提请 Owner 确认
-3. Owner 确认后 → `confirmed`——**只有 confirmed 的原型才允许进入落地实现**
+2. 原型「能跑能点」、可对回设计编号，并完成 L1 Static + 必要 L2 Visual 截图证据后 → `pending-review`，提请 Owner 确认
+3. Owner 确认且无 L2 阻断项后 → `confirmed`——**只有 confirmed 的原型才允许进入落地实现**
 4. 功能落地后 → `landed`；设计大改导致原型失效 → `superseded`（新建原型重走门）
 
 **未登记或未 confirmed 的原型，不得作为落地依据。**
@@ -186,6 +215,7 @@ Prototype Portal 支持 worktree / branch 切换：
 2. **原型不绑定最终运行时**：即使终态是 applet(Lynx) / Desktop 页面，原型也只用 web 栈（React+Vite+LobeUI）。不要为了"贴近运行时"把原型做成 ReactLynx 工程
 3. **禁止用原型当验收证据**：落地须由对应工程按其运行时重新实现
 4. **原型经确认后才落地**：总账中状态为 `confirmed` 才可以作为落地参照
+5. **Desktop 禁止新增独立模块卡片**：Portal desktop 区只允许**一张**可见原型入口（`packages/prototypes/desktop/shell/`）。所有 desktop 功能（Chat、Agent、Atelier、Orchestration、Call、Notes、Settings、Applets）必须在该唯一 Shell 内部通过路由接入，禁止在 `packages/prototypes/desktop/features/` 下新建独立可见卡片。已有的 feature 原型源码保留但必须设 `hidden: true`，其内容组件由 Shell 引用复用。违反此规则会导致 Portal 平铺多张卡 → 用户体验分裂（split-brain），历史上已多次发生。
 
 ---
 
@@ -211,6 +241,11 @@ Prototype Portal 支持 worktree / branch 切换：
 - [ ] 参考图只被用作结构/交互参考，没有覆盖 Peers Touch UI Identity
 - [ ] 颜色、字体、边框、圆角、阴影、间距能对回 UI Identity token roles，未用任意 raw CSS 私定风格
 - [ ] 已声明页面的 content rail、action rail、floating layer、recovery layer，未用装饰性边框/阴影弥补边界不清
+- [ ] 已完成 L1 Static 检查：组件选型、状态分支、token role、empty/loading/error/retry 覆盖有源码证据
+- [ ] 已完成 L2 Visual 截图检查：至少覆盖 default、关键状态、desktop 宽度、窄宽度或 mobile 宽度；如支持 dark/light，覆盖两种主题
+- [ ] 每张 L2 截图已实际打开确认，Evidence 记录包含截图路径 / 状态 / 视口 / 主题 / 判定项
+- [ ] 按钮主次、按钮类型、边距、密度、视觉层级、截断、空/加载/错误态等视觉结论均来自 L2 截图，而不是只从代码推断
+- [ ] 无法触达的视觉状态已在原型 README 标记 `L2 blocked` 或 `L3 required`，没有默认为通过
 - [ ] 使用 LobeUI / antd / lucide-react，未引入额外基础组件库
 - [ ] 未碰 Lynx / applet SDK / 非 web 运行时
 - [ ] mock 数据驱动，未依赖后端接口
