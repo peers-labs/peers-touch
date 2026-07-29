@@ -2812,11 +2812,23 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let scope = match resolve_scope(state) {
-                Ok(s) => s,
+            let token = match token_from_state(state) {
+                Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(AppResult::<StubPayload>::fail(ErrorCode::NotFound, "models module removed", None))
+            let provider_id = input.provider_id.trim();
+            let model_id = input.data.get("id").and_then(|v| v.as_str()).unwrap_or("").trim();
+            let display_name = input.data.get("display_name").and_then(|v| v.as_str()).unwrap_or("").trim();
+            let context_window = input.data.get("context_window").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            if model_id.is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(ErrorCode::InvalidArgument, "model id is required", None));
+            }
+            match app_provider::station_api::create_model(&token, provider_id, model_id, display_name, true, context_window) {
+                Ok(resp) => to_json(to_stub("model_add", resp)),
+                Err(e) => {
+                    to_json(AppResult::<StubPayload>::fail(ErrorCode::InternalError, &format!("{:?}", e), None))
+                }
+            }
         }
         "model_update" => {
             let input = match parse_args::<ProviderModelUpdateInput>(args) {
