@@ -409,8 +409,8 @@ No Desktop-only signal kind should be introduced.
 The Desktop product contract is detailed in:
 
 - Prototype entry: [`prototype/README.md`](./prototype/README.md)
-  (workspace at `packages/prototypes/desktop/features/call/`, registered in the
-  [prototype ledger](../prototypes/README.md)).
+  (implemented inside `packages/prototypes/desktop/features/social-chat/src/components/ChatArea.tsx`
+  and surfaced through the Desktop Shell `chat` route).
 
 Architecture-level UX invariants:
 
