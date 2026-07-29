@@ -2,17 +2,17 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-22 | **Updated**: 2026-06-22
+> **Created**: 2026-06-22 | **Updated**: 2026-07-08
 > **落地目标**: Desktop 好友聊天内的一对一语音 / 视频通话（`apps/desktop`，对应 `CallSurface`）；**原型本身只是 React web 展示**，不碰真实 WebRTC / 信令 / store / tauri
 > **总账状态**: confirmed（见 [原型总账](../../prototypes/README.md)）
 > **Owner**: Peers-Touch Realtime Team
-> **Module**: `packages/prototypes/desktop/features/call/`
+> **Module**: `packages/prototypes/desktop/features/social-chat/`
 
 ---
 
 ## 原型在哪
 
-源码在 `packages/prototypes/desktop/features/call/`（统一原型工作区；独立 web 工程）。本目录只放入口说明，不复制源码（架构文档标准 §5.8）。
+源码在 `packages/prototypes/desktop/features/social-chat/src/components/ChatArea.tsx`。可预览入口收敛到 `packages/prototypes/desktop/shell/`：stream call 作为 Social Chat 会话内的语音/视频状态与浮层承载，不再作为 Prototype Portal 顶层独立卡片或 Desktop Shell 独立页面展示。
 
 这个原型展示 **Desktop 一对一语音 / 视频通话长什么样**：在好友聊天界面之上，演示通话从呼出、来电、接通、弱网重连到结束 / 失败的完整生命周期 UI / UX。它不接真实 WebRTC / 信令 / TURN，纯前端 + mock 驱动，只为对齐"终态产品的样子"。
 
@@ -24,16 +24,16 @@
 ## 怎么跑
 
 ```bash
-cd packages/prototypes/desktop/features/call
-pnpm install        # 首次，monorepo 根装也可
-pnpm dev            # Vite，浏览器打开 localhost:3106
+make run-prototype desktop
 ```
+
+进入 `Desktop Shell` 后，从左侧「聊天」入口打开 Social Chat，再在会话头部使用语音 / 视频按钮进入 stream call。
 
 技术栈：React + Vite + `lucide-react` + 内联样式 DOM（近似 LobeUI / antd 桌面壳的视觉），纯前端、mock 驱动，浏览器直接看。
 
 ## 怎么看（状态走查）
 
-原型顶部内置 "PROTOTYPE STATES" 切换条，可在以下状态间逐态走查，并切换语音 / 视频与结束原因：
+状态走查入口折叠在 Chat header 的 `...` action menu 内，可在以下状态间逐态走查，并切换语音 / 视频与结束原因：
 
 | 状态 | 说明 |
 |------|------|
@@ -56,7 +56,7 @@ confirmed（见 [原型总账](../../prototypes/README.md)）。原型方向已�
 
 ## 已知差异 / 待补
 
-- "PROTOTYPE STATES" 切换条与卡片上的 "▶ Simulate …" 按钮仅为评审模拟，不属于产品 UI。
+- Chat header `...` 内的 stream call simulator 与 HUD 上的 "Simulate …" 按钮仅为评审模拟，不属于产品 UI。
 - 文案为占位英文；落地时所有用户可见文案必须走 i18n（`packages/locales/`），不得硬编码。
 - 视觉用纯 DOM + 内联样式近似桌面壳，未引入 `@lobehub/ui` / antd theme token；落地以真实主题系统为准。
 - 设备选择（麦克风 / 摄像头切换列表）、画中画拖拽、最小化为悬浮窗等交互未细化。
