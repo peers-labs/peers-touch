@@ -20,6 +20,12 @@ type NotificationProducer interface {
 	Produce(recipientID, actorID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) error
 }
 
+// ConversationCreator abstracts the conversation subsystem so that
+// accepting a friend request can auto-create the DM conversation.
+type ConversationCreator interface {
+	CreateDirect(ctx context.Context, actorA, actorB, stationA, stationB string) error
+}
+
 var (
 	ErrFriendRequestSelf     = errors.New("cannot send friend request to yourself")
 	ErrFriendRequestBlocked  = errors.New("blocked relationship")
@@ -33,6 +39,7 @@ type FriendRequestService struct {
 	blocks          infrastructure.BlockGraphRepository
 	relationshipSvc *RelationshipService
 	notif           NotificationProducer
+	conv            ConversationCreator
 }
 
 func NewFriendRequestService(
@@ -40,12 +47,14 @@ func NewFriendRequestService(
 	blocks infrastructure.BlockGraphRepository,
 	relationshipSvc *RelationshipService,
 	notif NotificationProducer,
+	conv ConversationCreator,
 ) *FriendRequestService {
 	return &FriendRequestService{
 		repo:            repo,
 		blocks:          blocks,
 		relationshipSvc: relationshipSvc,
 		notif:           notif,
+		conv:            conv,
 	}
 }
 
@@ -120,6 +129,13 @@ func (s *FriendRequestService) AcceptFriendRequest(ctx context.Context, actorID 
 	}
 	if _, err := s.relationshipSvc.Follow(ctx, actorID, existing.SenderDID); err != nil {
 		logger.Error(ctx, "friend accept: failed to create follow receiver→sender", "error", err)
+	}
+
+	// Auto-create DM conversation so both parties can message immediately.
+	if s.conv != nil {
+		if err := s.conv.CreateDirect(ctx, existing.SenderDID, actorDID, "", ""); err != nil {
+			logger.Error(ctx, "friend accept: failed to create DM conversation", "error", err)
+		}
 	}
 
 	return domainToProtoFriendRequest(*fr), nil
