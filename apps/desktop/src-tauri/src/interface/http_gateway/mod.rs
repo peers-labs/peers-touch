@@ -6691,6 +6691,82 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
 
         // =================================================================
+        // Conversation (unified IM layer — station proxy)
+        // =================================================================
+        "conversation_list" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            match crate::infrastructure::station_client::request_json_auth(
+                reqwest::Method::GET, "/conversation/list", &token, None, None,
+            ) {
+                Ok(resp) => to_json(AppResult::success(resp)),
+                Err(e) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError, &format!("conversation list: {e}"), None,
+                )),
+            }
+        }
+        "conversation_list_events" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let conv_id = args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("");
+            let after_seq = args.get("after_seq").and_then(|v| v.as_i64()).unwrap_or(0).to_string();
+            let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).to_string();
+            let query = vec![
+                ("conversation_id", conv_id.to_string()),
+                ("after_seq", after_seq),
+                ("limit", limit),
+            ];
+            match crate::infrastructure::station_client::request_json_auth(
+                reqwest::Method::GET, "/conversation/events", &token, Some(&query), None,
+            ) {
+                Ok(resp) => to_json(AppResult::success(resp)),
+                Err(e) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError, &format!("conversation events: {e}"), None,
+                )),
+            }
+        }
+        "conversation_get_members" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let conv_id = args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("");
+            let query = vec![("conversation_id", conv_id.to_string())];
+            match crate::infrastructure::station_client::request_json_auth(
+                reqwest::Method::GET, "/conversation/members", &token, Some(&query), None,
+            ) {
+                Ok(resp) => to_json(AppResult::success(resp)),
+                Err(e) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError, &format!("conversation members: {e}"), None,
+                )),
+            }
+        }
+        "conversation_react" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let body = json!({
+                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "message_id": args.get("message_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "emoji": args.get("emoji").and_then(|v| v.as_str()).unwrap_or(""),
+                "remove": args.get("remove").and_then(|v| v.as_bool()).unwrap_or(false),
+            });
+            match crate::infrastructure::station_client::request_json_auth(
+                reqwest::Method::POST, "/conversation/react", &token, None, Some(&body),
+            ) {
+                Ok(resp) => to_json(AppResult::success(resp)),
+                Err(e) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError, &format!("conversation react: {e}"), None,
+                )),
+            }
+        }
+
+        // =================================================================
         // Unknown command
         // =================================================================
         _ => to_json(AppResult::<StubPayload>::fail(

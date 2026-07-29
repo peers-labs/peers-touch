@@ -33,6 +33,7 @@ import {
   loadedThreadReplyCount,
 } from './message/ChatMessageTimeline';
 import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
+import { ForwardPickerModal } from './ForwardPickerModal';
 import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
@@ -87,6 +88,7 @@ export function ChatMessageArea() {
     peerOnline,
     typingPeers,
     threadCounts,
+    reactToMessage,
   } = useActiveSocialChatSlice((s) => ({
     activeTab: s.activeTab,
     activeSessionUlid: s.activeSessionUlid,
@@ -118,6 +120,7 @@ export function ChatMessageArea() {
     peerOnline: s.peerOnline,
     typingPeers: s.typingPeers,
     threadCounts: s.threadCounts,
+    reactToMessage: s.reactToMessage,
   }));
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -131,6 +134,7 @@ export function ChatMessageArea() {
   const [editingUlid, setEditingUlid] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
+  const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null);
   const [composerError, setComposerError] = useState<PresentedError | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -510,13 +514,26 @@ export function ChatMessageArea() {
   };
 
   const handleStartEdit = (msg: ChatMessage) => {
-    // Only plaintext messages are editable today. An E2EE chat
-    // would need a separate flow that re-encrypts under the active
-    // ratchet key before issuing the RPC; we deliberately disable
-    // the Edit button in `canEdit` rather than half-supporting it.
     setEditingUlid(msg.ulid);
     setInputValue(msg.content);
     setReplyToUlid(null);
+  };
+
+  const handleForwardSelect = async (conv: { id: string; kind: string }) => {
+    if (!forwardTarget) return;
+    const content = forwardTarget.content;
+    setForwardTarget(null);
+    try {
+      if (conv.kind === 'friend') {
+        await sendFriendMessage(conv.id, '', content, undefined, undefined, undefined);
+      } else {
+        await sendGroupMessage(conv.id, content, undefined, undefined, undefined);
+      }
+      toast.success(t('chat.social.messageArea.forwardSent'));
+    } catch (err) {
+      log.error('chat', 'forward message failed', err);
+      toast.error(t('chat.social.messageArea.forwardFailed'));
+    }
   };
 
   const cancelEdit = () => {
@@ -704,7 +721,12 @@ export function ChatMessageArea() {
             messages={mainTimelineMessages}
             onDelete={confirmDeleteMessage}
             onEdit={handleStartEdit}
+            onForward={setForwardTarget}
             onOpenThread={openThread}
+            onReact={(msg) => {
+              if (!activeUlid) return;
+              reactToMessage(activeUlid, msg.ulid, '👍');
+            }}
             onRecall={handleRecall}
             onReply={(messageUlid) => {
               setEditingUlid(null);
@@ -755,6 +777,13 @@ export function ChatMessageArea() {
           onConfirm={handleConfirmDelete}
         />
       )}
+
+      <ForwardPickerModal
+        open={!!forwardTarget}
+        conversations={getIMConversations()}
+        onCancel={() => setForwardTarget(null)}
+        onSelect={handleForwardSelect}
+      />
     </Flexbox>
   );
 }

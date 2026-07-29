@@ -11,6 +11,7 @@ import {
   normalizeAttachmentVisibility,
   type ChatMessage,
 } from './chatMessageModel';
+import { extractUrls, LinkPreviewCard } from './LinkPreviewCard';
 
 const { Text } = Typography;
 
@@ -32,6 +33,7 @@ export function ChatMessageContent({
   const isRecalled = isRecalledMessage(message);
   const encryptedPlaceholder = isEncryptedPlaceholder(message);
   const attachments = message.attachments || [];
+  const urls = !isRecalled && !encryptedPlaceholder ? extractUrls(message.content) : [];
 
   return (
     <>
@@ -54,6 +56,13 @@ export function ChatMessageContent({
         </Flexbox>
       ) : (
         message.content
+      )}
+      {urls.length > 0 && (
+        <Flexbox gap={4}>
+          {urls.slice(0, 3).map((url) => (
+            <LinkPreviewCard key={url} url={url} isOwn={isOwn} />
+          ))}
+        </Flexbox>
       )}
       {!isRecalled && attachments.length > 0 && (
         <Flexbox

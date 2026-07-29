@@ -405,6 +405,45 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 			},
 		}
 
+	case *chat.ConversationCommand_UpdateSettings:
+		if conv.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
+			if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+				return nil, err
+			}
+		}
+		changed := false
+		if p.UpdateSettings.Name != nil {
+			conv.Name = *p.UpdateSettings.Name
+			changed = true
+		}
+		if p.UpdateSettings.Description != nil {
+			conv.Description = *p.UpdateSettings.Description
+			changed = true
+		}
+		if p.UpdateSettings.AvatarCid != nil {
+			conv.AvatarCid = *p.UpdateSettings.AvatarCid
+			changed = true
+		}
+		if p.UpdateSettings.DisappearTimerSeconds != nil {
+			conv.DisappearTimerSeconds = *p.UpdateSettings.DisappearTimerSeconds
+			changed = true
+		}
+		if changed {
+			conv.UpdatedAt = timestamppb.New(now)
+			if err := s.repo.UpsertConversation(ctx, conv); err != nil {
+				return nil, fmt.Errorf("conversation: update settings failed: %w", err)
+			}
+		}
+		event.Payload = &chat.CommittedConversationEvent_SettingsChanged{
+			SettingsChanged: &chat.SettingsChangedEvent{
+				ChangedByPtid: cmd.SenderPtid,
+				Name:          p.UpdateSettings.Name,
+				Description:   p.UpdateSettings.Description,
+				AvatarCid:     p.UpdateSettings.AvatarCid,
+				Muted:         p.UpdateSettings.Muted,
+			},
+		}
+
 	case *chat.ConversationCommand_React:
 		if p.React.MessageId == "" || p.React.Emoji == "" {
 			return nil, fmt.Errorf("conversation: react requires message_id and emoji")

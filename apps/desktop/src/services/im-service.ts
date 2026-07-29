@@ -64,7 +64,7 @@ const conversationService: ConversationServiceContract = {
 
   async react(conversationId: string, messageId: string, emoji: string, remove = false) {
     await cmd('conversation_react', {
-      input: { conversation_id: conversationId, message_id: messageId, emoji, remove },
+      conversation_id: conversationId, message_id: messageId, emoji, remove,
     })
   },
 

@@ -531,14 +531,15 @@ type Conversation struct {
 	CreatedAt              *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt              *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// Group-only fields (empty for direct).
-	Name          string            `protobuf:"bytes,10,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string            `protobuf:"bytes,11,opt,name=description,proto3" json:"description,omitempty"`
-	AvatarCid     string            `protobuf:"bytes,12,opt,name=avatar_cid,json=avatarCid,proto3" json:"avatar_cid,omitempty"`
-	OwnerPtid     string            `protobuf:"bytes,13,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
-	MaxMembers    int32             `protobuf:"varint,14,opt,name=max_members,json=maxMembers,proto3" json:"max_members,omitempty"`
-	Visibility    GroupVisibilityV1 `protobuf:"varint,15,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibilityV1" json:"visibility,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Name                  string            `protobuf:"bytes,10,opt,name=name,proto3" json:"name,omitempty"`
+	Description           string            `protobuf:"bytes,11,opt,name=description,proto3" json:"description,omitempty"`
+	AvatarCid             string            `protobuf:"bytes,12,opt,name=avatar_cid,json=avatarCid,proto3" json:"avatar_cid,omitempty"`
+	OwnerPtid             string            `protobuf:"bytes,13,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
+	MaxMembers            int32             `protobuf:"varint,14,opt,name=max_members,json=maxMembers,proto3" json:"max_members,omitempty"`
+	Visibility            GroupVisibilityV1 `protobuf:"varint,15,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibilityV1" json:"visibility,omitempty"`
+	DisappearTimerSeconds uint32            `protobuf:"varint,16,opt,name=disappear_timer_seconds,json=disappearTimerSeconds,proto3" json:"disappear_timer_seconds,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *Conversation) Reset() {
@@ -660,6 +661,13 @@ func (x *Conversation) GetVisibility() GroupVisibilityV1 {
 		return x.Visibility
 	}
 	return GroupVisibilityV1_GROUP_VISIBILITY_V1_UNSPECIFIED
+}
+
+func (x *Conversation) GetDisappearTimerSeconds() uint32 {
+	if x != nil {
+		return x.DisappearTimerSeconds
+	}
+	return 0
 }
 
 type ConversationMember struct {
@@ -1475,12 +1483,13 @@ func (*DissolveCommand) Descriptor() ([]byte, []int) {
 type UpdateSettingsCommand struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Only set fields are applied.
-	Name          *string `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
-	Description   *string `protobuf:"bytes,2,opt,name=description,proto3,oneof" json:"description,omitempty"`
-	AvatarCid     *string `protobuf:"bytes,3,opt,name=avatar_cid,json=avatarCid,proto3,oneof" json:"avatar_cid,omitempty"`
-	Muted         *bool   `protobuf:"varint,4,opt,name=muted,proto3,oneof" json:"muted,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Name                  *string `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Description           *string `protobuf:"bytes,2,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	AvatarCid             *string `protobuf:"bytes,3,opt,name=avatar_cid,json=avatarCid,proto3,oneof" json:"avatar_cid,omitempty"`
+	Muted                 *bool   `protobuf:"varint,4,opt,name=muted,proto3,oneof" json:"muted,omitempty"`
+	DisappearTimerSeconds *uint32 `protobuf:"varint,5,opt,name=disappear_timer_seconds,json=disappearTimerSeconds,proto3,oneof" json:"disappear_timer_seconds,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *UpdateSettingsCommand) Reset() {
@@ -1539,6 +1548,13 @@ func (x *UpdateSettingsCommand) GetMuted() bool {
 		return *x.Muted
 	}
 	return false
+}
+
+func (x *UpdateSettingsCommand) GetDisappearTimerSeconds() uint32 {
+	if x != nil && x.DisappearTimerSeconds != nil {
+		return *x.DisappearTimerSeconds
+	}
+	return 0
 }
 
 type TypingCommand struct {
@@ -2953,7 +2969,7 @@ var File_domain_chat_conversation_proto protoreflect.FileDescriptor
 
 const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\n" +
-	"\x1edomain/chat/conversation.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfe\x04\n" +
+	"\x1edomain/chat/conversation.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb6\x05\n" +
 	"\fConversation\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12?\n" +
 	"\x04kind\x18\x02 \x01(\x0e2+.peers_touch.model.chat.v1.ConversationKindR\x04kind\x129\n" +
@@ -2975,7 +2991,8 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	"maxMembers\x12L\n" +
 	"\n" +
 	"visibility\x18\x0f \x01(\x0e2,.peers_touch.model.chat.v1.GroupVisibilityV1R\n" +
-	"visibility\"\xa1\x04\n" +
+	"visibility\x126\n" +
+	"\x17disappear_timer_seconds\x18\x10 \x01(\rR\x15disappearTimerSeconds\"\xa1\x04\n" +
 	"\x12ConversationMember\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x129\n" +
@@ -3035,17 +3052,19 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\x14RemoveMembersCommand\x12\x14\n" +
 	"\x05ptids\x18\x01 \x03(\tR\x05ptids\"\x0e\n" +
 	"\fLeaveCommand\"\x11\n" +
-	"\x0fDissolveCommand\"\xc8\x01\n" +
+	"\x0fDissolveCommand\"\xa1\x02\n" +
 	"\x15UpdateSettingsCommand\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12%\n" +
 	"\vdescription\x18\x02 \x01(\tH\x01R\vdescription\x88\x01\x01\x12\"\n" +
 	"\n" +
 	"avatar_cid\x18\x03 \x01(\tH\x02R\tavatarCid\x88\x01\x01\x12\x19\n" +
-	"\x05muted\x18\x04 \x01(\bH\x03R\x05muted\x88\x01\x01B\a\n" +
+	"\x05muted\x18\x04 \x01(\bH\x03R\x05muted\x88\x01\x01\x12;\n" +
+	"\x17disappear_timer_seconds\x18\x05 \x01(\rH\x04R\x15disappearTimerSeconds\x88\x01\x01B\a\n" +
 	"\x05_nameB\x0e\n" +
 	"\f_descriptionB\r\n" +
 	"\v_avatar_cidB\b\n" +
-	"\x06_muted\",\n" +
+	"\x06_mutedB\x1a\n" +
+	"\x18_disappear_timer_seconds\",\n" +
 	"\rTypingCommand\x12\x1b\n" +
 	"\tis_typing\x18\x01 \x01(\bR\bisTyping\"[\n" +
 	"\fReactCommand\x12\x1d\n" +
