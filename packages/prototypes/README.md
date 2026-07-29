@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-22 | **Updated**: 2026-06-24
+> **Created**: 2026-06-22 | **Updated**: 2026-07-08
 > **Owner**: Architecture Team
 
 ---
@@ -23,14 +23,14 @@
 
 | 站点 | 含义 | 示例 |
 |------|------|------|
-| `desktop` | Desktop App / desktop-web / applet 容器内体验 | desktop shell、atelier applet、social chat、call |
-| `mobile` | Mobile 端页面、组件与交互体验 | mobile chat、mobile form |
+| `desktop` | Desktop App / desktop-web / applet 容器内体验 | desktop shell、atelier applet、shell-hosted social chat（含 stream call） |
+| `mobile` | Mobile 端页面、组件与交互体验 | mobile shell、launch/access gate、chat、contacts、moments、settings |
 | `dashboard` | Station Dashboard / 管理台 / 运维台体验 | station admin dashboard |
 
 注意：
 
 - `atelier` 是 desktop 站点内的 applet 原型，不是一级站点。
-- `call` / `social-chat` 是 desktop 站点内的能力原型，不是和 `desktop` 并级的一级模块。
+- `social-chat` 是 desktop 站点内的能力原型，不是和 `desktop` 并级的一级模块；stream call 属于 Chat 会话内状态，不再单独建原型包。
 
 物理目录也必须表达同样的层级：
 
@@ -42,7 +42,6 @@ packages/prototypes/
 │   ├── applets/
 │   │   └── atelier/
 │   └── features/
-│       ├── call/
 │       └── social-chat/
 ├── mobile/
 │   └── chat/
@@ -61,6 +60,14 @@ make run-prototype
 ```
 
 Prototype Portal 内部提供 `desktop` / `mobile` / `dashboard` 站点切换。禁止把 `pnpm dev` / Vite 原生命令作为对用户或 Agent 的正式运行方式。原生命令只允许作为 Makefile 内部实现细节。
+
+默认 `make run-prototype` 对当前 worktree 排它运行，并使用 `3200` 作为起始端口。并行开发同一个 worktree 的多个原型时，使用：
+
+```bash
+make -w run-prototype
+```
+
+`-w` 表示 worktree parallel mode：跳过当前 worktree 的排它锁，从 `VITE_PROTOTYPE_PORT`（默认 `3200`）开始探测端口占用，并递增到第一个空闲端口后启动 Portal。
 
 跨 worktree / branch 预览：
 
@@ -93,12 +100,10 @@ Prototype Portal 内部提供 `desktop` / `mobile` / `dashboard` 站点切换。
 | 站点 | 原型 ID | 路径 | 说明 |
 |------|---------|------|------|
 | all | `portal` | `packages/prototypes/portal/` | 统一 Prototype Portal，按 `desktop` / `mobile` / `dashboard` 切换站点 |
-| desktop | `desktop-shell` | `packages/prototypes/desktop/shell/` | Desktop 容器外壳原型 |
+| desktop | `desktop-shell` | `packages/prototypes/desktop/shell/` | Desktop 容器外壳原型；Portal 顶层入口，承载 Chat / Agent / Applets；stream call 在 Chat 内呈现 |
 | desktop | `atelier` | `packages/prototypes/desktop/applets/atelier/` | Desktop 内的 applet 原型 |
 | desktop | `applet-lifecycle` | `packages/prototypes/desktop/features/applet-lifecycle/` | Applet Box 极简 launcher 与安装包导入生命周期原型 |
-| desktop | `call` | `packages/prototypes/desktop/features/call/` | Desktop Chat/通话能力原型 |
-| desktop | `social-chat` | `packages/prototypes/desktop/features/social-chat/` | Desktop Chat 能力原型 |
-| mobile | `mobile-chat` | `packages/prototypes/mobile/chat/` | Mobile Chat / 跨设备会话体验基准原型 |
+| mobile | `mobile-chat` | `packages/prototypes/mobile/chat/` | Mobile Shell source-backed 原型：对齐 `apps/mobile` 的 LaunchState、AccessGateHost、MobileShell、Chat / Contacts / Moments / Settings |
 | dashboard | `station-dashboard` | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard 运维台体验基准原型 |
 
 ---
