@@ -80,9 +80,11 @@ export function PrototypePortal() {
             const item = SITE_META[key];
             const active = key === site;
             return (
-              <div
+              <button
                 key={key}
+                type="button"
                 style={{ ...styles.siteItem, ...(active ? styles.siteItemActive : null), cursor: 'pointer' }}
+                aria-pressed={active}
                 onClick={() => setSite(key)}
               >
                 {item.icon}
@@ -90,7 +92,7 @@ export function PrototypePortal() {
                   <div style={styles.siteTitle}>{key}</div>
                   <div style={styles.siteSubtitle}>{item.title}</div>
                 </div>
-              </div>
+              </button>
             );
           })}
         </aside>
@@ -234,7 +236,7 @@ function PrototypePreview({ prototype }: { prototype: PrototypeManifest }) {
         <span>Live Preview</span>
         <span style={styles.previewMeta}>{prototype.title}</span>
       </div>
-      <div style={styles.previewBody}>
+      <div style={styles.localPreviewBody}>
         {Preview ? (
           <Preview />
         ) : (
@@ -347,13 +349,17 @@ const styles: Record<string, CSSProperties> = {
     borderRight: '1px solid #e5e7eb',
   },
   siteItem: {
+    width: '100%',
     display: 'flex',
     alignItems: 'center',
     gap: 10,
     padding: '10px 12px',
+    border: 0,
     borderRadius: 10,
+    background: 'transparent',
     color: '#4b5563',
     marginBottom: 8,
+    textAlign: 'left',
   },
   siteItemActive: {
     background: '#eef2ff',
@@ -530,6 +536,10 @@ const styles: Record<string, CSSProperties> = {
     height: 720,
     minHeight: 0,
     overflow: 'auto',
+  },
+  localPreviewBody: {
+    minHeight: 780,
+    overflow: 'visible',
   },
   previewPlaceholder: {
     height: '100%',
