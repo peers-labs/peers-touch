@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   AlertCircle,
   Check,
@@ -7,15 +7,23 @@ import {
   FileText,
   Image as ImageIcon,
   Lock,
+  Mic,
+  MicOff,
   MoreHorizontal,
   Paperclip,
   Phone,
+  PhoneIncoming,
+  PhoneOff,
   RotateCcw,
   Search,
   Send,
   ShieldCheck,
   Smile,
   Video,
+  VideoOff,
+  Wifi,
+  WifiOff,
+  type LucideIcon,
 } from 'lucide-react';
 import { T } from '../theme';
 import { Avatar } from './Avatar';
@@ -31,6 +39,20 @@ interface ChatAreaProps {
 }
 
 const HISTORY_RESTORE_WINDOW_MS = 24 * 60 * 60 * 1000;
+type CallState = 'idle' | 'outgoing' | 'incoming' | 'active' | 'reconnecting' | 'ended' | 'failed';
+type MediaKind = 'audio' | 'video';
+type EndReason = 'hangup' | 'canceled' | 'rejected' | 'missed' | 'denied' | 'network';
+
+const CALL_STATES: CallState[] = ['idle', 'outgoing', 'incoming', 'active', 'reconnecting', 'ended', 'failed'];
+const CALL_REASONS: EndReason[] = ['hangup', 'canceled', 'rejected', 'missed', 'denied', 'network'];
+const endReasonText: Record<EndReason, { title: string; tone: 'neutral' | 'bad' }> = {
+  hangup: { title: 'Call ended', tone: 'neutral' },
+  canceled: { title: 'Call canceled', tone: 'neutral' },
+  rejected: { title: 'Call declined', tone: 'neutral' },
+  missed: { title: 'No answer', tone: 'bad' },
+  denied: { title: 'Microphone / camera permission denied', tone: 'bad' },
+  network: { title: 'Connection failed - please retry', tone: 'bad' },
+};
 
 function formatMessageTime(timestamp: number): string {
   const d = new Date(timestamp);
@@ -196,6 +218,497 @@ function formatRemaining(ms: number) {
   return `${minutes}m`;
 }
 
+function fmtDuration(sec: number): string {
+  const m = Math.floor(sec / 60).toString().padStart(2, '0');
+  const s = Math.floor(sec % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function HeaderIconButton({
+  icon: Icon,
+  title,
+  active,
+  onClick,
+}: {
+  icon: LucideIcon;
+  title: string;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      style={{
+        width: 32,
+        height: 32,
+        border: 'none',
+        background: active ? T.bgHover : 'transparent',
+        borderRadius: T.radiusMd,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: active ? T.primary : T.textSecondary,
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = T.bgHover)}
+      onMouseLeave={(e) => (e.currentTarget.style.background = active ? T.bgHover : 'transparent')}
+    >
+      <Icon size={18} />
+    </button>
+  );
+}
+
+function CircleButton({
+  icon: Icon,
+  title,
+  tone = 'neutral',
+  onClick,
+}: {
+  icon: LucideIcon;
+  title: string;
+  tone?: 'neutral' | 'danger' | 'accept';
+  onClick?: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  const palette = {
+    neutral: { bg: hover ? T.bgHover : T.bgMuted, fg: T.textSecondary, border: T.border },
+    danger: { bg: T.textDanger, fg: T.textOnPrimary, border: T.textDanger },
+    accept: { bg: T.success, fg: T.textOnPrimary, border: T.success },
+  }[tone];
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: 42,
+        height: 42,
+        borderRadius: T.radiusFull,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        color: palette.fg,
+        background: palette.bg,
+        border: `1px solid ${palette.border}`,
+      }}
+    >
+      <Icon size={18} />
+    </button>
+  );
+}
+
+function Segmented<TValue extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: readonly TValue[];
+  value: TValue;
+  onChange: (value: TValue) => void;
+}) {
+  return (
+    <div style={{ display: 'inline-flex', gap: 4, background: T.bgMuted, padding: 3, borderRadius: T.radiusMd, flexWrap: 'wrap' }}>
+      {options.map((option) => {
+        const active = option === value;
+        return (
+          <button
+            key={option}
+            onClick={() => onChange(option)}
+            style={{
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: T.fontXs,
+              padding: `4px ${T.space2}px`,
+              borderRadius: T.radiusSm,
+              fontWeight: active ? 700 : 500,
+              color: active ? T.primary : T.textSecondary,
+              background: active ? T.bg : 'transparent',
+              boxShadow: active ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+            }}
+          >
+            {option}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CallDiagnosticsMenu({
+  state,
+  media,
+  reason,
+  onState,
+  onMedia,
+  onReason,
+  onOpenDetail,
+}: {
+  state: CallState;
+  media: MediaKind;
+  reason: EndReason;
+  onState: (state: CallState) => void;
+  onMedia: (media: MediaKind) => void;
+  onReason: (reason: EndReason) => void;
+  onOpenDetail: () => void;
+}) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 42,
+        right: 0,
+        zIndex: 40,
+        width: 320,
+        border: `1px solid ${T.border}`,
+        borderRadius: T.radiusLg,
+        background: T.bg,
+        boxShadow: '0 18px 48px rgba(15, 23, 42, 0.16)',
+        padding: T.space3,
+      }}
+    >
+      <button
+        onClick={onOpenDetail}
+        style={{
+          width: '100%',
+          height: 34,
+          border: `1px solid ${T.borderSubtle}`,
+          borderRadius: T.radiusMd,
+          background: T.bgSubtle,
+          color: T.text,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: `0 ${T.space3}px`,
+          fontSize: T.fontSm,
+          fontWeight: 700,
+          marginBottom: T.space3,
+        }}
+      >
+        <span>Conversation details</span>
+        <MoreHorizontal size={15} />
+      </button>
+      <div style={{ fontSize: T.fontXs, fontWeight: 800, color: T.textTertiary, letterSpacing: 0.4, marginBottom: T.space2 }}>
+        Stream call simulator
+      </div>
+      <div style={{ display: 'grid', gap: T.space2 }}>
+        <Segmented options={CALL_STATES} value={state} onChange={onState} />
+        <Segmented options={['audio', 'video'] as const} value={media} onChange={onMedia} />
+        {(state === 'ended' || state === 'failed') && (
+          <Segmented options={CALL_REASONS} value={reason} onChange={onReason} />
+        )}
+      </div>
+      <div style={{ marginTop: T.space2, color: T.textTertiary, fontSize: T.fontXs, lineHeight: 1.5 }}>
+        Hidden by default; use this only to review non-happy-path call states.
+      </div>
+    </div>
+  );
+}
+
+function ModalAction({
+  icon: Icon,
+  label,
+  tone,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  tone: 'danger' | 'accept';
+  onClick: () => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: T.space2 }}>
+      <CircleButton icon={Icon} title={label} tone={tone} onClick={onClick} />
+      <span style={{ fontSize: T.fontXs, color: T.textTertiary }}>{label}</span>
+    </div>
+  );
+}
+
+function IncomingCallModal({
+  conversation,
+  media,
+  onAccept,
+  onReject,
+}: {
+  conversation: MockConversation;
+  media: MediaKind;
+  onAccept: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 30,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(15,23,42,0.42)',
+      }}
+    >
+      <div
+        style={{
+          width: 320,
+          borderRadius: T.radiusLg,
+          background: T.bg,
+          padding: `${T.space6}px ${T.space5}px`,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.28)',
+        }}
+      >
+        <div style={{ position: 'relative' }}>
+          <Avatar name={conversation.name} size={80} online={conversation.online} groupIcon={conversation.type === 'group'} />
+          <span
+            style={{
+              position: 'absolute',
+              right: -2,
+              bottom: -2,
+              width: 30,
+              height: 30,
+              borderRadius: T.radiusFull,
+              background: T.primary,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: T.textOnPrimary,
+              border: `3px solid ${T.bg}`,
+            }}
+          >
+            <PhoneIncoming size={15} />
+          </span>
+        </div>
+        <div style={{ marginTop: T.space4, fontSize: T.fontLg, fontWeight: 700, color: T.text }}>{conversation.name}</div>
+        <div style={{ marginTop: 5, fontSize: T.fontSm, color: T.textTertiary }}>
+          Incoming {media === 'video' ? 'video' : 'voice'} call
+        </div>
+        <div style={{ marginTop: T.space6, display: 'flex', gap: 40 }}>
+          <ModalAction icon={PhoneOff} label="Decline" tone="danger" onClick={onReject} />
+          <ModalAction icon={media === 'video' ? Video : Phone} label="Accept" tone="accept" onClick={onAccept} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CallHud({
+  conversation,
+  state,
+  media,
+  duration,
+  micOn,
+  camOn,
+  onToggleMic,
+  onToggleCam,
+  onHangup,
+  onPeerAccept,
+  onSimWeak,
+}: {
+  conversation: MockConversation;
+  state: 'outgoing' | 'active' | 'reconnecting';
+  media: MediaKind;
+  duration: number;
+  micOn: boolean;
+  camOn: boolean;
+  onToggleMic: () => void;
+  onToggleCam: () => void;
+  onPeerAccept: () => void;
+  onSimWeak: () => void;
+}) {
+  const isVideo = media === 'video';
+  const isActive = state === 'active' || state === 'reconnecting';
+  const reconnecting = state === 'reconnecting';
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 22,
+        right: 22,
+        zIndex: 25,
+        width: isVideo ? 360 : 264,
+        background: T.bg,
+        border: `1px solid ${T.border}`,
+        borderRadius: T.radiusLg,
+        boxShadow: '0 12px 48px rgba(15,23,42,0.22)',
+        overflow: 'hidden',
+      }}
+    >
+      {isVideo && isActive ? (
+        <div style={{ position: 'relative', width: '100%', height: 200, background: '#111827' }}>
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              background: reconnecting
+                ? 'linear-gradient(135deg, #111827, #312e81)'
+                : 'linear-gradient(135deg, #312e81, #6d28d9)',
+              filter: reconnecting ? 'blur(1px) brightness(0.82)' : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: T.textOnPrimary,
+              fontSize: T.fontLg,
+              fontWeight: 800,
+            }}
+          >
+            {conversation.name}
+          </div>
+          <div
+            style={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              width: 80,
+              height: 60,
+              borderRadius: T.radiusSm,
+              border: `1px solid rgba(255,255,255,0.28)`,
+              background: camOn ? `linear-gradient(135deg, ${T.primary}, #9a8df0)` : '#111827',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: T.textOnPrimary,
+              fontSize: T.fontXs,
+              fontWeight: 700,
+            }}
+          >
+            {camOn ? 'You' : <VideoOff size={18} />}
+          </div>
+          <span
+            style={{
+              position: 'absolute',
+              top: 8,
+              left: 8,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: T.fontXs,
+              padding: '2px 7px',
+              borderRadius: T.radiusFull,
+              background: 'rgba(0,0,0,0.45)',
+              color: T.textOnPrimary,
+            }}
+          >
+            <ShieldCheck size={12} /> E2E
+          </span>
+        </div>
+      ) : (
+        <div
+          style={{
+            height: isVideo ? 200 : 104,
+            background: T.bgMuted,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {isVideo ? <Video size={44} color={T.textTertiary} /> : <Phone size={34} color={T.textTertiary} />}
+        </div>
+      )}
+
+      <div style={{ padding: T.space3, display: 'flex', flexDirection: 'column', gap: T.space2 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: T.space2 }}>
+          <span style={{ fontSize: T.fontBase, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {conversation.name}
+          </span>
+          <span style={{ fontSize: T.fontXs, display: 'inline-flex', alignItems: 'center', gap: 4, color: T.textTertiary, flexShrink: 0 }}>
+            {state === 'outgoing' ? (
+              'Ringing'
+            ) : reconnecting ? (
+              <><WifiOff size={13} color={T.warning} /> Reconnecting</>
+            ) : (
+              <><Wifi size={13} color={T.success} /> {fmtDuration(duration)}</>
+            )}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: T.space3 }}>
+          {isActive && (
+            <CircleButton icon={micOn ? Mic : MicOff} title={micOn ? 'Mute' : 'Unmute'} tone={micOn ? 'neutral' : 'danger'} onClick={onToggleMic} />
+          )}
+          {isActive && isVideo && (
+            <CircleButton icon={camOn ? Video : VideoOff} title={camOn ? 'Camera off' : 'Camera on'} tone={camOn ? 'neutral' : 'danger'} onClick={onToggleCam} />
+          )}
+          <CircleButton icon={PhoneOff} title={isActive ? 'End' : 'Cancel'} tone="danger" onClick={onHangup} />
+        </div>
+        <div style={{ display: 'flex', gap: T.space2, justifyContent: 'center' }}>
+          {state === 'outgoing' && <button onClick={onPeerAccept} style={simButtonStyle}>Simulate accept</button>}
+          {isActive && <button onClick={onSimWeak} style={simButtonStyle}>{reconnecting ? 'Simulate recover' : 'Simulate weak network'}</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const simButtonStyle: CSSProperties = {
+  fontSize: T.fontXs,
+  color: T.textTertiary,
+  cursor: 'pointer',
+  padding: `3px ${T.space2}px`,
+  borderRadius: T.radiusFull,
+  border: `1px dashed ${T.border}`,
+  background: T.bg,
+};
+
+function CallResultToast({
+  reason,
+  duration,
+  onClose,
+}: {
+  reason: EndReason;
+  duration: number;
+  onClose: () => void;
+}) {
+  const meta = endReasonText[reason];
+  const bad = meta.tone === 'bad';
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 74,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 25,
+        display: 'flex',
+        alignItems: 'center',
+        gap: T.space3,
+        padding: `${T.space3}px ${T.space4}px`,
+        borderRadius: T.radiusLg,
+        background: T.bg,
+        border: `1px solid ${bad ? T.textDanger : T.border}`,
+        boxShadow: '0 12px 36px rgba(15,23,42,0.16)',
+      }}
+    >
+      <PhoneOff size={18} color={bad ? T.textDanger : T.textSecondary} />
+      <div>
+        <div style={{ fontSize: T.fontSm, fontWeight: 700, color: T.text }}>{meta.title}</div>
+        <div style={{ fontSize: T.fontXs, color: T.textTertiary }}>
+          {reason === 'hangup' ? `Duration ${fmtDuration(duration)}` : 'Use the call button to retry'}
+        </div>
+      </div>
+      <button
+        onClick={onClose}
+        style={{
+          marginLeft: T.space1,
+          fontSize: T.fontXs,
+          color: T.textTertiary,
+          cursor: 'pointer',
+          padding: `4px ${T.space2}px`,
+          borderRadius: T.radiusSm,
+          border: 'none',
+          background: T.bgMuted,
+        }}
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
 export function ChatArea({
   conversation,
   messages,
@@ -206,6 +719,14 @@ export function ChatArea({
 }: ChatAreaProps) {
   const [inputValue, setInputValue] = useState('');
   const [now, setNow] = useState(Date.now());
+  const [callState, setCallState] = useState<CallState>('idle');
+  const [callMedia, setCallMedia] = useState<MediaKind>('video');
+  const [callReason, setCallReason] = useState<EndReason>('hangup');
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);
+  const [duration, setDuration] = useState(0);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const callTimer = useRef<number | null>(null);
   const historyClearedAt = conversation?.historyClearedAt ?? 0;
   const historyRestoreExpiresAt = historyClearedAt + HISTORY_RESTORE_WINDOW_MS;
   const canRestoreHistory = historyClearedAt > 0 && now < historyRestoreExpiresAt;
@@ -226,6 +747,29 @@ export function ChatArea({
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, [canRestoreHistory, historyRestoreExpiresAt]);
+
+  useEffect(() => {
+    const counting = callState === 'active' || callState === 'reconnecting';
+    if (counting && callTimer.current === null) {
+      callTimer.current = window.setInterval(() => setDuration((value) => value + 1), 1000);
+    }
+    if (!counting && callTimer.current !== null) {
+      window.clearInterval(callTimer.current);
+      callTimer.current = null;
+    }
+    if (callState === 'idle' || callState === 'outgoing' || callState === 'incoming') setDuration(0);
+    return () => {
+      if (callTimer.current !== null) {
+        window.clearInterval(callTimer.current);
+        callTimer.current = null;
+      }
+    };
+  }, [callState]);
+
+  useEffect(() => {
+    setCallState('idle');
+    setActionsOpen(false);
+  }, [conversation?.id]);
 
   if (!conversation) {
     return (
@@ -249,9 +793,24 @@ export function ChatArea({
     onSendMessage(conversation.id, inputValue);
     setInputValue('');
   };
+  const startCall = (media: MediaKind) => {
+    setCallMedia(media);
+    setMicOn(true);
+    setCamOn(media === 'video');
+    setCallReason('hangup');
+    setCallState('outgoing');
+  };
+  const callChip =
+    callState === 'outgoing'
+      ? 'Ringing'
+      : callState === 'incoming'
+        ? 'Incoming'
+        : callState === 'active' || callState === 'reconnecting'
+          ? `${callState === 'reconnecting' ? 'Reconnecting' : 'In call'} · ${fmtDuration(duration)}`
+          : null;
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: T.chatReadableMinWidth }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: compact ? 240 : T.chatReadableMinWidth, position: 'relative' }}>
       {/* Header — same height as session list header */}
       <div
         style={{
@@ -286,6 +845,25 @@ export function ChatArea({
                 {conversation.trustLabel}
               </span>
             )}
+            {callChip && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 7px',
+                  borderRadius: T.radiusFull,
+                  background: callState === 'reconnecting' ? '#fff7e6' : 'rgba(107,91,214,0.1)',
+                  color: callState === 'reconnecting' ? T.warning : T.primary,
+                  fontSize: T.fontXs,
+                  fontWeight: 800,
+                  flexShrink: 0,
+                }}
+              >
+                {callState === 'reconnecting' ? <WifiOff size={11} /> : <Phone size={11} />}
+                {callChip}
+              </span>
+            )}
           </div>
           <span style={{ display: 'block', fontSize: T.fontXs, color: T.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {conversation.type === 'group'
@@ -293,47 +871,25 @@ export function ChatArea({
               : `${conversation.online ? 'Online' : 'Offline'} · ${conversation.detailHint}`}
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: T.space1 }}>
-          {(compact ? [Search] : [Search, Phone, Video]).map((Icon, i) => (
-            <button
-              key={i}
-              style={{
-                width: 32,
-                height: 32,
-                border: 'none',
-                background: 'transparent',
-                borderRadius: T.radiusMd,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: T.textSecondary,
+        <div style={{ display: 'flex', alignItems: 'center', gap: T.space1, position: 'relative' }}>
+          <HeaderIconButton icon={Search} title="Search messages" />
+          <HeaderIconButton icon={Phone} title="Start voice call" onClick={() => startCall('audio')} />
+          <HeaderIconButton icon={Video} title="Start video call" onClick={() => startCall('video')} />
+          <HeaderIconButton icon={MoreHorizontal} title="Conversation actions" active={actionsOpen} onClick={() => setActionsOpen((value) => !value)} />
+          {actionsOpen && (
+            <CallDiagnosticsMenu
+              state={callState}
+              media={callMedia}
+              reason={callReason}
+              onState={setCallState}
+              onMedia={setCallMedia}
+              onReason={setCallReason}
+              onOpenDetail={() => {
+                setActionsOpen(false);
+                window.setTimeout(onToggleDetail, 0);
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = T.bgHover)}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              <Icon size={18} />
-            </button>
-          ))}
-          <button
-            onClick={onToggleDetail}
-            style={{
-              width: 32,
-              height: 32,
-              border: 'none',
-              background: 'transparent',
-              borderRadius: T.radiusMd,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: T.textSecondary,
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = T.bgHover)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            <MoreHorizontal size={18} />
-          </button>
+            />
+          )}
         </div>
       </div>
 
@@ -446,6 +1002,9 @@ export function ChatArea({
           }}
         >
           <button
+            type="button"
+            title="Emoji"
+            aria-label="Emoji"
             style={{
               width: 28, height: 28, border: 'none', background: 'transparent',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -455,6 +1014,9 @@ export function ChatArea({
             <Smile size={18} />
           </button>
           <button
+            type="button"
+            title="Attach file"
+            aria-label="Attach file"
             style={{
               width: 28, height: 28, border: 'none', background: 'transparent',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -482,6 +1044,10 @@ export function ChatArea({
             }}
           />
           <button
+            type="button"
+            title="Send message"
+            aria-label="Send message"
+            aria-disabled={!inputValue.trim()}
             onClick={send}
             style={{
               width: 28, height: 28, border: 'none',
@@ -497,6 +1063,45 @@ export function ChatArea({
           </button>
         </div>
       </div>
+      {callState === 'incoming' && (
+        <IncomingCallModal
+          conversation={conversation}
+          media={callMedia}
+          onAccept={() => setCallState('active')}
+          onReject={() => {
+            setCallReason('rejected');
+            setCallState('ended');
+          }}
+        />
+      )}
+      {(callState === 'outgoing' || callState === 'active' || callState === 'reconnecting') && (
+        <CallHud
+          conversation={conversation}
+          state={callState}
+          media={callMedia}
+          duration={duration}
+          micOn={micOn}
+          camOn={camOn}
+          onToggleMic={() => setMicOn((value) => !value)}
+          onToggleCam={() => setCamOn((value) => !value)}
+          onHangup={() => {
+            setCallReason(callState === 'outgoing' ? 'canceled' : 'hangup');
+            setCallState('ended');
+          }}
+          onPeerAccept={() => setCallState('active')}
+          onSimWeak={() => setCallState(callState === 'reconnecting' ? 'active' : 'reconnecting')}
+        />
+      )}
+      {callState === 'ended' && (
+        <CallResultToast reason={callReason} duration={duration} onClose={() => setCallState('idle')} />
+      )}
+      {callState === 'failed' && (
+        <CallResultToast
+          reason={callReason === 'hangup' ? 'network' : callReason}
+          duration={duration}
+          onClose={() => setCallState('idle')}
+        />
+      )}
     </div>
   );
 }
