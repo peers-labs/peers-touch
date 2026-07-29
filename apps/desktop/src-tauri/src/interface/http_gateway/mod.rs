@@ -3846,6 +3846,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => to_json(e.into_app_result_proto("federation_catalog_search failed")),
             }
         }
+        "federation_list_federations" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            match app_federation::list_federations(&token) {
+                Ok(view) => to_json(AppResult::success(app_federation::encode_list_federations(&view))),
+                Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_list_federations failed")),
+            }
+        }
 
         // =================================================================
         // Applet store (catalog/install — state-dependent)

@@ -25,8 +25,16 @@ func (s *subServer) handleGroupCreate(ctx context.Context, req *chat.CreateGroup
 		return nil, server.BadRequest("name is required")
 	}
 
-	members := make([]convsub.MemberEntry, 0, len(req.InitialMemberDids)+len(req.InitialFederatedMembers))
+	members := make([]convsub.MemberEntry, 0, len(req.InitialMemberDids)+len(req.InitialFederatedMembers)+1)
+	members = append(members, convsub.MemberEntry{
+		Ptid:      subject.ID,
+		StationID: s.localStationID,
+		Role:      chat.MemberRole_MEMBER_ROLE_OWNER,
+	})
 	for _, did := range req.InitialMemberDids {
+		if did == subject.ID {
+			continue
+		}
 		members = append(members, convsub.MemberEntry{
 			Ptid:      did,
 			StationID: s.localStationID,
