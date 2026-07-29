@@ -65,6 +65,13 @@ func (s *ModelConfigService) Create(ctx context.Context, req ModelCreateRequest)
 		return nil, err
 	}
 
+	var existing persistence.AgentModel
+	if err := db.WithContext(ctx).
+		Where("actor_id = ? AND provider_id = ? AND model_id = ?", req.ActorID, req.ProviderID, req.ModelID).
+		First(&existing).Error; err == nil {
+		return &existing, nil
+	}
+
 	model := persistence.AgentModel{
 		ID:               uuid.New().String(),
 		ActorID:          req.ActorID,
