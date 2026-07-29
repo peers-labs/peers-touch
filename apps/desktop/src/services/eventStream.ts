@@ -31,7 +31,7 @@ import { fromBinary } from '@bufbuild/protobuf';
 
 import { eventBus } from '../kernel/events';
 import { EVENT } from '../kernel/events/catalog';
-import type { RealtimeCallSignalKind } from '../kernel/events/types';
+import type { RealtimeCallSignalKind, RealtimeSocialGraphEventPayload } from '../kernel/events/types';
 import {
   ConversationSettingsChanged_Kind,
   MomentEvent_Kind,
@@ -397,6 +397,21 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
+    case 'socialGraphEvent': {
+      const s = kind.value;
+      const kindStr = socialGraphKindFromEnum(s.kind);
+      if (!kindStr) return;
+      eventBus.publish(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, {
+        eventId,
+        kind: kindStr,
+        actorDid: s.actorDid,
+        targetDid: s.targetDid,
+        requestId: s.requestId,
+        conversationId: s.conversationId,
+        actorDisplayName: s.actorDisplayName,
+      });
+      return;
+    }
     case 'moment':
       dispatchMomentEvent(eventId, kind.value);
       return;
@@ -504,6 +519,17 @@ function receiptKindFromEnum(value: number): 'DELIVERED' | 'READ' | null {
   switch (value) {
     case 1: return 'DELIVERED';
     case 2: return 'READ';
+    default: return null;
+  }
+}
+
+function socialGraphKindFromEnum(value: number): RealtimeSocialGraphEventPayload['kind'] | null {
+  switch (value) {
+    case 1: return 'friend_request_received';
+    case 2: return 'friend_request_accepted';
+    case 3: return 'friend_request_rejected';
+    case 4: return 'conversation_created';
+    case 5: return 'unfriended';
     default: return null;
   }
 }
