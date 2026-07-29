@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation"
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -40,6 +41,7 @@ type FriendRequestService struct {
 	relationshipSvc *RelationshipService
 	notif           NotificationProducer
 	conv            ConversationCreator
+	graph           *SocialGraphEventPublisher
 }
 
 func NewFriendRequestService(
@@ -55,6 +57,7 @@ func NewFriendRequestService(
 		relationshipSvc: relationshipSvc,
 		notif:           notif,
 		conv:            conv,
+		graph:           NewSocialGraphEventPublisher(),
 	}
 }
 
@@ -78,20 +81,23 @@ func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderID, 
 		return nil, err
 	}
 
+	senderDID := strconv.FormatUint(senderID, 10)
+	receiverDID := strconv.FormatUint(receiverID, 10)
+
 	if s.notif != nil {
-		receiverDID := strconv.FormatUint(receiverID, 10)
-		senderDID := strconv.FormatUint(senderID, 10)
 		if err := s.notif.Produce(
 			receiverDID, senderDID,
 			200, 1,
 			"friend_request", fr.ID,
-			"", message,
+			"Friend request from "+senderDID, message,
 			"friend_request:"+senderDID,
-			nil,
+			map[string]string{"sender_did": senderDID, "request_id": fr.ID},
 		); err != nil {
 			logger.Error(ctx, "friend request notification failed", "error", err)
 		}
 	}
+
+	s.graph.PublishFriendRequestReceived(ctx, senderDID, receiverDID, fr.ID)
 
 	return domainToProtoFriendRequest(fr), nil
 }
@@ -132,11 +138,16 @@ func (s *FriendRequestService) AcceptFriendRequest(ctx context.Context, actorID 
 	}
 
 	// Auto-create DM conversation so both parties can message immediately.
+	var conversationID string
 	if s.conv != nil {
 		if err := s.conv.CreateDirect(ctx, existing.SenderDID, actorDID, "", ""); err != nil {
 			logger.Error(ctx, "friend accept: failed to create DM conversation", "error", err)
+		} else {
+			conversationID = conversation.DeterministicDirectID(existing.SenderDID, actorDID)
 		}
 	}
+
+	s.graph.PublishFriendRequestAccepted(ctx, actorDID, existing.SenderDID, requestID, conversationID)
 
 	return domainToProtoFriendRequest(*fr), nil
 }

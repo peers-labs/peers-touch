@@ -205,6 +205,7 @@ providers:
     api_key_url: ""
     default_base_url: ""
     runtime_kind: cli
+    credential_env_key: OPENAI_API_KEY
     cli_command: codex exec --skip-git-repo-check -
     models:
       - id: gpt-5-codex
@@ -246,6 +247,7 @@ providers:
     api_key_url: ""
     default_base_url: ""
     runtime_kind: cli
+    credential_env_key: ANTHROPIC_API_KEY
     cli_command: claude -p
     models:
       - id: sonnet

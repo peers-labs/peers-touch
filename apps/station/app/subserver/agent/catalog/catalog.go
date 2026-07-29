@@ -19,22 +19,23 @@ type CatalogModel struct {
 }
 
 type CatalogProvider struct {
-	ID             string         `yaml:"id"`
-	Name           string         `yaml:"name"`
-	Description    string         `yaml:"description"`
-	Enabled        bool           `yaml:"enabled"`
-	Builtin        bool           `yaml:"builtin"`
-	ShowChecker    bool           `yaml:"show_checker"`
-	ShowAPIKey     *bool          `yaml:"show_api_key"`
-	Protocol       string         `yaml:"protocol"`
-	Discovery      string         `yaml:"discovery"`
-	HomeURL        string         `yaml:"home_url"`
-	APIKeyURL      string         `yaml:"api_key_url"`
-	DefaultBaseURL string         `yaml:"default_base_url"`
-	RuntimeKind    string         `yaml:"runtime_kind"`
-	CliCommand     string         `yaml:"cli_command"`
-	ModelsCommand  string         `yaml:"models_command"`
-	Models         []CatalogModel `yaml:"models"`
+	ID               string         `yaml:"id"`
+	Name             string         `yaml:"name"`
+	Description      string         `yaml:"description"`
+	Enabled          bool           `yaml:"enabled"`
+	Builtin          bool           `yaml:"builtin"`
+	ShowChecker      bool           `yaml:"show_checker"`
+	ShowAPIKey       *bool          `yaml:"show_api_key"`
+	Protocol         string         `yaml:"protocol"`
+	Discovery        string         `yaml:"discovery"`
+	HomeURL          string         `yaml:"home_url"`
+	APIKeyURL        string         `yaml:"api_key_url"`
+	DefaultBaseURL   string         `yaml:"default_base_url"`
+	RuntimeKind      string         `yaml:"runtime_kind"`
+	CredentialEnvKey string         `yaml:"credential_env_key"`
+	CliCommand       string         `yaml:"cli_command"`
+	ModelsCommand    string         `yaml:"models_command"`
+	Models           []CatalogModel `yaml:"models"`
 }
 
 type catalogFile struct {
