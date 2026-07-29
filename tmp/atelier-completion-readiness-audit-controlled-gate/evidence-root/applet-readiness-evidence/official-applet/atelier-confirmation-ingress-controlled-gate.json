@@ -1,0 +1,69 @@
+{
+  "ok": true,
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "gate": "atelier-confirmation-ingress-controlled-gate",
+  "commands": [
+    "go test ./subserver/official_applets -run 'TestDecodeAtelier(MemoryConfirmationJSON|RerunConfirmationJSON)(RejectsExecutionShapedFields|AcceptsReferencePayload)'",
+    "go test ./subserver/agent/service -run 'TestConfirmAtelier(MemoryCandidateWritesStationOwnedMemory|MemoryCandidateRejectsNonCandidateFeedback|RerunCreatesStationOwnedNewRun|RerunRejectsNonRerunFeedback)'"
+  ],
+  "tests": [
+    "TestDecodeAtelierMemoryConfirmationJSONRejectsExecutionShapedFields",
+    "TestDecodeAtelierMemoryConfirmationJSONAcceptsReferencePayload",
+    "TestDecodeAtelierRerunConfirmationJSONRejectsExecutionShapedFields",
+    "TestDecodeAtelierRerunConfirmationJSONAcceptsReferencePayload",
+    "TestConfirmAtelierMemoryCandidateWritesStationOwnedMemory",
+    "TestConfirmAtelierMemoryCandidateRejectsNonCandidateFeedback",
+    "TestConfirmAtelierRerunCreatesStationOwnedNewRun",
+    "TestConfirmAtelierRerunRejectsNonRerunFeedback"
+  ],
+  "memoryConfirmationForbiddenIngressFields": [
+    "run",
+    "execute",
+    "provider",
+    "attachments",
+    "memory",
+    "memoryContent",
+    "memory_content",
+    "content",
+    "target",
+    "layer",
+    "inputSnapshot",
+    "input_snapshot"
+  ],
+  "rerunConfirmationForbiddenIngressFields": [
+    "run",
+    "execute",
+    "provider",
+    "attachments",
+    "rerun",
+    "rerunTaskId",
+    "goal",
+    "model",
+    "inputSnapshot",
+    "input_snapshot"
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "Station official Atelier memory and rerun confirmation ingress rejects execution-shaped fields",
+      "Station confirmation requests remain reference-only taskId/feedbackId intents",
+      "Station service tests keep memory writes and rerun creation Station-owned after durable feedback review lookup"
+    ],
+    "doesNotProve": [
+      "real memory write E2E from Desktop Host + applet",
+      "real rerun task creation E2E from Desktop Host + applet",
+      "real Planner/Risk/Verifier feedback consumption",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "notCovered": [
+    "real memory write E2E from Desktop Host + applet",
+    "real rerun task creation E2E from Desktop Host + applet",
+    "real Planner/Risk/Verifier feedback consumption",
+    "complete Host + Station + applet E2E"
+  ],
+  "outputTail": [
+    "ok  \tgithub.com/peers-labs/peers-touch/station/app/subserver/official_applets\t(cached)",
+    "ok  \tgithub.com/peers-labs/peers-touch/station/app/subserver/agent/service\t(cached)"
+  ]
+}

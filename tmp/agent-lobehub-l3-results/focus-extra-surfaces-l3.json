@@ -1,0 +1,95 @@
+{
+  "evidenceId": "EVID-010-PROTOTYPE-REBUILD-J",
+  "url": "http://localhost:3111/",
+  "viewport": "1440x1100",
+  "results": [
+    {
+      "label": "pages-actions-open-first-focus",
+      "activeElement": {
+        "tag": "BUTTON",
+        "aria": null,
+        "text": "Version History",
+        "className": null
+      },
+      "pageActionsVisible": true,
+      "firstActionText": "Version History"
+    },
+    {
+      "label": "pages-actions-escape-return",
+      "activeElement": {
+        "tag": "BUTTON",
+        "aria": null,
+        "text": "Actions",
+        "className": null
+      },
+      "pageActionsVisible": false
+    },
+    {
+      "label": "pages-export-state-focus",
+      "activeElement": {
+        "tag": "DIV",
+        "aria": null,
+        "text": "Export requested; file download success remains unproven in browser tool.",
+        "className": "pt-state-box"
+      },
+      "stateText": "Export requested; file download success remains unproven in browser tool.",
+      "exportStateVisible": true
+    },
+    {
+      "label": "skills-import-input-focus",
+      "activeElement": {
+        "tag": "INPUT",
+        "aria": "Skill import URL",
+        "text": "http://127.0.0.1:8765/SKILL.md",
+        "className": "pt-search-input"
+      },
+      "importOpen": true,
+      "importValue": "http://127.0.0.1:8765/SKILL.md"
+    },
+    {
+      "label": "skills-import-escape-return",
+      "activeElement": {
+        "tag": "BUTTON",
+        "aria": null,
+        "text": "Import from URL",
+        "className": "pt-wide-button"
+      },
+      "importOpen": false
+    },
+    {
+      "label": "image-copy-prompt-state-focus",
+      "activeElement": {
+        "tag": "DIV",
+        "aria": null,
+        "text": "Image Topic 1: Failed to Copy Prompt modeled from live audit.",
+        "className": "pt-state-box"
+      },
+      "stateText": "Image Topic 1: Failed to Copy Prompt modeled from live audit.",
+      "copyFailureVisible": true
+    },
+    {
+      "label": "community-workspace-detail-focus",
+      "activeElement": {
+        "tag": "ASIDE",
+        "aria": null,
+        "text": "Workspace detail contract\n\nShared Workspace exposes header, version/schema metadata, installation or use method and external links. Product ",
+        "className": "pt-market-detail"
+      },
+      "detailText": "Workspace detail contract\n\nShared Workspace exposes header, version/schema metadata, installation or use method and external links. Product migration must keep marketplace browsing separate from local Agent runtime binding. Current category state: workspace profile, team assets, permission boundary.\n\nexternal/deferred",
+      "workspaceVisible": true,
+      "categoryLabels": [
+        "Agent",
+        "Group Agent",
+        "Model",
+        "Provider",
+        "MCP",
+        "Skill",
+        "Organization",
+        "User",
+        "Workspace"
+      ]
+    }
+  ],
+  "pass": true,
+  "failures": []
+}

@@ -1,8 +1,8 @@
 # Federation Architecture — 架构设计
 
-> **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-05-31 | **Updated**: 2026-05-31
+> **Status**: accepted
+> **Version**: v0.2
+> **Created**: 2026-05-31 | **Updated**: 2026-07-21
 > **Owner**: Architecture Team
 
 ---
@@ -14,10 +14,10 @@
 3. **Actor / Account 是参与者** — Actor 可以在已加入 Federation 内社交；Account 只是用户侧产品语言，默认不能改变联邦拓扑。
 4. **治理事实上账本** — 创建、邀请、加入、退出、授权、策略变更等进入 Federation Ledger。
 5. **社交数据不上账本** — 聊天、点赞、评论、好友请求内容、在线状态不进入 Federation Ledger。
-6. **用户不记地址** — 用户通过联邦广场选择 Federation、Station 和公开用户，而不是手动输入 `@user@host`。
+6. **用户不记地址** — 用户通过搜索、联系人、好友列表等日常入口自然接触联邦内的人，而不是手动输入 `@user@host`。
 7. **Federation 语境显式化** — Catalog、Resolver、Station list、Public actor list 都必须带 `federation_id`，禁止默认全局联邦范围。
 8. **身份模型复用 ActorRef** — 跨 Station 身份以 `ActorRef`、federated handle、`station_peer_id` 表达；`Account` 只作为产品语言，不成为新的 wire identity。
-9. **Station 是真源，Client 是投影** — Federation membership、policy、ledger、权限裁决归 Station；Desktop 联邦广场只消费 Station 投影。
+9. **Station 是真源，Client 是投影** — Federation membership、policy、ledger、权限裁决归 Station；Desktop Settings/Dashboard 只消费 Station 投影。
 
 ---
 
@@ -27,11 +27,18 @@
 Desktop
   ├─ Station Picker
   │   └─ 选择当前 Home Station，本地配置层
-  └─ Federation Plaza
-      ├─ Federation 列表
-      ├─ 成员 Station 列表
-      ├─ 公开用户列表
-      └─ 治理入口（仅管理员）
+  ├─ 搜索 / 联系人 / 聊天（日常入口）
+  │   └─ 跨联邦 handle 解析、好友来源标注、联邦 scope 筛选
+  └─ Settings → Federation（低频配置入口）
+      ├─ Actor Identity & Visibility
+      ├─ Routing Health
+      └─ Joined Federations (Join / Leave)
+
+Dashboard → Federation（治理入口）
+  ├─ Create Federation
+  ├─ Approve / Reject Station 加入
+  ├─ Ledger 管理
+  └─ Policy & Admin 治理
 
 Home Station
   ├─ Federation Service
@@ -53,10 +60,12 @@ Relay / Bootstrap
   └─ 提供网络发现、连接和未来 ledger event transport 的运行时基础
 ```
 
-Station Picker 和 Federation Plaza 的边界必须保持清晰：
+Station Picker 和 Federation 入口的边界必须保持清晰：
 
 - Station Picker 回答“Desktop 当前连接哪个 Home Station”。
-- Federation Plaza 回答“这个 Home Station 加入了哪些 Federation、这些 Federation 有哪些 Station 和用户”。
+- Settings → Federation 回答“我的联邦身份、可见性和已加入的联邦”。
+- Dashboard → Federation 回答“联邦治理：创建、审批、Ledger、策略”。
+- 搜索/联系人/聊天 回答“我能找到谁、跟谁聊天”——联邦作为底层 scope 自然生效，用户无需“进入联邦”。
 
 ### 2.1 组件边界
 
@@ -150,7 +159,7 @@ genesis_event
 |------|------|
 | `station_owner` | Station 最高治理者；默认由第一个 preset user 或第一个注册用户担任 |
 | `federation_admin` | 由 `station_owner` 授权；可以代表本站处理 Federation 加入、退出、邀请、审批等动作 |
-| `member` | 普通用户；可以浏览联邦广场和社交，不能修改联邦拓扑 |
+| `member` | 普通用户；可以通过搜索/联系人发现联邦内其他人并社交，不能修改联邦拓扑 |
 
 同一 Station 的用户看到的 Federation 状态一致，但可操作能力不同。
 
@@ -241,11 +250,11 @@ Federation discovery 分三层，不能混用：
 Discovery 和查询必须显式带 `federation_id`：
 
 ```text
-Federation Plaza
-  → list federations from Home Station
-  → list member stations by federation_id
-  → search catalog by federation_id + prefix/filter
-  → resolve actor by federation_id + federated_handle
+Federation Discovery（由 Station API 提供，Client 按入口消费）
+  → list federations from Home Station (Settings / Dashboard)
+  → list member stations by federation_id (Dashboard)
+  → search catalog by federation_id + prefix/filter (搜索入口)
+  → resolve actor by federation_id + federated_handle (联系人/聊天)
 ```
 
 `federation_id` 的作用：
@@ -260,19 +269,37 @@ Federation Plaza
 
 ---
 
-## 7. 联邦广场
+## 7. 联邦与用户感知
 
-联邦广场是 Desktop 的一级入口，不应隐藏在 Chat 或 Contacts 中。
+### 7.1 设计哲学：联邦是基础设施，不是产品入口
 
-```text
-联邦广场
-  → 选择 Federation
-  → 选择成员 Station
-  → 浏览公开用户
-  → Add Friend / Follow / Message
-```
+联邦是底层网络拓扑——用户日常感知的一级入口是"人"（搜索、联系人、好友、聊天），而不是"联邦"本身。正如普通人不会天天意识到自己在哪个国家的互联网上，用户也不应频繁操作联邦。
 
-普通用户看到 Federation、成员 Station、公开用户、只读治理历史和社交操作。管理员额外看到 create、invite、approve、suspend、grant、policy update 等治理入口，但所有权限裁决仍在 Station。
+这意味着：
+
+- **搜索和联系人** 是用户发现联邦内其他人的自然入口。搜索框支持跨联邦 handle 解析（`@user@station.example.com`），联系人列表显示来自各联邦的好友，不需要先"进入联邦"再"找人"。
+- **Settings → Federation** 是低频配置入口——查看联邦身份、调整 Actor 可见性、查看路由健康、加入/离开联邦。类似护照管理：偶尔需要，不是日常动作。
+- **Dashboard → Federation** 是治理入口——创建联邦、审批 Station 加入、管理 Ledger、策略变更。这是 Station 管理员的低频但重要的操作。
+- **不设独立的"联邦广场"一级页面**。联邦存在感通过社交流（好友来源标注 Station/Federation）、搜索结果（跨联邦发现）和偶尔的 Settings 配置自然渗透，而不是要求用户主动进入一个专门页面浏览联邦拓扑。
+
+### 7.2 各入口职责分工
+
+| 入口 | 频率 | 用户角色 | 职责 |
+|------|------|---------|------|
+| 搜索/联系人/聊天 | 日常 | 所有用户 | 发现联邦内的人、加好友、聊天、follow |
+| Settings → Federation | 低频 | 所有用户 | 查看身份、调 visibility、查健康、Join/Leave |
+| Dashboard → Federation | 极低频 | Station 管理员 | 创建联邦、审批 Station、Ledger 管理、策略治理 |
+
+### 7.3 联邦上下文的渗透方式
+
+普通用户不需要"进入联邦"就能感受到联邦：
+
+- 好友 profile 标注来源 Station 和所属 Federation。
+- 搜索结果按联邦 scope 筛选时，明确展示结果来自哪个联邦。
+- 群聊成员列表标注跨站成员的 Home Station。
+- 消息加密状态（MLS/X3DH）自然展示端到端安全性。
+
+管理员需要治理时，通过 Dashboard 操作 Federation Ledger；普通用户不接触 Ledger。
 
 ---
 

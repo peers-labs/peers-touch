@@ -1,0 +1,13 @@
+{
+  "evidenceId": "EVID-011-PS-pre",
+  "surface": "pages",
+  "state": "page-runtime-contract",
+  "check": "ps",
+  "url": "http://127.0.0.1:4183/?prototype=agent-lobehub-parity&preview=only&surface=pages&state=page-runtime-contract&check=ps",
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/pages-ps-source-interaction-scoped.png",
+  "width": 1204,
+  "height": 3200,
+  "sha256": "a41c55fe32319d04c05848cb2d1f3e7b2d95aa26b6a5c37955496583ef7052bd",
+  "visualInspection": "opened with view_image; confirmed Pages PS source-interaction hero, five source map cards, route/list runtime panels, editor/right-panel runtime, five source closure columns including body autosave and PageAgent server runtime, and fail-closed warning are visible and readable",
+  "portalChromeHit": false
+}

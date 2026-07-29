@@ -261,7 +261,7 @@ fn group_to_json(g: &model::chat::Group) -> Value {
 fn group_member_to_json(m: &model::chat::GroupMember) -> Value {
     json!({
         "groupUlid": m.group_ulid,
-        "actorDid": m.actor_did,
+        "actorDid": m.ptid,
         "role": m.role,
         "nickname": m.nickname,
         "muted": m.muted,
@@ -1274,7 +1274,7 @@ pub fn group_remove_member(
 ) -> StationResult<Value> {
     let req = model::chat::RemoveMemberRequest {
         group_ulid: group_ulid.to_string(),
-        actor_did: member_did.to_string(),
+        ptid: member_did.to_string(),
     };
     let resp = station_client::request_proto::<
         model::chat::RemoveMemberRequest,

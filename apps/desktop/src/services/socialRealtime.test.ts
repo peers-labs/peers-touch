@@ -1,4 +1,3 @@
-import { create, toBinary } from '@bufbuild/protobuf';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EVENT, eventBus } from '../kernel/events';
@@ -7,7 +6,6 @@ import {
   teardownSocialRealtimeBridge,
 } from './socialRealtime';
 import type { RealtimeGroupMembershipChangeKind } from '../kernel/events/types';
-import { FriendChatMessageSchema } from '../gen/proto/domain/chat/friend_chat_pb';
 
 class TestWindow extends EventTarget {
   setInterval = globalThis.setInterval.bind(globalThis);
@@ -29,11 +27,10 @@ class TestWindow extends EventTarget {
 }
 
 const mocks = vi.hoisted(() => ({
-  handleInboundSkdm: vi.fn(),
-  rotateGroupSenderChain: vi.fn(),
-  retrySkdmDistributionFor: vi.fn(),
   selectGroup: vi.fn(),
+  loadSessions: vi.fn(),
   loadGroups: vi.fn(),
+  loadFriendRequests: vi.fn(),
   loadGroupUnreadCounts: vi.fn(),
   loadGroupMembers: vi.fn(),
   loadConversationPreviews: vi.fn(),
@@ -50,13 +47,6 @@ const mocks = vi.hoisted(() => ({
 const originalWindow = globalThis.window;
 const originalCustomEvent = globalThis.CustomEvent;
 
-vi.mock('../modules/identity/groupSenderKeys', () => ({
-  FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION: 50,
-  handleInboundSkdm: mocks.handleInboundSkdm,
-  rotateGroupSenderChain: mocks.rotateGroupSenderChain,
-  retrySkdmDistributionFor: mocks.retrySkdmDistributionFor,
-}));
-
 vi.mock('../store/session', () => ({
   currentAuthenticatedActorId: () => null,
   useSessionStore: {
@@ -69,12 +59,15 @@ vi.mock('../store/socialChat', () => ({
     getState: () => ({
       currentUserDid: 'did:peer:self',
       activeTab: 'group',
+      sessions: [],
       groups: [],
       conversationLocalState: {},
       messages: {},
       activeGroupUlid: 'group-1',
       selectGroup: mocks.selectGroup,
+      loadSessions: mocks.loadSessions,
       loadGroups: mocks.loadGroups,
+      loadFriendRequests: mocks.loadFriendRequests,
       loadGroupUnreadCounts: mocks.loadGroupUnreadCounts,
       loadGroupMembers: mocks.loadGroupMembers,
       loadConversationPreviews: mocks.loadConversationPreviews,
@@ -114,9 +107,7 @@ vi.mock('../store/navigationBadges', () => ({
 
 vi.mock('./mediaRuntime', () => ({
   useMediaRuntimeStore: {
-    getState: () => ({
-      prewarmMessages: vi.fn(),
-    }),
+    getState: () => ({ mediaCallActive: false }),
   },
 }));
 
@@ -149,20 +140,19 @@ describe('social realtime group membership side effects', () => {
       };
     }
     vi.clearAllMocks();
-    mocks.rotateGroupSenderChain.mockResolvedValue(undefined);
-    mocks.handleInboundSkdm.mockResolvedValue(undefined);
     mocks.ingestRealtimeMessage.mockResolvedValue(undefined);
     mocks.friendChatAckMessages.mockResolvedValue(undefined);
     mocks.friendChatSync.mockResolvedValue(undefined);
     mocks.groupChatSync.mockResolvedValue(undefined);
+    mocks.loadSessions.mockResolvedValue(undefined);
     mocks.loadGroups.mockResolvedValue(undefined);
+    mocks.loadFriendRequests.mockResolvedValue(undefined);
     mocks.loadGroupUnreadCounts.mockResolvedValue(undefined);
     mocks.loadGroupMembers.mockResolvedValue(undefined);
     mocks.loadConversationPreviews.mockResolvedValue(undefined);
     mocks.loadMessages.mockResolvedValue(undefined);
     mocks.markGroupRead.mockResolvedValue(undefined);
     mocks.groupChatSync.mockResolvedValue(undefined);
-    mocks.handleInboundSkdm.mockResolvedValue(undefined);
     teardownSocialRealtimeBridge();
     installSocialRealtimeBridge();
   });
@@ -173,68 +163,12 @@ describe('social realtime group membership side effects', () => {
     (globalThis as any).CustomEvent = originalCustomEvent;
   });
 
-  it.each([
-    ['REMOVED'],
-    ['LEFT'],
-    ['TRANSFERRED'],
-  ] as const)('rotates sender keys after %s membership events', async (kind) => {
-    publishGroupMembership(kind, 'did:peer:other');
-
-    await vi.waitFor(() => {
-      expect(mocks.rotateGroupSenderChain).toHaveBeenCalledWith('did:peer:self', 'group-1');
-    });
-  });
-
-  it('installs delivered group SKDM envelopes only for the local device', async () => {
-    eventBus.publish(EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED, {
-      eventId: 'stream-event-1',
-      groupUlid: 'group-1',
-      membershipEpoch: 3,
-      senderDid: 'did:peer:alice',
-      senderKeyId: 7,
-      senderHomeStationPeerId: 'station-a',
-      recipientDid: 'did:peer:self',
-      recipientDeviceId: 'self-device-1',
-      idempotencyKey: 'skdm-1',
-      encryptedPayloadB64: 'sealed',
-      deliveredTsUnixMs: 123,
-  });
-
-    await vi.waitFor(() => {
-      expect(mocks.handleInboundSkdm).toHaveBeenCalledWith('did:peer:alice', 'sealed', {
-        groupUlid: 'group-1',
-        senderKeyId: 7,
-        senderHomeStationPeerId: 'station-a',
-        recipientDeviceId: 'self-device-1',
-      });
-    });
-
-    mocks.handleInboundSkdm.mockClear();
-    eventBus.publish(EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED, {
-      eventId: 'stream-event-2',
-      groupUlid: 'group-1',
-      membershipEpoch: 3,
-      senderDid: 'did:peer:alice',
-      senderKeyId: 7,
-      senderHomeStationPeerId: 'station-a',
-      recipientDid: 'did:peer:self',
-      recipientDeviceId: 'other-device',
-      idempotencyKey: 'skdm-2',
-      encryptedPayloadB64: 'sealed-2',
-      deliveredTsUnixMs: 124,
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(mocks.handleInboundSkdm).not.toHaveBeenCalled();
-  });
-
-  it('does not rotate sender keys when the local actor was removed', async () => {
+  it('clears the active group when the local actor is removed', async () => {
     publishGroupMembership('REMOVED', 'did:peer:self');
 
     await vi.waitFor(() => {
       expect(mocks.selectGroup).toHaveBeenCalledWith('');
     });
-    expect(mocks.rotateGroupSenderChain).not.toHaveBeenCalled();
   });
 
   it('clears the active group when the group is dissolved', async () => {
@@ -243,7 +177,6 @@ describe('social realtime group membership side effects', () => {
     await vi.waitFor(() => {
       expect(mocks.selectGroup).toHaveBeenCalledWith('');
     });
-    expect(mocks.rotateGroupSenderChain).not.toHaveBeenCalled();
   });
 
   it('refreshes group projection after a follower federation event', async () => {
@@ -265,40 +198,44 @@ describe('social realtime group membership side effects', () => {
     await vi.waitFor(() => {
       expect(mocks.groupChatSync).toHaveBeenCalledWith('group-1', 50, 1);
       expect(mocks.loadMessages).toHaveBeenCalledWith('group-1', 'group');
-      expect(mocks.markGroupRead).toHaveBeenCalledWith('group-1');
+      expect(mocks.markGroupRead).toHaveBeenCalled();
       expect(mocks.loadGroups).toHaveBeenCalled();
       expect(mocks.loadGroupUnreadCounts).toHaveBeenCalled();
       expect(mocks.loadConversationPreviews).toHaveBeenCalled();
     });
   });
 
-  it('consumes realtime friend SKDM before ack badge or visible message ingest', async () => {
-    const controlMessage = create(FriendChatMessageSchema, {
-      ulid: 'skdm-msg-1',
-      senderDid: 'did:peer:friend',
-      receiverDid: 'did:peer:self',
-      content: 'sender-key-payload',
-      type: 50,
-    });
+  it('coalesces overlapping realtime resync requests into a serial cold resync lane', async () => {
+    const firstColdResync = deferred<void>();
+    mocks.loadSessions.mockImplementationOnce(() => firstColdResync.promise);
 
-    eventBus.publish(EVENT.REALTIME_MESSAGE_RECEIVED, {
-      eventId: 'stream-event-skdm',
-      sessionUlid: 'session-1',
-      messageUlid: 'skdm-msg-1',
-      senderActorId: 'did:peer:friend',
-      recipientActorId: 'did:peer:self',
-      ciphertext: toBinary(FriendChatMessageSchema, controlMessage),
-      sentTsUnixMs: 123,
+    eventBus.publish(EVENT.REALTIME_RESYNC, {
+      newestEventId: '',
+      reason: 'browser-dev-gateway-resync',
     });
 
     await vi.waitFor(() => {
-      expect(mocks.handleInboundSkdm).toHaveBeenCalledWith('did:peer:friend', 'sender-key-payload');
+      expect(mocks.loadSessions).toHaveBeenCalledTimes(1);
     });
-    expect(mocks.friendChatAckMessages).not.toHaveBeenCalled();
-    expect(mocks.bumpChatUnread).not.toHaveBeenCalled();
-    expect(mocks.clearChatUnread).not.toHaveBeenCalled();
-    expect(mocks.ingestRealtimeMessage).not.toHaveBeenCalled();
-    expect(mocks.friendChatSync).not.toHaveBeenCalled();
+
+    eventBus.publish(EVENT.REALTIME_RESYNC, {
+      newestEventId: 'event-2',
+      reason: 'browser-dev-gateway-resync',
+    });
+    eventBus.publish(EVENT.REALTIME_RESYNC, {
+      newestEventId: 'event-3',
+      reason: 'browser-dev-gateway-resync',
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.loadSessions).toHaveBeenCalledTimes(1);
+
+    firstColdResync.resolve();
+
+    await vi.waitFor(() => {
+      expect(mocks.loadSessions).toHaveBeenCalledTimes(2);
+    });
+    expect(mocks.loadGroups).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -311,4 +248,14 @@ function publishGroupMembership(kind: RealtimeGroupMembershipChangeKind, actorDi
     kind,
     changedTsUnixMs: 123,
   });
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }

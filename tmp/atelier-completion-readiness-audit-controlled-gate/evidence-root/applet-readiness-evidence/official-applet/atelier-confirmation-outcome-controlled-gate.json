@@ -1,0 +1,59 @@
+{
+  "ok": true,
+  "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
+  "gate": "atelier-confirmation-outcome-controlled-gate",
+  "source": "station_confirmation_outcome_service_tests",
+  "command": "go test ./subserver/agent/service -run 'TestConfirmAtelier(MemoryCandidateWritesStationOwnedMemory|MemoryCandidateRejectsNonCandidateFeedback|RerunCreatesStationOwnedNewRun|RerunRejectsNonRerunFeedback)'",
+  "tests": [
+    "TestConfirmAtelierMemoryCandidateWritesStationOwnedMemory",
+    "TestConfirmAtelierMemoryCandidateRejectsNonCandidateFeedback",
+    "TestConfirmAtelierRerunCreatesStationOwnedNewRun",
+    "TestConfirmAtelierRerunRejectsNonRerunFeedback"
+  ],
+  "memoryConfirmationOutcome": {
+    "stationOwnedMemoryWriteProven": true,
+    "stationMemoryAuditEventProven": true,
+    "stationMemoryIdempotencyProven": true,
+    "stationNonCandidateRejectedProven": true,
+    "appletMemoryWriteExposed": false,
+    "realMemoryWriteE2EProven": false
+  },
+  "rerunConfirmationOutcome": {
+    "stationOwnedRerunTaskCreationProven": true,
+    "stationRerunProviderPlanCloneProven": true,
+    "stationRerunAuditEventProven": true,
+    "stationRerunIdempotencyProven": true,
+    "stationNonRerunRejectedProven": true,
+    "appletRerunExecutionExposed": false,
+    "realRerunTaskCreationE2EProven": false,
+    "realExecutorProviderRecoveryE2EProven": false
+  },
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "Station memory confirmation outcome writes review-derived long-term memory through MemoryService",
+      "Station memory confirmation outcome emits an audit event and is idempotent by feedbackId",
+      "Station rejects non-candidate feedback before memory write",
+      "Station rerun confirmation outcome creates a new Station-owned collaboration task from the durable feedback intent",
+      "Station rerun confirmation outcome clones provider plan/nodes, emits an audit event, and is idempotent by feedbackId",
+      "Station rejects non-rerun feedback before task creation"
+    ],
+    "doesNotProve": [
+      "real memory write E2E from Desktop Host + applet",
+      "real Planner/Risk/Verifier consumption of confirmed memory",
+      "real rerun task creation E2E from Desktop Host + applet",
+      "real executor/provider recovery for the confirmed rerun task",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "notCovered": [
+    "real memory write E2E from Desktop Host + applet",
+    "real Planner/Risk/Verifier consumption of confirmed memory",
+    "real rerun task creation E2E from Desktop Host + applet",
+    "real executor/provider recovery for the confirmed rerun task",
+    "complete Host + Station + applet E2E"
+  ],
+  "outputTail": [
+    "ok  \tgithub.com/peers-labs/peers-touch/station/app/subserver/agent/service\t(cached)"
+  ]
+}

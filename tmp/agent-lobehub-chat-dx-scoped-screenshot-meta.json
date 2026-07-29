@@ -1,0 +1,28 @@
+{
+  "evidenceId": "EVID-011-DX-pre",
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=chat&state=chat-runtime-contract&check=dx",
+  "markerSelector": "[data-review-marker=\"chat-runtime-contract-dx\"]",
+  "screenshotPath": "tmp/agent-lobehub-l2-screenshots/chat-dx-runtime-contract-scoped.png",
+  "domPath": "tmp/agent-lobehub-chat-dx-dom.json",
+  "captureMode": "headless-chrome-preview-only",
+  "image": {
+    "width": 1280,
+    "height": 1600,
+    "sha256": "47695276d7b5c025c4694a1ed0a99db78c9571b209df932d08423ef5a4f66b1d"
+  },
+  "visualInspection": {
+    "openedByAgent": true,
+    "portalChromeHit": false,
+    "portalTitlePresent": true,
+    "readable": true,
+    "statesVisible": [
+      "streaming chunk taxonomy",
+      "lifecycle separation",
+      "thinking stream",
+      "tool-call delta",
+      "parked human approval",
+      "resume lineage",
+      "gateway transport degraded state"
+    ]
+  }
+}

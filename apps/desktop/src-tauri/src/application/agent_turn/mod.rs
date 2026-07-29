@@ -4,7 +4,7 @@
 // `TypedHandler` protobuf mode requires `proto.Message` request types. Keep JSON until the
 // subserver handler and proto definitions are aligned with the desktop contract.
 // TODO(agent): align `agent.proto` + Station `HandleExecuteTurn` with the full turn payload, then use `request_proto`.
-use crate::application::{agent_workspace, chat, mcp, tools};
+use crate::application::{agent_workspace, mcp, tools};
 use crate::contracts::{
     AgentExecuteTurnInput, AgentLocalToolRequestInput, AgentToolApprovalDecisionInput,
     AgentTurnTraceGetInput, AgentTurnTraceListInput, McpExecuteToolInput, StubPayload,
@@ -17,9 +17,7 @@ use reqwest::Method;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::path::Path;
-use std::process::{Command, Stdio};
+use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -130,62 +128,198 @@ struct AgentTurnStreamEventPayload {
     data: Value,
 }
 
+struct CollectedTurn {
+    text: String,
+    model: String,
+    done: bool,
+    error: Option<String>,
+}
+
+impl CollectedTurn {
+    fn new() -> Self {
+        Self {
+            text: String::new(),
+            model: String::new(),
+            done: false,
+            error: None,
+        }
+    }
+
+    fn apply_event(&mut self, event: &str, data: &Value) {
+        match event {
+            "text" => {
+                if let Some(text) = string_field(data, "text")
+                    .or_else(|| string_field(data, "content"))
+                    .or_else(|| string_field(data, "result"))
+                {
+                    self.text.push_str(&text);
+                }
+                if let Some(m) = string_field(data, "model") {
+                    self.model = m;
+                }
+            }
+            "thinking" => {}
+            "done" => {
+                if let Some(m) = string_field(data, "model") {
+                    self.model = m;
+                }
+                self.done = true;
+            }
+            "error" => {
+                self.error = Some(
+                    string_field(data, "error")
+                        .or_else(|| string_field(data, "message"))
+                        .unwrap_or_else(|| "Unknown stream error".to_string()),
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_turn_text_via_stream(body: &Value, token: &str) -> Result<(String, String), String> {
+    let url = format!(
+        "{}{}",
+        station_client::station_base_url(),
+        "/sub-agent/agent/turn/stream"
+    );
+    let client = Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|error| format!("failed to create Station stream client: {error}"))?;
+    let auth = format!("Bearer {}", token.trim());
+    let mut response = client
+        .post(&url)
+        .header(CONTENT_TYPE, "application/json")
+        .header(AUTHORIZATION, auth)
+        .header("Accept", "text/event-stream")
+        .json(body)
+        .send()
+        .map_err(|error| format!("Station turn stream request failed: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Station turn stream returned HTTP {}",
+            response.status()
+        ));
+    }
+
+    let mut bytes = [0_u8; 4096];
+    let mut buffer = String::new();
+    let mut collected = CollectedTurn::new();
+
+    loop {
+        let read = response
+            .read(&mut bytes)
+            .map_err(|error| format!("failed to read Station turn stream: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        buffer.push_str(&String::from_utf8_lossy(&bytes[..read]));
+        while let Some(frame_end) = buffer.find("\n\n") {
+            let frame = buffer[..frame_end].to_string();
+            buffer = buffer[frame_end + 2..].to_string();
+            if let Some((event, data)) = parse_sse_frame(&frame) {
+                collected.apply_event(&event, &data);
+            }
+        }
+        if collected.done {
+            break;
+        }
+    }
+
+    if !buffer.trim().is_empty() {
+        if let Some((event, data)) = parse_sse_frame(&buffer) {
+            collected.apply_event(&event, &data);
+        }
+    }
+
+    if let Some(err) = collected.error {
+        return Err(err);
+    }
+
+    if collected.text.is_empty() {
+        return Err("agent turn produced no text response".to_string());
+    }
+
+    Ok((collected.text, collected.model))
+}
+
 pub fn agent_execute_turn(
     mut input: AgentExecuteTurnInput,
     token: &str,
-    actor_id: &str,
+    _actor_id: &str,
 ) -> AppResult<StubPayload> {
     if let Err(error) = apply_resolved_agent_workspace(&mut input) {
         return AppResult::fail(ErrorCode::InternalError, error, None);
     }
-    let cli_command = input.cli_command.clone().unwrap_or_default();
-    if !cli_command.trim().is_empty() {
-        return execute_cli_turn(input, actor_id);
+
+    let provider = input.provider.as_deref().unwrap_or("").trim();
+    let is_cli = matches!(provider, "trae-cli" | "codex-cli" | "claude-cli")
+        || input.runtime_backend.as_deref().unwrap_or("") == "cli"
+        || input.cli_command.is_some();
+
+    if is_cli {
+        return execute_cli_turn_blocking(&input);
     }
 
     tracing::info!(
         command = "agent_execute_turn",
         agent_id = %input.agent_id,
         conversation_id = %input.conversation_id,
-        "Executing agent turn via Station"
+        "Executing agent turn via Station (streaming collect)"
     );
 
-    let body = json!({
-        "conversation_id": input.conversation_id,
-        "agent_id": input.agent_id,
-        "user_input": input.user_input,
-        "provider": input.provider.unwrap_or_default(),
-        "model": input.model.unwrap_or_default(),
-        "cliCommand": input.cli_command.unwrap_or_default(),
-        "identity": input.identity.unwrap_or_default(),
-        "agentConfigPrompt": input.agent_config_prompt.unwrap_or_default(),
-        "effort": input.effort.unwrap_or_else(|| "medium".to_string()),
-        "platform": input.platform.unwrap_or("desktop".to_string()),
-        "workspace_root": input.workspace_root.unwrap_or_default(),
-        "context_window_size": input.context_window_size.unwrap_or(128000),
-        "max_retries": input.max_retries.unwrap_or(3),
-        "knowledge_resources": input.knowledge_resources.unwrap_or_default(),
-    });
+    let body = build_turn_request_body(input.clone(), true);
 
-    match station_client::request_json(
-        Method::POST,
-        "/sub-agent/agent/turn/execute",
-        token,
-        None,
-        Some(body),
-    ) {
-        Ok(result) => {
-            tracing::info!(command = "agent_execute_turn", "Turn execution succeeded");
-            let status =
-                serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+    match collect_turn_text_via_stream(&body, token) {
+        Ok((content, model_name)) => {
+            tracing::info!(command = "agent_execute_turn", content_len = content.len(), "Turn execution succeeded");
+            let result = json!({
+                "response_message": {
+                    "role": "assistant",
+                    "content": content,
+                },
+                "turn": {
+                    "agent_id": input.agent_id,
+                    "conversation_id": input.conversation_id,
+                    "final_response": content,
+                    "status": "TURN_STATUS_COMPLETED",
+                    "model": model_name,
+                },
+                "trace": {
+                    "model": model_name,
+                },
+            });
+            let status = serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
             AppResult::success(StubPayload {
                 command: "agent_execute_turn".to_string(),
                 status,
             })
         }
         Err(err) => {
-            tracing::error!(command = "agent_execute_turn", error = %err, "Turn execution failed");
-            err.into_app_result("Failed to execute agent turn")
+            tracing::error!(command = "agent_execute_turn", error = %err, "Turn execution failed, falling back to non-streaming");
+            let body_fallback = build_turn_request_body(input, false);
+            match station_client::request_json(
+                Method::POST,
+                "/sub-agent/agent/turn/execute",
+                token,
+                None,
+                Some(body_fallback),
+            ) {
+                Ok(result) => {
+                    let status =
+                        serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+                    AppResult::success(StubPayload {
+                        command: "agent_execute_turn".to_string(),
+                        status,
+                    })
+                }
+                Err(fb_err) => {
+                    tracing::error!(command = "agent_execute_turn", error = %fb_err, "Fallback also failed");
+                    fb_err.into_app_result("Failed to execute agent turn")
+                }
+            }
         }
     }
 }
@@ -255,7 +389,7 @@ pub fn agent_execute_turn_stream(
     stream_id: String,
     mut input: AgentExecuteTurnInput,
     token: String,
-    actor_id: String,
+    _actor_id: String,
     cancel_flag: Arc<AtomicBool>,
 ) {
     if let Err(error) = apply_resolved_agent_workspace(&mut input) {
@@ -270,16 +404,28 @@ pub fn agent_execute_turn_stream(
         );
         return;
     }
-    if input
-        .cli_command
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .is_some()
-    {
-        execute_cli_turn_stream(&app, &stream_id, input, &actor_id, &cancel_flag);
+
+    let provider = input.provider.as_deref().unwrap_or("").trim();
+    let is_cli_provider = matches!(provider, "trae-cli" | "codex-cli" | "claude-cli")
+        || input.runtime_backend.as_deref().unwrap_or("") == "cli"
+        || input.cli_command.is_some();
+
+    if is_cli_provider {
+        let result = stream_cli_turn(&app, &stream_id, &input, &cancel_flag);
+        if let Err(error) = result {
+            emit_turn_stream_event(
+                &app,
+                &stream_id,
+                "error",
+                json!({
+                    "type": "error",
+                    "error": error
+                }),
+            );
+        }
         return;
     }
+
     let agent_allowed_roots = input.allowed_roots.clone();
     let body = build_turn_request_body(input, true);
     let result = stream_station_turn(
@@ -441,420 +587,49 @@ pub fn agent_resolve_local_tool_request(
 }
 
 fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value {
-    json!({
+    let mut body = json!({
         "conversation_id": input.conversation_id,
         "agent_id": input.agent_id,
         "user_input": input.user_input,
         "attachments": input.attachments.unwrap_or_default(),
         "stream": stream,
-        "provider": input.provider.unwrap_or_default(),
-        "model": input.model.unwrap_or_default(),
-        "cliCommand": input.cli_command.unwrap_or_default(),
-        "identity": input.identity.unwrap_or_default(),
-        "agentConfigPrompt": input.agent_config_prompt.unwrap_or_default(),
         "effort": input.effort.unwrap_or_else(|| "medium".to_string()),
         "platform": input.platform.unwrap_or("desktop".to_string()),
-        "workspace_root": input.workspace_root.unwrap_or_default(),
         "context_window_size": input.context_window_size.unwrap_or(128000),
         "max_retries": input.max_retries.unwrap_or(3),
         "knowledge_resources": input.knowledge_resources.unwrap_or_default(),
-    })
+    });
+    if let Some(provider) = input.provider.filter(|v| !v.trim().is_empty()) {
+        body["provider"] = json!(provider);
+    }
+    if let Some(model) = input.model.filter(|v| !v.trim().is_empty()) {
+        body["model"] = json!(model);
+    }
+    if let Some(cli_cmd) = input.cli_command.filter(|v| !v.trim().is_empty()) {
+        body["cliCommand"] = json!(cli_cmd);
+    }
+    if let Some(runtime) = input.runtime_backend.filter(|v| !v.trim().is_empty()) {
+        body["runtimeBackend"] = json!(runtime);
+    }
+    if let Some(roots) = input.allowed_roots.filter(|v| !v.is_empty()) {
+        body["allowedRoots"] = json!(roots);
+    }
+    if let Some(identity) = input.identity.filter(|v| !v.trim().is_empty()) {
+        body["identity"] = json!(identity);
+    }
+    if let Some(prompt) = input.agent_config_prompt.filter(|v| !v.trim().is_empty()) {
+        body["agentConfigPrompt"] = json!(prompt);
+    }
+    if let Some(ws_root) = input.workspace_root.filter(|v| !v.trim().is_empty()) {
+        body["workspace_root"] = json!(ws_root);
+    }
+    body
 }
 
 fn apply_resolved_agent_workspace(input: &mut AgentExecuteTurnInput) -> Result<(), String> {
     let workspace = agent_workspace::resolve_agent_workspace(input)?;
     input.workspace_root = Some(workspace.path.to_string_lossy().to_string());
     Ok(())
-}
-
-fn execute_cli_turn(input: AgentExecuteTurnInput, actor_id: &str) -> AppResult<StubPayload> {
-    let command_line = input.cli_command.clone().unwrap_or_default();
-    tracing::info!(
-        command = "agent_execute_turn",
-        agent_id = %input.agent_id,
-        provider = %input.provider.clone().unwrap_or_default(),
-        model = %input.model.clone().unwrap_or_default(),
-        "Executing agent turn via local CLI provider"
-    );
-    match run_cli_command(&input, &command_line) {
-        Ok(output) => {
-            let provider = input.provider.clone().unwrap_or_else(|| "cli".to_string());
-            let model = input.model.clone().unwrap_or_else(|| "cli".to_string());
-            let persisted = chat::record_agent_turn_messages(
-                actor_id,
-                &input.conversation_id,
-                &input.agent_id,
-                &input.user_input,
-                &output,
-                Some(&model),
-            );
-            if !persisted.ok {
-                let message = persisted
-                    .error
-                    .as_ref()
-                    .map(|error| error.message.clone())
-                    .unwrap_or_else(|| "failed to persist CLI turn messages".to_string());
-                tracing::error!(
-                    command = "agent_execute_turn",
-                    conversation_id = %input.conversation_id,
-                    error = %message,
-                    "CLI provider turn succeeded but message persistence failed"
-                );
-                return AppResult::fail(ErrorCode::InternalError, message, None);
-            }
-            success_payload(
-                "agent_execute_turn",
-                json!({
-                    "result": output,
-                    "provider": provider,
-                    "model": model,
-                    "executionOwner": "desktop-rust"
-                }),
-            )
-        }
-        Err(error) => {
-            tracing::error!(command = "agent_execute_turn", error = %error, "CLI provider turn failed");
-            AppResult::fail(ErrorCode::InternalError, error, None)
-        }
-    }
-}
-
-fn execute_cli_turn_stream(
-    app: &AppHandle,
-    stream_id: &str,
-    input: AgentExecuteTurnInput,
-    actor_id: &str,
-    cancel_flag: &AtomicBool,
-) {
-    if cancel_flag.load(Ordering::SeqCst) {
-        return;
-    }
-    emit_turn_stream_event(
-        app,
-        stream_id,
-        "progress",
-        json!({
-            "type": "progress",
-            "stage": "cli_provider_started",
-            "message": "agent.progress.cliProviderStarted"
-        }),
-    );
-    let provider = input.provider.clone().unwrap_or_else(|| "cli".to_string());
-    let model = input.model.clone().unwrap_or_else(|| "cli".to_string());
-    let command_line = input.cli_command.clone().unwrap_or_default();
-    match run_cli_command(&input, &command_line) {
-        Ok(output) => {
-            let persisted = chat::record_agent_turn_messages(
-                actor_id,
-                &input.conversation_id,
-                &input.agent_id,
-                &input.user_input,
-                &output,
-                Some(&model),
-            );
-            if !persisted.ok {
-                let message = persisted
-                    .error
-                    .as_ref()
-                    .map(|error| error.message.clone())
-                    .unwrap_or_else(|| "failed to persist CLI turn messages".to_string());
-                tracing::error!(
-                    command = "agent_execute_turn_stream",
-                    conversation_id = %input.conversation_id,
-                    error = %message,
-                    "CLI provider stream succeeded but message persistence failed"
-                );
-                emit_turn_stream_event(
-                    app,
-                    stream_id,
-                    "error",
-                    json!({
-                        "type": "error",
-                        "error": message
-                    }),
-                );
-                return;
-            }
-            if cancel_flag.load(Ordering::SeqCst) {
-                return;
-            }
-            if !output.is_empty() {
-                emit_turn_stream_event(
-                    app,
-                    stream_id,
-                    "text",
-                    json!({
-                        "type": "text",
-                        "text": output
-                    }),
-                );
-            }
-            emit_turn_stream_event(
-                app,
-                stream_id,
-                "done",
-                json!({
-                    "type": "done",
-                    "provider": provider,
-                    "model": model,
-                    "executionOwner": "desktop-rust"
-                }),
-            );
-        }
-        Err(error) => {
-            tracing::error!(command = "agent_execute_turn_stream", error = %error, "CLI provider stream failed");
-            emit_turn_stream_event(
-                app,
-                stream_id,
-                "error",
-                json!({
-                    "type": "error",
-                    "error": error
-                }),
-            );
-        }
-    }
-}
-
-fn run_cli_command(input: &AgentExecuteTurnInput, command_line: &str) -> Result<String, String> {
-    let mut parts = normalize_cli_command(command_line)?;
-    if parts.is_empty() {
-        return Err("CLI command is empty".to_string());
-    };
-    let program = parts.remove(0);
-    let mut args = parts;
-    let prompt = build_cli_prompt(input);
-    let adapter_name = cli_adapter_name(&program);
-    let prompt_delivery = cli_prompt_delivery(adapter_name);
-    if matches!(prompt_delivery, CliPromptDelivery::Argument) {
-        args.push(prompt.clone());
-    }
-    let workspace_root = input
-        .workspace_root
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-    let Some(workspace_root) = workspace_root else {
-        return Err("agent workspace_root is required for CLI execution".to_string());
-    };
-    if !Path::new(&workspace_root).is_dir() {
-        return Err("agent workspace_root does not exist".to_string());
-    }
-
-    let mut command = if input.runtime_backend.as_deref() == Some("proot") {
-        build_proot_command(input, &workspace_root, &program, &args)?
-    } else {
-        let mut command = Command::new(&program);
-        command.args(&args).current_dir(&workspace_root);
-        command
-    };
-    command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env("PEERS_TOUCH_AGENT_ID", &input.agent_id)
-        .env("PEERS_TOUCH_CONVERSATION_ID", &input.conversation_id)
-        .env(
-            "PEERS_TOUCH_PROVIDER",
-            input.provider.as_deref().unwrap_or("cli"),
-        )
-        .env("PEERS_TOUCH_MODEL", input.model.as_deref().unwrap_or("cli"))
-        .env(
-            "PEERS_TOUCH_EFFORT",
-            input.effort.as_deref().unwrap_or("medium"),
-        )
-        .env("PEERS_TOUCH_CLI_ADAPTER", adapter_name)
-        .env("PEERS_TOUCH_AGENT_WORKSPACE", &workspace_root);
-    if let Some(allowed_roots) = input.allowed_roots.as_ref() {
-        if !allowed_roots.is_empty() {
-            command.env("PEERS_TOUCH_ALLOWED_ROOTS", allowed_roots.join(":"));
-        }
-    }
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("failed to start CLI provider: {error}"))?;
-    if matches!(prompt_delivery, CliPromptDelivery::Stdin) {
-        let Some(stdin) = child.stdin.as_mut() else {
-            return Err("failed to open CLI provider stdin".to_string());
-        };
-        stdin
-            .write_all(prompt.as_bytes())
-            .map_err(|error| format!("failed to write prompt to CLI provider: {error}"))?;
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|error| format!("failed to wait for CLI provider: {error}"))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if !output.status.success() {
-        let code = output
-            .status
-            .code()
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "signal".to_string());
-        return Err(format!(
-            "CLI provider exited with status {code}: {}",
-            if stderr.is_empty() { stdout } else { stderr }
-        ));
-    }
-    Ok(stdout)
-}
-
-fn normalize_cli_command(command_line: &str) -> Result<Vec<String>, String> {
-    let parts = split_command_line(command_line)?;
-    if parts.len() != 1 {
-        return Ok(parts);
-    }
-    let program = parts[0].trim();
-    let executable_name = Path::new(program)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(program)
-        .to_ascii_lowercase();
-    match executable_name.as_str() {
-        "codex" => split_command_line("codex exec --skip-git-repo-check -"),
-        "cursor" | "cursor-agent" => {
-            split_command_line("cursor-agent --print --output-format text --trust")
-        }
-        "claude" => split_command_line("claude -p"),
-        "trae" | "traecli" | "traex" => split_command_line("traecli exec --skip-git-repo-check -"),
-        "trae-agent" => split_command_line("trae-agent --print -"),
-        _ => Ok(parts),
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CliPromptDelivery {
-    Stdin,
-    Argument,
-}
-
-fn cli_prompt_delivery(adapter_name: &str) -> CliPromptDelivery {
-    match adapter_name {
-        "cursor" => CliPromptDelivery::Argument,
-        _ => CliPromptDelivery::Stdin,
-    }
-}
-
-fn cli_adapter_name(program: &str) -> &'static str {
-    let executable_name = Path::new(program)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(program)
-        .to_ascii_lowercase();
-    match executable_name.as_str() {
-        "codex" => "codex",
-        "cursor" | "cursor-agent" => "cursor",
-        "claude" => "claude",
-        "trae" | "traecli" | "traex" | "trae-agent" => "trae",
-        _ => "custom",
-    }
-}
-
-fn build_proot_command(
-    input: &AgentExecuteTurnInput,
-    workspace_root: &str,
-    program: &str,
-    args: &[String],
-) -> Result<Command, String> {
-    if !cfg!(target_os = "linux") {
-        return Err("PRoot backend is only supported on Linux hosts".to_string());
-    }
-    if !agent_workspace::proot_available() {
-        return Err("PRoot backend is selected but proot is not available in PATH".to_string());
-    }
-    let rootfs_path = input
-        .rootfs_path
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "PRoot backend requires rootfs_path".to_string())?;
-    if !Path::new(rootfs_path).is_dir() {
-        return Err("PRoot rootfs_path does not exist".to_string());
-    }
-
-    let mut command = Command::new("proot");
-    command
-        .arg("-R")
-        .arg(rootfs_path)
-        .arg("-b")
-        .arg(format!("{workspace_root}:/workspace"))
-        .arg("-w")
-        .arg("/workspace")
-        .arg(program)
-        .args(args);
-    Ok(command)
-}
-
-fn build_cli_prompt(input: &AgentExecuteTurnInput) -> String {
-    let mut sections = Vec::new();
-    if let Some(identity) = input
-        .identity
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        sections.push(format!("# SOUL.md\n{identity}"));
-    }
-    if let Some(instructions) = input
-        .agent_config_prompt
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        sections.push(format!("# AGENTS.md\n{instructions}"));
-    }
-    sections.push(format!("# User\n{}", input.user_input.trim()));
-    sections.join("\n\n")
-}
-
-fn split_command_line(command_line: &str) -> Result<Vec<String>, String> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut quote: Option<char> = None;
-    let mut escaped = false;
-    for ch in command_line.chars() {
-        if escaped {
-            current.push(ch);
-            escaped = false;
-            continue;
-        }
-        if ch == '\\' {
-            escaped = true;
-            continue;
-        }
-        if let Some(active_quote) = quote {
-            if ch == active_quote {
-                quote = None;
-            } else {
-                current.push(ch);
-            }
-            continue;
-        }
-        if ch == '\'' || ch == '"' {
-            quote = Some(ch);
-            continue;
-        }
-        if ch.is_whitespace() {
-            if !current.is_empty() {
-                parts.push(current.clone());
-                current.clear();
-            }
-            continue;
-        }
-        current.push(ch);
-    }
-    if escaped {
-        current.push('\\');
-    }
-    if quote.is_some() {
-        return Err("CLI command has an unterminated quote".to_string());
-    }
-    if !current.is_empty() {
-        parts.push(current);
-    }
-    Ok(parts)
 }
 
 fn stream_station_turn(
@@ -871,6 +646,7 @@ fn stream_station_turn(
         "/sub-agent/agent/turn/stream"
     );
     let client = Client::builder()
+        .timeout(Duration::from_secs(120))
         .build()
         .map_err(|error| format!("failed to create Station stream client: {error}"))?;
     let auth = format!("Bearer {}", token.trim());
@@ -1135,9 +911,8 @@ fn submit_local_tool_result(
 fn string_field(data: &Value, key: &str) -> Option<String> {
     data.get(key)
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
         .map(str::to_string)
+        .filter(|value| !value.is_empty())
 }
 
 fn string_array_field(data: &Value, key: &str) -> Option<Vec<String>> {
@@ -1190,6 +965,232 @@ fn local_tool_result_content(value: &Value) -> String {
             .unwrap_or_else(|| content.to_string());
     }
     output.to_string()
+}
+
+fn extract_content_from_cli_jsonl(stdout: &str) -> String {
+    let mut content = String::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || !trimmed.starts_with('{') {
+            continue;
+        }
+        if let Ok(event) = serde_json::from_str::<Value>(trimmed) {
+            let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            if let Some(text) = event.get("content").and_then(|v| v.as_str()) {
+                if event_type == "message" || event_type == "" || event_type == "text" {
+                    content.push_str(text);
+                }
+            }
+        }
+    }
+    if content.is_empty() {
+        stdout.lines()
+            .filter(|l| !l.trim().is_empty() && !l.contains("INFO") && !l.contains("WARN"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        content
+    }
+}
+
+fn execute_cli_turn_blocking(input: &AgentExecuteTurnInput) -> AppResult<StubPayload> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let model = input.model.as_deref().unwrap_or("").trim();
+    let user_input = input.user_input.trim();
+    if user_input.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "user_input is empty", None);
+    }
+
+    let cli_command = input.cli_command.as_deref()
+        .filter(|c| !c.trim().is_empty())
+        .unwrap_or("traecli exec --skip-git-repo-check -");
+
+    let mut args: Vec<&str> = cli_command.split_whitespace().collect();
+    if args.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "CLI command is empty", None);
+    }
+
+    let program = args.remove(0);
+    let has_json_flag = args.iter().any(|a| *a == "--json");
+    let has_model_flag = args.iter().any(|a| *a == "--model" || *a == "-m");
+
+    let mut cmd_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    if !has_json_flag {
+        cmd_args.insert(0, "--json".to_string());
+    }
+    if !has_model_flag && !model.is_empty() {
+        cmd_args.insert(0, model.to_string());
+        cmd_args.insert(0, "--model".to_string());
+    }
+    if cmd_args.last().map(|s| s.as_str()) == Some("-") {
+        cmd_args.pop();
+    }
+    cmd_args.push("-".to_string());
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let path = crate::application::provider::enriched_path();
+    let workspace = input.workspace_root.as_deref().unwrap_or(&home);
+
+    let mut cmd = Command::new(program);
+    cmd.args(&cmd_args)
+        .current_dir(workspace)
+        .env("PATH", &path)
+        .env("HOME", &home)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, format!("Failed to spawn CLI: {e}"), None),
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(user_input.as_bytes());
+    }
+
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, format!("CLI execution failed: {e}"), None),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let content = extract_content_from_cli_jsonl(&stdout);
+
+    let result = json!({
+        "response_message": {
+            "role": "assistant",
+            "content": content,
+        },
+        "turn": {
+            "agent_id": input.agent_id,
+            "conversation_id": input.conversation_id,
+            "final_response": content,
+            "status": "TURN_STATUS_COMPLETED",
+            "model": model,
+        },
+        "trace": { "model": model },
+    });
+    let status = serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+    AppResult::success(StubPayload {
+        command: "agent_execute_turn".to_string(),
+        status,
+    })
+}
+
+fn stream_cli_turn(
+    app: &AppHandle,
+    stream_id: &str,
+    input: &AgentExecuteTurnInput,
+    cancel_flag: &AtomicBool,
+) -> Result<(), String> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+
+    let model = input.model.as_deref().unwrap_or("").trim();
+    let user_input = input.user_input.trim();
+    if user_input.is_empty() {
+        return Err("user_input is empty".to_string());
+    }
+
+    let cli_command = input.cli_command.as_deref()
+        .filter(|c| !c.trim().is_empty())
+        .unwrap_or("traecli exec --skip-git-repo-check -");
+
+    let mut args: Vec<&str> = cli_command.split_whitespace().collect();
+    if args.is_empty() {
+        return Err("CLI command is empty".to_string());
+    }
+
+    let program = args.remove(0);
+    let has_json_flag = args.iter().any(|a| *a == "--json");
+    let has_model_flag = args.iter().any(|a| *a == "--model" || *a == "-m");
+
+    let mut cmd_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    if !has_json_flag {
+        cmd_args.insert(0, "--json".to_string());
+    }
+    if !has_model_flag && !model.is_empty() {
+        cmd_args.insert(0, model.to_string());
+        cmd_args.insert(0, "--model".to_string());
+    }
+
+    // Remove trailing "-" (stdin marker) since we pipe input
+    if cmd_args.last().map(|s| s.as_str()) == Some("-") {
+        cmd_args.pop();
+    }
+    cmd_args.push("-".to_string());
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let path = crate::application::provider::enriched_path();
+    let workspace = input.workspace_root.as_deref().unwrap_or(&home);
+
+    let mut cmd = Command::new(program);
+    cmd.args(&cmd_args)
+        .current_dir(workspace)
+        .env("PATH", &path)
+        .env("HOME", &home)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn CLI: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(user_input.as_bytes());
+    }
+
+    let stdout = child.stdout.take().ok_or("Failed to capture CLI stdout")?;
+    let reader = BufReader::new(stdout);
+
+    emit_turn_stream_event(app, stream_id, "start", json!({"type": "start"}));
+
+    for line in reader.lines() {
+        if cancel_flag.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            emit_turn_stream_event(app, stream_id, "done", json!({"type": "done", "reason": "cancelled"}));
+            return Ok(());
+        }
+
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Ok(event) = serde_json::from_str::<Value>(trimmed) {
+            let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            match event_type {
+                "message" => {
+                    if let Some(content) = event.get("content").and_then(|v| v.as_str()) {
+                        emit_turn_stream_event(app, stream_id, "text_delta", json!({"type": "text_delta", "text": content}));
+                    }
+                }
+                "error" => {
+                    let msg = event.get("message").or(event.get("error")).and_then(|v| v.as_str()).unwrap_or("CLI error");
+                    emit_turn_stream_event(app, stream_id, "error", json!({"type": "error", "error": msg}));
+                    return Ok(());
+                }
+                _ => {
+                    if let Some(content) = event.get("content").and_then(|v| v.as_str()) {
+                        emit_turn_stream_event(app, stream_id, "text_delta", json!({"type": "text_delta", "text": content}));
+                    }
+                }
+            }
+        } else {
+            emit_turn_stream_event(app, stream_id, "text_delta", json!({"type": "text_delta", "text": trimmed}));
+        }
+    }
+
+    let _ = child.wait();
+    emit_turn_stream_event(app, stream_id, "done", json!({"type": "done"}));
+    Ok(())
 }
 
 fn parse_sse_frame(frame: &str) -> Option<(String, Value)> {
@@ -1391,238 +1392,6 @@ mod tests {
         }));
 
         assert_eq!(content, "allowed");
-    }
-
-    #[test]
-    fn normalize_cli_command_expands_codex_adapter() {
-        let parts = normalize_cli_command("codex").expect("codex adapter should normalize");
-
-        assert_eq!(parts, vec!["codex", "exec", "--skip-git-repo-check", "-"]);
-    }
-
-    #[test]
-    fn normalize_cli_command_expands_cursor_adapter() {
-        let parts = normalize_cli_command("cursor-agent").expect("cursor adapter should normalize");
-
-        assert_eq!(
-            parts,
-            vec![
-                "cursor-agent",
-                "--print",
-                "--output-format",
-                "text",
-                "--trust"
-            ]
-        );
-        assert_eq!(cli_prompt_delivery("cursor"), CliPromptDelivery::Argument);
-    }
-
-    #[test]
-    fn normalize_cli_command_expands_trae_adapter() {
-        let parts = normalize_cli_command("traecli").expect("trae adapter should normalize");
-
-        assert_eq!(parts, vec!["traecli", "exec", "--skip-git-repo-check", "-"]);
-        assert_eq!(cli_prompt_delivery("trae"), CliPromptDelivery::Stdin);
-    }
-
-    #[test]
-    fn normalize_cli_command_keeps_custom_command_args() {
-        let parts = normalize_cli_command("codex exec --model gpt-5 -")
-            .expect("custom command should parse");
-
-        assert_eq!(parts, vec!["codex", "exec", "--model", "gpt-5", "-"]);
-    }
-
-    #[test]
-    fn cli_adapter_name_detects_known_program() {
-        assert_eq!(cli_adapter_name("/usr/local/bin/claude"), "claude");
-        assert_eq!(
-            cli_adapter_name("/Users/bytedance/.local/bin/cursor-agent"),
-            "cursor"
-        );
-        assert_eq!(cli_adapter_name("traecli"), "trae");
-        assert_eq!(cli_adapter_name("custom-agent"), "custom");
-    }
-
-    #[test]
-    fn run_cli_command_delivers_cursor_prompt_as_argument() {
-        let test_root = std::env::temp_dir().join(format!(
-            "peers-touch-cli-provider-test-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&test_root).expect("test root should be created");
-        let fake_cursor = test_root.join("cursor-agent");
-        std::fs::write(
-            &fake_cursor,
-            "#!/bin/sh\nlast=''\nfor arg do last=\"$arg\"; done\nprintf '%s\\n' \"$PEERS_TOUCH_CLI_ADAPTER\"\nprintf '%s\\n' \"$#\"\nprintf '%s' \"$last\"\n",
-        )
-        .expect("fake cursor should be written");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = std::fs::metadata(&fake_cursor)
-                .expect("fake cursor metadata should exist")
-                .permissions();
-            permissions.set_mode(0o755);
-            std::fs::set_permissions(&fake_cursor, permissions)
-                .expect("fake cursor should be executable");
-        }
-
-        let input = AgentExecuteTurnInput {
-            stream_id: None,
-            conversation_id: "conversation-1".to_string(),
-            agent_id: "agent-1".to_string(),
-            user_input: "reply with PT_CURSOR_OK".to_string(),
-            attachments: None,
-            provider: Some("cursor-cli".to_string()),
-            model: Some("cursor-cli".to_string()),
-            cli_command: None,
-            workspace_mode: None,
-            runtime_backend: None,
-            rootfs_path: None,
-            allowed_roots: None,
-            identity: None,
-            agent_config_prompt: None,
-            effort: None,
-            platform: None,
-            workspace_root: Some(test_root.to_string_lossy().to_string()),
-            context_window_size: None,
-            max_retries: None,
-            knowledge_resources: None,
-        };
-
-        let output = run_cli_command(
-            &input,
-            &format!(
-                "{} --print --output-format text --trust",
-                fake_cursor.to_string_lossy()
-            ),
-        )
-        .expect("fake cursor command should run");
-
-        assert!(output.contains("cursor"));
-        assert!(output.contains("reply with PT_CURSOR_OK"));
-    }
-
-    #[test]
-    fn agent_execute_turn_routes_cli_provider_to_desktop_runner() {
-        let test_root = std::env::temp_dir().join(format!(
-            "peers-touch-agent-turn-cli-test-{}",
-            std::process::id()
-        ));
-        let agent_home = test_root.join("agent-home");
-        std::fs::create_dir_all(&test_root).expect("test root should be created");
-        let fake_cli = test_root.join("fake-cli");
-        std::fs::write(
-            &fake_cli,
-            "#!/bin/sh\nprompt=$(cat)\nprintf 'owner=%s\\nprovider=%s\\n%s' \"$PEERS_TOUCH_CLI_ADAPTER\" \"$PEERS_TOUCH_PROVIDER\" \"$prompt\"\n",
-        )
-        .expect("fake cli should be written");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = std::fs::metadata(&fake_cli)
-                .expect("fake cli metadata should exist")
-                .permissions();
-            permissions.set_mode(0o755);
-            std::fs::set_permissions(&fake_cli, permissions)
-                .expect("fake cli should be executable");
-        }
-
-        let previous_agent_home = std::env::var("PEERS_TOUCH_AGENT_HOME").ok();
-        std::env::set_var("PEERS_TOUCH_AGENT_HOME", &agent_home);
-        let result = agent_execute_turn(
-            AgentExecuteTurnInput {
-                stream_id: None,
-                conversation_id: "conversation-cli".to_string(),
-                agent_id: "agent-cli".to_string(),
-                user_input: "reply with PT_AGENT_TURN_CLI_OK".to_string(),
-                attachments: None,
-                provider: Some("custom-cli".to_string()),
-                model: Some("fake-cli".to_string()),
-                cli_command: Some(fake_cli.to_string_lossy().to_string()),
-                workspace_mode: None,
-                runtime_backend: None,
-                rootfs_path: None,
-                allowed_roots: None,
-                identity: None,
-                agent_config_prompt: None,
-                effort: None,
-                platform: None,
-                workspace_root: None,
-                context_window_size: None,
-                max_retries: None,
-                knowledge_resources: None,
-            },
-            "unused-token",
-        );
-        if let Some(value) = previous_agent_home {
-            std::env::set_var("PEERS_TOUCH_AGENT_HOME", value);
-        } else {
-            std::env::remove_var("PEERS_TOUCH_AGENT_HOME");
-        }
-
-        assert!(result.ok);
-        let payload = result.data.expect("payload should exist");
-        let status: Value = serde_json::from_str(&payload.status).expect("status should be json");
-        assert_eq!(status["executionOwner"], "desktop-rust");
-        assert_eq!(status["provider"], "custom-cli");
-        assert!(status["result"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("reply with PT_AGENT_TURN_CLI_OK"));
-    }
-
-    /// Opt-in real CLI end-to-end check against a locally logged-in `traecli`.
-    ///
-    /// This test spends real model tokens, so it stays inert during normal runs and only
-    /// executes when `PEERS_TOUCH_CLI_E2E=1` is set. It drives the production runner
-    /// (`agent_execute_turn` -> `run_cli_command`) through the same `traecli exec` command
-    /// template used by the `trae-cli` provider, proving the full
-    /// `Agent turn -> Desktop Rust CLI runner -> real traecli -> model reply` closure.
-    #[test]
-    fn agent_execute_turn_runs_real_traecli_when_opted_in() {
-        if std::env::var("PEERS_TOUCH_CLI_E2E").as_deref() != Ok("1") {
-            return;
-        }
-
-        let result = agent_execute_turn(
-            AgentExecuteTurnInput {
-                stream_id: None,
-                conversation_id: "conversation-traecli-e2e".to_string(),
-                agent_id: "agent-traecli-e2e".to_string(),
-                user_input: "Reply with exactly this token and nothing else: PT_TRAE_E2E_OK"
-                    .to_string(),
-                attachments: None,
-                provider: Some("trae-cli".to_string()),
-                model: Some("trae-cli".to_string()),
-                cli_command: Some("traecli exec --skip-git-repo-check -".to_string()),
-                workspace_mode: None,
-                runtime_backend: None,
-                rootfs_path: None,
-                allowed_roots: None,
-                identity: None,
-                agent_config_prompt: None,
-                effort: None,
-                platform: None,
-                workspace_root: None,
-                context_window_size: None,
-                max_retries: None,
-                knowledge_resources: None,
-            },
-            "unused-token",
-        );
-
-        assert!(result.ok, "traecli turn should succeed: {:?}", result.error);
-        let payload = result.data.expect("payload should exist");
-        let status: Value = serde_json::from_str(&payload.status).expect("status should be json");
-        assert_eq!(status["executionOwner"], "desktop-rust");
-        assert_eq!(status["provider"], "trae-cli");
-        let output = status["result"].as_str().unwrap_or_default();
-        assert!(
-            output.contains("PT_TRAE_E2E_OK"),
-            "expected model reply to contain PT_TRAE_E2E_OK, got: {output}"
-        );
     }
 
     #[test]

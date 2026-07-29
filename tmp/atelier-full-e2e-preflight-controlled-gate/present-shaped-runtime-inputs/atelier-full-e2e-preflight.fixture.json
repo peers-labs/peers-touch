@@ -1,0 +1,167 @@
+{
+  "ok": true,
+  "evidenceClass": "READINESS_AUDIT",
+  "gate": "atelier:full-e2e-preflight",
+  "readiness": "NOT_READY",
+  "globalReady": false,
+  "validatedScripts": [
+    {
+      "script": "atelier:controlled-gates",
+      "command": "pnpm run atelier:projection-codegen-check && pnpm run atelier:projection-contract-gate && pnpm run atelier:bridge-runtime-gate && pnpm run atelier:desktop-bridge-gate && pnpm run atelier:desktop-typecheck-gate && pnpm run atelier:prototype-gate && pnpm run atelier:prototype-unit-gate && pnpm run atelier:official-frontend-gate && pnpm run atelier:official-frontend-unit-gate && pnpm run atelier:message-send-ingress-controlled-gate && pnpm run atelier:feedback-submit-ingress-controlled-gate && pnpm run atelier:confirmation-ingress-controlled-gate && pnpm run atelier:confirmation-outcome-controlled-gate && pnpm run atelier:feedback-memory-consumption-controlled-gate && pnpm run atelier:workspace-open-controlled-gate && pnpm run atelier:task-lifecycle-controlled-gate && pnpm run atelier:runtime-log-stream-controlled-gate && pnpm run atelier:artifact-renderer-controlled-gate && pnpm run atelier:artifact-renderer-live-controlled-gate && pnpm run atelier:artifact-body-fetch-controlled-gate && pnpm run atelier:host-storage-attachment-controlled-gate && pnpm run atelier:host-storage-attachment-browser-controlled-gate && pnpm run atelier:direct-run-execution-evidence-controlled-gate && pnpm run atelier:budget-surface-controlled-gate && pnpm run atelier:full-e2e-runtime-inputs-controlled-gate && pnpm run atelier:full-e2e-preflight-controlled-gate && pnpm run atelier:full-e2e-fail-closed-controlled-gate && pnpm run atelier:full-e2e-final-evidence-controlled-gate && pnpm run atelier:source-dist-integrity-policy-gate && pnpm run atelier:completion-readiness-audit-controlled-gate && pnpm --filter @peers-touch/atelier-official-applet run check && pnpm run atelier:official-frontend-build-gate && pnpm run applet:atelier-desktop-injection-gate"
+    },
+    {
+      "script": "atelier:real-product-gates",
+      "command": "node tooling/scripts/atelier-real-product-gates.mjs"
+    },
+    {
+      "script": "atelier:completion-readiness-audit",
+      "command": "node tooling/scripts/atelier-completion-readiness-audit.mjs"
+    },
+    {
+      "script": "atelier:full-e2e",
+      "command": "node tooling/scripts/atelier-full-e2e.mjs"
+    }
+  ],
+  "sourceArtifacts": [
+    {
+      "path": "apps/applets/atelier/applet.manifest.json",
+      "status": "PRESENT"
+    },
+    {
+      "path": "apps/applets/atelier/service.manifest.json",
+      "status": "PRESENT"
+    },
+    {
+      "path": "apps/applets/atelier/frontend/package.json",
+      "status": "PRESENT"
+    },
+    {
+      "path": "apps/applets/atelier/contracts/atelier-projection.contract.json",
+      "status": "PRESENT"
+    }
+  ],
+  "validatedEvidence": [
+    {
+      "path": "applet-readiness-evidence/official-applet/atelier-real-product-gates-aggregate.json",
+      "ok": true,
+      "readiness": "NOT_READY",
+      "evidenceClass": "REAL_PRODUCT_PATH"
+    },
+    {
+      "path": "applet-readiness-evidence/official-applet/atelier-projection-contract-gate.json",
+      "status": "PASS",
+      "readiness": "NOT_READY",
+      "evidenceClass": "STATIC_CONTRACT_GATE"
+    }
+  ],
+  "presentRuntimeInputs": [
+    {
+      "env": "PEERS_ATELIER_FULL_E2E_STATION_URL",
+      "purpose": "real Station base URL used by Desktop Host service binding",
+      "status": "PRESENT",
+      "rawValueRedacted": true
+    },
+    {
+      "env": "PEERS_ATELIER_FULL_E2E_DESKTOP_APP",
+      "purpose": "real Desktop app bundle or launch command under test",
+      "status": "PRESENT",
+      "rawValueRedacted": true
+    },
+    {
+      "env": "PEERS_ATELIER_FULL_E2E_IDE",
+      "purpose": "real IDE target for atelier.workspace.open native launch proof",
+      "status": "PRESENT",
+      "rawValueRedacted": true
+    },
+    {
+      "env": "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE",
+      "purpose": "production provider/model/runtime profile used outside scripted gate server paths",
+      "status": "PRESENT",
+      "rawValueRedacted": true
+    }
+  ],
+  "missingRuntimeInputs": [],
+  "invalidRuntimeInputs": [],
+  "sourceInstrumentation": [
+    {
+      "id": "post-ready-workspace-open-action-producer",
+      "proofObligationId": "post-ready-applet-ui-actions",
+      "path": "apps/desktop/src-tauri/src/application/applets/mod.rs",
+      "owner": "desktop_host",
+      "requiredEvidencePath": "applet-readiness-evidence/official-applet/atelier-full-e2e-workspace-open.json",
+      "status": "PRESENT",
+      "missingAnchors": []
+    },
+    {
+      "id": "real-ide-launch-side-evidence-producer",
+      "proofObligationId": "real-ide-launch",
+      "path": "apps/desktop/src-tauri/src/application/applets/mod.rs",
+      "owner": "desktop_host",
+      "requiredEvidencePath": "applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch.json",
+      "status": "PRESENT",
+      "missingAnchors": []
+    },
+    {
+      "id": "provider-runtime-side-evidence-producer",
+      "proofObligationId": "production-provider-runtime-quality",
+      "path": "apps/station/app/subserver/agent/service/atelier_projection.go",
+      "owner": "station",
+      "requiredEvidencePath": "applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime.json",
+      "status": "PRESENT",
+      "missingAnchors": []
+    }
+  ],
+  "sourceInstrumentationGaps": [],
+  "finalProofObligations": [
+    {
+      "id": "full-host-station-applet-e2e",
+      "status": "MISSING",
+      "requiredEvidence": "Run the official peers.atelier package through the real Desktop Host product shell/window against a real Station service binding and record task creation, projection replay, decision resolve, artifact/body/preview, cleanup, and auth/error behavior. Authenticated read-only handshakes must use Desktop Host applets_invoke service binding, not exported bearer tokens."
+    },
+    {
+      "id": "post-ready-applet-ui-actions",
+      "status": "MISSING",
+      "requiredEvidence": "After Desktop ready evidence, prove current-launch applet UI actions reached Desktop Host, starting with atelier.workspace.open action evidence bound to launchId/sessionId/taskId/workspaceUri/IDE target."
+    },
+    {
+      "id": "real-ide-launch",
+      "status": "MISSING",
+      "requiredEvidence": "Run atelier.workspace.open through the real Desktop Host workspace resolver and produce independent atelier-full-e2e-ide-launch.json evidence proving the IDE launch target without exposing file/shell/execute/openExternalUrl capability to the applet."
+    },
+    {
+      "id": "production-provider-runtime-quality",
+      "status": "MISSING",
+      "requiredEvidence": "Produce independent atelier-full-e2e-provider-runtime.json Station-owned evidence for the configured provider profileRef, proving provider runtime, model quality, streaming UX, artifact persistence, and trace/checkpoint/resume without exposing provider/runtime/artifact/trace controls to the applet."
+    }
+  ],
+  "runOrder": [
+    "pnpm run atelier:controlled-gates",
+    "pnpm run atelier:real-product-gates",
+    "pnpm run atelier:full-e2e-preflight",
+    "pnpm run atelier:full-e2e with the runtime inputs listed above",
+    "rerun pnpm run atelier:completion-readiness-audit after final evidence is wired"
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "final E2E run prerequisites are machine-audited before attempting a readiness claim",
+      "required Atelier controlled, real-product, and completion readiness gate scripts are present",
+      "required current evidence files are present and preserve NOT_READY readiness boundaries",
+      "missing real runtime inputs and final proof obligations are explicit and fail-closed for readiness",
+      "authenticated Station route checks are required to go through Desktop Host service binding rather than a runner-visible bearer token",
+      "final side evidence source instrumentation gaps are machine-audited before full E2E runtime handoff"
+    ],
+    "doesNotProve": [
+      "full Host + Station + applet E2E",
+      "real IDE launch",
+      "production provider/model/runtime quality",
+      "global Atelier readiness"
+    ]
+  },
+  "notCovered": [
+    "full Host + Station + applet E2E",
+    "real IDE launch",
+    "production provider/model/runtime quality",
+    "global Atelier readiness"
+  ]
+}

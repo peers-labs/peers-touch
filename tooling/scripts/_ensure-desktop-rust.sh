@@ -14,6 +14,7 @@
 #
 # Environment variables consumed:
 #   RESTART — If set to "1", kill existing Rust BFF and restart unconditionally.
+#   PT_DESKTOP_E2E — If "true", enable the opt-in native Playwright observer.
 #
 # Behavior:
 #   - If RESTART=1 → kill existing process and start fresh.
@@ -49,9 +50,8 @@ tauri_artifact_path() {
 tauri_compute_fingerprint() {
   local desktop_dir="$1"
   local profile="$2"
-  local gw_port="$3"
-  local vite_port="$4"
   local station_url="${PEERS_STATION_URL:-}"
+  local e2e_testing="${PT_DESKTOP_E2E:-false}"
 
   local files=()
   files+=("$desktop_dir/src-tauri/Cargo.toml")
@@ -77,9 +77,8 @@ tauri_compute_fingerprint() {
   printf '%s\n' \
     "kind=tauri-rust-bff" \
     "profile=${profile}" \
-    "gateway_port=${gw_port}" \
-    "vite_port=${vite_port}" \
     "station_url=${station_url}" \
+    "e2e_testing=${e2e_testing}" \
     "files=${file_hashes}" \
     "src_rs=${rs_hashes}" \
     | shasum -a 256 | awk '{print $1}'
@@ -157,9 +156,7 @@ tauri_meta_matches() {
   local meta_file="$1"
   local desired_fp="$2"
   local desired_profile="$3"
-  local desired_gw_port="$4"
-  local desired_vite_port="$5"
-  local desired_station_url="${6:-}"
+  local desired_station_url="${4:-}"
 
   if [[ ! -f "$meta_file" ]]; then
     return 1
@@ -170,8 +167,6 @@ tauri_meta_matches() {
 
   [[ "${TAURI_FINGERPRINT:-}" == "$desired_fp" ]] || return 1
   [[ "${TAURI_PROFILE:-}" == "$desired_profile" ]] || return 1
-  [[ "${TAURI_GATEWAY_PORT:-}" == "$desired_gw_port" ]] || return 1
-  [[ "${TAURI_VITE_PORT:-}" == "$desired_vite_port" ]] || return 1
   [[ "${TAURI_STATION_URL:-}" == "$desired_station_url" ]] || return 1
   return 0
 }
@@ -222,29 +217,35 @@ ensure_desktop_rust_ready() {
   local profile="$3"
   local vite_port="$4"
   local headless="${5:-}"
-  local pid_file="/tmp/peers-touch-desktop-rust-${profile}.pid"
-  local meta_file="/tmp/peers-touch-desktop-rust-${profile}.meta"
+  local wt_id="${WORKTREE_ID:-default}"
+  local pid_file="/tmp/peers-touch-desktop-rust-${profile}-${wt_id}.pid"
+  local meta_file="/tmp/peers-touch-desktop-rust-${profile}-${wt_id}.meta"
   TAURI_PID=""
   DESKTOP_RUST_PID_FILE="$pid_file"
   DESKTOP_RUST_META_FILE="$meta_file"
 
   local dev_url="http://localhost:${vite_port}"
   local tauri_config
-  if [[ "$headless" == "--headless" ]]; then
+  local e2e_testing="${PT_DESKTOP_E2E:-false}"
+  if [[ "$headless" == "--headless" && "$e2e_testing" == "true" ]]; then
+    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}],\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-playwright\",\"windows\":[\"*\"],\"permissions\":[\"playwright:default\"]}]}}}"
+  elif [[ "$headless" == "--headless" ]]; then
     tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}]}}"
+  elif [[ "$e2e_testing" == "true" ]]; then
+    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-playwright\",\"windows\":[\"*\"],\"permissions\":[\"playwright:default\"]}]}}}"
   else
     tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"}}"
   fi
 
   local desired_fp
-  desired_fp="$(tauri_compute_fingerprint "$desktop_dir" "$profile" "$gw_port" "$vite_port")"
+  desired_fp="$(tauri_compute_fingerprint "$desktop_dir" "$profile")"
 
   # Determine if a restart is needed: explicit RESTART=1 or source code changed
   local needs_restart=false
   if [[ "${RESTART:-}" == "1" ]]; then
     needs_restart=true
     echo "[INFO] RESTART=1 — forcing Rust BFF restart"
-  elif ! tauri_meta_matches "$meta_file" "$desired_fp" "$profile" "$gw_port" "$vite_port" "${PEERS_STATION_URL:-}"; then
+  elif ! tauri_meta_matches "$meta_file" "$desired_fp" "$profile" "${PEERS_STATION_URL:-}"; then
     needs_restart=true
     echo "[INFO] Rust BFF config/env fingerprint mismatch — restarting"
   elif rust_source_changed "$pid_file" "$desktop_dir"; then
@@ -272,13 +273,18 @@ ensure_desktop_rust_ready() {
   # to ensure devUrl, window visibility, and beforeDevCommand overrides are
   # applied correctly. The binary cannot accept runtime config overrides.
   # See docs/architecture/runtime/desktop-runtime-architecture.md §6.4.
+  local tauri_feature_args=()
+  if [[ "${PT_DESKTOP_E2E:-false}" == "true" ]]; then
+    tauri_feature_args=(--features e2e-testing)
+    echo "[INFO] Native Playwright observer enabled (e2e-testing feature)"
+  fi
   (
     cd "$desktop_dir"
     export PT_GATEWAY_PORT="$gw_port"
     export PT_PROFILE="$profile"
     export PEERS_STATION_URL="${PEERS_STATION_URL:-}"
     export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
-    pnpm tauri dev --config "$tauri_config"
+    pnpm tauri dev ${tauri_feature_args[@]+"${tauri_feature_args[@]}"} --config "$tauri_config"
   ) &
   TAURI_PID=$!
 
@@ -289,6 +295,7 @@ TAURI_PROFILE='${profile}'
 TAURI_GATEWAY_PORT='${gw_port}'
 TAURI_VITE_PORT='${vite_port}'
 TAURI_STATION_URL='${PEERS_STATION_URL:-}'
+TAURI_E2E_TESTING='${PT_DESKTOP_E2E:-false}'
 TAURI_PID='${TAURI_PID}'
 EOF
   echo "[INFO] Rust BFF started (pid: $TAURI_PID), waiting for gateway..."

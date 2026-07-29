@@ -1,0 +1,30 @@
+{
+  "evidenceId": "EVID-011-MR-pre",
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=memory&state=memory-runtime-contract&check=mr",
+  "markerSelector": "[data-review-marker=\"memory-runtime-contract-mr\"]",
+  "screenshotPath": "tmp/agent-lobehub-l2-screenshots/memory-mr-runtime-contract-scoped.png",
+  "domPath": "tmp/agent-lobehub-memory-mr-dom.json",
+  "captureMode": "headless-chrome-preview-only",
+  "image": {
+    "width": 1280,
+    "height": 1500,
+    "sha256": "c0dbbb35274a5bb46f7d45cd3aee47c56b6583edc92707fe69890e014a6d43c3"
+  },
+  "visualInspection": {
+    "openedByAgent": true,
+    "portalChromeHit": false,
+    "portalTitlePresent": true,
+    "readable": true,
+    "statesVisible": [
+      "home async boundary",
+      "query-state routing",
+      "timeline and grid virtualization",
+      "detail AsyncBoundary",
+      "analysis task states",
+      "edit draft/save recovery",
+      "delete service success/failure boundary",
+      "purge confirm and query cleanup",
+      "Station/Desktop/Model-proto ownership"
+    ]
+  }
+}

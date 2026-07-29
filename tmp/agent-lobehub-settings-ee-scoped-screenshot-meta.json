@@ -1,0 +1,14 @@
+{
+  "evidenceId": "EVID-011-EE-pre",
+  "surface": "settings",
+  "state": "provider-runtime-contract",
+  "check": "ee",
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=settings&state=provider-runtime-contract&check=ee",
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/settings-ee-source-interaction-scoped.png",
+  "width": 1080,
+  "height": 1400,
+  "sha256": "4596bf09188e0109cc3891e04066bc77f4379ff69c0a635696176a800fcabffa",
+  "capturedBy": "Google Chrome headless new with isolated user-data-dir and CDP scoped clip",
+  "visualInspection": "opened with view_image; confirmed Settings EE source-interaction closure, provider cache / model mutation / Agent consumer map, source-level closure columns, Station sync pending warning, ProviderConfig and ModelList runtime panels are visible and readable",
+  "portalChromeHit": false
+}

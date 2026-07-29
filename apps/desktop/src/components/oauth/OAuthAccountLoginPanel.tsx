@@ -91,7 +91,9 @@ export function OAuthAccountLoginPanel({
   showSectionTitle = true,
 }: Props) {
   const { t } = useTranslation('provider');
-  const { providers, connections, loadAll } = useOAuth2Store();
+  const providers = useOAuth2Store(s => s.providers);
+  const connections = useOAuth2Store(s => s.connections);
+  const loadAll = useOAuth2Store(s => s.loadAll);
   const [signInProvider, setSignInProvider] = useState<OAuth2ProviderSummary | null>(null);
 
   useEffect(() => {

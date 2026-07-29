@@ -202,7 +202,10 @@ function desktopExecutorPrompt(
 export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const { agents, loadAgents, setAgentSurface, setSelectedAgent } = useAgentStore();
+  const agents = useAgentStore(s => s.agents);
+  const loadAgents = useAgentStore(s => s.loadAgents);
+  const setAgentSurface = useAgentStore(s => s.setAgentSurface);
+  const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [prompt, setPrompt] = useState('');
   const [runState, setRunState] = useState<CanvasRunState>('idle');

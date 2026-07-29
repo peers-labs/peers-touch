@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "launchId": "b8f13ef7-0e3a-431b-bf56-176a9f53d563",
+  "appletId": "peers.atelier",
+  "sessionId": "controlled-session-workspace-open-shell-side-effect",
+  "readiness": "NOT_READY",
+  "globalReady": false,
+  "serviceBinding": {
+    "service": "atelier",
+    "transport": "sdk.network.request",
+    "stationUrlRedacted": true,
+    "stationUrlHash": "sha256:b925b85990ca9393d9a2194b7927ecfb94f5cefb038ceb1a2c26b36cb49435cf",
+    "stationPathPrefix": "/applets/atelier/v1"
+  },
+  "productShell": {
+    "kind": "desktop_host_product_shell",
+    "appletId": "peers.atelier"
+  },
+  "productWindow": {
+    "kind": "desktop_product_window",
+    "appletId": "peers.atelier",
+    "mounted": true
+  },
+  "completedAt": "2026-07-09T02:39:18.715Z"
+}

@@ -14,18 +14,23 @@ import (
 // This is the agent domain's own provider configuration store, replacing
 // the legacy cross-domain dependency on the ai_chat_providers table.
 type AgentProvider struct {
-	ID          string          `gorm:"primaryKey;type:varchar(36)"`
-	Name        string          `gorm:"not null;type:text"`
-	KeyVaults   string          `gorm:"type:text"`
-	Config      json.RawMessage `gorm:"type:jsonb"`
-	SourceType  string          `gorm:"type:varchar(20)"`
-	CheckModel  string          `gorm:"type:text"`
-	RuntimeKind string          `gorm:"type:varchar(20)"`
-	CliCommand  string          `gorm:"type:text"`
-	Protocol    string          `gorm:"type:varchar(40)"`
-	Enabled     bool            `gorm:"not null;default:true"`
-	CreatedAt   time.Time       `gorm:"not null;autoCreateTime"`
-	UpdatedAt   time.Time       `gorm:"not null;autoUpdateTime"`
+	ID           string          `gorm:"primaryKey;type:varchar(36)"`
+	ActorID      string          `gorm:"not null;type:varchar(36);default:'';uniqueIndex:idx_agent_providers_actor_provider"`
+	Name         string          `gorm:"not null;type:text;uniqueIndex:idx_agent_providers_actor_provider"`
+	DisplayName  string          `gorm:"type:varchar(256)"`
+	BaseURL      string          `gorm:"type:text"`
+	KeyVaults    string          `gorm:"type:text"`
+	Config       json.RawMessage `gorm:"type:jsonb"`
+	HiddenModels string          `gorm:"type:text"`
+	SourceType   string          `gorm:"type:varchar(20)"`
+	CheckModel   string          `gorm:"type:text"`
+	RuntimeKind  string          `gorm:"type:varchar(20)"`
+	CliCommand   string          `gorm:"type:text"`
+	Protocol     string          `gorm:"type:varchar(40)"`
+	Enabled      bool            `gorm:"not null;default:true"`
+	Version      int64           `gorm:"not null;default:1"`
+	CreatedAt    time.Time       `gorm:"not null;autoCreateTime"`
+	UpdatedAt    time.Time       `gorm:"not null;autoUpdateTime"`
 }
 
 // TableName sets the table name.

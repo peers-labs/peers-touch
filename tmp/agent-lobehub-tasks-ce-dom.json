@@ -1,0 +1,29 @@
+{
+  "url": "http://localhost:3200/?surface=tasks&check=ce",
+  "root": false,
+  "compactTasks": true,
+  "compactShell": true,
+  "workspace": true,
+  "allTasks": true,
+  "scheduledGroup": true,
+  "awaitingInputGroup": true,
+  "pausedGroup": true,
+  "groupLabels": [
+    "Scheduled1",
+    "Awaiting input1",
+    "Paused1"
+  ],
+  "taskRows": 3,
+  "selectedTask": "ScheduledARXIVArXiv daily picksDaily at 09:0009:12",
+  "detailAbsentByDefault": true,
+  "deepEditorAbsentByDefault": true,
+  "rightPanel": true,
+  "taskComposer": true,
+  "modelButton": true,
+  "rightPanelVisibleInViewport": true,
+  "searchButton": true,
+  "createTaskButton": true,
+  "viewSettingsCollapsedByDefault": true,
+  "taskAgentPlaceholder": "Ask, create, or start a task. @ to assign tasks to other agents.",
+  "forbiddenHits": []
+}

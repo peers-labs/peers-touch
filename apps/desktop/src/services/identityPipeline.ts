@@ -9,12 +9,32 @@ export interface IdentityChangePayload {
   loginMethod: string | null;
 }
 
+export interface IdentityHandlerFailure {
+  handlerName: string;
+  error: unknown;
+  durationMs: number;
+}
+
+export interface IdentityPipelineResult {
+  ok: boolean;
+  failures: ReadonlyArray<IdentityHandlerFailure>;
+}
+
+export class IdentityPipelineError extends Error {
+  readonly failures: ReadonlyArray<IdentityHandlerFailure>;
+  constructor(failures: IdentityHandlerFailure[]) {
+    const names = failures.map((f) => f.handlerName).join(', ');
+    super(`identity pipeline failed for handlers: ${names}`);
+    this.name = 'IdentityPipelineError';
+    this.failures = failures;
+  }
+}
+
 const orderedHandlers: Array<{
   name: string;
   fn: (payload: IdentityChangePayload) => void | Promise<void>;
 }> = [];
 
-/** Register a callback that runs on every identity change, in registration order. */
 export function registerIdentityHandler(
   name: string,
   fn: (payload: IdentityChangePayload) => void | Promise<void>,
@@ -22,18 +42,22 @@ export function registerIdentityHandler(
   orderedHandlers.push({ name, fn });
 }
 
-/** Invoke the pipeline. Throws if any handler throws. */
-export async function runIdentityPipeline(payload: IdentityChangePayload): Promise<void> {
+export async function runIdentityPipeline(payload: IdentityChangePayload): Promise<IdentityPipelineResult> {
+  const failures: IdentityHandlerFailure[] = [];
   for (const { name, fn } of orderedHandlers) {
     const t0 = performance.now();
     try {
       await fn(payload);
       const ms = Math.round(performance.now() - t0);
-      log.warn('identity', `identity pipeline handler ok: ${name}`, { ms, reason: payload.reason });
+      log.info('identity', `identity pipeline handler ok: ${name}`, { ms, reason: payload.reason });
     } catch (error) {
       const ms = Math.round(performance.now() - t0);
-      log.warn('identity', `identity pipeline handler failed: ${name}`, { ms, reason: payload.reason, error: String(error) });
-      throw error;
+      log.error('identity', `identity pipeline handler failed: ${name}`, { ms, reason: payload.reason, error: String(error) });
+      failures.push({ handlerName: name, error, durationMs: ms });
     }
   }
+  return {
+    ok: failures.length === 0,
+    failures,
+  };
 }

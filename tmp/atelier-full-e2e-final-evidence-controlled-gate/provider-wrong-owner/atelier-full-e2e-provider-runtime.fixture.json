@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "launchId": "3c11409e-9144-4002-a6ad-f79fc6fa14b9",
+  "appletId": "peers.atelier",
+  "sessionId": "controlled-session-provider-wrong-owner",
+  "owner": "applet",
+  "scope": "production-provider-runtime",
+  "providerProfileRefRedacted": true,
+  "providerProfileRefHash": "sha256:07bf0f45fa88d5ee53e6fc8fa119fc6887e73d34d0fec48bdd94474b82eb449b",
+  "providerRuntimeProven": true,
+  "providerModelQualityProven": true,
+  "streamingReplyUXProven": true,
+  "artifactPersistenceProven": true,
+  "traceCheckpointResumeProven": true,
+  "appletProviderInvokeExposed": false,
+  "appletRuntimeExecuteExposed": false,
+  "appletArtifactWriteExposed": false,
+  "appletTraceCheckpointResumeExposed": false,
+  "completedAt": "2026-07-09T02:39:21.757Z"
+}

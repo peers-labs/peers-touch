@@ -1,0 +1,22 @@
+{
+  "url": "http://localhost:3200/?prototype=agent-lobehub-parity&preview=only&surface=skills&state=skills-runtime-contract&check=sr",
+  "found": true,
+  "marker": "skills-runtime-contract-sr",
+  "evidenceId": "EVID-011-SR-pre",
+  "runtimeContractShell": true,
+  "settingsRouteState": "tab|view|skill|selectedTool",
+  "detailSyncState": "loading|no-manifest|no-permission|permission-editor",
+  "permissionState": "auto|needs_approval|disabled|batch-update|rollback",
+  "oauthState": "popup-open|polling|timeout|connected|cancelled|disconnect-confirm",
+  "mcpState": "quick-import|stdio|http|cloud|test-error|draft-preserved",
+  "migrationState": "create-connector|sync-tools|keep-legacy-on-sync-failure|best-effort-cleanup",
+  "runtimeToolState": "incompatible-model|approval-needed|denied|approved|running|success|error|timeout|retry",
+  "runtimeOwner": "base-settings inventory / agent-domain binding and lineage / Station durable audit truth",
+  "sourceContract": true,
+  "lifecycleContract": true,
+  "runtimeBoundaryContract": true,
+  "failClosedWarning": true,
+  "forbiddenHits": [],
+  "portalChromeHit": false,
+  "portalTitlePresent": false
+}

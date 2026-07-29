@@ -2,12 +2,24 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import wasm from 'vite-plugin-wasm'
 import { cpSync, existsSync, rmSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
 const configDir = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
+
+function getWorktreeInfo() {
+  try {
+    const toplevel = execSync('git rev-parse --show-toplevel', { cwd: configDir, encoding: 'utf8' }).trim()
+    const worktreeName = path.basename(toplevel)
+    const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: configDir, encoding: 'utf8' }).trim()
+    return { worktreeName, branch }
+  } catch {
+    return { worktreeName: 'unknown', branch: 'unknown' }
+  }
+}
 
 function appletDistPlugin() {
   const sourceDir = path.resolve(configDir, 'applets-dist')
@@ -30,9 +42,15 @@ function appletDistPlugin() {
 }
 
 // https://vitejs.dev/config/
+const worktreeInfo = getWorktreeInfo()
+
 export default defineConfig({
   plugins: [react(), wasm(), appletDistPlugin()],
   base: './',
+  define: {
+    __PT_DEV_WORKTREE__: JSON.stringify(worktreeInfo.worktreeName),
+    __PT_DEV_BRANCH__: JSON.stringify(worktreeInfo.branch),
+  },
   resolve: {
     alias: {
       '@': '/src',
@@ -82,10 +100,6 @@ export default defineConfig({
             id.includes('/micromark')
           ) {
             return 'markdown-core'
-          }
-
-          if (id.includes('/@lobehub/ui/')) {
-            return 'lobehub-ui'
           }
 
           if (id.includes('/antd/') || id.includes('/@ant-design/')) {

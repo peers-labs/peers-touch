@@ -19,7 +19,7 @@ export function useNavigation(router: HashRouter): Navigation {
     if (surface === 'profile') {
       agentStore.setSelectedAgent(agentName);
       agentStore.setAgentSurface(agentName, 'profile');
-      router.setProfilePage(agentName);
+      router.setPage('agent');
       return;
     }
 

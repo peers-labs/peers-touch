@@ -1,0 +1,27 @@
+{
+  "url": "http://localhost:3200/?surface=memory&state=compact-memory&check=dh",
+  "selector": ".pt-memory-layout.is-compact-memory",
+  "clip": {
+    "x": 365,
+    "y": 470,
+    "width": 1320,
+    "height": 658.859375,
+    "scale": 1
+  },
+  "geometry": {
+    "x": 365,
+    "y": 351,
+    "width": 1320,
+    "height": 658.859375,
+    "scrollX": 0,
+    "scrollY": 119
+  },
+  "screenshot": "tmp/agent-lobehub-l2-screenshots/memory-dh-compact-home-scoped.png",
+  "dom": "tmp/agent-lobehub-memory-dh-dom.json",
+  "captureMode": "cdp-card-click-page-coordinate-scoped-layout-screenshot",
+  "viewport": {
+    "width": 1720,
+    "height": 1100,
+    "deviceScaleFactor": 1
+  }
+}

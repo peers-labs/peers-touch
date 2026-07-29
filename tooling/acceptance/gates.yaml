@@ -8,6 +8,27 @@
       "tier": "ci-structure",
       "description": "Validate that the acceptance registry can plan the current diff."
     },
+    "acceptance-run-static-gate": {
+      "command": "python3 tooling/scripts/acceptance-run-test.py",
+      "timeout_seconds": 30,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate that acceptance-run preserves source artifact diagnostics, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata in latest-run evidence."
+    },
+    "desktop-performance-preflight-static-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-preflight-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the P0c-1/P0c-2 Desktop performance preflight artifact preserves Make entrypoint, Gateway, Station, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN semantics."
+    },
+    "desktop-performance-preflight-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-preflight.py",
+      "timeout_seconds": 120,
+      "environment": "local-desktop-gateway",
+      "tier": "env-evidence",
+      "description": "Generate the fail-closed P0c-1/P0c-2 Desktop performance preflight evidence before runtime sample emission."
+    },
     "proto-build": {
       "command": "./model/build.sh",
       "timeout_seconds": 600,
@@ -182,6 +203,174 @@
       "environment": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Validate Desktop gateway active Station and collect render diagnostics."
+    },
+    "desktop-performance-matrix-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-matrix-gate.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Generate the fail-closed Desktop performance runtime matrix with explicit sampled, blocked, baseline preflight failure, or diagnostic incomplete status per cell."
+    },
+    "desktop-performance-cell-template-static-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-cell-template-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the P0c-3 Desktop runtime-cell evidence template preserves Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata."
+    },
+    "desktop-performance-cell-template-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-cell-template.py --strict-exit",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Generate fail-closed P0c-3 runtime-cell evidence templates for dev and packaged Tauri WebView cells."
+    },
+    "desktop-performance-cell-collect-static-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-cell-collect-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the P0c-3 Desktop runtime-cell evidence collector converts sampled observations into source-bound matrix cell evidence and keeps missing observations PARTIAL/UNPROVEN."
+    },
+    "desktop-performance-cell-collect-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-cell-collect.py --strict-exit",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Generate P0c-3 runtime-cell evidence from runtime sampler observations, failing closed when true runtime samples are missing."
+    },
+    "desktop-performance-cohort-static-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-cohort-gate-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate P0c3-R2 cohort identity and actual-actor mismatch failure semantics."
+    },
+    "desktop-performance-cohort-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-cohort-gate.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Require complete and identical browser, dev-native, and packaged-native cohort observations before matrix samples are admitted."
+    },
+    "desktop-local-telemetry-buffer-static-gate": {
+      "command": "python3 tooling/scripts/desktop-local-telemetry-buffer-gate-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the Desktop local telemetry buffer gate preserves fail-closed sampler family and interactionId diagnostics."
+    },
+    "desktop-local-telemetry-buffer-gate": {
+      "command": "python3 tooling/scripts/desktop-local-telemetry-buffer-gate.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Generate local Desktop telemetry inspector evidence without replacing Station mirror proof."
+    },
+    "desktop-performance-sampler-static-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-sampler-gate-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the P0b Desktop sampler gate proves interaction correlation, React commit, store update, overlay latency, invoke, and main-thread evidence only from source-bound Station mirror events."
+    },
+    "desktop-performance-sampler-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-sampler-gate.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Generate the fail-closed P0b Desktop sampler evidence gate from the Station mirror artifact."
+    },
+    "desktop-telemetry-live-gate": {
+      "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py",
+      "timeout_seconds": 120,
+      "environment": "local-desktop-gateway",
+      "tier": "env-evidence",
+      "description": "Validate the fail-closed P0a Desktop Gateway -> Station ingest -> raw/rollup query -> Dev mirror telemetry loop."
+    },
+    "desktop-telemetry-mirror-static-gate": {
+      "command": "python3 tooling/scripts/desktop-telemetry-mirror-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the P0a/P0c Dev/CI telemetry mirror artifact preserves phase, BOM, Spec, Gate, proof metadata, and Station-as-product-sink boundary."
+    },
+    "desktop-telemetry-mirror-template-static-gate": {
+      "command": "python3 tooling/scripts/desktop-telemetry-mirror-template-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the P0a-6/P0c-5 fail-closed Desktop telemetry mirror template preserves Station source metadata while keeping raw event proof PARTIAL/UNPROVEN."
+    },
+    "desktop-telemetry-mirror-template-gate": {
+      "command": "python3 tooling/scripts/desktop-telemetry-mirror-template.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Ensure a fail-closed Desktop telemetry mirror artifact exists when Station query evidence is missing, without overwriting a real mirror artifact."
+    },
+    "desktop-anchor-inventory-gate": {
+      "command": "python3 tooling/scripts/desktop-anchor-inventory.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Generate the fail-closed Desktop stable-anchor inventory for P0b-1, preserving UNPROVEN when browser/Tauri DOM automation evidence is missing."
+    },
+    "desktop-anchor-source-static-gate": {
+      "command": "python3 tooling/scripts/desktop-anchor-source-gate-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the P0b-1 Desktop source-anchor gate proves required selectors without claiming browser/Tauri DOM automation evidence."
+    },
+    "desktop-anchor-source-gate": {
+      "command": "python3 tooling/scripts/desktop-anchor-source-gate.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Generate the P0b-1 Desktop source-anchor gate artifact for required stable selectors."
+    },
+    "desktop-anchor-dom-evidence-template-static-gate": {
+      "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-template-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the P0b-1 Desktop anchor DOM evidence template preserves Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata."
+    },
+    "desktop-anchor-dom-evidence-collect-static-gate": {
+      "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-collect-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the P0b-1 Desktop anchor DOM evidence collector normalizes browser/Tauri observations into the Phase, BOM, Spec, Gate evidence contract."
+    },
+    "desktop-anchor-dom-evidence-template-gate": {
+      "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-template.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Generate the fail-closed P0b-1 Desktop anchor DOM evidence template consumed by browser/Tauri DOM evidence gates."
+    },
+    "desktop-anchor-dom-evidence-gate": {
+      "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-gate.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the fail-closed Desktop browser/Tauri stable-anchor DOM automation evidence for P0b-1."
+    },
+    "desktop-performance-report-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-report.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Assemble the Desktop performance Dev/CI report from Station mirror and matrix/red-line artifacts, preserving PARTIAL/UNPROVEN when evidence is missing."
+    },
+    "desktop-performance-traceability-gate": {
+      "command": "python3 tooling/scripts/desktop-performance-traceability-gate.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate Phase 0 aggregate issue/result evidence preserves source artifact, Phase, BOM, Spec, Gate, and fail-closed traceability."
     },
     "federation-mutual-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain federation --require-proven",

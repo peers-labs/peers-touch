@@ -1,6 +1,7 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { api, type ProviderListItem, type ProviderDetail } from '../services/desktop_api';
 import { log } from '../utils/logger';
+import { useAgentStore } from './agent';
 
 interface ProviderState {
   providers: ProviderListItem[];
@@ -23,7 +24,7 @@ interface ProviderState {
   toggleAllModels: (providerId: string, enabled: boolean) => Promise<void>;
 }
 
-export const useProviderStore = create<ProviderState>((set, get) => ({
+export const useProviderStore = createDesktopStore<ProviderState>('provider', (set, get) => ({
   providers: [],
   selectedId: null,
   detail: null,
@@ -60,32 +61,39 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   },
 
   updateProvider: async (id: string, apiKey: string, baseUrl: string, enabled: boolean) => {
-    await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled });
+    const detail = get().detail;
+    const version = detail?.id === id ? detail.version : 0;
+    await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled, version });
     await get().loadProviders();
     if (get().selectedId === id) {
       await get().selectProvider(id, true);
     }
+    useAgentStore.getState().loadModels();
   },
 
   toggleProvider: async (id: string, enabled: boolean) => {
     const currentDetail = get().detail;
     let apiKey = '';
     let baseUrl = '';
+    let version = 0;
 
     if (currentDetail && currentDetail.id === id) {
       apiKey = currentDetail.api_key || '';
       baseUrl = currentDetail.base_url || '';
+      version = currentDetail.version;
     } else {
       const d = await api.getProvider(id);
       apiKey = d.api_key || '';
       baseUrl = d.base_url || '';
+      version = d.version;
     }
 
-    await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled });
+    await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled, version });
     await get().loadProviders();
     if (get().selectedId === id) {
       await get().selectProvider(id, true);
     }
+    useAgentStore.getState().loadModels();
   },
 
   checkProvider: async (id: string, apiKey?: string, baseUrl?: string, model?: string) => {
@@ -103,6 +111,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     await api.deleteProvider(id);
     set({ selectedId: null, detail: null });
     await get().loadProviders();
+    useAgentStore.getState().loadModels();
   },
 
   addModel: async (providerId: string, data: { id: string; display_name?: string; type?: string; context_window?: number; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean; enabled?: boolean }) => {
@@ -110,6 +119,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     if (get().selectedId === providerId) {
       await get().selectProvider(providerId, true);
     }
+    useAgentStore.getState().loadModels();
   },
 
   updateModel: async (providerId: string, modelId: string, data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) => {
@@ -117,13 +127,16 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     if (get().selectedId === providerId) {
       await get().selectProvider(providerId, true);
     }
+    useAgentStore.getState().loadModels();
   },
 
   deleteModel: async (providerId: string, modelId: string) => {
     await api.deleteModel(providerId, modelId);
-    if (get().selectedId === providerId) {
-      await get().selectProvider(providerId, true);
+    const detail = get().detail;
+    if (detail && detail.id === providerId) {
+      set({ detail: { ...detail, models: detail.models.filter((m) => m.id !== modelId) } });
     }
+    useAgentStore.getState().loadModels();
   },
 
   fetchRemoteModels: async (providerId: string, apiKey?: string, baseUrl?: string) => {
@@ -135,6 +148,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     if (get().selectedId === providerId) {
       await get().selectProvider(providerId, true);
     }
+    useAgentStore.getState().loadModels();
   },
 
   toggleAllModels: async (providerId: string, enabled: boolean) => {
@@ -142,5 +156,6 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     if (get().selectedId === providerId) {
       await get().selectProvider(providerId, true);
     }
+    useAgentStore.getState().loadModels();
   },
 }));
