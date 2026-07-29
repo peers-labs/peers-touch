@@ -539,6 +539,7 @@ fn main() {
             conversation::conversation_create_direct,
             conversation::conversation_create_group,
             conversation::conversation_submit_command,
+            conversation::conversation_react,
             conversation::conversation_submit_receipt,
             conversation::conversation_list,
             conversation::conversation_list_events,

@@ -28,6 +28,7 @@ export interface ConversationServiceContract {
   createGroup(name: string, members: { ptid: string; stationId?: string }[]): Promise<Conversation>
   submitCommand(command: ConversationCommand): Promise<CommittedConversationEvent>
   submitReceipt(conversationId: string, messageId: string, receiptType: ReceiptType): Promise<void>
+  react(conversationId: string, messageId: string, emoji: string, remove?: boolean): Promise<void>
   getConversation(conversationId: string): Promise<Conversation>
   listConversations(): Promise<Conversation[]>
   getMembers(conversationId: string): Promise<ConversationMember[]>

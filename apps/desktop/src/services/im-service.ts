@@ -62,6 +62,12 @@ const conversationService: ConversationServiceContract = {
     })
   },
 
+  async react(conversationId: string, messageId: string, emoji: string, remove = false) {
+    await cmd('conversation_react', {
+      conversation_id: conversationId, message_id: messageId, emoji, remove,
+    })
+  },
+
   async getConversation(_conversationId) {
     throw new Error('not yet implemented — use listConversations')
   },

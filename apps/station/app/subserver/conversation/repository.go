@@ -27,6 +27,7 @@ type conversationModel struct {
 	OwnerPtid              string    `gorm:"column:owner_ptid;size:255"`
 	MaxMembers             int32     `gorm:"column:max_members"`
 	Visibility             int32     `gorm:"column:visibility"`
+	DisappearTimerSeconds  uint32    `gorm:"column:disappear_timer_seconds"`
 	CreatedAt              time.Time `gorm:"column:created_at"`
 	UpdatedAt              time.Time `gorm:"column:updated_at"`
 }
@@ -71,6 +72,12 @@ func newPostgresConversationRepo(db *gorm.DB) *postgresConversationRepo {
 	return &postgresConversationRepo{db: db}
 }
 
+// NewPostgresRepository returns a Repository backed by the provided GORM DB.
+// Exported for use by adapter subservers (compat_chat) that share the same DB.
+func NewPostgresRepository(db *gorm.DB) Repository {
+	return newPostgresConversationRepo(db)
+}
+
 func (r *postgresConversationRepo) UpsertConversation(ctx context.Context, conv *chat.Conversation) error {
 	model := &conversationModel{
 		ConversationID:         conv.ConversationId,
@@ -84,13 +91,14 @@ func (r *postgresConversationRepo) UpsertConversation(ctx context.Context, conv 
 		OwnerPtid:              conv.OwnerPtid,
 		MaxMembers:             conv.MaxMembers,
 		Visibility:             int32(conv.Visibility),
+		DisappearTimerSeconds:  conv.DisappearTimerSeconds,
 		CreatedAt:              conv.CreatedAt.AsTime(),
 		UpdatedAt:              conv.UpdatedAt.AsTime(),
 	}
 	return r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "conversation_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"status", "membership_epoch", "name", "description", "updated_at"}),
+			DoUpdates: clause.AssignmentColumns([]string{"status", "membership_epoch", "name", "description", "avatar_cid", "visibility", "disappear_timer_seconds", "updated_at"}),
 		}).
 		Create(model).Error
 }
@@ -256,6 +264,7 @@ func (m *conversationModel) toProto() *chat.Conversation {
 		OwnerPtid:              m.OwnerPtid,
 		MaxMembers:             m.MaxMembers,
 		Visibility:             chat.GroupVisibilityV1(m.Visibility),
+		DisappearTimerSeconds:  m.DisappearTimerSeconds,
 		CreatedAt:              timestamppb.New(m.CreatedAt),
 		UpdatedAt:              timestamppb.New(m.UpdatedAt),
 	}
