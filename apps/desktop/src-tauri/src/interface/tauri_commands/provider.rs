@@ -169,13 +169,14 @@ pub struct ModelToggleInput {
 #[tauri::command]
 pub fn model_toggle(
     input: ModelToggleInput,
-    _state: State<'_, Arc<AppState>>,
-    _window: Window,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
 ) -> AppResult<StubPayload> {
-    AppResult::success(StubPayload {
-        command: "model_toggle".to_string(),
-        status: json!({ "ok": true, "provider_id": input.provider_id, "model_id": input.model_id, "enabled": input.enabled }).to_string(),
-    })
+    let (_scope, token) = match resolve_auth(&state, &window) {
+        Ok(auth) => auth,
+        Err(error) => return error,
+    };
+    application_provider::model_toggle(&token, &input.provider_id, &input.model_id, input.enabled)
 }
 
 #[derive(Debug, Deserialize)]
