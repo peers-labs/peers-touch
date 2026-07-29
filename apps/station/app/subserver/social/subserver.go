@@ -6,16 +6,21 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
+	convsub "github.com/peers-labs/peers-touch/station/app/subserver/conversation"
+	envpkg "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
+	envinf "github.com/peers-labs/peers-touch/station/app/subserver/envelope/infrastructure"
 	notifapp "github.com/peers-labs/peers-touch/station/app/subserver/notification/application"
 	notifinfra "github.com/peers-labs/peers-touch/station/app/subserver/notification/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	touch "github.com/peers-labs/peers-touch/station/frame/touch"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"strings"
 )
 
 type subServer struct {
@@ -85,7 +90,20 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	friendRequestRepo := infrastructure.NewFriendRequestRepository(rds)
 	notifRepo := notifinfra.NewGormRepo(rds)
 	notifSvc := notifapp.NewService(notifRepo)
-	s.friendRequestSvc = application.NewFriendRequestService(friendRequestRepo, repos.Blocks, s.relationshipSvc, &notifAdapter{svc: notifSvc})
+
+	localStationID := socialLocalAudience()
+	convRepo := convsub.NewPostgresRepository(rds)
+	envRepo := envinf.NewPostgresRepository(rds)
+	envBus := envpkg.NewSSEDeviceBus()
+	envSvc := envpkg.NewService(envRepo, envBus, socialLocalAudience)
+	envelopeBridge := convsub.NewEnvelopeBridge(envSvc)
+	convSvc := convsub.NewConversationService(convRepo, envelopeBridge, localStationID)
+
+	s.friendRequestSvc = application.NewFriendRequestService(
+		friendRequestRepo, repos.Blocks, s.relationshipSvc,
+		&notifAdapter{svc: notifSvc},
+		&convAdapter{svc: convSvc},
+	)
 	s.statsSvc = application.NewStatsService(rds, repos)
 	s.moderationSvc = application.NewModerationService(repos)
 
@@ -124,4 +142,26 @@ type notifAdapter struct {
 func (a *notifAdapter) Produce(recipientID, actorID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) error {
 	_, err := a.svc.Produce(recipientID, actorID, notifType, category, targetType, targetID, title, body, groupKey, metadata)
 	return err
+}
+
+// convAdapter bridges the conversation service to the ConversationCreator
+// interface expected by FriendRequestService.
+type convAdapter struct {
+	svc convsub.Service
+}
+
+func (a *convAdapter) CreateDirect(ctx context.Context, actorA, actorB, stationA, stationB string) error {
+	_, err := a.svc.CreateDirect(ctx, actorA, actorB, stationA, stationB)
+	return err
+}
+
+func socialLocalAudience() string {
+	identity := nativefed.LocalIdentitySnapshot()
+	if strings.TrimSpace(identity.StationPeerID.String()) != "" {
+		return identity.StationPeerID.String()
+	}
+	if strings.TrimSpace(identity.StationDomain) != "" {
+		return strings.TrimSpace(identity.StationDomain)
+	}
+	return ""
 }
