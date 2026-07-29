@@ -155,6 +155,16 @@
 - 可以解释为什么会变成今天这样
 - 但不作为“当前正式架构真源”
 
+### `research/`
+
+放 **外部项目、参考实现和工程实践的研究材料**。
+
+原则：
+
+- 可以作为设计、执行计划和工程基建建设的输入
+- 不直接作为当前正式架构真源
+- 需要落地时必须回写到对应 `architecture/`、`client/`、`station/`、`global/` 或任务账本
+
 ### `.ide/`
 
 放 **IDE / AI 工作材料、任务规格、辅助上下文**。
@@ -182,6 +192,7 @@
 - 通知系统架构：`architecture/notification/notification-architecture.md`
 - 实时平面：`architecture/realtime/event-stream.md`
 - 语音 / 视频通话架构：`architecture/realtime/voice-video-calls.md`
+- 服务协调（Relay/Station/Desktop/Mobile 依赖 DAG 与凭据契约）：`architecture/service-coordination.md`
 - 联邦 IM 架构：`architecture/federated-im/README.md`（draft；定义跨 Station 群/私聊 IM 的 group authority、事件日志、Sender Key、离线恢复与家庭 Station 压测边界）
 - 双端社交 Runtime 架构：`architecture/social-runtime/README.md`
 - 群生命周期业务真源：`architecture/social-runtime/group-lifecycle.md`（draft；定义建群、加人、发消息、撤回/编辑/删除、退群、踢人、解散、历史可见性、Realtime 事件与 Sender Key 轮换边界）
@@ -207,6 +218,7 @@
 - 表单控件 UX 契约：`client/common/form-control-ux-contract.md`
 - Desktop 平台总纲：`client/desktop/base.md`
 - Desktop 登录态状态机：`client/desktop/identity-lifecycle.md`
+- Desktop PIN 恢复：`client/desktop/pin-recovery.md`
 - Desktop 页面 / 运行时 / 启动契约：`client/desktop/runtime-projections.md`
 - Desktop GlobalContext 内核：`client/desktop/global-context-kernel.md`
 - 跨端 Chat UX 契约：`client/chat/chat-ux-contract.md`
@@ -219,6 +231,7 @@
 ### 4.3 规范层真源
 
 - 通用规范：`global/coding-guide/common/`
+- **API 字段放置标准**：`global/coding-guide/api-field-placement.md`
 - Desktop 规范：`global/coding-guide/desktop/`
 - Mobile 规范：`global/coding-guide/mobile/`
 - Station 规范：`global/coding-guide/station/`

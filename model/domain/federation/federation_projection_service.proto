@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpb";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Federation Projection Service — RPCs exposed by Home Station to its clients.
+// Consumed by Desktop Settings and Dashboard via standard JWT auth.
+// Source of truth: docs/architecture/federation/wire-protocol.md §6.5
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── ListFederations ────────────────────────────────────────────────────────
+
+message ListFederationsResponse {
+  repeated FederationSummary federations = 1;
+}
+
+message FederationSummary {
+  string federation_id = 1;
+  string name = 2;
+  string description = 3;
+  string status = 4;
+  string policy_type = 5;
+  uint64 head_seq = 6;
+  string sequencer_station_peer_id = 7;
+  uint32 member_station_count = 8;
+  string my_role = 9;
+  ActorCapability capability = 10;
+}
+
+message ActorCapability {
+  bool can_invite = 1;
+  bool can_approve_join = 2;
+  bool can_update_policy = 3;
+  bool can_view_ledger = 4;
+  bool can_remove_station = 5;
+  bool can_grant_admin = 6;
+  bool can_leave = 7;
+  bool can_archive = 8;
+}
+
+// ─── ListMemberStations ─────────────────────────────────────────────────────
+
+message ListMemberStationsRequest {
+  string federation_id = 1;
+}
+
+message ListMemberStationsResponse {
+  repeated MemberStationView stations = 1;
+}
+
+message MemberStationView {
+  string station_peer_id = 1;
+  string station_name = 2;
+  string station_url = 3;
+  string role = 4;
+  string status = 5;
+  string joined_at = 6;
+  string sync_status = 7;
+}
+
+// ─── CreateFederation ───────────────────────────────────────────────────────
+
+message CreateFederationRequest {
+  string name = 1;
+  string description = 2;
+  string policy_type = 3;
+}
+
+message CreateFederationResponse {
+  string federation_id = 1;
+  FederationSummary federation = 2;
+}
+
+// ─── JoinFederation ─────────────────────────────────────────────────────────
+
+message JoinFederationRequest {
+  string federation_endpoint = 1;
+  string federation_id = 2;
+  string message = 3;
+}
+
+message JoinFederationResponse {
+  string status = 1;
+  string proposal_id = 2;
+}
+
+// ─── LeaveFederation ────────────────────────────────────────────────────────
+
+message LeaveFederationRequest {
+  string federation_id = 1;
+  string reason = 2;
+}
+
+message LeaveFederationResponse {
+  bool success = 1;
+}
+
+// ─── DeleteFederation (archive) ─────────────────────────────────────────────
+
+message DeleteFederationRequest {
+  string federation_id = 1;
+}
+
+message DeleteFederationResponse {
+  bool success = 1;
+}

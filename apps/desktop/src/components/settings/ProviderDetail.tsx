@@ -11,11 +11,12 @@ import {
   Brain, X, RefreshCw, Wrench, Eye, Sparkles, Pencil,
   Image, Globe, Video, Search,
 } from 'lucide-react';
-import { useProviderStore } from '../../store/provider';
 import { ProviderIcon } from './ProviderIcon';
 import { UpdateProviderModal } from './UpdateProviderModal';
 import { api } from '../../services/desktop_api';
 import { useTranslation } from 'react-i18next';
+import { useActiveProviderSlice } from './useActiveSettingsStores';
+import { useProviderStore } from '../../store/provider';
 
 const { Text, Title, Link } = Typography;
 
@@ -36,15 +37,12 @@ function FormRow({
   return (
     <>
       <Flexbox
-        horizontal
-        justify="space-between"
-        align="center"
-        gap={24}
+        gap={8}
         style={{ padding: '16px 0', minHeight: 56 }}
       >
-        <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
+        <Flexbox gap={2}>
           <Flexbox horizontal align="center" gap={4}>
-            <Text strong style={{ fontSize: 14 }}>{label}</Text>
+            <Text strong style={{ fontSize: 14, whiteSpace: 'nowrap' }}>{label}</Text>
             {extra}
           </Flexbox>
           {desc && (
@@ -53,9 +51,9 @@ function FormRow({
             </Text>
           )}
         </Flexbox>
-        <Flexbox style={{ flexShrink: 0, maxWidth: '55%', minWidth: 200 }} align="flex-end">
+        <div>
           {children}
-        </Flexbox>
+        </div>
       </Flexbox>
       {!last && <Divider style={{ margin: 0, borderColor: token.colorBorderSecondary }} />}
     </>
@@ -98,7 +96,22 @@ export function ProviderDetail() {
     checkProvider, deleteProvider, addModel, updateModel, deleteModel,
     fetchRemoteModels, selectProvider, toggleModel, toggleAllModels,
     selectedId,
-  } = useProviderStore();
+  } = useActiveProviderSlice((s) => ({
+    detail: s.detail,
+    loading: s.loading,
+    updateProvider: s.updateProvider,
+    toggleProvider: s.toggleProvider,
+    checkProvider: s.checkProvider,
+    deleteProvider: s.deleteProvider,
+    addModel: s.addModel,
+    updateModel: s.updateModel,
+    deleteModel: s.deleteModel,
+    fetchRemoteModels: s.fetchRemoteModels,
+    selectProvider: s.selectProvider,
+    toggleModel: s.toggleModel,
+    toggleAllModels: s.toggleAllModels,
+    selectedId: s.selectedId,
+  }));
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [enabled, setEnabled] = useState(false);
@@ -112,14 +125,24 @@ export function ProviderDetail() {
   const [editModel, setEditModel] = useState<{ id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean } | null>(null);
   const { token } = theme.useToken();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const keyDirtyRef = useRef(false);
 
   // Whether the displayed detail matches the currently selected provider.
   // When switching, detail still holds old provider data until the new one loads.
   const isStale = detail != null && selectedId != null && detail.id !== selectedId;
+  const isCli = detail?.runtime_kind === 'cli';
 
   useEffect(() => {
     if (detail && !isStale) {
-      setApiKey(detail.api_key || '');
+      if (detail.api_key) {
+        setApiKey(detail.api_key);
+        keyDirtyRef.current = false;
+      } else if (!detail.has_api_key) {
+        setApiKey('');
+        keyDirtyRef.current = false;
+      }
+      // When has_api_key=true but api_key='' (server withholds raw secret),
+      // preserve the user's in-progress input (keyDirty) or leave as-is after reload
       setBaseUrl(detail.base_url || detail.default_base_url || '');
       setEnabled(detail.enabled);
       setCheckModel(detail.check_model || detail.models?.[0]?.id || '');
@@ -148,8 +171,14 @@ export function ProviderDetail() {
     };
   }, []);
 
+  useEffect(() => {
+    keyDirtyRef.current = false;
+    setApiKey('');
+  }, [selectedId]);
+
   const handleApiKeyChange = useCallback(
     (val: string) => {
+      keyDirtyRef.current = true;
       setApiKey(val);
       debouncedSave(val, baseUrl);
     },
@@ -217,12 +246,12 @@ export function ProviderDetail() {
     setFetching(true);
     try {
       const result = await fetchRemoteModels(detail.id, apiKey || undefined, baseUrl || undefined);
-      if (result.ok && result.models) {
+      if (result.ok && result.models && result.models.length > 0) {
         const existingIds = new Set((detail.models || []).map((m) => m.id));
         const newModels = result.models.filter((id) => !existingIds.has(id));
         if (newModels.length > 0) {
           for (const id of newModels) {
-            await addModel(detail.id, { id, display_name: '', type: 'chat', context_window: 128000 });
+            await addModel(detail.id, { id, display_name: id, type: 'chat', context_window: 128000 });
           }
           message.success(t('provider.model.fetchedNew', { count: newModels.length }));
         } else if (!silent) {
@@ -260,7 +289,7 @@ export function ProviderDetail() {
   };
 
   const isCliProvider = detail.runtime_kind === 'cli';
-  const isUnconfigured = !isCliProvider && apiKey.trim().length === 0;
+  const isUnconfigured = !isCliProvider && !detail.has_api_key && apiKey.trim().length === 0;
   const modelOptions = allModels.map((m) => ({
     value: m.id,
     label: m.display_name || m.id,
@@ -305,19 +334,21 @@ export function ProviderDetail() {
             style={{
               ...(enabled ? {} : { filter: 'grayscale(100%)', opacity: 0.66 }),
               transition: 'all 0.2s',
+              minWidth: 0,
+              flex: 1,
             }}
           >
             {detail.logo ? (
-              <Avatar src={detail.logo} shape="circle" size={32} />
+              <Avatar src={detail.logo} shape="circle" size={32} style={{ flexShrink: 0 }} />
             ) : (
               <ProviderIcon providerId={detail.id} providerName={detail.name} size={32} />
             )}
-            <Flexbox horizontal align="center" gap={8}>
-              <Title level={5} style={{ margin: 0, fontSize: 16 }}>{detail.name}</Title>
+            <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, flex: 1 }}>
+              <Title level={5} style={{ margin: 0, fontSize: 16, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{detail.name}</Title>
               <Tag
                 bordered={false}
                 color={detail.runtime_kind === 'cli' ? 'purple' : 'blue'}
-                style={{ margin: 0, fontSize: 11, lineHeight: '16px', paddingInline: 6 }}
+                style={{ margin: 0, fontSize: 11, lineHeight: '16px', paddingInline: 6, flexShrink: 0 }}
               >
                 {t(`provider.runtime.${detail.runtime_kind}`)}
               </Tag>
@@ -331,6 +362,7 @@ export function ProviderDetail() {
                     lineHeight: '16px',
                     paddingInline: 6,
                     color: token.colorTextTertiary,
+                    flexShrink: 0,
                   }}
                 >
                   {t('provider.detail.notConfigured')}
@@ -338,7 +370,7 @@ export function ProviderDetail() {
               )}
             </Flexbox>
           </Flexbox>
-          <Flexbox horizontal align="center" gap={8}>
+          <Flexbox horizontal align="center" gap={8} style={{ flexShrink: 0 }}>
             <Tooltip title={t('provider.detail.providerSettings')}>
               <Button
                 type="text"
@@ -376,7 +408,7 @@ export function ProviderDetail() {
                   try {
                     const refs = await api.getProviderReferences(detail.id);
                     if (refs.length > 0) {
-                      const slotNames = refs.map((r) => `• ${r.slot} (${r.model})`).join('\n');
+                      const slotNames = refs.map((r) => `• ${r.slot || r.service || r.key || 'default'} (${r.model})`).join('\n');
                       Modal.confirm({
                         title: t('provider.detail.disableConfirm.title'),
                         content: (
@@ -445,7 +477,7 @@ export function ProviderDetail() {
                   <InputPassword
                     value={apiKey}
                     onChange={(e) => handleApiKeyChange(e.target.value)}
-                    placeholder={t('provider.detail.apiKeyPlaceholder')}
+                    placeholder={detail.has_api_key && !apiKey ? '••••••••••••••••' : t('provider.detail.apiKeyPlaceholder')}
                     autoComplete="new-password"
                     style={{ width: '100%' }}
                   />
@@ -527,13 +559,13 @@ export function ProviderDetail() {
       {/* Model List - takes remaining space with independent scroll */}
       <Flexbox gap={12} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         <Flexbox horizontal justify="space-between" align="center" style={{ flexShrink: 0 }}>
-          <Flexbox horizontal align="center" gap={8}>
-            <Title level={5} style={{ margin: 0 }}>{t('provider.model.title')}</Title>
-            <Text type="secondary" style={{ fontSize: 13 }}>
+          <Flexbox horizontal align="center" gap={8} style={{ flexShrink: 0 }}>
+            <Title level={5} style={{ margin: 0, whiteSpace: 'nowrap' }}>{t('provider.model.title')}</Title>
+            <Text type="secondary" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
               {t('provider.model.count', { filtered: filteredModels.length, total: allModels.length })}
             </Text>
           </Flexbox>
-          <Flexbox horizontal gap={8} align="center">
+          <Flexbox horizontal gap={8} align="center" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {filteredModels.length > 0 && (
               <>
                 <Button
@@ -568,9 +600,11 @@ export function ProviderDetail() {
                 </Button>
               </>
             )}
-            <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-              {t('provider.model.addModel')}
-            </Button>
+            {!isCli && (
+              <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
+                {t('provider.model.addModel')}
+              </Button>
+            )}
             <Button
               size="small"
               type="primary"
@@ -585,13 +619,13 @@ export function ProviderDetail() {
 
         {allModels.length > 0 && (
           <Input
-            size="small"
+            size="middle"
             placeholder={t('provider.model.searchModels')}
-            prefix={<Search size={12} style={{ color: token.colorTextQuaternary }} />}
+            prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
             value={modelSearchKeyword}
             onChange={(e) => setModelSearchKeyword(e.target.value)}
             allowClear
-            style={{ marginBottom: 8, maxWidth: 240, fontSize: 12 }}
+            style={{ marginBottom: 8 }}
           />
         )}
 
@@ -717,9 +751,11 @@ export function ProviderDetail() {
                 </Text>
               </Flexbox>
               <Flexbox horizontal gap={12}>
-                <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-                  {t('provider.model.addModel')}
-                </Button>
+                {!isCli && (
+                  <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
+                    {t('provider.model.addModel')}
+                  </Button>
+                )}
                 <Button
                   type="primary"
                   icon={<RefreshCw size={14} />}

@@ -27,6 +27,7 @@ import (
 	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
@@ -156,12 +157,19 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	)
 	turnSvc.SetEventBus(eventBus)
 
+	// CLI executor: enables routing turns to local CLI processes (e.g. codex, trae, claude).
+	// WorkspaceManager creates per-session git worktrees for isolation.
+	cliWorkspaceMgr := cli.NewWorkspaceManager("")
+	cliExec := cli.NewCliExecutor(cliWorkspaceMgr)
+	turnSvc.SetCliExecutor(cliExec)
+
 	// Dogfood self-verification service.
 	dogfoodSvc := service.NewDogfoodService(memorySvc, skillSvc, growthMetricsSvc)
 
 	// Scheduler — autonomous learning: periodic SILENT reviews + dogfood runs.
 	schedulerSvc := service.NewSchedulerService(reviewSvc, dogfoodSvc, memorySvc, growthMetricsSvc)
 	orchestrationSvc := service.NewOrchestrationService(agentSvc, turnSvc, toolRegistrySvc)
+	schedulerSvc.SetOrchestrationService(orchestrationSvc)
 	orchestrationSvc.SetEventBus(eventBus)
 	orchestrationSvc.StartTaskRecovery(context.Background())
 
@@ -181,9 +189,15 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	dogfoodHandlers := handler.NewDogfoodHandlers(dogfoodSvc)
 	schedulerHandlers := handler.NewSchedulerHandlers(schedulerSvc)
 	orchestrationHandlers := handler.NewOrchestrationHandlers(orchestrationSvc)
-	atelierProjectionHandlers := handler.NewAtelierProjectionHandlers(service.NewAtelierProjectionService(orchestrationSvc))
+	atelierProjectionHandlers := handler.NewAtelierProjectionHandlers(service.NewAtelierProjectionService(orchestrationSvc, memorySvc))
 
 	growthHandlers := handler.NewGrowthHandlers(growthMetricsSvc, memorySvc, skillSvc, diagnosticSvc)
+
+	providerHandlers := handler.NewProviderHandlers(
+		service.NewProviderConfigService(service.NewCLIAdapterRegistry()),
+		service.NewModelConfigService(),
+		service.NewCredentialConfigService(),
+	)
 
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
@@ -199,11 +213,30 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-turn-trace-list", "/agent/turn/trace/list", server.POST, turnHandlers.HandleListTurnTraces, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
 
+		server.NewTypedHandler("agent-provider-verify-cli", "/agent/provider/verify-cli", server.POST, providerHandlers.HandleVerifyCli, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-fetch-cli-models", "/agent/provider/fetch-cli-models", server.POST, providerHandlers.HandleFetchCliModels, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-list", "/agent/provider/list", server.POST, providerHandlers.HandleProviderList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-get", "/agent/provider/get", server.POST, providerHandlers.HandleProviderGet, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-create", "/agent/provider/create", server.POST, providerHandlers.HandleProviderCreate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-update", "/agent/provider/update", server.POST, providerHandlers.HandleProviderUpdate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-delete", "/agent/provider/delete", server.POST, providerHandlers.HandleProviderDelete, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-model-list", "/agent/model/list", server.POST, providerHandlers.HandleModelList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-model-create", "/agent/model/create", server.POST, providerHandlers.HandleModelCreate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-model-update", "/agent/model/update", server.POST, providerHandlers.HandleModelUpdate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-model-available", "/agent/model/available", server.POST, providerHandlers.HandleListAvailableModels, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-credential-set", "/agent/credential/set", server.POST, providerHandlers.HandleCredentialSet, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-credential-delete", "/agent/credential/delete", server.POST, providerHandlers.HandleCredentialDelete, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-credential-status", "/agent/credential/status", server.POST, providerHandlers.HandleCredentialStatus, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-credential-resolve", "/agent/credential/resolve", server.POST, providerHandlers.HandleCredentialResolve, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-model-hide", "/agent/provider/model/hide", server.POST, providerHandlers.HandleModelHide, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-model-hidden-list", "/agent/provider/model/hidden", server.POST, providerHandlers.HandleModelHiddenList, logIDWrapper, jwtWrapper),
+
 		server.NewTypedHandler("agent-collaboration-create", "/agent/collaboration/create", server.POST, orchestrationHandlers.HandleCreateCollaborationTask, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-get", "/agent/collaboration/get", server.POST, orchestrationHandlers.HandleGetCollaborationTask, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-list", "/agent/collaboration/list", server.POST, orchestrationHandlers.HandleListCollaborationTasks, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-events-list", "/agent/collaboration/events/list", server.POST, orchestrationHandlers.HandleListTaskEvents, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-cancel", "/agent/collaboration/cancel", server.POST, orchestrationHandlers.HandleCancelCollaborationTask, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-collaboration-resume", "/agent/collaboration/resume", server.POST, orchestrationHandlers.HandleResumeCollaborationTask, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-node-submit-result", "/agent/collaboration/node/submit-result", server.POST, orchestrationHandlers.HandleSubmitCollaborationNodeResult, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-executor-claim", "/agent/collaboration/executor/claim", server.POST, orchestrationHandlers.HandleClaimDesktopExecutorTask, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-executor-heartbeat", "/agent/collaboration/executor/heartbeat", server.POST, orchestrationHandlers.HandleHeartbeatExecutorLease, logIDWrapper, jwtWrapper),
@@ -214,6 +247,11 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-atelier-escalation-resolve", "/agent/atelier/escalation/resolve", server.POST, atelierProjectionHandlers.HandleResolveDecision, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-atelier-task-set-status", "/agent/atelier/task/set-status", server.POST, atelierProjectionHandlers.HandleSetTaskStatus, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-atelier-task-purge", "/agent/atelier/task/purge", server.POST, atelierProjectionHandlers.HandlePurgeTask, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-atelier-provider-capabilities", "/agent/atelier/provider/capabilities", server.POST, atelierProjectionHandlers.HandleProviderCapabilities, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-atelier-feedback-submit", "/agent/atelier/feedback/submit", server.POST, atelierProjectionHandlers.HandleSubmitFeedback, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-atelier-memory-confirm-candidate", "/agent/atelier/memory/confirm-candidate", server.POST, atelierProjectionHandlers.HandleConfirmMemoryCandidate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-atelier-feedback-confirm-rerun", "/agent/atelier/feedback/confirm-rerun", server.POST, atelierProjectionHandlers.HandleConfirmRerun, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-atelier-artifact-body-fetch", "/agent/atelier/artifact/body/fetch", server.POST, atelierProjectionHandlers.HandleFetchArtifactBody, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-events-subscribe", "/agent/events/subscribe", server.POST, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
 
 		// POST: protobuf body carries ListMemoriesRequest (GET + empty body leaves agent_id unset).

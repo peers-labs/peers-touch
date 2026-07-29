@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import type {
   Audience,
   FeedObjectExplanation,
@@ -243,7 +243,7 @@ function refreshProjectionBestEffort(store: MomentsState, reason: string): void 
   });
 }
 
-export const useMomentsStore = create<MomentsState>((set, get) => ({
+export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set, get) => ({
   ...initialState,
 
   // -------------------------------------------------------------------------

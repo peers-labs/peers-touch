@@ -13,12 +13,65 @@ STATION_PORT="${PT_STATION_PORT:-18080}"
 STATION_MODE="${PT_STATION_MODE:-local}"
 STATION_CHECK_URL="$STATION_URL/api/oauth/providers"
 DEPLOY_SCRIPT="$PROJECT_ROOT/tooling/scripts/deploy/deploy.sh"
+COMPOSE_FILE="$PROJECT_ROOT/tooling/docker/compose.yml"
+COMPOSE_ENV_FILE="${PT_STATION_COMPOSE_ENV_FILE:-$PROJECT_ROOT/tooling/docker/.env}"
+COMPOSE_PROJECT_NAME_VALUE="${PT_STATION_COMPOSE_PROJECT:-pt-${PT_DEV_PROFILE}}"
 
 station_is_ready() {
   curl -fsS -m 2 "$STATION_CHECK_URL" >/dev/null 2>&1
 }
 
+compose_env() {
+  COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT_NAME_VALUE" \
+  STATION_PORT="$STATION_PORT" \
+  POSTGRES_DB="${PT_STATION_DB_NAME:-peers_touch}" \
+  PEERS_NODE_LABEL="${PT_STATION_NAME:-local}" \
+  "$@"
+}
+
+start_compose_station() {
+  if [[ ! -f "$COMPOSE_ENV_FILE" ]]; then
+    echo "[ERROR] Compose env file not found: $COMPOSE_ENV_FILE"
+    echo "        Run: make config"
+    exit 1
+  fi
+
+  local build_flag=""
+  local image_name="${COMPOSE_PROJECT_NAME_VALUE}-station"
+  if ! docker image inspect "$image_name" >/dev/null 2>&1; then
+    build_flag="--build"
+  fi
+
+  echo "[INFO] Station mode: compose-managed local closure"
+  echo "       URL        : $STATION_URL"
+  echo "       Project    : $COMPOSE_PROJECT_NAME_VALUE"
+  echo "       Compose    : $COMPOSE_FILE"
+  echo "       Env        : $COMPOSE_ENV_FILE"
+  echo "       Postgres DB: ${PT_STATION_DB_NAME:-peers_touch}"
+  if [[ -n "$build_flag" ]]; then
+    echo "       Build      : yes (image not cached)"
+  else
+    echo "       Build      : no (image cached, use 'make docker-station' to rebuild)"
+  fi
+  compose_env docker compose \
+    -f "$COMPOSE_FILE" \
+    --env-file "$COMPOSE_ENV_FILE" \
+    --profile infra \
+    --profile station \
+    up -d $build_flag postgres station
+}
+
 if [[ "$STATION_MODE" == "remote" ]]; then
+  skip_deploy="${PT_STATION_SKIP_DEPLOY:-false}"
+
+  if [[ "$skip_deploy" == "true" ]]; then
+    if station_is_ready; then
+      echo "[OK] Remote Station already ready (deploy skipped): $STATION_URL"
+      exit 0
+    fi
+    echo "[WARN] PT_STATION_SKIP_DEPLOY=true but Station not reachable: $STATION_URL"
+  fi
+
   deploy_env="${PT_STATION_DEPLOY_ENV:-}"
   if [[ -z "$deploy_env" ]]; then
     echo "[ERROR] Station mode is remote, but PT_STATION_DEPLOY_ENV is not set."
@@ -44,7 +97,8 @@ if [[ "$STATION_MODE" == "remote" ]]; then
   exit 0
 fi
 
-# Local mode
+# Local mode is compose-managed so `make station` owns the Station+Postgres
+# runtime dependency closure instead of relying on an external localhost DB.
 if station_is_ready; then
   echo "[INFO] Station already running: $STATION_URL"
   exit 0
@@ -65,19 +119,7 @@ if [[ -f "$STATION_PID_FILE" ]]; then
   fi
 fi
 
-# Start
-if [[ ! -f "$STATION_PID_FILE" ]]; then
-  echo "[INFO] Starting Station on :$STATION_PORT ..."
-  (
-    cd "$STATION_DIR"
-    STATION_PORT="$STATION_PORT" \
-    PEERS_BOOTSTRAP_NODES="${PT_BOOTSTRAP_NODES:-}" \
-    PEERS_NODE_LABEL="${PT_STATION_NAME:-local}" \
-    nohup go run . >> "$STATION_LOG_FILE" 2>&1 &
-    echo $! > "$STATION_PID_FILE"
-  )
-  echo "[INFO] Station PID: $(cat "$STATION_PID_FILE")"
-fi
+start_compose_station
 
 # Wait
 for _ in {1..40}; do

@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import {
   bumpChatUnreadCounter,
   chatUnreadForParticipant,
@@ -64,7 +64,7 @@ function initialState(): Pick<
 
 // ── Store ──
 
-export const useNavigationBadgeStore = create<NavigationBadgeState>((set) => ({
+export const useNavigationBadgeStore = createDesktopStore<NavigationBadgeState>('navigationBadges', (set) => ({
   ...initialState(),
 
   setChatSurfaceVisible: (visible) => {

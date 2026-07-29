@@ -30,6 +30,7 @@ message AiModel {
   google.protobuf.Timestamp accessed_at = 17;
   google.protobuf.Timestamp created_at = 18;
   google.protobuf.Timestamp updated_at = 19;
+  int64 version = 20;                  // Monotonic version for optimistic concurrency control.
 }
 
 // =================================================

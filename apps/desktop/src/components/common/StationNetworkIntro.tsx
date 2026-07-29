@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 
 type PersonKey = 'alice' | 'bob' | 'carol' | 'dana' | 'evan';
 type FlowKind = 'msg' | 'img' | 'video' | 'file';
@@ -139,7 +139,7 @@ type Hover =
   | { kind: 'node'; node: number }
   | { kind: 'flow'; flow: number };
 
-export function StationNetworkIntro({ labels }: StationNetworkIntroProps) {
+export const StationNetworkIntro = memo(function StationNetworkIntro({ labels }: StationNetworkIntroProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const [hover, setHover] = useState<Hover | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -261,7 +261,7 @@ export function StationNetworkIntro({ labels }: StationNetworkIntroProps) {
       <HoverCard hover={hover} cursor={cursor} labels={labels} />
     </section>
   );
-}
+});
 
 function RelayReveal({ from, to, relay, relayRole }: { from: Node; to: Node; relay: string; relayRole: string }) {
   const r = relayPoint(from, to);

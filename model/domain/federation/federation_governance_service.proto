@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpb";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Federation Governance Service — RPCs exposed by sequencer Station.
+// Source of truth: docs/architecture/federation/wire-protocol.md §6.3
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import "domain/federation/federation_ledger.proto";
+
+// ─── SubmitProposal ─────────────────────────────────────────────────────────
+
+message SubmitProposalRequest {
+  string    federation_id = 1;
+  EventType proposed_event_type = 2;
+  bytes     payload_bytes = 3;
+  bytes     payload_hash = 4;
+  string    actor_id = 5;
+  string    actor_federated_handle = 6;
+  string    station_peer_id = 7;
+  bytes     actor_signature = 8;
+  bytes     station_signature = 9;
+  int64     proposed_at_unix_ms = 10;
+}
+
+enum ProposalDecision {
+  PROPOSAL_DECISION_UNSPECIFIED = 0;
+  DECISION_ACCEPTED = 1;
+  DECISION_REJECTED = 2;
+  DECISION_PENDING = 3;
+}
+
+message SubmitProposalResponse {
+  string          proposal_id = 1;
+  ProposalDecision decision = 2;
+  string          rejection_reason = 3;
+  LedgerEvent     accepted_event = 4;
+}
+
+// ─── FetchHead ──────────────────────────────────────────────────────────────
+
+message FetchHeadRequest {
+  string federation_id = 1;
+}
+
+message FetchHeadResponse {
+  string federation_id = 1;
+  bytes  head_hash = 2;
+  uint64 head_seq = 3;
+  string sequencer_station_peer_id = 4;
+  int64  last_event_at_unix_ms = 5;
+}
+
+// ─── FetchEvents ────────────────────────────────────────────────────────────
+
+message FetchEventsRequest {
+  string federation_id = 1;
+  uint64 from_seq = 2;
+  uint32 limit = 3;
+}
+
+message FetchEventsResponse {
+  repeated LedgerEvent events = 1;
+  bool   has_more = 2;
+  uint64 next_seq = 3;
+}
