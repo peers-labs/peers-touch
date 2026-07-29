@@ -1,6 +1,6 @@
 # Signal-Level Chat Modernization — Execution Plan
 
-> **Status**: approved (2026-07-29)
+> **Status**: executing — P0 adapter implemented, awaiting deploy+test (2026-07-29)
 > **Created**: 2026-07-29
 > **Parent**: `docs/architecture/federated-im/design.md`
 > **Branch**: `feat/group-detail-history-ux-pr` (peers-chat-high-chat)
