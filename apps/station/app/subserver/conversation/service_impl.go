@@ -449,6 +449,24 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 			},
 		}
 
+	case *chat.ConversationCommand_PinMessage:
+		if p.PinMessage.MessageId == "" {
+			return nil, fmt.Errorf("conversation: pin requires message_id")
+		}
+		if conv.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
+			if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+				return nil, err
+			}
+		}
+		event.Payload = &chat.CommittedConversationEvent_Pin{
+			Pin: &chat.PinEvent{
+				MessageId: p.PinMessage.MessageId,
+				ActorPtid: cmd.SenderPtid,
+				Unpinned:  p.PinMessage.Unpin,
+				Ts:        event.CommittedAt,
+			},
+		}
+
 	default:
 		return nil, fmt.Errorf("conversation: unsupported command type")
 	}
