@@ -1379,9 +1379,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const state = get();
       const did = state.currentUserDid;
 
-      // Optimistic: clear unread badge for the selected session
       set((prev) => ({
         activeSessionUlid: ulid,
+        activeTab: 'friend' as const,
         openThreadRootUlid: null,
         sessions: did
           ? prev.sessions.map((s) => {
@@ -1410,8 +1410,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   selectGroup: (ulid) => {
       set((prev) => ({
         activeGroupUlid: ulid,
+        activeTab: 'group' as const,
         openThreadRootUlid: null,
-        // Optimistic: clear unread badge for the selected group
         groupUnreadCounts: { ...prev.groupUnreadCounts, [ulid]: 0 },
       }));
       get().markGroupRead(ulid).catch(() => {});
