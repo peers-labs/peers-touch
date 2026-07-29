@@ -141,8 +141,11 @@ export function FindPeopleModal({ open, onClose }: Props) {
   }));
   const currentUserDid = useActiveSocialChatStore((s) => s.currentUserDid);
   const federationReady = useActiveChatFederationSlice(selectFederationReady);
-  const federationSelf = useActiveChatFederationSlice((s) => s.self);
-  const joinedFederations = federationSelf?.joinedFederations ?? [];
+  const federations = useActiveChatFederationSlice((s) => s.federations);
+  const joinedFederations = useMemo(
+    () => federations.map((f) => ({ federationId: f.federationId, federationName: f.name })),
+    [federations],
+  );
 
   const [searchText, setSearchText] = useState('');
   const [results, setResults] = useState<ActorSearchResult[]>([]);
@@ -162,7 +165,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const pendingReceiverIds = useMemo(() => {
     const ids = new Set<string>();
     for (const req of friendRequests) {
-      if (req.status === 0 && req.senderId === currentUserDid) {
+      if ((req.status === 0 || req.status === 1) && req.senderId === currentUserDid) {
         ids.add(req.receiverId);
       }
     }
