@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { Drawer, Button, List, Tag, Popconfirm, Empty, Tooltip, message, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
@@ -34,7 +33,7 @@ export interface ServerManagerProps {
   onConnect: (conn: Connection) => void;
 }
 
-const authIcon: Record<string, ReactNode> = {
+const authIcon: Record<string, JSX.Element> = {
   key_file: <KeyRound size={13} />,
   key: <KeyRound size={13} />,
   password: <Lock size={13} />,
