@@ -132,6 +132,7 @@ message ConversationCommand {
     UpdateSettingsCommand update_settings = 17;
     TypingCommand typing = 18;
     ReactCommand react = 19;
+    UpdateMemberCommand update_member = 20;
   }
 }
 
@@ -186,6 +187,12 @@ message ReactCommand {
   string message_id = 1;
   string emoji = 2;
   bool remove = 3;
+}
+
+message UpdateMemberCommand {
+  string target_ptid = 1;
+  MemberRole new_role = 2;
+  bool muted = 3;
 }
 
 // --- Committed Conversation Event (authority -> followers) ---
