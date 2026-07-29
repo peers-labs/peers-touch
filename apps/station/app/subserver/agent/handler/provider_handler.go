@@ -390,7 +390,10 @@ func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *mod
 			}
 			return ""
 		}())
+
+		catalogIDs := make(map[string]bool, len(cp.Models))
 		for _, m := range cp.Models {
+			catalogIDs[m.ID] = true
 			if !m.Enabled || contains(hidden, m.ID) {
 				continue
 			}
@@ -402,6 +405,22 @@ func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *mod
 				Type:          m.Type,
 				Enabled:       m.Enabled,
 				ContextWindow: int32(m.ContextWindow),
+			})
+		}
+
+		dbModels, _ := h.modelConfig.List(ctx, actorID, cp.ID)
+		for i := range dbModels {
+			if !dbModels[i].Enabled || catalogIDs[dbModels[i].ModelID] || contains(hidden, dbModels[i].ModelID) {
+				continue
+			}
+			resp.Models = append(resp.Models, &model.AvailableModelInfo{
+				Id:            dbModels[i].ModelID,
+				ProviderId:    cp.ID,
+				ProviderName:  cp.Name,
+				DisplayName:   dbModels[i].DisplayName,
+				Type:          "chat",
+				Enabled:       dbModels[i].Enabled,
+				ContextWindow: int32(dbModels[i].ContextWindow),
 			})
 		}
 	}
