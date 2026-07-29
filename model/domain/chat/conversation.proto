@@ -38,6 +38,7 @@ message Conversation {
   string owner_ptid = 13;
   int32 max_members = 14;
   GroupVisibilityV1 visibility = 15;
+  uint32 disappear_timer_seconds = 16;
 }
 
 enum ConversationKind {
@@ -131,6 +132,9 @@ message ConversationCommand {
     DissolveCommand dissolve = 16;
     UpdateSettingsCommand update_settings = 17;
     TypingCommand typing = 18;
+    ReactCommand react = 19;
+    UpdateMemberCommand update_member = 20;
+    PinMessageCommand pin_message = 21;
   }
 }
 
@@ -175,10 +179,28 @@ message UpdateSettingsCommand {
   optional string description = 2;
   optional string avatar_cid = 3;
   optional bool muted = 4;
+  optional uint32 disappear_timer_seconds = 5;
 }
 
 message TypingCommand {
   bool is_typing = 1;
+}
+
+message ReactCommand {
+  string message_id = 1;
+  string emoji = 2;
+  bool remove = 3;
+}
+
+message UpdateMemberCommand {
+  string target_ptid = 1;
+  MemberRole new_role = 2;
+  bool muted = 3;
+}
+
+message PinMessageCommand {
+  string message_id = 1;
+  bool unpin = 2;
 }
 
 // --- Committed Conversation Event (authority -> followers) ---
@@ -203,6 +225,8 @@ message CommittedConversationEvent {
     ConversationCreatedEvent conversation_created = 14;
     ConversationDissolvedEvent conversation_dissolved = 15;
     SettingsChangedEvent settings_changed = 16;
+    ReactionEvent reaction = 17;
+    PinEvent pin = 18;
   }
 }
 
@@ -266,6 +290,21 @@ message SettingsChangedEvent {
   optional string description = 3;
   optional string avatar_cid = 4;
   optional bool muted = 5;
+}
+
+message ReactionEvent {
+  string message_id = 1;
+  string actor_ptid = 2;
+  string emoji = 3;
+  bool removed = 4;
+  google.protobuf.Timestamp ts = 5;
+}
+
+message PinEvent {
+  string message_id = 1;
+  string actor_ptid = 2;
+  bool unpinned = 3;
+  google.protobuf.Timestamp ts = 4;
 }
 
 // --- Message Content Types ---

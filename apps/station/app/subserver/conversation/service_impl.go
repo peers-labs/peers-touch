@@ -339,6 +339,9 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 		if conv.Kind != chat.ConversationKind_CONVERSATION_KIND_GROUP {
 			return nil, fmt.Errorf("conversation: remove_members only valid for group conversations")
 		}
+		if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+			return nil, err
+		}
 		newEpoch := conv.MembershipEpoch + 1
 		changes := make([]*chat.MemberChange, 0, len(p.RemoveMembers.Ptids))
 		for _, ptid := range p.RemoveMembers.Ptids {
@@ -401,6 +404,108 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 				DissolvedByPtid: cmd.SenderPtid,
 			},
 		}
+
+	case *chat.ConversationCommand_UpdateSettings:
+		if conv.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
+			if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+				return nil, err
+			}
+		}
+		changed := false
+		if p.UpdateSettings.Name != nil {
+			conv.Name = *p.UpdateSettings.Name
+			changed = true
+		}
+		if p.UpdateSettings.Description != nil {
+			conv.Description = *p.UpdateSettings.Description
+			changed = true
+		}
+		if p.UpdateSettings.AvatarCid != nil {
+			conv.AvatarCid = *p.UpdateSettings.AvatarCid
+			changed = true
+		}
+		if p.UpdateSettings.DisappearTimerSeconds != nil {
+			conv.DisappearTimerSeconds = *p.UpdateSettings.DisappearTimerSeconds
+			changed = true
+		}
+		if changed {
+			conv.UpdatedAt = timestamppb.New(now)
+			if err := s.repo.UpsertConversation(ctx, conv); err != nil {
+				return nil, fmt.Errorf("conversation: update settings failed: %w", err)
+			}
+		}
+		event.Payload = &chat.CommittedConversationEvent_SettingsChanged{
+			SettingsChanged: &chat.SettingsChangedEvent{
+				ChangedByPtid: cmd.SenderPtid,
+				Name:          p.UpdateSettings.Name,
+				Description:   p.UpdateSettings.Description,
+				AvatarCid:     p.UpdateSettings.AvatarCid,
+				Muted:         p.UpdateSettings.Muted,
+			},
+		}
+
+	case *chat.ConversationCommand_React:
+		if p.React.MessageId == "" || p.React.Emoji == "" {
+			return nil, fmt.Errorf("conversation: react requires message_id and emoji")
+		}
+		event.Payload = &chat.CommittedConversationEvent_Reaction{
+			Reaction: &chat.ReactionEvent{
+				MessageId: p.React.MessageId,
+				ActorPtid: cmd.SenderPtid,
+				Emoji:     p.React.Emoji,
+				Removed:   p.React.Remove,
+				Ts:        event.CommittedAt,
+			},
+		}
+
+	case *chat.ConversationCommand_UpdateMember:
+		if conv.Kind != chat.ConversationKind_CONVERSATION_KIND_GROUP {
+			return nil, fmt.Errorf("conversation: update_member only valid for group conversations")
+		}
+		if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+			return nil, err
+		}
+		if p.UpdateMember.TargetPtid == "" {
+			return nil, fmt.Errorf("conversation: update_member requires target_ptid")
+		}
+		targetMember, err := s.repo.GetMember(ctx, conv.ConversationId, p.UpdateMember.TargetPtid)
+		if err != nil || targetMember == nil {
+			return nil, fmt.Errorf("conversation: target member not found")
+		}
+		targetMember.Role = p.UpdateMember.NewRole
+		targetMember.Muted = p.UpdateMember.Muted
+		if err := s.repo.UpsertMember(ctx, targetMember); err != nil {
+			return nil, fmt.Errorf("conversation: update member failed: %w", err)
+		}
+		event.Payload = &chat.CommittedConversationEvent_MembershipChanged{
+			MembershipChanged: &chat.MembershipChangedEvent{
+				Changes: []*chat.MemberChange{{
+					Ptid:   p.UpdateMember.TargetPtid,
+					Action: chat.MemberChangeAction_MEMBER_CHANGE_ACTION_ROLE_CHANGED,
+					Role:   p.UpdateMember.NewRole,
+				}},
+				NewMembershipEpoch: conv.MembershipEpoch,
+			},
+		}
+
+	case *chat.ConversationCommand_PinMessage:
+		if p.PinMessage.MessageId == "" {
+			return nil, fmt.Errorf("conversation: pin requires message_id")
+		}
+		if conv.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
+			if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+				return nil, err
+			}
+		}
+		event.Payload = &chat.CommittedConversationEvent_Pin{
+			Pin: &chat.PinEvent{
+				MessageId: p.PinMessage.MessageId,
+				ActorPtid: cmd.SenderPtid,
+				Unpinned:  p.PinMessage.Unpin,
+				Ts:        event.CommittedAt,
+			},
+		}
+
 	default:
 		return nil, fmt.Errorf("conversation: unsupported command type")
 	}
@@ -414,4 +519,15 @@ func DeterministicDirectID(actorA, actorB string) string {
 	sort.Strings(pair)
 	hash := sha256.Sum256([]byte("direct:" + pair[0] + ":" + pair[1]))
 	return "d-" + hex.EncodeToString(hash[:16])
+}
+
+func (s *DefaultService) requireAdminOrOwner(ctx context.Context, conversationID, senderPtid string) error {
+	member, err := s.repo.GetMember(ctx, conversationID, senderPtid)
+	if err != nil || member == nil {
+		return fmt.Errorf("conversation: sender not a member")
+	}
+	if member.Role != chat.MemberRole_MEMBER_ROLE_OWNER && member.Role != chat.MemberRole_MEMBER_ROLE_ADMIN {
+		return fmt.Errorf("conversation: admin or owner role required")
+	}
+	return nil
 }
