@@ -167,6 +167,10 @@ func (s *subServer) Handlers() []server.Handler {
 			s.handleGroupStats, logID, s.jwtWrapper),
 		server.NewTypedHandler("compat-gc-federated-add", "/group-chat/member/federated-add", server.POST,
 			s.handleGroupFederatedAdd, logID, s.jwtWrapper),
+
+		// --- Utility routes ---
+		server.NewTypedHandler("compat-link-preview", "/link-preview/fetch", server.GET,
+			s.handleLinkPreview, logID, s.jwtWrapper),
 	}
 }
 
