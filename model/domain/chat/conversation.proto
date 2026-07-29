@@ -131,6 +131,7 @@ message ConversationCommand {
     DissolveCommand dissolve = 16;
     UpdateSettingsCommand update_settings = 17;
     TypingCommand typing = 18;
+    ReactCommand react = 19;
   }
 }
 
@@ -181,6 +182,12 @@ message TypingCommand {
   bool is_typing = 1;
 }
 
+message ReactCommand {
+  string message_id = 1;
+  string emoji = 2;
+  bool remove = 3;
+}
+
 // --- Committed Conversation Event (authority -> followers) ---
 
 // Events are what the authority Station produces after validating a command.
@@ -203,6 +210,7 @@ message CommittedConversationEvent {
     ConversationCreatedEvent conversation_created = 14;
     ConversationDissolvedEvent conversation_dissolved = 15;
     SettingsChangedEvent settings_changed = 16;
+    ReactionEvent reaction = 17;
   }
 }
 
@@ -266,6 +274,14 @@ message SettingsChangedEvent {
   optional string description = 3;
   optional string avatar_cid = 4;
   optional bool muted = 5;
+}
+
+message ReactionEvent {
+  string message_id = 1;
+  string actor_ptid = 2;
+  string emoji = 3;
+  bool removed = 4;
+  google.protobuf.Timestamp ts = 5;
 }
 
 // --- Message Content Types ---
