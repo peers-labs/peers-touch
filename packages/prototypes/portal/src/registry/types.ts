@@ -23,6 +23,12 @@ export type PrototypeManifest = {
   description: string;
   order?: number;
   previewExport?: string;
+  /**
+   * When true, the prototype source stays in the workspace but is not shown as
+   * its own Portal card. Use this for surfaces that have been consolidated into
+   * a host prototype (e.g. desktop features folded into `desktop-shell`).
+   */
+  hidden?: boolean;
   entry: () => Promise<PrototypeEntryModule>;
 };
 

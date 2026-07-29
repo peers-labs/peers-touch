@@ -13,8 +13,8 @@ import {
 } from '@peers-touch/client-chat-core';
 import {
   socialThreadKey,
-  useSocialChatStore,
 } from '../../store/socialChat';
+import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
 import { api } from '../../services/desktop_api';
@@ -33,6 +33,7 @@ import {
   loadedThreadReplyCount,
 } from './message/ChatMessageTimeline';
 import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
+import { ForwardPickerModal } from './ForwardPickerModal';
 import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
@@ -76,18 +77,51 @@ export function ChatMessageArea() {
     getIMMessages,
     getIMThreadMessages,
     getIMSenderProfile,
-  } = useSocialChatStore();
-  const messageHasMore = useSocialChatStore((s) => s.messageHasMore);
-  const messageLoadingMore = useSocialChatStore((s) => s.messageLoadingMore);
-  const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
-  const loadGroupMembers = useSocialChatStore((s) => s.loadGroupMembers);
-  const scrollToMessageUlid = useSocialChatStore((s) => s.scrollToMessageUlid);
-  const setScrollToMessageUlid = useSocialChatStore((s) => s.setScrollToMessageUlid);
-  const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
-  const friendP2pStatus = useSocialChatStore((s) => s.friendP2pStatus);
-  const peerOnline = useSocialChatStore((s) => s.peerOnline);
-  const typingPeers = useSocialChatStore((s) => s.typingPeers);
-  const threadCounts = useSocialChatStore((s) => s.threadCounts);
+    messageHasMore,
+    messageLoadingMore,
+    currentUserDid,
+    loadGroupMembers,
+    scrollToMessageUlid,
+    setScrollToMessageUlid,
+    encryptionEnabled,
+    friendP2pStatus,
+    peerOnline,
+    typingPeers,
+    threadCounts,
+    reactToMessage,
+  } = useActiveSocialChatSlice((s) => ({
+    activeTab: s.activeTab,
+    activeSessionUlid: s.activeSessionUlid,
+    activeGroupUlid: s.activeGroupUlid,
+    loadMessages: s.loadMessages,
+    loadOlderMessages: s.loadOlderMessages,
+    sendFriendMessage: s.sendFriendMessage,
+    sendGroupMessage: s.sendGroupMessage,
+    toggleDetail: s.toggleDetail,
+    deleteMessage: s.deleteMessage,
+    recallFriendMessage: s.recallFriendMessage,
+    editFriendMessage: s.editFriendMessage,
+    recallGroupMessage: s.recallGroupMessage,
+    editGroupMessage: s.editGroupMessage,
+    openThread: s.openThread,
+    conversationLocalState: s.conversationLocalState,
+    getIMConversations: s.getIMConversations,
+    getIMMessages: s.getIMMessages,
+    getIMThreadMessages: s.getIMThreadMessages,
+    getIMSenderProfile: s.getIMSenderProfile,
+    messageHasMore: s.messageHasMore,
+    messageLoadingMore: s.messageLoadingMore,
+    currentUserDid: s.currentUserDid,
+    loadGroupMembers: s.loadGroupMembers,
+    scrollToMessageUlid: s.scrollToMessageUlid,
+    setScrollToMessageUlid: s.setScrollToMessageUlid,
+    encryptionEnabled: s.encryptionEnabled,
+    friendP2pStatus: s.friendP2pStatus,
+    peerOnline: s.peerOnline,
+    typingPeers: s.typingPeers,
+    threadCounts: s.threadCounts,
+    reactToMessage: s.reactToMessage,
+  }));
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
@@ -100,6 +134,7 @@ export function ChatMessageArea() {
   const [editingUlid, setEditingUlid] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
+  const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null);
   const [composerError, setComposerError] = useState<PresentedError | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -479,13 +514,26 @@ export function ChatMessageArea() {
   };
 
   const handleStartEdit = (msg: ChatMessage) => {
-    // Only plaintext messages are editable today. An E2EE chat
-    // would need a separate flow that re-encrypts under the active
-    // ratchet key before issuing the RPC; we deliberately disable
-    // the Edit button in `canEdit` rather than half-supporting it.
     setEditingUlid(msg.ulid);
     setInputValue(msg.content);
     setReplyToUlid(null);
+  };
+
+  const handleForwardSelect = async (conv: { id: string; kind: string }) => {
+    if (!forwardTarget) return;
+    const content = forwardTarget.content;
+    setForwardTarget(null);
+    try {
+      if (conv.kind === 'friend') {
+        await sendFriendMessage(conv.id, '', content, undefined, undefined, undefined);
+      } else {
+        await sendGroupMessage(conv.id, content, undefined, undefined, undefined);
+      }
+      toast.success(t('chat.social.messageArea.forwardSent'));
+    } catch (err) {
+      log.error('chat', 'forward message failed', err);
+      toast.error(t('chat.social.messageArea.forwardFailed'));
+    }
   };
 
   const cancelEdit = () => {
@@ -667,12 +715,18 @@ export function ChatMessageArea() {
             activeConversationId={activeUlid}
             activeKind={activeKind}
             currentUserDid={currentUserDid}
+            scrollContainerRef={scrollContainerRef}
             getSenderProfile={getIMSenderProfile}
             highlightedMessageUlid={highlightedMessageUlid}
             messages={mainTimelineMessages}
             onDelete={confirmDeleteMessage}
             onEdit={handleStartEdit}
+            onForward={setForwardTarget}
             onOpenThread={openThread}
+            onReact={(msg) => {
+              if (!activeUlid) return;
+              reactToMessage(activeUlid, msg.ulid, '👍');
+            }}
             onRecall={handleRecall}
             onReply={(messageUlid) => {
               setEditingUlid(null);
@@ -723,6 +777,13 @@ export function ChatMessageArea() {
           onConfirm={handleConfirmDelete}
         />
       )}
+
+      <ForwardPickerModal
+        open={!!forwardTarget}
+        conversations={getIMConversations()}
+        onCancel={() => setForwardTarget(null)}
+        onSelect={handleForwardSelect}
+      />
     </Flexbox>
   );
 }

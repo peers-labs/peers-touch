@@ -133,8 +133,11 @@ type FederationSelfView struct {
 	// Diagnostic field for the Settings federation panel ("Reachable
 	// via …") — clients that don't render it ignore the field.
 	InboxRelayMounts []string `protobuf:"bytes,11,rep,name=inbox_relay_mounts,proto3" json:"inbox_relay_mounts,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Federations this actor's home station has joined.
+	// Populated from the governance subserver's materialized state.
+	JoinedFederations []*JoinedFederationRef `protobuf:"bytes,12,rep,name=joined_federations,proto3" json:"joined_federations,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *FederationSelfView) Reset() {
@@ -244,6 +247,83 @@ func (x *FederationSelfView) GetInboxRelayMounts() []string {
 	return nil
 }
 
+func (x *FederationSelfView) GetJoinedFederations() []*JoinedFederationRef {
+	if x != nil {
+		return x.JoinedFederations
+	}
+	return nil
+}
+
+// JoinedFederationRef is a lightweight reference to a joined federation,
+// surfaced in FederationSelfView for the Desktop Settings panel.
+type JoinedFederationRef struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	FederationId   string                 `protobuf:"bytes,1,opt,name=federation_id,proto3" json:"federation_id,omitempty"`
+	FederationName string                 `protobuf:"bytes,2,opt,name=federation_name,proto3" json:"federation_name,omitempty"`
+	MyRole         string                 `protobuf:"bytes,3,opt,name=my_role,proto3" json:"my_role,omitempty"`
+	Status         string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *JoinedFederationRef) Reset() {
+	*x = JoinedFederationRef{}
+	mi := &file_domain_federation_federation_self_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JoinedFederationRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JoinedFederationRef) ProtoMessage() {}
+
+func (x *JoinedFederationRef) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_federation_federation_self_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JoinedFederationRef.ProtoReflect.Descriptor instead.
+func (*JoinedFederationRef) Descriptor() ([]byte, []int) {
+	return file_domain_federation_federation_self_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *JoinedFederationRef) GetFederationId() string {
+	if x != nil {
+		return x.FederationId
+	}
+	return ""
+}
+
+func (x *JoinedFederationRef) GetFederationName() string {
+	if x != nil {
+		return x.FederationName
+	}
+	return ""
+}
+
+func (x *JoinedFederationRef) GetMyRole() string {
+	if x != nil {
+		return x.MyRole
+	}
+	return ""
+}
+
+func (x *JoinedFederationRef) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
 // FederationVisibilityRequest is the body of PUT /actor/federation/visibility.
 // Accepts the label form so a Desktop dropdown can speak the same
 // vocabulary it renders. Empty / unknown labels round-trip as a
@@ -257,7 +337,7 @@ type FederationVisibilityRequest struct {
 
 func (x *FederationVisibilityRequest) Reset() {
 	*x = FederationVisibilityRequest{}
-	mi := &file_domain_federation_federation_self_proto_msgTypes[1]
+	mi := &file_domain_federation_federation_self_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -269,7 +349,7 @@ func (x *FederationVisibilityRequest) String() string {
 func (*FederationVisibilityRequest) ProtoMessage() {}
 
 func (x *FederationVisibilityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_federation_federation_self_proto_msgTypes[1]
+	mi := &file_domain_federation_federation_self_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -282,7 +362,7 @@ func (x *FederationVisibilityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FederationVisibilityRequest.ProtoReflect.Descriptor instead.
 func (*FederationVisibilityRequest) Descriptor() ([]byte, []int) {
-	return file_domain_federation_federation_self_proto_rawDescGZIP(), []int{1}
+	return file_domain_federation_federation_self_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *FederationVisibilityRequest) GetVisibility() string {
@@ -296,7 +376,7 @@ var File_domain_federation_federation_self_proto protoreflect.FileDescriptor
 
 const file_domain_federation_federation_self_proto_rawDesc = "" +
 	"\n" +
-	"'domain/federation/federation_self.proto\x12\x1fpeers_touch.model.federation.v1\"\x85\x04\n" +
+	"'domain/federation/federation_self.proto\x12\x1fpeers_touch.model.federation.v1\"\xeb\x04\n" +
 	"\x12FederationSelfView\x12\x1a\n" +
 	"\bactor_id\x18\x01 \x01(\tR\bactor_id\x12$\n" +
 	"\ractor_id_uint\x18\x02 \x01(\x04R\ractor_id_uint\x12.\n" +
@@ -311,7 +391,13 @@ const file_domain_federation_federation_self_proto_rawDesc = "" +
 	"\vlocator_seq\x18\t \x01(\x04R\vlocator_seq\x12\x16\n" +
 	"\x06origin\x18\n" +
 	" \x01(\tR\x06origin\x12.\n" +
-	"\x12inbox_relay_mounts\x18\v \x03(\tR\x12inbox_relay_mounts\"=\n" +
+	"\x12inbox_relay_mounts\x18\v \x03(\tR\x12inbox_relay_mounts\x12d\n" +
+	"\x12joined_federations\x18\f \x03(\v24.peers_touch.model.federation.v1.JoinedFederationRefR\x12joined_federations\"\x97\x01\n" +
+	"\x13JoinedFederationRef\x12$\n" +
+	"\rfederation_id\x18\x01 \x01(\tR\rfederation_id\x12(\n" +
+	"\x0ffederation_name\x18\x02 \x01(\tR\x0ffederation_name\x12\x18\n" +
+	"\amy_role\x18\x03 \x01(\tR\amy_role\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\"=\n" +
 	"\x1bFederationVisibilityRequest\x12\x1e\n" +
 	"\n" +
 	"visibility\x18\x01 \x01(\tR\n" +
@@ -335,19 +421,21 @@ func file_domain_federation_federation_self_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_federation_federation_self_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_federation_federation_self_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_domain_federation_federation_self_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_domain_federation_federation_self_proto_goTypes = []any{
 	(FederationVisibility)(0),           // 0: peers_touch.model.federation.v1.FederationVisibility
 	(*FederationSelfView)(nil),          // 1: peers_touch.model.federation.v1.FederationSelfView
-	(*FederationVisibilityRequest)(nil), // 2: peers_touch.model.federation.v1.FederationVisibilityRequest
+	(*JoinedFederationRef)(nil),         // 2: peers_touch.model.federation.v1.JoinedFederationRef
+	(*FederationVisibilityRequest)(nil), // 3: peers_touch.model.federation.v1.FederationVisibilityRequest
 }
 var file_domain_federation_federation_self_proto_depIdxs = []int32{
 	0, // 0: peers_touch.model.federation.v1.FederationSelfView.visibility:type_name -> peers_touch.model.federation.v1.FederationVisibility
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 1: peers_touch.model.federation.v1.FederationSelfView.joined_federations:type_name -> peers_touch.model.federation.v1.JoinedFederationRef
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_domain_federation_federation_self_proto_init() }
@@ -361,7 +449,7 @@ func file_domain_federation_federation_self_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_federation_federation_self_proto_rawDesc), len(file_domain_federation_federation_self_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

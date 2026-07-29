@@ -1,8 +1,8 @@
 import type { PrototypeManifest } from '../../portal/src/registry/types';
 
 const manifest = {
-  id: 'desktop-shell',
-  title: 'Desktop Shell',
+  id: 'desktop',
+  title: 'Desktop',
   site: 'desktop',
   host: 'desktop',
   kind: 'shell',
@@ -10,7 +10,7 @@ const manifest = {
   module: 'desktop',
   path: 'packages/prototypes/desktop/shell/',
   docs: 'docs/architecture/desktop/prototype/README.md',
-  description: 'Desktop container shell; hosts applets such as Atelier.',
+  description: 'Unified desktop prototype — all desktop features (Chat, Agent, Atelier, Orchestration, Applets, Settings) live here.',
   order: 10,
   previewExport: 'DesktopShell',
   entry: () => import('./src/Shell'),

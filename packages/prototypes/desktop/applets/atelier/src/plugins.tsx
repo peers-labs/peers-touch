@@ -19,12 +19,14 @@
  */
 import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { ATELIER_DEFAULT_TASK_ORGANIZER_MODE, ATELIER_TASK_ORGANIZER_MODES } from './projection.contract.generated';
 import { C } from './theme';
 import type { Task, TaskHost, TaskPlugin } from './types';
 
 function TaskRow({ t, host }: { t: Task; host: TaskHost }) {
   const selected = host.selectedId === t.id;
   const [menuOpen, setMenuOpen] = useState(false);
+  const confirmingPurge = t.status === 'deleted' && host.purgeConfirmId === t.id;
 
   const actions: { key: string; label: string; danger?: boolean }[] =
     t.status === 'active'
@@ -39,15 +41,21 @@ function TaskRow({ t, host }: { t: Task; host: TaskHost }) {
           ]
         : [
             { key: 'restore', label: '还原' },
-            { key: 'purge', label: '彻底删除', danger: true },
+            { key: 'purge', label: confirmingPurge ? '确认彻底删除' : '彻底删除', danger: true },
           ];
 
   const onAction = (key: string) => {
-    setMenuOpen(false);
     if (key === 'archive') host.setStatus(t.id, 'archived');
     else if (key === 'delete') host.setStatus(t.id, 'deleted');
     else if (key === 'restore') host.setStatus(t.id, 'active');
-    else if (key === 'purge') host.purge(t.id);
+    else if (key === 'purge') {
+      if (!confirmingPurge) {
+        host.requestPurge(t.id);
+        return;
+      }
+      host.purge(t.id);
+    }
+    setMenuOpen(false);
   };
 
   return (
@@ -92,6 +100,11 @@ function TaskRow({ t, host }: { t: Task; host: TaskHost }) {
               <span style={{ fontSize: 12, color: a.danger ? C.error : C.textSecondary }}>{a.label}</span>
             </div>
           ))}
+          {confirmingPurge ? (
+            <div style={{ padding: '0 8px 6px', fontSize: 11, color: C.textTertiary, lineHeight: '15px' }}>
+              Station 仍会校验任务处于 deleted 后才允许 purge。
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -270,5 +283,25 @@ const dag: TaskPlugin = {
   },
 };
 
-export const PLUGINS: TaskPlugin[] = [folders, flatList, kanban, dag];
-export const DEFAULT_PLUGIN_ID = folders.id;
+const pluginById: Record<TaskPlugin['id'], TaskPlugin> = {
+  folders,
+  'flat-list': flatList,
+  kanban,
+  dag,
+};
+
+export const PLUGINS: TaskPlugin[] = ATELIER_TASK_ORGANIZER_MODES.map((mode) => {
+  const plugin = pluginById[mode.id];
+  return { ...plugin, ready: mode.ready };
+});
+export const DEFAULT_PLUGIN_ID = ATELIER_DEFAULT_TASK_ORGANIZER_MODE;
+
+export function resolveTaskPlugin(pluginId: string): TaskPlugin {
+  const plugin = PLUGINS.find((item) => item.id === pluginId);
+  if (plugin) return plugin;
+  const defaultPlugin = PLUGINS.find((item) => item.id === DEFAULT_PLUGIN_ID);
+  if (!defaultPlugin) {
+    throw new Error(`Atelier default task organizer plugin is missing: ${DEFAULT_PLUGIN_ID}`);
+  }
+  return defaultPlugin;
+}

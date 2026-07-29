@@ -61,16 +61,16 @@ model/domain/federation/federation_membership.proto
 model/domain/federation/federation_policy.proto
 model/domain/federation/federation_manifest.proto
 model/domain/federation/federation_sync.proto
-model/domain/federation/federation_plaza.proto
+model/domain/federation/federation_discovery.proto
 ```
 
-现有 Catalog proto 方向需要补充 `federation_id`。没有 `federation_id` 的 Catalog API 只能作为 legacy / advanced handle discovery，不能作为联邦广场的默认发现入口。
+现有 Catalog proto 方向需要补充 `federation_id`。没有 `federation_id` 的 Catalog API 只能作为 legacy / advanced handle discovery，不能作为 Federation scoped 发现的默认入口。
 
 ### 2.2 Client Projection
 
-Desktop 联邦广场是一级入口，但不是 Federation 真源：
+Desktop 通过 Settings 和 Dashboard 消费 Federation projection，不是 Federation 真源：
 
-- Desktop 可以缓存 Plaza view model、分页 cursor、UI 过滤条件。
+- Desktop 可以缓存 Federation view model、分页 cursor、UI 过滤条件。
 - Desktop 不保存 ledger head、membership、policy 的最终事实。
 - Desktop 治理按钮只根据 Station 返回的 capability projection 展示；最终权限裁决始终在 Station。
 - Mobile 后续可以复用同一 Station API，但不改变 Station 作为共享业务真源的边界。
@@ -98,7 +98,7 @@ Ledger sync 或 discovery 如果新增 relay-mediated topic，必须遵守现有
 
 ### 3.1 Catalog Scope
 
-现有 Catalog 文档需要补充 `federation_id` 参数和 Federation scoped visibility。未完成补充前，Catalog 只能视为 actor discovery primitive，不能代表完整 Federation Plaza discovery。
+现有 Catalog 文档需要补充 `federation_id` 参数和 Federation scoped visibility。未完成补充前，Catalog 只能视为 actor discovery primitive，不能代表完整 Federation scoped discovery。
 
 ### 3.2 Legacy Handle Resolve
 

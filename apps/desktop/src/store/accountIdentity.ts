@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createDesktopStore } from './createDesktopStore';
 import { api, type AccountIdentity } from '../services/desktop_api';
 import { EVENT, eventBus } from '../kernel/events';
 
@@ -44,7 +44,7 @@ function accountsEqual(a: AccountIdentity[], b: AccountIdentity[]): boolean {
   return true;
 }
 
-export const useAccountIdentityStore = create<AccountIdentityStore>((set, get) => ({
+export const useAccountIdentityStore = createDesktopStore<AccountIdentityStore>('accountIdentity', (set, get) => ({
   ...initialState,
 
   reset: () => {

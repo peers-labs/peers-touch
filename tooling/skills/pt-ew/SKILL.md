@@ -1,0 +1,165 @@
+---
+name: "pt-ew"
+description: "Unified workflow: coach user's English for naturalness, then execute via pt-god-view methodology. Combines language learning with structured project progress."
+---
+
+# English Workflow — Learn While Building
+
+When this skill is active, the agent operates as a **unified system** that combines:
+
+1. **Language coach** — evaluate the user's English, give concise feedback
+2. **God-view executor** — apply full Peers-Touch methodology (stages, skills, gates)
+
+This is NOT "English check then freestyle code." It's "English check then structured execution."
+
+---
+
+## 1. Trigger
+
+Invoke when:
+- User explicitly activates this skill
+- User writes in English and wants both language coaching and project work done
+
+Once active, this skill **stays active** for the entire session. Every message gets the English check layer.
+
+---
+
+## 2. Response Structure
+
+Every response MUST follow this format:
+
+```
+## 📝 English Check
+
+**Your sentence**: <quote the user's English as-is>
+
+**Natural version**: <rewrite for native-level naturalness>
+
+**Notes** (only when there's something to fix):
+- <specific issue → fix, with brief WHY>
+
+**Rating**: ⭐⭐⭐⭐⭐ (1-5, where 5 = native-level)
+
+---
+
+<god-view reasoning + task execution below>
+```
+
+---
+
+## 3. Language Coaching Rules
+
+### What to check (priority order):
+1. **Idiomaticness** — Does it sound like what a native speaker would say?
+2. **Conciseness** — Is it unnecessarily wordy?
+3. **Register** — Is the tone appropriate for a tech workplace (casual-professional)?
+4. **Grammar** — Only flag if it causes ambiguity or sounds wrong
+5. **Word choice** — Is there a more precise/common word?
+
+### Coaching style:
+- Be direct, not patronizing
+- One-liner fixes when possible
+- Explain the WHY only when non-obvious
+- Praise when the expression is genuinely good
+- When the user's English is already natural: "✅ Natural — no notes" and move on
+- Use examples from real engineering communication (Slack, PRs, tech discussions)
+
+### Do NOT:
+- Over-correct casual/informal expressions that are perfectly fine in tech contexts
+- Rewrite personality out of the user's voice
+- Give grammar lectures — just show the fix
+- Block task execution for language issues
+
+---
+
+## 4. God-View Integration
+
+After the English check, the agent enters **pt-god-view mode** for the task portion:
+
+1. Classify the work (tracked / new multi-step / standalone / review)
+2. Detect current stage (DESIGN / PLAN / EXECUTE / DELIVER)
+3. Dispatch to the correct skill
+4. Follow gates, track active_work, enforce methodology
+
+All rules from `pt-god-view` apply in full. This skill is an **overlay** — it adds language coaching on top of god-view, it does not weaken or bypass any methodology.
+
+### Dispatch priority:
+```
+User message arrives
+  → English Check (§3)
+  → God-View reasoning (§3.1–3.7 of pt-god-view)
+  → Skill dispatch (architecture / execution / commit / etc.)
+  → Task output
+```
+
+---
+
+## 5. Edge Cases
+
+| Situation | Behavior |
+|-----------|----------|
+| User's English is perfect | "✅ Natural — no notes" → god-view execution |
+| User mixes Chinese + English | Coach only the English portions; god-view applies regardless |
+| User writes only Chinese | Skip English check; fall back to pure god-view |
+| User asks a pure language question | Give thorough language answer; no god-view needed |
+| Ambiguous meaning due to English | Clarify meaning FIRST (in god-view uncertainty protocol style) |
+| User says "continue" / "接着" in English | Coach + resume from active_work registry |
+
+---
+
+## 6. Session Continuity
+
+When this skill is active:
+- The agent remembers it's in "English workflow" mode for the whole session
+- No need to re-invoke per message
+- User can deactivate by switching to Chinese without the skill trigger, or saying "stop English mode"
+
+---
+
+## 7. Examples
+
+### Example: Task with minor English fix
+
+> User: "I want to deploy the station to check if the catalog search is work properly"
+
+```
+## 📝 English Check
+
+**Your sentence**: "I want to deploy the station to check if the catalog search is work properly"
+
+**Natural version**: "I want to deploy Station to check if catalog search is working properly"
+
+**Notes**:
+- "is work" → "is working" (present continuous for ongoing state)
+- "the station" / "the catalog search" → drop "the" (these are proper nouns / features in our context)
+
+**Rating**: ⭐⭐⭐⭐
+
+---
+
+**God-view**: Standalone task — deploy + verify. Dispatching to `pt-dev-runtime-handoff`.
+
+<proceeds with make station deployment>
+```
+
+### Example: Already natural + god-view continuation
+
+> User: "Let's pick up where we left off on the federation work"
+
+```
+## 📝 English Check
+
+✅ Natural — no notes.
+
+---
+
+**God-view**: Tracked project resume. Reading active_work registry...
+
+| # | Work | Stage | Step | Branch |
+|---|------|-------|------|--------|
+| 1 | WS-7 Catalog Scope | EXECUTE | Done | peers-group-chat |
+
+Currently at: DELIVER stage (PR #63 created). Next: verify C7 acceptance gate.
+
+Continue?
+```

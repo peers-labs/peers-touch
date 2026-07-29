@@ -214,9 +214,8 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
   const [showCopilot, setShowCopilot] = useState(false);
   const [copilotAgentName, setCopilotAgentName] = useState('assistant');
 
-  const {
-    agents, loadAgents,
-  } = useAgentStore();
+  const agents = useAgentStore(s => s.agents);
+  const loadAgents = useAgentStore(s => s.loadAgents);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
