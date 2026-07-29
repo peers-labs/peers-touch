@@ -339,6 +339,9 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 		if conv.Kind != chat.ConversationKind_CONVERSATION_KIND_GROUP {
 			return nil, fmt.Errorf("conversation: remove_members only valid for group conversations")
 		}
+		if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+			return nil, err
+		}
 		newEpoch := conv.MembershipEpoch + 1
 		changes := make([]*chat.MemberChange, 0, len(p.RemoveMembers.Ptids))
 		for _, ptid := range p.RemoveMembers.Ptids {
@@ -416,6 +419,36 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 			},
 		}
 
+	case *chat.ConversationCommand_UpdateMember:
+		if conv.Kind != chat.ConversationKind_CONVERSATION_KIND_GROUP {
+			return nil, fmt.Errorf("conversation: update_member only valid for group conversations")
+		}
+		if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+			return nil, err
+		}
+		if p.UpdateMember.TargetPtid == "" {
+			return nil, fmt.Errorf("conversation: update_member requires target_ptid")
+		}
+		targetMember, err := s.repo.GetMember(ctx, conv.ConversationId, p.UpdateMember.TargetPtid)
+		if err != nil || targetMember == nil {
+			return nil, fmt.Errorf("conversation: target member not found")
+		}
+		targetMember.Role = p.UpdateMember.NewRole
+		targetMember.Muted = p.UpdateMember.Muted
+		if err := s.repo.UpsertMember(ctx, targetMember); err != nil {
+			return nil, fmt.Errorf("conversation: update member failed: %w", err)
+		}
+		event.Payload = &chat.CommittedConversationEvent_MembershipChanged{
+			MembershipChanged: &chat.MembershipChangedEvent{
+				Changes: []*chat.MemberChange{{
+					Ptid:   p.UpdateMember.TargetPtid,
+					Action: chat.MemberChangeAction_MEMBER_CHANGE_ACTION_ROLE_CHANGED,
+					Role:   p.UpdateMember.NewRole,
+				}},
+				NewMembershipEpoch: conv.MembershipEpoch,
+			},
+		}
+
 	default:
 		return nil, fmt.Errorf("conversation: unsupported command type")
 	}
@@ -429,4 +462,15 @@ func DeterministicDirectID(actorA, actorB string) string {
 	sort.Strings(pair)
 	hash := sha256.Sum256([]byte("direct:" + pair[0] + ":" + pair[1]))
 	return "d-" + hex.EncodeToString(hash[:16])
+}
+
+func (s *DefaultService) requireAdminOrOwner(ctx context.Context, conversationID, senderPtid string) error {
+	member, err := s.repo.GetMember(ctx, conversationID, senderPtid)
+	if err != nil || member == nil {
+		return fmt.Errorf("conversation: sender not a member")
+	}
+	if member.Role != chat.MemberRole_MEMBER_ROLE_OWNER && member.Role != chat.MemberRole_MEMBER_ROLE_ADMIN {
+		return fmt.Errorf("conversation: admin or owner role required")
+	}
+	return nil
 }
