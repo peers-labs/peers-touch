@@ -1379,9 +1379,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const state = get();
       const did = state.currentUserDid;
 
-      // Optimistic: clear unread badge for the selected session
       set((prev) => ({
         activeSessionUlid: ulid,
+        activeTab: 'friend' as const,
         openThreadRootUlid: null,
         sessions: did
           ? prev.sessions.map((s) => {
@@ -1410,8 +1410,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   selectGroup: (ulid) => {
       set((prev) => ({
         activeGroupUlid: ulid,
+        activeTab: 'group' as const,
         openThreadRootUlid: null,
-        // Optimistic: clear unread badge for the selected group
         groupUnreadCounts: { ...prev.groupUnreadCounts, [ulid]: 0 },
       }));
       get().markGroupRead(ulid).catch(() => {});
@@ -2166,6 +2166,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }
       await get().loadFriendRequests();
       await get().loadSessions();
+      // Retry loadSessions after a short delay to catch the DM conversation
+      // that Station creates asynchronously upon friend acceptance.
+      setTimeout(() => { get().loadSessions().catch(() => {}); }, 1500);
     } catch (error) {
       log.error('socialChat', 'acceptFriendRequest failed', error);
       throw error;

@@ -1,8 +1,8 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Tag } from '@lobehub/ui';
-import { Collapse, Empty, Tabs, theme, Typography } from 'antd';
+import { Badge, Collapse, Empty, Tabs, theme, Typography } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { log } from '../../utils/logger';
@@ -24,9 +24,9 @@ export function ChatContactsPanel() {
     getIMConversations,
     selectSession,
     selectGroup,
-    setActiveTab,
     acceptFriendRequest,
     rejectFriendRequest,
+    loadFriendRequests,
   } = useActiveSocialChatSlice((s) => ({
     friendRequests: s.friendRequests,
     currentUserDid: s.currentUserDid,
@@ -36,10 +36,14 @@ export function ChatContactsPanel() {
     getIMConversations: s.getIMConversations,
     selectSession: s.selectSession,
     selectGroup: s.selectGroup,
-    setActiveTab: s.setActiveTab,
     acceptFriendRequest: s.acceptFriendRequest,
     rejectFriendRequest: s.rejectFriendRequest,
+    loadFriendRequests: s.loadFriendRequests,
   }));
+
+  useEffect(() => {
+    loadFriendRequests();
+  }, [loadFriendRequests]);
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
   const conversations = getIMConversations();
@@ -62,8 +66,8 @@ export function ChatContactsPanel() {
   );
 
   const requestCardStyle: CSSProperties = {
-    padding: '10px 12px',
-    borderRadius: 10,
+    padding: '8px 10px',
+    borderRadius: 8,
     border: `1px solid ${token.colorBorderSecondary}`,
     background: token.colorFillQuaternary,
   };
@@ -102,11 +106,16 @@ export function ChatContactsPanel() {
   const newFriendsContent = (
     <Tabs
       size="small"
+      centered
       defaultActiveKey="received"
       items={[
         {
           key: 'received',
-          label: t('chat.social.contacts.receivedTab'),
+          label: (
+            <Badge count={pendingIncomingCount} size="small" offset={[6, -2]}>
+              {t('chat.social.contacts.receivedTab')}
+            </Badge>
+          ),
           children:
             receivedRequests.length === 0 ? (
               <Empty
@@ -120,10 +129,10 @@ export function ChatContactsPanel() {
                   const peerAvatar = req.senderAvatar;
                   const isPending = req.status === 1;
                   return (
-                    <Flexbox key={req.id} horizontal align="flex-start" gap={10} style={requestCardStyle}>
-                      <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={avatarSize} />
-                      <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
-                        <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
+                    <Flexbox key={req.id} horizontal align="flex-start" gap={8} style={requestCardStyle}>
+                      <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={30} />
+                      <Flexbox flex={1} style={{ minWidth: 0 }} gap={4}>
+                        <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
                           <Text strong ellipsis style={{ fontSize: 13 }}>
                             {peerLabel}
                           </Text>
@@ -135,7 +144,7 @@ export function ChatContactsPanel() {
                           </Text>
                         ) : null}
                         {isPending ? (
-                          <Flexbox horizontal gap={8} style={{ marginTop: 4 }}>
+                          <Flexbox horizontal gap={6} style={{ marginTop: 2 }}>
                             <Button
                               size="small"
                               type="primary"
@@ -151,9 +160,7 @@ export function ChatContactsPanel() {
                                   setBusyAction(null);
                                 }
                               }}
-                            >
-                              {t('chat.social.contacts.accept')}
-                            </Button>
+                            />
                             <Button
                               size="small"
                               icon={<X size={12} />}
@@ -168,9 +175,7 @@ export function ChatContactsPanel() {
                                   setBusyAction(null);
                                 }
                               }}
-                            >
-                              {t('chat.social.contacts.reject')}
-                            </Button>
+                            />
                           </Flexbox>
                         ) : null}
                       </Flexbox>
@@ -192,10 +197,10 @@ export function ChatContactsPanel() {
                   const peerLabel = req.receiverDisplayName || req.receiverId;
                   const peerAvatar = req.receiverAvatar;
                   return (
-                    <Flexbox key={req.id} horizontal align="flex-start" gap={10} style={requestCardStyle}>
-                      <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={avatarSize} />
-                      <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
-                        <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
+                    <Flexbox key={req.id} horizontal align="flex-start" gap={8} style={requestCardStyle}>
+                      <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={30} />
+                      <Flexbox flex={1} style={{ minWidth: 0 }} gap={4}>
+                        <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
                           <Text strong ellipsis style={{ fontSize: 13 }}>
                             {peerLabel}
                           </Text>
@@ -257,7 +262,6 @@ export function ChatContactsPanel() {
                   gap={9}
                   onClick={() => {
                     selectGroup(conversation.id);
-                    setActiveTab('group');
                   }}
                   style={{
                     ...rowBaseStyle,
@@ -325,7 +329,6 @@ export function ChatContactsPanel() {
                   gap={9}
                   onClick={() => {
                     selectSession(conversation.id);
-                    setActiveTab('friend');
                   }}
                   style={{
                     ...rowBaseStyle,

@@ -85,9 +85,9 @@ func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderID, 
 			receiverDID, senderDID,
 			200, 1,
 			"friend_request", fr.ID,
-			"", message,
+			"Friend request from "+senderDID, message,
 			"friend_request:"+senderDID,
-			nil,
+			map[string]string{"sender_did": senderDID, "request_id": fr.ID},
 		); err != nil {
 			logger.Error(ctx, "friend request notification failed", "error", err)
 		}
