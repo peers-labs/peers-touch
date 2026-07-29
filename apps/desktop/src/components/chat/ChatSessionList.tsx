@@ -49,7 +49,6 @@ export function ChatSessionList() {
     activeGroupUlid,
     conversationLocalState,
     loadError,
-    setActiveTab,
     selectSession,
     selectGroup,
     getIMConversations,
@@ -71,7 +70,6 @@ export function ChatSessionList() {
     activeGroupUlid: state.activeGroupUlid,
     conversationLocalState: state.conversationLocalState,
     loadError: state.loadError,
-    setActiveTab: state.setActiveTab,
     selectSession: state.selectSession,
     selectGroup: state.selectGroup,
     getIMConversations: state.getIMConversations,
@@ -130,10 +128,8 @@ export function ChatSessionList() {
   const handleSelect = (c: IMConversationProjection) => {
     if (c.kind === 'friend') {
       selectSession(c.id);
-      setActiveTab('friend');
     } else {
       selectGroup(c.id);
-      setActiveTab('group');
     }
   };
 
@@ -284,12 +280,11 @@ export function ChatSessionList() {
         </Flexbox>
 
         {loadError && (
-          <div style={{ padding: '8px 12px 0' }}>
+          <div style={{ padding: '8px 12px 0', overflow: 'hidden' }}>
             <Alert
               type="error"
               showIcon
               message={t('chat.social.sessionList.loadFailed')}
-              description={loadError}
               action={
                 <Button size="small" type="text" icon={<RefreshCw size={12} />} onClick={handleRetry}>
                   {t('common.action.retry')}
