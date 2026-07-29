@@ -7,4 +7,3 @@ createRoot(document.getElementById('root')!).render(
     <MobilePrototype />
   </StrictMode>,
 );
-
