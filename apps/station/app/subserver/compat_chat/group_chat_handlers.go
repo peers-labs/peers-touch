@@ -361,10 +361,39 @@ func (s *subServer) handleGroupUpdateMember(ctx context.Context, req *chat.Updat
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	// TODO: implement role/mute update via conversation command when F3 lands
+
+	newRole := chat.MemberRole_MEMBER_ROLE_UNSPECIFIED
+	if req.Role != nil {
+		newRole = chat.MemberRole(int32(*req.Role))
+	}
+	muted := false
+	if req.Muted != nil {
+		muted = *req.Muted
+	}
+
+	cmd := &chat.ConversationCommand{
+		CommandId:      uuid.NewString(),
+		ConversationId: req.GroupUlid,
+		SenderPtid:     subject.ID,
+		ClientTs:       timestamppb.Now(),
+		Payload: &chat.ConversationCommand_UpdateMember{
+			UpdateMember: &chat.UpdateMemberCommand{
+				TargetPtid: req.Ptid,
+				NewRole:    newRole,
+				Muted:      muted,
+			},
+		},
+	}
+
+	if _, err := s.convService.SubmitCommand(ctx, cmd); err != nil {
+		return nil, server.InternalErrorWithCause("update member failed", err)
+	}
+
 	return &chat.UpdateMemberResponse{Member: &chat.GroupMember{
 		GroupUlid: req.GroupUlid,
 		Ptid:      req.Ptid,
+		Role:      chat.GroupRole(newRole),
+		Muted:     muted,
 	}}, nil
 }
 
