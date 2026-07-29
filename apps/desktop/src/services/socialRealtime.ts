@@ -15,6 +15,7 @@ import type {
   RealtimeMessageReceivedPayload,
   RealtimePresenceFlipPayload,
   RealtimeResyncPayload,
+  RealtimeSocialGraphEventPayload,
   RealtimeTypingStatePayload,
 } from '../kernel/events/types';
 import { useMediaRuntimeStore } from './mediaRuntime';
@@ -461,6 +462,25 @@ function onPresenceFlip(payload: RealtimePresenceFlipPayload): void {
   store.setPeerOnline(payload.actorId, payload.online);
 }
 
+function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
+  const store = useSocialChatStore.getState();
+  switch (payload.kind) {
+    case 'friend_request_received':
+    case 'friend_request_rejected':
+      store.loadFriendRequests().catch(() => {});
+      break;
+    case 'friend_request_accepted':
+      Promise.allSettled([store.loadFriendRequests(), store.loadSessions()]).catch(() => {});
+      break;
+    case 'conversation_created':
+      store.loadSessions().catch(() => {});
+      break;
+    case 'unfriended':
+      Promise.allSettled([store.loadFriendRequests(), store.loadSessions()]).catch(() => {});
+      break;
+  }
+}
+
 async function syncKnownConversations(): Promise<void> {
   const store = useSocialChatStore.getState();
   const sessions = store.sessions.slice();
@@ -648,6 +668,7 @@ export function installSocialRealtimeBridge(): void {
     eventBus.subscribe(EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED, onConversationSettingsChanged),
     eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, onPresenceFlip),
     eventBus.subscribe(EVENT.REALTIME_RESYNC, onResync),
+    eventBus.subscribe(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, onSocialGraphEvent),
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 

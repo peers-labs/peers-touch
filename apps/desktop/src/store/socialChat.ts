@@ -2166,9 +2166,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }
       await get().loadFriendRequests();
       await get().loadSessions();
-      // Retry loadSessions after a short delay to catch the DM conversation
-      // that Station creates asynchronously upon friend acceptance.
-      setTimeout(() => { get().loadSessions().catch(() => {}); }, 1500);
     } catch (error) {
       log.error('socialChat', 'acceptFriendRequest failed', error);
       throw error;

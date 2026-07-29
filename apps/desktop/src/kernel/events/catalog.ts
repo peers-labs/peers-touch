@@ -22,6 +22,7 @@ export const EVENT = {
     REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED: 'realtime.group_skdm_envelope_delivered',
   REALTIME_ENVELOPE_DELIVERED: 'realtime.envelope_delivered',
   REALTIME_CONVERSATION_SETTINGS_CHANGED: 'realtime.conversation_settings_changed',
+  REALTIME_SOCIAL_GRAPH_EVENT: 'realtime.social_graph_event',
   MOMENT_CREATED: 'moment.created',
   MOMENT_DELETED: 'moment.deleted',
   MOMENT_COMMENTED: 'moment.commented',

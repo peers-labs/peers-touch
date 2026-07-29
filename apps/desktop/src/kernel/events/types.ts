@@ -196,6 +196,16 @@ export interface RealtimeConversationSettingsChangedPayload {
   changedTsUnixMs: number;
 }
 
+export interface RealtimeSocialGraphEventPayload {
+  eventId: string;
+  kind: 'friend_request_received' | 'friend_request_accepted' | 'friend_request_rejected' | 'conversation_created' | 'unfriended';
+  actorDid: string;
+  targetDid: string;
+  requestId: string;
+  conversationId: string;
+  actorDisplayName: string;
+}
+
 export interface RealtimeMessageMutationPayload {
   /** Server-assigned event id. Opaque cursor; see contract §2.2. */
   eventId: string;
@@ -307,6 +317,7 @@ export interface EventPayloadMap {
     [EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED]: RealtimeGroupSkdmEnvelopeDeliveredPayload;
   [EVENT.REALTIME_ENVELOPE_DELIVERED]: RealtimeEnvelopeDeliveredPayload;
   [EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED]: RealtimeConversationSettingsChangedPayload;
+  [EVENT.REALTIME_SOCIAL_GRAPH_EVENT]: RealtimeSocialGraphEventPayload;
   [EVENT.MOMENT_CREATED]: MomentCreatedPayload;
   [EVENT.MOMENT_DELETED]: MomentDeletedPayload;
   [EVENT.MOMENT_COMMENTED]: MomentCommentedPayload;
