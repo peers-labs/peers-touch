@@ -379,6 +379,62 @@ func TestGroup_B2_TextFanOut(t *testing.T) {
 	}
 }
 
+// ─── Scenario F1: Reactions ──────────────────────────────────────
+
+func TestF1_Reaction(t *testing.T) {
+	a := setupTestActor(t, "alice_rct_", "alice_react@test.local", "TestPass1!")
+	b := setupTestActor(t, "bob_rct_xx", "bob_react@test.local", "TestPass1!")
+
+	groupUlid := setupGroup(t, a, b, b)
+	if groupUlid == "" {
+		t.Skip("group setup failed")
+	}
+
+	// A sends a message
+	sendResp := httpPost(t, "/group-chat/message/send", &a.token, map[string]interface{}{
+		"group_ulid":        groupUlid,
+		"type":              1,
+		"encrypted_payload": "dGVzdCByZWFjdGlvbg==",
+	})
+	assertSuccess(t, sendResp, "send message for reaction")
+	msg, _ := sendResp["message"].(map[string]interface{})
+	messageID := fmt.Sprintf("%v", msg["ulid"])
+	if messageID == "" {
+		t.Fatal("message send did not return ulid")
+	}
+
+	// B reacts with 👍
+	reactResp := httpPost(t, "/conversation/command", &b.token, map[string]interface{}{
+		"command": map[string]interface{}{
+			"conversation_id": groupUlid,
+			"react": map[string]interface{}{
+				"message_id": messageID,
+				"emoji":      "👍",
+				"remove":     false,
+			},
+		},
+	})
+	assertSuccess(t, reactResp, "react to message")
+	t.Log("[R] B reacted with 👍")
+
+	// Verify reaction appears in events
+	evResp := httpGet(t, fmt.Sprintf("/conversation/events?conversation_id=%s&after_seq=0&limit=50", groupUlid), &a.token)
+	events := extractList(t, evResp, "events")
+	reactionFound := false
+	for _, ev := range events {
+		e, _ := ev.(map[string]interface{})
+		if reaction, ok := e["reaction"].(map[string]interface{}); ok {
+			if fmt.Sprintf("%v", reaction["emoji"]) == "👍" && fmt.Sprintf("%v", reaction["message_id"]) == messageID {
+				reactionFound = true
+				t.Logf("[R] A sees B's 👍 reaction on message %s", messageID)
+			}
+		}
+	}
+	if !reactionFound {
+		t.Error("[R] Reaction not found in conversation events")
+	}
+}
+
 // ─── Scenario D: Error Cases ──────────────────────────────────────
 
 func TestError_D3_FriendRequestToSelf(t *testing.T) {
