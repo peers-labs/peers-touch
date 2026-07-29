@@ -36,6 +36,15 @@ pub struct ConversationSubmitCommandInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationReactInput {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub emoji: String,
+    #[serde(default)]
+    pub remove: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationGetInput {
     pub conversation_id: String,
 }
@@ -162,6 +171,32 @@ pub fn conversation_submit_command(
     match station_client::request_json_auth(Method::POST, "/conversation/command", &token, None, Some(&body)) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "submit command failed"),
+    }
+}
+
+#[tauri::command]
+pub fn conversation_react(
+    input: ConversationReactInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let body = json!({
+        "command": {
+            "conversation_id": input.conversation_id,
+            "react": {
+                "message_id": input.message_id,
+                "emoji": input.emoji,
+                "remove": input.remove,
+            }
+        }
+    });
+    match station_client::request_json_auth(Method::POST, "/conversation/command", &token, None, Some(&body)) {
+        Ok(resp) => AppResult::success(resp),
+        Err(e) => station_err(e, "react failed"),
     }
 }
 
