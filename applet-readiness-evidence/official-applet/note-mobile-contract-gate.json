@@ -1,0 +1,48 @@
+{
+  "status": "PASS",
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.note",
+  "mobileReadiness": "CONTRACT_PREPARED_NOT_RUNTIME_E2E",
+  "manifest": "apps/applets/note/applet.manifest.json",
+  "targets": [
+    "desktop",
+    "android",
+    "ios",
+    "web"
+  ],
+  "androidLoad": {
+    "type": "lynx-native",
+    "entry": "main.lynx.bundle"
+  },
+  "iosLoad": {
+    "type": "lynx-native",
+    "entry": "main.lynx.bundle"
+  },
+  "noteService": {
+    "id": "note",
+    "kind": "http",
+    "binding": "station-resolved",
+    "allowedMethods": [
+      "GET",
+      "POST",
+      "PATCH",
+      "DELETE"
+    ],
+    "allowedPaths": [
+      "/v1/notes",
+      "/v1/notes/*",
+      "/v1/notes:search"
+    ],
+    "publicPathPrefix": "/v1",
+    "stationPathPrefix": "/applets/note/v1",
+    "streaming": false
+  },
+  "checkedFiles": [
+    "apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/applet/AppletManifestParser.kt",
+    "apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/applet/AppletBridgeSession.kt",
+    "apps/mobile/android/app/src/main/java/com/peerstouch/mobile/core/lynx/bridge/NetworkBridgeModule.kt",
+    "apps/mobile/android/app/src/test/java/com/peerstouch/mobile/core/applet/AppletBridgeSessionContractTest.kt"
+  ],
+  "runtimeEvidence": "NOT_IMPLEMENTED: requires applet-ios-lynx-runtime-e2e / applet-android-lynx-runtime-e2e on simulator or device",
+  "errors": []
+}
