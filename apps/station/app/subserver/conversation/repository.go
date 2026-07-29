@@ -71,6 +71,12 @@ func newPostgresConversationRepo(db *gorm.DB) *postgresConversationRepo {
 	return &postgresConversationRepo{db: db}
 }
 
+// NewPostgresRepository returns a Repository backed by the provided GORM DB.
+// Exported for use by adapter subservers (compat_chat) that share the same DB.
+func NewPostgresRepository(db *gorm.DB) Repository {
+	return newPostgresConversationRepo(db)
+}
+
 func (r *postgresConversationRepo) UpsertConversation(ctx context.Context, conv *chat.Conversation) error {
 	model := &conversationModel{
 		ConversationID:         conv.ConversationId,
