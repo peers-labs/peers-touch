@@ -220,6 +220,14 @@ func (s *DefaultService) GetMembers(ctx context.Context, conversationID string) 
 	return s.repo.GetMembers(ctx, conversationID)
 }
 
+func (s *DefaultService) GetMember(ctx context.Context, conversationID, ptid string) (*chat.ConversationMember, error) {
+	return s.repo.GetMember(ctx, conversationID, ptid)
+}
+
+func (s *DefaultService) UpsertMember(ctx context.Context, member *chat.ConversationMember) error {
+	return s.repo.UpsertMember(ctx, member)
+}
+
 func (s *DefaultService) ListEvents(ctx context.Context, conversationID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
