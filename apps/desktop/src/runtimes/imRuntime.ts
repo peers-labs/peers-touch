@@ -3,6 +3,7 @@ import { imServiceV1 } from '../services/im-service'
 import { MlsDeliveryKind } from '../services/im-service-contract'
 import { MlsKeyDeliveryPayloadSchema } from '../gen/proto/domain/chat/envelope_pb'
 import { useSocialChatStore } from '../store/socialChat'
+import { normalizeConversations } from '../store/socialNormalizers'
 import type { RuntimeDescriptor } from '../kernel/runtime'
 import { log } from '../utils/logger'
 import { EVENT, eventBus } from '../kernel/events'
@@ -114,7 +115,8 @@ async function uploadKeyPackages(): Promise<void> {
 
 async function loadConversations(): Promise<void> {
   try {
-    const convs = await imServiceV1.conversation.listConversations()
+    const raw = await imServiceV1.conversation.listConversations()
+    const convs = normalizeConversations(raw)
     state.conversations.clear()
     for (const conv of convs) {
       state.conversations.set(conv.conversationId, {
