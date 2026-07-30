@@ -96,7 +96,18 @@ const conversationService: ConversationServiceContract = {
 
 const envelopeService: EnvelopeServiceContract = {
   async submit(envelope) {
-    const resp = await cmd<any, { envelope_id: string }>('envelope_submit', { envelope })
+    const payloadB64 = envelope.payloadBytes && envelope.payloadBytes.length > 0
+      ? btoa(String.fromCharCode(...envelope.payloadBytes))
+      : '';
+    const resp = await cmd<any, { envelope_id: string }>('envelope_submit', {
+      conversation_id: envelope.conversationId,
+      sender_actor_did: envelope.senderPtid,
+      sender_device_id: envelope.senderDeviceId,
+      recipient_actor_did: envelope.recipientPtid,
+      payload_type: envelope.payloadType,
+      payload_bytes: payloadB64,
+      idempotency_key: envelope.idempotencyKey,
+    })
     return resp.envelope_id
   },
 
