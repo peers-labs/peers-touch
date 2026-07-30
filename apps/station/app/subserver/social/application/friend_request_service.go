@@ -81,13 +81,18 @@ func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderID, 
 	if s.notif != nil {
 		receiverDID := strconv.FormatUint(receiverID, 10)
 		senderDID := strconv.FormatUint(senderID, 10)
+		senderName := senderDID
+		profiles := resolveProfiles(ctx, []uint64{senderID})
+		if p, ok := profiles[senderID]; ok && p.Name != "" {
+			senderName = p.Name
+		}
 		if err := s.notif.Produce(
 			receiverDID, senderDID,
 			200, 1,
 			"friend_request", fr.ID,
-			"Friend request from "+senderDID, message,
+			senderName+" sent you a friend request", message,
 			"friend_request:"+senderDID,
-			map[string]string{"sender_did": senderDID, "request_id": fr.ID},
+			map[string]string{"sender_did": senderDID, "request_id": fr.ID, "sender_name": senderName},
 		); err != nil {
 			logger.Error(ctx, "friend request notification failed", "error", err)
 		}
