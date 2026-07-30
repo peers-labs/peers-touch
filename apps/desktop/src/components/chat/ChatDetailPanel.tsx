@@ -635,8 +635,16 @@ export function ChatDetailPanel() {
         profiles.set(peerProfile.did, { name: peerProfile.name, avatar: peerProfile.avatar });
       }
     });
+    for (const [did, profile] of Object.entries(peerProfiles)) {
+      if (profile && !profiles.has(did)) {
+        profiles.set(did, {
+          name: profile.display_name?.trim() || profile.username?.trim() || '',
+          avatar: profile.avatar || '',
+        });
+      }
+    }
     return profiles;
-  }, [currentUserDid, currentUserProfile, sessions]);
+  }, [currentUserDid, currentUserProfile, sessions, peerProfiles]);
   const displayMembers: GroupMemberDisplay[] = useMemo(() => {
     const sourceMembers: GroupMemberLike[] = members.length > 0
       ? members
