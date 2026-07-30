@@ -64,15 +64,29 @@ function createDraftAttachment(
   };
 }
 
+function guessMimeFromPath(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  const map: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+    webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml', ico: 'image/x-icon',
+    mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+    mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4',
+    pdf: 'application/pdf',
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
 function createPathDraftAttachment(filePath: string, fallbackName: string): ChatDraftAttachment {
   const name = filePath.split(/[\\/]/).filter(Boolean).pop() || fallbackName;
+  const mimeType = guessMimeFromPath(name);
+  const isImage = mimeType.startsWith('image/');
   return {
     id: nextDraftId(),
     filePath,
     name,
-    mimeType: 'application/octet-stream',
+    mimeType,
     size: 0,
-    previewUrl: null,
+    previewUrl: isImage ? `asset://localhost/${encodeURI(filePath)}` : null,
     status: 'uploading',
   };
 }
