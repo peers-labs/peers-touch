@@ -53,6 +53,22 @@ export function ChatContactsPanel() {
 
   const myDid = currentUserDid || currentAuthenticatedActorId() || '';
 
+  const acceptedContacts = useMemo(() => {
+    const existingPeerIds = new Set(friendConversations.map((c) => c.peerDid).filter(Boolean));
+    return friendRequests
+      .filter((r) => r.status === 2)
+      .map((r) => {
+        const isSender = r.senderId === myDid;
+        const peerId = isSender ? r.receiverId : r.senderId;
+        const peerName = isSender ? r.receiverDisplayName : r.senderDisplayName;
+        const peerAvatar = isSender ? r.receiverAvatar : r.senderAvatar;
+        return { peerId, peerName, peerAvatar };
+      })
+      .filter(({ peerId }) => !existingPeerIds.has(peerId));
+  }, [friendRequests, friendConversations, myDid]);
+
+  const totalContacts = friendConversations.length + acceptedContacts.length;
+
   const receivedRequests = useMemo(() => {
     if (!myDid) return [];
     return friendRequests.filter((r) => r.receiverId === myDid);
@@ -323,12 +339,12 @@ export function ChatContactsPanel() {
         <Flexbox horizontal align="center" gap={8}>
           <Contact size={14} style={{ color: token.colorTextSecondary }} />
           <Text strong style={{ fontSize: 13 }}>
-            {t('chat.social.contacts.contactsCount', { count: friendConversations.length })}
+            {t('chat.social.contacts.contactsCount', { count: totalContacts })}
           </Text>
         </Flexbox>
       ),
       children:
-        friendConversations.length === 0 ? (
+        totalContacts === 0 ? (
           <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noFriends')} />
           </Flexbox>
@@ -336,7 +352,6 @@ export function ChatContactsPanel() {
           <Flexbox gap={3} style={rowListStyle}>
             {friendConversations.map((conversation) => {
               const label = conversation.title || t('chat.social.sessionList.unknown');
-              const peerDid = conversation.peerDid || '';
               const isSelected = activeTab === 'friend' && conversation.id === activeSessionUlid;
               return (
                 <Flexbox
@@ -363,11 +378,6 @@ export function ChatContactsPanel() {
                     <Text strong ellipsis style={{ fontSize: 13, color: isSelected ? token.colorPrimary : undefined }}>
                       {label}
                     </Text>
-                    {peerDid ? (
-                      <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-                        {peerDid}
-                      </Text>
-                    ) : null}
                   </Flexbox>
                   <ChevronRight
                     size={14}
@@ -375,6 +385,32 @@ export function ChatContactsPanel() {
                       color: isSelected ? token.colorPrimary : token.colorTextQuaternary,
                       flexShrink: 0,
                     }}
+                  />
+                </Flexbox>
+              );
+            })}
+            {acceptedContacts.map(({ peerId, peerName, peerAvatar }) => {
+              const label = peerName || peerId;
+              return (
+                <Flexbox
+                  key={peerId}
+                  horizontal
+                  align="center"
+                  gap={9}
+                  onClick={() => selectSession(peerId)}
+                  style={rowBaseStyle}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = token.colorFillQuaternary; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <UserSquareAvatar remoteUrl={peerAvatar} name={label} size={avatarSize} />
+                  <Flexbox flex={1} style={{ minWidth: 0 }}>
+                    <Text strong ellipsis style={{ fontSize: 13 }}>
+                      {label}
+                    </Text>
+                  </Flexbox>
+                  <ChevronRight
+                    size={14}
+                    style={{ color: token.colorTextQuaternary, flexShrink: 0 }}
                   />
                 </Flexbox>
               );
