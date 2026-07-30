@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
 import { Alert, Badge, Empty, theme, Typography } from 'antd';
-import { RefreshCw, BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff, Trash2 } from 'lucide-react';
+import { RefreshCw, BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff } from 'lucide-react';
 import type { IMConversationProjection } from '@peers-touch/client-chat-core';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
@@ -49,13 +49,13 @@ export function ChatSessionList() {
     activeGroupUlid,
     conversationLocalState,
     loadError,
+    peerProfiles,
+    friendRequests,
     selectSession,
     selectGroup,
     getIMConversations,
     updateConversationLocalState,
     hideConversation,
-    deleteGroupContact,
-    deleteFriendContact,
     loadSessions,
     loadGroups,
   } = useActiveSocialChatSlice((state) => ({
@@ -70,13 +70,13 @@ export function ChatSessionList() {
     activeGroupUlid: state.activeGroupUlid,
     conversationLocalState: state.conversationLocalState,
     loadError: state.loadError,
+    peerProfiles: state.peerProfiles,
+    friendRequests: state.friendRequests,
     selectSession: state.selectSession,
     selectGroup: state.selectGroup,
     getIMConversations: state.getIMConversations,
     updateConversationLocalState: state.updateConversationLocalState,
     hideConversation: state.hideConversation,
-    deleteGroupContact: state.deleteGroupContact,
-    deleteFriendContact: state.deleteFriendContact,
     loadSessions: state.loadSessions,
     loadGroups: state.loadGroups,
   }));
@@ -91,7 +91,7 @@ export function ChatSessionList() {
   // fetch twice in parallel and the spinner blocks longer than necessary.
 
   const conversations = useMemo(
-    () => getIMConversations(),
+    () => getIMConversations().filter((c) => !c.hidden),
     [
       getIMConversations,
       sessions,
@@ -101,6 +101,8 @@ export function ChatSessionList() {
       currentUserDid,
       conversationLocalState,
       messages,
+      peerProfiles,
+      friendRequests,
     ],
   );
 
@@ -161,13 +163,6 @@ export function ChatSessionList() {
           icon: <EyeOff size={14} />,
           label: t('chat.social.contextMenu.hide'),
         },
-        { type: 'divider' as const, key: 'divider-2' },
-        {
-          key: 'delete',
-          icon: <Trash2 size={14} />,
-          label: t('chat.social.contextMenu.delete'),
-          danger: true,
-        },
       ],
       onClick: async ({ key }: { key: string }) => {
         switch (key) {
@@ -203,27 +198,12 @@ export function ChatSessionList() {
             }
             break;
           case 'hide':
-            await hideConversation(c.kind, c.id, true);
+            hideConversation(c.kind, c.id, true);
             break;
-          case 'delete': {
-            try {
-              if (c.kind === 'group') {
-                await deleteGroupContact(c.id);
-              } else {
-                await deleteFriendContact(c.id);
-              }
-            } catch (error) {
-              presentError(error, {
-                mapper: mapChatError,
-                context: { operation: 'delete' },
-              });
-            }
-            break;
-          }
         }
       },
     };
-  }, [conversationLocalState, t, updateConversationLocalState, hideConversation, deleteGroupContact, deleteFriendContact]);
+  }, [conversationLocalState, t, updateConversationLocalState, hideConversation]);
 
   const isRowActive = (c: IMConversationProjection) => {
     if (c.kind === 'friend') {
