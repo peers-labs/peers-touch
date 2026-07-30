@@ -80,7 +80,7 @@ function NotificationItem({
       </Flexbox>
 
       <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
-        <Flexbox horizontal justify="space-between" align="center">
+        <Flexbox horizontal justify="space-between" align="center" style={{ minWidth: 0 }}>
           <span
             style={{
               fontWeight: isUnread ? 600 : 400,
@@ -89,9 +89,11 @@ function NotificationItem({
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
+              flex: 1,
+              minWidth: 0,
             }}
           >
-            {item.title}
+            {item.title || item.metadata?.sender_name || 'Notification'}
           </span>
           <span style={{ fontSize: 11, color: token.colorTextQuaternary, flexShrink: 0, marginLeft: 8 }}>
             {formatTimeAgo(item.createdAt)}
