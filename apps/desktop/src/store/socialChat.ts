@@ -72,6 +72,8 @@ import {
   normalizeFriendChatSession,
   normalizeFriendRequestData,
   normalizeFriendRequests,
+  normalizeConversations,
+  normalizeConversationMembers,
   type FriendRequestData,
 } from './socialNormalizers';
 import { currentAuthenticatedActorId } from './session';
@@ -1330,13 +1332,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     if (!hasAuthenticatedActor()) return;
     set({ loading: true });
     try {
-      const allConversations = await imServiceV1.conversation.listConversations();
+      const rawConversations = await imServiceV1.conversation.listConversations();
+      const allConversations = normalizeConversations(rawConversations);
 
       const directConversations = allConversations.filter((c) => c.kind === 1);
       const memberResults = await Promise.allSettled(
         directConversations.map(async (conv) => {
-          const members = await imServiceV1.conversation.getMembers(conv.conversationId);
-          return [conv.conversationId, members] as const;
+          const rawMembers = await imServiceV1.conversation.getMembers(conv.conversationId);
+          return [conv.conversationId, normalizeConversationMembers(rawMembers)] as const;
         }),
       );
       const memberMap: Record<string, ConversationMember[]> = {};
@@ -1360,6 +1363,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         direct: directConversations.length,
         group: allConversations.length - directConversations.length,
       });
+
+      // Trigger profile loading for DM peers so names resolve.
+      for (const [, members] of Object.entries(memberMap)) {
+        for (const m of members) {
+          if (m.ptid && m.ptid !== actorId && !get().peerProfiles[m.ptid]) {
+            get().loadPeerProfile(m.ptid).catch(() => {});
+          }
+        }
+      }
     } catch (error) {
       set({ loading: false });
       if (isUnauthorizedError(error)) return;
@@ -2495,7 +2507,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const isDirect = conv.kind === 1;
       const kind = isDirect ? 'friend' : 'group';
       const localState = state.conversationLocalState[conversationKey(kind, convId)];
-      if (localState?.hidden) continue;
 
       const loadedMsgs = state.messages[convId];
       const loadedMainMsgs = loadedMsgs?.filter((message) => !socialMessageExplicitThreadRootUlid(message));
@@ -2508,12 +2519,23 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       if (isDirect) {
         const members = state.conversationMembers[convId] || [];
         const peer = members.find((m) => m.ptid !== actorId) || members[0];
+        const peerDid = peer?.ptid || '';
+        const profile = state.peerProfiles[peerDid];
+        const friendReq = peerDid
+          ? state.friendRequests.find((r) => r.senderId === peerDid || r.receiverId === peerDid)
+          : undefined;
+        const peerName = peer?.nickname
+          || profile?.display_name
+          || profile?.username
+          || (friendReq ? (friendReq.senderId === peerDid ? friendReq.senderDisplayName : friendReq.receiverDisplayName) : '')
+          || peerDid
+          || 'Friend';
         out.push(projectDesktopIMConversation({
           type: 'friend',
           ulid: convId,
-          name: peer?.nickname || peer?.ptid || 'Friend',
-          avatar: '',
-          peerDid: peer?.ptid || '',
+          name: peerName,
+          avatar: profile?.avatar || '',
+          peerDid,
           lastActivity,
           unread: state.groupUnreadCounts[convId] ?? 0,
           muted: localState?.muted ?? (peer?.muted || false),
