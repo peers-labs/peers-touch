@@ -16,8 +16,86 @@ import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
+import type { GroupMember } from '../../gen/proto/domain/chat/group_chat_pb';
 
 const { Text } = Typography;
+
+function SessionGroupAvatar({ members, peerProfiles, size = 36 }: {
+  groupId: string;
+  members: GroupMember[];
+  peerProfiles: Record<string, { display_name?: string; username?: string; avatar?: string } | null | undefined>;
+  size?: number;
+}) {
+  const { token } = theme.useToken();
+  const slots = members.slice(0, 4).map((m) => {
+    const p = peerProfiles[m.ptid];
+    return { name: p?.display_name?.trim() || p?.username?.trim() || m.nickname || '', avatar: p?.avatar || '' };
+  });
+  const count = slots.length;
+  const gap = 1;
+  const cellSize = count <= 1 ? size : Math.floor((size - gap) / 2);
+
+  if (count === 0) {
+    return (
+      <div style={{
+        width: size, height: size, borderRadius: Math.round(size * 0.25),
+        background: token.colorFillSecondary, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: token.colorTextSecondary, flexShrink: 0,
+      }}>
+        <Users size={Math.round(size * 0.44)} />
+      </div>
+    );
+  }
+
+  const positions: { top: number; left: number }[] = (() => {
+    if (count === 1) return [{ top: 0, left: 0 }];
+    if (count === 2) return [
+      { top: Math.floor((size - cellSize) / 2), left: 0 },
+      { top: Math.floor((size - cellSize) / 2), left: cellSize + gap },
+    ];
+    if (count === 3) return [
+      { top: 0, left: Math.floor((size - cellSize) / 2) },
+      { top: cellSize + gap, left: 0 },
+      { top: cellSize + gap, left: cellSize + gap },
+    ];
+    return [
+      { top: 0, left: 0 },
+      { top: 0, left: cellSize + gap },
+      { top: cellSize + gap, left: 0 },
+      { top: cellSize + gap, left: cellSize + gap },
+    ];
+  })();
+
+  return (
+    <div style={{ width: size, height: size, position: 'relative', flexShrink: 0, borderRadius: Math.round(size * 0.25), overflow: 'hidden' }}>
+      {slots.map((member, i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            top: positions[i].top,
+            left: positions[i].left,
+            width: count === 1 ? size : cellSize,
+            height: count === 1 ? size : cellSize,
+            background: token.colorFillSecondary,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: token.colorTextSecondary,
+            fontSize: count === 1 ? Math.round(size * 0.36) : Math.round(cellSize * 0.4),
+            fontWeight: 700,
+          }}
+        >
+          {member.avatar ? (
+            <img src={member.avatar} alt={member.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            member.name ? member.name.charAt(0).toUpperCase() : '?'
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const diffMs = Date.now() - d.getTime();
@@ -43,6 +121,7 @@ export function ChatSessionList() {
   const {
     sessions,
     groups,
+    groupMembers,
     groupUnreadCounts,
     lastPreviews,
     currentUserDid,
@@ -64,6 +143,7 @@ export function ChatSessionList() {
   } = useActiveSocialChatSlice((state) => ({
     sessions: state.sessions,
     groups: state.groups,
+    groupMembers: state.groupMembers,
     groupUnreadCounts: state.groupUnreadCounts,
     lastPreviews: state.lastPreviews,
     currentUserDid: state.currentUserDid,
@@ -384,7 +464,10 @@ export function ChatSessionList() {
                   text = p.content;
                 }
                 if (c.kind === 'group' && p.senderId) {
-                  const senderShort = p.senderId.length > 12 ? p.senderId.slice(0, 12) + '…' : p.senderId;
+                  const profile = peerProfiles[p.senderId];
+                  const senderShort = p.senderId === currentUserDid
+                    ? t('chat.social.preview.you')
+                    : profile?.display_name?.trim() || profile?.username?.trim() || p.senderId.slice(0, 8) + '…';
                   subtitle = `${senderShort}: ${text}`;
                 } else {
                   subtitle = text;
@@ -435,7 +518,11 @@ export function ChatSessionList() {
                   >
                     <OverlayCommitProfiler owner={contextMenuTarget} surface="chat-conversation-context-menu">
                       <>
-                          <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
+                          {c.kind === 'group' && !c.avatar ? (
+                            <SessionGroupAvatar groupId={c.id} members={groupMembers[c.id] || []} peerProfiles={peerProfiles} size={36} />
+                          ) : (
+                            <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
+                          )}
 
                           <Flexbox flex={1} style={{ minWidth: 0 }}>
                             <Flexbox horizontal align="center" justify="space-between" gap={6}>

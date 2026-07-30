@@ -571,6 +571,32 @@ pub fn oss_upload_attachment_social(
     application_oss::upload_attachment(&input.file_path, &token, "social", bucket, "public", None)
 }
 
+fn guess_mime_for_encrypted(file_path: &str) -> String {
+    let ext = std::path::Path::new(file_path)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "m4a" => "audio/mp4",
+        "pdf" => "application/pdf",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
 fn upload_encrypted_attachment(
     input: OssUploadAttachmentInput,
     token: &str,
@@ -741,7 +767,7 @@ fn upload_encrypted_attachment(
     );
     payload.insert(
         "mime_type".to_string(),
-        serde_json::Value::String("application/octet-stream".to_string()),
+        serde_json::Value::String(guess_mime_for_encrypted(&input.file_path)),
     );
     payload.insert(
         "media_encryption".to_string(),
@@ -972,7 +998,7 @@ pub fn oss_upload_encrypted_attachment_social(
     );
     payload.insert(
         "mime_type".to_string(),
-        serde_json::Value::String("application/octet-stream".to_string()),
+        serde_json::Value::String(guess_mime_for_encrypted(&input.file_path)),
     );
     payload.insert(
         "media_encryption".to_string(),

@@ -564,6 +564,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         width: 'fit-content',
         position: 'relative',
         marginTop: timelineGap ? (compact ? 6 : 8) : 0,
+        paddingBottom: 38,
+        marginBottom: -38,
       }}
       gap={avatarGap}
     >

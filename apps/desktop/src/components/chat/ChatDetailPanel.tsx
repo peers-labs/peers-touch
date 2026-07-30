@@ -52,7 +52,7 @@ import { MlsDeliveryKind } from '../../services/im-service-contract';
 
 const { Text } = Typography;
 
-const DETAIL_HEADER_HEIGHT = 56;
+const DETAIL_HEADER_HEIGHT = 64;
 const HISTORY_RESTORE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 type DetailAttachment = ChatAttachmentLike;
@@ -80,6 +80,69 @@ interface GroupMemberDisplay extends GroupMemberLike {
 function getInitial(name: string): string {
   if (!name) return '?';
   return name.charAt(0).toUpperCase();
+}
+
+function GroupCompositeAvatar({ members, size = 72 }: { members: { name: string; avatar: string }[]; size?: number }) {
+  const { token } = theme.useToken();
+  const slots = members.slice(0, 4);
+  const count = slots.length;
+  const gap = 2;
+  const cellSize = count <= 1 ? size : Math.floor((size - gap) / 2);
+
+  if (count === 0) {
+    return <Users size={Math.round(size * 0.44)} />;
+  }
+
+  const positions: { top: number; left: number }[] = (() => {
+    if (count === 1) return [{ top: 0, left: 0 }];
+    if (count === 2) return [
+      { top: Math.floor((size - cellSize) / 2), left: 0 },
+      { top: Math.floor((size - cellSize) / 2), left: cellSize + gap },
+    ];
+    if (count === 3) return [
+      { top: 0, left: Math.floor((size - cellSize) / 2) },
+      { top: cellSize + gap, left: 0 },
+      { top: cellSize + gap, left: cellSize + gap },
+    ];
+    return [
+      { top: 0, left: 0 },
+      { top: 0, left: cellSize + gap },
+      { top: cellSize + gap, left: 0 },
+      { top: cellSize + gap, left: cellSize + gap },
+    ];
+  })();
+
+  return (
+    <div style={{ width: size, height: size, position: 'relative' }}>
+      {slots.map((member, i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            top: positions[i].top,
+            left: positions[i].left,
+            width: count === 1 ? size : cellSize,
+            height: count === 1 ? size : cellSize,
+            borderRadius: count === 1 ? Math.round(size * 0.25) : Math.round(cellSize * 0.22),
+            background: token.colorFillSecondary,
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: token.colorTextSecondary,
+            fontSize: count === 1 ? Math.round(size * 0.36) : Math.round(cellSize * 0.4),
+            fontWeight: 700,
+          }}
+        >
+          {member.avatar ? (
+            <img src={member.avatar} alt={member.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            getInitial(member.name)
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function groupRoleLabel(role: number, t: (key: string) => string): string {
@@ -802,7 +865,7 @@ export function ChatDetailPanel() {
   };
 
   const handleGroupAvatarClick = async () => {
-    if (!activeUlid || !canManageGroupMembers) return;
+    if (!activeUlid) return;
     let filePath: string;
     try {
       filePath = await api.pickImageFile();
@@ -1216,8 +1279,8 @@ export function ChatDetailPanel() {
           <Flexbox align="center" gap={12} style={{ padding: '20px 16px 12px' }}>
             {/* Avatar with edit overlay */}
             <div
-              style={{ position: 'relative', cursor: canManageGroupMembers ? 'pointer' : 'default' }}
-              onClick={canManageGroupMembers ? handleGroupAvatarClick : undefined}
+              style={{ position: 'relative', cursor: 'pointer' }}
+              onClick={handleGroupAvatarClick}
             >
               <Flexbox
                 align="center"
@@ -1238,10 +1301,16 @@ export function ChatDetailPanel() {
                     style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                   />
                 ) : (
-                  <Users size={32} />
+                  <GroupCompositeAvatar
+                    size={72}
+                    members={members.slice(0, 4).map((m) => {
+                      const p = memberProfiles.get(m.ptid);
+                      return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
+                    })}
+                  />
                 )}
               </Flexbox>
-              {canManageGroupMembers && (
+              {isGroup && (
                 <Flexbox
                   align="center"
                   justify="center"

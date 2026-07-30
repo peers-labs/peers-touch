@@ -688,6 +688,8 @@ export function ChatComposer({
                 placement="topRight"
                 content={emojiPanel}
                 styles={{ content: { padding: 0 } }}
+                destroyTooltipOnHide
+                motion={{ motionName: '' }}
               >
                 <Tooltip title={t('chat.social.composer.emoji')}>
                   <Button
