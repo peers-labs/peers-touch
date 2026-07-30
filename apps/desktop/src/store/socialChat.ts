@@ -1076,6 +1076,15 @@ async function decodeFriendMessage(
   if (cached) {
     return { ...message, content: cached.content, type: cached.type || message.type, attachments: cached.attachments } as FriendChatMessage;
   }
+
+  // Try direct plaintext decode first (messages sent via conversation_submit_command)
+  const directPayload = decodeEncryptedChatPayloadBytes(message.encryptedPayload);
+  if (directPayload) {
+    const result = applyDecodedChatPayload(message, directPayload);
+    setDecryptCache(message.ulid, { content: result.content, type: result.type, attachments: (result as { attachments?: unknown[] }).attachments ?? [], cachedAt: Date.now() });
+    return result;
+  }
+
   try {
     const envelope = decodeFriendEncryptedEnvelope(message.encryptedPayload);
     if (!envelope) return message;
