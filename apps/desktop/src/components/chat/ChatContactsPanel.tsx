@@ -4,6 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Tag } from '@lobehub/ui';
 import { Badge, Collapse, Empty, Tabs, theme, Typography } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
+import { currentAuthenticatedActorId } from '../../store/session';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { log } from '../../utils/logger';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
@@ -50,15 +51,17 @@ export function ChatContactsPanel() {
   const groupConversations = conversations.filter((conversation) => conversation.kind === 'group');
   const friendConversations = conversations.filter((conversation) => conversation.kind === 'friend');
 
+  const myDid = currentUserDid || currentAuthenticatedActorId() || '';
+
   const receivedRequests = useMemo(() => {
-    if (!currentUserDid) return [];
-    return friendRequests.filter((r) => r.receiverId === currentUserDid);
-  }, [friendRequests, currentUserDid]);
+    if (!myDid) return [];
+    return friendRequests.filter((r) => r.receiverId === myDid);
+  }, [friendRequests, myDid]);
 
   const sentRequests = useMemo(() => {
-    if (!currentUserDid) return [];
-    return friendRequests.filter((r) => r.senderId === currentUserDid);
-  }, [friendRequests, currentUserDid]);
+    if (!myDid) return [];
+    return friendRequests.filter((r) => r.senderId === myDid);
+  }, [friendRequests, myDid]);
 
   const pendingIncomingCount = useMemo(
     () => receivedRequests.filter((r) => r.status === 1).length,
@@ -129,11 +132,18 @@ export function ChatContactsPanel() {
                   const peerAvatar = req.senderAvatar;
                   const isPending = req.status === 1;
                   return (
-                    <Flexbox key={req.id} horizontal align="flex-start" gap={8} style={requestCardStyle}>
+                    <Flexbox
+                      key={req.id}
+                      horizontal
+                      align="flex-start"
+                      gap={8}
+                      title={peerLabel}
+                      style={{ ...requestCardStyle, cursor: 'default' }}
+                    >
                       <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={30} />
                       <Flexbox flex={1} style={{ minWidth: 0 }} gap={4}>
                         <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
-                          <Text strong ellipsis style={{ fontSize: 13 }}>
+                          <Text strong ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
                             {peerLabel}
                           </Text>
                           {statusTag(req.status)}
@@ -197,11 +207,18 @@ export function ChatContactsPanel() {
                   const peerLabel = req.receiverDisplayName || req.receiverId;
                   const peerAvatar = req.receiverAvatar;
                   return (
-                    <Flexbox key={req.id} horizontal align="flex-start" gap={8} style={requestCardStyle}>
+                    <Flexbox
+                      key={req.id}
+                      horizontal
+                      align="flex-start"
+                      gap={8}
+                      title={peerLabel}
+                      style={{ ...requestCardStyle, cursor: 'default' }}
+                    >
                       <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={30} />
                       <Flexbox flex={1} style={{ minWidth: 0 }} gap={4}>
                         <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
-                          <Text strong ellipsis style={{ fontSize: 13 }}>
+                          <Text strong ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
                             {peerLabel}
                           </Text>
                           {statusTag(req.status)}
