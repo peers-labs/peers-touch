@@ -1,9 +1,9 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Input, toast } from '@lobehub/ui';
+import { Input, toast } from '@lobehub/ui';
 import { theme } from 'antd';
-import { Search, X, Check } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { peerOfSession } from '../../store/socialChat';
 import { currentAuthenticatedActorId } from '../../store/session';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -56,15 +56,26 @@ function getFirstLetter(name: string): string {
 export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sessions, currentUserDid, loadGroups, selectGroup, setActiveTab } = useActiveSocialChatSlice((s) => ({
+  const { sessions, friendRequests, currentUserDid, loadGroups, selectGroup, setActiveTab, getIMConversations, loadFriendRequests, loadSessions } = useActiveSocialChatSlice((s) => ({
     sessions: s.sessions,
+    friendRequests: s.friendRequests,
     currentUserDid: s.currentUserDid,
     loadGroups: s.loadGroups,
     selectGroup: s.selectGroup,
     setActiveTab: s.setActiveTab,
+    getIMConversations: s.getIMConversations,
+    loadFriendRequests: s.loadFriendRequests,
+    loadSessions: s.loadSessions,
   }));
   const sessionActorId = useActiveChatSessionSlice((s) => s.currentUser?.actorId ?? null);
   const ownDid = currentUserDid || sessionActorId;
+
+  useEffect(() => {
+    if (open) {
+      loadFriendRequests();
+      loadSessions();
+    }
+  }, [open, loadFriendRequests, loadSessions]);
 
   const [searchText, setSearchText] = useState('');
   const [selectedDids, setSelectedDids] = useState<Set<string>>(new Set());
@@ -73,19 +84,43 @@ export function CreateGroupModal({ open, onClose }: Props) {
   const contacts: Contact[] = useMemo(() => {
     if (!ownDid) return [];
     const seen = new Map<string, Contact>();
+
     for (const s of sessions) {
       const peer = peerOfSession(s, ownDid);
-      if (!peer.did) continue;
-      if (peer.did === ownDid) continue;
-      if (seen.has(peer.did)) continue;
+      if (!peer.did || peer.did === ownDid || seen.has(peer.did)) continue;
       seen.set(peer.did, {
         did: peer.did,
         name: peer.name || t('chat.social.sessionList.unknown'),
         avatar: peer.avatar,
       });
     }
+
+    const conversations = getIMConversations();
+    for (const conv of conversations) {
+      if (conv.kind !== 'friend' || !conv.peerDid || conv.peerDid === ownDid || seen.has(conv.peerDid)) continue;
+      seen.set(conv.peerDid, {
+        did: conv.peerDid,
+        name: conv.title || t('chat.social.sessionList.unknown'),
+        avatar: conv.avatar || '',
+      });
+    }
+
+    for (const req of friendRequests) {
+      if (req.status !== 2) continue;
+      const isSender: boolean = req.senderId === ownDid;
+      const peerId: string = isSender ? req.receiverId : req.senderId;
+      if (!peerId || peerId === ownDid || seen.has(peerId)) continue;
+      const peerName: string = isSender ? req.receiverDisplayName : req.senderDisplayName;
+      const peerAvatar: string = isSender ? req.receiverAvatar : req.senderAvatar;
+      seen.set(peerId, {
+        did: peerId,
+        name: peerName || t('chat.social.sessionList.unknown'),
+        avatar: peerAvatar || '',
+      });
+    }
+
     return Array.from(seen.values());
-  }, [sessions, ownDid, t]);
+  }, [sessions, friendRequests, ownDid, t, getIMConversations]);
 
   const selectedContacts = useMemo(() => {
     return contacts.filter((c) => selectedDids.has(c.did));
@@ -150,16 +185,22 @@ export function CreateGroupModal({ open, onClose }: Props) {
     if (!ownDid) return;
     if (selectedDids.size === 0) return;
     setCreating(true);
+
+    const memberDids = Array.from(selectedDids).filter((did) => did !== ownDid);
+    if (memberDids.length === 0) { setCreating(false); return; }
+
+    const namesByDid = new Map(contacts.map((c) => [c.did, c.name]));
+    const groupName =
+      memberDids.length <= 3
+        ? memberDids.map((d) => namesByDid.get(d) ?? d.slice(0, 8)).join(', ')
+        : t('chat.social.createGroup.defaultName', { count: memberDids.length + 1 });
+
+    handleClose();
+
     try {
-      const memberDids = Array.from(selectedDids).filter((did) => did !== ownDid);
-      if (memberDids.length === 0) return;
-      const namesByDid = new Map(contacts.map((c) => [c.did, c.name]));
-      const groupName =
-        memberDids.length <= 3
-          ? memberDids.map((d) => namesByDid.get(d) ?? d.slice(0, 8)).join(', ')
-          : t('chat.social.createGroup.defaultName', { count: memberDids.length + 1 });
       const resp = await api.groupChatCreateGroup(groupName, '', memberDids);
       await loadGroups();
+      await loadSessions();
       const newGroupUlid = resp?.group?.ulid;
       if (newGroupUlid) {
         setupMlsGroupSession(newGroupUlid).catch((err) =>
@@ -169,7 +210,6 @@ export function CreateGroupModal({ open, onClose }: Props) {
         selectGroup(newGroupUlid);
       }
       toast.success(t('chat.social.createGroup.success'));
-      handleClose();
     } catch (err) {
       log.error('chat', 'createGroup failed', err);
       toast.error(t('chat.social.createGroup.failed'));
@@ -184,7 +224,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
     onClose();
   };
 
-  const WECHAT_GREEN = '#07C160';
+  if (!open) return null;
 
   return (
     <div
@@ -195,9 +235,6 @@ export function CreateGroupModal({ open, onClose }: Props) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        pointerEvents: open ? 'auto' : 'none',
-        opacity: open ? 1 : 0,
-        transition: 'opacity 0.2s ease',
       }}
     >
       <div
@@ -205,238 +242,222 @@ export function CreateGroupModal({ open, onClose }: Props) {
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.45)',
+          background: 'rgba(0, 0, 0, 0.4)',
         }}
       />
       <div
         style={{
           position: 'relative',
-          width: 540,
-          maxHeight: '80vh',
+          width: 640,
+          height: '72vh',
+          maxHeight: 580,
           background: token.colorBgContainer,
-          borderRadius: 12,
-          boxShadow: token.boxShadowSecondary,
+          borderRadius: 8,
+          boxShadow: '0 8px 40px rgba(0,0,0,0.15)',
           display: 'flex',
-          flexDirection: 'column',
           overflow: 'hidden',
         }}
       >
-        <div
-          style={{
-            padding: '16px 20px 12px',
-            borderBottom: selectedContacts.length > 0 ? `1px solid ${token.colorBorderSecondary}` : 'none',
-          }}
-        >
-          <Input
-            prefix={<Search size={16} style={{ color: token.colorTextTertiary }} />}
-            placeholder={t('chat.social.createGroup.searchContacts')}
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            allowClear={{ clearIcon: <X size={14} /> }}
-            style={{
-              borderRadius: 6,
-            }}
-            styles={{
-              input: {
-                fontSize: 14,
-              },
-            }}
-          />
-        </div>
-
-        {selectedContacts.length > 0 && (
-          <div
-            style={{
-              padding: '10px 16px',
-              borderBottom: `1px solid ${token.colorBorderSecondary}`,
-              display: 'flex',
-              gap: 8,
-              flexWrap: 'nowrap',
-              overflowX: 'auto',
-              minHeight: 56,
-              alignItems: 'center',
-            }}
-          >
-            {selectedContacts.map((contact) => (
-              <div
-                key={contact.did}
-                onClick={() => removeSelected(contact.did)}
-                style={{
-                  position: 'relative',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
-              >
-                <UserSquareAvatar
-                  remoteUrl={contact.avatar}
-                  name={contact.name}
-                  size={40}
-                  radius={20}
-                />
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -4,
-                    right: -4,
-                    width: 16,
-                    height: 16,
-                    borderRadius: 8,
-                    background: 'rgba(0,0,0,0.55)',
-                    color: '#fff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 10,
-                  }}
-                >
-                  <X size={10} />
-                </div>
-              </div>
-            ))}
+        {/* Left panel — contacts */}
+        <div style={{ width: 300, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${token.colorBorderSecondary}` }}>
+          <div style={{ padding: '16px 16px 12px' }}>
+            <Input
+              prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
+              placeholder={t('chat.social.createGroup.searchContacts')}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              allowClear={{ clearIcon: <X size={12} /> }}
+              style={{ borderRadius: 4, height: 32 }}
+              styles={{ input: { fontSize: 13 } }}
+            />
           </div>
-        )}
 
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            minHeight: 200,
-            maxHeight: 420,
-          }}
-        >
-          {filteredContacts.length === 0 ? (
-            <Flexbox
-              align="center"
-              justify="center"
-              style={{ padding: '40px 20px', height: '100%' }}
-            >
-              <span style={{ color: token.colorTextTertiary, fontSize: 13 }}>
-                {t('chat.social.createGroup.noContacts')}
-              </span>
-            </Flexbox>
-          ) : (
-            groupedContacts.map(([letter, items]) => (
-              <div key={letter}>
-                <div
-                  style={{
-                    padding: '6px 20px',
-                    fontSize: 12,
-                    color: token.colorTextTertiary,
-                    background: token.colorFillQuaternary,
-                    fontWeight: 500,
-                    position: 'sticky',
-                    top: 0,
-                    zIndex: 1,
-                  }}
-                >
-                  {letter}
-                </div>
-                {items.map((contact) => {
-                  const selected = selectedDids.has(contact.did);
-                  return (
-                    <div
-                      key={contact.did}
-                      onClick={() => toggleSelect(contact.did)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        padding: '9px 20px',
-                        cursor: 'pointer',
-                        transition: 'background 0.1s',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = token.colorFillTertiary;
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'transparent';
-                      }}
-                    >
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {filteredContacts.length === 0 ? (
+              <Flexbox align="center" justify="center" style={{ padding: '40px 20px', height: '100%' }}>
+                <span style={{ color: token.colorTextTertiary, fontSize: 13 }}>
+                  {t('chat.social.createGroup.noContacts')}
+                </span>
+              </Flexbox>
+            ) : (
+              groupedContacts.map(([letter, items]) => (
+                <div key={letter}>
+                  <div
+                    style={{
+                      padding: '4px 16px',
+                      fontSize: 11,
+                      color: token.colorTextQuaternary,
+                      fontWeight: 500,
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 1,
+                      background: token.colorBgContainer,
+                    }}
+                  >
+                    {letter}
+                  </div>
+                  {items.map((contact) => {
+                    const selected = selectedDids.has(contact.did);
+                    return (
                       <div
+                        key={contact.did}
+                        onClick={() => toggleSelect(contact.did)}
                         style={{
-                          width: 22,
-                          height: 22,
-                          borderRadius: 11,
-                          border: selected ? 'none' : `2px solid ${token.colorBorder}`,
-                          background: selected ? WECHAT_GREEN : 'transparent',
-                          flexShrink: 0,
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.15s ease',
+                          gap: 10,
+                          padding: '7px 16px',
+                          cursor: 'pointer',
+                          background: selected ? token.colorFillQuaternary : 'transparent',
+                          transition: 'background 0.1s',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!selected) e.currentTarget.style.background = token.colorFillTertiary;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = selected ? token.colorFillQuaternary : 'transparent';
                         }}
                       >
-                        {selected && <Check size={14} color="#fff" strokeWidth={3} />}
+                        <div
+                          style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: 9,
+                            border: selected ? 'none' : `1.5px solid ${token.colorBorder}`,
+                            background: selected ? '#07C160' : 'transparent',
+                            flexShrink: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.12s ease',
+                          }}
+                        >
+                          {selected && (
+                            <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                              <path d="M1 4L3.5 6.5L9 1" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          )}
+                        </div>
+                        <UserSquareAvatar
+                          remoteUrl={contact.avatar}
+                          name={contact.name}
+                          size={34}
+                          radius={4}
+                        />
+                        <span
+                          style={{
+                            fontSize: 13,
+                            color: token.colorText,
+                            flex: 1,
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {contact.name}
+                        </span>
                       </div>
+                    );
+                  })}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Right panel — selected + actions */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '20px 24px 0', fontSize: 15, fontWeight: 600, color: token.colorText }}>
+            {t('chat.social.createGroup.title')}
+          </div>
+
+          <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+            {selectedContacts.length === 0 ? (
+              <Flexbox align="center" justify="center" style={{ height: '100%' }}>
+                <span style={{ color: token.colorTextQuaternary, fontSize: 13 }}>
+                  {t('chat.social.createGroup.selectHint')}
+                </span>
+              </Flexbox>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                {selectedContacts.map((contact) => (
+                  <div
+                    key={contact.did}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 52, position: 'relative' }}
+                  >
+                    <div
+                      onClick={() => removeSelected(contact.did)}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <UserSquareAvatar
                         remoteUrl={contact.avatar}
                         name={contact.name}
-                        size={38}
-                        radius={19}
+                        size={42}
+                        radius={4}
                       />
-                      <span
-                        style={{
-                          fontSize: 14,
-                          color: token.colorText,
-                          flex: 1,
-                          minWidth: 0,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {contact.name}
-                      </span>
                     </div>
-                  );
-                })}
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: token.colorTextSecondary,
+                        marginTop: 4,
+                        maxWidth: 52,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {contact.name}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))
-          )}
-        </div>
+            )}
+          </div>
 
-        <div
-          style={{
-            padding: '12px 20px',
-            borderTop: `1px solid ${token.colorBorderSecondary}`,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <Button
-            type="text"
-            onClick={handleClose}
+          <div
             style={{
-              fontSize: 14,
-              color: token.colorTextSecondary,
-              paddingInline: 8,
+              padding: '12px 24px 16px',
+              borderTop: `1px solid ${token.colorBorderSecondary}`,
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 12,
             }}
           >
-            {t('chat.social.createGroup.cancel')}
-          </Button>
-          <button
-            onClick={handleFinish}
-            disabled={selectedDids.size === 0 || creating}
-            style={{
-              padding: '7px 20px',
-              borderRadius: 6,
-              border: 'none',
-              background: selectedDids.size === 0 ? token.colorFillSecondary : WECHAT_GREEN,
-              color: selectedDids.size === 0 ? token.colorTextDisabled : '#fff',
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: selectedDids.size === 0 ? 'not-allowed' : 'pointer',
-              transition: 'all 0.15s',
-              fontFamily: 'inherit',
-            }}
-          >
-            {creating
-              ? t('chat.social.createGroup.finish')
-              : selectedDids.size > 0
-                ? `${t('chat.social.createGroup.finish')}(${selectedDids.size})`
-                : t('chat.social.createGroup.finish')}
-          </button>
+            <button
+              onClick={handleClose}
+              style={{
+                padding: '6px 20px',
+                fontSize: 13,
+                border: `1px solid ${token.colorBorder}`,
+                borderRadius: 4,
+                background: token.colorBgContainer,
+                color: token.colorText,
+                cursor: 'pointer',
+              }}
+            >
+              {t('common.action.cancel')}
+            </button>
+            <button
+              onClick={handleFinish}
+              disabled={selectedDids.size === 0 || creating}
+              style={{
+                padding: '6px 20px',
+                fontSize: 13,
+                border: 'none',
+                borderRadius: 4,
+                background: selectedDids.size > 0 ? '#07C160' : token.colorFillSecondary,
+                color: selectedDids.size > 0 ? '#fff' : token.colorTextQuaternary,
+                cursor: selectedDids.size > 0 ? 'pointer' : 'default',
+                fontWeight: 500,
+                opacity: creating ? 0.6 : 1,
+              }}
+            >
+              {creating ? '...' : t('chat.social.createGroup.finish')}
+            </button>
+          </div>
         </div>
       </div>
     </div>

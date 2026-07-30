@@ -592,6 +592,7 @@ export function ChatMessageArea() {
       gap={0}
       style={{
         height: '100%',
+        minWidth: 380,
         background: token.colorBgLayout,
         position: 'relative',
         overflow: 'hidden',

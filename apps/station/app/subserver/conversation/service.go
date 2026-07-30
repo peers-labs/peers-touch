@@ -36,6 +36,12 @@ type Service interface {
 	// GetMembers returns members for a conversation.
 	GetMembers(ctx context.Context, conversationID string) ([]*chat.ConversationMember, error)
 
+	// GetMember returns a single member by conversation and ptid.
+	GetMember(ctx context.Context, conversationID, ptid string) (*chat.ConversationMember, error)
+
+	// UpsertMember creates or updates a conversation member record.
+	UpsertMember(ctx context.Context, member *chat.ConversationMember) error
+
 	// ListEvents returns committed events for a conversation after a given sequence number.
 	ListEvents(ctx context.Context, conversationID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error)
 }

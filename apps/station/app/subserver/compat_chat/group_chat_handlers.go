@@ -570,7 +570,12 @@ func (s *subServer) handleGroupGetSettings(ctx context.Context, req *chat.GetGro
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	return &chat.GetGroupSettingsResponse{AlertEnabled: true}, nil
+	member, _ := s.convService.GetMember(ctx, req.GroupUlid, subject.ID)
+	alertEnabled := true
+	if member != nil {
+		alertEnabled = !member.Muted
+	}
+	return &chat.GetGroupSettingsResponse{AlertEnabled: alertEnabled}, nil
 }
 
 // --- /group-chat/my-settings (PUT) ---
@@ -579,6 +584,17 @@ func (s *subServer) handleGroupUpdateSettings(ctx context.Context, req *chat.Upd
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
+	}
+	if req.IsMuted == nil {
+		return &chat.UpdateGroupSettingsResponse{Success: true}, nil
+	}
+	member, err := s.convService.GetMember(ctx, req.GroupUlid, subject.ID)
+	if err != nil || member == nil {
+		return &chat.UpdateGroupSettingsResponse{Success: true}, nil
+	}
+	member.Muted = *req.IsMuted
+	if err := s.convService.UpsertMember(ctx, member); err != nil {
+		return nil, server.InternalErrorWithCause("update settings failed", err)
 	}
 	return &chat.UpdateGroupSettingsResponse{Success: true}, nil
 }
@@ -589,6 +605,14 @@ func (s *subServer) handleGroupUpdateNickname(ctx context.Context, req *chat.Upd
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
+	}
+	member, err := s.convService.GetMember(ctx, req.GroupUlid, subject.ID)
+	if err != nil || member == nil {
+		return nil, server.BadRequest("not a member of this group")
+	}
+	member.Nickname = req.Nickname
+	if err := s.convService.UpsertMember(ctx, member); err != nil {
+		return nil, server.InternalErrorWithCause("update nickname failed", err)
 	}
 	return &chat.UpdateMyNicknameResponse{Member: &chat.GroupMember{
 		GroupUlid: req.GroupUlid,

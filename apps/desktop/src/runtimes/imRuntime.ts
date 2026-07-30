@@ -277,13 +277,25 @@ async function resumeEnvelopes(): Promise<void> {
 
 async function refreshDirtyConversations(conversationIds: Set<string>): Promise<void> {
   const store = useSocialChatStore.getState()
+  const knownConvIds = new Set(store.conversations.map((c) => c.conversationId))
+  let hasNewConversation = false
+
   for (const convId of conversationIds) {
+    if (!knownConvIds.has(convId)) {
+      hasNewConversation = true
+      continue
+    }
     try {
       await store.loadMessages(convId, 'group')
     } catch (err) {
       log.warn('im-runtime', 'refresh dirty conversation failed', { convId, err })
     }
   }
+
+  if (hasNewConversation) {
+    await store.loadSessions()
+  }
+
   await store.loadGroupUnreadCounts?.()
   await store.loadConversationPreviews?.()
 }
