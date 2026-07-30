@@ -10,7 +10,10 @@ import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError } from '../../services/errorPresenter';
 import { markOverlayIntent, markOverlayVisible } from '../../kernel/frontendRuntimeProfiler';
 import { OverlayCommitProfiler } from '../../kernel/OverlayCommitProfiler';
+import { imServiceV1 } from '../../services/im-service';
+import { api } from '../../services/desktop_api';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import { ChatSearchDropdown } from './ChatSearchDropdown';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
 
@@ -106,11 +109,84 @@ export function ChatSessionList() {
     ],
   );
 
-  const filteredItems = useMemo(() => {
-    if (!searchText.trim()) return conversations;
+  const handleSearchSelect = async (c: any) => {
+    const existingConv = getIMConversations().find(
+      (conv) => conv.id === c.id || (c.peerDid && conv.peerDid === c.peerDid),
+    );
+
+    if (existingConv) {
+      setSearchText('');
+      handleSelect(existingConv);
+      if (existingConv.hidden) {
+        updateConversationLocalState(existingConv.kind, existingConv.id, { hidden: false });
+      }
+      return;
+    }
+
+    if (c.kind === 'friend' && c.peerDid) {
+      try {
+        const resp = await api.friendChatCreateSession(c.peerDid);
+        const sessionUlid = resp.session?.ulid;
+        if (sessionUlid) {
+          await loadSessions();
+          setSearchText('');
+          selectSession(sessionUlid);
+          return;
+        }
+        await imServiceV1.conversation.createDirect(c.peerDid);
+        await loadSessions();
+        const created = getIMConversations().find((conv) => conv.peerDid === c.peerDid);
+        if (created) {
+          setSearchText('');
+          handleSelect(created);
+        }
+      } catch (error) {
+        presentError(error, {
+          mapper: mapChatError,
+          context: { operation: 'conversationAction' },
+        });
+      }
+    }
+  };
+
+  const searchResults = useMemo(() => {
+    if (!searchText.trim()) return [];
     const q = searchText.toLowerCase();
-    return conversations.filter((c) => c.title.toLowerCase().includes(q));
-  }, [conversations, searchText]);
+
+    const fromConversations = getIMConversations().filter((c) => c.title.toLowerCase().includes(q));
+
+    const existingPeerIds = new Set(fromConversations.map((c) => c.peerDid).filter(Boolean));
+    const myId = currentUserDid || '';
+    const fromContacts: IMConversationProjection[] = friendRequests
+      .filter((r) => r.status === 2)
+      .map((r) => {
+        const isSender = r.senderId === myId;
+        const peerId = isSender ? r.receiverId : r.senderId;
+        const peerName = isSender ? r.receiverDisplayName : r.senderDisplayName;
+        const peerAvatar = isSender ? r.receiverAvatar : r.senderAvatar;
+        return { peerId, peerName, peerAvatar };
+      })
+      .filter(({ peerId, peerName }) =>
+        !existingPeerIds.has(peerId) && peerName.toLowerCase().includes(q),
+      )
+      .map(({ peerId, peerName, peerAvatar }) => ({
+        id: peerId,
+        kind: 'friend' as const,
+        title: peerName,
+        avatar: peerAvatar || '',
+        peerDid: peerId,
+        lastActivityMs: 0,
+        unread: 0,
+        visibleUnread: 0,
+        hidden: false,
+        muted: false,
+        alertEnabled: true,
+        syncStatus: 'live' as const,
+        preview: undefined,
+      }));
+
+    return [...fromConversations, ...fromContacts];
+  }, [searchText, getIMConversations, conversations, peerProfiles, friendRequests, currentUserDid]);
 
   const plusMenuItems = [
     {
@@ -228,6 +304,7 @@ export function ChatSessionList() {
           height: '100%',
           borderRight: `1px solid ${token.colorBorderSecondary}`,
           background: token.colorBgContainer,
+          position: 'relative',
         }}
       >
         <Flexbox gap={8} style={{ padding: '12px 12px 0' }}>
@@ -276,17 +353,15 @@ export function ChatSessionList() {
         )}
 
         <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 8px' }} gap={2}>
-          {filteredItems.length === 0 ? (
+          {conversations.length === 0 ? (
             <Flexbox align="center" justify="center" flex={1}>
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  searchText ? t('chat.social.sessionList.noResults') : t('chat.social.sessionList.noConversations')
-                }
+                description={t('chat.social.sessionList.noConversations')}
               />
             </Flexbox>
           ) : (
-            filteredItems.map((c) => {
+            conversations.map((c) => {
               const isActive = isRowActive(c);
               const name = c.title || t('chat.social.sessionList.unknown');
               const timeStr = relativeTime(new Date(c.lastActivityMs), t);
@@ -399,6 +474,12 @@ export function ChatSessionList() {
             })
           )}
         </Flexbox>
+
+        <ChatSearchDropdown
+          searchText={searchText}
+          results={searchResults}
+          onSelect={handleSearchSelect}
+        />
       </Flexbox>
 
       <CreateGroupModal open={showCreateGroup} onClose={() => setShowCreateGroup(false)} />

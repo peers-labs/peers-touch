@@ -1372,13 +1372,63 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           }
         }
       }
+
+      get().loadFriendRequests().catch(() => {});
     } catch (error) {
+      // Fallback: try old friend-chat sessions endpoint
+      try {
+        const resp = await api.friendChatListSessions();
+        const rawSessions = resp.sessions ?? [];
+        const actorId = currentAuthenticatedActorId() || '';
+        const fallbackConversations = rawSessions.map((s) => ({
+          $typeName: 'peers_touch.model.chat.v1.Conversation' as const,
+          conversationId: s.ulid,
+          kind: 1 as any,
+          authorityStationPeerId: '',
+          membershipEpoch: BigInt(0),
+          status: 1 as any,
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt ?? s.lastMessageAt,
+          name: '',
+          maxMembers: 2,
+        }));
+        const fallbackMembers: Record<string, ConversationMember[]> = {};
+        for (const s of rawSessions) {
+          fallbackMembers[s.ulid] = [
+            { $typeName: 'peers_touch.model.chat.v1.ConversationMember' as const, conversationId: s.ulid, ptid: s.participantADid, role: 0 as any, memberStatus: 1 as any, actorHomeStationPeerId: '', nickname: s.participantADisplayName } as ConversationMember,
+            { $typeName: 'peers_touch.model.chat.v1.ConversationMember' as const, conversationId: s.ulid, ptid: s.participantBDid, role: 0 as any, memberStatus: 1 as any, actorHomeStationPeerId: '', nickname: s.participantBDisplayName } as ConversationMember,
+          ];
+        }
+        set({
+          conversations: fallbackConversations as any,
+          conversationMembers: fallbackMembers,
+          sessions: rawSessions,
+          groups: [],
+          loading: false,
+          loadError: null,
+          ...(!get().currentUserDid && actorId ? { currentUserDid: actorId } : {}),
+        });
+        log.info('socialChat', 'loadSessions fallback via friend-chat', { count: rawSessions.length });
+
+        for (const s of rawSessions) {
+          const peerDid = s.participantADid === actorId ? s.participantBDid : s.participantADid;
+          if (peerDid && !get().peerProfiles[peerDid]) {
+            get().loadPeerProfile(peerDid).catch(() => {});
+          }
+        }
+        get().loadFriendRequests().catch(() => {});
+        return;
+      } catch {
+        // Both paths failed
+      }
+
       set({ loading: false });
       if (isUnauthorizedError(error)) return;
       const message = error instanceof Error ? error.message : String(error);
       set({ loadError: message });
       log.error('socialChat', 'loadConversations failed', error);
-      throw error;
+
+      get().loadFriendRequests().catch(() => {});
     }
   },
 
@@ -1449,9 +1499,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
             ? (session.participantADid === viewerDid ? session.participantBDid : session.participantADid)
             : '';
           friendPeerDid = peerDid;
-          if (peerDid) {
-            get().establishSession(ulid, peerDid).catch(() => {});
-          }
+        } else {
+          const members = get().conversationMembers[ulid] || [];
+          const viewerDid = get().currentUserDid || '';
+          const peer = members.find((m) => m.ptid !== viewerDid);
+          friendPeerDid = peer?.ptid || '';
+        }
+        if (friendPeerDid) {
+          get().establishSession(ulid, friendPeerDid).catch(() => {});
         }
       }
       let data: { messages?: unknown[]; hasMore?: boolean; has_more?: boolean };
@@ -1731,34 +1786,21 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const threadRootUlid = explicitThreadRootUlid;
 
       const plaintextBytes = createEncryptedChatPayloadBytes(content, attachments ?? [], type);
-      const { sessionEncrypted, encryptionEnabled } = get();
-      let payloadBytes: Uint8Array;
-
-      if ((content.trim() || attachments?.length) && encryptionEnabled && sessionEncrypted[sessionUlid]) {
-        const encryptedPlaintext = bytesToB64(plaintextBytes);
-        const enc = await api.cryptoEncryptMessage(sessionUlid, receiverDid, encryptedPlaintext);
-        const wire = encodeFriendEncryptedEnvelope({
-          ciphertext: enc.ciphertext,
-          counter: enc.counter,
-          ephemeralKey: enc.ephemeral_key,
-        });
-        payloadBytes = Uint8Array.from(atob(wire), c => c.charCodeAt(0));
-      } else {
-        payloadBytes = plaintextBytes;
-      }
-
       const deviceId = localStorage.getItem('peers_im_device_id') ?? '';
-      const envelope = createProto(StationEnvelopeSchema, {
-        conversationId: sessionUlid,
-        senderPtid: did,
-        senderDeviceId: deviceId,
-        recipientPtid: receiverDid,
-        payloadType: EnvelopePayloadType.COMMITTED_EVENT,
-        payloadBytes,
-        idempotencyKey: crypto.randomUUID(),
-      });
+      const payloadB64 = btoa(String.fromCharCode(...plaintextBytes));
 
-      await imServiceV1.envelope.submit(envelope);
+      await imServiceV1.conversation.submitCommand({
+        conversation_id: sessionUlid,
+        sender_ptid: did,
+        sender_device_id: deviceId,
+        observed_membership_epoch: 0,
+        send_message: {
+          encrypted_payload: payloadB64,
+          content_type: type ?? 1,
+          reply_to_message_id: '',
+          thread_root_message_id: threadRootUlid ?? '',
+        },
+      } as any);
 
       if (threadRootUlid) return;
       await get().loadMessages(sessionUlid, 'friend').catch((error) => {
