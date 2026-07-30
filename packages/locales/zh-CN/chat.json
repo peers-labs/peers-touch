@@ -718,6 +718,7 @@
   "chat.social.preview.file": "[文件]",
   "chat.social.preview.audio": "[语音]",
   "chat.social.preview.video": "[视频]",
+  "chat.social.preview.you": "你",
   "chat.social.subNav.chats": "聊天",
   "chat.social.subNav.contacts": "通讯录",
   "chat.agentHeader.fallbackDescription": "用这个智能体提问、创作和执行任务。",
