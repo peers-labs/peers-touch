@@ -9,7 +9,9 @@ import (
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 )
 
-// --- Request / Response types for new unified routes ---
+// --- Legacy JSON request/response types ---
+// These plain structs serve the 3 BFF functions that already call /conversation/* with JSON.
+// Once P2 migrates the BFF to proto encoding, handlers will switch to chat.* proto types.
 
 type listMessagesRequest struct {
 	ConversationID string `query:"conversation_id"`
@@ -130,12 +132,12 @@ func (s *subServer) handleGetThreadCounts(ctx context.Context, req *threadCounts
 	}
 	counts := make([]threadCountEntry, 0, len(req.RootIDs))
 	for _, rootID := range req.RootIDs {
-		s := summaries[rootID]
+		summary := summaries[rootID]
 		counts = append(counts, threadCountEntry{
 			RootID:        rootID,
-			ReplyCount:    s.ReplyCount,
-			LatestReplyID: s.LatestReplyID,
-			LatestReplyAt: s.LatestReplyAtMs,
+			ReplyCount:    summary.ReplyCount,
+			LatestReplyID: summary.LatestReplyID,
+			LatestReplyAt: summary.LatestReplyAtMs,
 			UnreadCount:   0,
 		})
 	}
