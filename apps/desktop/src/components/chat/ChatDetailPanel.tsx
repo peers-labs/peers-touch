@@ -31,7 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl } from '../../store/socialChat';
-import { GroupCompositeAvatar } from '../common/GroupCompositeAvatar';
+import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { CHAT_BACKGROUND_OPTIONS, type DesktopIMMessageProjection } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
@@ -598,9 +598,8 @@ export function ChatDetailPanel() {
   const activeGroup: Group | undefined = isGroup
     ? groups.find((g) => g.ulid === activeUlid)
     : undefined;
-  const groupAvatarUrl = useOssAttachmentUrl(activeGroup?.avatarCid || undefined)
-    || activeConversation?.avatar
-    || groupAvatarRemoteUrl(activeGroup);
+  const groupAvatarUrl = groupAvatarRemoteUrl(activeGroup)
+    || (activeConversation?.avatar || '');
 
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [showAllMembers, setShowAllMembers] = useState(false);
@@ -812,11 +811,12 @@ export function ChatDetailPanel() {
     }
     try {
       const uploaded = await api.ossUploadAttachmentSocial(filePath);
+      const avatarPath = `/sub-oss/file?key=${encodeURIComponent(uploaded.key)}`;
       await api.groupChatUpdateGroup(
         activeUlid,
         activeGroup?.name || displayName,
         activeGroup?.description || undefined,
-        uploaded.cid,
+        avatarPath,
       );
       toast.success(t('chat.social.detail.groupAvatarUpdated'));
       loadGroups();
@@ -1232,21 +1232,16 @@ export function ChatDetailPanel() {
                   overflow: 'hidden',
                 }}
               >
-                {groupAvatarUrl ? (
-                  <img
-                    src={groupAvatarUrl}
-                    alt={displayName}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                  />
-                ) : (
-                  <GroupCompositeAvatar
-                    size={72}
-                    members={members.slice(0, 4).map((m) => {
-                      const p = memberProfiles.get(m.ptid);
-                      return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
-                    })}
-                  />
-                )}
+                <GroupSquareAvatar
+                  remoteUrl={groupAvatarUrl || undefined}
+                  members={members.slice(0, 4).map((m) => {
+                    const p = memberProfiles.get(m.ptid);
+                    return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
+                  })}
+                  name={displayName}
+                  size={72}
+                  radius={18}
+                />
               </Flexbox>
               {isGroup && (
                 <Flexbox
