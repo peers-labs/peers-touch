@@ -138,6 +138,7 @@ export function normalizeConversation(raw: unknown): Conversation {
     updatedAt: normalizeTimestamp(r.updatedAt ?? r.updated_at),
     name: stringValue(r.name),
     maxMembers: numberValue(r.maxMembers ?? r.max_members),
+    avatarCid: stringValue(r.avatarCid, r.avatar_cid),
   } as Conversation;
 }
 

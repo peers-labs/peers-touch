@@ -174,3 +174,118 @@ message SendDkxRequest {
 message SendDkxResponse {
   string envelope_id = 1;
 }
+
+// --- Unified Message Queries ---
+
+message ListConversationMessagesRequest {
+  string conversation_id = 1;
+  int64 after_seq = 2;
+  int32 limit = 3;
+}
+
+message ListConversationMessagesResponse {
+  repeated CommittedConversationEvent events = 1;
+  bool has_more = 2;
+}
+
+message ListThreadMessagesRequest {
+  string conversation_id = 1;
+  string root_id = 2;
+  int64 after_seq = 3;
+  int32 limit = 4;
+}
+
+message ListThreadMessagesResponse {
+  repeated CommittedConversationEvent events = 1;
+  bool has_more = 2;
+}
+
+message GetThreadCountsRequest {
+  string conversation_id = 1;
+  repeated string root_ids = 2;
+}
+
+message ThreadCountEntry {
+  string root_message_id = 1;
+  int64 reply_count = 2;
+  string latest_reply_id = 3;
+  int64 latest_reply_at_ms = 4;
+  int64 unread_count = 5;
+}
+
+message GetThreadCountsResponse {
+  repeated ThreadCountEntry counts = 1;
+}
+
+// --- Read Cursors & Unread ---
+
+message SetReadCursorRequest {
+  string conversation_id = 1;
+  int64 last_read_seq = 2;
+}
+
+message SetReadCursorResponse {
+  bool success = 1;
+}
+
+message GetUnreadRequest {
+  string conversation_id = 1;
+}
+
+message GetUnreadResponse {
+  int64 unread_count = 1;
+}
+
+// --- Member Settings ---
+
+message MemberSettings {
+  string nickname = 1;
+  bool muted = 2;
+  bool alert_enabled = 3;
+  bool pinned = 4;
+  string background = 5;
+  int64 cleared_at_ms = 6;
+}
+
+message GetMemberSettingsRequest {
+  string conversation_id = 1;
+}
+
+message GetMemberSettingsResponse {
+  MemberSettings settings = 1;
+}
+
+message UpdateMemberSettingsRequest {
+  string conversation_id = 1;
+  MemberSettings settings = 2;
+}
+
+message UpdateMemberSettingsResponse {
+  bool success = 1;
+}
+
+// --- Search ---
+
+message SearchMessagesRequest {
+  string conversation_id = 1;
+  string query = 2;
+  int32 limit = 3;
+}
+
+message SearchMessagesResponse {
+  repeated CommittedConversationEvent events = 1;
+  bool has_more = 2;
+}
+
+// --- Stats ---
+
+message GetConversationStatsRequest {
+  string conversation_id = 1;
+}
+
+message GetConversationStatsResponse {
+  int64 message_count = 1;
+  int32 member_count = 2;
+  int64 created_at_ms = 3;
+  int64 last_activity_at_ms = 4;
+}
