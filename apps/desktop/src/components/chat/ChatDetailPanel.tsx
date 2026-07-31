@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl } from '../../store/socialChat';
+import { GroupCompositeAvatar } from '../common/GroupCompositeAvatar';
 import { CHAT_BACKGROUND_OPTIONS, type DesktopIMMessageProjection } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
@@ -80,69 +81,6 @@ interface GroupMemberDisplay extends GroupMemberLike {
 function getInitial(name: string): string {
   if (!name) return '?';
   return name.charAt(0).toUpperCase();
-}
-
-function GroupCompositeAvatar({ members, size = 72 }: { members: { name: string; avatar: string }[]; size?: number }) {
-  const { token } = theme.useToken();
-  const slots = members.slice(0, 4);
-  const count = slots.length;
-  const gap = 2;
-  const cellSize = count <= 1 ? size : Math.floor((size - gap) / 2);
-
-  if (count === 0) {
-    return <Users size={Math.round(size * 0.44)} />;
-  }
-
-  const positions: { top: number; left: number }[] = (() => {
-    if (count === 1) return [{ top: 0, left: 0 }];
-    if (count === 2) return [
-      { top: Math.floor((size - cellSize) / 2), left: 0 },
-      { top: Math.floor((size - cellSize) / 2), left: cellSize + gap },
-    ];
-    if (count === 3) return [
-      { top: 0, left: Math.floor((size - cellSize) / 2) },
-      { top: cellSize + gap, left: 0 },
-      { top: cellSize + gap, left: cellSize + gap },
-    ];
-    return [
-      { top: 0, left: 0 },
-      { top: 0, left: cellSize + gap },
-      { top: cellSize + gap, left: 0 },
-      { top: cellSize + gap, left: cellSize + gap },
-    ];
-  })();
-
-  return (
-    <div style={{ width: size, height: size, position: 'relative' }}>
-      {slots.map((member, i) => (
-        <div
-          key={i}
-          style={{
-            position: 'absolute',
-            top: positions[i].top,
-            left: positions[i].left,
-            width: count === 1 ? size : cellSize,
-            height: count === 1 ? size : cellSize,
-            borderRadius: count === 1 ? Math.round(size * 0.25) : Math.round(cellSize * 0.22),
-            background: token.colorFillSecondary,
-            overflow: 'hidden',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: token.colorTextSecondary,
-            fontSize: count === 1 ? Math.round(size * 0.36) : Math.round(cellSize * 0.4),
-            fontWeight: 700,
-          }}
-        >
-          {member.avatar ? (
-            <img src={member.avatar} alt={member.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            getInitial(member.name)
-          )}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function groupRoleLabel(role: number, t: (key: string) => string): string {

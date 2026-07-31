@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/agent/provider.proto.
  */
 export const file_domain_agent_provider: GenFile = /*@__PURE__*/
-  fileDesc("Chtkb21haW4vYWdlbnQvcHJvdmlkZXIucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxImwKEVByb3ZpZGVyTW9kZWxJbmZvEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIMCgR0eXBlGAMgASgJEg8KB2VuYWJsZWQYBCABKAgSFgoOY29udGV4dF93aW5kb3cYBSABKAUirAMKEUFnZW50UHJvdmlkZXJJbmZvEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIPCgdidWlsdGluGAUgASgIEhAKCHByb3RvY29sGAYgASgJEhEKCWRpc2NvdmVyeRgHIAEoCRIUCgxydW50aW1lX2tpbmQYCCABKAkSEAoIYmFzZV91cmwYCSABKAkSEAoIaG9tZV91cmwYCiABKAkSEwoLYXBpX2tleV91cmwYCyABKAkSFAoMc2hvd19jaGVja2VyGAwgASgIEhQKDHNob3dfYXBpX2tleRgNIAEoCBIZChFjcmVkZW50aWFsX3N0YXR1cxgOIAEoCRIPCgd2ZXJzaW9uGA8gASgDEg4KBnNvdXJjZRgQIAEoCRITCgtjbGlfY29tbWFuZBgRIAEoCRI9CgZtb2RlbHMYEiADKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Qcm92aWRlck1vZGVsSW5mbxIWCg5tb2RlbHNfY29tbWFuZBgTIAEoCSLtAQoOQWdlbnRNb2RlbEluZm8SCgoCaWQYASABKAkSEAoIYWN0b3JfaWQYAiABKAkSEwoLcHJvdmlkZXJfaWQYAyABKAkSEAoIbW9kZWxfaWQYBCABKAkSFAoMZGlzcGxheV9uYW1lGAUgASgJEg8KB2VuYWJsZWQYBiABKAgSDwoHdmVyc2lvbhgHIAEoAxIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJgChRDcmVkZW50aWFsU3RhdHVzSW5mbxITCgtwcm92aWRlcl9pZBgBIAEoCRISCgpjb25maWd1cmVkGAIgASgIEg4KBnN0YXR1cxgDIAEoCRIPCgd2ZXJzaW9uGAQgASgDImEKFUNyZWRlbnRpYWxSZXNvbHZlSW5mbxITCgtwcm92aWRlcl9pZBgBIAEoCRIPCgdhcGlfa2V5GAIgASgJEhAKCGJhc2VfdXJsGAMgASgJEhAKCHByb3RvY29sGAQgASgJIicKEFZlcmlmeUNsaVJlcXVlc3QSEwoLY2xpX2NvbW1hbmQYASABKAkiagoRVmVyaWZ5Q2xpUmVzcG9uc2USEQoJYXZhaWxhYmxlGAEgASgIEg8KB3Byb2dyYW0YAiABKAkSDAoEcGF0aBgDIAEoCRINCgVlcnJvchgEIAEoCRIUCgxpbnN0YWxsX2hpbnQYBSABKAkiLAoVRmV0Y2hDbGlNb2RlbHNSZXF1ZXN0EhMKC3Byb3ZpZGVyX2lkGAEgASgJIigKFkZldGNoQ2xpTW9kZWxzUmVzcG9uc2USDgoGbW9kZWxzGAEgAygJIhYKFExpc3RQcm92aWRlcnNSZXF1ZXN0IlkKFUxpc3RQcm92aWRlcnNSZXNwb25zZRJACglwcm92aWRlcnMYASADKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudFByb3ZpZGVySW5mbyIpChJHZXRQcm92aWRlclJlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkiVgoTR2V0UHJvdmlkZXJSZXNwb25zZRI/Cghwcm92aWRlchgBIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50UHJvdmlkZXJJbmZvIhwKGkxpc3RBdmFpbGFibGVNb2RlbHNSZXF1ZXN0Il0KG0xpc3RBdmFpbGFibGVNb2RlbHNSZXNwb25zZRI+CgZtb2RlbHMYASADKAsyLi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BdmFpbGFibGVNb2RlbEluZm8imQEKEkF2YWlsYWJsZU1vZGVsSW5mbxIKCgJpZBgBIAEoCRITCgtwcm92aWRlcl9pZBgCIAEoCRIVCg1wcm92aWRlcl9uYW1lGAMgASgJEhQKDGRpc3BsYXlfbmFtZRgEIAEoCRIMCgR0eXBlGAUgASgJEg8KB2VuYWJsZWQYBiABKAgSFgoOY29udGV4dF93aW5kb3cYByABKAUiewoVQ3JlYXRlUHJvdmlkZXJSZXF1ZXN0EhMKC3Byb3ZpZGVyX2lkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIQCghiYXNlX3VybBgDIAEoCRIQCghwcm90b2NvbBgEIAEoCRITCgtjb25maWdfanNvbhgFIAEoDCJZChZDcmVhdGVQcm92aWRlclJlc3BvbnNlEj8KCHByb3ZpZGVyGAEgASgLMi0ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRQcm92aWRlckluZm8i2AEKFVVwZGF0ZVByb3ZpZGVyUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCRIPCgd2ZXJzaW9uGAIgASgDEhkKDGRpc3BsYXlfbmFtZRgDIAEoCUgAiAEBEhUKCGJhc2VfdXJsGAQgASgJSAGIAQESFAoHZW5hYmxlZBgFIAEoCEgCiAEBEhMKC2NvbmZpZ19qc29uGAYgASgMEhIKCmtleV92YXVsdHMYByABKAlCDwoNX2Rpc3BsYXlfbmFtZUILCglfYmFzZV91cmxCCgoIX2VuYWJsZWQiWQoWVXBkYXRlUHJvdmlkZXJSZXNwb25zZRI/Cghwcm92aWRlchgBIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50UHJvdmlkZXJJbmZvIj0KFURlbGV0ZVByb3ZpZGVyUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCRIPCgd2ZXJzaW9uGAIgASgDIikKFkRlbGV0ZVByb3ZpZGVyUmVzcG9uc2USDwoHZGVsZXRlZBgBIAEoCCIoChFMaXN0TW9kZWxzUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCSJQChJMaXN0TW9kZWxzUmVzcG9uc2USOgoGbW9kZWxzGAEgAygLMioucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRNb2RlbEluZm8imgEKElVwZGF0ZU1vZGVsUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCRIQCghtb2RlbF9pZBgCIAEoCRIPCgd2ZXJzaW9uGAMgASgDEhkKDGRpc3BsYXlfbmFtZRgEIAEoCUgAiAEBEhQKB2VuYWJsZWQYBSABKAhIAYgBAUIPCg1fZGlzcGxheV9uYW1lQgoKCF9lbmFibGVkIlAKE1VwZGF0ZU1vZGVsUmVzcG9uc2USOQoFbW9kZWwYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1vZGVsSW5mbyI8ChRTZXRDcmVkZW50aWFsUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCRIPCgdhcGlfa2V5GAIgASgJIlkKFVNldENyZWRlbnRpYWxSZXNwb25zZRJACgZzdGF0dXMYASABKAsyMC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5DcmVkZW50aWFsU3RhdHVzSW5mbyI/ChdEZWxldGVDcmVkZW50aWFsUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCRIPCgd2ZXJzaW9uGAIgASgDIisKGERlbGV0ZUNyZWRlbnRpYWxSZXNwb25zZRIPCgdkZWxldGVkGAEgASgIIjEKGkdldENyZWRlbnRpYWxTdGF0dXNSZXF1ZXN0EhMKC3Byb3ZpZGVyX2lkGAEgASgJIl8KG0dldENyZWRlbnRpYWxTdGF0dXNSZXNwb25zZRJACgZzdGF0dXMYASABKAsyMC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5DcmVkZW50aWFsU3RhdHVzSW5mbyIvChhSZXNvbHZlQ3JlZGVudGlhbFJlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkiYgoZUmVzb2x2ZUNyZWRlbnRpYWxSZXNwb25zZRJFCgpjcmVkZW50aWFsGAEgASgLMjEucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQ3JlZGVudGlhbFJlc29sdmVJbmZvQktaSWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvYWdlbnQvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("Chtkb21haW4vYWdlbnQvcHJvdmlkZXIucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxImwKEVByb3ZpZGVyTW9kZWxJbmZvEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIMCgR0eXBlGAMgASgJEg8KB2VuYWJsZWQYBCABKAgSFgoOY29udGV4dF93aW5kb3cYBSABKAUirAMKEUFnZW50UHJvdmlkZXJJbmZvEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIPCgdidWlsdGluGAUgASgIEhAKCHByb3RvY29sGAYgASgJEhEKCWRpc2NvdmVyeRgHIAEoCRIUCgxydW50aW1lX2tpbmQYCCABKAkSEAoIYmFzZV91cmwYCSABKAkSEAoIaG9tZV91cmwYCiABKAkSEwoLYXBpX2tleV91cmwYCyABKAkSFAoMc2hvd19jaGVja2VyGAwgASgIEhQKDHNob3dfYXBpX2tleRgNIAEoCBIZChFjcmVkZW50aWFsX3N0YXR1cxgOIAEoCRIPCgd2ZXJzaW9uGA8gASgDEg4KBnNvdXJjZRgQIAEoCRITCgtjbGlfY29tbWFuZBgRIAEoCRI9CgZtb2RlbHMYEiADKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Qcm92aWRlck1vZGVsSW5mbxIWCg5tb2RlbHNfY29tbWFuZBgTIAEoCSLtAQoOQWdlbnRNb2RlbEluZm8SCgoCaWQYASABKAkSEAoIYWN0b3JfaWQYAiABKAkSEwoLcHJvdmlkZXJfaWQYAyABKAkSEAoIbW9kZWxfaWQYBCABKAkSFAoMZGlzcGxheV9uYW1lGAUgASgJEg8KB2VuYWJsZWQYBiABKAgSDwoHdmVyc2lvbhgHIAEoAxIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJgChRDcmVkZW50aWFsU3RhdHVzSW5mbxITCgtwcm92aWRlcl9pZBgBIAEoCRISCgpjb25maWd1cmVkGAIgASgIEg4KBnN0YXR1cxgDIAEoCRIPCgd2ZXJzaW9uGAQgASgDImEKFUNyZWRlbnRpYWxSZXNvbHZlSW5mbxITCgtwcm92aWRlcl9pZBgBIAEoCRIPCgdhcGlfa2V5GAIgASgJEhAKCGJhc2VfdXJsGAMgASgJEhAKCHByb3RvY29sGAQgASgJIicKEFZlcmlmeUNsaVJlcXVlc3QSEwoLY2xpX2NvbW1hbmQYASABKAkiagoRVmVyaWZ5Q2xpUmVzcG9uc2USEQoJYXZhaWxhYmxlGAEgASgIEg8KB3Byb2dyYW0YAiABKAkSDAoEcGF0aBgDIAEoCRINCgVlcnJvchgEIAEoCRIUCgxpbnN0YWxsX2hpbnQYBSABKAkiLAoVRmV0Y2hDbGlNb2RlbHNSZXF1ZXN0EhMKC3Byb3ZpZGVyX2lkGAEgASgJIigKFkZldGNoQ2xpTW9kZWxzUmVzcG9uc2USDgoGbW9kZWxzGAEgAygJIhYKFExpc3RQcm92aWRlcnNSZXF1ZXN0IlkKFUxpc3RQcm92aWRlcnNSZXNwb25zZRJACglwcm92aWRlcnMYASADKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudFByb3ZpZGVySW5mbyIpChJHZXRQcm92aWRlclJlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkiVgoTR2V0UHJvdmlkZXJSZXNwb25zZRI/Cghwcm92aWRlchgBIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50UHJvdmlkZXJJbmZvIhwKGkxpc3RBdmFpbGFibGVNb2RlbHNSZXF1ZXN0Il0KG0xpc3RBdmFpbGFibGVNb2RlbHNSZXNwb25zZRI+CgZtb2RlbHMYASADKAsyLi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BdmFpbGFibGVNb2RlbEluZm8imQEKEkF2YWlsYWJsZU1vZGVsSW5mbxIKCgJpZBgBIAEoCRITCgtwcm92aWRlcl9pZBgCIAEoCRIVCg1wcm92aWRlcl9uYW1lGAMgASgJEhQKDGRpc3BsYXlfbmFtZRgEIAEoCRIMCgR0eXBlGAUgASgJEg8KB2VuYWJsZWQYBiABKAgSFgoOY29udGV4dF93aW5kb3cYByABKAUiewoVQ3JlYXRlUHJvdmlkZXJSZXF1ZXN0EhMKC3Byb3ZpZGVyX2lkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIQCghiYXNlX3VybBgDIAEoCRIQCghwcm90b2NvbBgEIAEoCRITCgtjb25maWdfanNvbhgFIAEoDCJZChZDcmVhdGVQcm92aWRlclJlc3BvbnNlEj8KCHByb3ZpZGVyGAEgASgLMi0ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRQcm92aWRlckluZm8i2AEKFVVwZGF0ZVByb3ZpZGVyUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCRIPCgd2ZXJzaW9uGAIgASgDEhkKDGRpc3BsYXlfbmFtZRgDIAEoCUgAiAEBEhUKCGJhc2VfdXJsGAQgASgJSAGIAQESFAoHZW5hYmxlZBgFIAEoCEgCiAEBEhMKC2NvbmZpZ19qc29uGAYgASgMEhIKCmtleV92YXVsdHMYByABKAlCDwoNX2Rpc3BsYXlfbmFtZUILCglfYmFzZV91cmxCCgoIX2VuYWJsZWQiWQoWVXBkYXRlUHJvdmlkZXJSZXNwb25zZRI/Cghwcm92aWRlchgBIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50UHJvdmlkZXJJbmZvIj0KFURlbGV0ZVByb3ZpZGVyUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCRIPCgd2ZXJzaW9uGAIgASgDIikKFkRlbGV0ZVByb3ZpZGVyUmVzcG9uc2USDwoHZGVsZXRlZBgBIAEoCCIoChFMaXN0TW9kZWxzUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCSJQChJMaXN0TW9kZWxzUmVzcG9uc2USOgoGbW9kZWxzGAEgAygLMioucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRNb2RlbEluZm8iegoSQ3JlYXRlTW9kZWxSZXF1ZXN0EhMKC3Byb3ZpZGVyX2lkGAEgASgJEhAKCG1vZGVsX2lkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRIPCgdlbmFibGVkGAQgASgIEhYKDmNvbnRleHRfd2luZG93GAUgASgFIlAKE0NyZWF0ZU1vZGVsUmVzcG9uc2USOQoFbW9kZWwYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1vZGVsSW5mbyKaAQoSVXBkYXRlTW9kZWxSZXF1ZXN0EhMKC3Byb3ZpZGVyX2lkGAEgASgJEhAKCG1vZGVsX2lkGAIgASgJEg8KB3ZlcnNpb24YAyABKAMSGQoMZGlzcGxheV9uYW1lGAQgASgJSACIAQESFAoHZW5hYmxlZBgFIAEoCEgBiAEBQg8KDV9kaXNwbGF5X25hbWVCCgoIX2VuYWJsZWQiUAoTVXBkYXRlTW9kZWxSZXNwb25zZRI5CgVtb2RlbBgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50TW9kZWxJbmZvIjwKFFNldENyZWRlbnRpYWxSZXF1ZXN0EhMKC3Byb3ZpZGVyX2lkGAEgASgJEg8KB2FwaV9rZXkYAiABKAkiWQoVU2V0Q3JlZGVudGlhbFJlc3BvbnNlEkAKBnN0YXR1cxgBIAEoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkNyZWRlbnRpYWxTdGF0dXNJbmZvIj8KF0RlbGV0ZUNyZWRlbnRpYWxSZXF1ZXN0EhMKC3Byb3ZpZGVyX2lkGAEgASgJEg8KB3ZlcnNpb24YAiABKAMiKwoYRGVsZXRlQ3JlZGVudGlhbFJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKAgiMQoaR2V0Q3JlZGVudGlhbFN0YXR1c1JlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkiXwobR2V0Q3JlZGVudGlhbFN0YXR1c1Jlc3BvbnNlEkAKBnN0YXR1cxgBIAEoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkNyZWRlbnRpYWxTdGF0dXNJbmZvIi8KGFJlc29sdmVDcmVkZW50aWFsUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCSJiChlSZXNvbHZlQ3JlZGVudGlhbFJlc3BvbnNlEkUKCmNyZWRlbnRpYWwYASABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5DcmVkZW50aWFsUmVzb2x2ZUluZm9CS1pJZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9hZ2VudC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ProviderModelInfo
@@ -708,6 +708,60 @@ export const ListModelsResponseSchema: GenMessage<ListModelsResponse> = /*@__PUR
   messageDesc(file_domain_agent_provider, 23);
 
 /**
+ * @generated from message peers_touch.model.agent.v1.CreateModelRequest
+ */
+export type CreateModelRequest = Message<"peers_touch.model.agent.v1.CreateModelRequest"> & {
+  /**
+   * @generated from field: string provider_id = 1;
+   */
+  providerId: string;
+
+  /**
+   * @generated from field: string model_id = 2;
+   */
+  modelId: string;
+
+  /**
+   * @generated from field: string display_name = 3;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: bool enabled = 4;
+   */
+  enabled: boolean;
+
+  /**
+   * @generated from field: int32 context_window = 5;
+   */
+  contextWindow: number;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.CreateModelRequest.
+ * Use `create(CreateModelRequestSchema)` to create a new message.
+ */
+export const CreateModelRequestSchema: GenMessage<CreateModelRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_provider, 24);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.CreateModelResponse
+ */
+export type CreateModelResponse = Message<"peers_touch.model.agent.v1.CreateModelResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.AgentModelInfo model = 1;
+   */
+  model?: AgentModelInfo | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.CreateModelResponse.
+ * Use `create(CreateModelResponseSchema)` to create a new message.
+ */
+export const CreateModelResponseSchema: GenMessage<CreateModelResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_provider, 25);
+
+/**
  * @generated from message peers_touch.model.agent.v1.UpdateModelRequest
  */
 export type UpdateModelRequest = Message<"peers_touch.model.agent.v1.UpdateModelRequest"> & {
@@ -742,7 +796,7 @@ export type UpdateModelRequest = Message<"peers_touch.model.agent.v1.UpdateModel
  * Use `create(UpdateModelRequestSchema)` to create a new message.
  */
 export const UpdateModelRequestSchema: GenMessage<UpdateModelRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_provider, 24);
+  messageDesc(file_domain_agent_provider, 26);
 
 /**
  * @generated from message peers_touch.model.agent.v1.UpdateModelResponse
@@ -759,7 +813,7 @@ export type UpdateModelResponse = Message<"peers_touch.model.agent.v1.UpdateMode
  * Use `create(UpdateModelResponseSchema)` to create a new message.
  */
 export const UpdateModelResponseSchema: GenMessage<UpdateModelResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_provider, 25);
+  messageDesc(file_domain_agent_provider, 27);
 
 /**
  * Credential
@@ -783,7 +837,7 @@ export type SetCredentialRequest = Message<"peers_touch.model.agent.v1.SetCreden
  * Use `create(SetCredentialRequestSchema)` to create a new message.
  */
 export const SetCredentialRequestSchema: GenMessage<SetCredentialRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_provider, 26);
+  messageDesc(file_domain_agent_provider, 28);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SetCredentialResponse
@@ -800,7 +854,7 @@ export type SetCredentialResponse = Message<"peers_touch.model.agent.v1.SetCrede
  * Use `create(SetCredentialResponseSchema)` to create a new message.
  */
 export const SetCredentialResponseSchema: GenMessage<SetCredentialResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_provider, 27);
+  messageDesc(file_domain_agent_provider, 29);
 
 /**
  * @generated from message peers_touch.model.agent.v1.DeleteCredentialRequest
@@ -822,7 +876,7 @@ export type DeleteCredentialRequest = Message<"peers_touch.model.agent.v1.Delete
  * Use `create(DeleteCredentialRequestSchema)` to create a new message.
  */
 export const DeleteCredentialRequestSchema: GenMessage<DeleteCredentialRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_provider, 28);
+  messageDesc(file_domain_agent_provider, 30);
 
 /**
  * @generated from message peers_touch.model.agent.v1.DeleteCredentialResponse
@@ -839,7 +893,7 @@ export type DeleteCredentialResponse = Message<"peers_touch.model.agent.v1.Delet
  * Use `create(DeleteCredentialResponseSchema)` to create a new message.
  */
 export const DeleteCredentialResponseSchema: GenMessage<DeleteCredentialResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_provider, 29);
+  messageDesc(file_domain_agent_provider, 31);
 
 /**
  * @generated from message peers_touch.model.agent.v1.GetCredentialStatusRequest
@@ -856,7 +910,7 @@ export type GetCredentialStatusRequest = Message<"peers_touch.model.agent.v1.Get
  * Use `create(GetCredentialStatusRequestSchema)` to create a new message.
  */
 export const GetCredentialStatusRequestSchema: GenMessage<GetCredentialStatusRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_provider, 30);
+  messageDesc(file_domain_agent_provider, 32);
 
 /**
  * @generated from message peers_touch.model.agent.v1.GetCredentialStatusResponse
@@ -873,7 +927,7 @@ export type GetCredentialStatusResponse = Message<"peers_touch.model.agent.v1.Ge
  * Use `create(GetCredentialStatusResponseSchema)` to create a new message.
  */
 export const GetCredentialStatusResponseSchema: GenMessage<GetCredentialStatusResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_provider, 31);
+  messageDesc(file_domain_agent_provider, 33);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ResolveCredentialRequest
@@ -890,7 +944,7 @@ export type ResolveCredentialRequest = Message<"peers_touch.model.agent.v1.Resol
  * Use `create(ResolveCredentialRequestSchema)` to create a new message.
  */
 export const ResolveCredentialRequestSchema: GenMessage<ResolveCredentialRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_provider, 32);
+  messageDesc(file_domain_agent_provider, 34);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ResolveCredentialResponse
@@ -907,5 +961,5 @@ export type ResolveCredentialResponse = Message<"peers_touch.model.agent.v1.Reso
  * Use `create(ResolveCredentialResponseSchema)` to create a new message.
  */
 export const ResolveCredentialResponseSchema: GenMessage<ResolveCredentialResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_provider, 33);
+  messageDesc(file_domain_agent_provider, 35);
 
