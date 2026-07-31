@@ -2759,7 +2759,7 @@ func TestStationHumanDecisionResumeToolConsumesLiveDecision(t *testing.T) {
 	}
 
 	broker := NewLiveResumeBroker()
-	svc := NewTurnService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := NewTurnService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	svc.SetLiveResumeBroker(broker)
 	resultCh := make(chan struct {
 		output string

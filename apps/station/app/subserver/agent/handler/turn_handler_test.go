@@ -61,7 +61,7 @@ func TestWriteTurnStreamEvent(t *testing.T) {
 }
 
 func TestTurnConfigFromRequestCarriesKnowledgeResources(t *testing.T) {
-	handlers := NewTurnHandlers(&service.TurnService{}, service.NewToolRegistryService(nil, nil), nil)
+	handlers := NewTurnHandlers(&service.TurnService{}, service.NewToolRegistryService(nil, nil), nil, nil)
 	config := handlers.turnConfigFromRequest(&model.ExecuteTurnRequest{
 		ConversationId: "conv_1",
 		AgentId:        "agent_1",

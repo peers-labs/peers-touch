@@ -126,6 +126,9 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// Phase 4: Tool Registry — central dispatch for memory, skills, delegation.
 	toolRegistrySvc := service.NewToolRegistryService(memorySvc, skillSvc)
 
+	// Conversation service — owns conversation CRUD, message listing, seq allocation, and event persistence.
+	convSvc := service.NewConversationService()
+
 	// Session Search — cross-session learning via keyword search.
 	sessionSearchSvc := service.NewSessionSearchService()
 	service.RegisterSessionSearchTool(toolRegistrySvc, sessionSearchSvc)
@@ -154,6 +157,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		toolRegistrySvc,
 		reviewSvc,
 		growthMetricsSvc,
+		convSvc,
 	)
 	turnSvc.SetEventBus(eventBus)
 
@@ -179,7 +183,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	chatTaskSvc.RecoverRunningChatTasks(context.Background())
 
 	agentHandlers := handler.NewAgentHandlers(agentSvc, eventBus)
-	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc, chatTaskSvc)
+	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc, chatTaskSvc, convSvc)
+	convHandlers := handler.NewConversationHandlers(convSvc, turnSvc)
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)
 	workspaceHandlers := handler.NewWorkspaceHandlers(workspaceSvc)
 	configHandlers := handler.NewAgentConfigHandlers(configSvc)
@@ -203,7 +208,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-list-get", "/agent/list", server.GET, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-get", "/agent/get", server.POST, agentHandlers.HandleGetAgent, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-create", "/agent/create", server.POST, agentHandlers.HandleCreateAgent, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-create", "/agent/create", server.POST, agentHandlers.HandleCreateAgentRaw, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-update", "/agent/update", server.POST, agentHandlers.HandleUpdateAgent, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-delete", "/agent/delete", server.POST, agentHandlers.HandleDeleteAgent, logIDWrapper, jwtWrapper),
 
@@ -212,6 +217,14 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-turn-local-tool-result", "/agent/turn/local-tool-result", server.POST, turnHandlers.HandleLocalToolResult, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-list", "/agent/turn/trace/list", server.POST, turnHandlers.HandleListTurnTraces, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
+
+		server.NewHTTPHandler("agent-conversation-list", "/agent/conversation/list", server.POST, convHandlers.HandleListConversations, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-conversation-get", "/agent/conversation/get", server.POST, convHandlers.HandleGetConversation, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-conversation-create", "/agent/conversation/create", server.POST, convHandlers.HandleCreateConversation, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-conversation-update", "/agent/conversation/update", server.POST, convHandlers.HandleUpdateConversation, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-conversation-archive", "/agent/conversation/archive", server.POST, convHandlers.HandleArchiveConversation, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-conversation-messages", "/agent/conversation/messages", server.POST, convHandlers.HandleListMessages, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-conversation-events", "/agent/conversation/events", server.POST, convHandlers.HandleStreamConversationEvents, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-provider-verify-cli", "/agent/provider/verify-cli", server.POST, providerHandlers.HandleVerifyCli, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-fetch-cli-models", "/agent/provider/fetch-cli-models", server.POST, providerHandlers.HandleFetchCliModels, logIDWrapper, jwtWrapper),

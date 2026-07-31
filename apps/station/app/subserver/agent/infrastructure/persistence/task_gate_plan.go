@@ -10,8 +10,8 @@ type TaskGatePlan struct {
 	Source     string    `gorm:"type:varchar(128);index:idx_agent_task_gate_plans_source"`
 	Status     string    `gorm:"type:varchar(32);index:idx_agent_task_gate_plans_status"`
 	PlanJSON   string    `gorm:"type:text"`
-	CreatedAt  time.Time `gorm:"not null;default:now();index:idx_agent_task_gate_plans_created"`
-	UpdatedAt  time.Time `gorm:"not null;default:now();index:idx_agent_task_gate_plans_updated"`
+	CreatedAt  time.Time `gorm:"not null;autoCreateTime;index:idx_agent_task_gate_plans_created"`
+	UpdatedAt  time.Time `gorm:"not null;autoUpdateTime;index:idx_agent_task_gate_plans_updated"`
 }
 
 func (TaskGatePlan) TableName() string { return "agent_task_gate_plans" }

@@ -73,11 +73,21 @@ func (h *ProviderHandlers) HandleFetchCliModels(_ context.Context, req *model.Fe
 func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.ListProvidersRequest) (*model.ListProvidersResponse, error) {
 	actorID := subjectActorID(ctx)
 
-	userProviders, _ := h.providerConfig.List(ctx, actorID)
+	userProviders, err := h.providerConfig.List(ctx, actorID)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	userMatchMap := make(map[string]*persistence.AgentProvider)
 	hiddenByProvider := make(map[string][]string)
 	for i := range userProviders {
+		name := userProviders[i].Name
+		if _, exists := userMatchMap[name]; !exists {
+			userMatchMap[name] = &userProviders[i]
+		}
 		if hidden := parseHiddenModels(userProviders[i].HiddenModels); len(hidden) > 0 {
-			hiddenByProvider[userProviders[i].Name] = hidden
+			if _, exists := hiddenByProvider[name]; !exists {
+				hiddenByProvider[name] = hidden
+			}
 		}
 	}
 
@@ -87,18 +97,13 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 	}
 
 	for _, cp := range entries {
-		var userMatch *persistence.AgentProvider
-		for i := range userProviders {
-			if userProviders[i].Name == cp.ID {
-				userMatch = &userProviders[i]
-				break
-			}
-		}
+		userMatch := userMatchMap[cp.ID]
 
-		hasCredential := userMatch != nil && userMatch.KeyVaults != ""
 		credentialStatus := "not_configured"
-		if hasCredential {
-			credentialStatus = "configured"
+		if userMatch != nil {
+			if key := parseKeyVaultAPIKey(userMatch.KeyVaults); key != "" {
+				credentialStatus = "configured"
+			}
 		}
 		enabled := cp.Enabled
 		version := int64(0)
@@ -122,6 +127,32 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 			})
 		}
 
+		catalogIDs := make(map[string]bool, len(models))
+		for _, m := range models {
+			catalogIDs[m.Id] = true
+		}
+		dbModels, err := h.modelConfig.List(ctx, actorID, cp.ID)
+		if err != nil {
+			return nil, toHandlerError(err)
+		}
+		for i := range dbModels {
+			if catalogIDs[dbModels[i].ModelID] || contains(hidden, dbModels[i].ModelID) {
+				continue
+			}
+			models = append(models, &model.ProviderModelInfo{
+				Id:            dbModels[i].ModelID,
+				DisplayName:   dbModels[i].DisplayName,
+				Type:          "chat",
+				Enabled:       dbModels[i].Enabled,
+				ContextWindow: int32(dbModels[i].ContextWindow),
+			})
+		}
+
+		baseURL := cp.DefaultBaseURL
+		if userMatch != nil && userMatch.BaseURL != "" {
+			baseURL = userMatch.BaseURL
+		}
+
 		showAPIKey := true
 		if cp.ShowAPIKey != nil {
 			showAPIKey = *cp.ShowAPIKey
@@ -136,7 +167,7 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 			Protocol:         cp.Protocol,
 			Discovery:        cp.Discovery,
 			RuntimeKind:      cp.RuntimeKind,
-			BaseUrl:          cp.DefaultBaseURL,
+			BaseUrl:          baseURL,
 			HomeUrl:          cp.HomeURL,
 			ApiKeyUrl:        cp.APIKeyURL,
 			ShowChecker:      cp.ShowChecker,
@@ -148,6 +179,27 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 			ModelsCommand:    cp.ModelsCommand,
 			Models:           models,
 		})
+	}
+
+	for _, up := range userProviders {
+		if catalog.Find(up.Name) != nil {
+			continue
+		}
+		p := providerToProto(&up)
+		dbModels, err := h.modelConfig.List(ctx, actorID, up.Name)
+		if err != nil {
+			return nil, toHandlerError(err)
+		}
+		for i := range dbModels {
+			p.Models = append(p.Models, &model.ProviderModelInfo{
+				Id:            dbModels[i].ModelID,
+				DisplayName:   dbModels[i].DisplayName,
+				Type:          "chat",
+				Enabled:       dbModels[i].Enabled,
+				ContextWindow: int32(dbModels[i].ContextWindow),
+			})
+		}
+		resp.Providers = append(resp.Providers, p)
 	}
 
 	return resp, nil
@@ -196,10 +248,11 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 			}
 			return ""
 		}())
-		hasCredential := userMatch != nil && userMatch.KeyVaults != ""
 		credentialStatus := "not_configured"
-		if hasCredential {
-			credentialStatus = "configured"
+		if userMatch != nil {
+			if key := parseKeyVaultAPIKey(userMatch.KeyVaults); key != "" {
+				credentialStatus = "configured"
+			}
 		}
 		enabled := cp.Enabled
 		version := int64(0)
@@ -222,12 +275,14 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 			})
 		}
 
-		// Merge user-added models from DB (e.g. CLI-fetched models)
 		catalogIDs := make(map[string]bool, len(models))
 		for _, m := range models {
 			catalogIDs[m.Id] = true
 		}
-		dbModels, _ := h.modelConfig.List(ctx, actorID, providerID)
+		dbModels, err := h.modelConfig.List(ctx, actorID, providerID)
+		if err != nil {
+			return nil, toHandlerError(err)
+		}
 		for i := range dbModels {
 			if catalogIDs[dbModels[i].ModelID] || contains(hidden, dbModels[i].ModelID) {
 				continue
@@ -279,7 +334,21 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 		}}, nil
 	}
 
-	return &model.GetProviderResponse{Provider: providerToProto(userMatch)}, nil
+	p := providerToProto(userMatch)
+	dbModels, err := h.modelConfig.List(ctx, actorID, userMatch.Name)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	for i := range dbModels {
+		p.Models = append(p.Models, &model.ProviderModelInfo{
+			Id:            dbModels[i].ModelID,
+			DisplayName:   dbModels[i].DisplayName,
+			Type:          "chat",
+			Enabled:       dbModels[i].Enabled,
+			ContextWindow: int32(dbModels[i].ContextWindow),
+		})
+	}
+	return &model.GetProviderResponse{Provider: p}, nil
 }
 
 func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.UpdateProviderRequest) (*model.UpdateProviderResponse, error) {
@@ -471,6 +540,10 @@ func (h *ProviderHandlers) HandleModelCreate(ctx context.Context, req *model.Cre
 		return nil, server.NewHandlerError(http.StatusBadRequest, "model_id is required")
 	}
 
+	if err := h.ensureProviderRecord(ctx, actorID, providerID); err != nil {
+		return nil, toHandlerError(err)
+	}
+
 	m, err := h.modelConfig.Create(ctx, service.ModelCreateRequest{
 		ActorID:       actorID,
 		ProviderID:    providerID,
@@ -482,6 +555,8 @@ func (h *ProviderHandlers) HandleModelCreate(ctx context.Context, req *model.Cre
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
+
+	_ = h.providerConfig.UnhideModel(ctx, actorID, providerID, modelID)
 
 	return &model.CreateModelResponse{Model: modelToProto(m)}, nil
 }
@@ -594,15 +669,16 @@ func (h *ProviderHandlers) HandleModelHiddenList(ctx context.Context, req *model
 func providerToProto(p *persistence.AgentProvider) *model.AgentProviderInfo {
 	cp := catalog.Find(p.Name)
 	info := &model.AgentProviderInfo{
-		Id:          p.Name,
-		Name:        p.DisplayName,
-		Enabled:     p.Enabled,
-		Protocol:    p.Protocol,
-		RuntimeKind: p.RuntimeKind,
-		BaseUrl:     p.BaseURL,
-		CliCommand:  p.CliCommand,
-		Version:     p.Version,
-		Source:      "custom",
+		Id:            p.Name,
+		Name:          p.DisplayName,
+		Enabled:       p.Enabled,
+		Protocol:      p.Protocol,
+		RuntimeKind:   p.RuntimeKind,
+		BaseUrl:       p.BaseURL,
+		CliCommand:    p.CliCommand,
+		ModelsCommand: p.ModelsCommand,
+		Version:       p.Version,
+		Source:        "custom",
 	}
 	if cp != nil {
 		info.Source = "catalog"
@@ -617,8 +693,23 @@ func providerToProto(p *persistence.AgentProvider) *model.AgentProviderInfo {
 		} else {
 			info.ShowApiKey = true
 		}
+		if info.BaseUrl == "" {
+			info.BaseUrl = cp.DefaultBaseURL
+		}
+		if info.Protocol == "" {
+			info.Protocol = cp.Protocol
+		}
+		if info.RuntimeKind == "" {
+			info.RuntimeKind = cp.RuntimeKind
+		}
+		if info.CliCommand == "" {
+			info.CliCommand = cp.CliCommand
+		}
+		if info.ModelsCommand == "" {
+			info.ModelsCommand = cp.ModelsCommand
+		}
 	}
-	if p.KeyVaults != "" {
+	if key := parseKeyVaultAPIKey(p.KeyVaults); key != "" {
 		info.CredentialStatus = "configured"
 	} else {
 		info.CredentialStatus = "not_configured"
