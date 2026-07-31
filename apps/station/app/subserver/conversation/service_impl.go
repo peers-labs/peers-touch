@@ -539,3 +539,35 @@ func (s *DefaultService) requireAdminOrOwner(ctx context.Context, conversationID
 	}
 	return nil
 }
+
+// --- New Service methods (W1/W2: unified conversation API) ---
+
+func (s *DefaultService) ListMessages(ctx context.Context, conversationID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error) {
+	events, err := s.repo.ListEvents(ctx, conversationID, afterSeq, limit)
+	if err != nil {
+		return nil, err
+	}
+	messages := make([]*chat.CommittedConversationEvent, 0, len(events))
+	for _, ev := range events {
+		if ev.GetMessageCommitted() != nil {
+			messages = append(messages, ev)
+		}
+	}
+	return messages, nil
+}
+
+func (s *DefaultService) ListThreadMessages(ctx context.Context, conversationID, threadRootID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error) {
+	return s.repo.ListThreadEvents(ctx, conversationID, threadRootID, afterSeq, limit)
+}
+
+func (s *DefaultService) GetThreadCounts(ctx context.Context, conversationID string, rootIDs []string) (map[string]ThreadSummary, error) {
+	return s.repo.CountThreadReplies(ctx, conversationID, rootIDs)
+}
+
+func (s *DefaultService) SetReadCursor(ctx context.Context, conversationID, ptid string, seq int64) error {
+	return s.repo.SetReadCursor(ctx, conversationID, ptid, seq)
+}
+
+func (s *DefaultService) GetUnreadCount(ctx context.Context, conversationID, ptid string) (int64, error) {
+	return s.repo.CountUnread(ctx, conversationID, ptid)
+}
