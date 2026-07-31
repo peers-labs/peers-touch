@@ -313,6 +313,69 @@ func (r *ToolRegistryService) registerMemoryTool(svc *MemoryService) {
 		JSONSchema: schema,
 		Handler:    handler,
 	})
+
+	aliasedSchema := json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "string",
+      "enum": ["memory", "user"],
+      "description": "'memory' for your personal notes, 'user' for user profile facts"
+    },
+    "content": {
+      "type": "string",
+      "description": "The content to remember"
+    },
+    "old_text": {
+      "type": "string",
+      "description": "For replace/remove: text to match against existing entries"
+    }
+  },
+  "required": ["content"]
+}`)
+
+	makeAliasHandler := func(action string) func(ctx context.Context, meta *domain.ToolCallMeta, raw json.RawMessage) (*domain.ToolResult, error) {
+		return func(ctx context.Context, meta *domain.ToolCallMeta, raw json.RawMessage) (*domain.ToolResult, error) {
+			var args struct {
+				Target  string `json:"target"`
+				Content string `json:"content"`
+				OldText string `json:"old_text"`
+			}
+			_ = json.Unmarshal(raw, &args)
+			if args.Target == "" {
+				args.Target = "user"
+			}
+			if args.Content == "" {
+				return &domain.ToolResult{Content: "content is required", IsError: true}, nil
+			}
+			aliasRaw, _ := json.Marshal(memoryArgs{
+				Action:  action,
+				Target:  args.Target,
+				Content: args.Content,
+				OldText: args.OldText,
+			})
+			return handler(ctx, meta, aliasRaw)
+		}
+	}
+
+	r.Register(&domain.ToolDefinition{
+		Name:        "memory_add",
+		Description: "Add a memory entry. Use target='user' for user facts, target='memory' for notes.",
+		JSONSchema:  aliasedSchema,
+		Handler:     makeAliasHandler("add"),
+	})
+	r.Register(&domain.ToolDefinition{
+		Name:        "memory_replace",
+		Description: "Replace an existing memory entry.",
+		JSONSchema:  aliasedSchema,
+		Handler:     makeAliasHandler("replace"),
+	})
+	r.Register(&domain.ToolDefinition{
+		Name:        "memory_remove",
+		Description: "Remove a memory entry.",
+		JSONSchema:  aliasedSchema,
+		Handler:     makeAliasHandler("remove"),
+	})
 }
 
 // ---------------------------------------------------------------------------

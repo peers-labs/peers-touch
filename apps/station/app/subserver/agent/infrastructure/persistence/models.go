@@ -47,6 +47,7 @@ func AllModels() []interface{} {
 		&CollaborationTask{},
 		&CollaborationTaskNode{},
 		&TaskEvent{},
+		&TurnEvent{},
 		&InterruptRequest{},
 		&TaskArtifact{},
 		&TaskArtifactBlob{},
