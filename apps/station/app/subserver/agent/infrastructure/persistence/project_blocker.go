@@ -15,8 +15,8 @@ type ProjectBlocker struct {
 	SourceEventID  string    `gorm:"type:varchar(36);index:idx_agent_project_blockers_event"`
 	SourceEventSeq int64     `gorm:"not null;default:0;index:idx_agent_project_blockers_event_seq"`
 	PayloadJSON    string    `gorm:"type:text"`
-	CreatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_project_blockers_created"`
-	UpdatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_project_blockers_updated"`
+	CreatedAt      time.Time `gorm:"not null;autoCreateTime;index:idx_agent_project_blockers_created"`
+	UpdatedAt      time.Time `gorm:"not null;autoUpdateTime;index:idx_agent_project_blockers_updated"`
 }
 
 func (ProjectBlocker) TableName() string { return "agent_project_blockers" }

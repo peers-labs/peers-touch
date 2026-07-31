@@ -35,26 +35,30 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 	if n.opts.RDSMap != nil {
 		logger.Infof(ctx, "init rds map")
 		n.db = make(map[string]*gorm.DB)
+		dsnToDB := make(map[string]*gorm.DB)
 		for _, rds := range n.opts.RDSMap {
 			if rds.Enable {
+				if rds.Default {
+					n.defaultRDS = rds.Name
+				}
+
+				dsnKey := rds.Driver + "://" + rds.DSN
+				if existing, ok := dsnToDB[dsnKey]; ok {
+					n.db[rds.Name] = existing
+					logger.Infof(ctx, "rds[%s] sharing connection with identical DSN", rds.Name)
+					continue
+				}
+
 				dialector := store.GetDialector(rds.Driver)
 				if dialector == nil {
 					panic("dialector not found for driver: " + rds.Driver)
 				}
 
-				if rds.Default {
-					n.defaultRDS = rds.Name
-				}
-
 				gormConfig := &gorm.Config{
-					// todo: let gorm logger level follow the one of frame's
-					Logger: NewGormLogger().LogMode(gormlogger.Info),
+					Logger:                                   NewGormLogger().LogMode(gormlogger.Info),
 					DisableForeignKeyConstraintWhenMigrating: true,
 					NamingStrategy: schema.NamingStrategy{
 						NameReplacer: strings.NewReplacer(
-							// Project-specific abbreviations that GORM's default strategy splits incorrectly.
-							// Defense-in-depth: explicit column tags are the primary contract (see store.md §10),
-							// this NameReplacer catches any field that accidentally omits a tag.
 							"SPKID", "SpkId",
 							"OPKID", "OpkId",
 							"ULID", "Ulid",
@@ -68,6 +72,17 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 				}
 
 				n.db[rds.Name], err = gorm.Open(dialector(rds.DSN), gormConfig)
+				if err != nil {
+					return err
+				}
+				if rds.Driver == "sqlite" {
+					sqlDB, _ := n.db[rds.Name].DB()
+					if sqlDB != nil {
+						sqlDB.SetMaxOpenConns(1)
+						sqlDB.SetMaxIdleConns(1)
+					}
+				}
+				dsnToDB[dsnKey] = n.db[rds.Name]
 			} else {
 				logger.Warnf(ctx, "rds[%s] is disabled, skip init", rds.Name)
 			}
