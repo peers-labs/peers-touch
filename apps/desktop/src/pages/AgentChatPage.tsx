@@ -613,9 +613,9 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
           {[
             { icon: Pencil, label: t('agent.sidebar.menu.rename') },
             { icon: Sparkles, label: t('agent.sidebar.menu.smartRename') },
-            { icon: Copy, label: t('common.action.copy') },
+            { icon: Copy, label: t('common.action.copy', { ns: 'common' }) },
             { divider: true },
-            { icon: Trash2, label: t('common.action.delete'), danger: true },
+            { icon: Trash2, label: t('common.action.delete', { ns: 'common' }), danger: true },
           ].map((item, i) => {
             if ('divider' in item) {
               return <div key={i} style={{ height: 1, background: token.colorBorderSecondary, margin: '4px 0' }} />;

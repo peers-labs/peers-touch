@@ -756,6 +756,15 @@ export function groupAvatarRemoteUrl(group?: Pick<Group, 'avatarCid'> | null): s
   if (raw.startsWith('/') || raw.startsWith('http://') || raw.startsWith('https://')) {
     return raw;
   }
+  if (raw.startsWith('oss://')) {
+    try {
+      const inner = new URL(raw.slice(6));
+      const key = inner.pathname.slice(1);
+      return `${inner.origin}/sub-oss/file?key=${encodeURIComponent(key)}`;
+    } catch {
+      return '';
+    }
+  }
   return '';
 }
 
@@ -2631,7 +2640,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           type: 'group',
           ulid: convId,
           name: conv.name || 'Group',
-          avatar: conv.avatarCid || '',
+          avatar: groupAvatarRemoteUrl({ avatarCid: conv.avatarCid || '' }),
           memberCount,
           lastActivity,
           unread: state.groupUnreadCounts[convId] ?? 0,

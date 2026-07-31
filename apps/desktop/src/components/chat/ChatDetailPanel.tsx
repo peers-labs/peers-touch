@@ -818,8 +818,8 @@ export function ChatDetailPanel() {
         activeGroup?.description || undefined,
         uploaded.cid,
       );
-      await loadGroups();
       toast.success(t('chat.social.detail.groupAvatarUpdated'));
+      loadGroups();
     } catch (error) {
       log.error('chat', 'update group avatar failed', { groupUlid: activeUlid, error });
       toast.error(t('chat.social.detail.groupAvatarUpdateFailed'));
@@ -1370,7 +1370,7 @@ export function ChatDetailPanel() {
                 type="dashed"
                 icon={<UserPlus size={14} />}
                 size="small"
-                disabled={!canManageGroupMembers || inviteCandidates.length === 0}
+                disabled={inviteCandidates.length === 0}
                 onClick={() => setInviteModalOpen(true)}
               >
                 {t('chat.social.detail.addMember')}
