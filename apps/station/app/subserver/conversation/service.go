@@ -36,8 +36,29 @@ type Service interface {
 	// GetMembers returns members for a conversation.
 	GetMembers(ctx context.Context, conversationID string) ([]*chat.ConversationMember, error)
 
+	// GetMember returns a single member by conversation and ptid.
+	GetMember(ctx context.Context, conversationID, ptid string) (*chat.ConversationMember, error)
+
+	// UpsertMember creates or updates a conversation member record.
+	UpsertMember(ctx context.Context, member *chat.ConversationMember) error
+
 	// ListEvents returns committed events for a conversation after a given sequence number.
 	ListEvents(ctx context.Context, conversationID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error)
+
+	// ListMessages returns only message-committed events (excludes admin/system events).
+	ListMessages(ctx context.Context, conversationID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error)
+
+	// ListThreadMessages returns message events for a specific thread.
+	ListThreadMessages(ctx context.Context, conversationID, threadRootID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error)
+
+	// GetThreadCounts returns reply count summaries for multiple thread roots.
+	GetThreadCounts(ctx context.Context, conversationID string, rootIDs []string) (map[string]ThreadSummary, error)
+
+	// SetReadCursor updates the read position for an actor.
+	SetReadCursor(ctx context.Context, conversationID, ptid string, seq int64) error
+
+	// GetUnreadCount returns unread message count for an actor.
+	GetUnreadCount(ctx context.Context, conversationID, ptid string) (int64, error)
 }
 
 // MemberEntry is used when creating a group to specify initial members.
@@ -84,6 +105,30 @@ type Repository interface {
 	// members of at least one common conversation. Used by the social gate for
 	// relationship-based access control.
 	HaveSharedConversation(ctx context.Context, actorA, actorB string) (bool, error)
+
+	// ListThreadEvents returns events belonging to a specific thread (by root message ID).
+	// Uses partial index on thread_root_message_id for O(log n) lookup.
+	ListThreadEvents(ctx context.Context, conversationID, threadRootID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error)
+
+	// CountThreadReplies returns reply counts for multiple thread roots in one query.
+	CountThreadReplies(ctx context.Context, conversationID string, rootIDs []string) (map[string]ThreadSummary, error)
+
+	// GetReadCursor returns the last-read event seq for an actor in a conversation.
+	GetReadCursor(ctx context.Context, conversationID, ptid string) (int64, error)
+
+	// SetReadCursor upserts the read position for an actor.
+	SetReadCursor(ctx context.Context, conversationID, ptid string, seq int64) error
+
+	// CountUnread returns the number of message events after the actor's read cursor.
+	CountUnread(ctx context.Context, conversationID, ptid string) (int64, error)
+}
+
+// ThreadSummary holds denormalized thread counters per root message.
+type ThreadSummary struct {
+	RootMessageID   string
+	ReplyCount      int64
+	LatestReplyID   string
+	LatestReplyAtMs int64
 }
 
 // EnvelopeSubmitter routes committed events to recipients via the envelope service.

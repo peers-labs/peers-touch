@@ -720,6 +720,7 @@
   "chat.social.preview.file": "[File]",
   "chat.social.preview.audio": "[Audio]",
   "chat.social.preview.video": "[Video]",
+  "chat.social.preview.you": "You",
   "chat.social.subNav.chats": "Chats",
   "chat.social.subNav.contacts": "Contacts",
   "chat.agentHeader.fallbackDescription": "Ask, create, and run tasks with this Agent.",

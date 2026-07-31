@@ -175,23 +175,29 @@ export function ChatMessageArea() {
     const known = activePeerDid in peerOnline;
     if (!known) return null;
     const online = peerOnline[activePeerDid];
-    const tip = online
-      ? t('chat.social.presence.online')
-      : t('chat.social.presence.offline');
+    const label = online ? 'Online' : 'Offline';
+    const bg = online ? token.colorSuccessBg : token.colorFillSecondary;
+    const color = online ? token.colorSuccess : token.colorTextQuaternary;
     return (
-      <Tooltip title={tip}>
-        <span
-          aria-label={tip}
-          style={{
-            display: 'inline-block',
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            background: online ? token.colorSuccess : token.colorTextQuaternary,
-            flexShrink: 0,
-          }}
-        />
-      </Tooltip>
+      <span
+        aria-label={label}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 10,
+          fontWeight: 500,
+          color,
+          background: bg,
+          padding: '1px 6px',
+          borderRadius: 4,
+          lineHeight: '16px',
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ width: 5, height: 5, borderRadius: '50%', background: color }} />
+        {label}
+      </span>
     );
   })();
 
@@ -586,6 +592,7 @@ export function ChatMessageArea() {
       gap={0}
       style={{
         height: '100%',
+        minWidth: 380,
         background: token.colorBgLayout,
         position: 'relative',
         overflow: 'hidden',

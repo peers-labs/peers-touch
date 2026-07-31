@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl } from '../../store/socialChat';
+import { GroupCompositeAvatar } from '../common/GroupCompositeAvatar';
 import { CHAT_BACKGROUND_OPTIONS, type DesktopIMMessageProjection } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
@@ -52,7 +53,7 @@ import { MlsDeliveryKind } from '../../services/im-service-contract';
 
 const { Text } = Typography;
 
-const DETAIL_HEADER_HEIGHT = 56;
+const DETAIL_HEADER_HEIGHT = 64;
 const HISTORY_RESTORE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 type DetailAttachment = ChatAttachmentLike;
@@ -635,8 +636,16 @@ export function ChatDetailPanel() {
         profiles.set(peerProfile.did, { name: peerProfile.name, avatar: peerProfile.avatar });
       }
     });
+    for (const [did, profile] of Object.entries(peerProfiles)) {
+      if (profile && !profiles.has(did)) {
+        profiles.set(did, {
+          name: profile.display_name?.trim() || profile.username?.trim() || '',
+          avatar: profile.avatar || '',
+        });
+      }
+    }
     return profiles;
-  }, [currentUserDid, currentUserProfile, sessions]);
+  }, [currentUserDid, currentUserProfile, sessions, peerProfiles]);
   const displayMembers: GroupMemberDisplay[] = useMemo(() => {
     const sourceMembers: GroupMemberLike[] = members.length > 0
       ? members
@@ -794,7 +803,7 @@ export function ChatDetailPanel() {
   };
 
   const handleGroupAvatarClick = async () => {
-    if (!activeUlid || !canManageGroupMembers) return;
+    if (!activeUlid) return;
     let filePath: string;
     try {
       filePath = await api.pickImageFile();
@@ -809,8 +818,8 @@ export function ChatDetailPanel() {
         activeGroup?.description || undefined,
         uploaded.cid,
       );
-      await loadGroups();
       toast.success(t('chat.social.detail.groupAvatarUpdated'));
+      loadGroups();
     } catch (error) {
       log.error('chat', 'update group avatar failed', { groupUlid: activeUlid, error });
       toast.error(t('chat.social.detail.groupAvatarUpdateFailed'));
@@ -1208,8 +1217,8 @@ export function ChatDetailPanel() {
           <Flexbox align="center" gap={12} style={{ padding: '20px 16px 12px' }}>
             {/* Avatar with edit overlay */}
             <div
-              style={{ position: 'relative', cursor: canManageGroupMembers ? 'pointer' : 'default' }}
-              onClick={canManageGroupMembers ? handleGroupAvatarClick : undefined}
+              style={{ position: 'relative', cursor: 'pointer' }}
+              onClick={handleGroupAvatarClick}
             >
               <Flexbox
                 align="center"
@@ -1230,10 +1239,16 @@ export function ChatDetailPanel() {
                     style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                   />
                 ) : (
-                  <Users size={32} />
+                  <GroupCompositeAvatar
+                    size={72}
+                    members={members.slice(0, 4).map((m) => {
+                      const p = memberProfiles.get(m.ptid);
+                      return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
+                    })}
+                  />
                 )}
               </Flexbox>
-              {canManageGroupMembers && (
+              {isGroup && (
                 <Flexbox
                   align="center"
                   justify="center"
@@ -1355,7 +1370,7 @@ export function ChatDetailPanel() {
                 type="dashed"
                 icon={<UserPlus size={14} />}
                 size="small"
-                disabled={!canManageGroupMembers || inviteCandidates.length === 0}
+                disabled={inviteCandidates.length === 0}
                 onClick={() => setInviteModalOpen(true)}
               >
                 {t('chat.social.detail.addMember')}
