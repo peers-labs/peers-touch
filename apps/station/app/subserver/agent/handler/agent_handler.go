@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -50,6 +52,7 @@ func (h *AgentHandlers) HandleGetAgent(ctx context.Context, req *model.GetAgentR
 }
 
 func (h *AgentHandlers) HandleCreateAgent(ctx context.Context, req *model.CreateAgentRequest) (*model.CreateAgentResponse, error) {
+	configJSON := mergeConfigExtras(req.GetConfigJson(), "", "")
 	agent, err := h.agentService.CreateAgent(ctx, domain.AgentUpsertOptions{
 		ActorID:     subjectActorID(ctx),
 		Name:        req.GetName(),
@@ -59,13 +62,133 @@ func (h *AgentHandlers) HandleCreateAgent(ctx context.Context, req *model.Create
 		ModelName:   req.GetModelName(),
 		Effort:      req.GetEffort(),
 		Visibility:  protoAgentVisibilityToDomain(req.GetVisibility()),
-		ConfigJSON:  req.GetConfigJson(),
+		ConfigJSON:  configJSON,
 	})
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
 	h.publishAgentEvent(ctx, domain.EventTypeAgentCreated, agent)
 	return &model.CreateAgentResponse{Agent: domainAgentToProto(agent)}, nil
+}
+
+func (h *AgentHandlers) HandleCreateAgentRaw(ctx context.Context, req server.Request, resp server.Response) error {
+	resp.SetHeader("Content-Type", "application/json")
+	var body struct {
+		Name              string `json:"name"`
+		Title             string `json:"title"`
+		Description       string `json:"description"`
+		Provider          string `json:"provider"`
+		ProviderID        string `json:"provider_id"`
+		Model             string `json:"model"`
+		ModelName         string `json:"model_name"`
+		Effort            string `json:"effort"`
+		Visibility        string `json:"visibility"`
+		Identity          string `json:"identity"`
+		SoulMd            string `json:"soul_md"`
+		SoulMd2           string `json:"soulMd"`
+		AgentConfigPrompt string `json:"agent_config_prompt"`
+		AgentsMd          string `json:"agents_md"`
+		AgentsMd2         string `json:"agentsMd"`
+		ConfigJSON        string `json:"config_json"`
+		ConfigJson        string `json:"configJson"`
+		Enabled           bool   `json:"enabled"`
+		PermissionMode    string `json:"permission_mode"`
+	}
+	if err := json.Unmarshal(req.Body(), &body); err != nil {
+		resp.WriteHeader(400)
+		_ = json.NewEncoder(resp).Encode(map[string]interface{}{"error": "invalid JSON"})
+		return nil
+	}
+	provider := body.ProviderID
+	if provider == "" {
+		provider = body.Provider
+	}
+	modelName := body.ModelName
+	if modelName == "" {
+		modelName = body.Model
+	}
+	identity := body.Identity
+	if identity == "" {
+		identity = body.SoulMd
+	}
+	if identity == "" {
+		identity = body.SoulMd2
+	}
+	agentPrompt := body.AgentConfigPrompt
+	if agentPrompt == "" {
+		agentPrompt = body.AgentsMd
+	}
+	if agentPrompt == "" {
+		agentPrompt = body.AgentsMd2
+	}
+	cfgJSON := body.ConfigJSON
+	if cfgJSON == "" {
+		cfgJSON = body.ConfigJson
+	}
+	cfgJSON = mergeConfigExtras(cfgJSON, identity, agentPrompt)
+
+	visibility := domain.AgentVisibilityPrivate
+	if body.Visibility == "workspace" || body.Visibility == "AGENT_VISIBILITY_WORKSPACE" {
+		visibility = domain.AgentVisibilityWorkspace
+	}
+	agent, err := h.agentService.CreateAgent(ctx, domain.AgentUpsertOptions{
+		ActorID:     subjectActorID(ctx),
+		Name:        body.Name,
+		Title:       body.Title,
+		Description: body.Description,
+		ProviderID:  provider,
+		ModelName:   modelName,
+		Effort:      body.Effort,
+		Visibility:  visibility,
+		ConfigJSON:  cfgJSON,
+	})
+	if err != nil {
+		resp.WriteHeader(500)
+		_ = json.NewEncoder(resp).Encode(map[string]interface{}{"error": err.Error()})
+		return nil
+	}
+	h.publishAgentEvent(ctx, domain.EventTypeAgentCreated, agent)
+	_ = json.NewEncoder(resp).Encode(map[string]interface{}{"agent": domainAgentToMap(agent)})
+	return nil
+}
+
+func mergeConfigExtras(baseJSON, identity, agentPrompt string) string {
+	var cfg map[string]interface{}
+	if baseJSON != "" {
+		_ = json.Unmarshal([]byte(baseJSON), &cfg)
+	}
+	if cfg == nil {
+		cfg = make(map[string]interface{})
+	}
+	if identity != "" {
+		cfg["identity"] = identity
+		cfg["soulMd"] = identity
+	}
+	if agentPrompt != "" {
+		cfg["agentConfigPrompt"] = agentPrompt
+		cfg["agentsMd"] = agentPrompt
+	}
+	out, _ := json.Marshal(cfg)
+	return string(out)
+}
+
+func domainAgentToMap(agent *domain.Agent) map[string]interface{} {
+	if agent == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"agent_id":       agent.AgentID,
+		"name":           agent.Name,
+		"title":          agent.Title,
+		"description":    agent.Description,
+		"provider_id":    agent.ProviderID,
+		"model_name":     agent.ModelName,
+		"visibility":     agent.Visibility,
+		"owner_actor_id": agent.OwnerActorID,
+		"config_json":    agent.ConfigJSON,
+		"created_at":     agent.CreatedAt,
+		"updated_at":     agent.UpdatedAt,
+	}
 }
 
 func (h *AgentHandlers) HandleUpdateAgent(ctx context.Context, req *model.UpdateAgentRequest) (*model.UpdateAgentResponse, error) {
