@@ -570,7 +570,12 @@ func (s *subServer) handleGroupGetSettings(ctx context.Context, req *chat.GetGro
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	return &chat.GetGroupSettingsResponse{AlertEnabled: true}, nil
+	member, _ := s.convService.GetMember(ctx, req.GroupUlid, subject.ID)
+	alertEnabled := true
+	if member != nil {
+		alertEnabled = !member.Muted
+	}
+	return &chat.GetGroupSettingsResponse{AlertEnabled: alertEnabled}, nil
 }
 
 // --- /group-chat/my-settings (PUT) ---
@@ -579,6 +584,17 @@ func (s *subServer) handleGroupUpdateSettings(ctx context.Context, req *chat.Upd
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
+	}
+	if req.IsMuted == nil {
+		return &chat.UpdateGroupSettingsResponse{Success: true}, nil
+	}
+	member, err := s.convService.GetMember(ctx, req.GroupUlid, subject.ID)
+	if err != nil || member == nil {
+		return &chat.UpdateGroupSettingsResponse{Success: true}, nil
+	}
+	member.Muted = *req.IsMuted
+	if err := s.convService.UpsertMember(ctx, member); err != nil {
+		return nil, server.InternalErrorWithCause("update settings failed", err)
 	}
 	return &chat.UpdateGroupSettingsResponse{Success: true}, nil
 }
@@ -589,6 +605,14 @@ func (s *subServer) handleGroupUpdateNickname(ctx context.Context, req *chat.Upd
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
+	}
+	member, err := s.convService.GetMember(ctx, req.GroupUlid, subject.ID)
+	if err != nil || member == nil {
+		return nil, server.BadRequest("not a member of this group")
+	}
+	member.Nickname = req.Nickname
+	if err := s.convService.UpsertMember(ctx, member); err != nil {
+		return nil, server.InternalErrorWithCause("update nickname failed", err)
 	}
 	return &chat.UpdateMyNicknameResponse{Member: &chat.GroupMember{
 		GroupUlid: req.GroupUlid,
@@ -774,4 +798,108 @@ func groupAttachmentsToEncrypted(attachments []*chat.GroupMessageAttachment) []*
 		})
 	}
 	return result
+}
+
+type groupThreadMessagesRequest struct {
+	GroupUlid string `query:"group_ulid"`
+	RootUlid  string `query:"root_ulid"`
+	Limit     int    `query:"limit"`
+	AfterUlid string `query:"after_ulid"`
+}
+
+func (s *subServer) handleGroupThreadMessages(ctx context.Context, req *groupThreadMessagesRequest) (*chat.GetGroupMessagesResponse, error) {
+	if req.GroupUlid == "" || req.RootUlid == "" {
+		return nil, server.BadRequest("group_ulid and root_ulid required")
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+
+	events, err := s.convService.ListEvents(ctx, req.GroupUlid, 0, 500)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("list thread messages failed", err)
+	}
+
+	messages := make([]*chat.GroupMessage, 0)
+	for _, ev := range events {
+		mc := ev.GetMessageCommitted()
+		if mc == nil {
+			continue
+		}
+		if mc.ThreadRootMessageId != req.RootUlid {
+			continue
+		}
+		if req.AfterUlid != "" && mc.MessageId <= req.AfterUlid {
+			continue
+		}
+		messages = append(messages, eventToGroupMessage(ev, req.GroupUlid, mc.SenderPtid))
+		if len(messages) >= limit {
+			break
+		}
+	}
+
+	return &chat.GetGroupMessagesResponse{Messages: messages, HasMore: len(messages) >= limit}, nil
+}
+
+type groupThreadCountsRequest struct {
+	GroupUlid string   `json:"group_ulid"`
+	RootUlids []string `json:"root_ulids"`
+}
+
+type threadCountEntry struct {
+	RootUlid        string `json:"rootUlid"`
+	ReplyCount      int    `json:"replyCount"`
+	LatestReplyUlid string `json:"latestReplyUlid"`
+	LatestReplyAt   int64  `json:"latestReplyAt"`
+	UnreadCount     int    `json:"unreadCount"`
+}
+
+type groupThreadCountsResponse struct {
+	Counts []threadCountEntry `json:"counts"`
+}
+
+func (s *subServer) handleGroupThreadCounts(ctx context.Context, req *groupThreadCountsRequest) (*groupThreadCountsResponse, error) {
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid required")
+	}
+
+	events, err := s.convService.ListEvents(ctx, req.GroupUlid, 0, 1000)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("list events for thread counts failed", err)
+	}
+
+	countMap := make(map[string]int)
+	latestMap := make(map[string]string)
+	latestAtMap := make(map[string]int64)
+	for _, rootUlid := range req.RootUlids {
+		countMap[rootUlid] = 0
+	}
+
+	for _, ev := range events {
+		mc := ev.GetMessageCommitted()
+		if mc == nil || mc.ThreadRootMessageId == "" {
+			continue
+		}
+		if _, ok := countMap[mc.ThreadRootMessageId]; ok {
+			countMap[mc.ThreadRootMessageId]++
+			latestMap[mc.ThreadRootMessageId] = mc.MessageId
+			if ev.CommittedAt != nil {
+				latestAtMap[mc.ThreadRootMessageId] = ev.CommittedAt.AsTime().UnixMilli()
+			}
+		}
+	}
+
+	counts := make([]threadCountEntry, 0, len(req.RootUlids))
+	for _, rootUlid := range req.RootUlids {
+		counts = append(counts, threadCountEntry{
+			RootUlid:        rootUlid,
+			ReplyCount:      countMap[rootUlid],
+			LatestReplyUlid: latestMap[rootUlid],
+			LatestReplyAt:   latestAtMap[rootUlid],
+			UnreadCount:     0,
+		})
+	}
+
+	return &groupThreadCountsResponse{Counts: counts}, nil
 }

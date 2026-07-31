@@ -168,6 +168,8 @@ export function ChatMessageTimeline({
                 left: 0,
                 width: '100%',
                 transform: `translateY(${virtualItem.start}px)`,
+                display: 'flex',
+                flexDirection: 'column',
               }}
             >
               {item.showDateSeparator && messageDate && (

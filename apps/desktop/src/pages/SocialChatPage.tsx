@@ -154,7 +154,7 @@ export function SocialChatPage() {
   ];
 
   return (
-    <Flexbox horizontal style={{ height: '100%', minHeight: 0, width: '100%', overflow: 'hidden' }}>
+    <Flexbox horizontal style={{ height: '100%', minHeight: 0, width: '100%', overflowX: 'auto', overflowY: 'hidden' }}>
       {/* Sub-navigation: thin vertical icon bar */}
       <Flexbox
         gap={4}
