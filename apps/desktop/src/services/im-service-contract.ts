@@ -33,6 +33,29 @@ export interface ConversationServiceContract {
   listConversations(): Promise<Conversation[]>
   getMembers(conversationId: string): Promise<ConversationMember[]>
   listEvents(conversationId: string, afterSeq?: number, limit?: number): Promise<CommittedConversationEvent[]>
+  listMessages(conversationId: string, afterSeq?: number, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
+  listThreadMessages(conversationId: string, rootId: string, afterSeq?: number, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
+  threadCounts(conversationId: string, rootIds: string[]): Promise<{ counts: ThreadCountResult[] }>
+  setReadCursor(conversationId: string, lastReadSeq: number): Promise<void>
+  getUnread(conversationId: string): Promise<number>
+  getMemberSettings(conversationId: string): Promise<MemberSettingsResult>
+  updateMemberSettings(conversationId: string, settings: Partial<MemberSettingsResult>): Promise<void>
+  searchMessages(conversationId: string, query: string, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
+  syncFromStation(conversationId: string, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
+}
+
+export interface ThreadCountResult {
+  rootUlid: string
+  replyCount: number
+  latestReplyUlid: string
+  latestReplyAt: number
+  unreadCount: number
+}
+
+export interface MemberSettingsResult {
+  nickname: string
+  muted: boolean
+  alertEnabled: boolean
 }
 
 // --- Envelope Service Contract (v1) ---

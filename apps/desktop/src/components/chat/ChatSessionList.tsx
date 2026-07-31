@@ -5,6 +5,7 @@ import { Button, Dropdown, Input } from '@lobehub/ui';
 import { Alert, Badge, Empty, theme, Typography } from 'antd';
 import { RefreshCw, BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff } from 'lucide-react';
 import type { IMConversationProjection } from '@peers-touch/client-chat-core';
+import { GroupCompositeAvatar } from '../common/GroupCompositeAvatar';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError } from '../../services/errorPresenter';
@@ -26,75 +27,11 @@ function SessionGroupAvatar({ members, peerProfiles, size = 36 }: {
   peerProfiles: Record<string, { display_name?: string; username?: string; avatar?: string } | null | undefined>;
   size?: number;
 }) {
-  const { token } = theme.useToken();
   const slots = members.slice(0, 4).map((m) => {
     const p = peerProfiles[m.ptid];
     return { name: p?.display_name?.trim() || p?.username?.trim() || m.nickname || '', avatar: p?.avatar || '' };
   });
-  const count = slots.length;
-  const gap = 1;
-  const cellSize = count <= 1 ? size : Math.floor((size - gap) / 2);
-
-  if (count === 0) {
-    return (
-      <div style={{
-        width: size, height: size, borderRadius: Math.round(size * 0.25),
-        background: token.colorFillSecondary, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: token.colorTextSecondary, flexShrink: 0,
-      }}>
-        <Users size={Math.round(size * 0.44)} />
-      </div>
-    );
-  }
-
-  const positions: { top: number; left: number }[] = (() => {
-    if (count === 1) return [{ top: 0, left: 0 }];
-    if (count === 2) return [
-      { top: Math.floor((size - cellSize) / 2), left: 0 },
-      { top: Math.floor((size - cellSize) / 2), left: cellSize + gap },
-    ];
-    if (count === 3) return [
-      { top: 0, left: Math.floor((size - cellSize) / 2) },
-      { top: cellSize + gap, left: 0 },
-      { top: cellSize + gap, left: cellSize + gap },
-    ];
-    return [
-      { top: 0, left: 0 },
-      { top: 0, left: cellSize + gap },
-      { top: cellSize + gap, left: 0 },
-      { top: cellSize + gap, left: cellSize + gap },
-    ];
-  })();
-
-  return (
-    <div style={{ width: size, height: size, position: 'relative', flexShrink: 0, borderRadius: Math.round(size * 0.25), overflow: 'hidden' }}>
-      {slots.map((member, i) => (
-        <div
-          key={i}
-          style={{
-            position: 'absolute',
-            top: positions[i].top,
-            left: positions[i].left,
-            width: count === 1 ? size : cellSize,
-            height: count === 1 ? size : cellSize,
-            background: token.colorFillSecondary,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: token.colorTextSecondary,
-            fontSize: count === 1 ? Math.round(size * 0.36) : Math.round(cellSize * 0.4),
-            fontWeight: 700,
-          }}
-        >
-          {member.avatar ? (
-            <img src={member.avatar} alt={member.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            member.name ? member.name.charAt(0).toUpperCase() : '?'
-          )}
-        </div>
-      ))}
-    </div>
-  );
+  return <GroupCompositeAvatar members={slots} size={size} />;
 }
 
 function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) => string): string {
@@ -121,6 +58,7 @@ export function ChatSessionList() {
   const {
     sessions,
     groups,
+    conversations,
     groupMembers,
     groupUnreadCounts,
     lastPreviews,
@@ -143,6 +81,7 @@ export function ChatSessionList() {
   } = useActiveSocialChatSlice((state) => ({
     sessions: state.sessions,
     groups: state.groups,
+    conversations: state.conversations,
     groupMembers: state.groupMembers,
     groupUnreadCounts: state.groupUnreadCounts,
     lastPreviews: state.lastPreviews,
@@ -173,10 +112,11 @@ export function ChatSessionList() {
   // do NOT re-fire those calls here, otherwise the cold path runs every
   // fetch twice in parallel and the spinner blocks longer than necessary.
 
-  const conversations = useMemo(
+  const visibleConversations = useMemo(
     () => getIMConversations().filter((c) => !c.hidden),
     [
       getIMConversations,
+      conversations,
       sessions,
       groups,
       groupUnreadCounts,
@@ -433,7 +373,7 @@ export function ChatSessionList() {
         )}
 
         <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 8px' }} gap={2}>
-          {conversations.length === 0 ? (
+          {visibleConversations.length === 0 ? (
             <Flexbox align="center" justify="center" flex={1}>
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -441,7 +381,7 @@ export function ChatSessionList() {
               />
             </Flexbox>
           ) : (
-            conversations.map((c) => {
+            visibleConversations.map((c) => {
               const isActive = isRowActive(c);
               const name = c.title || t('chat.social.sessionList.unknown');
               const timeStr = relativeTime(new Date(c.lastActivityMs), t);

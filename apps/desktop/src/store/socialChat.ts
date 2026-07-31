@@ -1354,6 +1354,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const allConversations = normalizeConversations(rawConversations);
 
       const directConversations = allConversations.filter((c) => c.kind === 1);
+      const groupConversations = allConversations.filter((c) => c.kind === 2);
       const memberResults = await Promise.allSettled(
         directConversations.map(async (conv) => {
           const rawMembers = await imServiceV1.conversation.getMembers(conv.conversationId);
@@ -1367,10 +1368,24 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         }
       }
 
+      const groupMemberResults = await Promise.allSettled(
+        groupConversations.map(async (conv) => {
+          const rawMembers = await imServiceV1.conversation.getMembers(conv.conversationId);
+          return [conv.conversationId, rawMembers] as const;
+        }),
+      );
+      const groupMembersUpdate: Record<string, any[]> = { ...get().groupMembers };
+      for (const result of groupMemberResults) {
+        if (result.status === 'fulfilled') {
+          groupMembersUpdate[result.value[0]] = result.value[1] as any[];
+        }
+      }
+
       const actorId = currentAuthenticatedActorId() || '';
       set({
         conversations: allConversations,
         conversationMembers: memberMap,
+        groupMembers: groupMembersUpdate,
         sessions: [],
         groups: [],
         loading: false,
@@ -1451,7 +1466,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadGroups: async () => {
-    // Unified: all conversations loaded together via loadSessions → conversation subserver.
+    await get().loadSessions();
   },
 
   setActiveTab: (tab) => set({ activeTab: tab, openThreadRootUlid: null }),
