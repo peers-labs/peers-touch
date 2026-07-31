@@ -3,18 +3,36 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
 import { Alert, Badge, Empty, theme, Typography } from 'antd';
-import { RefreshCw, BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff, Trash2 } from 'lucide-react';
+import { RefreshCw, BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff } from 'lucide-react';
 import type { IMConversationProjection } from '@peers-touch/client-chat-core';
+import { GroupCompositeAvatar } from '../common/GroupCompositeAvatar';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError } from '../../services/errorPresenter';
 import { markOverlayIntent, markOverlayVisible } from '../../kernel/frontendRuntimeProfiler';
 import { OverlayCommitProfiler } from '../../kernel/OverlayCommitProfiler';
+import { imServiceV1 } from '../../services/im-service';
+import { api } from '../../services/desktop_api';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import { ChatSearchDropdown } from './ChatSearchDropdown';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
+import type { GroupMember } from '../../gen/proto/domain/chat/group_chat_pb';
 
 const { Text } = Typography;
+
+function SessionGroupAvatar({ members, peerProfiles, size = 36 }: {
+  groupId: string;
+  members: GroupMember[];
+  peerProfiles: Record<string, { display_name?: string; username?: string; avatar?: string } | null | undefined>;
+  size?: number;
+}) {
+  const slots = members.slice(0, 4).map((m) => {
+    const p = peerProfiles[m.ptid];
+    return { name: p?.display_name?.trim() || p?.username?.trim() || m.nickname || '', avatar: p?.avatar || '' };
+  });
+  return <GroupCompositeAvatar members={slots} size={size} />;
+}
 
 function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const diffMs = Date.now() - d.getTime();
@@ -40,6 +58,8 @@ export function ChatSessionList() {
   const {
     sessions,
     groups,
+    conversations,
+    groupMembers,
     groupUnreadCounts,
     lastPreviews,
     currentUserDid,
@@ -49,18 +69,20 @@ export function ChatSessionList() {
     activeGroupUlid,
     conversationLocalState,
     loadError,
+    peerProfiles,
+    friendRequests,
     selectSession,
     selectGroup,
     getIMConversations,
     updateConversationLocalState,
     hideConversation,
-    deleteGroupContact,
-    deleteFriendContact,
     loadSessions,
     loadGroups,
   } = useActiveSocialChatSlice((state) => ({
     sessions: state.sessions,
     groups: state.groups,
+    conversations: state.conversations,
+    groupMembers: state.groupMembers,
     groupUnreadCounts: state.groupUnreadCounts,
     lastPreviews: state.lastPreviews,
     currentUserDid: state.currentUserDid,
@@ -70,13 +92,13 @@ export function ChatSessionList() {
     activeGroupUlid: state.activeGroupUlid,
     conversationLocalState: state.conversationLocalState,
     loadError: state.loadError,
+    peerProfiles: state.peerProfiles,
+    friendRequests: state.friendRequests,
     selectSession: state.selectSession,
     selectGroup: state.selectGroup,
     getIMConversations: state.getIMConversations,
     updateConversationLocalState: state.updateConversationLocalState,
     hideConversation: state.hideConversation,
-    deleteGroupContact: state.deleteGroupContact,
-    deleteFriendContact: state.deleteFriendContact,
     loadSessions: state.loadSessions,
     loadGroups: state.loadGroups,
   }));
@@ -90,10 +112,11 @@ export function ChatSessionList() {
   // do NOT re-fire those calls here, otherwise the cold path runs every
   // fetch twice in parallel and the spinner blocks longer than necessary.
 
-  const conversations = useMemo(
-    () => getIMConversations(),
+  const visibleConversations = useMemo(
+    () => getIMConversations().filter((c) => !c.hidden),
     [
       getIMConversations,
+      conversations,
       sessions,
       groups,
       groupUnreadCounts,
@@ -101,14 +124,89 @@ export function ChatSessionList() {
       currentUserDid,
       conversationLocalState,
       messages,
+      peerProfiles,
+      friendRequests,
     ],
   );
 
-  const filteredItems = useMemo(() => {
-    if (!searchText.trim()) return conversations;
+  const handleSearchSelect = async (c: any) => {
+    const existingConv = getIMConversations().find(
+      (conv) => conv.id === c.id || (c.peerDid && conv.peerDid === c.peerDid),
+    );
+
+    if (existingConv) {
+      setSearchText('');
+      handleSelect(existingConv);
+      if (existingConv.hidden) {
+        updateConversationLocalState(existingConv.kind, existingConv.id, { hidden: false });
+      }
+      return;
+    }
+
+    if (c.kind === 'friend' && c.peerDid) {
+      try {
+        const resp = await api.friendChatCreateSession(c.peerDid);
+        const sessionUlid = resp.session?.ulid;
+        if (sessionUlid) {
+          await loadSessions();
+          setSearchText('');
+          selectSession(sessionUlid);
+          return;
+        }
+        await imServiceV1.conversation.createDirect(c.peerDid);
+        await loadSessions();
+        const created = getIMConversations().find((conv) => conv.peerDid === c.peerDid);
+        if (created) {
+          setSearchText('');
+          handleSelect(created);
+        }
+      } catch (error) {
+        presentError(error, {
+          mapper: mapChatError,
+          context: { operation: 'conversationAction' },
+        });
+      }
+    }
+  };
+
+  const searchResults = useMemo(() => {
+    if (!searchText.trim()) return [];
     const q = searchText.toLowerCase();
-    return conversations.filter((c) => c.title.toLowerCase().includes(q));
-  }, [conversations, searchText]);
+
+    const fromConversations = getIMConversations().filter((c) => c.title.toLowerCase().includes(q));
+
+    const existingPeerIds = new Set(fromConversations.map((c) => c.peerDid).filter(Boolean));
+    const myId = currentUserDid || '';
+    const fromContacts: IMConversationProjection[] = friendRequests
+      .filter((r) => r.status === 2)
+      .map((r) => {
+        const isSender = r.senderId === myId;
+        const peerId = isSender ? r.receiverId : r.senderId;
+        const peerName = isSender ? r.receiverDisplayName : r.senderDisplayName;
+        const peerAvatar = isSender ? r.receiverAvatar : r.senderAvatar;
+        return { peerId, peerName, peerAvatar };
+      })
+      .filter(({ peerId, peerName }) =>
+        !existingPeerIds.has(peerId) && peerName.toLowerCase().includes(q),
+      )
+      .map(({ peerId, peerName, peerAvatar }) => ({
+        id: peerId,
+        kind: 'friend' as const,
+        title: peerName,
+        avatar: peerAvatar || '',
+        peerDid: peerId,
+        lastActivityMs: 0,
+        unread: 0,
+        visibleUnread: 0,
+        hidden: false,
+        muted: false,
+        alertEnabled: true,
+        syncStatus: 'live' as const,
+        preview: undefined,
+      }));
+
+    return [...fromConversations, ...fromContacts];
+  }, [searchText, getIMConversations, conversations, peerProfiles, friendRequests, currentUserDid]);
 
   const plusMenuItems = [
     {
@@ -161,13 +259,6 @@ export function ChatSessionList() {
           icon: <EyeOff size={14} />,
           label: t('chat.social.contextMenu.hide'),
         },
-        { type: 'divider' as const, key: 'divider-2' },
-        {
-          key: 'delete',
-          icon: <Trash2 size={14} />,
-          label: t('chat.social.contextMenu.delete'),
-          danger: true,
-        },
       ],
       onClick: async ({ key }: { key: string }) => {
         switch (key) {
@@ -203,27 +294,12 @@ export function ChatSessionList() {
             }
             break;
           case 'hide':
-            await hideConversation(c.kind, c.id, true);
+            hideConversation(c.kind, c.id, true);
             break;
-          case 'delete': {
-            try {
-              if (c.kind === 'group') {
-                await deleteGroupContact(c.id);
-              } else {
-                await deleteFriendContact(c.id);
-              }
-            } catch (error) {
-              presentError(error, {
-                mapper: mapChatError,
-                context: { operation: 'delete' },
-              });
-            }
-            break;
-          }
         }
       },
     };
-  }, [conversationLocalState, t, updateConversationLocalState, hideConversation, deleteGroupContact, deleteFriendContact]);
+  }, [conversationLocalState, t, updateConversationLocalState, hideConversation]);
 
   const isRowActive = (c: IMConversationProjection) => {
     if (c.kind === 'friend') {
@@ -248,6 +324,7 @@ export function ChatSessionList() {
           height: '100%',
           borderRight: `1px solid ${token.colorBorderSecondary}`,
           background: token.colorBgContainer,
+          position: 'relative',
         }}
       >
         <Flexbox gap={8} style={{ padding: '12px 12px 0' }}>
@@ -287,7 +364,7 @@ export function ChatSessionList() {
               message={t('chat.social.sessionList.loadFailed')}
               action={
                 <Button size="small" type="text" icon={<RefreshCw size={12} />} onClick={handleRetry}>
-                  {t('common.action.retry')}
+                  {t('common.action.retry', { ns: 'common' })}
                 </Button>
               }
               style={{ fontSize: 12 }}
@@ -296,17 +373,15 @@ export function ChatSessionList() {
         )}
 
         <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 8px' }} gap={2}>
-          {filteredItems.length === 0 ? (
+          {visibleConversations.length === 0 ? (
             <Flexbox align="center" justify="center" flex={1}>
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  searchText ? t('chat.social.sessionList.noResults') : t('chat.social.sessionList.noConversations')
-                }
+                description={t('chat.social.sessionList.noConversations')}
               />
             </Flexbox>
           ) : (
-            filteredItems.map((c) => {
+            visibleConversations.map((c) => {
               const isActive = isRowActive(c);
               const name = c.title || t('chat.social.sessionList.unknown');
               const timeStr = relativeTime(new Date(c.lastActivityMs), t);
@@ -329,7 +404,10 @@ export function ChatSessionList() {
                   text = p.content;
                 }
                 if (c.kind === 'group' && p.senderId) {
-                  const senderShort = p.senderId.length > 12 ? p.senderId.slice(0, 12) + '…' : p.senderId;
+                  const profile = peerProfiles[p.senderId];
+                  const senderShort = p.senderId === currentUserDid
+                    ? t('chat.social.preview.you')
+                    : profile?.display_name?.trim() || profile?.username?.trim() || p.senderId.slice(0, 8) + '…';
                   subtitle = `${senderShort}: ${text}`;
                 } else {
                   subtitle = text;
@@ -380,7 +458,11 @@ export function ChatSessionList() {
                   >
                     <OverlayCommitProfiler owner={contextMenuTarget} surface="chat-conversation-context-menu">
                       <>
-                          <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
+                          {c.kind === 'group' && !c.avatar ? (
+                            <SessionGroupAvatar groupId={c.id} members={groupMembers[c.id] || []} peerProfiles={peerProfiles} size={36} />
+                          ) : (
+                            <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
+                          )}
 
                           <Flexbox flex={1} style={{ minWidth: 0 }}>
                             <Flexbox horizontal align="center" justify="space-between" gap={6}>
@@ -419,6 +501,12 @@ export function ChatSessionList() {
             })
           )}
         </Flexbox>
+
+        <ChatSearchDropdown
+          searchText={searchText}
+          results={searchResults}
+          onSelect={handleSearchSelect}
+        />
       </Flexbox>
 
       <CreateGroupModal open={showCreateGroup} onClose={() => setShowCreateGroup(false)} />

@@ -48,6 +48,11 @@ input, textarea, [contenteditable="true"] {
 .settings-tabs .ant-tabs-content {
   height: 100%;
 }
+
+.ant-modal-close {
+  border: none !important;
+}
+
 .settings-tabs .ant-tabs-content-holder {
   overflow: hidden;
 }

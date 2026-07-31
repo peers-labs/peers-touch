@@ -654,3 +654,246 @@ pub fn dkx_send(
         Err(e) => station_err(e, "dkx send failed"),
     }
 }
+
+// =============================================================================
+// Unified Message Queries (P2 — replaces friend_chat_* + group_chat_* commands)
+// =============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationListMessagesInput {
+    pub conversation_id: String,
+    pub after_seq: Option<i64>,
+    pub limit: Option<i32>,
+}
+
+#[tauri::command]
+pub fn conversation_list_messages(
+    input: ConversationListMessagesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let query = vec![
+        ("conversation_id", input.conversation_id),
+        ("after_seq", input.after_seq.unwrap_or(0).to_string()),
+        ("limit", input.limit.unwrap_or(50).to_string()),
+    ];
+    match station_client::request_json_auth(Method::GET, "/conversation/messages", &token, Some(&query), None) {
+        Ok(resp) => AppResult::success(resp),
+        Err(e) => station_err(e, "list messages failed"),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationListThreadMessagesInput {
+    pub conversation_id: String,
+    pub root_id: String,
+    pub after_seq: Option<i64>,
+    pub limit: Option<i32>,
+}
+
+#[tauri::command]
+pub fn conversation_list_thread_messages(
+    input: ConversationListThreadMessagesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let query = vec![
+        ("conversation_id", input.conversation_id),
+        ("root_id", input.root_id),
+        ("after_seq", input.after_seq.unwrap_or(0).to_string()),
+        ("limit", input.limit.unwrap_or(50).to_string()),
+    ];
+    match station_client::request_json_auth(Method::GET, "/conversation/thread/messages", &token, Some(&query), None) {
+        Ok(resp) => AppResult::success(resp),
+        Err(e) => station_err(e, "list thread messages failed"),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationThreadCountsInput {
+    pub conversation_id: String,
+    pub root_ids: Vec<String>,
+}
+
+#[tauri::command]
+pub fn conversation_thread_counts(
+    input: ConversationThreadCountsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let body = json!({
+        "conversation_id": input.conversation_id,
+        "root_ids": input.root_ids,
+    });
+    match station_client::request_json_auth(Method::POST, "/conversation/thread/counts", &token, None, Some(&body)) {
+        Ok(resp) => AppResult::success(resp),
+        Err(e) => station_err(e, "thread counts failed"),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationSetReadCursorInput {
+    pub conversation_id: String,
+    pub last_read_seq: i64,
+}
+
+#[tauri::command]
+pub fn conversation_set_read_cursor(
+    input: ConversationSetReadCursorInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let body = json!({
+        "conversation_id": input.conversation_id,
+        "last_read_seq": input.last_read_seq,
+    });
+    match station_client::request_json_auth(Method::POST, "/conversation/read-cursor", &token, None, Some(&body)) {
+        Ok(resp) => AppResult::success(resp),
+        Err(e) => station_err(e, "set read cursor failed"),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationGetUnreadInput {
+    pub conversation_id: String,
+}
+
+#[tauri::command]
+pub fn conversation_get_unread(
+    input: ConversationGetUnreadInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let query = vec![("conversation_id", input.conversation_id)];
+    match station_client::request_json_auth(Method::GET, "/conversation/unread", &token, Some(&query), None) {
+        Ok(resp) => AppResult::success(resp),
+        Err(e) => station_err(e, "get unread failed"),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationMemberSettingsInput {
+    pub conversation_id: String,
+}
+
+#[tauri::command]
+pub fn conversation_get_member_settings(
+    input: ConversationMemberSettingsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let query = vec![("conversation_id", input.conversation_id)];
+    match station_client::request_json_auth(Method::GET, "/conversation/member/settings", &token, Some(&query), None) {
+        Ok(resp) => AppResult::success(resp),
+        Err(e) => station_err(e, "get member settings failed"),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationUpdateMemberSettingsInput {
+    pub conversation_id: String,
+    pub nickname: Option<String>,
+    pub muted: Option<bool>,
+}
+
+#[tauri::command]
+pub fn conversation_update_member_settings(
+    input: ConversationUpdateMemberSettingsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let body = json!({
+        "conversation_id": input.conversation_id,
+        "nickname": input.nickname,
+        "muted": input.muted,
+    });
+    match station_client::request_json_auth(Method::PUT, "/conversation/member/settings", &token, None, Some(&body)) {
+        Ok(resp) => AppResult::success(resp),
+        Err(e) => station_err(e, "update member settings failed"),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationSearchInput {
+    pub conversation_id: String,
+    pub query: String,
+    pub limit: Option<i32>,
+}
+
+#[tauri::command]
+pub fn conversation_search_messages(
+    input: ConversationSearchInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let query = vec![
+        ("conversation_id", input.conversation_id),
+        ("q", input.query),
+        ("limit", input.limit.unwrap_or(20).to_string()),
+    ];
+    match station_client::request_json_auth(Method::GET, "/conversation/messages/search", &token, Some(&query), None) {
+        Ok(resp) => AppResult::success(resp),
+        Err(e) => station_err(e, "search messages failed"),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationSyncInput {
+    pub conversation_id: String,
+    pub limit: Option<i32>,
+    pub max_pages: Option<i32>,
+}
+
+#[tauri::command]
+pub fn conversation_sync_from_station(
+    input: ConversationSyncInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let limit = input.limit.unwrap_or(200);
+    let query = vec![
+        ("conversation_id", input.conversation_id),
+        ("after_seq", "0".to_string()),
+        ("limit", limit.to_string()),
+    ];
+    match station_client::request_json_auth(Method::GET, "/conversation/messages", &token, Some(&query), None) {
+        Ok(resp) => AppResult::success(resp),
+        Err(e) => station_err(e, "sync from station failed"),
+    }
+}
