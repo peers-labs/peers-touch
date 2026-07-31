@@ -15,6 +15,13 @@ import { extractUrls, LinkPreviewCard } from './LinkPreviewCard';
 
 const { Text } = Typography;
 
+const EMOJI_REGEX = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}\s]+$/u;
+
+function isEmojiOnly(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length > 0 && trimmed.length <= 24 && EMOJI_REGEX.test(trimmed);
+}
+
 interface ChatMessageContentProps {
   message: ChatMessage;
   isOwn: boolean;
@@ -55,7 +62,9 @@ export function ChatMessageContent({
           </Text>
         </Flexbox>
       ) : (
-        message.content
+        <span style={isEmojiOnly(message.content) ? { fontSize: 32, lineHeight: '40px' } : undefined}>
+          {message.content}
+        </span>
       )}
       {urls.length > 0 && (
         <Flexbox gap={4}>

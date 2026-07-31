@@ -849,18 +849,18 @@ pub fn list_group_thread_messages(
 ) -> StationResult<Value> {
     let limit = page_limit.clamp(1, 100);
     let mut query = vec![
-        ("group_ulid", group_ulid.to_string()),
-        ("root_ulid", root_ulid.to_string()),
+        ("conversation_id", group_ulid.to_string()),
+        ("root_id", root_ulid.to_string()),
         ("limit", limit.to_string()),
     ];
     if let Some(after) = after_ulid {
         if !after.is_empty() {
-            query.push(("after_ulid", after.to_string()));
+            query.push(("after_seq", after.to_string()));
         }
     }
     station_client::request_json(
         Method::GET,
-        "/group-chat/thread/messages",
+        "/conversation/thread/messages",
         token,
         Some(&query),
         None,
@@ -874,12 +874,12 @@ pub fn group_thread_counts(
 ) -> StationResult<Value> {
     station_client::request_json(
         Method::POST,
-        "/group-chat/thread/counts",
+        "/conversation/thread/counts",
         token,
         None,
         Some(json!({
-            "group_ulid": group_ulid,
-            "root_ulids": root_ulids,
+            "conversation_id": group_ulid,
+            "root_ids": root_ulids,
         })),
     )
 }
@@ -887,18 +887,17 @@ pub fn group_thread_counts(
 pub fn mark_group_thread_read(
     token: &str,
     group_ulid: &str,
-    root_ulid: &str,
-    last_read_ulid: Option<&str>,
+    _root_ulid: &str,
+    _last_read_ulid: Option<&str>,
 ) -> StationResult<Value> {
     station_client::request_json(
         Method::POST,
-        "/group-chat/thread/read",
+        "/conversation/read-cursor",
         token,
         None,
         Some(json!({
-            "group_ulid": group_ulid,
-            "root_ulid": root_ulid,
-            "last_read_ulid": last_read_ulid.unwrap_or_default(),
+            "conversation_id": group_ulid,
+            "last_read_seq": 0,
         })),
     )
 }

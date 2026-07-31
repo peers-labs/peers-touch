@@ -6670,14 +6670,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
+            let envelope = args.get("envelope").cloned().unwrap_or(json!({}));
+            let env_obj = envelope.as_object();
             let body = json!({
                 "envelope": {
-                    "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                    "sender_actor_did": args.get("sender_actor_did").and_then(|v| v.as_str()).unwrap_or(""),
-                    "recipient_actor_did": args.get("recipient_actor_did").and_then(|v| v.as_str()).unwrap_or(""),
-                    "payload_type": args.get("payload_type").and_then(|v| v.as_i64()).unwrap_or(1),
-                    "payload_bytes": args.get("payload_bytes"),
-                    "idempotency_key": args.get("idempotency_key").and_then(|v| v.as_str()).unwrap_or(""),
+                    "conversation_id": env_obj.and_then(|o| o.get("conversation_id")).and_then(|v| v.as_str()).unwrap_or(""),
+                    "sender_ptid": env_obj.and_then(|o| o.get("sender_ptid")).and_then(|v| v.as_str()).unwrap_or(""),
+                    "sender_device_id": env_obj.and_then(|o| o.get("sender_device_id")).and_then(|v| v.as_str()).unwrap_or(""),
+                    "recipient_ptid": env_obj.and_then(|o| o.get("recipient_ptid")).and_then(|v| v.as_str()).unwrap_or(""),
+                    "payload_type": env_obj.and_then(|o| o.get("payload_type")).and_then(|v| v.as_i64()).unwrap_or(1),
+                    "payload_bytes": env_obj.and_then(|o| o.get("payload_bytes")),
+                    "idempotency_key": env_obj.and_then(|o| o.get("idempotency_key")).and_then(|v| v.as_str()).unwrap_or(""),
                 }
             });
             match crate::infrastructure::station_client::request_json_auth(
@@ -6742,6 +6745,22 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(resp) => to_json(AppResult::success(resp)),
                 Err(e) => to_json(AppResult::<Value>::fail(
                     ErrorCode::InternalError, &format!("conversation members: {e}"), None,
+                )),
+            }
+        }
+        "conversation_submit_command" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let command = args.get("command").cloned().unwrap_or(json!({}));
+            let body = json!({ "command": command });
+            match crate::infrastructure::station_client::request_json_auth(
+                reqwest::Method::POST, "/conversation/command", &token, None, Some(&body),
+            ) {
+                Ok(resp) => to_json(AppResult::success(resp)),
+                Err(e) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError, &format!("conversation command: {e}"), None,
                 )),
             }
         }
