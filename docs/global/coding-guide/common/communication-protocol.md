@@ -558,12 +558,75 @@ server.NewTypedHandler(
 
 ---
 
-## 7. JSON 允许使用的场景
+## 7. 文件传输 (Binary/Multipart)
+
+文件上传和下载不使用 Protobuf 包装 — 二进制载荷直接作为 HTTP body 传输。
+
+### 7.1 上传 (Client → Station)
+
+传输方式: `multipart/form-data`
+
+```
+POST /oss/upload
+Content-Type: multipart/form-data; boundary=...
+Authorization: Bearer <token>
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="photo.jpg"
+Content-Type: image/jpeg
+
+<raw binary bytes>
+--boundary
+Content-Disposition: form-data; name="bucket"
+Content-Type: text/plain
+
+chat
+--boundary--
+```
+
+响应: JSON (Station OSS subserver 的 upload 响应历史上使用 JSON, 因为它返回动态的 CID/key/presigned-URL 组合, 非固定 schema)。
+
+源码参考: `station_client.rs` → `upload_multipart()`
+
+### 7.2 下载 (Station → Client)
+
+传输方式: 裸二进制流
+
+```
+GET /oss/blob/<key>
+Authorization: Bearer <token>
+
+→ 200 OK
+Content-Type: <original-mime>
+Content-Length: <size>
+
+<raw binary bytes>
+```
+
+### 7.3 为什么不用 Proto 包装二进制
+
+1. Proto 的 `bytes` 字段对大文件有内存和性能问题 (整体序列化, 无流式支持)
+2. HTTP multipart 和裸流传输是工业标准, 中间件 (nginx, CDN, 浏览器) 原生支持
+3. 文件元数据 (CID, MIME, size) 在上传完成后通过 Proto 结构化 API 查询, 不需要在传输中耦合
+
+### 7.4 适用场景
+
+| 操作 | 传输方式 | Content-Type |
+|---|---|---|
+| 文件/图片/音频上传 | multipart/form-data | `multipart/form-data` |
+| 头像上传 | multipart/form-data | `multipart/form-data` |
+| 文件下载/预览 | 裸二进制响应 | 原始 MIME |
+| Presigned URL 上传 | 客户端直传 (PUT raw) | 原始 MIME |
+
+---
+
+## 8. JSON 允许使用的场景
 
 | 场景 | 原因 |
 |---|---|
 | Tauri IPC (`invoke()`) | serde 序列化限制, 无法直接传输 proto wire format |
 | SSE data 字段 | SSE 协议要求文本格式, `data:` 行使用 JSON stringify |
+| OSS upload 响应 | 返回动态 CID/key/presigned-URL 组合, 历史 JSON; 元数据查询走 proto |
 | 第三方 API 响应 | 无法控制外部 API 的序列化格式 |
 | 配置文件 (YAML/JSON) | 人类可读需求 |
 
@@ -571,18 +634,20 @@ server.NewTypedHandler(
 
 ---
 
-## 8. 通信流程总览
+## 9. 通信流程总览
 
 ```
 Mobile (Kotlin/Swift)
   |
-  | HTTP + Protobuf (application/protobuf)
-  | SSE (text/event-stream + JSON data)
+  | HTTP + Protobuf (application/protobuf)       ← 结构化数据
+  | HTTP + multipart/form-data                   ← 文件上传
+  | SSE (text/event-stream + JSON data)          ← 实时推送
   v
 Station (Go)
   ^
-  | HTTP + Protobuf (application/protobuf)
-  | SSE (text/event-stream + JSON data)
+  | HTTP + Protobuf (application/protobuf)       ← 结构化数据
+  | HTTP + multipart/form-data                   ← 文件上传
+  | SSE (text/event-stream + JSON data)          ← 实时推送
   |
 Desktop Rust Layer
   ^
