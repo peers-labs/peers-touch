@@ -685,9 +685,11 @@ export function ChatComposer({
                 open={emojiOpen}
                 onOpenChange={setEmojiOpen}
                 trigger="click"
-                placement="topLeft"
+                placement="topRight"
                 content={emojiPanel}
                 styles={{ content: { padding: 0 } }}
+                destroyTooltipOnHide
+                motion={{ motionName: '' }}
               >
                 <Tooltip title={t('chat.social.composer.emoji')}>
                   <Button

@@ -220,6 +220,14 @@ func (s *DefaultService) GetMembers(ctx context.Context, conversationID string) 
 	return s.repo.GetMembers(ctx, conversationID)
 }
 
+func (s *DefaultService) GetMember(ctx context.Context, conversationID, ptid string) (*chat.ConversationMember, error) {
+	return s.repo.GetMember(ctx, conversationID, ptid)
+}
+
+func (s *DefaultService) UpsertMember(ctx context.Context, member *chat.ConversationMember) error {
+	return s.repo.UpsertMember(ctx, member)
+}
+
 func (s *DefaultService) ListEvents(ctx context.Context, conversationID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -407,7 +415,7 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 
 	case *chat.ConversationCommand_UpdateSettings:
 		if conv.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
-			if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+			if err := s.requireMembership(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
 				return nil, err
 			}
 		}
@@ -530,4 +538,44 @@ func (s *DefaultService) requireAdminOrOwner(ctx context.Context, conversationID
 		return fmt.Errorf("conversation: admin or owner role required")
 	}
 	return nil
+}
+
+func (s *DefaultService) requireMembership(ctx context.Context, conversationID, senderPtid string) error {
+	member, err := s.repo.GetMember(ctx, conversationID, senderPtid)
+	if err != nil || member == nil {
+		return fmt.Errorf("conversation: sender not a member")
+	}
+	return nil
+}
+
+// --- New Service methods (W1/W2: unified conversation API) ---
+
+func (s *DefaultService) ListMessages(ctx context.Context, conversationID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error) {
+	events, err := s.repo.ListEvents(ctx, conversationID, afterSeq, limit)
+	if err != nil {
+		return nil, err
+	}
+	messages := make([]*chat.CommittedConversationEvent, 0, len(events))
+	for _, ev := range events {
+		if ev.GetMessageCommitted() != nil {
+			messages = append(messages, ev)
+		}
+	}
+	return messages, nil
+}
+
+func (s *DefaultService) ListThreadMessages(ctx context.Context, conversationID, threadRootID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error) {
+	return s.repo.ListThreadEvents(ctx, conversationID, threadRootID, afterSeq, limit)
+}
+
+func (s *DefaultService) GetThreadCounts(ctx context.Context, conversationID string, rootIDs []string) (map[string]ThreadSummary, error) {
+	return s.repo.CountThreadReplies(ctx, conversationID, rootIDs)
+}
+
+func (s *DefaultService) SetReadCursor(ctx context.Context, conversationID, ptid string, seq int64) error {
+	return s.repo.SetReadCursor(ctx, conversationID, ptid, seq)
+}
+
+func (s *DefaultService) GetUnreadCount(ctx context.Context, conversationID, ptid string) (int64, error) {
+	return s.repo.CountUnread(ctx, conversationID, ptid)
 }
