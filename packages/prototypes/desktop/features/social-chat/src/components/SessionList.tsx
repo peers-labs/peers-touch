@@ -1,4 +1,5 @@
-import { Pin, BellOff, EyeOff, Trash2, CheckCheck, Volume2, VolumeX, Clock3 } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Pin, BellOff, EyeOff, Trash2, CheckCheck, Volume2, VolumeX, Clock3, Plus, UserPlus, Users, X } from 'lucide-react';
 import { T } from '../theme';
 import { Avatar } from './Avatar';
 import { ContextMenu } from './ContextMenu';
@@ -13,6 +14,8 @@ interface SessionListProps {
   onMarkAsRead: (id: string) => void;
   onHide: (id: string) => void;
   onDelete: (id: string) => void;
+  onCreateFriend: (name: string, peerId: string) => void;
+  onCreateGroup: (name: string, invitees: string[]) => void;
   onFindPeople?: () => void;
   compact?: boolean;
   fill?: boolean;
@@ -28,6 +31,95 @@ function formatTime(timestamp: number): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+function CreateAction({
+  icon,
+  title,
+  desc,
+  onClick,
+}: {
+  icon: ReactNode;
+  title: string;
+  desc: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: '100%',
+        border: 'none',
+        borderRadius: T.radiusMd,
+        background: 'transparent',
+        display: 'grid',
+        gridTemplateColumns: '28px 1fr',
+        gap: T.space2,
+        alignItems: 'center',
+        padding: T.space2,
+        cursor: 'pointer',
+        textAlign: 'left',
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = T.bgHover)}
+      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+    >
+      <span
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: T.radiusMd,
+          background: 'rgba(107,91,214,0.1)',
+          color: T.primary,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {icon}
+      </span>
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: T.fontSm, fontWeight: 800, color: T.text }}>{title}</span>
+        <span style={{ display: 'block', fontSize: T.fontXs, color: T.textTertiary, lineHeight: 1.35 }}>{desc}</span>
+      </span>
+    </button>
+  );
+}
+
+function CreateInput({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label style={{ display: 'block', marginTop: T.space2 }}>
+      <span style={{ display: 'block', fontSize: T.fontXs, color: T.textTertiary, fontWeight: 700, marginBottom: T.space1 }}>
+        {label}
+      </span>
+      <input
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          height: 32,
+          border: `1px solid ${T.border}`,
+          borderRadius: T.radiusMd,
+          background: T.bg,
+          color: T.text,
+          outline: 'none',
+          padding: `0 ${T.space2}px`,
+          fontSize: T.fontSm,
+        }}
+      />
+    </label>
+  );
+}
+
 export function SessionList({
   conversations,
   activeId,
@@ -37,14 +129,44 @@ export function SessionList({
   onMarkAsRead,
   onHide,
   onDelete,
+  onCreateFriend,
+  onCreateGroup,
   onFindPeople,
   compact = false,
   fill = false,
 }: SessionListProps) {
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<'friend' | 'group' | null>(null);
+  const [friendName, setFriendName] = useState('');
+  const [friendPeerId, setFriendPeerId] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [groupInvitees, setGroupInvitees] = useState('');
+
+  const closeCreateSurface = () => {
+    setCreateMenuOpen(false);
+    setCreateMode(null);
+    setFriendName('');
+    setFriendPeerId('');
+    setGroupName('');
+    setGroupInvitees('');
+  };
+
+  const submitCreate = () => {
+    if (createMode === 'friend') {
+      onCreateFriend(friendName, friendPeerId);
+      closeCreateSurface();
+    }
+    if (createMode === 'group') {
+      onCreateGroup(groupName, groupInvitees.split(/[,\n]/));
+      closeCreateSurface();
+    }
+  };
+
   return (
     <div
       style={{
-        width: fill ? '100%' : compact ? T.sessionListCompactWidth : T.sessionListWidth,
+        position: 'relative',
+        width: fill ? '100%' : compact ? 156 : T.sessionListWidth,
         height: '100%',
         borderRight: `1px solid ${T.border}`,
         display: 'flex',
@@ -67,7 +189,14 @@ export function SessionList({
       >
         <span style={{ fontSize: compact ? T.fontXl : T.fontHeading, fontWeight: 600, color: T.text }}>Messages</span>
         <button
-          onClick={onFindPeople}
+          onClick={() => {
+            setCreateMenuOpen((value) => !value);
+            setCreateMode(null);
+          }}
+          title="Add friend or group"
+          aria-label="Add friend or group"
+          aria-haspopup="menu"
+          aria-expanded={createMenuOpen}
           style={{
             width: 28,
             height: 28,
@@ -79,12 +208,107 @@ export function SessionList({
             alignItems: 'center',
             justifyContent: 'center',
             color: T.textSecondary,
-            fontSize: T.fontXl,
           }}
         >
-          +
+          <Plus size={16} />
         </button>
+        {createMenuOpen && !createMode && (
+          <div
+            style={{
+              position: 'absolute',
+              top: T.headerHeight - 6,
+              right: T.space3,
+              zIndex: 30,
+              width: 246,
+              border: `1px solid ${T.border}`,
+              borderRadius: T.radiusLg,
+              background: T.bg,
+              boxShadow: '0 18px 44px rgba(15,23,42,0.16)',
+              padding: T.space2,
+            }}
+          >
+            <CreateAction
+              icon={<UserPlus size={16} />}
+              title="Add friend"
+              desc="Maps to Friend create/list before first message."
+              onClick={() => setCreateMode('friend')}
+            />
+            <CreateAction
+              icon={<Users size={16} />}
+              title="Create group"
+              desc="Maps to Group create, then invite selected members."
+              onClick={() => setCreateMode('group')}
+            />
+          </div>
+        )}
       </div>
+
+      {createMode && (
+        <div
+          style={{
+            margin: `0 ${T.space3}px ${T.space2}px`,
+            border: `1px solid ${T.border}`,
+            borderRadius: T.radiusLg,
+            background: T.bgSubtle,
+            padding: T.space3,
+            boxShadow: T.shadowSm,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: T.space2 }}>
+            <div>
+              <div style={{ fontSize: T.fontSm, fontWeight: 800, color: T.text }}>
+                {createMode === 'friend' ? 'Add friend' : 'Create group'}
+              </div>
+              <div style={{ fontSize: T.fontXs, color: T.textTertiary }}>
+                {createMode === 'friend' ? 'Friend create -> open private session' : 'Group create -> queue member invites'}
+              </div>
+            </div>
+            <button
+              onClick={closeCreateSurface}
+              title="Close"
+              style={{
+                width: 24,
+                height: 24,
+                border: 'none',
+                borderRadius: T.radiusSm,
+                background: 'transparent',
+                color: T.textTertiary,
+                cursor: 'pointer',
+              }}
+            >
+              <X size={15} />
+            </button>
+          </div>
+          {createMode === 'friend' ? (
+            <>
+              <CreateInput label="Display name" value={friendName} onChange={setFriendName} placeholder="Sarah Jenkins" />
+              <CreateInput label="Peer ID / station handle" value={friendPeerId} onChange={setFriendPeerId} placeholder="station.example/alice" />
+            </>
+          ) : (
+            <>
+              <CreateInput label="Group name" value={groupName} onChange={setGroupName} placeholder="Release Review" />
+              <CreateInput label="Invitees" value={groupInvitees} onChange={setGroupInvitees} placeholder="alice, bob, station/carol" />
+            </>
+          )}
+          <button
+            onClick={submitCreate}
+            style={{
+              width: '100%',
+              height: 32,
+              border: 'none',
+              borderRadius: T.radiusMd,
+              background: T.primary,
+              color: T.textOnPrimary,
+              fontSize: T.fontSm,
+              fontWeight: 800,
+              cursor: 'pointer',
+              marginTop: T.space2,
+            }}
+          >
+            {createMode === 'friend' ? 'Create friend chat' : 'Create group'}
+          </button>
+        </div>
+      )}
 
       {/* Search */}
       <div style={{ padding: `${T.space2}px ${T.space3}px` }}>
