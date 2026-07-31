@@ -364,7 +364,7 @@ export function ChatSessionList() {
               message={t('chat.social.sessionList.loadFailed')}
               action={
                 <Button size="small" type="text" icon={<RefreshCw size={12} />} onClick={handleRetry}>
-                  {t('common.action.retry')}
+                  {t('common.action.retry', { ns: 'common' })}
                 </Button>
               }
               style={{ fontSize: 12 }}

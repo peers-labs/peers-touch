@@ -26,11 +26,13 @@ import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 
 // True when the app runs outside the Tauri webview (the dev gateway shim
-// in `main.tsx` set this flag on `window`). We resolve it once at module
-// load — the host does not change at runtime.
-const IS_BROWSER_GATEWAY = typeof window !== 'undefined'
-  && typeof (window as any).__PT_GATEWAY_BASE__ === 'string'
-  && (window as any).__PT_GATEWAY_BASE__.length > 0;
+// in `main.tsx` set this flag on `window`). Evaluated lazily because
+// `installBrowserGateway()` runs AFTER ES module imports resolve.
+function isBrowserGateway(): boolean {
+  return typeof window !== 'undefined'
+    && typeof (window as any).__PT_GATEWAY_BASE__ === 'string'
+    && (window as any).__PT_GATEWAY_BASE__.length > 0;
+}
 
 function gatewayAvatarUrl(remoteUrl: string): string {
   const base = (window as any).__PT_GATEWAY_BASE__ as string;
@@ -115,7 +117,7 @@ export function UserSquareAvatar({
     // route (`GET /avatar?url=…`) handles cache lookup + Station download
     // server-side; a single fetch beats the two-step "resolve, then load
     // file" pattern that the native path uses for historical reasons.
-    if (IS_BROWSER_GATEWAY) {
+    if (isBrowserGateway()) {
       setLocalPath(remoteUrl);
       return;
     }
@@ -138,7 +140,7 @@ export function UserSquareAvatar({
   const showImage = !!localPath && !imgError;
 
   if (showImage) {
-    const src = IS_BROWSER_GATEWAY
+    const src = isBrowserGateway()
       ? gatewayAvatarUrl(remoteUrl as string)
       : convertFileSrc(localPath as string);
     return (
@@ -147,7 +149,7 @@ export function UserSquareAvatar({
         alt={name}
         onError={() => {
           // Drop the cache entry so the next mount triggers a re-download.
-          if (remoteUrl && !IS_BROWSER_GATEWAY) resolveCache.delete(remoteUrl);
+          if (remoteUrl && !isBrowserGateway()) resolveCache.delete(remoteUrl);
           setImgError(true);
         }}
         style={{
