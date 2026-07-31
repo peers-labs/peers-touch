@@ -415,7 +415,7 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 
 	case *chat.ConversationCommand_UpdateSettings:
 		if conv.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
-			if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+			if err := s.requireMembership(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
 				return nil, err
 			}
 		}
@@ -536,6 +536,14 @@ func (s *DefaultService) requireAdminOrOwner(ctx context.Context, conversationID
 	}
 	if member.Role != chat.MemberRole_MEMBER_ROLE_OWNER && member.Role != chat.MemberRole_MEMBER_ROLE_ADMIN {
 		return fmt.Errorf("conversation: admin or owner role required")
+	}
+	return nil
+}
+
+func (s *DefaultService) requireMembership(ctx context.Context, conversationID, senderPtid string) error {
+	member, err := s.repo.GetMember(ctx, conversationID, senderPtid)
+	if err != nil || member == nil {
+		return fmt.Errorf("conversation: sender not a member")
 	}
 	return nil
 }

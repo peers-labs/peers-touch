@@ -438,7 +438,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
                 cursor: 'pointer',
               }}
             >
-              {t('common.action.cancel')}
+              {t('common.action.cancel', { ns: 'common' })}
             </button>
             <button
               onClick={handleFinish}
