@@ -44,8 +44,8 @@ import {
 import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
 import { AgentCanvasPage } from '@peers-touch/prototype-agent-canvas';
 import { AppletWorkspacePage } from '../../features/applet-workspace/src/AppletWorkspacePrototype';
+import { SocialChatPage } from '../../features/social-chat/src/pages/SocialChatPage';
 import { Page as AgentFeaturePage } from '../../features/agent/src/Page';
-import { ChatPageBlock as CallChatPage } from '../../features/call/src/CallPrototype';
 import { AgentChatPage } from './AgentChatPage';
 import { SettingsPage } from './Settings';
 import { T } from './theme';
@@ -117,7 +117,7 @@ const NAV_ITEMS: { id: string; icon: LucideIcon; title: string }[] = [
 
 const COMMANDS: { id: string; label: string; desc: string; shortcut: string; target: string }[] = [
   { id: 'search', label: '搜索', desc: '全局搜索', shortcut: '⌘K', target: 'search' },
-  { id: 'chat', label: '聊天', desc: '打开聊天', shortcut: '⌘⇧C', target: 'chat' },
+  { id: 'chat', label: '聊天', desc: '打开 Social Chat', shortcut: '⌘⇧C', target: 'chat' },
   { id: 'agent', label: 'Agent', desc: '打开 Agent', shortcut: '⌘J', target: 'agent' },
   { id: 'agent-atelier', label: 'Atelier', desc: '打开 Agent 工作台', shortcut: '⌘⇧A', target: 'agent-atelier' },
   { id: 'agent-orchestration', label: 'Agent 编排', desc: '从 Agent 页进入编排画板', shortcut: '⌘⇧J', target: 'agent-orchestration' },
@@ -141,14 +141,19 @@ function RailIcon({
 }) {
   const [hover, setHover] = useState(false);
   return (
-    <div
+    <button
+      type="button"
       title={title}
+      aria-label={title}
+      aria-pressed={active}
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
         width: 40,
         height: 40,
+        border: 0,
+        padding: 0,
         borderRadius: 8,
         display: 'flex',
         alignItems: 'center',
@@ -159,7 +164,7 @@ function RailIcon({
       }}
     >
       <Icon size={20} />
-    </div>
+    </button>
   );
 }
 
@@ -248,7 +253,7 @@ function SideNav({
 function PagePlaceholder({ page }: { page: string }) {
   const meta: Record<string, { title: string; desc: string; icon: LucideIcon }> = {
     search: { title: '搜索', desc: '全局搜索页（peers-touch 容器壳页，原型未细化）', icon: Search },
-    chat: { title: '聊天', desc: '社交聊天页（peers-touch 容器壳页，原型未细化）', icon: MessageCircle },
+    chat: { title: '聊天', desc: '社交聊天页（含 Chat / Contacts 与会话内 stream call）', icon: MessageCircle },
     notes: { title: 'Notes', desc: '笔记页（peers-touch 容器壳页，原型未细化）', icon: FileText },
     settings: { title: '设置', desc: '设置页（peers-touch 容器壳页，原型未细化）', icon: Settings },
   };
@@ -544,8 +549,9 @@ function CommandPalette({
         />
         <div style={{ display: 'grid', gap: 6 }}>
           {filtered.map((c) => (
-            <div
+            <button
               key={c.id}
+              type="button"
               onClick={() => onRun(c.target)}
               style={{
                 display: 'grid',
@@ -555,6 +561,8 @@ function CommandPalette({
                 padding: '10px 12px',
                 borderRadius: 10,
                 border: `1px solid ${T.borderSoft}`,
+                background: 'transparent',
+                textAlign: 'left',
                 cursor: 'pointer',
               }}
             >
@@ -577,7 +585,7 @@ function CommandPalette({
               >
                 {c.shortcut}
               </kbd>
-            </div>
+            </button>
           ))}
           {filtered.length === 0 ? (
             <div style={{ padding: 12, fontSize: 13, color: T.textTertiary, textAlign: 'center' }}>无匹配命令</div>
@@ -663,9 +671,18 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   } else if (page === 'applets') {
     body = <AppletWorkspacePage />;
   } else if (page === 'chat') {
-    body = <CallChatPage />;
-  } else if (page.startsWith('agent')) {
-    body = null;
+    body = <SocialChatPage />;
+  } else if (page === 'agent') {
+    body = (
+      <AgentChatPage
+        onOpenOrchestration={() => navigate('agent-orchestration')}
+        onOpenProfile={() => navigate('agent-profile')}
+      />
+    );
+  } else if (page === 'agent-profile') {
+    body = <AgentProfilePage onOpenOrchestration={() => navigate('agent-orchestration')} />;
+  } else if (page === 'agent-orchestration') {
+    body = <AgentCanvasPage embedded onBack={() => navigate('agent')} />;
   } else if (page === 'settings') {
     body = <SettingsPage />;
   } else {
