@@ -17,17 +17,17 @@ const defaultTimeout = 5 * time.Minute
 type EventSink func(eventType string, data map[string]any)
 
 type CliTurnRequest struct {
-	ConversationID   string
-	AgentID          string
-	UserInput        string
-	CliCommand       string
-	Identity         string
+	ConversationID    string
+	AgentID           string
+	UserInput         string
+	CliCommand        string
+	Identity          string
 	AgentConfigPrompt string
-	Provider         string
-	Model            string
-	Effort           string
-	RuntimeBackend   string
-	AllowedRoots     []string
+	Provider          string
+	Model             string
+	Effort            string
+	RuntimeBackend    string
+	AllowedRoots      []string
 }
 
 type CliExecutor struct {
@@ -350,8 +350,8 @@ func VerifyCliBinary(cliCommand string) CliVerifyResult {
 	path, lookErr := exec.LookPath(cmd.Program)
 	if lookErr != nil {
 		return CliVerifyResult{
-			Available:  false,
-			Program:    cmd.Program,
+			Available:   false,
+			Program:     cmd.Program,
 			InstallHint: installHint(cmd.AdapterName),
 		}
 	}
