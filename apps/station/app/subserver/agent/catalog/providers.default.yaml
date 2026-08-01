@@ -12,6 +12,11 @@ providers:
     api_key_url: https://console.volcengine.com/ark
     default_base_url: https://ark.cn-beijing.volces.com/api/v3
     models:
+      - id: ep-20260623145021-n4xdm
+        display_name: Doubao Seed 2.1 Pro (Ark endpoint)
+        type: chat
+        enabled: true
+        context_window: 256000
       - id: doubao-pro-256k
         display_name: Doubao Pro
         type: chat
