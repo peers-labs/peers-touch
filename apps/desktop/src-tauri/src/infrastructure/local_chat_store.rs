@@ -186,6 +186,11 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS crypto_session_delivery (
+            session_id TEXT NOT NULL PRIMARY KEY,
+            handshake_delivered INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS crypto_signed_prekey (
             id INTEGER NOT NULL PRIMARY KEY,
             private_key BLOB NOT NULL,
@@ -859,6 +864,41 @@ pub fn save_crypto_session(user_scope: &str, session: &CryptoSessionState) -> Re
     Ok(())
 }
 
+pub fn set_crypto_session_handshake_delivered(
+    user_scope: &str,
+    session_id: &str,
+    delivered: bool,
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.execute(
+        "INSERT INTO crypto_session_delivery(session_id, handshake_delivered, updated_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(session_id) DO UPDATE SET
+            handshake_delivered=excluded.handshake_delivered,
+            updated_at=excluded.updated_at",
+        params![session_id, delivered as i64, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn crypto_session_handshake_delivered(
+    user_scope: &str,
+    session_id: &str,
+) -> Result<bool, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT handshake_delivered FROM crypto_session_delivery WHERE session_id = ?1",
+        params![session_id],
+        |row| row.get::<_, i64>(0),
+    )
+    .optional()
+    .map(|value| value.unwrap_or(0) != 0)
+    .map_err(|e| e.to_string())
+}
+
 pub fn load_crypto_session(
     user_scope: &str,
     session_id: &str,
@@ -936,12 +976,6 @@ pub fn load_crypto_session(
 // Double Ratchet persistence (`version = 1` rows only)
 // ---------------------------------------------------------------------------
 
-/// Placeholder v=0 chain material once a session migrates to DR — keeps the
-/// legacy NOT NULL columns satisfied without retaining stale chain state.
-fn dr_placeholder_chain_bytes() -> [u8; 32] {
-    [0u8; 32]
-}
-
 fn save_dr_session_with_conn(conn: &Connection, state: &DrSessionState) -> Result<(), String> {
     let now = chrono_now();
     let exists: i64 = conn
@@ -957,7 +991,6 @@ fn save_dr_session_with_conn(conn: &Connection, state: &DrSessionState) -> Resul
                 .to_string(),
         );
     }
-    let z = dr_placeholder_chain_bytes();
     let dr_peer = state.peer_pub.as_ref().map(|p| p.as_slice());
     let dr_sck = state.send_chain_key.as_ref().map(|p| p.as_slice());
     let dr_rck = state.recv_chain_key.as_ref().map(|p| p.as_slice());
@@ -973,12 +1006,8 @@ fn save_dr_session_with_conn(conn: &Connection, state: &DrSessionState) -> Resul
             dr_ns = ?7,
             dr_nr = ?8,
             dr_pn = ?9,
-            send_chain_key = ?10,
-            recv_chain_key = ?11,
-            send_counter = 0,
-            recv_counter = 0,
-            updated_at = ?12
-         WHERE session_id = ?13",
+            updated_at = ?10
+         WHERE session_id = ?11",
         params![
             state.root_key.as_slice(),
             state.self_priv.as_slice(),
@@ -989,8 +1018,6 @@ fn save_dr_session_with_conn(conn: &Connection, state: &DrSessionState) -> Resul
             state.n_send as i64,
             state.n_recv as i64,
             state.n_prev as i64,
-            z.as_slice(),
-            z.as_slice(),
             now,
             state.session_id,
         ],
@@ -1207,6 +1234,81 @@ pub fn crypto_insert_opks(user_scope: &str, private_keys: &[Vec<u8>]) -> Result<
         ids.push(id);
     }
     Ok(ids)
+}
+
+pub fn crypto_load_signed_prekey_by_public(
+    user_scope: &str,
+    public_key: &[u8; 32],
+) -> Result<[u8; 32], String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    let mut stmt = conn
+        .prepare("SELECT private_key FROM crypto_signed_prekey ORDER BY created_at DESC")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, Vec<u8>>(0))
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let private = row.map_err(|e| e.to_string())?;
+        if private.len() != 32 {
+            continue;
+        }
+        let mut private_key = [0u8; 32];
+        private_key.copy_from_slice(&private);
+        let derived = x25519_dalek::PublicKey::from(&x25519_dalek::StaticSecret::from(private_key));
+        if derived.to_bytes() == *public_key {
+            return Ok(private_key);
+        }
+    }
+    Err("signed pre-key is unavailable or has rotated".to_string())
+}
+
+pub fn crypto_consume_opk_by_public(
+    user_scope: &str,
+    public_key: &[u8; 32],
+) -> Result<[u8; 32], String> {
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let matched = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT id, private_key FROM crypto_one_time_prekey
+                 WHERE consumed = 0 ORDER BY id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut matched = None;
+        for row in rows {
+            let (id, private) = row.map_err(|e| e.to_string())?;
+            if private.len() != 32 {
+                continue;
+            }
+            let mut private_key = [0u8; 32];
+            private_key.copy_from_slice(&private);
+            let derived =
+                x25519_dalek::PublicKey::from(&x25519_dalek::StaticSecret::from(private_key));
+            if derived.to_bytes() == *public_key {
+                matched = Some((id, private_key));
+                break;
+            }
+        }
+        matched
+    };
+    let Some((id, private_key)) = matched else {
+        return Err("one-time pre-key is unavailable or already consumed".to_string());
+    };
+    tx.execute(
+        "UPDATE crypto_one_time_prekey SET consumed = 1 WHERE id = ?1 AND consumed = 0",
+        params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(private_key)
 }
 
 /// FTS5 search with optional `scope` (`friend` / `group`) and `conversation_id` filters (empty = no filter).
@@ -1932,6 +2034,12 @@ mod dr_persistence_tests {
 
         let mut alice = init_initiator(&sid, &shared, bob_pub);
         save_dr_session(&scope_i, &alice).unwrap();
+        let legacy_after_dr = load_crypto_session(&scope_i, &sid).unwrap().unwrap();
+        assert_eq!(legacy_after_dr.send_chain_key, placeholder_chain());
+        assert_eq!(legacy_after_dr.recv_chain_key, placeholder_chain());
+        assert!(!crypto_session_handshake_delivered(&scope_i, &sid).unwrap());
+        set_crypto_session_handshake_delivered(&scope_i, &sid, true).unwrap();
+        assert!(crypto_session_handshake_delivered(&scope_i, &sid).unwrap());
 
         let wire = encrypt(&mut alice, b"hello-dr-sql", b"aad").unwrap();
         save_dr_session(&scope_i, &alice).unwrap();
@@ -1969,6 +2077,27 @@ mod dr_persistence_tests {
 
         let bob_reloaded = load_dr_session(&scope_r, &sid).unwrap().unwrap();
         assert_eq!(bob_reloaded.n_recv, out.advanced_state.n_recv);
+    }
+
+    #[test]
+    fn recipient_prekeys_are_resolved_by_public_key_and_opk_is_single_use() {
+        let scope = unique_scope("prekeys");
+        let signed_private = StaticSecret::random_from_rng(&mut OsRng);
+        let signed_public = PublicKey::from(&signed_private).to_bytes();
+        crypto_store_signed_prekey(&scope, 1, signed_private.to_bytes().as_slice()).unwrap();
+        assert_eq!(
+            crypto_load_signed_prekey_by_public(&scope, &signed_public).unwrap(),
+            signed_private.to_bytes(),
+        );
+
+        let opk_private = StaticSecret::random_from_rng(&mut OsRng);
+        let opk_public = PublicKey::from(&opk_private).to_bytes();
+        crypto_insert_opks(&scope, &[opk_private.to_bytes().to_vec()]).unwrap();
+        assert_eq!(
+            crypto_consume_opk_by_public(&scope, &opk_public).unwrap(),
+            opk_private.to_bytes(),
+        );
+        assert!(crypto_consume_opk_by_public(&scope, &opk_public).is_err());
     }
 }
 

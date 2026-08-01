@@ -12,7 +12,6 @@ import { presentError } from '../../services/errorPresenter';
 import { markOverlayIntent, markOverlayVisible } from '../../kernel/frontendRuntimeProfiler';
 import { OverlayCommitProfiler } from '../../kernel/OverlayCommitProfiler';
 import { imServiceV1 } from '../../services/im-service';
-import { api } from '../../services/desktop_api';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
 import { CreateGroupModal } from './CreateGroupModal';
@@ -131,14 +130,6 @@ export function ChatSessionList() {
 
     if (c.kind === 'friend' && c.peerDid) {
       try {
-        const resp = await api.friendChatCreateSession(c.peerDid);
-        const sessionUlid = resp.session?.ulid;
-        if (sessionUlid) {
-          await loadSessions();
-          setSearchText('');
-          selectSession(sessionUlid);
-          return;
-        }
         await imServiceV1.conversation.createDirect(c.peerDid);
         await loadSessions();
         const created = getIMConversations().find((conv) => conv.peerDid === c.peerDid);

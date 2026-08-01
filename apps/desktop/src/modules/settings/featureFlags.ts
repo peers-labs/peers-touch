@@ -23,7 +23,7 @@ function readBoolFromStorage(key: string, defaultValue: boolean): boolean {
 
 export function readFeatureFlags(): FeatureFlags {
   return {
-    cryptoDrEnabled: readBoolFromStorage(FLAG_KEYS.cryptoDrEnabled, false),
+    cryptoDrEnabled: readBoolFromStorage(FLAG_KEYS.cryptoDrEnabled, true),
     cryptoDrTelemetryEnabled: readBoolFromStorage(FLAG_KEYS.cryptoDrTelemetryEnabled, true),
   };
 }

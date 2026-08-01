@@ -5218,15 +5218,62 @@ export const api = {
     peerSpkPub: string,
     peerSpkSig: string,
     peerOpkPub?: string,
+    negotiatedVersion = 0,
   ) =>
-    invokeAppResultStub<{ ephemeral_key: string; established: boolean }>('crypto_init_session', {
+    invokeAppResultStub<{
+      ephemeral_key: string;
+      sender_identity_key: string;
+      recipient_signed_prekey: string;
+      recipient_one_time_prekey: string;
+      negotiated_version: number;
+      established: boolean;
+    }>('crypto_init_session', {
       sessionId,
       peerDid,
       peerIkPub,
       peerSpkPub,
       peerSpkSig,
       ...(peerOpkPub != null && peerOpkPub !== '' ? { peerOpkPub } : {}),
+      negotiatedVersion,
     }),
+
+  cryptoAcceptSession: (input: {
+    sessionId: string;
+    peerDid: string;
+    senderIdentityKey: string;
+    senderEphemeralKey: string;
+    recipientSignedPrekey: string;
+    recipientOneTimePrekey?: string;
+    negotiatedVersion: number;
+  }) =>
+    invokeAppResultStub<{ established: boolean; negotiated_version: number }>('crypto_accept_session', input),
+
+  cryptoSessionStatus: (sessionId: string) =>
+    invokeAppResultStub<{ established: boolean; version: number }>('crypto_session_status', { sessionId }),
+
+  cryptoMarkSessionReady: (sessionId: string) =>
+    invokeAppResultStub<{ established: boolean }>('crypto_mark_session_ready', { sessionId }),
+
+  drEncrypt: (sessionId: string, plaintext: string) =>
+    invokeAppResultStub<{
+      version: number;
+      ciphertext: string;
+      ratchet_pub: string;
+      counter: number;
+      prev_counter: number;
+      nonce: string;
+    }>('dr_encrypt', { sessionId, plaintext }),
+
+  drDecrypt: (input: {
+    sessionId: string;
+    ciphertext: string;
+    ratchetPub: string;
+    counter: number;
+    prevCounter: number;
+    nonce: string;
+    version: number;
+  }) =>
+    invokeAppResultStub<{ plaintext: string }>('dr_decrypt', input),
 
   cryptoEncryptMessage: (sessionId: string, peerDid: string, plaintext: string) =>
     invokeAppResultStub<{ ciphertext: string; counter: number; ephemeral_key?: string }>('crypto_encrypt_message', {
@@ -5509,6 +5556,7 @@ export interface CryptoKeyBundlePayload {
   spk_sig: string;
   opk_ids: number[];
   opk_pubs: string[];
+  supported_versions?: number[];
 }
 
 /** One device-published bundle from Station (`FetchKeyBundleResponse.bundles`). */
@@ -5522,6 +5570,7 @@ export interface KeyExchangeWireBundle {
   spk_sig: string;
   opks: string[];
   published_at_unix_ms: number;
+  supported_versions: number[];
 }
 
 export interface KeyExchangeFetchBundlesResponse {

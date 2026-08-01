@@ -1,6 +1,6 @@
 # G2 — v1 IM 统一执行计划（依赖有序）
 
-> **Status**: P0/P1/P2 实施中（已获批）；P3 基础设施就绪（待 G0 L3 部署验证）；P4–P7 待批准
+> **Status**: P0/P1/P2 已实施；P3 待 G0 L3 部署验证；P4 已批准并实施中，但被 Mobile P2/P3 协议能力阻塞
 > **Stage**: v1（不涉及任何版本号升级）
 > **Created**: 2026-07-12
 > **Worktree/Branch**: `peers-group-chat`
@@ -132,6 +132,45 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 1. **P3 群聊闭环产品实施** — 基础设施已就绪（MlsGroupManager + /mls/distribute + C-8 PASS），待 G0 C-5 (L3 三 Station 部署) 通过后转为可实施。
 2. **P4 客户端 Runtime 归一** — 依赖 P2+P3 完成。
 3. **P5–P7** — 顺序推进。
+
+### 2026-07-31 P2/P3 E2EE 激活切片
+
+- **P2 / Desktop DM**：`X3dhSessionInit` 经既有 DKX opaque envelope 投递；接收端消费持久化
+  SPK/OPK 后初始化 Double Ratchet。新消息发送强制先完成会话建立，`crypto.dr_enabled`
+  默认 `true`，协商双方均支持时固定为 `v=1`；关闭 kill switch 时仍使用加密的 legacy
+  chain-only sender，不启用明文发送。
+- **P3 / Desktop group message path**：group send/edit 强制通过 OpenMLS application message；
+  无本地 MLS state 时 fail closed。建群、加人、移除成员均生成并分发 Welcome/Commit。
+- **历史兼容**：接收顺序保持 plaintext history decode → DR decrypt → legacy chain decrypt；
+  DR 持久化不覆盖 legacy receive chain。
+- **本切片证据**：X3DH→DR 双端 round trip、DR SQLCipher persistence + OPK single-use、
+  OpenMLS create/add/remove/encrypt/decrypt 单测通过；Desktop Rust `cargo check` 通过。
+- **Profile three live evidence（2026-07-31）**：
+  - DM：两个独立 Desktop Rust gateway 完成 bundle 发布、X3DH、DR `v=1`、加密提交与接收端解密；
+    Station 原样保存 102-byte opaque frame，明文泄漏检查为 false
+    （conversation `d-c0ef931d01981a1c29460a7336a89760`）。
+  - Group：两个独立 Desktop Rust gateway 完成 MLS identity、Welcome/join、application encrypt、
+    Station commit 与接收端 decrypt；Station 原样保存 200-byte opaque application message，
+    明文泄漏检查为 false
+    （conversation `a23ab593-d7e1-4b64-aa0d-75247a8a6c0d`，membership epoch 1）。
+- **未关闭门**：C-4/C-5 三 Station 下 membership epoch 与 MLS Commit 原子绑定/跨进程收敛
+  仍是 `PARTIAL PASS`，不能据此声明完整 P3 或 P7 ready。
+- **2026-08-01 closure evidence**：
+  - SQLCipher 根因是 keyring-rs 未启用 native backend，macOS 实际使用 process-only mock。
+    Desktop 已改为目标平台原生持久化 backend；backend regression 与 fresh actor
+    create → native restart → reopen 同一 DB/key bundle 均通过。
+  - `/conversation/direct` mutual-follow allow 已由 gate test 固化。
+  - `/conversation/messages` GET query 的 snake_case 与 quoted numeric binding 已修复并由
+    typed-handler test 固化；message list 同时返回 commit/edit/retract lifecycle events。
+  - Desktop read/thread/settings/mutation 开始切到统一 conversation service，旧 session fallback
+    与 UI-owned friend-request refresh timer 已移除；changed-path TypeScript diagnostics、
+    social wire/runtime boundary、Rust check 均通过。
+- **P4 hard blockers**：
+  - Profile `three` 仍运行旧 Station build；上述 conversation contract fix 尚未部署，不能做
+    canonical read-path live gate。
+  - Mobile 当前没有 X3DH/Double Ratchet 或 OpenMLS engine：DM 仍为 per-message sealed envelope，
+    group 仍为 Sender Keys。Desktop + Mobile Runtime 归一在 Mobile P2/P3 完成前不可声明。
+  - C-4/C-5 三 Station MLS membership/Commit 收敛仍未通过。
 
 ---
 

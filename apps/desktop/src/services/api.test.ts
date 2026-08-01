@@ -172,6 +172,34 @@ describe('api friend crypto bridge', () => {
       peerSpkPub: 'spk',
       peerSpkSig: 'sig',
       peerOpkPub: 'opk',
+      negotiatedVersion: 0,
+    })
+  })
+
+  it('bridges Double Ratchet encrypt and decrypt headers', async () => {
+    await api.drEncrypt('session-1', 'plaintext-b64')
+    await api.drDecrypt({
+      sessionId: 'session-1',
+      ciphertext: 'ciphertext-b64',
+      ratchetPub: 'ratchet-pub-b64',
+      counter: 3,
+      prevCounter: 1,
+      nonce: 'nonce-b64',
+      version: 1,
+    })
+
+    expect(invoke).toHaveBeenNthCalledWith(1, 'dr_encrypt', {
+      sessionId: 'session-1',
+      plaintext: 'plaintext-b64',
+    })
+    expect(invoke).toHaveBeenNthCalledWith(2, 'dr_decrypt', {
+      sessionId: 'session-1',
+      ciphertext: 'ciphertext-b64',
+      ratchetPub: 'ratchet-pub-b64',
+      counter: 3,
+      prevCounter: 1,
+      nonce: 'nonce-b64',
+      version: 1,
     })
   })
 
