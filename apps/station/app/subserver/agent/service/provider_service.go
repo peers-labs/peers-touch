@@ -63,7 +63,10 @@ const (
 	providerHTTPTimeout = 120 * time.Second
 )
 
-var apiVersionSuffix = regexp.MustCompile(`/v\d+$`)
+// apiVersionSuffix matches a base URL that already ends in a version segment,
+// e.g. "/v1", "/openai/v1", or Ark's "/api/v3". The version must be the final
+// path segment so "/v1/chat/completions" does not match it.
+var apiVersionSuffix = regexp.MustCompile(`(^|/)v\d+$`)
 
 // ---------------------------------------------------------------------------
 // Request / Response types
