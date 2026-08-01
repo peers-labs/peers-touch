@@ -283,3 +283,17 @@ impl KeyProvider for PlatformKeyProvider {
         Ok(rotated)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use keyring::credential::CredentialPersistence;
+
+    #[test]
+    fn production_targets_use_restart_persistent_key_storage() {
+        let persistence = keyring::default::default_credential_builder().persistence();
+        assert!(
+            matches!(persistence, CredentialPersistence::UntilDelete),
+            "SQLCipher keys must survive Desktop process restarts",
+        );
+    }
+}

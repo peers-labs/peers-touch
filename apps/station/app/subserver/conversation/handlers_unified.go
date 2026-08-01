@@ -14,9 +14,9 @@ import (
 // Once P2 migrates the BFF to proto encoding, handlers will switch to chat.* proto types.
 
 type listMessagesRequest struct {
-	ConversationID string `query:"conversation_id"`
-	AfterSeq       int64  `query:"after_seq"`
-	Limit          int    `query:"limit"`
+	ConversationID string `json:"conversation_id" query:"conversation_id"`
+	AfterSeq       int64  `json:"after_seq,string" query:"after_seq"`
+	Limit          int    `json:"limit,string" query:"limit"`
 }
 
 type listMessagesResponse struct {
@@ -25,10 +25,10 @@ type listMessagesResponse struct {
 }
 
 type listThreadMessagesRequest struct {
-	ConversationID string `query:"conversation_id"`
-	RootID         string `query:"root_id"`
-	AfterSeq       int64  `query:"after_seq"`
-	Limit          int    `query:"limit"`
+	ConversationID string `json:"conversation_id" query:"conversation_id"`
+	RootID         string `json:"root_id" query:"root_id"`
+	AfterSeq       int64  `json:"after_seq,string" query:"after_seq"`
+	Limit          int    `json:"limit,string" query:"limit"`
 }
 
 type threadCountsRequest struct {
@@ -58,7 +58,7 @@ type setReadCursorResponse struct {
 }
 
 type getUnreadRequest struct {
-	ConversationID string `query:"conversation_id"`
+	ConversationID string `json:"conversation_id" query:"conversation_id"`
 }
 
 type getUnreadResponse struct {
@@ -66,7 +66,7 @@ type getUnreadResponse struct {
 }
 
 type getMemberSettingsRequest struct {
-	ConversationID string `query:"conversation_id"`
+	ConversationID string `json:"conversation_id" query:"conversation_id"`
 }
 
 type memberSettingsResponse struct {
