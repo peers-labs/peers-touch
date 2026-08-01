@@ -102,6 +102,19 @@ func (s *subServer) Address() server.SubserverAddress {
 }
 func (s *subServer) Status() server.Status { return s.status }
 
+func (s *subServer) requireActiveMembership(ctx context.Context, conversationID string) error {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return server.Unauthorized("authentication required")
+	}
+	member, err := s.service.GetMember(ctx, conversationID, subject.ID)
+	if err != nil || member == nil ||
+		member.MemberStatus != chat.MemberStatus_MEMBER_STATUS_ACTIVE {
+		return server.Forbidden("active conversation membership required")
+	}
+	return nil
+}
+
 func (s *subServer) Handlers() []server.Handler {
 	logID := serverwrapper.LogID()
 	deviceIDWrapper := serverwrapper.DeviceID()
@@ -252,6 +265,9 @@ func (s *subServer) handleSubmitReceipt(ctx context.Context, req *chat.SubmitCon
 	if req.ConversationId == "" || req.MessageId == "" {
 		return nil, server.BadRequest("conversation_id and message_id are required")
 	}
+	if err := s.requireActiveMembership(ctx, req.ConversationId); err != nil {
+		return nil, err
+	}
 
 	receipt := &chat.MessageReceipt{
 		ConversationId: req.ConversationId,
@@ -274,6 +290,9 @@ func (s *subServer) handleGetConversation(ctx context.Context, req *chat.GetConv
 	}
 	if req.ConversationId == "" {
 		return nil, server.BadRequest("conversation_id is required")
+	}
+	if err := s.requireActiveMembership(ctx, req.ConversationId); err != nil {
+		return nil, err
 	}
 
 	conv, err := s.service.GetConversation(ctx, req.ConversationId)
@@ -304,6 +323,9 @@ func (s *subServer) handleGetMembers(ctx context.Context, req *chat.GetConversat
 	if req.ConversationId == "" {
 		return nil, server.BadRequest("conversation_id is required")
 	}
+	if err := s.requireActiveMembership(ctx, req.ConversationId); err != nil {
+		return nil, err
+	}
 
 	members, err := s.service.GetMembers(ctx, req.ConversationId)
 	if err != nil {
@@ -319,6 +341,9 @@ func (s *subServer) handleListEvents(ctx context.Context, req *chat.ListConversa
 	}
 	if req.ConversationId == "" {
 		return nil, server.BadRequest("conversation_id is required")
+	}
+	if err := s.requireActiveMembership(ctx, req.ConversationId); err != nil {
+		return nil, err
 	}
 
 	events, err := s.service.ListEvents(ctx, req.ConversationId, req.AfterSeq, int(req.Limit))
@@ -472,7 +497,7 @@ func (s *subServer) handleMlsDistribute(ctx context.Context, req *chat.Distribut
 	mlsPayload := &chat.MlsKeyDeliveryPayload{
 		ConversationId: req.ConversationId,
 		Kind:           req.Kind,
-		MlsEpoch:      req.MlsEpoch,
+		MlsEpoch:       req.MlsEpoch,
 		OpaqueMlsBytes: req.OpaqueBytes,
 	}
 	payloadBytes, err := proto.Marshal(mlsPayload)
