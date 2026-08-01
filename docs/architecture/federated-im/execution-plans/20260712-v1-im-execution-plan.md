@@ -165,9 +165,19 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
   - Desktop read/thread/settings/mutation 开始切到统一 conversation service，旧 session fallback
     与 UI-owned friend-request refresh timer 已移除；changed-path TypeScript diagnostics、
     social wire/runtime boundary、Rust check 均通过。
+  - Profile `three` 已部署 `9eb590fb`，安全修复后升级到 `4dd517be`；远端 build metadata、
+    container restart 与 health closure 均通过。
+  - canonical DM live gate 通过：mutual-follow direct create、X3DH/DR `v=1`、send/edit/thread/retract、
+    opaque-byte equality、receiver exact decrypt、thread count、unread/read cursor、member settings
+    （conversation `d-cd5eff67494bb89ef67a4958e6846d1a`）。
+  - canonical MLS live gate 通过：Welcome/join、send/edit/thread、member remove、epoch `1→2`、
+    removed-member future decrypt/send/read 三项拒绝、opaque-byte equality
+    （conversation `52cf3462-f7f4-4eab-991c-17415c66b72b`）。
+  - Desktop App/Web MLS lifecycle command parity 已补齐；MLS provider state + original signer 作为
+    actor-scoped SQLCipher blob 独立持久化。完整 process stop/start 后 DR 与 MLS deferred
+    ciphertext 均 exact decrypt；profile key files 为 `0600`，profile storage plaintext scan
+    零命中。
 - **P4 hard blockers**：
-  - Profile `three` 仍运行旧 Station build；上述 conversation contract fix 尚未部署，不能做
-    canonical read-path live gate。
   - Mobile 当前没有 X3DH/Double Ratchet 或 OpenMLS engine：DM 仍为 per-message sealed envelope，
     group 仍为 Sender Keys。Desktop + Mobile Runtime 归一在 Mobile P2/P3 完成前不可声明。
   - C-4/C-5 三 Station MLS membership/Commit 收敛仍未通过。
