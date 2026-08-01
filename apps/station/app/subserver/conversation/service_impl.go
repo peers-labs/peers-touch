@@ -557,7 +557,9 @@ func (s *DefaultService) ListMessages(ctx context.Context, conversationID string
 	}
 	messages := make([]*chat.CommittedConversationEvent, 0, len(events))
 	for _, ev := range events {
-		if ev.GetMessageCommitted() != nil {
+		if ev.GetMessageCommitted() != nil ||
+			ev.GetMessageEdited() != nil ||
+			ev.GetMessageRetracted() != nil {
 			messages = append(messages, ev)
 		}
 	}

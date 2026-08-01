@@ -150,6 +150,26 @@ func (r *memConvRepo) HaveSharedConversation(_ context.Context, actorA, actorB s
 	return false, nil
 }
 
+func (r *memConvRepo) ListThreadEvents(_ context.Context, conversationID, threadRootID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error) {
+	return nil, nil
+}
+
+func (r *memConvRepo) CountThreadReplies(_ context.Context, conversationID string, rootIDs []string) (map[string]conversation.ThreadSummary, error) {
+	return make(map[string]conversation.ThreadSummary), nil
+}
+
+func (r *memConvRepo) GetReadCursor(_ context.Context, conversationID, ptid string) (int64, error) {
+	return 0, nil
+}
+
+func (r *memConvRepo) SetReadCursor(_ context.Context, conversationID, ptid string, seq int64) error {
+	return nil
+}
+
+func (r *memConvRepo) CountUnread(_ context.Context, conversationID, ptid string) (int64, error) {
+	return 0, nil
+}
+
 type spyEnvelope struct {
 	mu       sync.Mutex
 	events   []*chat.CommittedConversationEvent
@@ -216,7 +236,7 @@ func TestSubmitCommand_SendMessage(t *testing.T) {
 
 	cmd := &chat.ConversationCommand{
 		ConversationId: convID,
-		SenderPtid: "did:alice",
+		SenderPtid:     "did:alice",
 		SenderDeviceId: "device-1",
 		ClientTs:       timestamppb.New(time.Now()),
 		Payload: &chat.ConversationCommand_SendMessage{
@@ -261,7 +281,7 @@ func TestSubmitCommand_NonMember_Rejected(t *testing.T) {
 
 	cmd := &chat.ConversationCommand{
 		ConversationId: convID,
-		SenderPtid: "did:charlie",
+		SenderPtid:     "did:charlie",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
 				EncryptedPayload: []byte("intrusion"),
@@ -311,7 +331,7 @@ func TestCreateGroup_And_MembershipEpochBinding(t *testing.T) {
 
 	addCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:alice",
+		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_AddMembers{
 			AddMembers: &chat.AddMembersCommand{
 				Members: []*chat.MemberAddEntry{
@@ -339,7 +359,7 @@ func TestCreateGroup_And_MembershipEpochBinding(t *testing.T) {
 
 	removeCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:alice",
+		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_RemoveMembers{
 			RemoveMembers: &chat.RemoveMembersCommand{
 				Ptids: []string{"did:bob"},
@@ -367,7 +387,7 @@ func TestSubmitReceipt_RoutesToOtherMembers(t *testing.T) {
 	receipt := &chat.MessageReceipt{
 		ConversationId: convID,
 		MessageId:      "msg-001",
-		Ptid:       "did:bob",
+		Ptid:           "did:bob",
 		DeviceId:       "device-1",
 		ReceiptType:    chat.ReceiptType_RECEIPT_TYPE_READ,
 	}
@@ -396,7 +416,7 @@ func TestListEvents_PaginatedHistory(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		cmd := &chat.ConversationCommand{
 			ConversationId: convID,
-			SenderPtid: "did:alice",
+			SenderPtid:     "did:alice",
 			SenderDeviceId: "device-1",
 			Payload: &chat.ConversationCommand_SendMessage{
 				SendMessage: &chat.SendMessageCommand{
@@ -439,7 +459,7 @@ func TestRemovedMember_CannotSendMessage(t *testing.T) {
 
 	removeCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:alice",
+		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_RemoveMembers{
 			RemoveMembers: &chat.RemoveMembersCommand{
 				Ptids: []string{"did:bob"},
@@ -450,7 +470,7 @@ func TestRemovedMember_CannotSendMessage(t *testing.T) {
 
 	sendCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:bob",
+		SenderPtid:     "did:bob",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
 				EncryptedPayload: []byte("should fail"),
@@ -478,14 +498,14 @@ func TestLeftMember_CannotSendMessage(t *testing.T) {
 
 	leaveCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:bob",
+		SenderPtid:     "did:bob",
 		Payload:        &chat.ConversationCommand_Leave{Leave: &chat.LeaveCommand{}},
 	}
 	svc.SubmitCommand(context.Background(), leaveCmd)
 
 	sendCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:bob",
+		SenderPtid:     "did:bob",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
 				EncryptedPayload: []byte("should fail"),
@@ -516,7 +536,7 @@ func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
 
 	addCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:alice",
+		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_AddMembers{
 			AddMembers: &chat.AddMembersCommand{
 				Members: []*chat.MemberAddEntry{
@@ -532,7 +552,7 @@ func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
 
 	leaveCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:charlie",
+		SenderPtid:     "did:charlie",
 		Payload:        &chat.ConversationCommand_Leave{Leave: &chat.LeaveCommand{}},
 	}
 	ev2, _ := svc.SubmitCommand(context.Background(), leaveCmd)
@@ -542,7 +562,7 @@ func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
 
 	removeCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:alice",
+		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_RemoveMembers{
 			RemoveMembers: &chat.RemoveMembersCommand{
 				Ptids: []string{"did:bob"},
@@ -557,7 +577,7 @@ func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
 	// Non-membership commands should NOT bump epoch
 	sendCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:alice",
+		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
 				EncryptedPayload: []byte("hello"),
@@ -591,7 +611,7 @@ func TestEnvelopeFanout_OnlyActiveMembers(t *testing.T) {
 	// Remove bob
 	removeCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:alice",
+		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_RemoveMembers{
 			RemoveMembers: &chat.RemoveMembersCommand{
 				Ptids: []string{"did:bob"},
@@ -607,7 +627,7 @@ func TestEnvelopeFanout_OnlyActiveMembers(t *testing.T) {
 	// Send message — should only fan out to alice + charlie (bob removed)
 	sendCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:alice",
+		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
 				EncryptedPayload: []byte("private post-removal"),
@@ -664,7 +684,7 @@ func TestCrossStation_DirectMessage_E2E(t *testing.T) {
 
 	sendCmd := &chat.ConversationCommand{
 		ConversationId: conv.ConversationId,
-		SenderPtid: "did:alice",
+		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
 				EncryptedPayload: []byte("encrypted-dm-payload"),

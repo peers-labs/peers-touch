@@ -269,6 +269,8 @@ pub struct KeyExchangeUploadInput {
     pub spk_sig: String,
     pub opk_ids: Vec<i32>,
     pub opk_pubs: Vec<String>,
+    #[serde(default)]
+    pub supported_versions: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

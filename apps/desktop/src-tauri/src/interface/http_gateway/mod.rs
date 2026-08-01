@@ -746,6 +746,39 @@ fn parse_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, Value> {
     })
 }
 
+fn string_arg(args: &Value, snake_case: &str, camel_case: &str) -> String {
+    args.get(snake_case)
+        .or_else(|| args.get(camel_case))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn optional_string_arg(args: &Value, snake_case: &str, camel_case: &str) -> Option<String> {
+    let value = string_arg(args, snake_case, camel_case);
+    (!value.trim().is_empty()).then_some(value)
+}
+
+fn u32_arg(args: &Value, snake_case: &str, camel_case: &str) -> u32 {
+    args.get(snake_case)
+        .or_else(|| args.get(camel_case))
+        .and_then(Value::as_u64)
+        .unwrap_or_default() as u32
+}
+
+fn authenticated_crypto_context(state: &AppState) -> Result<(String, String), Value> {
+    let actor_id = actor_id_from_state(state)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            to_json(AppResult::<StubPayload>::fail(
+                ErrorCode::Unauthorized,
+                "Authentication required — please log in",
+                None,
+            ))
+        })?;
+    Ok((actor_id, user_scope_from_state(state)))
+}
+
 fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> Value {
     let input = match parse_args::<OssUploadAttachmentBytesInput>(args) {
         Ok(v) => v,
@@ -1132,6 +1165,92 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     "opk_ids": opk_ids,
                     "opk_pubs": opk_pubs.iter().map(|b| B64.encode(b)).collect::<Vec<String>>(),
                 }),
+            ))
+        }
+        "crypto_init_session" => {
+            let (actor_id, user_scope) = match authenticated_crypto_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let negotiated_version = args
+                .get("negotiated_version")
+                .or_else(|| args.get("negotiatedVersion"))
+                .and_then(Value::as_u64)
+                .map(|value| value as u32);
+            to_json(crate::interface::tauri_commands::crypto::crypto_init_session_for_context(
+                string_arg(&args, "session_id", "sessionId"),
+                string_arg(&args, "peer_did", "peerDid"),
+                string_arg(&args, "peer_ik_pub", "peerIkPub"),
+                string_arg(&args, "peer_spk_pub", "peerSpkPub"),
+                string_arg(&args, "peer_spk_sig", "peerSpkSig"),
+                optional_string_arg(&args, "peer_opk_pub", "peerOpkPub"),
+                negotiated_version,
+                actor_id,
+                user_scope,
+            ))
+        }
+        "crypto_accept_session" => {
+            let (actor_id, user_scope) = match authenticated_crypto_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(crate::interface::tauri_commands::crypto::crypto_accept_session_for_context(
+                string_arg(&args, "session_id", "sessionId"),
+                string_arg(&args, "peer_did", "peerDid"),
+                string_arg(&args, "sender_identity_key", "senderIdentityKey"),
+                string_arg(&args, "sender_ephemeral_key", "senderEphemeralKey"),
+                string_arg(&args, "recipient_signed_prekey", "recipientSignedPrekey"),
+                optional_string_arg(&args, "recipient_one_time_prekey", "recipientOneTimePrekey"),
+                u32_arg(&args, "negotiated_version", "negotiatedVersion"),
+                actor_id,
+                user_scope,
+            ))
+        }
+        "crypto_session_status" => {
+            let (_, user_scope) = match authenticated_crypto_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(crate::interface::tauri_commands::crypto::crypto_session_status_for_scope(
+                string_arg(&args, "session_id", "sessionId"),
+                user_scope,
+            ))
+        }
+        "crypto_mark_session_ready" => {
+            let (_, user_scope) = match authenticated_crypto_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(crate::interface::tauri_commands::crypto::crypto_mark_session_ready_for_scope(
+                string_arg(&args, "session_id", "sessionId"),
+                user_scope,
+            ))
+        }
+        "dr_encrypt" => {
+            let (_, user_scope) = match authenticated_crypto_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(crate::interface::tauri_commands::crypto::dr_encrypt_for_scope(
+                string_arg(&args, "session_id", "sessionId"),
+                string_arg(&args, "plaintext", "plaintext"),
+                user_scope,
+            ))
+        }
+        "dr_decrypt" => {
+            let (_, user_scope) = match authenticated_crypto_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(crate::interface::tauri_commands::crypto::dr_decrypt_for_scope(
+                string_arg(&args, "session_id", "sessionId"),
+                string_arg(&args, "ciphertext", "ciphertext"),
+                string_arg(&args, "ratchet_pub", "ratchetPub"),
+                u32_arg(&args, "counter", "counter"),
+                u32_arg(&args, "prev_counter", "prevCounter"),
+                string_arg(&args, "nonce", "nonce"),
+                u32_arg(&args, "version", "version"),
+                user_scope,
             ))
         }
         "signaling_envelope_seal" => {
@@ -4970,7 +5089,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 opk_ids: input.opk_ids,
                 opk_pubs: input.opk_pubs,
                 device_id,
-                supported_versions: vec![0, 1],
+                supported_versions: if input.supported_versions.contains(&1) {
+                    vec![0, 1]
+                } else {
+                    vec![0]
+                },
             };
             match station_client::request_proto::<
                 model::key_exchange::UploadKeyBundleRequest,
@@ -5031,6 +5154,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                                 "spk_sig": b.spk_sig,
                                 "opks": b.opks,
                                 "published_at_unix_ms": b.published_at_unix_ms,
+                                "supported_versions": b.supported_versions,
                             })
                         })
                         .collect();

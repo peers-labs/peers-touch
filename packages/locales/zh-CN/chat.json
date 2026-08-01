@@ -452,6 +452,7 @@
   "chat.social.background.calm": "晴蓝",
   "chat.social.background.graphite": "石墨",
   "chat.social.encryption.enabled": "端到端加密",
+  "chat.social.encryption.establishing": "正在建立安全通道…",
   "chat.social.encryption.title": "加密",
   "chat.social.encryption.fingerprint": "你的安全指纹",
   "chat.social.encryption.encryptedMessage": "加密消息",

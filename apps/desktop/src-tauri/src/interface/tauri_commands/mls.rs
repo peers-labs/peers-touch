@@ -1,6 +1,6 @@
+use crate::application::session_resolver;
 use crate::domain::mls_group::MlsGroupManager;
 use crate::error::{AppResult, ErrorCode};
-use crate::application::session_resolver;
 use crate::infrastructure::station_client;
 use crate::state::AppState;
 use reqwest::Method;
@@ -24,9 +24,7 @@ pub fn mls_init_identity(
 }
 
 #[tauri::command]
-pub fn mls_generate_key_package(
-    mls: State<'_, Arc<MlsGroupManager>>,
-) -> AppResult<Value> {
+pub fn mls_generate_key_package(mls: State<'_, Arc<MlsGroupManager>>) -> AppResult<Value> {
     match mls.generate_key_package() {
         Ok(kp_bytes) => AppResult::success(json!({ "key_package": kp_bytes })),
         Err(e) => AppResult::fail(ErrorCode::InternalError, &e, None),
@@ -145,7 +143,7 @@ pub fn mls_group_add_member(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MlsGroupRemoveMemberInput {
     pub conversation_id: String,
-    pub member_index: u32,
+    pub member_actor_did: String,
 }
 
 #[tauri::command]
@@ -153,10 +151,23 @@ pub fn mls_group_remove_member(
     input: MlsGroupRemoveMemberInput,
     mls: State<'_, Arc<MlsGroupManager>>,
 ) -> AppResult<Value> {
-    match mls.remove_member(&input.conversation_id, input.member_index) {
+    match mls.remove_member(&input.conversation_id, &input.member_actor_did) {
         Ok(commit_bytes) => AppResult::success(json!({ "commit_bytes": commit_bytes })),
         Err(e) => AppResult::fail(ErrorCode::InternalError, &e, None),
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MlsGroupStatusInput {
+    pub conversation_id: String,
+}
+
+#[tauri::command]
+pub fn mls_group_status(
+    input: MlsGroupStatusInput,
+    mls: State<'_, Arc<MlsGroupManager>>,
+) -> AppResult<Value> {
+    AppResult::success(json!({ "ready": mls.has_session(&input.conversation_id) }))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,8 +230,18 @@ pub fn mls_distribute(
         "opaque_bytes": input.opaque_bytes,
         "recipients": input.recipients.unwrap_or_default(),
     });
-    match station_client::request_json_auth(Method::POST, "/mls/distribute", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/mls/distribute",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
-        Err(e) => AppResult::fail(ErrorCode::InternalError, &format!("mls distribute failed: {e}"), None),
+        Err(e) => AppResult::fail(
+            ErrorCode::InternalError,
+            &format!("mls distribute failed: {e}"),
+            None,
+        ),
     }
 }

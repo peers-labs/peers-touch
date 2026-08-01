@@ -48,6 +48,10 @@ impl MlsGroupManager {
         *id = Some((signer, cwk));
     }
 
+    pub fn has_session(&self, conversation_id: &str) -> bool {
+        self.sessions.lock().unwrap().contains_key(conversation_id)
+    }
+
     pub fn generate_key_package(&self) -> Result<Vec<u8>, String> {
         let id = self.identity.lock().unwrap();
         let (signer, cwk) = id.as_ref().ok_or("identity not initialized")?;
@@ -298,14 +302,19 @@ impl MlsGroupManager {
     pub fn remove_member(
         &self,
         conversation_id: &str,
-        member_index: u32,
+        member_actor_did: &str,
     ) -> Result<Vec<u8>, String> {
         let mut sessions = self.sessions.lock().unwrap();
         let session = sessions
             .get_mut(conversation_id)
             .ok_or("no MLS session for this conversation")?;
 
-        let leaf_index = LeafNodeIndex::new(member_index);
+        let leaf_index = session
+            .group
+            .members()
+            .find(|member| member.credential.serialized_content() == member_actor_did.as_bytes())
+            .map(|member| member.index)
+            .ok_or("member is not present in the MLS group")?;
         let (mls_out, _welcome, _group_info) = session
             .group
             .remove_members(&session.provider, &session.signer, &[leaf_index])
@@ -454,7 +463,7 @@ mod tests {
             .expect("bob join");
 
         let commit_bytes = alice_mgr
-            .remove_member("conv-remove-test", 1)
+            .remove_member("conv-remove-test", "did:bob")
             .expect("remove bob");
 
         let enc_after = alice_mgr

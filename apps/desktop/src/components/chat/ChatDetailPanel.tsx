@@ -559,6 +559,7 @@ export function ChatDetailPanel() {
     peerOnline,
     peerProfiles,
     loadPeerProfile,
+    setGroupSecurityState,
   } = useActiveSocialChatSlice((s) => ({
     activeTab: s.activeTab,
     activeSessionUlid: s.activeSessionUlid,
@@ -585,6 +586,7 @@ export function ChatDetailPanel() {
     peerOnline: s.peerOnline,
     peerProfiles: s.peerProfiles,
     loadPeerProfile: s.loadPeerProfile,
+    setGroupSecurityState: s.setGroupSecurityState,
   }));
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
@@ -924,30 +926,38 @@ export function ChatDetailPanel() {
   const submitGroupInvites = async () => {
     if (!activeUlid || inviteDids.length === 0) return;
     setInviteSubmitting(true);
+    const pendingDids = [...inviteDids];
     try {
-      await api.groupChatInviteToGroup(activeUlid, inviteDids);
+      setGroupSecurityState(activeUlid, 'establishing');
+      const keyPackages = new Map<string, Uint8Array>();
+      for (const did of pendingDids) {
+        const { data } = await imServiceV1.keyPackage.fetch(did);
+        if (!data) {
+          throw new Error(`MLS KeyPackage is unavailable for ${did}`);
+        }
+        keyPackages.set(did, data);
+      }
+      await api.groupChatInviteToGroup(activeUlid, pendingDids);
+      for (const did of pendingDids) {
+        const { commitBytes, welcomeBytes } = await imServiceV1.mlsGroup.addMember(
+          activeUlid,
+          keyPackages.get(did)!,
+        );
+        await imServiceV1.mlsGroup.save(activeUlid);
+        if (commitBytes.length > 0) {
+          await imServiceV1.mlsGroup.distribute(activeUlid, MlsDeliveryKind.COMMIT, 0, commitBytes);
+        }
+        if (welcomeBytes.length > 0) {
+          await imServiceV1.mlsGroup.distribute(activeUlid, MlsDeliveryKind.WELCOME, 0, welcomeBytes, [did]);
+        }
+      }
+      setGroupSecurityState(activeUlid, 'ready');
       await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
       setInviteDids([]);
       setInviteModalOpen(false);
       toast.success(t('chat.social.detail.addMemberSuccess'));
-
-      for (const did of inviteDids) {
-        try {
-          const { data: kpData } = await imServiceV1.keyPackage.fetch(did);
-          if (!kpData) continue;
-          const { commitBytes, welcomeBytes } = await imServiceV1.mlsGroup.addMember(activeUlid, kpData);
-          await imServiceV1.mlsGroup.save(activeUlid);
-          if (commitBytes.length > 0) {
-            await imServiceV1.mlsGroup.distribute(activeUlid, MlsDeliveryKind.COMMIT, 0, commitBytes);
-          }
-          if (welcomeBytes.length > 0) {
-            await imServiceV1.mlsGroup.distribute(activeUlid, MlsDeliveryKind.WELCOME, 0, welcomeBytes, [did]);
-          }
-        } catch (mlsErr) {
-          log.warn('chat', 'MLS add member failed (non-fatal)', { did, error: mlsErr });
-        }
-      }
     } catch (error) {
+      setGroupSecurityState(activeUlid, 'error');
       log.error('chat', 'invite group members failed', { groupUlid: activeUlid, inviteeCount: inviteDids.length, error });
       toast.error(t('chat.social.detail.addMemberFailed'));
       throw error;
@@ -967,10 +977,23 @@ export function ChatDetailPanel() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
+          setGroupSecurityState(activeUlid, 'establishing');
+          const commitBytes = await imServiceV1.mlsGroup.removeMember(activeUlid, member.ptid);
+          await imServiceV1.mlsGroup.save(activeUlid);
+          if (commitBytes.length > 0) {
+            await imServiceV1.mlsGroup.distribute(
+              activeUlid,
+              MlsDeliveryKind.COMMIT,
+              0,
+              commitBytes,
+            );
+          }
           await api.groupChatRemoveMember(activeUlid, member.ptid);
+          setGroupSecurityState(activeUlid, 'ready');
           await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
           toast.success(t('chat.social.detail.removeMemberSuccess'));
         } catch (error) {
+          setGroupSecurityState(activeUlid, 'error');
           log.error('chat', 'remove group member failed', { groupUlid: activeUlid, ptid: member.ptid, error });
           toast.error(t('chat.social.detail.removeMemberFailed'));
           throw error;

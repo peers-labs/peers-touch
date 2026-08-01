@@ -1,13 +1,18 @@
 import { fromBinary } from '@bufbuild/protobuf'
 import { imServiceV1 } from '../services/im-service'
-import { MlsDeliveryKind } from '../services/im-service-contract'
-import { MlsKeyDeliveryPayloadSchema } from '../gen/proto/domain/chat/envelope_pb'
+import { DirectKeyExchangeKind, MlsDeliveryKind } from '../services/im-service-contract'
+import {
+  DirectKeyExchangePayloadSchema,
+  MlsKeyDeliveryPayloadSchema,
+} from '../gen/proto/domain/chat/envelope_pb'
+import { X3dhSessionInitSchema } from '../gen/proto/domain/chat/key_exchange_pb'
 import { useSocialChatStore } from '../store/socialChat'
 import { normalizeConversations } from '../store/socialNormalizers'
 import type { RuntimeDescriptor } from '../kernel/runtime'
 import { log } from '../utils/logger'
 import { EVENT, eventBus } from '../kernel/events'
 import { api } from '../services/desktop_api'
+import { readFeatureFlags } from '../modules/settings/featureFlags'
 
 interface IMState {
   initialized: boolean
@@ -35,6 +40,12 @@ const state: IMState = {
 const DEDUP_MAX_SIZE = 2000
 const processedInboxItemIds = new Set<string>()
 const processedOrder: string[] = []
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
 
 function markProcessed(inboxItemId: string): boolean {
   if (processedInboxItemIds.has(inboxItemId)) return false
@@ -137,8 +148,10 @@ async function restoreMlsSessions(): Promise<void> {
     if (conv.kind !== 'group') continue
     try {
       await imServiceV1.mlsGroup.load(convId)
+      useSocialChatStore.getState().setGroupSecurityState(convId, 'ready')
     } catch {
       // No persisted session yet — will be established on first Welcome
+      useSocialChatStore.getState().setGroupSecurityState(convId, 'idle')
     }
   }
 }
@@ -151,6 +164,7 @@ async function processEnvelopePayload(
   payloadType: number,
   payloadBytes: Uint8Array,
   conversationId: string,
+  senderPtid: string,
   dirtyConversations: Set<string>,
 ): Promise<void> {
   switch (payloadType) {
@@ -167,19 +181,60 @@ async function processEnvelopePayload(
         if (delivery.kind === MlsDeliveryKind.WELCOME) {
           await imServiceV1.mlsGroup.joinGroup(convId, delivery.opaqueMlsBytes)
           await imServiceV1.mlsGroup.save(convId)
+          useSocialChatStore.getState().setGroupSecurityState(convId, 'ready')
           log.info('im-runtime', 'MLS group joined via Welcome', { convId })
         } else if (delivery.kind === MlsDeliveryKind.COMMIT) {
           await imServiceV1.mlsGroup.processCommit(convId, delivery.opaqueMlsBytes)
           await imServiceV1.mlsGroup.save(convId)
+          useSocialChatStore.getState().setGroupSecurityState(convId, 'ready')
           log.info('im-runtime', 'MLS commit processed', { convId })
         }
       } catch (err) {
+        if (conversationId) {
+          useSocialChatStore.getState().setGroupSecurityState(conversationId, 'error')
+        }
         log.warn('im-runtime', 'MLS_KEY_DELIVERY processing failed', { err })
       }
       break
     }
-    case 3: // DIRECT_KEY_EXCHANGE
+    case 3: { // DIRECT_KEY_EXCHANGE
+      if (payloadBytes.length === 0 || !senderPtid) break
+      try {
+        const delivery = fromBinary(DirectKeyExchangePayloadSchema, payloadBytes)
+        if (delivery.kind !== DirectKeyExchangeKind.INITIAL_MESSAGE) break
+        const init = fromBinary(X3dhSessionInitSchema, delivery.opaqueKeyMaterial)
+        if (!init.sessionId || init.sessionId !== delivery.sessionId) {
+          throw new Error('direct key exchange session mismatch')
+        }
+        if (init.negotiatedVersion === 1 && !readFeatureFlags().cryptoDrEnabled) {
+          throw new Error('Double Ratchet is disabled by the local kill switch')
+        }
+        await api.cryptoAcceptSession({
+          sessionId: init.sessionId,
+          peerDid: senderPtid,
+          senderIdentityKey: bytesToBase64(init.senderIdentityKey),
+          senderEphemeralKey: bytesToBase64(init.senderEphemeralKey),
+          recipientSignedPrekey: bytesToBase64(init.recipientSignedPrekey),
+          recipientOneTimePrekey: init.recipientOneTimePrekey.length > 0
+            ? bytesToBase64(init.recipientOneTimePrekey)
+            : undefined,
+          negotiatedVersion: init.negotiatedVersion,
+        })
+        useSocialChatStore.getState().setSessionSecurityState(
+          init.sessionId,
+          'ready',
+          init.negotiatedVersion,
+        )
+        dirtyConversations.add(init.sessionId)
+        log.info('im-runtime', 'direct secure channel established', {
+          conversationId: init.sessionId,
+          version: init.negotiatedVersion,
+        })
+      } catch (err) {
+        log.warn('im-runtime', 'DIRECT_KEY_EXCHANGE processing failed', { err })
+      }
       break
+    }
     case 4: // RECEIPT
       break
     default:
@@ -214,6 +269,7 @@ async function handleEnvelopeDelivered(data: {
     data.payloadType,
     payloadBytes,
     data.conversationId,
+    data.senderPtid,
     dirtyConversations,
   )
 
@@ -259,6 +315,7 @@ async function resumeEnvelopes(): Promise<void> {
           env.payloadType,
           payloadBytes,
           env.conversationId ?? '',
+          env.senderPtid ?? '',
           dirtyConversations,
         )
       }
@@ -286,7 +343,8 @@ async function refreshDirtyConversations(conversationIds: Set<string>): Promise<
       continue
     }
     try {
-      await store.loadMessages(convId, 'group')
+      const kind = state.conversations.get(convId)?.kind ?? 'group'
+      await store.loadMessages(convId, kind === 'direct' ? 'friend' : 'group')
     } catch (err) {
       log.warn('im-runtime', 'refresh dirty conversation failed', { convId, err })
     }

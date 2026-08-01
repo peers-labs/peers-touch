@@ -93,7 +93,8 @@ export interface MlsGroupServiceContract {
   decrypt(conversationId: string, ciphertext: Uint8Array): Promise<Uint8Array>
   processCommit(conversationId: string, commitBytes: Uint8Array): Promise<void>
   addMember(conversationId: string, memberKeyPackage: Uint8Array): Promise<MlsMemberChangeResult>
-  removeMember(conversationId: string, memberIndex: number): Promise<Uint8Array>
+  removeMember(conversationId: string, memberActorDid: string): Promise<Uint8Array>
+  status(conversationId: string): Promise<{ ready: boolean }>
   distribute(conversationId: string, kind: MlsDeliveryKind, mlsEpoch: number, opaqueBytes: Uint8Array, recipients?: string[]): Promise<number>
   save(conversationId: string): Promise<void>
   load(conversationId: string): Promise<void>
