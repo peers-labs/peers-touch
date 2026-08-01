@@ -6785,6 +6785,96 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
         }
+        "mls_group_process_commit" => {
+            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupProcessCommitInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("mls_group_process_commit") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            match mls.process_commit(&input.conversation_id, &input.commit_bytes) {
+                Ok(()) => to_json(AppResult::success(json!({}))),
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        "mls_group_add_member" => {
+            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupAddMemberInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("mls_group_add_member") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            match mls.add_member(&input.conversation_id, &input.member_key_package) {
+                Ok((commit_bytes, welcome_bytes)) => to_json(AppResult::success(json!({
+                    "commit_bytes": commit_bytes,
+                    "welcome_bytes": welcome_bytes,
+                }))),
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        "mls_group_remove_member" => {
+            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupRemoveMemberInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("mls_group_remove_member") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            match mls.remove_member(&input.conversation_id, &input.member_actor_did) {
+                Ok(commit_bytes) => to_json(AppResult::success(json!({ "commit_bytes": commit_bytes }))),
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        "mls_group_status" => {
+            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupStatusInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("mls_group_status") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            to_json(AppResult::success(json!({ "ready": mls.has_session(&input.conversation_id) })))
+        }
+        "mls_group_save" => {
+            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupSaveInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("mls_group_save") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            match mls.save_session(&input.conversation_id) {
+                Ok(()) => to_json(AppResult::success(json!({}))),
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        "mls_group_load" => {
+            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupLoadInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("mls_group_load") {
+                Ok(a) => a,
+                Err(e) => return e,
+            };
+            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
+            match mls.load_session(&input.conversation_id) {
+                Ok(()) => to_json(AppResult::success(json!({}))),
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
 
         // =================================================================
         // Envelope submit (send encrypted payload to Station)

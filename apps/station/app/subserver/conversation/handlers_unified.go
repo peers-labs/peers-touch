@@ -87,6 +87,9 @@ func (s *subServer) handleListMessages(ctx context.Context, req *listMessagesReq
 	if req.ConversationID == "" {
 		return nil, server.BadRequest("conversation_id is required")
 	}
+	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
+		return nil, err
+	}
 	limit := req.Limit
 	if limit <= 0 {
 		limit = 50
@@ -108,6 +111,9 @@ func (s *subServer) handleListThreadMessages(ctx context.Context, req *listThrea
 	if req.ConversationID == "" || req.RootID == "" {
 		return nil, server.BadRequest("conversation_id and root_id are required")
 	}
+	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
+		return nil, err
+	}
 	limit := req.Limit
 	if limit <= 0 {
 		limit = 50
@@ -125,6 +131,9 @@ func (s *subServer) handleListThreadMessages(ctx context.Context, req *listThrea
 func (s *subServer) handleGetThreadCounts(ctx context.Context, req *threadCountsRequest) (*threadCountsResponse, error) {
 	if req.ConversationID == "" {
 		return nil, server.BadRequest("conversation_id is required")
+	}
+	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
+		return nil, err
 	}
 	summaries, err := s.service.GetThreadCounts(ctx, req.ConversationID, req.RootIDs)
 	if err != nil {
@@ -152,6 +161,9 @@ func (s *subServer) handleSetReadCursor(ctx context.Context, req *setReadCursorR
 	if req.ConversationID == "" {
 		return nil, server.BadRequest("conversation_id is required")
 	}
+	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
+		return nil, err
+	}
 	if err := s.service.SetReadCursor(ctx, req.ConversationID, subject.ID, req.LastReadSeq); err != nil {
 		return nil, server.InternalErrorWithCause("set read cursor failed", err)
 	}
@@ -165,6 +177,9 @@ func (s *subServer) handleGetUnread(ctx context.Context, req *getUnreadRequest) 
 	}
 	if req.ConversationID == "" {
 		return nil, server.BadRequest("conversation_id is required")
+	}
+	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
+		return nil, err
 	}
 	count, err := s.service.GetUnreadCount(ctx, req.ConversationID, subject.ID)
 	if err != nil {
@@ -181,9 +196,12 @@ func (s *subServer) handleGetMemberSettings(ctx context.Context, req *getMemberS
 	if req.ConversationID == "" {
 		return nil, server.BadRequest("conversation_id is required")
 	}
+	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
+		return nil, err
+	}
 	member, err := s.service.GetMember(ctx, req.ConversationID, subject.ID)
-	if err != nil || member == nil {
-		return &memberSettingsResponse{AlertEnabled: true}, nil
+	if err != nil {
+		return nil, server.InternalErrorWithCause("get member settings failed", err)
 	}
 	return &memberSettingsResponse{
 		Nickname:     member.Nickname,
@@ -200,9 +218,12 @@ func (s *subServer) handleUpdateMemberSettings(ctx context.Context, req *updateM
 	if req.ConversationID == "" {
 		return nil, server.BadRequest("conversation_id is required")
 	}
+	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
+		return nil, err
+	}
 	member, err := s.service.GetMember(ctx, req.ConversationID, subject.ID)
-	if err != nil || member == nil {
-		return nil, server.BadRequest("not a member of this conversation")
+	if err != nil {
+		return nil, server.InternalErrorWithCause("get member settings failed", err)
 	}
 	if req.Nickname != nil {
 		member.Nickname = *req.Nickname
