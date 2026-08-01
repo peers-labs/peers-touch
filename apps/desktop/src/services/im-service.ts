@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { fromJson } from '@bufbuild/protobuf'
 import type { RustCommandResult } from './desktop_api'
 import type {
   ConversationServiceContract,
@@ -18,6 +19,7 @@ import type {
   ConversationMember,
   CommittedConversationEvent,
 } from '../gen/proto/domain/chat/conversation_pb'
+import { CommittedConversationEventSchema } from '../gen/proto/domain/chat/conversation_pb'
 import type {
   DeviceInboxItem,
 } from '../gen/proto/domain/chat/envelope_pb'
@@ -29,6 +31,10 @@ async function cmd<TInput, TData>(command: string, input?: TInput): Promise<TDat
     throw new Error(result.error?.message ?? `${command} failed`)
   }
   return result.data as TData
+}
+
+function normalizeConversationEvents(events: readonly unknown[] | undefined): CommittedConversationEvent[] {
+  return (events ?? []).map(event => fromJson(CommittedConversationEventSchema, event as any))
 }
 
 const conversationService: ConversationServiceContract = {
@@ -87,31 +93,31 @@ const conversationService: ConversationServiceContract = {
   },
 
   async listEvents(conversationId, afterSeq, limit) {
-    const resp = await cmd<any, { events: CommittedConversationEvent[] }>('conversation_list_events', {
+    const resp = await cmd<any, { events: unknown[] }>('conversation_list_events', {
       conversation_id: conversationId,
       after_seq: afterSeq ?? 0,
       limit: limit ?? 50,
     })
-    return resp.events ?? []
+    return normalizeConversationEvents(resp.events)
   },
 
   async listMessages(conversationId, afterSeq, limit) {
-    const resp = await cmd<any, { events: CommittedConversationEvent[]; has_more: boolean }>('conversation_list_messages', {
+    const resp = await cmd<any, { events: unknown[]; has_more: boolean }>('conversation_list_messages', {
       conversation_id: conversationId,
       after_seq: afterSeq ?? 0,
       limit: limit ?? 50,
     })
-    return { events: resp.events ?? [], hasMore: resp.has_more ?? false }
+    return { events: normalizeConversationEvents(resp.events), hasMore: resp.has_more ?? false }
   },
 
   async listThreadMessages(conversationId, rootId, afterSeq, limit) {
-    const resp = await cmd<any, { events: CommittedConversationEvent[]; has_more: boolean }>('conversation_list_thread_messages', {
+    const resp = await cmd<any, { events: unknown[]; has_more: boolean }>('conversation_list_thread_messages', {
       conversation_id: conversationId,
       root_id: rootId,
       after_seq: afterSeq ?? 0,
       limit: limit ?? 50,
     })
-    return { events: resp.events ?? [], hasMore: resp.has_more ?? false }
+    return { events: normalizeConversationEvents(resp.events), hasMore: resp.has_more ?? false }
   },
 
   async threadCounts(conversationId, rootIds) {
@@ -152,20 +158,20 @@ const conversationService: ConversationServiceContract = {
   },
 
   async searchMessages(conversationId, query, limit) {
-    const resp = await cmd<any, { events: CommittedConversationEvent[]; has_more: boolean }>('conversation_search_messages', {
+    const resp = await cmd<any, { events: unknown[]; has_more: boolean }>('conversation_search_messages', {
       conversation_id: conversationId,
       query,
       limit: limit ?? 20,
     })
-    return { events: resp.events ?? [], hasMore: resp.has_more ?? false }
+    return { events: normalizeConversationEvents(resp.events), hasMore: resp.has_more ?? false }
   },
 
   async syncFromStation(conversationId, limit) {
-    const resp = await cmd<any, { events: CommittedConversationEvent[]; has_more: boolean }>('conversation_sync_from_station', {
+    const resp = await cmd<any, { events: unknown[]; has_more: boolean }>('conversation_sync_from_station', {
       conversation_id: conversationId,
       limit: limit ?? 200,
     })
-    return { events: resp.events ?? [], hasMore: resp.has_more ?? false }
+    return { events: normalizeConversationEvents(resp.events), hasMore: resp.has_more ?? false }
   },
 }
 
@@ -314,12 +320,18 @@ const mlsGroupService: MlsGroupServiceContract = {
     }
   },
 
-  async removeMember(conversationId, memberIndex) {
+  async removeMember(conversationId, memberActorDid) {
     const resp = await cmd<any, { commit_bytes: number[] }>('mls_group_remove_member', {
       conversation_id: conversationId,
-      member_index: memberIndex,
+      member_actor_did: memberActorDid,
     })
     return new Uint8Array(resp.commit_bytes)
+  },
+
+  async status(conversationId) {
+    return cmd<any, { ready: boolean }>('mls_group_status', {
+      conversation_id: conversationId,
+    })
   },
 
   async distribute(conversationId, kind, mlsEpoch, opaqueBytes, recipients) {

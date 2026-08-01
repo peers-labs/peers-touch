@@ -555,6 +555,7 @@ pub fn identity_fingerprint_hex(verifying_key: &VerifyingKey) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::Signer;
 
     #[test]
     fn ed25519_private_and_public_map_to_same_x25519_public() {
@@ -565,5 +566,56 @@ mod tests {
             .expect("Ed25519 verifying key should map to X25519 public");
 
         assert_eq!(from_private.public.as_bytes(), from_public.as_bytes());
+    }
+
+    #[test]
+    fn x3dh_bootstrap_and_double_ratchet_two_client_round_trip() {
+        let alice_identity = generate_identity_keypair();
+        let bob_identity = generate_identity_keypair();
+        let bob_spk_private = StaticSecret::random_from_rng(OsRng);
+        let bob_spk = X25519KeyPair {
+            public: PublicKey::from(&bob_spk_private),
+            private: bob_spk_private,
+        };
+        let bob_opk_private = StaticSecret::random_from_rng(OsRng);
+        let bob_opk = X25519KeyPair {
+            public: PublicKey::from(&bob_opk_private),
+            private: bob_opk_private,
+        };
+        let bundle = X3DHBundle {
+            ik_pub: bob_identity.verifying_key.to_bytes(),
+            spk_pub: bob_spk.public.to_bytes(),
+            spk_sig: bob_identity
+                .signing_key
+                .sign(bob_spk.public.as_bytes())
+                .to_bytes()
+                .to_vec(),
+            opk_pub: Some(bob_opk.public.to_bytes()),
+        };
+
+        let alice_x3dh = x3dh_sender(&alice_identity, &bundle).expect("alice X3DH");
+        let bob_shared = x3dh_receiver(
+            &bob_identity,
+            &bob_spk,
+            Some(&bob_opk),
+            &alice_identity.verifying_key.to_bytes(),
+            &alice_x3dh.ephemeral_pub,
+        )
+        .expect("bob X3DH");
+        assert_eq!(alice_x3dh.shared_secret, bob_shared);
+
+        let session_id = "two-client-e2e";
+        let mut alice = double_ratchet::init_initiator(
+            session_id,
+            &alice_x3dh.shared_secret,
+            bob_spk.public.to_bytes(),
+        );
+        let bob =
+            double_ratchet::init_responder(session_id, &bob_shared, bob_spk.private.to_bytes());
+        let wire =
+            double_ratchet::encrypt(&mut alice, b"encrypted from alice", b"").expect("encrypt");
+        let outcome = double_ratchet::decrypt(&bob, &wire, &[], b"").expect("decrypt");
+
+        assert_eq!(outcome.plaintext, b"encrypted from alice");
     }
 }
