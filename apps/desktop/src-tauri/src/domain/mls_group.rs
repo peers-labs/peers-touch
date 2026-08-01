@@ -27,6 +27,12 @@ pub struct MlsGroupSession {
     group: MlsGroup,
 }
 
+#[derive(Serialize, Deserialize)]
+struct PersistedMlsGroupSession {
+    provider_state: Vec<u8>,
+    signer: SignatureKeyPair,
+}
+
 pub struct MlsGroupManager {
     sessions: Mutex<HashMap<String, MlsGroupSession>>,
     identity: Mutex<Option<(SignatureKeyPair, CredentialWithKey)>>,
@@ -332,21 +338,27 @@ impl MlsGroupManager {
         Ok(commit_bytes)
     }
 
-    pub fn save_session(&self, conversation_id: &str) -> Result<(), String> {
+    pub fn export_session_state(&self, conversation_id: &str) -> Result<Vec<u8>, String> {
         let sessions = self.sessions.lock().unwrap();
         let session = sessions
             .get(conversation_id)
             .ok_or("no MLS session for this conversation")?;
-        session.provider.save_state(&format!("peers_mls_{conversation_id}"))
+        let persisted = PersistedMlsGroupSession {
+            provider_state: session.provider.export_state()?,
+            signer: session.signer.clone(),
+        };
+        serde_json::to_vec(&persisted).map_err(|e| format!("serialize MLS session: {e}"))
     }
 
-    pub fn load_session(&self, conversation_id: &str) -> Result<(), String> {
-        let id = self.identity.lock().unwrap();
-        let (signer, _cwk) = id.as_ref().ok_or("identity not initialized")?.clone();
-        drop(id);
-
+    pub fn import_session_state(
+        &self,
+        conversation_id: &str,
+        state_bytes: &[u8],
+    ) -> Result<(), String> {
+        let persisted: PersistedMlsGroupSession = serde_json::from_slice(state_bytes)
+            .map_err(|e| format!("deserialize MLS session: {e}"))?;
         let mut provider = PeersMLSProvider::new();
-        provider.load_state(&format!("peers_mls_{conversation_id}"))?;
+        provider.import_state(&persisted.provider_state)?;
 
         let group_id = GroupId::from_slice(conversation_id.as_bytes());
         let group = MlsGroup::load(provider.storage(), &group_id)
@@ -355,7 +367,7 @@ impl MlsGroupManager {
 
         let session = MlsGroupSession {
             provider,
-            signer,
+            signer: persisted.signer,
             group,
         };
 
@@ -477,5 +489,47 @@ mod tests {
         );
 
         drop(commit_bytes);
+    }
+
+    #[test]
+    fn p3_independent_session_state_survives_cold_start() {
+        let alice = MlsGroupManager::new();
+        let bob = MlsGroupManager::new();
+        alice.init_identity("did:alice");
+        bob.init_identity("did:bob");
+
+        let bob_kp = bob.generate_key_package().expect("bob kp");
+        let created = alice
+            .create_group("conv-cold-start", &[bob_kp])
+            .expect("create");
+        bob.join_group("conv-cold-start", &created.welcome_bytes)
+            .expect("join");
+
+        let alice_state = alice
+            .export_session_state("conv-cold-start")
+            .expect("export alice");
+        let bob_state = bob
+            .export_session_state("conv-cold-start")
+            .expect("export bob");
+        assert_ne!(alice_state, bob_state, "member states must remain independent");
+
+        let restored_alice = MlsGroupManager::new();
+        let restored_bob = MlsGroupManager::new();
+        restored_alice.init_identity("did:alice");
+        restored_bob.init_identity("did:bob");
+        restored_alice
+            .import_session_state("conv-cold-start", &alice_state)
+            .expect("restore alice");
+        restored_bob
+            .import_session_state("conv-cold-start", &bob_state)
+            .expect("restore bob");
+
+        let encrypted = restored_alice
+            .encrypt("conv-cold-start", b"after cold start")
+            .expect("encrypt");
+        let plaintext = restored_bob
+            .decrypt("conv-cold-start", &encrypted.ciphertext)
+            .expect("decrypt");
+        assert_eq!(plaintext, b"after cold start");
     }
 }

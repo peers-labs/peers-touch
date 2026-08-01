@@ -194,10 +194,33 @@ impl PlatformKeyProvider {
                         format!("file keystore mkdir failed: {e}"),
                     )
                 })?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(
+                        |e| {
+                            KeyProviderError::io_failure(
+                                key_ref,
+                                format!("file keystore chmod failed: {e}"),
+                            )
+                        },
+                    )?;
+                }
             }
-            return fs::write(path, Self::encode_material(item)).map_err(|e| {
+            fs::write(&path, Self::encode_material(item)).map_err(|e| {
                 KeyProviderError::io_failure(key_ref, format!("file keystore write failed: {e}"))
-            });
+            })?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(|e| {
+                    KeyProviderError::io_failure(
+                        key_ref,
+                        format!("file keystore chmod failed: {e}"),
+                    )
+                })?;
+            }
+            return Ok(());
         }
         let entry = Entry::new(
             Self::service_name(),

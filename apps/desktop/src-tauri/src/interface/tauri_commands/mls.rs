@@ -1,6 +1,7 @@
 use crate::application::session_resolver;
 use crate::domain::mls_group::MlsGroupManager;
 use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::local_chat_store;
 use crate::infrastructure::station_client;
 use crate::state::AppState;
 use reqwest::Method;
@@ -179,8 +180,28 @@ pub struct MlsGroupSaveInput {
 pub fn mls_group_save(
     input: MlsGroupSaveInput,
     mls: State<'_, Arc<MlsGroupManager>>,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
 ) -> AppResult<Value> {
-    match mls.save_session(&input.conversation_id) {
+    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
+    let user_scope = crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+    mls_group_save_for_scope(input, mls.inner(), &user_scope)
+}
+
+pub(crate) fn mls_group_save_for_scope(
+    input: MlsGroupSaveInput,
+    mls: &MlsGroupManager,
+    user_scope: &str,
+) -> AppResult<Value> {
+    let state_blob = match mls.export_session_state(&input.conversation_id) {
+        Ok(blob) => blob,
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
+    };
+    match local_chat_store::crypto_save_mls_state(
+        user_scope,
+        &input.conversation_id,
+        &state_blob,
+    ) {
         Ok(()) => AppResult::success(json!({})),
         Err(e) => AppResult::fail(ErrorCode::InternalError, &e, None),
     }
@@ -195,8 +216,34 @@ pub struct MlsGroupLoadInput {
 pub fn mls_group_load(
     input: MlsGroupLoadInput,
     mls: State<'_, Arc<MlsGroupManager>>,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
 ) -> AppResult<Value> {
-    match mls.load_session(&input.conversation_id) {
+    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
+    let user_scope = crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref());
+    mls_group_load_for_scope(input, mls.inner(), &user_scope)
+}
+
+pub(crate) fn mls_group_load_for_scope(
+    input: MlsGroupLoadInput,
+    mls: &MlsGroupManager,
+    user_scope: &str,
+) -> AppResult<Value> {
+    let state_blob = match local_chat_store::crypto_load_mls_state(
+        user_scope,
+        &input.conversation_id,
+    ) {
+        Ok(Some(blob)) => blob,
+        Ok(None) => {
+            return AppResult::fail(
+                ErrorCode::NotFound,
+                "MLS session state not found",
+                None,
+            )
+        }
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
+    };
+    match mls.import_session_state(&input.conversation_id, &state_blob) {
         Ok(()) => AppResult::success(json!({})),
         Err(e) => AppResult::fail(ErrorCode::InternalError, &e, None),
     }

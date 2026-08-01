@@ -6855,10 +6855,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            match mls.save_session(&input.conversation_id) {
-                Ok(()) => to_json(AppResult::success(json!({}))),
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
-            }
+            let user_scope = user_scope_from_state(state);
+            to_json(crate::interface::tauri_commands::mls::mls_group_save_for_scope(
+                input,
+                mls.inner(),
+                &user_scope,
+            ))
         }
         "mls_group_load" => {
             let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupLoadInput>(args) {
@@ -6870,10 +6872,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            match mls.load_session(&input.conversation_id) {
-                Ok(()) => to_json(AppResult::success(json!({}))),
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
-            }
+            let user_scope = user_scope_from_state(state);
+            to_json(crate::interface::tauri_commands::mls::mls_group_load_for_scope(
+                input,
+                mls.inner(),
+                &user_scope,
+            ))
         }
 
         // =================================================================

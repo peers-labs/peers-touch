@@ -10,6 +10,9 @@ use openmls_basic_credential::SignatureKeyPair;
 use openmls_memory_storage::MemoryStorage;
 use openmls_rust_crypto::RustCrypto;
 use openmls_traits::OpenMlsProvider;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
+use std::path::PathBuf;
 
 pub const PEERS_CIPHERSUITE: Ciphersuite =
     Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
@@ -36,6 +39,60 @@ impl PeersMLSProvider {
     pub fn load_state(&mut self, name: &str) -> Result<(), String> {
         self.storage.load(name.to_string())
     }
+
+    pub fn export_state(&self) -> Result<Vec<u8>, String> {
+        let path = secure_temp_state_path()?;
+        let file = create_secure_temp_file(&path)?;
+        let result = self.storage.save_to_file(&file);
+        drop(file);
+        let bytes = result.and_then(|_| fs::read(&path).map_err(|e| e.to_string()));
+        let _ = fs::remove_file(path);
+        bytes
+    }
+
+    pub fn import_state(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let path = secure_temp_state_path()?;
+        let mut file = create_secure_temp_file(&path)?;
+        let result = file
+            .write_all(bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|e| e.to_string());
+        drop(file);
+        let result = result.and_then(|_| {
+            let file = File::open(&path).map_err(|e| e.to_string())?;
+            self.storage.load_from_file(&file)
+        });
+        let _ = fs::remove_file(path);
+        result
+    }
+}
+
+fn secure_temp_state_path() -> Result<PathBuf, String> {
+    let root = std::env::var("PEERS_STORAGE_ROOT")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let dir = root.join("peers-touch").join("desktop").join("runtime").join("mls-export");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(dir.join(format!("{}.state", ulid::Ulid::new())))
+}
+
+fn create_secure_temp_file(path: &std::path::Path) -> Result<File, String> {
+    let mut options = OpenOptions::new();
+    options.create_new(true).read(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path).map_err(|e| e.to_string())
 }
 
 impl OpenMlsProvider for PeersMLSProvider {

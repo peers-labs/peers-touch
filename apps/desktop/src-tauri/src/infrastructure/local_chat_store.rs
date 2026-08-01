@@ -191,6 +191,11 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             handshake_delivered INTEGER NOT NULL DEFAULT 0,
             updated_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS crypto_mls_state (
+            conversation_id TEXT NOT NULL PRIMARY KEY,
+            state_blob BLOB NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS crypto_signed_prekey (
             id INTEGER NOT NULL PRIMARY KEY,
             private_key BLOB NOT NULL,
@@ -896,6 +901,40 @@ pub fn crypto_session_handshake_delivered(
     )
     .optional()
     .map(|value| value.unwrap_or(0) != 0)
+    .map_err(|e| e.to_string())
+}
+
+pub fn crypto_save_mls_state(
+    user_scope: &str,
+    conversation_id: &str,
+    state_blob: &[u8],
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.execute(
+        "INSERT INTO crypto_mls_state(conversation_id, state_blob, updated_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(conversation_id) DO UPDATE SET
+            state_blob=excluded.state_blob,
+            updated_at=excluded.updated_at",
+        params![conversation_id, state_blob, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn crypto_load_mls_state(
+    user_scope: &str,
+    conversation_id: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT state_blob FROM crypto_mls_state WHERE conversation_id = ?1",
+        params![conversation_id],
+        |row| row.get(0),
+    )
+    .optional()
     .map_err(|e| e.to_string())
 }
 
