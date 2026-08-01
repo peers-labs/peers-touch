@@ -72,7 +72,11 @@ pub fn key_exchange_upload_bundle(
         opk_ids: input.opk_ids,
         opk_pubs: input.opk_pubs,
         device_id,
-        supported_versions: vec![0, 1],
+        supported_versions: if input.supported_versions.contains(&1) {
+            vec![0, 1]
+        } else {
+            vec![0]
+        },
     };
     match station_client::request_proto::<
         kemodel::UploadKeyBundleRequest,
@@ -133,6 +137,7 @@ pub fn key_exchange_fetch_bundle(
                 "spk_sig": b.spk_sig,
                 "opks": b.opks,
                 "published_at_unix_ms": b.published_at_unix_ms,
+                "supported_versions": b.supported_versions,
             })
         })
         .collect();
