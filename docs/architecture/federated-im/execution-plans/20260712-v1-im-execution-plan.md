@@ -1,9 +1,9 @@
 # G2 — v1 IM 统一执行计划（依赖有序）
 
-> **Status**: P0/P1/P2 已实施；P3 待 G0 L3 部署验证；P4 已批准并实施中，但被 Mobile P2/P3 协议能力阻塞
+> **Status**: P0/P1 已实施；P2/P3 严格加密收口进行中；P4 被 Mobile P2/P3 与三 Station MLS 收敛门阻塞
 > **Stage**: v1（不涉及任何版本号升级）
-> **Created**: 2026-07-12
-> **Worktree/Branch**: `peers-group-chat`
+> **Created**: 2026-07-12 | **Updated**: 2026-08-01
+> **Current Worktree/Branch**: `peers-chat-high-chat` / `feat/group-detail-history-ux-pr`
 > **Governing decisions**: [`../decisions.md`](../decisions.md) D-01…D-05、D-07（沿用）；D-08…D-12（v1 归一）
 > **Verification gate**: [`20260712-g0-mls-verification.md`](./20260712-g0-mls-verification.md)（G0 未过前，群聊 MLS 相位不得实施）
 > **Governing invariant**: [`../../../knowledge/invariants/actor-presence-ownership.md`](../../../knowledge/invariants/actor-presence-ownership.md)
@@ -21,6 +21,8 @@
 ### 全局硬约束（每个相位都必须守）
 
 - **单一真源 / 无脑裂 / 无历史债**（`pt-refactor-discipline`）：新路径落地即迁移全部消费者并删旧路径，禁止兼容桥、双写、`_legacy`、feature flag 遗留。
+- **严格加密单路径**（D-08、D-09、D-11）：私聊只接受 X3DH + Double Ratchet `v=1`，群聊只接受 MLS；禁止 plaintext decode、chain-only `v=0`、Sender Keys 与 raw-text fallback。
+- **历史数据不进入应用迁移**：旧明文、`v=0` 与 Sender Keys 数据不读取、不迁移，也不由应用代码删除；P6 通过单独审批的运维 SQL 清理，清理前由严格解码器 fail closed / ignore。
 - **presence 归属**（上方 invariant）：chat 只能 `presence.IsActorOnline` 窄读，禁止 chat 本地存 reachability、禁止 chat 私有 presence 流。
 - **proto-first**：数据模型先改 `model/domain/**.proto`，不手改生成码，按官方脚本重生成。
 - **E2EE 红线**：Station 不持明文/群密钥/私钥；日志与指标不含敏感载荷。
@@ -36,9 +38,9 @@ P0 契约冻结（proto 单一合同）
    │
    ├────────────► P1 Station 信封底座（D-10：outbox/inbox/cursor/幂等/ACK/重试/死信/背压；本地+联邦 transport）
    │                     │
-   │                     ├────────────► P2 私聊闭环（D-09：X3DH+Double Ratchet，多设备，跨站，离线恢复，状态机）
+   │                     ├────────────► P2 私聊闭环（D-09：X3DH+Double Ratchet v1 only，多设备，跨站，离线恢复）
    │                     │
-   │                     └────────────► P3 群聊闭环（D-08：MLS）  ← 受 G0 门约束（G0 通过 + MLS 库经批准）
+   │                     └────────────► P3 群聊闭环（D-08：MLS only）  ← 受 G0 门约束（G0 通过 + MLS 库经批准）
    │                                          │
    ├──────────────────────────────────────────┘
    ▼
@@ -76,13 +78,13 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 
 ### P2 私聊闭环（D-09）
 - **依赖**：P0、P1。**不被 G0 阻塞**（不使用 MLS）。
-- **范围**：确定性 Direct Conversation ID + 确定性 authority（DP-4）；X3DH 初始握手；Double Ratchet 接入真实收发（修复现状 skeleton）；多设备 session manager + fanout；设备新增/吊销/丢失恢复；发送/送达/已读/失败重试；编辑/撤回/删除/引用/线程；加密附件；本地全文搜索；安全码/身份变化提示。删除 chain-only fallback。
+- **范围**：确定性 Direct Conversation ID + 确定性 authority（DP-4）；X3DH 初始握手；Double Ratchet `v=1` 接入真实收发；多设备 session manager + fanout；设备新增/吊销/丢失恢复；发送/送达/已读/失败重试；编辑/撤回/删除/引用/线程；加密附件；本地全文搜索；安全码/身份变化提示。删除 plaintext decode、chain-only `v=0`、版本协商 feature flag 与 raw-text fallback；未知/旧格式 fail closed。
 - **验收门**：同站+跨站私聊 L2/L3；多设备；离线重启补投；被吊销设备不能解未来消息。
 - **原子切换**：私聊旧 pending map 在 P6 删除。
 
 ### P3 群聊闭环（D-08）— **受 G0 门约束**
 - **依赖**：P0、P1、**G0 通过 + MLS 库与版本经用户批准**。
-- **范围**：authority 排序 MLS Commit（与 `membership_epoch` 原子绑定，C-4）；KeyPackage 目录；建群/邀请/加入/退出/踢人/转让/解散；actor membership 与 device membership 分离；Welcome/Commit 经信封投递；历史可见性；authority 不可用只读降级（D-05）；follower 投影同步 + fork protection；群消息/回执/编辑/撤回/线程；群附件加密。
+- **范围**：authority 排序 MLS Commit（与 `membership_epoch` 原子绑定，C-4）；KeyPackage 目录；建群/邀请/加入/退出/踢人/转让/解散；actor membership 与 device membership 分离；Welcome/Commit 经信封投递；历史可见性；authority 不可用只读降级（D-05）；follower 投影同步 + fork protection；群消息/回执/编辑/撤回/线程；群附件加密。删除 plaintext decode、Sender Keys/SKDM 与 raw-text fallback；未知/旧格式 fail closed。
 - **验收门**：三 Station 群聊 L3；成员进出后可解密集合正确；安全负例（伪造 Commit / 旧 epoch / 移除后解密）；100 人压力。
 - **原子切换**：Sender Keys/SKDM/friend type50 在 P6 删除。
 
@@ -98,8 +100,8 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 
 ### P6 原子删除旧世界（D-11）
 - **依赖**：P2、P3、P4、P5 的替代路径全部就绪。
-- **范围**：删除 Sender Keys 全套、friend-chat type50、旧 key-exchange proto、friend pending map、group offline 双轨、旧 crypto fallback、重复 store 路径、`ChatMessageArea.tsx.rej`；清空旧聊天数据（D-11）。
-- **验收门**：全仓搜索旧符号（SKDM / SenderKey / type50 / pending map 等）**零活跃命中**；无兼容桥/双写/feature flag 残留；`pt-completion-auditor` 无过度声明。
+- **范围**：删除 Sender Keys 全套、friend-chat type50、旧 key-exchange proto、friend pending map、group offline 双轨、重复 store 路径、`ChatMessageArea.tsx.rej`；验证 P2/P3 已删除旧 crypto fallback。旧聊天数据不做应用内迁移或删除，由单独审批的运维 SQL 清空（D-11）。
+- **验收门**：全仓搜索旧符号（SKDM / SenderKey / type50 / pending map / plaintext decode / `crypto.dr_enabled` 等）**零活跃命中**；无兼容桥/双写/feature flag 残留；运维 SQL 执行后旧数据行数为零并留存脱敏证据；`pt-completion-auditor` 无过度声明。
 
 ### P7 全量验收
 - **依赖**：P6。
@@ -124,14 +126,14 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 ## 4. 批准状态与推进项
 
 ### 已批准（2026-07-12）
-1. **P0/P1/P2 产品代码实施** — 已完成：conversation/envelope subservers + Desktop Tauri commands + TS service contracts + 20 contract tests PASS。
+1. **P0/P1 产品代码实施** — 已完成：conversation/envelope subservers + Desktop Tauri commands + TS service contracts + contract tests PASS。
 2. **MLS 选库** — openmls 0.8.1 选定，已引入 Desktop Cargo.toml 产品依赖。
 3. **压力预算** — 用户授权按默认阈值执行，C-7 已验证通过（裕量 ≥10×）。
 
-### 待批准
-1. **P3 群聊闭环产品实施** — 基础设施已就绪（MlsGroupManager + /mls/distribute + C-8 PASS），待 G0 C-5 (L3 三 Station 部署) 通过后转为可实施。
-2. **P4 客户端 Runtime 归一** — 依赖 P2+P3 完成。
-3. **P5–P7** — 顺序推进。
+### 当前执行授权（2026-08-01）
+1. **P2/P3 严格加密收口** — 已批准；Desktop S1 为下一执行闭包，Mobile 与三 Station 门随后并行。
+2. **P4 客户端 Runtime 归一** — 已批准但依赖未满足；P2/P3 完成前保持 BLOCKED。
+3. **P5–P7** — 维持原依赖顺序，不提前启动。
 
 ### 2026-07-31 P2/P3 E2EE 激活切片
 
@@ -141,8 +143,9 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
   chain-only sender，不启用明文发送。
 - **P3 / Desktop group message path**：group send/edit 强制通过 OpenMLS application message；
   无本地 MLS state 时 fail closed。建群、加人、移除成员均生成并分发 Welcome/Commit。
-- **历史兼容**：接收顺序保持 plaintext history decode → DR decrypt → legacy chain decrypt；
-  DR 持久化不覆盖 legacy receive chain。
+- **已废止的临时兼容（2026-08-01）**：本切片曾保留
+  `plaintext history decode → DR decrypt → legacy chain decrypt`。该行为与 D-11 冲突，
+  已由下方严格切换修订取代，不再是允许的目标状态。
 - **本切片证据**：X3DH→DR 双端 round trip、DR SQLCipher persistence + OPK single-use、
   OpenMLS create/add/remove/encrypt/decrypt 单测通过；Desktop Rust `cargo check` 通过。
 - **Profile three live evidence（2026-07-31）**：
@@ -182,10 +185,116 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
     group 仍为 Sender Keys。Desktop + Mobile Runtime 归一在 Mobile P2/P3 完成前不可声明。
   - C-4/C-5 三 Station MLS membership/Commit 收敛仍未通过。
 
+### 2026-08-01 严格加密切换修订（已批准）
+
+- **用户决策**：不保留任何兼容路径；历史消息允许丢弃。
+- **运行时合同**：
+  - Direct 仅发布/接受 `supported_versions=[1]`，只运行 X3DH + Double Ratchet `v=1`。
+  - Group 仅运行 OpenMLS application message，不接受 plaintext 或 Sender Keys。
+  - 解码必须先验证协议信封；格式缺失、未知版本、旧格式与解密失败统一 fail closed，
+    不把载荷尝试解释为明文。
+  - 删除 `crypto.dr_enabled` 及所有 rollback/fallback 分支；回滚只依赖 Git/部署回滚。
+- **历史数据合同**：
+  - 应用不读取、不迁移、不重加密，也不执行历史数据删除。
+  - P6 前旧行可以物理保留但对产品不可见；P6 使用单独审批、可审计的运维 SQL 清空。
+  - 任何 SQL 清理必须先备份必要的非消息业务真源，并以表/字段白名单限定影响范围。
+- **依赖修正**：P2/P3 严格加密门关闭前，P4 不得声明进行中或完成；P5 不得启动。
+
+### 当前实施状态与下一执行闭包
+
+| Phase | 状态 | 已有证据 | 关闭条件 |
+|---|---|---|---|
+| P0 | DONE | proto build / wire contract | — |
+| P1 | DONE | conversation/envelope Station gates | — |
+| P2 | IN PROGRESS | Desktop strict DR v1 S1 + live restart PASS | Mobile DR v1；跨站/多设备/吊销门 |
+| P3 | IN PROGRESS | Desktop strict MLS S1 + removal/restart PASS | Mobile OpenMLS；C-4/C-5 三 Station；压力门 |
+| P4 | BLOCKED | Desktop 部分 canonical migration | P2/P3 全部门关闭后执行 Desktop + Mobile Runtime 归一 |
+| P5 | PENDING | — | P4 完成 |
+| P6 | PENDING | — | P2–P5 替代路径完成；原子删旧世界 + 运维 SQL 清理 |
+| P7 | PENDING | 单 Station Desktop 局部证据 | P6 完成后执行完整验收矩阵 |
+
+**下一执行闭包：`P2/P3-S1 Desktop strict encrypted-only cutover`**
+
+1. 删除 DM/group direct plaintext decode、DM `v=0`、raw-text fallback 与
+   `crypto.dr_enabled` feature flag；bundle 仅声明 `[1]`。
+2. 将 DM/group 解码统一为“验证信封 → DR v1/MLS 解密 → 验证
+   `ChatEncryptedMessagePayload`”，任一步失败都只显示 decrypt-failed 状态。
+3. 增加旧明文、`v=0`、未知版本、损坏密文的 fail-closed 负例；不得增加数据迁移或删除代码。
+4. 运行 Desktop check/Rust tests、双 Rust gateway DM+MLS E2E、完整 stop/start recovery、
+   Station opaque-byte equality 与本地/Station plaintext marker scan。
+5. S1 关闭后，并行进入 `P2/P3-S2 Mobile DR/OpenMLS parity` 与
+   `P3-S3 C-4/C-5 three-Station convergence`；两者完成后才进入 P4。
+
+### 2026-08-01 `P2/P3-S1` 关闭证据
+
+- Desktop DM/group 解码已删除 plaintext probing、DR `v=0`、raw-text fallback 与
+  `crypto.dr_enabled`；Direct bundle 只发布 `[1]`。
+- Rust 边界只接受 `negotiated_version=1`；chain-only Tauri/conversation 命令已删除。
+  Desktop Sender Keys 前端与 Tauri 注册面已删除，dev HTTP gateway 在 dispatch 前 fail closed；
+  Sender Keys 源码与表的物理删除仍属于 P6。
+- 应用启动时的 `legacy_group_plaintext_wipe_v1` 已删除；历史数据不再由应用代码修改。
+- `socialChat.strictCrypto.test.ts`：9/9 PASS，覆盖 plaintext、`v=0`、未知版本、损坏信封、
+  raw decrypted bytes、旧命令面与应用内数据删除负例。
+- Rust `cargo check --bin peers-touch-desktop` PASS；crypto binary tests 23/23 PASS。
+- Profile `three` 两个独立 Rust gateway：
+  - 旧 Sender Keys 命令返回 `NOT_FOUND`。
+  - `crypto_init_session negotiatedVersion=0` 返回 `INVALID_ARGUMENT`。
+  - 双端 session status 均为 `{established:true, version:1}`，fresh DR exact decrypt PASS。
+  - fresh two-member MLS exact decrypt PASS。
+  - 完整 stop/start 后 deferred DR 与 MLS ciphertext exact decrypt PASS。
+- canonical `/conversation/command` 提交返回的 committed event 与客户端 DR envelope
+  byte-for-byte 相等，第二客户端 exact decrypt PASS
+  （message `fb7610c3-3fcf-44d6-8f27-1d3add3d6a18`）。
+- bundle fetch 只返回 `supported_versions:[1]`；profile plaintext marker scan 零命中，
+  SQLCipher key files `0600`，transient MLS state files 为零。
+- Desktop social wire/runtime boundary gates PASS。完整 `pnpm run check` 仍因仓库既有
+  React 18/19 `ReactNode` 类型重复、MessageList prop 与 provider typing 基线错误 FAIL；
+  本切片改动文件未新增诊断。
+- **P4 已知缺口**：dev HTTP gateway 尚未注册 `conversation_list_messages` 等完整 canonical
+  read command parity；S1 使用 Station committed response 完成 opaque-byte 证据，不把该缺口
+  误报为 P4 已完成。P4 Runtime 归一时必须补齐并删除旧 read command。
+
+**下一执行闭包（可并行）**
+
+1. `P2/P3-S2 Mobile DR/OpenMLS parity`：以同一 proto/wire 合同替换 Mobile sealed-envelope
+   DM 与 Sender Keys group runtime。
+2. `P3-S3 C-4/C-5 three-Station convergence`：补齐 membership epoch / MLS Commit
+   原子绑定、跨进程收敛与移除后安全负例。
+
+### 2026-08-02 Desktop 证明优先级修订（已批准）
+
+- **顺序调整**：Mobile 实施后移；先关闭
+  `P2/P3-S1.1 Desktop multi-worktree E2E`，不得用同一 worktree 的 App/Web
+  证据代替独立 worktree 证明。
+- **代码同源**：`peers-chat-high-chat` 作为 source commit；
+  `peers-group-chat` 在独立 E2E branch 上检出同一 commit，不合并或覆盖其历史分支。
+- **环境拓扑**：
+  - high-chat 保持 Profile `three` slot 2。
+  - group-chat 使用独立 slot/profile，但 `PT_STATION_URL` 同为
+    `http://10.37.94.156:18080`，且不重复部署 Station。
+  - Station 只从 high-chat 执行 `make station`。
+- **客户端矩阵**：两个 worktree 均启动 `make desktop` 与 `make desktop-web`
+  （4 个独立 Rust gateway / storage scope）。
+- **账号矩阵**：使用 Profile `three` 预置账号 `a`、`b`、`c`
+  （产品证据别名 Alice、Bob、Third）。
+- **DM 门**：
+  - Alice→Bob、Bob→Alice、Alice→Third fresh X3DH + DR v1。
+  - Station committed payload byte equality、receiver exact decrypt、replay rejection。
+  - 四客户端中至少一条跨 worktree App↔App、一条 App↔Web、一条 Web↔Web。
+- **Group 门**：
+  - Alice 建三人 MLS group，Bob/Third 处理 Welcome。
+  - 三方 application message exact decrypt；跨 worktree App/Web 均覆盖。
+  - remove Third 后 epoch 前进；Third future decrypt/send/read 均拒绝。
+- **Restart 门**：四个 Desktop runtime 全停后重启，deferred DM/MLS ciphertext exact decrypt。
+- **存储门**：四个 profile storage plaintext marker scan 零命中；key files `0600`；
+  transient MLS state files 为零。
+- **后续顺序**：S1.1 关闭后再进入 Mobile parity；C-4/C-5 three-Station
+  convergence 仍须在 P4 前关闭。
+
 ---
 
 ## 5. 声明
 
-- P0/P1/P2 产品代码已落地且通过编译+测试验证。
-- P3 基础设施就绪但产品集成需 G0 L3 三 Station 部署验证（C-5）。
-- 关键路径与「哪些相位可绕过 G0 先行」已执行验证。
+- P0/P1 已关闭。
+- P2/P3 只有 Desktop 单 Station 主路径具备真实证据；严格单路径、Mobile 与三 Station 门未关闭。
+- P4 被 P2/P3 阻塞，当前不得声明 P4 或后续相位完成。

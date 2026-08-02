@@ -12,7 +12,6 @@ import type { RuntimeDescriptor } from '../kernel/runtime'
 import { log } from '../utils/logger'
 import { EVENT, eventBus } from '../kernel/events'
 import { api } from '../services/desktop_api'
-import { readFeatureFlags } from '../modules/settings/featureFlags'
 
 interface IMState {
   initialized: boolean
@@ -206,8 +205,8 @@ async function processEnvelopePayload(
         if (!init.sessionId || init.sessionId !== delivery.sessionId) {
           throw new Error('direct key exchange session mismatch')
         }
-        if (init.negotiatedVersion === 1 && !readFeatureFlags().cryptoDrEnabled) {
-          throw new Error('Double Ratchet is disabled by the local kill switch')
+        if (init.negotiatedVersion !== 1) {
+          throw new Error('unsupported direct secure-channel version')
         }
         await api.cryptoAcceptSession({
           sessionId: init.sessionId,
