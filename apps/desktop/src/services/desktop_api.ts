@@ -5004,11 +5004,8 @@ export const api = {
       last_read_ulid: lastReadUlid,
     }),
 
-  // Group chat sends MUST carry `encryptedPayload` (the base64
-  // bytes of a `GroupCiphertext` produced by `cryptoGroupEncrypt`).
-  // The Rust layer pins `content` to "" regardless of what the JS
-  // layer passes; it is kept in the signature for source compat
-  // with old callers but a non-empty value is silently dropped.
+  // Legacy group RPCs are retained until the P3/P4 atomic command cutover,
+  // but their payload must already be MLS ciphertext produced by mlsGroup.
   groupChatSendMessage: (
     groupUlid: string,
     content: string,
@@ -5203,7 +5200,6 @@ export const api = {
 
   cryptoRatchetTelemetrySnapshot: () =>
     invokeAppResultStub<{
-      legacy_decrypts: number;
       dr_decrypts: number;
       since_unix_ms: number;
     }>('crypto_ratchet_telemetry_snapshot'),
@@ -5218,7 +5214,6 @@ export const api = {
     peerSpkPub: string,
     peerSpkSig: string,
     peerOpkPub?: string,
-    negotiatedVersion = 0,
   ) =>
     invokeAppResultStub<{
       ephemeral_key: string;
@@ -5234,7 +5229,7 @@ export const api = {
       peerSpkPub,
       peerSpkSig,
       ...(peerOpkPub != null && peerOpkPub !== '' ? { peerOpkPub } : {}),
-      negotiatedVersion,
+      negotiatedVersion: 1,
     }),
 
   cryptoAcceptSession: (input: {
@@ -5244,7 +5239,7 @@ export const api = {
     senderEphemeralKey: string;
     recipientSignedPrekey: string;
     recipientOneTimePrekey?: string;
-    negotiatedVersion: number;
+    negotiatedVersion: 1;
   }) =>
     invokeAppResultStub<{ established: boolean; negotiated_version: number }>('crypto_accept_session', input),
 
@@ -5274,105 +5269,6 @@ export const api = {
     version: number;
   }) =>
     invokeAppResultStub<{ plaintext: string }>('dr_decrypt', input),
-
-  cryptoEncryptMessage: (sessionId: string, peerDid: string, plaintext: string) =>
-    invokeAppResultStub<{ ciphertext: string; counter: number; ephemeral_key?: string }>('crypto_encrypt_message', {
-      sessionId,
-      peerDid,
-      plaintext,
-    }),
-
-  cryptoDecryptMessage: (
-    sessionId: string,
-    peerDid: string,
-    ciphertext: string,
-    counter: number,
-    ephemeralKey?: string,
-  ) =>
-    invokeAppResultStub<{ plaintext: string }>('crypto_decrypt_message', {
-      sessionId,
-      peerDid,
-      ciphertext,
-      counter,
-      ...(ephemeralKey != null && ephemeralKey !== '' ? { ephemeralKey } : {}),
-    }),
-
-  // ── Group chat E2EE: Sender Keys ──
-  //
-  // Four primitives:
-  //   * cryptoGroupSkEmitSkdm    -> get the SKDM bytes to ship to a
-  //                                 single peer over friend chat.
-  //                                 Idempotent on the server side
-  //                                 (returns the same chain key /
-  //                                 counter until the next rotation).
-  //   * cryptoGroupSkConsumeSkdm -> install a chain we received as a
-  //                                 friend-chat type=50 control body.
-  //                                 `claimedSenderDid` MUST equal the
-  //                                 friend-chat envelope sender DID
-  //                                 -- guards against A re-distributing
-  //                                 B's chain as their own.
-  //   * cryptoGroupEncrypt       -> wrap a plaintext for
-  //                                 SendGroupMessageRequest
-  //                                 .encrypted_payload. Plaintext is
-  //                                 base64 so binary content (image /
-  //                                 file body) round-trips losslessly.
-  //   * cryptoGroupDecrypt       -> reverse direction. Returns
-  //                                 base64; caller decodes to UTF-8
-  //                                 if it knows the body is text.
-  //
-  // See peers-touch/docs/architecture/encryption/group-sender-keys.md
-  // for the protocol and `crypto/sender_keys.rs` for the primitive.
-
-  cryptoGroupSkEmitSkdm: (groupUlid: string) =>
-    invokeAppResultStub<{
-      group_ulid: string;
-      sender_did: string;
-      sender_key_id: number;
-      skdm_b64: string;
-    }>('crypto_group_sk_emit_skdm', { groupUlid }),
-
-  cryptoGroupSkConsumeSkdm: (claimedSenderDid: string, skdmB64: string) =>
-    invokeAppResultStub<{
-      group_ulid: string;
-      sender_did: string;
-      sender_key_id: number;
-    }>('crypto_group_sk_consume_skdm', {
-      claimedSenderDid,
-      skdmB64,
-    }),
-
-  // Force-rotate the local sender chain for `groupUlid`. After this
-  // returns the caller MUST call `resetSkdmDistribution` and a fresh
-  // `ensureSkdmDistributed` so the new chain reaches every member;
-  // otherwise the dedupe set will suppress redistribution and peers
-  // will silently fail to decrypt post-rotation messages.
-  cryptoGroupSkRotate: (groupUlid: string) =>
-    invokeAppResultStub<{
-      group_ulid: string;
-      sender_did: string;
-      sender_key_id: number;
-    }>('crypto_group_sk_rotate', { groupUlid }),
-
-  cryptoGroupEncrypt: (groupUlid: string, plaintextB64: string) =>
-    invokeAppResultStub<{
-      encrypted_payload_b64: string;
-      sender_key_id: number;
-      counter: number;
-    }>('crypto_group_encrypt', {
-      groupUlid,
-      plaintextB64,
-    }),
-
-  cryptoGroupDecrypt: (groupUlid: string, encryptedPayloadB64: string) =>
-    invokeAppResultStub<{
-      plaintext_b64: string;
-      sender_did: string;
-      sender_key_id: number;
-      counter: number;
-    }>('crypto_group_decrypt', {
-      groupUlid,
-      encryptedPayloadB64,
-    }),
 
   keyExchangeUploadBundle: (bundle: CryptoKeyBundlePayload) =>
     invokeRustDataFromStatus<CryptoKeyBundlePayload, Record<string, unknown>>(
