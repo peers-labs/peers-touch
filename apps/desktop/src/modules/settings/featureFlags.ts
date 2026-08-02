@@ -1,10 +1,14 @@
+import {
+  readDesktopPreferenceSync,
+  removeDesktopPreferenceSync,
+  writeDesktopPreferenceSync,
+} from '../../storage/desktopClientStorage';
+
 const FLAG_KEYS: Record<keyof FeatureFlags, string> = {
-  cryptoDrEnabled: 'peers-touch:feature-flag:crypto.dr_enabled',
   cryptoDrTelemetryEnabled: 'peers-touch:feature-flag:crypto.dr_telemetry_enabled',
 };
 
 export interface FeatureFlags {
-  cryptoDrEnabled: boolean;
   cryptoDrTelemetryEnabled: boolean;
 }
 
@@ -23,7 +27,6 @@ function readBoolFromStorage(key: string, defaultValue: boolean): boolean {
 
 export function readFeatureFlags(): FeatureFlags {
   return {
-    cryptoDrEnabled: readBoolFromStorage(FLAG_KEYS.cryptoDrEnabled, true),
     cryptoDrTelemetryEnabled: readBoolFromStorage(FLAG_KEYS.cryptoDrTelemetryEnabled, true),
   };
 }
@@ -43,8 +46,3 @@ export function resetFeatureFlag(key: keyof FeatureFlags): void {
     /* ignore */
   }
 }
-import {
-  readDesktopPreferenceSync,
-  removeDesktopPreferenceSync,
-  writeDesktopPreferenceSync,
-} from '../../storage/desktopClientStorage';
