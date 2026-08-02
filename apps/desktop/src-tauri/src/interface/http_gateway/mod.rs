@@ -1039,6 +1039,20 @@ fn filter_incremental_messages(
 /// This function mirrors the full invoke_handler list from main.rs,
 /// calling the same application-layer functions that tauri_commands use.
 fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) -> Value {
+    if matches!(
+        cmd,
+        "crypto_group_sk_emit_skdm"
+            | "crypto_group_sk_consume_skdm"
+            | "crypto_group_sk_rotate"
+            | "crypto_group_encrypt"
+            | "crypto_group_decrypt"
+    ) {
+        return to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::NotFound,
+            "command is retired; group chat requires OpenMLS",
+            None,
+        ));
+    }
     match cmd {
         // =================================================================
         // Meta
@@ -1053,7 +1067,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(to_stub(
                 "crypto_ratchet_telemetry_snapshot",
                 json!({
-                    "legacy_decrypts": snap.legacy_decrypts,
                     "dr_decrypts": snap.dr_decrypts,
                     "since_unix_ms": snap.since_unix_ms,
                 }),
@@ -1172,11 +1185,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            let negotiated_version = args
-                .get("negotiated_version")
-                .or_else(|| args.get("negotiatedVersion"))
-                .and_then(Value::as_u64)
-                .map(|value| value as u32);
+            let negotiated_version =
+                u32_arg(&args, "negotiated_version", "negotiatedVersion");
             to_json(crate::interface::tauri_commands::crypto::crypto_init_session_for_context(
                 string_arg(&args, "session_id", "sessionId"),
                 string_arg(&args, "peer_did", "peerDid"),
@@ -5089,11 +5099,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 opk_ids: input.opk_ids,
                 opk_pubs: input.opk_pubs,
                 device_id,
-                supported_versions: if input.supported_versions.contains(&1) {
-                    vec![0, 1]
-                } else {
-                    vec![0]
-                },
+                supported_versions: vec![1],
             };
             match station_client::request_proto::<
                 model::key_exchange::UploadKeyBundleRequest,

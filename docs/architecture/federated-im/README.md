@@ -61,6 +61,7 @@ The current group lifecycle source of truth defines local Station group behavior
 | [decisions.md](./decisions.md) | ADR-lite decisions and alternatives |
 | [proposals/20260711-im-unification-review.md](./proposals/20260711-im-unification-review.md) | v1 IM unification review (approved decisions D-08…D-12) |
 | [execution-plans/20260712-v1-im-execution-plan.md](./execution-plans/20260712-v1-im-execution-plan.md) | v1 IM dependency-ordered execution plan (P0…P7) |
+| [execution-plans/20260731-debt-zero-dm-group.md](./execution-plans/20260731-debt-zero-dm-group.md) | Full-stack DM/group single-path cutover subplan; P3.0 strict decoding complete, awaiting parent Mobile/three-Station gates |
 | [execution-plans/20260712-g0-mls-verification.md](./execution-plans/20260712-g0-mls-verification.md) | G0 MLS two-platform verification plan (unblocks D-08 / P3) |
 | [execution-plans/20260729-signal-level-chat-modernization.md](./execution-plans/20260729-signal-level-chat-modernization.md) | Signal-level UX modernization (read receipts, media, reactions, calls) |
 | [execution-plans/20260704-foundation-federated-im.md](./execution-plans/20260704-foundation-federated-im.md) | **Superseded (D-08…D-12).** Historical Sender Keys landing plan |
@@ -75,4 +76,3 @@ The current group lifecycle source of truth defines local Station group behavior
 | `docs/architecture/realtime/event-stream.md` | Reliable event stream and recovery model |
 | `docs/global/architecture.md` | Station/Model/Client ownership rule |
 | `docs/global/first-principles.md` | Proto-first contracts and auth/security constraints |
-

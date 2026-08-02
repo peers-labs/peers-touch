@@ -37,7 +37,6 @@ import { X3dhSessionInitSchema } from '../gen/proto/domain/chat/key_exchange_pb'
 import type { Conversation, ConversationMember } from '../gen/proto/domain/chat/conversation_pb';
 import { imServiceV1 } from '../services/im-service';
 import { DirectKeyExchangeKind } from '../services/im-service-contract';
-import { readFeatureFlags } from '../modules/settings/featureFlags';
 import { log } from '../utils/logger';
 import { getDecryptCache, setDecryptCache } from './decryptCache';
 import {
@@ -96,10 +95,9 @@ function b64ToBytes(value: string): Uint8Array {
 }
 
 interface FriendEncryptedEnvelope {
-  version: number;
+  version: 1;
   ciphertext: string;
   counter: number;
-  ephemeralKey?: string;
   ratchetPub?: string;
   prevCounter?: number;
   nonce?: string;
@@ -109,7 +107,6 @@ function encodeFriendEncryptedEnvelope(input: FriendEncryptedEnvelope): string {
   const wire = createProto(EncryptedMessageSchema, {
     ciphertext: b64ToBytes(input.ciphertext),
     counter: input.counter,
-    ephemeralKey: input.ephemeralKey ? b64ToBytes(input.ephemeralKey) : new Uint8Array(),
     ratchetPub: input.ratchetPub ? b64ToBytes(input.ratchetPub) : new Uint8Array(),
     prevCounter: input.prevCounter ?? 0,
     version: input.version,
@@ -118,32 +115,27 @@ function encodeFriendEncryptedEnvelope(input: FriendEncryptedEnvelope): string {
   return bytesToB64(toBinary(EncryptedMessageSchema, wire));
 }
 
-function decodeFriendEncryptedEnvelope(bytes: Uint8Array): FriendEncryptedEnvelope | null {
+export function decodeFriendEncryptedEnvelope(bytes: Uint8Array): FriendEncryptedEnvelope | null {
   try {
     const wire = fromBinary(EncryptedMessageSchema, bytes);
-    if (!wire.ciphertext.byteLength) return null;
-    return {
-      version: wire.version,
-      ciphertext: bytesToB64(wire.ciphertext),
-      counter: wire.counter,
-      ephemeralKey: wire.ephemeralKey.byteLength ? bytesToB64(wire.ephemeralKey) : undefined,
-      ratchetPub: wire.ratchetPub.byteLength ? bytesToB64(wire.ratchetPub) : undefined,
-      prevCounter: wire.prevCounter,
-      nonce: wire.nonce.byteLength ? bytesToB64(wire.nonce) : undefined,
-    };
-  } catch {
-    try {
-      const envelopeText = new TextDecoder().decode(bytes);
-      const legacy = JSON.parse(envelopeText.startsWith('{') ? envelopeText : atob(envelopeText)) as {
-        c?: string;
-        n?: number;
-        e?: string;
-      };
-      if (!legacy.c || legacy.n == null) return null;
-      return { version: 0, ciphertext: legacy.c, counter: legacy.n, ephemeralKey: legacy.e };
-    } catch {
+    if (
+      wire.version !== 1
+      || !wire.ciphertext.byteLength
+      || wire.ratchetPub.byteLength !== 32
+      || wire.nonce.byteLength !== 12
+    ) {
       return null;
     }
+    return {
+      version: 1,
+      ciphertext: bytesToB64(wire.ciphertext),
+      counter: wire.counter,
+      ratchetPub: bytesToB64(wire.ratchetPub),
+      prevCounter: wire.prevCounter,
+      nonce: bytesToB64(wire.nonce),
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -202,7 +194,6 @@ export function createEncryptedChatPayloadBytes(
 
 async function encryptFriendMessagePayload(
   sessionUlid: string,
-  receiverDid: string,
   content: string,
   attachments: readonly ChatAttachmentInput[] = [],
   messageType?: number,
@@ -213,27 +204,24 @@ async function encryptFriendMessagePayload(
   if (!status.established) {
     throw new Error('Secure channel is not ready');
   }
-  if (status.version === 1) {
-    const enc = await api.drEncrypt(sessionUlid, encryptedPlaintext);
-    return encodeFriendEncryptedEnvelope({
-      version: enc.version,
-      ciphertext: enc.ciphertext,
-      counter: enc.counter,
-      ratchetPub: enc.ratchet_pub,
-      prevCounter: enc.prev_counter,
-      nonce: enc.nonce,
-    });
+  if (status.version !== 1) {
+    throw new Error('Secure channel is not Double Ratchet v1');
   }
-  const enc = await api.cryptoEncryptMessage(sessionUlid, receiverDid, encryptedPlaintext);
+  const enc = await api.drEncrypt(sessionUlid, encryptedPlaintext);
+  if (enc.version !== 1) {
+    throw new Error('Double Ratchet returned an unsupported version');
+  }
   return encodeFriendEncryptedEnvelope({
-    version: 0,
+    version: 1,
     ciphertext: enc.ciphertext,
     counter: enc.counter,
-    ephemeralKey: enc.ephemeral_key,
+    ratchetPub: enc.ratchet_pub,
+    prevCounter: enc.prev_counter,
+    nonce: enc.nonce,
   });
 }
 
-function decodeEncryptedChatPayloadBytes(bytes: Uint8Array): ChatEncryptedMessagePayload | null {
+export function decodeEncryptedChatPayloadBytes(bytes: Uint8Array): ChatEncryptedMessagePayload | null {
   try {
     const payload = fromBinary(ChatEncryptedMessagePayloadSchema, bytes);
     if (payload.version === CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION) return payload;
@@ -932,8 +920,11 @@ async function decodeGroupMessage(
   logLabel: string,
 ): Promise<GroupMessage> {
   const payloadB64 = groupEncryptedPayloadB64(message);
-  if (message.recalled || !payloadB64) {
+  if (message.recalled) {
     return message;
+  }
+  if (!payloadB64) {
+    return { ...message, content: GROUP_DECRYPT_FAILED_PLACEHOLDER } as GroupMessage;
   }
   const cached = getDecryptCache(message.ulid);
   if (cached) {
@@ -941,20 +932,13 @@ async function decodeGroupMessage(
   }
   try {
     const cipherBytes = Uint8Array.from(atob(payloadB64), c => c.charCodeAt(0));
-
-    const directPayload = decodeEncryptedChatPayloadBytes(cipherBytes);
-    if (directPayload) {
-      const result = applyDecodedChatPayload(message, directPayload);
-      cacheDecryptedGroupMessage(message, result);
-      return result;
-    }
-
     const plaintext = await imServiceV1.mlsGroup.decrypt(groupUlid, cipherBytes);
     await imServiceV1.mlsGroup.save(groupUlid);
     const payload = decodeEncryptedChatPayloadBytes(plaintext);
-    const result = payload
-      ? applyDecodedChatPayload(message, payload)
-      : ({ ...message, content: new TextDecoder().decode(plaintext) } as GroupMessage);
+    if (!payload) {
+      throw new Error('MLS plaintext is not a valid encrypted chat payload');
+    }
+    const result = applyDecodedChatPayload(message, payload);
     cacheDecryptedGroupMessage(message, result);
     return result;
   } catch (error) {
@@ -984,8 +968,11 @@ async function decodeFriendMessage(
   peerDid: string,
   message: FriendChatMessage,
 ): Promise<FriendChatMessage> {
-  if (message.recalled || !message.encryptedPayload || message.encryptedPayload.byteLength === 0 || !peerDid) {
+  if (message.recalled) {
     return message;
+  }
+  if (!message.encryptedPayload || message.encryptedPayload.byteLength === 0 || !peerDid) {
+    return { ...message, content: GROUP_DECRYPT_FAILED_PLACEHOLDER } as FriendChatMessage;
   }
   // Cache hit — skip expensive IPC decrypt
   const cached = getDecryptCache(message.ulid);
@@ -993,43 +980,27 @@ async function decodeFriendMessage(
     return { ...message, content: cached.content, type: cached.type || message.type, attachments: cached.attachments } as FriendChatMessage;
   }
 
-  // Try direct plaintext decode first (messages sent via conversation_submit_command)
-  const directPayload = decodeEncryptedChatPayloadBytes(message.encryptedPayload);
-  if (directPayload) {
-    const result = applyDecodedChatPayload(message, directPayload);
-    setDecryptCache(message.ulid, { content: result.content, type: result.type, attachments: (result as { attachments?: unknown[] }).attachments ?? [], cachedAt: Date.now() });
-    return result;
-  }
-
   try {
     const envelope = decodeFriendEncryptedEnvelope(message.encryptedPayload);
-    if (!envelope) return message;
-    const plaintextB64 = envelope.version === 1
-      ? (await api.drDecrypt({
-          sessionId: sessionUlid,
-          ciphertext: envelope.ciphertext,
-          ratchetPub: envelope.ratchetPub ?? '',
-          counter: envelope.counter,
-          prevCounter: envelope.prevCounter ?? 0,
-          nonce: envelope.nonce ?? '',
-          version: envelope.version,
-        })).plaintext
-      : (await api.cryptoDecryptMessage(
-          sessionUlid,
-          peerDid,
-          envelope.ciphertext,
-          envelope.counter,
-          envelope.ephemeralKey,
-        )).plaintext;
-    try {
-      const payload = decodeEncryptedChatPayloadBytes(b64ToBytes(plaintextB64));
-      const result = payload ? applyDecodedChatPayload(message, payload) : { ...message, content: plaintextB64 };
-      setDecryptCache(message.ulid, { content: result.content, type: result.type, attachments: (result as { attachments?: unknown[] }).attachments ?? [], cachedAt: Date.now() });
-      return result;
-    } catch {
-      setDecryptCache(message.ulid, { content: plaintextB64, type: message.type, attachments: [], cachedAt: Date.now() });
-      return { ...message, content: plaintextB64 };
+    if (!envelope) {
+      throw new Error('Direct message is not a valid Double Ratchet v1 envelope');
     }
+    const plaintextB64 = (await api.drDecrypt({
+      sessionId: sessionUlid,
+      ciphertext: envelope.ciphertext,
+      ratchetPub: envelope.ratchetPub ?? '',
+      counter: envelope.counter,
+      prevCounter: envelope.prevCounter ?? 0,
+      nonce: envelope.nonce ?? '',
+      version: 1,
+    })).plaintext;
+    const payload = decodeEncryptedChatPayloadBytes(b64ToBytes(plaintextB64));
+    if (!payload) {
+      throw new Error('Double Ratchet plaintext is not a valid encrypted chat payload');
+    }
+    const result = applyDecodedChatPayload(message, payload);
+    setDecryptCache(message.ulid, { content: result.content, type: result.type, attachments: (result as { attachments?: unknown[] }).attachments ?? [], cachedAt: Date.now() });
+    return result;
   } catch (error) {
     log.warn('socialChat', 'friend decrypt failed', error);
     return { ...message, content: GROUP_DECRYPT_FAILED_PLACEHOLDER } as FriendChatMessage;
@@ -1250,7 +1221,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   initEncryption: async () => {
     try {
-      const flags = readFeatureFlags();
       const result = await api.cryptoGenerateIdentity();
       set({
         encryptionEnabled: true,
@@ -1260,7 +1230,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         const bundle = await api.cryptoGetKeyBundle();
         await api.keyExchangeUploadBundle({
           ...bundle,
-          supported_versions: flags.cryptoDrEnabled ? [0, 1] : [0],
+          supported_versions: [1],
         });
       } catch (uploadErr) {
         log.error('socialChat', 'key bundle upload failed (non-fatal)', uploadErr);
@@ -1277,8 +1247,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       return sessionEncrypted[sessionUlid] ?? false;
     }
     const persisted = await api.cryptoSessionStatus(sessionUlid);
-    if (persisted.established) {
-      get().setSessionSecurityState(sessionUlid, 'ready', persisted.version);
+    if (persisted.established && persisted.version === 1) {
+      get().setSessionSecurityState(sessionUlid, 'ready', 1);
       return true;
     }
     if (sessionSecurityState[sessionUlid] === 'establishing') {
@@ -1302,9 +1272,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         get().setSessionSecurityState(sessionUlid, 'error');
         return false;
       }
-      const flags = readFeatureFlags();
-      const negotiatedVersion =
-        flags.cryptoDrEnabled && peerBundle.supported_versions?.includes(1) ? 1 : 0;
+      if (!peerBundle.supported_versions?.includes(1)) {
+        throw new Error('Peer does not support Double Ratchet v1');
+      }
+      const negotiatedVersion = 1;
       const opkPub = peerBundle.opks?.[0];
       const initialized = await api.cryptoInitSession(
         sessionUlid,
@@ -1313,7 +1284,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         peerBundle.spk_pub,
         peerBundle.spk_sig,
         opkPub,
-        negotiatedVersion,
       );
       const handshake = toBinary(
         X3dhSessionInitSchema,
@@ -1765,7 +1735,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }
       const payloadB64 = await encryptFriendMessagePayload(
         sessionUlid,
-        receiverDid,
         content,
         attachments ?? [],
         type,
@@ -1909,9 +1878,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         const cipherBytes = Uint8Array.from(atob(payloadB64), c => c.charCodeAt(0));
         const plaintext = await imServiceV1.mlsGroup.decrypt(groupUlid, cipherBytes);
         const payload = decodeEncryptedChatPayloadBytes(plaintext);
-        const result = payload
-          ? applyDecodedChatPayload(m, payload)
-          : ({ ...m, content: new TextDecoder().decode(plaintext) } as GroupMessage);
+        if (!payload) {
+          throw new Error('MLS plaintext is not a valid encrypted chat payload');
+        }
+        const result = applyDecodedChatPayload(m, payload);
         cacheDecryptedGroupMessage(m, result);
         decrypted.set(m.ulid, result);
       } catch (err) {
@@ -2045,7 +2015,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           ? peerOfSession(session, currentUserDid).did
           : conversationMembers[sessionUlid]?.find((member) => member.ptid !== currentUserDid)?.ptid ?? '';
         if (!receiverDid) throw new Error('editFriendMessage: receiverDid is required for encrypted edit');
-        const encrypted = await encryptFriendMessagePayload(sessionUlid, receiverDid, newContent.trim(), [], undefined);
+        const encrypted = await encryptFriendMessagePayload(sessionUlid, newContent.trim(), [], undefined);
         editCiphertext = b64ToBytes(encrypted);
       }
       await imServiceV1.conversation.submitCommand({

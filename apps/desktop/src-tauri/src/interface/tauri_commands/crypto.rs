@@ -12,7 +12,7 @@ use crate::contracts::{ChatIndexLocalInput, ChatSearchLocalInput, StubPayload};
 use crate::domain::crypto::sender_keys::{
     self, GroupCiphertextWire, SenderChainState, SenderKeyDistributionPayload,
 };
-use crate::domain::crypto::{self, CryptoSession, EncryptedMessage, X25519KeyPair, X3DHBundle};
+use crate::domain::crypto::{self, CryptoSessionState, X25519KeyPair, X3DHBundle};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::local_chat_store;
 use crate::model::chat as model_chat;
@@ -232,7 +232,6 @@ pub fn crypto_ratchet_telemetry_snapshot() -> AppResult<StubPayload> {
     to_stub(
         "crypto_ratchet_telemetry_snapshot",
         json!({
-            "legacy_decrypts": snap.legacy_decrypts,
             "dr_decrypts": snap.dr_decrypts,
             "since_unix_ms": snap.since_unix_ms,
         }),
@@ -360,7 +359,7 @@ pub fn crypto_init_session(
     peer_spk_pub: String,
     peer_spk_sig: String,
     peer_opk_pub: Option<String>,
-    negotiated_version: Option<u32>,
+    negotiated_version: u32,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
@@ -396,7 +395,7 @@ pub(crate) fn crypto_init_session_for_context(
     peer_spk_pub: String,
     peer_spk_sig: String,
     peer_opk_pub: Option<String>,
-    negotiated_version: Option<u32>,
+    negotiated_version: u32,
     actor_id: String,
     user_scope: String,
 ) -> AppResult<StubPayload> {
@@ -407,6 +406,14 @@ pub(crate) fn crypto_init_session_for_context(
             None,
         );
     }
+    if negotiated_version != 1 {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "Double Ratchet version 1 is required",
+            None,
+        );
+    }
+    let version = 1;
     let identity_key_ref =
         crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
             .identity_key_ref();
@@ -482,26 +489,14 @@ pub(crate) fn crypto_init_session_for_context(
             );
         }
     };
-    let version = negotiated_version.unwrap_or(0);
-    if version > 1 {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "Unsupported secure-channel version",
-            None,
-        );
-    }
-
-    let session = CryptoSession::from_x3dh_shared_secret(
+    let session = CryptoSessionState::from_x3dh_bootstrap(
         session_id.clone(),
         peer_did,
-        x3.shared_secret,
         true,
         Some(x3.ephemeral_pub),
     );
 
-    if let Err(reason) =
-        local_chat_store::save_crypto_session(user_scope.as_str(), &session.to_state())
-    {
+    if let Err(reason) = local_chat_store::save_crypto_session(user_scope.as_str(), &session) {
         return AppResult::fail(
             ErrorCode::InternalError,
             format!("Failed to save crypto session: {}", reason),
@@ -522,16 +517,14 @@ pub(crate) fn crypto_init_session_for_context(
             None,
         );
     }
-    if version == 1 {
-        let dr =
-            crypto::double_ratchet::init_initiator(session_id.as_str(), &x3.shared_secret, spk_arr);
-        if let Err(reason) = local_chat_store::save_dr_session(user_scope.as_str(), &dr) {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to save Double Ratchet session: {}", reason),
-                None,
-            );
-        }
+    let dr =
+        crypto::double_ratchet::init_initiator(session_id.as_str(), &x3.shared_secret, spk_arr);
+    if let Err(reason) = local_chat_store::save_dr_session(user_scope.as_str(), &dr) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to save Double Ratchet session: {}", reason),
+            None,
+        );
     }
 
     to_stub(
@@ -542,7 +535,7 @@ pub(crate) fn crypto_init_session_for_context(
             "recipient_signed_prekey": B64.encode(spk_arr),
             "recipient_one_time_prekey": opk.map(|value| B64.encode(value)).unwrap_or_default(),
             "negotiated_version": version,
-            "established": session.established,
+            "established": true,
         }),
     )
 }
@@ -602,10 +595,10 @@ pub(crate) fn crypto_accept_session_for_context(
             None,
         );
     }
-    if negotiated_version > 1 {
+    if negotiated_version != 1 {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "Unsupported secure-channel version",
+            "Double Ratchet version 1 is required",
             None,
         );
     }
@@ -712,35 +705,26 @@ pub(crate) fn crypto_accept_session_for_context(
             );
         }
     };
-    let session = CryptoSession::from_x3dh_shared_secret(
-        session_id.clone(),
-        peer_did,
-        shared_secret,
-        false,
-        None,
-    );
-    if let Err(reason) =
-        local_chat_store::save_crypto_session(user_scope.as_str(), &session.to_state())
-    {
+    let session =
+        CryptoSessionState::from_x3dh_bootstrap(session_id.clone(), peer_did, false, None);
+    if let Err(reason) = local_chat_store::save_crypto_session(user_scope.as_str(), &session) {
         return AppResult::fail(
             ErrorCode::InternalError,
             format!("Failed to save crypto session: {}", reason),
             None,
         );
     }
-    if negotiated_version == 1 {
-        let dr = crypto::double_ratchet::init_responder(
-            session_id.as_str(),
-            &shared_secret,
-            signed_prekey_private,
+    let dr = crypto::double_ratchet::init_responder(
+        session_id.as_str(),
+        &shared_secret,
+        signed_prekey_private,
+    );
+    if let Err(reason) = local_chat_store::save_dr_session(user_scope.as_str(), &dr) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to save Double Ratchet session: {}", reason),
+            None,
         );
-        if let Err(reason) = local_chat_store::save_dr_session(user_scope.as_str(), &dr) {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to save Double Ratchet session: {}", reason),
-                None,
-            );
-        }
     }
     if let Err(reason) = local_chat_store::set_crypto_session_handshake_delivered(
         user_scope.as_str(),
@@ -805,21 +789,10 @@ pub(crate) fn crypto_session_status_for_scope(
             );
         }
     }
-    match local_chat_store::load_crypto_session(user_scope.as_str(), session_id.as_str()) {
-        Ok(Some(session)) => to_stub(
-            "crypto_session_status",
-            json!({ "established": delivered && session.established, "version": 0 }),
-        ),
-        Ok(None) => to_stub(
-            "crypto_session_status",
-            json!({ "established": false, "version": -1 }),
-        ),
-        Err(reason) => AppResult::fail(
-            ErrorCode::InternalError,
-            format!("Failed to load secure channel: {}", reason),
-            None,
-        ),
-    }
+    to_stub(
+        "crypto_session_status",
+        json!({ "established": false, "version": -1 }),
+    )
 }
 
 #[tauri::command]
@@ -1040,151 +1013,6 @@ pub(crate) fn dr_decrypt_for_scope(
         "dr_decrypt",
         json!({ "plaintext": B64.encode(outcome.plaintext) }),
     )
-}
-
-#[tauri::command]
-pub fn crypto_encrypt_message(
-    session_id: String,
-    peer_did: String,
-    plaintext: String,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    if session_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Session ID is required", None);
-    }
-    let user_scope = user_scope_from_state(&state, &window);
-    let st = match local_chat_store::load_crypto_session(user_scope.as_str(), session_id.as_str()) {
-        Ok(s) => s,
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to load crypto session: {}", reason),
-                None,
-            );
-        }
-    };
-    let Some(mut st) = st else {
-        return AppResult::fail(ErrorCode::NotFound, "Crypto session not found", None);
-    };
-    if st.peer_did != peer_did {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "Session peer does not match",
-            None,
-        );
-    }
-    let mut session = CryptoSession::from_state(&st);
-    let enc = match session.encrypt(plaintext.as_bytes()) {
-        Ok(e) => e,
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Encryption failed: {}", reason),
-                None,
-            );
-        }
-    };
-    st = session.to_state();
-    if let Err(reason) = local_chat_store::save_crypto_session(user_scope.as_str(), &st) {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!("Failed to save crypto session: {}", reason),
-            None,
-        );
-    }
-
-    let mut v = json!({
-        "ciphertext": B64.encode(&enc.ciphertext),
-        "counter": enc.counter,
-    });
-    if let Some(eph) = enc.ephemeral_key {
-        v["ephemeral_key"] = json!(B64.encode(eph));
-    }
-    to_stub("crypto_encrypt_message", v)
-}
-
-#[tauri::command]
-pub fn crypto_decrypt_message(
-    session_id: String,
-    peer_did: String,
-    ciphertext: String,
-    counter: u32,
-    ephemeral_key: Option<String>,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let _ = ephemeral_key;
-    if session_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Session ID is required", None);
-    }
-    let user_scope = user_scope_from_state(&state, &window);
-    let st = match local_chat_store::load_crypto_session(user_scope.as_str(), session_id.as_str()) {
-        Ok(s) => s,
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to load crypto session: {}", reason),
-                None,
-            );
-        }
-    };
-    let Some(mut st) = st else {
-        return AppResult::fail(ErrorCode::NotFound, "Crypto session not found", None);
-    };
-    if st.peer_did != peer_did {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "Session peer does not match",
-            None,
-        );
-    }
-    let ct_raw = match B64.decode(ciphertext.trim()) {
-        Ok(b) => b,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                format!("Invalid base64 ciphertext: {}", e),
-                None,
-            );
-        }
-    };
-
-    let mut session = CryptoSession::from_state(&st);
-    let msg = EncryptedMessage {
-        ciphertext: ct_raw,
-        counter,
-        ephemeral_key: None,
-    };
-    let plain = match session.decrypt(&msg) {
-        Ok(p) => p,
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Decryption failed: {}", reason),
-                None,
-            );
-        }
-    };
-    st = session.to_state();
-    if let Err(reason) = local_chat_store::save_crypto_session(user_scope.as_str(), &st) {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!("Failed to save crypto session: {}", reason),
-            None,
-        );
-    }
-    let text = match String::from_utf8(plain) {
-        Ok(s) => s,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Decrypted plaintext is not valid UTF-8: {}", e),
-                None,
-            );
-        }
-    };
-    to_stub("crypto_decrypt_message", json!({ "plaintext": text }))
 }
 
 // ---------------------------------------------------------------------
