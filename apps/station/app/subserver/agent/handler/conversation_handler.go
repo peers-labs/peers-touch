@@ -285,6 +285,12 @@ func messagesToJSON(msgs []*domain.Message) []map[string]any {
 		if m.ModelName != "" {
 			item["model_name"] = m.ModelName
 		}
+		if len(m.ReasoningJSON) > 0 {
+			item["reasoning_json"] = string(m.ReasoningJSON)
+		}
+		if len(m.ToolCallsJSON) > 0 {
+			item["tool_calls_json"] = string(m.ToolCallsJSON)
+		}
 		if m.BranchID != "" {
 			item["branch_id"] = m.BranchID
 		}
