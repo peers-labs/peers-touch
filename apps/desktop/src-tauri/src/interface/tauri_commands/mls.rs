@@ -256,7 +256,7 @@ pub struct MlsDistributeInput {
     pub conversation_id: String,
     pub kind: i32,
     pub mls_epoch: i64,
-    pub opaque_bytes: Vec<u8>,
+    pub opaque_bytes: String,
     pub recipients: Option<Vec<String>>,
 }
 
