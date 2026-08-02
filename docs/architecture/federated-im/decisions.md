@@ -1,8 +1,8 @@
 # Federated IM Architecture — Decisions
 
 > **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-07-04 | **Updated**: 2026-07-11
+> **Version**: v0.2
+> **Created**: 2026-07-04 | **Updated**: 2026-08-02
 > **Owner**: Architecture Team
 
 ---
@@ -23,6 +23,7 @@
 | D-10 | One Station signaling-envelope channel with typed QoS; no per-domain queues | accepted |
 | D-11 | Hard cutover with no compatibility bridge; legacy chat data wiped | accepted |
 | D-12 | Text always flows through the Station envelope; P2P only for audio/video and large files | accepted |
+| D-13 | Authority commits membership and MLS transition as one transactional fact | accepted |
 
 > **Approval**: D-08/09/10/11/12 approved by user on 2026-07-11 (worktree `peers-group-chat`).
 > Proposal source: [`proposals/20260711-im-unification-review.md`](proposals/20260711-im-unification-review.md).
@@ -366,3 +367,121 @@ This keeps the durability/ordering guarantees on the reliable path and confines 
 
 Call signaling still rides the envelope; media SRTP/data paths are established peer-to-peer with the envelope as the signaling channel.
 
+---
+
+## D-13: Authority Commits Membership And MLS Transition As One Transactional Fact
+
+**Status**: accepted
+**Date**: 2026-08-02
+**Approval**: User approved on 2026-08-02 with the product constraint to stay
+focused on a modern Desktop/Mobile IM experience.
+
+### Context
+
+C-4 requires the group authority to bind MLS Commit ordering atomically to
+`membership_epoch`. The current product cannot satisfy that property:
+
+- `AddMembersCommand`, `RemoveMembersCommand`, and `LeaveCommand` carry no MLS
+  epoch, Commit hash, or opaque Commit bytes.
+- clients call `/mls/distribute` independently from the membership command;
+- Station mutates member rows, bumps the epoch, appends the event, and enqueues
+  delivery through separate persistence calls;
+- the registered L3 acceptance gate points to a missing Make target.
+
+This is a verified architecture gap, not merely missing test coverage. A crash
+or rejection between the independent operations can leave business membership
+and the device MLS tree at different epochs.
+
+### Decision
+
+Introduce one proto-first **membership transition** accepted only by the group
+authority. It carries:
+
+- a globally unique `transition_id`;
+- the observed membership and MLS epochs;
+- the requested member changes;
+- the target MLS epoch;
+- opaque MLS Commit bytes plus SHA-256;
+- recipient-specific opaque Welcome deliveries plus hashes when adding members.
+
+For the Foundation Profile, every accepted transition advances exactly one
+step:
+
+```text
+to_membership_epoch = from_membership_epoch + 1
+to_mls_epoch        = from_mls_epoch + 1
+to_membership_epoch = to_mls_epoch
+```
+
+The authority locks the conversation head and commits the following in one
+database transaction:
+
+1. member-row mutations;
+2. `membership_epoch` and `group_seq`;
+3. one `MembershipTransitionCommitted` group event containing the opaque Commit
+   and transition hashes;
+4. transactional outbox rows for committed-event replication and recipient
+   Commit/Welcome delivery.
+
+Outbox transmission remains asynchronous. Transaction success means every
+delivery fact is durable; transaction failure means none of the four facts is
+visible.
+
+Admission is bounded before the transaction: Commit bytes are at most 128 KiB,
+Welcome payloads total at most 8 MiB, and one transition targets at most 200
+device deliveries. Larger requests are rejected without partial state.
+
+The client generates an OpenMLS pending Commit but MUST NOT merge it into its
+durable local group state until the authority accepts the transition. Rejection
+discards the pending Commit. The standalone client sequencing path
+`/mls/distribute` is removed for Commit and Welcome after cutover; KeyPackage
+directory operations remain separate because they do not mutate group truth.
+
+Follower Stations apply the authority event in `group_seq` order. Projection
+head, membership epoch, transition identity/hash, and local recipient inbox
+rows are committed transactionally. Duplicate identical transitions are
+no-ops; same identity/sequence with different hashes activates fork protection
+and read-only state. A future sequence or epoch is buffered within a bounded
+window and triggers authority resync.
+
+### Rationale
+
+This makes the authority event the only ordering fact shared by business
+membership and cryptographic progression. A transactional outbox preserves
+atomicity without making network delivery part of the database transaction,
+and Stations remain blind to MLS secrets because Commit and Welcome bytes stay
+opaque.
+
+Station proves atomic association of declared epochs and exact opaque bytes; it
+does not prove MLS semantic validity. Recipient OpenMLS verifies the actual
+group and epoch transition. A semantic mismatch is fail-closed and moves the
+group to crypto-desynced read-only state.
+
+### Alternatives Considered
+
+- **Keep `/mls/distribute` before membership mutation**: removed members can
+  receive the Commit, but crashes can advance only the crypto side.
+- **Keep `/mls/distribute` after membership mutation**: business membership can
+  advance without a durable Commit, and removed members may be excluded before
+  receiving their eviction Commit.
+- **Store only a Commit hash in the event**: proves association but cannot
+  recover missing Commit delivery after disconnect.
+- **Let follower Stations sequence local membership**: violates the single
+  authority and creates multi-writer forks.
+- **Have Station parse or generate MLS**: breaks the device-local E2EE trust
+  boundary and is rejected.
+
+### Consequences
+
+- Model contracts, Station repository boundaries, Desktop/Mobile crypto
+  orchestration, federation replication, and acceptance tooling all change.
+- Group creation with initial remote members must use the same transition
+  semantics at epoch 1.
+- Existing independent Commit/Welcome distribution entrypoints are deleted in
+  the same cutover; no compatibility bridge or dual-write is allowed.
+- Authorized malicious devices can still submit an MLS Commit that other
+  devices reject. Recipient OpenMLS rejection moves the group to crypto-desynced
+  read-only state and requires resync; Station cannot validate MLS semantics
+  without violating E2EE.
+- D-13 is binding for downstream planning. C-4/C-5 remain `UNPROVEN` until
+  three distinct Station processes pass the L3 matrix.
