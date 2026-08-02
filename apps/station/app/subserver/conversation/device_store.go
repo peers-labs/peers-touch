@@ -10,13 +10,13 @@ import (
 
 // DeviceRecord represents a registered device for an actor.
 type DeviceRecord struct {
-	ID        uint      `gorm:"column:id;primaryKey"`
-	Ptid      string    `gorm:"column:ptid;size:255;index:idx_device_actor;uniqueIndex:idx_device_actor_device"`
-	DeviceID  string    `gorm:"column:device_id;size:255;uniqueIndex:idx_device_actor_device"`
-	Label     string    `gorm:"column:label;size:255"`
-	PublicKey []byte    `gorm:"column:public_key;type:bytea"`
-	Revoked   bool      `gorm:"column:revoked"`
-	CreatedAt time.Time `gorm:"column:created_at"`
+	ID        uint       `gorm:"column:id;primaryKey"`
+	Ptid      string     `gorm:"column:ptid;size:255;index:idx_device_ptid;uniqueIndex:idx_device_ptid_device"`
+	DeviceID  string     `gorm:"column:device_id;size:255;uniqueIndex:idx_device_ptid_device"`
+	Label     string     `gorm:"column:label;size:255"`
+	PublicKey []byte     `gorm:"column:public_key;type:bytea"`
+	Revoked   bool       `gorm:"column:revoked"`
+	CreatedAt time.Time  `gorm:"column:created_at"`
 	RevokedAt *time.Time `gorm:"column:revoked_at"`
 }
 
@@ -41,7 +41,7 @@ func (s *DeviceStore) Register(ctx context.Context, ptid, deviceID, label string
 		Ptid:      ptid,
 		DeviceID:  deviceID,
 		Label:     label,
-		PublicKey:  publicKey,
+		PublicKey: publicKey,
 		Revoked:   false,
 		CreatedAt: time.Now(),
 	}

@@ -14,7 +14,7 @@ import (
 // for group creation or member addition.
 type KeyPackage struct {
 	ID        uint      `gorm:"column:id;primaryKey"`
-	Ptid      string    `gorm:"column:ptid;size:255;index:idx_kp_actor"`
+	Ptid      string    `gorm:"column:ptid;size:255;index:idx_kp_ptid"`
 	DeviceID  string    `gorm:"column:device_id;size:255;index:idx_kp_device"`
 	StationID string    `gorm:"column:station_id;size:255"`
 	Data      []byte    `gorm:"column:data;type:bytea"`
