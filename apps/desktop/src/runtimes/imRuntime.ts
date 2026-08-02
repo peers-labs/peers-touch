@@ -107,17 +107,23 @@ async function initMlsIdentity(actorId: string): Promise<void> {
 
 const KEY_PACKAGE_TARGET = 10
 
-async function uploadKeyPackages(): Promise<void> {
+async function uploadKeyPackages(actorId: string): Promise<void> {
   try {
-    const count = await imServiceV1.keyPackage.countAvailable()
-    if (count >= KEY_PACKAGE_TARGET) return
-    const toGenerate = KEY_PACKAGE_TARGET - count
+    let retired = 0
+    while (retired < 1000) {
+      const stale = await imServiceV1.keyPackage.fetch(actorId)
+      if (!stale.available) break
+      retired += 1
+    }
     const deviceId = await getDeviceId()
-    for (let i = 0; i < toGenerate; i++) {
+    for (let i = 0; i < KEY_PACKAGE_TARGET; i++) {
       const kpBytes = await imServiceV1.mlsGroup.generateKeyPackage()
       await imServiceV1.keyPackage.upload(deviceId, kpBytes)
     }
-    log.info('im-runtime', 'key packages uploaded', { generated: toGenerate })
+    log.info('im-runtime', 'key package pool replaced', {
+      retired,
+      generated: KEY_PACKAGE_TARGET,
+    })
   } catch (err) {
     log.warn('im-runtime', 'key package upload failed', { err })
   }
@@ -422,7 +428,7 @@ export const imRuntime: RuntimeDescriptor = {
 
     await registerDevice(actorId)
     await initMlsIdentity(actorId)
-    await uploadKeyPackages()
+    await uploadKeyPackages(actorId)
     await loadConversations()
     await restoreMlsSessions()
     await resumeEnvelopes()
