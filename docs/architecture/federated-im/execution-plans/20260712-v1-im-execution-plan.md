@@ -313,7 +313,7 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 - 三人 MLS group `c1f730b6-d215-4f7a-b7b1-bb394b3e34c1`：
   Bob/Third 处理 Welcome；`MLS-3-MEMBER-1785634845299` 在 Bob Web 与 Third App
   独立 exact decrypt；remove Third 后 epoch=2，Bob exact decrypt，Third read 返回 403，
-  decrypt 返回 `UseAfterEviction`。
+  send 返回 `NOT_MEMBER`，decrypt 返回 `UseAfterEviction`。
 - 四 runtime 全停重启后：
   - DR deferred `RESTART-DM-PROOF` exact decrypt；
   - MLS deferred `RESTART-MLS-PROOF` exact decrypt，Alice/Bob MLS status 均 ready。
