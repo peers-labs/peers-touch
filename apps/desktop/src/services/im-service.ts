@@ -23,6 +23,7 @@ import { CommittedConversationEventSchema } from '../gen/proto/domain/chat/conve
 import type {
   DeviceInboxItem,
 } from '../gen/proto/domain/chat/envelope_pb'
+import { DeviceInboxItemSchema } from '../gen/proto/domain/chat/envelope_pb'
 
 async function cmd<TInput, TData>(command: string, input?: TInput): Promise<TData> {
   const payload = input === undefined ? undefined : { input }
@@ -31,6 +32,19 @@ async function cmd<TInput, TData>(command: string, input?: TInput): Promise<TDat
     throw new Error(result.error?.message ?? `${command} failed`)
   }
   return result.data as TData
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
+  }
+  return btoa(binary)
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  return Uint8Array.from(atob(value), char => char.charCodeAt(0))
 }
 
 function normalizeConversationEvents(events: readonly unknown[] | undefined): CommittedConversationEvent[] {
@@ -178,7 +192,7 @@ const conversationService: ConversationServiceContract = {
 const envelopeService: EnvelopeServiceContract = {
   async submit(envelope) {
     const payloadB64 = envelope.payloadBytes && envelope.payloadBytes.length > 0
-      ? btoa(String.fromCharCode(...envelope.payloadBytes))
+      ? bytesToBase64(envelope.payloadBytes)
       : '';
     const resp = await cmd<any, { envelope_id?: string; error?: string }>('envelope_submit', {
       envelope: {
@@ -202,26 +216,26 @@ const envelopeService: EnvelopeServiceContract = {
   },
 
   async resume(deviceId, afterCursor) {
-    const resp = await cmd<any, { items: DeviceInboxItem[] }>('envelope_resume', {
+    const resp = await cmd<any, { items: unknown[] }>('envelope_resume', {
       device_id: deviceId,
       after_cursor: afterCursor ?? '',
     })
-    return resp.items ?? []
+    return (resp.items ?? []).map(item => fromJson(DeviceInboxItemSchema, item as any))
   },
 }
 
 const keyPackageService: KeyPackageServiceContract = {
   async upload(deviceId, data) {
-    await cmd('keypackage_upload', { device_id: deviceId, data: Array.from(data) })
+    await cmd('keypackage_upload', { device_id: deviceId, data: bytesToBase64(data) })
   },
 
   async fetch(ptid, homeStationPeerId) {
-    const resp = await cmd<any, { data: number[] | null; available: boolean }>('keypackage_fetch', {
+    const resp = await cmd<any, { data: string | null; available: boolean }>('keypackage_fetch', {
       ptid,
       home_station_peer_id: homeStationPeerId ?? null,
     })
     return {
-      data: resp.data ? new Uint8Array(resp.data) : null,
+      data: resp.data ? base64ToBytes(resp.data) : null,
       available: resp.available,
     }
   },
@@ -237,7 +251,7 @@ const deviceService: DeviceServiceContract = {
     await cmd('device_register', {
       device_id: deviceId,
       label: label ?? '',
-      public_key: publicKey ? Array.from(publicKey) : [],
+      public_key: publicKey ? bytesToBase64(publicKey) : '',
     })
   },
 
@@ -339,7 +353,7 @@ const mlsGroupService: MlsGroupServiceContract = {
       conversation_id: conversationId,
       kind: kind as number,
       mls_epoch: mlsEpoch,
-      opaque_bytes: Array.from(opaqueBytes),
+      opaque_bytes: bytesToBase64(opaqueBytes),
       recipients: recipients ?? [],
     })
     return resp.delivered
@@ -361,7 +375,7 @@ const dkxService: DirectKeyExchangeServiceContract = {
       recipient_station_peer_id: recipientStationPeerId ?? '',
       session_id: sessionId,
       kind: kind as number,
-      opaque_key_material: Array.from(opaqueKeyMaterial),
+      opaque_key_material: bytesToBase64(opaqueKeyMaterial),
     })
     return resp.envelope_id
   },

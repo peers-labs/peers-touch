@@ -72,7 +72,7 @@ pub struct EnvelopeResumeInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyPackageUploadInput {
     pub device_id: String,
-    pub data: Vec<u8>,
+    pub data: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -414,7 +414,7 @@ fn user_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> S
 pub struct DeviceRegisterInput {
     pub device_id: String,
     pub label: Option<String>,
-    pub public_key: Option<Vec<u8>>,
+    pub public_key: Option<String>,
 }
 
 #[tauri::command]
@@ -483,7 +483,7 @@ pub struct DkxSendInput {
     pub recipient_station_peer_id: Option<String>,
     pub session_id: String,
     pub kind: i32,
-    pub opaque_key_material: Vec<u8>,
+    pub opaque_key_material: String,
 }
 
 #[tauri::command]
