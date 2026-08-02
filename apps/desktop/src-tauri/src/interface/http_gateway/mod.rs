@@ -460,6 +460,34 @@ fn token_from_state(state: &AppState) -> Result<String, Value> {
     Ok(token)
 }
 
+fn proxy_authenticated_station_json(
+    state: &AppState,
+    method: reqwest::Method,
+    path: &str,
+    query: Option<Vec<(&'static str, String)>>,
+    body: Option<Value>,
+    operation: &str,
+) -> Value {
+    let token = match token_from_state(state) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    match crate::infrastructure::station_client::request_json_auth(
+        method,
+        path,
+        &token,
+        query.as_deref(),
+        body.as_ref(),
+    ) {
+        Ok(response) => to_json(AppResult::success(response)),
+        Err(error) => to_json(AppResult::<Value>::fail(
+            ErrorCode::InternalError,
+            format!("{operation}: {error}"),
+            None,
+        )),
+    }
+}
+
 fn actor_id_from_state(state: &AppState) -> Option<String> {
     state.session.lock().ok().and_then(|g| g.actor_id.clone())
 }
@@ -6916,10 +6944,142 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 )),
             }
         }
+        "envelope_ack" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/envelope/ack",
+            None,
+            Some(json!({
+                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "inbox_item_id": args.get("inbox_item_id").and_then(|v| v.as_str()).unwrap_or(""),
+            })),
+            "envelope ack",
+        ),
+        "envelope_resume" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::GET,
+            "/envelope/resume",
+            Some(vec![
+                ("device_id", args.get("device_id").and_then(|v| v.as_str()).unwrap_or("").to_string()),
+                ("after_cursor", args.get("after_cursor").and_then(|v| v.as_str()).unwrap_or("").to_string()),
+            ]),
+            None,
+            "envelope resume",
+        ),
+        "keypackage_upload" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/keypackage/upload",
+            None,
+            Some(json!({
+                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "data": args.get("data").cloned().unwrap_or_else(|| json!([])),
+            })),
+            "key package upload",
+        ),
+        "keypackage_fetch" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/keypackage/fetch",
+            None,
+            Some(json!({
+                "ptid": args.get("ptid").and_then(|v| v.as_str()).unwrap_or(""),
+                "home_station_peer_id": args.get("home_station_peer_id").and_then(|v| v.as_str()).unwrap_or(""),
+            })),
+            "key package fetch",
+        ),
+        "keypackage_count" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::GET,
+            "/keypackage/count",
+            None,
+            None,
+            "key package count",
+        ),
+        "device_register" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/device/register",
+            None,
+            Some(json!({
+                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "label": args.get("label").and_then(|v| v.as_str()).unwrap_or(""),
+                "public_key": args.get("public_key").cloned().unwrap_or_else(|| json!([])),
+            })),
+            "device register",
+        ),
+        "device_list" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::GET,
+            "/device/list",
+            None,
+            None,
+            "device list",
+        ),
+        "device_revoke" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/device/revoke",
+            None,
+            Some(json!({
+                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
+            })),
+            "device revoke",
+        ),
+        "dkx_send" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/dkx/send",
+            None,
+            Some(json!({
+                "recipient_ptid": args.get("recipient_ptid").and_then(|v| v.as_str()).unwrap_or(""),
+                "recipient_station_peer_id": args.get("recipient_station_peer_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "session_id": args.get("session_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "kind": args.get("kind").and_then(|v| v.as_i64()).unwrap_or(0),
+                "opaque_key_material": args.get("opaque_key_material").cloned().unwrap_or_else(|| json!([])),
+            })),
+            "direct key exchange send",
+        ),
+        "mls_distribute" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/mls/distribute",
+            None,
+            Some(json!({
+                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "kind": args.get("kind").and_then(|v| v.as_i64()).unwrap_or(0),
+                "mls_epoch": args.get("mls_epoch").and_then(|v| v.as_i64()).unwrap_or(0),
+                "opaque_bytes": args.get("opaque_bytes").cloned().unwrap_or_else(|| json!([])),
+                "recipients": args.get("recipients").cloned().unwrap_or_else(|| json!([])),
+            })),
+            "MLS distribute",
+        ),
 
         // =================================================================
         // Conversation (unified IM layer — station proxy)
         // =================================================================
+        "conversation_create_direct" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/conversation/direct",
+            None,
+            Some(json!({
+                "peer_ptid": args.get("peer_ptid").and_then(|v| v.as_str()).unwrap_or(""),
+                "peer_station_peer_id": args.get("peer_station_peer_id").and_then(|v| v.as_str()).unwrap_or(""),
+            })),
+            "conversation create direct",
+        ),
+        "conversation_create_group" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/conversation/group",
+            None,
+            Some(json!({
+                "name": args.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                "members": args.get("members").cloned().unwrap_or_else(|| json!([])),
+            })),
+            "conversation create group",
+        ),
         "conversation_list" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
@@ -6934,6 +7094,19 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 )),
             }
         }
+        "conversation_submit_receipt" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/conversation/receipt",
+            None,
+            Some(json!({
+                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "message_id": args.get("message_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "receipt_type": args.get("receipt_type").and_then(|v| v.as_i64()).unwrap_or(0),
+            })),
+            "conversation submit receipt",
+        ),
         "conversation_list_events" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
@@ -6956,6 +7129,91 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 )),
             }
         }
+        "conversation_list_messages" | "conversation_sync_from_station" => {
+            let conversation_id = args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let after_seq = if cmd == "conversation_sync_from_station" {
+                0
+            } else {
+                args.get("after_seq").and_then(|v| v.as_i64()).unwrap_or(0)
+            };
+            let default_limit = if cmd == "conversation_sync_from_station" { 200 } else { 50 };
+            let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(default_limit);
+            proxy_authenticated_station_json(
+                state,
+                reqwest::Method::GET,
+                "/conversation/messages",
+                Some(vec![
+                    ("conversation_id", conversation_id),
+                    ("after_seq", after_seq.to_string()),
+                    ("limit", limit.to_string()),
+                ]),
+                None,
+                "conversation list messages",
+            )
+        }
+        "conversation_list_thread_messages" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::GET,
+            "/conversation/thread/messages",
+            Some(vec![
+                ("conversation_id", args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("").to_string()),
+                ("root_id", args.get("root_id").and_then(|v| v.as_str()).unwrap_or("").to_string()),
+                ("after_seq", args.get("after_seq").and_then(|v| v.as_i64()).unwrap_or(0).to_string()),
+                ("limit", args.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).to_string()),
+            ]),
+            None,
+            "conversation list thread messages",
+        ),
+        "conversation_thread_counts" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/conversation/thread/counts",
+            None,
+            Some(json!({
+                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "root_ids": args.get("root_ids").cloned().unwrap_or_else(|| json!([])),
+            })),
+            "conversation thread counts",
+        ),
+        "conversation_set_read_cursor" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/conversation/read-cursor",
+            None,
+            Some(json!({
+                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "last_read_seq": args.get("last_read_seq").and_then(|v| v.as_i64()).unwrap_or(0),
+            })),
+            "conversation set read cursor",
+        ),
+        "conversation_get_unread" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::GET,
+            "/conversation/unread",
+            Some(vec![("conversation_id", args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("").to_string())]),
+            None,
+            "conversation get unread",
+        ),
+        "conversation_get_member_settings" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::GET,
+            "/conversation/member/settings",
+            Some(vec![("conversation_id", args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("").to_string())]),
+            None,
+            "conversation get member settings",
+        ),
+        "conversation_update_member_settings" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::PUT,
+            "/conversation/member/settings",
+            None,
+            Some(json!({
+                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "nickname": args.get("nickname").cloned().unwrap_or(Value::Null),
+                "muted": args.get("muted").cloned().unwrap_or(Value::Null),
+            })),
+            "conversation update member settings",
+        ),
         "conversation_get_members" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
@@ -6994,13 +7252,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let body = json!({
-                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "message_id": args.get("message_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "emoji": args.get("emoji").and_then(|v| v.as_str()).unwrap_or(""),
-                "remove": args.get("remove").and_then(|v| v.as_bool()).unwrap_or(false),
+                "command": {
+                    "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
+                    "react": {
+                        "message_id": args.get("message_id").and_then(|v| v.as_str()).unwrap_or(""),
+                        "emoji": args.get("emoji").and_then(|v| v.as_str()).unwrap_or(""),
+                        "remove": args.get("remove").and_then(|v| v.as_bool()).unwrap_or(false),
+                    }
+                }
             });
             match crate::infrastructure::station_client::request_json_auth(
-                reqwest::Method::POST, "/conversation/react", &token, None, Some(&body),
+                reqwest::Method::POST, "/conversation/command", &token, None, Some(&body),
             ) {
                 Ok(resp) => to_json(AppResult::success(resp)),
                 Err(e) => to_json(AppResult::<Value>::fail(
