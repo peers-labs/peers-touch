@@ -321,6 +321,13 @@ fn harden_identity_path(path: &Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
             .map_err(|e| e.to_string())?;
+        for entry in fs::read_dir(parent).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            if entry.file_type().map_err(|e| e.to_string())?.is_file() {
+                fs::set_permissions(entry.path(), fs::Permissions::from_mode(0o600))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
     }
     fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())
 }
