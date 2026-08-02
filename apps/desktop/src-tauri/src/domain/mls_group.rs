@@ -36,7 +36,7 @@ struct PersistedMlsGroupSession {
 pub struct MlsGroupManager {
     sessions: Mutex<HashMap<String, MlsGroupSession>>,
     identity: Mutex<Option<(SignatureKeyPair, CredentialWithKey)>>,
-    pending_join_provider: Mutex<Option<PeersMLSProvider>>,
+    pending_join_providers: Mutex<Vec<PeersMLSProvider>>,
 }
 
 impl MlsGroupManager {
@@ -44,7 +44,7 @@ impl MlsGroupManager {
         Self {
             sessions: Mutex::new(HashMap::new()),
             identity: Mutex::new(None),
-            pending_join_provider: Mutex::new(None),
+            pending_join_providers: Mutex::new(Vec::new()),
         }
     }
 
@@ -66,8 +66,7 @@ impl MlsGroupManager {
         let kp_bytes = kp
             .tls_serialize_detached()
             .map_err(|e| format!("serialize key package: {e:?}"))?;
-        let mut pending = self.pending_join_provider.lock().unwrap();
-        *pending = Some(provider);
+        self.pending_join_providers.lock().unwrap().push(provider);
         Ok(kp_bytes)
     }
 
@@ -147,24 +146,33 @@ impl MlsGroupManager {
         let (signer, _cwk) = id.as_ref().ok_or("identity not initialized")?.clone();
         drop(id);
 
-        let provider = self.pending_join_provider.lock().unwrap().take()
-            .unwrap_or_else(PeersMLSProvider::new);
-
-        let welcome = MlsMessageIn::tls_deserialize(&mut Cursor::new(welcome_bytes))
-            .map_err(|e| format!("deserialize welcome: {e:?}"))?;
-
-        let welcome = welcome
-            .into_welcome()
-            .ok_or("message is not a Welcome")?;
-
         let mls_group_config = MlsGroupJoinConfig::builder()
             .use_ratchet_tree_extension(true)
             .build();
-
-        let group = StagedWelcome::new_from_welcome(&provider, &mls_group_config, welcome, None)
-            .map_err(|e| format!("stage welcome: {e:?}"))?
-            .into_group(&provider)
-            .map_err(|e| format!("join group: {e:?}"))?;
+        let mut pending = self.pending_join_providers.lock().unwrap();
+        let mut matched = None;
+        for index in 0..pending.len() {
+            let provider = &pending[index];
+            let welcome = MlsMessageIn::tls_deserialize(&mut Cursor::new(welcome_bytes))
+                .map_err(|e| format!("deserialize welcome: {e:?}"))?
+                .into_welcome()
+                .ok_or("message is not a Welcome")?;
+            let Ok(staged) =
+                StagedWelcome::new_from_welcome(provider, &mls_group_config, welcome, None)
+            else {
+                continue;
+            };
+            let group = staged
+                .into_group(provider)
+                .map_err(|e| format!("join group: {e:?}"))?;
+            matched = Some((index, group));
+            break;
+        }
+        let Some((provider_index, group)) = matched else {
+            return Err("stage welcome: NoMatchingKeyPackage".to_string());
+        };
+        let provider = pending.remove(provider_index);
+        drop(pending);
 
         let session = MlsGroupSession {
             provider,
@@ -411,6 +419,25 @@ mod tests {
             .expect("decrypt");
 
         assert_eq!(plaintext, b"hello group p3");
+    }
+
+    #[test]
+    fn generated_key_package_pool_accepts_packages_before_the_latest() {
+        let alice_mgr = MlsGroupManager::new();
+        let bob_mgr = MlsGroupManager::new();
+
+        alice_mgr.init_identity("did:alice");
+        bob_mgr.init_identity("did:bob");
+
+        let first_bob_kp = bob_mgr.generate_key_package().expect("first bob kp");
+        let _second_bob_kp = bob_mgr.generate_key_package().expect("second bob kp");
+        let created = alice_mgr
+            .create_group("conv-key-pool", &[first_bob_kp])
+            .expect("create group");
+
+        bob_mgr
+            .join_group("conv-key-pool", &created.welcome_bytes)
+            .expect("join with first pending key package");
     }
 
     #[test]
