@@ -12,7 +12,7 @@ use tauri::{State, Window};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationCreateDirectInput {
-    pub peer_actor_did: String,
+    pub peer_ptid: String,
     pub peer_station_peer_id: Option<String>,
 }
 
@@ -24,7 +24,7 @@ pub struct ConversationCreateGroupInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationMemberInput {
-    pub actor_did: String,
+    pub ptid: String,
     pub station_id: Option<String>,
 }
 
@@ -77,7 +77,7 @@ pub struct KeyPackageUploadInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyPackageFetchInput {
-    pub actor_did: String,
+    pub ptid: String,
     pub home_station_peer_id: Option<String>,
 }
 
@@ -119,7 +119,7 @@ pub fn conversation_create_direct(
         Err(e) => return e,
     };
     let body = json!({
-        "peer_actor_did": input.peer_actor_did,
+        "peer_ptid": input.peer_ptid,
         "peer_station_peer_id": input.peer_station_peer_id.unwrap_or_default(),
     });
     match station_client::request_json_auth(Method::POST, "/conversation/direct", &token, None, Some(&body)) {
@@ -143,7 +143,7 @@ pub fn conversation_create_group(
         .iter()
         .map(|m| {
             json!({
-                "actor_did": m.actor_did,
+                "ptid": m.ptid,
                 "station_id": m.station_id.clone().unwrap_or_default(),
             })
         })
@@ -379,7 +379,7 @@ pub fn keypackage_fetch(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let mut body = json!({ "actor_did": input.actor_did });
+    let mut body = json!({ "ptid": input.ptid });
     if let Some(ref station_id) = input.home_station_peer_id {
         body["home_station_peer_id"] = json!(station_id);
     }
@@ -479,7 +479,7 @@ pub fn device_revoke(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DkxSendInput {
-    pub recipient_actor_did: String,
+    pub recipient_ptid: String,
     pub recipient_station_peer_id: Option<String>,
     pub session_id: String,
     pub kind: i32,
@@ -497,7 +497,7 @@ pub fn dkx_send(
         Err(e) => return e,
     };
     let body = json!({
-        "recipient_actor_did": input.recipient_actor_did,
+        "recipient_ptid": input.recipient_ptid,
         "recipient_station_peer_id": input.recipient_station_peer_id.unwrap_or_default(),
         "session_id": input.session_id,
         "kind": input.kind,

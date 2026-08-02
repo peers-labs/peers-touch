@@ -40,7 +40,7 @@ function normalizeConversationEvents(events: readonly unknown[] | undefined): Co
 const conversationService: ConversationServiceContract = {
   async createDirect(peerPtid, peerStationPeerId) {
     const resp = await cmd<any, { conversation: Conversation }>('conversation_create_direct', {
-      peer_actor_did: peerPtid,
+      peer_ptid: peerPtid,
       peer_station_peer_id: peerStationPeerId ?? '',
     })
     return resp.conversation
@@ -49,7 +49,7 @@ const conversationService: ConversationServiceContract = {
   async createGroup(name, members) {
     const resp = await cmd<any, { conversation: Conversation }>('conversation_create_group', {
       name,
-      members: members.map(m => ({ actor_did: m.ptid, station_id: m.stationId ?? '' })),
+      members: members.map(m => ({ ptid: m.ptid, station_id: m.stationId ?? '' })),
     })
     return resp.conversation
   },
@@ -217,7 +217,7 @@ const keyPackageService: KeyPackageServiceContract = {
 
   async fetch(ptid, homeStationPeerId) {
     const resp = await cmd<any, { data: number[] | null; available: boolean }>('keypackage_fetch', {
-      actor_did: ptid,
+      ptid,
       home_station_peer_id: homeStationPeerId ?? null,
     })
     return {
@@ -357,7 +357,7 @@ const mlsGroupService: MlsGroupServiceContract = {
 const dkxService: DirectKeyExchangeServiceContract = {
   async send(recipientPtid, sessionId, kind, opaqueKeyMaterial, recipientStationPeerId) {
     const resp = await cmd<any, { envelope_id: string }>('dkx_send', {
-      recipient_actor_did: recipientPtid,
+      recipient_ptid: recipientPtid,
       recipient_station_peer_id: recipientStationPeerId ?? '',
       session_id: sessionId,
       kind: kind as number,
