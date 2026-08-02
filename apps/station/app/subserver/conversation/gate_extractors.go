@@ -70,14 +70,16 @@ func extractMlsDistributeOp(body []byte) social_gate.Operation {
 	}
 }
 
-// extractDkxSendOp extracts the recipient actor DID from a SendDkxRequest body.
-// DKX operations are gated as bilateral key exchange checks.
+// extractDkxSendOp extracts the conversation and recipient from a SendDkxRequest body.
+// DKX is allowed only for active members of the direct conversation.
 func extractDkxSendOp(body []byte) social_gate.Operation {
 	var partial struct {
 		RecipientPtid string `json:"recipient_ptid"`
+		SessionID     string `json:"session_id"`
 	}
 	_ = json.Unmarshal(body, &partial)
 	return social_gate.Operation{
-		TargetPtid: partial.RecipientPtid,
+		TargetPtid:     partial.RecipientPtid,
+		ConversationID: partial.SessionID,
 	}
 }
