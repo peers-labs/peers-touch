@@ -22,7 +22,7 @@ use rand::rngs::OsRng;
 use sha2::{Digest, Sha256, Sha512};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use x25519_dalek::{PublicKey, StaticSecret};
 
@@ -314,13 +314,30 @@ fn scoped_identity_file(identity_key_ref: &str) -> Option<PathBuf> {
     )
 }
 
+#[cfg(unix)]
+fn harden_identity_path(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    if let Some(parent) = path.parent() {
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())
+}
+
+#[cfg(not(unix))]
+fn harden_identity_path(_path: &Path) -> Result<(), String> {
+    Ok(())
+}
+
 pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(), String> {
     let hex_seed: String = seed.iter().map(|b| format!("{b:02x}")).collect();
     if let Some(path) = scoped_identity_file(identity_key_ref) {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        fs::write(path, hex_seed.as_str()).map_err(|e| e.to_string())?;
+        fs::write(&path, hex_seed.as_str()).map_err(|e| e.to_string())?;
+        harden_identity_path(&path)?;
         return Ok(());
     }
     let entry = identity_entry(identity_key_ref)?;
@@ -336,8 +353,11 @@ pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPai
         }
     }
     if let Some(path) = scoped_identity_file(identity_key_ref) {
-        let pw = match fs::read_to_string(path) {
-            Ok(p) => p,
+        let pw = match fs::read_to_string(&path) {
+            Ok(p) => {
+                harden_identity_path(&path)?;
+                p
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(e.to_string()),
         };
