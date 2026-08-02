@@ -1,8 +1,8 @@
 # Federated IM Architecture
 
 > **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-07-04 | **Updated**: 2026-07-11
+> **Version**: v0.2
+> **Created**: 2026-07-04 | **Updated**: 2026-08-02
 > **Owner**: Architecture Team
 > **Module**: `apps/station/app/subserver/group_chat/`, `apps/station/frame/touch/federation/`, `model/domain/chat/`, `model/domain/federation/`, `model/domain/realtime/`, `apps/desktop/src/store/socialChat.ts`
 
@@ -11,6 +11,12 @@
 > channel (D-10), direct-chat X3DH + Double Ratchet (D-09), text-only-on-envelope
 > with P2P for media (D-12), and a hard cutover wiping legacy chat data (D-11).
 > Review source: [`proposals/20260711-im-unification-review.md`](./proposals/20260711-im-unification-review.md).
+>
+> **C-4/C-5 design amendment (2026-08-02)**: D-13 is accepted. It
+> defines an authority-sequenced, transactional membership transition that binds
+> business membership, `membership_epoch`, MLS epoch, opaque Commit delivery,
+> and follower convergence. No implementation may claim C-4/C-5 until D-13 is
+> implemented and its L3 gates pass.
 
 ---
 
@@ -59,8 +65,10 @@ The current group lifecycle source of truth defines local Station group behavior
 | [design.md](./design.md) | Architecture, ownership, runtime units, trust boundaries, core flows |
 | [data-model.md](./data-model.md) | Conceptual contracts, event log, ActorRef membership, epochs, delivery cursors |
 | [decisions.md](./decisions.md) | ADR-lite decisions and alternatives |
+| [integration.md](./integration.md) | D-13 current-to-target Model/Station/Desktop/federation mapping and deletion boundary |
 | [proposals/20260711-im-unification-review.md](./proposals/20260711-im-unification-review.md) | v1 IM unification review (approved decisions D-08…D-12) |
 | [execution-plans/20260712-v1-im-execution-plan.md](./execution-plans/20260712-v1-im-execution-plan.md) | v1 IM dependency-ordered execution plan (P0…P7) |
+| [execution-plans/20260802-d13-atomic-mls-membership-transition.md](./execution-plans/20260802-d13-atomic-mls-membership-transition.md) | D-13 atomic membership/MLS transition and three-Station C-4/C-5 closure plan |
 | [execution-plans/20260731-debt-zero-dm-group.md](./execution-plans/20260731-debt-zero-dm-group.md) | Full-stack DM/group single-path cutover subplan; P3.0 strict decoding complete, awaiting parent Mobile/three-Station gates |
 | [execution-plans/20260712-g0-mls-verification.md](./execution-plans/20260712-g0-mls-verification.md) | G0 MLS two-platform verification plan (unblocks D-08 / P3) |
 | [execution-plans/20260729-signal-level-chat-modernization.md](./execution-plans/20260729-signal-level-chat-modernization.md) | Signal-level UX modernization (read receipts, media, reactions, calls) |

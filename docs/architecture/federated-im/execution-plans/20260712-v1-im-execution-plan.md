@@ -291,6 +291,10 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
   transient MLS state files 为零。
 - **后续顺序**：S1.1 关闭后先执行 `P3-S3 C-4/C-5 three-Station convergence`；
   Mobile parity 在其后的 phase 执行；两者仍须在 P4 前关闭。
+- **P3-S3 正式子计划**：
+  [`20260802-d13-atomic-mls-membership-transition.md`](./20260802-d13-atomic-mls-membership-transition.md)
+  （D-13 authority transaction、follower convergence、Desktop pending Commit、
+  L2 fault matrix 与三 Station L3 gate）。
 
 ### 2026-08-02 `P2/P3-S1.1` multi-worktree 关闭证据
 

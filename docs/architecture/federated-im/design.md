@@ -1,8 +1,8 @@
 # Federated IM Architecture — Design
 
 > **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-07-04 | **Updated**: 2026-07-11
+> **Version**: v0.2
+> **Created**: 2026-07-04 | **Updated**: 2026-08-02
 > **Owner**: Architecture Team
 > **Module**: `apps/station/app/subserver/group_chat/`, `apps/station/frame/touch/federation/`, `model/domain/chat/`, `model/domain/federation/`, `model/domain/realtime/`
 
@@ -26,6 +26,9 @@
 5. **Clients render projection and execute crypto.** Desktop/Mobile hydrate Station projections, process MLS Commits/Welcome, decrypt locally, and display policy states.
 6. **Family-scale reliability beats premature consensus.** Ordinary chat uses authority sequencing for latency and availability; quorum recovery is reserved for authority loss and future high-value groups.
 7. **One reliable envelope, typed QoS.** Direct and group chat share a single Station signaling-envelope channel (D-10) carrying committed events, key-delivery payloads, receipts, and low-latency signals; text never uses P2P (D-12).
+8. **One membership transition fact.** Under accepted D-13, group membership,
+   `membership_epoch`, MLS epoch, opaque Commit ordering, and durable fan-out
+   are accepted or rejected together by the authority Station.
 
 ## 2. System Architecture
 
@@ -198,27 +201,55 @@ StationA validates metadata and ciphertext envelope shape, not plaintext.
 ### 6.3 Membership Change
 
 ```text
-Owner/Admin issues add/remove/leave/update
-  -> command reaches group authority
-  -> authority validates role and Federation Station state
-  -> authority increments membership_epoch
-  -> authority commits GroupMembershipChanged and orders the corresponding MLS Commit
-  -> member Stations refresh projection
-  -> clients process the MLS Commit / Welcome before post-change sends
+Owner/Admin device creates an OpenMLS pending Commit
+  -> device submits MembershipTransitionCommand to group authority
+  -> authority validates role, Federation Station state, current heads,
+     target epochs, transition id, Commit hash, size, and recipient routes
+  -> authority transaction locks the conversation head
+  -> transaction mutates members + advances membership_epoch/group_seq
+  -> transaction appends MembershipTransitionCommitted with opaque Commit
+  -> transaction inserts committed-event and Commit/Welcome outbox rows
+  -> authority responds accepted with event id, seq, epochs, and hashes
+  -> committer merges the pending Commit only after acceptance
+  -> member Stations apply the ordered transition and enqueue local delivery
+  -> recipient clients process Commit/Welcome before post-change sends
 ```
 
-Removed or left members are removed from the MLS group by the Commit and receive no post-change group secrets. `membership_epoch` and the MLS epoch advance together (see D-08 consequence).
+The Foundation Profile binds one business transition to one MLS transition:
+
+```text
+to_membership_epoch = from_membership_epoch + 1
+to_mls_epoch        = from_mls_epoch + 1
+to_membership_epoch = to_mls_epoch
+```
+
+Removed or left members are included in the pre-transition Commit recipient
+set so they can process their eviction, but are excluded from all post-change
+messages and group secrets. Added members receive recipient-specific Welcome
+delivery tied to the same `transition_id`; they do not apply the Commit as an
+existing member.
+
+The client MUST keep a generated OpenMLS Commit pending until the authority
+accepts the transition. Local durable MLS state cannot advance on request send,
+transport ACK, or optimistic UI state. Authority rejection discards the pending
+Commit and refreshes the authoritative projection before retry.
+
+Authority admission rejects a transition before locking when Commit bytes exceed
+128 KiB, Welcome payloads exceed 8 MiB total, or recipient device deliveries
+exceed 200.
 
 ### 6.4 Cross-Station MLS Key Delivery
 
-MLS key-delivery objects (Welcome for new members, Commit for existing members, KeyPackage publication) are opaque client-to-client encrypted payloads carried over the single Station signaling envelope (D-10). Foundation Profile routing:
+MLS key-delivery objects remain opaque and ride the single Station signaling
+envelope (D-10), and accepted D-13 defines their ordering owner:
 
 ```text
-Sender/committer device
-  -> produce MLS Welcome/Commit for the target member devices
-  -> Home Station routes opaque key-delivery envelope
-  -> recipient Home Station stores/delivers the control event
-  -> recipient client applies Welcome/Commit into local MLS group state
+Committer device
+  -> include opaque Commit/Welcome material in MembershipTransitionCommand
+  -> authority commits transition event and transactional outbox rows
+  -> federation transport retries durable rows asynchronously
+  -> recipient Home Station stores authority event + local inbox rows atomically
+  -> recipient client applies the authority-ordered Commit/Welcome
 ```
 
 Key-delivery envelopes must bind:
@@ -231,10 +262,65 @@ Key-delivery envelopes must bind:
 - `sender_device_id`
 - `recipient_actor_ref`
 - `recipient_device_id`
+- `transition_id`
+- `group_seq`
+- `from_membership_epoch` / `to_membership_epoch`
+- `from_mls_epoch` / `to_mls_epoch`
+- `commit_sha256` or `welcome_sha256`
 
 The Station sees only opaque bytes plus this routing metadata; it never sees MLS group secrets.
 
-### 6.5 Dissolve And History Retention
+Station verifies exact hashes and declared epoch progression. Recipient
+OpenMLS verifies that the opaque Commit actually belongs to the expected group
+and advances the expected cryptographic epoch.
+
+`/mls/distribute` is not an ordering API in the D-13 target. Commit and Welcome
+delivery are created only as effects of an accepted authority transition.
+KeyPackage upload/fetch remains a separate directory capability.
+
+### 6.5 Follower And Device Convergence
+
+Follower Stations maintain one authority-derived head:
+
+```text
+FollowerGroupHead
+  group_seq
+  event_hash
+  membership_epoch
+  mls_epoch
+  transition_id
+  commit_sha256
+  status
+```
+
+Apply rules:
+
+1. `group_seq == head.group_seq + 1` and both epochs advance according to the
+   event transition.
+2. Applying the same `transition_id` with the same hashes is a no-op.
+3. Reusing a transition id or group sequence with a different event/Commit hash
+   activates fork protection and read-only state.
+4. A future sequence or epoch is held in a bounded 128-event buffer and starts
+   authority resync. Buffer overflow remains read-only and requires a snapshot.
+5. Disconnect resume starts from the last transactionally applied sequence, not
+   the last received or SSE-delivered sequence.
+
+Follower projection mutation and local recipient inbox insertion occur in one
+database transaction. Network ACK is emitted only after that transaction
+commits.
+
+Client runtime rules:
+
+- Commit application is idempotent by `(transition_id, commit_sha256)`.
+- duplicate delivery is acknowledged without reapplying OpenMLS state;
+- future transitions are buffered by authority `group_seq`;
+- a gap triggers Station resync and blocks post-gap sends;
+- OpenMLS rejection, hash mismatch, or impossible epoch progression puts the
+  conversation in crypto-desynced read-only state;
+- reconnect replays from the last durable local transition, then drains the
+  bounded buffer in order.
+
+### 6.6 Dissolve And History Retention
 
 Group dissolution is a committed group event:
 
@@ -343,4 +429,3 @@ Resolution:
 - Security: authorization, signatures, epoch checks, plaintext/key non-leakage, and diagnostics constraints are covered.
 - Decisions: ADR-lite alternatives are recorded in `decisions.md`.
 - Downstream constraint: platform implementations must not redefine authority, epoch, or MLS group-state ownership.
-
