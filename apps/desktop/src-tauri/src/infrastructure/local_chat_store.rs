@@ -123,7 +123,6 @@ fn invalidate_pool(user_scope: &str) {
 }
 
 /// One-time migrations tracked per chat DB (per `user_scope`).
-const LEGACY_GROUP_PLAINTEXT_WIPE_MIGRATION: &str = "legacy_group_plaintext_wipe_v1";
 const ADD_DR_SQL_COLUMNS_V1: &str = "add_double_ratchet_columns_v1";
 
 fn migrate(conn: &Connection) -> Result<(), String> {
@@ -308,46 +307,8 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
     backfill_local_thread_roots(conn)
 }
 
-fn wipe_legacy_group_plaintext_rows(conn: &Connection) -> Result<u64, String> {
-    conn.execute(
-        "UPDATE group_messages
-         SET content = ''
-         WHERE content IS NOT NULL AND content != ''
-           AND (encrypted_payload IS NULL OR length(encrypted_payload) = 0)",
-        [],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(conn.changes() as u64)
-}
-
 fn apply_one_time_migrations(conn: &Connection) -> Result<(), String> {
-    apply_legacy_group_plaintext_wipe_v1(conn)?;
     apply_add_double_ratchet_columns_v1(conn)?;
-    Ok(())
-}
-
-fn apply_legacy_group_plaintext_wipe_v1(conn: &Connection) -> Result<(), String> {
-    let already: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM chat_applied_migrations WHERE name = ?1",
-            params![LEGACY_GROUP_PLAINTEXT_WIPE_MIGRATION],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-    if already > 0 {
-        return Ok(());
-    }
-    let rows_wiped = wipe_legacy_group_plaintext_rows(conn)?;
-    conn.execute(
-        "INSERT INTO chat_applied_migrations(name, applied_at) VALUES (?1, ?2)",
-        params![LEGACY_GROUP_PLAINTEXT_WIPE_MIGRATION, chrono_now()],
-    )
-    .map_err(|e| e.to_string())?;
-    tracing::info!(
-        migration = LEGACY_GROUP_PLAINTEXT_WIPE_MIGRATION,
-        rows_wiped,
-        "local_chat_store: wiped pre-E2EE group message plaintext bodies"
-    );
     Ok(())
 }
 
@@ -394,16 +355,6 @@ fn apply_add_double_ratchet_columns_v1(conn: &Connection) -> Result<(), String> 
         "local_chat_store: applied Double Ratchet SQLCipher columns"
     );
     Ok(())
-}
-
-#[cfg(test)]
-pub(crate) fn test_migrate_schema_only(conn: &Connection) -> Result<(), String> {
-    migrate_schema(conn)
-}
-
-#[cfg(test)]
-pub(crate) fn test_apply_one_time_migrations(conn: &Connection) -> Result<(), String> {
-    apply_one_time_migrations(conn)
 }
 
 fn upsert_record(conn: &Connection, item: &LocalChatRecord) -> Result<(), String> {
@@ -1026,7 +977,7 @@ fn save_dr_session_with_conn(conn: &Connection, state: &DrSessionState) -> Resul
         .map_err(|e| e.to_string())?;
     if exists == 0 {
         return Err(
-            "save_dr_session: missing crypto_sessions row; persist CryptoSessionState (v=0) first"
+            "save_dr_session: missing crypto_sessions row; persist X3DH bootstrap state first"
                 .to_string(),
         );
     }
@@ -2137,91 +2088,5 @@ mod dr_persistence_tests {
             opk_private.to_bytes(),
         );
         assert!(crypto_consume_opk_by_public(&scope, &opk_public).is_err());
-    }
-}
-
-#[cfg(test)]
-mod migration_tests {
-    use super::{test_apply_one_time_migrations, test_migrate_schema_only};
-    use crate::domain::storage::database::DatabaseOpenSpec;
-    use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
-    use crate::infrastructure::storage::open_database;
-    use rusqlite::params;
-
-    fn unique_scope(tag: &str) -> String {
-        format!(
-            "test-mig-{tag}-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )
-    }
-
-    #[test]
-    fn legacy_group_plaintext_wipe_runs_once_and_is_idempotent() {
-        let scope = unique_scope("plain");
-        let spec = DatabaseOpenSpec::new_chat_main(scope);
-        let conn =
-            open_database(&spec, PlatformKeyProvider::shared()).expect("open_database(chat/main)");
-
-        test_migrate_schema_only(&conn).expect("schema migration");
-
-        let legacy_ulid = "01HXTESTLEGACY000000000000";
-        let sk_ulid = "01HXTESTPOSTSK000000000000";
-        let ciphertext: Vec<u8> = vec![0x01, 0x02, 0xde, 0xad];
-
-        conn.execute(
-            "INSERT INTO group_messages(ulid, group_ulid, sender_did, content, encrypted_payload, sent_at)
-             VALUES (?1, 'g1', 'did:legacy', 'secret plaintext', NULL, 1000)",
-            params![legacy_ulid],
-        )
-        .expect("insert legacy row");
-        conn.execute(
-            "INSERT INTO group_messages(ulid, group_ulid, sender_did, content, encrypted_payload, sent_at)
-             VALUES (?1, 'g1', 'did:sk', '', ?2, 2000)",
-            params![sk_ulid, ciphertext.as_slice()],
-        )
-        .expect("insert sender-key row");
-
-        test_apply_one_time_migrations(&conn).expect("first one-time migration");
-
-        let leg_content: String = conn
-            .query_row(
-                "SELECT content FROM group_messages WHERE ulid = ?1",
-                params![legacy_ulid],
-                |r| r.get(0),
-            )
-            .expect("read legacy content");
-        assert_eq!(leg_content, "");
-
-        let sk_payload: Vec<u8> = conn
-            .query_row(
-                "SELECT encrypted_payload FROM group_messages WHERE ulid = ?1",
-                params![sk_ulid],
-                |r| r.get(0),
-            )
-            .expect("read sk ciphertext");
-        assert_eq!(sk_payload, ciphertext);
-
-        test_apply_one_time_migrations(&conn).expect("second one-time migration");
-
-        let leg_content_2: String = conn
-            .query_row(
-                "SELECT content FROM group_messages WHERE ulid = ?1",
-                params![legacy_ulid],
-                |r| r.get(0),
-            )
-            .expect("read legacy after second migration");
-        assert_eq!(leg_content_2, "");
-
-        let sk_payload_2: Vec<u8> = conn
-            .query_row(
-                "SELECT encrypted_payload FROM group_messages WHERE ulid = ?1",
-                params![sk_ulid],
-                |r| r.get(0),
-            )
-            .expect("read sk ciphertext after second migration");
-        assert_eq!(sk_payload_2, ciphertext);
     }
 }
