@@ -206,9 +206,9 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 |---|---|---|---|
 | P0 | DONE | proto build / wire contract | — |
 | P1 | DONE | conversation/envelope Station gates | — |
-| P2 | IN PROGRESS | Desktop strict DR v1 S1 + live restart PASS | Mobile DR v1；跨站/多设备/吊销门 |
-| P3 | IN PROGRESS | Desktop strict MLS S1 + removal/restart PASS | Mobile OpenMLS；C-4/C-5 三 Station；压力门 |
-| P4 | BLOCKED | Desktop 部分 canonical migration | P2/P3 全部门关闭后执行 Desktop + Mobile Runtime 归一 |
+| P2 | IN PROGRESS | Desktop strict DR v1 S1.1 multi-worktree PASS | Mobile DR v1；跨站/多设备/吊销门 |
+| P3 | IN PROGRESS | Desktop strict MLS S1.1 + removal/restart PASS | Mobile OpenMLS；C-4/C-5 三 Station；压力门 |
+| P4 | BLOCKED | Desktop canonical App/Web gateway parity 已关闭 | P2/P3 全部门关闭后执行 Desktop + Mobile Runtime 归一 |
 | P5 | PENDING | — | P4 完成 |
 | P6 | PENDING | — | P2–P5 替代路径完成；原子删旧世界 + 运维 SQL 清理 |
 | P7 | PENDING | 单 Station Desktop 局部证据 | P6 完成后执行完整验收矩阵 |
@@ -250,9 +250,9 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 - Desktop social wire/runtime boundary gates PASS。完整 `pnpm run check` 仍因仓库既有
   React 18/19 `ReactNode` 类型重复、MessageList prop 与 provider typing 基线错误 FAIL；
   本切片改动文件未新增诊断。
-- **P4 已知缺口**：dev HTTP gateway 尚未注册 `conversation_list_messages` 等完整 canonical
-  read command parity；S1 使用 Station committed response 完成 opaque-byte 证据，不把该缺口
-  误报为 P4 已完成。P4 Runtime 归一时必须补齐并删除旧 read command。
+- **已关闭的 P4 前置缺口**：dev HTTP gateway 已补齐 conversation、device、key-package、
+  envelope、DKX 与 MLS distribution canonical parity；Station Go oneof JSON 也已在 Desktop
+  service boundary 归一。P4 仍受 Mobile 与三 Station 门阻塞，不因 Desktop parity 关闭而提前完成。
 
 **下一执行闭包（可并行）**
 
@@ -275,8 +275,9 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
   - Station 只从 high-chat 执行 `make station`。
 - **客户端矩阵**：两个 worktree 均启动 `make desktop` 与 `make desktop-web`
   （4 个独立 Rust gateway / storage scope）。
-- **账号矩阵**：使用 Profile `three` 预置账号 `a`、`b`、`c`
-  （产品证据别名 Alice、Bob、Third）。
+- **账号矩阵**：Profile `three` 实际不存在文档所述 `a`、`b`、`c` seed rows，因此通过
+  `/actor/sign-up` 创建 `alicee2e`、`bobe2e`、`thirde2e` 与第四客户端 `observere2e`。
+  独立 App↔App clean-room 门使用 `aliceapp` 与 `thirdapp`；均走产品 auth/signup 边界。
 - **DM 门**：
   - Alice→Bob、Bob→Alice、Alice→Third fresh X3DH + DR v1。
   - Station committed payload byte equality、receiver exact decrypt、replay rejection。
@@ -288,8 +289,42 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 - **Restart 门**：四个 Desktop runtime 全停后重启，deferred DM/MLS ciphertext exact decrypt。
 - **存储门**：四个 profile storage plaintext marker scan 零命中；key files `0600`；
   transient MLS state files 为零。
-- **后续顺序**：S1.1 关闭后再进入 Mobile parity；C-4/C-5 three-Station
-  convergence 仍须在 P4 前关闭。
+- **后续顺序**：S1.1 关闭后先执行 `P3-S3 C-4/C-5 three-Station convergence`；
+  Mobile parity 在其后的 phase 执行；两者仍须在 P4 前关闭。
+
+### 2026-08-02 `P2/P3-S1.1` multi-worktree 关闭证据
+
+- high-chat 与 group-chat implementation baseline 均为 `3d38ad3d`；group-chat 仅保留既有未跟踪
+  `.pt-dev-workflow/` 与 `tooling/spikes/mls-g0/target/`。
+- Profile `three` Station 由 high-chat `make station` 部署并通过 health check。
+- 四个独立 Rust gateway / storage scope 与 Vite surface 均启动：
+  `3230/3410` high App、`3231/3411` high Web、`3330/3510` group App、
+  `3331/3511` group Web。
+- canonical App/Web parity、proto `ptid` 字段、protobuf JSON bytes base64、
+  embedded Station error、DKX gate extractor、Station `ptid` indexes、MLS KeyPackage pool
+  与 Go oneof event normalization 均在本闭包修复。
+- DM exact E2E：
+  - App→Web `ALICE-APP-OBSERVER-WEB-1785634439576`；
+  - Web→App `OBSERVER-WEB-ALICE-APP-1785635560441`，重复 decrypt 返回
+    `CounterRegression`；
+  - Web→Web `BOB-WEB-OBSERVER-WEB-1785635590781`；
+  - cross-worktree App→App `ALICE-APP-THIRD-APP-1785635768300`。
+  每条均验证 Station readback ciphertext byte equality 与 receiver plaintext exact equality。
+- 三人 MLS group `c1f730b6-d215-4f7a-b7b1-bb394b3e34c1`：
+  Bob/Third 处理 Welcome；`MLS-3-MEMBER-1785634845299` 在 Bob Web 与 Third App
+  独立 exact decrypt；remove Third 后 epoch=2，Bob exact decrypt，Third read 返回 403，
+  decrypt 返回 `UseAfterEviction`。
+- 四 runtime 全停重启后：
+  - DR deferred `RESTART-DM-PROOF` exact decrypt；
+  - MLS deferred `RESTART-MLS-PROOF` exact decrypt，Alice/Bob MLS status 均 ready。
+- high-chat / group-chat profile plaintext marker scan 零命中；transient MLS temp files零命中；
+  两个 profile 的 storage/identity key files 全部为 `0600`。
+- 验证：
+  - Desktop `cargo check --bin peers-touch-desktop` PASS；
+  - HTTP gateway tests 4 PASS / 1 intentional ignore；
+  - MLS tests 5/5 PASS；crypto focused tests PASS；
+  - strict crypto + Station event normalization tests 10/10 PASS；
+  - conversation Go package tests PASS。
 
 ---
 
