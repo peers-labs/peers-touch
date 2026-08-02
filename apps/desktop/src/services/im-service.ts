@@ -47,8 +47,69 @@ function base64ToBytes(value: string): Uint8Array {
   return Uint8Array.from(atob(value), char => char.charCodeAt(0))
 }
 
-function normalizeConversationEvents(events: readonly unknown[] | undefined): CommittedConversationEvent[] {
-  return (events ?? []).map(event => fromJson(CommittedConversationEventSchema, event as any))
+const GO_EVENT_PAYLOAD_KEYS: Record<string, string> = {
+  MessageCommitted: 'messageCommitted',
+  MessageEdited: 'messageEdited',
+  MessageRetracted: 'messageRetracted',
+  MembershipChanged: 'membershipChanged',
+  ConversationCreated: 'conversationCreated',
+  ConversationDissolved: 'conversationDissolved',
+  SettingsChanged: 'settingsChanged',
+  Reaction: 'reaction',
+  Pin: 'pin',
+}
+
+function protobufTimestampJson(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value
+  const timestamp = value as { seconds?: number | string; nanos?: number }
+  if (timestamp.seconds == null) return value
+  const millis = Number(timestamp.seconds) * 1000 + Number(timestamp.nanos ?? 0) / 1_000_000
+  return new Date(millis).toISOString()
+}
+
+function normalizeGoEventTimestamps(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeGoEventTimestamps)
+  if (!value || typeof value !== 'object') return value
+  const source = value as Record<string, unknown>
+  const normalized: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(source)) {
+    normalized[key] = [
+      'committed_at',
+      'client_ts',
+      'edited_at',
+      'retracted_at',
+      'ts',
+    ].includes(key)
+      ? protobufTimestampJson(item)
+      : normalizeGoEventTimestamps(item)
+  }
+  return normalized
+}
+
+function normalizeGoConversationEvent(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value
+  const source = value as Record<string, unknown>
+  const payload = source.Payload as Record<string, unknown> | undefined
+  if (!payload) return value
+
+  const normalized = normalizeGoEventTimestamps(
+    Object.fromEntries(Object.entries(source).filter(([key]) => key !== 'Payload')),
+  ) as Record<string, unknown>
+  for (const [goKey, payloadValue] of Object.entries(payload)) {
+    const jsonKey = GO_EVENT_PAYLOAD_KEYS[goKey]
+    if (jsonKey) normalized[jsonKey] = normalizeGoEventTimestamps(payloadValue)
+  }
+  return normalized
+}
+
+export function normalizeConversationEvents(events: readonly unknown[] | undefined): CommittedConversationEvent[] {
+  return (events ?? []).map((event) => {
+    try {
+      return fromJson(CommittedConversationEventSchema, event as any)
+    } catch {
+      return fromJson(CommittedConversationEventSchema, normalizeGoConversationEvent(event) as any)
+    }
+  })
 }
 
 const conversationService: ConversationServiceContract = {
