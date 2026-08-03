@@ -40,6 +40,14 @@ const localChatStoreSource = readFileSync(
   new URL('../../src-tauri/src/infrastructure/local_chat_store.rs', import.meta.url),
   'utf8',
 );
+const desktopClientStorageSource = readFileSync(
+  new URL('../storage/desktopClientStorage.ts', import.meta.url),
+  'utf8',
+);
+const identityHandlersSource = readFileSync(
+  new URL('../services/identityHandlers.ts', import.meta.url),
+  'utf8',
+);
 
 describe('strict chat encryption source contract', () => {
   it('does not probe encrypted transport bytes as plaintext payloads', () => {
@@ -91,6 +99,8 @@ describe('strict chat encryption source contract', () => {
     expect(rustGatewaySource).not.toContain('crypto_group_sk_');
     expect(rustGatewaySource).not.toContain('"crypto_group_encrypt"');
     expect(rustGatewaySource).not.toContain('"crypto_group_decrypt"');
+    expect(desktopClientStorageSource).not.toContain('crypto.sender-key-ledger');
+    expect(identityHandlersSource).not.toContain('crypto.sender-key-ledger');
   });
 });
 

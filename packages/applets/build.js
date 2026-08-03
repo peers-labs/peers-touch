@@ -503,6 +503,10 @@ async function main() {
       cwd: rootDir,
       stdio: 'inherit',
     })
+    run('pnpm', ['--filter', '@peers-touch/applet-kernel', 'run', 'build'], {
+      cwd: rootDir,
+      stdio: 'inherit',
+    })
     
     // 初始化输出目录
     await initOutputDirs()
