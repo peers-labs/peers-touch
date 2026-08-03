@@ -18,6 +18,7 @@ import {
 
 import { FriendMessageStatus, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
+import type { CommittedConversationEvent } from '../gen/proto/domain/chat/conversation_pb';
 
 export interface MessagePreview {
   content: string;
@@ -62,6 +63,97 @@ export function normalizeChatBackgroundId(value: unknown): ChatBackgroundId {
 }
 
 export type SocialMessage = FriendChatMessage | GroupMessage;
+
+type SequencedSocialMessage = SocialMessage & { groupSeq?: bigint };
+
+export function projectConversationMessageEvents(
+  kind: 'friend' | 'group',
+  events: readonly CommittedConversationEvent[],
+): SocialMessage[] {
+  const messages = new Map<string, SequencedSocialMessage>();
+
+  for (const event of [...events].sort((a, b) => Number(a.groupSeq - b.groupSeq))) {
+    switch (event.payload.case) {
+      case 'messageCommitted': {
+        const payload = event.payload.value;
+        const common = {
+          ulid: payload.messageId,
+          senderDid: payload.senderPtid,
+          type: payload.contentType as number,
+          content: '',
+          attachments: [],
+          replyToUlid: payload.replyToMessageId,
+          threadRootUlid: payload.threadRootMessageId,
+          sentAt: payload.clientTs ?? event.committedAt,
+          createdAt: event.committedAt,
+          updatedAt: event.committedAt,
+          encryptedPayload: payload.encryptedPayload,
+          recalled: false,
+          editedAt: undefined,
+          groupSeq: event.groupSeq,
+        };
+        const message = kind === 'friend'
+          ? {
+              ...common,
+              $typeName: 'peers_touch.model.chat.v1.FriendChatMessage' as const,
+              sessionUlid: event.conversationId,
+              receiverDid: '',
+              status: FriendMessageStatus.SENT,
+              deliveredAt: undefined,
+              readAt: undefined,
+            }
+          : {
+              ...common,
+              $typeName: 'peers_touch.model.chat.v1.GroupMessage' as const,
+              groupUlid: event.conversationId,
+              mentionedDids: [],
+              mentionAll: false,
+            };
+        messages.set(payload.messageId, message as unknown as SequencedSocialMessage);
+        break;
+      }
+      case 'messageEdited': {
+        const payload = event.payload.value;
+        const current = messages.get(payload.messageId);
+        if (current) {
+          messages.set(payload.messageId, {
+            ...current,
+            content: '',
+            encryptedPayload: payload.encryptedPayload,
+            editedAt: payload.editedAt ?? event.committedAt,
+            updatedAt: payload.editedAt ?? event.committedAt,
+          } as SequencedSocialMessage);
+        }
+        break;
+      }
+      case 'messageRetracted': {
+        const payload = event.payload.value;
+        const current = messages.get(payload.messageId);
+        if (current) {
+          messages.set(payload.messageId, {
+            ...current,
+            content: '',
+            encryptedPayload: new Uint8Array(),
+            recalled: true,
+            updatedAt: payload.retractedAt ?? event.committedAt,
+          } as SequencedSocialMessage);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return [...messages.values()].sort((a, b) => {
+    const seqDelta = Number((a.groupSeq ?? 0n) - (b.groupSeq ?? 0n));
+    return seqDelta || a.ulid.localeCompare(b.ulid);
+  });
+}
+
+export function messageGroupSeq(message: SocialMessage): number {
+  return Number((message as SequencedSocialMessage).groupSeq ?? 0n);
+}
 
 export type DesktopIMConversationProjection = IMConversationProjection & {
   peerDid?: string;

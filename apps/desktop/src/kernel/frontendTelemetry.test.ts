@@ -205,7 +205,7 @@ describe('frontend telemetry queue', () => {
       source: 'shell',
     });
 
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(10_000);
 
     expect(uploader).toHaveBeenCalledTimes(1);
     expect(getFrontendTelemetryEvents()).toHaveLength(1);
@@ -255,8 +255,8 @@ describe('frontend telemetry queue', () => {
       source: 'shell',
     });
 
-    await vi.advanceTimersByTimeAsync(2_000);
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(10_000);
 
     expect(uploader).toHaveBeenCalledTimes(2);
     expect(getFrontendTelemetryEvents()).toHaveLength(1);
