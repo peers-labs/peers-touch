@@ -6,8 +6,8 @@ export function MessageList() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '12px 0' }}>
-      {messages.map((message, index) => (
-        <MessageBubble key={message.id} message={message} index={index} />
+      {messages.map((message) => (
+        <MessageBubble key={message.id} message={message} />
       ))}
     </div>
   );

@@ -74,8 +74,12 @@ type ActorProfileEnvelope struct {
 	// SHA-256 / base32-nopad fingerprint of `signing_key_pem`. Receivers
 	// recompute this and compare; mismatch is a tampered envelope.
 	SigningKeyKid string `protobuf:"bytes,9,opt,name=signing_key_kid,proto3" json:"signing_key_kid,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Active actor-device signing keys authenticated by the Home Station.
+	// The envelope signature covers this list; receivers persist it only after
+	// the normal locator-key pin and envelope verification succeeds.
+	DeviceSigningKeys []*model.VerifiedActorDeviceSigningKey `protobuf:"bytes,10,rep,name=device_signing_keys,json=deviceSigningKeys,proto3" json:"device_signing_keys,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ActorProfileEnvelope) Reset() {
@@ -171,11 +175,18 @@ func (x *ActorProfileEnvelope) GetSigningKeyKid() string {
 	return ""
 }
 
+func (x *ActorProfileEnvelope) GetDeviceSigningKeys() []*model.VerifiedActorDeviceSigningKey {
+	if x != nil {
+		return x.DeviceSigningKeys
+	}
+	return nil
+}
+
 var File_domain_federation_profile_proto protoreflect.FileDescriptor
 
 const file_domain_federation_profile_proto_rawDesc = "" +
 	"\n" +
-	"\x1fdomain/federation/profile.proto\x12\x1fpeers_touch.model.federation.v1\x1a\x18domain/actor/actor.proto\"\xbc\x03\n" +
+	"\x1fdomain/federation/profile.proto\x12\x1fpeers_touch.model.federation.v1\x1a\x18domain/actor/actor.proto\"\xa7\x04\n" +
 	"\x14ActorProfileEnvelope\x12*\n" +
 	"\x10federated_handle\x18\x01 \x01(\tR\x10federated_handle\x122\n" +
 	"\x14home_station_peer_id\x18\x02 \x01(\tR\x14home_station_peer_id\x120\n" +
@@ -185,7 +196,9 @@ const file_domain_federation_profile_proto_rawDesc = "" +
 	"\x12expires_at_unix_ms\x18\x06 \x01(\x03R\x12expires_at_unix_ms\x12\x1c\n" +
 	"\tsignature\x18\a \x01(\fR\tsignature\x12(\n" +
 	"\x0fsigning_key_pem\x18\b \x01(\tR\x0fsigning_key_pem\x12(\n" +
-	"\x0fsigning_key_kid\x18\t \x01(\tR\x0fsigning_key_kidBPZNgithub.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb;pbb\x06proto3"
+	"\x0fsigning_key_kid\x18\t \x01(\tR\x0fsigning_key_kid\x12i\n" +
+	"\x13device_signing_keys\x18\n" +
+	" \x03(\v29.peers_touch.model.actor.v1.VerifiedActorDeviceSigningKeyR\x11deviceSigningKeysBPZNgithub.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb;pbb\x06proto3"
 
 var (
 	file_domain_federation_profile_proto_rawDescOnce sync.Once
@@ -201,16 +214,18 @@ func file_domain_federation_profile_proto_rawDescGZIP() []byte {
 
 var file_domain_federation_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_domain_federation_profile_proto_goTypes = []any{
-	(*ActorProfileEnvelope)(nil), // 0: peers_touch.model.federation.v1.ActorProfileEnvelope
-	(*model.ActorProfile)(nil),   // 1: peers_touch.model.actor.v1.ActorProfile
+	(*ActorProfileEnvelope)(nil),                // 0: peers_touch.model.federation.v1.ActorProfileEnvelope
+	(*model.ActorProfile)(nil),                  // 1: peers_touch.model.actor.v1.ActorProfile
+	(*model.VerifiedActorDeviceSigningKey)(nil), // 2: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
 }
 var file_domain_federation_profile_proto_depIdxs = []int32{
 	1, // 0: peers_touch.model.federation.v1.ActorProfileEnvelope.profile:type_name -> peers_touch.model.actor.v1.ActorProfile
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 1: peers_touch.model.federation.v1.ActorProfileEnvelope.device_signing_keys:type_name -> peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_domain_federation_profile_proto_init() }

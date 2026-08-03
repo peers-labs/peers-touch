@@ -88,9 +88,9 @@ describe('strict chat encryption source contract', () => {
     expect(desktopApiSource).not.toContain('cryptoGroupEncrypt');
     expect(desktopApiSource).not.toContain('cryptoGroupDecrypt');
     expect(rustMainSource).not.toContain('crypto::crypto_group_');
-    expect(rustGatewaySource).toContain(
-      'command is retired; group chat requires OpenMLS',
-    );
+    expect(rustGatewaySource).not.toContain('crypto_group_sk_');
+    expect(rustGatewaySource).not.toContain('"crypto_group_encrypt"');
+    expect(rustGatewaySource).not.toContain('"crypto_group_decrypt"');
   });
 });
 

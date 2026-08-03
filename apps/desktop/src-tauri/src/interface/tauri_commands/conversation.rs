@@ -1,10 +1,20 @@
 use crate::application::session_resolver;
+use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
+use crate::model::chat::{
+    conversation_command, ConversationCommand, ConversationCommandKind,
+    ConversationCommandProposal, ConversationCommandProposalSigningInput,
+    ConversationCommandSubmissionState, GetConversationCommandProposalResultRequest,
+    GetConversationCommandProposalResultResponse, SubmitConversationCommandProposalRequest,
+    SubmitConversationCommandProposalResponse,
+};
 use crate::state::AppState;
+use prost::Message;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tauri::{State, Window};
 
@@ -19,18 +29,29 @@ pub struct ConversationCreateDirectInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationCreateGroupInput {
     pub name: String,
-    pub members: Vec<ConversationMemberInput>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationMemberInput {
-    pub ptid: String,
-    pub station_id: Option<String>,
+    pub genesis_transition: Value,
+    pub federation_id: Option<String>,
+    pub conversation_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationSubmitCommandInput {
     pub command: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationSubmitCommandProposalInput {
+    pub federation_id: String,
+    pub authority_station_peer_id: String,
+    pub authority_epoch: i64,
+    pub home_station_peer_id: String,
+    pub command_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationGetCommandProposalResultInput {
+    pub conversation_id: String,
+    pub command_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,11 +120,7 @@ fn get_token(
 }
 
 fn station_err(e: station_client::StationClientError, msg: &str) -> AppResult<Value> {
-    AppResult::fail(
-        ErrorCode::InternalError,
-        &format!("{}: {}", msg, e),
-        None,
-    )
+    e.into_app_result(msg)
 }
 
 // --- Conversation commands ---
@@ -122,7 +139,13 @@ pub fn conversation_create_direct(
         "peer_ptid": input.peer_ptid,
         "peer_station_peer_id": input.peer_station_peer_id.unwrap_or_default(),
     });
-    match station_client::request_json_auth(Method::POST, "/conversation/direct", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/conversation/direct",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "create direct failed"),
     }
@@ -138,18 +161,19 @@ pub fn conversation_create_group(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let members: Vec<Value> = input
-        .members
-        .iter()
-        .map(|m| {
-            json!({
-                "ptid": m.ptid,
-                "station_id": m.station_id.clone().unwrap_or_default(),
-            })
-        })
-        .collect();
-    let body = json!({ "name": input.name, "members": members });
-    match station_client::request_json_auth(Method::POST, "/conversation/group", &token, None, Some(&body)) {
+    let body = json!({
+        "name": input.name,
+        "genesis_transition": input.genesis_transition,
+        "federation_id": input.federation_id.unwrap_or_default(),
+        "conversation_id": input.conversation_id,
+    });
+    match station_client::request_json_auth(
+        Method::POST,
+        "/conversation/group",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "create group failed"),
     }
@@ -166,10 +190,258 @@ pub fn conversation_submit_command(
         Err(e) => return e,
     };
     let body = json!({ "command": input.command });
-    match station_client::request_json_auth(Method::POST, "/conversation/command", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/conversation/command",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "submit command failed"),
     }
+}
+
+#[tauri::command]
+pub fn conversation_submit_command_proposal(
+    input: ConversationSubmitCommandProposalInput,
+    identity: State<'_, Arc<ActorDeviceIdentity>>,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    conversation_submit_command_proposal_with_token(input, identity.inner(), &token)
+}
+
+pub(crate) fn conversation_submit_command_proposal_with_token(
+    input: ConversationSubmitCommandProposalInput,
+    identity: &ActorDeviceIdentity,
+    token: &str,
+) -> AppResult<Value> {
+    let command = match ConversationCommand::decode(input.command_bytes.as_slice()) {
+        Ok(command) => command,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("decode conversation command: {error}"),
+                None,
+            )
+        }
+    };
+    let command_kind = match command_kind(&command) {
+        Some(kind) => kind,
+        None => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "unsupported durable conversation command",
+                None,
+            )
+        }
+    };
+    if input.federation_id.is_empty()
+        || input.authority_station_peer_id.is_empty()
+        || input.home_station_peer_id.is_empty()
+        || input.authority_epoch <= 0
+        || command.command_id.is_empty()
+        || command.conversation_id.is_empty()
+        || command.sender_ptid.is_empty()
+        || command.sender_device_id.is_empty()
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "remote conversation command routing is incomplete",
+            None,
+        );
+    }
+    let (signing_key_id, _) = match identity.signing_identity() {
+        Ok(identity) => identity,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, &error, None),
+    };
+    let created_at_unix_ms = match unix_time_millis() {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let expires_at_unix_ms = created_at_unix_ms + 5 * 60 * 1000;
+    let canonical_command_bytes = command.encode_to_vec();
+    let command_sha256 = Sha256::digest(&canonical_command_bytes).to_vec();
+    let signing_input = ConversationCommandProposalSigningInput {
+        version: 1,
+        federation_id: input.federation_id.clone(),
+        authority_station_peer_id: input.authority_station_peer_id.clone(),
+        authority_epoch: input.authority_epoch,
+        home_station_peer_id: input.home_station_peer_id.clone(),
+        conversation_id: command.conversation_id.clone(),
+        command_id: command.command_id.clone(),
+        command_kind: command_kind as i32,
+        actor_ptid: command.sender_ptid.clone(),
+        actor_device_id: command.sender_device_id.clone(),
+        actor_signing_key_id: signing_key_id.clone(),
+        command_sha256: command_sha256.clone(),
+        created_at_unix_ms,
+        expires_at_unix_ms,
+    };
+    let actor_signature = match identity.sign(&signing_input.encode_to_vec()) {
+        Ok(signature) => signature,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, &error, None),
+    };
+    let proposal = ConversationCommandProposal {
+        version: 1,
+        federation_id: input.federation_id,
+        authority_station_peer_id: input.authority_station_peer_id,
+        authority_epoch: input.authority_epoch,
+        home_station_peer_id: input.home_station_peer_id,
+        actor_ptid: command.sender_ptid.clone(),
+        actor_device_id: command.sender_device_id.clone(),
+        actor_signing_key_id: signing_key_id,
+        command: Some(command),
+        command_sha256,
+        actor_signature,
+        created_at_unix_ms,
+        expires_at_unix_ms,
+    };
+    let response = match station_client::request_proto::<
+        SubmitConversationCommandProposalRequest,
+        SubmitConversationCommandProposalResponse,
+    >(
+        Method::POST,
+        "/conversation/command-proposal",
+        token,
+        None,
+        Some(&SubmitConversationCommandProposalRequest {
+            proposal: Some(proposal),
+        }),
+    ) {
+        Ok(response) => response,
+        Err(error) => return error.into_app_result("submit conversation command proposal"),
+    };
+    command_proposal_response_json(response)
+}
+
+#[tauri::command]
+pub fn conversation_get_command_proposal_result(
+    input: ConversationGetCommandProposalResultInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = match get_token(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    conversation_get_command_proposal_result_with_token(input, &token)
+}
+
+pub(crate) fn conversation_get_command_proposal_result_with_token(
+    input: ConversationGetCommandProposalResultInput,
+    token: &str,
+) -> AppResult<Value> {
+    if input.conversation_id.is_empty() || input.command_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id and command_id are required",
+            None,
+        );
+    }
+    let query = vec![
+        ("conversation_id", input.conversation_id),
+        ("command_id", input.command_id),
+    ];
+    let response = match station_client::request_proto::<
+        GetConversationCommandProposalResultRequest,
+        GetConversationCommandProposalResultResponse,
+    >(
+        Method::GET,
+        "/conversation/command-proposal/result",
+        token,
+        Some(&query),
+        None::<&GetConversationCommandProposalResultRequest>,
+    ) {
+        Ok(response) => response,
+        Err(error) => return error.into_app_result("get conversation command proposal result"),
+    };
+    command_proposal_result_json(
+        response.conversation_id,
+        response.command_id,
+        response.state,
+        response.result,
+        response.next_retry_at_unix_ms,
+    )
+}
+
+fn command_proposal_response_json(
+    response: SubmitConversationCommandProposalResponse,
+) -> AppResult<Value> {
+    command_proposal_result_json(
+        response.conversation_id,
+        response.command_id,
+        response.state,
+        response.result,
+        0,
+    )
+}
+
+fn command_proposal_result_json(
+    conversation_id: String,
+    command_id: String,
+    state: i32,
+    result: Option<crate::model::chat::ConversationCommandProposalResult>,
+    next_retry_at_unix_ms: i64,
+) -> AppResult<Value> {
+    let event_bytes = result
+        .as_ref()
+        .and_then(|value| value.committed_event.as_ref())
+        .map(Message::encode_to_vec);
+    let reject_code = result.as_ref().map(|value| value.reject_code).unwrap_or(0);
+    let retryable = result
+        .as_ref()
+        .map(|value| value.retryable)
+        .unwrap_or(false);
+    AppResult::success(json!({
+        "conversation_id": conversation_id,
+        "command_id": command_id,
+        "state": state,
+        "accepted": state == ConversationCommandSubmissionState::Accepted as i32,
+        "terminal_rejected": state == ConversationCommandSubmissionState::TerminalRejected as i32,
+        "retryable": retryable,
+        "reject_code": reject_code,
+        "event_bytes": event_bytes,
+        "next_retry_at_unix_ms": next_retry_at_unix_ms,
+    }))
+}
+
+fn command_kind(command: &ConversationCommand) -> Option<ConversationCommandKind> {
+    match command.payload.as_ref()? {
+        conversation_command::Payload::SendMessage(_) => Some(ConversationCommandKind::SendMessage),
+        conversation_command::Payload::EditMessage(_) => Some(ConversationCommandKind::EditMessage),
+        conversation_command::Payload::RetractMessage(_) => {
+            Some(ConversationCommandKind::RetractMessage)
+        }
+        conversation_command::Payload::Dissolve(_) => Some(ConversationCommandKind::Dissolve),
+        conversation_command::Payload::UpdateSettings(_) => {
+            Some(ConversationCommandKind::UpdateSettings)
+        }
+        conversation_command::Payload::React(_) => Some(ConversationCommandKind::React),
+        conversation_command::Payload::PinMessage(_) => Some(ConversationCommandKind::PinMessage),
+        conversation_command::Payload::MembershipTransition(_) => {
+            Some(ConversationCommandKind::MembershipTransition)
+        }
+        conversation_command::Payload::Typing(_) => None,
+    }
+}
+
+fn unix_time_millis() -> Result<i64, AppResult<Value>> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .map_err(|error| {
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!("system clock before Unix epoch: {error}"),
+                None,
+            )
+        })
 }
 
 #[tauri::command]
@@ -192,7 +464,13 @@ pub fn conversation_react(
             }
         }
     });
-    match station_client::request_json_auth(Method::POST, "/conversation/command", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/conversation/command",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "react failed"),
     }
@@ -222,17 +500,20 @@ pub fn conversation_submit_receipt(
         "device_id": input.device_id,
         "receipt_type": input.receipt_type,
     });
-    match station_client::request_json_auth(Method::POST, "/conversation/receipt", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/conversation/receipt",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "submit receipt failed"),
     }
 }
 
 #[tauri::command]
-pub fn conversation_list(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
+pub fn conversation_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Value> {
     let token = match get_token(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
@@ -265,7 +546,13 @@ pub fn conversation_list_events(
         ("after_seq", input.after_seq.unwrap_or(0).to_string()),
         ("limit", input.limit.unwrap_or(50).to_string()),
     ];
-    match station_client::request_json_auth(Method::GET, "/conversation/events", &token, Some(&query), None) {
+    match station_client::request_json_auth(
+        Method::GET,
+        "/conversation/events",
+        &token,
+        Some(&query),
+        None,
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "list events failed"),
     }
@@ -282,7 +569,13 @@ pub fn conversation_get_members(
         Err(e) => return e,
     };
     let query = vec![("conversation_id", input.conversation_id)];
-    match station_client::request_json_auth(Method::GET, "/conversation/members", &token, Some(&query), None) {
+    match station_client::request_json_auth(
+        Method::GET,
+        "/conversation/members",
+        &token,
+        Some(&query),
+        None,
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "get members failed"),
     }
@@ -301,7 +594,13 @@ pub fn envelope_submit(
         Err(e) => return e,
     };
     let body = json!({ "envelope": input.envelope });
-    match station_client::request_json_auth(Method::POST, "/envelope/submit", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/envelope/submit",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "envelope submit failed"),
     }
@@ -321,7 +620,13 @@ pub fn envelope_ack(
         "device_id": input.device_id,
         "inbox_item_id": input.inbox_item_id,
     });
-    match station_client::request_json_auth(Method::POST, "/envelope/ack", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/envelope/ack",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "envelope ack failed"),
     }
@@ -341,7 +646,13 @@ pub fn envelope_resume(
         ("device_id", input.device_id),
         ("after_cursor", input.after_cursor.unwrap_or_default()),
     ];
-    match station_client::request_json_auth(Method::GET, "/envelope/resume", &token, Some(&query), None) {
+    match station_client::request_json_auth(
+        Method::GET,
+        "/envelope/resume",
+        &token,
+        Some(&query),
+        None,
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "envelope resume failed"),
     }
@@ -363,7 +674,13 @@ pub fn keypackage_upload(
         "device_id": input.device_id,
         "data": input.data,
     });
-    match station_client::request_json_auth(Method::POST, "/keypackage/upload", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/keypackage/upload",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "keypackage upload failed"),
     }
@@ -383,17 +700,20 @@ pub fn keypackage_fetch(
     if let Some(ref station_id) = input.home_station_peer_id {
         body["home_station_peer_id"] = json!(station_id);
     }
-    match station_client::request_json_auth(Method::POST, "/keypackage/fetch", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/keypackage/fetch",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "keypackage fetch failed"),
     }
 }
 
 #[tauri::command]
-pub fn keypackage_count(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
+pub fn keypackage_count(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Value> {
     let token = match get_token(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
@@ -415,6 +735,7 @@ pub struct DeviceRegisterInput {
     pub device_id: String,
     pub label: Option<String>,
     pub public_key: Option<String>,
+    pub signing_key_id: Option<String>,
 }
 
 #[tauri::command]
@@ -431,18 +752,23 @@ pub fn device_register(
         "device_id": input.device_id,
         "label": input.label.unwrap_or_default(),
         "public_key": input.public_key.unwrap_or_default(),
+        "signing_key_id": input.signing_key_id.unwrap_or_default(),
+        "profile_version": 1,
     });
-    match station_client::request_json_auth(Method::POST, "/device/register", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/device/register",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "device register failed"),
     }
 }
 
 #[tauri::command]
-pub fn device_list(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
+pub fn device_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Value> {
     let token = match get_token(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
@@ -469,7 +795,13 @@ pub fn device_revoke(
         Err(e) => return e,
     };
     let body = json!({ "device_id": input.device_id });
-    match station_client::request_json_auth(Method::POST, "/device/revoke", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/device/revoke",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "device revoke failed"),
     }
@@ -535,7 +867,13 @@ pub fn conversation_list_messages(
         ("after_seq", input.after_seq.unwrap_or(0).to_string()),
         ("limit", input.limit.unwrap_or(50).to_string()),
     ];
-    match station_client::request_json_auth(Method::GET, "/conversation/messages", &token, Some(&query), None) {
+    match station_client::request_json_auth(
+        Method::GET,
+        "/conversation/messages",
+        &token,
+        Some(&query),
+        None,
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "list messages failed"),
     }
@@ -565,7 +903,13 @@ pub fn conversation_list_thread_messages(
         ("after_seq", input.after_seq.unwrap_or(0).to_string()),
         ("limit", input.limit.unwrap_or(50).to_string()),
     ];
-    match station_client::request_json_auth(Method::GET, "/conversation/thread/messages", &token, Some(&query), None) {
+    match station_client::request_json_auth(
+        Method::GET,
+        "/conversation/thread/messages",
+        &token,
+        Some(&query),
+        None,
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "list thread messages failed"),
     }
@@ -591,7 +935,13 @@ pub fn conversation_thread_counts(
         "conversation_id": input.conversation_id,
         "root_ids": input.root_ids,
     });
-    match station_client::request_json_auth(Method::POST, "/conversation/thread/counts", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/conversation/thread/counts",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "thread counts failed"),
     }
@@ -617,7 +967,13 @@ pub fn conversation_set_read_cursor(
         "conversation_id": input.conversation_id,
         "last_read_seq": input.last_read_seq,
     });
-    match station_client::request_json_auth(Method::POST, "/conversation/read-cursor", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/conversation/read-cursor",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "set read cursor failed"),
     }
@@ -639,7 +995,13 @@ pub fn conversation_get_unread(
         Err(e) => return e,
     };
     let query = vec![("conversation_id", input.conversation_id)];
-    match station_client::request_json_auth(Method::GET, "/conversation/unread", &token, Some(&query), None) {
+    match station_client::request_json_auth(
+        Method::GET,
+        "/conversation/unread",
+        &token,
+        Some(&query),
+        None,
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "get unread failed"),
     }
@@ -661,7 +1023,13 @@ pub fn conversation_get_member_settings(
         Err(e) => return e,
     };
     let query = vec![("conversation_id", input.conversation_id)];
-    match station_client::request_json_auth(Method::GET, "/conversation/member/settings", &token, Some(&query), None) {
+    match station_client::request_json_auth(
+        Method::GET,
+        "/conversation/member/settings",
+        &token,
+        Some(&query),
+        None,
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "get member settings failed"),
     }
@@ -689,7 +1057,13 @@ pub fn conversation_update_member_settings(
         "nickname": input.nickname,
         "muted": input.muted,
     });
-    match station_client::request_json_auth(Method::PUT, "/conversation/member/settings", &token, None, Some(&body)) {
+    match station_client::request_json_auth(
+        Method::PUT,
+        "/conversation/member/settings",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "update member settings failed"),
     }
@@ -717,7 +1091,13 @@ pub fn conversation_search_messages(
         ("q", input.query),
         ("limit", input.limit.unwrap_or(20).to_string()),
     ];
-    match station_client::request_json_auth(Method::GET, "/conversation/messages/search", &token, Some(&query), None) {
+    match station_client::request_json_auth(
+        Method::GET,
+        "/conversation/messages/search",
+        &token,
+        Some(&query),
+        None,
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "search messages failed"),
     }
@@ -746,7 +1126,13 @@ pub fn conversation_sync_from_station(
         ("after_seq", "0".to_string()),
         ("limit", limit.to_string()),
     ];
-    match station_client::request_json_auth(Method::GET, "/conversation/messages", &token, Some(&query), None) {
+    match station_client::request_json_auth(
+        Method::GET,
+        "/conversation/messages",
+        &token,
+        Some(&query),
+        None,
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "sync from station failed"),
     }

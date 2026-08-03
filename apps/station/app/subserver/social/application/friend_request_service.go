@@ -23,7 +23,7 @@ type NotificationProducer interface {
 // ConversationCreator abstracts the conversation subsystem so that
 // accepting a friend request can auto-create the DM conversation.
 type ConversationCreator interface {
-	CreateDirect(ctx context.Context, actorA, actorB, stationA, stationB string) error
+	CreateDirect(ctx context.Context, actorAID, actorBID uint64) error
 }
 
 var (
@@ -138,7 +138,7 @@ func (s *FriendRequestService) AcceptFriendRequest(ctx context.Context, actorID 
 
 	// Auto-create DM conversation so both parties can message immediately.
 	if s.conv != nil {
-		if err := s.conv.CreateDirect(ctx, existing.SenderDID, actorDID, "", ""); err != nil {
+		if err := s.conv.CreateDirect(ctx, senderID, actorID); err != nil {
 			logger.Error(ctx, "friend accept: failed to create DM conversation", "error", err)
 		}
 	}
@@ -212,6 +212,7 @@ func collectActorIDs(requests []domain.FriendRequest) []uint64 {
 type actorProfile struct {
 	Name   string
 	Avatar string
+	Ptid   string
 }
 
 func resolveProfiles(ctx context.Context, ids []uint64) map[uint64]actorProfile {
@@ -228,7 +229,7 @@ func resolveProfiles(ctx context.Context, ids []uint64) map[uint64]actorProfile 
 		if name == "" {
 			name = a.PreferredUsername
 		}
-		out[id] = actorProfile{Name: name, Avatar: a.Icon}
+		out[id] = actorProfile{Name: name, Avatar: a.Icon, Ptid: a.PTID}
 	}
 	return out
 }
@@ -236,12 +237,14 @@ func resolveProfiles(ctx context.Context, ids []uint64) map[uint64]actorProfile 
 func enrichFriendRequest(fr *chat.FriendRequest, profiles map[uint64]actorProfile) {
 	if senderID, err := strconv.ParseUint(fr.SenderId, 10, 64); err == nil {
 		if p, ok := profiles[senderID]; ok {
+			fr.SenderId = p.Ptid
 			fr.SenderDisplayName = p.Name
 			fr.SenderAvatar = p.Avatar
 		}
 	}
 	if receiverID, err := strconv.ParseUint(fr.ReceiverId, 10, 64); err == nil {
 		if p, ok := profiles[receiverID]; ok {
+			fr.ReceiverId = p.Ptid
 			fr.ReceiverDisplayName = p.Name
 			fr.ReceiverAvatar = p.Avatar
 		}

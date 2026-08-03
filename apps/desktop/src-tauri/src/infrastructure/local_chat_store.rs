@@ -3,13 +3,12 @@ use super::storage::key_provider::PlatformKeyProvider;
 use super::storage::open_database;
 use super::storage::rotate_database_key;
 use crate::domain::crypto::double_ratchet::{DrSessionState, DrSkippedMessageKey};
-use crate::domain::crypto::sender_keys::{SenderChainState, SkippedMessageKey};
 use crate::domain::crypto::CryptoSessionState;
 use crate::domain::storage::database::DatabaseOpenSpec;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,6 +194,82 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             state_blob BLOB NOT NULL,
             updated_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS crypto_mls_pending_transition (
+            conversation_id TEXT NOT NULL PRIMARY KEY,
+            transition_id TEXT NOT NULL,
+            state_blob BLOB NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS crypto_mls_identity (
+            id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+            ptid TEXT NOT NULL,
+            state_blob BLOB NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS crypto_mls_join_provider_pool (
+            id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+            state_blob BLOB NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS crypto_mls_recipient_head (
+            conversation_id TEXT NOT NULL PRIMARY KEY,
+            group_seq INTEGER NOT NULL,
+            event_hash BLOB NOT NULL,
+            membership_epoch INTEGER NOT NULL,
+            mls_epoch INTEGER NOT NULL,
+            transition_id TEXT NOT NULL DEFAULT '',
+            commit_sha256 BLOB NOT NULL DEFAULT X'',
+            status TEXT NOT NULL,
+            last_error TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS crypto_mls_recipient_event_buffer (
+            conversation_id TEXT NOT NULL,
+            group_seq INTEGER NOT NULL,
+            event_hash BLOB NOT NULL,
+            event_blob BLOB NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(conversation_id, group_seq)
+        );
+        CREATE TABLE IF NOT EXISTS crypto_mls_recipient_delivery_buffer (
+            conversation_id TEXT NOT NULL,
+            transition_id TEXT NOT NULL,
+            group_seq INTEGER NOT NULL,
+            kind INTEGER NOT NULL,
+            payload_sha256 BLOB NOT NULL,
+            delivery_blob BLOB NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(conversation_id, transition_id),
+            UNIQUE(conversation_id, group_seq)
+        );
+        CREATE TABLE IF NOT EXISTS crypto_mls_recipient_applied (
+            conversation_id TEXT NOT NULL,
+            transition_id TEXT NOT NULL,
+            group_seq INTEGER NOT NULL,
+            event_hash BLOB NOT NULL,
+            commit_sha256 BLOB NOT NULL,
+            payload_sha256 BLOB NOT NULL,
+            kind INTEGER NOT NULL,
+            applied_at INTEGER NOT NULL,
+            PRIMARY KEY(conversation_id, transition_id),
+            UNIQUE(conversation_id, group_seq)
+        );
+        CREATE TABLE IF NOT EXISTS crypto_mls_recipient_applied_event (
+            conversation_id TEXT NOT NULL,
+            group_seq INTEGER NOT NULL,
+            event_hash BLOB NOT NULL,
+            applied_at INTEGER NOT NULL,
+            PRIMARY KEY(conversation_id, group_seq)
+        );
+        CREATE TABLE IF NOT EXISTS crypto_mls_local_accepted_transition (
+            conversation_id TEXT NOT NULL,
+            transition_id TEXT NOT NULL,
+            from_mls_epoch INTEGER NOT NULL,
+            to_mls_epoch INTEGER NOT NULL,
+            commit_sha256 BLOB NOT NULL,
+            accepted_at INTEGER NOT NULL,
+            PRIMARY KEY(conversation_id, transition_id)
+        );
         CREATE TABLE IF NOT EXISTS crypto_signed_prekey (
             id INTEGER NOT NULL PRIMARY KEY,
             private_key BLOB NOT NULL,
@@ -205,65 +280,8 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             private_key BLOB NOT NULL,
             consumed INTEGER NOT NULL DEFAULT 0
         );
-        -- The crypto_group_keys table is intentionally NOT created. The
-        -- previous design (one shared symmetric key per group, generated
-        -- per-device with no distribution) was removed alongside the
-        -- crypto_group_encrypt/decrypt/rotate Tauri commands -- see
-        -- peers-touch/docs/architecture/encryption/group-sender-keys.md
-        -- for the replacement design. Existing tables on already-migrated
-        -- devices are left in place for a future migration to drop them
-        -- explicitly; they are inert because no code path reads or writes
-        -- them anymore.
-        --
-        -- Sender Keys persistence (G3 of the rollout). Two tables:
-        --   * group_sender_keys:        one row per (group, sender,
-        --                               sender_key_id) chain. Holds the
-        --                               current chain key + counter, the
-        --                               sender's signing seed (NULL on
-        --                               receiver-side rows), and the
-        --                               verifying key.
-        --   * group_skipped_message_keys: derived; one row per
-        --                               counter we leapfrogged on the
-        --                               receive side. Consumed exactly
-        --                               once and then deleted.
-        --
-        -- Atomicity rule: callers MUST persist a chain advance and the
-        -- corresponding skipped-key inserts in the same SQLite
-        -- transaction. Splitting them risks losing skipped rows after
-        -- a crash, which would make the corresponding intermediate
-        -- messages permanently undecryptable. apply_group_decrypt_outcome
-        -- below is the only correct write path for receive flow.
-        CREATE TABLE IF NOT EXISTS group_sender_keys (
-            group_ulid     TEXT    NOT NULL,
-            sender_did     TEXT    NOT NULL,
-            sender_key_id  INTEGER NOT NULL,
-            chain_key      BLOB    NOT NULL,
-            counter        INTEGER NOT NULL,
-            -- NULL for chains we received over an SKDM. NOT NULL for
-            -- chains we mint locally (we are the sender for this row).
-            -- Receivers MUST refuse to encrypt against rows whose seed
-            -- is NULL -- enforced in the crypto layer, not in SQL.
-            signing_seed   BLOB,
-            verifying_key  BLOB    NOT NULL,
-            updated_at     INTEGER NOT NULL,
-            PRIMARY KEY (group_ulid, sender_did, sender_key_id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_group_sender_keys_local
-            ON group_sender_keys(group_ulid, sender_did, sender_key_id DESC)
-            WHERE signing_seed IS NOT NULL;
-        CREATE TABLE IF NOT EXISTS group_skipped_message_keys (
-            group_ulid     TEXT    NOT NULL,
-            sender_did     TEXT    NOT NULL,
-            sender_key_id  INTEGER NOT NULL,
-            counter        INTEGER NOT NULL,
-            key            BLOB    NOT NULL,
-            nonce          BLOB    NOT NULL,
-            created_at     INTEGER NOT NULL,
-            PRIMARY KEY (group_ulid, sender_did, sender_key_id, counter)
-        );
-        -- Group messages persisted locally with optional Sender Keys ciphertext.
-        -- Pre-E2EE history stored plaintext in `content` only; post-G0 rows use
-        -- `encrypted_payload` and pin `content` to '' (see group_chat send path).
+        -- Group message payloads are opaque ciphertext. Group encryption state
+        -- is owned by the OpenMLS persistence records above.
         CREATE TABLE IF NOT EXISTS group_messages (
             ulid               TEXT    NOT NULL PRIMARY KEY,
             group_ulid         TEXT    NOT NULL DEFAULT '',
@@ -889,6 +907,775 @@ pub fn crypto_load_mls_state(
     .map_err(|e| e.to_string())
 }
 
+pub fn crypto_save_actor_device_identity(
+    user_scope: &str,
+    ptid: &str,
+    state_blob: &[u8],
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.execute(
+        "INSERT INTO crypto_mls_identity(id, ptid, state_blob, updated_at)
+         VALUES (1, ?1, ?2, ?3)
+         ON CONFLICT(id) DO UPDATE SET
+            ptid=excluded.ptid,
+            state_blob=excluded.state_blob,
+            updated_at=excluded.updated_at",
+        params![ptid, state_blob, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn crypto_load_actor_device_identity(
+    user_scope: &str,
+) -> Result<Option<(String, Vec<u8>)>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT ptid, state_blob FROM crypto_mls_identity WHERE id = 1",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+pub fn crypto_save_mls_join_provider_pool(
+    user_scope: &str,
+    state_blob: &[u8],
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.execute(
+        "INSERT INTO crypto_mls_join_provider_pool(id, state_blob, updated_at)
+         VALUES (1, ?1, ?2)
+         ON CONFLICT(id) DO UPDATE SET
+            state_blob=excluded.state_blob,
+            updated_at=excluded.updated_at",
+        params![state_blob, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn crypto_load_mls_join_provider_pool(user_scope: &str) -> Result<Option<Vec<u8>>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT state_blob FROM crypto_mls_join_provider_pool WHERE id = 1",
+        [],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CryptoMlsRecipientHead {
+    pub conversation_id: String,
+    pub group_seq: i64,
+    pub event_hash: Vec<u8>,
+    pub membership_epoch: i64,
+    pub mls_epoch: i64,
+    pub transition_id: String,
+    pub commit_sha256: Vec<u8>,
+    pub status: String,
+    pub last_error: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CryptoMlsBufferedEvent {
+    pub group_seq: i64,
+    pub event_hash: Vec<u8>,
+    pub event_blob: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CryptoMlsBufferedDelivery {
+    pub transition_id: String,
+    pub group_seq: i64,
+    pub kind: i32,
+    pub payload_sha256: Vec<u8>,
+    pub delivery_blob: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CryptoMlsAppliedTransition {
+    pub group_seq: i64,
+    pub event_hash: Vec<u8>,
+    pub commit_sha256: Vec<u8>,
+    pub payload_sha256: Vec<u8>,
+    pub kind: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CryptoMlsLocalAcceptedTransition {
+    pub from_mls_epoch: i64,
+    pub to_mls_epoch: i64,
+    pub commit_sha256: Vec<u8>,
+}
+
+pub fn crypto_load_mls_recipient_head(
+    user_scope: &str,
+    conversation_id: &str,
+) -> Result<Option<CryptoMlsRecipientHead>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT conversation_id, group_seq, event_hash, membership_epoch, mls_epoch,
+                transition_id, commit_sha256, status, last_error
+         FROM crypto_mls_recipient_head
+         WHERE conversation_id = ?1",
+        params![conversation_id],
+        |row| {
+            Ok(CryptoMlsRecipientHead {
+                conversation_id: row.get(0)?,
+                group_seq: row.get(1)?,
+                event_hash: row.get(2)?,
+                membership_epoch: row.get(3)?,
+                mls_epoch: row.get(4)?,
+                transition_id: row.get(5)?,
+                commit_sha256: row.get(6)?,
+                status: row.get(7)?,
+                last_error: row.get(8)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+pub fn crypto_enqueue_mls_recipient_event(
+    user_scope: &str,
+    conversation_id: &str,
+    group_seq: i64,
+    event_hash: &[u8],
+    event_blob: &[u8],
+    limit: usize,
+) -> Result<bool, String> {
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let existing = tx
+        .query_row(
+            "SELECT event_hash FROM crypto_mls_recipient_event_buffer
+             WHERE conversation_id = ?1 AND group_seq = ?2",
+            params![conversation_id, group_seq],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if let Some(existing_hash) = existing {
+        if existing_hash == event_hash {
+            return Ok(false);
+        }
+        return Err("recipient event buffer has a same-sequence hash conflict".to_string());
+    }
+    let count: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM crypto_mls_recipient_event_buffer
+             WHERE conversation_id = ?1",
+            params![conversation_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if count >= limit as i64 {
+        return Err("recipient event reorder buffer overflow".to_string());
+    }
+    tx.execute(
+        "INSERT INTO crypto_mls_recipient_event_buffer(
+            conversation_id, group_seq, event_hash, event_blob, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            conversation_id,
+            group_seq,
+            event_hash,
+            event_blob,
+            chrono_now()
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+pub fn crypto_enqueue_mls_recipient_delivery(
+    user_scope: &str,
+    delivery: &CryptoMlsBufferedDelivery,
+    conversation_id: &str,
+    limit: usize,
+) -> Result<bool, String> {
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let existing = tx
+        .query_row(
+            "SELECT group_seq, kind, payload_sha256
+             FROM crypto_mls_recipient_delivery_buffer
+             WHERE conversation_id = ?1 AND transition_id = ?2",
+            params![conversation_id, delivery.transition_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i32>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if let Some((group_seq, kind, payload_sha256)) = existing {
+        if group_seq == delivery.group_seq
+            && kind == delivery.kind
+            && payload_sha256 == delivery.payload_sha256
+        {
+            return Ok(false);
+        }
+        return Err("recipient delivery buffer has a transition conflict".to_string());
+    }
+    let sequence_owner = tx
+        .query_row(
+            "SELECT transition_id FROM crypto_mls_recipient_delivery_buffer
+             WHERE conversation_id = ?1 AND group_seq = ?2",
+            params![conversation_id, delivery.group_seq],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if sequence_owner.is_some() {
+        return Err("recipient delivery buffer has a same-sequence conflict".to_string());
+    }
+    let count: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM crypto_mls_recipient_delivery_buffer
+             WHERE conversation_id = ?1",
+            params![conversation_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if count >= limit as i64 {
+        return Err("recipient delivery reorder buffer overflow".to_string());
+    }
+    tx.execute(
+        "INSERT INTO crypto_mls_recipient_delivery_buffer(
+            conversation_id, transition_id, group_seq, kind,
+            payload_sha256, delivery_blob, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            conversation_id,
+            delivery.transition_id,
+            delivery.group_seq,
+            delivery.kind,
+            delivery.payload_sha256,
+            delivery.delivery_blob,
+            chrono_now()
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+pub fn crypto_load_next_mls_recipient_event(
+    user_scope: &str,
+    conversation_id: &str,
+) -> Result<Option<CryptoMlsBufferedEvent>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT group_seq, event_hash, event_blob
+         FROM crypto_mls_recipient_event_buffer
+         WHERE conversation_id = ?1
+         ORDER BY group_seq ASC
+         LIMIT 1",
+        params![conversation_id],
+        |row| {
+            Ok(CryptoMlsBufferedEvent {
+                group_seq: row.get(0)?,
+                event_hash: row.get(1)?,
+                event_blob: row.get(2)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+pub fn crypto_load_mls_recipient_delivery(
+    user_scope: &str,
+    conversation_id: &str,
+    transition_id: &str,
+) -> Result<Option<CryptoMlsBufferedDelivery>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT transition_id, group_seq, kind, payload_sha256, delivery_blob
+         FROM crypto_mls_recipient_delivery_buffer
+         WHERE conversation_id = ?1 AND transition_id = ?2",
+        params![conversation_id, transition_id],
+        |row| {
+            Ok(CryptoMlsBufferedDelivery {
+                transition_id: row.get(0)?,
+                group_seq: row.get(1)?,
+                kind: row.get(2)?,
+                payload_sha256: row.get(3)?,
+                delivery_blob: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+pub fn crypto_count_mls_recipient_buffers(
+    user_scope: &str,
+    conversation_id: &str,
+) -> Result<(i64, i64), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    let events = conn
+        .query_row(
+            "SELECT COUNT(*) FROM crypto_mls_recipient_event_buffer
+             WHERE conversation_id = ?1",
+            params![conversation_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let deliveries = conn
+        .query_row(
+            "SELECT COUNT(*) FROM crypto_mls_recipient_delivery_buffer
+             WHERE conversation_id = ?1",
+            params![conversation_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok((events, deliveries))
+}
+
+pub fn crypto_load_mls_applied_transition(
+    user_scope: &str,
+    conversation_id: &str,
+    transition_id: &str,
+) -> Result<Option<CryptoMlsAppliedTransition>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT group_seq, event_hash, commit_sha256, payload_sha256, kind
+         FROM crypto_mls_recipient_applied
+         WHERE conversation_id = ?1 AND transition_id = ?2",
+        params![conversation_id, transition_id],
+        |row| {
+            Ok(CryptoMlsAppliedTransition {
+                group_seq: row.get(0)?,
+                event_hash: row.get(1)?,
+                commit_sha256: row.get(2)?,
+                payload_sha256: row.get(3)?,
+                kind: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+pub fn crypto_load_mls_local_accepted_transition(
+    user_scope: &str,
+    conversation_id: &str,
+    transition_id: &str,
+) -> Result<Option<CryptoMlsLocalAcceptedTransition>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT from_mls_epoch, to_mls_epoch, commit_sha256
+         FROM crypto_mls_local_accepted_transition
+         WHERE conversation_id = ?1 AND transition_id = ?2",
+        params![conversation_id, transition_id],
+        |row| {
+            Ok(CryptoMlsLocalAcceptedTransition {
+                from_mls_epoch: row.get(0)?,
+                to_mls_epoch: row.get(1)?,
+                commit_sha256: row.get(2)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+pub fn crypto_load_mls_applied_event_hash(
+    user_scope: &str,
+    conversation_id: &str,
+    group_seq: i64,
+) -> Result<Option<Vec<u8>>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT event_hash FROM crypto_mls_recipient_applied_event
+         WHERE conversation_id = ?1 AND group_seq = ?2",
+        params![conversation_id, group_seq],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+pub fn crypto_delete_mls_recipient_event(
+    user_scope: &str,
+    conversation_id: &str,
+    group_seq: i64,
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.execute(
+        "DELETE FROM crypto_mls_recipient_event_buffer
+         WHERE conversation_id = ?1 AND group_seq = ?2",
+        params![conversation_id, group_seq],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn crypto_commit_plain_recipient_event(
+    user_scope: &str,
+    conversation_id: &str,
+    group_seq: i64,
+    event_hash: &[u8],
+    membership_epoch: i64,
+    mls_epoch: i64,
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO crypto_mls_recipient_applied_event(
+            conversation_id, group_seq, event_hash, applied_at
+         ) VALUES (?1, ?2, ?3, ?4)",
+        params![conversation_id, group_seq, event_hash, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    upsert_mls_recipient_head(
+        &tx,
+        conversation_id,
+        group_seq,
+        event_hash,
+        membership_epoch,
+        mls_epoch,
+        "",
+        &[],
+        "active",
+        "",
+    )?;
+    tx.execute(
+        "DELETE FROM crypto_mls_recipient_event_buffer
+         WHERE conversation_id = ?1 AND group_seq = ?2",
+        params![conversation_id, group_seq],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn crypto_commit_mls_recipient_transition(
+    user_scope: &str,
+    conversation_id: &str,
+    group_seq: i64,
+    event_hash: &[u8],
+    membership_epoch: i64,
+    mls_epoch: i64,
+    transition_id: &str,
+    commit_sha256: &[u8],
+    payload_sha256: &[u8],
+    kind: i32,
+    accepted_state_blob: &[u8],
+    provider_pool_blob: Option<&[u8]>,
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO crypto_mls_state(conversation_id, state_blob, updated_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(conversation_id) DO UPDATE SET
+            state_blob=excluded.state_blob,
+            updated_at=excluded.updated_at",
+        params![conversation_id, accepted_state_blob, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    if let Some(provider_pool_blob) = provider_pool_blob {
+        tx.execute(
+            "INSERT INTO crypto_mls_join_provider_pool(id, state_blob, updated_at)
+             VALUES (1, ?1, ?2)
+             ON CONFLICT(id) DO UPDATE SET
+                state_blob=excluded.state_blob,
+                updated_at=excluded.updated_at",
+            params![provider_pool_blob, chrono_now()],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.execute(
+        "INSERT INTO crypto_mls_recipient_applied(
+            conversation_id, transition_id, group_seq, event_hash,
+            commit_sha256, payload_sha256, kind, applied_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            conversation_id,
+            transition_id,
+            group_seq,
+            event_hash,
+            commit_sha256,
+            payload_sha256,
+            kind,
+            chrono_now()
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO crypto_mls_recipient_applied_event(
+            conversation_id, group_seq, event_hash, applied_at
+         ) VALUES (?1, ?2, ?3, ?4)",
+        params![conversation_id, group_seq, event_hash, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    upsert_mls_recipient_head(
+        &tx,
+        conversation_id,
+        group_seq,
+        event_hash,
+        membership_epoch,
+        mls_epoch,
+        transition_id,
+        commit_sha256,
+        "active",
+        "",
+    )?;
+    tx.execute(
+        "DELETE FROM crypto_mls_recipient_event_buffer
+         WHERE conversation_id = ?1 AND group_seq = ?2",
+        params![conversation_id, group_seq],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM crypto_mls_recipient_delivery_buffer
+         WHERE conversation_id = ?1 AND transition_id = ?2",
+        params![conversation_id, transition_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM crypto_mls_local_accepted_transition
+         WHERE conversation_id = ?1 AND transition_id = ?2",
+        params![conversation_id, transition_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
+}
+
+pub fn crypto_mark_mls_recipient_status(
+    user_scope: &str,
+    conversation_id: &str,
+    status: &str,
+    last_error: &str,
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.execute(
+        "INSERT INTO crypto_mls_recipient_head(
+            conversation_id, group_seq, event_hash, membership_epoch, mls_epoch,
+            transition_id, commit_sha256, status, last_error, updated_at
+         ) VALUES (?1, 0, X'', 0, 0, '', X'', ?2, ?3, ?4)
+         ON CONFLICT(conversation_id) DO UPDATE SET
+            status=excluded.status,
+            last_error=excluded.last_error,
+            updated_at=excluded.updated_at",
+        params![conversation_id, status, last_error, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn upsert_mls_recipient_head(
+    tx: &rusqlite::Transaction<'_>,
+    conversation_id: &str,
+    group_seq: i64,
+    event_hash: &[u8],
+    membership_epoch: i64,
+    mls_epoch: i64,
+    transition_id: &str,
+    commit_sha256: &[u8],
+    status: &str,
+    last_error: &str,
+) -> Result<(), String> {
+    tx.execute(
+        "INSERT INTO crypto_mls_recipient_head(
+            conversation_id, group_seq, event_hash, membership_epoch, mls_epoch,
+            transition_id, commit_sha256, status, last_error, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+         ON CONFLICT(conversation_id) DO UPDATE SET
+            group_seq=excluded.group_seq,
+            event_hash=excluded.event_hash,
+            membership_epoch=excluded.membership_epoch,
+            mls_epoch=excluded.mls_epoch,
+            transition_id=CASE
+                WHEN excluded.transition_id = '' THEN crypto_mls_recipient_head.transition_id
+                ELSE excluded.transition_id
+            END,
+            commit_sha256=CASE
+                WHEN length(excluded.commit_sha256) = 0 THEN crypto_mls_recipient_head.commit_sha256
+                ELSE excluded.commit_sha256
+            END,
+            status=excluded.status,
+            last_error=excluded.last_error,
+            updated_at=excluded.updated_at",
+        params![
+            conversation_id,
+            group_seq,
+            event_hash,
+            membership_epoch,
+            mls_epoch,
+            transition_id,
+            commit_sha256,
+            status,
+            last_error,
+            chrono_now()
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn crypto_save_mls_join_result(
+    user_scope: &str,
+    conversation_id: &str,
+    accepted_state_blob: &[u8],
+    provider_pool_blob: &[u8],
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO crypto_mls_state(conversation_id, state_blob, updated_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(conversation_id) DO UPDATE SET
+            state_blob=excluded.state_blob,
+            updated_at=excluded.updated_at",
+        params![conversation_id, accepted_state_blob, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO crypto_mls_join_provider_pool(id, state_blob, updated_at)
+         VALUES (1, ?1, ?2)
+         ON CONFLICT(id) DO UPDATE SET
+            state_blob=excluded.state_blob,
+            updated_at=excluded.updated_at",
+        params![provider_pool_blob, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
+}
+
+pub fn crypto_save_mls_pending_transition(
+    user_scope: &str,
+    conversation_id: &str,
+    transition_id: &str,
+    state_blob: &[u8],
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.execute(
+        "INSERT INTO crypto_mls_pending_transition(
+            conversation_id, transition_id, state_blob, updated_at
+         ) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(conversation_id) DO UPDATE SET
+            transition_id=excluded.transition_id,
+            state_blob=excluded.state_blob,
+            updated_at=excluded.updated_at",
+        params![conversation_id, transition_id, state_blob, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn crypto_load_mls_pending_transition(
+    user_scope: &str,
+    conversation_id: &str,
+) -> Result<Option<(String, Vec<u8>)>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT transition_id, state_blob
+         FROM crypto_mls_pending_transition
+         WHERE conversation_id = ?1",
+        params![conversation_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+pub fn crypto_delete_mls_pending_transition(
+    user_scope: &str,
+    conversation_id: &str,
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.execute(
+        "DELETE FROM crypto_mls_pending_transition WHERE conversation_id = ?1",
+        params![conversation_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn crypto_accept_mls_transition(
+    user_scope: &str,
+    conversation_id: &str,
+    transition_id: &str,
+    from_mls_epoch: i64,
+    to_mls_epoch: i64,
+    commit_sha256: &[u8],
+    accepted_state_blob: &[u8],
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO crypto_mls_state(conversation_id, state_blob, updated_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(conversation_id) DO UPDATE SET
+            state_blob=excluded.state_blob,
+            updated_at=excluded.updated_at",
+        params![conversation_id, accepted_state_blob, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO crypto_mls_local_accepted_transition(
+            conversation_id, transition_id, from_mls_epoch, to_mls_epoch,
+            commit_sha256, accepted_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(conversation_id, transition_id) DO UPDATE SET
+            from_mls_epoch=excluded.from_mls_epoch,
+            to_mls_epoch=excluded.to_mls_epoch,
+            commit_sha256=excluded.commit_sha256,
+            accepted_at=excluded.accepted_at",
+        params![
+            conversation_id,
+            transition_id,
+            from_mls_epoch,
+            to_mls_epoch,
+            commit_sha256,
+            chrono_now()
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM crypto_mls_pending_transition WHERE conversation_id = ?1",
+        params![conversation_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
+}
+
 pub fn load_crypto_session(
     user_scope: &str,
     session_id: &str,
@@ -1383,525 +2170,6 @@ pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, Strin
     result
 }
 
-// ---------------------------------------------------------------------------
-// Sender Keys persistence
-// ---------------------------------------------------------------------------
-//
-// Storage rules of thumb for callers:
-//
-//   * Receive path  -> ALWAYS go through `apply_group_decrypt_outcome`.
-//     It wraps chain advance + new skipped-key inserts + (optional)
-//     consumed-skipped-key delete in one SQLite transaction so a
-//     crash mid-write cannot leave the chain ahead of its keys.
-//
-//   * Send path     -> save the advanced sender chain AND the just-used
-//     message key in one `apply_group_decrypt_outcome` transaction before
-//     returning ciphertext to the caller. The advanced chain prevents
-//     AES-GCM key reuse; the persisted sent key lets the sender decrypt
-//     their own history after a renderer reload drops the JS plaintext cache.
-//
-//   * Distribution -> `latest_local_sender_chain` returns the highest
-//     `sender_key_id` we own for `(group, sender)`. SKDM emission
-//     uses `snapshot_for_skdm` on the returned state.
-
-/// Upsert a Sender-Keys chain row.
-///
-/// Caller controls whether `signing_seed` is `Some(_)` (we own the
-/// chain) or `None` (received via SKDM). The DB does not second-guess
-/// that distinction — see the schema comment for the invariant.
-pub fn save_group_sender_chain(user_scope: &str, chain: &SenderChainState) -> Result<(), String> {
-    let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-    save_group_sender_chain_with_conn(&conn, chain)
-}
-
-fn save_group_sender_chain_with_conn(
-    conn: &Connection,
-    chain: &SenderChainState,
-) -> Result<(), String> {
-    let now = chrono_now();
-    let signing_seed = chain.signing_seed.as_ref().map(|s| s.as_slice());
-    conn.execute(
-        "INSERT INTO group_sender_keys(
-            group_ulid, sender_did, sender_key_id,
-            chain_key, counter, signing_seed, verifying_key, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-         ON CONFLICT(group_ulid, sender_did, sender_key_id) DO UPDATE SET
-            chain_key      = excluded.chain_key,
-            counter        = excluded.counter,
-            -- Never *demote* a row from sender (Some signing_seed) to
-            -- receiver (None) silently. The only path that nullifies
-            -- signing_seed is an explicit `clear_local_signing_seed`
-            -- helper (not exposed yet; future post-rotation cleanup).
-            signing_seed   = COALESCE(excluded.signing_seed, group_sender_keys.signing_seed),
-            verifying_key  = excluded.verifying_key,
-            updated_at     = excluded.updated_at",
-        params![
-            chain.group_ulid,
-            chain.sender_did,
-            chain.sender_key_id as i64,
-            chain.chain_key.as_ref(),
-            chain.counter as i64,
-            signing_seed,
-            chain.verifying_key.as_ref(),
-            now,
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-fn row_to_sender_chain(
-    group_ulid: String,
-    sender_did: String,
-    sender_key_id: u32,
-    chain_key_blob: Vec<u8>,
-    counter: u32,
-    signing_seed_blob: Option<Vec<u8>>,
-    verifying_key_blob: Vec<u8>,
-) -> Result<SenderChainState, String> {
-    if chain_key_blob.len() != 32 {
-        return Err("invalid chain_key length in group_sender_keys".to_string());
-    }
-    if verifying_key_blob.len() != 32 {
-        return Err("invalid verifying_key length in group_sender_keys".to_string());
-    }
-    let mut chain_key = [0u8; 32];
-    chain_key.copy_from_slice(&chain_key_blob);
-    let mut verifying_key = [0u8; 32];
-    verifying_key.copy_from_slice(&verifying_key_blob);
-    let signing_seed = match signing_seed_blob {
-        Some(b) if b.len() == 32 => {
-            let mut a = [0u8; 32];
-            a.copy_from_slice(&b);
-            Some(a)
-        }
-        Some(_) => return Err("invalid signing_seed length in group_sender_keys".to_string()),
-        None => None,
-    };
-    Ok(SenderChainState {
-        group_ulid,
-        sender_did,
-        sender_key_id,
-        chain_key,
-        counter,
-        signing_seed,
-        verifying_key,
-    })
-}
-
-/// Load a specific (group, sender, sender_key_id) chain. Returns
-/// `Ok(None)` if no row exists -- typical when we haven't yet
-/// processed the SKDM for that generation.
-pub fn load_group_sender_chain(
-    user_scope: &str,
-    group_ulid: &str,
-    sender_did: &str,
-    sender_key_id: u32,
-) -> Result<Option<SenderChainState>, String> {
-    let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-    let mut stmt = conn
-        .prepare(
-            "SELECT chain_key, counter, signing_seed, verifying_key
-             FROM group_sender_keys
-             WHERE group_ulid = ?1 AND sender_did = ?2 AND sender_key_id = ?3",
-        )
-        .map_err(|e| e.to_string())?;
-    let row = stmt
-        .query_row(params![group_ulid, sender_did, sender_key_id as i64], |r| {
-            let chain_key_blob: Vec<u8> = r.get(0)?;
-            let counter: i64 = r.get(1)?;
-            let signing_seed_blob: Option<Vec<u8>> = r.get(2)?;
-            let verifying_key_blob: Vec<u8> = r.get(3)?;
-            Ok((
-                chain_key_blob,
-                counter as u32,
-                signing_seed_blob,
-                verifying_key_blob,
-            ))
-        })
-        .optional()
-        .map_err(|e| e.to_string())?;
-    match row {
-        None => Ok(None),
-        Some((ck, counter, ss, vk)) => Ok(Some(row_to_sender_chain(
-            group_ulid.to_string(),
-            sender_did.to_string(),
-            sender_key_id,
-            ck,
-            counter,
-            ss,
-            vk,
-        )?)),
-    }
-}
-
-/// Highest `sender_key_id` we have ever stored for `(group, sender)`,
-/// regardless of whether we own the signing seed. Used by the
-/// rotation path to mint the *next* generation: rotation MUST pick
-/// `current + 1` so a newly-distributed SKDM cannot collide with a
-/// chain we (or a peer) may already have stored under the same id.
-/// Returns `Ok(None)` if no row exists for this pair.
-pub fn max_sender_key_id(
-    user_scope: &str,
-    group_ulid: &str,
-    sender_did: &str,
-) -> Result<Option<u32>, String> {
-    let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-    // SQLite's MAX over an empty set returns one row with a NULL
-    // value, not zero rows -- so `.optional()` would still surface
-    // a row, and a `r.get::<_, i64>(0)` on it errors with
-    // "Invalid column type Null". We therefore read the column as
-    // `Option<i64>` directly and let outer `Option` collapse the
-    // "NULL but row exists" and "no row" cases into the same None.
-    let row: Option<Option<i64>> = conn
-        .query_row(
-            "SELECT MAX(sender_key_id)
-             FROM group_sender_keys
-             WHERE group_ulid = ?1 AND sender_did = ?2",
-            params![group_ulid, sender_did],
-            |r| r.get::<_, Option<i64>>(0),
-        )
-        .optional()
-        .map_err(|e| e.to_string())?;
-    Ok(row.flatten().map(|v| v as u32))
-}
-
-/// Highest `sender_key_id` for which we own the signing seed. Used
-/// by the send path: "what chain should I use to encrypt my next
-/// message?". Returns `Ok(None)` when we have never emitted to this
-/// group (the caller should mint a fresh chain via
-/// `create_local_chain` and persist it before encrypting).
-pub fn latest_local_sender_chain(
-    user_scope: &str,
-    group_ulid: &str,
-    sender_did: &str,
-) -> Result<Option<SenderChainState>, String> {
-    let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-    let mut stmt = conn
-        .prepare(
-            "SELECT sender_key_id, chain_key, counter, signing_seed, verifying_key
-             FROM group_sender_keys
-             WHERE group_ulid = ?1 AND sender_did = ?2 AND signing_seed IS NOT NULL
-             ORDER BY sender_key_id DESC
-             LIMIT 1",
-        )
-        .map_err(|e| e.to_string())?;
-    let row = stmt
-        .query_row(params![group_ulid, sender_did], |r| {
-            let sender_key_id: i64 = r.get(0)?;
-            let chain_key_blob: Vec<u8> = r.get(1)?;
-            let counter: i64 = r.get(2)?;
-            let signing_seed_blob: Option<Vec<u8>> = r.get(3)?;
-            let verifying_key_blob: Vec<u8> = r.get(4)?;
-            Ok((
-                sender_key_id as u32,
-                chain_key_blob,
-                counter as u32,
-                signing_seed_blob,
-                verifying_key_blob,
-            ))
-        })
-        .optional()
-        .map_err(|e| e.to_string())?;
-    match row {
-        None => Ok(None),
-        Some((sender_key_id, ck, counter, ss, vk)) => Ok(Some(row_to_sender_chain(
-            group_ulid.to_string(),
-            sender_did.to_string(),
-            sender_key_id,
-            ck,
-            counter,
-            ss,
-            vk,
-        )?)),
-    }
-}
-
-/// Load all skipped-message-keys for a single (group, sender,
-/// sender_key_id), keyed by counter. Receive path uses this to
-/// short-circuit OOO catch-up: if the inbound counter is already in
-/// the map we decrypt straight from there without touching the
-/// chain.
-pub fn load_group_skipped_keys(
-    user_scope: &str,
-    group_ulid: &str,
-    sender_did: &str,
-    sender_key_id: u32,
-) -> Result<BTreeMap<u32, SkippedMessageKey>, String> {
-    let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-    let mut stmt = conn
-        .prepare(
-            "SELECT counter, key, nonce
-             FROM group_skipped_message_keys
-             WHERE group_ulid = ?1 AND sender_did = ?2 AND sender_key_id = ?3",
-        )
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(params![group_ulid, sender_did, sender_key_id as i64], |r| {
-            let counter: i64 = r.get(0)?;
-            let key_blob: Vec<u8> = r.get(1)?;
-            let nonce_blob: Vec<u8> = r.get(2)?;
-            Ok((counter as u32, key_blob, nonce_blob))
-        })
-        .map_err(|e| e.to_string())?;
-    let mut out: BTreeMap<u32, SkippedMessageKey> = BTreeMap::new();
-    for row in rows {
-        let (counter, key_blob, nonce_blob) = row.map_err(|e| e.to_string())?;
-        if key_blob.len() != 32 || nonce_blob.len() != 12 {
-            return Err("invalid skipped-key column lengths".to_string());
-        }
-        let mut key = [0u8; 32];
-        key.copy_from_slice(&key_blob);
-        let mut nonce = [0u8; 12];
-        nonce.copy_from_slice(&nonce_blob);
-        out.insert(
-            counter,
-            SkippedMessageKey {
-                group_ulid: group_ulid.to_string(),
-                sender_did: sender_did.to_string(),
-                sender_key_id,
-                counter,
-                key,
-                nonce,
-            },
-        );
-    }
-    Ok(out)
-}
-
-/// Atomic write for the receive path. Everything happens in one
-/// transaction:
-///
-/// 1. Save the new chain state (`chain` already carries the bumped
-///    counter / advanced chain key returned in `DecryptOutcome`).
-/// 2. Insert any newly materialised skipped keys (no-op when the
-///    decrypt was in-order).
-/// 3. If the message we just decrypted *was* a skipped one,
-///    `consumed_counter = Some(c)` deletes that row so the same
-///    skipped key cannot be replayed.
-///
-/// Either everything lands or nothing does. The transaction is the
-/// only correctness gate against the "chain advanced but skipped
-/// rows lost" failure mode that would silently brick OOO recovery.
-pub fn apply_group_decrypt_outcome(
-    user_scope: &str,
-    chain: &SenderChainState,
-    new_skipped: &[SkippedMessageKey],
-    consumed_counter: Option<u32>,
-) -> Result<(), String> {
-    let conn = open_connection(user_scope)?;
-    let mut conn = conn.lock();
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    save_group_sender_chain_with_conn(&tx, chain)?;
-    let now = chrono_now();
-    for s in new_skipped {
-        tx.execute(
-            "INSERT OR IGNORE INTO group_skipped_message_keys(
-                group_ulid, sender_did, sender_key_id, counter, key, nonce, created_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                s.group_ulid,
-                s.sender_did,
-                s.sender_key_id as i64,
-                s.counter as i64,
-                s.key.as_ref(),
-                s.nonce.as_ref(),
-                now,
-            ],
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    if let Some(c) = consumed_counter {
-        tx.execute(
-            "DELETE FROM group_skipped_message_keys
-             WHERE group_ulid = ?1 AND sender_did = ?2
-               AND sender_key_id = ?3 AND counter = ?4",
-            params![
-                chain.group_ulid,
-                chain.sender_did,
-                chain.sender_key_id as i64,
-                c as i64
-            ],
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    tx.commit().map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[cfg(test)]
-mod sender_key_tests {
-    use super::*;
-    use crate::domain::crypto::sender_keys::{
-        consume_skdm, create_local_chain, current_message_key_snapshot, decrypt, encrypt,
-        snapshot_for_skdm,
-    };
-
-    fn unique_scope(tag: &str) -> String {
-        format!(
-            "test-sk-{tag}-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )
-    }
-
-    #[test]
-    fn round_trip_with_persistence() {
-        // End-to-end: a sender chain we mint locally is persisted
-        // and re-loaded; the same persistence path on the receiver
-        // side replays our SKDM and decrypts an OOO sequence.
-        let scope_s = unique_scope("send");
-        let scope_r = unique_scope("recv");
-
-        let mut local = create_local_chain("g-1", "did:peers:alice", 1);
-        save_group_sender_chain(&scope_s, &local).unwrap();
-        let reloaded = latest_local_sender_chain(&scope_s, "g-1", "did:peers:alice")
-            .unwrap()
-            .expect("chain present");
-        assert_eq!(reloaded.sender_key_id, 1);
-        assert_eq!(reloaded.counter, 0);
-        assert!(reloaded.signing_seed.is_some());
-
-        // Distribute to receiver via SKDM.
-        let payload = snapshot_for_skdm(&local);
-        let recv = consume_skdm(&payload).unwrap();
-        save_group_sender_chain(&scope_r, &recv).unwrap();
-
-        // Sender produces three messages out of order in receive.
-        let m0 = encrypt(&mut local, b"a").unwrap();
-        let m1 = encrypt(&mut local, b"b").unwrap();
-        let m2 = encrypt(&mut local, b"c").unwrap();
-        save_group_sender_chain(&scope_s, &local).unwrap();
-
-        // Receive m2 first.
-        let recv_state = load_group_sender_chain(&scope_r, "g-1", "did:peers:alice", 1)
-            .unwrap()
-            .unwrap();
-        let pre = load_group_skipped_keys(&scope_r, "g-1", "did:peers:alice", 1).unwrap();
-        let out2 = decrypt(&recv_state, &m2, &pre).unwrap();
-        assert_eq!(out2.plaintext, b"c");
-        assert_eq!(out2.new_skipped.len(), 2);
-
-        let advanced = SenderChainState {
-            group_ulid: recv_state.group_ulid.clone(),
-            sender_did: recv_state.sender_did.clone(),
-            sender_key_id: recv_state.sender_key_id,
-            chain_key: out2.advanced_chain_key,
-            counter: out2.advanced_counter,
-            signing_seed: recv_state.signing_seed,
-            verifying_key: recv_state.verifying_key,
-        };
-        apply_group_decrypt_outcome(&scope_r, &advanced, &out2.new_skipped, None).unwrap();
-
-        // m0 arrives late and decrypts from the persisted skipped-key store.
-        let recv_state2 = load_group_sender_chain(&scope_r, "g-1", "did:peers:alice", 1)
-            .unwrap()
-            .unwrap();
-        let pre2 = load_group_skipped_keys(&scope_r, "g-1", "did:peers:alice", 1).unwrap();
-        assert!(pre2.contains_key(&0));
-        let out0 = decrypt(&recv_state2, &m0, &pre2).unwrap();
-        assert_eq!(out0.plaintext, b"a");
-        // After consuming m0, delete the row.
-        apply_group_decrypt_outcome(&scope_r, &recv_state2, &[], Some(0)).unwrap();
-        let pre3 = load_group_skipped_keys(&scope_r, "g-1", "did:peers:alice", 1).unwrap();
-        assert!(!pre3.contains_key(&0));
-        assert!(pre3.contains_key(&1));
-
-        // m1 also decrypts.
-        let out1 = decrypt(&recv_state2, &m1, &pre3).unwrap();
-        assert_eq!(out1.plaintext, b"b");
-    }
-
-    #[test]
-    fn self_authored_message_key_survives_reload() {
-        let scope = unique_scope("self-history");
-
-        let mut local = create_local_chain("g-self", "did:peers:alice", 1);
-        save_group_sender_chain(&scope, &local).unwrap();
-
-        let sent_key = current_message_key_snapshot(&local);
-        let wire = encrypt(&mut local, b"self-authored").unwrap();
-        apply_group_decrypt_outcome(&scope, &local, &[sent_key], None).unwrap();
-
-        // Simulate a new renderer/webview: only the advanced chain and
-        // persisted skipped-key table remain. Counter 0 is now behind the
-        // chain, so decrypt must use the saved sent key.
-        let reloaded = load_group_sender_chain(&scope, "g-self", "did:peers:alice", 1)
-            .unwrap()
-            .expect("reloaded sender chain");
-        assert_eq!(reloaded.counter, 1);
-        let pre = load_group_skipped_keys(&scope, "g-self", "did:peers:alice", 1).unwrap();
-        assert!(pre.contains_key(&0));
-
-        let out = decrypt(&reloaded, &wire, &pre).unwrap();
-        assert_eq!(out.plaintext, b"self-authored");
-
-        // Self-authored history is not a network replay attempt. The command
-        // layer must leave the key available for future reloads.
-        apply_group_decrypt_outcome(&scope, &reloaded, &[], None).unwrap();
-        let pre_after = load_group_skipped_keys(&scope, "g-self", "did:peers:alice", 1).unwrap();
-        assert!(pre_after.contains_key(&0));
-    }
-
-    #[test]
-    fn max_sender_key_id_drives_rotation_collision_avoidance() {
-        // Forced rotation must mint at `max + 1`. The helper has
-        // to consider EVERY row -- ours, peers', stale ones --
-        // because the rotation generation is shared globally
-        // across the (group, sender) pair. A simple "pick latest
-        // owned chain" would let a peer's higher generation
-        // collide.
-        let scope = unique_scope("rotmax");
-        let group = "g-rot";
-        let me = "did:peers:rotor";
-        // No rows yet -- caller treats None as "start at 1".
-        assert!(max_sender_key_id(&scope, group, me).unwrap().is_none());
-
-        // Three local chains at 1, 5, 3. max should be 5 regardless
-        // of insert order.
-        for kid in [1u32, 5, 3] {
-            let chain = create_local_chain(group, me, kid);
-            save_group_sender_chain(&scope, &chain).unwrap();
-        }
-        assert_eq!(max_sender_key_id(&scope, group, me).unwrap(), Some(5));
-
-        // A different (group, sender) tuple is isolated -- the
-        // rotation generation is per-pair, not per-actor.
-        let other = create_local_chain(group, "did:peers:other", 99);
-        save_group_sender_chain(&scope, &other).unwrap();
-        assert_eq!(max_sender_key_id(&scope, group, me).unwrap(), Some(5));
-        assert_eq!(
-            max_sender_key_id(&scope, group, "did:peers:other").unwrap(),
-            Some(99)
-        );
-    }
-
-    #[test]
-    fn signing_seed_is_not_silently_clobbered() {
-        // A stray "I just got an SKDM for my own chain" upsert
-        // (signing_seed = None) MUST NOT erase the seed of a row we
-        // own. Without this guard a spurious echo of our own
-        // distribution would lock us out of our own chain.
-        let scope = unique_scope("noclobber");
-        let local = create_local_chain("g-9", "did:peers:gus", 1);
-        save_group_sender_chain(&scope, &local).unwrap();
-        let payload = snapshot_for_skdm(&local);
-        let recv_view = consume_skdm(&payload).unwrap();
-        save_group_sender_chain(&scope, &recv_view).unwrap();
-        let after = load_group_sender_chain(&scope, "g-9", "did:peers:gus", 1)
-            .unwrap()
-            .unwrap();
-        assert!(after.signing_seed.is_some());
-    }
-}
-
 #[cfg(test)]
 mod search_tests {
     use super::*;
@@ -1990,6 +2258,100 @@ mod dr_persistence_tests {
 
     fn placeholder_chain() -> [u8; 32] {
         [0xAB; 32]
+    }
+
+    #[test]
+    fn mls_acceptance_atomically_replaces_pending_state() {
+        let scope = unique_scope("mls-accept");
+        let conversation_id = "conversation-mls-accept";
+        crypto_save_actor_device_identity(&scope, "did:alice", b"identity-state").unwrap();
+        assert_eq!(
+            crypto_load_actor_device_identity(&scope).unwrap(),
+            Some(("did:alice".to_string(), b"identity-state".to_vec()))
+        );
+        crypto_save_mls_join_provider_pool(&scope, b"provider-pool").unwrap();
+        assert_eq!(
+            crypto_load_mls_join_provider_pool(&scope).unwrap(),
+            Some(b"provider-pool".to_vec())
+        );
+        crypto_save_mls_pending_transition(
+            &scope,
+            conversation_id,
+            "transition-1",
+            b"pending-state",
+        )
+        .unwrap();
+
+        crypto_accept_mls_transition(
+            &scope,
+            conversation_id,
+            "transition-1",
+            0,
+            1,
+            &[7; 32],
+            b"accepted-state",
+        )
+        .unwrap();
+
+        assert_eq!(
+            crypto_load_mls_state(&scope, conversation_id).unwrap(),
+            Some(b"accepted-state".to_vec())
+        );
+        assert!(crypto_load_mls_pending_transition(&scope, conversation_id)
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            crypto_load_mls_local_accepted_transition(&scope, conversation_id, "transition-1")
+                .unwrap()
+                .unwrap()
+                .commit_sha256,
+            vec![7; 32]
+        );
+    }
+
+    #[test]
+    fn mls_recipient_event_buffer_is_bounded_and_fork_protected() {
+        let scope = unique_scope("mls-recipient-buffer");
+        let conversation_id = "conversation-buffer";
+        for seq in 1..=128i64 {
+            let hash = vec![seq as u8; 32];
+            assert!(crypto_enqueue_mls_recipient_event(
+                &scope,
+                conversation_id,
+                seq,
+                &hash,
+                &[seq as u8],
+                128,
+            )
+            .unwrap());
+        }
+        assert!(!crypto_enqueue_mls_recipient_event(
+            &scope,
+            conversation_id,
+            1,
+            &[1; 32],
+            &[1],
+            128,
+        )
+        .unwrap());
+        assert!(crypto_enqueue_mls_recipient_event(
+            &scope,
+            conversation_id,
+            1,
+            &[9; 32],
+            &[9],
+            128,
+        )
+        .is_err());
+        assert!(crypto_enqueue_mls_recipient_event(
+            &scope,
+            conversation_id,
+            129,
+            &[129; 32],
+            &[129],
+            128,
+        )
+        .is_err());
     }
 
     #[test]

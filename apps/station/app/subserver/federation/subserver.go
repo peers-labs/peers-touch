@@ -2,7 +2,9 @@ package federation
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,8 +18,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/scope"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
-	"github.com/peers-labs/peers-touch/station/frame/core/node"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
@@ -64,7 +66,11 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 			FederationGovernanceSyncScope,
 			peerKeys,
 			func(r *http.Request) (string, error) {
-				return node.GetService().Options().Id, nil
+				peerID := localStationPeerID()
+				if peerID == "" {
+					return "", fmt.Errorf("local Station peer identity unavailable")
+				}
+				return peerID, nil
 			},
 			false,
 		),
@@ -120,12 +126,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 
 	fedCache := federation.Singleton()
 	localStationFn := func() string {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Warnf(context.Background(), "[federation] node.GetService() not ready: %v", r)
-			}
-		}()
-		return node.GetService().Options().Id
+		return localStationPeerID()
 	}
 
 	fetcher := NewHTTPLedgerFetcher(fedCache, localStationFn)
@@ -145,6 +146,25 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 
 	log.Infof(ctx, "[federation] subserver initialized")
 	return nil
+}
+
+func localStationPeerID() string {
+	identity := nativefed.LocalIdentitySnapshot()
+	if identity.StationPeerID == "" {
+		return ""
+	}
+	return identity.StationPeerID.String()
+}
+
+func localStationURL() string {
+	domain := strings.TrimSpace(nativefed.LocalIdentitySnapshot().StationDomain)
+	if domain == "" {
+		return ""
+	}
+	if strings.HasPrefix(domain, "http://") || strings.HasPrefix(domain, "https://") {
+		return strings.TrimRight(domain, "/")
+	}
+	return "http://" + strings.TrimRight(domain, "/")
 }
 
 func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {

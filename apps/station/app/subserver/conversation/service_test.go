@@ -6,26 +6,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation"
+	envpkg "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gorm.io/gorm"
 )
 
 // memConvRepo is an in-memory Repository for contract testing.
 type memConvRepo struct {
-	mu      sync.Mutex
-	convs   map[string]*chat.Conversation
-	members map[string][]*chat.ConversationMember
-	events  map[string][]*chat.CommittedConversationEvent
-	seqs    map[string]int64
+	mu       sync.Mutex
+	convs    map[string]*chat.Conversation
+	members  map[string][]*chat.ConversationMember
+	devices  map[string][]conversation.MemberDevice
+	events   map[string][]*chat.CommittedConversationEvent
+	seqs     map[string]int64
+	receipts map[string]*conversation.CommandReceipt
 }
 
 func newMemConvRepo() *memConvRepo {
 	return &memConvRepo{
-		convs:   make(map[string]*chat.Conversation),
-		members: make(map[string][]*chat.ConversationMember),
-		events:  make(map[string][]*chat.CommittedConversationEvent),
-		seqs:    make(map[string]int64),
+		convs:    make(map[string]*chat.Conversation),
+		members:  make(map[string][]*chat.ConversationMember),
+		devices:  make(map[string][]conversation.MemberDevice),
+		events:   make(map[string][]*chat.CommittedConversationEvent),
+		seqs:     make(map[string]int64),
+		receipts: make(map[string]*conversation.CommandReceipt),
 	}
 }
 
@@ -43,6 +51,10 @@ func (r *memConvRepo) GetConversation(_ context.Context, id string) (*chat.Conve
 		return c, nil
 	}
 	return nil, nil
+}
+
+func (r *memConvRepo) GetConversationForUpdate(ctx context.Context, id string) (*chat.Conversation, error) {
+	return r.GetConversation(ctx, id)
 }
 
 func (r *memConvRepo) ListByActor(_ context.Context, ptid string) ([]*chat.Conversation, error) {
@@ -75,6 +87,51 @@ func (r *memConvRepo) UpsertMember(_ context.Context, member *chat.ConversationM
 	return nil
 }
 
+func (r *memConvRepo) UpsertMemberDevice(
+	_ context.Context,
+	conversationID string,
+	ptid string,
+	deviceID string,
+	homeStationPeerID string,
+	active bool,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	devices := r.devices[conversationID]
+	for index, device := range devices {
+		if device.Ptid == ptid && device.DeviceID == deviceID {
+			devices[index].HomeStationPeerID = homeStationPeerID
+			devices[index].Active = active
+			r.devices[conversationID] = devices
+			return nil
+		}
+	}
+	r.devices[conversationID] = append(devices, conversation.MemberDevice{
+		Ptid:              ptid,
+		DeviceID:          deviceID,
+		HomeStationPeerID: homeStationPeerID,
+		Active:            active,
+	})
+	return nil
+}
+
+func (r *memConvRepo) ListMemberDevices(
+	_ context.Context,
+	conversationID string,
+	activeOnly bool,
+) ([]conversation.MemberDevice, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	devices := make([]conversation.MemberDevice, 0, len(r.devices[conversationID]))
+	for _, device := range r.devices[conversationID] {
+		if activeOnly && !device.Active {
+			continue
+		}
+		devices = append(devices, device)
+	}
+	return devices, nil
+}
+
 func (r *memConvRepo) GetMembers(_ context.Context, conversationID string) ([]*chat.ConversationMember, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -96,6 +153,61 @@ func (r *memConvRepo) AppendEvent(_ context.Context, event *chat.CommittedConver
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events[event.ConversationId] = append(r.events[event.ConversationId], event)
+	if event.GroupSeq > r.seqs[event.ConversationId] {
+		r.seqs[event.ConversationId] = event.GroupSeq
+	}
+	return nil
+}
+
+func (r *memConvRepo) GetEventByTransitionID(
+	_ context.Context,
+	conversationID string,
+	transitionID string,
+) (*chat.CommittedConversationEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, event := range r.events[conversationID] {
+		if event.GetMembershipTransitionCommitted().GetTransitionId() == transitionID {
+			return event, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
+func (r *memConvRepo) GetLastEvent(
+	_ context.Context,
+	conversationID string,
+) (*chat.CommittedConversationEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	events := r.events[conversationID]
+	if len(events) == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return events[len(events)-1], nil
+}
+
+func (r *memConvRepo) GetCommandReceipt(
+	_ context.Context,
+	conversationID string,
+	commandID string,
+) (*conversation.CommandReceipt, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	receipt, ok := r.receipts[conversationID+":"+commandID]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return receipt, nil
+}
+
+func (r *memConvRepo) CreateCommandReceipt(
+	_ context.Context,
+	receipt *conversation.CommandReceipt,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.receipts[receipt.ConversationID+":"+receipt.CommandID] = receipt
 	return nil
 }
 
@@ -126,6 +238,21 @@ func (r *memConvRepo) BumpMembershipEpoch(_ context.Context, conversationID stri
 	defer r.mu.Unlock()
 	if conv, ok := r.convs[conversationID]; ok {
 		conv.MembershipEpoch = newEpoch
+	}
+	return nil
+}
+
+func (r *memConvRepo) SetMembershipAndMlsEpoch(
+	_ context.Context,
+	conversationID string,
+	membershipEpoch int64,
+	mlsEpoch int64,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if conv, ok := r.convs[conversationID]; ok {
+		conv.MembershipEpoch = membershipEpoch
+		conv.MlsEpoch = mlsEpoch
 	}
 	return nil
 }
@@ -174,6 +301,9 @@ type spyEnvelope struct {
 	mu       sync.Mutex
 	events   []*chat.CommittedConversationEvent
 	receipts []*chat.MessageReceipt
+	inbox    []*chat.DeviceInboxItem
+	outbox   []*chat.OutboxItem
+	notified []*chat.DeviceInboxItem
 }
 
 func (s *spyEnvelope) SubmitEvent(_ context.Context, _ *chat.Conversation, _ []*chat.ConversationMember, event *chat.CommittedConversationEvent) error {
@@ -190,10 +320,101 @@ func (s *spyEnvelope) SubmitReceipt(_ context.Context, receipt *chat.MessageRece
 	return nil
 }
 
+func (s *spyEnvelope) NotifyPersisted(_ context.Context, item *chat.DeviceInboxItem) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.notified = append(s.notified, item)
+}
+
+func (s *spyEnvelope) EnqueueOutbox(_ context.Context, item *chat.OutboxItem) (string, error) {
+	s.outbox = append(s.outbox, item)
+	return item.OutboxItemId, nil
+}
+
+func (s *spyEnvelope) PendingOutboxItems(context.Context, int) ([]*chat.OutboxItem, error) {
+	return nil, nil
+}
+
+func (s *spyEnvelope) MarkOutboxInFlight(context.Context, string) error { return nil }
+func (s *spyEnvelope) MarkOutboxDelivered(context.Context, string, time.Time) error {
+	return nil
+}
+func (s *spyEnvelope) MarkOutboxDeadLetter(context.Context, string, string) error {
+	return nil
+}
+func (s *spyEnvelope) SetOutboxNextRetry(context.Context, string, time.Time, string) error {
+	return nil
+}
+func (s *spyEnvelope) EnqueueInbox(_ context.Context, item *chat.DeviceInboxItem) (string, error) {
+	s.inbox = append(s.inbox, item)
+	return item.InboxItemId, nil
+}
+func (s *spyEnvelope) MarkInboxDelivered(context.Context, string, time.Time) error { return nil }
+func (s *spyEnvelope) MarkInboxAcked(context.Context, string) error                { return nil }
+func (s *spyEnvelope) UnackedInboxItems(context.Context, string, string, string, int) ([]*chat.DeviceInboxItem, error) {
+	return nil, nil
+}
+func (s *spyEnvelope) HasIdempotencyKey(context.Context, string) (bool, error) {
+	return false, nil
+}
+
+type memUnitOfWork struct {
+	repo     *memConvRepo
+	envelope envpkg.Repository
+}
+
+func (u memUnitOfWork) Execute(
+	ctx context.Context,
+	fn func(conversation.TransitionRepositories) error,
+) error {
+	return fn(conversation.TransitionRepositories{
+		Conversation: u.repo,
+		Envelope:     u.envelope,
+	})
+}
+
+func newMemService(repo *memConvRepo, spy *spyEnvelope) *conversation.DefaultService {
+	return conversation.NewConversationService(
+		repo,
+		spy,
+		"station-A",
+		memUnitOfWork{repo: repo, envelope: spy},
+	)
+}
+
+func seedGroup(t *testing.T, repo *memConvRepo, members ...*chat.ConversationMember) *chat.Conversation {
+	t.Helper()
+	now := timestamppb.New(time.Now())
+	conv := &chat.Conversation{
+		ConversationId:         "group-" + time.Now().Format("150405.000000000"),
+		Kind:                   chat.ConversationKind_CONVERSATION_KIND_GROUP,
+		AuthorityStationPeerId: "station-A",
+		MembershipEpoch:        1,
+		MlsEpoch:               1,
+		Status:                 chat.ConversationStatus_CONVERSATION_STATUS_ACTIVE,
+		OwnerPtid:              "did:alice",
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+	if err := repo.UpsertConversation(context.Background(), conv); err != nil {
+		t.Fatal(err)
+	}
+	for _, member := range members {
+		member.ConversationId = conv.ConversationId
+		if member.JoinedAt == nil {
+			member.JoinedAt = now
+		}
+		if err := repo.UpsertMember(context.Background(), member); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return conv
+}
+
 func TestCreateDirect_DeterministicID(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
+	svc := newMemService(repo, spy)
 
 	conv1, err := svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-B")
 	if err != nil {
@@ -216,7 +437,7 @@ func TestCreateDirect_DeterministicID(t *testing.T) {
 func TestCreateDirect_Idempotent(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
+	svc := newMemService(repo, spy)
 
 	conv1, _ := svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-A")
 	conv2, _ := svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-A")
@@ -229,12 +450,13 @@ func TestCreateDirect_Idempotent(t *testing.T) {
 func TestSubmitCommand_SendMessage(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
+	svc := newMemService(repo, spy)
 
 	svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-A")
 	convID := conversation.DeterministicDirectID("did:alice", "did:bob")
 
 	cmd := &chat.ConversationCommand{
+		CommandId:      uuid.NewString(),
 		ConversationId: convID,
 		SenderPtid:     "did:alice",
 		SenderDeviceId: "device-1",
@@ -265,21 +487,97 @@ func TestSubmitCommand_SendMessage(t *testing.T) {
 	if string(msgEvent.EncryptedPayload) != "hello bob" {
 		t.Fatalf("payload mismatch")
 	}
+	if len(event.EventHash) != 32 {
+		t.Fatalf("event hash length = %d, want 32", len(event.EventHash))
+	}
+	if len(event.PrevEventHash) != 32 {
+		t.Fatalf("previous event hash length = %d, want 32", len(event.PrevEventHash))
+	}
 
-	if len(spy.events) != 2 {
-		t.Fatalf("expected 2 envelope submissions (create + send), got %d", len(spy.events))
+	if len(spy.events) != 1 || len(spy.inbox) != 2 {
+		t.Fatalf(
+			"delivery facts = events:%d inbox:%d, want create event:1 command inbox:2",
+			len(spy.events),
+			len(spy.inbox),
+		)
+	}
+}
+
+func TestSubmitCommand_ExactReplayReturnsCanonicalEvent(t *testing.T) {
+	repo := newMemConvRepo()
+	spy := &spyEnvelope{}
+	svc := newMemService(repo, spy)
+	svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-A")
+	command := &chat.ConversationCommand{
+		CommandId:      uuid.NewString(),
+		ConversationId: conversation.DeterministicDirectID("did:alice", "did:bob"),
+		SenderPtid:     "did:alice",
+		SenderDeviceId: "alice-device",
+		Payload: &chat.ConversationCommand_SendMessage{
+			SendMessage: &chat.SendMessageCommand{
+				EncryptedPayload: []byte("ciphertext"),
+				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+			},
+		},
+	}
+	first, err := svc.SubmitCommand(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inboxCount := len(spy.inbox)
+	second, err := svc.SubmitCommand(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.EventId != second.EventId || !proto.Equal(first, second) {
+		t.Fatal("exact replay did not return the canonical event")
+	}
+	if len(spy.inbox) != inboxCount {
+		t.Fatal("exact replay enqueued duplicate delivery")
+	}
+}
+
+func TestSubmitCommand_CommandHashConflictRejectsBeforeMutation(t *testing.T) {
+	repo := newMemConvRepo()
+	spy := &spyEnvelope{}
+	svc := newMemService(repo, spy)
+	svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-A")
+	command := &chat.ConversationCommand{
+		CommandId:      uuid.NewString(),
+		ConversationId: conversation.DeterministicDirectID("did:alice", "did:bob"),
+		SenderPtid:     "did:alice",
+		SenderDeviceId: "alice-device",
+		Payload: &chat.ConversationCommand_SendMessage{
+			SendMessage: &chat.SendMessageCommand{
+				EncryptedPayload: []byte("ciphertext-a"),
+				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+			},
+		},
+	}
+	if _, err := svc.SubmitCommand(context.Background(), command); err != nil {
+		t.Fatal(err)
+	}
+	conflict := proto.Clone(command).(*chat.ConversationCommand)
+	conflict.GetSendMessage().EncryptedPayload = []byte("ciphertext-b")
+	eventCount := len(repo.events[command.ConversationId])
+	if _, err := svc.SubmitCommand(context.Background(), conflict); err == nil {
+		t.Fatal("expected command hash conflict")
+	}
+	if len(repo.events[command.ConversationId]) != eventCount {
+		t.Fatal("command hash conflict mutated the event log")
 	}
 }
 
 func TestSubmitCommand_NonMember_Rejected(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
+	svc := newMemService(repo, spy)
 
 	svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-A")
 	convID := conversation.DeterministicDirectID("did:alice", "did:bob")
 
 	cmd := &chat.ConversationCommand{
+		CommandId:      uuid.NewString(),
 		ConversationId: convID,
 		SenderPtid:     "did:charlie",
 		Payload: &chat.ConversationCommand_SendMessage{
@@ -307,79 +605,10 @@ func TestDeterministicDirectID_Symmetric(t *testing.T) {
 	}
 }
 
-func TestCreateGroup_And_MembershipEpochBinding(t *testing.T) {
-	repo := newMemConvRepo()
-	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
-
-	members := []conversation.MemberEntry{
-		{Ptid: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
-		{Ptid: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
-		{Ptid: "did:charlie", StationID: "station-B", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
-	}
-
-	conv, err := svc.CreateGroup(context.Background(), "Test Group", "did:alice", "station-A", members)
-	if err != nil {
-		t.Fatalf("CreateGroup failed: %v", err)
-	}
-	if conv.Kind != chat.ConversationKind_CONVERSATION_KIND_GROUP {
-		t.Fatalf("expected GROUP kind")
-	}
-	if conv.MembershipEpoch != 1 {
-		t.Fatalf("expected epoch 1, got %d", conv.MembershipEpoch)
-	}
-
-	addCmd := &chat.ConversationCommand{
-		ConversationId: conv.ConversationId,
-		SenderPtid:     "did:alice",
-		Payload: &chat.ConversationCommand_AddMembers{
-			AddMembers: &chat.AddMembersCommand{
-				Members: []*chat.MemberAddEntry{
-					{Ptid: "did:dave", ActorHomeStationPeerId: "station-C", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
-				},
-			},
-		},
-	}
-
-	event, err := svc.SubmitCommand(context.Background(), addCmd)
-	if err != nil {
-		t.Fatalf("AddMembers failed: %v", err)
-	}
-	if event.MembershipEpoch != 2 {
-		t.Fatalf("expected epoch 2 after add, got %d", event.MembershipEpoch)
-	}
-
-	membershipEvent := event.GetMembershipChanged()
-	if membershipEvent == nil {
-		t.Fatal("expected MembershipChangedEvent")
-	}
-	if membershipEvent.NewMembershipEpoch != 2 {
-		t.Fatalf("expected new_membership_epoch=2, got %d", membershipEvent.NewMembershipEpoch)
-	}
-
-	removeCmd := &chat.ConversationCommand{
-		ConversationId: conv.ConversationId,
-		SenderPtid:     "did:alice",
-		Payload: &chat.ConversationCommand_RemoveMembers{
-			RemoveMembers: &chat.RemoveMembersCommand{
-				Ptids: []string{"did:bob"},
-			},
-		},
-	}
-
-	event2, err := svc.SubmitCommand(context.Background(), removeCmd)
-	if err != nil {
-		t.Fatalf("RemoveMembers failed: %v", err)
-	}
-	if event2.MembershipEpoch != 3 {
-		t.Fatalf("expected epoch 3 after remove, got %d", event2.MembershipEpoch)
-	}
-}
-
 func TestSubmitReceipt_RoutesToOtherMembers(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
+	svc := newMemService(repo, spy)
 
 	svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-A")
 	convID := conversation.DeterministicDirectID("did:alice", "did:bob")
@@ -408,13 +637,14 @@ func TestSubmitReceipt_RoutesToOtherMembers(t *testing.T) {
 func TestListEvents_PaginatedHistory(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
+	svc := newMemService(repo, spy)
 
 	svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-A")
 	convID := conversation.DeterministicDirectID("did:alice", "did:bob")
 
 	for i := 0; i < 5; i++ {
 		cmd := &chat.ConversationCommand{
+			CommandId:      uuid.NewString(),
 			ConversationId: convID,
 			SenderPtid:     "did:alice",
 			SenderDeviceId: "device-1",
@@ -440,8 +670,8 @@ func TestListEvents_PaginatedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListEvents with cursor failed: %v", err)
 	}
-	if len(afterThird) != 2 {
-		t.Fatalf("expected 2 events after seq 3 (seq 4 and 5), got %d", len(afterThird))
+	if len(afterThird) != 3 {
+		t.Fatalf("expected 3 events after seq 3 (seq 4 through 6), got %d", len(afterThird))
 	}
 }
 
@@ -449,26 +679,22 @@ func TestListEvents_PaginatedHistory(t *testing.T) {
 func TestRemovedMember_CannotSendMessage(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
-
-	members := []conversation.MemberEntry{
-		{Ptid: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
-		{Ptid: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
-	}
-	conv, _ := svc.CreateGroup(context.Background(), "Test", "did:alice", "station-A", members)
-
-	removeCmd := &chat.ConversationCommand{
-		ConversationId: conv.ConversationId,
-		SenderPtid:     "did:alice",
-		Payload: &chat.ConversationCommand_RemoveMembers{
-			RemoveMembers: &chat.RemoveMembersCommand{
-				Ptids: []string{"did:bob"},
-			},
+	svc := newMemService(repo, spy)
+	conv := seedGroup(t, repo,
+		&chat.ConversationMember{
+			Ptid:         "did:alice",
+			Role:         chat.MemberRole_MEMBER_ROLE_OWNER,
+			MemberStatus: chat.MemberStatus_MEMBER_STATUS_ACTIVE,
 		},
-	}
-	svc.SubmitCommand(context.Background(), removeCmd)
+		&chat.ConversationMember{
+			Ptid:         "did:bob",
+			Role:         chat.MemberRole_MEMBER_ROLE_MEMBER,
+			MemberStatus: chat.MemberStatus_MEMBER_STATUS_REMOVED,
+		},
+	)
 
 	sendCmd := &chat.ConversationCommand{
+		CommandId:      uuid.NewString(),
 		ConversationId: conv.ConversationId,
 		SenderPtid:     "did:bob",
 		Payload: &chat.ConversationCommand_SendMessage{
@@ -488,22 +714,22 @@ func TestRemovedMember_CannotSendMessage(t *testing.T) {
 func TestLeftMember_CannotSendMessage(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
-
-	members := []conversation.MemberEntry{
-		{Ptid: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
-		{Ptid: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
-	}
-	conv, _ := svc.CreateGroup(context.Background(), "Test", "did:alice", "station-A", members)
-
-	leaveCmd := &chat.ConversationCommand{
-		ConversationId: conv.ConversationId,
-		SenderPtid:     "did:bob",
-		Payload:        &chat.ConversationCommand_Leave{Leave: &chat.LeaveCommand{}},
-	}
-	svc.SubmitCommand(context.Background(), leaveCmd)
+	svc := newMemService(repo, spy)
+	conv := seedGroup(t, repo,
+		&chat.ConversationMember{
+			Ptid:         "did:alice",
+			Role:         chat.MemberRole_MEMBER_ROLE_OWNER,
+			MemberStatus: chat.MemberStatus_MEMBER_STATUS_ACTIVE,
+		},
+		&chat.ConversationMember{
+			Ptid:         "did:bob",
+			Role:         chat.MemberRole_MEMBER_ROLE_MEMBER,
+			MemberStatus: chat.MemberStatus_MEMBER_STATUS_LEFT,
+		},
+	)
 
 	sendCmd := &chat.ConversationCommand{
+		CommandId:      uuid.NewString(),
 		ConversationId: conv.ConversationId,
 		SenderPtid:     "did:bob",
 		Payload: &chat.ConversationCommand_SendMessage{
@@ -519,63 +745,17 @@ func TestLeftMember_CannotSendMessage(t *testing.T) {
 	}
 }
 
-// C-4 partial: membership epoch monotonically increases across mutations.
-func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
+func TestNonMembershipCommandDoesNotChangeEpoch(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
-
-	members := []conversation.MemberEntry{
-		{Ptid: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
-		{Ptid: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
-	}
-	conv, _ := svc.CreateGroup(context.Background(), "Epoch Test", "did:alice", "station-A", members)
-	if conv.MembershipEpoch != 1 {
-		t.Fatalf("initial epoch should be 1, got %d", conv.MembershipEpoch)
-	}
-
-	addCmd := &chat.ConversationCommand{
-		ConversationId: conv.ConversationId,
-		SenderPtid:     "did:alice",
-		Payload: &chat.ConversationCommand_AddMembers{
-			AddMembers: &chat.AddMembersCommand{
-				Members: []*chat.MemberAddEntry{
-					{Ptid: "did:charlie", ActorHomeStationPeerId: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
-				},
-			},
-		},
-	}
-	ev1, _ := svc.SubmitCommand(context.Background(), addCmd)
-	if ev1.MembershipEpoch != 2 {
-		t.Fatalf("epoch after add should be 2, got %d", ev1.MembershipEpoch)
-	}
-
-	leaveCmd := &chat.ConversationCommand{
-		ConversationId: conv.ConversationId,
-		SenderPtid:     "did:charlie",
-		Payload:        &chat.ConversationCommand_Leave{Leave: &chat.LeaveCommand{}},
-	}
-	ev2, _ := svc.SubmitCommand(context.Background(), leaveCmd)
-	if ev2.MembershipEpoch != 3 {
-		t.Fatalf("epoch after leave should be 3, got %d", ev2.MembershipEpoch)
-	}
-
-	removeCmd := &chat.ConversationCommand{
-		ConversationId: conv.ConversationId,
-		SenderPtid:     "did:alice",
-		Payload: &chat.ConversationCommand_RemoveMembers{
-			RemoveMembers: &chat.RemoveMembersCommand{
-				Ptids: []string{"did:bob"},
-			},
-		},
-	}
-	ev3, _ := svc.SubmitCommand(context.Background(), removeCmd)
-	if ev3.MembershipEpoch != 4 {
-		t.Fatalf("epoch after remove should be 4, got %d", ev3.MembershipEpoch)
-	}
-
-	// Non-membership commands should NOT bump epoch
+	svc := newMemService(repo, spy)
+	conv := seedGroup(t, repo, &chat.ConversationMember{
+		Ptid:         "did:alice",
+		Role:         chat.MemberRole_MEMBER_ROLE_OWNER,
+		MemberStatus: chat.MemberStatus_MEMBER_STATUS_ACTIVE,
+	})
 	sendCmd := &chat.ConversationCommand{
+		CommandId:      uuid.NewString(),
 		ConversationId: conv.ConversationId,
 		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_SendMessage{
@@ -585,9 +765,12 @@ func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
 			},
 		},
 	}
-	ev4, _ := svc.SubmitCommand(context.Background(), sendCmd)
-	if ev4.MembershipEpoch != 4 {
-		t.Fatalf("epoch should stay 4 for message command, got %d", ev4.MembershipEpoch)
+	event, err := svc.SubmitCommand(context.Background(), sendCmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.MembershipEpoch != 1 {
+		t.Fatalf("epoch should stay 1 for message command, got %d", event.MembershipEpoch)
 	}
 }
 
@@ -595,30 +778,45 @@ func TestMembershipEpoch_MonotonicallyIncreases(t *testing.T) {
 func TestEnvelopeFanout_OnlyActiveMembers(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
-
-	members := []conversation.MemberEntry{
-		{Ptid: "did:alice", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_OWNER},
-		{Ptid: "did:bob", StationID: "station-A", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
-		{Ptid: "did:charlie", StationID: "station-B", Role: chat.MemberRole_MEMBER_ROLE_MEMBER},
-	}
-	conv, _ := svc.CreateGroup(context.Background(), "Fanout Test", "did:alice", "station-A", members)
-
-	spy.mu.Lock()
-	spy.events = nil
-	spy.mu.Unlock()
-
-	// Remove bob
-	removeCmd := &chat.ConversationCommand{
-		ConversationId: conv.ConversationId,
-		SenderPtid:     "did:alice",
-		Payload: &chat.ConversationCommand_RemoveMembers{
-			RemoveMembers: &chat.RemoveMembersCommand{
-				Ptids: []string{"did:bob"},
-			},
+	svc := newMemService(repo, spy)
+	conv := seedGroup(t, repo,
+		&chat.ConversationMember{
+			Ptid:         "did:alice",
+			Role:         chat.MemberRole_MEMBER_ROLE_OWNER,
+			MemberStatus: chat.MemberStatus_MEMBER_STATUS_ACTIVE,
 		},
+		&chat.ConversationMember{
+			Ptid:         "did:bob",
+			Role:         chat.MemberRole_MEMBER_ROLE_MEMBER,
+			MemberStatus: chat.MemberStatus_MEMBER_STATUS_REMOVED,
+		},
+		&chat.ConversationMember{
+			Ptid:                   "did:charlie",
+			Role:                   chat.MemberRole_MEMBER_ROLE_MEMBER,
+			MemberStatus:           chat.MemberStatus_MEMBER_STATUS_ACTIVE,
+			ActorHomeStationPeerId: "station-B",
+		},
+	)
+	if err := repo.UpsertMemberDevice(
+		context.Background(),
+		conv.ConversationId,
+		"did:alice",
+		"alice-device",
+		"station-A",
+		true,
+	); err != nil {
+		t.Fatal(err)
 	}
-	svc.SubmitCommand(context.Background(), removeCmd)
+	if err := repo.UpsertMemberDevice(
+		context.Background(),
+		conv.ConversationId,
+		"did:charlie",
+		"charlie-device",
+		"station-B",
+		true,
+	); err != nil {
+		t.Fatal(err)
+	}
 
 	spy.mu.Lock()
 	spy.events = nil
@@ -626,6 +824,7 @@ func TestEnvelopeFanout_OnlyActiveMembers(t *testing.T) {
 
 	// Send message — should only fan out to alice + charlie (bob removed)
 	sendCmd := &chat.ConversationCommand{
+		CommandId:      uuid.NewString(),
 		ConversationId: conv.ConversationId,
 		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_SendMessage{
@@ -639,15 +838,27 @@ func TestEnvelopeFanout_OnlyActiveMembers(t *testing.T) {
 
 	spy.mu.Lock()
 	defer spy.mu.Unlock()
-	if len(spy.events) != 1 {
-		t.Fatalf("expected 1 envelope submission event, got %d", len(spy.events))
+	if len(spy.inbox) != 1 || len(spy.outbox) != 1 {
+		t.Fatalf(
+			"command deliveries = inbox:%d outbox:%d, want 1 local and 1 remote",
+			len(spy.inbox),
+			len(spy.outbox),
+		)
+	}
+	if spy.inbox[0].RecipientDeviceId != "alice-device" ||
+		spy.outbox[0].Envelope.RecipientDeviceId != "charlie-device" {
+		t.Fatalf(
+			"group command fan-out was not device scoped: local=%q remote=%q",
+			spy.inbox[0].RecipientDeviceId,
+			spy.outbox[0].Envelope.RecipientDeviceId,
+		)
 	}
 }
 
 func TestCrossStation_DirectMessage_E2E(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
-	svc := conversation.NewConversationService(repo, spy, "station-A")
+	svc := newMemService(repo, spy)
 
 	conv, err := svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-B")
 	if err != nil {
@@ -683,6 +894,7 @@ func TestCrossStation_DirectMessage_E2E(t *testing.T) {
 	spy.mu.Unlock()
 
 	sendCmd := &chat.ConversationCommand{
+		CommandId:      uuid.NewString(),
 		ConversationId: conv.ConversationId,
 		SenderPtid:     "did:alice",
 		Payload: &chat.ConversationCommand_SendMessage{
@@ -702,11 +914,14 @@ func TestCrossStation_DirectMessage_E2E(t *testing.T) {
 
 	spy.mu.Lock()
 	defer spy.mu.Unlock()
-	if len(spy.events) != 1 {
-		t.Fatalf("expected 1 event submission (message), got %d", len(spy.events))
+	if len(spy.inbox) != 1 || len(spy.outbox) != 1 {
+		t.Fatalf(
+			"cross-Station command deliveries = inbox:%d outbox:%d, want 1 each",
+			len(spy.inbox),
+			len(spy.outbox),
+		)
 	}
-	committed := spy.events[0]
-	msgEvt := committed.GetMessageCommitted()
+	msgEvt := event.GetMessageCommitted()
 	if msgEvt == nil {
 		t.Fatal("expected MessageCommittedEvent payload")
 	}

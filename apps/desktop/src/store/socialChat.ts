@@ -34,7 +34,12 @@ import {
 } from '../gen/proto/domain/chat/group_chat_pb';
 import { EncryptedMediaDescriptorSchema } from '../gen/proto/domain/common/common_pb';
 import { X3dhSessionInitSchema } from '../gen/proto/domain/chat/key_exchange_pb';
-import type { Conversation, ConversationMember } from '../gen/proto/domain/chat/conversation_pb';
+import {
+  CommittedConversationEventSchema,
+  type CommittedConversationEvent,
+  type Conversation,
+  type ConversationMember,
+} from '../gen/proto/domain/chat/conversation_pb';
 import { imServiceV1 } from '../services/im-service';
 import { DirectKeyExchangeKind } from '../services/im-service-contract';
 import { log } from '../utils/logger';
@@ -242,6 +247,21 @@ function applyDecodedChatPayload<T extends FriendChatMessage | GroupMessage>(
     attachments: payload.attachments,
   } as T;
 }
+
+function cacheOwnCommittedMessage(
+  event: CommittedConversationEvent,
+  content: string,
+  attachments: readonly ChatAttachmentInput[],
+  messageType?: number,
+): void {
+  if (event.payload.case !== 'messageCommitted' || !event.payload.value.messageId) return;
+  setDecryptCache(event.payload.value.messageId, {
+    content,
+    type: messageType ?? encryptedChatTransportMessageType(),
+    attachments: attachments.map(groupAttachmentFromInput),
+    cachedAt: Date.now(),
+  });
+}
 export interface UnifiedConversation {
   type: 'friend' | 'group';
   ulid: string;
@@ -359,7 +379,10 @@ interface SocialChatState {
   sessionEncrypted: Record<string, boolean>;
   sessionSecurityState: Record<string, 'idle' | 'establishing' | 'ready' | 'error'>;
   sessionCryptoVersion: Record<string, number>;
-  groupSecurityState: Record<string, 'idle' | 'establishing' | 'ready' | 'error'>;
+  groupSecurityState: Record<
+    string,
+    'idle' | 'establishing' | 'ready' | 'crypto-desynced' | 'error'
+  >;
   setSessionSecurityState: (
     sessionUlid: string,
     state: 'idle' | 'establishing' | 'ready' | 'error',
@@ -367,7 +390,7 @@ interface SocialChatState {
   ) => void;
   setGroupSecurityState: (
     groupUlid: string,
-    state: 'idle' | 'establishing' | 'ready' | 'error',
+    state: 'idle' | 'establishing' | 'ready' | 'crypto-desynced' | 'error',
   ) => void;
   /**
    * Per-session WebRTC status. `transport` is the in-use ICE candidate type:
@@ -469,18 +492,6 @@ interface SocialChatState {
     threadRootUlid?: string,
   ) => Promise<void>;
   loadGroupMembers: (groupUlid: string) => Promise<void>;
-  /**
-   * Re-attempt decryption of any group ciphertext currently stuck on
-   * the `[Waiting for sender key…]` / `[Decrypt failed]` placeholder.
-   *
-   * Triggered by the `GROUP_SKDM_INSTALLED` event so a late-arriving
-   * SKDM unblocks all the messages it was supposed to unblock without
-   * forcing the user to reload the chat. When `senderDid` is
-   * provided we only retry rows attributed to that sender (cheap
-   * narrowing on the common single-peer case); when omitted we retry
-   * every placeholder in the group.
-   */
-  redecryptGroupMessages: (groupUlid: string, senderDid?: string) => Promise<void>;
   toggleDetail: () => void;
   setShowDetail: (show: boolean) => void;
   deleteMessage: (ulid: string, messageUlid: string, kind?: 'friend' | 'group') => Promise<void>;
@@ -1485,7 +1496,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           fmsgs,
         );
       } else {
-        // Group chat is stored remotely as Sender-Keys ciphertext.
+        // Group chat is stored remotely as opaque OpenMLS ciphertext.
         // The same decode path feeds rendering and the local plaintext
         // search index so UI state and search state cannot drift.
         msgs = await decodeGroupMessages(ulid, msgs as GroupMessage[], 'group decrypt failed');
@@ -1741,7 +1752,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       );
       const deviceId = localStorage.getItem('peers_im_device_id') ?? '';
 
-      await imServiceV1.conversation.submitCommand({
+      const committed = await imServiceV1.conversation.submitCommand({
         conversation_id: sessionUlid,
         sender_ptid: did,
         sender_device_id: deviceId,
@@ -1753,6 +1764,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           thread_root_message_id: threadRootUlid ?? '',
         },
       } as any);
+      cacheOwnCommittedMessage(committed, content, attachments ?? [], type);
 
       if (threadRootUlid) return;
       await get().loadMessages(sessionUlid, 'friend').catch((error) => {
@@ -1792,7 +1804,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           ?.membershipEpoch ?? 0,
       );
 
-      await imServiceV1.conversation.submitCommand({
+      const committed = await imServiceV1.conversation.submitCommand({
         conversation_id: groupUlid,
         sender_ptid: did,
         sender_device_id: deviceId,
@@ -1804,6 +1816,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           thread_root_message_id: explicitThreadRootUlid ?? '',
         },
       } as any);
+      await imServiceV1.mlsGroup.recordAuthorityEvent(
+        toBinary(CommittedConversationEventSchema, committed),
+        deviceId,
+      );
+      cacheOwnCommittedMessage(committed, content, attachments ?? [], type);
 
       if (explicitThreadRootUlid) return;
       await get().loadMessages(groupUlid, 'group').catch((error) => {
@@ -1844,62 +1861,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       log.error('socialChat', 'loadGroupMembers failed', error);
       throw error;
     }
-  },
-
-  redecryptGroupMessages: async (groupUlid, senderDid) => {
-    // Guards: nothing to do if we have no cached messages for this
-    // group yet (the next loadMessages will decrypt fresh anyway).
-    const cached = get().messages[groupUlid] as GroupMessage[] | undefined;
-    if (!cached || cached.length === 0) return;
-
-    // Identify rows that are encrypted-but-undecrypted. We use the
-    // placeholder strings as the "stuck" sentinel because they are
-    // produced exclusively by loadMessages' MissingSkdm / generic
-    // failure arm; any successfully-decrypted row has the real
-    // plaintext in `content` already.
-      const PLACEHOLDERS = new Set([
-        GROUP_DECRYPT_FAILED_PLACEHOLDER,
-      ]);
-    const rows = cached.filter((m) => {
-      if (m.recalled) return false;
-      if (!m.encryptedPayload || m.encryptedPayload.byteLength === 0) return false;
-      if (!PLACEHOLDERS.has(m.content || '')) return false;
-      if (senderDid && m.senderDid && m.senderDid !== senderDid) return false;
-      return true;
-    });
-    if (rows.length === 0) return;
-
-    // Walk in original order; we update at the end as a single
-    // setState so React doesn't re-render once per message.
-    const decrypted = new Map<string, GroupMessage>();
-    for (const m of rows) {
-      try {
-        const payloadB64 = bytesToB64(m.encryptedPayload);
-        const cipherBytes = Uint8Array.from(atob(payloadB64), c => c.charCodeAt(0));
-        const plaintext = await imServiceV1.mlsGroup.decrypt(groupUlid, cipherBytes);
-        const payload = decodeEncryptedChatPayloadBytes(plaintext);
-        if (!payload) {
-          throw new Error('MLS plaintext is not a valid encrypted chat payload');
-        }
-        const result = applyDecodedChatPayload(m, payload);
-        cacheDecryptedGroupMessage(m, result);
-        decrypted.set(m.ulid, result);
-      } catch (err) {
-        log.warn('socialChat', 'redecryptGroupMessages: decrypt failed', err);
-      }
-    }
-    if (decrypted.size === 0) return;
-
-    set((state) => {
-      const list = state.messages[groupUlid] as GroupMessage[] | undefined;
-      if (!list) return state;
-      const next = list.map((m) => {
-        return decrypted.get(m.ulid) ?? m;
-      });
-      return {
-        messages: { ...state.messages, [groupUlid]: next as (FriendChatMessage | GroupMessage)[] },
-      };
-    });
   },
 
   toggleDetail: () => set((state) => ({ showDetail: !state.showDetail })),
@@ -2474,26 +2435,26 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   deleteGroupContact: async (groupUlid) => {
     try {
-      await api.groupChatLeaveGroup(groupUlid);
-      set((prev) => {
-        const nextLocalState = { ...prev.conversationLocalState };
-        delete nextLocalState[conversationKey('group', groupUlid)];
-        const nextMessages = { ...prev.messages };
-        const nextPreviews = { ...prev.lastPreviews };
-        delete nextMessages[groupUlid];
-        delete nextPreviews[groupUlid];
-        saveConversationLocalState(prev.currentUserDid, nextLocalState);
-        return {
-          groups: prev.groups.filter((group) => group.ulid !== groupUlid),
-          groupMembers: Object.fromEntries(Object.entries(prev.groupMembers).filter(([key]) => key !== groupUlid)),
-          groupUnreadCounts: Object.fromEntries(Object.entries(prev.groupUnreadCounts).filter(([key]) => key !== groupUlid)),
-          conversationLocalState: nextLocalState,
-          messages: nextMessages,
-          lastPreviews: nextPreviews,
-          ...(prev.activeGroupUlid === groupUlid ? { activeGroupUlid: null } : {}),
-        };
+      const state = get();
+      const actorPtid = state.currentUserDid ?? '';
+      if (!actorPtid) throw new Error('No authenticated actor');
+      const [conversation, federationSelf, device] = await Promise.all([
+        imServiceV1.conversation.getConversation(groupUlid),
+        api.federationGetSelf(),
+        api.accountGetDeviceId(),
+      ]);
+      await imServiceV1.mlsGroup.requestLeaveIntent({
+        federationId: conversation.federationId,
+        authorityStationPeerId: conversation.authorityStationPeerId,
+        authorityEpoch: Number(conversation.authorityEpoch),
+        homeStationPeerId: federationSelf.homeStationPeerId,
+        conversationId: groupUlid,
+        actorPtid,
+        actorDeviceId: device.device_id,
+        observedMembershipEpoch: Number(conversation.membershipEpoch),
+        observedMlsEpoch: Number(conversation.mlsEpoch),
       });
-      await get().loadGroups();
+      get().setGroupSecurityState(groupUlid, 'establishing');
     } catch (error) {
       log.error('socialChat', 'deleteGroupContact failed', error);
       throw error;

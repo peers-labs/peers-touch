@@ -1,10 +1,10 @@
 # Federated IM Architecture
 
 > **Status**: draft
-> **Version**: v0.2
-> **Created**: 2026-07-04 | **Updated**: 2026-08-02
+> **Version**: v0.4
+> **Created**: 2026-07-04 | **Updated**: 2026-08-03
 > **Owner**: Architecture Team
-> **Module**: `apps/station/app/subserver/group_chat/`, `apps/station/frame/touch/federation/`, `model/domain/chat/`, `model/domain/federation/`, `model/domain/realtime/`, `apps/desktop/src/store/socialChat.ts`
+> **Module**: `apps/station/app/subserver/conversation/`, `apps/station/app/subserver/envelope/`, `apps/station/frame/touch/actor/`, `apps/station/frame/touch/federation/`, `model/domain/chat/`, `model/domain/federation/`, `apps/desktop/src/store/socialChat.ts`
 
 > **v1 unification update (2026-07-11)**: Decisions D-08…D-12 (see `decisions.md`)
 > set group E2EE to MLS (RFC 9420, D-06 superseded), one Station signaling-envelope
@@ -17,6 +17,18 @@
 > business membership, `membership_epoch`, MLS epoch, opaque Commit delivery,
 > and follower convergence. No implementation may claim C-4/C-5 until D-13 is
 > implemented and its L3 gates pass.
+>
+> **Remote proposal trust amendment (2026-08-02)**: D-14 is accepted.
+> Remote membership transitions use a conversation-owned signed proposal that
+> wraps the canonical D-13 command, verifies a device actor signature against
+> the Actor identity projection, and returns the canonical committed event.
+> Legacy `GroupProposal`/`GroupEvent` is not a compatibility path.
+>
+> **Remote command unification amendment (2026-08-03)**: D-17 is accepted.
+> It replaces the membership-only D-14
+> wrapper with one actor-device-signed `ConversationCommandProposal` for every
+> authority-committed remote command. Owner approval was recorded on
+> 2026-08-03.
 
 ---
 
@@ -43,6 +55,8 @@ The current group lifecycle source of truth defines local Station group behavior
 
 - who owns a federated group event log;
 - how remote actors join and speak in a group;
+- how remote authority commands are signed, retried, deduplicated, and
+  committed without direct client-to-authority mutation;
 - how group messages are ordered without putting every message into Federation Ledger;
 - how MLS group key material (Welcome/Commit/KeyPackage) is delivered across Stations without exposing group secrets to any Station;
 - how a family-scale Station can prove quality with 100-person group and private-chat stress tests.
@@ -65,10 +79,12 @@ The current group lifecycle source of truth defines local Station group behavior
 | [design.md](./design.md) | Architecture, ownership, runtime units, trust boundaries, core flows |
 | [data-model.md](./data-model.md) | Conceptual contracts, event log, ActorRef membership, epochs, delivery cursors |
 | [decisions.md](./decisions.md) | ADR-lite decisions and alternatives |
-| [integration.md](./integration.md) | D-13 current-to-target Model/Station/Desktop/federation mapping and deletion boundary |
+| [integration.md](./integration.md) | D-17 evidence ledger, current-to-target cross-runtime mapping, failure semantics, and deletion boundary |
+| [module-layout.md](./module-layout.md) | D-17 target ownership, module responsibilities, dependency direction, and forbidden duplication |
 | [proposals/20260711-im-unification-review.md](./proposals/20260711-im-unification-review.md) | v1 IM unification review (approved decisions D-08…D-12) |
 | [execution-plans/20260712-v1-im-execution-plan.md](./execution-plans/20260712-v1-im-execution-plan.md) | v1 IM dependency-ordered execution plan (P0…P7) |
 | [execution-plans/20260802-d13-atomic-mls-membership-transition.md](./execution-plans/20260802-d13-atomic-mls-membership-transition.md) | D-13 atomic membership/MLS transition and three-Station C-4/C-5 closure plan |
+| [execution-plans/20260803-d17-generic-conversation-command-proposal.md](./execution-plans/20260803-d17-generic-conversation-command-proposal.md) | Accepted D-17 generic remote command hard-cut and C6 remote-send closure plan |
 | [execution-plans/20260731-debt-zero-dm-group.md](./execution-plans/20260731-debt-zero-dm-group.md) | Full-stack DM/group single-path cutover subplan; P3.0 strict decoding complete, awaiting parent Mobile/three-Station gates |
 | [execution-plans/20260712-g0-mls-verification.md](./execution-plans/20260712-g0-mls-verification.md) | G0 MLS two-platform verification plan (unblocks D-08 / P3) |
 | [execution-plans/20260729-signal-level-chat-modernization.md](./execution-plans/20260729-signal-level-chat-modernization.md) | Signal-level UX modernization (read receipts, media, reactions, calls) |

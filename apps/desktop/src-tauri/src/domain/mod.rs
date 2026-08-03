@@ -1,3 +1,4 @@
+pub mod actor_device_identity;
 pub mod admin;
 pub mod applets;
 pub mod auth;
@@ -6,6 +7,7 @@ pub mod crypto;
 pub mod identity;
 pub mod mls;
 pub mod mls_group;
+pub mod mls_transition;
 pub mod pin_lock;
 pub mod presence;
 pub mod profile;

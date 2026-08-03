@@ -25,9 +25,10 @@ pub mod peers_touch {
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
     applets, auth, channels, chat, conversation, cron, crypto, desktop_capture, federation,
-    friend_chat, frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice, key_exchange,
-    mcp, memory, mls, model_config, notebook, notification, oauth2, oss, presence, profile,
-    provider, realtime, search, settings, skills, skills_market, social, station, system, tools, tts,
+    friend_chat, frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice,
+    key_exchange, mcp, memory, mls, model_config, notebook, notification, oauth2, oss, presence,
+    profile, provider, realtime, search, settings, skills, skills_market, social, station, system,
+    tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -41,7 +42,10 @@ fn main() {
     let app_state = Arc::new(ctx.app_state);
 
     let presence_supervisor = Arc::new(application::presence::PresenceSupervisor::new());
-    let mls_group_manager = Arc::new(domain::mls_group::MlsGroupManager::new());
+    let actor_device_identity = Arc::new(domain::actor_device_identity::ActorDeviceIdentity::new());
+    let mls_group_manager = Arc::new(domain::mls_group::MlsGroupManager::with_actor_identity(
+        actor_device_identity.clone(),
+    ));
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
@@ -54,6 +58,7 @@ fn main() {
         .manage(app_state)
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
         .manage(presence_supervisor)
+        .manage(actor_device_identity)
         .manage(mls_group_manager)
         .setup(|app| {
             let resource_dir = app.path()
@@ -479,8 +484,6 @@ fn main() {
             group_chat::group_chat_list_thread_messages,
             group_chat::group_chat_thread_counts,
             group_chat::group_chat_thread_mark_read,
-            group_chat::group_chat_send_message,
-            group_chat::group_chat_submit_skdm_envelope,
             group_chat::group_chat_unread_count,
             group_chat::group_chat_mark_read,
             group_chat::group_chat_create_group,
@@ -537,6 +540,8 @@ fn main() {
             conversation::conversation_create_direct,
             conversation::conversation_create_group,
             conversation::conversation_submit_command,
+            conversation::conversation_submit_command_proposal,
+            conversation::conversation_get_command_proposal_result,
             conversation::conversation_react,
             conversation::conversation_submit_receipt,
             conversation::conversation_list,
@@ -563,6 +568,8 @@ fn main() {
             conversation::dkx_send,
             // v1 MLS group commands (P3)
             mls::mls_init_identity,
+            mls::mls_submit_leave_intent,
+            mls::mls_list_leave_intents,
             mls::mls_generate_key_package,
             mls::mls_group_create,
             mls::mls_group_join,
@@ -571,10 +578,17 @@ fn main() {
             mls::mls_group_process_commit,
             mls::mls_group_add_member,
             mls::mls_group_remove_member,
+            mls::mls_group_remove_device,
+            mls::mls_group_accept_pending,
+            mls::mls_group_discard_pending,
+            mls::mls_group_pending_status,
+            mls::mls_recipient_record_authority_event,
+            mls::mls_recipient_apply_delivery,
+            mls::mls_recipient_status,
             mls::mls_group_status,
+            mls::mls_group_public_head,
             mls::mls_group_save,
-            mls::mls_group_load,
-            mls::mls_distribute
+            mls::mls_group_load
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -1,6 +1,6 @@
 # G2 — v1 IM 统一执行计划（依赖有序）
 
-> **Status**: P0/P1 已实施；P2/P3 严格加密收口进行中；P4 被 Mobile P2/P3 与三 Station MLS 收敛门阻塞
+> **Status**: P0/P1 与 Desktop/三 Station P2/P3 已关闭；P4 仅被 Mobile P2/P3 阻塞
 > **Stage**: v1（不涉及任何版本号升级）
 > **Created**: 2026-07-12 | **Updated**: 2026-08-01
 > **Current Worktree/Branch**: `peers-chat-high-chat` / `feat/group-detail-history-ux-pr`
@@ -207,7 +207,7 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 | P0 | DONE | proto build / wire contract | — |
 | P1 | DONE | conversation/envelope Station gates | — |
 | P2 | IN PROGRESS | Desktop strict DR v1 S1.1 multi-worktree PASS | Mobile DR v1；跨站/多设备/吊销门 |
-| P3 | IN PROGRESS | Desktop strict MLS S1.1 + removal/restart PASS | Mobile OpenMLS；C-4/C-5 三 Station；压力门 |
+| P3 | IN PROGRESS | Desktop strict MLS S1.1 + D13 C0-C7 three-Station PASS | Mobile OpenMLS；Mobile 成员/设备/移除安全门 |
 | P4 | BLOCKED | Desktop canonical App/Web gateway parity 已关闭 | P2/P3 全部门关闭后执行 Desktop + Mobile Runtime 归一 |
 | P5 | PENDING | — | P4 完成 |
 | P6 | PENDING | — | P2–P5 替代路径完成；原子删旧世界 + 运维 SQL 清理 |
@@ -230,8 +230,9 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 - Desktop DM/group 解码已删除 plaintext probing、DR `v=0`、raw-text fallback 与
   `crypto.dr_enabled`；Direct bundle 只发布 `[1]`。
 - Rust 边界只接受 `negotiated_version=1`；chain-only Tauri/conversation 命令已删除。
-  Desktop Sender Keys 前端与 Tauri 注册面已删除，dev HTTP gateway 在 dispatch 前 fail closed；
-  Sender Keys 源码与表的物理删除仍属于 P6。
+  Desktop Sender Keys 已完成物理删除：前端、Tauri/Web gateway、crypto 源码、旧 group send/SKDM
+  命令、SQLCipher create/read/write helper 与事件管线均已移除。共享 proto/Mobile 合同删除由独立
+  Mobile migration 项目负责，不计入 Desktop 完成声明。
 - 应用启动时的 `legacy_group_plaintext_wipe_v1` 已删除；历史数据不再由应用代码修改。
 - `socialChat.strictCrypto.test.ts`：9/9 PASS，覆盖 plaintext、`v=0`、未知版本、损坏信封、
   raw decrypted bytes、旧命令面与应用内数据删除负例。
@@ -258,8 +259,8 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 
 1. `P2/P3-S2 Mobile DR/OpenMLS parity`：以同一 proto/wire 合同替换 Mobile sealed-envelope
    DM 与 Sender Keys group runtime。
-2. `P3-S3 C-4/C-5 three-Station convergence`：补齐 membership epoch / MLS Commit
-   原子绑定、跨进程收敛与移除后安全负例。
+2. `P3-S3 C-4/C-5 three-Station convergence` 已由 D13 C0-C7 与 D17 W1-W8 关闭；
+   最终 C6 报告为 `pass`，三 Station 运行同一快照 `6acefbf39526`。
 
 ### 2026-08-02 Desktop 证明优先级修订（已批准）
 
@@ -335,5 +336,5 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 ## 5. 声明
 
 - P0/P1 已关闭。
-- P2/P3 只有 Desktop 单 Station 主路径具备真实证据；严格单路径、Mobile 与三 Station 门未关闭。
-- P4 被 P2/P3 阻塞，当前不得声明 P4 或后续相位完成。
+- P2/P3 的 Desktop 严格单路径与三 Station D13/D17 门已关闭；Mobile 尚未关闭。
+- P4 仅被 Mobile P2/P3 阻塞，当前不得声明 P4 或后续相位完成。

@@ -59,17 +59,6 @@ func extractFetchKeyPackageOp(body []byte) social_gate.Operation {
 	}
 }
 
-// extractMlsDistributeOp extracts the conversation_id from a DistributeMlsRequest body.
-func extractMlsDistributeOp(body []byte) social_gate.Operation {
-	var partial struct {
-		ConversationID string `json:"conversation_id"`
-	}
-	_ = json.Unmarshal(body, &partial)
-	return social_gate.Operation{
-		ConversationID: partial.ConversationID,
-	}
-}
-
 // extractDkxSendOp extracts the conversation and recipient from a SendDkxRequest body.
 // DKX is allowed only for active members of the direct conversation.
 func extractDkxSendOp(body []byte) social_gate.Operation {

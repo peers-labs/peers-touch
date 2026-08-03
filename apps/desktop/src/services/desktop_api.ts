@@ -42,7 +42,6 @@ import {
 import {
   ListGroupsResponseSchema,
   GetGroupMessagesResponseSchema,
-  SendGroupMessageResponseSchema,
   GetUnreadCountResponseSchema,
   MarkGroupReadResponseSchema,
   CreateGroupResponseSchema,
@@ -66,7 +65,6 @@ import {
   GetOfflineMessagesResponseSchema,
   AckOfflineMessagesResponseSchema,
   GetGroupStatsResponseSchema,
-  SubmitGroupSkdmEnvelopeResponseSchema,
 } from '../gen/proto/domain/chat/group_chat_pb';
 export type {
   ActorList,
@@ -155,7 +153,6 @@ export type {
   GroupMessage,
   ListGroupsResponse,
   GetGroupMessagesResponse,
-  SendGroupMessageResponse,
   GetUnreadCountResponse,
   MarkGroupReadResponse,
   GroupMember,
@@ -180,7 +177,6 @@ export type {
   GetOfflineMessagesResponse,
   AckOfflineMessagesResponse,
   GetGroupStatsResponse,
-  SubmitGroupSkdmEnvelopeResponse,
 } from '../gen/proto/domain/chat/group_chat_pb';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -3660,8 +3656,12 @@ export const api = {
             }
             return { model, id: resolvedId, displayName };
           })
-          .filter(({ id }) => id.length > 0)
-          .map(({ model, id: mid, displayName }) => {
+          .filter(({ id }: { id: string }) => id.length > 0)
+          .map(({ model, id: mid, displayName }: {
+            model: any;
+            id: string;
+            displayName: string;
+          }) => {
             return {
               id: mid,
               display_name: displayName || mid,
@@ -5002,58 +5002,6 @@ export const api = {
       group_ulid: groupUlid,
       root_ulid: rootUlid,
       last_read_ulid: lastReadUlid,
-    }),
-
-  // Legacy group RPCs are retained until the P3/P4 atomic command cutover,
-  // but their payload must already be MLS ciphertext produced by mlsGroup.
-  groupChatSendMessage: (
-    groupUlid: string,
-    content: string,
-    type?: number,
-    replyToUlid?: string,
-    mentionedDids?: string[],
-    mentionAll?: boolean,
-    attachments?: ChatAttachmentInput[],
-    encryptedPayload?: string,
-    threadRootUlid?: string,
-    observedMembershipEpoch?: number | bigint,
-  ) =>
-    invokeRustProto('group_chat_send_message', SendGroupMessageResponseSchema, {
-      group_ulid: groupUlid,
-      content,
-      type,
-      reply_to_ulid: replyToUlid,
-      thread_root_ulid: threadRootUlid,
-      mentioned_dids: mentionedDids,
-      mention_all: mentionAll,
-      attachments,
-      ...(encryptedPayload != null && encryptedPayload !== ''
-        ? { encrypted_payload: encryptedPayload }
-        : {}),
-      observed_membership_epoch: Number(observedMembershipEpoch ?? 0),
-    }),
-
-  groupChatSubmitSkdmEnvelope: (input: {
-    groupUlid: string;
-    membershipEpoch: number | bigint;
-    senderDid: string;
-    senderKeyId: number;
-    recipientDid: string;
-    recipientDeviceId: string;
-    recipientHomeStationPeerId: string;
-    encryptedPayload: string;
-    idempotencyKey?: string;
-  }) =>
-    invokeRustProto('group_chat_submit_skdm_envelope', SubmitGroupSkdmEnvelopeResponseSchema, {
-      group_ulid: input.groupUlid,
-      membership_epoch: Number(input.membershipEpoch),
-      sender_did: input.senderDid,
-      sender_key_id: input.senderKeyId,
-      recipient_did: input.recipientDid,
-      recipient_device_id: input.recipientDeviceId,
-      recipient_home_station_peer_id: input.recipientHomeStationPeerId,
-      encrypted_payload: input.encryptedPayload,
-      idempotency_key: input.idempotencyKey,
     }),
 
   groupChatUnreadCount: (groupUlid?: string) =>

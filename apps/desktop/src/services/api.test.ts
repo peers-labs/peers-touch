@@ -317,6 +317,7 @@ describe('api.updateProvider', () => {
           enabled: true,
           key_vaults: '{"api_key":"sk-test"}',
           config_json: '{"base_url":""}',
+          version: 0,
       },
     })
   })

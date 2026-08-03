@@ -29,6 +29,20 @@ type Service interface {
 	// Resume returns all unacknowledged inbox items for a device, ordered by
 	// queue time. Called on SSE reconnect / cold start with Last-Event-ID cursor.
 	Resume(ctx context.Context, recipientPtid, deviceID string, afterCursor string) ([]*chat.DeviceInboxItem, error)
+
+	// NotifyPersisted publishes an inbox item that another application unit of
+	// work has already committed. It never performs persistence.
+	NotifyPersisted(ctx context.Context, item *chat.DeviceInboxItem)
+}
+
+// FederatedDeliveryApplier lets a domain atomically apply ordered Station facts
+// and persist their local inbox rows before transport ACK.
+type FederatedDeliveryApplier interface {
+	ApplyFederatedDelivery(
+		ctx context.Context,
+		env *chat.StationEnvelope,
+		issuerStationPeerID string,
+	) (handled bool, notifications []*chat.DeviceInboxItem, err error)
 }
 
 // FederationClaims carries the verified JWT claims from a relay-forward request.

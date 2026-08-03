@@ -56,6 +56,8 @@ func seedTestnet(t *testing.T, ctx context.Context, cfg *testnetSeedConfig, fedS
 			ApprovedByActorId:              creator.ActorID,
 			ApprovedByActorFederatedHandle: creator.Handle,
 			Role:                           "member_station",
+			ApprovedStationUrl:             station.URL,
+			ApprovedStationName:            station.Name,
 		}
 		payloadBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(payload)
 		if err != nil {

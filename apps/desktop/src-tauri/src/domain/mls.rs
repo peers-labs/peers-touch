@@ -73,13 +73,16 @@ fn secure_temp_state_path() -> Result<PathBuf, String> {
         .filter(|value| !value.trim().is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
-    let dir = root.join("peers-touch").join("desktop").join("runtime").join("mls-export");
+    let dir = root
+        .join("peers-touch")
+        .join("desktop")
+        .join("runtime")
+        .join("mls-export");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))
-            .map_err(|e| e.to_string())?;
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
     }
     Ok(dir.join(format!("{}.state", ulid::Ulid::new())))
 }
@@ -157,8 +160,8 @@ mod tests {
         let alice_provider = PeersMLSProvider::new();
         let bob_provider = PeersMLSProvider::new();
 
-        let bob_kp = create_key_package(&bob_provider, &bob_signer, bob_cwk.clone())
-            .expect("bob kp");
+        let bob_kp =
+            create_key_package(&bob_provider, &bob_signer, bob_cwk.clone()).expect("bob kp");
 
         let mut alice_group = MlsGroup::builder()
             .ciphersuite(PEERS_CIPHERSUITE)
@@ -179,24 +182,24 @@ mod tests {
             .create_message(&alice_provider, &alice_signer, b"before-persist")
             .expect("encrypt msg");
 
-        alice_provider
-            .save_state(state_name)
-            .expect("save state");
+        alice_provider.save_state(state_name).expect("save state");
 
         let mut restored_provider = PeersMLSProvider::new();
         restored_provider
             .load_state(state_name)
             .expect("load state");
 
-        let restored_group =
-            MlsGroup::load(restored_provider.storage(), &GroupId::from_slice(b"c2-test-group"))
-                .expect("load group from storage");
+        let restored_group = MlsGroup::load(
+            restored_provider.storage(),
+            &GroupId::from_slice(b"c2-test-group"),
+        )
+        .expect("load group from storage");
 
         assert!(restored_group.is_some(), "group not found after restore");
         let mut restored_group = restored_group.unwrap();
 
-        let msg2 = restored_group
-            .create_message(&restored_provider, &alice_signer, b"after-persist");
+        let msg2 =
+            restored_group.create_message(&restored_provider, &alice_signer, b"after-persist");
 
         assert!(
             msg2.is_ok(),
@@ -205,7 +208,7 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(
-            std::env::temp_dir().join(format!("openmls_cli_{state_name}_ks.json"))
+            std::env::temp_dir().join(format!("openmls_cli_{state_name}_ks.json")),
         );
     }
 }

@@ -19,6 +19,7 @@ import (
 	fednode "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator"
 	locatorpb "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator/pb"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	fedcache "github.com/peers-labs/peers-touch/station/frame/touch/federation/cache"
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
 	profilepb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
@@ -435,6 +436,12 @@ func (r *Resolver) resolveRemote(
 	}); vErr != nil {
 		logger.Warnf(ctx, "[resolver] envelope verify failed handle=%s err=%v", canon, vErr)
 		return nil, fmt.Errorf("resolver: verify envelope: %w", vErr)
+	}
+	if err := touchactor.CacheVerifiedRemoteDeviceSigningKeys(
+		ctx,
+		env,
+	); err != nil {
+		return nil, fmt.Errorf("resolver: cache verified actor device keys: %w", err)
 	}
 
 	return &Resolved{Envelope: env, Locator: rec, IsLocal: false}, nil

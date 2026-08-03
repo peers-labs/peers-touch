@@ -860,20 +860,6 @@ pub struct GroupChatListMessagesInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatSendInput {
-    pub group_ulid: String,
-    pub content: String,
-    pub r#type: Option<i32>,
-    pub reply_to_ulid: Option<String>,
-    pub thread_root_ulid: Option<String>,
-    pub mentioned_dids: Option<Vec<String>>,
-    pub mention_all: Option<bool>,
-    pub attachments: Option<Vec<AttachmentInput>>,
-    pub encrypted_payload: Option<String>,
-    pub observed_membership_epoch: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupChatUnreadInput {
     pub group_ulid: Option<String>,
 }
