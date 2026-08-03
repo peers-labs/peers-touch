@@ -49,7 +49,6 @@ import { presentError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { imServiceV1 } from '../../services/im-service';
-import { MlsDeliveryKind } from '../../services/im-service-contract';
 
 const { Text } = Typography;
 
@@ -924,32 +923,49 @@ export function ChatDetailPanel() {
   };
 
   const submitGroupInvites = async () => {
-    if (!activeUlid || inviteDids.length === 0) return;
+    if (!activeUlid || !currentUserDid || inviteDids.length === 0) return;
     setInviteSubmitting(true);
     const pendingDids = [...inviteDids];
     try {
       setGroupSecurityState(activeUlid, 'establishing');
-      const keyPackages = new Map<string, Uint8Array>();
+      const device = await api.accountGetDeviceId();
+      if (!device.device_id) throw new Error('Local device identity is unavailable');
+      const invitees = new Map<string, {
+        data: Uint8Array;
+        deviceId: string;
+        homeStationPeerId: string;
+      }>();
       for (const did of pendingDids) {
-        const { data } = await imServiceV1.keyPackage.fetch(did);
-        if (!data) {
-          throw new Error(`MLS KeyPackage is unavailable for ${did}`);
+        const fetched = await imServiceV1.keyPackage.fetch(did);
+        if (
+          !fetched.available
+          || !fetched.data
+          || !fetched.deviceId
+          || !fetched.homeStationPeerId
+        ) {
+          throw new Error(`MLS KeyPackage routing is unavailable for ${did}`);
         }
-        keyPackages.set(did, data);
+        invitees.set(did, {
+          data: fetched.data,
+          deviceId: fetched.deviceId,
+          homeStationPeerId: fetched.homeStationPeerId,
+        });
       }
-      await api.groupChatInviteToGroup(activeUlid, pendingDids);
       for (const did of pendingDids) {
-        const { commitBytes, welcomeBytes } = await imServiceV1.mlsGroup.addMember(
-          activeUlid,
-          keyPackages.get(did)!,
-        );
-        await imServiceV1.mlsGroup.save(activeUlid);
-        if (commitBytes.length > 0) {
-          await imServiceV1.mlsGroup.distribute(activeUlid, MlsDeliveryKind.COMMIT, 0, commitBytes);
-        }
-        if (welcomeBytes.length > 0) {
-          await imServiceV1.mlsGroup.distribute(activeUlid, MlsDeliveryKind.WELCOME, 0, welcomeBytes, [did]);
-        }
+        const conversation = await imServiceV1.conversation.getConversation(activeUlid);
+        const invitee = invitees.get(did)!;
+        await imServiceV1.mlsGroup.addAuthorizedMember({
+          conversationId: activeUlid,
+          senderPtid: currentUserDid,
+          senderDeviceId: device.device_id,
+          observedMembershipEpoch: Number(conversation.membershipEpoch),
+          member: {
+            ptid: did,
+            deviceId: invitee.deviceId,
+            homeStationPeerId: invitee.homeStationPeerId,
+            keyPackage: invitee.data,
+          },
+        });
       }
       setGroupSecurityState(activeUlid, 'ready');
       await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
@@ -977,18 +993,20 @@ export function ChatDetailPanel() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
+          if (!currentUserDid) throw new Error('Authenticated actor is unavailable');
           setGroupSecurityState(activeUlid, 'establishing');
-          const commitBytes = await imServiceV1.mlsGroup.removeMember(activeUlid, member.ptid);
-          await imServiceV1.mlsGroup.save(activeUlid);
-          if (commitBytes.length > 0) {
-            await imServiceV1.mlsGroup.distribute(
-              activeUlid,
-              MlsDeliveryKind.COMMIT,
-              0,
-              commitBytes,
-            );
-          }
-          await api.groupChatRemoveMember(activeUlid, member.ptid);
+          const [device, conversation] = await Promise.all([
+            api.accountGetDeviceId(),
+            imServiceV1.conversation.getConversation(activeUlid),
+          ]);
+          if (!device.device_id) throw new Error('Local device identity is unavailable');
+          await imServiceV1.mlsGroup.removeAuthorizedMember({
+            conversationId: activeUlid,
+            senderPtid: currentUserDid,
+            senderDeviceId: device.device_id,
+            observedMembershipEpoch: Number(conversation.membershipEpoch),
+            memberPtid: member.ptid,
+          });
           setGroupSecurityState(activeUlid, 'ready');
           await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
           toast.success(t('chat.social.detail.removeMemberSuccess'));
@@ -1065,9 +1083,24 @@ export function ChatDetailPanel() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await api.groupChatLeaveGroup(activeUlid);
-          await loadGroups();
-          selectGroup('');
+          const [conversation, federationSelf, device] = await Promise.all([
+            imServiceV1.conversation.getConversation(activeUlid),
+            api.federationGetSelf(),
+            api.accountGetDeviceId(),
+          ]);
+          if (!currentUserDid) throw new Error('No authenticated actor');
+          await imServiceV1.mlsGroup.requestLeaveIntent({
+            federationId: conversation.federationId,
+            authorityStationPeerId: conversation.authorityStationPeerId,
+            authorityEpoch: Number(conversation.authorityEpoch),
+            homeStationPeerId: federationSelf.homeStationPeerId,
+            conversationId: activeUlid,
+            actorPtid: currentUserDid,
+            actorDeviceId: device.device_id,
+            observedMembershipEpoch: Number(conversation.membershipEpoch),
+            observedMlsEpoch: Number(conversation.mlsEpoch),
+          });
+          setGroupSecurityState(activeUlid, 'establishing');
           setShowDetail(false);
         } catch (error) {
           log.error('chat', 'leave group failed', { groupUlid: activeUlid, error });

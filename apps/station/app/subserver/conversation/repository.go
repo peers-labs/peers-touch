@@ -18,7 +18,10 @@ type conversationModel struct {
 	ConversationID         string    `gorm:"column:conversation_id;size:128;uniqueIndex"`
 	Kind                   int32     `gorm:"column:kind"`
 	AuthorityStationPeerID string    `gorm:"column:authority_station_peer_id;size:255"`
+	FederationID           string    `gorm:"column:federation_id;size:128;index"`
+	AuthorityEpoch         int64     `gorm:"column:authority_epoch"`
 	MembershipEpoch        int64     `gorm:"column:membership_epoch"`
+	MlsEpoch               int64     `gorm:"column:mls_epoch"`
 	Status                 int32     `gorm:"column:status"`
 	CurrentSeq             int64     `gorm:"column:current_seq"`
 	Name                   string    `gorm:"column:name;size:255"`
@@ -51,16 +54,48 @@ type conversationMemberModel struct {
 
 func (*conversationMemberModel) TableName() string { return "conversation_members" }
 
+type conversationMemberDeviceModel struct {
+	ID                uint      `gorm:"column:id;primaryKey"`
+	ConversationID    string    `gorm:"column:conversation_id;size:128;index:idx_member_device_conv;uniqueIndex:uidx_member_device"`
+	Ptid              string    `gorm:"column:ptid;size:255;index:idx_member_device_ptid;uniqueIndex:uidx_member_device"`
+	DeviceID          string    `gorm:"column:device_id;size:255;uniqueIndex:uidx_member_device"`
+	HomeStationPeerID string    `gorm:"column:home_station_peer_id;size:255"`
+	Active            bool      `gorm:"column:active"`
+	UpdatedAt         time.Time `gorm:"column:updated_at"`
+}
+
+func (*conversationMemberDeviceModel) TableName() string {
+	return "conversation_member_devices"
+}
+
 type conversationEventModel struct {
-	ID             uint      `gorm:"column:id;primaryKey"`
-	EventID        string    `gorm:"column:event_id;size:64;uniqueIndex"`
-	ConversationID string    `gorm:"column:conversation_id;size:128;index:idx_event_conv_seq"`
-	GroupSeq       int64     `gorm:"column:group_seq;index:idx_event_conv_seq"`
-	EventBytes     []byte    `gorm:"column:event_bytes;type:bytea"`
-	CommittedAt    time.Time `gorm:"column:committed_at"`
+	ID              uint      `gorm:"column:id;primaryKey"`
+	EventID         string    `gorm:"column:event_id;size:64;uniqueIndex"`
+	ConversationID  string    `gorm:"column:conversation_id;size:128;index:idx_event_conv_seq,priority:1;uniqueIndex:uidx_event_conv_seq,priority:1;uniqueIndex:uidx_event_conv_transition,priority:1"`
+	GroupSeq        int64     `gorm:"column:group_seq;index:idx_event_conv_seq,priority:2;uniqueIndex:uidx_event_conv_seq,priority:2"`
+	TransitionID    *string   `gorm:"column:transition_id;size:64;uniqueIndex:uidx_event_conv_transition,priority:2"`
+	MembershipEpoch int64     `gorm:"column:membership_epoch"`
+	MlsEpoch        int64     `gorm:"column:mls_epoch"`
+	EventHash       []byte    `gorm:"column:event_hash;type:bytea"`
+	CommitSHA256    []byte    `gorm:"column:commit_sha256;type:bytea"`
+	EventBytes      []byte    `gorm:"column:event_bytes;type:bytea"`
+	CommittedAt     time.Time `gorm:"column:committed_at"`
 }
 
 func (*conversationEventModel) TableName() string { return "conversation_events" }
+
+type conversationCommandReceiptModel struct {
+	ID             uint      `gorm:"column:id;primaryKey"`
+	ConversationID string    `gorm:"column:conversation_id;size:128;uniqueIndex:uidx_command_receipt"`
+	CommandID      string    `gorm:"column:command_id;size:128;uniqueIndex:uidx_command_receipt"`
+	CommandSHA256  []byte    `gorm:"column:command_sha256;type:bytea"`
+	EventBytes     []byte    `gorm:"column:event_bytes;type:bytea"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+}
+
+func (*conversationCommandReceiptModel) TableName() string {
+	return "conversation_command_receipts"
+}
 
 // --- PostgresConversationRepo ---
 
@@ -83,7 +118,10 @@ func (r *postgresConversationRepo) UpsertConversation(ctx context.Context, conv 
 		ConversationID:         conv.ConversationId,
 		Kind:                   int32(conv.Kind),
 		AuthorityStationPeerID: conv.AuthorityStationPeerId,
+		FederationID:           conv.FederationId,
+		AuthorityEpoch:         conv.AuthorityEpoch,
 		MembershipEpoch:        conv.MembershipEpoch,
+		MlsEpoch:               conv.MlsEpoch,
 		Status:                 int32(conv.Status),
 		Name:                   conv.Name,
 		Description:            conv.Description,
@@ -98,7 +136,7 @@ func (r *postgresConversationRepo) UpsertConversation(ctx context.Context, conv 
 	return r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "conversation_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"status", "membership_epoch", "name", "description", "avatar_cid", "visibility", "disappear_timer_seconds", "updated_at"}),
+			DoUpdates: clause.AssignmentColumns([]string{"authority_station_peer_id", "federation_id", "authority_epoch", "status", "membership_epoch", "mls_epoch", "name", "description", "avatar_cid", "visibility", "disappear_timer_seconds", "updated_at"}),
 		}).
 		Create(model).Error
 }
@@ -106,6 +144,17 @@ func (r *postgresConversationRepo) UpsertConversation(ctx context.Context, conv 
 func (r *postgresConversationRepo) GetConversation(ctx context.Context, conversationID string) (*chat.Conversation, error) {
 	var model conversationModel
 	if err := r.db.WithContext(ctx).Where("conversation_id = ?", conversationID).First(&model).Error; err != nil {
+		return nil, err
+	}
+	return model.toProto(), nil
+}
+
+func (r *postgresConversationRepo) GetConversationForUpdate(ctx context.Context, conversationID string) (*chat.Conversation, error) {
+	var model conversationModel
+	if err := r.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("conversation_id = ?", conversationID).
+		First(&model).Error; err != nil {
 		return nil, err
 	}
 	return model.toProto(), nil
@@ -155,10 +204,75 @@ func (r *postgresConversationRepo) UpsertMember(ctx context.Context, member *cha
 	}
 	return r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "conversation_id"}, {Name: "ptid"}},
-			DoUpdates: clause.AssignmentColumns([]string{"role", "member_status", "nickname", "muted"}),
+			Columns: []clause.Column{{Name: "conversation_id"}, {Name: "ptid"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"role",
+				"member_status",
+				"actor_home_station_peer_id",
+				"nickname",
+				"muted",
+				"joined_at",
+				"invited_by_ptid",
+			}),
 		}).
 		Create(model).Error
+}
+
+func (r *postgresConversationRepo) UpsertMemberDevice(
+	ctx context.Context,
+	conversationID string,
+	ptid string,
+	deviceID string,
+	homeStationPeerID string,
+	active bool,
+) error {
+	model := &conversationMemberDeviceModel{
+		ConversationID:    conversationID,
+		Ptid:              ptid,
+		DeviceID:          deviceID,
+		HomeStationPeerID: homeStationPeerID,
+		Active:            active,
+		UpdatedAt:         time.Now(),
+	}
+	return r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "conversation_id"},
+				{Name: "ptid"},
+				{Name: "device_id"},
+			},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"home_station_peer_id",
+				"active",
+				"updated_at",
+			}),
+		}).
+		Create(model).Error
+}
+
+func (r *postgresConversationRepo) ListMemberDevices(
+	ctx context.Context,
+	conversationID string,
+	activeOnly bool,
+) ([]MemberDevice, error) {
+	var models []conversationMemberDeviceModel
+	query := r.db.WithContext(ctx).Where("conversation_id = ?", conversationID)
+	if activeOnly {
+		query = query.Where("active = ?", true)
+	}
+	if err := query.Find(&models).Error; err != nil {
+		return nil, err
+	}
+	devices := make([]MemberDevice, 0, len(models))
+	for _, model := range models {
+		devices = append(devices, MemberDevice{
+			Ptid:              model.Ptid,
+			DeviceID:          model.DeviceID,
+			HomeStationPeerID: model.HomeStationPeerID,
+			Active:            model.Active,
+		})
+	}
+	return devices, nil
 }
 
 func (r *postgresConversationRepo) GetMembers(ctx context.Context, conversationID string) ([]*chat.ConversationMember, error) {
@@ -191,13 +305,97 @@ func (r *postgresConversationRepo) AppendEvent(ctx context.Context, event *chat.
 		return err
 	}
 	model := &conversationEventModel{
-		EventID:        event.EventId,
-		ConversationID: event.ConversationId,
-		GroupSeq:       event.GroupSeq,
-		EventBytes:     eventBytes,
-		CommittedAt:    event.CommittedAt.AsTime(),
+		EventID:         event.EventId,
+		ConversationID:  event.ConversationId,
+		GroupSeq:        event.GroupSeq,
+		MembershipEpoch: event.MembershipEpoch,
+		EventHash:       event.EventHash,
+		EventBytes:      eventBytes,
+		CommittedAt:     event.CommittedAt.AsTime(),
 	}
-	return r.db.WithContext(ctx).Create(model).Error
+	if transition := event.GetMembershipTransitionCommitted(); transition != nil {
+		transitionID := transition.TransitionId
+		model.TransitionID = &transitionID
+		model.MlsEpoch = transition.ToMlsEpoch
+		model.CommitSHA256 = transition.CommitSha256
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(model).Error; err != nil {
+			return err
+		}
+		return tx.Model(&conversationModel{}).
+			Where("conversation_id = ? AND current_seq < ?", event.ConversationId, event.GroupSeq).
+			Update("current_seq", event.GroupSeq).Error
+	})
+}
+
+func (r *postgresConversationRepo) GetEventByTransitionID(
+	ctx context.Context,
+	conversationID string,
+	transitionID string,
+) (*chat.CommittedConversationEvent, error) {
+	var model conversationEventModel
+	if err := r.db.WithContext(ctx).
+		Where("conversation_id = ? AND transition_id = ?", conversationID, transitionID).
+		First(&model).Error; err != nil {
+		return nil, err
+	}
+	event := &chat.CommittedConversationEvent{}
+	if err := proto.Unmarshal(model.EventBytes, event); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+func (r *postgresConversationRepo) GetLastEvent(
+	ctx context.Context,
+	conversationID string,
+) (*chat.CommittedConversationEvent, error) {
+	var model conversationEventModel
+	if err := r.db.WithContext(ctx).
+		Where("conversation_id = ?", conversationID).
+		Order("group_seq DESC").
+		First(&model).Error; err != nil {
+		return nil, err
+	}
+	event := &chat.CommittedConversationEvent{}
+	if err := proto.Unmarshal(model.EventBytes, event); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+func (r *postgresConversationRepo) GetCommandReceipt(
+	ctx context.Context,
+	conversationID string,
+	commandID string,
+) (*CommandReceipt, error) {
+	var model conversationCommandReceiptModel
+	if err := r.db.WithContext(ctx).
+		Where("conversation_id = ? AND command_id = ?", conversationID, commandID).
+		First(&model).Error; err != nil {
+		return nil, err
+	}
+	return &CommandReceipt{
+		ConversationID: model.ConversationID,
+		CommandID:      model.CommandID,
+		CommandSHA256:  append([]byte(nil), model.CommandSHA256...),
+		EventBytes:     append([]byte(nil), model.EventBytes...),
+		CreatedAt:      model.CreatedAt,
+	}, nil
+}
+
+func (r *postgresConversationRepo) CreateCommandReceipt(
+	ctx context.Context,
+	receipt *CommandReceipt,
+) error {
+	return r.db.WithContext(ctx).Create(&conversationCommandReceiptModel{
+		ConversationID: receipt.ConversationID,
+		CommandID:      receipt.CommandID,
+		CommandSHA256:  receipt.CommandSHA256,
+		EventBytes:     receipt.EventBytes,
+		CreatedAt:      receipt.CreatedAt,
+	}).Error
 }
 
 func (r *postgresConversationRepo) ListEvents(ctx context.Context, conversationID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error) {
@@ -221,12 +419,19 @@ func (r *postgresConversationRepo) ListEvents(ctx context.Context, conversationI
 }
 
 func (r *postgresConversationRepo) NextSeq(ctx context.Context, conversationID string) (int64, error) {
-	var seq int64
-	err := r.db.WithContext(ctx).Raw(
-		"UPDATE conversations SET current_seq = current_seq + 1 WHERE conversation_id = ? RETURNING current_seq",
-		conversationID,
-	).Scan(&seq).Error
-	return seq, err
+	model := &conversationModel{}
+	result := r.db.WithContext(ctx).
+		Model(model).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "current_seq"}}}).
+		Where("conversation_id = ?", conversationID).
+		UpdateColumn("current_seq", gorm.Expr("current_seq + 1"))
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return 0, gorm.ErrRecordNotFound
+	}
+	return model.CurrentSeq, nil
 }
 
 func (r *postgresConversationRepo) BumpMembershipEpoch(ctx context.Context, conversationID string, newEpoch int64) error {
@@ -234,6 +439,21 @@ func (r *postgresConversationRepo) BumpMembershipEpoch(ctx context.Context, conv
 		Model(&conversationModel{}).
 		Where("conversation_id = ?", conversationID).
 		Update("membership_epoch", newEpoch).Error
+}
+
+func (r *postgresConversationRepo) SetMembershipAndMlsEpoch(
+	ctx context.Context,
+	conversationID string,
+	membershipEpoch int64,
+	mlsEpoch int64,
+) error {
+	return r.db.WithContext(ctx).
+		Model(&conversationModel{}).
+		Where("conversation_id = ?", conversationID).
+		Updates(map[string]any{
+			"membership_epoch": membershipEpoch,
+			"mls_epoch":        mlsEpoch,
+		}).Error
 }
 
 // HaveSharedConversation checks whether actorA and actorB are both active members
@@ -256,7 +476,10 @@ func (m *conversationModel) toProto() *chat.Conversation {
 		ConversationId:         m.ConversationID,
 		Kind:                   chat.ConversationKind(m.Kind),
 		AuthorityStationPeerId: m.AuthorityStationPeerID,
+		FederationId:           m.FederationID,
+		AuthorityEpoch:         m.AuthorityEpoch,
 		MembershipEpoch:        m.MembershipEpoch,
+		MlsEpoch:               m.MlsEpoch,
 		Status:                 chat.ConversationStatus(m.Status),
 		Name:                   m.Name,
 		Description:            m.Description,
