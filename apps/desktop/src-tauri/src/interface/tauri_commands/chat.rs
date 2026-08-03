@@ -180,7 +180,8 @@ pub async fn chat_completion_stream(
     let stream_id = format!("stream-{}", ulid::Ulid::new().to_string());
     let stream_id_clone = stream_id.clone();
     tauri::async_runtime::spawn(async move {
-        application_chat::streaming::chat_completion_stream(app, stream_id_clone, token, input).await;
+        application_chat::streaming::chat_completion_stream(app, stream_id_clone, token, input)
+            .await;
     });
     AppResult::success(StubPayload {
         command: "chat_completion_stream".to_string(),

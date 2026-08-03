@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -75,25 +76,37 @@ func (s *ProviderConfigService) Create(ctx context.Context, req ProviderCreateRe
 
 	runtimeKind := "http"
 	cliCommand := ""
-	if s.cliRegistry.IsRegistered(req.ProviderID) {
-		runtimeKind = "cli"
-		spec, _ := s.cliRegistry.Resolve(req.ProviderID)
-		cliCommand = spec.BinaryPath
+	modelsCommand := ""
+
+	cp := catalog.Find(req.ProviderID)
+	if cp != nil {
+		if cp.RuntimeKind != "" {
+			runtimeKind = cp.RuntimeKind
+		}
+		cliCommand = cp.CliCommand
+		modelsCommand = cp.ModelsCommand
+	}
+	if runtimeKind == "cli" && s.cliRegistry.IsRegistered(req.ProviderID) {
+		spec, ok := s.cliRegistry.Resolve(req.ProviderID)
+		if ok && cliCommand == "" {
+			cliCommand = spec.BinaryPath
+		}
 	}
 
 	provider := persistence.AgentProvider{
-		ID:          uuid.New().String(),
-		ActorID:     req.ActorID,
-		Name:        req.ProviderID,
-		DisplayName: req.DisplayName,
-		BaseURL:     req.BaseURL,
-		Config:      req.ConfigJSON,
-		SourceType:  "custom",
-		RuntimeKind: runtimeKind,
-		CliCommand:  cliCommand,
-		Protocol:    req.Protocol,
-		Enabled:     true,
-		Version:     1,
+		ID:            uuid.New().String(),
+		ActorID:       req.ActorID,
+		Name:          req.ProviderID,
+		DisplayName:   req.DisplayName,
+		BaseURL:       req.BaseURL,
+		Config:        req.ConfigJSON,
+		SourceType:    "custom",
+		RuntimeKind:   runtimeKind,
+		CliCommand:    cliCommand,
+		ModelsCommand: modelsCommand,
+		Protocol:      req.Protocol,
+		Enabled:       true,
+		Version:       1,
 	}
 
 	if err := db.WithContext(ctx).Create(&provider).Error; err != nil {
@@ -243,6 +256,44 @@ func (s *ProviderConfigService) HideModel(ctx context.Context, actorID, provider
 	hidden = append(hidden, modelID)
 	hiddenJSON, _ := json.Marshal(hidden)
 
+	if err := db.WithContext(ctx).Model(&provider).
+		Update("hidden_models", string(hiddenJSON)).Error; err != nil {
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to update hidden_models", err)
+	}
+	return nil
+}
+
+// UnhideModel removes a model ID from the provider's hidden_models list.
+func (s *ProviderConfigService) UnhideModel(ctx context.Context, actorID, providerID, modelID string) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	var provider persistence.AgentProvider
+	if err := db.WithContext(ctx).
+		Where("actor_id = ? AND name = ?", actorID, providerID).
+		First(&provider).Error; err != nil {
+		return nil
+	}
+
+	hidden := parseHiddenModels(provider.HiddenModels)
+	if len(hidden) == 0 {
+		return nil
+	}
+
+	newHidden := make([]string, 0, len(hidden))
+	for _, h := range hidden {
+		if h != modelID {
+			newHidden = append(newHidden, h)
+		}
+	}
+	if len(newHidden) == len(hidden) {
+		return nil
+	}
+
+	hiddenJSON, _ := json.Marshal(newHidden)
 	if err := db.WithContext(ctx).Model(&provider).
 		Update("hidden_models", string(hiddenJSON)).Error; err != nil {
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,

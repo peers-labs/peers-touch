@@ -64,4 +64,9 @@ message ActorProfileEnvelope {
   // SHA-256 / base32-nopad fingerprint of `signing_key_pem`. Receivers
   // recompute this and compare; mismatch is a tampered envelope.
   string signing_key_kid = 9 [json_name = "signing_key_kid"];
+
+  // Active actor-device signing keys authenticated by the Home Station.
+  // The envelope signature covers this list; receivers persist it only after
+  // the normal locator-key pin and envelope verification succeeds.
+  repeated peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey device_signing_keys = 10;
 }

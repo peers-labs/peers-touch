@@ -32,6 +32,8 @@ build_on_host() {
 
   echo "[BUILD] $env_name ($user@$host) ..."
 
+  # Client-side expansion injects the selected deploy profile into the remote script.
+  # shellcheck disable=SC2087
   ssh "$user@$host" bash -s <<EOF
 set -e
 cd "\$HOME/$path"
