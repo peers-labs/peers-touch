@@ -45,7 +45,10 @@ pub fn start(state: Arc<AppState>) {
         .expect("failed to start desktop executor worker");
 }
 
-fn desktop_executor_worker_enabled(product_window_e2e: Option<&str>, worker_env: Option<&str>) -> bool {
+fn desktop_executor_worker_enabled(
+    product_window_e2e: Option<&str>,
+    worker_env: Option<&str>,
+) -> bool {
     if let Some(value) = worker_env.map(str::trim).filter(|value| !value.is_empty()) {
         return matches!(value, "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON");
     }

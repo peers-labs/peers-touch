@@ -2,15 +2,17 @@ package social
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
-	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	convsub "github.com/peers-labs/peers-touch/station/app/subserver/conversation"
 	envpkg "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	envinf "github.com/peers-labs/peers-touch/station/app/subserver/envelope/infrastructure"
 	notifapp "github.com/peers-labs/peers-touch/station/app/subserver/notification/application"
 	notifinfra "github.com/peers-labs/peers-touch/station/app/subserver/notification/infrastructure"
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -19,8 +21,9 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	touch "github.com/peers-labs/peers-touch/station/frame/touch"
+	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	"strings"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
 type subServer struct {
@@ -150,9 +153,44 @@ type convAdapter struct {
 	svc convsub.Service
 }
 
-func (a *convAdapter) CreateDirect(ctx context.Context, actorA, actorB, stationA, stationB string) error {
-	_, err := a.svc.CreateDirect(ctx, actorA, actorB, stationA, stationB)
+func (a *convAdapter) CreateDirect(ctx context.Context, actorAID, actorBID uint64) error {
+	actors, err := actor.GetActorsByIDs(ctx, []uint64{actorAID, actorBID})
+	if err != nil {
+		return fmt.Errorf("resolve direct-conversation actors: %w", err)
+	}
+	actorAPtid, actorAStation, actorBPtid, actorBStation, err := canonicalDirectParticipants(
+		actors,
+		actorAID,
+		actorBID,
+	)
+	if err != nil {
+		return err
+	}
+	_, err = a.svc.CreateDirect(
+		ctx,
+		actorAPtid,
+		actorBPtid,
+		actorAStation,
+		actorBStation,
+	)
 	return err
+}
+
+func canonicalDirectParticipants(
+	actors map[uint64]*db.Actor,
+	actorAID, actorBID uint64,
+) (string, string, string, string, error) {
+	actorA, okA := actors[actorAID]
+	actorB, okB := actors[actorBID]
+	if !okA || !okB || actorA == nil || actorB == nil {
+		return "", "", "", "", fmt.Errorf("resolve direct-conversation actors: actor record missing")
+	}
+	actorAPtid := strings.TrimSpace(actorA.PTID)
+	actorBPtid := strings.TrimSpace(actorB.PTID)
+	if actorAPtid == "" || actorBPtid == "" {
+		return "", "", "", "", fmt.Errorf("resolve direct-conversation actors: canonical PTID missing")
+	}
+	return actorAPtid, actorA.HomeStationPeerID, actorBPtid, actorB.HomeStationPeerID, nil
 }
 
 func socialLocalAudience() string {

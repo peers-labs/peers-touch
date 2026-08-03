@@ -1,43 +1,19 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Input, toast } from '@lobehub/ui';
 import { theme } from 'antd';
 import { Search, X } from 'lucide-react';
-import { peerOfSession } from '../../store/socialChat';
-import { currentAuthenticatedActorId } from '../../store/session';
+import { peerOfSession, useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { api } from '../../services/desktop_api';
 import { imServiceV1 } from '../../services/im-service';
-import { MlsDeliveryKind } from '../../services/im-service-contract';
 import { log } from '../../utils/logger';
 import { useActiveChatSessionSlice, useActiveSocialChatSlice } from './useActiveSocialChatStore';
 
 interface Props {
   open: boolean;
   onClose: () => void;
-}
-
-async function setupMlsGroupSession(groupUlid: string): Promise<void> {
-  const resp = await api.groupChatGetMembers(groupUlid);
-  const selfDid = currentAuthenticatedActorId();
-  const otherMembers = (resp?.members ?? []).filter((m) => m.ptid !== selfDid);
-  if (otherMembers.length === 0) return;
-
-  const memberKeyPackages: Uint8Array[] = [];
-  for (const member of otherMembers) {
-    const { data } = await imServiceV1.keyPackage.fetch(
-      member.ptid,
-      member.actorHomeStationPeerId || undefined,
-    );
-    if (data) memberKeyPackages.push(data);
-  }
-  if (memberKeyPackages.length === 0) return;
-  const { welcomeBytes } = await imServiceV1.mlsGroup.createGroup(groupUlid, memberKeyPackages);
-  await imServiceV1.mlsGroup.save(groupUlid);
-  if (welcomeBytes.length > 0) {
-    await imServiceV1.mlsGroup.distribute(groupUlid, MlsDeliveryKind.WELCOME, 0, welcomeBytes);
-  }
 }
 
 interface Contact {
@@ -56,7 +32,7 @@ function getFirstLetter(name: string): string {
 export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sessions, friendRequests, currentUserDid, loadGroups, selectGroup, setActiveTab, getIMConversations, loadFriendRequests, loadSessions } = useActiveSocialChatSlice((s) => ({
+  const { sessions, friendRequests, currentUserDid, loadGroups, selectGroup, setActiveTab, getIMConversations, loadSessions } = useActiveSocialChatSlice((s) => ({
     sessions: s.sessions,
     friendRequests: s.friendRequests,
     currentUserDid: s.currentUserDid,
@@ -64,18 +40,10 @@ export function CreateGroupModal({ open, onClose }: Props) {
     selectGroup: s.selectGroup,
     setActiveTab: s.setActiveTab,
     getIMConversations: s.getIMConversations,
-    loadFriendRequests: s.loadFriendRequests,
     loadSessions: s.loadSessions,
   }));
   const sessionActorId = useActiveChatSessionSlice((s) => s.currentUser?.actorId ?? null);
   const ownDid = currentUserDid || sessionActorId;
-
-  useEffect(() => {
-    if (open) {
-      loadFriendRequests();
-      loadSessions();
-    }
-  }, [open, loadFriendRequests, loadSessions]);
 
   const [searchText, setSearchText] = useState('');
   const [selectedDids, setSelectedDids] = useState<Set<string>>(new Set());
@@ -197,21 +165,52 @@ export function CreateGroupModal({ open, onClose }: Props) {
 
     handleClose();
 
+    const conversationId = crypto.randomUUID();
+    useSocialChatStore.getState().setGroupSecurityState(conversationId, 'establishing');
     try {
-      const resp = await api.groupChatCreateGroup(groupName, '', memberDids);
+      const device = await api.accountGetDeviceId();
+      const registry = await api.stationList();
+      const activeStation = registry.entries.find(entry => entry.url === registry.active_url);
+      const station = activeStation?.peer_id
+        ? activeStation
+        : await api.stationProbe(registry.active_url);
+      if (!device.device_id || !station.peer_id) {
+        throw new Error('Local device or Station identity is unavailable');
+      }
+      const members = await Promise.all(memberDids.map(async (ptid) => {
+        const fetched = await imServiceV1.keyPackage.fetch(ptid);
+        if (
+          !fetched.available
+          || !fetched.data
+          || !fetched.deviceId
+          || !fetched.homeStationPeerId
+        ) {
+          throw new Error(`MLS KeyPackage routing is unavailable for ${ptid}`);
+        }
+        return {
+          ptid,
+          deviceId: fetched.deviceId,
+          homeStationPeerId: fetched.homeStationPeerId,
+          keyPackage: fetched.data,
+        };
+      }));
+      await imServiceV1.mlsGroup.createAuthorizedGroup({
+        conversationId,
+        name: groupName,
+        ownerPtid: ownDid,
+        ownerDeviceId: device.device_id,
+        ownerHomeStationPeerId: station.peer_id,
+        members,
+      });
+      useSocialChatStore.getState().setGroupSecurityState(conversationId, 'ready');
       await loadGroups();
       await loadSessions();
-      const newGroupUlid = resp?.group?.ulid;
-      if (newGroupUlid) {
-        setupMlsGroupSession(newGroupUlid).catch((err) =>
-          log.warn('chat', 'MLS group setup failed (non-fatal)', err),
-        );
-        setActiveTab('group');
-        selectGroup(newGroupUlid);
-      }
+      setActiveTab('group');
+      selectGroup(conversationId);
       toast.success(t('chat.social.createGroup.success'));
     } catch (err) {
-      log.error('chat', 'createGroup failed', err);
+      useSocialChatStore.getState().setGroupSecurityState(conversationId, 'error');
+      log.error('chat', 'createGroup failed', { conversationId, error: err });
       toast.error(t('chat.social.createGroup.failed'));
     } finally {
       setCreating(false);

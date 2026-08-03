@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "gate": "chat-mls-three-station-convergence",
+  "generated_at_unix_ms": 1785725010538,
+  "status": "pass",
+  "deployed_commit": "6acefbf39526",
+  "federation_id": "fed_01KZ2Q3W7CY99JMYZRRATBT132",
+  "conversation_id": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+  "transitions": {
+    "genesis_epoch": 1,
+    "remote_add_device_epoch": 3,
+    "remote_remove_device_epoch": 4,
+    "delegated_leave_epoch": 5
+  },
+  "fault_schedule": {
+    "disconnected_recipient_before_add": true,
+    "durable_inbox_reconnect": true,
+    "recipient_delivery_reordered": true,
+    "partial_ack_replayed": true,
+    "duplicate_delivery_noop": true,
+    "duplicate_remote_proposal_exact_replay": true,
+    "desktop_gateway_restart_epoch": 3,
+    "follower_station_restart_before_epoch": 4,
+    "follower_post_restart_epoch": 4
+  },
+  "final_client_heads": {
+    "alice": {
+      "conversationId": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+      "mlsEpoch": 5,
+      "groupContextSha256": "c89b171b470a91664d28af09581b81bd59beac3b416a662932896dd78c7bba50",
+      "ratchetTreeSha256": "a704bb83f57d5ce9cb46871418ec99d4d848d5cb6962cb8afc8cb83de2b2df98",
+      "memberCredentialsSha256": "70fd40dec3f248451adb639c8bddfc50176333710ce5849114e50c3183fff232",
+      "members": [
+        {
+          "ptid": "ptid:v1:actor:peers:p:c6alice1785724935360:12207bfe6cfb3a0a18c5cffc8065c74a29a34a564fe92c5cb109c76b67f1e43cf360",
+          "deviceId": "01KZ2R091P7T60VXTAS5X8D09B"
+        },
+        {
+          "ptid": "ptid:v1:actor:peers:p:c6charlie17857249401:1220d9fda590ab5b136bcc2198d39b3217a32f7f17e3c09f279274b507033628521c",
+          "deviceId": "01KZ2R0DA4N1RBF66QR386QKR7"
+        }
+      ]
+    },
+    "charlie": {
+      "conversationId": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+      "mlsEpoch": 5,
+      "groupContextSha256": "c89b171b470a91664d28af09581b81bd59beac3b416a662932896dd78c7bba50",
+      "ratchetTreeSha256": "a704bb83f57d5ce9cb46871418ec99d4d848d5cb6962cb8afc8cb83de2b2df98",
+      "memberCredentialsSha256": "70fd40dec3f248451adb639c8bddfc50176333710ce5849114e50c3183fff232",
+      "members": [
+        {
+          "ptid": "ptid:v1:actor:peers:p:c6alice1785724935360:12207bfe6cfb3a0a18c5cffc8065c74a29a34a564fe92c5cb109c76b67f1e43cf360",
+          "deviceId": "01KZ2R091P7T60VXTAS5X8D09B"
+        },
+        {
+          "ptid": "ptid:v1:actor:peers:p:c6charlie17857249401:1220d9fda590ab5b136bcc2198d39b3217a32f7f17e3c09f279274b507033628521c",
+          "deviceId": "01KZ2R0DA4N1RBF66QR386QKR7"
+        }
+      ]
+    }
+  },
+  "removed_device_decrypt_denied": true,
+  "departed_actor_decrypt_denied": true,
+  "remote_ordinary_send": {
+    "status": "pass",
+    "sender_station": "two",
+    "authority_station": "one",
+    "recipient_station": "three",
+    "command_path": "desktop-rust -> home -> authority -> committed-event",
+    "event_id": "cc6cc96c-8b61-4971-a638-f9b76ccecf72",
+    "event_hash": "bb5cfe085d3cbe5bd96ee661372593c6e98fe68c6cb4bb03120c8511de927a0c",
+    "recipient_decrypt": true
+  },
+  "access_tokens_present": false,
+  "station_public_heads": {
+    "one": {
+      "source": "authority",
+      "conversation_id": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+      "federation_id": "fed_01KZ2Q3W7CY99JMYZRRATBT132",
+      "authority_station_peer_id": "12D3KooWQZwHCzezsjLCSYpAm2wvwDL5xD4iZ48MjWKL7TXbKC1B",
+      "authority_epoch": 1,
+      "group_seq": 7,
+      "event_hash": "05e68c16ae8d27d23c860520b351b003ae6853eb86f1072f436763852be7dda1",
+      "membership_epoch": 5,
+      "mls_epoch": 5,
+      "transition_id": "01KZ2R25G7MGGDBZ860X59H558",
+      "commit_sha256": "8bd14860dfcc5f264329a7adc691ea45eb9acb3ad75f3fe25de41f448c9fe663",
+      "status": "active"
+    },
+    "two": {
+      "source": "follower",
+      "conversation_id": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+      "federation_id": "fed_01KZ2Q3W7CY99JMYZRRATBT132",
+      "authority_station_peer_id": "12D3KooWQZwHCzezsjLCSYpAm2wvwDL5xD4iZ48MjWKL7TXbKC1B",
+      "authority_epoch": 1,
+      "group_seq": 7,
+      "event_hash": "05e68c16ae8d27d23c860520b351b003ae6853eb86f1072f436763852be7dda1",
+      "membership_epoch": 5,
+      "mls_epoch": 5,
+      "transition_id": "01KZ2R25G7MGGDBZ860X59H558",
+      "commit_sha256": "8bd14860dfcc5f264329a7adc691ea45eb9acb3ad75f3fe25de41f448c9fe663",
+      "status": "active"
+    },
+    "three": {
+      "source": "follower",
+      "conversation_id": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+      "federation_id": "fed_01KZ2Q3W7CY99JMYZRRATBT132",
+      "authority_station_peer_id": "12D3KooWQZwHCzezsjLCSYpAm2wvwDL5xD4iZ48MjWKL7TXbKC1B",
+      "authority_epoch": 1,
+      "group_seq": 7,
+      "event_hash": "05e68c16ae8d27d23c860520b351b003ae6853eb86f1072f436763852be7dda1",
+      "membership_epoch": 5,
+      "mls_epoch": 5,
+      "transition_id": "01KZ2R25G7MGGDBZ860X59H558",
+      "commit_sha256": "8bd14860dfcc5f264329a7adc691ea45eb9acb3ad75f3fe25de41f448c9fe663",
+      "status": "active"
+    }
+  }
+}

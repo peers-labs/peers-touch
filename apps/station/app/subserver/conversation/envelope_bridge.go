@@ -68,3 +68,8 @@ func (b *EnvelopeBridge) SubmitReceipt(ctx context.Context, receipt *chat.Messag
 	_, err = b.envelopeService.Submit(ctx, env)
 	return err
 }
+
+// NotifyPersisted publishes an inbox item after its surrounding transaction commits.
+func (b *EnvelopeBridge) NotifyPersisted(ctx context.Context, item *chat.DeviceInboxItem) {
+	b.envelopeService.NotifyPersisted(ctx, item)
+}

@@ -337,32 +337,6 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
-      case 'groupSkdmEnvelopeDelivered': {
-        const s = kind.value;
-        if (!s.groupUlid || !s.senderDid || !s.recipientDid || !s.recipientDeviceId || s.encryptedPayload.byteLength === 0) {
-          log.warn('eventStream', 'invalid GroupSkdmEnvelopeDelivered, dropping', {
-            groupUlid: s.groupUlid,
-            senderDid: s.senderDid,
-            recipientDid: s.recipientDid,
-            recipientDeviceId: s.recipientDeviceId,
-          });
-          return;
-        }
-        eventBus.publish(EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED, {
-          eventId,
-          groupUlid: s.groupUlid,
-          membershipEpoch: Number(s.membershipEpoch),
-          senderDid: s.senderDid,
-          senderKeyId: s.senderKeyId,
-          senderHomeStationPeerId: s.senderHomeStationPeerId,
-          recipientDid: s.recipientDid,
-          recipientDeviceId: s.recipientDeviceId,
-          idempotencyKey: s.idempotencyKey,
-          encryptedPayloadB64: bytesToBase64(s.encryptedPayload),
-          deliveredTsUnixMs: Number(s.deliveredTsUnixMs),
-        });
-        return;
-      }
     case 'envelopeDelivered': {
       const d = kind.value;
       if (!d.inboxItemId || !d.payloadBytes || d.payloadBytes.byteLength === 0) return;
@@ -566,12 +540,4 @@ function base64ToBytes(b64: string): Uint8Array {
     out[i] = binary.charCodeAt(i);
   }
   return out;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
 }

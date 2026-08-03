@@ -9,3 +9,15 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 message KeyBundle {
   repeated int32 supported_versions = 99;
 }
+
+// Initiator material required for the recipient to complete X3DH and initialize
+// the negotiated direct-message ratchet. Serialized into
+// DirectKeyExchangePayload.opaque_key_material; Station treats it as opaque.
+message X3dhSessionInit {
+  string session_id = 1;
+  bytes sender_identity_key = 2;
+  bytes sender_ephemeral_key = 3;
+  bytes recipient_signed_prekey = 4;
+  bytes recipient_one_time_prekey = 5;
+  uint32 negotiated_version = 6;
+}

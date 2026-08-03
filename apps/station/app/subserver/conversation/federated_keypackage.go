@@ -43,7 +43,7 @@ func parseFedPeerMap(raw string) map[string]string {
 	return m
 }
 
-func (f *FederatedKeyPackageFetcher) FetchRemote(ctx context.Context, targetStationPeerID, ptid string) ([]byte, error) {
+func (f *FederatedKeyPackageFetcher) FetchRemote(ctx context.Context, targetStationPeerID, ptid string) (*KeyPackage, error) {
 	targetURL, ok := f.peerMap[targetStationPeerID]
 	if !ok {
 		return nil, fmt.Errorf("federated kp: unknown station %s", targetStationPeerID)
@@ -87,8 +87,10 @@ func (f *FederatedKeyPackageFetcher) FetchRemote(ctx context.Context, targetStat
 	}
 
 	var result struct {
-		Data      []byte `json:"data"`
-		Available bool   `json:"available"`
+		Data              []byte `json:"data"`
+		Available         bool   `json:"available"`
+		DeviceID          string `json:"device_id"`
+		HomeStationPeerID string `json:"home_station_peer_id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("federated kp: decode response: %w", err)
@@ -97,5 +99,10 @@ func (f *FederatedKeyPackageFetcher) FetchRemote(ctx context.Context, targetStat
 	if !result.Available || result.Data == nil {
 		return nil, nil
 	}
-	return result.Data, nil
+	return &KeyPackage{
+		Ptid:      ptid,
+		DeviceID:  result.DeviceID,
+		StationID: result.HomeStationPeerID,
+		Data:      result.Data,
+	}, nil
 }
