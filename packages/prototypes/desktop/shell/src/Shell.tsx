@@ -50,6 +50,7 @@ import { AgentChatPage } from './AgentChatPage';
 import { SettingsPage } from './Settings';
 import { T } from './theme';
 import { ToastHost } from '../../shared/Toast';
+import { ModernChatReview } from '../../features/modern-chat-agent/src/ModernChatReview';
 
 /** An installed applet (mirrors RuntimeAppletInfo.manifest + status). */
 interface AppletInfo {
@@ -622,10 +623,15 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   // page mirrors the real router: kernel ids (search/chat/agent/notes/settings),
   // `applets` for the applets center, or `applet:<id>` for an applet surface.
   // Default lands on the applets center to show: rail ▦ → list → enter applet.
-  const [page, setPage] = useState(initialPage ?? 'applets');
+  const modernChatState = typeof window === 'undefined'
+    ? ''
+    : new URLSearchParams(window.location.search).get('state') ?? '';
+  const showModernChatReview = modernChatState.startsWith('modern-');
+  const defaultPage = showModernChatReview ? 'agent' : initialPage ?? 'applets';
+  const [page, setPage] = useState(defaultPage);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [visitedAgentSurfaces, setVisitedAgentSurfaces] = useState<Set<AgentSurfaceId>>(() => {
-    const initialSurface = getAgentSurfaceId(initialPage ?? 'applets');
+    const initialSurface = getAgentSurfaceId(defaultPage);
     return initialSurface ? new Set([initialSurface]) : new Set();
   });
 
@@ -752,12 +758,16 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
                     data-agent-surface="agent"
                     style={{ position: 'absolute', inset: 0, display: page === 'agent' || page === 'agent-profile' ? 'block' : 'none' }}
                   >
-                    <AgentChatPage
-                      onOpenOrchestration={() => navigate('agent-orchestration')}
-                      profileOpen={page === 'agent-profile'}
-                      onOpenProfile={() => navigate('agent-profile')}
-                      onCloseProfile={() => navigate('agent')}
-                    />
+                    {showModernChatReview ? (
+                      <ModernChatReview initialState={modernChatState} withTopicRail />
+                    ) : (
+                      <AgentChatPage
+                        onOpenOrchestration={() => navigate('agent-orchestration')}
+                        profileOpen={page === 'agent-profile'}
+                        onOpenProfile={() => navigate('agent-profile')}
+                        onCloseProfile={() => navigate('agent')}
+                      />
+                    )}
                   </div>
                 </>
               )}
