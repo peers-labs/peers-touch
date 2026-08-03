@@ -29,10 +29,9 @@ use crate::infrastructure::station_client;
 use crate::model::federation::v1::{
     CreateFederationRequest, CreateFederationResponse, DeleteFederationRequest,
     DeleteFederationResponse, FederationCatalogSearchRequest, FederationCatalogSearchResponse,
-    FederationHealthView, FederationResolveView, FederationSelfView,
-    FederationVisibilityRequest, JoinFederationRequest, JoinFederationResponse,
-    LeaveFederationRequest, LeaveFederationResponse, ListFederationsResponse,
-    ListMemberStationsResponse,
+    FederationHealthView, FederationResolveView, FederationSelfView, FederationVisibilityRequest,
+    JoinFederationRequest, JoinFederationResponse, LeaveFederationRequest, LeaveFederationResponse,
+    ListFederationsResponse, ListMemberStationsResponse,
 };
 
 const ROUTE_ME: &str = "/actor/federation/me";
@@ -181,13 +180,10 @@ pub fn catalog_search(
         page_size: page_size.unwrap_or(20),
         ..Default::default()
     };
-    station_client::request_peers_proto::<FederationCatalogSearchRequest, FederationCatalogSearchResponse>(
-        Method::POST,
-        ROUTE_CATALOG_SEARCH,
-        token,
-        None,
-        Some(&body),
-    )
+    station_client::request_peers_proto::<
+        FederationCatalogSearchRequest,
+        FederationCatalogSearchResponse,
+    >(Method::POST, ROUTE_CATALOG_SEARCH, token, None, Some(&body))
     .map_err(FederationGatewayError::Station)
 }
 

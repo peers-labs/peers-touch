@@ -3559,7 +3559,9 @@ type EncryptedMessage struct {
 	RatchetPub   []byte                 `protobuf:"bytes,4,opt,name=ratchet_pub,json=ratchetPub,proto3" json:"ratchet_pub,omitempty"`
 	PrevCounter  uint32                 `protobuf:"varint,5,opt,name=prev_counter,json=prevCounter,proto3" json:"prev_counter,omitempty"`
 	// 0 = legacy chain-only ratchet, 1 = Double Ratchet (see design doc §5).
-	Version       uint32 `protobuf:"varint,6,opt,name=version,proto3" json:"version,omitempty"`
+	Version uint32 `protobuf:"varint,6,opt,name=version,proto3" json:"version,omitempty"`
+	// AES-256-GCM nonce for Double Ratchet frames. Empty for legacy frames.
+	Nonce         []byte `protobuf:"bytes,7,opt,name=nonce,proto3" json:"nonce,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3634,6 +3636,13 @@ func (x *EncryptedMessage) GetVersion() uint32 {
 		return x.Version
 	}
 	return 0
+}
+
+func (x *EncryptedMessage) GetNonce() []byte {
+	if x != nil {
+		return x.Nonce
+	}
+	return nil
 }
 
 var File_domain_chat_friend_chat_proto protoreflect.FileDescriptor
@@ -3894,7 +3903,7 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x1aDeleteFriendMessageRequest\x12!\n" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12!\n" +
 	"\fmessage_ulid\x18\x02 \x01(\tR\vmessageUlid\"\x1d\n" +
-	"\x1bDeleteFriendMessageResponse\"\xcf\x01\n" +
+	"\x1bDeleteFriendMessageResponse\"\xe5\x01\n" +
 	"\x10EncryptedMessage\x12\x1e\n" +
 	"\n" +
 	"ciphertext\x18\x01 \x01(\fR\n" +
@@ -3904,7 +3913,8 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\vratchet_pub\x18\x04 \x01(\fR\n" +
 	"ratchetPub\x12!\n" +
 	"\fprev_counter\x18\x05 \x01(\rR\vprevCounter\x12\x18\n" +
-	"\aversion\x18\x06 \x01(\rR\aversion*\x82\x02\n" +
+	"\aversion\x18\x06 \x01(\rR\aversion\x12\x14\n" +
+	"\x05nonce\x18\a \x01(\fR\x05nonce*\x82\x02\n" +
 	"\x11FriendMessageType\x12#\n" +
 	"\x1fFRIEND_MESSAGE_TYPE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18FRIEND_MESSAGE_TYPE_TEXT\x10\x01\x12\x1d\n" +

@@ -16,7 +16,6 @@ import { UpdateProviderModal } from './UpdateProviderModal';
 import { api } from '../../services/desktop_api';
 import { useTranslation } from 'react-i18next';
 import { useActiveProviderSlice } from './useActiveSettingsStores';
-import { useProviderStore } from '../../store/provider';
 
 const { Text, Title, Link } = Typography;
 

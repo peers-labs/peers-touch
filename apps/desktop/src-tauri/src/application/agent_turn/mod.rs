@@ -4,8 +4,8 @@
 // `TypedHandler` protobuf mode requires `proto.Message` request types. Keep JSON until the
 // subserver handler and proto definitions are aligned with the desktop contract.
 // TODO(agent): align `agent.proto` + Station `HandleExecuteTurn` with the full turn payload, then use `request_proto`.
-use crate::application::{agent_workspace, error_resolver, mcp, tools};
 use crate::application::error_resolver::ProviderKind;
+use crate::application::{agent_workspace, error_resolver, mcp, tools};
 use crate::contracts::{
     AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
     AgentConversationListInput, AgentConversationMessagesInput, AgentExecuteTurnInput,
@@ -261,7 +261,14 @@ pub fn agent_execute_turn(
     let provider_normalized = provider.to_ascii_lowercase();
     let is_cli = matches!(
         provider_normalized.as_str(),
-        "trae-cli" | "codex-cli" | "claude-cli" | "cursor-cli" | "trae" | "codex" | "claude" | "cursor"
+        "trae-cli"
+            | "codex-cli"
+            | "claude-cli"
+            | "cursor-cli"
+            | "trae"
+            | "codex"
+            | "claude"
+            | "cursor"
     ) || input.runtime_backend.as_deref().unwrap_or("") == "cli"
         || input.cli_command.is_some();
 
@@ -283,14 +290,24 @@ pub fn agent_execute_turn(
     let body = build_turn_request_body(input.clone(), true);
 
     let cli_binary = if is_cli {
-        input.cli_command.as_deref().unwrap_or("").split_whitespace().next().unwrap_or("")
+        input
+            .cli_command
+            .as_deref()
+            .unwrap_or("")
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
     } else {
         ""
     };
 
     match collect_turn_text_via_stream(&body, token) {
         Ok((content, model_name)) => {
-            tracing::info!(command = "agent_execute_turn", content_len = content.len(), "Turn execution succeeded");
+            tracing::info!(
+                command = "agent_execute_turn",
+                content_len = content.len(),
+                "Turn execution succeeded"
+            );
             let result = json!({
                 "response_message": {
                     "role": "assistant",
@@ -307,7 +324,8 @@ pub fn agent_execute_turn(
                     "model": model_name,
                 },
             });
-            let status = serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+            let status =
+                serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
             AppResult::success(StubPayload {
                 command: "agent_execute_turn".to_string(),
                 status,
@@ -324,8 +342,8 @@ pub fn agent_execute_turn(
                 Some(body_fallback),
             ) {
                 Ok(result) => {
-                    let status =
-                        serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+                    let status = serde_json::to_string(&result)
+                        .unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
                     AppResult::success(StubPayload {
                         command: "agent_execute_turn".to_string(),
                         status,
@@ -333,7 +351,13 @@ pub fn agent_execute_turn(
                 }
                 Err(fb_err) => {
                     tracing::error!(command = "agent_execute_turn", error = %fb_err, "Fallback also failed");
-                    resolved_turn_failure(&provider, is_cli, cli_binary, &fb_err.to_string(), fb_err.details.as_ref())
+                    resolved_turn_failure(
+                        &provider,
+                        is_cli,
+                        cli_binary,
+                        &fb_err.to_string(),
+                        fb_err.details.as_ref(),
+                    )
                 }
             }
         }
@@ -412,7 +436,14 @@ pub fn agent_execute_turn_stream(
     let provider_normalized = provider.trim().to_ascii_lowercase();
     let is_cli_provider = matches!(
         provider_normalized.as_str(),
-        "trae-cli" | "codex-cli" | "claude-cli" | "cursor-cli" | "trae" | "codex" | "claude" | "cursor"
+        "trae-cli"
+            | "codex-cli"
+            | "claude-cli"
+            | "cursor-cli"
+            | "trae"
+            | "codex"
+            | "claude"
+            | "cursor"
     ) || input.runtime_backend.as_deref().unwrap_or("") == "cli"
         || input.cli_command.is_some();
 
@@ -424,7 +455,14 @@ pub fn agent_execute_turn_stream(
     }
 
     if let Err(error) = apply_resolved_agent_workspace(&mut input) {
-        emit_resolved_error(&app, &stream_id, &provider, ProviderKind::Direct, None, &error);
+        emit_resolved_error(
+            &app,
+            &stream_id,
+            &provider,
+            ProviderKind::Direct,
+            None,
+            &error,
+        );
         return;
     }
 
@@ -440,7 +478,14 @@ pub fn agent_execute_turn_stream(
         provider.as_str(),
     );
     if let Err(error) = result {
-        emit_resolved_error(&app, &stream_id, &provider, ProviderKind::Direct, None, &error);
+        emit_resolved_error(
+            &app,
+            &stream_id,
+            &provider,
+            ProviderKind::Direct,
+            None,
+            &error,
+        );
     }
 }
 
@@ -636,11 +681,18 @@ fn stream_station_turn(
     cancel_flag: &AtomicBool,
     provider_id: &str,
 ) -> Result<(), String> {
-    let effective_provider = body.get("provider").and_then(|v| v.as_str()).unwrap_or(provider_id);
-    let cli_command = body.get("cli_command").and_then(|v| v.as_str())
+    let effective_provider = body
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .unwrap_or(provider_id);
+    let cli_command = body
+        .get("cli_command")
+        .and_then(|v| v.as_str())
         .or_else(|| body.get("cliCommand").and_then(|v| v.as_str()))
         .unwrap_or("");
-    let runtime_backend = body.get("runtime_backend").and_then(|v| v.as_str())
+    let runtime_backend = body
+        .get("runtime_backend")
+        .and_then(|v| v.as_str())
         .or_else(|| body.get("runtimeBackend").and_then(|v| v.as_str()))
         .unwrap_or("");
     let is_cli_turn = !cli_command.is_empty() || runtime_backend == "cli";
@@ -707,7 +759,14 @@ fn stream_station_turn(
                         &data,
                         agent_allowed_roots,
                     ) {
-                        emit_resolved_error(app, stream_id, effective_provider, ProviderKind::Direct, None, &error);
+                        emit_resolved_error(
+                            app,
+                            stream_id,
+                            effective_provider,
+                            ProviderKind::Direct,
+                            None,
+                            &error,
+                        );
                         error_emitted = true;
                     }
                     continue;
@@ -717,11 +776,28 @@ fn stream_station_turn(
                         continue;
                     }
                     error_emitted = true;
-                    let raw = data.get("error").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+                    let raw = data
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown error");
                     if is_cli_turn {
-                        emit_resolved_error(app, stream_id, effective_provider, ProviderKind::Cli, Some(cli_binary), raw);
+                        emit_resolved_error(
+                            app,
+                            stream_id,
+                            effective_provider,
+                            ProviderKind::Cli,
+                            Some(cli_binary),
+                            raw,
+                        );
                     } else {
-                        emit_resolved_error(app, stream_id, effective_provider, ProviderKind::Direct, None, raw);
+                        emit_resolved_error(
+                            app,
+                            stream_id,
+                            effective_provider,
+                            ProviderKind::Direct,
+                            None,
+                            raw,
+                        );
                     }
                 } else {
                     emit_turn_stream_event(app, stream_id, &event, data);
@@ -733,11 +809,28 @@ fn stream_station_turn(
         if let Some((event, data)) = parse_sse_frame(&buffer) {
             if event == "error" {
                 if !error_emitted {
-                    let raw = data.get("error").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+                    let raw = data
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown error");
                     if is_cli_turn {
-                        emit_resolved_error(app, stream_id, effective_provider, ProviderKind::Cli, Some(cli_binary), raw);
+                        emit_resolved_error(
+                            app,
+                            stream_id,
+                            effective_provider,
+                            ProviderKind::Cli,
+                            Some(cli_binary),
+                            raw,
+                        );
                     } else {
-                        emit_resolved_error(app, stream_id, effective_provider, ProviderKind::Direct, None, raw);
+                        emit_resolved_error(
+                            app,
+                            stream_id,
+                            effective_provider,
+                            ProviderKind::Direct,
+                            None,
+                            raw,
+                        );
                     }
                 }
             } else {
@@ -1127,7 +1220,10 @@ fn build_local_tool_result_event(
     })
 }
 
-pub fn agent_conversation_list(input: AgentConversationListInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_conversation_list(
+    input: AgentConversationListInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let agent_id = input.agent_id.trim().to_string();
     if agent_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "agent_id is required", None);
@@ -1153,10 +1249,17 @@ pub fn agent_conversation_list(input: AgentConversationListInput, token: &str) -
     }
 }
 
-pub fn agent_conversation_get(input: AgentConversationGetInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_conversation_get(
+    input: AgentConversationGetInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let conversation_id = input.conversation_id.trim().to_string();
     if conversation_id.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "conversation_id is required", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id is required",
+            None,
+        );
     }
     let body = json!({ "conversation_id": conversation_id });
     match station_client::request_json(
@@ -1174,7 +1277,10 @@ pub fn agent_conversation_get(input: AgentConversationGetInput, token: &str) -> 
     }
 }
 
-pub fn agent_conversation_create(input: AgentConversationCreateInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_conversation_create(
+    input: AgentConversationCreateInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let agent_id = input.agent_id.trim().to_string();
     if agent_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "agent_id is required", None);
@@ -1209,10 +1315,17 @@ pub fn agent_conversation_create(input: AgentConversationCreateInput, token: &st
     }
 }
 
-pub fn agent_conversation_messages(input: AgentConversationMessagesInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_conversation_messages(
+    input: AgentConversationMessagesInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let conversation_id = input.conversation_id.trim().to_string();
     if conversation_id.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "conversation_id is required", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id is required",
+            None,
+        );
     }
     let body = json!({
         "conversation_id": conversation_id,
@@ -1235,10 +1348,17 @@ pub fn agent_conversation_messages(input: AgentConversationMessagesInput, token:
     }
 }
 
-pub fn agent_conversation_archive(input: AgentConversationArchiveInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_conversation_archive(
+    input: AgentConversationArchiveInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let conversation_id = input.conversation_id.trim().to_string();
     if conversation_id.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "conversation_id is required", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id is required",
+            None,
+        );
     }
     let body = json!({
         "conversation_id": conversation_id,

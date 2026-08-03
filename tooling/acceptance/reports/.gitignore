@@ -1,2 +1,5 @@
 *
 !.gitignore
+!d13-c5-atomic-mls-fault-matrix.json
+!testnet-p5-federation-e2e.json
+!chat-mls-three-station-convergence.json

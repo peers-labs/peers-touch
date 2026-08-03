@@ -68,6 +68,9 @@ pnpm --filter @peers-touch/prototype-desktop-social-chat dev
 ## 已知差异 / 待补
 
 - 原型使用 mock 数据，不接 Station、Desktop Rust、实时同步或真实端到端加密。
+- `UNSYNCED`：真实 Desktop 在 X3DH 进行中显示 `Establishing secure channel…`，
+  且只在 DM/MLS 会话真实 ready 后显示锁图标；当前原型仅覆盖稳定加密态。
+  下一步由 Chat / Social Owner 在原型状态切换器补 `establishing` 态并完成 L2 截图确认。
 - 文件/图片只展示交互卡片，不做真实上传、预览或下载。
 - 搜索入口、背景选择入口只表达 action surface 的位置和层级，未实现完整搜索结果页。
 - Owner 确认前不得把本原型当作真实 Desktop 落地依据。
