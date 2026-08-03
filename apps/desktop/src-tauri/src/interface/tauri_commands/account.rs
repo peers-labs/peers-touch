@@ -1,7 +1,7 @@
 use crate::contracts::{
-    AccountAuthorizePinRecoveryInput, AccountIdInput, AccountRemovePinInput,
-    AccountResetPinInput, AccountSetPinInput, AccountUnlockInput, AccountUpsertOAuthInput,
-    AuthSessionPayload, StubPayload,
+    AccountAuthorizePinRecoveryInput, AccountIdInput, AccountRemovePinInput, AccountResetPinInput,
+    AccountSetPinInput, AccountUnlockInput, AccountUpsertOAuthInput, AuthSessionPayload,
+    StubPayload,
 };
 use crate::domain::identity::{ActiveSession, ActorRef};
 use crate::error::{AppResult, ErrorCode};
@@ -398,10 +398,7 @@ pub fn account_authorize_pin_recovery(
 }
 
 #[tauri::command]
-pub fn account_begin_pin_recovery(
-    window: Window,
-    input: AccountIdInput,
-) -> AppResult<StubPayload> {
+pub fn account_begin_pin_recovery(window: Window, input: AccountIdInput) -> AppResult<StubPayload> {
     application_account::account_begin_pin_recovery(&input.id, &window.label())
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input } from '@lobehub/ui';
@@ -134,9 +134,8 @@ function catalogEntryToResult(entry: FederationCatalogEntry): ActorSearchResult 
 export function FindPeopleModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sendFriendRequest, loadFriendRequests, friendRequests } = useActiveSocialChatSlice((s) => ({
+  const { sendFriendRequest, friendRequests } = useActiveSocialChatSlice((s) => ({
     sendFriendRequest: s.sendFriendRequest,
-    loadFriendRequests: s.loadFriendRequests,
     friendRequests: s.friendRequests,
   }));
   const currentUserDid = useActiveSocialChatStore((s) => s.currentUserDid);
@@ -157,16 +156,6 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const [selectedFederationId, setSelectedFederationId] = useState<string>('');
 
   const RESEND_COOLDOWN_MS = 5 * 60 * 1000;
-
-  useEffect(() => {
-    if (open) loadFriendRequests();
-  }, [open, loadFriendRequests]);
-
-  useEffect(() => {
-    if (!open) return;
-    const interval = setInterval(() => loadFriendRequests(), 10_000);
-    return () => clearInterval(interval);
-  }, [open, loadFriendRequests]);
 
   const pendingReceiverIds = useMemo(() => {
     const ids = new Set<string>();
