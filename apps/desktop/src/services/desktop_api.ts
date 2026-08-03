@@ -2574,6 +2574,67 @@ export interface AgentTurnTraceGetInput {
   turn_id?: string;
 }
 
+export interface AgentConversation {
+  conversation_id: string;
+  agent_id: string;
+  user_id?: string;
+  title: string;
+  description?: string;
+  provider_id?: string;
+  model_name?: string;
+  status: string;
+  parent_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentMessage {
+  message_id: string;
+  conversation_id: string;
+  turn_id?: string;
+  model_name?: string;
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  seq: number;
+  branch_id?: string;
+  replaces_message_id?: string;
+  reasoning_json?: string;
+  tool_calls_json?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentConversationListInput {
+  agent_id: string;
+  status?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface AgentConversationGetInput {
+  conversation_id: string;
+}
+
+export interface AgentConversationCreateInput {
+  agent_id: string;
+  title?: string;
+  description?: string;
+  model_name?: string;
+  provider_id?: string;
+}
+
+export interface AgentConversationMessagesInput {
+  conversation_id: string;
+  after_seq?: number;
+  before_seq?: number;
+  limit?: number;
+}
+
+export interface AgentConversationArchiveInput {
+  conversation_id: string;
+  permanent?: boolean;
+}
+
 export interface AgentTurnStreamPayload {
   streamId: string;
   event: string;
@@ -4208,6 +4269,41 @@ export const api = {
       decidedAt: string;
     }>('agent_decide_tool_approval', input),
 
+  listAgentConversations: (agentId: string, options?: { status?: string; page?: number; pageSize?: number }) =>
+    invokeRustDataFromStatus<AgentConversationListInput, { ok: boolean; conversations: AgentConversation[]; total: number }>(
+      'agent_conversation_list',
+      {
+        agent_id: agentId,
+        status: options?.status,
+        page: options?.page,
+        page_size: options?.pageSize,
+      },
+    ).then((r) => r.conversations),
+
+  getAgentConversation: (conversationId: string) =>
+    invokeRustDataFromStatus<AgentConversationGetInput, { ok: boolean; conversation: AgentConversation }>(
+      'agent_conversation_get',
+      { conversation_id: conversationId },
+    ).then((r) => r.conversation),
+
+  createAgentConversation: (input: AgentConversationCreateInput) =>
+    invokeRustDataFromStatus<AgentConversationCreateInput, { ok: boolean; conversation: AgentConversation }>(
+      'agent_conversation_create',
+      input,
+    ).then((r) => r.conversation),
+
+  listAgentConversationMessages: (input: AgentConversationMessagesInput) =>
+    invokeRustDataFromStatus<
+      AgentConversationMessagesInput,
+      { ok: boolean; messages: AgentMessage[]; next_cursor: number; has_more: boolean }
+    >('agent_conversation_messages', input),
+
+  archiveAgentConversation: (conversationId: string, permanent?: boolean) =>
+    invokeRustDataFromStatus<AgentConversationArchiveInput, { ok: boolean }>('agent_conversation_archive', {
+      conversation_id: conversationId,
+      permanent,
+    }),
+
   // ── Cron Jobs API ──
 
   cronStatus: () =>
@@ -5451,6 +5547,9 @@ export const api = {
 
   stationProbe: (url: string) =>
     invokeRustDataFromStatus<{ url: string }, StationProbeResult>('station_probe', { url }),
+
+  resolveErrorAction: (action: { type: string; cliId?: string; providerId?: string; label: string }) =>
+    invoke<{ ok: boolean; reauth?: boolean; message?: string; opened?: boolean }>('resolve_error_action', { action }),
 };
 
 export interface ConfigFieldMeta {
@@ -5601,7 +5700,7 @@ export interface NotificationPreferenceData {
 
 export interface StreamEvent {
   event: string;
-  data: Record<string, string>;
+  data: Record<string, unknown>;
 }
 
 export interface ChatImageInput {
@@ -5868,7 +5967,21 @@ export function streamAgentTurn(
         onDone();
       } catch (err: unknown) {
         if (!controller.signal.aborted) {
-          onError(err instanceof Error ? err : new Error(String(err)));
+          const error = err instanceof Error ? err : new Error(String(err));
+          const rustErr = err as RustCommandException;
+          if (rustErr?.details && typeof rustErr.details === 'object') {
+            const details = rustErr.details as Record<string, unknown>;
+            if (details.resolution) {
+              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).resolution = details.resolution;
+            }
+            if (typeof details.detail === 'string') {
+              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).errorDetail = details.detail;
+            }
+            if (typeof details.providerId === 'string') {
+              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).providerId = details.providerId;
+            }
+          }
+          onError(error);
         }
       }
     })();
@@ -5888,13 +6001,9 @@ export function streamAgentTurn(
           return;
         }
 
-        const data: Record<string, string> = {};
+        const data: Record<string, unknown> = {};
         Object.entries(payload.data || {}).forEach(([key, value]) => {
-          if (typeof value === 'string') {
-            data[key] = value;
-          } else if (value !== undefined && value !== null) {
-            data[key] = JSON.stringify(value);
-          }
+          data[key] = value;
         });
         if (typeof payload.data?.text === 'string') data.content = payload.data.text;
         if (typeof payload.data?.result === 'string') data.content = payload.data.result;
@@ -5908,7 +6017,7 @@ export function streamAgentTurn(
           conversationId: input.conversation_id,
           agentId: input.agent_id,
           event: payload.event,
-          data,
+          data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])),
           timestampMs: Date.now(),
         } satisfies AgentTurnStreamEventPayload);
         onEvent({ event: payload.event, data });
@@ -5918,7 +6027,15 @@ export function streamAgentTurn(
         }
         if (payload.event === 'error') {
           unlisten?.();
-          onError(new Error(data.error || 'agent.error.streamFailed'));
+          const err = new Error(typeof data.error === 'string' ? data.error : 'agent.error.streamFailed') as Error & {
+            resolution?: unknown;
+            errorDetail?: string;
+            providerId?: string;
+          };
+          if (data.resolution && typeof data.resolution === 'object') err.resolution = data.resolution;
+          if (typeof data.detail === 'string') err.errorDetail = data.detail;
+          if (typeof data.providerId === 'string') err.providerId = data.providerId;
+          onError(err);
         }
       });
 
