@@ -66,8 +66,12 @@ fn now_unix_secs() -> u64 {
 
 fn sessions_dir() -> Result<PathBuf, SessionStoreError> {
     let station_scope = crate::infrastructure::local_scope::active_station_scope();
-    storage::app_file_path("desktop", StorageKind::Data, &["auth", "sessions", &station_scope])
-        .map_err(SessionStoreError::from)
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Data,
+        &["auth", "sessions", &station_scope],
+    )
+    .map_err(SessionStoreError::from)
 }
 
 /// Returns the on-disk path for a given local account id.
@@ -269,9 +273,13 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).expect("mkdir");
+        let previous_storage_root = std::env::var_os("PEERS_STORAGE_ROOT");
         std::env::set_var("PEERS_STORAGE_ROOT", base.to_str().unwrap());
         f();
-        std::env::remove_var("PEERS_STORAGE_ROOT");
+        match previous_storage_root {
+            Some(value) => std::env::set_var("PEERS_STORAGE_ROOT", value),
+            None => std::env::remove_var("PEERS_STORAGE_ROOT"),
+        }
         let _ = fs::remove_dir_all(&base);
     }
 
