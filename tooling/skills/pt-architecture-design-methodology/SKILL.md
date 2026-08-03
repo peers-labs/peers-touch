@@ -2,7 +2,7 @@
 name: "pt-architecture-design-methodology"
 description: "Designs evidence-backed architecture boundaries, ownership, contracts, topology, failure semantics, and decisions. Invoke before execution planning whenever the target architecture is not yet accepted."
 stage: "DESIGN"
-requires: ["user requirement or problem statement"]
+requires: ["accepted product contract for product-facing work, or a verified infrastructure problem statement"]
 produces: ["accepted architecture docs (design.md, decisions.md, data-model.md)"]
 next: "pt-architecture-execution-methodology"
 ---
@@ -14,7 +14,7 @@ next: "pt-architecture-execution-methodology"
 This skill owns **DESIGN** only.
 
 ```text
-evidence-backed problem
+accepted product contract or evidence-backed infrastructure problem
   -> target architecture
   -> accepted design
   -> pt-architecture-execution-methodology
@@ -35,6 +35,8 @@ It answers:
 
 It does **not**:
 
+- Define target users, product promise, benchmark disposition, user journeys,
+  visible product states, or receiver-perspective product scope.
 - Split work into phases, tasks, owners, or dependency order.
 - Select implementation sequencing or migration batches.
 - Track progress or execute code.
@@ -49,6 +51,7 @@ exists.
 
 Read these before designing:
 
+- Accepted outputs from `pt-product-design-methodology` for product-facing work.
 - `docs/README.md`
 - `docs/global/architecture-document-standard.md`
 - `docs/global/architecture.md`
@@ -60,6 +63,12 @@ Read these before designing:
 Repository sources constrain the design. External documentation and runtime
 evidence may establish platform behavior. Unsupported rules remain proposals,
 not repository facts.
+
+For a new product, module, major capability, workflow redesign, or
+benchmark-driven rebuild, return `ARCHITECTURE_BLOCKED_BY_PRODUCT` when the
+product contract is missing, still draft, or lacks stable capability, journey,
+state, and acceptance IDs. Pure infrastructure work may proceed from a verified
+problem statement when no product contract is applicable.
 
 ## Evidence Discipline
 
@@ -268,6 +277,8 @@ status remains `draft` or `proposed`.
 
 The handoff package to `pt-architecture-execution-methodology` is:
 
+- Accepted product document paths and capability/journey/acceptance IDs when
+  applicable.
 - Accepted architecture document paths.
 - Accepted decision IDs.
 - Invariant and forbidden-relationship IDs.

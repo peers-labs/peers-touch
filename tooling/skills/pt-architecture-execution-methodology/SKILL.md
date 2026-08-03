@@ -2,7 +2,7 @@
 name: "pt-architecture-execution-methodology"
 description: "Transforms an accepted architecture into an ordered, dependency-backed execution plan with atomic cutovers, deliverables, gates, and evidence. Invoke for planning only; it must not redesign or execute."
 stage: "PLAN"
-requires: ["accepted architecture docs"]
+requires: ["accepted product contract when applicable", "accepted architecture docs"]
 produces: ["dependency graph", "execution closures", "ordered step list"]
 next: "pt-plan-and-document"
 ---
@@ -14,7 +14,7 @@ next: "pt-plan-and-document"
 This skill owns **PLAN** only.
 
 ```text
-accepted architecture
+accepted product and architecture contracts
   -> impact inventory
   -> dependency graph
   -> execution closures
@@ -23,7 +23,8 @@ accepted architecture
   -> implementation and evidence
 ```
 
-It consumes the output of `pt-architecture-design-methodology` and answers:
+It consumes accepted outputs from `pt-product-design-methodology` when
+applicable and `pt-architecture-design-methodology`, then answers:
 
 - What current assets must change, move, or be deleted.
 - Which workstreams own each deliverable.
@@ -48,6 +49,8 @@ this planning skill.
 Required inputs:
 
 - Accepted architecture document paths.
+- Accepted product document paths, capability/journey IDs, visible state
+  contracts, and product acceptance matrix when the work is product-facing.
 - Accepted decision IDs.
 - Invariant and forbidden-relationship IDs.
 - Target-state retention/deletion list.
@@ -63,6 +66,10 @@ PLAN_BLOCKED_BY_DESIGN
 
 Name the exact missing architecture decision or contract. Do not silently fill
 the gap inside the execution plan.
+
+Use `PLAN_BLOCKED_BY_PRODUCT` instead when a product-facing plan lacks an
+accepted product contract, confirmed required prototype, or complete
+receiver-perspective acceptance matrix.
 
 ## Core Rule
 
@@ -88,11 +95,12 @@ condition.
 
 Create a traceability table:
 
-| Plan requirement | Architecture source | Decision/invariant | Required evidence |
-|---|---|---|---|
+| Plan requirement | Product capability/journey | Architecture source | Decision/invariant | Required evidence |
+|---|---|---|---|---|
 
-Every plan item must trace to an accepted design requirement. Unmapped work is
-out of scope or requires a design amendment.
+Every product-facing plan item must trace through accepted product and
+architecture requirements. Unmapped work is out of scope or requires a product
+or architecture amendment.
 
 ### Step 2. Inventory The Current Impact Surface
 
@@ -214,6 +222,8 @@ Place plans under the nearest `execution-plans/` directory.
 The plan must contain:
 
 - Accepted architecture sources and IDs.
+- Accepted product sources, capability/journey IDs, visible states, and
+  receiver-perspective acceptance when applicable.
 - Scope and non-scope.
 - Current-state inventory.
 - Responsibility workstreams.
@@ -232,6 +242,7 @@ documents are needed.
 Return `PLAN_READY_FOR_EXECUTION` only when:
 
 - Architecture inputs are accepted and unchanged.
+- Product inputs are accepted and unchanged when applicable.
 - Every plan item traces to architecture IDs.
 - Current-state inventory is repository-backed.
 - End-to-end lifecycles have no unmapped step.
@@ -249,6 +260,7 @@ The handoff package to `pt-execution-plan-guardian` is:
 
 - Formal plan paths.
 - Accepted architecture paths.
+- Accepted product paths and product acceptance IDs when applicable.
 - In-scope workstream/task IDs.
 - Dependency and parallelization constraints.
 - Per-task acceptance commands and evidence paths.
@@ -268,6 +280,11 @@ During planning, return `DESIGN_AMENDMENT_REQUIRED` when:
   architecture decision.
 
 Describe the gap and stop. Do not repair architecture inside the plan.
+
+Return `PRODUCT_AMENDMENT_REQUIRED` when current repository evidence shows that
+a required user journey, visible state, platform promise, benchmark
+disposition, or receiver-perspective assertion is undefined or contradictory.
+Do not repair product design inside the plan.
 
 ## Anti-Patterns
 
