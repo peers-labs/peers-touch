@@ -89,6 +89,12 @@ pub fn provider_update(
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
 
+    if let Some(api_key) = input.key_vaults.as_deref().and_then(parse_key_vault_api_key) {
+        if !api_key.is_empty() {
+            let _ = station_api::set_credential(token, id, &api_key);
+        }
+    }
+
     let resp = match station_api::update_provider_full(
         token,
         id,
@@ -156,15 +162,15 @@ pub fn provider_create(
     };
 
     if let Some(api_key) = parse_key_vault_api_key(&input.key_vaults) {
-        let _ = station_api::set_credential(token, &provider.name, &api_key);
+        let _ = station_api::set_credential(token, &provider.id, &api_key);
     }
 
     success_payload(
         "provider_create",
         json!({
             "provider": {
-                "id": provider.name,
-                "name": provider.display_name,
+                "id": provider.id,
+                "name": provider.name,
                 "enabled": provider.enabled,
                 "version": provider.version,
             }
