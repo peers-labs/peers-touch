@@ -1,8 +1,10 @@
 use crate::application::agent_turn as application_agent_turn;
 use crate::application::session_resolver;
 use crate::contracts::{
-    AgentExecuteTurnInput, AgentLocalToolRequestInput, AgentToolApprovalDecisionInput,
-    AgentTurnStreamCancelInput, AgentTurnTraceGetInput, AgentTurnTraceListInput, StubPayload,
+    AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
+    AgentConversationListInput, AgentConversationMessagesInput, AgentExecuteTurnInput,
+    AgentLocalToolRequestInput, AgentToolApprovalDecisionInput, AgentTurnStreamCancelInput,
+    AgentTurnTraceGetInput, AgentTurnTraceListInput, StubPayload,
 };
 use crate::error::AppResult;
 use crate::error::ErrorCode;
@@ -106,4 +108,69 @@ pub fn agent_turn_trace_get(
 #[tauri::command]
 pub fn agent_decide_tool_approval(input: AgentToolApprovalDecisionInput) -> AppResult<StubPayload> {
     application_agent_turn::decide_tool_approval(input)
+}
+
+#[tauri::command]
+pub fn agent_conversation_list(
+    input: AgentConversationListInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_conversation_list(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_conversation_get(
+    input: AgentConversationGetInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_conversation_get(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_conversation_create(
+    input: AgentConversationCreateInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_conversation_create(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_conversation_messages(
+    input: AgentConversationMessagesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_conversation_messages(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_conversation_archive(
+    input: AgentConversationArchiveInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_conversation_archive(input, &token)
 }

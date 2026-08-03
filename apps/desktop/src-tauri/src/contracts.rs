@@ -1191,6 +1191,42 @@ pub struct AgentTurnTraceGetInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationListInput {
+    pub agent_id: String,
+    pub status: Option<String>,
+    pub page: Option<i32>,
+    pub page_size: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationGetInput {
+    pub conversation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationCreateInput {
+    pub agent_id: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub model_name: Option<String>,
+    pub provider_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationMessagesInput {
+    pub conversation_id: String,
+    pub after_seq: Option<i64>,
+    pub before_seq: Option<i64>,
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationArchiveInput {
+    pub conversation_id: String,
+    pub permanent: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCollaborationCreateInput {
     pub title: String,
     pub description: String,
