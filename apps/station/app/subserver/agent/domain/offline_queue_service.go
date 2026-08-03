@@ -23,13 +23,13 @@ const (
 type OfflineOpType string
 
 const (
-	OfflineOpTypeWorkspaceFileCreate  OfflineOpType = "workspace_file_create"
-	OfflineOpTypeWorkspaceFileUpdate  OfflineOpType = "workspace_file_update"
-	OfflineOpTypeWorkspaceFileDelete  OfflineOpType = "workspace_file_delete"
-	OfflineOpTypeMemoryCreate         OfflineOpType = "memory_create"
-	OfflineOpTypeMemoryUpdate         OfflineOpType = "memory_update"
-	OfflineOpTypeMemoryDelete         OfflineOpType = "memory_delete"
-	OfflineOpTypeAgentConfigUpdate    OfflineOpType = "agent_config_update"
+	OfflineOpTypeWorkspaceFileCreate OfflineOpType = "workspace_file_create"
+	OfflineOpTypeWorkspaceFileUpdate OfflineOpType = "workspace_file_update"
+	OfflineOpTypeWorkspaceFileDelete OfflineOpType = "workspace_file_delete"
+	OfflineOpTypeMemoryCreate        OfflineOpType = "memory_create"
+	OfflineOpTypeMemoryUpdate        OfflineOpType = "memory_update"
+	OfflineOpTypeMemoryDelete        OfflineOpType = "memory_delete"
+	OfflineOpTypeAgentConfigUpdate   OfflineOpType = "agent_config_update"
 )
 
 type OfflineOperation struct {
