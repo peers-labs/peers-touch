@@ -624,14 +624,14 @@ func TestAtelierProviderCapabilitiesWritesFullE2EProviderRuntimeEvidenceFromStat
 	if evidence["owner"] != "station" ||
 		evidence["scope"] != "production-provider-runtime" ||
 		evidence["launchId"] != "launch-provider-runtime" ||
-                evidence["sessionId"] != "session-provider-runtime" ||
-                evidence["providerProfileRefRedacted"] != true ||
-                evidence["providerProfileRefHash"] != atelierSHA256Hash("controlled-provider-profile") {
+		evidence["sessionId"] != "session-provider-runtime" ||
+		evidence["providerProfileRefRedacted"] != true ||
+		evidence["providerProfileRefHash"] != atelierSHA256Hash("controlled-provider-profile") {
 		t.Fatalf("unexpected provider runtime identity evidence: %+v", evidence)
 	}
-        if _, ok := evidence["providerProfileRef"]; ok {
-                t.Fatalf("provider runtime evidence must not persist raw providerProfileRef: %+v", evidence)
-        }
+	if _, ok := evidence["providerProfileRef"]; ok {
+		t.Fatalf("provider runtime evidence must not persist raw providerProfileRef: %+v", evidence)
+	}
 	for _, key := range []string{
 		"appletProviderInvokeExposed",
 		"appletRuntimeExecuteExposed",

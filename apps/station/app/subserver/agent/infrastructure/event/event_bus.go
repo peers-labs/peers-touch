@@ -9,9 +9,9 @@ import (
 )
 
 type MemoryEventBus struct {
-	mu           sync.RWMutex
-	subscribers  map[string][]domain.EventHandler
-	globalSubs   []domain.EventHandler
+	mu          sync.RWMutex
+	subscribers map[string][]domain.EventHandler
+	globalSubs  []domain.EventHandler
 }
 
 func NewMemoryEventBus() *MemoryEventBus {

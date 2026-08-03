@@ -11,7 +11,7 @@ import (
 const defaultBaseDir = "/var/lib/peers-touch/agent-workspaces"
 
 type WorkspaceManager struct {
-	BaseDir   string
+	BaseDir    string
 	SourceRepo string
 }
 
