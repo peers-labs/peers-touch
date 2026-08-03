@@ -40,6 +40,15 @@ type LocalProfileFetcher interface {
 	FetchByLocalHandle(ctx context.Context, localHandle string) (*modelpb.ActorProfile, error)
 }
 
+// LocalDeviceSigningKeyFetcher is implemented by identity owners that can
+// publish authenticated local device keys in the signed profile envelope.
+type LocalDeviceSigningKeyFetcher interface {
+	FetchDeviceSigningKeys(
+		ctx context.Context,
+		localHandle string,
+	) ([]*modelpb.VerifiedActorDeviceSigningKey, error)
+}
+
 // BuildInput carries the request parameters for Build.
 type BuildInput struct {
 	// Handle is the federated handle requested by the caller (e.g.
@@ -104,6 +113,13 @@ func Build(ctx context.Context, in BuildInput) (*pb.ActorProfileEnvelope, []byte
 	if body == nil {
 		return nil, nil, ErrHandleNotLocal
 	}
+	var deviceSigningKeys []*modelpb.VerifiedActorDeviceSigningKey
+	if keyFetcher, ok := in.Fetcher.(LocalDeviceSigningKeyFetcher); ok {
+		deviceSigningKeys, err = keyFetcher.FetchDeviceSigningKeys(ctx, localPart)
+		if err != nil {
+			return nil, nil, fmt.Errorf("profile: build: load device signing keys: %w", err)
+		}
+	}
 
 	localKey, err := in.Keys.Get(ctx)
 	if err != nil {
@@ -120,6 +136,7 @@ func Build(ctx context.Context, in BuildInput) (*pb.ActorProfileEnvelope, []byte
 		HomeStationPeerID: id.StationPeerID.String(),
 		HomeStationDomain: id.StationDomain,
 		Profile:           body,
+		DeviceSigningKeys: deviceSigningKeys,
 		Now:               now,
 		TTL:               in.TTL,
 		LocalKey:          localKey,

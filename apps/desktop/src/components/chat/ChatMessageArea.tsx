@@ -590,7 +590,11 @@ export function ChatMessageArea() {
       : peerIsTyping
       ? t('chat.social.messageArea.typing')
       : ''
-    : subtitle;
+    : groupSecurityState[activeUlid] === 'establishing'
+      ? t('chat.social.encryption.establishing')
+      : groupSecurityState[activeUlid] === 'crypto-desynced'
+        ? t('chat.social.encryption.cryptoDesynced')
+        : subtitle;
   const conversationEncrypted = activeTab === 'friend'
     ? sessionSecurityState[activeUlid] === 'ready'
     : groupSecurityState[activeUlid] === 'ready';

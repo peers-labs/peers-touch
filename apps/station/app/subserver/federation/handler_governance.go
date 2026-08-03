@@ -3,10 +3,11 @@ package federation
 import (
 	"context"
 	"errors"
+	"net/url"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/application"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
-	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
 func (s *subServer) handleFetchHead(ctx context.Context, req *pb.FetchHeadRequest) (*pb.FetchHeadResponse, error) {
@@ -59,6 +60,7 @@ func (s *subServer) handleFetchEvents(ctx context.Context, req *pb.FetchEventsRe
 var ErrFederationNotFound = errFedNotFound{}
 
 type errFedNotFound struct{}
+
 func (e errFedNotFound) Error() string { return "federation not found" }
 
 func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProposalRequest) (*pb.SubmitProposalResponse, error) {
@@ -67,6 +69,13 @@ func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProp
 	}
 	if req.StationPeerId == "" {
 		return nil, errors.New("station_peer_id is required")
+	}
+	if req.JoiningStationName == "" {
+		return nil, errors.New("joining_station_name is required")
+	}
+	joiningURL, err := url.ParseRequestURI(req.JoiningStationUrl)
+	if err != nil || joiningURL.Scheme == "" || joiningURL.Host == "" {
+		return nil, errors.New("joining_station_url must be an absolute HTTP endpoint")
 	}
 
 	fed, err := s.federationSvc.GetFederation(ctx, req.FederationId)
@@ -77,7 +86,10 @@ func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProp
 		return nil, ErrFederationNotFound
 	}
 
-	localPeerID := node.GetService().Options().Id
+	localPeerID := localStationPeerID()
+	if localPeerID == "" {
+		return nil, server.InternalError("local Station peer identity unavailable")
+	}
 	if fed.SequencerStationPeerID != localPeerID {
 		return nil, errors.New("this station is not the sequencer for this federation")
 	}
@@ -107,8 +119,8 @@ func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProp
 	membership, err := s.federationSvc.ApproveJoin(ctx, &application.ApproveJoinInput{
 		FederationID:          req.FederationId,
 		JoiningStationPeerID:  req.StationPeerId,
-		JoiningStationName:    req.ActorFederatedHandle,
-		JoiningStationURL:     "",
+		JoiningStationName:    req.JoiningStationName,
+		JoiningStationURL:     req.JoiningStationUrl,
 		ApproverActorID:       sequencerActorID,
 		ApproverActorHandle:   sequencerActorID,
 		ApproverStationPeerID: localPeerID,
@@ -120,9 +132,18 @@ func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProp
 	}
 
 	_ = actorPriv
+	events, err := s.ledgerSvc.FetchEvents(ctx, req.FederationId, 0, 1000)
+	if err != nil {
+		return nil, err
+	}
+	if len(events) == 0 {
+		return nil, errors.New("accepted Federation has no bootstrap ledger")
+	}
 
 	return &pb.SubmitProposalResponse{
-		ProposalId: membership.ApprovedByEventID,
-		Decision:   pb.ProposalDecision_DECISION_ACCEPTED,
+		ProposalId:      membership.ApprovedByEventID,
+		Decision:        pb.ProposalDecision_DECISION_ACCEPTED,
+		AcceptedEvent:   events[len(events)-1],
+		BootstrapEvents: events,
 	}, nil
 }

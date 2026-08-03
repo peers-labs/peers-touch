@@ -6,10 +6,6 @@ const settingsStore = vi.hoisted(() => ({
   loadChatPreferences: vi.fn(),
 }));
 
-const providerStore = vi.hoisted(() => ({
-  loadProviders: vi.fn(),
-}));
-
 const sessionStore = vi.hoisted(() => ({
   subscribe: vi.fn(),
 }));
@@ -17,12 +13,6 @@ const sessionStore = vi.hoisted(() => ({
 vi.mock('../store/settings', () => ({
   useSettingsStore: {
     getState: () => settingsStore,
-  },
-}));
-
-vi.mock('../store/provider', () => ({
-  useProviderStore: {
-    getState: () => providerStore,
   },
 }));
 
@@ -38,25 +28,22 @@ describe('settingsRuntime', () => {
     settingsStore.refreshActiveAccount.mockResolvedValue(undefined);
     settingsStore.loadAgents.mockResolvedValue(undefined);
     settingsStore.loadChatPreferences.mockResolvedValue(undefined);
-    providerStore.loadProviders.mockResolvedValue(undefined);
     sessionStore.subscribe.mockReturnValue(() => undefined);
   });
 
-  it('bootstraps provider projection with settings runtime data', async () => {
+  it('bootstraps settings-owned projection data', async () => {
     await settingsRuntime.bootstrap(null);
 
     expect(settingsStore.refreshActiveAccount).toHaveBeenCalledTimes(1);
     expect(settingsStore.loadAgents).toHaveBeenCalledTimes(1);
     expect(settingsStore.loadChatPreferences).toHaveBeenCalledTimes(1);
-    expect(providerStore.loadProviders).toHaveBeenCalledTimes(1);
   });
 
-  it('reconciles provider projection through the runtime owner', async () => {
+  it('reconciles settings-owned projection data', async () => {
     await settingsRuntime.reconcile?.('test');
 
     expect(settingsStore.refreshActiveAccount).toHaveBeenCalledTimes(1);
     expect(settingsStore.loadAgents).toHaveBeenCalledTimes(1);
     expect(settingsStore.loadChatPreferences).toHaveBeenCalledTimes(1);
-    expect(providerStore.loadProviders).toHaveBeenCalledTimes(1);
   });
 });

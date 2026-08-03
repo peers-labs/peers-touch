@@ -453,6 +453,7 @@
   "chat.social.background.graphite": "Graphite",
   "chat.social.encryption.enabled": "End-to-end encrypted",
   "chat.social.encryption.establishing": "Establishing secure channel…",
+  "chat.social.encryption.cryptoDesynced": "Encryption state is out of sync. Sending is disabled.",
   "chat.social.encryption.title": "Encryption",
   "chat.social.encryption.fingerprint": "Your security fingerprint",
   "chat.social.encryption.encryptedMessage": "Encrypted message",
