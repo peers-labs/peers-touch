@@ -9,6 +9,9 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "pnpm run build && node tests/im-projection-contract.test.mjs"
   },
+  "dependencies": {
+    "@peers-touch/client-storage": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "~5.9.3"
   }

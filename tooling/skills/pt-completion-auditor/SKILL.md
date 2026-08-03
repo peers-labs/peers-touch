@@ -36,6 +36,8 @@ Never audit by vibes.
 Every conclusion must be tied to:
 
 - Concrete changed files.
+- Accepted product capabilities, journeys, visible states, and acceptance
+  assertions when the work is product-facing.
 - Authoritative plan/spec/docs, when available.
 - Runtime / contract boundaries.
 - Executed commands or explicitly missing evidence.
@@ -60,6 +62,7 @@ the work is complete, coherent, safe, and aligned across Peers-Touch.
 
 Check the user's actual request and the current workstream.
 
+- Trace product-facing work to accepted product capability/journey IDs.
 - List requested outcomes.
 - Mark each as `DONE`, `PARTIAL`, `UNPROVEN`, `NOT STARTED`, or `OUT OF SCOPE`.
 - Identify any "done" wording that is only backed by mock, mapper, docs, or
@@ -156,6 +159,8 @@ Never treat:
 
 Check:
 
+- Product definition, benchmark disposition, experience/state contracts,
+  prototype status, architecture, and plan remain mutually consistent.
 - Docs updated where behavior or contract changed.
 - Old docs do not contradict new architecture.
 - "Current state" and "remaining work" are explicit.
@@ -208,6 +213,8 @@ If the scope is unclear, ask one concise clarification question.
 
 Prefer:
 
+- Accepted product definition, benchmark disposition, experience/state
+  contracts, acceptance matrix, and confirmed prototype references.
 - `docs/architecture/**`
 - `docs/client/**`
 - `docs/station/**`
@@ -291,8 +298,8 @@ Use this structure:
   Fix:
 
 **Completion Matrix**
-| Requirement | Status | Evidence | Gaps |
-| --- | --- | --- | --- |
+| Product capability/journey | Architecture/plan closure | Status | Evidence | Gaps |
+| --- | --- | --- | --- | --- |
 
 **Architecture Map**
 | Layer | Status | Notes |
