@@ -197,27 +197,24 @@ After X3DH establishes the shared secret, every message uses the Double Ratchet:
 2. **Receiving**: Process ratchet header → derive same message key → decrypt
 3. **DH Ratchet step**: On each reply direction change, a new DH exchange ratchets the root key forward (forward secrecy)
 
-### 5.4 Group Chat (Sender Keys)
+### 5.4 Group Chat (MLS, RFC 9420)
 
 ```
 Creator                        Station                      Members
   │                              │                              │
   │── Create group ─────────────>│                              │
-  │── For each member:           │                              │
-  │   Generate SenderKey(SK_A)   │                              │
-  │   Encrypt SK_A with pairwise │                              │
-  │   session to each member     │                              │
-  │── Send encrypted SK_A ──────>│── Distribute ──────────────>│
-  │                              │                              │── Decrypt SK_A
-  │                              │                              │── Store SK_A for Alice
+  │── Build MLS group + Commit ─>│                              │
+  │── Welcome (opaque bytes) ───>│── Durable envelope ─────────>│
+  │                              │                              │── Join MLS group
   │                              │                              │
-  │── Encrypt(msg, SK_A) ───────>│── Fan out ─────────────────>│
-  │                              │                              │── Decrypt with SK_A
+  │── MLS application message ──>│── Store/fan out ciphertext ─>│
+  │                              │                              │── MLS decrypt
 ```
 
-- Each member generates their own sender key and distributes it to all group members via pairwise E2E channels.
-- When a member is removed, all remaining members rotate their sender keys.
-- Sender keys are ratcheted forward (hash ratchet) for forward secrecy within a sender's chain.
+- Clients own MLS group state and key material; Station only orders and relays opaque bytes.
+- Group creation and member addition distribute Welcome plus Commit material through the typed Station envelope.
+- Member removal advances the MLS epoch before subsequent application messages are accepted.
+- Every new group message is an MLS application message. Missing local MLS state blocks sending; there is no plaintext fallback.
 
 ---
 
@@ -412,19 +409,19 @@ await api.friendChatSendMessage(sessionUlid, receiverDid, '', type, undefined, u
 
 ### Phase 3: Friend Chat E2E (Week 4-6)
 
-- [ ] Implement X3DH key agreement
-- [ ] Implement Double Ratchet
-- [ ] Add `encrypted_payload` path in friend_chat handler
-- [ ] Desktop: encrypt before send, decrypt after receive
+- [x] Implement X3DH key agreement
+- [x] Implement Double Ratchet
+- [x] Add `encrypted_payload` path in friend chat
+- [x] Desktop: encrypt before send, decrypt after receive
 - [ ] Local FTS5 index from decrypted content
-- [ ] Migration: new messages encrypted, old messages remain plaintext
-- [ ] UI: encryption indicator on messages
+- [x] Migration: new messages encrypted, old messages remain readable
+- [x] UI: encryption indicator reflects established session state
 
 ### Phase 4: Group Chat E2E (Week 7-8)
 
-- [ ] Implement Sender Keys distribution
-- [ ] Key rotation on member add/remove
-- [ ] Group message encrypt/decrypt path
+- [x] Implement OpenMLS group state and Welcome/Commit distribution
+- [x] MLS epoch advancement on member add/remove
+- [x] Group message encrypt/decrypt path
 - [ ] Same local indexing pattern as friend chat
 
 ### Phase 5: Verification & Hardening (Week 9-10)
@@ -459,10 +456,9 @@ phased-implementation tables above for their respective arms:
   rollback plan. Until that lands, friend chat remains on the
   chain-only ratchet shipped in
   `peers-chat/apps/desktop/src-tauri/src/domain/crypto/mod.rs`.
-- `group-sender-keys.md` — replaces the (intentionally removed)
-  dead `GroupKeyState` stubs with the Signal Group v2 Sender Keys
-  protocol, distributed via the existing pairwise friend-chat E2E
-  channel. Defines the `GroupCiphertext` wire format inside
-  `GroupMessage.encrypted_payload`, the `SenderKeyDistributionMessage`
-  control type, the rotation triggers, and the G0..G5 migration plan.
-  Until that lands, group chat is plaintext on the wire.
+- `../federated-im/decisions.md` D-08 and
+  `../federated-im/execution-plans/20260712-g0-mls-verification.md` —
+  supersede the historical Sender Keys design with MLS (RFC 9420),
+  including Welcome/Commit delivery, epoch progression, persistence,
+  and security gates. `group-sender-keys.md` is retained only as
+  superseded history.

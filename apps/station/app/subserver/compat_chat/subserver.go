@@ -1,8 +1,7 @@
 // Package compat_chat provides backward-compatible HTTP route handlers for the
-// legacy /friend-chat/* and /group-chat/* API paths. These routes were removed
-// when the friend_chat and group_chat subservers were replaced by the unified
-// conversation + envelope subsystem (commit 82cdb299). The BFF (Desktop Rust)
-// still targets the old paths; this adapter bridges them without BFF rewrites.
+// legacy /friend-chat/* API paths and link previews. The friend-chat routes were
+// removed when the unified conversation + envelope subsystem landed, but the
+// Desktop BFF still targets them.
 package compat_chat
 
 import (
@@ -109,68 +108,6 @@ func (s *subServer) Handlers() []server.Handler {
 			s.handleFriendGetStats, logID, s.jwtWrapper),
 		server.NewTypedHandler("compat-fc-sync", "/friend-chat/message/sync", server.POST,
 			s.handleFriendSyncMessages, logID, s.jwtWrapper),
-
-		// --- Group Chat compat routes ---
-		server.NewTypedHandler("compat-gc-create", "/group-chat/create", server.POST,
-			s.handleGroupCreate, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-list", "/group-chat/list", server.GET,
-			s.handleGroupList, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-info", "/group-chat/info", server.GET,
-			s.handleGroupInfo, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-update", "/group-chat/update", server.PUT,
-			s.handleGroupUpdate, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-send-message", "/group-chat/message/send", server.POST,
-			s.handleGroupSendMessage, logID, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-list-messages", "/group-chat/messages", server.GET,
-			s.handleGroupListMessages, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-members", "/group-chat/members", server.GET,
-			s.handleGroupGetMembers, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-leave", "/group-chat/leave", server.POST,
-			s.handleGroupLeave, logID, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-invite", "/group-chat/invite", server.POST,
-			s.handleGroupInvite, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-join", "/group-chat/join", server.POST,
-			s.handleGroupJoin, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-remove-member", "/group-chat/member/remove", server.POST,
-			s.handleGroupRemoveMember, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-update-member", "/group-chat/member/update", server.POST,
-			s.handleGroupUpdateMember, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-transfer-ownership", "/group-chat/ownership/transfer", server.POST,
-			s.handleGroupTransferOwnership, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-dissolve", "/group-chat/dissolve", server.POST,
-			s.handleGroupDissolve, logID, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-recall", "/group-chat/message/recall", server.POST,
-			s.handleGroupRecallMessage, logID, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-edit", "/group-chat/message/edit", server.POST,
-			s.handleGroupEditMessage, logID, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-delete", "/group-chat/message/delete", server.POST,
-			s.handleGroupDeleteMessage, logID, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-unread-count", "/group-chat/unread-count", server.GET,
-			s.handleGroupUnreadCount, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-mark-read", "/group-chat/mark-read", server.POST,
-			s.handleGroupMarkRead, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-skdm-submit", "/group-chat/skdm/submit", server.POST,
-			s.handleGroupSkdmSubmit, logID, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-my-settings", "/group-chat/my-settings", server.GET,
-			s.handleGroupGetSettings, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-my-settings-update", "/group-chat/my-settings", server.PUT,
-			s.handleGroupUpdateSettings, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-nickname", "/group-chat/member/nickname", server.PUT,
-			s.handleGroupUpdateNickname, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-search", "/group-chat/messages/search", server.GET,
-			s.handleGroupSearchMessages, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-offline", "/group-chat/offline-messages", server.GET,
-			s.handleGroupOfflineMessages, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-offline-ack", "/group-chat/offline-messages/ack", server.POST,
-			s.handleGroupOfflineMessagesAck, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-stats", "/group-chat/stats", server.GET,
-			s.handleGroupStats, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-federated-add", "/group-chat/member/federated-add", server.POST,
-			s.handleGroupFederatedAdd, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-thread-messages", "/group-chat/thread/messages", server.GET,
-			s.handleGroupThreadMessages, logID, s.jwtWrapper),
-		server.NewTypedHandler("compat-gc-thread-counts", "/group-chat/thread/counts", server.POST,
-			s.handleGroupThreadCounts, logID, s.jwtWrapper),
 
 		// --- Utility routes ---
 		server.NewTypedHandler("compat-link-preview", "/link-preview/fetch", server.GET,

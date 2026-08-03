@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -16,19 +16,25 @@ describe('logger background lane', () => {
     ({ log } = await import('./logger'));
   });
 
-  it('defers frontend_log invoke off the caller stack', async () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('defers batched frontend logging off the caller stack', async () => {
     log.info('runtime', 'deferred log', { command: 'frontend_log' });
 
     expect(invoke).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(16);
+    await vi.advanceTimersByTimeAsync(150);
 
-    expect(invoke).toHaveBeenCalledWith('frontend_log', {
+    expect(invoke).toHaveBeenCalledWith('frontend_log_batch', {
       input: {
-        data: JSON.stringify({ command: 'frontend_log' }),
-        level: 'info',
-        message: 'deferred log',
-        tag: 'runtime',
+        entries: [{
+          data: JSON.stringify({ command: 'frontend_log' }),
+          level: 'info',
+          message: 'deferred log',
+          tag: 'runtime',
+        }],
       },
     });
   });
@@ -44,13 +50,16 @@ describe('logger background lane', () => {
     vi.mocked(invoke).mockResolvedValue(undefined);
 
     log.warn('runtime', 'first');
-    log.warn('runtime', 'second');
+    await vi.advanceTimersByTimeAsync(150);
+    expect(invoke).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(16);
+    log.warn('runtime', 'second');
+    await vi.advanceTimersByTimeAsync(150);
     expect(invoke).toHaveBeenCalledTimes(1);
 
     releaseFirst?.();
     await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(150);
 
     expect(invoke).toHaveBeenCalledTimes(2);
   });

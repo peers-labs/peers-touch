@@ -30,7 +30,10 @@ func (s *subServer) handleCatalogSearch(ctx context.Context, req *pb.FederationC
 		return nil, errors.New("prefix is required for catalog search")
 	}
 
-	stationPeerID := node.GetService().Options().Id
+	stationPeerID := localStationPeerID()
+	if stationPeerID == "" {
+		return nil, server.InternalError("local Station peer identity unavailable")
+	}
 
 	if req.StationId != "" && req.StationId != stationPeerID {
 		return &pb.FederationCatalogSearchResponse{
