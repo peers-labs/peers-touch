@@ -5,17 +5,23 @@ import (
 	"crypto/subtle"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain/policy"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
+	federationpb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(
+		sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -226,4 +232,170 @@ func TestNonSequencerAppendRejected(t *testing.T) {
 	}
 
 	t.Logf("correctly rejected non-sequencer append: %v", err)
+}
+
+func TestBootstrapReplicaMaterializesCanonicalLedgerAndStationURLs(t *testing.T) {
+	ctx := context.Background()
+	authority, authorityLedger, authorityRepos := setupTestServices(t)
+	cfg := defaultTestnetSeedConfig()
+	if err := seedTestnet(t, ctx, cfg, authority, authorityLedger); err != nil {
+		t.Fatal(err)
+	}
+	federations, err := authorityRepos.Federation.ListByStation(ctx, "")
+	if err != nil || len(federations) != 1 {
+		t.Fatalf("authority federations=%d err=%v", len(federations), err)
+	}
+	federationID := federations[0].FederationID
+	events, err := authorityLedger.FetchEvents(ctx, federationID, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	replica, _, replicaRepos := setupTestServices(t)
+	if err := replica.BootstrapReplica(
+		ctx,
+		&application.BootstrapFederationReplicaInput{
+			FederationID:       federationID,
+			LocalActorID:       "actor-b",
+			LocalStationPeerID: "node-b",
+			Events:             events,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	replicaFederations, err := replicaRepos.Federation.ListByStation(ctx, "node-b")
+	if err != nil || len(replicaFederations) != 1 {
+		t.Fatalf("replica federations=%d err=%v", len(replicaFederations), err)
+	}
+	if replicaFederations[0].HeadSeq != 2 {
+		t.Fatalf("replica head=%d want=2", replicaFederations[0].HeadSeq)
+	}
+	members, err := replicaRepos.Membership.ListByFederation(ctx, federationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 3 {
+		t.Fatalf("replica member count=%d want=3", len(members))
+	}
+	for _, member := range members {
+		if member.StationURL == "" {
+			t.Fatalf("member %s lost Station URL", member.StationPeerID)
+		}
+	}
+}
+
+func TestBootstrapReplicaRejectsForgedLedgerBeforeMembershipWrites(t *testing.T) {
+	ctx := context.Background()
+	authority, authorityLedger, authorityRepos := setupTestServices(t)
+	cfg := defaultTestnetSeedConfig()
+	if err := seedTestnet(t, ctx, cfg, authority, authorityLedger); err != nil {
+		t.Fatal(err)
+	}
+	federations, err := authorityRepos.Federation.ListByStation(ctx, "")
+	if err != nil || len(federations) != 1 {
+		t.Fatalf("authority federations=%d err=%v", len(federations), err)
+	}
+	events, err := authorityLedger.FetchEvents(
+		ctx,
+		federations[0].FederationID,
+		0,
+		100,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := make([]*federationpb.LedgerEvent, len(events))
+	for index, event := range events {
+		forged[index] = proto.Clone(event).(*federationpb.LedgerEvent)
+	}
+	forged[1].EventHash[0] ^= 0xff
+
+	replica, _, replicaRepos := setupTestServices(t)
+	if err := replica.BootstrapReplica(
+		ctx,
+		&application.BootstrapFederationReplicaInput{
+			FederationID:       federations[0].FederationID,
+			LocalActorID:       "actor-b",
+			LocalStationPeerID: "node-b",
+			Events:             forged,
+		},
+	); err == nil {
+		t.Fatal("forged bootstrap ledger was accepted")
+	}
+	members, err := replicaRepos.Membership.ListByFederation(
+		ctx,
+		federations[0].FederationID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 0 {
+		t.Fatalf("forged bootstrap wrote %d memberships", len(members))
+	}
+	replicaFederations, err := replicaRepos.Federation.ListByStation(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(replicaFederations) != 0 {
+		t.Fatalf("forged bootstrap wrote %d Federation records", len(replicaFederations))
+	}
+}
+
+func TestRemoteEventAdvancesHeadAndMembershipProjectionTogether(t *testing.T) {
+	ctx := context.Background()
+	authority, authorityLedger, authorityRepos := setupTestServices(t)
+	cfg := defaultTestnetSeedConfig()
+	if err := seedTestnet(t, ctx, cfg, authority, authorityLedger); err != nil {
+		t.Fatal(err)
+	}
+	federations, err := authorityRepos.Federation.ListByStation(ctx, "")
+	if err != nil || len(federations) != 1 {
+		t.Fatalf("authority federations=%d err=%v", len(federations), err)
+	}
+	federationID := federations[0].FederationID
+	events, err := authorityLedger.FetchEvents(ctx, federationID, 0, 100)
+	if err != nil || len(events) != 3 {
+		t.Fatalf("authority events=%d err=%v", len(events), err)
+	}
+
+	replica, replicaLedger, replicaRepos := setupTestServices(t)
+	if err := replica.BootstrapReplica(
+		ctx,
+		&application.BootstrapFederationReplicaInput{
+			FederationID:       federationID,
+			LocalActorID:       "actor-b",
+			LocalStationPeerID: "node-b",
+			Events:             events[:2],
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewLedgerSyncManager(
+		replicaLedger,
+		replicaRepos.Federation,
+		replicaRepos.LedgerEvent,
+		replicaRepos.SyncCursor,
+		replicaRepos.Membership,
+		NewLedgerEventPublisher(replicaRepos.ActorRole),
+		domain.NewHashService(),
+		nil,
+		"node-b",
+	)
+	if err := manager.ApplyRemoteEvent(ctx, events[2]); err != nil {
+		t.Fatal(err)
+	}
+	members, err := replicaRepos.Membership.ListByFederation(ctx, federationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 3 {
+		t.Fatalf("membership projection count=%d want=3", len(members))
+	}
+	replicaFederations, err := replicaRepos.Federation.ListByStation(ctx, "node-b")
+	if err != nil || len(replicaFederations) != 1 {
+		t.Fatalf("replica federations=%d err=%v", len(replicaFederations), err)
+	}
+	if replicaFederations[0].HeadSeq != 2 {
+		t.Fatalf("replica head=%d want=2", replicaFederations[0].HeadSeq)
+	}
 }
