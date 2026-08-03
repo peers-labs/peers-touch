@@ -1,11 +1,11 @@
 // Change History:
-// - 2026-04-11: Initial implementation — complete error classification pipeline
-//   for LLM provider failover. Classifies upstream errors by HTTP status, provider
-//   error code, message pattern matching, and transport heuristics; maps each
-//   FailoverReason to recovery action flags (retryable, compress, rotate, fallback).
-// - 2026-04-11: Added ProviderHTTPError type assertion in extractHTTPStatus so
-//   that HTTP status codes from provider_service's non-2xx responses flow into
-//   the Priority 1 classification pipeline.
+//   - 2026-04-11: Initial implementation — complete error classification pipeline
+//     for LLM provider failover. Classifies upstream errors by HTTP status, provider
+//     error code, message pattern matching, and transport heuristics; maps each
+//     FailoverReason to recovery action flags (retryable, compress, rotate, fallback).
+//   - 2026-04-11: Added ProviderHTTPError type assertion in extractHTTPStatus so
+//     that HTTP status codes from provider_service's non-2xx responses flow into
+//     the Priority 1 classification pipeline.
 package service
 
 import (
@@ -381,7 +381,8 @@ func (s *ErrorClassifierService) inferContextOverflow(
 //
 // Changelog:
 // 2026-04-11 — Added ProviderHTTPError check so that HTTP status codes from
-//   provider_service's Do() calls reach the Priority 1 classification pipeline.
+//
+//	provider_service's Do() calls reach the Priority 1 classification pipeline.
 func extractHTTPStatus(err error) int {
 	if err == nil {
 		return 0
