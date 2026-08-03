@@ -196,6 +196,89 @@ function foldToolMessages(messages: ChatMessage[]): ChatMessage[] {
   return folded;
 }
 
+function isOptimisticMessageId(id: string): boolean {
+  return id.startsWith('temp-');
+}
+
+function isInFlightMessage(message: ChatMessage): boolean {
+  return message.loading === true || Boolean(message.error);
+}
+
+function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): ChatMessage {
+  const hasCot = source.toolCalls
+    || source.thinking
+    || source.thinkingDone != null
+    || source.processDuration != null
+    || source.lastEventAt != null
+    || source.attachments?.length
+    || source.images?.length
+    || source.operation
+    || source.replacementOf
+    || source.replacedBy
+    || source.errorDetail
+    || source.resolution;
+  if (!hasCot) return target;
+  return {
+    ...target,
+    toolCalls: target.toolCalls ?? source.toolCalls,
+    thinking: target.thinking ?? source.thinking,
+    thinkingDone: target.thinkingDone ?? source.thinkingDone,
+    processDuration: target.processDuration ?? source.processDuration,
+    lastEventAt: target.lastEventAt ?? source.lastEventAt,
+    attachments: target.attachments ?? source.attachments,
+    images: target.images ?? source.images,
+    operation: target.operation ?? source.operation,
+    replacementOf: target.replacementOf ?? source.replacementOf,
+    replacedBy: target.replacedBy ?? source.replacedBy,
+    error: target.error ?? source.error,
+    errorDetail: target.errorDetail ?? source.errorDetail,
+    resolution: target.resolution ?? source.resolution,
+  };
+}
+
+export function mergeServerMessages(currentMessages: ChatMessage[], serverMessages: ChatMessage[]): ChatMessage[] {
+  const currentById = new Map<string, ChatMessage>();
+  for (const message of currentMessages) currentById.set(message.id, message);
+
+  const merged: ChatMessage[] = serverMessages.map((serverMessage) => {
+    const match = currentById.get(serverMessage.id);
+    if (!match) return serverMessage;
+    return carryChainOfThoughtFields(serverMessage, match);
+  });
+
+  const mergedIds = new Set(merged.map((message) => message.id));
+
+  for (const message of currentMessages) {
+    if (mergedIds.has(message.id)) continue;
+    const isLocalOnly = isOptimisticMessageId(message.id) || isInFlightMessage(message);
+    if (!isLocalOnly) continue;
+    if (isSupersededByServer(message, merged)) continue;
+    merged.push(message);
+  }
+
+  return merged;
+}
+
+function isSupersededByServer(localMessage: ChatMessage, serverMessages: ChatMessage[]): boolean {
+  if (localMessage.role === 'user') {
+    return serverMessages.some(
+      (serverMessage) => serverMessage.role === 'user'
+        && serverMessage.content === localMessage.content
+        && serverMessage.timestamp >= localMessage.timestamp - 1000,
+    );
+  }
+  if (localMessage.role === 'assistant') {
+    const serverHasCompletedReply = serverMessages.some(
+      (serverMessage) => serverMessage.role === 'assistant'
+        && !serverMessage.loading
+        && Boolean(serverMessage.content)
+        && serverMessage.timestamp >= localMessage.timestamp - 1000,
+    );
+    if (serverHasCompletedReply && (localMessage.loading || !localMessage.content)) return true;
+  }
+  return false;
+}
+
 function normalizeDelegationStatus(value: unknown): DelegationTaskStatus {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'completed' || normalized === 'delegation_status_completed') return 'completed';
@@ -739,12 +822,14 @@ async function loadSessionMessages(
   try {
     const cached = await agentChatCache.getMessages(key);
     if (get().currentSessionKey !== key) return;
-    set({ messages: foldToolMessages(cached.map(cachedMessageToChatMessage)) });
+    const cachedMessages = foldToolMessages(cached.map(cachedMessageToChatMessage));
+    set({ messages: mergeServerMessages(get().messages, cachedMessages) });
     void agentChatCache
       .syncConversation(key)
       .then((synced) => {
         if (get().currentSessionKey !== key) return;
-        set({ messages: foldToolMessages(synced.map(cachedMessageToChatMessage)) });
+        const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
+        set({ messages: mergeServerMessages(get().messages, serverMessages) });
       })
       .catch((syncError) => {
         log.warn('chat', 'Background conversation sync failed; keeping cache', { key, error: String(syncError) });
@@ -917,27 +1002,6 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     log.debug('chat', 'Syncing messages', { key: get().currentSessionKey });
     const { currentSessionKey, messages: currentMessages } = get();
 
-    const cotFields = (m: ChatMessage) => ({
-      toolCalls: m.toolCalls,
-      thinking: m.thinking,
-      thinkingDone: m.thinkingDone,
-      processDuration: m.processDuration,
-      lastEventAt: m.lastEventAt,
-      error: m.error,
-      images: m.images,
-      attachments: m.attachments,
-      operation: m.operation,
-      replacementOf: m.replacementOf,
-      replacedBy: m.replacedBy,
-    });
-
-    const existingById = new Map<string, ChatMessage>();
-    const existingByIdx = new Map<number, ChatMessage>();
-    for (const [i, m] of currentMessages.entries()) {
-      existingById.set(m.id, m);
-      existingByIdx.set(i, m);
-    }
-
     try {
       if (currentSessionKey.startsWith('draft:')) {
         return;
@@ -946,37 +1010,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       if (get().currentSessionKey !== currentSessionKey) return;
       const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
 
-      const merged = serverMessages.map((serverMsg, i) => {
-        const mem = existingById.get(serverMsg.id)
-          || (existingByIdx.get(i)?.role === serverMsg.role ? existingByIdx.get(i) : undefined);
-        if (mem) {
-          const cot = cotFields(mem);
-          const hasCOT = cot.toolCalls || cot.thinking || cot.processDuration != null || cot.attachments?.length;
-          if (hasCOT) return { ...serverMsg, ...cot };
-        }
-        return serverMsg;
-      });
-
-      const lastCurrent = currentMessages[currentMessages.length - 1];
-      if (lastCurrent?.error && lastCurrent.role === 'assistant') {
-        const serverHasIt = merged.some((m) => m.id === lastCurrent.id);
-        if (!serverHasIt) {
-          merged.push({ ...lastCurrent, loading: false });
-        }
-      }
-
-      const localUserCount = currentMessages.filter((m) => m.role !== 'system').length;
-      const mergedUserCount = merged.filter((m) => m.role !== 'system').length;
-      if (localUserCount > mergedUserCount) {
-        const hasCompletedContent = currentMessages.some(
-          (m) => m.role === 'assistant' && !m.loading && m.content,
-        );
-        if (hasCompletedContent) {
-          set({ messages: currentMessages });
-          return;
-        }
-      }
-
+      const merged = mergeServerMessages(currentMessages, serverMessages);
       set({ messages: merged });
     } catch (error) {
       log.warn('chat', 'Failed to sync messages; keeping current view', { error: String(error) });
