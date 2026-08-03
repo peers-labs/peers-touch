@@ -242,17 +242,15 @@ pub(crate) fn post_json_with_auth(
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
         .json(&body);
-    let resp = with_device_id(resp)
-        .send()
-        .map_err(|e| {
-            let elapsed = start.elapsed().as_millis();
-            tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
-            StationClientError::new(
-                StationClientErrorKind::Network,
-                format!("request failed: {}", e),
-                None,
-            )
-        })?;
+    let resp = with_device_id(resp).send().map_err(|e| {
+        let elapsed = start.elapsed().as_millis();
+        tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
+        StationClientError::new(
+            StationClientErrorKind::Network,
+            format!("request failed: {}", e),
+            None,
+        )
+    })?;
 
     let status = resp.status();
     let elapsed = start.elapsed().as_millis();
@@ -964,6 +962,24 @@ pub(crate) fn request_json_auth(
             None,
         )
     })?;
+    let embedded_status = result
+        .get("code")
+        .and_then(|code| {
+            code.as_u64()
+                .or_else(|| code.as_str().and_then(|value| value.parse::<u64>().ok()))
+        })
+        .filter(|code| *code >= 400 && *code <= u16::MAX as u64);
+    if let Some(status) = embedded_status {
+        let text = result.to_string();
+        tracing::warn!(
+            path = %path,
+            status,
+            elapsed_ms = elapsed,
+            body = %text,
+            "← station FAIL (json-auth, embedded status)",
+        );
+        return Err(build_error_for_status(status as u16, path, &text));
+    }
     tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json-auth)");
     Ok(result)
 }

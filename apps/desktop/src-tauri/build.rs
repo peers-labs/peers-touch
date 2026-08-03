@@ -17,6 +17,9 @@ fn compile_protos() {
 
     let proto_files: Vec<PathBuf> = [
         "domain/chat/chat.proto",
+        "domain/chat/conversation.proto",
+        "domain/chat/conversation_api.proto",
+        "domain/chat/envelope.proto",
         "domain/chat/key_exchange.proto",
         "domain/chat/friend_chat.proto",
         "domain/chat/group_chat.proto",

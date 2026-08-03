@@ -25,7 +25,6 @@ time = { version = "0.3", features = ["formatting", "parsing"] }
 urlencoding = "2"
 reqwest = { version = "0.12", features = ["blocking", "json", "multipart", "rustls-tls", "stream"] }
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
-keyring = "3"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 curve25519-dalek = "4"
@@ -54,6 +53,15 @@ openmls_memory_storage = { version = "0.5.0", features = ["persistence"] }
 openmls_traits = "0.5.0"
 openmls_basic_credential = "0.5.0"
 tls_codec = "0.4.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
 
 [features]
 default = ["custom-protocol"]

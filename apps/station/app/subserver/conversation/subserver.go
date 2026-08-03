@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -16,24 +17,38 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/social_gate"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/follower"
 	envpkg "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	envinf "github.com/peers-labs/peers-touch/station/app/subserver/envelope/infrastructure"
+	fedinf "github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
 
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"gorm.io/gorm"
 )
 
 type subServer struct {
-	status          server.Status
-	jwtWrapper      server.Wrapper
-	repo            Repository
-	service         Service
-	kpStore         *KeyPackageStore
-	deviceStore     *DeviceStore
-	envelopeService envpkg.Service
-	localStationID  string
-	fedKpFetcher    *FederatedKeyPackageFetcher
-	gateEval        *ConversationGateEvaluator
+	status               server.Status
+	jwtWrapper           server.Wrapper
+	proposalWrapper      server.Wrapper
+	leaveIntentWrapper   server.Wrapper
+	syncWrapper          server.Wrapper
+	repo                 Repository
+	service              Service
+	proposalService      *ConversationCommandProposalService
+	proposalForwarder    ConversationCommandProposalForwarder
+	proposalStore        *commandProposalStore
+	proposalWorkerCancel context.CancelFunc
+	leaveService         *MlsLeaveIntentService
+	leaveIntentForwarder MlsLeaveIntentForwarder
+	kpStore              *KeyPackageStore
+	deviceStore          *touchactor.DeviceStore
+	envelopeService      envpkg.Service
+	localStationID       string
+	fedKpFetcher         *FederatedKeyPackageFetcher
+	gateEval             *ConversationGateEvaluator
+	db                   *gorm.DB
 }
 
 func NewConversationSubServer(opts ...option.Option) server.Subserver {
@@ -42,9 +57,15 @@ func NewConversationSubServer(opts ...option.Option) server.Subserver {
 
 func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusStarting
+	registerConversationCommandProposalScope()
+	registerMlsLeaveIntentFederationScope()
+	registerAuthorityEventSyncScope()
 
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
+	s.jwtWrapper = withCanonicalConversationSubject(
+		server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider)),
+		resolveConversationSubjectPTID,
+	)
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
@@ -54,27 +75,84 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	if err := rds.AutoMigrate(
 		&conversationModel{},
 		&conversationMemberModel{},
+		&conversationMemberDeviceModel{},
 		&conversationEventModel{},
+		&conversationCommandReceiptModel{},
+		&conversationCommandProposalModel{},
+		&mlsLeaveIntentModel{},
 		&readCursorModel{},
 		&KeyPackage{},
-		&DeviceRecord{},
 	); err != nil {
 		return err
 	}
 
 	s.localStationID = conversationLocalAudience()
+	s.db = rds
 	repo := newPostgresConversationRepo(rds)
 	s.repo = repo
+	s.proposalStore = newCommandProposalStore(rds)
 	s.kpStore = NewKeyPackageStore(rds)
-	s.deviceStore = NewDeviceStore(rds)
+	s.deviceStore = touchactor.NewDeviceStore(rds)
+	if err := s.deviceStore.AutoMigrate(); err != nil {
+		return err
+	}
 
 	envRepo := envinf.NewPostgresRepository(rds)
+	if err := envRepo.AutoMigrate(); err != nil {
+		return err
+	}
 	envBus := envpkg.NewSSEDeviceBus()
 	envelopeService := envpkg.NewService(envRepo, envBus, conversationLocalAudience)
 	envelopeBridge := NewEnvelopeBridge(envelopeService)
 
 	s.envelopeService = envelopeService
-	s.service = NewConversationService(repo, envelopeBridge, s.localStationID)
+	s.service = NewConversationService(
+		repo,
+		envelopeBridge,
+		s.localStationID,
+		NewPostgresTransitionUnitOfWork(rds),
+	)
+	authorityService := s.service.(*DefaultService)
+	federationRepos := fedinf.NewRepos(rds)
+	s.proposalService = NewConversationCommandProposalService(
+		authorityService,
+		s.deviceStore,
+		federationMembershipAdapter{repo: federationRepos.Membership},
+		s.localStationID,
+	).WithActorKeyHydrator(NewVerifiedProfileActorKeyHydrator(
+		federationRepos.Membership,
+		authfed.NewPeerKeyStoreGORMWithDB(rds),
+		s.deviceStore,
+	))
+	s.proposalForwarder = NewHTTPConversationCommandProposalForwarder(
+		rds,
+		authfed.Singleton(),
+	)
+	s.leaveService = NewMlsLeaveIntentService(
+		repo,
+		newPostgresLeaveIntentRepository(rds),
+		s.deviceStore,
+		s.localStationID,
+	)
+	s.leaveIntentForwarder = NewHTTPMlsLeaveIntentForwarder(
+		rds,
+		authfed.Singleton(),
+	)
+	s.proposalWrapper = serverwrapper.RequireFederationToken(
+		conversationCommandProposalScope,
+		authfed.NewPeerKeyStoreGORMWithDB(rds),
+		conversationCommandProposalAudience(),
+	)
+	s.leaveIntentWrapper = serverwrapper.RequireFederationToken(
+		mlsLeaveIntentFederationScope,
+		authfed.NewPeerKeyStoreGORMWithDB(rds),
+		mlsLeaveIntentFederationAudience(),
+	)
+	s.syncWrapper = serverwrapper.RequireFederationToken(
+		authorityEventSyncScope,
+		authfed.NewPeerKeyStoreGORMWithDB(rds),
+		authorityEventSyncAudience(),
+	)
 	s.fedKpFetcher = NewFederatedKeyPackageFetcher(authfed.Singleton())
 
 	// Social gate: compose policy evaluator from repository-backed adapters.
@@ -86,11 +164,18 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 }
 
 func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
+	workerCtx, cancel := context.WithCancel(context.Background())
+	s.proposalWorkerCancel = cancel
+	go s.runCommandProposalWorker(workerCtx)
 	s.status = server.StatusRunning
 	return nil
 }
 
 func (s *subServer) Stop(ctx context.Context) error {
+	if s.proposalWorkerCancel != nil {
+		s.proposalWorkerCancel()
+		s.proposalWorkerCancel = nil
+	}
 	s.status = server.StatusStopped
 	return nil
 }
@@ -102,6 +187,44 @@ func (s *subServer) Address() server.SubserverAddress {
 }
 func (s *subServer) Status() server.Status { return s.status }
 
+func (s *subServer) requireActiveMembership(ctx context.Context, conversationID string) error {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return server.Unauthorized("authentication required")
+	}
+	member, err := s.service.GetMember(ctx, conversationID, subject.ID)
+	if err == nil && member != nil &&
+		member.MemberStatus == chat.MemberStatus_MEMBER_STATUS_ACTIVE {
+		return nil
+	}
+	if s.db != nil {
+		active, followerErr := follower.NewService(s.db).IsActiveMember(
+			ctx,
+			conversationID,
+			subject.ID,
+		)
+		if followerErr == nil && active {
+			return nil
+		}
+	}
+	return server.Forbidden("active conversation membership required")
+}
+
+func mapConversationServiceError(err error) error {
+	var transitionErr *TransitionError
+	if !errors.As(err, &transitionErr) {
+		return server.InternalErrorWithCause("conversation operation failed", err)
+	}
+	switch transitionErr.Code {
+	case "PERMISSION_DENIED", "NOT_MEMBER", "NOT_AUTHORITY", "GROUP_READ_ONLY":
+		return server.Forbidden(transitionErr.Message)
+	case "TRANSITION_CONFLICT", "EPOCH_STALE", "EPOCH_MISMATCH":
+		return server.Conflict(transitionErr.Message)
+	default:
+		return server.BadRequest(transitionErr.Message)
+	}
+}
+
 func (s *subServer) Handlers() []server.Handler {
 	logID := serverwrapper.LogID()
 	deviceIDWrapper := serverwrapper.DeviceID()
@@ -110,20 +233,91 @@ func (s *subServer) Handlers() []server.Handler {
 	createDirectGate := social_gate.NewGateWrapper(s.gateEval, "create_direct", extractCreateDirectOp)
 	submitCmdGate := social_gate.NewGateWrapper(s.gateEval, "send_message", extractSubmitCommandOp)
 	fetchKpGate := social_gate.NewGateWrapper(s.gateEval, "fetch_key_package", extractFetchKeyPackageOp)
-	mlsDistributeGate := social_gate.NewGateWrapper(s.gateEval, "mls_distribute", extractMlsDistributeOp)
 	dkxSendGate := social_gate.NewGateWrapper(s.gateEval, "dkx_send", extractDkxSendOp)
 
 	return []server.Handler{
+		server.NewTypedHandler("conv-identity", "/conversation/identity", server.GET,
+			s.handleGetConversationIdentity, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-create-direct", "/conversation/direct", server.POST,
 			s.handleCreateDirect, logID, createDirectGate, s.jwtWrapper),
 		server.NewTypedHandler("conv-create-group", "/conversation/group", server.POST,
-			s.handleCreateGroup, logID, s.jwtWrapper),
+			s.handleCreateGroup, logID, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("conv-submit-cmd", "/conversation/command", server.POST,
 			s.handleSubmitCommand, logID, deviceIDWrapper, submitCmdGate, s.jwtWrapper),
+		server.NewTypedHandler(
+			"conv-submit-command-proposal",
+			"/conversation/command-proposal",
+			server.POST,
+			s.handleSubmitConversationCommandProposal,
+			logID,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"conv-federated-command-proposal",
+			"/conversation/federation/command-proposal",
+			server.POST,
+			s.handleFederatedConversationCommandProposal,
+			logID,
+			s.proposalWrapper,
+		),
+		server.NewTypedHandler(
+			"conv-command-proposal-result",
+			"/conversation/command-proposal/result",
+			server.GET,
+			s.handleGetConversationCommandProposalResult,
+			logID,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"conv-submit-mls-leave-intent",
+			"/conversation/mls/leave-intent",
+			server.POST,
+			s.handleSubmitMlsLeaveIntent,
+			logID,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"conv-list-mls-leave-intents",
+			"/conversation/mls/leave-intents",
+			server.GET,
+			s.handleListPendingMlsLeaveIntents,
+			logID,
+			deviceIDWrapper,
+			s.jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"conv-federated-submit-mls-leave-intent",
+			"/conversation/federation/mls/leave-intent",
+			server.POST,
+			s.handleFederatedSubmitMlsLeaveIntent,
+			logID,
+			s.leaveIntentWrapper,
+		),
+		server.NewTypedHandler(
+			"conv-federated-list-mls-leave-intents",
+			"/conversation/federation/mls/leave-intents",
+			server.POST,
+			s.handleFederatedListMlsLeaveIntents,
+			logID,
+			s.leaveIntentWrapper,
+		),
+		server.NewTypedHandler(
+			"conv-authority-event-sync",
+			"/conversation/federation/events/sync",
+			server.POST,
+			s.handleSyncAuthorityEvents,
+			logID,
+			s.syncWrapper,
+		),
 		server.NewTypedHandler("conv-receipt", "/conversation/receipt", server.POST,
 			s.handleSubmitReceipt, logID, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("conv-get", "/conversation/get", server.GET,
 			s.handleGetConversation, logID, s.jwtWrapper),
+		server.NewTypedHandler("conv-public-head", "/conversation/public-head", server.GET,
+			s.handleGetConversationPublicHead, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-list", "/conversation/list", server.GET,
 			s.handleListConversations, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-members", "/conversation/members", server.GET,
@@ -156,11 +350,23 @@ func (s *subServer) Handlers() []server.Handler {
 			s.handleDeviceList, logID, s.jwtWrapper),
 		server.NewTypedHandler("device-revoke", "/device/revoke", server.POST,
 			s.handleDeviceRevoke, logID, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("mls-distribute", "/mls/distribute", server.POST,
-			s.handleMlsDistribute, logID, deviceIDWrapper, mlsDistributeGate, s.jwtWrapper),
 		server.NewTypedHandler("dkx-send", "/dkx/send", server.POST,
 			s.handleDkxSend, logID, deviceIDWrapper, dkxSendGate, s.jwtWrapper),
 	}
+}
+
+func (s *subServer) handleGetConversationIdentity(
+	ctx context.Context,
+	_ *chat.GetConversationIdentityRequest,
+) (*chat.GetConversationIdentityResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if !strings.HasPrefix(subject.ID, "ptid:") {
+		return nil, server.Conflict("authenticated actor has no canonical PTID")
+	}
+	return &chat.GetConversationIdentityResponse{Ptid: subject.ID}, nil
 }
 
 // --- Handlers ---
@@ -194,33 +400,30 @@ func (s *subServer) handleCreateGroup(ctx context.Context, req *chat.CreateGroup
 	if req.Name == "" {
 		return nil, server.BadRequest("name is required")
 	}
-
-	entries := make([]MemberEntry, 0, len(req.Members)+1)
-	entries = append(entries, MemberEntry{
-		Ptid:      subject.ID,
-		StationID: s.localStationID,
-		Role:      chat.MemberRole_MEMBER_ROLE_OWNER,
-	})
-	for _, m := range req.Members {
-		if m.Ptid == subject.ID {
-			continue
-		}
-		station := m.StationId
-		if station == "" {
-			station = s.localStationID
-		}
-		entries = append(entries, MemberEntry{
-			Ptid:      m.Ptid,
-			StationID: station,
-			Role:      chat.MemberRole_MEMBER_ROLE_MEMBER,
-		})
+	if req.GenesisTransition == nil {
+		return nil, server.BadRequest("genesis_transition is required")
+	}
+	if req.ConversationId == "" {
+		return nil, server.BadRequest("conversation_id is required")
 	}
 
-	conv, err := s.service.CreateGroup(ctx, req.Name, subject.ID, s.localStationID, entries)
+	conv, transitionEvent, err := s.service.CreateGroup(
+		ctx,
+		req.Name,
+		subject.ID,
+		s.localStationID,
+		serverwrapper.GetDeviceID(ctx),
+		req.FederationId,
+		req.ConversationId,
+		req.GenesisTransition,
+	)
 	if err != nil {
-		return nil, server.InternalErrorWithCause("create group failed", err)
+		return nil, mapConversationServiceError(err)
 	}
-	return &chat.CreateGroupConversationResponse{Conversation: conv}, nil
+	return &chat.CreateGroupConversationResponse{
+		Conversation:    conv,
+		TransitionEvent: transitionEvent,
+	}, nil
 }
 
 func (s *subServer) handleSubmitCommand(ctx context.Context, req *chat.SubmitConversationCommandRequest) (*chat.SubmitConversationCommandResponse, error) {
@@ -239,9 +442,55 @@ func (s *subServer) handleSubmitCommand(ctx context.Context, req *chat.SubmitCon
 
 	event, err := s.service.SubmitCommand(ctx, req.Command)
 	if err != nil {
-		return nil, server.InternalErrorWithCause("submit command failed", err)
+		return nil, mapConversationServiceError(err)
 	}
 	return &chat.SubmitConversationCommandResponse{Event: event}, nil
+}
+
+func (s *subServer) handleSubmitMlsLeaveIntent(
+	ctx context.Context,
+	req *chat.SubmitMlsLeaveIntentRequest,
+) (*chat.SubmitMlsLeaveIntentResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.Intent == nil {
+		return nil, server.BadRequest("intent is required")
+	}
+	intent, err := s.submitAuthenticatedMlsLeaveIntent(
+		ctx,
+		subject.ID,
+		serverwrapper.GetDeviceID(ctx),
+		req.Intent,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &chat.SubmitMlsLeaveIntentResponse{Intent: intent}, nil
+}
+
+func (s *subServer) handleListPendingMlsLeaveIntents(
+	ctx context.Context,
+	req *chat.ListPendingMlsLeaveIntentsRequest,
+) (*chat.ListPendingMlsLeaveIntentsResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.ConversationId == "" {
+		return nil, server.BadRequest("conversation_id is required")
+	}
+	intents, err := s.listAuthenticatedMlsLeaveIntents(
+		ctx,
+		subject.ID,
+		serverwrapper.GetDeviceID(ctx),
+		req.ConversationId,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &chat.ListPendingMlsLeaveIntentsResponse{Intents: intents}, nil
 }
 
 func (s *subServer) handleSubmitReceipt(ctx context.Context, req *chat.SubmitConversationReceiptRequest) (*chat.SubmitConversationReceiptResponse, error) {
@@ -251,6 +500,9 @@ func (s *subServer) handleSubmitReceipt(ctx context.Context, req *chat.SubmitCon
 	}
 	if req.ConversationId == "" || req.MessageId == "" {
 		return nil, server.BadRequest("conversation_id and message_id are required")
+	}
+	if err := s.requireActiveMembership(ctx, req.ConversationId); err != nil {
+		return nil, err
 	}
 
 	receipt := &chat.MessageReceipt{
@@ -275,12 +527,95 @@ func (s *subServer) handleGetConversation(ctx context.Context, req *chat.GetConv
 	if req.ConversationId == "" {
 		return nil, server.BadRequest("conversation_id is required")
 	}
+	if err := s.requireActiveMembership(ctx, req.ConversationId); err != nil {
+		return nil, err
+	}
 
 	conv, err := s.service.GetConversation(ctx, req.ConversationId)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("get conversation failed", err)
 	}
 	return &chat.GetConversationResponse{Conversation: conv}, nil
+}
+
+func (s *subServer) handleGetConversationPublicHead(
+	ctx context.Context,
+	req *chat.GetConversationPublicHeadRequest,
+) (*chat.GetConversationPublicHeadResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.ConversationId == "" {
+		return nil, server.BadRequest("conversation_id is required")
+	}
+	conversation, err := s.repo.GetConversation(ctx, req.ConversationId)
+	if err == nil && conversation.AuthorityStationPeerId == s.localStationID {
+		member, memberErr := s.repo.GetMember(ctx, req.ConversationId, subject.ID)
+		if memberErr != nil ||
+			member.MemberStatus != chat.MemberStatus_MEMBER_STATUS_ACTIVE {
+			return nil, server.Forbidden("active conversation membership required")
+		}
+		event, eventErr := s.repo.GetLastEvent(ctx, req.ConversationId)
+		if eventErr != nil {
+			return nil, server.InternalErrorWithCause("load authority public head", eventErr)
+		}
+		transition := event.GetMembershipTransitionCommitted()
+		head := &chat.ConversationPublicHead{
+			ConversationId:         conversation.ConversationId,
+			Source:                 chat.ConversationPublicHeadSource_CONVERSATION_PUBLIC_HEAD_SOURCE_AUTHORITY,
+			FederationId:           conversation.FederationId,
+			AuthorityStationPeerId: conversation.AuthorityStationPeerId,
+			AuthorityEpoch:         conversation.AuthorityEpoch,
+			GroupSeq:               event.GroupSeq,
+			EventHash:              append([]byte(nil), event.EventHash...),
+			MembershipEpoch:        conversation.MembershipEpoch,
+			MlsEpoch:               conversation.MlsEpoch,
+			Status:                 conversation.Status.String(),
+		}
+		if transition != nil {
+			head.TransitionId = transition.TransitionId
+			head.CommitSha256 = append([]byte(nil), transition.CommitSha256...)
+		}
+		return &chat.GetConversationPublicHeadResponse{Head: head}, nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, server.InternalErrorWithCause("load conversation public head", err)
+	}
+	var followerMember follower.Member
+	if err := s.db.WithContext(ctx).First(
+		&followerMember,
+		"conversation_id = ? AND ptid = ?",
+		req.ConversationId,
+		subject.ID,
+	).Error; err != nil ||
+		followerMember.Status != int32(chat.MemberStatus_MEMBER_STATUS_ACTIVE) {
+		return nil, server.Forbidden("active follower membership required")
+	}
+	var followerHead follower.Head
+	if err := s.db.WithContext(ctx).First(
+		&followerHead,
+		"conversation_id = ?",
+		req.ConversationId,
+	).Error; err != nil {
+		return nil, server.InternalErrorWithCause("load follower public head", err)
+	}
+	return &chat.GetConversationPublicHeadResponse{
+		Head: &chat.ConversationPublicHead{
+			ConversationId:         followerHead.ConversationID,
+			Source:                 chat.ConversationPublicHeadSource_CONVERSATION_PUBLIC_HEAD_SOURCE_FOLLOWER,
+			FederationId:           followerHead.FederationID,
+			AuthorityStationPeerId: followerHead.AuthorityStationPeerID,
+			AuthorityEpoch:         followerHead.AuthorityEpoch,
+			GroupSeq:               followerHead.GroupSeq,
+			EventHash:              append([]byte(nil), followerHead.EventHash...),
+			MembershipEpoch:        followerHead.MembershipEpoch,
+			MlsEpoch:               followerHead.MlsEpoch,
+			TransitionId:           followerHead.TransitionID,
+			CommitSha256:           append([]byte(nil), followerHead.CommitSHA256...),
+			Status:                 followerHead.Status,
+		},
+	}, nil
 }
 
 func (s *subServer) handleListConversations(ctx context.Context, _ *chat.ListConversationsRequest) (*chat.ListConversationsResponse, error) {
@@ -293,6 +628,25 @@ func (s *subServer) handleListConversations(ctx context.Context, _ *chat.ListCon
 	if err != nil {
 		return nil, server.InternalErrorWithCause("list conversations failed", err)
 	}
+	if s.db != nil {
+		followerConversations, followerErr := follower.NewService(s.db).
+			ListConversationsForActor(ctx, subject.ID)
+		if followerErr != nil {
+			return nil, server.InternalErrorWithCause(
+				"list follower conversations failed",
+				followerErr,
+			)
+		}
+		seen := make(map[string]bool, len(convs))
+		for _, conversation := range convs {
+			seen[conversation.ConversationId] = true
+		}
+		for _, conversation := range followerConversations {
+			if !seen[conversation.ConversationId] {
+				convs = append(convs, conversation)
+			}
+		}
+	}
 	return &chat.ListConversationsResponse{Conversations: convs}, nil
 }
 
@@ -304,10 +658,23 @@ func (s *subServer) handleGetMembers(ctx context.Context, req *chat.GetConversat
 	if req.ConversationId == "" {
 		return nil, server.BadRequest("conversation_id is required")
 	}
+	if err := s.requireActiveMembership(ctx, req.ConversationId); err != nil {
+		return nil, err
+	}
 
-	members, err := s.service.GetMembers(ctx, req.ConversationId)
+	var (
+		members []*chat.ConversationMember
+		err     error
+	)
+	if _, err := s.repo.GetConversation(ctx, req.ConversationId); err == nil {
+		members, err = s.service.GetMembers(ctx, req.ConversationId)
+	} else if s.db != nil {
+		members, err = follower.NewService(s.db).ListMembers(ctx, req.ConversationId)
+	} else {
+		err = gorm.ErrRecordNotFound
+	}
 	if err != nil {
-		return nil, server.InternalErrorWithCause("get members failed", err)
+		return nil, server.InternalErrorWithCause("get conversation members failed", err)
 	}
 	return &chat.GetConversationMembersResponse{Members: members}, nil
 }
@@ -319,6 +686,9 @@ func (s *subServer) handleListEvents(ctx context.Context, req *chat.ListConversa
 	}
 	if req.ConversationId == "" {
 		return nil, server.BadRequest("conversation_id is required")
+	}
+	if err := s.requireActiveMembership(ctx, req.ConversationId); err != nil {
+		return nil, err
 	}
 
 	events, err := s.service.ListEvents(ctx, req.ConversationId, req.AfterSeq, int(req.Limit))
@@ -364,20 +734,38 @@ func (s *subServer) handleFetchKeyPackage(ctx context.Context, req *chat.FetchKe
 		return nil, server.BadRequest("ptid is required")
 	}
 
-	data, err := s.kpStore.FetchAndConsume(ctx, req.Ptid)
+	keyPackage, err := s.kpStore.FetchAndConsume(ctx, req.Ptid)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("fetch keypackage failed", err)
 	}
 
-	if data == nil && req.HomeStationPeerId != "" && req.HomeStationPeerId != s.localStationID {
-		remoteData, fetchErr := s.fedKpFetcher.FetchRemote(ctx, req.HomeStationPeerId, req.Ptid)
+	homeStationPeerID := strings.TrimSpace(req.HomeStationPeerId)
+	if keyPackage == nil && homeStationPeerID == "" {
+		actorRecord, resolveErr := touchactor.GetActorByPTID(ctx, req.Ptid)
+		if resolveErr != nil {
+			return nil, server.InternalErrorWithCause("resolve actor Home Station failed", resolveErr)
+		}
+		if actorRecord != nil {
+			homeStationPeerID = strings.TrimSpace(actorRecord.HomeStationPeerID)
+		}
+	}
+	if keyPackage == nil && homeStationPeerID != "" && homeStationPeerID != s.localStationID {
+		remoteKeyPackage, fetchErr := s.fedKpFetcher.FetchRemote(ctx, homeStationPeerID, req.Ptid)
 		if fetchErr != nil {
 			return nil, server.InternalErrorWithCause("federated keypackage fetch failed", fetchErr)
 		}
-		data = remoteData
+		keyPackage = remoteKeyPackage
 	}
 
-	return &chat.FetchKeyPackageResponse{Data: data, Available: data != nil}, nil
+	if keyPackage == nil {
+		return &chat.FetchKeyPackageResponse{}, nil
+	}
+	return &chat.FetchKeyPackageResponse{
+		Data:              keyPackage.Data,
+		Available:         true,
+		DeviceId:          keyPackage.DeviceID,
+		HomeStationPeerId: keyPackage.StationID,
+	}, nil
 }
 
 func (s *subServer) handleCountKeyPackages(ctx context.Context, _ *chat.CountKeyPackagesRequest) (*chat.CountKeyPackagesResponse, error) {
@@ -404,7 +792,16 @@ func (s *subServer) handleDeviceRegister(ctx context.Context, req *chat.Register
 		return nil, server.BadRequest("device_id is required")
 	}
 
-	if err := s.deviceStore.Register(ctx, subject.ID, req.DeviceId, req.Label, req.PublicKey); err != nil {
+	if err := s.deviceStore.RegisterLocal(
+		ctx,
+		subject.ID,
+		req.DeviceId,
+		req.Label,
+		s.localStationID,
+		req.SigningKeyId,
+		req.PublicKey,
+		req.ProfileVersion,
+	); err != nil {
 		return nil, server.InternalErrorWithCause("device register failed", err)
 	}
 	return &chat.RegisterDeviceResponse{}, nil
@@ -446,75 +843,6 @@ func (s *subServer) handleDeviceRevoke(ctx context.Context, req *chat.RevokeDevi
 		return nil, server.InternalErrorWithCause("device revoke failed", err)
 	}
 	return &chat.RevokeDeviceResponse{}, nil
-}
-
-// --- MLS distribute handler (P3: C-8 envelope carrying MLS) ---
-
-func (s *subServer) handleMlsDistribute(ctx context.Context, req *chat.DistributeMlsRequest) (*chat.DistributeMlsResponse, error) {
-	subject := coreauth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	if req.ConversationId == "" || len(req.OpaqueBytes) == 0 {
-		return nil, server.BadRequest("conversation_id and opaque_bytes are required")
-	}
-
-	conv, err := s.service.GetConversation(ctx, req.ConversationId)
-	if err != nil || conv == nil {
-		return nil, server.BadRequest("conversation not found")
-	}
-
-	member, err := s.service.GetMembers(ctx, req.ConversationId)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("get members failed", err)
-	}
-
-	mlsPayload := &chat.MlsKeyDeliveryPayload{
-		ConversationId: req.ConversationId,
-		Kind:           req.Kind,
-		MlsEpoch:      req.MlsEpoch,
-		OpaqueMlsBytes: req.OpaqueBytes,
-	}
-	payloadBytes, err := proto.Marshal(mlsPayload)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("marshal mls payload failed", err)
-	}
-
-	recipientSet := make(map[string]bool, len(req.Recipients))
-	for _, r := range req.Recipients {
-		recipientSet[r] = true
-	}
-
-	delivered := int32(0)
-	for _, m := range member {
-		if m.Ptid == subject.ID {
-			continue
-		}
-		if m.MemberStatus != chat.MemberStatus_MEMBER_STATUS_ACTIVE {
-			continue
-		}
-		if len(recipientSet) > 0 && !recipientSet[m.Ptid] {
-			continue
-		}
-
-		env := &chat.StationEnvelope{
-			EnvelopeId:                 uuid.NewString(),
-			IdempotencyKey:             req.ConversationId + ":" + subject.ID + ":mls:" + uuid.NewString()[:8],
-			ConversationId:             req.ConversationId,
-			SenderPtid:                 subject.ID,
-			RecipientPtid:              m.Ptid,
-			RecipientHomeStationPeerId: m.ActorHomeStationPeerId,
-			MembershipEpoch:            conv.MembershipEpoch,
-			PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY,
-			PayloadBytes:               payloadBytes,
-		}
-
-		if _, submitErr := s.envelopeService.Submit(ctx, env); submitErr == nil {
-			delivered++
-		}
-	}
-
-	return &chat.DistributeMlsResponse{Delivered: delivered}, nil
 }
 
 // --- Direct Key Exchange handler (P2: X3DH initial handshake routing) ---

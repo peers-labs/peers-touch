@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Tag } from '@lobehub/ui';
@@ -27,7 +27,6 @@ export function ChatContactsPanel() {
     selectGroup,
     acceptFriendRequest,
     rejectFriendRequest,
-    loadFriendRequests,
   } = useActiveSocialChatSlice((s) => ({
     friendRequests: s.friendRequests,
     currentUserDid: s.currentUserDid,
@@ -39,12 +38,7 @@ export function ChatContactsPanel() {
     selectGroup: s.selectGroup,
     acceptFriendRequest: s.acceptFriendRequest,
     rejectFriendRequest: s.rejectFriendRequest,
-    loadFriendRequests: s.loadFriendRequests,
   }));
-
-  useEffect(() => {
-    loadFriendRequests();
-  }, [loadFriendRequests]);
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
   const conversations = getIMConversations();

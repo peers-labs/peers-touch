@@ -5,26 +5,36 @@ import (
 	"fmt"
 	"time"
 
-	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"github.com/google/uuid"
+	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 )
 
 // DefaultService implements Service with durable outbox/inbox semantics.
 type DefaultService struct {
 	repo                Repository
 	bus                 DeviceBus
+	federatedApplier    FederatedDeliveryApplier
 	localStationIDFunc  func() string
 	maxDeliveryAttempts int
 }
 
 // NewService creates the envelope application service.
-func NewService(repo Repository, bus DeviceBus, localStationIDFunc func() string) *DefaultService {
-	return &DefaultService{
+func NewService(
+	repo Repository,
+	bus DeviceBus,
+	localStationIDFunc func() string,
+	appliers ...FederatedDeliveryApplier,
+) *DefaultService {
+	service := &DefaultService{
 		repo:                repo,
 		bus:                 bus,
 		localStationIDFunc:  localStationIDFunc,
 		maxDeliveryAttempts: 20,
 	}
+	if len(appliers) > 0 {
+		service.federatedApplier = appliers[0]
+	}
+	return service
 }
 
 func (s *DefaultService) Submit(ctx context.Context, env *chat.StationEnvelope) (string, error) {
@@ -53,6 +63,22 @@ func (s *DefaultService) Deliver(ctx context.Context, env *chat.StationEnvelope,
 	if err := s.validateFederationClaims(env, claims); err != nil {
 		return fmt.Errorf("envelope: federation validation failed: %w", err)
 	}
+	if s.federatedApplier != nil {
+		handled, notifications, err := s.federatedApplier.ApplyFederatedDelivery(
+			ctx,
+			env,
+			claims.IssuerStationPeerID,
+		)
+		if err != nil {
+			return err
+		}
+		if handled {
+			for _, item := range notifications {
+				s.NotifyPersisted(ctx, item)
+			}
+			return nil
+		}
+	}
 
 	exists, err := s.repo.HasIdempotencyKey(ctx, env.IdempotencyKey)
 	if err != nil {
@@ -80,12 +106,12 @@ func (s *DefaultService) isLocalRecipient(env *chat.StationEnvelope) bool {
 
 func (s *DefaultService) deliverLocal(ctx context.Context, env *chat.StationEnvelope) (string, error) {
 	item := &chat.DeviceInboxItem{
-		InboxItemId:      uuid.NewString(),
-		RecipientPtid: env.RecipientPtid,
+		InboxItemId:       uuid.NewString(),
+		RecipientPtid:     env.RecipientPtid,
 		RecipientDeviceId: env.RecipientDeviceId,
-		Envelope:         env,
-		Status:           chat.InboxItemStatus_INBOX_ITEM_STATUS_PENDING,
-		DeliveryAttempts: 0,
+		Envelope:          env,
+		Status:            chat.InboxItemStatus_INBOX_ITEM_STATUS_PENDING,
+		DeliveryAttempts:  0,
 	}
 
 	inboxID, err := s.repo.EnqueueInbox(ctx, item)
@@ -93,6 +119,17 @@ func (s *DefaultService) deliverLocal(ctx context.Context, env *chat.StationEnve
 		return "", fmt.Errorf("envelope: enqueue inbox failed: %w", err)
 	}
 
+	item.InboxItemId = inboxID
+	s.NotifyPersisted(ctx, item)
+	return env.EnvelopeId, nil
+}
+
+func (s *DefaultService) NotifyPersisted(ctx context.Context, item *chat.DeviceInboxItem) {
+	if item == nil || item.Envelope == nil {
+		return
+	}
+	env := item.Envelope
+	inboxID := item.InboxItemId
 	if env.RecipientDeviceId != "" {
 		delivered := s.bus.PublishToDevice(ctx, env.RecipientPtid, env.RecipientDeviceId, inboxID, env)
 		if delivered {
@@ -104,13 +141,11 @@ func (s *DefaultService) deliverLocal(ctx context.Context, env *chat.StationEnve
 			_ = s.repo.MarkInboxDelivered(ctx, inboxID, time.Now())
 		}
 	}
-
-	return env.EnvelopeId, nil
 }
 
 func (s *DefaultService) enqueueForFederation(ctx context.Context, env *chat.StationEnvelope) (string, error) {
 	item := &chat.OutboxItem{
-		OutboxItemId:         uuid.NewString(),
+		OutboxItemId:        uuid.NewString(),
 		TargetStationPeerId: env.RecipientHomeStationPeerId,
 		Envelope:            env,
 		Status:              chat.OutboxItemStatus_OUTBOX_ITEM_STATUS_PENDING,

@@ -1,14 +1,16 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
+	"fmt"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain/policy"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
-	"github.com/oklog/ulid/v2"
 )
 
 type EventAppendedHook func(ctx context.Context, event *pb.LedgerEvent)
@@ -46,13 +48,13 @@ func (s *LedgerService) SetOnAppended(hook EventAppendedHook) {
 }
 
 type AppendEventInput struct {
-	FederationID string
-	EventType    pb.EventType
-	PayloadBytes []byte
-	ActorID      string
-	ActorHandle  string
-	StationPeerID string
-	ActorPrivateKey ed25519.PrivateKey
+	FederationID      string
+	EventType         pb.EventType
+	PayloadBytes      []byte
+	ActorID           string
+	ActorHandle       string
+	StationPeerID     string
+	ActorPrivateKey   ed25519.PrivateKey
 	StationPrivateKey ed25519.PrivateKey
 }
 
@@ -193,11 +195,73 @@ func (s *LedgerService) FetchEvents(ctx context.Context, federationID string, fr
 	return s.eventRepo.ListRange(ctx, federationID, fromSeq, limit)
 }
 
+func (s *LedgerService) ImportBootstrapEvents(
+	ctx context.Context,
+	federationID string,
+	events []*pb.LedgerEvent,
+) error {
+	if err := s.ValidateBootstrapEvents(federationID, events); err != nil {
+		return err
+	}
+	if head, err := s.eventRepo.GetHead(ctx, federationID); err != nil {
+		return err
+	} else if head != nil {
+		last := events[len(events)-1]
+		if head.Seq == last.Seq && bytes.Equal(head.EventHash, last.EventHash) {
+			return nil
+		}
+		return fmt.Errorf("federation bootstrap conflicts with existing ledger")
+	}
+	for _, event := range events {
+		if err := s.eventRepo.Append(ctx, event); err != nil {
+			return err
+		}
+	}
+	last := events[len(events)-1]
+	return s.federationRepo.UpdateHead(
+		ctx,
+		federationID,
+		last.EventHash,
+		last.Seq,
+	)
+}
+
+func (s *LedgerService) ValidateBootstrapEvents(
+	federationID string,
+	events []*pb.LedgerEvent,
+) error {
+	if federationID == "" || len(events) == 0 {
+		return fmt.Errorf("federation bootstrap events are required")
+	}
+	prevHash := make([]byte, 32)
+	for index, event := range events {
+		if event == nil ||
+			event.FederationId != federationID ||
+			event.Seq != uint64(index) ||
+			!bytes.Equal(event.PrevHash, prevHash) {
+			return fmt.Errorf("federation bootstrap chain is discontinuous at index %d", index)
+		}
+		valid, err := s.hashSvc.VerifyEventHash(event, event.PayloadHash)
+		if err != nil {
+			return err
+		}
+		if !valid {
+			return fmt.Errorf("federation bootstrap event hash is invalid at index %d", index)
+		}
+		prevHash = event.EventHash
+	}
+	return nil
+}
+
 type membershipAdapter struct{ record *domain.MembershipRecord }
+
 func (a *membershipAdapter) GetStationPeerID() string { return a.record.StationPeerID }
 func (a *membershipAdapter) GetRole() string          { return a.record.Role }
 func (a *membershipAdapter) GetStatus() string        { return a.record.Status }
 
 type federationAdapter struct{ record *domain.FederationRecord }
-func (a *federationAdapter) GetSequencerStationPeerID() string { return a.record.SequencerStationPeerID }
-func (a *federationAdapter) GetPolicyType() policy.Type        { return policy.Type(a.record.PolicyType) }
+
+func (a *federationAdapter) GetSequencerStationPeerID() string {
+	return a.record.SequencerStationPeerID
+}
+func (a *federationAdapter) GetPolicyType() policy.Type { return policy.Type(a.record.PolicyType) }

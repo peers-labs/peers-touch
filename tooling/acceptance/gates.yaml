@@ -106,54 +106,12 @@
       "tier": "env-evidence",
       "description": "Run a parameterized Station private-chat pressure and security gate; set CHAT_PRIVATE_PRESSURE_ACTORS=100 and CHAT_PRIVATE_PRESSURE_MESSAGES=1000 for the Foundation full run."
     },
-    "chat-federated-group-pressure": {
-      "command": "cd apps/station/app && GOWORK=off go test ./subserver/group_chat -run TestRelayMediatedThreeStationProposalPressureAcceptance -count=1 -v",
-      "timeout_seconds": 600,
-      "environment": "local",
-      "tier": "ci-cheap",
-      "description": "Run the relay-mediated 3-Station federated group proposal pressure harness: 100 actors, 10 active senders, 1000 message proposals, and 2000 follower event deliveries."
-    },
     "chat-federated-browser-prereq": {
       "command": "python3 tooling/acceptance/gates/chat/federated_browser_prereq.py",
       "timeout_seconds": 120,
       "environment": "home-station",
       "tier": "env-evidence",
       "description": "Validate live deployed federated browser prerequisites: distinct authority/follower Stations, healthy Relay, discoverable Station peer IDs, and optional Desktop gateway Station binding."
-    },
-    "chat-federated-desktop-dom-group-decrypt": {
-      "command": "python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_decrypt.py",
-      "timeout_seconds": 900,
-      "environment": "home-station",
-      "tier": "env-evidence",
-      "description": "Run a parameterized live two-Desktop cross-Station group flow: authority creates groups with a remote FederatedActorRef, sends Sender-Key encrypted messages, follower receives SKDM over realtime SSE, syncs projection/history, and renders decrypted DOM text. Set CHAT_FEDERATION_DOM_GROUPS and CHAT_FEDERATION_DOM_MESSAGES_PER_GROUP for repeated browser-runtime evidence."
-    },
-    "chat-federated-desktop-dom-removed-member-negative": {
-      "command": "python3 tooling/acceptance/gates/chat/federated_desktop_dom_removed_member_negative.py",
-      "timeout_seconds": 900,
-      "environment": "home-station",
-      "tier": "env-evidence",
-      "description": "Run a live two-Desktop cross-Station removed-member negative flow: follower decrypts a pre-remove message, authority removes the follower, authority sends a post-remove message, and follower DOM must not render the post-remove plaintext."
-    },
-    "chat-federated-desktop-dom-late-join-negative": {
-      "command": "python3 tooling/acceptance/gates/chat/federated_desktop_dom_late_join_negative.py",
-      "timeout_seconds": 900,
-      "environment": "home-station",
-      "tier": "env-evidence",
-      "description": "Run a live two-Desktop cross-Station late-join negative flow: authority sends a pre-join encrypted message, adds the follower as a federated member, follower DOM must not render the pre-join plaintext, then follower must decrypt a post-join message."
-    },
-    "chat-federated-desktop-dom-group-pressure": {
-      "command": "python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_pressure.py",
-      "timeout_seconds": 2400,
-      "environment": "home-station",
-      "tier": "env-evidence",
-      "description": "Run a live two-Desktop cross-Station group pressure flow: authority sends 1000 Sender-Key encrypted messages by default, follower syncs/decrypts the pressure window in the browser runtime, and follower DOM must render the last plaintext without waiting/decrypt placeholders."
-    },
-    "chat-federated-desktop-dom-multi-follower-pressure": {
-      "command": "python3 tooling/acceptance/gates/chat/federated_desktop_dom_multi_follower_pressure.py",
-      "timeout_seconds": 2400,
-      "environment": "home-station",
-      "tier": "env-evidence",
-      "description": "Run a live bounded multi-follower Desktop/browser pressure flow: authority sends Sender-Key encrypted messages to one group containing multiple follower actors, each follower Desktop runtime syncs/decrypts the pressure window, and every follower DOM must render the last plaintext without waiting/decrypt placeholders."
     },
     "desktop-check": {
       "command": "cd apps/desktop && pnpm run check",

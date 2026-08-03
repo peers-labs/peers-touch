@@ -5,34 +5,19 @@ import { Button, Dropdown, Input } from '@lobehub/ui';
 import { Alert, Badge, Empty, theme, Typography } from 'antd';
 import { RefreshCw, BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff } from 'lucide-react';
 import type { IMConversationProjection } from '@peers-touch/client-chat-core';
-import { GroupCompositeAvatar } from '../common/GroupCompositeAvatar';
+import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError } from '../../services/errorPresenter';
 import { markOverlayIntent, markOverlayVisible } from '../../kernel/frontendRuntimeProfiler';
 import { OverlayCommitProfiler } from '../../kernel/OverlayCommitProfiler';
 import { imServiceV1 } from '../../services/im-service';
-import { api } from '../../services/desktop_api';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
-import type { GroupMember } from '../../gen/proto/domain/chat/group_chat_pb';
 
 const { Text } = Typography;
-
-function SessionGroupAvatar({ members, peerProfiles, size = 36 }: {
-  groupId: string;
-  members: GroupMember[];
-  peerProfiles: Record<string, { display_name?: string; username?: string; avatar?: string } | null | undefined>;
-  size?: number;
-}) {
-  const slots = members.slice(0, 4).map((m) => {
-    const p = peerProfiles[m.ptid];
-    return { name: p?.display_name?.trim() || p?.username?.trim() || m.nickname || '', avatar: p?.avatar || '' };
-  });
-  return <GroupCompositeAvatar members={slots} size={size} />;
-}
 
 function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const diffMs = Date.now() - d.getTime();
@@ -145,14 +130,6 @@ export function ChatSessionList() {
 
     if (c.kind === 'friend' && c.peerDid) {
       try {
-        const resp = await api.friendChatCreateSession(c.peerDid);
-        const sessionUlid = resp.session?.ulid;
-        if (sessionUlid) {
-          await loadSessions();
-          setSearchText('');
-          selectSession(sessionUlid);
-          return;
-        }
         await imServiceV1.conversation.createDirect(c.peerDid);
         await loadSessions();
         const created = getIMConversations().find((conv) => conv.peerDid === c.peerDid);
@@ -458,8 +435,16 @@ export function ChatSessionList() {
                   >
                     <OverlayCommitProfiler owner={contextMenuTarget} surface="chat-conversation-context-menu">
                       <>
-                          {c.kind === 'group' && !c.avatar ? (
-                            <SessionGroupAvatar groupId={c.id} members={groupMembers[c.id] || []} peerProfiles={peerProfiles} size={36} />
+                          {c.kind === 'group' ? (
+                            <GroupSquareAvatar
+                              remoteUrl={c.avatar || undefined}
+                              members={(groupMembers[c.id] || []).slice(0, 4).map((m) => {
+                                const p = peerProfiles[m.ptid];
+                                return { name: p?.display_name?.trim() || p?.username?.trim() || m.nickname || '', avatar: p?.avatar || '' };
+                              })}
+                              name={name}
+                              size={36}
+                            />
                           ) : (
                             <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
                           )}

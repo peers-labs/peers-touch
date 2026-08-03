@@ -1,22 +1,20 @@
 use crate::application::chat_storage;
 use crate::application::session_resolver;
 use crate::contracts::{
-    AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput,
-    ChatScopeCursorSetInput, GroupAckOfflineInput, GroupAddFederatedMemberInput,
-    GroupChatCreateGroupInput, GroupChatEditInput, GroupChatFederatedActorInput,
-    GroupChatLeaveGroupInput, GroupChatListInput, GroupChatListMessagesInput,
-    GroupChatMarkReadInput, GroupChatSendInput, GroupChatSyncInput, GroupChatThreadCountsInput,
-    GroupChatThreadInput, GroupChatThreadReadInput, GroupChatUnreadInput, GroupInviteInput,
-    GroupJoinInput, GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
-    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupSkdmSubmitInput,
-    GroupTransferOwnershipInput, GroupUlidInput, GroupUpdateInput, GroupUpdateMemberInput,
-    GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
+    ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput,
+    GroupAckOfflineInput, GroupAddFederatedMemberInput, GroupChatCreateGroupInput,
+    GroupChatEditInput, GroupChatFederatedActorInput, GroupChatLeaveGroupInput, GroupChatListInput,
+    GroupChatListMessagesInput, GroupChatMarkReadInput, GroupChatSyncInput,
+    GroupChatThreadCountsInput, GroupChatThreadInput, GroupChatThreadReadInput,
+    GroupChatUnreadInput, GroupInviteInput, GroupJoinInput, GroupMembersInput,
+    GroupMessageActionInput, GroupOfflineMessagesInput, GroupRemoveMemberInput,
+    GroupSearchMessagesInput, GroupTransferOwnershipInput, GroupUlidInput, GroupUpdateInput,
+    GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::model;
 use crate::state::AppState;
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use prost::Message;
 use reqwest::Method;
 use serde_json::{json, Value};
@@ -101,22 +99,6 @@ fn extract_latest_ulid(payload: &Value) -> Option<String> {
         }
     }
     None
-}
-
-fn map_group_attachments(inputs: &[AttachmentInput]) -> Vec<model::chat::GroupMessageAttachment> {
-    inputs
-        .iter()
-        .map(|a| model::chat::GroupMessageAttachment {
-            cid: a.cid.clone(),
-            filename: a.filename.clone(),
-            mime_type: a.mime_type.clone(),
-            size: a.size,
-            thumbnail_cid: a.thumbnail_cid.clone().unwrap_or_default(),
-            visibility: a.visibility.clone().unwrap_or_default(),
-            media_encryption: None,
-            ..Default::default()
-        })
-        .collect()
 }
 
 fn filter_incremental_messages(
@@ -302,136 +284,6 @@ pub fn group_chat_thread_mark_read(
         Err(error) => return error.into_app_result("station request failed"),
     };
     to_stub("group_chat_thread_mark_read", data)
-}
-
-#[tauri::command]
-pub fn group_chat_send_message(
-    input: GroupChatSendInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    // Sender Keys is the only supported send path. The web layer passes
-    // base64-encoded `GroupCiphertext` proto bytes from `crypto_group_encrypt`;
-    // Desktop decodes those bytes and sends a protobuf request to Station.
-    // `content` is pinned to empty so plaintext can never be smuggled beside
-    // ciphertext.
-    let encrypted_payload = match input.encrypted_payload.as_ref() {
-        Some(s) if !s.trim().is_empty() => match B64.decode(s.trim().as_bytes()) {
-            Ok(bytes) if !bytes.is_empty() => bytes,
-            Ok(_) => {
-                return AppResult::fail(
-                    ErrorCode::InvalidArgument,
-                    "encrypted_payload is required for group sends",
-                    None,
-                );
-            }
-            Err(e) => {
-                return AppResult::fail(
-                    ErrorCode::InvalidArgument,
-                    format!("Invalid encrypted_payload: {}", e),
-                    None,
-                );
-            }
-        },
-        _ => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                "encrypted_payload is required for group sends",
-                None,
-            );
-        }
-    };
-
-    let attachments = input.attachments.unwrap_or_default();
-    let req = model::chat::SendGroupMessageRequest {
-        group_ulid: input.group_ulid,
-        r#type: input.r#type.unwrap_or(1),
-        content: String::new(),
-        attachments: map_group_attachments(&attachments),
-        reply_to_ulid: input.reply_to_ulid.unwrap_or_default(),
-        mentioned_dids: input.mentioned_dids.unwrap_or_default(),
-        mention_all: input.mention_all.unwrap_or(false),
-        encrypted_payload,
-        thread_root_ulid: input.thread_root_ulid.unwrap_or_default(),
-        observed_membership_epoch: input.observed_membership_epoch.unwrap_or_default(),
-    };
-
-    let resp = match station_client::request_proto::<
-        model::chat::SendGroupMessageRequest,
-        model::chat::SendGroupMessageResponse,
-    >(
-        Method::POST,
-        "/group-chat/message/send",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return e.into_app_result("station request failed"),
-    };
-    AppResult::success(resp.encode_to_vec())
-}
-
-#[tauri::command]
-pub fn group_chat_submit_skdm_envelope(
-    input: GroupSkdmSubmitInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    let encrypted_payload = match B64.decode(input.encrypted_payload.trim().as_bytes()) {
-        Ok(bytes) if !bytes.is_empty() => bytes,
-        Ok(_) => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                "encrypted_payload is required for SKDM submit",
-                None,
-            );
-        }
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                format!("Invalid encrypted_payload: {}", e),
-                None,
-            );
-        }
-    };
-    let req = model::chat::SubmitGroupSkdmEnvelopeRequest {
-        envelope: Some(model::chat::GroupSkdmEnvelope {
-            group_ulid: input.group_ulid,
-            membership_epoch: input.membership_epoch,
-            sender_did: input.sender_did,
-            sender_key_id: input.sender_key_id,
-            sender_home_station_peer_id: String::new(),
-            recipient_did: input.recipient_did,
-            recipient_device_id: input.recipient_device_id,
-            recipient_home_station_peer_id: input.recipient_home_station_peer_id,
-            encrypted_payload,
-            idempotency_key: input.idempotency_key.unwrap_or_default(),
-            created_at: None,
-        }),
-    };
-    let resp = match station_client::request_proto::<
-        model::chat::SubmitGroupSkdmEnvelopeRequest,
-        model::chat::SubmitGroupSkdmEnvelopeResponse,
-    >(
-        Method::POST,
-        "/group-chat/skdm/submit",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "station request failed"),
-    };
-    AppResult::success(resp.encode_to_vec())
 }
 
 #[tauri::command]

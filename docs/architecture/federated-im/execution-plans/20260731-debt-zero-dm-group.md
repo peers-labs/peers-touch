@@ -1,10 +1,11 @@
 # Debt-Zero: Full-Stack DM/Group Chat Unification
 
-> **Status**: ready-for-execution
-> **Created**: 2026-07-31
+> **Status**: P0/P1/P2 and P3.0 implemented; P3.1–P3.4 blocked by parent P2/P3 Mobile + three-Station gates; P4 pending
+> **Created**: 2026-07-31 | **Updated**: 2026-08-01
 > **Supersedes**: `20260731-compat-chat-elimination.md` (was surface-only; this covers ALL layers)
 > **Architecture source**: `docs/architecture/federated-im/proposals/compat-chat-elimination.md`
-> **Branch**: `feat/debt-zero-chat` (from current HEAD)
+> **Governing decisions**: `docs/architecture/federated-im/decisions.md` D-08…D-12
+> **Current Branch**: `feat/group-detail-history-ux-pr`
 
 ---
 
@@ -32,6 +33,22 @@ Frontend types     UnifiedConversation carries both FriendChatSession  —
 Total duplicated/dead code: ~12,400 LOC
 Target state: ONE code path per operation, top to bottom.
 ```
+
+---
+
+## Strict Encryption And Historical Data Policy
+
+- Direct conversations accept only X3DH + Double Ratchet `v=1`.
+- Group conversations accept only OpenMLS application messages.
+- Plaintext payload probing, chain-only `v=0`, Sender Keys/SKDM, raw-text
+  fallback, and encryption feature flags are forbidden compatibility paths.
+- Historical plaintext and legacy ciphertext are not migrated or rendered.
+  Application code must not delete them. Until the P4 operational purge they
+  are ignored by the strict decoder; the purge is executed separately through
+  approved, auditable SQL with table/column scope and row-count evidence.
+- P3 consumer migration and P4 deletion form one atomic release cutover. The
+  repository may contain both implementations while the branch is under
+  construction, but no deployed build may expose both paths.
 
 ---
 
@@ -88,10 +105,10 @@ P1: Station — Fill gaps + fix handlers_unified.go to use proto types
 P2: BFF Unification — Replace friend_chat.rs + group_chat.rs + chat_storage.rs
     with ONE conversation.rs module calling /conversation/* (proto-encoded)
  ↓
-P3: Frontend Unification — Single Tauri command set, single store path,
-    single message type, no kind='friend'|'group' branching
+P3: Frontend Unification — Strict encrypted-only decoder, single Tauri command
+    set, single store path, single message type, no kind branching
  ↓
-P4: Kill Shot — Delete ALL legacy code across every layer
+P4: Kill Shot — Delete ALL legacy code and operationally purge legacy rows
 ```
 
 ---
@@ -328,13 +345,48 @@ Delete all `friend_chat_message_to_json`, `group_message_to_json`, `friend_chat_
 
 ### P2.4 — Register new commands in main.rs
 
-Add new unified commands to Tauri's `invoke_handler!`. Keep old commands temporarily (frontend still calls them).
+Add new unified commands to Tauri's `invoke_handler!`. Old commands may remain
+registered only while the branch is under construction. P3 and P4 must land as
+one atomic cutover; no released or deployed build may expose both command sets.
 
 **Gate**: `cd apps/desktop/src-tauri && cargo check` — compiles with both old + new commands available.
 
 ---
 
 ## Phase 3: Frontend Unification
+
+### P3.0 — Strict Encrypted-Only Conversation Decoder
+
+**Status**: DONE (2026-08-01)
+
+Before consolidating the store API, remove the compatibility semantics from the
+current Desktop path:
+
+- Publish and accept only `supported_versions=[1]` for direct conversations.
+- Delete `crypto.dr_enabled`, DR `v=0` negotiation, and chain-only encrypt/decrypt.
+- Delete direct plaintext probing for DM and group payloads.
+- Require successful DR v1 or MLS decryption followed by successful
+  `ChatEncryptedMessagePayload` decoding.
+- Unknown versions, malformed envelopes, old plaintext, legacy ciphertext, and
+  corrupted ciphertext fail closed into the typed decrypt-failed projection.
+- Do not add data migration, re-encryption, or deletion code.
+
+**Gate**:
+
+- Tree search returns zero active hits for direct plaintext probing,
+  `crypto.dr_enabled`, or the `v=0` branch.
+- Negative tests prove plaintext, `v=0`, unknown-version, and corrupted payloads
+  never become rendered message content.
+- Two independent Rust gateways pass DM DR v1 and group MLS round trips, opaque
+  Station byte equality, and full process restart recovery.
+
+**Evidence**:
+
+- `socialChat.strictCrypto.test.ts`: 9/9 PASS.
+- Desktop crypto binary tests: 23/23 PASS.
+- Two live Profile `three` gateways reject `v=0` and retired Sender Keys commands.
+- Fresh and cold-restart DR/MLS exact decrypt gates PASS.
+- No application-side historical-message deletion remains.
 
 ### P3.1 — Unified Service Layer
 
@@ -393,6 +445,8 @@ The conversation object carries its own `type` field — components read it from
 **E2E Gate**: Two-worktree verification:
 - DM: create, send, receive, thread, unread, search, settings
 - Group: create, invite, send, receive, thread, unread, search, settings, admin, leave
+- Security negatives: plaintext, DR `v=0`, unknown version, malformed envelope,
+  removed MLS member, replay, and restart recovery
 
 ---
 
@@ -458,6 +512,18 @@ Regenerate: `./model/build.sh`
 
 Move `compat_chat/link_preview_handler.go` → `conversation/handlers_link_preview.go` and register as `/conversation/link-preview`.
 
+### P4.9 — Operational Legacy-Row Purge
+
+- Application code must not delete, migrate, or re-encrypt historical messages.
+- After the strict runtime is deployed and verified, use separately approved
+  operational SQL to delete only legacy plaintext, DR `v=0`, and Sender
+  Keys/SKDM chat rows.
+- The SQL procedure must identify exact tables and predicates, record before/
+  after row counts, run transactionally where supported, and preserve
+  conversation membership and other non-message business truth.
+- Until the operation runs, strict clients ignore legacy rows and never render
+  their payloads.
+
 **Final Gate**:
 - `cd apps/station && go build ./app/...` — no errors
 - `cd apps/desktop/src-tauri && cargo check` — clean, no `#![allow(dead_code)]`
@@ -465,6 +531,9 @@ Move `compat_chat/link_preview_handler.go` → `conversation/handlers_link_previ
 - `find . -path "*compat_chat*"` → empty
 - `grep -rn "friend.chat\|group.chat" apps/station/ apps/desktop/src-tauri/src/ apps/desktop/src/services/ apps/desktop/src/store/` → zero hits except test fixtures
 - `grep -rn "friend_chat_pb\|group_chat_pb" apps/desktop/src/` → zero hits
+- `grep -rn "crypto.dr_enabled\|supported_versions.*0\|SenderKey\|SKDM" apps/desktop apps/mobile` → zero active hits
+- Approved operational SQL report shows scoped legacy rows removed, or the
+  release is explicitly marked `runtime-cutover-only` and not D-11 complete
 - Two-worktree full E2E pass
 
 ---
@@ -506,8 +575,14 @@ One proto schema. One Station subserver. One BFF module. One service layer. One 
 - P0 + P1 can overlap (proto gen + Station gaps are independent Go work)
 - P2 must follow P0 (needs prost types)
 - P3 must follow P2 (needs unified Tauri commands available)
-- P4 must follow P3's E2E gate (ensures zero remaining callers of old code)
+- P3.0 is complete. Parent-plan `P2/P3-S2` Mobile parity and `P3-S3`
+  three-Station convergence are the next dependency-ready closures.
+- P3 consumer migration and P4 deletion are reviewed and released atomically;
+  P4 deletion runs only after P3's E2E gate proves zero remaining callers.
+- Operational SQL purge follows the deployed strict-runtime verification and is
+  never embedded in application startup or migrations.
 
-Old and new commands coexist during P2→P3 transition (backwards compatible — frontend migrates one action at a time). P4 is the atomic deletion once all callers are migrated.
+Old and new code may coexist only inside the unshipped implementation branch.
+There is no compatibility release: P3 migration and P4 deletion are one cutover.
 
 Estimated: 3–4 focused sessions.

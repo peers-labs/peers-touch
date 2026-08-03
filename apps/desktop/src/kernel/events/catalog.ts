@@ -19,7 +19,6 @@ export const EVENT = {
   REALTIME_MESSAGE_MUTATION: 'realtime.message_mutation',
   REALTIME_GROUP_MEMBERSHIP_CHANGE: 'realtime.group_membership_change',
   REALTIME_GROUP_FEDERATION_EVENT: 'realtime.group_federation_event',
-    REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED: 'realtime.group_skdm_envelope_delivered',
   REALTIME_ENVELOPE_DELIVERED: 'realtime.envelope_delivered',
   REALTIME_CONVERSATION_SETTINGS_CHANGED: 'realtime.conversation_settings_changed',
   REALTIME_SOCIAL_GRAPH_EVENT: 'realtime.social_graph_event',
@@ -29,13 +28,6 @@ export const EVENT = {
   MOMENT_REACTED: 'moment.reacted',
   MOMENT_RESYNC_REQUESTED: 'moment.resync_requested',
   RELATIONSHIP_CHANGED: 'relationship.changed',
-  // Fired by handleInboundSkdm after a peer's Sender Keys
-  // distribution message has been successfully consumed and
-  // persisted. Subscribers (socialChat) use this to re-attempt
-  // decryption of any group ciphertext that previously failed
-  // with MissingSkdmError for the same (groupUlid, senderDid,
-  // senderKeyId) tuple.
-  GROUP_SKDM_INSTALLED: 'crypto.group_skdm_installed',
 } as const;
 
 export type EventType = (typeof EVENT)[keyof typeof EVENT];

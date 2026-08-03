@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/actor/actor.proto.
  */
 export const file_domain_actor_actor: GenFile = /*@__PURE__*/
-  fileDesc("Chhkb21haW4vYWN0b3IvYWN0b3IucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxIncKCEFjdG9yUmVmEhoKCGFjdG9yX2lkGAEgASgEUghhY3Rvcl9pZBIMCgRwdGlkGAIgASgJEgwKBGFjY3QYAyABKAkSMwoEa2luZBgEIAEoDjIlLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yS2luZCKhBQoFQWN0b3ISCgoCaWQYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEg0KBWVtYWlsGAQgASgJEg0KBWluYm94GAUgASgJEg4KBm91dGJveBgGIAEoCRJDCgllbmRwb2ludHMYByADKAsyMC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3Rvci5FbmRwb2ludHNFbnRyeRIiCgxpc19mb2xsb3dpbmcYCCABKAhSDGlzX2ZvbGxvd2luZxIaCghhY3Rvcl9pZBgJIAEoBFIIYWN0b3JfaWQSDgoGYXZhdGFyGAogASgJEjMKBGtpbmQYCyABKA4yJS5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvcktpbmQSKgoQZmVkZXJhdGVkX2hhbmRsZRgMIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIyChRob21lX3N0YXRpb25fcGVlcl9pZBgNIAEoCVIUaG9tZV9zdGF0aW9uX3BlZXJfaWQSMAoTaG9tZV9zdGF0aW9uX2RvbWFpbhgOIAEoCVITaG9tZV9zdGF0aW9uX2RvbWFpbhI/Cgp2aXNpYmlsaXR5GA8gASgOMisucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JWaXNpYmlsaXR5EjcKBm9yaWdpbhgQIAEoDjInLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yT3JpZ2luEi4KEnNpZ25pbmdfcHVibGljX2tleRgRIAEoDFISc2lnbmluZ19wdWJsaWNfa2V5GjAKDkVuZHBvaW50c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiJgoIVXNlckxpbmsSDQoFbGFiZWwYASABKAkSCwoDdXJsGAIgASgJIjAKDlBlZXJzVG91Y2hJbmZvEh4KCm5ldHdvcmtfaWQYASABKAlSCm5ldHdvcmtfaWQikwcKDEFjdG9yUHJvZmlsZRIKCgJpZBgBIAEoCRIiCgxkaXNwbGF5X25hbWUYAiABKAlSDGRpc3BsYXlfbmFtZRIQCgh1c2VybmFtZRgDIAEoCRIMCgRub3RlGAQgASgJEg4KBmF2YXRhchgFIAEoCRIOCgZoZWFkZXIYBiABKAkSDgoGcmVnaW9uGAcgASgJEhAKCHRpbWV6b25lGAggASgJEgwKBHRhZ3MYCSADKAkSMwoFbGlua3MYCiADKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5Vc2VyTGluaxILCgN1cmwYCyABKAkSJAoNc2VydmVyX2RvbWFpbhgMIAEoCVINc2VydmVyX2RvbWFpbhIoCg9rZXlfZmluZ2VycHJpbnQYDSABKAlSD2tleV9maW5nZXJwcmludBIVCg12ZXJpZmljYXRpb25zGA4gAygJEkwKC3BlZXJzX3RvdWNoGA8gASgLMioucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuUGVlcnNUb3VjaEluZm9SC3BlZXJzX3RvdWNoEgwKBGFjY3QYECABKAkSDgoGbG9ja2VkGBEgASgIEh4KCmNyZWF0ZWRfYXQYEiABKAlSCmNyZWF0ZWRfYXQSKAoPZm9sbG93ZXJzX2NvdW50GBMgASgDUg9mb2xsb3dlcnNfY291bnQSKAoPZm9sbG93aW5nX2NvdW50GBQgASgDUg9mb2xsb3dpbmdfY291bnQSJgoOc3RhdHVzZXNfY291bnQYFSABKANSDnN0YXR1c2VzX2NvdW50EiAKC3Nob3dfY291bnRzGBYgASgIUgtzaG93X2NvdW50cxIPCgdtb21lbnRzGBcgAygJEi4KEmRlZmF1bHRfdmlzaWJpbGl0eRgYIAEoCVISZGVmYXVsdF92aXNpYmlsaXR5EkAKG21hbnVhbGx5X2FwcHJvdmVzX2ZvbGxvd2VycxgZIAEoCFIbbWFudWFsbHlfYXBwcm92ZXNfZm9sbG93ZXJzEi4KEm1lc3NhZ2VfcGVybWlzc2lvbhgaIAEoCVISbWVzc2FnZV9wZXJtaXNzaW9uEioKEGF1dG9fZXhwaXJlX2RheXMYGyABKAVSEGF1dG9fZXhwaXJlX2RheXMSMQoDcmVmGBwgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWYi+AQKFFVwZGF0ZVByb2ZpbGVSZXF1ZXN0EicKDGRpc3BsYXlfbmFtZRgBIAEoCUgAUgxkaXNwbGF5X25hbWWIAQESEQoEbm90ZRgCIAEoCUgBiAEBEhMKBmF2YXRhchgDIAEoCUgCiAEBEhMKBmhlYWRlchgEIAEoCUgDiAEBEhMKBnJlZ2lvbhgFIAEoCUgEiAEBEhUKCHRpbWV6b25lGAYgASgJSAWIAQESDAoEdGFncxgHIAMoCRIzCgVsaW5rcxgIIAMoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLlVzZXJMaW5rEjMKEmRlZmF1bHRfdmlzaWJpbGl0eRgJIAEoCUgGUhJkZWZhdWx0X3Zpc2liaWxpdHmIAQESRQobbWFudWFsbHlfYXBwcm92ZXNfZm9sbG93ZXJzGAogASgISAdSG21hbnVhbGx5X2FwcHJvdmVzX2ZvbGxvd2Vyc4gBARIzChJtZXNzYWdlX3Blcm1pc3Npb24YCyABKAlICFISbWVzc2FnZV9wZXJtaXNzaW9uiAEBEi8KEGF1dG9fZXhwaXJlX2RheXMYDCABKAVICVIQYXV0b19leHBpcmVfZGF5c4gBAUIPCg1fZGlzcGxheV9uYW1lQgcKBV9ub3RlQgkKB19hdmF0YXJCCQoHX2hlYWRlckIJCgdfcmVnaW9uQgsKCV90aW1lem9uZUIVChNfZGVmYXVsdF92aXNpYmlsaXR5Qh4KHF9tYW51YWxseV9hcHByb3Zlc19mb2xsb3dlcnNCFQoTX21lc3NhZ2VfcGVybWlzc2lvbkITChFfYXV0b19leHBpcmVfZGF5cyJMCglBY3Rvckxpc3QSMAoFaXRlbXMYASADKAsyIS5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvchINCgV0b3RhbBgCIAEoAyIfChJTZWFyY2hVc2Vyc1JlcXVlc3QSCQoBcRgBIAEoCSIOCgxHZXRNZVJlcXVlc3QqugEKCUFjdG9yS2luZBIaChZBQ1RPUl9LSU5EX1VOU1BFQ0lGSUVEEAASFQoRQUNUT1JfS0lORF9QRVJTT04QARIUChBBQ1RPUl9LSU5EX0dST1VQEAISGwoXQUNUT1JfS0lORF9PUkdBTklaQVRJT04QAxIWChJBQ1RPUl9LSU5EX1NFUlZJQ0UQBBIaChZBQ1RPUl9LSU5EX0FQUExJQ0FUSU9OEAUSEwoPQUNUT1JfS0lORF9OT0RFEAYqYwoLQWN0b3JPcmlnaW4SHAoYQUNUT1JfT1JJR0lOX1VOU1BFQ0lGSUVEEAASFgoSQUNUT1JfT1JJR0lOX0xPQ0FMEAESHgoaQUNUT1JfT1JJR0lOX1JFTU9URV9DQUNIRUQQAiqOAQoPQWN0b3JWaXNpYmlsaXR5EiAKHEFDVE9SX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIbChdBQ1RPUl9WSVNJQklMSVRZX0hJRERFThABEh4KGkFDVE9SX1ZJU0lCSUxJVFlfQllfSEFORExFEAISHAoYQUNUT1JfVklTSUJJTElUWV9JTkRFWEVEEANCQ1pBZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWw7bW9kZWxiBnByb3RvMw");
+  fileDesc("Chhkb21haW4vYWN0b3IvYWN0b3IucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxIncKCEFjdG9yUmVmEhoKCGFjdG9yX2lkGAEgASgEUghhY3Rvcl9pZBIMCgRwdGlkGAIgASgJEgwKBGFjY3QYAyABKAkSMwoEa2luZBgEIAEoDjIlLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yS2luZCKhBQoFQWN0b3ISCgoCaWQYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEg0KBWVtYWlsGAQgASgJEg0KBWluYm94GAUgASgJEg4KBm91dGJveBgGIAEoCRJDCgllbmRwb2ludHMYByADKAsyMC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3Rvci5FbmRwb2ludHNFbnRyeRIiCgxpc19mb2xsb3dpbmcYCCABKAhSDGlzX2ZvbGxvd2luZxIaCghhY3Rvcl9pZBgJIAEoBFIIYWN0b3JfaWQSDgoGYXZhdGFyGAogASgJEjMKBGtpbmQYCyABKA4yJS5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvcktpbmQSKgoQZmVkZXJhdGVkX2hhbmRsZRgMIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIyChRob21lX3N0YXRpb25fcGVlcl9pZBgNIAEoCVIUaG9tZV9zdGF0aW9uX3BlZXJfaWQSMAoTaG9tZV9zdGF0aW9uX2RvbWFpbhgOIAEoCVITaG9tZV9zdGF0aW9uX2RvbWFpbhI/Cgp2aXNpYmlsaXR5GA8gASgOMisucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JWaXNpYmlsaXR5EjcKBm9yaWdpbhgQIAEoDjInLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yT3JpZ2luEi4KEnNpZ25pbmdfcHVibGljX2tleRgRIAEoDFISc2lnbmluZ19wdWJsaWNfa2V5GjAKDkVuZHBvaW50c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiywIKHVZlcmlmaWVkQWN0b3JEZXZpY2VTaWduaW5nS2V5EhIKCmFjdG9yX3B0aWQYASABKAkSFwoPYWN0b3JfZGV2aWNlX2lkGAIgASgJEhwKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAMgASgJEhYKDnNpZ25pbmdfa2V5X2lkGAQgASgJEhoKEmVkMjU1MTlfcHVibGljX2tleRgFIAEoDBIXCg9wcm9maWxlX3ZlcnNpb24YBiABKAMSWgoTdmVyaWZpY2F0aW9uX3NvdXJjZRgHIAEoDjI9LnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yU2lnbmluZ0tleVZlcmlmaWNhdGlvblNvdXJjZRIaChJ2YWxpZF9mcm9tX3VuaXhfbXMYCCABKAMSGgoScmV2b2tlZF9hdF91bml4X21zGAkgASgDIiYKCFVzZXJMaW5rEg0KBWxhYmVsGAEgASgJEgsKA3VybBgCIAEoCSIwCg5QZWVyc1RvdWNoSW5mbxIeCgpuZXR3b3JrX2lkGAEgASgJUgpuZXR3b3JrX2lkIpMHCgxBY3RvclByb2ZpbGUSCgoCaWQYASABKAkSIgoMZGlzcGxheV9uYW1lGAIgASgJUgxkaXNwbGF5X25hbWUSEAoIdXNlcm5hbWUYAyABKAkSDAoEbm90ZRgEIAEoCRIOCgZhdmF0YXIYBSABKAkSDgoGaGVhZGVyGAYgASgJEg4KBnJlZ2lvbhgHIAEoCRIQCgh0aW1lem9uZRgIIAEoCRIMCgR0YWdzGAkgAygJEjMKBWxpbmtzGAogAygLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuVXNlckxpbmsSCwoDdXJsGAsgASgJEiQKDXNlcnZlcl9kb21haW4YDCABKAlSDXNlcnZlcl9kb21haW4SKAoPa2V5X2ZpbmdlcnByaW50GA0gASgJUg9rZXlfZmluZ2VycHJpbnQSFQoNdmVyaWZpY2F0aW9ucxgOIAMoCRJMCgtwZWVyc190b3VjaBgPIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLlBlZXJzVG91Y2hJbmZvUgtwZWVyc190b3VjaBIMCgRhY2N0GBAgASgJEg4KBmxvY2tlZBgRIAEoCBIeCgpjcmVhdGVkX2F0GBIgASgJUgpjcmVhdGVkX2F0EigKD2ZvbGxvd2Vyc19jb3VudBgTIAEoA1IPZm9sbG93ZXJzX2NvdW50EigKD2ZvbGxvd2luZ19jb3VudBgUIAEoA1IPZm9sbG93aW5nX2NvdW50EiYKDnN0YXR1c2VzX2NvdW50GBUgASgDUg5zdGF0dXNlc19jb3VudBIgCgtzaG93X2NvdW50cxgWIAEoCFILc2hvd19jb3VudHMSDwoHbW9tZW50cxgXIAMoCRIuChJkZWZhdWx0X3Zpc2liaWxpdHkYGCABKAlSEmRlZmF1bHRfdmlzaWJpbGl0eRJAChttYW51YWxseV9hcHByb3Zlc19mb2xsb3dlcnMYGSABKAhSG21hbnVhbGx5X2FwcHJvdmVzX2ZvbGxvd2VycxIuChJtZXNzYWdlX3Blcm1pc3Npb24YGiABKAlSEm1lc3NhZ2VfcGVybWlzc2lvbhIqChBhdXRvX2V4cGlyZV9kYXlzGBsgASgFUhBhdXRvX2V4cGlyZV9kYXlzEjEKA3JlZhgcIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmIvgEChRVcGRhdGVQcm9maWxlUmVxdWVzdBInCgxkaXNwbGF5X25hbWUYASABKAlIAFIMZGlzcGxheV9uYW1liAEBEhEKBG5vdGUYAiABKAlIAYgBARITCgZhdmF0YXIYAyABKAlIAogBARITCgZoZWFkZXIYBCABKAlIA4gBARITCgZyZWdpb24YBSABKAlIBIgBARIVCgh0aW1lem9uZRgGIAEoCUgFiAEBEgwKBHRhZ3MYByADKAkSMwoFbGlua3MYCCADKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5Vc2VyTGluaxIzChJkZWZhdWx0X3Zpc2liaWxpdHkYCSABKAlIBlISZGVmYXVsdF92aXNpYmlsaXR5iAEBEkUKG21hbnVhbGx5X2FwcHJvdmVzX2ZvbGxvd2VycxgKIAEoCEgHUhttYW51YWxseV9hcHByb3Zlc19mb2xsb3dlcnOIAQESMwoSbWVzc2FnZV9wZXJtaXNzaW9uGAsgASgJSAhSEm1lc3NhZ2VfcGVybWlzc2lvbogBARIvChBhdXRvX2V4cGlyZV9kYXlzGAwgASgFSAlSEGF1dG9fZXhwaXJlX2RheXOIAQFCDwoNX2Rpc3BsYXlfbmFtZUIHCgVfbm90ZUIJCgdfYXZhdGFyQgkKB19oZWFkZXJCCQoHX3JlZ2lvbkILCglfdGltZXpvbmVCFQoTX2RlZmF1bHRfdmlzaWJpbGl0eUIeChxfbWFudWFsbHlfYXBwcm92ZXNfZm9sbG93ZXJzQhUKE19tZXNzYWdlX3Blcm1pc3Npb25CEwoRX2F1dG9fZXhwaXJlX2RheXMiTAoJQWN0b3JMaXN0EjAKBWl0ZW1zGAEgAygLMiEucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3ISDQoFdG90YWwYAiABKAMiHwoSU2VhcmNoVXNlcnNSZXF1ZXN0EgkKAXEYASABKAkiDgoMR2V0TWVSZXF1ZXN0KroBCglBY3RvcktpbmQSGgoWQUNUT1JfS0lORF9VTlNQRUNJRklFRBAAEhUKEUFDVE9SX0tJTkRfUEVSU09OEAESFAoQQUNUT1JfS0lORF9HUk9VUBACEhsKF0FDVE9SX0tJTkRfT1JHQU5JWkFUSU9OEAMSFgoSQUNUT1JfS0lORF9TRVJWSUNFEAQSGgoWQUNUT1JfS0lORF9BUFBMSUNBVElPThAFEhMKD0FDVE9SX0tJTkRfTk9ERRAGKmMKC0FjdG9yT3JpZ2luEhwKGEFDVE9SX09SSUdJTl9VTlNQRUNJRklFRBAAEhYKEkFDVE9SX09SSUdJTl9MT0NBTBABEh4KGkFDVE9SX09SSUdJTl9SRU1PVEVfQ0FDSEVEEAIqjgEKD0FjdG9yVmlzaWJpbGl0eRIgChxBQ1RPUl9WSVNJQklMSVRZX1VOU1BFQ0lGSUVEEAASGwoXQUNUT1JfVklTSUJJTElUWV9ISURERU4QARIeChpBQ1RPUl9WSVNJQklMSVRZX0JZX0hBTkRMRRACEhwKGEFDVE9SX1ZJU0lCSUxJVFlfSU5ERVhFRBADKpcCCiFBY3RvclNpZ25pbmdLZXlWZXJpZmljYXRpb25Tb3VyY2USNQoxQUNUT1JfU0lHTklOR19LRVlfVkVSSUZJQ0FUSU9OX1NPVVJDRV9VTlNQRUNJRklFRBAAEkMKP0FDVE9SX1NJR05JTkdfS0VZX1ZFUklGSUNBVElPTl9TT1VSQ0VfTE9DQUxfREVWSUNFX1JFR0lTVFJBVElPThABEjoKNkFDVE9SX1NJR05JTkdfS0VZX1ZFUklGSUNBVElPTl9TT1VSQ0VfVkVSSUZJRURfUFJPRklMRRACEjoKNkFDVE9SX1NJR05JTkdfS0VZX1ZFUklGSUNBVElPTl9TT1VSQ0VfVkVSSUZJRURfTE9DQVRPUhADQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM");
 
 /**
  * @generated from message peers_touch.model.actor.v1.ActorRef
@@ -156,6 +156,67 @@ export const ActorSchema: GenMessage<Actor> = /*@__PURE__*/
   messageDesc(file_domain_actor_actor, 1);
 
 /**
+ * Identity-owned device signing-key projection used to verify actor-signed
+ * federated commands. Consumers must not accept a key supplied by the command
+ * being verified.
+ *
+ * @generated from message peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
+ */
+export type VerifiedActorDeviceSigningKey = Message<"peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey"> & {
+  /**
+   * @generated from field: string actor_ptid = 1;
+   */
+  actorPtid: string;
+
+  /**
+   * @generated from field: string actor_device_id = 2;
+   */
+  actorDeviceId: string;
+
+  /**
+   * @generated from field: string home_station_peer_id = 3;
+   */
+  homeStationPeerId: string;
+
+  /**
+   * @generated from field: string signing_key_id = 4;
+   */
+  signingKeyId: string;
+
+  /**
+   * @generated from field: bytes ed25519_public_key = 5;
+   */
+  ed25519PublicKey: Uint8Array;
+
+  /**
+   * @generated from field: int64 profile_version = 6;
+   */
+  profileVersion: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorSigningKeyVerificationSource verification_source = 7;
+   */
+  verificationSource: ActorSigningKeyVerificationSource;
+
+  /**
+   * @generated from field: int64 valid_from_unix_ms = 8;
+   */
+  validFromUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 revoked_at_unix_ms = 9;
+   */
+  revokedAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey.
+ * Use `create(VerifiedActorDeviceSigningKeySchema)` to create a new message.
+ */
+export const VerifiedActorDeviceSigningKeySchema: GenMessage<VerifiedActorDeviceSigningKey> = /*@__PURE__*/
+  messageDesc(file_domain_actor_actor, 2);
+
+/**
  * @generated from message peers_touch.model.actor.v1.UserLink
  */
 export type UserLink = Message<"peers_touch.model.actor.v1.UserLink"> & {
@@ -175,7 +236,7 @@ export type UserLink = Message<"peers_touch.model.actor.v1.UserLink"> & {
  * Use `create(UserLinkSchema)` to create a new message.
  */
 export const UserLinkSchema: GenMessage<UserLink> = /*@__PURE__*/
-  messageDesc(file_domain_actor_actor, 2);
+  messageDesc(file_domain_actor_actor, 3);
 
 /**
  * @generated from message peers_touch.model.actor.v1.PeersTouchInfo
@@ -192,7 +253,7 @@ export type PeersTouchInfo = Message<"peers_touch.model.actor.v1.PeersTouchInfo"
  * Use `create(PeersTouchInfoSchema)` to create a new message.
  */
 export const PeersTouchInfoSchema: GenMessage<PeersTouchInfo> = /*@__PURE__*/
-  messageDesc(file_domain_actor_actor, 3);
+  messageDesc(file_domain_actor_actor, 4);
 
 /**
  * @generated from message peers_touch.model.actor.v1.ActorProfile
@@ -344,7 +405,7 @@ export type ActorProfile = Message<"peers_touch.model.actor.v1.ActorProfile"> & 
  * Use `create(ActorProfileSchema)` to create a new message.
  */
 export const ActorProfileSchema: GenMessage<ActorProfile> = /*@__PURE__*/
-  messageDesc(file_domain_actor_actor, 4);
+  messageDesc(file_domain_actor_actor, 5);
 
 /**
  * @generated from message peers_touch.model.actor.v1.UpdateProfileRequest
@@ -416,7 +477,7 @@ export type UpdateProfileRequest = Message<"peers_touch.model.actor.v1.UpdatePro
  * Use `create(UpdateProfileRequestSchema)` to create a new message.
  */
 export const UpdateProfileRequestSchema: GenMessage<UpdateProfileRequest> = /*@__PURE__*/
-  messageDesc(file_domain_actor_actor, 5);
+  messageDesc(file_domain_actor_actor, 6);
 
 /**
  * @generated from message peers_touch.model.actor.v1.ActorList
@@ -438,7 +499,7 @@ export type ActorList = Message<"peers_touch.model.actor.v1.ActorList"> & {
  * Use `create(ActorListSchema)` to create a new message.
  */
 export const ActorListSchema: GenMessage<ActorList> = /*@__PURE__*/
-  messageDesc(file_domain_actor_actor, 6);
+  messageDesc(file_domain_actor_actor, 7);
 
 /**
  * SearchUsersRequest carries query parameters for the user search endpoint.
@@ -457,7 +518,7 @@ export type SearchUsersRequest = Message<"peers_touch.model.actor.v1.SearchUsers
  * Use `create(SearchUsersRequestSchema)` to create a new message.
  */
 export const SearchUsersRequestSchema: GenMessage<SearchUsersRequest> = /*@__PURE__*/
-  messageDesc(file_domain_actor_actor, 7);
+  messageDesc(file_domain_actor_actor, 8);
 
 /**
  * GetMeRequest is intentionally empty; the current user is identified via JWT auth context.
@@ -472,7 +533,7 @@ export type GetMeRequest = Message<"peers_touch.model.actor.v1.GetMeRequest"> & 
  * Use `create(GetMeRequestSchema)` to create a new message.
  */
 export const GetMeRequestSchema: GenMessage<GetMeRequest> = /*@__PURE__*/
-  messageDesc(file_domain_actor_actor, 8);
+  messageDesc(file_domain_actor_actor, 9);
 
 /**
  * @generated from enum peers_touch.model.actor.v1.ActorKind
@@ -597,4 +658,35 @@ export enum ActorVisibility {
  */
 export const ActorVisibilitySchema: GenEnum<ActorVisibility> = /*@__PURE__*/
   enumDesc(file_domain_actor_actor, 2);
+
+/**
+ * @generated from enum peers_touch.model.actor.v1.ActorSigningKeyVerificationSource
+ */
+export enum ActorSigningKeyVerificationSource {
+  /**
+   * @generated from enum value: ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION = 1;
+   */
+  LOCAL_DEVICE_REGISTRATION = 1,
+
+  /**
+   * @generated from enum value: ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE = 2;
+   */
+  VERIFIED_PROFILE = 2,
+
+  /**
+   * @generated from enum value: ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR = 3;
+   */
+  VERIFIED_LOCATOR = 3,
+}
+
+/**
+ * Describes the enum peers_touch.model.actor.v1.ActorSigningKeyVerificationSource.
+ */
+export const ActorSigningKeyVerificationSourceSchema: GenEnum<ActorSigningKeyVerificationSource> = /*@__PURE__*/
+  enumDesc(file_domain_actor_actor, 3);
 

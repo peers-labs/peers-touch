@@ -10,6 +10,9 @@ use openmls_basic_credential::SignatureKeyPair;
 use openmls_memory_storage::MemoryStorage;
 use openmls_rust_crypto::RustCrypto;
 use openmls_traits::OpenMlsProvider;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
+use std::path::PathBuf;
 
 pub const PEERS_CIPHERSUITE: Ciphersuite =
     Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
@@ -36,6 +39,63 @@ impl PeersMLSProvider {
     pub fn load_state(&mut self, name: &str) -> Result<(), String> {
         self.storage.load(name.to_string())
     }
+
+    pub fn export_state(&self) -> Result<Vec<u8>, String> {
+        let path = secure_temp_state_path()?;
+        let file = create_secure_temp_file(&path)?;
+        let result = self.storage.save_to_file(&file);
+        drop(file);
+        let bytes = result.and_then(|_| fs::read(&path).map_err(|e| e.to_string()));
+        let _ = fs::remove_file(path);
+        bytes
+    }
+
+    pub fn import_state(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let path = secure_temp_state_path()?;
+        let mut file = create_secure_temp_file(&path)?;
+        let result = file
+            .write_all(bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|e| e.to_string());
+        drop(file);
+        let result = result.and_then(|_| {
+            let file = File::open(&path).map_err(|e| e.to_string())?;
+            self.storage.load_from_file(&file)
+        });
+        let _ = fs::remove_file(path);
+        result
+    }
+}
+
+fn secure_temp_state_path() -> Result<PathBuf, String> {
+    let root = std::env::var("PEERS_STORAGE_ROOT")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let dir = root
+        .join("peers-touch")
+        .join("desktop")
+        .join("runtime")
+        .join("mls-export");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    }
+    Ok(dir.join(format!("{}.state", ulid::Ulid::new())))
+}
+
+fn create_secure_temp_file(path: &std::path::Path) -> Result<File, String> {
+    let mut options = OpenOptions::new();
+    options.create_new(true).read(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path).map_err(|e| e.to_string())
 }
 
 impl OpenMlsProvider for PeersMLSProvider {
@@ -100,8 +160,8 @@ mod tests {
         let alice_provider = PeersMLSProvider::new();
         let bob_provider = PeersMLSProvider::new();
 
-        let bob_kp = create_key_package(&bob_provider, &bob_signer, bob_cwk.clone())
-            .expect("bob kp");
+        let bob_kp =
+            create_key_package(&bob_provider, &bob_signer, bob_cwk.clone()).expect("bob kp");
 
         let mut alice_group = MlsGroup::builder()
             .ciphersuite(PEERS_CIPHERSUITE)
@@ -122,24 +182,24 @@ mod tests {
             .create_message(&alice_provider, &alice_signer, b"before-persist")
             .expect("encrypt msg");
 
-        alice_provider
-            .save_state(state_name)
-            .expect("save state");
+        alice_provider.save_state(state_name).expect("save state");
 
         let mut restored_provider = PeersMLSProvider::new();
         restored_provider
             .load_state(state_name)
             .expect("load state");
 
-        let restored_group =
-            MlsGroup::load(restored_provider.storage(), &GroupId::from_slice(b"c2-test-group"))
-                .expect("load group from storage");
+        let restored_group = MlsGroup::load(
+            restored_provider.storage(),
+            &GroupId::from_slice(b"c2-test-group"),
+        )
+        .expect("load group from storage");
 
         assert!(restored_group.is_some(), "group not found after restore");
         let mut restored_group = restored_group.unwrap();
 
-        let msg2 = restored_group
-            .create_message(&restored_provider, &alice_signer, b"after-persist");
+        let msg2 =
+            restored_group.create_message(&restored_provider, &alice_signer, b"after-persist");
 
         assert!(
             msg2.is_ok(),
@@ -148,7 +208,7 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(
-            std::env::temp_dir().join(format!("openmls_cli_{state_name}_ks.json"))
+            std::env::temp_dir().join(format!("openmls_cli_{state_name}_ks.json")),
         );
     }
 }
