@@ -42,7 +42,6 @@ import {
 import {
   ListGroupsResponseSchema,
   GetGroupMessagesResponseSchema,
-  SendGroupMessageResponseSchema,
   GetUnreadCountResponseSchema,
   MarkGroupReadResponseSchema,
   CreateGroupResponseSchema,
@@ -66,7 +65,6 @@ import {
   GetOfflineMessagesResponseSchema,
   AckOfflineMessagesResponseSchema,
   GetGroupStatsResponseSchema,
-  SubmitGroupSkdmEnvelopeResponseSchema,
 } from '../gen/proto/domain/chat/group_chat_pb';
 export type {
   ActorList,
@@ -155,7 +153,6 @@ export type {
   GroupMessage,
   ListGroupsResponse,
   GetGroupMessagesResponse,
-  SendGroupMessageResponse,
   GetUnreadCountResponse,
   MarkGroupReadResponse,
   GroupMember,
@@ -180,7 +177,6 @@ export type {
   GetOfflineMessagesResponse,
   AckOfflineMessagesResponse,
   GetGroupStatsResponse,
-  SubmitGroupSkdmEnvelopeResponse,
 } from '../gen/proto/domain/chat/group_chat_pb';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -2574,6 +2570,67 @@ export interface AgentTurnTraceGetInput {
   turn_id?: string;
 }
 
+export interface AgentConversation {
+  conversation_id: string;
+  agent_id: string;
+  user_id?: string;
+  title: string;
+  description?: string;
+  provider_id?: string;
+  model_name?: string;
+  status: string;
+  parent_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentMessage {
+  message_id: string;
+  conversation_id: string;
+  turn_id?: string;
+  model_name?: string;
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  seq: number;
+  branch_id?: string;
+  replaces_message_id?: string;
+  reasoning_json?: string;
+  tool_calls_json?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentConversationListInput {
+  agent_id: string;
+  status?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface AgentConversationGetInput {
+  conversation_id: string;
+}
+
+export interface AgentConversationCreateInput {
+  agent_id: string;
+  title?: string;
+  description?: string;
+  model_name?: string;
+  provider_id?: string;
+}
+
+export interface AgentConversationMessagesInput {
+  conversation_id: string;
+  after_seq?: number;
+  before_seq?: number;
+  limit?: number;
+}
+
+export interface AgentConversationArchiveInput {
+  conversation_id: string;
+  permanent?: boolean;
+}
+
 export interface AgentTurnStreamPayload {
   streamId: string;
   event: string;
@@ -3660,8 +3717,12 @@ export const api = {
             }
             return { model, id: resolvedId, displayName };
           })
-          .filter(({ id }) => id.length > 0)
-          .map(({ model, id: mid, displayName }) => {
+          .filter(({ id }: { id: string }) => id.length > 0)
+          .map(({ model, id: mid, displayName }: {
+            model: any;
+            id: string;
+            displayName: string;
+          }) => {
             return {
               id: mid,
               display_name: displayName || mid,
@@ -4207,6 +4268,41 @@ export const api = {
       actor: string;
       decidedAt: string;
     }>('agent_decide_tool_approval', input),
+
+  listAgentConversations: (agentId: string, options?: { status?: string; page?: number; pageSize?: number }) =>
+    invokeRustDataFromStatus<AgentConversationListInput, { ok: boolean; conversations: AgentConversation[]; total: number }>(
+      'agent_conversation_list',
+      {
+        agent_id: agentId,
+        status: options?.status,
+        page: options?.page,
+        page_size: options?.pageSize,
+      },
+    ).then((r) => r.conversations),
+
+  getAgentConversation: (conversationId: string) =>
+    invokeRustDataFromStatus<AgentConversationGetInput, { ok: boolean; conversation: AgentConversation }>(
+      'agent_conversation_get',
+      { conversation_id: conversationId },
+    ).then((r) => r.conversation),
+
+  createAgentConversation: (input: AgentConversationCreateInput) =>
+    invokeRustDataFromStatus<AgentConversationCreateInput, { ok: boolean; conversation: AgentConversation }>(
+      'agent_conversation_create',
+      input,
+    ).then((r) => r.conversation),
+
+  listAgentConversationMessages: (input: AgentConversationMessagesInput) =>
+    invokeRustDataFromStatus<
+      AgentConversationMessagesInput,
+      { ok: boolean; messages: AgentMessage[]; next_cursor: number; has_more: boolean }
+    >('agent_conversation_messages', input),
+
+  archiveAgentConversation: (conversationId: string, permanent?: boolean) =>
+    invokeRustDataFromStatus<AgentConversationArchiveInput, { ok: boolean }>('agent_conversation_archive', {
+      conversation_id: conversationId,
+      permanent,
+    }),
 
   // ── Cron Jobs API ──
 
@@ -5004,61 +5100,6 @@ export const api = {
       last_read_ulid: lastReadUlid,
     }),
 
-  // Group chat sends MUST carry `encryptedPayload` (the base64
-  // bytes of a `GroupCiphertext` produced by `cryptoGroupEncrypt`).
-  // The Rust layer pins `content` to "" regardless of what the JS
-  // layer passes; it is kept in the signature for source compat
-  // with old callers but a non-empty value is silently dropped.
-  groupChatSendMessage: (
-    groupUlid: string,
-    content: string,
-    type?: number,
-    replyToUlid?: string,
-    mentionedDids?: string[],
-    mentionAll?: boolean,
-    attachments?: ChatAttachmentInput[],
-    encryptedPayload?: string,
-    threadRootUlid?: string,
-    observedMembershipEpoch?: number | bigint,
-  ) =>
-    invokeRustProto('group_chat_send_message', SendGroupMessageResponseSchema, {
-      group_ulid: groupUlid,
-      content,
-      type,
-      reply_to_ulid: replyToUlid,
-      thread_root_ulid: threadRootUlid,
-      mentioned_dids: mentionedDids,
-      mention_all: mentionAll,
-      attachments,
-      ...(encryptedPayload != null && encryptedPayload !== ''
-        ? { encrypted_payload: encryptedPayload }
-        : {}),
-      observed_membership_epoch: Number(observedMembershipEpoch ?? 0),
-    }),
-
-  groupChatSubmitSkdmEnvelope: (input: {
-    groupUlid: string;
-    membershipEpoch: number | bigint;
-    senderDid: string;
-    senderKeyId: number;
-    recipientDid: string;
-    recipientDeviceId: string;
-    recipientHomeStationPeerId: string;
-    encryptedPayload: string;
-    idempotencyKey?: string;
-  }) =>
-    invokeRustProto('group_chat_submit_skdm_envelope', SubmitGroupSkdmEnvelopeResponseSchema, {
-      group_ulid: input.groupUlid,
-      membership_epoch: Number(input.membershipEpoch),
-      sender_did: input.senderDid,
-      sender_key_id: input.senderKeyId,
-      recipient_did: input.recipientDid,
-      recipient_device_id: input.recipientDeviceId,
-      recipient_home_station_peer_id: input.recipientHomeStationPeerId,
-      encrypted_payload: input.encryptedPayload,
-      idempotency_key: input.idempotencyKey,
-    }),
-
   groupChatUnreadCount: (groupUlid?: string) =>
     invokeRustProto('group_chat_unread_count', GetUnreadCountResponseSchema, { group_ulid: groupUlid }),
 
@@ -5203,7 +5244,6 @@ export const api = {
 
   cryptoRatchetTelemetrySnapshot: () =>
     invokeAppResultStub<{
-      legacy_decrypts: number;
       dr_decrypts: number;
       since_unix_ms: number;
     }>('crypto_ratchet_telemetry_snapshot'),
@@ -5219,113 +5259,60 @@ export const api = {
     peerSpkSig: string,
     peerOpkPub?: string,
   ) =>
-    invokeAppResultStub<{ ephemeral_key: string; established: boolean }>('crypto_init_session', {
+    invokeAppResultStub<{
+      ephemeral_key: string;
+      sender_identity_key: string;
+      recipient_signed_prekey: string;
+      recipient_one_time_prekey: string;
+      negotiated_version: number;
+      established: boolean;
+    }>('crypto_init_session', {
       sessionId,
       peerDid,
       peerIkPub,
       peerSpkPub,
       peerSpkSig,
       ...(peerOpkPub != null && peerOpkPub !== '' ? { peerOpkPub } : {}),
+      negotiatedVersion: 1,
     }),
 
-  cryptoEncryptMessage: (sessionId: string, peerDid: string, plaintext: string) =>
-    invokeAppResultStub<{ ciphertext: string; counter: number; ephemeral_key?: string }>('crypto_encrypt_message', {
-      sessionId,
-      peerDid,
-      plaintext,
-    }),
+  cryptoAcceptSession: (input: {
+    sessionId: string;
+    peerDid: string;
+    senderIdentityKey: string;
+    senderEphemeralKey: string;
+    recipientSignedPrekey: string;
+    recipientOneTimePrekey?: string;
+    negotiatedVersion: 1;
+  }) =>
+    invokeAppResultStub<{ established: boolean; negotiated_version: number }>('crypto_accept_session', input),
 
-  cryptoDecryptMessage: (
-    sessionId: string,
-    peerDid: string,
-    ciphertext: string,
-    counter: number,
-    ephemeralKey?: string,
-  ) =>
-    invokeAppResultStub<{ plaintext: string }>('crypto_decrypt_message', {
-      sessionId,
-      peerDid,
-      ciphertext,
-      counter,
-      ...(ephemeralKey != null && ephemeralKey !== '' ? { ephemeralKey } : {}),
-    }),
+  cryptoSessionStatus: (sessionId: string) =>
+    invokeAppResultStub<{ established: boolean; version: number }>('crypto_session_status', { sessionId }),
 
-  // ── Group chat E2EE: Sender Keys ──
-  //
-  // Four primitives:
-  //   * cryptoGroupSkEmitSkdm    -> get the SKDM bytes to ship to a
-  //                                 single peer over friend chat.
-  //                                 Idempotent on the server side
-  //                                 (returns the same chain key /
-  //                                 counter until the next rotation).
-  //   * cryptoGroupSkConsumeSkdm -> install a chain we received as a
-  //                                 friend-chat type=50 control body.
-  //                                 `claimedSenderDid` MUST equal the
-  //                                 friend-chat envelope sender DID
-  //                                 -- guards against A re-distributing
-  //                                 B's chain as their own.
-  //   * cryptoGroupEncrypt       -> wrap a plaintext for
-  //                                 SendGroupMessageRequest
-  //                                 .encrypted_payload. Plaintext is
-  //                                 base64 so binary content (image /
-  //                                 file body) round-trips losslessly.
-  //   * cryptoGroupDecrypt       -> reverse direction. Returns
-  //                                 base64; caller decodes to UTF-8
-  //                                 if it knows the body is text.
-  //
-  // See peers-touch/docs/architecture/encryption/group-sender-keys.md
-  // for the protocol and `crypto/sender_keys.rs` for the primitive.
+  cryptoMarkSessionReady: (sessionId: string) =>
+    invokeAppResultStub<{ established: boolean }>('crypto_mark_session_ready', { sessionId }),
 
-  cryptoGroupSkEmitSkdm: (groupUlid: string) =>
+  drEncrypt: (sessionId: string, plaintext: string) =>
     invokeAppResultStub<{
-      group_ulid: string;
-      sender_did: string;
-      sender_key_id: number;
-      skdm_b64: string;
-    }>('crypto_group_sk_emit_skdm', { groupUlid }),
-
-  cryptoGroupSkConsumeSkdm: (claimedSenderDid: string, skdmB64: string) =>
-    invokeAppResultStub<{
-      group_ulid: string;
-      sender_did: string;
-      sender_key_id: number;
-    }>('crypto_group_sk_consume_skdm', {
-      claimedSenderDid,
-      skdmB64,
-    }),
-
-  // Force-rotate the local sender chain for `groupUlid`. After this
-  // returns the caller MUST call `resetSkdmDistribution` and a fresh
-  // `ensureSkdmDistributed` so the new chain reaches every member;
-  // otherwise the dedupe set will suppress redistribution and peers
-  // will silently fail to decrypt post-rotation messages.
-  cryptoGroupSkRotate: (groupUlid: string) =>
-    invokeAppResultStub<{
-      group_ulid: string;
-      sender_did: string;
-      sender_key_id: number;
-    }>('crypto_group_sk_rotate', { groupUlid }),
-
-  cryptoGroupEncrypt: (groupUlid: string, plaintextB64: string) =>
-    invokeAppResultStub<{
-      encrypted_payload_b64: string;
-      sender_key_id: number;
+      version: number;
+      ciphertext: string;
+      ratchet_pub: string;
       counter: number;
-    }>('crypto_group_encrypt', {
-      groupUlid,
-      plaintextB64,
-    }),
+      prev_counter: number;
+      nonce: string;
+    }>('dr_encrypt', { sessionId, plaintext }),
 
-  cryptoGroupDecrypt: (groupUlid: string, encryptedPayloadB64: string) =>
-    invokeAppResultStub<{
-      plaintext_b64: string;
-      sender_did: string;
-      sender_key_id: number;
-      counter: number;
-    }>('crypto_group_decrypt', {
-      groupUlid,
-      encryptedPayloadB64,
-    }),
+  drDecrypt: (input: {
+    sessionId: string;
+    ciphertext: string;
+    ratchetPub: string;
+    counter: number;
+    prevCounter: number;
+    nonce: string;
+    version: number;
+  }) =>
+    invokeAppResultStub<{ plaintext: string }>('dr_decrypt', input),
 
   keyExchangeUploadBundle: (bundle: CryptoKeyBundlePayload) =>
     invokeRustDataFromStatus<CryptoKeyBundlePayload, Record<string, unknown>>(
@@ -5451,6 +5438,9 @@ export const api = {
 
   stationProbe: (url: string) =>
     invokeRustDataFromStatus<{ url: string }, StationProbeResult>('station_probe', { url }),
+
+  resolveErrorAction: (action: { type: string; cliId?: string; providerId?: string; label: string }) =>
+    invoke<{ ok: boolean; reauth?: boolean; message?: string; opened?: boolean }>('resolve_error_action', { action }),
 };
 
 export interface ConfigFieldMeta {
@@ -5509,6 +5499,7 @@ export interface CryptoKeyBundlePayload {
   spk_sig: string;
   opk_ids: number[];
   opk_pubs: string[];
+  supported_versions?: number[];
 }
 
 /** One device-published bundle from Station (`FetchKeyBundleResponse.bundles`). */
@@ -5522,6 +5513,7 @@ export interface KeyExchangeWireBundle {
   spk_sig: string;
   opks: string[];
   published_at_unix_ms: number;
+  supported_versions: number[];
 }
 
 export interface KeyExchangeFetchBundlesResponse {
@@ -5601,7 +5593,7 @@ export interface NotificationPreferenceData {
 
 export interface StreamEvent {
   event: string;
-  data: Record<string, string>;
+  data: Record<string, unknown>;
 }
 
 export interface ChatImageInput {
@@ -5868,7 +5860,21 @@ export function streamAgentTurn(
         onDone();
       } catch (err: unknown) {
         if (!controller.signal.aborted) {
-          onError(err instanceof Error ? err : new Error(String(err)));
+          const error = err instanceof Error ? err : new Error(String(err));
+          const rustErr = err as RustCommandException;
+          if (rustErr?.details && typeof rustErr.details === 'object') {
+            const details = rustErr.details as Record<string, unknown>;
+            if (details.resolution) {
+              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).resolution = details.resolution;
+            }
+            if (typeof details.detail === 'string') {
+              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).errorDetail = details.detail;
+            }
+            if (typeof details.providerId === 'string') {
+              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).providerId = details.providerId;
+            }
+          }
+          onError(error);
         }
       }
     })();
@@ -5888,13 +5894,9 @@ export function streamAgentTurn(
           return;
         }
 
-        const data: Record<string, string> = {};
+        const data: Record<string, unknown> = {};
         Object.entries(payload.data || {}).forEach(([key, value]) => {
-          if (typeof value === 'string') {
-            data[key] = value;
-          } else if (value !== undefined && value !== null) {
-            data[key] = JSON.stringify(value);
-          }
+          data[key] = value;
         });
         if (typeof payload.data?.text === 'string') data.content = payload.data.text;
         if (typeof payload.data?.result === 'string') data.content = payload.data.result;
@@ -5908,7 +5910,7 @@ export function streamAgentTurn(
           conversationId: input.conversation_id,
           agentId: input.agent_id,
           event: payload.event,
-          data,
+          data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])),
           timestampMs: Date.now(),
         } satisfies AgentTurnStreamEventPayload);
         onEvent({ event: payload.event, data });
@@ -5918,7 +5920,15 @@ export function streamAgentTurn(
         }
         if (payload.event === 'error') {
           unlisten?.();
-          onError(new Error(data.error || 'agent.error.streamFailed'));
+          const err = new Error(typeof data.error === 'string' ? data.error : 'agent.error.streamFailed') as Error & {
+            resolution?: unknown;
+            errorDetail?: string;
+            providerId?: string;
+          };
+          if (data.resolution && typeof data.resolution === 'object') err.resolution = data.resolution;
+          if (typeof data.detail === 'string') err.errorDetail = data.detail;
+          if (typeof data.providerId === 'string') err.providerId = data.providerId;
+          onError(err);
         }
       });
 

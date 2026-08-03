@@ -26,7 +26,7 @@ type TaskBudgetUsage struct {
 	PricingSource           string    `gorm:"type:varchar(128);index:idx_agent_task_budget_usages_pricing_source"`
 	Source                  string    `gorm:"type:varchar(128);index:idx_agent_task_budget_usages_source"`
 	PayloadJSON             string    `gorm:"type:text"`
-	CreatedAt               time.Time `gorm:"not null;default:now();index:idx_agent_task_budget_usages_created"`
+	CreatedAt               time.Time `gorm:"not null;autoCreateTime;index:idx_agent_task_budget_usages_created"`
 }
 
 func (TaskBudgetUsage) TableName() string { return "agent_task_budget_usages" }

@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -8,26 +9,38 @@ import (
 	"sort"
 	"time"
 
-	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"github.com/google/uuid"
+	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gorm.io/gorm"
 )
 
 // DefaultService implements the conversation Service.
 type DefaultService struct {
 	repo           Repository
 	envelope       EnvelopeSubmitter
+	transitionUOW  TransitionUnitOfWork
 	localStationID string
 	clock          Clock
 }
 
-func NewConversationService(repo Repository, envelope EnvelopeSubmitter, localStationID string) *DefaultService {
-	return &DefaultService{
+func NewConversationService(
+	repo Repository,
+	envelope EnvelopeSubmitter,
+	localStationID string,
+	transitionUOW ...TransitionUnitOfWork,
+) *DefaultService {
+	service := &DefaultService{
 		repo:           repo,
 		envelope:       envelope,
 		localStationID: localStationID,
 		clock:          time.Now,
 	}
+	if len(transitionUOW) > 0 {
+		service.transitionUOW = transitionUOW[0]
+	}
+	return service
 }
 
 func (s *DefaultService) CreateDirect(ctx context.Context, actorA, actorB string, actorAStation, actorBStation string) (*chat.Conversation, error) {
@@ -78,12 +91,12 @@ func (s *DefaultService) CreateDirect(ctx context.Context, actorA, actorB string
 	}
 
 	createdEvent := &chat.CommittedConversationEvent{
-		EventId:                   uuid.NewString(),
-		ConversationId:            convID,
-		GroupSeq:                  1,
-		MembershipEpoch:           1,
-		CommittedByStationPeerId:  s.localStationID,
-		CommittedAt:               timestamppb.New(now),
+		EventId:                  uuid.NewString(),
+		ConversationId:           convID,
+		GroupSeq:                 1,
+		MembershipEpoch:          1,
+		CommittedByStationPeerId: s.localStationID,
+		CommittedAt:              timestamppb.New(now),
 		Payload: &chat.CommittedConversationEvent_ConversationCreated{
 			ConversationCreated: &chat.ConversationCreatedEvent{
 				Conversation:   conv,
@@ -91,6 +104,11 @@ func (s *DefaultService) CreateDirect(ctx context.Context, actorA, actorB string
 			},
 		},
 	}
+	createdHash, err := hashCommittedEvent(createdEvent)
+	if err != nil {
+		return nil, err
+	}
+	createdEvent.EventHash = createdHash
 
 	if err := s.repo.AppendEvent(ctx, createdEvent); err != nil {
 		return nil, fmt.Errorf("conversation: append created event failed: %w", err)
@@ -104,108 +122,425 @@ func (s *DefaultService) CreateDirect(ctx context.Context, actorA, actorB string
 	return conv, nil
 }
 
-func (s *DefaultService) CreateGroup(ctx context.Context, name string, ownerPtid string, ownerStation string, members []MemberEntry) (*chat.Conversation, error) {
-	convID := uuid.NewString()
+func (s *DefaultService) CreateGroup(
+	ctx context.Context,
+	name string,
+	ownerPtid string,
+	ownerStation string,
+	ownerDeviceID string,
+	federationID string,
+	conversationID string,
+	genesis *chat.MembershipTransitionCommand,
+) (*chat.Conversation, *chat.CommittedConversationEvent, error) {
+	if s.transitionUOW == nil {
+		return nil, nil, fmt.Errorf("conversation: transition unit of work is unavailable")
+	}
+	convID := conversationID
+	if convID == "" {
+		convID = uuid.NewString()
+	}
 	now := s.clock()
+	command := &chat.ConversationCommand{
+		ConversationId: convID,
+		SenderPtid:     ownerPtid,
+		SenderDeviceId: ownerDeviceID,
+	}
+	if err := validateMembershipTransitionInput(command, genesis); err != nil {
+		return nil, nil, err
+	}
+	if genesis.FromMembershipEpoch != 0 ||
+		genesis.FromMlsEpoch != 0 ||
+		genesis.ToMlsEpoch != 1 {
+		return nil, nil, transitionError(
+			"EPOCH_MISMATCH",
+			"group genesis must advance membership and MLS epochs from 0 to 1",
+		)
+	}
+	if err := validateGroupGenesisChanges(ownerPtid, genesis.Changes); err != nil {
+		return nil, nil, err
+	}
+	if err := validateWelcomeTargets(genesis, ownerPtid, ownerDeviceID); err != nil {
+		return nil, nil, err
+	}
+	if err := validateTransitionDeliveryAdmission(nil, nil, command, genesis); err != nil {
+		return nil, nil, err
+	}
 
 	conv := &chat.Conversation{
 		ConversationId:         convID,
 		Kind:                   chat.ConversationKind_CONVERSATION_KIND_GROUP,
 		AuthorityStationPeerId: s.localStationID,
-		MembershipEpoch:        1,
+		FederationId:           federationID,
+		AuthorityEpoch:         1,
+		MembershipEpoch:        0,
+		MlsEpoch:               0,
 		Status:                 chat.ConversationStatus_CONVERSATION_STATUS_ACTIVE,
 		Name:                   name,
 		OwnerPtid:              ownerPtid,
 		CreatedAt:              timestamppb.New(now),
 		UpdatedAt:              timestamppb.New(now),
 	}
-
-	if err := s.repo.UpsertConversation(ctx, conv); err != nil {
-		return nil, fmt.Errorf("conversation: create group failed: %w", err)
-	}
-
-	protoMembers := make([]*chat.ConversationMember, 0, len(members))
-	for _, entry := range members {
-		role := entry.Role
-		if entry.Ptid == ownerPtid {
-			role = chat.MemberRole_MEMBER_ROLE_OWNER
+	var transitionEvent *chat.CommittedConversationEvent
+	var localDeliveries []*chat.DeviceInboxItem
+	err := s.transitionUOW.Execute(ctx, func(repos TransitionRepositories) error {
+		if err := repos.Conversation.UpsertConversation(ctx, conv); err != nil {
+			return fmt.Errorf("conversation: create group failed: %w", err)
 		}
-		member := &chat.ConversationMember{
-			ConversationId:         convID,
-			Ptid:                   entry.Ptid,
-			Role:                   role,
-			MemberStatus:           chat.MemberStatus_MEMBER_STATUS_ACTIVE,
-			ActorHomeStationPeerId: entry.StationID,
-			JoinedAt:               timestamppb.New(now),
-		}
-		if err := s.repo.UpsertMember(ctx, member); err != nil {
-			return nil, fmt.Errorf("conversation: add initial member %s failed: %w", entry.Ptid, err)
-		}
-		protoMembers = append(protoMembers, member)
-	}
-
-	createdEvent := &chat.CommittedConversationEvent{
-		EventId:                  uuid.NewString(),
-		ConversationId:           convID,
-		GroupSeq:                 1,
-		MembershipEpoch:          1,
-		CommittedByStationPeerId: s.localStationID,
-		CommittedAt:              timestamppb.New(now),
-		Payload: &chat.CommittedConversationEvent_ConversationCreated{
-			ConversationCreated: &chat.ConversationCreatedEvent{
-				Conversation:   conv,
-				InitialMembers: protoMembers,
+		createdConversation := proto.Clone(conv).(*chat.Conversation)
+		createdEvent := &chat.CommittedConversationEvent{
+			EventId:                  deterministicTransitionID("created:" + convID),
+			ConversationId:           convID,
+			GroupSeq:                 1,
+			MembershipEpoch:          0,
+			CommittedByStationPeerId: s.localStationID,
+			CommittedAt:              timestamppb.New(now),
+			Payload: &chat.CommittedConversationEvent_ConversationCreated{
+				ConversationCreated: &chat.ConversationCreatedEvent{
+					Conversation: createdConversation,
+				},
 			},
-		},
+		}
+		createdHash, err := hashCommittedEvent(createdEvent)
+		if err != nil {
+			return err
+		}
+		createdEvent.EventHash = createdHash
+		if err := repos.Conversation.AppendEvent(ctx, createdEvent); err != nil {
+			return fmt.Errorf("conversation: append created event failed: %w", err)
+		}
+		if err := applyTransitionChanges(
+			ctx,
+			repos.Conversation,
+			convID,
+			ownerPtid,
+			nil,
+			nil,
+			genesis.Changes,
+			now,
+		); err != nil {
+			return err
+		}
+		if err := repos.Conversation.UpsertMemberDevice(
+			ctx,
+			convID,
+			ownerPtid,
+			ownerDeviceID,
+			ownerStation,
+			true,
+		); err != nil {
+			return fmt.Errorf("conversation: add owner device failed: %w", err)
+		}
+		for _, welcome := range genesis.WelcomeDeliveries {
+			if err := repos.Conversation.UpsertMemberDevice(
+				ctx,
+				convID,
+				welcome.RecipientPtid,
+				welcome.RecipientDeviceId,
+				welcome.RecipientHomeStationPeerId,
+				true,
+			); err != nil {
+				return fmt.Errorf("conversation: add genesis member device failed: %w", err)
+			}
+		}
+		if err := repos.Conversation.SetMembershipAndMlsEpoch(ctx, convID, 1, 1); err != nil {
+			return fmt.Errorf("conversation: advance genesis epochs failed: %w", err)
+		}
+		seq, err := repos.Conversation.NextSeq(ctx, convID)
+		if err != nil {
+			return fmt.Errorf("conversation: allocate genesis transition sequence failed: %w", err)
+		}
+		transitionEvent = &chat.CommittedConversationEvent{
+			EventId:                  deterministicTransitionID("event:" + genesis.TransitionId),
+			ConversationId:           convID,
+			GroupSeq:                 seq,
+			MembershipEpoch:          1,
+			CommittedByStationPeerId: s.localStationID,
+			CommittedAt:              timestamppb.New(now),
+			PrevEventHash:            createdEvent.EventHash,
+			Payload: &chat.CommittedConversationEvent_MembershipTransitionCommitted{
+				MembershipTransitionCommitted: &chat.MembershipTransitionCommittedEvent{
+					TransitionId:         genesis.TransitionId,
+					FromMembershipEpoch:  0,
+					ToMembershipEpoch:    1,
+					FromMlsEpoch:         0,
+					ToMlsEpoch:           1,
+					Changes:              genesis.Changes,
+					OpaqueMlsCommitBytes: genesis.OpaqueMlsCommitBytes,
+					CommitSha256:         genesis.CommitSha256,
+					WelcomeDescriptors:   welcomeDescriptors(genesis.WelcomeDeliveries),
+					LeaveIntentId:        genesis.LeaveIntentId,
+				},
+			},
+		}
+		transitionHash, err := hashCommittedEvent(transitionEvent)
+		if err != nil {
+			return err
+		}
+		transitionEvent.EventHash = transitionHash
+		if err := repos.Conversation.AppendEvent(ctx, transitionEvent); err != nil {
+			return fmt.Errorf("conversation: append genesis transition failed: %w", err)
+		}
+		conv.MembershipEpoch = 1
+		conv.MlsEpoch = 1
+		members, err := repos.Conversation.GetMembers(ctx, convID)
+		if err != nil {
+			return err
+		}
+		if err := persistCreatedEventDeliveries(
+			ctx,
+			repos,
+			s.localStationID,
+			conv,
+			createdEvent,
+			members,
+			&localDeliveries,
+		); err != nil {
+			return err
+		}
+		return persistTransitionDeliveries(
+			ctx,
+			repos,
+			s.localStationID,
+			command,
+			conv,
+			transitionEvent,
+			nil,
+			members,
+			genesis,
+			&localDeliveries,
+		)
+	})
+	if err != nil {
+		return nil, nil, err
 	}
-
-	if err := s.repo.AppendEvent(ctx, createdEvent); err != nil {
-		return nil, fmt.Errorf("conversation: append created event failed: %w", err)
-	}
-
-	if s.envelope != nil {
-		_ = s.envelope.SubmitEvent(ctx, conv, protoMembers, createdEvent)
-	}
-
-	return conv, nil
+	s.notifyPersistedDeliveries(ctx, localDeliveries)
+	return conv, transitionEvent, nil
 }
 
 func (s *DefaultService) SubmitCommand(ctx context.Context, cmd *chat.ConversationCommand) (*chat.CommittedConversationEvent, error) {
 	if cmd.ConversationId == "" {
 		return nil, fmt.Errorf("conversation: conversation_id is required")
 	}
-
-	conv, err := s.repo.GetConversation(ctx, cmd.ConversationId)
+	if transition, ok := cmd.Payload.(*chat.ConversationCommand_MembershipTransition); ok {
+		return s.submitMembershipTransition(ctx, cmd, transition.MembershipTransition)
+	}
+	if cmd.CommandId == "" {
+		return nil, fmt.Errorf("conversation: command_id is required")
+	}
+	if s.transitionUOW == nil {
+		return nil, fmt.Errorf("conversation: command unit of work is unavailable")
+	}
+	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("conversation: not found: %w", err)
+		return nil, fmt.Errorf("conversation: marshal command hash input: %w", err)
 	}
-	if conv.Status != chat.ConversationStatus_CONVERSATION_STATUS_ACTIVE {
-		return nil, fmt.Errorf("conversation: not active (status=%v)", conv.Status)
-	}
+	commandHash := sha256.Sum256(commandBytes)
 
-	member, err := s.repo.GetMember(ctx, cmd.ConversationId, cmd.SenderPtid)
-	if err != nil || member == nil {
-		return nil, fmt.Errorf("conversation: sender not a member")
-	}
-	if member.MemberStatus != chat.MemberStatus_MEMBER_STATUS_ACTIVE {
-		return nil, fmt.Errorf("conversation: sender membership not active")
-	}
-
-	event, err := s.processCommand(ctx, conv, cmd)
+	var event *chat.CommittedConversationEvent
+	var localDeliveries []*chat.DeviceInboxItem
+	err = s.transitionUOW.Execute(ctx, func(repos TransitionRepositories) error {
+		locked, err := repos.Conversation.GetConversationForUpdate(ctx, cmd.ConversationId)
+		if err != nil {
+			return fmt.Errorf("conversation: not found: %w", err)
+		}
+		receipt, err := repos.Conversation.GetCommandReceipt(
+			ctx,
+			cmd.ConversationId,
+			cmd.CommandId,
+		)
+		if err == nil {
+			if !bytes.Equal(receipt.CommandSHA256, commandHash[:]) {
+				return fmt.Errorf("conversation: COMMAND_CONFLICT")
+			}
+			replayed := &chat.CommittedConversationEvent{}
+			if err := proto.Unmarshal(receipt.EventBytes, replayed); err != nil {
+				return fmt.Errorf("conversation: decode command receipt: %w", err)
+			}
+			event = replayed
+			return nil
+		}
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return fmt.Errorf("conversation: load command receipt: %w", err)
+		}
+		if locked.Status != chat.ConversationStatus_CONVERSATION_STATUS_ACTIVE {
+			return fmt.Errorf("conversation: not active (status=%v)", locked.Status)
+		}
+		member, err := repos.Conversation.GetMember(ctx, cmd.ConversationId, cmd.SenderPtid)
+		if err != nil || member == nil {
+			return fmt.Errorf("conversation: sender not a member")
+		}
+		if member.MemberStatus != chat.MemberStatus_MEMBER_STATUS_ACTIVE {
+			return fmt.Errorf("conversation: sender membership not active")
+		}
+		committed, err := s.processCommand(ctx, repos.Conversation, locked, cmd)
+		if err != nil {
+			return err
+		}
+		if committed.GroupSeq > 1 {
+			head, err := repos.Conversation.GetLastEvent(ctx, cmd.ConversationId)
+			if err != nil {
+				return fmt.Errorf("conversation: load authority event head failed: %w", err)
+			}
+			if head.GroupSeq+1 != committed.GroupSeq || len(head.EventHash) != sha256.Size {
+				return fmt.Errorf("conversation: authority event head is invalid")
+			}
+			committed.PrevEventHash = append([]byte(nil), head.EventHash...)
+		}
+		hash, err := hashCommittedEvent(committed)
+		if err != nil {
+			return err
+		}
+		committed.EventHash = hash
+		if err := repos.Conversation.AppendEvent(ctx, committed); err != nil {
+			return fmt.Errorf("conversation: append event failed: %w", err)
+		}
+		members, err := repos.Conversation.GetMembers(ctx, cmd.ConversationId)
+		if err != nil {
+			return fmt.Errorf("conversation: load command recipients: %w", err)
+		}
+		if err := persistCommandEventDeliveries(
+			ctx,
+			repos,
+			s.localStationID,
+			locked,
+			cmd,
+			committed,
+			members,
+			&localDeliveries,
+		); err != nil {
+			return fmt.Errorf("conversation: persist command deliveries: %w", err)
+		}
+		eventBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(committed)
+		if err != nil {
+			return fmt.Errorf("conversation: marshal command receipt event: %w", err)
+		}
+		if err := repos.Conversation.CreateCommandReceipt(ctx, &CommandReceipt{
+			ConversationID: cmd.ConversationId,
+			CommandID:      cmd.CommandId,
+			CommandSHA256:  commandHash[:],
+			EventBytes:     eventBytes,
+			CreatedAt:      s.clock(),
+		}); err != nil {
+			return fmt.Errorf("conversation: create command receipt: %w", err)
+		}
+		event = committed
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	if err := s.repo.AppendEvent(ctx, event); err != nil {
-		return nil, fmt.Errorf("conversation: append event failed: %w", err)
-	}
-
-	members, _ := s.repo.GetMembers(ctx, cmd.ConversationId)
-	if s.envelope != nil {
-		_ = s.envelope.SubmitEvent(ctx, conv, members, event)
-	}
-
+	s.notifyPersistedDeliveries(ctx, localDeliveries)
 	return event, nil
+}
+
+func persistCommandEventDeliveries(
+	ctx context.Context,
+	repos TransitionRepositories,
+	localStationID string,
+	conv *chat.Conversation,
+	cmd *chat.ConversationCommand,
+	event *chat.CommittedConversationEvent,
+	members []*chat.ConversationMember,
+	localDeliveries *[]*chat.DeviceInboxItem,
+) error {
+	eventBytes, err := proto.Marshal(event)
+	if err != nil {
+		return err
+	}
+	activeMembers := make([]*chat.ConversationMember, 0, len(members))
+	activeMemberSet := make(map[string]struct{}, len(members))
+	for _, member := range members {
+		if member.MemberStatus == chat.MemberStatus_MEMBER_STATUS_ACTIVE {
+			activeMembers = append(activeMembers, member)
+			activeMemberSet[member.Ptid] = struct{}{}
+		}
+	}
+	sort.Slice(activeMembers, func(i, j int) bool {
+		return activeMembers[i].Ptid < activeMembers[j].Ptid
+	})
+	if conv.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
+		devices, err := repos.Conversation.ListMemberDevices(ctx, conv.ConversationId, true)
+		if err != nil {
+			return fmt.Errorf("conversation: list active group devices for command delivery: %w", err)
+		}
+		sort.Slice(devices, func(i, j int) bool {
+			if devices[i].Ptid == devices[j].Ptid {
+				return devices[i].DeviceID < devices[j].DeviceID
+			}
+			return devices[i].Ptid < devices[j].Ptid
+		})
+		for _, device := range devices {
+			if !device.Active {
+				continue
+			}
+			if _, active := activeMemberSet[device.Ptid]; !active {
+				continue
+			}
+			key := "command:" + cmd.CommandId + ":event:" + device.Ptid + ":" + device.DeviceID
+			env := &chat.StationEnvelope{
+				EnvelopeId:                 deterministicTransitionID("envelope:" + key),
+				ConversationId:             conv.ConversationId,
+				SenderPtid:                 cmd.SenderPtid,
+				SenderDeviceId:             cmd.SenderDeviceId,
+				SenderHomeStationPeerId:    localStationID,
+				RecipientPtid:              device.Ptid,
+				RecipientDeviceId:          device.DeviceID,
+				RecipientHomeStationPeerId: device.HomeStationPeerID,
+				IdempotencyKey:             key,
+				MembershipEpoch:            event.MembershipEpoch,
+				PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT,
+				PayloadBytes:               eventBytes,
+				IssuedAt:                   timestamppb.New(time.Now()),
+				GroupSeq:                   event.GroupSeq,
+				PayloadSha256:              event.EventHash,
+				AuthorityStationPeerId:     localStationID,
+				FederationId:               conv.FederationId,
+				AuthorityEpoch:             conv.AuthorityEpoch,
+			}
+			if err := enqueueTransitionEnvelope(
+				ctx,
+				repos,
+				localStationID,
+				env,
+				localDeliveries,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, member := range activeMembers {
+		key := "command:" + cmd.CommandId + ":event:" + member.Ptid
+		env := &chat.StationEnvelope{
+			EnvelopeId:                 deterministicTransitionID("envelope:" + key),
+			ConversationId:             conv.ConversationId,
+			SenderPtid:                 cmd.SenderPtid,
+			SenderDeviceId:             cmd.SenderDeviceId,
+			SenderHomeStationPeerId:    localStationID,
+			RecipientPtid:              member.Ptid,
+			RecipientHomeStationPeerId: member.ActorHomeStationPeerId,
+			IdempotencyKey:             key,
+			MembershipEpoch:            event.MembershipEpoch,
+			PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT,
+			PayloadBytes:               eventBytes,
+			IssuedAt:                   timestamppb.New(time.Now()),
+			GroupSeq:                   event.GroupSeq,
+			PayloadSha256:              event.EventHash,
+			AuthorityStationPeerId:     localStationID,
+			FederationId:               conv.FederationId,
+			AuthorityEpoch:             conv.AuthorityEpoch,
+		}
+		if err := enqueueTransitionEnvelope(
+			ctx,
+			repos,
+			localStationID,
+			env,
+			localDeliveries,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *DefaultService) GetConversation(ctx context.Context, conversationID string) (*chat.Conversation, error) {
@@ -259,8 +594,8 @@ func (s *DefaultService) SubmitReceipt(ctx context.Context, receipt *chat.Messag
 	return nil
 }
 
-func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversation, cmd *chat.ConversationCommand) (*chat.CommittedConversationEvent, error) {
-	seq, err := s.repo.NextSeq(ctx, conv.ConversationId)
+func (s *DefaultService) processCommand(ctx context.Context, repo Repository, conv *chat.Conversation, cmd *chat.ConversationCommand) (*chat.CommittedConversationEvent, error) {
+	seq, err := repo.NextSeq(ctx, conv.ConversationId)
 	if err != nil {
 		return nil, fmt.Errorf("conversation: next seq failed: %w", err)
 	}
@@ -279,22 +614,22 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 	case *chat.ConversationCommand_SendMessage:
 		event.Payload = &chat.CommittedConversationEvent_MessageCommitted{
 			MessageCommitted: &chat.MessageCommittedEvent{
-				MessageId:            uuid.NewString(),
+				MessageId:           uuid.NewString(),
 				SenderPtid:          cmd.SenderPtid,
-				SenderDeviceId:       cmd.SenderDeviceId,
-				EncryptedPayload:     p.SendMessage.EncryptedPayload,
-				ContentType:          p.SendMessage.ContentType,
-				ReplyToMessageId:     p.SendMessage.ReplyToMessageId,
-				ThreadRootMessageId:  p.SendMessage.ThreadRootMessageId,
-				Attachments:          p.SendMessage.Attachments,
-				ClientTs:             cmd.ClientTs,
+				SenderDeviceId:      cmd.SenderDeviceId,
+				EncryptedPayload:    p.SendMessage.EncryptedPayload,
+				ContentType:         p.SendMessage.ContentType,
+				ReplyToMessageId:    p.SendMessage.ReplyToMessageId,
+				ThreadRootMessageId: p.SendMessage.ThreadRootMessageId,
+				Attachments:         p.SendMessage.Attachments,
+				ClientTs:            cmd.ClientTs,
 			},
 		}
 	case *chat.ConversationCommand_EditMessage:
 		event.Payload = &chat.CommittedConversationEvent_MessageEdited{
 			MessageEdited: &chat.MessageEditedEvent{
 				MessageId:        p.EditMessage.TargetMessageId,
-				EditorPtid:      cmd.SenderPtid,
+				EditorPtid:       cmd.SenderPtid,
 				EncryptedPayload: p.EditMessage.EncryptedPayload,
 				EditedAt:         timestamppb.New(now),
 			},
@@ -302,101 +637,9 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 	case *chat.ConversationCommand_RetractMessage:
 		event.Payload = &chat.CommittedConversationEvent_MessageRetracted{
 			MessageRetracted: &chat.MessageRetractedEvent{
-				MessageId:         p.RetractMessage.TargetMessageId,
-				RetractorPtid:    cmd.SenderPtid,
-				RetractedAt:        timestamppb.New(now),
-			},
-		}
-	case *chat.ConversationCommand_AddMembers:
-		if conv.Kind != chat.ConversationKind_CONVERSATION_KIND_GROUP {
-			return nil, fmt.Errorf("conversation: add_members only valid for group conversations")
-		}
-		newEpoch := conv.MembershipEpoch + 1
-		changes := make([]*chat.MemberChange, 0, len(p.AddMembers.Members))
-		for _, entry := range p.AddMembers.Members {
-			member := &chat.ConversationMember{
-				ConversationId:         conv.ConversationId,
-				Ptid:                   entry.Ptid,
-				Role:                   entry.Role,
-				MemberStatus:           chat.MemberStatus_MEMBER_STATUS_ACTIVE,
-				ActorHomeStationPeerId: entry.ActorHomeStationPeerId,
-				JoinedAt:               timestamppb.New(now),
-				InvitedByPtid:          cmd.SenderPtid,
-			}
-			if err := s.repo.UpsertMember(ctx, member); err != nil {
-				return nil, fmt.Errorf("conversation: add member %s failed: %w", entry.Ptid, err)
-			}
-			changes = append(changes, &chat.MemberChange{
-				Ptid:                   entry.Ptid,
-				Action:                 chat.MemberChangeAction_MEMBER_CHANGE_ACTION_ADDED,
-				Role:                   entry.Role,
-				ActorHomeStationPeerId: entry.ActorHomeStationPeerId,
-			})
-		}
-		if err := s.repo.BumpMembershipEpoch(ctx, conv.ConversationId, newEpoch); err != nil {
-			return nil, fmt.Errorf("conversation: bump epoch failed: %w", err)
-		}
-		event.MembershipEpoch = newEpoch
-		event.Payload = &chat.CommittedConversationEvent_MembershipChanged{
-			MembershipChanged: &chat.MembershipChangedEvent{
-				Changes:            changes,
-				NewMembershipEpoch: newEpoch,
-			},
-		}
-	case *chat.ConversationCommand_RemoveMembers:
-		if conv.Kind != chat.ConversationKind_CONVERSATION_KIND_GROUP {
-			return nil, fmt.Errorf("conversation: remove_members only valid for group conversations")
-		}
-		if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
-			return nil, err
-		}
-		newEpoch := conv.MembershipEpoch + 1
-		changes := make([]*chat.MemberChange, 0, len(p.RemoveMembers.Ptids))
-		for _, ptid := range p.RemoveMembers.Ptids {
-			removedMember := &chat.ConversationMember{
-				ConversationId: conv.ConversationId,
-				Ptid:           ptid,
-				MemberStatus:   chat.MemberStatus_MEMBER_STATUS_REMOVED,
-			}
-			if err := s.repo.UpsertMember(ctx, removedMember); err != nil {
-				return nil, fmt.Errorf("conversation: remove member %s failed: %w", ptid, err)
-			}
-			changes = append(changes, &chat.MemberChange{
-				Ptid:   ptid,
-				Action: chat.MemberChangeAction_MEMBER_CHANGE_ACTION_REMOVED,
-			})
-		}
-		if err := s.repo.BumpMembershipEpoch(ctx, conv.ConversationId, newEpoch); err != nil {
-			return nil, fmt.Errorf("conversation: bump epoch failed: %w", err)
-		}
-		event.MembershipEpoch = newEpoch
-		event.Payload = &chat.CommittedConversationEvent_MembershipChanged{
-			MembershipChanged: &chat.MembershipChangedEvent{
-				Changes:            changes,
-				NewMembershipEpoch: newEpoch,
-			},
-		}
-	case *chat.ConversationCommand_Leave:
-		newEpoch := conv.MembershipEpoch + 1
-		leftMember := &chat.ConversationMember{
-			ConversationId: conv.ConversationId,
-			Ptid:           cmd.SenderPtid,
-			MemberStatus:   chat.MemberStatus_MEMBER_STATUS_LEFT,
-		}
-		if err := s.repo.UpsertMember(ctx, leftMember); err != nil {
-			return nil, fmt.Errorf("conversation: leave failed: %w", err)
-		}
-		if err := s.repo.BumpMembershipEpoch(ctx, conv.ConversationId, newEpoch); err != nil {
-			return nil, fmt.Errorf("conversation: bump epoch failed: %w", err)
-		}
-		event.MembershipEpoch = newEpoch
-		event.Payload = &chat.CommittedConversationEvent_MembershipChanged{
-			MembershipChanged: &chat.MembershipChangedEvent{
-				Changes: []*chat.MemberChange{{
-					Ptid:   cmd.SenderPtid,
-					Action: chat.MemberChangeAction_MEMBER_CHANGE_ACTION_LEFT,
-				}},
-				NewMembershipEpoch: newEpoch,
+				MessageId:     p.RetractMessage.TargetMessageId,
+				RetractorPtid: cmd.SenderPtid,
+				RetractedAt:   timestamppb.New(now),
 			},
 		}
 	case *chat.ConversationCommand_Dissolve:
@@ -404,7 +647,7 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 			return nil, fmt.Errorf("conversation: dissolve only valid for group conversations")
 		}
 		conv.Status = chat.ConversationStatus_CONVERSATION_STATUS_DISSOLVED
-		if err := s.repo.UpsertConversation(ctx, conv); err != nil {
+		if err := repo.UpsertConversation(ctx, conv); err != nil {
 			return nil, fmt.Errorf("conversation: dissolve update failed: %w", err)
 		}
 		event.Payload = &chat.CommittedConversationEvent_ConversationDissolved{
@@ -415,7 +658,7 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 
 	case *chat.ConversationCommand_UpdateSettings:
 		if conv.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
-			if err := s.requireMembership(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+			if err := requireMembership(ctx, repo, conv.ConversationId, cmd.SenderPtid); err != nil {
 				return nil, err
 			}
 		}
@@ -438,7 +681,7 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 		}
 		if changed {
 			conv.UpdatedAt = timestamppb.New(now)
-			if err := s.repo.UpsertConversation(ctx, conv); err != nil {
+			if err := repo.UpsertConversation(ctx, conv); err != nil {
 				return nil, fmt.Errorf("conversation: update settings failed: %w", err)
 			}
 		}
@@ -466,42 +709,12 @@ func (s *DefaultService) processCommand(ctx context.Context, conv *chat.Conversa
 			},
 		}
 
-	case *chat.ConversationCommand_UpdateMember:
-		if conv.Kind != chat.ConversationKind_CONVERSATION_KIND_GROUP {
-			return nil, fmt.Errorf("conversation: update_member only valid for group conversations")
-		}
-		if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
-			return nil, err
-		}
-		if p.UpdateMember.TargetPtid == "" {
-			return nil, fmt.Errorf("conversation: update_member requires target_ptid")
-		}
-		targetMember, err := s.repo.GetMember(ctx, conv.ConversationId, p.UpdateMember.TargetPtid)
-		if err != nil || targetMember == nil {
-			return nil, fmt.Errorf("conversation: target member not found")
-		}
-		targetMember.Role = p.UpdateMember.NewRole
-		targetMember.Muted = p.UpdateMember.Muted
-		if err := s.repo.UpsertMember(ctx, targetMember); err != nil {
-			return nil, fmt.Errorf("conversation: update member failed: %w", err)
-		}
-		event.Payload = &chat.CommittedConversationEvent_MembershipChanged{
-			MembershipChanged: &chat.MembershipChangedEvent{
-				Changes: []*chat.MemberChange{{
-					Ptid:   p.UpdateMember.TargetPtid,
-					Action: chat.MemberChangeAction_MEMBER_CHANGE_ACTION_ROLE_CHANGED,
-					Role:   p.UpdateMember.NewRole,
-				}},
-				NewMembershipEpoch: conv.MembershipEpoch,
-			},
-		}
-
 	case *chat.ConversationCommand_PinMessage:
 		if p.PinMessage.MessageId == "" {
 			return nil, fmt.Errorf("conversation: pin requires message_id")
 		}
 		if conv.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
-			if err := s.requireAdminOrOwner(ctx, conv.ConversationId, cmd.SenderPtid); err != nil {
+			if err := requireAdminOrOwner(ctx, repo, conv.ConversationId, cmd.SenderPtid); err != nil {
 				return nil, err
 			}
 		}
@@ -529,8 +742,8 @@ func DeterministicDirectID(actorA, actorB string) string {
 	return "d-" + hex.EncodeToString(hash[:16])
 }
 
-func (s *DefaultService) requireAdminOrOwner(ctx context.Context, conversationID, senderPtid string) error {
-	member, err := s.repo.GetMember(ctx, conversationID, senderPtid)
+func requireAdminOrOwner(ctx context.Context, repo Repository, conversationID, senderPtid string) error {
+	member, err := repo.GetMember(ctx, conversationID, senderPtid)
 	if err != nil || member == nil {
 		return fmt.Errorf("conversation: sender not a member")
 	}
@@ -540,8 +753,8 @@ func (s *DefaultService) requireAdminOrOwner(ctx context.Context, conversationID
 	return nil
 }
 
-func (s *DefaultService) requireMembership(ctx context.Context, conversationID, senderPtid string) error {
-	member, err := s.repo.GetMember(ctx, conversationID, senderPtid)
+func requireMembership(ctx context.Context, repo Repository, conversationID, senderPtid string) error {
+	member, err := repo.GetMember(ctx, conversationID, senderPtid)
 	if err != nil || member == nil {
 		return fmt.Errorf("conversation: sender not a member")
 	}
@@ -557,7 +770,9 @@ func (s *DefaultService) ListMessages(ctx context.Context, conversationID string
 	}
 	messages := make([]*chat.CommittedConversationEvent, 0, len(events))
 	for _, ev := range events {
-		if ev.GetMessageCommitted() != nil {
+		if ev.GetMessageCommitted() != nil ||
+			ev.GetMessageEdited() != nil ||
+			ev.GetMessageRetracted() != nil {
 			messages = append(messages, ev)
 		}
 	}

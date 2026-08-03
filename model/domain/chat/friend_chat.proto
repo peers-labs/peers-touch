@@ -451,4 +451,6 @@ message EncryptedMessage {
   uint32 prev_counter = 5;
   // 0 = legacy chain-only ratchet, 1 = Double Ratchet (see design doc §5).
   uint32 version = 6;
+  // AES-256-GCM nonce for Double Ratchet frames. Empty for legacy frames.
+  bytes nonce = 7;
 }

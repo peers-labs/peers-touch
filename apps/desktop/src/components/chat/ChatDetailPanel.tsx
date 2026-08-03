@@ -31,7 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl } from '../../store/socialChat';
-import { GroupCompositeAvatar } from '../common/GroupCompositeAvatar';
+import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { CHAT_BACKGROUND_OPTIONS, type DesktopIMMessageProjection } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
@@ -49,7 +49,6 @@ import { presentError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { imServiceV1 } from '../../services/im-service';
-import { MlsDeliveryKind } from '../../services/im-service-contract';
 
 const { Text } = Typography;
 
@@ -559,6 +558,7 @@ export function ChatDetailPanel() {
     peerOnline,
     peerProfiles,
     loadPeerProfile,
+    setGroupSecurityState,
   } = useActiveSocialChatSlice((s) => ({
     activeTab: s.activeTab,
     activeSessionUlid: s.activeSessionUlid,
@@ -585,6 +585,7 @@ export function ChatDetailPanel() {
     peerOnline: s.peerOnline,
     peerProfiles: s.peerProfiles,
     loadPeerProfile: s.loadPeerProfile,
+    setGroupSecurityState: s.setGroupSecurityState,
   }));
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
@@ -598,9 +599,8 @@ export function ChatDetailPanel() {
   const activeGroup: Group | undefined = isGroup
     ? groups.find((g) => g.ulid === activeUlid)
     : undefined;
-  const groupAvatarUrl = useOssAttachmentUrl(activeGroup?.avatarCid || undefined)
-    || activeConversation?.avatar
-    || groupAvatarRemoteUrl(activeGroup);
+  const groupAvatarUrl = groupAvatarRemoteUrl(activeGroup)
+    || (activeConversation?.avatar || '');
 
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [showAllMembers, setShowAllMembers] = useState(false);
@@ -812,11 +812,12 @@ export function ChatDetailPanel() {
     }
     try {
       const uploaded = await api.ossUploadAttachmentSocial(filePath);
+      const avatarPath = `/sub-oss/file?key=${encodeURIComponent(uploaded.key)}`;
       await api.groupChatUpdateGroup(
         activeUlid,
         activeGroup?.name || displayName,
         activeGroup?.description || undefined,
-        uploaded.cid,
+        avatarPath,
       );
       toast.success(t('chat.social.detail.groupAvatarUpdated'));
       loadGroups();
@@ -922,32 +923,57 @@ export function ChatDetailPanel() {
   };
 
   const submitGroupInvites = async () => {
-    if (!activeUlid || inviteDids.length === 0) return;
+    if (!activeUlid || !currentUserDid || inviteDids.length === 0) return;
     setInviteSubmitting(true);
+    const pendingDids = [...inviteDids];
     try {
-      await api.groupChatInviteToGroup(activeUlid, inviteDids);
+      setGroupSecurityState(activeUlid, 'establishing');
+      const device = await api.accountGetDeviceId();
+      if (!device.device_id) throw new Error('Local device identity is unavailable');
+      const invitees = new Map<string, {
+        data: Uint8Array;
+        deviceId: string;
+        homeStationPeerId: string;
+      }>();
+      for (const did of pendingDids) {
+        const fetched = await imServiceV1.keyPackage.fetch(did);
+        if (
+          !fetched.available
+          || !fetched.data
+          || !fetched.deviceId
+          || !fetched.homeStationPeerId
+        ) {
+          throw new Error(`MLS KeyPackage routing is unavailable for ${did}`);
+        }
+        invitees.set(did, {
+          data: fetched.data,
+          deviceId: fetched.deviceId,
+          homeStationPeerId: fetched.homeStationPeerId,
+        });
+      }
+      for (const did of pendingDids) {
+        const conversation = await imServiceV1.conversation.getConversation(activeUlid);
+        const invitee = invitees.get(did)!;
+        await imServiceV1.mlsGroup.addAuthorizedMember({
+          conversationId: activeUlid,
+          senderPtid: currentUserDid,
+          senderDeviceId: device.device_id,
+          observedMembershipEpoch: Number(conversation.membershipEpoch),
+          member: {
+            ptid: did,
+            deviceId: invitee.deviceId,
+            homeStationPeerId: invitee.homeStationPeerId,
+            keyPackage: invitee.data,
+          },
+        });
+      }
+      setGroupSecurityState(activeUlid, 'ready');
       await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
       setInviteDids([]);
       setInviteModalOpen(false);
       toast.success(t('chat.social.detail.addMemberSuccess'));
-
-      for (const did of inviteDids) {
-        try {
-          const { data: kpData } = await imServiceV1.keyPackage.fetch(did);
-          if (!kpData) continue;
-          const { commitBytes, welcomeBytes } = await imServiceV1.mlsGroup.addMember(activeUlid, kpData);
-          await imServiceV1.mlsGroup.save(activeUlid);
-          if (commitBytes.length > 0) {
-            await imServiceV1.mlsGroup.distribute(activeUlid, MlsDeliveryKind.COMMIT, 0, commitBytes);
-          }
-          if (welcomeBytes.length > 0) {
-            await imServiceV1.mlsGroup.distribute(activeUlid, MlsDeliveryKind.WELCOME, 0, welcomeBytes, [did]);
-          }
-        } catch (mlsErr) {
-          log.warn('chat', 'MLS add member failed (non-fatal)', { did, error: mlsErr });
-        }
-      }
     } catch (error) {
+      setGroupSecurityState(activeUlid, 'error');
       log.error('chat', 'invite group members failed', { groupUlid: activeUlid, inviteeCount: inviteDids.length, error });
       toast.error(t('chat.social.detail.addMemberFailed'));
       throw error;
@@ -967,10 +993,25 @@ export function ChatDetailPanel() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await api.groupChatRemoveMember(activeUlid, member.ptid);
+          if (!currentUserDid) throw new Error('Authenticated actor is unavailable');
+          setGroupSecurityState(activeUlid, 'establishing');
+          const [device, conversation] = await Promise.all([
+            api.accountGetDeviceId(),
+            imServiceV1.conversation.getConversation(activeUlid),
+          ]);
+          if (!device.device_id) throw new Error('Local device identity is unavailable');
+          await imServiceV1.mlsGroup.removeAuthorizedMember({
+            conversationId: activeUlid,
+            senderPtid: currentUserDid,
+            senderDeviceId: device.device_id,
+            observedMembershipEpoch: Number(conversation.membershipEpoch),
+            memberPtid: member.ptid,
+          });
+          setGroupSecurityState(activeUlid, 'ready');
           await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
           toast.success(t('chat.social.detail.removeMemberSuccess'));
         } catch (error) {
+          setGroupSecurityState(activeUlid, 'error');
           log.error('chat', 'remove group member failed', { groupUlid: activeUlid, ptid: member.ptid, error });
           toast.error(t('chat.social.detail.removeMemberFailed'));
           throw error;
@@ -1042,9 +1083,24 @@ export function ChatDetailPanel() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await api.groupChatLeaveGroup(activeUlid);
-          await loadGroups();
-          selectGroup('');
+          const [conversation, federationSelf, device] = await Promise.all([
+            imServiceV1.conversation.getConversation(activeUlid),
+            api.federationGetSelf(),
+            api.accountGetDeviceId(),
+          ]);
+          if (!currentUserDid) throw new Error('No authenticated actor');
+          await imServiceV1.mlsGroup.requestLeaveIntent({
+            federationId: conversation.federationId,
+            authorityStationPeerId: conversation.authorityStationPeerId,
+            authorityEpoch: Number(conversation.authorityEpoch),
+            homeStationPeerId: federationSelf.homeStationPeerId,
+            conversationId: activeUlid,
+            actorPtid: currentUserDid,
+            actorDeviceId: device.device_id,
+            observedMembershipEpoch: Number(conversation.membershipEpoch),
+            observedMlsEpoch: Number(conversation.mlsEpoch),
+          });
+          setGroupSecurityState(activeUlid, 'establishing');
           setShowDetail(false);
         } catch (error) {
           log.error('chat', 'leave group failed', { groupUlid: activeUlid, error });
@@ -1232,21 +1288,16 @@ export function ChatDetailPanel() {
                   overflow: 'hidden',
                 }}
               >
-                {groupAvatarUrl ? (
-                  <img
-                    src={groupAvatarUrl}
-                    alt={displayName}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                  />
-                ) : (
-                  <GroupCompositeAvatar
-                    size={72}
-                    members={members.slice(0, 4).map((m) => {
-                      const p = memberProfiles.get(m.ptid);
-                      return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
-                    })}
-                  />
-                )}
+                <GroupSquareAvatar
+                  remoteUrl={groupAvatarUrl || undefined}
+                  members={members.slice(0, 4).map((m) => {
+                    const p = memberProfiles.get(m.ptid);
+                    return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
+                  })}
+                  name={displayName}
+                  size={72}
+                  radius={18}
+                />
               </Flexbox>
               {isGroup && (
                 <Flexbox

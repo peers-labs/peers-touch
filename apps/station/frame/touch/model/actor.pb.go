@@ -207,6 +207,58 @@ func (ActorVisibility) EnumDescriptor() ([]byte, []int) {
 	return file_domain_actor_actor_proto_rawDescGZIP(), []int{2}
 }
 
+type ActorSigningKeyVerificationSource int32
+
+const (
+	ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_UNSPECIFIED               ActorSigningKeyVerificationSource = 0
+	ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION ActorSigningKeyVerificationSource = 1
+	ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE          ActorSigningKeyVerificationSource = 2
+	ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR          ActorSigningKeyVerificationSource = 3
+)
+
+// Enum value maps for ActorSigningKeyVerificationSource.
+var (
+	ActorSigningKeyVerificationSource_name = map[int32]string{
+		0: "ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_UNSPECIFIED",
+		1: "ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION",
+		2: "ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE",
+		3: "ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR",
+	}
+	ActorSigningKeyVerificationSource_value = map[string]int32{
+		"ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_UNSPECIFIED":               0,
+		"ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION": 1,
+		"ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE":          2,
+		"ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR":          3,
+	}
+)
+
+func (x ActorSigningKeyVerificationSource) Enum() *ActorSigningKeyVerificationSource {
+	p := new(ActorSigningKeyVerificationSource)
+	*p = x
+	return p
+}
+
+func (x ActorSigningKeyVerificationSource) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ActorSigningKeyVerificationSource) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_actor_actor_proto_enumTypes[3].Descriptor()
+}
+
+func (ActorSigningKeyVerificationSource) Type() protoreflect.EnumType {
+	return &file_domain_actor_actor_proto_enumTypes[3]
+}
+
+func (x ActorSigningKeyVerificationSource) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ActorSigningKeyVerificationSource.Descriptor instead.
+func (ActorSigningKeyVerificationSource) EnumDescriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{3}
+}
+
 type ActorRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ActorId       uint64                 `protobuf:"varint,1,opt,name=actor_id,proto3" json:"actor_id,omitempty"`
@@ -453,6 +505,117 @@ func (x *Actor) GetSigningPublicKey() []byte {
 	return nil
 }
 
+// Identity-owned device signing-key projection used to verify actor-signed
+// federated commands. Consumers must not accept a key supplied by the command
+// being verified.
+type VerifiedActorDeviceSigningKey struct {
+	state              protoimpl.MessageState            `protogen:"open.v1"`
+	ActorPtid          string                            `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
+	ActorDeviceId      string                            `protobuf:"bytes,2,opt,name=actor_device_id,json=actorDeviceId,proto3" json:"actor_device_id,omitempty"`
+	HomeStationPeerId  string                            `protobuf:"bytes,3,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	SigningKeyId       string                            `protobuf:"bytes,4,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	Ed25519PublicKey   []byte                            `protobuf:"bytes,5,opt,name=ed25519_public_key,json=ed25519PublicKey,proto3" json:"ed25519_public_key,omitempty"`
+	ProfileVersion     int64                             `protobuf:"varint,6,opt,name=profile_version,json=profileVersion,proto3" json:"profile_version,omitempty"`
+	VerificationSource ActorSigningKeyVerificationSource `protobuf:"varint,7,opt,name=verification_source,json=verificationSource,proto3,enum=peers_touch.model.actor.v1.ActorSigningKeyVerificationSource" json:"verification_source,omitempty"`
+	ValidFromUnixMs    int64                             `protobuf:"varint,8,opt,name=valid_from_unix_ms,json=validFromUnixMs,proto3" json:"valid_from_unix_ms,omitempty"`
+	RevokedAtUnixMs    int64                             `protobuf:"varint,9,opt,name=revoked_at_unix_ms,json=revokedAtUnixMs,proto3" json:"revoked_at_unix_ms,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *VerifiedActorDeviceSigningKey) Reset() {
+	*x = VerifiedActorDeviceSigningKey{}
+	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifiedActorDeviceSigningKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifiedActorDeviceSigningKey) ProtoMessage() {}
+
+func (x *VerifiedActorDeviceSigningKey) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifiedActorDeviceSigningKey.ProtoReflect.Descriptor instead.
+func (*VerifiedActorDeviceSigningKey) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *VerifiedActorDeviceSigningKey) GetActorPtid() string {
+	if x != nil {
+		return x.ActorPtid
+	}
+	return ""
+}
+
+func (x *VerifiedActorDeviceSigningKey) GetActorDeviceId() string {
+	if x != nil {
+		return x.ActorDeviceId
+	}
+	return ""
+}
+
+func (x *VerifiedActorDeviceSigningKey) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+func (x *VerifiedActorDeviceSigningKey) GetSigningKeyId() string {
+	if x != nil {
+		return x.SigningKeyId
+	}
+	return ""
+}
+
+func (x *VerifiedActorDeviceSigningKey) GetEd25519PublicKey() []byte {
+	if x != nil {
+		return x.Ed25519PublicKey
+	}
+	return nil
+}
+
+func (x *VerifiedActorDeviceSigningKey) GetProfileVersion() int64 {
+	if x != nil {
+		return x.ProfileVersion
+	}
+	return 0
+}
+
+func (x *VerifiedActorDeviceSigningKey) GetVerificationSource() ActorSigningKeyVerificationSource {
+	if x != nil {
+		return x.VerificationSource
+	}
+	return ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_UNSPECIFIED
+}
+
+func (x *VerifiedActorDeviceSigningKey) GetValidFromUnixMs() int64 {
+	if x != nil {
+		return x.ValidFromUnixMs
+	}
+	return 0
+}
+
+func (x *VerifiedActorDeviceSigningKey) GetRevokedAtUnixMs() int64 {
+	if x != nil {
+		return x.RevokedAtUnixMs
+	}
+	return 0
+}
+
 type UserLink struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Label         string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
@@ -463,7 +626,7 @@ type UserLink struct {
 
 func (x *UserLink) Reset() {
 	*x = UserLink{}
-	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	mi := &file_domain_actor_actor_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -475,7 +638,7 @@ func (x *UserLink) String() string {
 func (*UserLink) ProtoMessage() {}
 
 func (x *UserLink) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	mi := &file_domain_actor_actor_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -488,7 +651,7 @@ func (x *UserLink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserLink.ProtoReflect.Descriptor instead.
 func (*UserLink) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{2}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *UserLink) GetLabel() string {
@@ -514,7 +677,7 @@ type PeersTouchInfo struct {
 
 func (x *PeersTouchInfo) Reset() {
 	*x = PeersTouchInfo{}
-	mi := &file_domain_actor_actor_proto_msgTypes[3]
+	mi := &file_domain_actor_actor_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -526,7 +689,7 @@ func (x *PeersTouchInfo) String() string {
 func (*PeersTouchInfo) ProtoMessage() {}
 
 func (x *PeersTouchInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[3]
+	mi := &file_domain_actor_actor_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -539,7 +702,7 @@ func (x *PeersTouchInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeersTouchInfo.ProtoReflect.Descriptor instead.
 func (*PeersTouchInfo) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{3}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PeersTouchInfo) GetNetworkId() string {
@@ -585,7 +748,7 @@ type ActorProfile struct {
 
 func (x *ActorProfile) Reset() {
 	*x = ActorProfile{}
-	mi := &file_domain_actor_actor_proto_msgTypes[4]
+	mi := &file_domain_actor_actor_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -597,7 +760,7 @@ func (x *ActorProfile) String() string {
 func (*ActorProfile) ProtoMessage() {}
 
 func (x *ActorProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[4]
+	mi := &file_domain_actor_actor_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -610,7 +773,7 @@ func (x *ActorProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActorProfile.ProtoReflect.Descriptor instead.
 func (*ActorProfile) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{4}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ActorProfile) GetId() string {
@@ -829,7 +992,7 @@ type UpdateProfileRequest struct {
 
 func (x *UpdateProfileRequest) Reset() {
 	*x = UpdateProfileRequest{}
-	mi := &file_domain_actor_actor_proto_msgTypes[5]
+	mi := &file_domain_actor_actor_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -841,7 +1004,7 @@ func (x *UpdateProfileRequest) String() string {
 func (*UpdateProfileRequest) ProtoMessage() {}
 
 func (x *UpdateProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[5]
+	mi := &file_domain_actor_actor_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -854,7 +1017,7 @@ func (x *UpdateProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProfileRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProfileRequest) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{5}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *UpdateProfileRequest) GetDisplayName() string {
@@ -951,7 +1114,7 @@ type ActorList struct {
 
 func (x *ActorList) Reset() {
 	*x = ActorList{}
-	mi := &file_domain_actor_actor_proto_msgTypes[6]
+	mi := &file_domain_actor_actor_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -963,7 +1126,7 @@ func (x *ActorList) String() string {
 func (*ActorList) ProtoMessage() {}
 
 func (x *ActorList) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[6]
+	mi := &file_domain_actor_actor_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -976,7 +1139,7 @@ func (x *ActorList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActorList.ProtoReflect.Descriptor instead.
 func (*ActorList) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{6}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ActorList) GetItems() []*Actor {
@@ -1003,7 +1166,7 @@ type SearchUsersRequest struct {
 
 func (x *SearchUsersRequest) Reset() {
 	*x = SearchUsersRequest{}
-	mi := &file_domain_actor_actor_proto_msgTypes[7]
+	mi := &file_domain_actor_actor_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1015,7 +1178,7 @@ func (x *SearchUsersRequest) String() string {
 func (*SearchUsersRequest) ProtoMessage() {}
 
 func (x *SearchUsersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[7]
+	mi := &file_domain_actor_actor_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1028,7 +1191,7 @@ func (x *SearchUsersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchUsersRequest.ProtoReflect.Descriptor instead.
 func (*SearchUsersRequest) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{7}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SearchUsersRequest) GetQ() string {
@@ -1047,7 +1210,7 @@ type GetMeRequest struct {
 
 func (x *GetMeRequest) Reset() {
 	*x = GetMeRequest{}
-	mi := &file_domain_actor_actor_proto_msgTypes[8]
+	mi := &file_domain_actor_actor_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1059,7 +1222,7 @@ func (x *GetMeRequest) String() string {
 func (*GetMeRequest) ProtoMessage() {}
 
 func (x *GetMeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[8]
+	mi := &file_domain_actor_actor_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1072,7 +1235,7 @@ func (x *GetMeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMeRequest.ProtoReflect.Descriptor instead.
 func (*GetMeRequest) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{8}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{9}
 }
 
 var File_domain_actor_actor_proto protoreflect.FileDescriptor
@@ -1108,7 +1271,18 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x12signing_public_key\x18\x11 \x01(\fR\x12signing_public_key\x1a<\n" +
 	"\x0eEndpointsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"2\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xde\x03\n" +
+	"\x1dVerifiedActorDeviceSigningKey\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12&\n" +
+	"\x0factor_device_id\x18\x02 \x01(\tR\ractorDeviceId\x12/\n" +
+	"\x14home_station_peer_id\x18\x03 \x01(\tR\x11homeStationPeerId\x12$\n" +
+	"\x0esigning_key_id\x18\x04 \x01(\tR\fsigningKeyId\x12,\n" +
+	"\x12ed25519_public_key\x18\x05 \x01(\fR\x10ed25519PublicKey\x12'\n" +
+	"\x0fprofile_version\x18\x06 \x01(\x03R\x0eprofileVersion\x12n\n" +
+	"\x13verification_source\x18\a \x01(\x0e2=.peers_touch.model.actor.v1.ActorSigningKeyVerificationSourceR\x12verificationSource\x12+\n" +
+	"\x12valid_from_unix_ms\x18\b \x01(\x03R\x0fvalidFromUnixMs\x12+\n" +
+	"\x12revoked_at_unix_ms\x18\t \x01(\x03R\x0frevokedAtUnixMs\"2\n" +
 	"\bUserLink\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\"0\n" +
@@ -1194,7 +1368,12 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x1cACTOR_VISIBILITY_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17ACTOR_VISIBILITY_HIDDEN\x10\x01\x12\x1e\n" +
 	"\x1aACTOR_VISIBILITY_BY_HANDLE\x10\x02\x12\x1c\n" +
-	"\x18ACTOR_VISIBILITY_INDEXED\x10\x03BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"\x18ACTOR_VISIBILITY_INDEXED\x10\x03*\x97\x02\n" +
+	"!ActorSigningKeyVerificationSource\x125\n" +
+	"1ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_UNSPECIFIED\x10\x00\x12C\n" +
+	"?ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION\x10\x01\x12:\n" +
+	"6ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE\x10\x02\x12:\n" +
+	"6ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR\x10\x03BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_actor_actor_proto_rawDescOnce sync.Once
@@ -1208,39 +1387,42 @@ func file_domain_actor_actor_proto_rawDescGZIP() []byte {
 	return file_domain_actor_actor_proto_rawDescData
 }
 
-var file_domain_actor_actor_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_domain_actor_actor_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_domain_actor_actor_proto_goTypes = []any{
-	(ActorKind)(0),               // 0: peers_touch.model.actor.v1.ActorKind
-	(ActorOrigin)(0),             // 1: peers_touch.model.actor.v1.ActorOrigin
-	(ActorVisibility)(0),         // 2: peers_touch.model.actor.v1.ActorVisibility
-	(*ActorRef)(nil),             // 3: peers_touch.model.actor.v1.ActorRef
-	(*Actor)(nil),                // 4: peers_touch.model.actor.v1.Actor
-	(*UserLink)(nil),             // 5: peers_touch.model.actor.v1.UserLink
-	(*PeersTouchInfo)(nil),       // 6: peers_touch.model.actor.v1.PeersTouchInfo
-	(*ActorProfile)(nil),         // 7: peers_touch.model.actor.v1.ActorProfile
-	(*UpdateProfileRequest)(nil), // 8: peers_touch.model.actor.v1.UpdateProfileRequest
-	(*ActorList)(nil),            // 9: peers_touch.model.actor.v1.ActorList
-	(*SearchUsersRequest)(nil),   // 10: peers_touch.model.actor.v1.SearchUsersRequest
-	(*GetMeRequest)(nil),         // 11: peers_touch.model.actor.v1.GetMeRequest
-	nil,                          // 12: peers_touch.model.actor.v1.Actor.EndpointsEntry
+	(ActorKind)(0),                         // 0: peers_touch.model.actor.v1.ActorKind
+	(ActorOrigin)(0),                       // 1: peers_touch.model.actor.v1.ActorOrigin
+	(ActorVisibility)(0),                   // 2: peers_touch.model.actor.v1.ActorVisibility
+	(ActorSigningKeyVerificationSource)(0), // 3: peers_touch.model.actor.v1.ActorSigningKeyVerificationSource
+	(*ActorRef)(nil),                       // 4: peers_touch.model.actor.v1.ActorRef
+	(*Actor)(nil),                          // 5: peers_touch.model.actor.v1.Actor
+	(*VerifiedActorDeviceSigningKey)(nil),  // 6: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
+	(*UserLink)(nil),                       // 7: peers_touch.model.actor.v1.UserLink
+	(*PeersTouchInfo)(nil),                 // 8: peers_touch.model.actor.v1.PeersTouchInfo
+	(*ActorProfile)(nil),                   // 9: peers_touch.model.actor.v1.ActorProfile
+	(*UpdateProfileRequest)(nil),           // 10: peers_touch.model.actor.v1.UpdateProfileRequest
+	(*ActorList)(nil),                      // 11: peers_touch.model.actor.v1.ActorList
+	(*SearchUsersRequest)(nil),             // 12: peers_touch.model.actor.v1.SearchUsersRequest
+	(*GetMeRequest)(nil),                   // 13: peers_touch.model.actor.v1.GetMeRequest
+	nil,                                    // 14: peers_touch.model.actor.v1.Actor.EndpointsEntry
 }
 var file_domain_actor_actor_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.actor.v1.ActorRef.kind:type_name -> peers_touch.model.actor.v1.ActorKind
-	12, // 1: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
+	14, // 1: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
 	0,  // 2: peers_touch.model.actor.v1.Actor.kind:type_name -> peers_touch.model.actor.v1.ActorKind
 	2,  // 3: peers_touch.model.actor.v1.Actor.visibility:type_name -> peers_touch.model.actor.v1.ActorVisibility
 	1,  // 4: peers_touch.model.actor.v1.Actor.origin:type_name -> peers_touch.model.actor.v1.ActorOrigin
-	5,  // 5: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
-	6,  // 6: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
-	3,  // 7: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
-	5,  // 8: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
-	4,  // 9: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	3,  // 5: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey.verification_source:type_name -> peers_touch.model.actor.v1.ActorSigningKeyVerificationSource
+	7,  // 6: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
+	8,  // 7: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
+	4,  // 8: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	7,  // 9: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
+	5,  // 10: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_proto_init() }
@@ -1248,14 +1430,14 @@ func file_domain_actor_actor_proto_init() {
 	if File_domain_actor_actor_proto != nil {
 		return
 	}
-	file_domain_actor_actor_proto_msgTypes[5].OneofWrappers = []any{}
+	file_domain_actor_actor_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_actor_actor_proto_rawDesc), len(file_domain_actor_actor_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   10,
+			NumEnums:      4,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

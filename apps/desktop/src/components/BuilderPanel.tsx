@@ -193,11 +193,11 @@ export function BuilderPanel({
       currentAgent,
       (event) => {
         if (event.event === 'text') {
-          const delta = event.data?.content || '';
+          const delta = typeof event.data?.content === 'string' ? event.data.content : '';
           if (delta) assistantContent += delta;
         }
         if (event.event === 'done') {
-          modelName = event.data?.model || modelName;
+          modelName = typeof event.data?.model === 'string' ? event.data.model : modelName;
         }
       },
       () => {

@@ -1,7 +1,13 @@
-import { fromBinary } from '@bufbuild/protobuf'
-import { imServiceV1 } from '../services/im-service'
-import { MlsDeliveryKind } from '../services/im-service-contract'
-import { MlsKeyDeliveryPayloadSchema } from '../gen/proto/domain/chat/envelope_pb'
+import { fromBinary, toBinary } from '@bufbuild/protobuf'
+import {
+  consumeCommandResultDelivery,
+  imServiceV1,
+  reconcilePendingConversationCommands,
+} from '../services/im-service'
+import { DirectKeyExchangeKind } from '../services/im-service-contract'
+import { DirectKeyExchangePayloadSchema } from '../gen/proto/domain/chat/envelope_pb'
+import { X3dhSessionInitSchema } from '../gen/proto/domain/chat/key_exchange_pb'
+import { CommittedConversationEventSchema } from '../gen/proto/domain/chat/conversation_pb'
 import { useSocialChatStore } from '../store/socialChat'
 import { normalizeConversations } from '../store/socialNormalizers'
 import type { RuntimeDescriptor } from '../kernel/runtime'
@@ -12,6 +18,7 @@ import { api } from '../services/desktop_api'
 interface IMState {
   initialized: boolean
   deviceId: string | null
+  actorPtid: string | null
   conversations: Map<string, ConversationProjection>
   pendingResume: boolean
   sseConnected: boolean
@@ -27,6 +34,7 @@ interface ConversationProjection {
 const state: IMState = {
   initialized: false,
   deviceId: null,
+  actorPtid: null,
   conversations: new Map(),
   pendingResume: false,
   sseConnected: false,
@@ -36,18 +44,28 @@ const DEDUP_MAX_SIZE = 2000
 const processedInboxItemIds = new Set<string>()
 const processedOrder: string[] = []
 
-function markProcessed(inboxItemId: string): boolean {
-  if (processedInboxItemIds.has(inboxItemId)) return false
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
+function isProcessed(inboxItemId: string): boolean {
+  return processedInboxItemIds.has(inboxItemId)
+}
+
+function markProcessed(inboxItemId: string): void {
+  if (processedInboxItemIds.has(inboxItemId)) return
   processedInboxItemIds.add(inboxItemId)
   processedOrder.push(inboxItemId)
   while (processedOrder.length > DEDUP_MAX_SIZE) {
     const oldest = processedOrder.shift()!
     processedInboxItemIds.delete(oldest)
   }
-  return true
 }
 
 let resumeIntervalId: ReturnType<typeof setInterval> | null = null
+let leaveIntentIntervalId: ReturnType<typeof setInterval> | null = null
 let eventUnsubscribers: (() => void)[] = []
 
 function triggerImmediateResume(): void {
@@ -76,38 +94,42 @@ async function getDeviceId(): Promise<string> {
   return id
 }
 
-async function registerDevice(_actorId: string): Promise<void> {
+async function registerDevice(
+  _actorId: string,
+  signingIdentity: { signingKeyId: string; publicKey: Uint8Array },
+): Promise<string> {
   const deviceId = await getDeviceId()
-  try {
-    await imServiceV1.device.register(deviceId, navigator.userAgent)
-    log.info('im-runtime', 'device registered', { deviceId })
-  } catch (err) {
-    log.warn('im-runtime', 'device register failed (may already exist)', { err })
-  }
+  await imServiceV1.device.register(
+    deviceId,
+    navigator.userAgent,
+    signingIdentity.publicKey,
+    signingIdentity.signingKeyId,
+  )
+  log.info('im-runtime', 'device registered', { deviceId })
+  return deviceId
 }
 
-async function initMlsIdentity(actorId: string): Promise<void> {
-  try {
-    await imServiceV1.mlsGroup.initIdentity(actorId)
-    log.info('im-runtime', 'MLS identity initialized')
-  } catch (err) {
-    log.warn('im-runtime', 'MLS identity init failed', { err })
-  }
+async function initMlsIdentity(actorId: string, deviceId: string) {
+  const identity = await imServiceV1.mlsGroup.initIdentity(actorId, deviceId)
+  log.info('im-runtime', 'MLS identity initialized')
+  return identity
 }
 
 const KEY_PACKAGE_TARGET = 10
 
 async function uploadKeyPackages(): Promise<void> {
   try {
-    const count = await imServiceV1.keyPackage.countAvailable()
-    if (count >= KEY_PACKAGE_TARGET) return
-    const toGenerate = KEY_PACKAGE_TARGET - count
+    const available = await imServiceV1.keyPackage.countAvailable()
+    const replenish = Math.max(0, KEY_PACKAGE_TARGET - available)
     const deviceId = await getDeviceId()
-    for (let i = 0; i < toGenerate; i++) {
+    for (let i = 0; i < replenish; i++) {
       const kpBytes = await imServiceV1.mlsGroup.generateKeyPackage()
       await imServiceV1.keyPackage.upload(deviceId, kpBytes)
     }
-    log.info('im-runtime', 'key packages uploaded', { generated: toGenerate })
+    log.info('im-runtime', 'key package pool replenished', {
+      available,
+      generated: replenish,
+    })
   } catch (err) {
     log.warn('im-runtime', 'key package upload failed', { err })
   }
@@ -132,15 +154,168 @@ async function loadConversations(): Promise<void> {
   }
 }
 
+async function requireConversationProjection(
+  conversationId: string,
+): Promise<ConversationProjection> {
+  let conversation = state.conversations.get(conversationId)
+  if (!conversation && conversationId) {
+    await loadConversations()
+    conversation = state.conversations.get(conversationId)
+  }
+  if (!conversation) {
+    throw new Error(`conversation metadata unavailable: ${conversationId}`)
+  }
+  return conversation
+}
+
 async function restoreMlsSessions(): Promise<void> {
   for (const [convId, conv] of state.conversations) {
     if (conv.kind !== 'group') continue
+    let sessionLoaded = false
     try {
       await imServiceV1.mlsGroup.load(convId)
+      sessionLoaded = true
     } catch {
-      // No persisted session yet — will be established on first Welcome
+      // A durable event/material buffer may exist before the first Welcome.
+    }
+    try {
+      const [pending, recipient] = await Promise.all([
+        imServiceV1.mlsGroup.pendingStatus(convId),
+        imServiceV1.mlsGroup.recipientStatus(convId),
+      ])
+      const securityState = recipient.status === 'crypto_desynced'
+        ? 'crypto-desynced'
+        : pending || recipient.status === 'establishing'
+          ? 'establishing'
+          : sessionLoaded
+            ? 'ready'
+            : 'idle'
+      useSocialChatStore.getState().setGroupSecurityState(convId, securityState)
+    } catch {
+      useSocialChatStore.getState().setGroupSecurityState(
+        convId,
+        sessionLoaded ? 'ready' : 'idle',
+      )
     }
   }
+}
+
+let processingLeaveIntents = false
+
+async function processPendingLeaveIntents(): Promise<void> {
+  if (processingLeaveIntents || !state.actorPtid || !state.deviceId) return
+  processingLeaveIntents = true
+  try {
+    for (const [conversationId, conversation] of state.conversations) {
+      if (conversation.kind !== 'group') continue
+      const recipient = await imServiceV1.mlsGroup.recipientStatus(conversationId)
+      if (recipient.status !== 'active') continue
+      const intents = await imServiceV1.mlsGroup.listLeaveIntents(conversationId)
+      for (const intent of intents) {
+        if (intent.actorPtid === state.actorPtid) {
+          useSocialChatStore.getState().setGroupSecurityState(conversationId, 'establishing')
+          continue
+        }
+        if (
+          intent.observedMembershipEpoch !== recipient.membershipEpoch
+          || intent.observedMlsEpoch !== recipient.mlsEpoch
+        ) {
+          continue
+        }
+        try {
+          await imServiceV1.mlsGroup.commitAuthorizedLeave({
+            conversationId,
+            senderPtid: state.actorPtid,
+            senderDeviceId: state.deviceId,
+            observedMembershipEpoch: intent.observedMembershipEpoch,
+            intent,
+          })
+          log.info('im-runtime', 'delegated MLS leave committed', {
+            conversationId,
+            intentId: intent.intentId,
+            actorPtid: intent.actorPtid,
+          })
+        } catch (err) {
+          log.warn('im-runtime', 'delegated MLS leave not committed', {
+            conversationId,
+            intentId: intent.intentId,
+            err,
+          })
+        }
+      }
+    }
+  } finally {
+    processingLeaveIntents = false
+  }
+}
+
+async function reconcileMlsRecipient(
+  conversationId: string,
+  recipientDeviceId: string,
+): Promise<void> {
+  try {
+    const status = await imServiceV1.mlsGroup.recipientStatus(conversationId)
+    if (status.status === 'crypto_desynced') {
+      useSocialChatStore.getState().setGroupSecurityState(
+        conversationId,
+        'crypto-desynced',
+      )
+      return
+    }
+    const events = await imServiceV1.conversation.listEvents(
+      conversationId,
+      status.groupSeq,
+      128,
+    )
+    let latestStatus: 'active' | 'establishing' = status.status === 'active'
+      ? 'active'
+      : 'establishing'
+    for (const event of events) {
+      const result = await imServiceV1.mlsGroup.recordAuthorityEvent(
+        toBinary(CommittedConversationEventSchema, event),
+        recipientDeviceId,
+      )
+      latestStatus = result.status
+    }
+    useSocialChatStore.getState().setGroupSecurityState(
+      conversationId,
+      latestStatus === 'active' ? 'ready' : 'establishing',
+    )
+  } catch (error) {
+    log.warn('im-runtime', 'MLS recipient reconciliation deferred', {
+      conversationId,
+      error,
+    })
+    try {
+      const status = await imServiceV1.mlsGroup.recipientStatus(conversationId)
+      if (status.status === 'crypto_desynced') {
+        useSocialChatStore.getState().setGroupSecurityState(
+          conversationId,
+          'crypto-desynced',
+        )
+      }
+    } catch {
+      // Authority unavailability keeps the existing establishing state.
+    }
+  }
+}
+
+async function reconcileCommandProposals(): Promise<void> {
+  const events = await reconcilePendingConversationCommands()
+  if (events.length === 0) return
+  const deviceId = await getDeviceId()
+  const dirtyConversations = new Set<string>()
+  for (const event of events) {
+    const conversation = await requireConversationProjection(event.conversationId)
+    if (conversation.kind === 'group') {
+      await imServiceV1.mlsGroup.recordAuthorityEvent(
+        toBinary(CommittedConversationEventSchema, event),
+        deviceId,
+      )
+    }
+    dirtyConversations.add(event.conversationId)
+  }
+  await refreshDirtyConversations(dirtyConversations)
 }
 
 // ---------------------------------------------------------------------------
@@ -151,37 +326,128 @@ async function processEnvelopePayload(
   payloadType: number,
   payloadBytes: Uint8Array,
   conversationId: string,
+  senderPtid: string,
+  recipientDeviceId: string,
   dirtyConversations: Set<string>,
 ): Promise<void> {
   switch (payloadType) {
     case 1: { // COMMITTED_EVENT
+      if (payloadBytes.length === 0) break
+      const conversation = await requireConversationProjection(conversationId)
+      if (conversation.kind === 'group') {
+        try {
+          const result = await imServiceV1.mlsGroup.recordAuthorityEvent(
+            payloadBytes,
+            recipientDeviceId,
+          )
+          useSocialChatStore.getState().setGroupSecurityState(
+            conversationId,
+            result.status === 'active' ? 'ready' : 'establishing',
+          )
+          if (result.status === 'establishing') {
+            await reconcileMlsRecipient(conversationId, recipientDeviceId)
+          }
+        } catch (error) {
+          useSocialChatStore.getState().setGroupSecurityState(
+            conversationId,
+            'crypto-desynced',
+          )
+          throw error
+        }
+      }
       if (conversationId) dirtyConversations.add(conversationId)
       break
     }
-    case 2: { // MLS_KEY_DELIVERY
+    case 2: { // MLS_TRANSITION_DELIVERY
       if (payloadBytes.length === 0) break
+      const conversation = await requireConversationProjection(conversationId)
+      if (conversation.kind !== 'group') {
+        throw new Error('MLS transition delivery targets a direct conversation')
+      }
       try {
-        const delivery = fromBinary(MlsKeyDeliveryPayloadSchema, payloadBytes)
-        const convId = delivery.conversationId
-        if (!convId) break
-        if (delivery.kind === MlsDeliveryKind.WELCOME) {
-          await imServiceV1.mlsGroup.joinGroup(convId, delivery.opaqueMlsBytes)
-          await imServiceV1.mlsGroup.save(convId)
-          log.info('im-runtime', 'MLS group joined via Welcome', { convId })
-        } else if (delivery.kind === MlsDeliveryKind.COMMIT) {
-          await imServiceV1.mlsGroup.processCommit(convId, delivery.opaqueMlsBytes)
-          await imServiceV1.mlsGroup.save(convId)
-          log.info('im-runtime', 'MLS commit processed', { convId })
+        const result = await imServiceV1.mlsGroup.applyTransitionDelivery(
+          payloadBytes,
+          recipientDeviceId,
+        )
+        useSocialChatStore.getState().setGroupSecurityState(
+          conversationId,
+          result.status === 'active' ? 'ready' : 'establishing',
+        )
+        if (result.status === 'establishing') {
+          await reconcileMlsRecipient(conversationId, recipientDeviceId)
         }
+        log.info('im-runtime', 'MLS transition delivery recorded', {
+          conversationId,
+          applied: result.applied,
+          duplicate: result.duplicate,
+          buffered: result.buffered,
+        })
       } catch (err) {
-        log.warn('im-runtime', 'MLS_KEY_DELIVERY processing failed', { err })
+        if (conversationId) {
+          useSocialChatStore.getState().setGroupSecurityState(
+            conversationId,
+            'crypto-desynced',
+          )
+        }
+        log.warn('im-runtime', 'MLS_TRANSITION_DELIVERY processing failed', { err })
+        throw err
       }
       break
     }
-    case 3: // DIRECT_KEY_EXCHANGE
+    case 3: { // DIRECT_KEY_EXCHANGE
+      if (payloadBytes.length === 0 || !senderPtid) break
+      try {
+        const delivery = fromBinary(DirectKeyExchangePayloadSchema, payloadBytes)
+        if (delivery.kind !== DirectKeyExchangeKind.INITIAL_MESSAGE) break
+        const init = fromBinary(X3dhSessionInitSchema, delivery.opaqueKeyMaterial)
+        if (!init.sessionId || init.sessionId !== delivery.sessionId) {
+          throw new Error('direct key exchange session mismatch')
+        }
+        if (init.negotiatedVersion !== 1) {
+          throw new Error('unsupported direct secure-channel version')
+        }
+        await api.cryptoAcceptSession({
+          sessionId: init.sessionId,
+          peerDid: senderPtid,
+          senderIdentityKey: bytesToBase64(init.senderIdentityKey),
+          senderEphemeralKey: bytesToBase64(init.senderEphemeralKey),
+          recipientSignedPrekey: bytesToBase64(init.recipientSignedPrekey),
+          recipientOneTimePrekey: init.recipientOneTimePrekey.length > 0
+            ? bytesToBase64(init.recipientOneTimePrekey)
+            : undefined,
+          negotiatedVersion: init.negotiatedVersion,
+        })
+        useSocialChatStore.getState().setSessionSecurityState(
+          init.sessionId,
+          'ready',
+          init.negotiatedVersion,
+        )
+        dirtyConversations.add(init.sessionId)
+        log.info('im-runtime', 'direct secure channel established', {
+          conversationId: init.sessionId,
+          version: init.negotiatedVersion,
+        })
+      } catch (err) {
+        log.warn('im-runtime', 'DIRECT_KEY_EXCHANGE processing failed', { err })
+      }
       break
+    }
     case 4: // RECEIPT
       break
+    case 7: { // CONVERSATION_COMMAND_RESULT
+      if (payloadBytes.length === 0) break
+      const event = await consumeCommandResultDelivery(payloadBytes)
+      if (!event) break
+      const conversation = await requireConversationProjection(event.conversationId)
+      if (conversation.kind === 'group') {
+        await imServiceV1.mlsGroup.recordAuthorityEvent(
+          toBinary(CommittedConversationEventSchema, event),
+          recipientDeviceId,
+        )
+      }
+      dirtyConversations.add(event.conversationId)
+      break
+    }
     default:
       break
   }
@@ -203,7 +469,11 @@ async function handleEnvelopeDelivered(data: {
   membershipEpoch: number
   queuedTsUnixMs: number
 }): Promise<void> {
-  if (!markProcessed(data.inboxItemId)) return
+  const deviceId = await getDeviceId()
+  if (isProcessed(data.inboxItemId)) {
+    await imServiceV1.envelope.ack(deviceId, data.inboxItemId)
+    return
+  }
 
   const dirtyConversations = new Set<string>()
   const payloadBytes = data.payloadBytes instanceof Uint8Array
@@ -214,10 +484,12 @@ async function handleEnvelopeDelivered(data: {
     data.payloadType,
     payloadBytes,
     data.conversationId,
+    data.senderPtid,
+    data.recipientDeviceId,
     dirtyConversations,
   )
 
-  const deviceId = await getDeviceId()
+  markProcessed(data.inboxItemId)
   try {
     await imServiceV1.envelope.ack(deviceId, data.inboxItemId)
   } catch (err) {
@@ -245,7 +517,7 @@ async function resumeEnvelopes(): Promise<void> {
     const dirtyConversations = new Set<string>()
 
     for (const item of items) {
-      if (!markProcessed(item.inboxItemId)) {
+      if (isProcessed(item.inboxItemId)) {
         await imServiceV1.envelope.ack(deviceId, item.inboxItemId)
         continue
       }
@@ -259,9 +531,12 @@ async function resumeEnvelopes(): Promise<void> {
           env.payloadType,
           payloadBytes,
           env.conversationId ?? '',
+          env.senderPtid ?? '',
+          env.recipientDeviceId ?? '',
           dirtyConversations,
         )
       }
+      markProcessed(item.inboxItemId)
       await imServiceV1.envelope.ack(deviceId, item.inboxItemId)
     }
 
@@ -286,7 +561,8 @@ async function refreshDirtyConversations(conversationIds: Set<string>): Promise<
       continue
     }
     try {
-      await store.loadMessages(convId, 'group')
+      const kind = state.conversations.get(convId)?.kind ?? 'group'
+      await store.loadMessages(convId, kind === 'direct' ? 'friend' : 'group')
     } catch (err) {
       log.warn('im-runtime', 'refresh dirty conversation failed', { convId, err })
     }
@@ -318,6 +594,19 @@ function stopResumePolling(): void {
   }
 }
 
+function startLeaveIntentPolling(): void {
+  if (leaveIntentIntervalId) return
+  leaveIntentIntervalId = setInterval(() => {
+    processPendingLeaveIntents()
+  }, 5000)
+}
+
+function stopLeaveIntentPolling(): void {
+  if (!leaveIntentIntervalId) return
+  clearInterval(leaveIntentIntervalId)
+  leaveIntentIntervalId = null
+}
+
 function handleConnectionStateChange(payload: { connected: boolean }): void {
   state.sseConnected = payload.connected
   if (payload.connected) {
@@ -338,6 +627,7 @@ export const imRuntime: RuntimeDescriptor = {
 
   install(): void {
     startResumePolling()
+    startLeaveIntentPolling()
     eventUnsubscribers = [
       eventBus.subscribe(EVENT.REALTIME_RESYNC, triggerImmediateResume),
       eventBus.subscribe(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, triggerImmediateResume),
@@ -349,10 +639,12 @@ export const imRuntime: RuntimeDescriptor = {
 
   teardown(): void {
     stopResumePolling()
+    stopLeaveIntentPolling()
     for (const unsub of eventUnsubscribers) unsub()
     eventUnsubscribers = []
     state.initialized = false
     state.deviceId = null
+    state.actorPtid = null
     state.sseConnected = false
     state.conversations.clear()
     processedInboxItemIds.clear()
@@ -363,18 +655,29 @@ export const imRuntime: RuntimeDescriptor = {
     if (!actorId) return
     if (state.initialized) return
 
-    await registerDevice(actorId)
-    await initMlsIdentity(actorId)
+    const profile = await api.actorGetMyProfile()
+    const deviceId = await getDeviceId()
+    const signingIdentity = await initMlsIdentity(profile.id, deviceId)
+    const actorPtid = signingIdentity.ptid
+    if (!actorPtid.startsWith('ptid:')) {
+      throw new Error('authenticated actor has no canonical PTID')
+    }
+    state.actorPtid = actorPtid
+    await registerDevice(actorPtid, signingIdentity)
     await uploadKeyPackages()
     await loadConversations()
     await restoreMlsSessions()
     await resumeEnvelopes()
+    await reconcileCommandProposals()
+    await processPendingLeaveIntents()
 
     state.initialized = true
-    log.info('im-runtime', 'bootstrap complete', { actorId })
+    log.info('im-runtime', 'bootstrap complete', { actorPtid })
   },
 
   async reconcile(_reason: string): Promise<void> {
     await resumeEnvelopes()
+    await reconcileCommandProposals()
+    await processPendingLeaveIntents()
   },
 }

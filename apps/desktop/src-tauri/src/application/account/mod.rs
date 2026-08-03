@@ -308,10 +308,7 @@ pub fn account_authorize_pin_recovery(
     };
 
     match pin_recovery::authorize_grant(recovery_id, window_label, &active_id, &fresh_token) {
-        Ok(()) => success_payload(
-            "account_authorize_pin_recovery",
-            json!({ "ok": true }),
-        ),
+        Ok(()) => success_payload("account_authorize_pin_recovery", json!({ "ok": true })),
         Err(pin_recovery::RecoveryGrantError::AccountMismatch) => AppResult::fail(
             ErrorCode::Forbidden,
             "pin_recovery_account_mismatch",
@@ -325,10 +322,7 @@ pub fn account_authorize_pin_recovery(
     }
 }
 
-pub fn account_begin_pin_recovery(
-    account_id: &str,
-    window_label: &str,
-) -> AppResult<StubPayload> {
+pub fn account_begin_pin_recovery(account_id: &str, window_label: &str) -> AppResult<StubPayload> {
     if account_id.trim().is_empty() {
         return invalid_argument("account_id is required");
     }
@@ -352,7 +346,10 @@ pub fn account_begin_pin_recovery(
     )
 }
 
-pub fn account_reset_pin(input: AccountResetPinInput, window_label: &str) -> AppResult<StubPayload> {
+pub fn account_reset_pin(
+    input: AccountResetPinInput,
+    window_label: &str,
+) -> AppResult<StubPayload> {
     if input.recovery_id.trim().is_empty() {
         return invalid_argument("recovery_id is required");
     }
@@ -360,31 +357,33 @@ pub fn account_reset_pin(input: AccountResetPinInput, window_label: &str) -> App
         return invalid_argument("new_pin is required");
     }
 
-    let (account_id, fresh_token) = match pin_recovery::consume_grant(&input.recovery_id, window_label) {
-        Ok(pair) => pair,
-        Err(pin_recovery::RecoveryGrantError::GrantInvalid) => {
-            return AppResult::fail(
-                ErrorCode::Forbidden,
-                "pin_recovery_grant_invalid",
-                Some(json!({ "reason": "pin_recovery_grant_invalid" })),
-            );
-        }
-        Err(pin_recovery::RecoveryGrantError::AccountMismatch) => {
-            return AppResult::fail(
-                ErrorCode::Forbidden,
-                "pin_recovery_account_mismatch",
-                Some(json!({ "reason": "pin_recovery_account_mismatch" })),
-            );
-        }
-    };
+    let (account_id, fresh_token) =
+        match pin_recovery::consume_grant(&input.recovery_id, window_label) {
+            Ok(pair) => pair,
+            Err(pin_recovery::RecoveryGrantError::GrantInvalid) => {
+                return AppResult::fail(
+                    ErrorCode::Forbidden,
+                    "pin_recovery_grant_invalid",
+                    Some(json!({ "reason": "pin_recovery_grant_invalid" })),
+                );
+            }
+            Err(pin_recovery::RecoveryGrantError::AccountMismatch) => {
+                return AppResult::fail(
+                    ErrorCode::Forbidden,
+                    "pin_recovery_account_mismatch",
+                    Some(json!({ "reason": "pin_recovery_account_mismatch" })),
+                );
+            }
+        };
 
     try_cmd!(
-        auth_identity::set_account_pin(&account_id, &input.new_pin, Some(&fresh_token))
-            .map_err(|e| AppResult::fail(
+        auth_identity::set_account_pin(&account_id, &input.new_pin, Some(&fresh_token)).map_err(
+            |e| AppResult::fail(
                 ErrorCode::InternalError,
                 "pin_recovery_persist_failed",
                 Some(json!({ "reason": "pin_recovery_persist_failed", "detail": e })),
-            ))
+            )
+        )
     );
 
     session_vault::purge_raw_session_for_account(&account_id);

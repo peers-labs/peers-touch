@@ -22,7 +22,9 @@ describe('createDesktopStore instrumentation', () => {
   });
 
   it('preserves store updates and emits changed key plus listener metadata only', () => {
-    vi.stubGlobal('window', {});
+    vi.stubGlobal('window', {
+      localStorage: { getItem: () => '1' },
+    });
     installFrontendRuntimeProfiler();
     const interactionId = markInteractionStarted('shell', 'primary-nav:test');
 
@@ -68,7 +70,9 @@ describe('createDesktopStore instrumentation', () => {
   });
 
   it('does not emit when a set call leaves top-level state unchanged', () => {
-    vi.stubGlobal('window', {});
+    vi.stubGlobal('window', {
+      localStorage: { getItem: () => '1' },
+    });
     installFrontendRuntimeProfiler();
 
     const useTestStore = createDesktopStore<TestStore>('testStore', (set) => ({

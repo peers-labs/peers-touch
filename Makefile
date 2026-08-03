@@ -14,6 +14,7 @@ include tooling/make/prototypes.mk
 include tooling/make/docker.mk
 include tooling/make/deploy.mk
 include tooling/make/setup.mk
+include tooling/make/testnet.mk
 
 # ─── Help ────────────────────────────────────────────────────────
 

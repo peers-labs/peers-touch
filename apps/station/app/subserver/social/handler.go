@@ -647,12 +647,13 @@ func (s *subServer) handleGetMe(ctx context.Context, _ *model.GetMeRequest) (*mo
 		return nil, server.InternalErrorWithCause("failed to get current user", err)
 	}
 	return &model.ActorProfile{
-		Id:           fmt.Sprintf("%d", a.ID),
+		Id:           a.PTID,
 		DisplayName:  a.Name,
 		Username:     a.PreferredUsername,
 		Avatar:       a.Icon,
 		ServerDomain: a.HomeStationDomain,
 		Acct:         a.FederatedHandle,
+		Ref:          actor.ProtoActorRef(a, ""),
 	}, nil
 }
 

@@ -248,6 +248,7 @@ func newOfficialAtelierProjectionService() *agentservice.AtelierProjectionServic
 	contextReferenceSvc := agentservice.NewContextReferenceService()
 	delegationSvc := agentservice.NewDelegationService()
 	toolRegistrySvc := agentservice.NewToolRegistryService(memorySvc, skillSvc)
+	convSvc := agentservice.NewConversationService()
 	reviewSvc := agentservice.NewReviewService(
 		credentialPoolSvc,
 		errorClassifierSvc,
@@ -270,6 +271,7 @@ func newOfficialAtelierProjectionService() *agentservice.AtelierProjectionServic
 		toolRegistrySvc,
 		reviewSvc,
 		growthMetricsSvc,
+		convSvc,
 	)
 	turnSvc.SetEventBus(eventBus)
 	orchestrationSvc := agentservice.NewOrchestrationService(agentSvc, turnSvc, toolRegistrySvc)

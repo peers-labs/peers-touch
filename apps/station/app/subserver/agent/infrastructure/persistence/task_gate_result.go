@@ -20,7 +20,7 @@ type TaskGateResult struct {
 	ChecksJSON      string    `gorm:"type:text"`
 	ProducedBy      string    `gorm:"type:varchar(128);index:idx_agent_task_gate_results_produced_by"`
 	PayloadJSON     string    `gorm:"type:text"`
-	CreatedAt       time.Time `gorm:"not null;default:now();index:idx_agent_task_gate_results_created"`
+	CreatedAt       time.Time `gorm:"not null;autoCreateTime;index:idx_agent_task_gate_results_created"`
 }
 
 func (TaskGateResult) TableName() string { return "agent_task_gate_results" }

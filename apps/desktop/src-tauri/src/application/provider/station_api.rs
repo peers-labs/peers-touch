@@ -53,7 +53,10 @@ impl From<StationClientError> for StationApiError {
         match e.kind {
             station_client::StationClientErrorKind::SessionRevoked => StationApiError::Unauthorized,
             station_client::StationClientErrorKind::HttpStatus(409) => {
-                StationApiError::VersionConflict { current: -1, submitted: -1 }
+                StationApiError::VersionConflict {
+                    current: -1,
+                    submitted: -1,
+                }
             }
             station_client::StationClientErrorKind::HttpStatus(404) => {
                 StationApiError::NotFound(e.message)
@@ -61,9 +64,7 @@ impl From<StationClientError> for StationApiError {
             station_client::StationClientErrorKind::HttpStatus(401) => {
                 StationApiError::Unauthorized
             }
-            station_client::StationClientErrorKind::Network => {
-                StationApiError::Network(e.message)
-            }
+            station_client::StationClientErrorKind::Network => StationApiError::Network(e.message),
             _ => StationApiError::Internal(e.message),
         }
     }
@@ -89,7 +90,9 @@ pub fn get_providers(token: &str, _scope: &str) -> Result<Vec<StationProvider>, 
     )?;
 
     let providers: Vec<StationProvider> = serde_json::from_value(
-        resp.get("providers").cloned().unwrap_or(Value::Array(vec![])),
+        resp.get("providers")
+            .cloned()
+            .unwrap_or(Value::Array(vec![])),
     )
     .unwrap_or_default();
 
@@ -116,7 +119,6 @@ pub fn list_available_models(token: &str) -> Result<Value, StationApiError> {
     )?)
 }
 
-
 pub fn update_provider_full(
     token: &str,
     provider_id: &str,
@@ -138,7 +140,11 @@ pub fn update_provider_full(
         }
     }
     if let Some(kv) = key_vaults {
-        body["key_vaults"] = json!(kv);
+        if let Ok(parsed) = serde_json::from_str::<Value>(kv) {
+            body["key_vaults"] = parsed;
+        } else {
+            body["key_vaults"] = json!(kv);
+        }
     }
 
     Ok(station_client::request_json_auth(
@@ -258,10 +264,7 @@ pub fn delete_provider(
     Ok(())
 }
 
-pub fn list_models(
-    token: &str,
-    provider_id: &str,
-) -> Result<Vec<StationModel>, StationApiError> {
+pub fn list_models(token: &str, provider_id: &str) -> Result<Vec<StationModel>, StationApiError> {
     let resp = station_client::request_json_auth(
         Method::POST,
         "/sub-agent/agent/model/list",
@@ -270,10 +273,9 @@ pub fn list_models(
         Some(&json!({"provider_id": provider_id})),
     )?;
 
-    let models: Vec<StationModel> = serde_json::from_value(
-        resp.get("models").cloned().unwrap_or(Value::Array(vec![])),
-    )
-    .unwrap_or_default();
+    let models: Vec<StationModel> =
+        serde_json::from_value(resp.get("models").cloned().unwrap_or(Value::Array(vec![])))
+            .unwrap_or_default();
 
     Ok(models)
 }
@@ -306,10 +308,9 @@ pub fn update_model(
         Some(&body),
     )?;
 
-    let model: StationModel = serde_json::from_value(
-        resp.get("model").cloned().unwrap_or_default(),
-    )
-    .map_err(|e| StationApiError::Internal(format!("decode model: {}", e)))?;
+    let model: StationModel =
+        serde_json::from_value(resp.get("model").cloned().unwrap_or_default())
+            .map_err(|e| StationApiError::Internal(format!("decode model: {}", e)))?;
 
     Ok(model)
 }
@@ -330,10 +331,8 @@ pub fn set_credential(
         })),
     )?;
 
-    serde_json::from_value(
-        resp.get("status").cloned().unwrap_or_default(),
-    )
-    .map_err(|e| StationApiError::Internal(format!("decode credential status: {}", e)))
+    serde_json::from_value(resp.get("status").cloned().unwrap_or_default())
+        .map_err(|e| StationApiError::Internal(format!("decode credential status: {}", e)))
 }
 
 pub fn delete_credential(
@@ -366,10 +365,8 @@ pub fn credential_status(
         Some(&json!({"provider_id": provider_id})),
     )?;
 
-    serde_json::from_value(
-        resp.get("status").cloned().unwrap_or_default(),
-    )
-    .map_err(|e| StationApiError::Internal(format!("decode credential status: {}", e)))
+    serde_json::from_value(resp.get("status").cloned().unwrap_or_default())
+        .map_err(|e| StationApiError::Internal(format!("decode credential status: {}", e)))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -392,17 +389,13 @@ pub fn resolve_credential(
         Some(&json!({"provider_id": provider_id})),
     )?;
 
-    serde_json::from_value(
-        resp.get("credential").cloned().unwrap_or_default(),
-    )
-    .map_err(|e| StationApiError::Internal(format!("decode resolved credential: {}", e)))
+    serde_json::from_value(resp.get("credential").cloned().unwrap_or_default())
+        .map_err(|e| StationApiError::Internal(format!("decode resolved credential: {}", e)))
 }
 
 fn parse_provider_from_response(resp: Value) -> Result<StationProvider, StationApiError> {
-    serde_json::from_value(
-        resp.get("provider").cloned().unwrap_or_default(),
-    )
-    .map_err(|e| StationApiError::Internal(format!("decode provider: {}", e)))
+    serde_json::from_value(resp.get("provider").cloned().unwrap_or_default())
+        .map_err(|e| StationApiError::Internal(format!("decode provider: {}", e)))
 }
 
 pub fn hide_model(token: &str, provider_id: &str, model_id: &str) -> Result<(), StationApiError> {
@@ -426,7 +419,9 @@ pub fn get_hidden_models(token: &str, provider_id: &str) -> Result<Vec<String>, 
     )?;
 
     let hidden: Vec<String> = serde_json::from_value(
-        resp.get("hidden_models").cloned().unwrap_or(Value::Array(vec![])),
+        resp.get("hidden_models")
+            .cloned()
+            .unwrap_or(Value::Array(vec![])),
     )
     .unwrap_or_default();
 

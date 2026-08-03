@@ -81,6 +81,28 @@ message Actor {
   bytes signing_public_key = 17 [json_name = "signing_public_key"];
 }
 
+// Identity-owned device signing-key projection used to verify actor-signed
+// federated commands. Consumers must not accept a key supplied by the command
+// being verified.
+message VerifiedActorDeviceSigningKey {
+  string actor_ptid = 1;
+  string actor_device_id = 2;
+  string home_station_peer_id = 3;
+  string signing_key_id = 4;
+  bytes ed25519_public_key = 5;
+  int64 profile_version = 6;
+  ActorSigningKeyVerificationSource verification_source = 7;
+  int64 valid_from_unix_ms = 8;
+  int64 revoked_at_unix_ms = 9;
+}
+
+enum ActorSigningKeyVerificationSource {
+  ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_UNSPECIFIED = 0;
+  ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION = 1;
+  ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE = 2;
+  ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR = 3;
+}
+
 message UserLink {
   string label = 1;
   string url = 2;

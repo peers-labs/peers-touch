@@ -24,6 +24,8 @@ message SubmitProposalRequest {
   bytes     actor_signature = 8;
   bytes     station_signature = 9;
   int64     proposed_at_unix_ms = 10;
+  string    joining_station_url = 11;
+  string    joining_station_name = 12;
 }
 
 enum ProposalDecision {
@@ -38,6 +40,7 @@ message SubmitProposalResponse {
   ProposalDecision decision = 2;
   string          rejection_reason = 3;
   LedgerEvent     accepted_event = 4;
+  repeated LedgerEvent bootstrap_events = 5;
 }
 
 // ─── FetchHead ──────────────────────────────────────────────────────────────

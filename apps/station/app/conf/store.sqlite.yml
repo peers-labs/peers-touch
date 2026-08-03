@@ -2,33 +2,43 @@ peers:
   store:
     rds:
       gorm:
-        - name: sqlite
+        - name: default
           driver: sqlite
           enable: true
           default: true
-          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1
+          dsn: "file:/tmp/peers-touch-local.db?_fk=1&_journal_mode=WAL&_busy_timeout=10000"
+        - name: sqlite
+          driver: sqlite
+          enable: true
+          default: false
+          dsn: "file:/tmp/peers-touch-local.db?_fk=1&_journal_mode=WAL&_busy_timeout=10000"
         - name: agent
           driver: sqlite
           enable: true
           default: false
-          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1
+          dsn: "file:/tmp/peers-touch-local.db?_fk=1&_journal_mode=WAL&_busy_timeout=10000"
         - name: oss
           driver: sqlite
           enable: true
           default: false
-          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1
+          dsn: "file:/tmp/peers-touch-local.db?_fk=1&_journal_mode=WAL&_busy_timeout=10000"
         - name: ai_chat
           driver: sqlite
           enable: true
           default: false
-          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1
+          dsn: "file:/tmp/peers-touch-local.db?_fk=1&_journal_mode=WAL&_busy_timeout=10000"
         - name: applet_store
           driver: sqlite
           enable: true
           default: false
-          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1
+          dsn: "file:/tmp/peers-touch-local.db?_fk=1&_journal_mode=WAL&_busy_timeout=10000"
         - name: launcher
           driver: sqlite
           enable: true
           default: false
-          dsn: file:/tmp/peers-touch-local.db?cache=shared&_fk=1
+          dsn: "file:/tmp/peers-touch-local.db?_fk=1&_journal_mode=WAL&_busy_timeout=10000"
+        - name: federation
+          driver: sqlite
+          enable: true
+          default: false
+          dsn: "file:/tmp/peers-touch-local.db?_fk=1&_journal_mode=WAL&_busy_timeout=10000"

@@ -43,7 +43,6 @@ import {
   markRouteRequested,
   markRouteVisible,
   scheduleAfterPaint,
-  isFrontendRuntimeProfilerEnabled,
   isReactCommitProfilingEnabled,
   recordReactCommit,
   recordHiddenSurfaceRender,

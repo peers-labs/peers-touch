@@ -6,7 +6,7 @@ peers:
       wellknown: true
       user: true
   run-mode: 2
-  includes: store.sqlite.yml, sub_agent.yml, log.yml, actor.yml, server.host.local.yml, oauth.yml
+  includes: store.sqlite.yml, sub_agent.yml, sub_oss.yml, sub_turn.yml, sub_aichat.yml, log.yml, actor.yml, server.host.local.yml, oauth.yml, sub_dashboard.yml
   config:
     hierarchy-merge: true
   node:
@@ -14,7 +14,7 @@ peers:
       name: native
       native:
         enable-relay: false
-        libp2p-identity-key-file: /tmp/peers-libp2p.key
+        libp2p-identity-key-file: ./data/libp2p.key
     server:
       name: hertz
       address: :18080

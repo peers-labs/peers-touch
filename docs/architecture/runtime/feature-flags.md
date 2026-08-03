@@ -61,18 +61,16 @@ does not collide with unrelated product keys.
 ### 4.1 crypto.dr_enabled
 
 - **Storage key:** `peers-touch:feature-flag:crypto.dr_enabled`
-- **Default:** `false`
+- **Default:** `true`
 - **Type:** boolean
-- **Phase:** Introduced in **M1** (DR implementation behind a kill
-  switch per `chat-ratchet-upgrade.md` §6). **M2** may flip the default
-  to `true` for new-session negotiation while keeping this override for
-  rollback (§7).
+- **Phase:** Introduced in **M1** and flipped to `true` for **M2** on
+  2026-07-31. The override remains the rollback kill switch (§7).
 - **Effect (when true):** Key bundles may advertise Double Ratchet
   capability (`supported_versions` includes `1`) where the product
   wires that publication; pairwise sessions negotiate `v = 1` only when
   both peers ship compatible code and flags.
-- **Effect (when false):** New sessions remain on legacy chain-only
-  negotiation (`v = 0`).
+- **Effect (when false):** New sessions negotiate the encrypted legacy
+  chain-only protocol (`v = 0`); plaintext sending is never enabled.
 
 ### 4.2 crypto.dr_telemetry_enabled
 

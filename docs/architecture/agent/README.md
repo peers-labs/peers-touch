@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-04-11 | **Updated**: 2026-06-25
+> **Created**: 2026-04-11 | **Updated**: 2026-07-30
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `apps/station/app/subserver/agent/`, `apps/desktop/src-tauri/src/application/agent_turn/`, `apps/desktop/src-tauri/src/application/mcp/`
 
@@ -32,11 +32,13 @@
 
 | 文档 | 定位 |
 |---|---|
+| [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent draft product + architecture** — LobeHub/Peers-Touch benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前 `PRODUCT_DESIGN_INCOMPLETE` |
 | [agent-canvas-orchestration.md](./agent-canvas-orchestration.md) | **当前 Agent 编排正式设计** — 以 Agent Canvas 为入口、GoalKeeper 为目标锚点、EngineMatcher/RunPlan/AutonomyController 为运行内核的多 Agent 编排架构 |
 | [provider-station-ownership/](./provider-station-ownership/) | **Provider Station Ownership** — Station 是所有 AI Provider 的唯一执行者和配置所有者；Desktop/Mobile 是编辑入口 + SSE 消费端；per-actor 凭证隔离；版本号防脑裂 |
 | [agent-lobehub-blueprint.md](./agent-lobehub-blueprint.md) | **当前 Agent 重构正式设计** — 以 LobeHub 为蓝本的 UI/UX、Tool、MCP、Skill、后端能力映射与目标架构 |
 | [lobehub-parity/](./lobehub-parity/) | **Agent LobeHub 全栈能力对标账本** — 以 BOM/Spec/Plan/Gate/Evidence/Traceability 追踪 LobeHub 源码级对标、原型确认门与迁移设计 |
-| [prototype/](./prototype/) | **Agent LobeHub 原型审查入口** — 指向当前 `agent-lobehub-parity` pending-review 原型、Owner checklist 和产品迁移 fail-closed 边界 |
+| [modern-chat-agent/prototype/](./modern-chat-agent/prototype/) | **Modern Chat Agent 产品原型** — Peers-owned 产品状态、交互、MCA traceability 与 Owner confirmation gate |
+| [prototype/](./prototype/) | **历史 LobeHub benchmark 原型审查包** — 保留来源对标、Owner checklist 和历史迁移门证据，不再作为当前产品身份 |
 | [agent-self-growth-architecture.md](./agent-self-growth-architecture.md) | **peers-touch 架构设计** — 自成长生命周期、领域对象、服务拓扑、Turn 执行闭环、成长评估机制 |
 | [agent-memory-architecture.md](./agent-memory-architecture.md) | **Agent Memory 架构** — Memory 分层、存储、检索、反馈与可视化 |
 | [hermes-agent-self-improving-analysis.md](./hermes-agent-self-improving-analysis.md) | **Hermes 参考分析** — hermes-agent 的七层架构、工程实现细节，作为设计参考 |
@@ -51,6 +53,7 @@
 
 | 优先级 | 状态 | 文档 | 定位 |
 |---|---|---|---|
+| P0-P2 | draft / design-blocked | [modern-chat-agent](./execution-plans/20260730-modern-chat-agent.md) | Station 单一真源下的现代 Agent Chat 集成、所有权切换与端到端验收计划 |
 | P0-P4 | active | [agent-lobehub-rebuild](./execution-plans/20260616-agent-lobehub-rebuild.md) | 以 LobeHub 为蓝本的 Agent 产品与能力重构执行计划 |
 | P0 | code | [system-prompt-assembly](./execution-plans/20260411-system-prompt-assembly.md) | System Prompt 层级组装 + Context References + Prompt Caching |
 | P0 | code | [skill-filesystem-and-routing](./execution-plans/20260411-skill-filesystem-and-routing.md) | Skill 文件系统、渐进式披露、Skills Guard 安全扫描 |

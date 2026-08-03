@@ -18,7 +18,7 @@ type TaskArtifact struct {
 	ProducedBy  string    `gorm:"type:varchar(128);index:idx_agent_task_artifacts_produced_by"`
 	RefsJSON    string    `gorm:"type:text"`
 	PayloadJSON string    `gorm:"type:text"`
-	CreatedAt   time.Time `gorm:"not null;default:now();index:idx_agent_task_artifacts_created"`
+	CreatedAt   time.Time `gorm:"not null;autoCreateTime;index:idx_agent_task_artifacts_created"`
 }
 
 func (TaskArtifact) TableName() string { return "agent_task_artifacts" }

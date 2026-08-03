@@ -13,6 +13,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
@@ -26,6 +27,7 @@ type TurnHandlers struct {
 	turnService     *service.TurnService
 	toolRegistry    *service.ToolRegistryService
 	chatTaskService *service.ChatTaskService
+	convService     *service.ConversationService
 }
 
 type localToolResultRequest struct {
@@ -35,8 +37,8 @@ type localToolResultRequest struct {
 	IsError bool   `json:"is_error"`
 }
 
-func NewTurnHandlers(turnService *service.TurnService, toolRegistry *service.ToolRegistryService, chatTaskService *service.ChatTaskService) *TurnHandlers {
-	return &TurnHandlers{turnService: turnService, toolRegistry: toolRegistry, chatTaskService: chatTaskService}
+func NewTurnHandlers(turnService *service.TurnService, toolRegistry *service.ToolRegistryService, chatTaskService *service.ChatTaskService, convService *service.ConversationService) *TurnHandlers {
+	return &TurnHandlers{turnService: turnService, toolRegistry: toolRegistry, chatTaskService: chatTaskService, convService: convService}
 }
 
 // beginChatTaskStep ensures the Station-owned Chat root task for the conversation
@@ -62,12 +64,26 @@ func (h *TurnHandlers) beginChatTaskStep(ctx context.Context, req *model.Execute
 }
 
 func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.ExecuteTurnRequest) (*model.ExecuteTurnResponse, error) {
-	if req.GetConversationId() == "" || req.GetAgentId() == "" || req.GetUserInput() == "" {
+	if req.GetAgentId() == "" || req.GetUserInput() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400,
-			"conversation_id, agent_id, and user_input are required", nil))
+			"agent_id and user_input are required", nil))
 	}
 
-	config := h.turnConfigFromRequest(req, nil)
+	if strings.TrimSpace(req.GetConversationId()) == "" && h.convService != nil {
+		userID := subjectActorID(ctx)
+		conv, err := h.convService.CreateConversation(ctx, req.GetAgentId(), userID, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
+		if err != nil {
+			return nil, toHandlerError(err)
+		}
+		req.ConversationId = conv.ConversationID
+	}
+
+	if req.GetConversationId() == "" {
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400,
+			"conversation_id is required", nil))
+	}
+
+	config := h.turnConfigFromRequest(ctx, req, nil)
 	taskID, stepID := h.beginChatTaskStep(ctx, req)
 	config.TaskID = taskID
 	config.StepID = stepID
@@ -79,6 +95,7 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 		}
 		return nil, toHandlerError(err)
 	}
+
 	if h.chatTaskService != nil && stepID != "" {
 		turnID := ""
 		if turn != nil {
@@ -137,17 +154,53 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		return nil
 	}
 	input.Stream = true
-	if input.GetConversationId() == "" || input.GetAgentId() == "" || input.GetUserInput() == "" {
+	if input.GetAgentId() == "" || input.GetUserInput() == "" {
 		_ = writeTurnStreamEvent(resp, "error", map[string]any{
 			"type":  "error",
-			"error": "conversation_id, agent_id, and user_input are required",
+			"error": "agent_id and user_input are required",
+		})
+		return nil
+	}
+
+	if strings.TrimSpace(input.GetConversationId()) == "" && h.convService != nil {
+		userID := subjectActorID(ctx)
+		conv, err := h.convService.CreateConversation(ctx, input.GetAgentId(), userID, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
+		if err != nil {
+			_ = writeTurnStreamEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
+			return nil
+		}
+		input.ConversationId = conv.ConversationID
+		_ = writeTurnStreamEvent(resp, "conversation_created", map[string]any{
+			"type":            "conversation_created",
+			"conversation_id": conv.ConversationID,
+		})
+	} else if h.convService != nil {
+		userID := subjectActorID(ctx)
+		existing, getErr := h.convService.GetConversation(ctx, input.GetConversationId())
+		if getErr != nil || existing == nil {
+			conv, err := h.convService.CreateConversationWithID(ctx, input.GetConversationId(), input.GetAgentId(), userID, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
+			if err != nil {
+				_ = writeTurnStreamEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
+				return nil
+			}
+			_ = writeTurnStreamEvent(resp, "conversation_created", map[string]any{
+				"type":            "conversation_created",
+				"conversation_id": conv.ConversationID,
+			})
+		}
+	}
+
+	if input.GetConversationId() == "" {
+		_ = writeTurnStreamEvent(resp, "error", map[string]any{
+			"type":  "error",
+			"error": "conversation_id is required",
 		})
 		return nil
 	}
 
 	events := make(chan service.TurnEvent, 32)
 	done := make(chan turnStreamResult, 1)
-	config := h.turnConfigFromRequest(&input, func(eventCtx context.Context, event service.TurnEvent) {
+	config := h.turnConfigFromRequest(ctx, &input, func(eventCtx context.Context, event service.TurnEvent) {
 		select {
 		case events <- event:
 		case <-eventCtx.Done():
@@ -237,7 +290,7 @@ type turnStreamResult struct {
 	err    error
 }
 
-func (h *TurnHandlers) turnConfigFromRequest(req *model.ExecuteTurnRequest, sink service.TurnEventSink) *service.TurnConfig {
+func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.ExecuteTurnRequest, sink service.TurnEventSink) *service.TurnConfig {
 	contextWindowSize := int(req.GetContextWindowSize())
 	if contextWindowSize <= 0 {
 		contextWindowSize = 128000
@@ -248,8 +301,11 @@ func (h *TurnHandlers) turnConfigFromRequest(req *model.ExecuteTurnRequest, sink
 		maxRetries = 3
 	}
 
+	actorID := subjectActorID(ctx)
+
 	return &service.TurnConfig{
 		AgentID:            req.GetAgentId(),
+		ActorID:            actorID,
 		ConversationID:     req.GetConversationId(),
 		Identity:           req.GetIdentity(),
 		AgentConfigPrompt:  req.GetAgentConfigPrompt(),
@@ -542,4 +598,12 @@ func domainKnowledgeChunkReferenceToProto(chunk *domain.KnowledgeChunkReference)
 		Score:          chunk.Score,
 		ContentPreview: chunk.ContentPreview,
 	}
+}
+
+func truncateForTitle(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > 50 {
+		return s[:50]
+	}
+	return s
 }

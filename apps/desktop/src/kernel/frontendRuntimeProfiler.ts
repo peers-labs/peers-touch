@@ -93,7 +93,11 @@ type LayoutShiftEntryLike = Pick<PerformanceEntry, 'duration' | 'name' | 'startT
 type PaintTimingEntryLike = Pick<PerformanceEntry, 'duration' | 'name' | 'startTime'>;
 
 export function isFrontendRuntimeProfilerEnabled(): boolean {
-  return (import.meta.env.DEV || import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') && typeof window !== 'undefined';
+  return (
+    import.meta.env.DEV
+    || import.meta.env.MODE === 'test'
+    || import.meta.env.VITE_ACCEPTANCE_HARNESS === '1'
+  ) && typeof window !== 'undefined';
 }
 
 export function isReactCommitProfilingEnabled(): boolean {
@@ -939,5 +943,6 @@ export function recordRuntimePageLease(
 }
 
 export function getFrontendRuntimeProfilerEvents(): ReadonlyArray<DesktopFrontendTelemetryEvent> {
+  drainPendingEvents();
   return getFrontendTelemetryEvents();
 }

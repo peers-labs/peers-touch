@@ -3493,7 +3493,7 @@ func (s *OrchestrationService) runCollaborationNode(
 		prompt = appendCollaborationResumeContext(prompt, resumeContext)
 	}
 
-	turn, err := s.turnService.ExecuteTurn(ctx, s.turnConfigForNode(task, node, agent, runtimeProvider), prompt)
+	turn, err := s.turnService.ExecuteTurn(ctx, s.turnConfigForNode(actorID, task, node, agent, runtimeProvider), prompt)
 	if s.isTaskCancelled(ctx, db, task) {
 		s.updateNode(ctx, db, node, model.TaskNodeStatus_TASK_NODE_STATUS_SKIPPED, "Task cancelled.")
 		return collaborationNodeRunResult{Summary: "Task cancelled.", Cancelled: true}
@@ -3774,7 +3774,7 @@ func (s *OrchestrationService) synthesizeTaskResult(
 		}
 		return "", "", false
 	}
-	turn, err := s.turnService.ExecuteTurn(ctx, s.turnConfigForNode(task, synthNode, agent, runtimeProvider), collaborationSynthesisPrompt(task, nodes))
+	turn, err := s.turnService.ExecuteTurn(ctx, s.turnConfigForNode(actorID, task, synthNode, agent, runtimeProvider), collaborationSynthesisPrompt(task, nodes))
 	if err != nil {
 		logger.Warnf(ctx, "collaboration synthesis turn failed: task_id=%s node_id=%s err=%v", task.ID, synthNode.ID, err)
 		if isSynthesisNode(synthNode) {
@@ -4594,7 +4594,7 @@ func (s *OrchestrationService) updateTaskStatus(ctx context.Context, db *gorm.DB
 	}
 }
 
-func (s *OrchestrationService) turnConfigForNode(task *persistence.CollaborationTask, node *persistence.CollaborationTaskNode, agent *domain.Agent, runtimeProvider collaborationRuntimeProviderOverride) *TurnConfig {
+func (s *OrchestrationService) turnConfigForNode(actorID string, task *persistence.CollaborationTask, node *persistence.CollaborationTaskNode, agent *domain.Agent, runtimeProvider collaborationRuntimeProviderOverride) *TurnConfig {
 	agentPrompt, workspaceRoot := agentRuntimeConfig(agent)
 	availableTools := []string{}
 	if s.toolRegistry != nil {
@@ -4605,6 +4605,7 @@ func (s *OrchestrationService) turnConfigForNode(task *persistence.Collaboration
 	effort := firstNonEmptyString(runtimeProvider.ReasoningEffort, strings.TrimSpace(agent.Effort))
 	return &TurnConfig{
 		AgentID:           agent.AgentID,
+		ActorID:           actorID,
 		ConversationID:    node.ID,
 		Identity:          agent.Name,
 		AgentConfigPrompt: agentPrompt,

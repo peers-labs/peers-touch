@@ -12,16 +12,16 @@ import (
 
 // OutboxModel is the GORM table model for cross-Station federation delivery.
 type OutboxModel struct {
-	ID                  uint      `gorm:"column:id;primaryKey"`
-	OutboxItemID        string    `gorm:"column:outbox_item_id;size:64;uniqueIndex"`
-	TargetStationPeerID string    `gorm:"column:target_station_peer_id;size:255;index"`
-	IdempotencyKey      string    `gorm:"column:idempotency_key;size:255;uniqueIndex"`
-	EnvelopeBytes       []byte    `gorm:"column:envelope_bytes;type:bytea"`
-	Status              int32     `gorm:"column:status;index"`
-	RetryCount          int32     `gorm:"column:retry_count"`
-	LastError           string    `gorm:"column:last_error;type:text"`
-	FirstQueuedAt       time.Time `gorm:"column:first_queued_at"`
-	NextRetryAt         time.Time `gorm:"column:next_retry_at;index"`
+	ID                  uint       `gorm:"column:id;primaryKey"`
+	OutboxItemID        string     `gorm:"column:outbox_item_id;size:64;uniqueIndex"`
+	TargetStationPeerID string     `gorm:"column:target_station_peer_id;size:255;index"`
+	IdempotencyKey      string     `gorm:"column:idempotency_key;size:255;uniqueIndex"`
+	EnvelopeBytes       []byte     `gorm:"column:envelope_bytes;type:bytea"`
+	Status              int32      `gorm:"column:status;index"`
+	RetryCount          int32      `gorm:"column:retry_count"`
+	LastError           string     `gorm:"column:last_error;type:text"`
+	FirstQueuedAt       time.Time  `gorm:"column:first_queued_at"`
+	NextRetryAt         time.Time  `gorm:"column:next_retry_at;index"`
 	DeliveredAt         *time.Time `gorm:"column:delivered_at"`
 }
 
@@ -29,17 +29,17 @@ func (*OutboxModel) TableName() string { return "envelope_outbox" }
 
 // InboxModel is the GORM table model for per-device durable delivery.
 type InboxModel struct {
-	ID               uint      `gorm:"column:id;primaryKey"`
-	InboxItemID      string    `gorm:"column:inbox_item_id;size:64;uniqueIndex"`
-	RecipientDID     string    `gorm:"column:recipient_did;size:255;index:idx_inbox_device"`
-	RecipientDeviceID string   `gorm:"column:recipient_device_id;size:255;index:idx_inbox_device"`
-	IdempotencyKey   string    `gorm:"column:idempotency_key;size:255;index:idx_inbox_idemp,unique"`
-	EnvelopeBytes    []byte    `gorm:"column:envelope_bytes;type:bytea"`
-	Status           int32     `gorm:"column:status;index"`
-	DeliveryAttempts int32     `gorm:"column:delivery_attempts"`
-	FirstQueuedAt    time.Time `gorm:"column:first_queued_at"`
-	LastAttemptAt    *time.Time `gorm:"column:last_attempt_at"`
-	DeliveredAt      *time.Time `gorm:"column:delivered_at"`
+	ID                uint       `gorm:"column:id;primaryKey"`
+	InboxItemID       string     `gorm:"column:inbox_item_id;size:64;uniqueIndex"`
+	RecipientDID      string     `gorm:"column:recipient_did;size:255;index:idx_inbox_device"`
+	RecipientDeviceID string     `gorm:"column:recipient_device_id;size:255;index:idx_inbox_device"`
+	IdempotencyKey    string     `gorm:"column:idempotency_key;size:255;index:idx_inbox_idemp,unique"`
+	EnvelopeBytes     []byte     `gorm:"column:envelope_bytes;type:bytea"`
+	Status            int32      `gorm:"column:status;index"`
+	DeliveryAttempts  int32      `gorm:"column:delivery_attempts"`
+	FirstQueuedAt     time.Time  `gorm:"column:first_queued_at"`
+	LastAttemptAt     *time.Time `gorm:"column:last_attempt_at"`
+	DeliveredAt       *time.Time `gorm:"column:delivered_at"`
 }
 
 func (*InboxModel) TableName() string { return "envelope_inbox" }
@@ -92,7 +92,9 @@ func (r *PostgresRepository) EnqueueOutbox(ctx context.Context, item *chat.Outbo
 	if result.Error != nil {
 		return "", result.Error
 	}
-	r.recordIdempotency(ctx, item.Envelope.IdempotencyKey)
+	if err := r.recordIdempotency(ctx, item.Envelope.IdempotencyKey); err != nil {
+		return "", err
+	}
 	return item.OutboxItemId, nil
 }
 
@@ -188,7 +190,9 @@ func (r *PostgresRepository) EnqueueInbox(ctx context.Context, item *chat.Device
 	if result.Error != nil {
 		return "", result.Error
 	}
-	r.recordIdempotency(ctx, item.Envelope.IdempotencyKey)
+	if err := r.recordIdempotency(ctx, item.Envelope.IdempotencyKey); err != nil {
+		return "", err
+	}
 	return item.InboxItemId, nil
 }
 
@@ -244,10 +248,11 @@ func (r *PostgresRepository) HasIdempotencyKey(ctx context.Context, idempotencyK
 	return count > 0, err
 }
 
-func (r *PostgresRepository) recordIdempotency(ctx context.Context, key string) {
-	r.db.WithContext(ctx).
+func (r *PostgresRepository) recordIdempotency(ctx context.Context, key string) error {
+	return r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
-		Create(&IdempotencyModel{IdempotencyKey: key, CreatedAt: time.Now()})
+		Create(&IdempotencyModel{IdempotencyKey: key, CreatedAt: time.Now()}).
+		Error
 }
 
 // --- Helpers ---
@@ -273,7 +278,7 @@ func (m *InboxModel) toProto() (*chat.DeviceInboxItem, error) {
 	}
 	return &chat.DeviceInboxItem{
 		InboxItemId:       m.InboxItemID,
-		RecipientPtid: m.RecipientDID,
+		RecipientPtid:     m.RecipientDID,
 		RecipientDeviceId: m.RecipientDeviceID,
 		Envelope:          env,
 		Status:            chat.InboxItemStatus(m.Status),
