@@ -52,8 +52,8 @@ type NudgeState struct {
 }
 
 const (
-	defaultNudgeInterval          = 10
-	maxAdaptiveNudgeInterval      = 40
+	defaultNudgeInterval           = 10
+	maxAdaptiveNudgeInterval       = 40
 	ineffectiveThresholdForBackoff = 3
 )
 

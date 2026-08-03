@@ -26,11 +26,11 @@ type threatPattern struct {
 // before installation. It detects exfiltration, injection, destructive
 // commands, persistence mechanisms, and other threat categories.
 type SkillsGuardService struct {
-	patterns           []threatPattern
-	binaryExtensions   map[string]bool
-	invisibleUnicodes  []rune
-	maxFileCount       int
-	maxTotalSizeKB     int
+	patterns            []threatPattern
+	binaryExtensions    map[string]bool
+	invisibleUnicodes   []rune
+	maxFileCount        int
+	maxTotalSizeKB      int
 	maxSingleFileSizeKB int
 }
 
