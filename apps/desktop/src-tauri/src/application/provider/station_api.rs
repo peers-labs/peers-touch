@@ -138,7 +138,11 @@ pub fn update_provider_full(
         }
     }
     if let Some(kv) = key_vaults {
-        body["key_vaults"] = json!(kv);
+        if let Ok(parsed) = serde_json::from_str::<Value>(kv) {
+            body["key_vaults"] = parsed;
+        } else {
+            body["key_vaults"] = json!(kv);
+        }
     }
 
     Ok(station_client::request_json_auth(
