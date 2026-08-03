@@ -1601,6 +1601,8 @@ export function replyPreviewForChatMessage(
   const mimeType = chatAttachmentMimeType(firstAttachment).toLowerCase();
   if (mimeType.startsWith('image/')) return labels.image;
   if (mimeType.startsWith('video/')) return labels.video;
-  if (mimeType.startsWith('audio/')) return labels.audio;
+  if (mimeType.startsWith('audio')) return labels.audio;
   return firstAttachment.filename || labels.file;
 }
+
+export * from './agentChatCache';

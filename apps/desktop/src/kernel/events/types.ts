@@ -160,20 +160,6 @@ export interface RealtimeGroupFederationEventPayload {
   actorDid: string;
 }
 
-export interface RealtimeGroupSkdmEnvelopeDeliveredPayload {
-  eventId: string;
-  groupUlid: string;
-  membershipEpoch: number;
-  senderDid: string;
-  senderKeyId: number;
-  senderHomeStationPeerId: string;
-  recipientDid: string;
-  recipientDeviceId: string;
-  idempotencyKey: string;
-  encryptedPayloadB64: string;
-  deliveredTsUnixMs: number;
-}
-
 export interface RealtimeEnvelopeDeliveredPayload {
   eventId: string;
   inboxItemId: string;
@@ -267,23 +253,6 @@ export interface RelationshipChangedPayload {
   action: 'follow' | 'unfollow' | 'block' | 'unblock';
 }
 
-/**
- * Group Sender-Keys distribution-message install notification.
- *
- * Fired by `handleInboundSkdm` after a peer's SKDM has been
- * decoded, authenticated, and persisted. The store subscribes
- * and re-attempts decryption of any group ciphertext that
- * previously failed with `MissingSkdmError` for the same
- * `(groupUlid, senderDid, senderKeyId)` tuple, so a late SKDM
- * unblocks all the messages it was supposed to unblock without
- * forcing the user to reload the chat.
- */
-export interface GroupSkdmInstalledPayload {
-  groupUlid: string;
-  senderDid: string;
-  senderKeyId: number;
-}
-
 export interface AgentTurnStreamEventPayload {
   streamId: string;
   conversationId: string;
@@ -314,7 +283,6 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_MESSAGE_MUTATION]: RealtimeMessageMutationPayload;
   [EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE]: RealtimeGroupMembershipChangePayload;
   [EVENT.REALTIME_GROUP_FEDERATION_EVENT]: RealtimeGroupFederationEventPayload;
-    [EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED]: RealtimeGroupSkdmEnvelopeDeliveredPayload;
   [EVENT.REALTIME_ENVELOPE_DELIVERED]: RealtimeEnvelopeDeliveredPayload;
   [EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED]: RealtimeConversationSettingsChangedPayload;
   [EVENT.REALTIME_SOCIAL_GRAPH_EVENT]: RealtimeSocialGraphEventPayload;
@@ -324,7 +292,6 @@ export interface EventPayloadMap {
   [EVENT.MOMENT_REACTED]: MomentReactedPayload;
   [EVENT.MOMENT_RESYNC_REQUESTED]: MomentResyncRequestedPayload;
   [EVENT.RELATIONSHIP_CHANGED]: RelationshipChangedPayload;
-  [EVENT.GROUP_SKDM_INSTALLED]: GroupSkdmInstalledPayload;
 }
 
 export interface AppEvent<TType extends keyof EventPayloadMap> {

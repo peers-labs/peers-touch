@@ -77,7 +77,7 @@ Every response MUST follow this format:
 After the English check, the agent enters **pt-god-view mode** for the task portion:
 
 1. Classify the work (tracked / new multi-step / standalone / review)
-2. Detect current stage (DESIGN / PLAN / EXECUTE / DELIVER)
+2. Detect current stage (PRODUCT / DESIGN / PLAN / EXECUTE / DELIVER)
 3. Dispatch to the correct skill
 4. Follow gates, track active_work, enforce methodology
 

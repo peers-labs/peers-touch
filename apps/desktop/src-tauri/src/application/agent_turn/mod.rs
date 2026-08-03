@@ -4,10 +4,13 @@
 // `TypedHandler` protobuf mode requires `proto.Message` request types. Keep JSON until the
 // subserver handler and proto definitions are aligned with the desktop contract.
 // TODO(agent): align `agent.proto` + Station `HandleExecuteTurn` with the full turn payload, then use `request_proto`.
-use crate::application::{agent_workspace, mcp, tools};
+use crate::application::error_resolver::ProviderKind;
+use crate::application::{agent_workspace, error_resolver, mcp, tools};
 use crate::contracts::{
-    AgentExecuteTurnInput, AgentLocalToolRequestInput, AgentToolApprovalDecisionInput,
-    AgentTurnTraceGetInput, AgentTurnTraceListInput, McpExecuteToolInput, StubPayload,
+    AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
+    AgentConversationListInput, AgentConversationMessagesInput, AgentExecuteTurnInput,
+    AgentLocalToolRequestInput, AgentToolApprovalDecisionInput, AgentTurnTraceGetInput,
+    AgentTurnTraceListInput, McpExecuteToolInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -254,27 +257,57 @@ pub fn agent_execute_turn(
         return AppResult::fail(ErrorCode::InternalError, error, None);
     }
 
-    let provider = input.provider.as_deref().unwrap_or("").trim();
-    let is_cli = matches!(provider, "trae-cli" | "codex-cli" | "claude-cli")
-        || input.runtime_backend.as_deref().unwrap_or("") == "cli"
+    let provider = input.provider.as_deref().unwrap_or("").trim().to_string();
+    let provider_normalized = provider.to_ascii_lowercase();
+    let is_cli = matches!(
+        provider_normalized.as_str(),
+        "trae-cli"
+            | "codex-cli"
+            | "claude-cli"
+            | "cursor-cli"
+            | "trae"
+            | "codex"
+            | "claude"
+            | "cursor"
+    ) || input.runtime_backend.as_deref().unwrap_or("") == "cli"
         || input.cli_command.is_some();
 
-    if is_cli {
-        return execute_cli_turn_blocking(&input);
+    if is_cli && input.cli_command.is_none() {
+        input.cli_command = Some(default_cli_command(&provider_normalized));
+    }
+    if is_cli && input.runtime_backend.is_none() {
+        input.runtime_backend = Some("cli".to_string());
     }
 
     tracing::info!(
         command = "agent_execute_turn",
         agent_id = %input.agent_id,
         conversation_id = %input.conversation_id,
-        "Executing agent turn via Station (streaming collect)"
+        is_cli = is_cli,
+        "Executing agent turn via Station"
     );
 
     let body = build_turn_request_body(input.clone(), true);
 
+    let cli_binary = if is_cli {
+        input
+            .cli_command
+            .as_deref()
+            .unwrap_or("")
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+    } else {
+        ""
+    };
+
     match collect_turn_text_via_stream(&body, token) {
         Ok((content, model_name)) => {
-            tracing::info!(command = "agent_execute_turn", content_len = content.len(), "Turn execution succeeded");
+            tracing::info!(
+                command = "agent_execute_turn",
+                content_len = content.len(),
+                "Turn execution succeeded"
+            );
             let result = json!({
                 "response_message": {
                     "role": "assistant",
@@ -291,7 +324,8 @@ pub fn agent_execute_turn(
                     "model": model_name,
                 },
             });
-            let status = serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+            let status =
+                serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
             AppResult::success(StubPayload {
                 command: "agent_execute_turn".to_string(),
                 status,
@@ -299,7 +333,7 @@ pub fn agent_execute_turn(
         }
         Err(err) => {
             tracing::error!(command = "agent_execute_turn", error = %err, "Turn execution failed, falling back to non-streaming");
-            let body_fallback = build_turn_request_body(input, false);
+            let body_fallback = build_turn_request_body(input.clone(), false);
             match station_client::request_json(
                 Method::POST,
                 "/sub-agent/agent/turn/execute",
@@ -308,8 +342,8 @@ pub fn agent_execute_turn(
                 Some(body_fallback),
             ) {
                 Ok(result) => {
-                    let status =
-                        serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+                    let status = serde_json::to_string(&result)
+                        .unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
                     AppResult::success(StubPayload {
                         command: "agent_execute_turn".to_string(),
                         status,
@@ -317,7 +351,13 @@ pub fn agent_execute_turn(
                 }
                 Err(fb_err) => {
                     tracing::error!(command = "agent_execute_turn", error = %fb_err, "Fallback also failed");
-                    fb_err.into_app_result("Failed to execute agent turn")
+                    resolved_turn_failure(
+                        &provider,
+                        is_cli,
+                        cli_binary,
+                        &fb_err.to_string(),
+                        fb_err.details.as_ref(),
+                    )
                 }
             }
         }
@@ -392,37 +432,37 @@ pub fn agent_execute_turn_stream(
     _actor_id: String,
     cancel_flag: Arc<AtomicBool>,
 ) {
-    if let Err(error) = apply_resolved_agent_workspace(&mut input) {
-        emit_turn_stream_event(
-            &app,
-            &stream_id,
-            "error",
-            json!({
-                "type": "error",
-                "error": error
-            }),
-        );
-        return;
-    }
-
-    let provider = input.provider.as_deref().unwrap_or("").trim();
-    let is_cli_provider = matches!(provider, "trae-cli" | "codex-cli" | "claude-cli")
-        || input.runtime_backend.as_deref().unwrap_or("") == "cli"
+    let provider = input.provider.as_deref().unwrap_or("").trim().to_string();
+    let provider_normalized = provider.trim().to_ascii_lowercase();
+    let is_cli_provider = matches!(
+        provider_normalized.as_str(),
+        "trae-cli"
+            | "codex-cli"
+            | "claude-cli"
+            | "cursor-cli"
+            | "trae"
+            | "codex"
+            | "claude"
+            | "cursor"
+    ) || input.runtime_backend.as_deref().unwrap_or("") == "cli"
         || input.cli_command.is_some();
 
-    if is_cli_provider {
-        let result = stream_cli_turn(&app, &stream_id, &input, &cancel_flag);
-        if let Err(error) = result {
-            emit_turn_stream_event(
-                &app,
-                &stream_id,
-                "error",
-                json!({
-                    "type": "error",
-                    "error": error
-                }),
-            );
-        }
+    if is_cli_provider && input.cli_command.is_none() {
+        input.cli_command = Some(default_cli_command(&provider_normalized));
+    }
+    if is_cli_provider && input.runtime_backend.is_none() {
+        input.runtime_backend = Some("cli".to_string());
+    }
+
+    if let Err(error) = apply_resolved_agent_workspace(&mut input) {
+        emit_resolved_error(
+            &app,
+            &stream_id,
+            &provider,
+            ProviderKind::Direct,
+            None,
+            &error,
+        );
         return;
     }
 
@@ -435,16 +475,16 @@ pub fn agent_execute_turn_stream(
         agent_allowed_roots.as_deref(),
         &token,
         &cancel_flag,
+        provider.as_str(),
     );
     if let Err(error) = result {
-        emit_turn_stream_event(
+        emit_resolved_error(
             &app,
             &stream_id,
-            "error",
-            json!({
-                "type": "error",
-                "error": error
-            }),
+            &provider,
+            ProviderKind::Direct,
+            None,
+            &error,
         );
     }
 }
@@ -606,19 +646,19 @@ fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value 
         body["model"] = json!(model);
     }
     if let Some(cli_cmd) = input.cli_command.filter(|v| !v.trim().is_empty()) {
-        body["cliCommand"] = json!(cli_cmd);
+        body["cli_command"] = json!(cli_cmd);
     }
     if let Some(runtime) = input.runtime_backend.filter(|v| !v.trim().is_empty()) {
-        body["runtimeBackend"] = json!(runtime);
+        body["runtime_backend"] = json!(runtime);
     }
     if let Some(roots) = input.allowed_roots.filter(|v| !v.is_empty()) {
-        body["allowedRoots"] = json!(roots);
+        body["allowed_roots"] = json!(roots);
     }
     if let Some(identity) = input.identity.filter(|v| !v.trim().is_empty()) {
         body["identity"] = json!(identity);
     }
     if let Some(prompt) = input.agent_config_prompt.filter(|v| !v.trim().is_empty()) {
-        body["agentConfigPrompt"] = json!(prompt);
+        body["agent_config_prompt"] = json!(prompt);
     }
     if let Some(ws_root) = input.workspace_root.filter(|v| !v.trim().is_empty()) {
         body["workspace_root"] = json!(ws_root);
@@ -639,7 +679,29 @@ fn stream_station_turn(
     agent_allowed_roots: Option<&[String]>,
     token: &str,
     cancel_flag: &AtomicBool,
+    provider_id: &str,
 ) -> Result<(), String> {
+    let effective_provider = body
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .unwrap_or(provider_id);
+    let cli_command = body
+        .get("cli_command")
+        .and_then(|v| v.as_str())
+        .or_else(|| body.get("cliCommand").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let runtime_backend = body
+        .get("runtime_backend")
+        .and_then(|v| v.as_str())
+        .or_else(|| body.get("runtimeBackend").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let is_cli_turn = !cli_command.is_empty() || runtime_backend == "cli";
+    let cli_binary = if is_cli_turn {
+        cli_command.split_whitespace().next().unwrap_or("")
+    } else {
+        ""
+    };
+
     let url = format!(
         "{}{}",
         station_client::station_base_url(),
@@ -668,6 +730,7 @@ fn stream_station_turn(
 
     let mut bytes = [0_u8; 4096];
     let mut buffer = String::new();
+    let mut error_emitted = false;
     loop {
         if cancel_flag.load(Ordering::SeqCst) {
             return Ok(());
@@ -696,25 +759,83 @@ fn stream_station_turn(
                         &data,
                         agent_allowed_roots,
                     ) {
-                        emit_turn_stream_event(
+                        emit_resolved_error(
                             app,
                             stream_id,
-                            "error",
-                            json!({
-                                "type": "error",
-                                "error": error
-                            }),
+                            effective_provider,
+                            ProviderKind::Direct,
+                            None,
+                            &error,
                         );
+                        error_emitted = true;
                     }
                     continue;
                 }
-                emit_turn_stream_event(app, stream_id, &event, data);
+                if event == "error" {
+                    if error_emitted {
+                        continue;
+                    }
+                    error_emitted = true;
+                    let raw = data
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown error");
+                    if is_cli_turn {
+                        emit_resolved_error(
+                            app,
+                            stream_id,
+                            effective_provider,
+                            ProviderKind::Cli,
+                            Some(cli_binary),
+                            raw,
+                        );
+                    } else {
+                        emit_resolved_error(
+                            app,
+                            stream_id,
+                            effective_provider,
+                            ProviderKind::Direct,
+                            None,
+                            raw,
+                        );
+                    }
+                } else {
+                    emit_turn_stream_event(app, stream_id, &event, data);
+                }
             }
         }
     }
     if !buffer.trim().is_empty() {
         if let Some((event, data)) = parse_sse_frame(&buffer) {
-            emit_turn_stream_event(app, stream_id, &event, data);
+            if event == "error" {
+                if !error_emitted {
+                    let raw = data
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown error");
+                    if is_cli_turn {
+                        emit_resolved_error(
+                            app,
+                            stream_id,
+                            effective_provider,
+                            ProviderKind::Cli,
+                            Some(cli_binary),
+                            raw,
+                        );
+                    } else {
+                        emit_resolved_error(
+                            app,
+                            stream_id,
+                            effective_provider,
+                            ProviderKind::Direct,
+                            None,
+                            raw,
+                        );
+                    }
+                }
+            } else {
+                emit_turn_stream_event(app, stream_id, &event, data);
+            }
         }
     }
     Ok(())
@@ -967,232 +1088,6 @@ fn local_tool_result_content(value: &Value) -> String {
     output.to_string()
 }
 
-fn extract_content_from_cli_jsonl(stdout: &str) -> String {
-    let mut content = String::new();
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || !trimmed.starts_with('{') {
-            continue;
-        }
-        if let Ok(event) = serde_json::from_str::<Value>(trimmed) {
-            let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
-            if let Some(text) = event.get("content").and_then(|v| v.as_str()) {
-                if event_type == "message" || event_type == "" || event_type == "text" {
-                    content.push_str(text);
-                }
-            }
-        }
-    }
-    if content.is_empty() {
-        stdout.lines()
-            .filter(|l| !l.trim().is_empty() && !l.contains("INFO") && !l.contains("WARN"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    } else {
-        content
-    }
-}
-
-fn execute_cli_turn_blocking(input: &AgentExecuteTurnInput) -> AppResult<StubPayload> {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
-    let model = input.model.as_deref().unwrap_or("").trim();
-    let user_input = input.user_input.trim();
-    if user_input.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "user_input is empty", None);
-    }
-
-    let cli_command = input.cli_command.as_deref()
-        .filter(|c| !c.trim().is_empty())
-        .unwrap_or("traecli exec --skip-git-repo-check -");
-
-    let mut args: Vec<&str> = cli_command.split_whitespace().collect();
-    if args.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "CLI command is empty", None);
-    }
-
-    let program = args.remove(0);
-    let has_json_flag = args.iter().any(|a| *a == "--json");
-    let has_model_flag = args.iter().any(|a| *a == "--model" || *a == "-m");
-
-    let mut cmd_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    if !has_json_flag {
-        cmd_args.insert(0, "--json".to_string());
-    }
-    if !has_model_flag && !model.is_empty() {
-        cmd_args.insert(0, model.to_string());
-        cmd_args.insert(0, "--model".to_string());
-    }
-    if cmd_args.last().map(|s| s.as_str()) == Some("-") {
-        cmd_args.pop();
-    }
-    cmd_args.push("-".to_string());
-
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let path = crate::application::provider::enriched_path();
-    let workspace = input.workspace_root.as_deref().unwrap_or(&home);
-
-    let mut cmd = Command::new(program);
-    cmd.args(&cmd_args)
-        .current_dir(workspace)
-        .env("PATH", &path)
-        .env("HOME", &home)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, format!("Failed to spawn CLI: {e}"), None),
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(user_input.as_bytes());
-    }
-
-    let output = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, format!("CLI execution failed: {e}"), None),
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let content = extract_content_from_cli_jsonl(&stdout);
-
-    let result = json!({
-        "response_message": {
-            "role": "assistant",
-            "content": content,
-        },
-        "turn": {
-            "agent_id": input.agent_id,
-            "conversation_id": input.conversation_id,
-            "final_response": content,
-            "status": "TURN_STATUS_COMPLETED",
-            "model": model,
-        },
-        "trace": { "model": model },
-    });
-    let status = serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
-    AppResult::success(StubPayload {
-        command: "agent_execute_turn".to_string(),
-        status,
-    })
-}
-
-fn stream_cli_turn(
-    app: &AppHandle,
-    stream_id: &str,
-    input: &AgentExecuteTurnInput,
-    cancel_flag: &AtomicBool,
-) -> Result<(), String> {
-    use std::io::{BufRead, BufReader, Write};
-    use std::process::{Command, Stdio};
-
-    let model = input.model.as_deref().unwrap_or("").trim();
-    let user_input = input.user_input.trim();
-    if user_input.is_empty() {
-        return Err("user_input is empty".to_string());
-    }
-
-    let cli_command = input.cli_command.as_deref()
-        .filter(|c| !c.trim().is_empty())
-        .unwrap_or("traecli exec --skip-git-repo-check -");
-
-    let mut args: Vec<&str> = cli_command.split_whitespace().collect();
-    if args.is_empty() {
-        return Err("CLI command is empty".to_string());
-    }
-
-    let program = args.remove(0);
-    let has_json_flag = args.iter().any(|a| *a == "--json");
-    let has_model_flag = args.iter().any(|a| *a == "--model" || *a == "-m");
-
-    let mut cmd_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    if !has_json_flag {
-        cmd_args.insert(0, "--json".to_string());
-    }
-    if !has_model_flag && !model.is_empty() {
-        cmd_args.insert(0, model.to_string());
-        cmd_args.insert(0, "--model".to_string());
-    }
-
-    // Remove trailing "-" (stdin marker) since we pipe input
-    if cmd_args.last().map(|s| s.as_str()) == Some("-") {
-        cmd_args.pop();
-    }
-    cmd_args.push("-".to_string());
-
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let path = crate::application::provider::enriched_path();
-    let workspace = input.workspace_root.as_deref().unwrap_or(&home);
-
-    let mut cmd = Command::new(program);
-    cmd.args(&cmd_args)
-        .current_dir(workspace)
-        .env("PATH", &path)
-        .env("HOME", &home)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn CLI: {e}"))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(user_input.as_bytes());
-    }
-
-    let stdout = child.stdout.take().ok_or("Failed to capture CLI stdout")?;
-    let reader = BufReader::new(stdout);
-
-    emit_turn_stream_event(app, stream_id, "start", json!({"type": "start"}));
-
-    for line in reader.lines() {
-        if cancel_flag.load(Ordering::Relaxed) {
-            let _ = child.kill();
-            emit_turn_stream_event(app, stream_id, "done", json!({"type": "done", "reason": "cancelled"}));
-            return Ok(());
-        }
-
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        if let Ok(event) = serde_json::from_str::<Value>(trimmed) {
-            let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
-            match event_type {
-                "message" => {
-                    if let Some(content) = event.get("content").and_then(|v| v.as_str()) {
-                        emit_turn_stream_event(app, stream_id, "text_delta", json!({"type": "text_delta", "text": content}));
-                    }
-                }
-                "error" => {
-                    let msg = event.get("message").or(event.get("error")).and_then(|v| v.as_str()).unwrap_or("CLI error");
-                    emit_turn_stream_event(app, stream_id, "error", json!({"type": "error", "error": msg}));
-                    return Ok(());
-                }
-                _ => {
-                    if let Some(content) = event.get("content").and_then(|v| v.as_str()) {
-                        emit_turn_stream_event(app, stream_id, "text_delta", json!({"type": "text_delta", "text": content}));
-                    }
-                }
-            }
-        } else {
-            emit_turn_stream_event(app, stream_id, "text_delta", json!({"type": "text_delta", "text": trimmed}));
-        }
-    }
-
-    let _ = child.wait();
-    emit_turn_stream_event(app, stream_id, "done", json!({"type": "done"}));
-    Ok(())
-}
-
 fn parse_sse_frame(frame: &str) -> Option<(String, Value)> {
     let mut event = "message".to_string();
     let mut data_lines = Vec::new();
@@ -1210,6 +1105,70 @@ fn parse_sse_frame(frame: &str) -> Option<(String, Value)> {
     let data = data_lines.join("\n");
     let parsed = serde_json::from_str::<Value>(&data).unwrap_or_else(|_| json!({ "raw": data }));
     Some((event, parsed))
+}
+
+fn default_cli_command(provider: &str) -> String {
+    match provider {
+        "trae" | "trae-cli" => "traecli exec --skip-git-repo-check -".to_string(),
+        "codex" | "codex-cli" => "codex exec --skip-git-repo-check -".to_string(),
+        "claude" | "claude-cli" => "claude -p".to_string(),
+        "cursor" | "cursor-cli" => "cursor-agent --print --output-format text --trust".to_string(),
+        _ => "traecli exec --skip-git-repo-check -".to_string(),
+    }
+}
+
+fn resolved_turn_failure(
+    provider_id: &str,
+    is_cli: bool,
+    cli_binary: &str,
+    raw_message: &str,
+    details: Option<&Value>,
+) -> AppResult<StubPayload> {
+    let error_text = extract_station_error_message(raw_message, details);
+    let resolved = if is_cli && !cli_binary.is_empty() {
+        error_resolver::resolve_cli_error(cli_binary, &error_text)
+    } else {
+        error_resolver::resolve_error(provider_id, &error_text)
+    };
+    let mut details_obj = json!({});
+    if let Some(detail) = resolved.detail {
+        details_obj["detail"] = json!(detail);
+    }
+    if let Some(action) = resolved.action {
+        details_obj["resolution"] = json!(action);
+    }
+    if let Some(pid) = resolved.provider_id {
+        details_obj["providerId"] = json!(pid);
+    }
+    AppResult::fail(
+        ErrorCode::InternalError,
+        resolved.message,
+        Some(details_obj),
+    )
+}
+
+fn extract_station_error_message(raw: &str, details: Option<&Value>) -> String {
+    if let Some(d) = details {
+        if let Some(body) = d.get("body").and_then(|v| v.as_str()) {
+            let trimmed = body.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+    raw.to_string()
+}
+
+fn emit_resolved_error(
+    app: &AppHandle,
+    stream_id: &str,
+    provider_id: &str,
+    kind: ProviderKind,
+    cli_command: Option<&str>,
+    raw_error: &str,
+) {
+    let wrapped = error_resolver::wrap_stream_error(provider_id, kind, raw_error, cli_command);
+    emit_turn_stream_event(app, stream_id, "error", wrapped);
 }
 
 fn emit_turn_stream_event(app: &AppHandle, stream_id: &str, event: &str, data: Value) {
@@ -1259,6 +1218,165 @@ fn build_local_tool_result_event(
             "audit": execution.get("audit").cloned().unwrap_or_else(|| json!({}))
         }
     })
+}
+
+pub fn agent_conversation_list(
+    input: AgentConversationListInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let agent_id = input.agent_id.trim().to_string();
+    if agent_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "agent_id is required", None);
+    }
+    let body = json!({
+        "agent_id": agent_id,
+        "status": input.status.unwrap_or_default(),
+        "page": input.page.unwrap_or(1),
+        "page_size": input.page_size.unwrap_or(50),
+    });
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/conversation/list",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_conversation_list", result),
+        Err(err) => {
+            tracing::error!(command = "agent_conversation_list", error = %err, "Conversation list failed");
+            err.into_app_result("Failed to list agent conversations")
+        }
+    }
+}
+
+pub fn agent_conversation_get(
+    input: AgentConversationGetInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let conversation_id = input.conversation_id.trim().to_string();
+    if conversation_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id is required",
+            None,
+        );
+    }
+    let body = json!({ "conversation_id": conversation_id });
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/conversation/get",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_conversation_get", result),
+        Err(err) => {
+            tracing::error!(command = "agent_conversation_get", error = %err, "Conversation get failed");
+            err.into_app_result("Failed to get agent conversation")
+        }
+    }
+}
+
+pub fn agent_conversation_create(
+    input: AgentConversationCreateInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let agent_id = input.agent_id.trim().to_string();
+    if agent_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "agent_id is required", None);
+    }
+    let mut body = json!({
+        "agent_id": agent_id,
+    });
+    if let Some(title) = input.title.filter(|s| !s.trim().is_empty()) {
+        body["title"] = json!(title);
+    }
+    if let Some(desc) = input.description.filter(|s| !s.trim().is_empty()) {
+        body["description"] = json!(desc);
+    }
+    if let Some(model) = input.model_name.filter(|s| !s.trim().is_empty()) {
+        body["model_name"] = json!(model);
+    }
+    if let Some(provider) = input.provider_id.filter(|s| !s.trim().is_empty()) {
+        body["provider_id"] = json!(provider);
+    }
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/conversation/create",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_conversation_create", result),
+        Err(err) => {
+            tracing::error!(command = "agent_conversation_create", error = %err, "Conversation create failed");
+            err.into_app_result("Failed to create agent conversation")
+        }
+    }
+}
+
+pub fn agent_conversation_messages(
+    input: AgentConversationMessagesInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let conversation_id = input.conversation_id.trim().to_string();
+    if conversation_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id is required",
+            None,
+        );
+    }
+    let body = json!({
+        "conversation_id": conversation_id,
+        "after_seq": input.after_seq.unwrap_or(0),
+        "before_seq": input.before_seq.unwrap_or(0),
+        "limit": input.limit.unwrap_or(50),
+    });
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/conversation/messages",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_conversation_messages", result),
+        Err(err) => {
+            tracing::error!(command = "agent_conversation_messages", error = %err, "Conversation messages failed");
+            err.into_app_result("Failed to list agent conversation messages")
+        }
+    }
+}
+
+pub fn agent_conversation_archive(
+    input: AgentConversationArchiveInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let conversation_id = input.conversation_id.trim().to_string();
+    if conversation_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id is required",
+            None,
+        );
+    }
+    let body = json!({
+        "conversation_id": conversation_id,
+        "permanent": input.permanent.unwrap_or(false),
+    });
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/conversation/archive",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_conversation_archive", result),
+        Err(err) => {
+            tracing::error!(command = "agent_conversation_archive", error = %err, "Conversation archive failed");
+            err.into_app_result("Failed to archive agent conversation")
+        }
+    }
 }
 
 #[cfg(test)]

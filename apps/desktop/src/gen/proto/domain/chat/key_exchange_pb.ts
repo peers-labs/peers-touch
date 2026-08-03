@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/chat/key_exchange.proto.
  */
 export const file_domain_chat_key_exchange: GenFile = /*@__PURE__*/
-  fileDesc("Ch5kb21haW4vY2hhdC9rZXlfZXhjaGFuZ2UucHJvdG8SGXBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEiJwoJS2V5QnVuZGxlEhoKEnN1cHBvcnRlZF92ZXJzaW9ucxhjIAMoBUJHWkVnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9jaGF0O2NoYXRiBnByb3RvMw");
+  fileDesc("Ch5kb21haW4vY2hhdC9rZXlfZXhjaGFuZ2UucHJvdG8SGXBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEiJwoJS2V5QnVuZGxlEhoKEnN1cHBvcnRlZF92ZXJzaW9ucxhjIAMoBSLAAQoPWDNkaFNlc3Npb25Jbml0EhIKCnNlc3Npb25faWQYASABKAkSGwoTc2VuZGVyX2lkZW50aXR5X2tleRgCIAEoDBIcChRzZW5kZXJfZXBoZW1lcmFsX2tleRgDIAEoDBIfChdyZWNpcGllbnRfc2lnbmVkX3ByZWtleRgEIAEoDBIhChlyZWNpcGllbnRfb25lX3RpbWVfcHJla2V5GAUgASgMEhoKEm5lZ290aWF0ZWRfdmVyc2lvbhgGIAEoDUJHWkVnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9jaGF0O2NoYXRiBnByb3RvMw");
 
 /**
  * X3DH public key bundle surface plus Double Ratchet wire-version negotiation.
@@ -31,4 +31,50 @@ export type KeyBundle = Message<"peers_touch.model.chat.v1.KeyBundle"> & {
  */
 export const KeyBundleSchema: GenMessage<KeyBundle> = /*@__PURE__*/
   messageDesc(file_domain_chat_key_exchange, 0);
+
+/**
+ * Initiator material required for the recipient to complete X3DH and initialize
+ * the negotiated direct-message ratchet. Serialized into
+ * DirectKeyExchangePayload.opaque_key_material; Station treats it as opaque.
+ *
+ * @generated from message peers_touch.model.chat.v1.X3dhSessionInit
+ */
+export type X3dhSessionInit = Message<"peers_touch.model.chat.v1.X3dhSessionInit"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: bytes sender_identity_key = 2;
+   */
+  senderIdentityKey: Uint8Array;
+
+  /**
+   * @generated from field: bytes sender_ephemeral_key = 3;
+   */
+  senderEphemeralKey: Uint8Array;
+
+  /**
+   * @generated from field: bytes recipient_signed_prekey = 4;
+   */
+  recipientSignedPrekey: Uint8Array;
+
+  /**
+   * @generated from field: bytes recipient_one_time_prekey = 5;
+   */
+  recipientOneTimePrekey: Uint8Array;
+
+  /**
+   * @generated from field: uint32 negotiated_version = 6;
+   */
+  negotiatedVersion: number;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.X3dhSessionInit.
+ * Use `create(X3dhSessionInitSchema)` to create a new message.
+ */
+export const X3dhSessionInitSchema: GenMessage<X3dhSessionInit> = /*@__PURE__*/
+  messageDesc(file_domain_chat_key_exchange, 1);
 

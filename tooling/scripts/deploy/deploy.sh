@@ -96,7 +96,6 @@ push_to_central() {
 
 # ─── Direct mode: push straight to target station ───
 push_direct() {
-  local remote_url="ssh://${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}/~/${PT_DEPLOY_PATH}"
   echo "[INFO] Pushing directly to: ${PT_DEPLOY_HOST}:${PT_DEPLOY_PATH}"
   ssh_run "mkdir -p \$HOME/$PT_DEPLOY_PATH && cd \$HOME/$PT_DEPLOY_PATH && git init --bare .bare.git 2>/dev/null || true"
   git -C "$PROJECT_ROOT" push --force "ssh://${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}/home/${PT_DEPLOY_USER}/${PT_DEPLOY_PATH}/.bare.git" "HEAD:refs/heads/$BRANCH" 2>&1 | sed 's/^/       /'

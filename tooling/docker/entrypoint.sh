@@ -248,4 +248,26 @@ if [ -n "$OVERLAYS" ]; then
   done
 fi
 
+# ── Host CLI provider wiring (e.g. traecli) ─────────────────────────────────
+# The compose file bind-mounts the host's real CLI binary at
+# /usr/local/bin/host-cli-bin and the host CLI auth/config home at
+# /root/.host-cli-home when PEERS_HOST_CLI_*_MOUNT are set. Here we expose
+# them under their canonical names (traecli on PATH, ~/.trae) so the agent
+# subprocess can spawn the CLI without rebuilding the image. This is
+# idempotent and a no-op when the sources are absent (default /dev/null bind).
+HOST_CLI_BIN=/usr/local/bin/host-cli-bin
+if [ -f "$HOST_CLI_BIN" ] && [ -x "$HOST_CLI_BIN" ]; then
+  ln -sf "$HOST_CLI_BIN" /usr/local/bin/traecli
+  echo "[entrypoint] host CLI binary wired: traecli -> $HOST_CLI_BIN"
+fi
+
+HOST_CLI_HOME=/root/.host-cli-home
+if [ -d "$HOST_CLI_HOME" ] && [ -n "$(ls -A "$HOST_CLI_HOME" 2>/dev/null)" ]; then
+  # Reuse the host's CLI login/config. Bind-mount is read-write so the CLI can
+  # refresh its session metadata; ~/.trae is the canonical config location.
+  rm -rf /root/.trae
+  ln -sf "$HOST_CLI_HOME" /root/.trae
+  echo "[entrypoint] host CLI home wired: /root/.trae -> $HOST_CLI_HOME"
+fi
+
 exec "$@"

@@ -39,6 +39,30 @@ message Conversation {
   int32 max_members = 14;
   GroupVisibilityV1 visibility = 15;
   uint32 disappear_timer_seconds = 16;
+  int64 mls_epoch = 17;
+  string federation_id = 18;
+  int64 authority_epoch = 19;
+}
+
+message ConversationPublicHead {
+  string conversation_id = 1;
+  ConversationPublicHeadSource source = 2;
+  string federation_id = 3;
+  string authority_station_peer_id = 4;
+  int64 authority_epoch = 5;
+  int64 group_seq = 6;
+  bytes event_hash = 7;
+  int64 membership_epoch = 8;
+  int64 mls_epoch = 9;
+  string transition_id = 10;
+  bytes commit_sha256 = 11;
+  string status = 12;
+}
+
+enum ConversationPublicHeadSource {
+  CONVERSATION_PUBLIC_HEAD_SOURCE_UNSPECIFIED = 0;
+  CONVERSATION_PUBLIC_HEAD_SOURCE_AUTHORITY = 1;
+  CONVERSATION_PUBLIC_HEAD_SOURCE_FOLLOWER = 2;
 }
 
 enum ConversationKind {
@@ -126,16 +150,16 @@ message ConversationCommand {
     SendMessageCommand send_message = 10;
     EditMessageCommand edit_message = 11;
     RetractMessageCommand retract_message = 12;
-    AddMembersCommand add_members = 13;
-    RemoveMembersCommand remove_members = 14;
-    LeaveCommand leave = 15;
     DissolveCommand dissolve = 16;
     UpdateSettingsCommand update_settings = 17;
     TypingCommand typing = 18;
     ReactCommand react = 19;
-    UpdateMemberCommand update_member = 20;
     PinMessageCommand pin_message = 21;
+    MembershipTransitionCommand membership_transition = 22;
   }
+
+  reserved 13, 14, 15, 20;
+  reserved "add_members", "remove_members", "leave", "update_member";
 }
 
 message SendMessageCommand {
@@ -155,21 +179,191 @@ message RetractMessageCommand {
   string target_message_id = 1;
 }
 
-message AddMembersCommand {
-  repeated MemberAddEntry members = 1;
+message MembershipTransitionCommand {
+  string transition_id = 1;
+  int64 from_membership_epoch = 2;
+  int64 from_mls_epoch = 3;
+  int64 to_mls_epoch = 4;
+  repeated MembershipTransitionChange changes = 5;
+  bytes opaque_mls_commit_bytes = 6;
+  bytes commit_sha256 = 7;
+  repeated MlsWelcomeDelivery welcome_deliveries = 8;
+  string idempotency_key = 9;
+  // D-16 proof consumed atomically for a delegated LEAVE transition.
+  string leave_intent_id = 10;
 }
 
-message MemberAddEntry {
+// D-15 device-scoped MLS leaf identity. Its deterministic protobuf bytes are
+// the complete OpenMLS BasicCredential.identity. PTID-only credentials are not
+// valid after the hard cutover.
+message MlsDeviceCredential {
+  uint32 version = 1;
+  string ptid = 2;
+  string device_id = 3;
+}
+
+// D-16 actor authorization for a different active MLS leaf to commit LEAVE.
+message MlsLeaveIntent {
+  uint32 version = 1;
+  string intent_id = 2;
+  string federation_id = 3;
+  string authority_station_peer_id = 4;
+  int64 authority_epoch = 5;
+  string home_station_peer_id = 6;
+  string conversation_id = 7;
+  string actor_ptid = 8;
+  string actor_device_id = 9;
+  string actor_signing_key_id = 10;
+  int64 observed_membership_epoch = 11;
+  int64 observed_mls_epoch = 12;
+  int64 created_at_unix_ms = 13;
+  int64 expires_at_unix_ms = 14;
+  bytes actor_signature = 15;
+}
+
+// Exact deterministic protobuf input signed by the departing actor device.
+message MlsLeaveIntentSigningInput {
+  uint32 version = 1;
+  string intent_id = 2;
+  string federation_id = 3;
+  string authority_station_peer_id = 4;
+  int64 authority_epoch = 5;
+  string home_station_peer_id = 6;
+  string conversation_id = 7;
+  string actor_ptid = 8;
+  string actor_device_id = 9;
+  string actor_signing_key_id = 10;
+  int64 observed_membership_epoch = 11;
+  int64 observed_mls_epoch = 12;
+  int64 created_at_unix_ms = 13;
+  int64 expires_at_unix_ms = 14;
+}
+
+message MembershipTransitionChange {
   string ptid = 1;
   string actor_home_station_peer_id = 2;
-  MemberRole role = 3;
+  MembershipTransitionAction action = 3;
+  MemberRole role = 4;
+  string device_id = 5;
 }
 
-message RemoveMembersCommand {
-  repeated string ptids = 1;
+enum MembershipTransitionAction {
+  MEMBERSHIP_TRANSITION_ACTION_UNSPECIFIED = 0;
+  MEMBERSHIP_TRANSITION_ACTION_ADD = 1;
+  MEMBERSHIP_TRANSITION_ACTION_REMOVE = 2;
+  MEMBERSHIP_TRANSITION_ACTION_LEAVE = 3;
+  MEMBERSHIP_TRANSITION_ACTION_ROLE_CHANGE = 4;
+  MEMBERSHIP_TRANSITION_ACTION_ADD_DEVICE = 5;
+  MEMBERSHIP_TRANSITION_ACTION_REMOVE_DEVICE = 6;
 }
 
-message LeaveCommand {}
+message MlsWelcomeDelivery {
+  string recipient_ptid = 1;
+  string recipient_device_id = 2;
+  string recipient_home_station_peer_id = 3;
+  bytes opaque_welcome_bytes = 4;
+  bytes welcome_sha256 = 5;
+}
+
+// D-17 is the only remote durable command wrapper. command_id is both the
+// proposal identity and the authority idempotency identity.
+message ConversationCommandProposal {
+  uint32 version = 1;
+  string federation_id = 2;
+  string authority_station_peer_id = 3;
+  int64 authority_epoch = 4;
+  string home_station_peer_id = 5;
+  string actor_ptid = 6;
+  string actor_device_id = 7;
+  string actor_signing_key_id = 8;
+  ConversationCommand command = 9;
+  bytes command_sha256 = 10;
+  bytes actor_signature = 11;
+  int64 created_at_unix_ms = 12;
+  int64 expires_at_unix_ms = 13;
+}
+
+// Exact deterministic protobuf input signed by the actor device.
+message ConversationCommandProposalSigningInput {
+  uint32 version = 1;
+  string federation_id = 2;
+  string authority_station_peer_id = 3;
+  int64 authority_epoch = 4;
+  string home_station_peer_id = 5;
+  string conversation_id = 6;
+  string command_id = 7;
+  ConversationCommandKind command_kind = 8;
+  string actor_ptid = 9;
+  string actor_device_id = 10;
+  string actor_signing_key_id = 11;
+  bytes command_sha256 = 12;
+  int64 created_at_unix_ms = 13;
+  int64 expires_at_unix_ms = 14;
+}
+
+enum ConversationCommandKind {
+  CONVERSATION_COMMAND_KIND_UNSPECIFIED = 0;
+  CONVERSATION_COMMAND_KIND_SEND_MESSAGE = 1;
+  CONVERSATION_COMMAND_KIND_EDIT_MESSAGE = 2;
+  CONVERSATION_COMMAND_KIND_RETRACT_MESSAGE = 3;
+  CONVERSATION_COMMAND_KIND_DISSOLVE = 4;
+  CONVERSATION_COMMAND_KIND_UPDATE_SETTINGS = 5;
+  CONVERSATION_COMMAND_KIND_REACT = 6;
+  CONVERSATION_COMMAND_KIND_PIN_MESSAGE = 7;
+  CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION = 8;
+}
+
+message ConversationCommandProposalResult {
+  string command_id = 1;
+  bool accepted = 2;
+  CommittedConversationEvent committed_event = 3;
+  ConversationCommandRejectCode reject_code = 4;
+  bool retryable = 5;
+  int64 retry_after_unix_ms = 6;
+  int64 required_membership_epoch = 7;
+  int64 required_mls_epoch = 8;
+  int64 authority_group_seq = 9;
+  bytes authority_event_hash = 10;
+}
+
+enum ConversationCommandRejectCode {
+  CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED = 0;
+  CONVERSATION_COMMAND_REJECT_CODE_INVALID_PROPOSAL = 1;
+  CONVERSATION_COMMAND_REJECT_CODE_INVALID_STATION_TOKEN = 2;
+  CONVERSATION_COMMAND_REJECT_CODE_INACTIVE_FEDERATION_STATION = 3;
+  CONVERSATION_COMMAND_REJECT_CODE_ACTOR_KEY_UNAVAILABLE = 4;
+  CONVERSATION_COMMAND_REJECT_CODE_ACTOR_KEY_REVOKED = 5;
+  CONVERSATION_COMMAND_REJECT_CODE_INVALID_ACTOR_SIGNATURE = 6;
+  CONVERSATION_COMMAND_REJECT_CODE_COMMAND_HASH_MISMATCH = 7;
+  CONVERSATION_COMMAND_REJECT_CODE_FIELD_BINDING_MISMATCH = 8;
+  CONVERSATION_COMMAND_REJECT_CODE_NOT_AUTHORITY = 9;
+  CONVERSATION_COMMAND_REJECT_CODE_PERMISSION_DENIED = 10;
+  CONVERSATION_COMMAND_REJECT_CODE_MEMBERSHIP_EPOCH_STALE = 11;
+  CONVERSATION_COMMAND_REJECT_CODE_MLS_EPOCH_MISMATCH = 12;
+  CONVERSATION_COMMAND_REJECT_CODE_COMMAND_CONFLICT = 13;
+  CONVERSATION_COMMAND_REJECT_CODE_COMMAND_EXPIRED = 14;
+  CONVERSATION_COMMAND_REJECT_CODE_GROUP_READ_ONLY = 15;
+  CONVERSATION_COMMAND_REJECT_CODE_PAYLOAD_TOO_LARGE = 16;
+  CONVERSATION_COMMAND_REJECT_CODE_TOO_MANY_RECIPIENTS = 17;
+  CONVERSATION_COMMAND_REJECT_CODE_RATE_LIMITED = 18;
+  CONVERSATION_COMMAND_REJECT_CODE_UNSUPPORTED_COMMAND = 19;
+}
+
+enum ConversationCommandSubmissionState {
+  CONVERSATION_COMMAND_SUBMISSION_STATE_UNSPECIFIED = 0;
+  CONVERSATION_COMMAND_SUBMISSION_STATE_HOME_ACCEPTED = 1;
+  CONVERSATION_COMMAND_SUBMISSION_STATE_SUBMITTED = 2;
+  CONVERSATION_COMMAND_SUBMISSION_STATE_RETRY_WAIT = 3;
+  CONVERSATION_COMMAND_SUBMISSION_STATE_ACCEPTED = 4;
+  CONVERSATION_COMMAND_SUBMISSION_STATE_TERMINAL_REJECTED = 5;
+}
+
+message ConversationCommandResultDelivery {
+  string conversation_id = 1;
+  string command_id = 2;
+  ConversationCommandSubmissionState state = 3;
+  ConversationCommandProposalResult result = 4;
+}
 
 message DissolveCommand {}
 
@@ -190,12 +384,6 @@ message ReactCommand {
   string message_id = 1;
   string emoji = 2;
   bool remove = 3;
-}
-
-message UpdateMemberCommand {
-  string target_ptid = 1;
-  MemberRole new_role = 2;
-  bool muted = 3;
 }
 
 message PinMessageCommand {
@@ -221,13 +409,16 @@ message CommittedConversationEvent {
     MessageCommittedEvent message_committed = 10;
     MessageEditedEvent message_edited = 11;
     MessageRetractedEvent message_retracted = 12;
-    MembershipChangedEvent membership_changed = 13;
     ConversationCreatedEvent conversation_created = 14;
     ConversationDissolvedEvent conversation_dissolved = 15;
     SettingsChangedEvent settings_changed = 16;
     ReactionEvent reaction = 17;
     PinEvent pin = 18;
+    MembershipTransitionCommittedEvent membership_transition_committed = 19;
   }
+
+  reserved 13;
+  reserved "membership_changed";
 }
 
 message MessageCommittedEvent {
@@ -255,24 +446,24 @@ message MessageRetractedEvent {
   google.protobuf.Timestamp retracted_at = 3;
 }
 
-message MembershipChangedEvent {
-  repeated MemberChange changes = 1;
-  int64 new_membership_epoch = 2;
+message MembershipTransitionCommittedEvent {
+  string transition_id = 1;
+  int64 from_membership_epoch = 2;
+  int64 to_membership_epoch = 3;
+  int64 from_mls_epoch = 4;
+  int64 to_mls_epoch = 5;
+  repeated MembershipTransitionChange changes = 6;
+  bytes opaque_mls_commit_bytes = 7;
+  bytes commit_sha256 = 8;
+  repeated MlsWelcomeDescriptor welcome_descriptors = 9;
+  string leave_intent_id = 10;
 }
 
-message MemberChange {
-  string ptid = 1;
-  MemberChangeAction action = 2;
-  MemberRole role = 3;
-  string actor_home_station_peer_id = 4;
-}
-
-enum MemberChangeAction {
-  MEMBER_CHANGE_ACTION_UNSPECIFIED = 0;
-  MEMBER_CHANGE_ACTION_ADDED = 1;
-  MEMBER_CHANGE_ACTION_REMOVED = 2;
-  MEMBER_CHANGE_ACTION_LEFT = 3;
-  MEMBER_CHANGE_ACTION_ROLE_CHANGED = 4;
+message MlsWelcomeDescriptor {
+  string recipient_ptid = 1;
+  string recipient_device_id = 2;
+  string recipient_home_station_peer_id = 3;
+  bytes welcome_sha256 = 4;
 }
 
 message ConversationCreatedEvent {
