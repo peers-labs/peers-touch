@@ -1,10 +1,10 @@
 # Federated IM Architecture — Design
 
 > **Status**: draft
-> **Version**: v0.2
-> **Created**: 2026-07-04 | **Updated**: 2026-08-02
+> **Version**: v0.4
+> **Created**: 2026-07-04 | **Updated**: 2026-08-03
 > **Owner**: Architecture Team
-> **Module**: `apps/station/app/subserver/group_chat/`, `apps/station/frame/touch/federation/`, `model/domain/chat/`, `model/domain/federation/`, `model/domain/realtime/`
+> **Module**: `apps/station/app/subserver/conversation/`, `apps/station/app/subserver/envelope/`, `apps/station/frame/touch/actor/`, `apps/station/frame/touch/federation/`, `model/domain/chat/`, `model/domain/federation/`
 
 > **v1 unification update (2026-07-11)**: This design now reflects the approved
 > decisions D-08…D-12 (see `decisions.md`). Group E2EE is **MLS (RFC 9420)**, not
@@ -29,6 +29,11 @@
 8. **One membership transition fact.** Under accepted D-13, group membership,
    `membership_epoch`, MLS epoch, opaque Commit ordering, and durable fan-out
    are accepted or rejected together by the authority Station.
+9. **One remote authority-command trust protocol.** Under accepted D-17, every
+   authority-committed remote `ConversationCommand` uses the same
+   actor-device-signed proposal, Home Station token, verifier, idempotency
+   journal, and canonical committed-event result. Ephemeral typing remains on
+   the signaling plane.
 
 ## 2. System Architecture
 
@@ -129,7 +134,8 @@ Foundation Profile rules:
 The actor Home Station:
 
 - authenticates the local actor;
-- signs remote proposals with actor and Station credentials;
+- accepts actor-device-signed proposals and adds short-lived Station transport
+  authentication without creating an actor signature;
 - queues proposals to remote group authority Stations;
 - stores local projection and delivery cursors;
 - delivers SSE events to local clients.
@@ -187,16 +193,128 @@ Initial direct-add is allowed only if the group policy says so. Otherwise, membe
 ```text
 Bob@StationB sends to group owned by StationA
   -> Bob client encrypts payload as an MLS application message for the current MLS epoch
-  -> StationB builds signed GroupMessageProposal
-  -> StationB sends proposal to StationA
-  -> StationA validates Federation membership, ActorRef, group member, role, mute, epoch
-  -> StationA allocates committed group_seq
-  -> StationA appends GroupMessageCommitted
+  -> Bob device signs one ConversationCommandProposal over the canonical command hash
+  -> StationB authenticates Bob/device and verifies its durable follower route/head
+  -> StationB mints a short-lived, command-bound peer token and forwards the proposal
+  -> StationA verifies Station/Federation/actor-device signatures and exact field binding
+  -> StationA resolves command_id idempotently and runs the same SubmitCommand service
+  -> StationA allocates committed group_seq and appends MessageCommitted
   -> StationA replicates event to member Stations
   -> StationB/StationC fan out local SSE to their clients
 ```
 
 StationA validates metadata and ciphertext envelope shape, not plaintext.
+
+#### 6.2.1 Accepted D-17 Remote Command Boundary
+
+D-17 applies only to authority-committed command kinds:
+
+```text
+send_message | edit_message | retract_message | dissolve |
+update_settings | react | pin_message | membership_transition
+```
+
+`typing` is ephemeral and stays on the D-10 signaling channel. Receipts retain
+their dedicated typed receipt contract. Neither becomes a committed group event
+through the proposal wrapper.
+
+The device, Home Station, and authority responsibilities are distinct:
+
+| Boundary | Responsibility | Forbidden behavior |
+| --- | --- | --- |
+| Device | deterministically encode command, hash it, sign proposal input | give the Home Station its actor private key |
+| Home Station | authenticate exact PTID/device, verify follower routing facts, persist retry state, mint peer token | commit remote truth or alter signed command bytes |
+| Authority | verify both trust layers, resolve exact retry, authorize command, commit canonical event | trust proposal-supplied public keys or accept direct remote client writes |
+
+`command_id` is required for every authority-committed command. The authority
+owns an idempotency journal keyed by `(conversation_id, command_id)`:
+
+- the same deterministic command hash returns the same committed event;
+- a different hash for the same key returns `COMMAND_CONFLICT`;
+- retries never allocate a second `group_seq` or duplicate fan-out.
+
+For every durable command, one authority transaction owns:
+
+```text
+lock conversation head
+  -> resolve command receipt or conflict
+  -> validate command-specific authorization/admission
+  -> allocate group_seq
+  -> append canonical committed event
+  -> insert command receipt
+  -> insert deterministic replication/inbox outbox rows
+commit
+```
+
+No post-commit network submission is the durability source. Workers only wake
+and deliver rows that already committed with the event. A crash exposes either
+none of the command/event/outbox or all of them.
+
+The Home Station may remint an expired peer token without changing device-signed
+bytes. It retries a durable proposal until the authority returns an accepted or
+terminal rejected result, or until the immutable device-signed command expiry.
+Authority unavailability creates no local committed event. An expired command
+is terminal and cannot be extended by the Home Station. A client cannot cancel
+a signed command after Home Station acceptance; message retraction or another
+compensating command is the explicit follow-up.
+
+Admission is bounded before authority mutation. Oversized commands,
+ciphertexts, or attachment metadata return `PAYLOAD_TOO_LARGE`; saturated Home
+or authority queues return `RATE_LIMITED`. Exact byte/count thresholds are
+Station policy surfaced through typed limits and must be exercised by the
+acceptance gate. No queue is unbounded.
+
+Home Station dispatch is FIFO for one conversation and fairly scheduled across
+actors/conversations under bounded per-actor, per-conversation, and global
+limits. It must not reorder accepted commands inside one conversation to
+prioritize membership over messages; the authority head decides the resulting
+order and stale commands receive typed rejection.
+
+The actor-device signer is process/actor scoped, not window scoped. Multiple
+Desktop windows share the same durable device identity through the Rust
+identity runtime, generate distinct command IDs, and never copy private key
+bytes into TypeScript or window state. Closing the originating window does not
+cancel a Home Station-durable proposal; process shutdown preserves local queued
+state and Home Station retry remains authoritative after durable acceptance.
+
+#### 6.2.2 Accepted Endpoints And Result Recovery
+
+```text
+POST /conversation/command
+  auth: local actor JWT + exact device header
+  use: local-authority command only
+  response: canonical committed event or typed rejection
+
+POST /conversation/command-proposal
+  auth: local actor JWT + exact device header
+  use: Home Station durable acceptance of device-signed proposal
+  response: home_accepted | accepted | terminal_rejected
+
+POST /conversation/federation/command-proposal
+  auth: scoped Station peer token
+  use: Home Station worker to authority
+  response: accepted | retryable_rejected | terminal_rejected
+
+GET /conversation/command-proposal/result
+  auth: local actor JWT + exact device header
+  key: conversation_id + command_id
+  response: current durable Home Station proposal/result state
+```
+
+The Home Station persists the proposal before attempting remote forwarding. A
+fast authority response may be returned by the initial POST, but the request
+may safely return `home_accepted` while forwarding continues.
+
+On authority acceptance or terminal rejection, the Home Station atomically
+stores the result and inserts a local device inbox notification addressed to
+the originating actor/device. The D-10 signaling envelope carries only the
+typed command result and public authority evidence. Reconnect can recover from
+the local inbox or the result query; response loss never requires issuing a new
+command ID.
+
+The public `/conversation/command` route rejects a group whose authority is not
+the authenticated actor's Home Station. The peer route rejects actor JWTs.
+Remote clients never submit directly to the authority.
 
 ### 6.3 Membership Change
 
@@ -229,6 +347,12 @@ messages and group secrets. Added members receive recipient-specific Welcome
 delivery tied to the same `transition_id`; they do not apply the Commit as an
 existing member.
 
+D-16 governs actor-initiated leave because RFC-conforming OpenMLS rejects a
+Commit that removes the committer's own leaf. The departing device signs a
+head-bound leave intent. A different active leaf removes every D-15 credential
+for the target PTID, and the authority consumes the verified intent atomically
+with the D-13 transition. A bare or self-authored `LEAVE` is invalid.
+
 The client MUST keep a generated OpenMLS Commit pending until the authority
 accepts the transition. Local durable MLS state cannot advance on request send,
 transport ACK, or optimistic UI state. Authority rejection discards the pending
@@ -237,6 +361,54 @@ Commit and refreshes the authoritative projection before retry.
 Authority admission rejects a transition before locking when Commit bytes exceed
 128 KiB, Welcome payloads exceed 8 MiB total, or recipient device deliveries
 exceed 200.
+
+#### 6.3.1 Accepted Unified Signed Remote Command Submission
+
+Local and remote commands converge on the same authority service:
+
+```text
+Remote member device
+  -> prepares canonical ConversationCommand
+  -> hashes the deterministic command and signs proposal input
+  -> Home Station authenticates actor/device and resolves group authority
+  -> Home Station forwards ConversationCommandProposal with Station token
+  -> authority verifies Station token and active Federation membership
+  -> authority resolves actor key from verified Actor identity projection
+  -> authority verifies actor signature, command hash, and bound identifiers
+  -> authority invokes the same SubmitCommand service as a local command
+  -> authority returns ConversationCommandProposalResult
+```
+
+D-14 remains the membership-specific validation specialization inside this
+generic D-17 boundary. Membership commands still require D-13 epoch, Commit,
+Welcome, leave-intent, and exact pending-Commit acceptance checks. They do not
+retain a second membership-only proposal protocol.
+
+Trust boundaries:
+
+- the device owns the actor signing private key;
+- Actor identity/resolver owns the verified public-key projection and rotation;
+- the Home Station owns transport authentication and the Station signature;
+- Conversation owns proposal semantics, command idempotency, and authority
+  business validation;
+- Federation governance owns the active Station set;
+- the authority event remains the only membership/MLS ordering truth.
+
+Forbidden relationships:
+
+- Home Station must not create an actor signature on behalf of the device;
+- authority must not trust actor public-key bytes supplied by the proposal;
+- Conversation must not persist a parallel actor signing-key copy;
+- remote proposal handling must not emit or return legacy `GroupEvent`;
+- membership handling must not retain a parallel
+  `MembershipTransitionProposal` route after the D-17 hard cut;
+- a verified Station token alone is insufficient to authorize an actor command.
+
+Missing or stale identity projection, invalid actor signature, inactive Home
+Station, claim mismatch, expired token, or command-hash mismatch rejects before
+authority mutation. Exact command retry resolves to the same canonical
+committed event. Membership-specific semantic rejection also discards the
+device's pending OpenMLS Commit.
 
 ### 6.4 Cross-Station MLS Key Delivery
 
@@ -320,6 +492,30 @@ Client runtime rules:
 - reconnect replays from the last durable local transition, then drains the
   bounded buffer in order.
 
+### 6.5.1 Accepted Device-To-Leaf Identity
+
+D-15 requires that every MLS leaf use deterministic protobuf
+`MlsDeviceCredential{version, ptid, device_id}` bytes as its BasicCredential
+identity. Actor membership remains Station truth; device-to-leaf identity
+remains client/OpenMLS truth.
+
+Allowed relationships:
+
+- Station orders actor/device transition descriptors but does not parse MLS
+  KeyPackages or Commits.
+- Clients validate KeyPackage credentials against directory routing metadata.
+- Clients resolve exact device leaves locally and verify received Commits
+  against the authority transition.
+
+Forbidden relationships:
+
+- selecting the first leaf whose credential contains only PTID;
+- ad hoc `ptid#device_id` string identities;
+- Station-owned MLS leaf indexes or device secret synchronization;
+- compatibility fallback for PTID-only development credentials.
+
+This boundary is accepted and authorizes the proto-first hard cutover.
+
 ### 6.6 Dissolve And History Retention
 
 Group dissolution is a committed group event:
@@ -381,12 +577,20 @@ Mandatory:
 | --- | --- | --- | --- |
 | Federation Governance | Station membership and policy truth | Ledger events/proposals | Materialized active Station set |
 | Actor Resolver | Cross-Station identity resolution | Federation scope + handle/ActorRef | Verified ActorRef projection |
+| Actor Device Identity | Device-local Ed25519 signer and Station-side verified public projection | authenticated actor/device scope, signed profile | signatures and verified device key records |
+| Command Proposal Gateway | D-17 Home/authority transport authentication and field binding | device-signed command, follower route, peer token | verified canonical command or typed rejection |
+| Command Receipt Store | Exact command replay/conflict resolution | conversation ID, command ID, command hash | canonical accepted/terminal result |
 | Group Authority Service | Group lifecycle truth | local commands, remote proposals | committed group events |
 | Group Follower Service | Local projection of remote group truth | committed group events | local query/SSE projection |
 | Federation Delivery Outbox | Reliable cross-Station delivery | proposals/events | retries, cursors, status |
 | Realtime Event Stream | Device-window notification | local projection events | SSE + resync |
 | Client Crypto Runtime | E2EE encrypt/decrypt, MLS group state, direct-chat ratchet | key bundles, ciphertext, epoch, MLS Commit/Welcome | local plaintext projection |
 | Stress Harness | Family-scale evidence | configured Stations/actors | latency/error/security reports |
+
+The Actor Device Identity component is upstream of both the generic command
+proposal signer and OpenMLS credential construction. The MLS runtime must not
+become the owner of generic proposal signing merely because the current D-14
+implementation first exposed the signer from an MLS module.
 
 ## 10. Three-Round Architecture Self Review
 

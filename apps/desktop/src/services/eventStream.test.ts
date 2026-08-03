@@ -16,7 +16,6 @@ import {
 import type {
   RealtimeGroupFederationEventPayload,
   RealtimeGroupMembershipChangeKind,
-  RealtimeGroupSkdmEnvelopeDeliveredPayload,
 } from '../kernel/events/types';
 
 type TauriEventHandler = (event: { payload: unknown }) => void;
@@ -148,44 +147,6 @@ describe('event stream group membership decode', () => {
     ]);
   });
 
-  it('dispatches group SKDM envelope delivery events', async () => {
-    let realtimeHandler: TauriEventHandler = () => {
-      throw new Error('realtime:event handler was not installed');
-    };
-    listenMock.mockImplementation(async (eventName: string, handler: TauriEventHandler) => {
-      if (eventName === 'realtime:event') realtimeHandler = handler;
-      return () => undefined;
-    });
-    const payloads: RealtimeGroupSkdmEnvelopeDeliveredPayload[] = [];
-    const unsubscribe = eventBus.subscribe(EVENT.REALTIME_GROUP_SKDM_ENVELOPE_DELIVERED, (payload) => {
-      payloads.push(payload);
-    });
-
-    await installEventStreamBridge();
-    realtimeHandler({
-      payload: {
-        event_id: 'stream-event-1',
-        data_b64: groupSkdmEnvelopeDeliveredFrameBase64(),
-      },
-    });
-    unsubscribe();
-
-    expect(payloads).toEqual([
-      expect.objectContaining({
-        eventId: 'stream-event-1',
-        groupUlid: 'group-1',
-        membershipEpoch: 3,
-        senderDid: 'did:peer:alice',
-        senderKeyId: 7,
-        senderHomeStationPeerId: 'station-a',
-        recipientDid: 'did:peer:bob',
-        recipientDeviceId: 'bob-device-1',
-        idempotencyKey: 'skdm-1',
-        encryptedPayloadB64: Buffer.from('sealed-skdm').toString('base64'),
-      }),
-    ]);
-  });
-
   it('keeps browser gateway resync fallback low-frequency', async () => {
     vi.useFakeTimers();
     (window as any).__PT_GATEWAY_BASE__ = 'http://127.0.0.1:3031';
@@ -249,28 +210,6 @@ function groupFederationFrameBase64(): string {
         membershipEpoch: 1n,
         committedTsUnixMs: 123n,
         actorDid: 'did:peer:bob',
-      },
-    },
-  });
-  return Buffer.from(toBinary(StreamEventSchema, event)).toString('base64');
-}
-
-function groupSkdmEnvelopeDeliveredFrameBase64(): string {
-  const event = create(StreamEventSchema, {
-    eventId: 'stream-event-1',
-    kind: {
-      case: 'groupSkdmEnvelopeDelivered',
-      value: {
-        groupUlid: 'group-1',
-        membershipEpoch: 3n,
-        senderDid: 'did:peer:alice',
-        senderKeyId: 7,
-        senderHomeStationPeerId: 'station-a',
-        recipientDid: 'did:peer:bob',
-        recipientDeviceId: 'bob-device-1',
-        idempotencyKey: 'skdm-1',
-        encryptedPayload: new TextEncoder().encode('sealed-skdm'),
-        deliveredTsUnixMs: 123n,
       },
     },
   });
