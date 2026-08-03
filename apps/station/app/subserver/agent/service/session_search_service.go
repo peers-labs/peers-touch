@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	sessionSearchMaxResults     = 5
-	sessionSearchContextWindow  = 3 // messages before and after match
-	sessionSearchMaxContentLen  = 500
+	sessionSearchMaxResults    = 5
+	sessionSearchContextWindow = 3 // messages before and after match
+	sessionSearchMaxContentLen = 500
 )
 
 type SessionSearchResult struct {
