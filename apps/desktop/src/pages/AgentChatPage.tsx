@@ -21,7 +21,6 @@ import {
   Square,
   UserRound,
   Settings2,
-  X,
 } from 'lucide-react';
 import { useChatStore, type Session } from '../store/chat';
 import { useAgentStore } from '../store/agent';
@@ -53,6 +52,8 @@ function isToday(ts: number): boolean {
   return isSameDay(ts, Date.now());
 }
 
+const AGENT_SEARCH_INPUT_ID = 'agent-chat-agent-search-input';
+
 export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfile?: (agentName: string) => void; onNavigateAgentCanvas?: () => void }) {
   const { t } = useTranslation(['agent', 'common']);
   const { token } = theme.useToken();
@@ -63,7 +64,6 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [narrow, setNarrow] = useState(false);
-  const [topicsOpen, setTopicsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const narrowRef = useRef<boolean | null>(null);
 
@@ -78,6 +78,7 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
   const sessions = useChatStore((s) => s.sessions);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const selectSession = useChatStore((s) => s.selectSession);
+  const bootstrapSession = useChatStore((s) => s.bootstrapSession);
   const newSession = useChatStore((s) => s.newSession);
   const deleteSession = useChatStore((s) => s.deleteSession);
 
@@ -89,6 +90,12 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
       }
     }
   }, [agents, selectedAgent, setSelectedAgent]);
+
+  useEffect(() => {
+    if (agents.length === 0) return;
+    if (currentSurface !== 'chat') return;
+    void bootstrapSession();
+  }, [agents.length, currentSurface, bootstrapSession]);
 
   useEffect(() => {
     loadAgents();
@@ -111,7 +118,6 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
       setNarrow(nextNarrow);
       if (nextNarrow && wasNarrow !== true) {
         setLeftOpen(false);
-        setTopicsOpen(false);
       }
     };
     syncWidth(root.getBoundingClientRect().width);
@@ -174,6 +180,12 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
     ? otherAgents.filter((a) => a.name.toLowerCase().includes(search.toLowerCase()))
     : otherAgents;
 
+  const returnToChat = useCallback(() => {
+    if (selectedAgent) {
+      setAgentSurface(selectedAgent, 'chat');
+    }
+  }, [selectedAgent, setAgentSurface]);
+
   const handleSelectSession = useCallback((key: string) => {
     if (manageMode) {
       setSelectedSessions((prev) => {
@@ -185,7 +197,8 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
     }
     selectSession(key);
     setSearch('');
-  }, [manageMode, selectSession]);
+    returnToChat();
+  }, [manageMode, selectSession, returnToChat]);
 
   const toggleManageMode = useCallback(() => {
     setManageMode((p) => !p);
@@ -202,18 +215,22 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
 
   const handleNewSession = useCallback(() => {
     newSession();
-  }, [newSession]);
+    returnToChat();
+  }, [newSession, returnToChat]);
+
+  const handleFocusSearch = useCallback(() => {
+    setLeftOpen(true);
+    requestAnimationFrame(() => {
+      const input = document.getElementById(AGENT_SEARCH_INPUT_ID) as HTMLInputElement | null;
+      input?.focus();
+    });
+  }, []);
 
   const handleOpenProfile = useCallback(() => {
     if (selectedAgent) {
       setAgentSurface(selectedAgent, 'profile');
     }
   }, [selectedAgent, setAgentSurface]);
-
-  const handleToggleTopics = useCallback(() => {
-    if (!topicsOpen) setLeftOpen(false);
-    setTopicsOpen((open) => !open);
-  }, [topicsOpen]);
 
   return (
     <div ref={rootRef} style={{
@@ -227,157 +244,169 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
       color: token.colorText,
       fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     }}>
-      <aside
-        style={{
-          width: leftOpen ? 230 : 48,
-          background: SIDEBAR_COLORS.asideBg,
-          borderRight: `1px solid ${token.colorBorderSecondary}`,
-          display: 'flex',
-          flexDirection: 'column',
-          padding: leftOpen ? '14px 10px 58px' : '14px 0 58px',
-          transition: 'width 0.18s ease, padding 0.18s ease',
-          flexShrink: 0,
-          position: 'relative',
-          overflow: 'hidden',
-          alignItems: leftOpen ? 'stretch' : 'center',
-          boxSizing: 'border-box',
-          zIndex: 4,
-        }}
-      >
-        {leftOpen ? (
-          <>
-            <Flexbox horizontal align="center" gap={8} style={{ height: 40, marginBottom: 10 }}>
-              <span style={{ flex: 1, fontSize: 14, fontWeight: 800, color: token.colorText }}>{t('agent.chat.myAgents')}</span>
-              <ActionIcon
-                icon={Plus}
-                size={{ blockSize: 34, size: 15 }}
-                style={{ borderRadius: 10, border: `1px solid ${token.colorBorderSecondary}`, background: '#fff', color: token.colorTextSecondary }}
-                title={t('agent.chat.newAgent')}
-                onClick={handleOpenProfile}
-              />
-              <ActionIcon
-                icon={Workflow}
-                size={{ blockSize: 34, size: 15 }}
-                style={{ borderRadius: 10, border: `1px solid ${token.colorBorderSecondary}`, background: '#fff', color: token.colorTextSecondary }}
-                title={t('agent.chat.workflow')}
-              />
-            </Flexbox>
-            <div style={{ marginBottom: 8 }}>
-              <SearchBar
-                placeholder={t('agent.sidebar.searchAgents')}
-                value={search}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-                allowClear
-                size="small"
-                style={{ borderRadius: 7, height: 40 }}
-              />
-            </div>
-            <Flexbox flex={1} gap={0} style={{ minHeight: 0, overflow: 'auto' }}>
-              {filteredPinned.length > 0 && (
-                <>
-                  <div style={{ margin: '12px 0 6px', color: token.colorTextTertiary, fontSize: 12, fontWeight: 650, height: 18, lineHeight: '18px' }}>{t('agent.chat.pinned')}</div>
-                  {filteredPinned.map((agent) => (
-                    <AgentRow
-                      key={agent.name}
-                      name={agent.name}
-                      avatar={agent.avatar}
-                      desc={agent.description}
-                      active={selectedAgent === agent.name}
-                      pinned
-                      onClick={() => handleSelectAgent(agent.name)}
-                      token={token}
-                    />
-                  ))}
-                </>
-              )}
-              {filteredOthers.length > 0 && (
-                <>
-                  <div style={{ margin: '12px 0 6px', color: token.colorTextTertiary, fontSize: 12, fontWeight: 650, height: 18, lineHeight: '18px' }}>{t('agent.chat.allAgents')}</div>
-                  {filteredOthers.map((agent) => (
-                    <AgentRow
-                      key={agent.name}
-                      name={agent.name}
-                      avatar={agent.avatar}
-                      desc={agent.description}
-                      active={selectedAgent === agent.name}
-                      onClick={() => handleSelectAgent(agent.name)}
-                      token={token}
-                    />
-                  ))}
-                </>
-              )}
-            </Flexbox>
-          </>
-        ) : (
-          <>
+      {leftOpen ? (
+        <aside
+          style={{
+            width: 230,
+            background: SIDEBAR_COLORS.asideBg,
+            borderRight: `1px solid ${token.colorBorderSecondary}`,
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '14px 10px 58px',
+            flexShrink: 0,
+            position: 'relative',
+            overflow: 'hidden',
+            boxSizing: 'border-box',
+            zIndex: 4,
+          }}
+        >
+          <Flexbox horizontal align="center" gap={8} style={{ height: 40, marginBottom: 10 }}>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 800, color: token.colorText }}>{t('agent.chat.myAgents')}</span>
             <ActionIcon
               icon={Plus}
-              size={{ blockSize: 40, size: 16 }}
-              style={{ borderRadius: 12, border: 0, background: 'transparent', margin: '0 auto 10px', color: token.colorTextSecondary }}
+              size={{ blockSize: 34, size: 15 }}
+              style={{ borderRadius: 10, border: `1px solid ${token.colorBorderSecondary}`, background: '#fff', color: token.colorTextSecondary }}
               title={t('agent.chat.newAgent')}
               onClick={handleOpenProfile}
             />
             <ActionIcon
-              icon={Search}
-              size={{ blockSize: 40, size: 16 }}
-              style={{ borderRadius: 12, border: 0, background: 'transparent', margin: '0 auto 2px', color: token.colorTextSecondary }}
-              title={t('common.action.search', { ns: 'common' })}
-              onClick={() => { setLeftOpen(true); }}
+              icon={Workflow}
+              size={{ blockSize: 34, size: 15 }}
+              style={{ borderRadius: 10, border: `1px solid ${token.colorBorderSecondary}`, background: '#fff', color: token.colorTextSecondary }}
+              title={t('agent.chat.workflow')}
             />
-            <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+          </Flexbox>
+          <div style={{ marginBottom: 8 }}>
+            <SearchBar
+              id={AGENT_SEARCH_INPUT_ID}
+              placeholder={t('agent.sidebar.searchAgents')}
+              value={search}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+              allowClear
+              size="small"
+              style={{ borderRadius: 7, height: 40 }}
+            />
+          </div>
+          <Flexbox flex={1} gap={0} style={{ minHeight: 0, overflow: 'auto' }}>
+            {filteredPinned.length > 0 && (
+              <>
+                <div style={{ margin: '12px 0 6px', color: token.colorTextTertiary, fontSize: 12, fontWeight: 650, height: 18, lineHeight: '18px' }}>{t('agent.chat.pinned')}</div>
+                {filteredPinned.map((agent) => (
+                  <AgentRow
+                    key={agent.name}
+                    name={agent.name}
+                    title={agent.title}
+                    avatar={agent.avatar}
+                    desc={agent.description}
+                    active={selectedAgent === agent.name}
+                    pinned
+                    onClick={() => handleSelectAgent(agent.name)}
+                    token={token}
+                  />
+                ))}
+              </>
+            )}
+            {filteredOthers.length > 0 && (
+              <>
+                <div style={{ margin: '12px 0 6px', color: token.colorTextTertiary, fontSize: 12, fontWeight: 650, height: 18, lineHeight: '18px' }}>{t('agent.chat.allAgents')}</div>
+                {filteredOthers.map((agent) => (
+                  <AgentRow
+                    key={agent.name}
+                    name={agent.name}
+                    title={agent.title}
+                    avatar={agent.avatar}
+                    desc={agent.description}
+                    active={selectedAgent === agent.name}
+                    onClick={() => handleSelectAgent(agent.name)}
+                    token={token}
+                  />
+                ))}
+              </>
+            )}
+          </Flexbox>
+
+          <PanelToggleDock
+            open
+            title={t('agent.chat.collapsePanel')}
+            onClick={() => setLeftOpen(false)}
+            token={token}
+          />
+        </aside>
+      ) : (
+        <aside
+          style={{
+            width: 48,
+            minWidth: 48,
+            background: SIDEBAR_COLORS.asideBg,
+            borderRight: `1px solid ${token.colorBorderSecondary}`,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '14px 0 58px',
+            flexShrink: 0,
+            position: 'relative',
+            overflow: 'hidden',
+            boxSizing: 'border-box',
+            zIndex: 4,
+          }}
+        >
+          <ActionIcon
+            icon={Plus}
+            size={{ blockSize: 40, size: 16 }}
+            style={{ borderRadius: 12, border: 0, background: 'transparent', color: token.colorTextSecondary, marginBottom: 10 }}
+            title={t('agent.chat.newAgent')}
+            onClick={handleOpenProfile}
+          />
+          <ActionIcon
+            icon={Search}
+            size={{ blockSize: 40, size: 16 }}
+            style={{ borderRadius: 12, border: 0, background: 'transparent', color: token.colorTextSecondary, marginBottom: 2 }}
+            title={t('common.action.search', { ns: 'common' })}
+            onClick={handleFocusSearch}
+          />
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+            {pinnedAgents.length > 0 && (
               <div style={{ width: 40, height: 18, margin: '12px auto 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span style={{ width: 18, height: 1, background: token.colorBorderSecondary }} />
               </div>
-              {pinnedAgents.map((agent) => (
-                <CollapsedAgentButton
-                  key={agent.name}
-                  name={agent.name}
-                  avatar={agent.avatar}
-                  active={selectedAgent === agent.name}
-                  onClick={() => handleSelectAgent(agent.name)}
-                />
-              ))}
+            )}
+            {pinnedAgents.map((agent) => (
+              <CollapsedAgentButton
+                key={agent.name}
+                name={agent.name}
+                title={agent.title}
+                avatar={agent.avatar}
+                active={selectedAgent === agent.name}
+                onClick={() => handleSelectAgent(agent.name)}
+              />
+            ))}
+            {otherAgents.length > 0 && (
               <div style={{ width: 40, height: 18, margin: '12px auto 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span style={{ width: 18, height: 1, background: token.colorBorderSecondary }} />
               </div>
-              {otherAgents.map((agent) => (
-                <CollapsedAgentButton
-                  key={agent.name}
-                  name={agent.name}
-                  avatar={agent.avatar}
-                  active={selectedAgent === agent.name}
-                  onClick={() => handleSelectAgent(agent.name)}
-                />
-              ))}
-            </div>
-          </>
-        )}
+            )}
+            {otherAgents.map((agent) => (
+              <CollapsedAgentButton
+                key={agent.name}
+                name={agent.name}
+                title={agent.title}
+                avatar={agent.avatar}
+                active={selectedAgent === agent.name}
+                onClick={() => handleSelectAgent(agent.name)}
+              />
+            ))}
+          </div>
 
-        <div style={{ position: 'absolute', left: 10, bottom: 14, width: 28, height: 28, zIndex: 2, display: 'flex', justifyContent: 'center' }} data-panel-toggle-dock="left">
-          <button
-            type="button"
-            title={leftOpen ? t('agent.chat.collapsePanel') : t('agent.chat.expandPanel')}
-            onClick={() => setLeftOpen(!leftOpen)}
-            style={{
-              width: 28, height: 28, border: 0, borderRadius: 7, background: 'transparent',
-              color: TOGGLE_COLOR, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', flexShrink: 0, padding: 0,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = SIDEBAR_COLORS.toggleHoverBg;
-              e.currentTarget.style.color = token.colorPrimary;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.color = TOGGLE_COLOR;
-            }}
-          >
-            {leftOpen ? <PanelLeftClose size={15} strokeWidth={1.85} /> : <PanelLeftOpen size={15} strokeWidth={1.85} />}
-          </button>
-        </div>
-      </aside>
+          <PanelToggleDock
+            open={false}
+            title={t('agent.chat.expandPanel')}
+            onClick={() => setLeftOpen(true)}
+            token={token}
+          />
+        </aside>
+      )}
 
-      {!narrow || topicsOpen ? (
+      {!narrow && (
       <aside
         style={{
           width: 230,
@@ -394,25 +423,6 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
           minHeight: 0,
         }}
       >
-        {narrow && (
-          <button type="button" title={t('agent.chat.closeTopics')} onClick={() => setTopicsOpen(false)} style={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            width: 28,
-            height: 28,
-            border: 0,
-            borderRadius: 8,
-            background: token.colorFillQuaternary,
-            color: token.colorTextSecondary,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}>
-            <X size={15} />
-          </button>
-        )}
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
             <Flexbox horizontal align="center" gap={9} style={{
               minHeight: 58,
@@ -422,9 +432,9 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
               background: '#fff',
               marginBottom: 10,
             }}>
-              <AgentIcon name={currentAgent?.name || 'A'} avatar={currentAgent?.avatar} size={44} active token={token} />
+              <AgentIcon label={currentAgent?.title || currentAgent?.name} name={currentAgent?.name || 'A'} avatar={currentAgent?.avatar} size={44} active token={token} />
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 15, fontWeight: 750, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: token.colorText }}>{currentAgent?.name || t('agent.default.title')}</div>
+                <div style={{ fontSize: 15, fontWeight: 750, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: token.colorText }}>{currentAgent?.title || currentAgent?.name || t('agent.default.title')}</div>
                 <div style={{ marginTop: 3, color: token.colorTextTertiary, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentAgent?.description || ''}</div>
               </div>
               <Sparkles size={14} color="#faad14" />
@@ -440,7 +450,7 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
                   <UserRound size={15} />
                   {t('agent.sidebar.agentProfile')}
                 </button>
-                <button type="button" style={topicActionStyle(token)}>
+                <button type="button" style={topicActionStyle(token)} onClick={handleFocusSearch}>
                   <Search size={15} />
                   {t('common.action.search', { ns: 'common' })}
                 </button>
@@ -587,7 +597,7 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
             </div>
         )}
       </aside>
-      ) : null}
+      )}
 
       <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', background: '#fff', display: 'flex', flexDirection: 'column' }}>
         {currentSurface === 'profile' ? (
@@ -598,7 +608,7 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
             embedded
           />
         ) : (
-          <ChatPage onOpenProfile={handleOpenProfile} onToggleTopics={handleToggleTopics} topicsOpen={topicsOpen} />
+          <ChatPage onOpenProfile={handleOpenProfile} narrow={narrow} />
         )}
       </main>
 
@@ -642,13 +652,15 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
   );
 }
 
-function AgentRow({ name, avatar, desc, active, pinned, onClick, token }: {
-  name: string; avatar?: string; desc?: string; active: boolean; pinned?: boolean; onClick: () => void; token: any;
+function AgentRow({ name, title, avatar, desc, active, pinned, onClick, token }: {
+  name: string; title?: string; avatar?: string; desc?: string; active: boolean; pinned?: boolean; onClick: () => void; token: any;
 }) {
+  const displayName = title || name;
   return (
     <button
       type="button"
       onClick={onClick}
+      title={displayName}
       style={{
         width: '100%',
         height: 48,
@@ -664,10 +676,10 @@ function AgentRow({ name, avatar, desc, active, pinned, onClick, token }: {
         color: token.colorText,
       }}
     >
-      <AgentIcon name={name} avatar={avatar} size={30} active={active} token={token} />
+      <AgentIcon label={displayName} name={name} avatar={avatar} size={30} active={active} token={token} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: 12, fontWeight: 750, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {name}{pinned ? ' ★' : ''}
+          {displayName}{pinned ? ' ★' : ''}
         </span>
         <span style={{ display: 'block', color: token.colorTextTertiary, fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {desc || ''}
@@ -678,12 +690,13 @@ function AgentRow({ name, avatar, desc, active, pinned, onClick, token }: {
   );
 }
 
-function CollapsedAgentButton({ name, avatar, active, onClick }: { name: string; avatar?: string; active: boolean; onClick: () => void }) {
+function CollapsedAgentButton({ name, title, avatar, active, onClick }: { name: string; title?: string; avatar?: string; active: boolean; onClick: () => void }) {
   const { token } = theme.useToken();
+  const displayName = title || name;
   return (
     <button
       type="button"
-      title={name}
+      title={displayName}
       onClick={onClick}
       style={{
         width: 40,
@@ -698,15 +711,42 @@ function CollapsedAgentButton({ name, avatar, active, onClick }: { name: string;
         padding: 0,
       }}
     >
-      <AgentIcon name={name} avatar={avatar} size={30} active={active} token={token} />
+      <AgentIcon label={displayName} name={name} avatar={avatar} size={30} active={active} token={token} />
     </button>
   );
 }
 
-function AgentIcon({ name, avatar, size, active, token }: { name: string; avatar?: string; size: number; active?: boolean; token: any }) {
+function PanelToggleDock({ open, title, onClick, token }: { open: boolean; title: string; onClick: () => void; token: any }) {
+  return (
+    <div style={{ position: 'absolute', left: open ? 19 : 10, bottom: 14, width: 28, height: 28, zIndex: 2, display: 'flex', justifyContent: 'center' }} data-panel-toggle-dock="left">
+      <button
+        type="button"
+        title={title}
+        onClick={onClick}
+        style={{
+          width: 28, height: 28, border: 0, borderRadius: 7, background: 'transparent',
+          color: TOGGLE_COLOR, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', flexShrink: 0, padding: 0,
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = SIDEBAR_COLORS.toggleHoverBg;
+          e.currentTarget.style.color = token.colorPrimary;
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'transparent';
+          e.currentTarget.style.color = TOGGLE_COLOR;
+        }}
+      >
+        {open ? <PanelLeftClose size={15} strokeWidth={1.85} /> : <PanelLeftOpen size={15} strokeWidth={1.85} />}
+      </button>
+    </div>
+  );
+}
+
+function AgentIcon({ name, label, avatar, size, active, token }: { name: string; label?: string; avatar?: string; size: number; active?: boolean; token: any }) {
   const iconSize = Math.max(14, Math.round(size * 0.48));
   const borderRadius = Math.max(8, size / 4);
-  const initial = name.charAt(0).toUpperCase();
+  const initial = (label || name).charAt(0).toUpperCase();
   const isUrl = avatar && /^(https?:|\/|asset|file:)/.test(avatar);
   const isEmoji = avatar && !isUrl && avatar.length <= 4;
   return (
@@ -726,7 +766,7 @@ function AgentIcon({ name, avatar, size, active, token }: { name: string; avatar
       }}
     >
       {isUrl ? (
-        <img src={avatar} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius }} />
+        <img src={avatar} alt={label || name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius }} />
       ) : isEmoji ? (
         <span style={{ fontSize: iconSize * 1.2, lineHeight: 1 }}>{avatar}</span>
       ) : avatar ? (
