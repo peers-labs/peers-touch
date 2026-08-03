@@ -18,7 +18,7 @@ type SocialGate interface {
 type Operation struct {
 	// Action identifies the semantic operation being attempted.
 	// Known values: "create_direct", "send_message", "add_member",
-	// "remove_member", "dissolve", "leave", "mls_distribute",
+	// "remove_member", "dissolve", "leave",
 	// "dkx_send", "fetch_key_package".
 	Action string
 
