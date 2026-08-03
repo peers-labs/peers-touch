@@ -18,7 +18,7 @@ plan, bug-fix protocol, or readiness gate.
 This skill owns **EXECUTE** only.
 
 ```text
-accepted architecture
+accepted product and architecture contracts
   -> pt-architecture-execution-methodology
   -> approved formal execution plan
   -> pt-execution-plan-guardian
@@ -29,10 +29,14 @@ It consumes a plan; it does not create or redesign one.
 
 For architecture-level or cross-layer work:
 
+- Missing accepted product contract for product-facing work ->
+  `EXECUTION_BLOCKED_BY_PRODUCT`.
 - Missing accepted architecture -> `EXECUTION_BLOCKED_BY_DESIGN`.
 - Accepted architecture but missing approved plan -> `EXECUTION_BLOCKED_BY_PLAN`.
 - Plan execution exposes an undefined architecture semantic ->
   `DESIGN_AMENDMENT_REQUIRED`.
+- Execution exposes an undefined user journey, visible state, platform promise,
+  or receiver-perspective assertion -> `PRODUCT_AMENDMENT_REQUIRED`.
 - Code reality invalidates plan inventory/dependencies but not architecture ->
   `PLAN_AMENDMENT_REQUIRED`.
 
@@ -107,6 +111,7 @@ the user only says "继续" / "continue" without repeating the details:
 
 Before any code edit, verify:
 
+- Product status is accepted/active where product design is required.
 - Architecture status is accepted/active where architecture is required.
 - A formal execution plan exists and is approved.
 - Requested work maps to a plan workstream/task ID.
@@ -120,12 +125,14 @@ If not, return the matching blocked/amendment state from the Stage Contract.
 Before execution or readiness reporting, identify the authoritative sources in
 this order:
 
-1. Architecture-layer docs, such as `docs/architecture/**`.
-2. Platform-layer docs, such as `docs/client/**`, `docs/station/**`.
-3. Specification-layer docs, such as `docs/global/coding-guide/**`.
-4. Execution plans, progress docs, checklists, readiness reports, issue specs,
+1. Accepted product definition, experience/state contracts, benchmark
+   disposition, prototype status, and product acceptance matrix.
+2. Architecture-layer docs, such as `docs/architecture/**`.
+3. Platform-layer docs, such as `docs/client/**`, `docs/station/**`.
+4. Specification-layer docs, such as `docs/global/coding-guide/**`.
+5. Execution plans, progress docs, checklists, readiness reports, issue specs,
    or PRD docs.
-5. User-confirmed decisions from the current conversation.
+6. User-confirmed decisions from the current conversation.
 
 Output a `Plan Source` list with paths or explicitly state `No formal plan
 source found`. For architecture work, `No formal plan source found` blocks
@@ -155,6 +162,7 @@ Before coding, define acceptance criteria from the plan:
 
 - Required behavior.
 - Required failure behavior.
+- Required product capability, journey, visible state, and acceptance IDs.
 - Required architecture IDs and plan task IDs.
 - Required old-path deletion/search result.
 - Required evidence files or commands.
@@ -192,6 +200,9 @@ independent units and check whether they can run concurrently:
 - If implementation reveals missing retry, replay, ordering, cancellation,
   overload, auth, lifecycle, or data-plane semantics, stop with
   `DESIGN_AMENDMENT_REQUIRED`.
+- If implementation reveals a missing journey, visible state, benchmark
+  disposition, platform behavior, or receiver-perspective assertion, stop with
+  `PRODUCT_AMENDMENT_REQUIRED`.
 - If the architecture remains valid but current inventory, dependency order,
   deliverables, or gates are wrong/incomplete, stop with
   `PLAN_AMENDMENT_REQUIRED`.

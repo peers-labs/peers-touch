@@ -21,6 +21,10 @@ export interface DesktopClientStorageRuntime {
     readonly peerProfiles: DomainCacheRepository<unknown>;
     readonly runtimeProjection: DomainCacheRepository<unknown>;
     readonly stationRegistry: DomainCacheRepository<unknown>;
+    readonly agentConversations: DomainCacheRepository<Record<string, unknown>>;
+    readonly agentMessages: DomainCacheRepository<Record<string, unknown[]>>;
+    readonly agentTurnEvents: DomainCacheRepository<Record<string, unknown[]>>;
+    readonly agentCursor: DomainCacheRepository<number>;
   };
   readonly clearSession: () => Promise<void>;
 }
@@ -51,6 +55,10 @@ export function createDesktopClientStorageRuntime(scope: DesktopStorageSessionSc
       peerProfiles: kernel.repository<unknown>('profile.peer'),
       runtimeProjection: kernel.repository<unknown>('runtime.projection'),
       stationRegistry: kernel.repository<unknown>('station.registry'),
+      agentConversations: kernel.repository<Record<string, unknown>>('agent.conversation'),
+      agentMessages: kernel.repository<Record<string, unknown[]>>('agent.message'),
+      agentTurnEvents: kernel.repository<Record<string, unknown[]>>('agent.turn-event'),
+      agentCursor: kernel.repository<number>('agent.cursor'),
     },
     clearSession: () => kernel.invalidateSession(),
   };

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/chat/envelope.proto.
  */
 export const file_domain_chat_envelope: GenFile = /*@__PURE__*/
-  fileDesc("Chpkb21haW4vY2hhdC9lbnZlbG9wZS5wcm90bxIZcGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MSKZBAoPU3RhdGlvbkVudmVsb3BlEhMKC2VudmVsb3BlX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRITCgtzZW5kZXJfcHRpZBgDIAEoCRIYChBzZW5kZXJfZGV2aWNlX2lkGAQgASgJEiMKG3NlbmRlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgFIAEoCRIWCg5yZWNpcGllbnRfcHRpZBgGIAEoCRIbChNyZWNpcGllbnRfZGV2aWNlX2lkGAcgASgJEiYKHnJlY2lwaWVudF9ob21lX3N0YXRpb25fcGVlcl9pZBgIIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYCSABKAkSGAoQbWVtYmVyc2hpcF9lcG9jaBgKIAEoAxJECgxwYXlsb2FkX3R5cGUYCyABKA4yLi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkVudmVsb3BlUGF5bG9hZFR5cGUSFQoNcGF5bG9hZF9ieXRlcxgMIAEoDBIYChBzZW5kZXJfc2lnbmF0dXJlGA0gASgMEh4KFmhvbWVfc3RhdGlvbl9zaWduYXR1cmUYDiABKAwSLQoJaXNzdWVkX2F0GA8gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GBAgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKOAwoPRGV2aWNlSW5ib3hJdGVtEhUKDWluYm94X2l0ZW1faWQYASABKAkSFgoOcmVjaXBpZW50X3B0aWQYAiABKAkSGwoTcmVjaXBpZW50X2RldmljZV9pZBgDIAEoCRI8CghlbnZlbG9wZRgEIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuU3RhdGlvbkVudmVsb3BlEjoKBnN0YXR1cxgFIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuSW5ib3hJdGVtU3RhdHVzEhkKEWRlbGl2ZXJ5X2F0dGVtcHRzGAYgASgFEjMKD2ZpcnN0X3F1ZXVlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoPbGFzdF9hdHRlbXB0X2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxkZWxpdmVyZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoIDCgpPdXRib3hJdGVtEhYKDm91dGJveF9pdGVtX2lkGAEgASgJEh4KFnRhcmdldF9zdGF0aW9uX3BlZXJfaWQYAiABKAkSPAoIZW52ZWxvcGUYAyABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlN0YXRpb25FbnZlbG9wZRI7CgZzdGF0dXMYBCABKA4yKy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk91dGJveEl0ZW1TdGF0dXMSEwoLcmV0cnlfY291bnQYBSABKAUSMwoPZmlyc3RfcXVldWVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1uZXh0X3JldHJ5X2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxkZWxpdmVyZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmxhc3RfZXJyb3IYCSABKAkilwEKFU1sc0tleURlbGl2ZXJ5UGF5bG9hZBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSOAoEa2luZBgCIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuTWxzRGVsaXZlcnlLaW5kEhEKCW1sc19lcG9jaBgDIAEoAxIYChBvcGFxdWVfbWxzX2J5dGVzGAQgASgMIosBChhEaXJlY3RLZXlFeGNoYW5nZVBheWxvYWQSEgoKc2Vzc2lvbl9pZBgBIAEoCRI+CgRraW5kGAIgASgOMjAucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EaXJlY3RLZXlFeGNoYW5nZUtpbmQSGwoTb3BhcXVlX2tleV9tYXRlcmlhbBgDIAEoDCqxAgoTRW52ZWxvcGVQYXlsb2FkVHlwZRIlCiFFTlZFTE9QRV9QQVlMT0FEX1RZUEVfVU5TUEVDSUZJRUQQABIpCiVFTlZFTE9QRV9QQVlMT0FEX1RZUEVfQ09NTUlUVEVEX0VWRU5UEAESKgomRU5WRUxPUEVfUEFZTE9BRF9UWVBFX01MU19LRVlfREVMSVZFUlkQAhItCilFTlZFTE9QRV9QQVlMT0FEX1RZUEVfRElSRUNUX0tFWV9FWENIQU5HRRADEiEKHUVOVkVMT1BFX1BBWUxPQURfVFlQRV9SRUNFSVBUEAQSIAocRU5WRUxPUEVfUEFZTE9BRF9UWVBFX1RZUElORxAFEigKJEVOVkVMT1BFX1BBWUxPQURfVFlQRV9DQUxMX1NJR05BTElORxAGKrQBCg9JbmJveEl0ZW1TdGF0dXMSIQodSU5CT1hfSVRFTV9TVEFUVVNfVU5TUEVDSUZJRUQQABIdChlJTkJPWF9JVEVNX1NUQVRVU19QRU5ESU5HEAESHwobSU5CT1hfSVRFTV9TVEFUVVNfREVMSVZFUkVEEAISGwoXSU5CT1hfSVRFTV9TVEFUVVNfQUNLRUQQAxIhCh1JTkJPWF9JVEVNX1NUQVRVU19ERUFEX0xFVFRFUhAEKr4BChBPdXRib3hJdGVtU3RhdHVzEiIKHk9VVEJPWF9JVEVNX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGk9VVEJPWF9JVEVNX1NUQVRVU19QRU5ESU5HEAESIAocT1VUQk9YX0lURU1fU1RBVFVTX0lOX0ZMSUdIVBACEiAKHE9VVEJPWF9JVEVNX1NUQVRVU19ERUxJVkVSRUQQAxIiCh5PVVRCT1hfSVRFTV9TVEFUVVNfREVBRF9MRVRURVIQBCqUAQoPTWxzRGVsaXZlcnlLaW5kEiEKHU1MU19ERUxJVkVSWV9LSU5EX1VOU1BFQ0lGSUVEEAASHQoZTUxTX0RFTElWRVJZX0tJTkRfV0VMQ09NRRABEhwKGE1MU19ERUxJVkVSWV9LSU5EX0NPTU1JVBACEiEKHU1MU19ERUxJVkVSWV9LSU5EX0tFWV9QQUNLQUdFEAMqzAEKFURpcmVjdEtleUV4Y2hhbmdlS2luZBIoCiRESVJFQ1RfS0VZX0VYQ0hBTkdFX0tJTkRfVU5TUEVDSUZJRUQQABIqCiZESVJFQ1RfS0VZX0VYQ0hBTkdFX0tJTkRfUFJFS0VZX0JVTkRMRRABEiwKKERJUkVDVF9LRVlfRVhDSEFOR0VfS0lORF9JTklUSUFMX01FU1NBR0UQAhIvCitESVJFQ1RfS0VZX0VYQ0hBTkdFX0tJTkRfUkFUQ0hFVF9LRVlfVVBEQVRFEANCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvY2hhdDtjaGF0YgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("Chpkb21haW4vY2hhdC9lbnZlbG9wZS5wcm90bxIZcGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MSKYBgoPU3RhdGlvbkVudmVsb3BlEhMKC2VudmVsb3BlX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRITCgtzZW5kZXJfcHRpZBgDIAEoCRIYChBzZW5kZXJfZGV2aWNlX2lkGAQgASgJEiMKG3NlbmRlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgFIAEoCRIWCg5yZWNpcGllbnRfcHRpZBgGIAEoCRIbChNyZWNpcGllbnRfZGV2aWNlX2lkGAcgASgJEiYKHnJlY2lwaWVudF9ob21lX3N0YXRpb25fcGVlcl9pZBgIIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYCSABKAkSGAoQbWVtYmVyc2hpcF9lcG9jaBgKIAEoAxJECgxwYXlsb2FkX3R5cGUYCyABKA4yLi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkVudmVsb3BlUGF5bG9hZFR5cGUSFQoNcGF5bG9hZF9ieXRlcxgMIAEoDBIYChBzZW5kZXJfc2lnbmF0dXJlGA0gASgMEh4KFmhvbWVfc3RhdGlvbl9zaWduYXR1cmUYDiABKAwSLQoJaXNzdWVkX2F0GA8gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GBAgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglncm91cF9zZXEYESABKAMSFQoNdHJhbnNpdGlvbl9pZBgSIAEoCRIdChVmcm9tX21lbWJlcnNoaXBfZXBvY2gYEyABKAMSGwoTdG9fbWVtYmVyc2hpcF9lcG9jaBgUIAEoAxIWCg5mcm9tX21sc19lcG9jaBgVIAEoAxIUCgx0b19tbHNfZXBvY2gYFiABKAMSFgoOcGF5bG9hZF9zaGEyNTYYFyABKAwSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgYIAEoCRIVCg1mZWRlcmF0aW9uX2lkGBkgASgJEhcKD2F1dGhvcml0eV9lcG9jaBgaIAEoAyKOAwoPRGV2aWNlSW5ib3hJdGVtEhUKDWluYm94X2l0ZW1faWQYASABKAkSFgoOcmVjaXBpZW50X3B0aWQYAiABKAkSGwoTcmVjaXBpZW50X2RldmljZV9pZBgDIAEoCRI8CghlbnZlbG9wZRgEIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuU3RhdGlvbkVudmVsb3BlEjoKBnN0YXR1cxgFIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuSW5ib3hJdGVtU3RhdHVzEhkKEWRlbGl2ZXJ5X2F0dGVtcHRzGAYgASgFEjMKD2ZpcnN0X3F1ZXVlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoPbGFzdF9hdHRlbXB0X2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxkZWxpdmVyZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoIDCgpPdXRib3hJdGVtEhYKDm91dGJveF9pdGVtX2lkGAEgASgJEh4KFnRhcmdldF9zdGF0aW9uX3BlZXJfaWQYAiABKAkSPAoIZW52ZWxvcGUYAyABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlN0YXRpb25FbnZlbG9wZRI7CgZzdGF0dXMYBCABKA4yKy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk91dGJveEl0ZW1TdGF0dXMSEwoLcmV0cnlfY291bnQYBSABKAUSMwoPZmlyc3RfcXVldWVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1uZXh0X3JldHJ5X2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxkZWxpdmVyZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmxhc3RfZXJyb3IYCSABKAkiwQIKHE1sc1RyYW5zaXRpb25EZWxpdmVyeVBheWxvYWQSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEhUKDXRyYW5zaXRpb25faWQYAiABKAkSEQoJZ3JvdXBfc2VxGAMgASgDEh0KFWZyb21fbWVtYmVyc2hpcF9lcG9jaBgEIAEoAxIbChN0b19tZW1iZXJzaGlwX2Vwb2NoGAUgASgDEhYKDmZyb21fbWxzX2Vwb2NoGAYgASgDEhQKDHRvX21sc19lcG9jaBgHIAEoAxJCCgRraW5kGAggASgOMjQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5NbHNUcmFuc2l0aW9uRGVsaXZlcnlLaW5kEhgKEG9wYXF1ZV9tbHNfYnl0ZXMYCSABKAwSFgoOcGF5bG9hZF9zaGEyNTYYCiABKAwiiwEKGERpcmVjdEtleUV4Y2hhbmdlUGF5bG9hZBISCgpzZXNzaW9uX2lkGAEgASgJEj4KBGtpbmQYAiABKA4yMC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkRpcmVjdEtleUV4Y2hhbmdlS2luZBIbChNvcGFxdWVfa2V5X21hdGVyaWFsGAMgASgMKu8CChNFbnZlbG9wZVBheWxvYWRUeXBlEiUKIUVOVkVMT1BFX1BBWUxPQURfVFlQRV9VTlNQRUNJRklFRBAAEikKJUVOVkVMT1BFX1BBWUxPQURfVFlQRV9DT01NSVRURURfRVZFTlQQARIxCi1FTlZFTE9QRV9QQVlMT0FEX1RZUEVfTUxTX1RSQU5TSVRJT05fREVMSVZFUlkQAhItCilFTlZFTE9QRV9QQVlMT0FEX1RZUEVfRElSRUNUX0tFWV9FWENIQU5HRRADEiEKHUVOVkVMT1BFX1BBWUxPQURfVFlQRV9SRUNFSVBUEAQSIAocRU5WRUxPUEVfUEFZTE9BRF9UWVBFX1RZUElORxAFEigKJEVOVkVMT1BFX1BBWUxPQURfVFlQRV9DQUxMX1NJR05BTElORxAGEjUKMUVOVkVMT1BFX1BBWUxPQURfVFlQRV9DT05WRVJTQVRJT05fQ09NTUFORF9SRVNVTFQQByq0AQoPSW5ib3hJdGVtU3RhdHVzEiEKHUlOQk9YX0lURU1fU1RBVFVTX1VOU1BFQ0lGSUVEEAASHQoZSU5CT1hfSVRFTV9TVEFUVVNfUEVORElORxABEh8KG0lOQk9YX0lURU1fU1RBVFVTX0RFTElWRVJFRBACEhsKF0lOQk9YX0lURU1fU1RBVFVTX0FDS0VEEAMSIQodSU5CT1hfSVRFTV9TVEFUVVNfREVBRF9MRVRURVIQBCq+AQoQT3V0Ym94SXRlbVN0YXR1cxIiCh5PVVRCT1hfSVRFTV9TVEFUVVNfVU5TUEVDSUZJRUQQABIeChpPVVRCT1hfSVRFTV9TVEFUVVNfUEVORElORxABEiAKHE9VVEJPWF9JVEVNX1NUQVRVU19JTl9GTElHSFQQAhIgChxPVVRCT1hfSVRFTV9TVEFUVVNfREVMSVZFUkVEEAMSIgoeT1VUQk9YX0lURU1fU1RBVFVTX0RFQURfTEVUVEVSEAQqnAEKGU1sc1RyYW5zaXRpb25EZWxpdmVyeUtpbmQSLAooTUxTX1RSQU5TSVRJT05fREVMSVZFUllfS0lORF9VTlNQRUNJRklFRBAAEicKI01MU19UUkFOU0lUSU9OX0RFTElWRVJZX0tJTkRfQ09NTUlUEAESKAokTUxTX1RSQU5TSVRJT05fREVMSVZFUllfS0lORF9XRUxDT01FEAIqzAEKFURpcmVjdEtleUV4Y2hhbmdlS2luZBIoCiRESVJFQ1RfS0VZX0VYQ0hBTkdFX0tJTkRfVU5TUEVDSUZJRUQQABIqCiZESVJFQ1RfS0VZX0VYQ0hBTkdFX0tJTkRfUFJFS0VZX0JVTkRMRRABEiwKKERJUkVDVF9LRVlfRVhDSEFOR0VfS0lORF9JTklUSUFMX01FU1NBR0UQAhIvCitESVJFQ1RfS0VZX0VYQ0hBTkdFX0tJTkRfUkFUQ0hFVF9LRVlfVVBEQVRFEANCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvY2hhdDtjaGF0YgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * StationEnvelope is the wire unit for all chat signaling between Stations
@@ -111,6 +111,58 @@ export type StationEnvelope = Message<"peers_touch.model.chat.v1.StationEnvelope
    * @generated from field: google.protobuf.Timestamp expires_at = 16;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * Authority-ordered group transition metadata (D-13).
+   *
+   * @generated from field: int64 group_seq = 17;
+   */
+  groupSeq: bigint;
+
+  /**
+   * @generated from field: string transition_id = 18;
+   */
+  transitionId: string;
+
+  /**
+   * @generated from field: int64 from_membership_epoch = 19;
+   */
+  fromMembershipEpoch: bigint;
+
+  /**
+   * @generated from field: int64 to_membership_epoch = 20;
+   */
+  toMembershipEpoch: bigint;
+
+  /**
+   * @generated from field: int64 from_mls_epoch = 21;
+   */
+  fromMlsEpoch: bigint;
+
+  /**
+   * @generated from field: int64 to_mls_epoch = 22;
+   */
+  toMlsEpoch: bigint;
+
+  /**
+   * @generated from field: bytes payload_sha256 = 23;
+   */
+  payloadSha256: Uint8Array;
+
+  /**
+   * @generated from field: string authority_station_peer_id = 24;
+   */
+  authorityStationPeerId: string;
+
+  /**
+   * @generated from field: string federation_id = 25;
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: int64 authority_epoch = 26;
+   */
+  authorityEpoch: bigint;
 };
 
 /**
@@ -239,38 +291,69 @@ export const OutboxItemSchema: GenMessage<OutboxItem> = /*@__PURE__*/
   messageDesc(file_domain_chat_envelope, 2);
 
 /**
- * Opaque MLS material (Welcome/Commit/KeyPackage) carried inside
- * a StationEnvelope with payload_type = MLS_KEY_DELIVERY.
+ * Opaque MLS Commit/Welcome material carried inside a StationEnvelope with
+ * payload_type = MLS_TRANSITION_DELIVERY. KeyPackage publication is a separate
+ * directory capability and never uses this payload.
  *
- * @generated from message peers_touch.model.chat.v1.MlsKeyDeliveryPayload
+ * @generated from message peers_touch.model.chat.v1.MlsTransitionDeliveryPayload
  */
-export type MlsKeyDeliveryPayload = Message<"peers_touch.model.chat.v1.MlsKeyDeliveryPayload"> & {
+export type MlsTransitionDeliveryPayload = Message<"peers_touch.model.chat.v1.MlsTransitionDeliveryPayload"> & {
   /**
    * @generated from field: string conversation_id = 1;
    */
   conversationId: string;
 
   /**
-   * @generated from field: peers_touch.model.chat.v1.MlsDeliveryKind kind = 2;
+   * @generated from field: string transition_id = 2;
    */
-  kind: MlsDeliveryKind;
+  transitionId: string;
 
   /**
-   * @generated from field: int64 mls_epoch = 3;
+   * @generated from field: int64 group_seq = 3;
    */
-  mlsEpoch: bigint;
+  groupSeq: bigint;
 
   /**
-   * @generated from field: bytes opaque_mls_bytes = 4;
+   * @generated from field: int64 from_membership_epoch = 4;
+   */
+  fromMembershipEpoch: bigint;
+
+  /**
+   * @generated from field: int64 to_membership_epoch = 5;
+   */
+  toMembershipEpoch: bigint;
+
+  /**
+   * @generated from field: int64 from_mls_epoch = 6;
+   */
+  fromMlsEpoch: bigint;
+
+  /**
+   * @generated from field: int64 to_mls_epoch = 7;
+   */
+  toMlsEpoch: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.MlsTransitionDeliveryKind kind = 8;
+   */
+  kind: MlsTransitionDeliveryKind;
+
+  /**
+   * @generated from field: bytes opaque_mls_bytes = 9;
    */
   opaqueMlsBytes: Uint8Array;
+
+  /**
+   * @generated from field: bytes payload_sha256 = 10;
+   */
+  payloadSha256: Uint8Array;
 };
 
 /**
- * Describes the message peers_touch.model.chat.v1.MlsKeyDeliveryPayload.
- * Use `create(MlsKeyDeliveryPayloadSchema)` to create a new message.
+ * Describes the message peers_touch.model.chat.v1.MlsTransitionDeliveryPayload.
+ * Use `create(MlsTransitionDeliveryPayloadSchema)` to create a new message.
  */
-export const MlsKeyDeliveryPayloadSchema: GenMessage<MlsKeyDeliveryPayload> = /*@__PURE__*/
+export const MlsTransitionDeliveryPayloadSchema: GenMessage<MlsTransitionDeliveryPayload> = /*@__PURE__*/
   messageDesc(file_domain_chat_envelope, 3);
 
 /**
@@ -322,11 +405,11 @@ export enum EnvelopePayloadType {
   COMMITTED_EVENT = 1,
 
   /**
-   * Durable, device-targeted, retriable — MLS Welcome/Commit/KeyPackage (D-08).
+   * Durable, device-targeted, authority-ordered MLS Commit/Welcome (D-13).
    *
-   * @generated from enum value: ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY = 2;
+   * @generated from enum value: ENVELOPE_PAYLOAD_TYPE_MLS_TRANSITION_DELIVERY = 2;
    */
-  MLS_KEY_DELIVERY = 2,
+  MLS_TRANSITION_DELIVERY = 2,
 
   /**
    * Durable, device-targeted, retriable — X3DH prekey bundle / initial message (D-09).
@@ -355,6 +438,13 @@ export enum EnvelopePayloadType {
    * @generated from enum value: ENVELOPE_PAYLOAD_TYPE_CALL_SIGNALING = 6;
    */
   CALL_SIGNALING = 6,
+
+  /**
+   * Durable, device-targeted D-17 authority result and public head evidence.
+   *
+   * @generated from enum value: ENVELOPE_PAYLOAD_TYPE_CONVERSATION_COMMAND_RESULT = 7;
+   */
+  CONVERSATION_COMMAND_RESULT = 7,
 }
 
 /**
@@ -436,34 +526,29 @@ export const OutboxItemStatusSchema: GenEnum<OutboxItemStatus> = /*@__PURE__*/
   enumDesc(file_domain_chat_envelope, 2);
 
 /**
- * @generated from enum peers_touch.model.chat.v1.MlsDeliveryKind
+ * @generated from enum peers_touch.model.chat.v1.MlsTransitionDeliveryKind
  */
-export enum MlsDeliveryKind {
+export enum MlsTransitionDeliveryKind {
   /**
-   * @generated from enum value: MLS_DELIVERY_KIND_UNSPECIFIED = 0;
+   * @generated from enum value: MLS_TRANSITION_DELIVERY_KIND_UNSPECIFIED = 0;
    */
   UNSPECIFIED = 0,
 
   /**
-   * @generated from enum value: MLS_DELIVERY_KIND_WELCOME = 1;
+   * @generated from enum value: MLS_TRANSITION_DELIVERY_KIND_COMMIT = 1;
    */
-  WELCOME = 1,
+  COMMIT = 1,
 
   /**
-   * @generated from enum value: MLS_DELIVERY_KIND_COMMIT = 2;
+   * @generated from enum value: MLS_TRANSITION_DELIVERY_KIND_WELCOME = 2;
    */
-  COMMIT = 2,
-
-  /**
-   * @generated from enum value: MLS_DELIVERY_KIND_KEY_PACKAGE = 3;
-   */
-  KEY_PACKAGE = 3,
+  WELCOME = 2,
 }
 
 /**
- * Describes the enum peers_touch.model.chat.v1.MlsDeliveryKind.
+ * Describes the enum peers_touch.model.chat.v1.MlsTransitionDeliveryKind.
  */
-export const MlsDeliveryKindSchema: GenEnum<MlsDeliveryKind> = /*@__PURE__*/
+export const MlsTransitionDeliveryKindSchema: GenEnum<MlsTransitionDeliveryKind> = /*@__PURE__*/
   enumDesc(file_domain_chat_envelope, 3);
 
 /**

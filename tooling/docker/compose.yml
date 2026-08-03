@@ -103,6 +103,12 @@ services:
       PEERS_FEDERATION_PEER_MAP: ${PEERS_FEDERATION_PEER_MAP:-}
       # Actor display_name pattern: replaces __NODE__ in actor.yml
       PEERS_NODE_LABEL: ${PEERS_NODE_LABEL:-}
+      # Host-installed CLI providers (e.g. traecli). When PEERS_HOST_CLI_BIN is
+      # set to an absolute binary path on the host, the entrypoint symlinks it
+      # into /usr/local/bin so the agent can spawn CLI providers without baking
+      # them into the image. The host auth/config dir is bind-mounted below.
+      PEERS_HOST_CLI_BIN: ${PEERS_HOST_CLI_BIN:-}
+      PEERS_HOST_CLI_HOME: ${PEERS_HOST_CLI_HOME:-}
     ports:
       - "${STATION_PORT:-18080}:18080"
       # libp2p port for the bootstrap subserver. Same-host coexistence
@@ -115,6 +121,19 @@ services:
       # into /app/data via the paths.docker.yml overlay emitted by
       # entrypoint.sh — peers.yml itself stays untouched.
       - peers_data:/app/data
+      # Host-installed CLI providers (e.g. traecli). Bind-mount the REAL
+      # binary (not a ~/.local/bin symlink — bind-mounting a symlink only
+      # mounts the link itself) and its auth/config home so CLI providers
+      # survive container recreate (make station) without rebuilding the
+      # image. Both sources are host-specific and enabled only when the
+      # per-env file sets PEERS_HOST_CLI_BIN_MOUNT / PEERS_HOST_CLI_HOME_MOUNT
+      # (empty defaults → bind /dev/null, effectively disabling the feature).
+      - ${PEERS_HOST_CLI_BIN_MOUNT:-/dev/null}:/usr/local/bin/host-cli-bin:ro
+      # CLI auth/config home is mounted read-write (not :ro): some CLIs
+      # (e.g. traecli) refresh installation metadata or write session state
+      # under ~/.trae on startup. Mounting the host's real home reuses its
+      # existing login and persists across container recreate.
+      - ${PEERS_HOST_CLI_HOME_MOUNT:-/dev/null}:/root/.host-cli-home
     depends_on:
       postgres:
         condition: service_healthy
