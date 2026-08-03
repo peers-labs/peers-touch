@@ -6,6 +6,7 @@ import { Tooltip, theme } from 'antd';
 import { api } from '../services/desktop_api';
 import { useOAuth2Store } from '../store/oauth2';
 import { EVENT, eventBus } from '../kernel/events';
+import { GlobalOperationTray } from './GlobalOperationTray';
 
 const HEARTBEAT_INTERVAL = 60_000;
 const AUTH_CHECK_INTERVAL = 120_000;
@@ -172,6 +173,7 @@ export function GlobalLayout({ sideNav, children }: GlobalLayoutProps) {
           {children}
         </Flexbox>
       </Flexbox>
+      <GlobalOperationTray />
     </Flexbox>
   );
 }
