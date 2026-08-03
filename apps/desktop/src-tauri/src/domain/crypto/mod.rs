@@ -8,7 +8,6 @@
 //! contract.
 
 pub mod double_ratchet;
-pub mod sender_keys;
 pub mod signaling_envelope;
 pub mod telemetry;
 
@@ -417,22 +416,6 @@ pub fn identity_fingerprint_hex(verifying_key: &VerifyingKey) -> String {
     let digest = h.finalize();
     hex::encode(digest)
 }
-
-// Group symmetric key primitives intentionally removed.
-//
-// The previous GroupKeyState / GroupEncryptedMessage primitives
-// implemented a single shared symmetric key per group with no
-// distribution mechanism -- GroupKeyState::generate() simply minted a
-// fresh OsRng key per device, so two members would never agree on a
-// key for the same group. The Tauri commands wrapping these
-// primitives (crypto_group_encrypt / crypto_group_decrypt /
-// crypto_group_rotate_key) were never registered in the
-// invoke_handler and had zero JS callers, so removing them is purely
-// dead-code cleanup with no behavioral change.
-//
-// The replacement is the Sender Keys protocol designed in
-// peers-touch/docs/architecture/encryption/group-sender-keys.md;
-// implementation lands per the G0..G5 phase plan in that doc.
 
 #[cfg(test)]
 mod tests {

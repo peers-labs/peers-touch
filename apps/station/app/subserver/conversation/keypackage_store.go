@@ -50,7 +50,7 @@ func (s *KeyPackageStore) Upload(ctx context.Context, ptid, deviceID, stationID 
 
 // FetchAndConsume atomically retrieves and deletes one KeyPackage for the actor.
 // Returns nil, nil if no packages are available.
-func (s *KeyPackageStore) FetchAndConsume(ctx context.Context, ptid string) ([]byte, error) {
+func (s *KeyPackageStore) FetchAndConsume(ctx context.Context, ptid string) (*KeyPackage, error) {
 	var kp KeyPackage
 	err := s.db.WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
@@ -67,7 +67,7 @@ func (s *KeyPackageStore) FetchAndConsume(ctx context.Context, ptid string) ([]b
 	if err := s.db.WithContext(ctx).Delete(&kp).Error; err != nil {
 		return nil, fmt.Errorf("keypackage: consume failed: %w", err)
 	}
-	return kp.Data, nil
+	return &kp, nil
 }
 
 // CountAvailable returns how many KeyPackages are stored for the actor.
@@ -86,12 +86,12 @@ func (s *KeyPackageStore) CountAvailable(ctx context.Context, ptid string) (int6
 func (s *KeyPackageStore) FetchForMultiple(ctx context.Context, ptids []string) (map[string][]byte, error) {
 	result := make(map[string][]byte, len(ptids))
 	for _, ptid := range ptids {
-		data, err := s.FetchAndConsume(ctx, ptid)
+		keyPackage, err := s.FetchAndConsume(ctx, ptid)
 		if err != nil {
 			return nil, err
 		}
-		if data != nil {
-			result[ptid] = data
+		if keyPackage != nil {
+			result[ptid] = keyPackage.Data
 		}
 	}
 	return result, nil
