@@ -572,6 +572,7 @@ mod tests {
             std::process::id()
         ));
         fs::create_dir_all(&base).expect("temp storage root");
+        let previous_storage_root = std::env::var_os("PEERS_STORAGE_ROOT");
         std::env::set_var("PEERS_STORAGE_ROOT", base.to_str().expect("utf8 path"));
         if let Ok(mut store) = plugin_store().lock() {
             store.plugins.clear();
@@ -580,7 +581,10 @@ mod tests {
         if let Ok(mut store) = plugin_store().lock() {
             store.plugins.clear();
         }
-        std::env::remove_var("PEERS_STORAGE_ROOT");
+        match previous_storage_root {
+            Some(value) => std::env::set_var("PEERS_STORAGE_ROOT", value),
+            None => std::env::remove_var("PEERS_STORAGE_ROOT"),
+        }
         let _ = fs::remove_dir_all(base);
     }
 

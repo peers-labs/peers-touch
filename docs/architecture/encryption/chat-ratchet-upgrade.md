@@ -194,6 +194,7 @@ EncryptedMessage {
     bytes  ratchet_pub  = 4;       // NEW — DR-Header.dh_pub (X25519 32B)
     uint32 prev_counter = 5;       // NEW — DR-Header.pn
     uint32 version      = 6;       // NEW — wire-format version (see §5)
+    bytes  nonce        = 7;       // NEW — AES-256-GCM nonce (12B)
 }
 ```
 
@@ -312,8 +313,13 @@ defense.
 
 ### Phase M2 — Opt-in for new sessions
 
-- Flip the default for new sessions: bundle publishes `[0, 1]`,
+- **Activated 2026-07-31.** The default for new sessions publishes `[0, 1]`,
   X3DH negotiates `v = 1` whenever both sides are M2+.
+- `X3dhSessionInit` is carried as opaque material inside the existing
+  `DIRECT_KEY_EXCHANGE` envelope so the recipient initializes its DR
+  responder state before decrypting the first message.
+- Session readiness is persisted only after the DKX envelope is accepted;
+  failed handshakes block message sending.
 - Existing sessions stay on `v = 0` indefinitely.
 - Acceptance gate: zero new-bug regressions over 2 release cycles
   AND DR-vs-legacy decrypt success rate within `0.01%` parity.
@@ -458,13 +464,10 @@ These MUST be resolved during M1 before any wire goes out:
    currently in-order, but a planned offline-pull-back batch may
    deliver hundreds of buffered messages at reconnection. Decide
    whether 1000 is enough or whether per-session config is needed.
-2. **Group sender-keys interaction.** Sender Keys (parent doc §5.4)
-   is its own ratchet. The chat-ratchet upgrade explicitly does NOT
-   touch group chat. But group's per-pairwise distribution channel
-   *uses* the friend-chat session — so the group SK distribution
-   message MUST be sent under whatever `version` that pairwise
-   session has negotiated. No code change for group, but a test must
-   confirm SK distribution works on both `v = 0` and `v = 1`.
+2. **MLS interaction.** Group chat is independently encrypted with
+   MLS under federated-im D-08. Welcome and Commit delivery use the
+   typed Station envelope and do not depend on the direct-message
+   ratchet version.
 3. **Multi-device backfill.** Adding a new device to an existing
    actor today re-runs X3DH against every active peer. Under DR this
    is naturally a fresh session at the highest mutually negotiated

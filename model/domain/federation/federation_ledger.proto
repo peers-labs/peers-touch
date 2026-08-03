@@ -129,6 +129,8 @@ message StationJoinApprovedPayload {
   string approved_by_actor_id = 2;
   string approved_by_actor_federated_handle = 3;
   string role = 4;
+  string approved_station_url = 5;
+  string approved_station_name = 6;
 }
 
 message StationLeftPayload {
