@@ -15,7 +15,6 @@ export interface DesktopClientStorageRuntime {
     readonly avatars: DomainCacheRepository<string>;
     readonly chatPreferences: DomainCacheRepository<Record<string, unknown>>;
     readonly conversationSettings: DomainCacheRepository<unknown>;
-    readonly cryptoSenderKeyLedger: DomainCacheRepository<unknown>;
     readonly identityTrust: DomainCacheRepository<unknown>;
     readonly messages: DomainCacheRepository<unknown>;
     readonly peerProfiles: DomainCacheRepository<unknown>;
@@ -49,7 +48,6 @@ export function createDesktopClientStorageRuntime(scope: DesktopStorageSessionSc
       avatars: kernel.repository<string>('asset.avatar'),
       chatPreferences: kernel.repository<Record<string, unknown>>('config.preference'),
       conversationSettings: kernel.repository<unknown>('chat.conversation-settings'),
-      cryptoSenderKeyLedger: kernel.repository<unknown>('crypto.sender-key-ledger'),
       identityTrust: kernel.repository<unknown>('identity.trust'),
       messages: kernel.repository<unknown>('chat.message'),
       peerProfiles: kernel.repository<unknown>('profile.peer'),
