@@ -3,15 +3,20 @@
 // with tool-output pruning, structured/iterative summarization prompts, and
 // tool-call/result pair sanitization.
 // 2026-04-11 — Added SetPreviousSummary() to allow turn_service to store actual
-//   LLM-generated summary text instead of the raw summary prompt.
+//
+//	LLM-generated summary text instead of the raw summary prompt.
+//
 // 2026-04-11 — Fix: added sync.RWMutex to protect previousSummary from
-//   concurrent read/write races. Added GetPreviousSummary() accessor.
+//
+//	concurrent read/write races. Added GetPreviousSummary() accessor.
+//
 // 2026-04-11 — Removed previousSummary state and BuildIterativeSummaryPrompt.
-//   The summary text is already injected into the message list as a system
-//   message after compression, so the LLM naturally sees prior summaries
-//   on subsequent compressions. Keeping per-instance state caused:
-//   (a) multi-conversation cross-contamination (singleton shared across convs),
-//   (b) process-restart inconsistency, (c) unnecessary complexity.
+//
+//	The summary text is already injected into the message list as a system
+//	message after compression, so the LLM naturally sees prior summaries
+//	on subsequent compressions. Keeping per-instance state caused:
+//	(a) multi-conversation cross-contamination (singleton shared across convs),
+//	(b) process-restart inconsistency, (c) unnecessary complexity.
 package service
 
 import (
