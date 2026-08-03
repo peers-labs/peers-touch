@@ -11,7 +11,7 @@ import {
   Select,
   InputNumber,
 } from 'antd';
-import { Tag, Button } from '@lobehub/ui';
+import { Tag, Button, ActionIcon } from '@lobehub/ui';
 import {
   Settings2,
   ArrowLeft,
@@ -292,17 +292,22 @@ function AgentWorkbenchHero({
             padding: 0,
           }}
         />
-        <Flexbox horizontal gap={8} style={{ flexShrink: 0 }}>
-          <Button
-            icon={<Settings2 size={14} />}
-            onClick={onOpenSettings}
+        <Flexbox horizontal align="center" gap={8} style={{ flexShrink: 0 }}>
+          <ActionIcon
+            icon={Settings2}
             title={t('agent.profile.editSettings')}
-            aria-label={t('agent.profile.editSettings')}
-            style={{ width: 32, height: 32, padding: 0 }}
+            size={{ blockSize: 32, size: 16 }}
+            onClick={onOpenSettings}
+            style={{ border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 8, background: token.colorBgContainer }}
           />
-          <Button icon={<ArrowLeft size={14} />} onClick={onBack}>
-            {t('agent.profile.backToAgent')}
-          </Button>
+          <ActionIcon
+            icon={ArrowLeft}
+            title={t('agent.profile.backToAgent')}
+            aria-label={t('agent.profile.backToAgent')}
+            size={{ blockSize: 32, size: 16 }}
+            onClick={onBack}
+            style={{ border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 8, background: token.colorBgContainer }}
+          />
         </Flexbox>
       </Flexbox>
 
@@ -935,6 +940,7 @@ export function AgentProfilePage({
   const agents = useAgentStore(s => s.agents);
   const availableModels = useAgentStore(s => s.availableModels);
   const loadAgents = useAgentStore(s => s.loadAgents);
+  const updateAgentProfile = useAgentStore(s => s.updateAgentProfile);
   const loadModels = useAgentStore(s => s.loadModels);
   const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
   const setAgentSurface = useAgentStore(s => s.setAgentSurface);
@@ -1034,7 +1040,7 @@ export function AgentProfilePage({
   }, [agentName]);
 
   useEffect(() => {
-    const found = agents.find((a) => a.name === profileAgentName) || agents[0];
+    const found = agents.find((a) => a.name === profileAgentName);
     if (found) {
       setAgent(found);
       setSoulMd(found.soulMd || '');
@@ -1190,18 +1196,18 @@ export function AgentProfilePage({
       const m = availableModels.find((x) => x.id === modelId);
       const providerId = m?.provider_id || '';
       try {
-        await api.updateAgent(agent.id, { model: modelId || '', provider: providerId });
+        const updated = await updateAgentProfile(agent.id, { model: modelId || '', provider: providerId });
+        setAgent(updated);
         if (modelId) {
           await api.setModelConfig(`agent:${agent.name}`, { provider: providerId, model: modelId });
         } else {
           await api.deleteModelConfig(`agent:${agent.name}`);
         }
-        loadAgents();
       } catch (err: any) {
         antMessage.error(err.message || t('agent.profile.failedToUpdateModel'));
       }
     },
-    [agent, availableModels, loadAgents],
+    [agent, availableModels, updateAgentProfile, t],
   );
 
   const handleProviderChange = useCallback(
@@ -1210,19 +1216,19 @@ export function AgentProfilePage({
       const currentModel = availableModels.find((item) => item.id === agent.model);
       const shouldClearModel = !!currentModel && currentModel.provider_id !== providerId;
       try {
-        await api.updateAgent(agent.id, {
+        const updated = await updateAgentProfile(agent.id, {
           provider: providerId || '',
           model: shouldClearModel ? '' : agent.model,
         });
+        setAgent(updated);
         if (shouldClearModel) {
           await api.deleteModelConfig(`agent:${agent.name}`);
         }
-        loadAgents();
       } catch (err: any) {
         antMessage.error(err.message || t('agent.profile.failedToUpdateModel'));
       }
     },
-    [agent, availableModels, loadAgents, t],
+    [agent, availableModels, updateAgentProfile, t],
   );
 
   const handleTitleBlur = useCallback(
@@ -1231,15 +1237,14 @@ export function AgentProfilePage({
       const value = rawValue.trim();
       if (!value || value === (agent.title || agent.name)) return;
       try {
-        const updated = await api.updateAgent(agent.id, { title: value });
+        const updated = await updateAgentProfile(agent.id, { title: value });
         setAgent(updated);
-        await loadAgents();
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
         antMessage.error(message);
       }
     },
-    [agent, loadAgents, t],
+    [agent, updateAgentProfile, t],
   );
 
   const handleDescriptionBlur = useCallback(
@@ -1248,30 +1253,28 @@ export function AgentProfilePage({
       const value = rawValue.trim();
       if (value === (agent.description || '').trim()) return;
       try {
-        const updated = await api.updateAgent(agent.id, { description: value });
+        const updated = await updateAgentProfile(agent.id, { description: value });
         setAgent(updated);
-        await loadAgents();
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
         antMessage.error(message);
       }
     },
-    [agent, loadAgents, t],
+    [agent, updateAgentProfile, t],
   );
 
   const handleAvatarChange = useCallback(
     async (emoji: string) => {
       if (!agent) return;
       try {
-        const updated = await api.updateAgent(agent.id, { avatar: emoji });
+        const updated = await updateAgentProfile(agent.id, { avatar: emoji });
         setAgent(updated);
-        await loadAgents();
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
         antMessage.error(message);
       }
     },
-    [agent, loadAgents, t],
+    [agent, updateAgentProfile, t],
   );
 
   const handleSettingsSaved = useCallback(

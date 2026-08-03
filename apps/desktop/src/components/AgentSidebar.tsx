@@ -37,6 +37,7 @@ import {
   useActiveChatSlice,
 } from './agent/useActiveAgentStores';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
+import { resolveI18nValue } from '../i18n';
 
 interface AgentSidebarProps {
   onEditAgent: (agent: Agent) => void;
@@ -575,7 +576,7 @@ function MessageSearchResults({
           }}
         >
           <span style={{ fontSize: 12, color: token.colorText, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {result.topicTitle || result.topicKey}
+            {resolveI18nValue(result.topicTitle) || result.topicKey}
           </span>
           <span style={{ fontSize: 11, color: token.colorTextSecondary, lineHeight: 1.35 }}>
             {result.snippet}
@@ -887,7 +888,7 @@ function TopicItem({
               whiteSpace: 'nowrap',
             }}
           >
-            {topic.title || t('agent.sidebar.newTopic')}
+            {resolveI18nValue(topic.title) || t('agent.sidebar.newTopic')}
           </span>
         </Popover>
 
