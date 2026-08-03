@@ -70,6 +70,7 @@ type SchedulerService struct {
 
 	running   bool
 	startedAt *time.Time
+	rootCtx   context.Context
 	cancel    context.CancelFunc
 	jobs      []*scheduledJob
 }
@@ -79,6 +80,7 @@ type scheduledJob struct {
 	lastRunAt *time.Time
 	lastErr   string
 	runCount  int
+	cancel    context.CancelFunc
 	stopCh    chan struct{}
 }
 
@@ -113,6 +115,7 @@ func (s *SchedulerService) Start(ctx context.Context, configs []ScheduledJobConf
 	}
 
 	bgCtx, cancel := context.WithCancel(context.Background())
+	s.rootCtx = bgCtx
 	s.cancel = cancel
 	s.running = true
 	now := time.Now()
@@ -125,12 +128,14 @@ func (s *SchedulerService) Start(ctx context.Context, configs []ScheduledJobConf
 		if cfg.Interval < 30*time.Second {
 			cfg.Interval = 30 * time.Second
 		}
+		jobCtx, jobCancel := context.WithCancel(bgCtx)
 		j := &scheduledJob{
 			config: cfg,
+			cancel: jobCancel,
 			stopCh: make(chan struct{}),
 		}
 		s.jobs = append(s.jobs, j)
-		go s.runJobLoop(bgCtx, j)
+		go s.runJobLoop(jobCtx, j)
 	}
 
 	logger.Infof(ctx, "scheduler: started with %d jobs", len(s.jobs))
@@ -147,10 +152,12 @@ func (s *SchedulerService) Stop(ctx context.Context) {
 
 	s.cancel()
 	for _, j := range s.jobs {
+		j.cancel()
 		close(j.stopCh)
 	}
 	s.jobs = nil
 	s.running = false
+	s.rootCtx = nil
 	s.startedAt = nil
 	logger.Infof(ctx, "scheduler: stopped")
 }
@@ -196,14 +203,15 @@ func (s *SchedulerService) AddJob(ctx context.Context, cfg ScheduledJobConfig) e
 		cfg.Interval = 30 * time.Second
 	}
 
+	jobCtx, jobCancel := context.WithCancel(s.rootCtx)
 	j := &scheduledJob{
 		config: cfg,
+		cancel: jobCancel,
 		stopCh: make(chan struct{}),
 	}
 	s.jobs = append(s.jobs, j)
 
-	bgCtx, _ := context.WithCancel(context.Background())
-	go s.runJobLoop(bgCtx, j)
+	go s.runJobLoop(jobCtx, j)
 
 	logger.Infof(ctx, "scheduler: added job kind=%s agent=%s interval=%s",
 		cfg.Kind, cfg.AgentID, cfg.Interval)
