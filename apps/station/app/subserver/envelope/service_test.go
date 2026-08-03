@@ -183,8 +183,8 @@ func TestSubmit_LocalRecipient_DeliverToInbox(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-1",
-		SenderPtid:             "did:alice",
-		RecipientPtid:          "did:bob",
+		SenderPtid:                 "did:alice",
+		RecipientPtid:              "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		ConversationId:             "conv-1",
@@ -219,8 +219,8 @@ func TestSubmit_CrossStation_EnqueuesOutbox(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-2",
-		SenderPtid:             "did:alice",
-		RecipientPtid:          "did:bob",
+		SenderPtid:                 "did:alice",
+		RecipientPtid:              "did:bob",
 		RecipientHomeStationPeerId: "station-B",
 		ConversationId:             "conv-1",
 		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT,
@@ -251,8 +251,8 @@ func TestSubmit_Idempotency(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-dup",
-		SenderPtid:             "did:alice",
-		RecipientPtid:          "did:bob",
+		SenderPtid:                 "did:alice",
+		RecipientPtid:              "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		ConversationId:             "conv-1",
@@ -277,8 +277,8 @@ func TestAck_MarksItemAcked(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "key-ack",
-		SenderPtid:             "did:alice",
-		RecipientPtid:          "did:bob",
+		SenderPtid:                 "did:alice",
+		RecipientPtid:              "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_RECEIPT,
@@ -307,8 +307,8 @@ func TestResume_CursorBasedRecovery(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		env := &chat.StationEnvelope{
 			IdempotencyKey:             "key-resume-" + string(rune('a'+i)),
-			SenderPtid:             "did:alice",
-			RecipientPtid:          "did:bob",
+			SenderPtid:                 "did:alice",
+			RecipientPtid:              "did:bob",
 			RecipientDeviceId:          "device-1",
 			RecipientHomeStationPeerId: "station-A",
 			PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT,
@@ -327,7 +327,7 @@ func TestResume_CursorBasedRecovery(t *testing.T) {
 	}
 }
 
-// C-8: MLS_KEY_DELIVERY envelopes route through the same envelope service.
+// C-8: MLS_TRANSITION_DELIVERY envelopes route through the same envelope service.
 func TestSubmit_MlsKeyDelivery_LocalRouting(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
@@ -335,12 +335,12 @@ func TestSubmit_MlsKeyDelivery_LocalRouting(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "mls-welcome-1",
-		SenderPtid:             "did:alice",
-		RecipientPtid:          "did:bob",
+		SenderPtid:                 "did:alice",
+		RecipientPtid:              "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		ConversationId:             "group-1",
-		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY,
+		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_TRANSITION_DELIVERY,
 		PayloadBytes:               []byte("opaque-mls-welcome-bytes"),
 		MembershipEpoch:            2,
 	}
@@ -360,8 +360,8 @@ func TestSubmit_MlsKeyDelivery_LocalRouting(t *testing.T) {
 	published := bus.published[0]
 	bus.mu.Unlock()
 
-	if published.PayloadType != chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY {
-		t.Fatalf("expected MLS_KEY_DELIVERY payload type, got %v", published.PayloadType)
+	if published.PayloadType != chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_TRANSITION_DELIVERY {
+		t.Fatalf("expected MLS_TRANSITION_DELIVERY payload type, got %v", published.PayloadType)
 	}
 	if published.MembershipEpoch != 2 {
 		t.Fatalf("expected membership_epoch 2, got %d", published.MembershipEpoch)
@@ -371,12 +371,12 @@ func TestSubmit_MlsKeyDelivery_LocalRouting(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("expected 1 inbox item for MLS delivery, got %d", len(items))
 	}
-	if items[0].Envelope.PayloadType != chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY {
+	if items[0].Envelope.PayloadType != chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_TRANSITION_DELIVERY {
 		t.Fatal("inbox item should preserve MLS payload type")
 	}
 }
 
-// C-8: MLS_KEY_DELIVERY cross-station goes to outbox.
+// C-8: MLS_TRANSITION_DELIVERY cross-station goes to outbox.
 func TestSubmit_MlsKeyDelivery_CrossStation(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
@@ -384,11 +384,11 @@ func TestSubmit_MlsKeyDelivery_CrossStation(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "mls-commit-fed-1",
-		SenderPtid:             "did:alice",
-		RecipientPtid:          "did:charlie",
+		SenderPtid:                 "did:alice",
+		RecipientPtid:              "did:charlie",
 		RecipientHomeStationPeerId: "station-B",
 		ConversationId:             "group-1",
-		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY,
+		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_TRANSITION_DELIVERY,
 		PayloadBytes:               []byte("opaque-mls-commit-bytes"),
 		MembershipEpoch:            3,
 	}
@@ -406,8 +406,8 @@ func TestSubmit_MlsKeyDelivery_CrossStation(t *testing.T) {
 	if len(pending) != 1 {
 		t.Fatalf("expected 1 outbox item for federated MLS, got %d", len(pending))
 	}
-	if pending[0].Envelope.PayloadType != chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY {
-		t.Fatal("outbox should preserve MLS_KEY_DELIVERY type")
+	if pending[0].Envelope.PayloadType != chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_TRANSITION_DELIVERY {
+		t.Fatal("outbox should preserve MLS_TRANSITION_DELIVERY type")
 	}
 	if pending[0].TargetStationPeerId != "station-B" {
 		t.Fatalf("expected target station-B, got %s", pending[0].TargetStationPeerId)
@@ -422,8 +422,8 @@ func TestSubmit_DirectKeyExchange_LocalRouting(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "dkx-session-1:did:alice:PREKEY_BUNDLE",
-		SenderPtid:             "did:alice",
-		RecipientPtid:          "did:bob",
+		SenderPtid:                 "did:alice",
+		RecipientPtid:              "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE,
@@ -455,8 +455,8 @@ func TestC5_DuplicateSubmit_Idempotent(t *testing.T) {
 
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "c5-dup-test",
-		SenderPtid:             "did:alice",
-		RecipientPtid:          "did:bob",
+		SenderPtid:                 "did:alice",
+		RecipientPtid:              "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",
 		ConversationId:             "conv-c5",
@@ -488,8 +488,8 @@ func TestC5_OutOfOrderSubmit_ConvergesToOrderedInbox(t *testing.T) {
 	for i := 5; i >= 1; i-- {
 		env := &chat.StationEnvelope{
 			IdempotencyKey:             "c5-order-" + string(rune('a'+i)),
-			SenderPtid:             "did:alice",
-			RecipientPtid:          "did:bob",
+			SenderPtid:                 "did:alice",
+			RecipientPtid:              "did:bob",
 			RecipientDeviceId:          "device-1",
 			RecipientHomeStationPeerId: "station-A",
 			ConversationId:             "conv-c5-order",
@@ -521,8 +521,8 @@ func TestC5_ReconnectAfterPartialAck_ConsistentState(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		env := &chat.StationEnvelope{
 			IdempotencyKey:             "c5-reconnect-" + string(rune('a'+i)),
-			SenderPtid:             "did:alice",
-			RecipientPtid:          "did:bob",
+			SenderPtid:                 "did:alice",
+			RecipientPtid:              "did:bob",
 			RecipientDeviceId:          "device-1",
 			RecipientHomeStationPeerId: "station-A",
 			ConversationId:             "conv-c5-reconnect",
@@ -555,5 +555,65 @@ func TestC5_ReconnectAfterPartialAck_ConsistentState(t *testing.T) {
 		if resumed[i].InboxItemId != cursorResumed[i].InboxItemId {
 			t.Fatalf("resume and cursor-resume should return same items at position %d", i)
 		}
+	}
+}
+
+type followerApplierSpy struct {
+	calls int
+}
+
+func (a *followerApplierSpy) ApplyFederatedDelivery(
+	_ context.Context,
+	env *chat.StationEnvelope,
+	issuer string,
+) (bool, []*chat.DeviceInboxItem, error) {
+	a.calls++
+	return true, []*chat.DeviceInboxItem{{
+		InboxItemId:       "follower-inbox",
+		RecipientPtid:     env.RecipientPtid,
+		RecipientDeviceId: env.RecipientDeviceId,
+		Envelope:          env,
+	}}, nil
+}
+
+func TestFederatedDeliverDelegatesOrderedFactsBeforeGenericInbox(t *testing.T) {
+	repo := newMemRepo()
+	bus := &spyBus{}
+	applier := &followerApplierSpy{}
+	svc := envelope.NewService(
+		repo,
+		bus,
+		func() string { return "station-B" },
+		applier,
+	)
+	env := &chat.StationEnvelope{
+		EnvelopeId:                 "event-envelope",
+		IdempotencyKey:             "event-idempotency",
+		ConversationId:             "group-1",
+		SenderPtid:                 "alice",
+		RecipientPtid:              "bob",
+		RecipientDeviceId:          "bob-device",
+		RecipientHomeStationPeerId: "station-B",
+		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT,
+	}
+	err := svc.Deliver(context.Background(), env, &envelope.FederationClaims{
+		IssuerStationPeerID:   "station-A",
+		AudienceStationPeerID: "station-B",
+		SenderPtid:            "alice",
+		ConversationID:        "group-1",
+		IdempotencyKey:        "event-idempotency",
+		ExpiresAt:             time.Now().Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applier.calls != 1 {
+		t.Fatalf("follower applier calls = %d, want 1", applier.calls)
+	}
+	if len(repo.inbox) != 0 {
+		t.Fatalf("generic inbox wrote %d duplicate rows", len(repo.inbox))
+	}
+	if len(bus.published) != 1 {
+		t.Fatalf("post-commit notifications = %d, want 1", len(bus.published))
 	}
 }

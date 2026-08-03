@@ -15,18 +15,17 @@ import "domain/chat/envelope.proto";
 // CommittedConversationEvent, etc.) are defined in conversation.proto.
 // ============================================================================
 
-// --- Helper Types ---
-
-message CreateGroupMemberInput {
-  string ptid = 1;
-  string station_id = 2;
-}
-
 message DeviceInfoView {
   string device_id = 1;
   string label = 2;
   string created_at = 3;
   bool revoked = 4;
+}
+
+message GetConversationIdentityRequest {}
+
+message GetConversationIdentityResponse {
+  string ptid = 1;
 }
 
 // --- Conversation Management ---
@@ -42,11 +41,17 @@ message CreateDirectConversationResponse {
 
 message CreateGroupConversationRequest {
   string name = 1;
-  repeated CreateGroupMemberInput members = 2;
+  MembershipTransitionCommand genesis_transition = 3;
+  string federation_id = 4;
+  string conversation_id = 5;
+
+  reserved 2;
+  reserved "members";
 }
 
 message CreateGroupConversationResponse {
   Conversation conversation = 1;
+  CommittedConversationEvent transition_event = 2;
 }
 
 message GetConversationRequest {
@@ -55,6 +60,14 @@ message GetConversationRequest {
 
 message GetConversationResponse {
   Conversation conversation = 1;
+}
+
+message GetConversationPublicHeadRequest {
+  string conversation_id = 1;
+}
+
+message GetConversationPublicHeadResponse {
+  ConversationPublicHead head = 1;
 }
 
 message ListConversationsRequest {}
@@ -81,6 +94,54 @@ message SubmitConversationCommandResponse {
   CommittedConversationEvent event = 1;
 }
 
+message SubmitConversationCommandProposalRequest {
+  ConversationCommandProposal proposal = 1;
+}
+
+message SubmitConversationCommandProposalResponse {
+  string conversation_id = 1;
+  string command_id = 2;
+  ConversationCommandSubmissionState state = 3;
+  ConversationCommandProposalResult result = 4;
+}
+
+message ForwardConversationCommandProposalRequest {
+  ConversationCommandProposal proposal = 1;
+}
+
+message ForwardConversationCommandProposalResponse {
+  ConversationCommandProposalResult result = 1;
+}
+
+message GetConversationCommandProposalResultRequest {
+  string conversation_id = 1;
+  string command_id = 2;
+}
+
+message GetConversationCommandProposalResultResponse {
+  string conversation_id = 1;
+  string command_id = 2;
+  ConversationCommandSubmissionState state = 3;
+  ConversationCommandProposalResult result = 4;
+  int64 next_retry_at_unix_ms = 5;
+}
+
+message SubmitMlsLeaveIntentRequest {
+  MlsLeaveIntent intent = 1;
+}
+
+message SubmitMlsLeaveIntentResponse {
+  MlsLeaveIntent intent = 1;
+}
+
+message ListPendingMlsLeaveIntentsRequest {
+  string conversation_id = 1;
+}
+
+message ListPendingMlsLeaveIntentsResponse {
+  repeated MlsLeaveIntent intents = 1;
+}
+
 message SubmitConversationReceiptRequest {
   string conversation_id = 1;
   string message_id = 2;
@@ -97,6 +158,18 @@ message ListConversationEventsRequest {
 }
 
 message ListConversationEventsResponse {
+  repeated CommittedConversationEvent events = 1;
+}
+
+message SyncAuthorityConversationEventsRequest {
+  string federation_id = 1;
+  string conversation_id = 2;
+  int64 authority_epoch = 3;
+  int64 after_group_seq = 4;
+  int32 limit = 5;
+}
+
+message SyncAuthorityConversationEventsResponse {
   repeated CommittedConversationEvent events = 1;
 }
 
@@ -117,6 +190,8 @@ message FetchKeyPackageRequest {
 message FetchKeyPackageResponse {
   bytes data = 1;
   bool available = 2;
+  string device_id = 3;
+  string home_station_peer_id = 4;
 }
 
 message CountKeyPackagesRequest {}
@@ -131,6 +206,8 @@ message RegisterDeviceRequest {
   string device_id = 1;
   string label = 2;
   bytes public_key = 3;
+  string signing_key_id = 4;
+  int64 profile_version = 5;
 }
 
 message RegisterDeviceResponse {}
@@ -146,20 +223,6 @@ message RevokeDeviceRequest {
 }
 
 message RevokeDeviceResponse {}
-
-// --- MLS Distribution ---
-
-message DistributeMlsRequest {
-  string conversation_id = 1;
-  MlsDeliveryKind kind = 2;
-  int64 mls_epoch = 3;
-  bytes opaque_bytes = 4;
-  repeated string recipients = 5;
-}
-
-message DistributeMlsResponse {
-  int32 delivered = 1;
-}
 
 // --- Direct Key Exchange ---
 
