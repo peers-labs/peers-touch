@@ -23,7 +23,6 @@ registerIdentityHandler('clear-client-storage-caches', async (payload) => {
     'chat.conversation-settings',
     'chat.message',
     'config.preference',
-    'crypto.sender-key-ledger',
     'identity.trust',
     'profile.peer',
     'runtime.projection',
