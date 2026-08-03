@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -14,8 +15,8 @@ import (
 // key-loading, sub-servers, wrapper loading, etc.
 //
 // Change History:
-// - 2026-04-10: Populate Options.SubserverInstances in init() so that any
-//   subserver can discover its siblings via server.GetOptions() at Start time.
+//   - 2026-04-10: Populate Options.SubserverInstances in init() so that any
+//     subserver can discover its siblings via server.GetOptions() at Start time.
 type BaseServer struct {
 	opts *Options
 
@@ -82,8 +83,10 @@ func (b *BaseServer) init(opts ...option.Option) error {
 		b.opts.Apply(opt)
 	}
 
-	// then init the sub servers from the ones injected by Option server.WithSubServer
-	for _, subFuc := range b.opts.SubServers {
+	// Bootstrap owns federation identity and must initialize before consumers.
+	// Sort all remaining names so startup behavior never depends on Go map order.
+	for _, name := range orderedSubserverNames(b.opts.SubServers) {
+		subFuc := b.opts.SubServers[name]
 		// create the sub server
 		sub := subFuc.exec(subFuc.options...)
 		// init the sub server
@@ -110,6 +113,20 @@ func (b *BaseServer) init(opts ...option.Option) error {
 	}
 
 	return nil
+}
+
+func orderedSubserverNames(subservers map[string]subServerNewFunctions) []string {
+	names := make([]string, 0, len(subservers))
+	for name := range subservers {
+		if name != "bootstrap" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	if _, ok := subservers["bootstrap"]; ok {
+		names = append([]string{"bootstrap"}, names...)
+	}
+	return names
 }
 
 // NewServer constructs a BaseServer and applies options.
