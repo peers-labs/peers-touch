@@ -1,4 +1,4 @@
-use crate::application::provider::{station_api as provider_cache, remote as provider_remote};
+use crate::application::provider::{remote as provider_remote, station_api as provider_cache};
 use crate::contracts::{
     AppletActionInput, AppletConfigSetInput, AppletCreateSessionInput, AppletGatewayManifest,
     AppletGatewayService, AppletGatewaySkill, AppletIdInput, AppletInvokeInput, StubPayload,
@@ -62,8 +62,7 @@ const ATELIER_FULL_E2E_DESKTOP_READY_EVIDENCE_ENV: &str =
     "PEERS_ATELIER_FULL_E2E_DESKTOP_READY_EVIDENCE";
 const ATELIER_FULL_E2E_WORKSPACE_OPEN_EVIDENCE_ENV: &str =
     "PEERS_ATELIER_FULL_E2E_WORKSPACE_OPEN_EVIDENCE";
-const ATELIER_FULL_E2E_IDE_LAUNCH_EVIDENCE_ENV: &str =
-    "PEERS_ATELIER_FULL_E2E_IDE_LAUNCH_EVIDENCE";
+const ATELIER_FULL_E2E_IDE_LAUNCH_EVIDENCE_ENV: &str = "PEERS_ATELIER_FULL_E2E_IDE_LAUNCH_EVIDENCE";
 const ATELIER_FULL_E2E_IDE_LAUNCHER_ENV: &str = "PEERS_ATELIER_FULL_E2E_IDE_LAUNCHER";
 const ATELIER_PROJECTION_CONTRACT_JSON: &str = include_str!(
     "../../../../../../apps/applets/atelier/contracts/atelier-projection.contract.json"
@@ -3893,7 +3892,9 @@ fn validate_atelier_workspace_open_uri(task_id: &str, workspace_uri: &str) -> Re
         || task_segments[0].is_empty()
         || task_segments[0].chars().any(char::is_whitespace)
     {
-        return Err("atelier.workspace.open requires exactly one non-empty task path segment".to_string());
+        return Err(
+            "atelier.workspace.open requires exactly one non-empty task path segment".to_string(),
+        );
     }
     if task_segments[0] != task_id {
         return Err("atelier.workspace.open task path must match params.taskId".to_string());
@@ -3902,11 +3903,18 @@ fn validate_atelier_workspace_open_uri(task_id: &str, workspace_uri: &str) -> Re
         .query_pairs()
         .map(|(key, value)| (key.into_owned(), value.into_owned()))
         .collect();
-    if query_pairs.len() != 1 || query_pairs[0].0 != "workspace" || query_pairs[0].1.trim().is_empty() {
-        return Err("atelier.workspace.open requires exactly one non-empty workspace query".to_string());
+    if query_pairs.len() != 1
+        || query_pairs[0].0 != "workspace"
+        || query_pairs[0].1.trim().is_empty()
+    {
+        return Err(
+            "atelier.workspace.open requires exactly one non-empty workspace query".to_string(),
+        );
     }
     if query_pairs[0].1.chars().any(char::is_whitespace) {
-        return Err("atelier.workspace.open workspace query must not contain whitespace".to_string());
+        return Err(
+            "atelier.workspace.open workspace query must not contain whitespace".to_string(),
+        );
     }
     Ok(())
 }
@@ -4604,7 +4612,11 @@ fn handle_ai(
     }
 }
 
-fn invoke_ai_generate(token: &str, request_id: &str, params: Option<Value>) -> Result<Value, String> {
+fn invoke_ai_generate(
+    token: &str,
+    request_id: &str,
+    params: Option<Value>,
+) -> Result<Value, String> {
     let params = params.ok_or_else(|| "ai.generate requires params".to_string())?;
     let prompt = params
         .get("prompt")
@@ -4671,10 +4683,8 @@ fn invoke_ai_chat(token: &str, request_id: &str, params: Option<Value>) -> Resul
         return Err("ai.chat requires a model".to_string());
     }
 
-    let effective_protocol = provider_remote::resolve_model_protocol(
-        None,
-        Some(&resolved.protocol),
-    );
+    let effective_protocol =
+        provider_remote::resolve_model_protocol(None, Some(&resolved.protocol));
 
     let result = provider_remote::chat_completion(
         &resolved.base_url,
@@ -4689,8 +4699,6 @@ fn invoke_ai_chat(token: &str, request_id: &str, params: Option<Value>) -> Resul
         json!({ "requestId": request_id, "message": { "role": "assistant", "content": result.text }, "model": result.model }),
     )
 }
-
-
 
 fn handle_telemetry(
     applet_id: &str,
@@ -5026,7 +5034,11 @@ fn record_atelier_full_e2e_ide_launch(
     let launcher = std::env::var(ATELIER_FULL_E2E_IDE_LAUNCHER_ENV)
         .map(|value| value.trim().to_string())
         .unwrap_or_default();
-    if launcher.is_empty() || launcher.contains('\0') || launcher.contains('\n') || launcher.contains('\r') {
+    if launcher.is_empty()
+        || launcher.contains('\0')
+        || launcher.contains('\n')
+        || launcher.contains('\r')
+    {
         return Err(format!(
             "{} must name a non-empty executable path for Atelier full E2E IDE launch evidence",
             ATELIER_FULL_E2E_IDE_LAUNCHER_ENV
@@ -5047,7 +5059,9 @@ fn record_atelier_full_e2e_ide_launch(
     let workspace_id = parsed
         .query_pairs()
         .find_map(|(key, value)| (key == "workspace").then(|| value.into_owned()))
-        .ok_or_else(|| "atelier.workspace.open requires workspace query for IDE launch evidence".to_string())?;
+        .ok_or_else(|| {
+            "atelier.workspace.open requires workspace query for IDE launch evidence".to_string()
+        })?;
 
     let status = Command::new(&launcher)
         .arg(ide_hint)
@@ -6558,7 +6572,7 @@ mod tests {
         ENV_LOCK
             .get_or_init(|| Mutex::new(()))
             .lock()
-            .expect("full E2E env lock should not be poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     #[test]
@@ -6570,10 +6584,7 @@ mod tests {
         std::env::set_var(ATELIER_FULL_E2E_ENV, "1");
         std::env::set_var(ATELIER_FULL_E2E_APPLET_ID_ENV, "peers.atelier");
         std::env::set_var(ATELIER_FULL_E2E_DESKTOP_LAUNCH_ID_ENV, "launch-test-1");
-        std::env::set_var(
-            ATELIER_FULL_E2E_DESKTOP_READY_EVIDENCE_ENV,
-            &output_path,
-        );
+        std::env::set_var(ATELIER_FULL_E2E_DESKTOP_READY_EVIDENCE_ENV, &output_path);
         std::env::set_var("PEERS_APPLET_SERVICE_ATELIER", station_url);
 
         let result = record_atelier_full_e2e_desktop_ready(
@@ -6608,7 +6619,12 @@ mod tests {
             evidence["serviceBinding"]["transport"],
             "sdk.network.request"
         );
-        assert_eq!(evidence["serviceBinding"]["stationUrl"], station_url);
+        assert_eq!(evidence["serviceBinding"]["stationUrlRedacted"], true);
+        assert_eq!(
+            evidence["serviceBinding"]["stationUrlHash"],
+            atelier_full_e2e_sha256(station_url)
+        );
+        assert!(evidence["serviceBinding"].get("stationUrl").is_none());
         assert_eq!(
             evidence["serviceBinding"]["stationPathPrefix"],
             "/applets/atelier/v1"
@@ -6617,14 +6633,16 @@ mod tests {
             evidence["productShell"]["kind"],
             "desktop_host_product_shell"
         );
-        assert_eq!(
-            evidence["productWindow"]["kind"],
-            "desktop_product_window"
-        );
+        assert_eq!(evidence["productWindow"]["kind"], "desktop_product_window");
         assert_eq!(evidence["productWindow"]["mounted"], true);
     }
 
-    fn register_e2e_provider(_provider_id: &str, _protocol: &str, _model_id: &str, _base_url: &str) {
+    fn register_e2e_provider(
+        _provider_id: &str,
+        _protocol: &str,
+        _model_id: &str,
+        _base_url: &str,
+    ) {
         // Provider registration now requires Station. E2E tests for ai.chat
         // capability must run against a real Station with providers configured.
     }
@@ -8832,7 +8850,9 @@ mod tests {
             evidence["workspaceUri"],
             "pt-workspace://task/task-1?workspace=workspace-1"
         );
-        assert_eq!(evidence["ideHint"], "vscode");
+        assert_eq!(evidence["ideHintRedacted"], true);
+        assert_eq!(evidence["ideTargetHash"], atelier_full_e2e_sha256("vscode"));
+        assert!(evidence.get("ideHint").is_none());
         assert_eq!(evidence["accepted"], true);
         assert_eq!(evidence["opened"], false);
         assert_eq!(evidence["mode"], "host_intent");
@@ -8896,7 +8916,12 @@ mod tests {
             ide_evidence["workspaceUri"],
             "pt-workspace://task/task-1?workspace=workspace-1"
         );
-        assert_eq!(ide_evidence["ideTarget"], "controlled-ide");
+        assert_eq!(ide_evidence["ideTargetRedacted"], true);
+        assert_eq!(
+            ide_evidence["ideTargetHash"],
+            atelier_full_e2e_sha256("controlled-ide")
+        );
+        assert!(ide_evidence.get("ideTarget").is_none());
         assert_eq!(ide_evidence["realIdeLaunchProven"], true);
         assert_eq!(ide_evidence["launchOwner"], "desktop_host");
         assert_eq!(ide_evidence["resolver"], "desktop_host.pt_workspace_uri");
