@@ -34,6 +34,7 @@ export PEERS_STATION_URL="${PT_STATION_URL:-http://127.0.0.1:18080}"
 export STATION_HEALTHCHECK_URL="${PT_STATION_HEALTH_URL:-$PEERS_STATION_URL/api/oauth/providers}"
 export PEERS_STATION_MODE="${PT_STATION_MODE:-local}"
 export STATION_PORT="${PT_STATION_PORT:-18080}"
+export PEERS_STORAGE_ROOT="${PEERS_STORAGE_ROOT:-$PT_DEV_DATA/desktop-$MODE}"
 
 # Ensure Station is reachable (don't redeploy if already running)
 if [[ "${PT_STATION_MODE:-local}" == "remote" ]]; then

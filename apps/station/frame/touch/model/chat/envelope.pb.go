@@ -29,8 +29,8 @@ const (
 	EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_UNSPECIFIED EnvelopePayloadType = 0
 	// Durable, ordered, persisted in outbox/inbox, cursor-tracked, retriable.
 	EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT EnvelopePayloadType = 1
-	// Durable, device-targeted, retriable — MLS Welcome/Commit/KeyPackage (D-08).
-	EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY EnvelopePayloadType = 2
+	// Durable, device-targeted, authority-ordered MLS Commit/Welcome (D-13).
+	EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_MLS_TRANSITION_DELIVERY EnvelopePayloadType = 2
 	// Durable, device-targeted, retriable — X3DH prekey bundle / initial message (D-09).
 	EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE EnvelopePayloadType = 3
 	// Semi-durable: persisted briefly for offline, but not indefinitely.
@@ -39,6 +39,8 @@ const (
 	EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_TYPING EnvelopePayloadType = 5
 	// Low-latency, semi-durable: call signaling (SDP, ICE candidates).
 	EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_CALL_SIGNALING EnvelopePayloadType = 6
+	// Durable, device-targeted D-17 authority result and public head evidence.
+	EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_CONVERSATION_COMMAND_RESULT EnvelopePayloadType = 7
 )
 
 // Enum value maps for EnvelopePayloadType.
@@ -46,20 +48,22 @@ var (
 	EnvelopePayloadType_name = map[int32]string{
 		0: "ENVELOPE_PAYLOAD_TYPE_UNSPECIFIED",
 		1: "ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT",
-		2: "ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY",
+		2: "ENVELOPE_PAYLOAD_TYPE_MLS_TRANSITION_DELIVERY",
 		3: "ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE",
 		4: "ENVELOPE_PAYLOAD_TYPE_RECEIPT",
 		5: "ENVELOPE_PAYLOAD_TYPE_TYPING",
 		6: "ENVELOPE_PAYLOAD_TYPE_CALL_SIGNALING",
+		7: "ENVELOPE_PAYLOAD_TYPE_CONVERSATION_COMMAND_RESULT",
 	}
 	EnvelopePayloadType_value = map[string]int32{
-		"ENVELOPE_PAYLOAD_TYPE_UNSPECIFIED":         0,
-		"ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT":     1,
-		"ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY":    2,
-		"ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE": 3,
-		"ENVELOPE_PAYLOAD_TYPE_RECEIPT":             4,
-		"ENVELOPE_PAYLOAD_TYPE_TYPING":              5,
-		"ENVELOPE_PAYLOAD_TYPE_CALL_SIGNALING":      6,
+		"ENVELOPE_PAYLOAD_TYPE_UNSPECIFIED":                 0,
+		"ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT":             1,
+		"ENVELOPE_PAYLOAD_TYPE_MLS_TRANSITION_DELIVERY":     2,
+		"ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE":         3,
+		"ENVELOPE_PAYLOAD_TYPE_RECEIPT":                     4,
+		"ENVELOPE_PAYLOAD_TYPE_TYPING":                      5,
+		"ENVELOPE_PAYLOAD_TYPE_CALL_SIGNALING":              6,
+		"ENVELOPE_PAYLOAD_TYPE_CONVERSATION_COMMAND_RESULT": 7,
 	}
 )
 
@@ -200,55 +204,52 @@ func (OutboxItemStatus) EnumDescriptor() ([]byte, []int) {
 	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{2}
 }
 
-type MlsDeliveryKind int32
+type MlsTransitionDeliveryKind int32
 
 const (
-	MlsDeliveryKind_MLS_DELIVERY_KIND_UNSPECIFIED MlsDeliveryKind = 0
-	MlsDeliveryKind_MLS_DELIVERY_KIND_WELCOME     MlsDeliveryKind = 1
-	MlsDeliveryKind_MLS_DELIVERY_KIND_COMMIT      MlsDeliveryKind = 2
-	MlsDeliveryKind_MLS_DELIVERY_KIND_KEY_PACKAGE MlsDeliveryKind = 3
+	MlsTransitionDeliveryKind_MLS_TRANSITION_DELIVERY_KIND_UNSPECIFIED MlsTransitionDeliveryKind = 0
+	MlsTransitionDeliveryKind_MLS_TRANSITION_DELIVERY_KIND_COMMIT      MlsTransitionDeliveryKind = 1
+	MlsTransitionDeliveryKind_MLS_TRANSITION_DELIVERY_KIND_WELCOME     MlsTransitionDeliveryKind = 2
 )
 
-// Enum value maps for MlsDeliveryKind.
+// Enum value maps for MlsTransitionDeliveryKind.
 var (
-	MlsDeliveryKind_name = map[int32]string{
-		0: "MLS_DELIVERY_KIND_UNSPECIFIED",
-		1: "MLS_DELIVERY_KIND_WELCOME",
-		2: "MLS_DELIVERY_KIND_COMMIT",
-		3: "MLS_DELIVERY_KIND_KEY_PACKAGE",
+	MlsTransitionDeliveryKind_name = map[int32]string{
+		0: "MLS_TRANSITION_DELIVERY_KIND_UNSPECIFIED",
+		1: "MLS_TRANSITION_DELIVERY_KIND_COMMIT",
+		2: "MLS_TRANSITION_DELIVERY_KIND_WELCOME",
 	}
-	MlsDeliveryKind_value = map[string]int32{
-		"MLS_DELIVERY_KIND_UNSPECIFIED": 0,
-		"MLS_DELIVERY_KIND_WELCOME":     1,
-		"MLS_DELIVERY_KIND_COMMIT":      2,
-		"MLS_DELIVERY_KIND_KEY_PACKAGE": 3,
+	MlsTransitionDeliveryKind_value = map[string]int32{
+		"MLS_TRANSITION_DELIVERY_KIND_UNSPECIFIED": 0,
+		"MLS_TRANSITION_DELIVERY_KIND_COMMIT":      1,
+		"MLS_TRANSITION_DELIVERY_KIND_WELCOME":     2,
 	}
 )
 
-func (x MlsDeliveryKind) Enum() *MlsDeliveryKind {
-	p := new(MlsDeliveryKind)
+func (x MlsTransitionDeliveryKind) Enum() *MlsTransitionDeliveryKind {
+	p := new(MlsTransitionDeliveryKind)
 	*p = x
 	return p
 }
 
-func (x MlsDeliveryKind) String() string {
+func (x MlsTransitionDeliveryKind) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (MlsDeliveryKind) Descriptor() protoreflect.EnumDescriptor {
+func (MlsTransitionDeliveryKind) Descriptor() protoreflect.EnumDescriptor {
 	return file_domain_chat_envelope_proto_enumTypes[3].Descriptor()
 }
 
-func (MlsDeliveryKind) Type() protoreflect.EnumType {
+func (MlsTransitionDeliveryKind) Type() protoreflect.EnumType {
 	return &file_domain_chat_envelope_proto_enumTypes[3]
 }
 
-func (x MlsDeliveryKind) Number() protoreflect.EnumNumber {
+func (x MlsTransitionDeliveryKind) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use MlsDeliveryKind.Descriptor instead.
-func (MlsDeliveryKind) EnumDescriptor() ([]byte, []int) {
+// Deprecated: Use MlsTransitionDeliveryKind.Descriptor instead.
+func (MlsTransitionDeliveryKind) EnumDescriptor() ([]byte, []int) {
 	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{3}
 }
 
@@ -328,10 +329,21 @@ type StationEnvelope struct {
 	SenderSignature      []byte `protobuf:"bytes,13,opt,name=sender_signature,json=senderSignature,proto3" json:"sender_signature,omitempty"`
 	HomeStationSignature []byte `protobuf:"bytes,14,opt,name=home_station_signature,json=homeStationSignature,proto3" json:"home_station_signature,omitempty"`
 	// Timestamps
-	IssuedAt      *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	IssuedAt  *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// Authority-ordered group transition metadata (D-13).
+	GroupSeq               int64  `protobuf:"varint,17,opt,name=group_seq,json=groupSeq,proto3" json:"group_seq,omitempty"`
+	TransitionId           string `protobuf:"bytes,18,opt,name=transition_id,json=transitionId,proto3" json:"transition_id,omitempty"`
+	FromMembershipEpoch    int64  `protobuf:"varint,19,opt,name=from_membership_epoch,json=fromMembershipEpoch,proto3" json:"from_membership_epoch,omitempty"`
+	ToMembershipEpoch      int64  `protobuf:"varint,20,opt,name=to_membership_epoch,json=toMembershipEpoch,proto3" json:"to_membership_epoch,omitempty"`
+	FromMlsEpoch           int64  `protobuf:"varint,21,opt,name=from_mls_epoch,json=fromMlsEpoch,proto3" json:"from_mls_epoch,omitempty"`
+	ToMlsEpoch             int64  `protobuf:"varint,22,opt,name=to_mls_epoch,json=toMlsEpoch,proto3" json:"to_mls_epoch,omitempty"`
+	PayloadSha256          []byte `protobuf:"bytes,23,opt,name=payload_sha256,json=payloadSha256,proto3" json:"payload_sha256,omitempty"`
+	AuthorityStationPeerId string `protobuf:"bytes,24,opt,name=authority_station_peer_id,json=authorityStationPeerId,proto3" json:"authority_station_peer_id,omitempty"`
+	FederationId           string `protobuf:"bytes,25,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	AuthorityEpoch         int64  `protobuf:"varint,26,opt,name=authority_epoch,json=authorityEpoch,proto3" json:"authority_epoch,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *StationEnvelope) Reset() {
@@ -474,6 +486,76 @@ func (x *StationEnvelope) GetExpiresAt() *timestamppb.Timestamp {
 		return x.ExpiresAt
 	}
 	return nil
+}
+
+func (x *StationEnvelope) GetGroupSeq() int64 {
+	if x != nil {
+		return x.GroupSeq
+	}
+	return 0
+}
+
+func (x *StationEnvelope) GetTransitionId() string {
+	if x != nil {
+		return x.TransitionId
+	}
+	return ""
+}
+
+func (x *StationEnvelope) GetFromMembershipEpoch() int64 {
+	if x != nil {
+		return x.FromMembershipEpoch
+	}
+	return 0
+}
+
+func (x *StationEnvelope) GetToMembershipEpoch() int64 {
+	if x != nil {
+		return x.ToMembershipEpoch
+	}
+	return 0
+}
+
+func (x *StationEnvelope) GetFromMlsEpoch() int64 {
+	if x != nil {
+		return x.FromMlsEpoch
+	}
+	return 0
+}
+
+func (x *StationEnvelope) GetToMlsEpoch() int64 {
+	if x != nil {
+		return x.ToMlsEpoch
+	}
+	return 0
+}
+
+func (x *StationEnvelope) GetPayloadSha256() []byte {
+	if x != nil {
+		return x.PayloadSha256
+	}
+	return nil
+}
+
+func (x *StationEnvelope) GetAuthorityStationPeerId() string {
+	if x != nil {
+		return x.AuthorityStationPeerId
+	}
+	return ""
+}
+
+func (x *StationEnvelope) GetFederationId() string {
+	if x != nil {
+		return x.FederationId
+	}
+	return ""
+}
+
+func (x *StationEnvelope) GetAuthorityEpoch() int64 {
+	if x != nil {
+		return x.AuthorityEpoch
+	}
+	return 0
 }
 
 // Per-device durable inbox entry. Station persists these until ACK'd.
@@ -694,32 +776,39 @@ func (x *OutboxItem) GetLastError() string {
 	return ""
 }
 
-// Opaque MLS material (Welcome/Commit/KeyPackage) carried inside
-// a StationEnvelope with payload_type = MLS_KEY_DELIVERY.
-type MlsKeyDeliveryPayload struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	Kind           MlsDeliveryKind        `protobuf:"varint,2,opt,name=kind,proto3,enum=peers_touch.model.chat.v1.MlsDeliveryKind" json:"kind,omitempty"`
-	MlsEpoch       int64                  `protobuf:"varint,3,opt,name=mls_epoch,json=mlsEpoch,proto3" json:"mls_epoch,omitempty"`
-	OpaqueMlsBytes []byte                 `protobuf:"bytes,4,opt,name=opaque_mls_bytes,json=opaqueMlsBytes,proto3" json:"opaque_mls_bytes,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+// Opaque MLS Commit/Welcome material carried inside a StationEnvelope with
+// payload_type = MLS_TRANSITION_DELIVERY. KeyPackage publication is a separate
+// directory capability and never uses this payload.
+type MlsTransitionDeliveryPayload struct {
+	state               protoimpl.MessageState    `protogen:"open.v1"`
+	ConversationId      string                    `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	TransitionId        string                    `protobuf:"bytes,2,opt,name=transition_id,json=transitionId,proto3" json:"transition_id,omitempty"`
+	GroupSeq            int64                     `protobuf:"varint,3,opt,name=group_seq,json=groupSeq,proto3" json:"group_seq,omitempty"`
+	FromMembershipEpoch int64                     `protobuf:"varint,4,opt,name=from_membership_epoch,json=fromMembershipEpoch,proto3" json:"from_membership_epoch,omitempty"`
+	ToMembershipEpoch   int64                     `protobuf:"varint,5,opt,name=to_membership_epoch,json=toMembershipEpoch,proto3" json:"to_membership_epoch,omitempty"`
+	FromMlsEpoch        int64                     `protobuf:"varint,6,opt,name=from_mls_epoch,json=fromMlsEpoch,proto3" json:"from_mls_epoch,omitempty"`
+	ToMlsEpoch          int64                     `protobuf:"varint,7,opt,name=to_mls_epoch,json=toMlsEpoch,proto3" json:"to_mls_epoch,omitempty"`
+	Kind                MlsTransitionDeliveryKind `protobuf:"varint,8,opt,name=kind,proto3,enum=peers_touch.model.chat.v1.MlsTransitionDeliveryKind" json:"kind,omitempty"`
+	OpaqueMlsBytes      []byte                    `protobuf:"bytes,9,opt,name=opaque_mls_bytes,json=opaqueMlsBytes,proto3" json:"opaque_mls_bytes,omitempty"`
+	PayloadSha256       []byte                    `protobuf:"bytes,10,opt,name=payload_sha256,json=payloadSha256,proto3" json:"payload_sha256,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
-func (x *MlsKeyDeliveryPayload) Reset() {
-	*x = MlsKeyDeliveryPayload{}
+func (x *MlsTransitionDeliveryPayload) Reset() {
+	*x = MlsTransitionDeliveryPayload{}
 	mi := &file_domain_chat_envelope_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MlsKeyDeliveryPayload) String() string {
+func (x *MlsTransitionDeliveryPayload) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MlsKeyDeliveryPayload) ProtoMessage() {}
+func (*MlsTransitionDeliveryPayload) ProtoMessage() {}
 
-func (x *MlsKeyDeliveryPayload) ProtoReflect() protoreflect.Message {
+func (x *MlsTransitionDeliveryPayload) ProtoReflect() protoreflect.Message {
 	mi := &file_domain_chat_envelope_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -731,35 +820,77 @@ func (x *MlsKeyDeliveryPayload) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MlsKeyDeliveryPayload.ProtoReflect.Descriptor instead.
-func (*MlsKeyDeliveryPayload) Descriptor() ([]byte, []int) {
+// Deprecated: Use MlsTransitionDeliveryPayload.ProtoReflect.Descriptor instead.
+func (*MlsTransitionDeliveryPayload) Descriptor() ([]byte, []int) {
 	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *MlsKeyDeliveryPayload) GetConversationId() string {
+func (x *MlsTransitionDeliveryPayload) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
 	return ""
 }
 
-func (x *MlsKeyDeliveryPayload) GetKind() MlsDeliveryKind {
+func (x *MlsTransitionDeliveryPayload) GetTransitionId() string {
 	if x != nil {
-		return x.Kind
+		return x.TransitionId
 	}
-	return MlsDeliveryKind_MLS_DELIVERY_KIND_UNSPECIFIED
+	return ""
 }
 
-func (x *MlsKeyDeliveryPayload) GetMlsEpoch() int64 {
+func (x *MlsTransitionDeliveryPayload) GetGroupSeq() int64 {
 	if x != nil {
-		return x.MlsEpoch
+		return x.GroupSeq
 	}
 	return 0
 }
 
-func (x *MlsKeyDeliveryPayload) GetOpaqueMlsBytes() []byte {
+func (x *MlsTransitionDeliveryPayload) GetFromMembershipEpoch() int64 {
+	if x != nil {
+		return x.FromMembershipEpoch
+	}
+	return 0
+}
+
+func (x *MlsTransitionDeliveryPayload) GetToMembershipEpoch() int64 {
+	if x != nil {
+		return x.ToMembershipEpoch
+	}
+	return 0
+}
+
+func (x *MlsTransitionDeliveryPayload) GetFromMlsEpoch() int64 {
+	if x != nil {
+		return x.FromMlsEpoch
+	}
+	return 0
+}
+
+func (x *MlsTransitionDeliveryPayload) GetToMlsEpoch() int64 {
+	if x != nil {
+		return x.ToMlsEpoch
+	}
+	return 0
+}
+
+func (x *MlsTransitionDeliveryPayload) GetKind() MlsTransitionDeliveryKind {
+	if x != nil {
+		return x.Kind
+	}
+	return MlsTransitionDeliveryKind_MLS_TRANSITION_DELIVERY_KIND_UNSPECIFIED
+}
+
+func (x *MlsTransitionDeliveryPayload) GetOpaqueMlsBytes() []byte {
 	if x != nil {
 		return x.OpaqueMlsBytes
+	}
+	return nil
+}
+
+func (x *MlsTransitionDeliveryPayload) GetPayloadSha256() []byte {
+	if x != nil {
+		return x.PayloadSha256
 	}
 	return nil
 }
@@ -830,7 +961,7 @@ var File_domain_chat_envelope_proto protoreflect.FileDescriptor
 
 const file_domain_chat_envelope_proto_rawDesc = "" +
 	"\n" +
-	"\x1adomain/chat/envelope.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa0\x06\n" +
+	"\x1adomain/chat/envelope.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbe\t\n" +
 	"\x0fStationEnvelope\x12\x1f\n" +
 	"\venvelope_id\x18\x01 \x01(\tR\n" +
 	"envelopeId\x12'\n" +
@@ -851,7 +982,18 @@ const file_domain_chat_envelope_proto_rawDesc = "" +
 	"\x16home_station_signature\x18\x0e \x01(\fR\x14homeStationSignature\x127\n" +
 	"\tissued_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x8c\x04\n" +
+	"expires_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1b\n" +
+	"\tgroup_seq\x18\x11 \x01(\x03R\bgroupSeq\x12#\n" +
+	"\rtransition_id\x18\x12 \x01(\tR\ftransitionId\x122\n" +
+	"\x15from_membership_epoch\x18\x13 \x01(\x03R\x13fromMembershipEpoch\x12.\n" +
+	"\x13to_membership_epoch\x18\x14 \x01(\x03R\x11toMembershipEpoch\x12$\n" +
+	"\x0efrom_mls_epoch\x18\x15 \x01(\x03R\ffromMlsEpoch\x12 \n" +
+	"\fto_mls_epoch\x18\x16 \x01(\x03R\n" +
+	"toMlsEpoch\x12%\n" +
+	"\x0epayload_sha256\x18\x17 \x01(\fR\rpayloadSha256\x129\n" +
+	"\x19authority_station_peer_id\x18\x18 \x01(\tR\x16authorityStationPeerId\x12#\n" +
+	"\rfederation_id\x18\x19 \x01(\tR\ffederationId\x12'\n" +
+	"\x0fauthority_epoch\x18\x1a \x01(\x03R\x0eauthorityEpoch\"\x8c\x04\n" +
 	"\x0fDeviceInboxItem\x12\"\n" +
 	"\rinbox_item_id\x18\x01 \x01(\tR\vinboxItemId\x12%\n" +
 	"\x0erecipient_ptid\x18\x02 \x01(\tR\rrecipientPtid\x12.\n" +
@@ -874,25 +1016,34 @@ const file_domain_chat_envelope_proto_rawDesc = "" +
 	"\rnext_retry_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vnextRetryAt\x12=\n" +
 	"\fdelivered_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\vdeliveredAt\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\t \x01(\tR\tlastError\"\xc7\x01\n" +
-	"\x15MlsKeyDeliveryPayload\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12>\n" +
-	"\x04kind\x18\x02 \x01(\x0e2*.peers_touch.model.chat.v1.MlsDeliveryKindR\x04kind\x12\x1b\n" +
-	"\tmls_epoch\x18\x03 \x01(\x03R\bmlsEpoch\x12(\n" +
-	"\x10opaque_mls_bytes\x18\x04 \x01(\fR\x0eopaqueMlsBytes\"\xaf\x01\n" +
+	"last_error\x18\t \x01(\tR\tlastError\"\xd0\x03\n" +
+	"\x1cMlsTransitionDeliveryPayload\x12'\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12#\n" +
+	"\rtransition_id\x18\x02 \x01(\tR\ftransitionId\x12\x1b\n" +
+	"\tgroup_seq\x18\x03 \x01(\x03R\bgroupSeq\x122\n" +
+	"\x15from_membership_epoch\x18\x04 \x01(\x03R\x13fromMembershipEpoch\x12.\n" +
+	"\x13to_membership_epoch\x18\x05 \x01(\x03R\x11toMembershipEpoch\x12$\n" +
+	"\x0efrom_mls_epoch\x18\x06 \x01(\x03R\ffromMlsEpoch\x12 \n" +
+	"\fto_mls_epoch\x18\a \x01(\x03R\n" +
+	"toMlsEpoch\x12H\n" +
+	"\x04kind\x18\b \x01(\x0e24.peers_touch.model.chat.v1.MlsTransitionDeliveryKindR\x04kind\x12(\n" +
+	"\x10opaque_mls_bytes\x18\t \x01(\fR\x0eopaqueMlsBytes\x12%\n" +
+	"\x0epayload_sha256\x18\n" +
+	" \x01(\fR\rpayloadSha256\"\xaf\x01\n" +
 	"\x18DirectKeyExchangePayload\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12D\n" +
 	"\x04kind\x18\x02 \x01(\x0e20.peers_touch.model.chat.v1.DirectKeyExchangeKindR\x04kind\x12.\n" +
-	"\x13opaque_key_material\x18\x03 \x01(\fR\x11opaqueKeyMaterial*\xb1\x02\n" +
+	"\x13opaque_key_material\x18\x03 \x01(\fR\x11opaqueKeyMaterial*\xef\x02\n" +
 	"\x13EnvelopePayloadType\x12%\n" +
 	"!ENVELOPE_PAYLOAD_TYPE_UNSPECIFIED\x10\x00\x12)\n" +
-	"%ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT\x10\x01\x12*\n" +
-	"&ENVELOPE_PAYLOAD_TYPE_MLS_KEY_DELIVERY\x10\x02\x12-\n" +
+	"%ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT\x10\x01\x121\n" +
+	"-ENVELOPE_PAYLOAD_TYPE_MLS_TRANSITION_DELIVERY\x10\x02\x12-\n" +
 	")ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE\x10\x03\x12!\n" +
 	"\x1dENVELOPE_PAYLOAD_TYPE_RECEIPT\x10\x04\x12 \n" +
 	"\x1cENVELOPE_PAYLOAD_TYPE_TYPING\x10\x05\x12(\n" +
-	"$ENVELOPE_PAYLOAD_TYPE_CALL_SIGNALING\x10\x06*\xb4\x01\n" +
+	"$ENVELOPE_PAYLOAD_TYPE_CALL_SIGNALING\x10\x06\x125\n" +
+	"1ENVELOPE_PAYLOAD_TYPE_CONVERSATION_COMMAND_RESULT\x10\a*\xb4\x01\n" +
 	"\x0fInboxItemStatus\x12!\n" +
 	"\x1dINBOX_ITEM_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19INBOX_ITEM_STATUS_PENDING\x10\x01\x12\x1f\n" +
@@ -904,12 +1055,11 @@ const file_domain_chat_envelope_proto_rawDesc = "" +
 	"\x1aOUTBOX_ITEM_STATUS_PENDING\x10\x01\x12 \n" +
 	"\x1cOUTBOX_ITEM_STATUS_IN_FLIGHT\x10\x02\x12 \n" +
 	"\x1cOUTBOX_ITEM_STATUS_DELIVERED\x10\x03\x12\"\n" +
-	"\x1eOUTBOX_ITEM_STATUS_DEAD_LETTER\x10\x04*\x94\x01\n" +
-	"\x0fMlsDeliveryKind\x12!\n" +
-	"\x1dMLS_DELIVERY_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
-	"\x19MLS_DELIVERY_KIND_WELCOME\x10\x01\x12\x1c\n" +
-	"\x18MLS_DELIVERY_KIND_COMMIT\x10\x02\x12!\n" +
-	"\x1dMLS_DELIVERY_KIND_KEY_PACKAGE\x10\x03*\xcc\x01\n" +
+	"\x1eOUTBOX_ITEM_STATUS_DEAD_LETTER\x10\x04*\x9c\x01\n" +
+	"\x19MlsTransitionDeliveryKind\x12,\n" +
+	"(MLS_TRANSITION_DELIVERY_KIND_UNSPECIFIED\x10\x00\x12'\n" +
+	"#MLS_TRANSITION_DELIVERY_KIND_COMMIT\x10\x01\x12(\n" +
+	"$MLS_TRANSITION_DELIVERY_KIND_WELCOME\x10\x02*\xcc\x01\n" +
 	"\x15DirectKeyExchangeKind\x12(\n" +
 	"$DIRECT_KEY_EXCHANGE_KIND_UNSPECIFIED\x10\x00\x12*\n" +
 	"&DIRECT_KEY_EXCHANGE_KIND_PREKEY_BUNDLE\x10\x01\x12,\n" +
@@ -931,17 +1081,17 @@ func file_domain_chat_envelope_proto_rawDescGZIP() []byte {
 var file_domain_chat_envelope_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
 var file_domain_chat_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_domain_chat_envelope_proto_goTypes = []any{
-	(EnvelopePayloadType)(0),         // 0: peers_touch.model.chat.v1.EnvelopePayloadType
-	(InboxItemStatus)(0),             // 1: peers_touch.model.chat.v1.InboxItemStatus
-	(OutboxItemStatus)(0),            // 2: peers_touch.model.chat.v1.OutboxItemStatus
-	(MlsDeliveryKind)(0),             // 3: peers_touch.model.chat.v1.MlsDeliveryKind
-	(DirectKeyExchangeKind)(0),       // 4: peers_touch.model.chat.v1.DirectKeyExchangeKind
-	(*StationEnvelope)(nil),          // 5: peers_touch.model.chat.v1.StationEnvelope
-	(*DeviceInboxItem)(nil),          // 6: peers_touch.model.chat.v1.DeviceInboxItem
-	(*OutboxItem)(nil),               // 7: peers_touch.model.chat.v1.OutboxItem
-	(*MlsKeyDeliveryPayload)(nil),    // 8: peers_touch.model.chat.v1.MlsKeyDeliveryPayload
-	(*DirectKeyExchangePayload)(nil), // 9: peers_touch.model.chat.v1.DirectKeyExchangePayload
-	(*timestamppb.Timestamp)(nil),    // 10: google.protobuf.Timestamp
+	(EnvelopePayloadType)(0),             // 0: peers_touch.model.chat.v1.EnvelopePayloadType
+	(InboxItemStatus)(0),                 // 1: peers_touch.model.chat.v1.InboxItemStatus
+	(OutboxItemStatus)(0),                // 2: peers_touch.model.chat.v1.OutboxItemStatus
+	(MlsTransitionDeliveryKind)(0),       // 3: peers_touch.model.chat.v1.MlsTransitionDeliveryKind
+	(DirectKeyExchangeKind)(0),           // 4: peers_touch.model.chat.v1.DirectKeyExchangeKind
+	(*StationEnvelope)(nil),              // 5: peers_touch.model.chat.v1.StationEnvelope
+	(*DeviceInboxItem)(nil),              // 6: peers_touch.model.chat.v1.DeviceInboxItem
+	(*OutboxItem)(nil),                   // 7: peers_touch.model.chat.v1.OutboxItem
+	(*MlsTransitionDeliveryPayload)(nil), // 8: peers_touch.model.chat.v1.MlsTransitionDeliveryPayload
+	(*DirectKeyExchangePayload)(nil),     // 9: peers_touch.model.chat.v1.DirectKeyExchangePayload
+	(*timestamppb.Timestamp)(nil),        // 10: google.protobuf.Timestamp
 }
 var file_domain_chat_envelope_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.chat.v1.StationEnvelope.payload_type:type_name -> peers_touch.model.chat.v1.EnvelopePayloadType
@@ -957,7 +1107,7 @@ var file_domain_chat_envelope_proto_depIdxs = []int32{
 	10, // 10: peers_touch.model.chat.v1.OutboxItem.first_queued_at:type_name -> google.protobuf.Timestamp
 	10, // 11: peers_touch.model.chat.v1.OutboxItem.next_retry_at:type_name -> google.protobuf.Timestamp
 	10, // 12: peers_touch.model.chat.v1.OutboxItem.delivered_at:type_name -> google.protobuf.Timestamp
-	3,  // 13: peers_touch.model.chat.v1.MlsKeyDeliveryPayload.kind:type_name -> peers_touch.model.chat.v1.MlsDeliveryKind
+	3,  // 13: peers_touch.model.chat.v1.MlsTransitionDeliveryPayload.kind:type_name -> peers_touch.model.chat.v1.MlsTransitionDeliveryKind
 	4,  // 14: peers_touch.model.chat.v1.DirectKeyExchangePayload.kind:type_name -> peers_touch.model.chat.v1.DirectKeyExchangeKind
 	15, // [15:15] is the sub-list for method output_type
 	15, // [15:15] is the sub-list for method input_type

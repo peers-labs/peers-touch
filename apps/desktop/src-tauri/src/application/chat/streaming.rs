@@ -1,4 +1,4 @@
-use crate::application::provider::{station_api as provider_cache, remote as provider_remote};
+use crate::application::provider::{remote as provider_remote, station_api as provider_cache};
 use crate::contracts::ChatCompletionInput;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::Serialize;
@@ -93,7 +93,12 @@ struct StreamConfig {
     message: String,
 }
 
-pub async fn chat_completion_stream(app: AppHandle, stream_id: String, token: String, input: ChatCompletionInput) {
+pub async fn chat_completion_stream(
+    app: AppHandle,
+    stream_id: String,
+    token: String,
+    input: ChatCompletionInput,
+) {
     let config = match resolve_stream_config(&token, &input) {
         Ok(config) => config,
         Err(err) => {
@@ -141,12 +146,7 @@ fn resolve_stream_config(token: &str, input: &ChatCompletionInput) -> Result<Str
     let provider_id = if provider_id.is_empty() && !model_hint.is_empty() {
         provider_cache::get_providers(token, "")
             .ok()
-            .and_then(|providers| {
-                providers
-                    .iter()
-                    .find(|p| p.enabled)
-                    .map(|p| p.name.clone())
-            })
+            .and_then(|providers| providers.iter().find(|p| p.enabled).map(|p| p.name.clone()))
             .unwrap_or_default()
     } else {
         provider_id
@@ -174,11 +174,8 @@ fn resolve_stream_config(token: &str, input: &ChatCompletionInput) -> Result<Str
         return Err("Model is required".to_string());
     }
 
-    let protocol = provider_remote::resolve_model_protocol(
-        None,
-        Some(&resolved.protocol),
-    )
-    .to_string();
+    let protocol =
+        provider_remote::resolve_model_protocol(None, Some(&resolved.protocol)).to_string();
 
     Ok(StreamConfig {
         base_url,

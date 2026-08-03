@@ -20,7 +20,10 @@ fn station_error_to_result(e: station_api::StationApiError) -> AppResult<StubPay
     match e {
         station_api::StationApiError::VersionConflict { current, submitted } => AppResult::fail(
             ErrorCode::Conflict,
-            &format!("Version conflict: current={}, submitted={}", current, submitted),
+            &format!(
+                "Version conflict: current={}, submitted={}",
+                current, submitted
+            ),
             None,
         ),
         station_api::StationApiError::NotFound(msg) => {
@@ -59,9 +62,11 @@ pub fn provider_get(_scope: &str, token: &str, input: ProviderIdInput) -> AppRes
 
     let mut result = resp.clone();
     if let Some(provider) = result.get_mut("provider") {
-        let is_configured = provider.get("credential_status")
+        let is_configured = provider
+            .get("credential_status")
             .and_then(|v| v.as_str())
-            .unwrap_or("not_configured") == "configured";
+            .unwrap_or("not_configured")
+            == "configured";
         provider["has_api_key"] = json!(is_configured);
 
         if is_configured {
@@ -69,7 +74,13 @@ pub fn provider_get(_scope: &str, token: &str, input: ProviderIdInput) -> AppRes
                 if !cred.api_key.is_empty() {
                     provider["api_key"] = json!(cred.api_key);
                 }
-                if !cred.base_url.is_empty() && provider.get("base_url").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                if !cred.base_url.is_empty()
+                    && provider
+                        .get("base_url")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .is_empty()
+                {
                     provider["base_url"] = json!(cred.base_url);
                 }
             }
@@ -89,7 +100,11 @@ pub fn provider_update(
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
 
-    if let Some(api_key) = input.key_vaults.as_deref().and_then(parse_key_vault_api_key) {
+    if let Some(api_key) = input
+        .key_vaults
+        .as_deref()
+        .and_then(parse_key_vault_api_key)
+    {
         if !api_key.is_empty() {
             let _ = station_api::set_credential(token, id, &api_key);
         }
@@ -149,17 +164,11 @@ pub fn provider_create(
 
     let provider_id = name.to_lowercase().replace(' ', "-");
 
-    let provider = match station_api::create_provider(
-        token,
-        &provider_id,
-        name,
-        &base_url,
-        &protocol,
-        None,
-    ) {
-        Ok(p) => p,
-        Err(e) => return station_error_to_result(e),
-    };
+    let provider =
+        match station_api::create_provider(token, &provider_id, name, &base_url, &protocol, None) {
+            Ok(p) => p,
+            Err(e) => return station_error_to_result(e),
+        };
 
     if let Some(api_key) = parse_key_vault_api_key(&input.key_vaults) {
         let _ = station_api::set_credential(token, &provider.id, &api_key);
@@ -206,27 +215,45 @@ pub fn provider_list_available_models(_scope: &str, token: &str) -> AppResult<St
 pub fn model_fetch_remote(scope: &str, token: &str, provider_id: &str) -> AppResult<StubPayload> {
     let resp = match station_api::get_provider(token, provider_id) {
         Ok(v) => v,
-        Err(_) => return success_payload("model_fetch_remote", json!({ "ok": true, "models": [] })),
+        Err(_) => {
+            return success_payload("model_fetch_remote", json!({ "ok": true, "models": [] }))
+        }
     };
 
     let provider = resp.get("provider").cloned().unwrap_or(json!({}));
-    let runtime_kind = provider.get("runtime_kind").and_then(|v| v.as_str()).unwrap_or("");
-    let models_command = provider.get("models_command").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let runtime_kind = provider
+        .get("runtime_kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let models_command = provider
+        .get("models_command")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
 
     if runtime_kind == "cli" && !models_command.is_empty() {
         let models = execute_cli_models_command(models_command, scope, provider_id);
         if models.is_empty() {
-            return success_payload("model_fetch_remote", json!({
-                "ok": false,
-                "models": [],
-                "error": format!("CLI command returned no models: {}", models_command)
-            }));
+            return success_payload(
+                "model_fetch_remote",
+                json!({
+                    "ok": false,
+                    "models": [],
+                    "error": format!("CLI command returned no models: {}", models_command)
+                }),
+            );
         }
-        return success_payload("model_fetch_remote", json!({ "ok": true, "models": models }));
+        return success_payload(
+            "model_fetch_remote",
+            json!({ "ok": true, "models": models }),
+        );
     }
 
     let models = provider.get("models").cloned().unwrap_or(json!([]));
-    success_payload("model_fetch_remote", json!({ "ok": true, "models": models }))
+    success_payload(
+        "model_fetch_remote",
+        json!({ "ok": true, "models": models }),
+    )
 }
 
 fn execute_cli_models_command(command: &str, actor_id: &str, provider_id: &str) -> Vec<String> {
@@ -252,7 +279,12 @@ fn credential_env_key_for_provider(provider_id: &str) -> Option<&'static str> {
 
 fn ensure_actor_workspace(actor_id: &str, provider_id: &str) -> PathBuf {
     let base = app_data_dir();
-    let workspace = base.join("actors").join(actor_id).join("cli").join(provider_id).join("workspace");
+    let workspace = base
+        .join("actors")
+        .join(actor_id)
+        .join("cli")
+        .join(provider_id)
+        .join("workspace");
     if !workspace.exists() {
         let _ = std::fs::create_dir_all(&workspace);
     }
@@ -266,7 +298,12 @@ fn app_data_dir() -> PathBuf {
 
 // --- WS-3: CLI Env Injection ---
 
-fn build_cli_env(actor_id: &str, provider_id: &str, token: &str, credential_env_key: Option<&str>) -> HashMap<String, String> {
+fn build_cli_env(
+    actor_id: &str,
+    provider_id: &str,
+    token: &str,
+    credential_env_key: Option<&str>,
+) -> HashMap<String, String> {
     let workspace = ensure_actor_workspace(actor_id, provider_id);
     let station_url = std::env::var("PEERS_STATION_URL").unwrap_or_default();
 
@@ -274,7 +311,10 @@ fn build_cli_env(actor_id: &str, provider_id: &str, token: &str, credential_env_
     env.insert("PATH".to_string(), enriched_path());
     env.insert("PEERS_ACTOR_ID".to_string(), actor_id.to_string());
     env.insert("PEERS_PROVIDER_ID".to_string(), provider_id.to_string());
-    env.insert("PEERS_WORKSPACE".to_string(), workspace.to_string_lossy().to_string());
+    env.insert(
+        "PEERS_WORKSPACE".to_string(),
+        workspace.to_string_lossy().to_string(),
+    );
     if !station_url.is_empty() {
         env.insert("PEERS_STATION_URL".to_string(), station_url);
     }
@@ -296,9 +336,14 @@ fn build_cli_env(actor_id: &str, provider_id: &str, token: &str, credential_env_
     env
 }
 
-fn run_cli_subprocess(command: &str, env: &HashMap<String, String>, cwd: &PathBuf, stdin_input: Option<&str>) -> Option<String> {
-    use std::process::{Command, Stdio};
+fn run_cli_subprocess(
+    command: &str,
+    env: &HashMap<String, String>,
+    cwd: &PathBuf,
+    stdin_input: Option<&str>,
+) -> Option<String> {
     use std::io::Write;
+    use std::process::{Command, Stdio};
 
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.is_empty() {
@@ -339,7 +384,8 @@ fn parse_cli_model_list(stdout: &str) -> Vec<String> {
     if trimmed.starts_with('{') || trimmed.starts_with('[') {
         parse_json_models(trimmed)
     } else {
-        trimmed.lines()
+        trimmed
+            .lines()
             .map(|l| l.trim().to_string())
             .filter(|l| !l.is_empty())
             .collect()
@@ -359,7 +405,10 @@ pub fn parse_cli_execution_output(stdout: &str) -> CLIResponse {
             if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
                 return CLIResponse {
                     content: content.to_string(),
-                    model: val.get("model").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    model: val
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 };
             }
         }
@@ -390,26 +439,36 @@ fn parse_json_models(json_str: &str) -> Vec<String> {
         Err(_) => return vec![],
     };
 
-    let models_array = val.get("models")
+    let models_array = val
+        .get("models")
         .and_then(|m| m.as_array())
         .or_else(|| val.as_array());
 
     match models_array {
-        Some(arr) => arr.iter().filter_map(|item| {
-            if let Some(s) = item.as_str() {
-                return Some(s.to_string());
-            }
-            item.get("slug").and_then(|v| v.as_str())
-                .or_else(|| item.get("id").and_then(|v| v.as_str()))
-                .or_else(|| item.get("name").and_then(|v| v.as_str()))
-                .or_else(|| item.get("model_id").and_then(|v| v.as_str()))
-                .map(|s| s.to_string())
-        }).collect(),
+        Some(arr) => arr
+            .iter()
+            .filter_map(|item| {
+                if let Some(s) = item.as_str() {
+                    return Some(s.to_string());
+                }
+                item.get("slug")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| item.get("id").and_then(|v| v.as_str()))
+                    .or_else(|| item.get("name").and_then(|v| v.as_str()))
+                    .or_else(|| item.get("model_id").and_then(|v| v.as_str()))
+                    .map(|s| s.to_string())
+            })
+            .collect(),
         None => vec![],
     }
 }
 
-pub fn model_toggle(token: &str, provider_id: &str, model_id: &str, enabled: bool) -> AppResult<StubPayload> {
+pub fn model_toggle(
+    token: &str,
+    provider_id: &str,
+    model_id: &str,
+    enabled: bool,
+) -> AppResult<StubPayload> {
     let models = match station_api::list_models(token, provider_id) {
         Ok(m) => m,
         Err(e) => return station_error_to_result(e),
@@ -418,7 +477,14 @@ pub fn model_toggle(token: &str, provider_id: &str, model_id: &str, enabled: boo
         Some(m) => m,
         None => return AppResult::fail(ErrorCode::NotFound, "Model not found", None),
     };
-    if let Err(e) = station_api::update_model(token, provider_id, model_id, model.version, None, Some(enabled)) {
+    if let Err(e) = station_api::update_model(
+        token,
+        provider_id,
+        model_id,
+        model.version,
+        None,
+        Some(enabled),
+    ) {
         return station_error_to_result(e);
     }
     success_payload("model_toggle", json!({ "ok": true, "enabled": enabled }))

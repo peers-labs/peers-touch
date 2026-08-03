@@ -215,13 +215,34 @@ pub fn model_add(
         Err(error) => return error,
     };
     let provider_id = input.provider_id.trim();
-    let model_id = input.data.get("id").and_then(|v| v.as_str()).unwrap_or("").trim();
-    let display_name = input.data.get("display_name").and_then(|v| v.as_str()).unwrap_or("").trim();
-    let context_window = input.data.get("context_window").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+    let model_id = input
+        .data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    let display_name = input
+        .data
+        .get("display_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    let context_window = input
+        .data
+        .get("context_window")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
     if model_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "model id is required", None);
     }
-    match application_provider::station_api::create_model(&token, provider_id, model_id, display_name, true, context_window) {
+    match application_provider::station_api::create_model(
+        &token,
+        provider_id,
+        model_id,
+        display_name,
+        true,
+        context_window,
+    ) {
         Ok(resp) => AppResult::success(StubPayload {
             command: "model_add".to_string(),
             status: resp.to_string(),

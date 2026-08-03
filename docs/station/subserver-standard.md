@@ -204,6 +204,22 @@ func init() {
 - 注册名与路径、配置项、日志上下文保持一致
 - 不使用历史遗留或临时命名污染长期域模型
 
+### 7.1 初始化顺序
+
+Subserver 初始化顺序必须确定，不能依赖 Go map 遍历顺序。
+
+- `bootstrap` 必须最先初始化并发布 Station federation identity。
+- 其余 Subserver 按稳定名称顺序初始化。
+- 依赖 Station identity 的 Subserver 不得在 identity 建立前缓存空值。
+- Bootstrap 是 federation Station identity 的唯一发布者；业务 Subserver
+  不得用 transport host 或其他 peer ID 作为替代来源。
+
+回归门：
+
+```bash
+go test ./apps/station/frame/core/server
+```
+
 ---
 
 ## 8. 配置与依赖注入

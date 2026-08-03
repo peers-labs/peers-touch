@@ -963,6 +963,8 @@ type StationJoinApprovedPayload struct {
 	ApprovedByActorId              string                 `protobuf:"bytes,2,opt,name=approved_by_actor_id,json=approvedByActorId,proto3" json:"approved_by_actor_id,omitempty"`
 	ApprovedByActorFederatedHandle string                 `protobuf:"bytes,3,opt,name=approved_by_actor_federated_handle,json=approvedByActorFederatedHandle,proto3" json:"approved_by_actor_federated_handle,omitempty"`
 	Role                           string                 `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	ApprovedStationUrl             string                 `protobuf:"bytes,5,opt,name=approved_station_url,json=approvedStationUrl,proto3" json:"approved_station_url,omitempty"`
+	ApprovedStationName            string                 `protobuf:"bytes,6,opt,name=approved_station_name,json=approvedStationName,proto3" json:"approved_station_name,omitempty"`
 	unknownFields                  protoimpl.UnknownFields
 	sizeCache                      protoimpl.SizeCache
 }
@@ -1021,6 +1023,20 @@ func (x *StationJoinApprovedPayload) GetApprovedByActorFederatedHandle() string 
 func (x *StationJoinApprovedPayload) GetRole() string {
 	if x != nil {
 		return x.Role
+	}
+	return ""
+}
+
+func (x *StationJoinApprovedPayload) GetApprovedStationUrl() string {
+	if x != nil {
+		return x.ApprovedStationUrl
+	}
+	return ""
+}
+
+func (x *StationJoinApprovedPayload) GetApprovedStationName() string {
+	if x != nil {
+		return x.ApprovedStationName
 	}
 	return ""
 }
@@ -1923,12 +1939,14 @@ const file_domain_federation_federation_ledger_proto_rawDesc = "" +
 	"\x1drequesting_station_public_key\x18\x04 \x01(\fR\x1arequestingStationPublicKey\x12.\n" +
 	"\x13requesting_actor_id\x18\x05 \x01(\tR\x11requestingActorId\x12I\n" +
 	"!requesting_actor_federated_handle\x18\x06 \x01(\tR\x1erequestingActorFederatedHandle\x12\x18\n" +
-	"\amessage\x18\a \x01(\tR\amessage\"\xe6\x01\n" +
+	"\amessage\x18\a \x01(\tR\amessage\"\xcc\x02\n" +
 	"\x1aStationJoinApprovedPayload\x127\n" +
 	"\x18approved_station_peer_id\x18\x01 \x01(\tR\x15approvedStationPeerId\x12/\n" +
 	"\x14approved_by_actor_id\x18\x02 \x01(\tR\x11approvedByActorId\x12J\n" +
 	"\"approved_by_actor_federated_handle\x18\x03 \x01(\tR\x1eapprovedByActorFederatedHandle\x12\x12\n" +
-	"\x04role\x18\x04 \x01(\tR\x04role\"\xd2\x01\n" +
+	"\x04role\x18\x04 \x01(\tR\x04role\x120\n" +
+	"\x14approved_station_url\x18\x05 \x01(\tR\x12approvedStationUrl\x122\n" +
+	"\x15approved_station_name\x18\x06 \x01(\tR\x13approvedStationName\"\xd2\x01\n" +
 	"\x12StationLeftPayload\x125\n" +
 	"\x17leaving_station_peer_id\x18\x01 \x01(\tR\x14leavingStationPeerId\x12(\n" +
 	"\x10leaving_actor_id\x18\x02 \x01(\tR\x0eleavingActorId\x12C\n" +

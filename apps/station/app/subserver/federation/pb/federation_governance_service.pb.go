@@ -85,6 +85,8 @@ type SubmitProposalRequest struct {
 	ActorSignature       []byte                 `protobuf:"bytes,8,opt,name=actor_signature,json=actorSignature,proto3" json:"actor_signature,omitempty"`
 	StationSignature     []byte                 `protobuf:"bytes,9,opt,name=station_signature,json=stationSignature,proto3" json:"station_signature,omitempty"`
 	ProposedAtUnixMs     int64                  `protobuf:"varint,10,opt,name=proposed_at_unix_ms,json=proposedAtUnixMs,proto3" json:"proposed_at_unix_ms,omitempty"`
+	JoiningStationUrl    string                 `protobuf:"bytes,11,opt,name=joining_station_url,json=joiningStationUrl,proto3" json:"joining_station_url,omitempty"`
+	JoiningStationName   string                 `protobuf:"bytes,12,opt,name=joining_station_name,json=joiningStationName,proto3" json:"joining_station_name,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -189,12 +191,27 @@ func (x *SubmitProposalRequest) GetProposedAtUnixMs() int64 {
 	return 0
 }
 
+func (x *SubmitProposalRequest) GetJoiningStationUrl() string {
+	if x != nil {
+		return x.JoiningStationUrl
+	}
+	return ""
+}
+
+func (x *SubmitProposalRequest) GetJoiningStationName() string {
+	if x != nil {
+		return x.JoiningStationName
+	}
+	return ""
+}
+
 type SubmitProposalResponse struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	ProposalId      string                 `protobuf:"bytes,1,opt,name=proposal_id,json=proposalId,proto3" json:"proposal_id,omitempty"`
 	Decision        ProposalDecision       `protobuf:"varint,2,opt,name=decision,proto3,enum=peers_touch.model.federation.v1.ProposalDecision" json:"decision,omitempty"`
 	RejectionReason string                 `protobuf:"bytes,3,opt,name=rejection_reason,json=rejectionReason,proto3" json:"rejection_reason,omitempty"`
 	AcceptedEvent   *LedgerEvent           `protobuf:"bytes,4,opt,name=accepted_event,json=acceptedEvent,proto3" json:"accepted_event,omitempty"`
+	BootstrapEvents []*LedgerEvent         `protobuf:"bytes,5,rep,name=bootstrap_events,json=bootstrapEvents,proto3" json:"bootstrap_events,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -253,6 +270,13 @@ func (x *SubmitProposalResponse) GetRejectionReason() string {
 func (x *SubmitProposalResponse) GetAcceptedEvent() *LedgerEvent {
 	if x != nil {
 		return x.AcceptedEvent
+	}
+	return nil
+}
+
+func (x *SubmitProposalResponse) GetBootstrapEvents() []*LedgerEvent {
+	if x != nil {
+		return x.BootstrapEvents
 	}
 	return nil
 }
@@ -501,7 +525,7 @@ var File_domain_federation_federation_governance_service_proto protoreflect.File
 
 const file_domain_federation_federation_governance_service_proto_rawDesc = "" +
 	"\n" +
-	"5domain/federation/federation_governance_service.proto\x12\x1fpeers_touch.model.federation.v1\x1a)domain/federation/federation_ledger.proto\"\xde\x03\n" +
+	"5domain/federation/federation_governance_service.proto\x12\x1fpeers_touch.model.federation.v1\x1a)domain/federation/federation_ledger.proto\"\xc0\x04\n" +
 	"\x15SubmitProposalRequest\x12#\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12Z\n" +
 	"\x13proposed_event_type\x18\x02 \x01(\x0e2*.peers_touch.model.federation.v1.EventTypeR\x11proposedEventType\x12#\n" +
@@ -513,13 +537,16 @@ const file_domain_federation_federation_governance_service_proto_rawDesc = "" +
 	"\x0factor_signature\x18\b \x01(\fR\x0eactorSignature\x12+\n" +
 	"\x11station_signature\x18\t \x01(\fR\x10stationSignature\x12-\n" +
 	"\x13proposed_at_unix_ms\x18\n" +
-	" \x01(\x03R\x10proposedAtUnixMs\"\x88\x02\n" +
+	" \x01(\x03R\x10proposedAtUnixMs\x12.\n" +
+	"\x13joining_station_url\x18\v \x01(\tR\x11joiningStationUrl\x120\n" +
+	"\x14joining_station_name\x18\f \x01(\tR\x12joiningStationName\"\xe1\x02\n" +
 	"\x16SubmitProposalResponse\x12\x1f\n" +
 	"\vproposal_id\x18\x01 \x01(\tR\n" +
 	"proposalId\x12M\n" +
 	"\bdecision\x18\x02 \x01(\x0e21.peers_touch.model.federation.v1.ProposalDecisionR\bdecision\x12)\n" +
 	"\x10rejection_reason\x18\x03 \x01(\tR\x0frejectionReason\x12S\n" +
-	"\x0eaccepted_event\x18\x04 \x01(\v2,.peers_touch.model.federation.v1.LedgerEventR\racceptedEvent\"7\n" +
+	"\x0eaccepted_event\x18\x04 \x01(\v2,.peers_touch.model.federation.v1.LedgerEventR\racceptedEvent\x12W\n" +
+	"\x10bootstrap_events\x18\x05 \x03(\v2,.peers_touch.model.federation.v1.LedgerEventR\x0fbootstrapEvents\"7\n" +
 	"\x10FetchHeadRequest\x12#\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\"\xdd\x01\n" +
 	"\x11FetchHeadResponse\x12#\n" +
@@ -571,12 +598,13 @@ var file_domain_federation_federation_governance_service_proto_depIdxs = []int32
 	7, // 0: peers_touch.model.federation.v1.SubmitProposalRequest.proposed_event_type:type_name -> peers_touch.model.federation.v1.EventType
 	0, // 1: peers_touch.model.federation.v1.SubmitProposalResponse.decision:type_name -> peers_touch.model.federation.v1.ProposalDecision
 	8, // 2: peers_touch.model.federation.v1.SubmitProposalResponse.accepted_event:type_name -> peers_touch.model.federation.v1.LedgerEvent
-	8, // 3: peers_touch.model.federation.v1.FetchEventsResponse.events:type_name -> peers_touch.model.federation.v1.LedgerEvent
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	8, // 3: peers_touch.model.federation.v1.SubmitProposalResponse.bootstrap_events:type_name -> peers_touch.model.federation.v1.LedgerEvent
+	8, // 4: peers_touch.model.federation.v1.FetchEventsResponse.events:type_name -> peers_touch.model.federation.v1.LedgerEvent
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_domain_federation_federation_governance_service_proto_init() }

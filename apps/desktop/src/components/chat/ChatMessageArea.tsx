@@ -84,6 +84,8 @@ export function ChatMessageArea() {
     scrollToMessageUlid,
     setScrollToMessageUlid,
     encryptionEnabled,
+    sessionSecurityState,
+    groupSecurityState,
     friendP2pStatus,
     peerOnline,
     typingPeers,
@@ -116,6 +118,8 @@ export function ChatMessageArea() {
     scrollToMessageUlid: s.scrollToMessageUlid,
     setScrollToMessageUlid: s.setScrollToMessageUlid,
     encryptionEnabled: s.encryptionEnabled,
+    sessionSecurityState: s.sessionSecurityState,
+    groupSecurityState: s.groupSecurityState,
     friendP2pStatus: s.friendP2pStatus,
     peerOnline: s.peerOnline,
     typingPeers: s.typingPeers,
@@ -581,10 +585,19 @@ export function ChatMessageArea() {
     activeBackgroundImageUrl || undefined,
   );
   const headerSubtitle = activeTab === 'friend'
-    ? peerIsTyping
+    ? sessionSecurityState[activeUlid] === 'establishing'
+      ? t('chat.social.encryption.establishing')
+      : peerIsTyping
       ? t('chat.social.messageArea.typing')
       : ''
-    : subtitle;
+    : groupSecurityState[activeUlid] === 'establishing'
+      ? t('chat.social.encryption.establishing')
+      : groupSecurityState[activeUlid] === 'crypto-desynced'
+        ? t('chat.social.encryption.cryptoDesynced')
+        : subtitle;
+  const conversationEncrypted = activeTab === 'friend'
+    ? sessionSecurityState[activeUlid] === 'ready'
+    : groupSecurityState[activeUlid] === 'ready';
 
   return (
     <Flexbox
@@ -642,7 +655,7 @@ export function ChatMessageArea() {
               <Flexbox horizontal align="center" gap={6}>
                 <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
                 {peerOnlineIndicator}
-                {encryptionEnabled && (
+                {encryptionEnabled && conversationEncrypted && (
                   <Tooltip title={t('chat.social.encryption.enabled')}>
                     <Lock size={13} style={{ color: token.colorTextTertiary, marginLeft: 2 }} />
                   </Tooltip>

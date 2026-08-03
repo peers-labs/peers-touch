@@ -3,10 +3,11 @@ package application
 import (
 	"context"
 	"crypto/ed25519"
+	"fmt"
 
+	"github.com/oklog/ulid/v2"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
-	"github.com/oklog/ulid/v2"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -156,16 +157,140 @@ func (s *FederationService) GetFederation(ctx context.Context, federationID stri
 	return s.federationRepo.GetByID(ctx, federationID)
 }
 
-type ApproveJoinInput struct {
+type BootstrapFederationReplicaInput struct {
 	FederationID       string
-	JoiningStationPeerID string
-	JoiningStationName   string
-	JoiningStationURL    string
-	ApproverActorID      string
-	ApproverActorHandle  string
+	LocalActorID       string
+	LocalStationPeerID string
+	Events             []*pb.LedgerEvent
+}
+
+func (s *FederationService) BootstrapReplica(
+	ctx context.Context,
+	input *BootstrapFederationReplicaInput,
+) error {
+	if input == nil ||
+		input.FederationID == "" ||
+		input.LocalActorID == "" ||
+		input.LocalStationPeerID == "" ||
+		len(input.Events) == 0 {
+		return fmt.Errorf("federation bootstrap input is incomplete")
+	}
+	if err := s.ledgerSvc.ValidateBootstrapEvents(
+		input.FederationID,
+		input.Events,
+	); err != nil {
+		return err
+	}
+	genesisEvent := input.Events[0]
+	if genesisEvent == nil ||
+		genesisEvent.Seq != 0 ||
+		genesisEvent.EventType != pb.EventType_FEDERATION_CREATED {
+		return fmt.Errorf("federation bootstrap must start with genesis")
+	}
+	genesis := &pb.FederationCreatedPayload{}
+	if err := proto.Unmarshal(genesisEvent.PayloadBytes, genesis); err != nil {
+		return fmt.Errorf("decode federation genesis: %w", err)
+	}
+	if genesis.FederationId != input.FederationID ||
+		genesis.SequencerStationPeerId == "" ||
+		genesis.CreatorStationPeerId == "" ||
+		genesis.CreatorStationUrl == "" {
+		return fmt.Errorf("federation genesis routing is incomplete")
+	}
+
+	memberships := []*domain.MembershipRecord{{
+		FederationID:  input.FederationID,
+		StationPeerID: genesis.CreatorStationPeerId,
+		StationName:   genesis.CreatorStationName,
+		StationURL:    genesis.CreatorStationUrl,
+		Role:          "founder",
+		Status:        "active",
+	}}
+	localApproved := genesis.CreatorStationPeerId == input.LocalStationPeerID
+	for _, event := range input.Events[1:] {
+		if event.EventType != pb.EventType_STATION_JOIN_APPROVED {
+			continue
+		}
+		joined := &pb.StationJoinApprovedPayload{}
+		if err := proto.Unmarshal(event.PayloadBytes, joined); err != nil {
+			return fmt.Errorf("decode Federation join event: %w", err)
+		}
+		if joined.ApprovedStationPeerId == "" ||
+			joined.ApprovedStationUrl == "" ||
+			joined.ApprovedStationName == "" {
+			return fmt.Errorf("Federation join event routing is incomplete")
+		}
+		memberships = append(memberships, &domain.MembershipRecord{
+			FederationID:      input.FederationID,
+			StationPeerID:     joined.ApprovedStationPeerId,
+			StationName:       joined.ApprovedStationName,
+			StationURL:        joined.ApprovedStationUrl,
+			Role:              joined.Role,
+			Status:            "active",
+			ApprovedByEventID: event.EventId,
+		})
+		if joined.ApprovedStationPeerId == input.LocalStationPeerID {
+			localApproved = true
+		}
+	}
+	if !localApproved {
+		return fmt.Errorf("local Station is not approved by the bootstrap ledger")
+	}
+
+	existing, err := s.federationRepo.GetByID(ctx, input.FederationID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		if err := s.federationRepo.Create(ctx, &domain.FederationRecord{
+			FederationID:           input.FederationID,
+			Name:                   genesis.Name,
+			Description:            genesis.Description,
+			Status:                 "active",
+			PolicyType:             genesis.PolicyType,
+			SequencerStationPeerID: genesis.SequencerStationPeerId,
+			GenesisHash:            genesisEvent.EventHash,
+			HeadHash:               make([]byte, 32),
+			HeadSeq:                0,
+			CreatedByActorID:       genesis.CreatorActorId,
+			CreatedByStationPeerID: genesis.CreatorStationPeerId,
+		}); err != nil {
+			return err
+		}
+	} else if existing.SequencerStationPeerID != genesis.SequencerStationPeerId {
+		return fmt.Errorf("federation bootstrap conflicts with local sequencer")
+	}
+	if err := s.ledgerSvc.ImportBootstrapEvents(
+		ctx,
+		input.FederationID,
+		input.Events,
+	); err != nil {
+		return err
+	}
+	for _, membership := range memberships {
+		if err := s.membershipRepo.Upsert(ctx, membership); err != nil {
+			return err
+		}
+	}
+	return s.actorRoleRepo.Upsert(ctx, &domain.ActorRoleRecord{
+		FederationID:         input.FederationID,
+		ActorID:              input.LocalActorID,
+		ActorFederatedHandle: input.LocalActorID,
+		StationPeerID:        input.LocalStationPeerID,
+		Role:                 "federation_member",
+	})
+}
+
+type ApproveJoinInput struct {
+	FederationID          string
+	JoiningStationPeerID  string
+	JoiningStationName    string
+	JoiningStationURL     string
+	ApproverActorID       string
+	ApproverActorHandle   string
 	ApproverStationPeerID string
-	ActorPrivateKey      ed25519.PrivateKey
-	StationPrivateKey    ed25519.PrivateKey
+	ActorPrivateKey       ed25519.PrivateKey
+	StationPrivateKey     ed25519.PrivateKey
 }
 
 func (s *FederationService) ApproveJoin(ctx context.Context, input *ApproveJoinInput) (*domain.MembershipRecord, error) {
@@ -174,6 +299,8 @@ func (s *FederationService) ApproveJoin(ctx context.Context, input *ApproveJoinI
 		ApprovedByActorId:              input.ApproverActorID,
 		ApprovedByActorFederatedHandle: input.ApproverActorHandle,
 		Role:                           "member_station",
+		ApprovedStationUrl:             input.JoiningStationURL,
+		ApprovedStationName:            input.JoiningStationName,
 	}
 	payloadBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(payload)
 	if err != nil {

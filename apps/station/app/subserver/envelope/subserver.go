@@ -16,18 +16,20 @@ import (
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/follower"
 	"github.com/peers-labs/peers-touch/station/app/subserver/envelope/infrastructure"
 
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 )
 
 const (
-	envelopeFederationScopeName      = "envelope-federation-deliver"
-	envelopeFederationMaxTTL         = 60 * time.Second
-	envelopeFederationClaimSender    = "sender_ptid"
-	envelopeFederationClaimConv      = "conversation_id"
-	envelopeFederationClaimIdempKey  = "idempotency_key"
+	envelopeFederationScopeName     = "envelope-federation-deliver"
+	envelopeFederationMaxTTL        = 60 * time.Second
+	envelopeFederationClaimSender   = "sender_ptid"
+	envelopeFederationClaimConv     = "conversation_id"
+	envelopeFederationClaimIdempKey = "idempotency_key"
 )
 
 var envelopeScopeOnce sync.Once
@@ -51,13 +53,14 @@ func registerEnvelopeFederationScope() {
 }
 
 type subServer struct {
-	status             server.Status
-	jwtWrapper         server.Wrapper
-	federationWrapper  server.Wrapper
-	service            Service
-	dispatcher         OutboxDispatcher
-	peerKeys           authfed.PeerKeyStore
-	localStationID     string
+	status            server.Status
+	jwtWrapper        server.Wrapper
+	federationWrapper server.Wrapper
+	service           Service
+	dispatcher        OutboxDispatcher
+	resyncManager     *follower.ResyncManager
+	peerKeys          authfed.PeerKeyStore
+	localStationID    string
 }
 
 func NewEnvelopeSubServer(opts ...option.Option) server.Subserver {
@@ -71,7 +74,10 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	registerEnvelopeFederationScope()
 
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
+	s.jwtWrapper = serverwrapper.CanonicalSubject(
+		server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider)),
+		touchactor.ResolveSubjectPTID,
+	)
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
@@ -93,9 +99,20 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	)
 
 	bus := NewSSEDeviceBus()
-	s.service = NewService(repo, bus, envelopeLocalAudience)
+	followerService := follower.NewService(rds)
+	if err := followerService.AutoMigrate(); err != nil {
+		return err
+	}
+	s.service = NewService(repo, bus, envelopeLocalAudience, followerService)
+	s.resyncManager = follower.NewResyncManager(
+		followerService,
+		follower.NewHTTPAuthorityEventFetcher(rds, authfed.Singleton()),
+	)
 
-	transport := NewHTTPFederationTransport(authfed.Singleton())
+	transport := NewHTTPFederationTransport(
+		authfed.Singleton(),
+		NewGORMStationURLResolver(rds),
+	)
 	s.dispatcher = NewDispatcher(repo, transport)
 
 	return nil
@@ -103,11 +120,16 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 
 func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusRunning
-	return s.dispatcher.Start(ctx)
+	if err := s.dispatcher.Start(ctx); err != nil {
+		return err
+	}
+	s.resyncManager.Start(ctx)
+	return nil
 }
 
 func (s *subServer) Stop(ctx context.Context) error {
 	s.dispatcher.Stop()
+	s.resyncManager.Stop()
 	s.status = server.StatusStopped
 	return nil
 }

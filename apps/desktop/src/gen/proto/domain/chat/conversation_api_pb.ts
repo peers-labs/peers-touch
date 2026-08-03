@@ -4,9 +4,9 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { CommittedConversationEvent, Conversation, ConversationCommand, ConversationMember, ReceiptType } from "./conversation_pb";
+import type { CommittedConversationEvent, Conversation, ConversationCommand, ConversationCommandProposal, ConversationCommandProposalResult, ConversationCommandSubmissionState, ConversationMember, ConversationPublicHead, MembershipTransitionCommand, MlsLeaveIntent, ReceiptType } from "./conversation_pb";
 import { file_domain_chat_conversation } from "./conversation_pb";
-import type { DirectKeyExchangeKind, MlsDeliveryKind } from "./envelope_pb";
+import type { DirectKeyExchangeKind } from "./envelope_pb";
 import { file_domain_chat_envelope } from "./envelope_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -14,29 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/chat/conversation_api.proto.
  */
 export const file_domain_chat_conversation_api: GenFile = /*@__PURE__*/
-  fileDesc("CiJkb21haW4vY2hhdC9jb252ZXJzYXRpb25fYXBpLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIjoKFkNyZWF0ZUdyb3VwTWVtYmVySW5wdXQSDAoEcHRpZBgBIAEoCRISCgpzdGF0aW9uX2lkGAIgASgJIlcKDkRldmljZUluZm9WaWV3EhEKCWRldmljZV9pZBgBIAEoCRINCgVsYWJlbBgCIAEoCRISCgpjcmVhdGVkX2F0GAMgASgJEg8KB3Jldm9rZWQYBCABKAgiUgofQ3JlYXRlRGlyZWN0Q29udmVyc2F0aW9uUmVxdWVzdBIRCglwZWVyX3B0aWQYASABKAkSHAoUcGVlcl9zdGF0aW9uX3BlZXJfaWQYAiABKAkiYQogQ3JlYXRlRGlyZWN0Q29udmVyc2F0aW9uUmVzcG9uc2USPQoMY29udmVyc2F0aW9uGAEgASgLMicucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db252ZXJzYXRpb24icgoeQ3JlYXRlR3JvdXBDb252ZXJzYXRpb25SZXF1ZXN0EgwKBG5hbWUYASABKAkSQgoHbWVtYmVycxgCIAMoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ3JlYXRlR3JvdXBNZW1iZXJJbnB1dCJgCh9DcmVhdGVHcm91cENvbnZlcnNhdGlvblJlc3BvbnNlEj0KDGNvbnZlcnNhdGlvbhgBIAEoCzInLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29udmVyc2F0aW9uIjEKFkdldENvbnZlcnNhdGlvblJlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJIlgKF0dldENvbnZlcnNhdGlvblJlc3BvbnNlEj0KDGNvbnZlcnNhdGlvbhgBIAEoCzInLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29udmVyc2F0aW9uIhoKGExpc3RDb252ZXJzYXRpb25zUmVxdWVzdCJbChlMaXN0Q29udmVyc2F0aW9uc1Jlc3BvbnNlEj4KDWNvbnZlcnNhdGlvbnMYASADKAsyJy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbnZlcnNhdGlvbiI4Ch1HZXRDb252ZXJzYXRpb25NZW1iZXJzUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiYAoeR2V0Q29udmVyc2F0aW9uTWVtYmVyc1Jlc3BvbnNlEj4KB21lbWJlcnMYASADKAsyLS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbnZlcnNhdGlvbk1lbWJlciJjCiBTdWJtaXRDb252ZXJzYXRpb25Db21tYW5kUmVxdWVzdBI/Cgdjb21tYW5kGAEgASgLMi4ucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db252ZXJzYXRpb25Db21tYW5kImkKIVN1Ym1pdENvbnZlcnNhdGlvbkNvbW1hbmRSZXNwb25zZRJECgVldmVudBgBIAEoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29tbWl0dGVkQ29udmVyc2F0aW9uRXZlbnQioAEKIFN1Ym1pdENvbnZlcnNhdGlvblJlY2VpcHRSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRISCgptZXNzYWdlX2lkGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRI8CgxyZWNlaXB0X3R5cGUYBCABKA4yJi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlJlY2VpcHRUeXBlIiMKIVN1Ym1pdENvbnZlcnNhdGlvblJlY2VpcHRSZXNwb25zZSJaCh1MaXN0Q29udmVyc2F0aW9uRXZlbnRzUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSEQoJYWZ0ZXJfc2VxGAIgASgDEg0KBWxpbWl0GAMgASgFImcKHkxpc3RDb252ZXJzYXRpb25FdmVudHNSZXNwb25zZRJFCgZldmVudHMYASADKAsyNS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbW1pdHRlZENvbnZlcnNhdGlvbkV2ZW50IjoKF1VwbG9hZEtleVBhY2thZ2VSZXF1ZXN0EhEKCWRldmljZV9pZBgBIAEoCRIMCgRkYXRhGAIgASgMIhoKGFVwbG9hZEtleVBhY2thZ2VSZXNwb25zZSJEChZGZXRjaEtleVBhY2thZ2VSZXF1ZXN0EgwKBHB0aWQYASABKAkSHAoUaG9tZV9zdGF0aW9uX3BlZXJfaWQYAiABKAkiOgoXRmV0Y2hLZXlQYWNrYWdlUmVzcG9uc2USDAoEZGF0YRgBIAEoDBIRCglhdmFpbGFibGUYAiABKAgiGQoXQ291bnRLZXlQYWNrYWdlc1JlcXVlc3QiKQoYQ291bnRLZXlQYWNrYWdlc1Jlc3BvbnNlEg0KBWNvdW50GAEgASgDIk0KFVJlZ2lzdGVyRGV2aWNlUmVxdWVzdBIRCglkZXZpY2VfaWQYASABKAkSDQoFbGFiZWwYAiABKAkSEgoKcHVibGljX2tleRgDIAEoDCIYChZSZWdpc3RlckRldmljZVJlc3BvbnNlIhQKEkxpc3REZXZpY2VzUmVxdWVzdCJRChNMaXN0RGV2aWNlc1Jlc3BvbnNlEjoKB2RldmljZXMYASADKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkRldmljZUluZm9WaWV3IigKE1Jldm9rZURldmljZVJlcXVlc3QSEQoJZGV2aWNlX2lkGAEgASgJIhYKFFJldm9rZURldmljZVJlc3BvbnNlIqYBChREaXN0cmlidXRlTWxzUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSOAoEa2luZBgCIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuTWxzRGVsaXZlcnlLaW5kEhEKCW1sc19lcG9jaBgDIAEoAxIUCgxvcGFxdWVfYnl0ZXMYBCABKAwSEgoKcmVjaXBpZW50cxgFIAMoCSIqChVEaXN0cmlidXRlTWxzUmVzcG9uc2USEQoJZGVsaXZlcmVkGAEgASgFIrwBCg5TZW5kRGt4UmVxdWVzdBIWCg5yZWNpcGllbnRfcHRpZBgBIAEoCRIhChlyZWNpcGllbnRfc3RhdGlvbl9wZWVyX2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSPgoEa2luZBgEIAEoDjIwLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRGlyZWN0S2V5RXhjaGFuZ2VLaW5kEhsKE29wYXF1ZV9rZXlfbWF0ZXJpYWwYBSABKAwiJgoPU2VuZERreFJlc3BvbnNlEhMKC2VudmVsb3BlX2lkGAEgASgJIlwKH0xpc3RDb252ZXJzYXRpb25NZXNzYWdlc1JlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEhEKCWFmdGVyX3NlcRgCIAEoAxINCgVsaW1pdBgDIAEoBSJ7CiBMaXN0Q29udmVyc2F0aW9uTWVzc2FnZXNSZXNwb25zZRJFCgZldmVudHMYASADKAsyNS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbW1pdHRlZENvbnZlcnNhdGlvbkV2ZW50EhAKCGhhc19tb3JlGAIgASgIImcKGUxpc3RUaHJlYWRNZXNzYWdlc1JlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEg8KB3Jvb3RfaWQYAiABKAkSEQoJYWZ0ZXJfc2VxGAMgASgDEg0KBWxpbWl0GAQgASgFInUKGkxpc3RUaHJlYWRNZXNzYWdlc1Jlc3BvbnNlEkUKBmV2ZW50cxgBIAMoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29tbWl0dGVkQ29udmVyc2F0aW9uRXZlbnQSEAoIaGFzX21vcmUYAiABKAgiQwoWR2V0VGhyZWFkQ291bnRzUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSEAoIcm9vdF9pZHMYAiADKAkiiwEKEFRocmVhZENvdW50RW50cnkSFwoPcm9vdF9tZXNzYWdlX2lkGAEgASgJEhMKC3JlcGx5X2NvdW50GAIgASgDEhcKD2xhdGVzdF9yZXBseV9pZBgDIAEoCRIaChJsYXRlc3RfcmVwbHlfYXRfbXMYBCABKAMSFAoMdW5yZWFkX2NvdW50GAUgASgDIlYKF0dldFRocmVhZENvdW50c1Jlc3BvbnNlEjsKBmNvdW50cxgBIAMoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuVGhyZWFkQ291bnRFbnRyeSJGChRTZXRSZWFkQ3Vyc29yUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSFQoNbGFzdF9yZWFkX3NlcRgCIAEoAyIoChVTZXRSZWFkQ3Vyc29yUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIrChBHZXRVbnJlYWRSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCSIpChFHZXRVbnJlYWRSZXNwb25zZRIUCgx1bnJlYWRfY291bnQYASABKAMigwEKDk1lbWJlclNldHRpbmdzEhAKCG5pY2tuYW1lGAEgASgJEg0KBW11dGVkGAIgASgIEhUKDWFsZXJ0X2VuYWJsZWQYAyABKAgSDgoGcGlubmVkGAQgASgIEhIKCmJhY2tncm91bmQYBSABKAkSFQoNY2xlYXJlZF9hdF9tcxgGIAEoAyIzChhHZXRNZW1iZXJTZXR0aW5nc1JlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJIlgKGUdldE1lbWJlclNldHRpbmdzUmVzcG9uc2USOwoIc2V0dGluZ3MYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lbWJlclNldHRpbmdzInMKG1VwZGF0ZU1lbWJlclNldHRpbmdzUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSOwoIc2V0dGluZ3MYAiABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lbWJlclNldHRpbmdzIi8KHFVwZGF0ZU1lbWJlclNldHRpbmdzUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCJOChVTZWFyY2hNZXNzYWdlc1JlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEg0KBXF1ZXJ5GAIgASgJEg0KBWxpbWl0GAMgASgFInEKFlNlYXJjaE1lc3NhZ2VzUmVzcG9uc2USRQoGZXZlbnRzGAEgAygLMjUucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db21taXR0ZWRDb252ZXJzYXRpb25FdmVudBIQCghoYXNfbW9yZRgCIAEoCCI2ChtHZXRDb252ZXJzYXRpb25TdGF0c1JlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJIn8KHEdldENvbnZlcnNhdGlvblN0YXRzUmVzcG9uc2USFQoNbWVzc2FnZV9jb3VudBgBIAEoAxIUCgxtZW1iZXJfY291bnQYAiABKAUSFQoNY3JlYXRlZF9hdF9tcxgDIAEoAxIbChNsYXN0X2FjdGl2aXR5X2F0X21zGAQgASgDQkdaRWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL2NoYXQ7Y2hhdGIGcHJvdG8z", [file_domain_chat_conversation, file_domain_chat_envelope]);
-
-/**
- * @generated from message peers_touch.model.chat.v1.CreateGroupMemberInput
- */
-export type CreateGroupMemberInput = Message<"peers_touch.model.chat.v1.CreateGroupMemberInput"> & {
-  /**
-   * @generated from field: string ptid = 1;
-   */
-  ptid: string;
-
-  /**
-   * @generated from field: string station_id = 2;
-   */
-  stationId: string;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.CreateGroupMemberInput.
- * Use `create(CreateGroupMemberInputSchema)` to create a new message.
- */
-export const CreateGroupMemberInputSchema: GenMessage<CreateGroupMemberInput> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 0);
+  fileDesc("CiJkb21haW4vY2hhdC9jb252ZXJzYXRpb25fYXBpLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIlcKDkRldmljZUluZm9WaWV3EhEKCWRldmljZV9pZBgBIAEoCRINCgVsYWJlbBgCIAEoCRISCgpjcmVhdGVkX2F0GAMgASgJEg8KB3Jldm9rZWQYBCABKAgiIAoeR2V0Q29udmVyc2F0aW9uSWRlbnRpdHlSZXF1ZXN0Ii8KH0dldENvbnZlcnNhdGlvbklkZW50aXR5UmVzcG9uc2USDAoEcHRpZBgBIAEoCSJSCh9DcmVhdGVEaXJlY3RDb252ZXJzYXRpb25SZXF1ZXN0EhEKCXBlZXJfcHRpZBgBIAEoCRIcChRwZWVyX3N0YXRpb25fcGVlcl9pZBgCIAEoCSJhCiBDcmVhdGVEaXJlY3RDb252ZXJzYXRpb25SZXNwb25zZRI9Cgxjb252ZXJzYXRpb24YASABKAsyJy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbnZlcnNhdGlvbiLBAQoeQ3JlYXRlR3JvdXBDb252ZXJzYXRpb25SZXF1ZXN0EgwKBG5hbWUYASABKAkSUgoSZ2VuZXNpc190cmFuc2l0aW9uGAMgASgLMjYucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5NZW1iZXJzaGlwVHJhbnNpdGlvbkNvbW1hbmQSFQoNZmVkZXJhdGlvbl9pZBgEIAEoCRIXCg9jb252ZXJzYXRpb25faWQYBSABKAlKBAgCEANSB21lbWJlcnMisQEKH0NyZWF0ZUdyb3VwQ29udmVyc2F0aW9uUmVzcG9uc2USPQoMY29udmVyc2F0aW9uGAEgASgLMicucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db252ZXJzYXRpb24STwoQdHJhbnNpdGlvbl9ldmVudBgCIAEoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29tbWl0dGVkQ29udmVyc2F0aW9uRXZlbnQiMQoWR2V0Q29udmVyc2F0aW9uUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiWAoXR2V0Q29udmVyc2F0aW9uUmVzcG9uc2USPQoMY29udmVyc2F0aW9uGAEgASgLMicucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db252ZXJzYXRpb24iOwogR2V0Q29udmVyc2F0aW9uUHVibGljSGVhZFJlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJImQKIUdldENvbnZlcnNhdGlvblB1YmxpY0hlYWRSZXNwb25zZRI/CgRoZWFkGAEgASgLMjEucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db252ZXJzYXRpb25QdWJsaWNIZWFkIhoKGExpc3RDb252ZXJzYXRpb25zUmVxdWVzdCJbChlMaXN0Q29udmVyc2F0aW9uc1Jlc3BvbnNlEj4KDWNvbnZlcnNhdGlvbnMYASADKAsyJy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbnZlcnNhdGlvbiI4Ch1HZXRDb252ZXJzYXRpb25NZW1iZXJzUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiYAoeR2V0Q29udmVyc2F0aW9uTWVtYmVyc1Jlc3BvbnNlEj4KB21lbWJlcnMYASADKAsyLS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbnZlcnNhdGlvbk1lbWJlciJjCiBTdWJtaXRDb252ZXJzYXRpb25Db21tYW5kUmVxdWVzdBI/Cgdjb21tYW5kGAEgASgLMi4ucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db252ZXJzYXRpb25Db21tYW5kImkKIVN1Ym1pdENvbnZlcnNhdGlvbkNvbW1hbmRSZXNwb25zZRJECgVldmVudBgBIAEoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29tbWl0dGVkQ29udmVyc2F0aW9uRXZlbnQidAooU3VibWl0Q29udmVyc2F0aW9uQ29tbWFuZFByb3Bvc2FsUmVxdWVzdBJICghwcm9wb3NhbBgBIAEoCzI2LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29udmVyc2F0aW9uQ29tbWFuZFByb3Bvc2FsIvQBCilTdWJtaXRDb252ZXJzYXRpb25Db21tYW5kUHJvcG9zYWxSZXNwb25zZRIXCg9jb252ZXJzYXRpb25faWQYASABKAkSEgoKY29tbWFuZF9pZBgCIAEoCRJMCgVzdGF0ZRgDIAEoDjI9LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29udmVyc2F0aW9uQ29tbWFuZFN1Ym1pc3Npb25TdGF0ZRJMCgZyZXN1bHQYBCABKAsyPC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbnZlcnNhdGlvbkNvbW1hbmRQcm9wb3NhbFJlc3VsdCJ1CilGb3J3YXJkQ29udmVyc2F0aW9uQ29tbWFuZFByb3Bvc2FsUmVxdWVzdBJICghwcm9wb3NhbBgBIAEoCzI2LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29udmVyc2F0aW9uQ29tbWFuZFByb3Bvc2FsInoKKkZvcndhcmRDb252ZXJzYXRpb25Db21tYW5kUHJvcG9zYWxSZXNwb25zZRJMCgZyZXN1bHQYASABKAsyPC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbnZlcnNhdGlvbkNvbW1hbmRQcm9wb3NhbFJlc3VsdCJaCitHZXRDb252ZXJzYXRpb25Db21tYW5kUHJvcG9zYWxSZXN1bHRSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRISCgpjb21tYW5kX2lkGAIgASgJIpYCCixHZXRDb252ZXJzYXRpb25Db21tYW5kUHJvcG9zYWxSZXN1bHRSZXNwb25zZRIXCg9jb252ZXJzYXRpb25faWQYASABKAkSEgoKY29tbWFuZF9pZBgCIAEoCRJMCgVzdGF0ZRgDIAEoDjI9LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29udmVyc2F0aW9uQ29tbWFuZFN1Ym1pc3Npb25TdGF0ZRJMCgZyZXN1bHQYBCABKAsyPC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbnZlcnNhdGlvbkNvbW1hbmRQcm9wb3NhbFJlc3VsdBIdChVuZXh0X3JldHJ5X2F0X3VuaXhfbXMYBSABKAMiWAobU3VibWl0TWxzTGVhdmVJbnRlbnRSZXF1ZXN0EjkKBmludGVudBgBIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuTWxzTGVhdmVJbnRlbnQiWQocU3VibWl0TWxzTGVhdmVJbnRlbnRSZXNwb25zZRI5CgZpbnRlbnQYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1sc0xlYXZlSW50ZW50IjwKIUxpc3RQZW5kaW5nTWxzTGVhdmVJbnRlbnRzUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiYAoiTGlzdFBlbmRpbmdNbHNMZWF2ZUludGVudHNSZXNwb25zZRI6CgdpbnRlbnRzGAEgAygLMikucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5NbHNMZWF2ZUludGVudCKgAQogU3VibWl0Q29udmVyc2F0aW9uUmVjZWlwdFJlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEhIKCm1lc3NhZ2VfaWQYAiABKAkSEQoJZGV2aWNlX2lkGAMgASgJEjwKDHJlY2VpcHRfdHlwZRgEIAEoDjImLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuUmVjZWlwdFR5cGUiIwohU3VibWl0Q29udmVyc2F0aW9uUmVjZWlwdFJlc3BvbnNlIloKHUxpc3RDb252ZXJzYXRpb25FdmVudHNSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIRCglhZnRlcl9zZXEYAiABKAMSDQoFbGltaXQYAyABKAUiZwoeTGlzdENvbnZlcnNhdGlvbkV2ZW50c1Jlc3BvbnNlEkUKBmV2ZW50cxgBIAMoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29tbWl0dGVkQ29udmVyc2F0aW9uRXZlbnQimQEKJlN5bmNBdXRob3JpdHlDb252ZXJzYXRpb25FdmVudHNSZXF1ZXN0EhUKDWZlZGVyYXRpb25faWQYASABKAkSFwoPY29udmVyc2F0aW9uX2lkGAIgASgJEhcKD2F1dGhvcml0eV9lcG9jaBgDIAEoAxIXCg9hZnRlcl9ncm91cF9zZXEYBCABKAMSDQoFbGltaXQYBSABKAUicAonU3luY0F1dGhvcml0eUNvbnZlcnNhdGlvbkV2ZW50c1Jlc3BvbnNlEkUKBmV2ZW50cxgBIAMoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29tbWl0dGVkQ29udmVyc2F0aW9uRXZlbnQiOgoXVXBsb2FkS2V5UGFja2FnZVJlcXVlc3QSEQoJZGV2aWNlX2lkGAEgASgJEgwKBGRhdGEYAiABKAwiGgoYVXBsb2FkS2V5UGFja2FnZVJlc3BvbnNlIkQKFkZldGNoS2V5UGFja2FnZVJlcXVlc3QSDAoEcHRpZBgBIAEoCRIcChRob21lX3N0YXRpb25fcGVlcl9pZBgCIAEoCSJrChdGZXRjaEtleVBhY2thZ2VSZXNwb25zZRIMCgRkYXRhGAEgASgMEhEKCWF2YWlsYWJsZRgCIAEoCBIRCglkZXZpY2VfaWQYAyABKAkSHAoUaG9tZV9zdGF0aW9uX3BlZXJfaWQYBCABKAkiGQoXQ291bnRLZXlQYWNrYWdlc1JlcXVlc3QiKQoYQ291bnRLZXlQYWNrYWdlc1Jlc3BvbnNlEg0KBWNvdW50GAEgASgDIn4KFVJlZ2lzdGVyRGV2aWNlUmVxdWVzdBIRCglkZXZpY2VfaWQYASABKAkSDQoFbGFiZWwYAiABKAkSEgoKcHVibGljX2tleRgDIAEoDBIWCg5zaWduaW5nX2tleV9pZBgEIAEoCRIXCg9wcm9maWxlX3ZlcnNpb24YBSABKAMiGAoWUmVnaXN0ZXJEZXZpY2VSZXNwb25zZSIUChJMaXN0RGV2aWNlc1JlcXVlc3QiUQoTTGlzdERldmljZXNSZXNwb25zZRI6CgdkZXZpY2VzGAEgAygLMikucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EZXZpY2VJbmZvVmlldyIoChNSZXZva2VEZXZpY2VSZXF1ZXN0EhEKCWRldmljZV9pZBgBIAEoCSIWChRSZXZva2VEZXZpY2VSZXNwb25zZSK8AQoOU2VuZERreFJlcXVlc3QSFgoOcmVjaXBpZW50X3B0aWQYASABKAkSIQoZcmVjaXBpZW50X3N0YXRpb25fcGVlcl9pZBgCIAEoCRISCgpzZXNzaW9uX2lkGAMgASgJEj4KBGtpbmQYBCABKA4yMC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkRpcmVjdEtleUV4Y2hhbmdlS2luZBIbChNvcGFxdWVfa2V5X21hdGVyaWFsGAUgASgMIiYKD1NlbmREa3hSZXNwb25zZRITCgtlbnZlbG9wZV9pZBgBIAEoCSJcCh9MaXN0Q29udmVyc2F0aW9uTWVzc2FnZXNSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIRCglhZnRlcl9zZXEYAiABKAMSDQoFbGltaXQYAyABKAUiewogTGlzdENvbnZlcnNhdGlvbk1lc3NhZ2VzUmVzcG9uc2USRQoGZXZlbnRzGAEgAygLMjUucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db21taXR0ZWRDb252ZXJzYXRpb25FdmVudBIQCghoYXNfbW9yZRgCIAEoCCJnChlMaXN0VGhyZWFkTWVzc2FnZXNSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIPCgdyb290X2lkGAIgASgJEhEKCWFmdGVyX3NlcRgDIAEoAxINCgVsaW1pdBgEIAEoBSJ1ChpMaXN0VGhyZWFkTWVzc2FnZXNSZXNwb25zZRJFCgZldmVudHMYASADKAsyNS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbW1pdHRlZENvbnZlcnNhdGlvbkV2ZW50EhAKCGhhc19tb3JlGAIgASgIIkMKFkdldFRocmVhZENvdW50c1JlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEhAKCHJvb3RfaWRzGAIgAygJIosBChBUaHJlYWRDb3VudEVudHJ5EhcKD3Jvb3RfbWVzc2FnZV9pZBgBIAEoCRITCgtyZXBseV9jb3VudBgCIAEoAxIXCg9sYXRlc3RfcmVwbHlfaWQYAyABKAkSGgoSbGF0ZXN0X3JlcGx5X2F0X21zGAQgASgDEhQKDHVucmVhZF9jb3VudBgFIAEoAyJWChdHZXRUaHJlYWRDb3VudHNSZXNwb25zZRI7CgZjb3VudHMYASADKAsyKy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlRocmVhZENvdW50RW50cnkiRgoUU2V0UmVhZEN1cnNvclJlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEhUKDWxhc3RfcmVhZF9zZXEYAiABKAMiKAoVU2V0UmVhZEN1cnNvclJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiKwoQR2V0VW5yZWFkUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiKQoRR2V0VW5yZWFkUmVzcG9uc2USFAoMdW5yZWFkX2NvdW50GAEgASgDIoMBCg5NZW1iZXJTZXR0aW5ncxIQCghuaWNrbmFtZRgBIAEoCRINCgVtdXRlZBgCIAEoCBIVCg1hbGVydF9lbmFibGVkGAMgASgIEg4KBnBpbm5lZBgEIAEoCBISCgpiYWNrZ3JvdW5kGAUgASgJEhUKDWNsZWFyZWRfYXRfbXMYBiABKAMiMwoYR2V0TWVtYmVyU2V0dGluZ3NSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCSJYChlHZXRNZW1iZXJTZXR0aW5nc1Jlc3BvbnNlEjsKCHNldHRpbmdzGAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5NZW1iZXJTZXR0aW5ncyJzChtVcGRhdGVNZW1iZXJTZXR0aW5nc1JlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEjsKCHNldHRpbmdzGAIgASgLMikucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5NZW1iZXJTZXR0aW5ncyIvChxVcGRhdGVNZW1iZXJTZXR0aW5nc1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiTgoVU2VhcmNoTWVzc2FnZXNSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRINCgVxdWVyeRgCIAEoCRINCgVsaW1pdBgDIAEoBSJxChZTZWFyY2hNZXNzYWdlc1Jlc3BvbnNlEkUKBmV2ZW50cxgBIAMoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29tbWl0dGVkQ29udmVyc2F0aW9uRXZlbnQSEAoIaGFzX21vcmUYAiABKAgiNgobR2V0Q29udmVyc2F0aW9uU3RhdHNSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCSJ/ChxHZXRDb252ZXJzYXRpb25TdGF0c1Jlc3BvbnNlEhUKDW1lc3NhZ2VfY291bnQYASABKAMSFAoMbWVtYmVyX2NvdW50GAIgASgFEhUKDWNyZWF0ZWRfYXRfbXMYAyABKAMSGwoTbGFzdF9hY3Rpdml0eV9hdF9tcxgEIAEoA0JHWkVnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9jaGF0O2NoYXRiBnByb3RvMw", [file_domain_chat_conversation, file_domain_chat_envelope]);
 
 /**
  * @generated from message peers_touch.model.chat.v1.DeviceInfoView
@@ -68,7 +46,37 @@ export type DeviceInfoView = Message<"peers_touch.model.chat.v1.DeviceInfoView">
  * Use `create(DeviceInfoViewSchema)` to create a new message.
  */
 export const DeviceInfoViewSchema: GenMessage<DeviceInfoView> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 0);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.GetConversationIdentityRequest
+ */
+export type GetConversationIdentityRequest = Message<"peers_touch.model.chat.v1.GetConversationIdentityRequest"> & {
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.GetConversationIdentityRequest.
+ * Use `create(GetConversationIdentityRequestSchema)` to create a new message.
+ */
+export const GetConversationIdentityRequestSchema: GenMessage<GetConversationIdentityRequest> = /*@__PURE__*/
   messageDesc(file_domain_chat_conversation_api, 1);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.GetConversationIdentityResponse
+ */
+export type GetConversationIdentityResponse = Message<"peers_touch.model.chat.v1.GetConversationIdentityResponse"> & {
+  /**
+   * @generated from field: string ptid = 1;
+   */
+  ptid: string;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.GetConversationIdentityResponse.
+ * Use `create(GetConversationIdentityResponseSchema)` to create a new message.
+ */
+export const GetConversationIdentityResponseSchema: GenMessage<GetConversationIdentityResponse> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 2);
 
 /**
  * @generated from message peers_touch.model.chat.v1.CreateDirectConversationRequest
@@ -90,7 +98,7 @@ export type CreateDirectConversationRequest = Message<"peers_touch.model.chat.v1
  * Use `create(CreateDirectConversationRequestSchema)` to create a new message.
  */
 export const CreateDirectConversationRequestSchema: GenMessage<CreateDirectConversationRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 2);
+  messageDesc(file_domain_chat_conversation_api, 3);
 
 /**
  * @generated from message peers_touch.model.chat.v1.CreateDirectConversationResponse
@@ -107,7 +115,7 @@ export type CreateDirectConversationResponse = Message<"peers_touch.model.chat.v
  * Use `create(CreateDirectConversationResponseSchema)` to create a new message.
  */
 export const CreateDirectConversationResponseSchema: GenMessage<CreateDirectConversationResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 3);
+  messageDesc(file_domain_chat_conversation_api, 4);
 
 /**
  * @generated from message peers_touch.model.chat.v1.CreateGroupConversationRequest
@@ -119,9 +127,19 @@ export type CreateGroupConversationRequest = Message<"peers_touch.model.chat.v1.
   name: string;
 
   /**
-   * @generated from field: repeated peers_touch.model.chat.v1.CreateGroupMemberInput members = 2;
+   * @generated from field: peers_touch.model.chat.v1.MembershipTransitionCommand genesis_transition = 3;
    */
-  members: CreateGroupMemberInput[];
+  genesisTransition?: MembershipTransitionCommand | undefined;
+
+  /**
+   * @generated from field: string federation_id = 4;
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: string conversation_id = 5;
+   */
+  conversationId: string;
 };
 
 /**
@@ -129,7 +147,7 @@ export type CreateGroupConversationRequest = Message<"peers_touch.model.chat.v1.
  * Use `create(CreateGroupConversationRequestSchema)` to create a new message.
  */
 export const CreateGroupConversationRequestSchema: GenMessage<CreateGroupConversationRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 4);
+  messageDesc(file_domain_chat_conversation_api, 5);
 
 /**
  * @generated from message peers_touch.model.chat.v1.CreateGroupConversationResponse
@@ -139,6 +157,11 @@ export type CreateGroupConversationResponse = Message<"peers_touch.model.chat.v1
    * @generated from field: peers_touch.model.chat.v1.Conversation conversation = 1;
    */
   conversation?: Conversation | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.CommittedConversationEvent transition_event = 2;
+   */
+  transitionEvent?: CommittedConversationEvent | undefined;
 };
 
 /**
@@ -146,7 +169,7 @@ export type CreateGroupConversationResponse = Message<"peers_touch.model.chat.v1
  * Use `create(CreateGroupConversationResponseSchema)` to create a new message.
  */
 export const CreateGroupConversationResponseSchema: GenMessage<CreateGroupConversationResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 5);
+  messageDesc(file_domain_chat_conversation_api, 6);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetConversationRequest
@@ -163,7 +186,7 @@ export type GetConversationRequest = Message<"peers_touch.model.chat.v1.GetConve
  * Use `create(GetConversationRequestSchema)` to create a new message.
  */
 export const GetConversationRequestSchema: GenMessage<GetConversationRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 6);
+  messageDesc(file_domain_chat_conversation_api, 7);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetConversationResponse
@@ -180,7 +203,41 @@ export type GetConversationResponse = Message<"peers_touch.model.chat.v1.GetConv
  * Use `create(GetConversationResponseSchema)` to create a new message.
  */
 export const GetConversationResponseSchema: GenMessage<GetConversationResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 7);
+  messageDesc(file_domain_chat_conversation_api, 8);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.GetConversationPublicHeadRequest
+ */
+export type GetConversationPublicHeadRequest = Message<"peers_touch.model.chat.v1.GetConversationPublicHeadRequest"> & {
+  /**
+   * @generated from field: string conversation_id = 1;
+   */
+  conversationId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.GetConversationPublicHeadRequest.
+ * Use `create(GetConversationPublicHeadRequestSchema)` to create a new message.
+ */
+export const GetConversationPublicHeadRequestSchema: GenMessage<GetConversationPublicHeadRequest> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 9);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.GetConversationPublicHeadResponse
+ */
+export type GetConversationPublicHeadResponse = Message<"peers_touch.model.chat.v1.GetConversationPublicHeadResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ConversationPublicHead head = 1;
+   */
+  head?: ConversationPublicHead | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.GetConversationPublicHeadResponse.
+ * Use `create(GetConversationPublicHeadResponseSchema)` to create a new message.
+ */
+export const GetConversationPublicHeadResponseSchema: GenMessage<GetConversationPublicHeadResponse> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 10);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ListConversationsRequest
@@ -193,7 +250,7 @@ export type ListConversationsRequest = Message<"peers_touch.model.chat.v1.ListCo
  * Use `create(ListConversationsRequestSchema)` to create a new message.
  */
 export const ListConversationsRequestSchema: GenMessage<ListConversationsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 8);
+  messageDesc(file_domain_chat_conversation_api, 11);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ListConversationsResponse
@@ -210,7 +267,7 @@ export type ListConversationsResponse = Message<"peers_touch.model.chat.v1.ListC
  * Use `create(ListConversationsResponseSchema)` to create a new message.
  */
 export const ListConversationsResponseSchema: GenMessage<ListConversationsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 9);
+  messageDesc(file_domain_chat_conversation_api, 12);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetConversationMembersRequest
@@ -227,7 +284,7 @@ export type GetConversationMembersRequest = Message<"peers_touch.model.chat.v1.G
  * Use `create(GetConversationMembersRequestSchema)` to create a new message.
  */
 export const GetConversationMembersRequestSchema: GenMessage<GetConversationMembersRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 10);
+  messageDesc(file_domain_chat_conversation_api, 13);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetConversationMembersResponse
@@ -244,7 +301,7 @@ export type GetConversationMembersResponse = Message<"peers_touch.model.chat.v1.
  * Use `create(GetConversationMembersResponseSchema)` to create a new message.
  */
 export const GetConversationMembersResponseSchema: GenMessage<GetConversationMembersResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 11);
+  messageDesc(file_domain_chat_conversation_api, 14);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationCommandRequest
@@ -261,7 +318,7 @@ export type SubmitConversationCommandRequest = Message<"peers_touch.model.chat.v
  * Use `create(SubmitConversationCommandRequestSchema)` to create a new message.
  */
 export const SubmitConversationCommandRequestSchema: GenMessage<SubmitConversationCommandRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 12);
+  messageDesc(file_domain_chat_conversation_api, 15);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationCommandResponse
@@ -278,7 +335,217 @@ export type SubmitConversationCommandResponse = Message<"peers_touch.model.chat.
  * Use `create(SubmitConversationCommandResponseSchema)` to create a new message.
  */
 export const SubmitConversationCommandResponseSchema: GenMessage<SubmitConversationCommandResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 13);
+  messageDesc(file_domain_chat_conversation_api, 16);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.SubmitConversationCommandProposalRequest
+ */
+export type SubmitConversationCommandProposalRequest = Message<"peers_touch.model.chat.v1.SubmitConversationCommandProposalRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ConversationCommandProposal proposal = 1;
+   */
+  proposal?: ConversationCommandProposal | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.SubmitConversationCommandProposalRequest.
+ * Use `create(SubmitConversationCommandProposalRequestSchema)` to create a new message.
+ */
+export const SubmitConversationCommandProposalRequestSchema: GenMessage<SubmitConversationCommandProposalRequest> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 17);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.SubmitConversationCommandProposalResponse
+ */
+export type SubmitConversationCommandProposalResponse = Message<"peers_touch.model.chat.v1.SubmitConversationCommandProposalResponse"> & {
+  /**
+   * @generated from field: string conversation_id = 1;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: string command_id = 2;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ConversationCommandSubmissionState state = 3;
+   */
+  state: ConversationCommandSubmissionState;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ConversationCommandProposalResult result = 4;
+   */
+  result?: ConversationCommandProposalResult | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.SubmitConversationCommandProposalResponse.
+ * Use `create(SubmitConversationCommandProposalResponseSchema)` to create a new message.
+ */
+export const SubmitConversationCommandProposalResponseSchema: GenMessage<SubmitConversationCommandProposalResponse> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 18);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.ForwardConversationCommandProposalRequest
+ */
+export type ForwardConversationCommandProposalRequest = Message<"peers_touch.model.chat.v1.ForwardConversationCommandProposalRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ConversationCommandProposal proposal = 1;
+   */
+  proposal?: ConversationCommandProposal | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.ForwardConversationCommandProposalRequest.
+ * Use `create(ForwardConversationCommandProposalRequestSchema)` to create a new message.
+ */
+export const ForwardConversationCommandProposalRequestSchema: GenMessage<ForwardConversationCommandProposalRequest> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 19);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.ForwardConversationCommandProposalResponse
+ */
+export type ForwardConversationCommandProposalResponse = Message<"peers_touch.model.chat.v1.ForwardConversationCommandProposalResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ConversationCommandProposalResult result = 1;
+   */
+  result?: ConversationCommandProposalResult | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.ForwardConversationCommandProposalResponse.
+ * Use `create(ForwardConversationCommandProposalResponseSchema)` to create a new message.
+ */
+export const ForwardConversationCommandProposalResponseSchema: GenMessage<ForwardConversationCommandProposalResponse> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 20);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.GetConversationCommandProposalResultRequest
+ */
+export type GetConversationCommandProposalResultRequest = Message<"peers_touch.model.chat.v1.GetConversationCommandProposalResultRequest"> & {
+  /**
+   * @generated from field: string conversation_id = 1;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: string command_id = 2;
+   */
+  commandId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.GetConversationCommandProposalResultRequest.
+ * Use `create(GetConversationCommandProposalResultRequestSchema)` to create a new message.
+ */
+export const GetConversationCommandProposalResultRequestSchema: GenMessage<GetConversationCommandProposalResultRequest> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 21);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.GetConversationCommandProposalResultResponse
+ */
+export type GetConversationCommandProposalResultResponse = Message<"peers_touch.model.chat.v1.GetConversationCommandProposalResultResponse"> & {
+  /**
+   * @generated from field: string conversation_id = 1;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: string command_id = 2;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ConversationCommandSubmissionState state = 3;
+   */
+  state: ConversationCommandSubmissionState;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ConversationCommandProposalResult result = 4;
+   */
+  result?: ConversationCommandProposalResult | undefined;
+
+  /**
+   * @generated from field: int64 next_retry_at_unix_ms = 5;
+   */
+  nextRetryAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.GetConversationCommandProposalResultResponse.
+ * Use `create(GetConversationCommandProposalResultResponseSchema)` to create a new message.
+ */
+export const GetConversationCommandProposalResultResponseSchema: GenMessage<GetConversationCommandProposalResultResponse> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 22);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.SubmitMlsLeaveIntentRequest
+ */
+export type SubmitMlsLeaveIntentRequest = Message<"peers_touch.model.chat.v1.SubmitMlsLeaveIntentRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.chat.v1.MlsLeaveIntent intent = 1;
+   */
+  intent?: MlsLeaveIntent | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.SubmitMlsLeaveIntentRequest.
+ * Use `create(SubmitMlsLeaveIntentRequestSchema)` to create a new message.
+ */
+export const SubmitMlsLeaveIntentRequestSchema: GenMessage<SubmitMlsLeaveIntentRequest> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 23);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.SubmitMlsLeaveIntentResponse
+ */
+export type SubmitMlsLeaveIntentResponse = Message<"peers_touch.model.chat.v1.SubmitMlsLeaveIntentResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.chat.v1.MlsLeaveIntent intent = 1;
+   */
+  intent?: MlsLeaveIntent | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.SubmitMlsLeaveIntentResponse.
+ * Use `create(SubmitMlsLeaveIntentResponseSchema)` to create a new message.
+ */
+export const SubmitMlsLeaveIntentResponseSchema: GenMessage<SubmitMlsLeaveIntentResponse> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 24);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsRequest
+ */
+export type ListPendingMlsLeaveIntentsRequest = Message<"peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsRequest"> & {
+  /**
+   * @generated from field: string conversation_id = 1;
+   */
+  conversationId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsRequest.
+ * Use `create(ListPendingMlsLeaveIntentsRequestSchema)` to create a new message.
+ */
+export const ListPendingMlsLeaveIntentsRequestSchema: GenMessage<ListPendingMlsLeaveIntentsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 25);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsResponse
+ */
+export type ListPendingMlsLeaveIntentsResponse = Message<"peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.chat.v1.MlsLeaveIntent intents = 1;
+   */
+  intents: MlsLeaveIntent[];
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsResponse.
+ * Use `create(ListPendingMlsLeaveIntentsResponseSchema)` to create a new message.
+ */
+export const ListPendingMlsLeaveIntentsResponseSchema: GenMessage<ListPendingMlsLeaveIntentsResponse> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 26);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationReceiptRequest
@@ -310,7 +577,7 @@ export type SubmitConversationReceiptRequest = Message<"peers_touch.model.chat.v
  * Use `create(SubmitConversationReceiptRequestSchema)` to create a new message.
  */
 export const SubmitConversationReceiptRequestSchema: GenMessage<SubmitConversationReceiptRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 14);
+  messageDesc(file_domain_chat_conversation_api, 27);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationReceiptResponse
@@ -323,7 +590,7 @@ export type SubmitConversationReceiptResponse = Message<"peers_touch.model.chat.
  * Use `create(SubmitConversationReceiptResponseSchema)` to create a new message.
  */
 export const SubmitConversationReceiptResponseSchema: GenMessage<SubmitConversationReceiptResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 15);
+  messageDesc(file_domain_chat_conversation_api, 28);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ListConversationEventsRequest
@@ -350,7 +617,7 @@ export type ListConversationEventsRequest = Message<"peers_touch.model.chat.v1.L
  * Use `create(ListConversationEventsRequestSchema)` to create a new message.
  */
 export const ListConversationEventsRequestSchema: GenMessage<ListConversationEventsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 16);
+  messageDesc(file_domain_chat_conversation_api, 29);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ListConversationEventsResponse
@@ -367,7 +634,61 @@ export type ListConversationEventsResponse = Message<"peers_touch.model.chat.v1.
  * Use `create(ListConversationEventsResponseSchema)` to create a new message.
  */
 export const ListConversationEventsResponseSchema: GenMessage<ListConversationEventsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 17);
+  messageDesc(file_domain_chat_conversation_api, 30);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.SyncAuthorityConversationEventsRequest
+ */
+export type SyncAuthorityConversationEventsRequest = Message<"peers_touch.model.chat.v1.SyncAuthorityConversationEventsRequest"> & {
+  /**
+   * @generated from field: string federation_id = 1;
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: string conversation_id = 2;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: int64 authority_epoch = 3;
+   */
+  authorityEpoch: bigint;
+
+  /**
+   * @generated from field: int64 after_group_seq = 4;
+   */
+  afterGroupSeq: bigint;
+
+  /**
+   * @generated from field: int32 limit = 5;
+   */
+  limit: number;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.SyncAuthorityConversationEventsRequest.
+ * Use `create(SyncAuthorityConversationEventsRequestSchema)` to create a new message.
+ */
+export const SyncAuthorityConversationEventsRequestSchema: GenMessage<SyncAuthorityConversationEventsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 31);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.SyncAuthorityConversationEventsResponse
+ */
+export type SyncAuthorityConversationEventsResponse = Message<"peers_touch.model.chat.v1.SyncAuthorityConversationEventsResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.chat.v1.CommittedConversationEvent events = 1;
+   */
+  events: CommittedConversationEvent[];
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.SyncAuthorityConversationEventsResponse.
+ * Use `create(SyncAuthorityConversationEventsResponseSchema)` to create a new message.
+ */
+export const SyncAuthorityConversationEventsResponseSchema: GenMessage<SyncAuthorityConversationEventsResponse> = /*@__PURE__*/
+  messageDesc(file_domain_chat_conversation_api, 32);
 
 /**
  * @generated from message peers_touch.model.chat.v1.UploadKeyPackageRequest
@@ -389,7 +710,7 @@ export type UploadKeyPackageRequest = Message<"peers_touch.model.chat.v1.UploadK
  * Use `create(UploadKeyPackageRequestSchema)` to create a new message.
  */
 export const UploadKeyPackageRequestSchema: GenMessage<UploadKeyPackageRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 18);
+  messageDesc(file_domain_chat_conversation_api, 33);
 
 /**
  * @generated from message peers_touch.model.chat.v1.UploadKeyPackageResponse
@@ -402,7 +723,7 @@ export type UploadKeyPackageResponse = Message<"peers_touch.model.chat.v1.Upload
  * Use `create(UploadKeyPackageResponseSchema)` to create a new message.
  */
 export const UploadKeyPackageResponseSchema: GenMessage<UploadKeyPackageResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 19);
+  messageDesc(file_domain_chat_conversation_api, 34);
 
 /**
  * @generated from message peers_touch.model.chat.v1.FetchKeyPackageRequest
@@ -424,7 +745,7 @@ export type FetchKeyPackageRequest = Message<"peers_touch.model.chat.v1.FetchKey
  * Use `create(FetchKeyPackageRequestSchema)` to create a new message.
  */
 export const FetchKeyPackageRequestSchema: GenMessage<FetchKeyPackageRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 20);
+  messageDesc(file_domain_chat_conversation_api, 35);
 
 /**
  * @generated from message peers_touch.model.chat.v1.FetchKeyPackageResponse
@@ -439,6 +760,16 @@ export type FetchKeyPackageResponse = Message<"peers_touch.model.chat.v1.FetchKe
    * @generated from field: bool available = 2;
    */
   available: boolean;
+
+  /**
+   * @generated from field: string device_id = 3;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: string home_station_peer_id = 4;
+   */
+  homeStationPeerId: string;
 };
 
 /**
@@ -446,7 +777,7 @@ export type FetchKeyPackageResponse = Message<"peers_touch.model.chat.v1.FetchKe
  * Use `create(FetchKeyPackageResponseSchema)` to create a new message.
  */
 export const FetchKeyPackageResponseSchema: GenMessage<FetchKeyPackageResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 21);
+  messageDesc(file_domain_chat_conversation_api, 36);
 
 /**
  * @generated from message peers_touch.model.chat.v1.CountKeyPackagesRequest
@@ -459,7 +790,7 @@ export type CountKeyPackagesRequest = Message<"peers_touch.model.chat.v1.CountKe
  * Use `create(CountKeyPackagesRequestSchema)` to create a new message.
  */
 export const CountKeyPackagesRequestSchema: GenMessage<CountKeyPackagesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 22);
+  messageDesc(file_domain_chat_conversation_api, 37);
 
 /**
  * @generated from message peers_touch.model.chat.v1.CountKeyPackagesResponse
@@ -476,7 +807,7 @@ export type CountKeyPackagesResponse = Message<"peers_touch.model.chat.v1.CountK
  * Use `create(CountKeyPackagesResponseSchema)` to create a new message.
  */
 export const CountKeyPackagesResponseSchema: GenMessage<CountKeyPackagesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 23);
+  messageDesc(file_domain_chat_conversation_api, 38);
 
 /**
  * @generated from message peers_touch.model.chat.v1.RegisterDeviceRequest
@@ -496,6 +827,16 @@ export type RegisterDeviceRequest = Message<"peers_touch.model.chat.v1.RegisterD
    * @generated from field: bytes public_key = 3;
    */
   publicKey: Uint8Array;
+
+  /**
+   * @generated from field: string signing_key_id = 4;
+   */
+  signingKeyId: string;
+
+  /**
+   * @generated from field: int64 profile_version = 5;
+   */
+  profileVersion: bigint;
 };
 
 /**
@@ -503,7 +844,7 @@ export type RegisterDeviceRequest = Message<"peers_touch.model.chat.v1.RegisterD
  * Use `create(RegisterDeviceRequestSchema)` to create a new message.
  */
 export const RegisterDeviceRequestSchema: GenMessage<RegisterDeviceRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 24);
+  messageDesc(file_domain_chat_conversation_api, 39);
 
 /**
  * @generated from message peers_touch.model.chat.v1.RegisterDeviceResponse
@@ -516,7 +857,7 @@ export type RegisterDeviceResponse = Message<"peers_touch.model.chat.v1.Register
  * Use `create(RegisterDeviceResponseSchema)` to create a new message.
  */
 export const RegisterDeviceResponseSchema: GenMessage<RegisterDeviceResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 25);
+  messageDesc(file_domain_chat_conversation_api, 40);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ListDevicesRequest
@@ -529,7 +870,7 @@ export type ListDevicesRequest = Message<"peers_touch.model.chat.v1.ListDevicesR
  * Use `create(ListDevicesRequestSchema)` to create a new message.
  */
 export const ListDevicesRequestSchema: GenMessage<ListDevicesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 26);
+  messageDesc(file_domain_chat_conversation_api, 41);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ListDevicesResponse
@@ -546,7 +887,7 @@ export type ListDevicesResponse = Message<"peers_touch.model.chat.v1.ListDevices
  * Use `create(ListDevicesResponseSchema)` to create a new message.
  */
 export const ListDevicesResponseSchema: GenMessage<ListDevicesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 27);
+  messageDesc(file_domain_chat_conversation_api, 42);
 
 /**
  * @generated from message peers_touch.model.chat.v1.RevokeDeviceRequest
@@ -563,7 +904,7 @@ export type RevokeDeviceRequest = Message<"peers_touch.model.chat.v1.RevokeDevic
  * Use `create(RevokeDeviceRequestSchema)` to create a new message.
  */
 export const RevokeDeviceRequestSchema: GenMessage<RevokeDeviceRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 28);
+  messageDesc(file_domain_chat_conversation_api, 43);
 
 /**
  * @generated from message peers_touch.model.chat.v1.RevokeDeviceResponse
@@ -576,61 +917,7 @@ export type RevokeDeviceResponse = Message<"peers_touch.model.chat.v1.RevokeDevi
  * Use `create(RevokeDeviceResponseSchema)` to create a new message.
  */
 export const RevokeDeviceResponseSchema: GenMessage<RevokeDeviceResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 29);
-
-/**
- * @generated from message peers_touch.model.chat.v1.DistributeMlsRequest
- */
-export type DistributeMlsRequest = Message<"peers_touch.model.chat.v1.DistributeMlsRequest"> & {
-  /**
-   * @generated from field: string conversation_id = 1;
-   */
-  conversationId: string;
-
-  /**
-   * @generated from field: peers_touch.model.chat.v1.MlsDeliveryKind kind = 2;
-   */
-  kind: MlsDeliveryKind;
-
-  /**
-   * @generated from field: int64 mls_epoch = 3;
-   */
-  mlsEpoch: bigint;
-
-  /**
-   * @generated from field: bytes opaque_bytes = 4;
-   */
-  opaqueBytes: Uint8Array;
-
-  /**
-   * @generated from field: repeated string recipients = 5;
-   */
-  recipients: string[];
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.DistributeMlsRequest.
- * Use `create(DistributeMlsRequestSchema)` to create a new message.
- */
-export const DistributeMlsRequestSchema: GenMessage<DistributeMlsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 30);
-
-/**
- * @generated from message peers_touch.model.chat.v1.DistributeMlsResponse
- */
-export type DistributeMlsResponse = Message<"peers_touch.model.chat.v1.DistributeMlsResponse"> & {
-  /**
-   * @generated from field: int32 delivered = 1;
-   */
-  delivered: number;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.DistributeMlsResponse.
- * Use `create(DistributeMlsResponseSchema)` to create a new message.
- */
-export const DistributeMlsResponseSchema: GenMessage<DistributeMlsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 31);
+  messageDesc(file_domain_chat_conversation_api, 44);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SendDkxRequest
@@ -667,7 +954,7 @@ export type SendDkxRequest = Message<"peers_touch.model.chat.v1.SendDkxRequest">
  * Use `create(SendDkxRequestSchema)` to create a new message.
  */
 export const SendDkxRequestSchema: GenMessage<SendDkxRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 32);
+  messageDesc(file_domain_chat_conversation_api, 45);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SendDkxResponse
@@ -684,7 +971,7 @@ export type SendDkxResponse = Message<"peers_touch.model.chat.v1.SendDkxResponse
  * Use `create(SendDkxResponseSchema)` to create a new message.
  */
 export const SendDkxResponseSchema: GenMessage<SendDkxResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 33);
+  messageDesc(file_domain_chat_conversation_api, 46);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ListConversationMessagesRequest
@@ -711,7 +998,7 @@ export type ListConversationMessagesRequest = Message<"peers_touch.model.chat.v1
  * Use `create(ListConversationMessagesRequestSchema)` to create a new message.
  */
 export const ListConversationMessagesRequestSchema: GenMessage<ListConversationMessagesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 34);
+  messageDesc(file_domain_chat_conversation_api, 47);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ListConversationMessagesResponse
@@ -733,7 +1020,7 @@ export type ListConversationMessagesResponse = Message<"peers_touch.model.chat.v
  * Use `create(ListConversationMessagesResponseSchema)` to create a new message.
  */
 export const ListConversationMessagesResponseSchema: GenMessage<ListConversationMessagesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 35);
+  messageDesc(file_domain_chat_conversation_api, 48);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ListThreadMessagesRequest
@@ -765,7 +1052,7 @@ export type ListThreadMessagesRequest = Message<"peers_touch.model.chat.v1.ListT
  * Use `create(ListThreadMessagesRequestSchema)` to create a new message.
  */
 export const ListThreadMessagesRequestSchema: GenMessage<ListThreadMessagesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 36);
+  messageDesc(file_domain_chat_conversation_api, 49);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ListThreadMessagesResponse
@@ -787,7 +1074,7 @@ export type ListThreadMessagesResponse = Message<"peers_touch.model.chat.v1.List
  * Use `create(ListThreadMessagesResponseSchema)` to create a new message.
  */
 export const ListThreadMessagesResponseSchema: GenMessage<ListThreadMessagesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 37);
+  messageDesc(file_domain_chat_conversation_api, 50);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetThreadCountsRequest
@@ -809,7 +1096,7 @@ export type GetThreadCountsRequest = Message<"peers_touch.model.chat.v1.GetThrea
  * Use `create(GetThreadCountsRequestSchema)` to create a new message.
  */
 export const GetThreadCountsRequestSchema: GenMessage<GetThreadCountsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 38);
+  messageDesc(file_domain_chat_conversation_api, 51);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ThreadCountEntry
@@ -846,7 +1133,7 @@ export type ThreadCountEntry = Message<"peers_touch.model.chat.v1.ThreadCountEnt
  * Use `create(ThreadCountEntrySchema)` to create a new message.
  */
 export const ThreadCountEntrySchema: GenMessage<ThreadCountEntry> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 39);
+  messageDesc(file_domain_chat_conversation_api, 52);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetThreadCountsResponse
@@ -863,7 +1150,7 @@ export type GetThreadCountsResponse = Message<"peers_touch.model.chat.v1.GetThre
  * Use `create(GetThreadCountsResponseSchema)` to create a new message.
  */
 export const GetThreadCountsResponseSchema: GenMessage<GetThreadCountsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 40);
+  messageDesc(file_domain_chat_conversation_api, 53);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SetReadCursorRequest
@@ -885,7 +1172,7 @@ export type SetReadCursorRequest = Message<"peers_touch.model.chat.v1.SetReadCur
  * Use `create(SetReadCursorRequestSchema)` to create a new message.
  */
 export const SetReadCursorRequestSchema: GenMessage<SetReadCursorRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 41);
+  messageDesc(file_domain_chat_conversation_api, 54);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SetReadCursorResponse
@@ -902,7 +1189,7 @@ export type SetReadCursorResponse = Message<"peers_touch.model.chat.v1.SetReadCu
  * Use `create(SetReadCursorResponseSchema)` to create a new message.
  */
 export const SetReadCursorResponseSchema: GenMessage<SetReadCursorResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 42);
+  messageDesc(file_domain_chat_conversation_api, 55);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetUnreadRequest
@@ -919,7 +1206,7 @@ export type GetUnreadRequest = Message<"peers_touch.model.chat.v1.GetUnreadReque
  * Use `create(GetUnreadRequestSchema)` to create a new message.
  */
 export const GetUnreadRequestSchema: GenMessage<GetUnreadRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 43);
+  messageDesc(file_domain_chat_conversation_api, 56);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetUnreadResponse
@@ -936,7 +1223,7 @@ export type GetUnreadResponse = Message<"peers_touch.model.chat.v1.GetUnreadResp
  * Use `create(GetUnreadResponseSchema)` to create a new message.
  */
 export const GetUnreadResponseSchema: GenMessage<GetUnreadResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 44);
+  messageDesc(file_domain_chat_conversation_api, 57);
 
 /**
  * @generated from message peers_touch.model.chat.v1.MemberSettings
@@ -978,7 +1265,7 @@ export type MemberSettings = Message<"peers_touch.model.chat.v1.MemberSettings">
  * Use `create(MemberSettingsSchema)` to create a new message.
  */
 export const MemberSettingsSchema: GenMessage<MemberSettings> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 45);
+  messageDesc(file_domain_chat_conversation_api, 58);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetMemberSettingsRequest
@@ -995,7 +1282,7 @@ export type GetMemberSettingsRequest = Message<"peers_touch.model.chat.v1.GetMem
  * Use `create(GetMemberSettingsRequestSchema)` to create a new message.
  */
 export const GetMemberSettingsRequestSchema: GenMessage<GetMemberSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 46);
+  messageDesc(file_domain_chat_conversation_api, 59);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetMemberSettingsResponse
@@ -1012,7 +1299,7 @@ export type GetMemberSettingsResponse = Message<"peers_touch.model.chat.v1.GetMe
  * Use `create(GetMemberSettingsResponseSchema)` to create a new message.
  */
 export const GetMemberSettingsResponseSchema: GenMessage<GetMemberSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 47);
+  messageDesc(file_domain_chat_conversation_api, 60);
 
 /**
  * @generated from message peers_touch.model.chat.v1.UpdateMemberSettingsRequest
@@ -1034,7 +1321,7 @@ export type UpdateMemberSettingsRequest = Message<"peers_touch.model.chat.v1.Upd
  * Use `create(UpdateMemberSettingsRequestSchema)` to create a new message.
  */
 export const UpdateMemberSettingsRequestSchema: GenMessage<UpdateMemberSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 48);
+  messageDesc(file_domain_chat_conversation_api, 61);
 
 /**
  * @generated from message peers_touch.model.chat.v1.UpdateMemberSettingsResponse
@@ -1051,7 +1338,7 @@ export type UpdateMemberSettingsResponse = Message<"peers_touch.model.chat.v1.Up
  * Use `create(UpdateMemberSettingsResponseSchema)` to create a new message.
  */
 export const UpdateMemberSettingsResponseSchema: GenMessage<UpdateMemberSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 49);
+  messageDesc(file_domain_chat_conversation_api, 62);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SearchMessagesRequest
@@ -1078,7 +1365,7 @@ export type SearchMessagesRequest = Message<"peers_touch.model.chat.v1.SearchMes
  * Use `create(SearchMessagesRequestSchema)` to create a new message.
  */
 export const SearchMessagesRequestSchema: GenMessage<SearchMessagesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 50);
+  messageDesc(file_domain_chat_conversation_api, 63);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SearchMessagesResponse
@@ -1100,7 +1387,7 @@ export type SearchMessagesResponse = Message<"peers_touch.model.chat.v1.SearchMe
  * Use `create(SearchMessagesResponseSchema)` to create a new message.
  */
 export const SearchMessagesResponseSchema: GenMessage<SearchMessagesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 51);
+  messageDesc(file_domain_chat_conversation_api, 64);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetConversationStatsRequest
@@ -1117,7 +1404,7 @@ export type GetConversationStatsRequest = Message<"peers_touch.model.chat.v1.Get
  * Use `create(GetConversationStatsRequestSchema)` to create a new message.
  */
 export const GetConversationStatsRequestSchema: GenMessage<GetConversationStatsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 52);
+  messageDesc(file_domain_chat_conversation_api, 65);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetConversationStatsResponse
@@ -1149,5 +1436,5 @@ export type GetConversationStatsResponse = Message<"peers_touch.model.chat.v1.Ge
  * Use `create(GetConversationStatsResponseSchema)` to create a new message.
  */
 export const GetConversationStatsResponseSchema: GenMessage<GetConversationStatsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_conversation_api, 53);
+  messageDesc(file_domain_chat_conversation_api, 66);
 

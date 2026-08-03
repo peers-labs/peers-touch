@@ -52,7 +52,7 @@ func (e *ConversationGateEvaluator) Evaluate(ctx context.Context, op social_gate
 	switch op.Action {
 	case "create_direct":
 		return e.evaluateCreateDirect(ctx, subjectPtid, op.TargetPtid)
-	case "send_message", "mls_distribute", "dkx_send":
+	case "send_message", "dkx_send":
 		return e.evaluateConversationMember(ctx, subjectPtid, op.ConversationID, op.Action)
 	case "add_member":
 		return e.evaluateAdminAction(ctx, subjectPtid, op.ConversationID)

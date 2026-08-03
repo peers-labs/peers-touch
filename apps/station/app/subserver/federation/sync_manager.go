@@ -12,7 +12,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
-	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"google.golang.org/protobuf/proto"
 )
 
 var ErrSyncStopped = errors.New("sync stopped")
@@ -124,12 +124,11 @@ func (m *LedgerSyncManager) safeTick(ctx context.Context) {
 
 func (m *LedgerSyncManager) syncAllFederations(ctx context.Context) {
 	if m.localStationID == "" {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Warnf(ctx, "[federation-sync] node not ready, skipping tick: %v", r)
-			}
-		}()
-		m.localStationID = node.GetService().Options().Id
+		m.localStationID = localStationPeerID()
+		if m.localStationID == "" {
+			log.Warnf(ctx, "[federation-sync] Station peer identity unavailable, skipping tick")
+			return
+		}
 	}
 
 	feds, err := m.federationRepo.ListByStation(ctx, "")
@@ -237,8 +236,15 @@ func (m *LedgerSyncManager) ApplyRemoteEvent(ctx context.Context, event *pb.Ledg
 	if !valid {
 		return fmt.Errorf("event hash verification failed for seq=%d federation=%s", event.Seq, event.FederationId)
 	}
+	applyProjection, err := m.remoteProjectionMutation(ctx, event)
+	if err != nil {
+		return err
+	}
 
 	if err := m.eventRepo.Append(ctx, event); err != nil {
+		return err
+	}
+	if err := applyProjection(); err != nil {
 		return err
 	}
 
@@ -247,4 +253,87 @@ func (m *LedgerSyncManager) ApplyRemoteEvent(ctx context.Context, event *pb.Ledg
 	}
 
 	return m.publisher.PublishToLocalActors(ctx, event)
+}
+
+func (m *LedgerSyncManager) remoteProjectionMutation(
+	ctx context.Context,
+	event *pb.LedgerEvent,
+) (func() error, error) {
+	switch event.EventType {
+	case pb.EventType_STATION_JOIN_APPROVED:
+		payload := &pb.StationJoinApprovedPayload{}
+		if err := proto.Unmarshal(event.PayloadBytes, payload); err != nil {
+			return nil, err
+		}
+		if payload.ApprovedStationPeerId == "" ||
+			payload.ApprovedStationName == "" ||
+			payload.ApprovedStationUrl == "" {
+			return nil, fmt.Errorf("remote Federation join projection is incomplete")
+		}
+		role := payload.Role
+		if role == "" {
+			role = "member_station"
+		}
+		return func() error {
+			return m.membershipRepo.Upsert(ctx, &domain.MembershipRecord{
+				FederationID:      event.FederationId,
+				StationPeerID:     payload.ApprovedStationPeerId,
+				StationName:       payload.ApprovedStationName,
+				StationURL:        payload.ApprovedStationUrl,
+				Role:              role,
+				Status:            "active",
+				ApprovedByEventID: event.EventId,
+			})
+		}, nil
+	case pb.EventType_STATION_LEFT:
+		payload := &pb.StationLeftPayload{}
+		if err := proto.Unmarshal(event.PayloadBytes, payload); err != nil {
+			return nil, err
+		}
+		if payload.LeavingStationPeerId == "" {
+			return nil, fmt.Errorf("remote Federation leave projection is incomplete")
+		}
+		return func() error {
+			return m.membershipRepo.UpdateStatus(
+				ctx,
+				event.FederationId,
+				payload.LeavingStationPeerId,
+				"left",
+			)
+		}, nil
+	case pb.EventType_STATION_SUSPENDED:
+		payload := &pb.StationSuspendedPayload{}
+		if err := proto.Unmarshal(event.PayloadBytes, payload); err != nil {
+			return nil, err
+		}
+		if payload.TargetStationPeerId == "" {
+			return nil, fmt.Errorf("remote Federation suspension projection is incomplete")
+		}
+		return func() error {
+			return m.membershipRepo.UpdateStatus(
+				ctx,
+				event.FederationId,
+				payload.TargetStationPeerId,
+				"suspended",
+			)
+		}, nil
+	case pb.EventType_STATION_REMOVED:
+		payload := &pb.StationRemovedPayload{}
+		if err := proto.Unmarshal(event.PayloadBytes, payload); err != nil {
+			return nil, err
+		}
+		if payload.TargetStationPeerId == "" {
+			return nil, fmt.Errorf("remote Federation removal projection is incomplete")
+		}
+		return func() error {
+			return m.membershipRepo.UpdateStatus(
+				ctx,
+				event.FederationId,
+				payload.TargetStationPeerId,
+				"removed",
+			)
+		}, nil
+	default:
+		return func() error { return nil }, nil
+	}
 }

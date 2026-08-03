@@ -333,7 +333,13 @@ mod tests {
 
     #[test]
     fn normalize_base_url_trims_and_strips_slash() {
-        assert_eq!(normalize_base_url("  https://api.openai.com/v1/  "), "https://api.openai.com/v1");
-        assert_eq!(normalize_base_url("http://localhost:11434/"), "http://localhost:11434");
+        assert_eq!(
+            normalize_base_url("  https://api.openai.com/v1/  "),
+            "https://api.openai.com/v1"
+        );
+        assert_eq!(
+            normalize_base_url("http://localhost:11434/"),
+            "http://localhost:11434"
+        );
     }
 }

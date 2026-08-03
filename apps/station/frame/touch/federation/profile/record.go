@@ -67,6 +67,9 @@ type SignInput struct {
 	// Sensitive fields MUST already be cleared by the caller.
 	Profile *modelpb.ActorProfile
 
+	// DeviceSigningKeys are authenticated local actor-device public keys.
+	DeviceSigningKeys []*modelpb.VerifiedActorDeviceSigningKey
+
 	// Now is wall-clock at sign time. Tests inject deterministic clocks;
 	// production passes time.Now().
 	Now time.Time
@@ -118,6 +121,7 @@ func Sign(in SignInput) (*pb.ActorProfileEnvelope, []byte, error) {
 		HomeStationPeerId: in.HomeStationPeerID,
 		HomeStationDomain: in.HomeStationDomain,
 		Profile:           in.Profile,
+		DeviceSigningKeys: in.DeviceSigningKeys,
 		IssuedAtUnixMs:    now.UnixMilli(),
 		ExpiresAtUnixMs:   now.Add(ttl).UnixMilli(),
 		SigningKeyPem:     in.LocalKey.PubPEM,

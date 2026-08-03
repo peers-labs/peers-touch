@@ -19,7 +19,7 @@
     "check:social-runtime-boundaries": "../../tooling/scripts/check-social-runtime-boundaries.sh",
     "check": "pnpm run check:social-wire && pnpm run check:social-runtime-boundaries && tsc --noEmit -p tsconfig.json",
     "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "vitest run",
+    "test": "vitest run src",
     "test:chat-visual": "vitest run src/components/chat/chatComposerInput.test.ts",
     "test:applet": "vitest run src/applet/*.test.ts",
     "preview": "vite preview"

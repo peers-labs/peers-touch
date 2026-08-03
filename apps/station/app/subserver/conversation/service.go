@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	envpkg "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 )
 
@@ -14,9 +15,18 @@ type Service interface {
 	// Idempotent: returns existing conversation if already created.
 	CreateDirect(ctx context.Context, actorA, actorB string, actorAStation, actorBStation string) (*chat.Conversation, error)
 
-	// CreateGroup creates a new group conversation. This Station becomes the authority.
-	// The membership_epoch starts at 1.
-	CreateGroup(ctx context.Context, name string, ownerPtid string, ownerStation string, members []MemberEntry) (*chat.Conversation, error)
+	// CreateGroup creates the group and commits its epoch-1 MLS genesis
+	// transition atomically. This Station becomes the authority.
+	CreateGroup(
+		ctx context.Context,
+		name string,
+		ownerPtid string,
+		ownerStation string,
+		ownerDeviceID string,
+		federationID string,
+		conversationID string,
+		genesis *chat.MembershipTransitionCommand,
+	) (*chat.Conversation, *chat.CommittedConversationEvent, error)
 
 	// SubmitCommand validates and processes a ConversationCommand.
 	// For direct chats where this Station is authority: commits immediately.
@@ -61,13 +71,6 @@ type Service interface {
 	GetUnreadCount(ctx context.Context, conversationID, ptid string) (int64, error)
 }
 
-// MemberEntry is used when creating a group to specify initial members.
-type MemberEntry struct {
-	Ptid      string
-	StationID string
-	Role      chat.MemberRole
-}
-
 // Repository is the persistence contract for the conversation domain.
 type Repository interface {
 	// UpsertConversation creates or updates a conversation.
@@ -76,11 +79,22 @@ type Repository interface {
 	// GetConversation retrieves a conversation by ID.
 	GetConversation(ctx context.Context, conversationID string) (*chat.Conversation, error)
 
+	// GetConversationForUpdate retrieves and locks the authority head for a
+	// membership transition. Callers must invoke it inside TransitionUnitOfWork.
+	GetConversationForUpdate(ctx context.Context, conversationID string) (*chat.Conversation, error)
+
 	// ListByActor returns all conversations where the actor is an active member.
 	ListByActor(ctx context.Context, ptid string) ([]*chat.Conversation, error)
 
 	// UpsertMember creates or updates a conversation member.
 	UpsertMember(ctx context.Context, member *chat.ConversationMember) error
+
+	// UpsertMemberDevice records whether a device participates in the
+	// conversation MLS tree.
+	UpsertMemberDevice(ctx context.Context, conversationID, ptid, deviceID, homeStationPeerID string, active bool) error
+
+	// ListMemberDevices returns the device-level MLS participants for a group.
+	ListMemberDevices(ctx context.Context, conversationID string, activeOnly bool) ([]MemberDevice, error)
 
 	// GetMembers returns all members for a conversation.
 	GetMembers(ctx context.Context, conversationID string) ([]*chat.ConversationMember, error)
@@ -94,12 +108,29 @@ type Repository interface {
 	// ListEvents returns events for a conversation after a given seq.
 	ListEvents(ctx context.Context, conversationID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error)
 
+	// GetEventByTransitionID returns an already committed transition for
+	// idempotent replay handling.
+	GetEventByTransitionID(ctx context.Context, conversationID, transitionID string) (*chat.CommittedConversationEvent, error)
+
+	// GetLastEvent returns the current authority event head.
+	GetLastEvent(ctx context.Context, conversationID string) (*chat.CommittedConversationEvent, error)
+
+	// GetCommandReceipt returns the canonical result for one durable command.
+	GetCommandReceipt(ctx context.Context, conversationID, commandID string) (*CommandReceipt, error)
+
+	// CreateCommandReceipt records the command hash and canonical event bytes.
+	CreateCommandReceipt(ctx context.Context, receipt *CommandReceipt) error
+
 	// NextSeq atomically increments and returns the next group_seq.
 	NextSeq(ctx context.Context, conversationID string) (int64, error)
 
 	// BumpMembershipEpoch atomically sets the membership_epoch for a conversation.
 	// This binds the MLS epoch to the authority-sequenced membership change (C-4).
 	BumpMembershipEpoch(ctx context.Context, conversationID string, newEpoch int64) error
+
+	// SetMembershipAndMlsEpoch advances the business and declared MLS heads in
+	// the same transaction.
+	SetMembershipAndMlsEpoch(ctx context.Context, conversationID string, membershipEpoch, mlsEpoch int64) error
 
 	// HaveSharedConversation returns true if actorA and actorB are both active
 	// members of at least one common conversation. Used by the social gate for
@@ -123,12 +154,43 @@ type Repository interface {
 	CountUnread(ctx context.Context, conversationID, ptid string) (int64, error)
 }
 
+// TransitionRepositories are transaction-scoped adapters over one Station DB
+// transaction. Envelope persistence remains owned by the envelope repository.
+type TransitionRepositories struct {
+	Conversation Repository
+	Envelope     envpkg.Repository
+	LeaveIntents LeaveIntentRepository
+}
+
+// TransitionUnitOfWork atomically coordinates conversation truth and envelope
+// outbox/inbox facts.
+type TransitionUnitOfWork interface {
+	Execute(ctx context.Context, fn func(TransitionRepositories) error) error
+}
+
 // ThreadSummary holds denormalized thread counters per root message.
 type ThreadSummary struct {
 	RootMessageID   string
 	ReplyCount      int64
 	LatestReplyID   string
 	LatestReplyAtMs int64
+}
+
+// MemberDevice is the Station-owned routing projection for one MLS device.
+type MemberDevice struct {
+	Ptid              string
+	DeviceID          string
+	HomeStationPeerID string
+	Active            bool
+}
+
+// CommandReceipt binds a command identity and hash to its canonical event.
+type CommandReceipt struct {
+	ConversationID string
+	CommandID      string
+	CommandSHA256  []byte
+	EventBytes     []byte
+	CreatedAt      time.Time
 }
 
 // EnvelopeSubmitter routes committed events to recipients via the envelope service.
@@ -139,6 +201,11 @@ type EnvelopeSubmitter interface {
 
 	// SubmitReceipt routes a message receipt to the message sender.
 	SubmitReceipt(ctx context.Context, receipt *chat.MessageReceipt, recipientPtid, recipientStation string) error
+}
+
+// PersistedEnvelopeNotifier wakes connected local devices after transaction commit.
+type PersistedEnvelopeNotifier interface {
+	NotifyPersisted(ctx context.Context, item *chat.DeviceInboxItem)
 }
 
 // DirectConversationIDFunc generates a deterministic conversation ID for a direct pair.

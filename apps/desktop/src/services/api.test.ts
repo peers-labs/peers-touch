@@ -172,92 +172,37 @@ describe('api friend crypto bridge', () => {
       peerSpkPub: 'spk',
       peerSpkSig: 'sig',
       peerOpkPub: 'opk',
+      negotiatedVersion: 1,
     })
   })
 
-  it('encrypts friend payloads with Tauri camelCase args', async () => {
-    await api.cryptoEncryptMessage('session-1', 'did:peer:bob', 'plaintext')
-
-    expect(invoke).toHaveBeenCalledWith('crypto_encrypt_message', {
+  it('bridges Double Ratchet encrypt and decrypt headers', async () => {
+    await api.drEncrypt('session-1', 'plaintext-b64')
+    await api.drDecrypt({
       sessionId: 'session-1',
-      peerDid: 'did:peer:bob',
-      plaintext: 'plaintext',
+      ciphertext: 'ciphertext-b64',
+      ratchetPub: 'ratchet-pub-b64',
+      counter: 3,
+      prevCounter: 1,
+      nonce: 'nonce-b64',
+      version: 1,
     })
-  })
 
-  it('decrypts friend payloads with Tauri camelCase args', async () => {
-    await api.cryptoDecryptMessage('session-1', 'did:peer:bob', 'ciphertext', 1, 'ephemeral')
-
-    expect(invoke).toHaveBeenCalledWith('crypto_decrypt_message', {
+    expect(invoke).toHaveBeenNthCalledWith(1, 'dr_encrypt', {
       sessionId: 'session-1',
-      peerDid: 'did:peer:bob',
-      ciphertext: 'ciphertext',
-      counter: 1,
-      ephemeralKey: 'ephemeral',
+      plaintext: 'plaintext-b64',
     })
-  })
-})
-describe('api group sender-key bridge', () => {
-  beforeEach(() => {
-    vi.mocked(invoke).mockResolvedValue({
-      ok: true,
-      data: {
-        command: 'crypto_group',
-        status: JSON.stringify({
-          group_ulid: 'group-1',
-          sender_did: 'did:peer:alice',
-          sender_key_id: 1,
-          skdm_b64: 'skdm',
-          encrypted_payload_b64: 'ciphertext',
-          plaintext_b64: 'plaintext',
-          counter: 1,
-        }),
-      },
+    expect(invoke).toHaveBeenNthCalledWith(2, 'dr_decrypt', {
+      sessionId: 'session-1',
+      ciphertext: 'ciphertext-b64',
+      ratchetPub: 'ratchet-pub-b64',
+      counter: 3,
+      prevCounter: 1,
+      nonce: 'nonce-b64',
+      version: 1,
     })
   })
 
-  it('emits SKDM with Tauri camelCase args', async () => {
-    await api.cryptoGroupSkEmitSkdm('group-1')
-
-    expect(invoke).toHaveBeenCalledWith('crypto_group_sk_emit_skdm', {
-      groupUlid: 'group-1',
-    })
-  })
-
-  it('encrypts group payload with Tauri camelCase args', async () => {
-    await api.cryptoGroupEncrypt('group-1', 'plaintext')
-
-    expect(invoke).toHaveBeenCalledWith('crypto_group_encrypt', {
-      groupUlid: 'group-1',
-      plaintextB64: 'plaintext',
-    })
-  })
-
-  it('decrypts group payload with Tauri camelCase args', async () => {
-    await api.cryptoGroupDecrypt('group-1', 'ciphertext')
-
-    expect(invoke).toHaveBeenCalledWith('crypto_group_decrypt', {
-      groupUlid: 'group-1',
-      encryptedPayloadB64: 'ciphertext',
-    })
-  })
-
-  it('consumes SKDM with Tauri camelCase args', async () => {
-    await api.cryptoGroupSkConsumeSkdm('did:peer:alice', 'skdm')
-
-    expect(invoke).toHaveBeenCalledWith('crypto_group_sk_consume_skdm', {
-      claimedSenderDid: 'did:peer:alice',
-      skdmB64: 'skdm',
-    })
-  })
-
-  it('rotates group sender key with Tauri camelCase args', async () => {
-    await api.cryptoGroupSkRotate('group-1')
-
-    expect(invoke).toHaveBeenCalledWith('crypto_group_sk_rotate', {
-      groupUlid: 'group-1',
-    })
-  })
 })
 
 describe('api.listApplets', () => {
@@ -372,6 +317,7 @@ describe('api.updateProvider', () => {
           enabled: true,
           key_vaults: '{"api_key":"sk-test"}',
           config_json: '{"base_url":""}',
+          version: 0,
       },
     })
   })

@@ -194,10 +194,33 @@ impl PlatformKeyProvider {
                         format!("file keystore mkdir failed: {e}"),
                     )
                 })?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(
+                        |e| {
+                            KeyProviderError::io_failure(
+                                key_ref,
+                                format!("file keystore chmod failed: {e}"),
+                            )
+                        },
+                    )?;
+                }
             }
-            return fs::write(path, Self::encode_material(item)).map_err(|e| {
+            fs::write(&path, Self::encode_material(item)).map_err(|e| {
                 KeyProviderError::io_failure(key_ref, format!("file keystore write failed: {e}"))
-            });
+            })?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(|e| {
+                    KeyProviderError::io_failure(
+                        key_ref,
+                        format!("file keystore chmod failed: {e}"),
+                    )
+                })?;
+            }
+            return Ok(());
         }
         let entry = Entry::new(
             Self::service_name(),
@@ -281,5 +304,19 @@ impl KeyProvider for PlatformKeyProvider {
         }
         guard.insert(key_ref.to_string(), rotated.clone());
         Ok(rotated)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use keyring::credential::CredentialPersistence;
+
+    #[test]
+    fn production_targets_use_restart_persistent_key_storage() {
+        let persistence = keyring::default::default_credential_builder().persistence();
+        assert!(
+            matches!(persistence, CredentialPersistence::UntilDelete),
+            "SQLCipher keys must survive Desktop process restarts",
+        );
     }
 }

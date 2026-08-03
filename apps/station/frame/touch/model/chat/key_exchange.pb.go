@@ -67,13 +67,108 @@ func (x *KeyBundle) GetSupportedVersions() []int32 {
 	return nil
 }
 
+// Initiator material required for the recipient to complete X3DH and initialize
+// the negotiated direct-message ratchet. Serialized into
+// DirectKeyExchangePayload.opaque_key_material; Station treats it as opaque.
+type X3DhSessionInit struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	SessionId              string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SenderIdentityKey      []byte                 `protobuf:"bytes,2,opt,name=sender_identity_key,json=senderIdentityKey,proto3" json:"sender_identity_key,omitempty"`
+	SenderEphemeralKey     []byte                 `protobuf:"bytes,3,opt,name=sender_ephemeral_key,json=senderEphemeralKey,proto3" json:"sender_ephemeral_key,omitempty"`
+	RecipientSignedPrekey  []byte                 `protobuf:"bytes,4,opt,name=recipient_signed_prekey,json=recipientSignedPrekey,proto3" json:"recipient_signed_prekey,omitempty"`
+	RecipientOneTimePrekey []byte                 `protobuf:"bytes,5,opt,name=recipient_one_time_prekey,json=recipientOneTimePrekey,proto3" json:"recipient_one_time_prekey,omitempty"`
+	NegotiatedVersion      uint32                 `protobuf:"varint,6,opt,name=negotiated_version,json=negotiatedVersion,proto3" json:"negotiated_version,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *X3DhSessionInit) Reset() {
+	*x = X3DhSessionInit{}
+	mi := &file_domain_chat_key_exchange_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *X3DhSessionInit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*X3DhSessionInit) ProtoMessage() {}
+
+func (x *X3DhSessionInit) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_key_exchange_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use X3DhSessionInit.ProtoReflect.Descriptor instead.
+func (*X3DhSessionInit) Descriptor() ([]byte, []int) {
+	return file_domain_chat_key_exchange_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *X3DhSessionInit) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *X3DhSessionInit) GetSenderIdentityKey() []byte {
+	if x != nil {
+		return x.SenderIdentityKey
+	}
+	return nil
+}
+
+func (x *X3DhSessionInit) GetSenderEphemeralKey() []byte {
+	if x != nil {
+		return x.SenderEphemeralKey
+	}
+	return nil
+}
+
+func (x *X3DhSessionInit) GetRecipientSignedPrekey() []byte {
+	if x != nil {
+		return x.RecipientSignedPrekey
+	}
+	return nil
+}
+
+func (x *X3DhSessionInit) GetRecipientOneTimePrekey() []byte {
+	if x != nil {
+		return x.RecipientOneTimePrekey
+	}
+	return nil
+}
+
+func (x *X3DhSessionInit) GetNegotiatedVersion() uint32 {
+	if x != nil {
+		return x.NegotiatedVersion
+	}
+	return 0
+}
+
 var File_domain_chat_key_exchange_proto protoreflect.FileDescriptor
 
 const file_domain_chat_key_exchange_proto_rawDesc = "" +
 	"\n" +
 	"\x1edomain/chat/key_exchange.proto\x12\x19peers_touch.model.chat.v1\":\n" +
 	"\tKeyBundle\x12-\n" +
-	"\x12supported_versions\x18c \x03(\x05R\x11supportedVersionsBGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
+	"\x12supported_versions\x18c \x03(\x05R\x11supportedVersions\"\xb4\x02\n" +
+	"\x0fX3dhSessionInit\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12.\n" +
+	"\x13sender_identity_key\x18\x02 \x01(\fR\x11senderIdentityKey\x120\n" +
+	"\x14sender_ephemeral_key\x18\x03 \x01(\fR\x12senderEphemeralKey\x126\n" +
+	"\x17recipient_signed_prekey\x18\x04 \x01(\fR\x15recipientSignedPrekey\x129\n" +
+	"\x19recipient_one_time_prekey\x18\x05 \x01(\fR\x16recipientOneTimePrekey\x12-\n" +
+	"\x12negotiated_version\x18\x06 \x01(\rR\x11negotiatedVersionBGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
 
 var (
 	file_domain_chat_key_exchange_proto_rawDescOnce sync.Once
@@ -87,9 +182,10 @@ func file_domain_chat_key_exchange_proto_rawDescGZIP() []byte {
 	return file_domain_chat_key_exchange_proto_rawDescData
 }
 
-var file_domain_chat_key_exchange_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_domain_chat_key_exchange_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_domain_chat_key_exchange_proto_goTypes = []any{
-	(*KeyBundle)(nil), // 0: peers_touch.model.chat.v1.KeyBundle
+	(*KeyBundle)(nil),       // 0: peers_touch.model.chat.v1.KeyBundle
+	(*X3DhSessionInit)(nil), // 1: peers_touch.model.chat.v1.X3dhSessionInit
 }
 var file_domain_chat_key_exchange_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -110,7 +206,7 @@ func file_domain_chat_key_exchange_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_key_exchange_proto_rawDesc), len(file_domain_chat_key_exchange_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
