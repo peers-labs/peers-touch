@@ -9,6 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/crypto"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type PresetActorConfig struct {
@@ -16,6 +17,7 @@ type PresetActorConfig struct {
 	Email       string
 	Password    string
 	DisplayName string
+	Avatar      string
 	Endpoints   map[string]string
 }
 
@@ -49,6 +51,9 @@ func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
 
 		var exists db.Actor
 		if err := rds.Where("email = ?", email).Or("preferred_username = ?", p.Username).First(&exists).Error; err == nil {
+			if err := backfillPresetAvatar(rds, &exists, p.Avatar); err != nil {
+				log.Warnf(ctx, "seed preset avatar for %s: %v", p.Username, err)
+			}
 			var meta db.ActorTouchMeta
 			if e := rds.Where("actor_id = ?", exists.ID).First(&meta).Error; e != nil {
 				meta = db.ActorTouchMeta{ActorID: exists.ID}
@@ -68,6 +73,7 @@ func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
 		a := db.Actor{
 			PreferredUsername: p.Username,
 			Name:              displayName,
+			Icon:              p.Avatar,
 			Email:             email,
 			PasswordHash:      string(hash),
 			PTID:              p.Username,
@@ -98,4 +104,11 @@ func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
 		log.Infof(ctx, "[seed] preset user %s (%s) created", p.Username, email)
 	}
 	return nil
+}
+
+func backfillPresetAvatar(rds *gorm.DB, actor *db.Actor, avatar string) error {
+	if actor.Icon != "" || avatar == "" {
+		return nil
+	}
+	return rds.Model(actor).Update("icon", avatar).Error
 }
