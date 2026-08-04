@@ -162,9 +162,9 @@ export function ChatContactsPanel({
       {unifiedRequests.map(({ request, direction, peerDid, peerName, peerAvatar }) => {
         const cachedProfile = peerProfiles[peerDid];
         const peerLabel = cachedProfile?.display_name?.trim()
-          || peerName
           || cachedProfile?.username?.trim()
-          || peerDid;
+          || peerName
+          || t('chat.social.sessionList.unknown');
         const resolvedAvatar = cachedProfile?.avatar?.trim() || peerAvatar;
         const isPendingIncoming = direction === 'incoming' && request.status === 1;
         const isAccepted = request.status === 2;
@@ -423,7 +423,12 @@ export function ChatContactsPanel({
               );
             })}
             {acceptedContacts.map(({ peerId, peerName, peerAvatar }) => {
-              const label = peerName || peerId;
+              const cachedProfile = peerProfiles[peerId];
+              const label = cachedProfile?.display_name?.trim()
+                || cachedProfile?.username?.trim()
+                || peerName
+                || t('chat.social.sessionList.unknown');
+              const avatar = cachedProfile?.avatar?.trim() || peerAvatar;
               const isSelected = selectedContact?.kind === 'friend'
                 && !selectedContact.conversationId
                 && selectedContact.peerDid === peerId;
@@ -437,7 +442,7 @@ export function ChatContactsPanel({
                     kind: 'friend',
                     peerDid: peerId,
                     displayName: label,
-                    avatar: peerAvatar,
+                    avatar,
                   })}
                   style={{
                     ...rowBaseStyle,
@@ -450,7 +455,7 @@ export function ChatContactsPanel({
                     e.currentTarget.style.background = isSelected ? token.colorPrimaryBg : 'transparent';
                   }}
                 >
-                  <UserSquareAvatar remoteUrl={peerAvatar} name={label} size={avatarSize} />
+                  <UserSquareAvatar remoteUrl={avatar} name={label} size={avatarSize} />
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
                     <Text strong ellipsis style={{ fontSize: 13, color: isSelected ? token.colorPrimary : undefined }}>
                       {label}
