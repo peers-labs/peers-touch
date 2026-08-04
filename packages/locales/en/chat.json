@@ -550,6 +550,7 @@
   "chat.social.messageArea.attachmentOpen": "Open",
   "chat.social.messageArea.attachmentOpenOrDownload": "Open or download attachment",
   "chat.social.messageArea.actionReply": "Reply",
+  "chat.social.messageArea.actionReact": "React",
   "chat.social.messageArea.actionEdit": "Edit",
   "chat.social.messageArea.actionRecall": "Recall",
   "chat.social.messageArea.actionDelete": "Delete",

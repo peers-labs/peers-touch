@@ -216,7 +216,7 @@ function HoverActions({
           />
         </Tooltip>
       )}
-      <Tooltip title="React">
+      <Tooltip title={t('chat.social.messageArea.actionReact')}>
         <Button
           type="text"
           size="small"
