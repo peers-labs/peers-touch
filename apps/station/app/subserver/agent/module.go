@@ -8,18 +8,18 @@ import (
 )
 
 type ModuleDeps struct {
-	DB          interface{}
-	EventBus    domain.EventBus
-	JWTWrapper  server.Wrapper
+	DB           interface{}
+	EventBus     domain.EventBus
+	JWTWrapper   server.Wrapper
 	LogIDWrapper server.Wrapper
-	Config      *ModuleConfig
+	Config       *ModuleConfig
 }
 
 type ModuleConfig struct {
 	OSS struct {
-		Bucket     string
-		Endpoint   string
-		Region     string
+		Bucket   string
+		Endpoint string
+		Region   string
 	}
 }
 

@@ -1,8 +1,14 @@
-# Agent LobeHub Parity — 原型
+# Agent LobeHub Benchmark — Historical Prototype Evidence
 
-> Status: pending-review
+> Status: superseded
 > **Evidence**: EVID-010-PROTOTYPE-RESET, EVID-010-PROTOTYPE-REBUILD-A..N, EVID-011-Y-pre, EVID-011-AA-pre, EVID-011-AC-pre..EVID-011-AE-pre, EVID-011-Z-owner, EVID-011-AO-pre..EVID-011-BM-pre, EVID-011-BN-pre..EVID-011-BY-pre, EVID-011-BZ-pre, EVID-011-CA-pre, EVID-011-CB-pre, EVID-011-CI-pre, EVID-011-CJ-pre, EVID-011-CC-pre, EVID-011-CK-pre, EVID-011-CZ-pre, EVID-011-DA-pre, EVID-011-DB-pre, EVID-011-CD-pre, EVID-011-CL-pre, EVID-011-DD-pre, EVID-011-CE-pre, EVID-011-CM-pre, EVID-011-CF-pre, EVID-011-CN-pre, EVID-011-CG-pre, EVID-011-CO-pre, EVID-011-CH-pre, EVID-011-CP-pre, EVID-011-SI-pre, EVID-011-CQ-pre, EVID-011-SS-pre, EVID-011-CR-pre, EVID-011-CS-pre, EVID-011-GA-pre, EVID-011-VD-pre, EVID-011-VL-pre, EVID-011-L23-pre, EVID-011-CT-pre, EVID-011-CU-pre, EVID-011-CV-pre, EVID-011-CW-pre, EVID-011-CX-pre, EVID-011-CY-pre, EVID-011-DC-pre
 > Scope: source-backed prototype reset; no product code migration
+
+This directory is historical benchmark evidence. It is not the Peers Touch
+product prototype and must not define current product identity. The canonical
+product prototype is:
+
+`docs/architecture/agent/modern-chat-agent/prototype/README.md`
 
 ## 2026-07 Profile 收敛说明
 

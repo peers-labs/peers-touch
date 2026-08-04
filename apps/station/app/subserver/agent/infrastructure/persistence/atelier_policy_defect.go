@@ -11,8 +11,8 @@ type AtelierPolicy struct {
 	SourceEventID      string    `gorm:"type:varchar(36);index:idx_agent_atelier_policies_event"`
 	SourceEventSeq     int64     `gorm:"not null;default:0;index:idx_agent_atelier_policies_event_seq"`
 	PayloadJSON        string    `gorm:"type:text"`
-	CreatedAt          time.Time `gorm:"not null;default:now();index:idx_agent_atelier_policies_created"`
-	UpdatedAt          time.Time `gorm:"not null;default:now();index:idx_agent_atelier_policies_updated"`
+	CreatedAt          time.Time `gorm:"not null;autoCreateTime;index:idx_agent_atelier_policies_created"`
+	UpdatedAt          time.Time `gorm:"not null;autoUpdateTime;index:idx_agent_atelier_policies_updated"`
 }
 
 func (AtelierPolicy) TableName() string { return "agent_atelier_policies" }
@@ -28,8 +28,8 @@ type AtelierPolicyRule struct {
 	SourceEventID  string    `gorm:"type:varchar(36);index:idx_agent_atelier_policy_rules_event"`
 	SourceEventSeq int64     `gorm:"not null;default:0;index:idx_agent_atelier_policy_rules_event_seq"`
 	PayloadJSON    string    `gorm:"type:text"`
-	CreatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_atelier_policy_rules_created"`
-	UpdatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_atelier_policy_rules_updated"`
+	CreatedAt      time.Time `gorm:"not null;autoCreateTime;index:idx_agent_atelier_policy_rules_created"`
+	UpdatedAt      time.Time `gorm:"not null;autoUpdateTime;index:idx_agent_atelier_policy_rules_updated"`
 }
 
 func (AtelierPolicyRule) TableName() string { return "agent_atelier_policy_rules" }
@@ -47,8 +47,8 @@ type AtelierDefect struct {
 	SourceEventID  string    `gorm:"type:varchar(36);index:idx_agent_atelier_defects_event"`
 	SourceEventSeq int64     `gorm:"not null;default:0;index:idx_agent_atelier_defects_event_seq"`
 	PayloadJSON    string    `gorm:"type:text"`
-	CreatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_atelier_defects_created"`
-	UpdatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_atelier_defects_updated"`
+	CreatedAt      time.Time `gorm:"not null;autoCreateTime;index:idx_agent_atelier_defects_created"`
+	UpdatedAt      time.Time `gorm:"not null;autoUpdateTime;index:idx_agent_atelier_defects_updated"`
 }
 
 func (AtelierDefect) TableName() string { return "agent_atelier_defects" }

@@ -1,6 +1,6 @@
 pub mod streaming;
 
-use crate::application::provider::{station_api as provider_cache, remote as provider_remote};
+use crate::application::provider::{remote as provider_remote, station_api as provider_cache};
 use crate::contracts::{
     ChatCompletionInput, ChatConversationInput, ChatListMessagesInput, ChatMarkReadInput,
     ChatMessageInput, ChatRenameConversationInput, ChatSendMessageInput,
@@ -637,7 +637,11 @@ pub fn chat_stop(_actor_id: &str, input: ChatConversationInput) -> AppResult<Stu
     )
 }
 
-pub fn chat_completion_once(actor_id: &str, token: &str, input: ChatCompletionInput) -> AppResult<StubPayload> {
+pub fn chat_completion_once(
+    actor_id: &str,
+    token: &str,
+    input: ChatCompletionInput,
+) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_completion_once", session_id = %input.session_id, model = ?input.model, "Starting completion");
     let session_id = input.session_id.trim().to_string();
     if session_id.is_empty() {
@@ -657,12 +661,7 @@ pub fn chat_completion_once(actor_id: &str, token: &str, input: ChatCompletionIn
     let provider_id = if provider_id.is_empty() && !model_hint.is_empty() {
         provider_cache::get_providers(token, actor_id)
             .ok()
-            .and_then(|providers| {
-                providers
-                    .iter()
-                    .find(|p| p.enabled)
-                    .map(|p| p.name.clone())
-            })
+            .and_then(|providers| providers.iter().find(|p| p.enabled).map(|p| p.name.clone()))
             .unwrap_or_default()
     } else {
         provider_id
@@ -672,7 +671,13 @@ pub fn chat_completion_once(actor_id: &str, token: &str, input: ChatCompletionIn
     }
     let resolved = match provider_cache::resolve_credential(token, &provider_id) {
         Ok(r) => r,
-        Err(_) => return AppResult::fail(ErrorCode::NotFound, "Provider not found or no credential", None),
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::NotFound,
+                "Provider not found or no credential",
+                None,
+            )
+        }
     };
     let api_key = resolved.api_key;
     let base_url = resolved.base_url;
@@ -693,10 +698,8 @@ pub fn chat_completion_once(actor_id: &str, token: &str, input: ChatCompletionIn
     if model_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "Model is required", None);
     }
-    let effective_protocol = provider_remote::resolve_model_protocol(
-        None,
-        provider_protocol.as_deref(),
-    );
+    let effective_protocol =
+        provider_remote::resolve_model_protocol(None, provider_protocol.as_deref());
     match provider_remote::chat_completion(
         &base_url,
         &api_key,

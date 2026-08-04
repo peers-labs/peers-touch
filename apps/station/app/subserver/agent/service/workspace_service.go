@@ -143,11 +143,11 @@ func (s *WorkspaceService) CommitChanges(ctx context.Context, req *model.CommitW
 	changes := make([]domain.WorkspaceChange, 0, len(req.GetChanges()))
 	for _, c := range req.GetChanges() {
 		changes = append(changes, domain.WorkspaceChange{
-			Path:      c.GetPath(),
+			Path:       c.GetPath(),
 			ChangeType: c.GetChangeType(),
-			Size:      c.GetSize(),
-			SHA256:    c.GetSha256(),
-			MimeType:  c.GetMimeType(),
+			Size:       c.GetSize(),
+			SHA256:     c.GetSha256(),
+			MimeType:   c.GetMimeType(),
 		})
 	}
 
@@ -196,12 +196,12 @@ func (s *WorkspaceService) toProtoWorkspaceFiles(files []*domain.WorkspaceFile) 
 	result := make([]*model.WorkspaceFile, 0, len(files))
 	for _, f := range files {
 		result = append(result, &model.WorkspaceFile{
-			Id:            f.ID,
-			WorkspaceId:   f.WorkspaceID,
-			Path:          f.Path,
-			Size:          f.Size,
-			Sha256:        f.SHA256,
-			MimeType:      f.MimeType,
+			Id:          f.ID,
+			WorkspaceId: f.WorkspaceID,
+			Path:        f.Path,
+			Size:        f.Size,
+			Sha256:      f.SHA256,
+			MimeType:    f.MimeType,
 		})
 	}
 	return result
@@ -229,11 +229,11 @@ func (s *WorkspaceService) toProtoWorkspaceChanges(changes []domain.WorkspaceCha
 		}
 
 		result = append(result, &model.WorkspaceChange{
-			Path:      c.Path,
+			Path:       c.Path,
 			ChangeType: c.ChangeType,
-			Size:      size,
-			Sha256:    sha256,
-			MimeType:  mimeType,
+			Size:       size,
+			Sha256:     sha256,
+			MimeType:   mimeType,
 		})
 	}
 	return result
