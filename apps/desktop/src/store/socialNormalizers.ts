@@ -38,6 +38,21 @@ export function normalizeFriendRequests(raw: unknown): FriendRequestData[] {
   return raw.map(normalizeFriendRequestData);
 }
 
+export function friendRequestProfileDids(
+  requests: FriendRequestData[],
+  currentUserDid: string | null,
+): string[] {
+  const ownDid = currentUserDid?.trim() || '';
+  const dids = new Set<string>();
+  for (const request of requests) {
+    for (const candidate of [request.senderId, request.receiverId]) {
+      const did = candidate.trim();
+      if (did && did !== ownDid) dids.add(did);
+    }
+  }
+  return [...dids];
+}
+
 export function normalizeFriendRequestData(raw: unknown): FriendRequestData {
   const record = recordFromUnknown(raw);
   return {
