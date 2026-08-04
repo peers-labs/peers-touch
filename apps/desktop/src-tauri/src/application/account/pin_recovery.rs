@@ -39,11 +39,7 @@ impl PinRecoveryGrant {
     }
 }
 
-pub fn begin_recovery(
-    window_label: &str,
-    target_local_account_id: &str,
-    provider: &str,
-) -> String {
+pub fn begin_recovery(window_label: &str, target_local_account_id: &str, provider: &str) -> String {
     let recovery_id = ulid::Ulid::new().to_string();
     let grant = PinRecoveryGrant {
         recovery_id: recovery_id.clone(),

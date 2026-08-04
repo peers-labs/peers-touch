@@ -14,7 +14,7 @@
 
 源码在 `packages/prototypes/desktop/shell/`（统一原型工作区；独立 web 工程）。本目录只放入口说明，不复制源码（架构文档标准 §5.8）。
 
-这个原型展示 **peers-touch desktop 容器外壳长什么样**。容器壳负责全局导航与页面切换；Agent Profile 直接复用 `agent-lobehub-parity` 的整合 Surface，Atelier 后续也作为原生 Agent 子入口继续收敛。
+这个原型展示 **peers-touch desktop 容器外壳长什么样**。容器壳负责全局导航与页面切换；Agent 使用 Peers-owned Shell Agent Surface，Modern Chat 产品评审态来自 `modern-chat-agent`，Atelier 作为原生 Agent 子入口继续收敛。
 
 ## 怎么跑
 
@@ -39,8 +39,8 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
 
 ## Agent 模块集成
 
-- Shell 的 `agent-profile` 路由直接渲染 `IntegratedAgentProfileSurface`。
-- 唯一实现位于 `packages/prototypes/desktop/features/agent-lobehub-parity/`；Shell 不再维护重复的 `src/AgentProfilePage.tsx`。
+- Shell 的 `agent-profile` 路由由 `src/AgentChatPage.tsx` 内的 Agent Profile surface 承载。
+- Modern Chat 产品原型位于 `packages/prototypes/desktop/features/modern-chat-agent/`，由 Shell Agent 页面挂载；历史 benchmark 原型不参与产品身份。
 - Profile 根据 Shell 内容容器宽度响应，而不是根据浏览器 viewport 猜测：
   - 小于 920px：My Agents 收为 48px 图标栏，Builder 默认关闭。
   - 窄容器打开 Builder：作为右侧覆盖层，不压缩主内容。

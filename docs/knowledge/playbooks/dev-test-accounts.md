@@ -7,6 +7,7 @@ owns:
   - apps/station/frame/touch/actor/seed.go
   - apps/station/frame/touch/actor/seed_dev_friends.go
   - apps/station/frame/touch/setup.go
+detected: 2026-07-06
 ---
 
 # Dev Test Accounts

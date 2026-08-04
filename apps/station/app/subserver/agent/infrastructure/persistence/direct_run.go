@@ -14,8 +14,8 @@ type DirectRun struct {
 	TraceID           string    `gorm:"type:varchar(128);index:idx_agent_direct_runs_trace"`
 	State             string    `gorm:"type:varchar(64);index:idx_agent_direct_runs_state"`
 	Source            string    `gorm:"type:varchar(128);index:idx_agent_direct_runs_source"`
-	CreatedAt         time.Time `gorm:"not null;default:now();index:idx_agent_direct_runs_created"`
-	UpdatedAt         time.Time `gorm:"not null;default:now();index:idx_agent_direct_runs_updated"`
+	CreatedAt         time.Time `gorm:"not null;autoCreateTime;index:idx_agent_direct_runs_created"`
+	UpdatedAt         time.Time `gorm:"not null;autoUpdateTime;index:idx_agent_direct_runs_updated"`
 }
 
 func (DirectRun) TableName() string { return "agent_direct_runs" }

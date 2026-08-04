@@ -156,12 +156,8 @@ pub fn federation_create(
         Ok(t) => t,
         Err(err) => return err,
     };
-    match federation::create_federation(
-        &token,
-        &input.name,
-        &input.description,
-        &input.policy_type,
-    ) {
+    match federation::create_federation(&token, &input.name, &input.description, &input.policy_type)
+    {
         Ok(view) => AppResult::success(federation::encode_create_federation(&view)),
         Err(e) => e.into_app_result_proto("federation_create failed"),
     }
