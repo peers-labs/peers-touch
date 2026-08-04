@@ -4355,33 +4355,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => e,
             }
         }
-        "friend_chat_create_session" => {
-            let input = match parse_args::<FriendChatCreateSessionInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.participant_did.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "participant_did is required",
-                    None,
-                ));
-            }
-            match station_request_json(
-                Method::POST,
-                "/friend-chat/session/create",
-                &token,
-                None,
-                Some(json!({"participant_did": input.participant_did})),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_create_session", data)),
-                Err(e) => e,
-            }
-        }
         "friend_chat_get_settings" => {
             let input = match parse_args::<FriendConversationSettingsInput>(args) {
                 Ok(v) => v,
