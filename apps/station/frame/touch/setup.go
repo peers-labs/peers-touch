@@ -45,6 +45,7 @@ func onAfterStart() error {
 				Email:       p.Email,
 				Password:    p.Password,
 				DisplayName: p.DisplayName,
+				Avatar:      p.Avatar,
 				Endpoints:   p.Endpoints,
 			}
 		}
