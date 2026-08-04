@@ -7134,19 +7134,56 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             })),
             "conversation create direct",
         ),
-        "conversation_create_group" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/conversation/group",
-            None,
-            Some(json!({
+        "conversation_create_group" => {
+            let genesis = args
+                .get("genesis_transition")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            let owner_device_id = genesis
+                .get("changes")
+                .and_then(Value::as_array)
+                .and_then(|changes| {
+                    changes.iter().find(|change| {
+                        change.get("action").and_then(Value::as_i64) == Some(1)
+                            && change.get("role").and_then(Value::as_i64) == Some(3)
+                    })
+                })
+                .and_then(|change| change.get("device_id"))
+                .and_then(Value::as_str)
+                .filter(|device_id| !device_id.is_empty());
+            let Some(owner_device_id) = owner_device_id else {
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::InvalidArgument,
+                    "group genesis requires an owner device",
+                    None,
+                ));
+            };
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            let body = json!({
                 "name": args.get("name").and_then(|v| v.as_str()).unwrap_or(""),
-                "genesis_transition": args.get("genesis_transition").cloned().unwrap_or_else(|| json!({})),
+                "genesis_transition": genesis,
                 "federation_id": args.get("federation_id").and_then(|v| v.as_str()).unwrap_or(""),
                 "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-            })),
-            "conversation create group",
-        ),
+            });
+            match crate::infrastructure::station_client::request_json_auth_with_device_id(
+                reqwest::Method::POST,
+                "/conversation/group",
+                &token,
+                None,
+                Some(&body),
+                owner_device_id,
+            ) {
+                Ok(response) => to_json(AppResult::success(response)),
+                Err(error) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("conversation create group: {error}"),
+                    None,
+                )),
+            }
+        }
         "conversation_list" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
