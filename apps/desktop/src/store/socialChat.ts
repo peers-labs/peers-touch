@@ -1,6 +1,6 @@
 import { createDesktopStore } from './createDesktopStore';
 import { create as createProto, fromBinary, toBinary } from '@bufbuild/protobuf';
-import { timestampDate } from '@bufbuild/protobuf/wkt';
+import { timestampDate, timestampFromDate } from '@bufbuild/protobuf/wkt';
 import {
   CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION,
   chatUnreadForParticipant,
@@ -20,6 +20,8 @@ import {
 } from '../services/desktop_api';
 import {
   EncryptedMessageSchema,
+  FriendChatMessageSchema,
+  FriendMessageAttachmentSchema,
   FriendMessageStatus,
   type FriendChatSession,
   type FriendChatMessage,
@@ -181,6 +183,45 @@ function groupAttachmentFromInput(attachment: ChatAttachmentInput) {
     ciphertextSha256B64: attachment.ciphertext_sha256_b64 ?? '',
     plaintextSize: BigInt(attachment.plaintext_size ?? attachment.size),
     ciphertextSize: BigInt(attachment.ciphertext_size ?? attachment.size),
+  });
+}
+
+function friendAttachmentFromInput(attachment: ChatAttachmentInput) {
+  return createProto(FriendMessageAttachmentSchema, {
+    cid: attachment.cid,
+    filename: attachment.filename,
+    mimeType: attachment.mime_type,
+    size: BigInt(attachment.size),
+    thumbnailCid: attachment.thumbnail_cid ?? '',
+    visibility: attachment.visibility ?? '',
+    mediaEncryption: encryptedMediaDescriptorFromInput(attachment),
+  });
+}
+
+function optimisticFriendMessage(input: {
+  localId: string;
+  sessionUlid: string;
+  senderDid: string;
+  receiverDid: string;
+  content: string;
+  type?: number;
+  replyToUlid?: string;
+  attachments: readonly ChatAttachmentInput[];
+}): FriendChatMessage {
+  const now = timestampFromDate(new Date());
+  return createProto(FriendChatMessageSchema, {
+    ulid: input.localId,
+    sessionUlid: input.sessionUlid,
+    senderDid: input.senderDid,
+    receiverDid: input.receiverDid,
+    type: input.type ?? 1,
+    content: input.content,
+    attachments: input.attachments.map(friendAttachmentFromInput),
+    replyToUlid: input.replyToUlid ?? '',
+    status: FriendMessageStatus.SENDING,
+    sentAt: now,
+    createdAt: now,
+    updatedAt: now,
   });
 }
 
@@ -482,6 +523,12 @@ interface SocialChatState {
     replyToUlid?: string,
     attachments?: ChatAttachmentInput[],
     threadRootUlid?: string,
+    localMessageUlid?: string,
+  ) => Promise<void>;
+  retryFriendMessage: (
+    sessionUlid: string,
+    messageUlid: string,
+    receiverDid: string,
   ) => Promise<void>;
   sendGroupMessage: (
     groupUlid: string,
@@ -612,7 +659,11 @@ interface SocialChatState {
   closeThread: () => void;
 
   initEncryption: () => Promise<void>;
-  establishSession: (sessionUlid: string, peerDid: string) => Promise<boolean>;
+  establishSession: (
+    sessionUlid: string,
+    peerDid: string,
+    initiatedBySend?: boolean,
+  ) => Promise<boolean>;
   /** Clear actor-scoped in-memory data (used by the identity pipeline). */
   reset: () => void;
   hydrate: (actorId: string) => Promise<void>;
@@ -1252,7 +1303,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  establishSession: async (sessionUlid, peerDid) => {
+  establishSession: async (sessionUlid, peerDid, initiatedBySend = false) => {
     const { encryptionEnabled, sessionEncrypted, sessionSecurityState } = get();
     if (!encryptionEnabled || sessionEncrypted[sessionUlid]) {
       return sessionEncrypted[sessionUlid] ?? false;
@@ -1270,14 +1321,23 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       get().setSessionSecurityState(sessionUlid, 'error');
       return false;
     }
-    get().setSessionSecurityState(sessionUlid, 'establishing');
     // One deterministic initiator prevents simultaneous X3DH handshakes from
-    // overwriting the same conversation session with different roots.
-    if (actorDid.localeCompare(peerDid) > 0) {
+    // overwriting the same conversation session during background bootstrap.
+    // An explicit sender may always initiate because X3DH must support an
+    // offline recipient.
+    if (!initiatedBySend && actorDid.localeCompare(peerDid) > 0) {
       return false;
     }
+    get().setSessionSecurityState(sessionUlid, 'establishing');
     try {
-      const peerResp = await api.keyExchangeFetchBundle(peerDid);
+      const peerMember = get().conversationMembers[sessionUlid]?.find(
+        (member) => member.ptid === peerDid,
+      );
+      const peerResp = await api.keyExchangeFetchBundle(
+        peerDid,
+        undefined,
+        peerMember?.actorHomeStationPeerId,
+      );
       const peerBundle = pickLatestKeyExchangeBundle(peerResp);
       if (!peerBundle?.ik_pub || !peerBundle.spk_pub) {
         get().setSessionSecurityState(sessionUlid, 'error');
@@ -1308,9 +1368,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
             : new Uint8Array(),
           negotiatedVersion,
         }),
-      );
-      const peerMember = get().conversationMembers[sessionUlid]?.find(
-        (member) => member.ptid === peerDid,
       );
       await imServiceV1.dkx.send(
         peerDid,
@@ -1364,7 +1421,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         }
       }
 
-      const actorId = currentAuthenticatedActorId() || '';
+      const actorPtid = get().currentUserDid || '';
       set({
         conversations: allConversations,
         conversationMembers: memberMap,
@@ -1373,7 +1430,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         groups: [],
         loading: false,
         loadError: null,
-        ...(!get().currentUserDid && actorId ? { currentUserDid: actorId } : {}),
       });
       log.info('socialChat', 'loadConversations completed', {
         direct: directConversations.length,
@@ -1383,14 +1439,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       // Trigger profile loading for DM peers so names resolve.
       for (const [, members] of Object.entries(memberMap)) {
         for (const m of members) {
-          if (m.ptid && m.ptid !== actorId && !get().peerProfiles[m.ptid]) {
+          if (m.ptid && m.ptid !== actorPtid && !get().peerProfiles[m.ptid]) {
             get().loadPeerProfile(m.ptid).catch(() => {});
           }
         }
       }
       for (const conversation of directConversations) {
         const peer = memberMap[conversation.conversationId]?.find(
-          (member) => member.ptid && member.ptid !== actorId,
+          (member) => member.ptid && member.ptid !== actorPtid,
         );
         if (peer?.ptid) {
           get().establishSession(conversation.conversationId, peer.ptid).catch(() => {});
@@ -1733,14 +1789,50 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  sendFriendMessage: async (sessionUlid, receiverDid, content, type, _replyToUlid, attachments, explicitThreadRootUlid) => {
+  sendFriendMessage: async (
+    sessionUlid,
+    receiverDid,
+    content,
+    type,
+    replyToUlid,
+    attachments,
+    explicitThreadRootUlid,
+    retryMessageUlid,
+  ) => {
+    const did = get().currentUserDid ?? '';
+    const threadRootUlid = explicitThreadRootUlid;
+    const localMessageUlid = retryMessageUlid || `local-${crypto.randomUUID()}`;
+    if (did && receiverDid && !threadRootUlid) {
+      set((state) => {
+        const current = state.messages[sessionUlid] ?? [];
+        const existing = current.some((message) => message.ulid === localMessageUlid);
+        const nextMessage = optimisticFriendMessage({
+          localId: localMessageUlid,
+          sessionUlid,
+          senderDid: did,
+          receiverDid,
+          content,
+          type,
+          replyToUlid,
+          attachments: attachments ?? [],
+        });
+        return {
+          messages: {
+            ...state.messages,
+            [sessionUlid]: existing
+              ? current.map((message) => (
+                message.ulid === localMessageUlid ? nextMessage : message
+              ))
+              : [...current, nextMessage],
+          },
+        };
+      });
+    }
     try {
-      const did = get().currentUserDid ?? '';
-      const threadRootUlid = explicitThreadRootUlid;
       if (!did || !receiverDid) {
         throw new Error('A sender and recipient are required for a secure message');
       }
-      const established = await get().establishSession(sessionUlid, receiverDid);
+      const established = await get().establishSession(sessionUlid, receiverDid, true);
       if (!established) {
         throw new Error('Establishing secure channel. Try again shortly.');
       }
@@ -1767,6 +1859,26 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       cacheOwnCommittedMessage(committed, content, attachments ?? [], type);
 
       if (threadRootUlid) return;
+      const committedMessageUlid = committed.payload.case === 'messageCommitted'
+        ? committed.payload.value.messageId
+        : '';
+      if (!committedMessageUlid) {
+        throw new Error('Station did not return a committed message ID');
+      }
+      set((state) => ({
+        messages: {
+          ...state.messages,
+          [sessionUlid]: (state.messages[sessionUlid] ?? []).map((message) => (
+            message.ulid === localMessageUlid
+              ? {
+                  ...message,
+                  ulid: committedMessageUlid,
+                  status: FriendMessageStatus.SENT,
+                } as FriendChatMessage
+              : message
+          )),
+        },
+      }));
       await get().loadMessages(sessionUlid, 'friend').catch((error) => {
         log.warn('socialChat', 'sendFriendMessage: post-send message refresh failed', error);
       });
@@ -1777,9 +1889,57 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         },
       }));
     } catch (error) {
+      if (!threadRootUlid) {
+        set((state) => ({
+          messages: {
+            ...state.messages,
+            [sessionUlid]: (state.messages[sessionUlid] ?? []).map((message) => (
+              message.ulid === localMessageUlid
+                ? { ...message, status: FriendMessageStatus.FAILED } as FriendChatMessage
+                : message
+            )),
+          },
+        }));
+      }
       log.error('socialChat', 'sendFriendMessage failed', error);
       throw error;
     }
+  },
+
+  retryFriendMessage: async (sessionUlid, messageUlid, receiverDid) => {
+    const message = (get().messages[sessionUlid] ?? []).find(
+      (item) => item.ulid === messageUlid,
+    ) as FriendChatMessage | undefined;
+    if (!message || message.status !== FriendMessageStatus.FAILED) return;
+    await get().sendFriendMessage(
+      sessionUlid,
+      receiverDid,
+      message.content,
+      message.type,
+      message.replyToUlid || undefined,
+      message.attachments.map((attachment) => ({
+        cid: attachment.cid,
+        filename: attachment.filename,
+        mime_type: attachment.mimeType,
+        size: Number(attachment.size),
+        thumbnail_cid: attachment.thumbnailCid || undefined,
+        visibility: attachment.visibility || undefined,
+        encryption_suite: attachment.mediaEncryption?.suite,
+        encryption_key_b64: attachment.mediaEncryption?.keyB64,
+        encryption_nonce_b64: attachment.mediaEncryption?.nonceB64,
+        plaintext_sha256_b64: attachment.mediaEncryption?.plaintextSha256B64,
+        ciphertext_sha256_b64: attachment.mediaEncryption?.ciphertextSha256B64,
+        plaintext_size: Number(attachment.mediaEncryption?.plaintextSize ?? attachment.size),
+        ciphertext_size: Number(attachment.mediaEncryption?.ciphertextSize ?? attachment.size),
+        chunking: attachment.mediaEncryption?.chunking,
+        chunk_size: attachment.mediaEncryption?.chunkSize,
+        chunk_count: attachment.mediaEncryption?.chunkCount,
+        tag_size: attachment.mediaEncryption?.tagSize,
+        nonce_strategy: attachment.mediaEncryption?.nonceStrategy,
+      })),
+      undefined,
+      messageUlid,
+    );
   },
 
   sendGroupMessage: async (groupUlid, content, type, _replyToUlid, attachments, explicitThreadRootUlid) => {

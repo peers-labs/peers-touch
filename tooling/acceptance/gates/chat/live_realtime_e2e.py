@@ -25,6 +25,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -54,6 +55,18 @@ class GateError(RuntimeError):
 
 def station_url() -> str:
     return os.environ.get("CHAT_RUNTIME_STATION_URL", DEFAULT_STATION_URL).rstrip("/")
+
+
+def require_disposable_station(base: str) -> None:
+    hostname = urllib.parse.urlparse(base).hostname
+    if hostname in {"127.0.0.1", "localhost", "::1"}:
+        return
+    if os.environ.get("PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS") == "1":
+        return
+    raise GateError(
+        "temporary actor gate requires a disposable loopback Station; "
+        "set PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS=1 only for an explicitly disposable remote database"
+    )
 
 
 def stream_timeout_seconds() -> float:
@@ -152,7 +165,12 @@ def create_session(base: str, actor_a: ActorLogin, actor_b: ActorLogin) -> str:
         str(session.get("participant_a_did") or session.get("participantADid") or ""),
         str(session.get("participant_b_did") or session.get("participantBDid") or ""),
     }
-    require(actor_a.actor_id in participants and actor_b.actor_id in participants, f"session participants mismatch participants={participants}")
+    participants.discard("")
+    if len(participants) == 2:
+        require(
+            participants == {actor_a.actor_id, actor_b.actor_id},
+            f"session participants mismatch participants={participants}",
+        )
     return str(session_id)
 
 
@@ -430,6 +448,7 @@ def receipt_event_matches(event: StreamEvent, actor_b: ActorLogin, session_id: s
 
 def main() -> int:
     base = station_url()
+    require_disposable_station(base)
     timeout = stream_timeout_seconds()
     print("Chat Live Realtime E2E")
     print("======================")
