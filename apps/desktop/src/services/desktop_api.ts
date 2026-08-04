@@ -18,7 +18,6 @@ import type {
 } from '../kernel/events/types';
 import {
   GetSessionsResponseSchema,
-  CreateSessionResponseSchema,
   GetFriendConversationSettingsResponseSchema,
   UpdateFriendConversationSettingsResponseSchema,
   GetMessagesResponseSchema,
@@ -4713,9 +4712,6 @@ export const api = {
 
   friendChatListSessions: (limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_sessions', GetSessionsResponseSchema, { limit, offset }),
-
-  friendChatCreateSession: (participantDid: string) =>
-    invokeRustProto('friend_chat_create_session', CreateSessionResponseSchema, { participant_did: participantDid }),
 
   friendChatGetSettings: (sessionUlid: string) =>
     invokeRustProto('friend_chat_get_settings', GetFriendConversationSettingsResponseSchema, { session_ulid: sessionUlid }),

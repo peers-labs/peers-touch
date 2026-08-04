@@ -3,13 +3,13 @@ use crate::application::session_resolver;
 use crate::contracts::{
     AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput,
     ChatScopeCursorSetInput, FriendChatAcceptFriendRequestInput, FriendChatAckInput,
-    FriendChatBlockUserInput, FriendChatCreateSessionInput, FriendChatDeleteInput,
-    FriendChatEditInput, FriendChatListBlockedUsersInput, FriendChatListFriendRequestsInput,
-    FriendChatListInput, FriendChatListMessagesInput, FriendChatPendingInput,
-    FriendChatRecallInput, FriendChatRejectFriendRequestInput, FriendChatSendFriendRequestInput,
-    FriendChatSendInput, FriendChatSyncInput, FriendChatSyncMessagesInput,
-    FriendChatThreadCountsInput, FriendChatThreadInput, FriendChatThreadReadInput,
-    FriendConversationSettingsInput, FriendConversationSettingsUpdateInput, StubPayload,
+    FriendChatBlockUserInput, FriendChatDeleteInput, FriendChatEditInput,
+    FriendChatListBlockedUsersInput, FriendChatListFriendRequestsInput, FriendChatListInput,
+    FriendChatListMessagesInput, FriendChatPendingInput, FriendChatRecallInput,
+    FriendChatRejectFriendRequestInput, FriendChatSendFriendRequestInput, FriendChatSendInput,
+    FriendChatSyncInput, FriendChatSyncMessagesInput, FriendChatThreadCountsInput,
+    FriendChatThreadInput, FriendChatThreadReadInput, FriendConversationSettingsInput,
+    FriendConversationSettingsUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -311,42 +311,6 @@ pub fn friend_chat_list_sessions(
         &token,
         Some(&query),
         None::<&()>,
-    ) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "station request failed"),
-    };
-    AppResult::success(resp.encode_to_vec())
-}
-
-#[tauri::command]
-pub fn friend_chat_create_session(
-    input: FriendChatCreateSessionInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    if input.participant_did.trim().is_empty() {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "participant_did is required",
-            None,
-        );
-    }
-    let req = model::chat::CreateSessionRequest {
-        participant_did: input.participant_did,
-    };
-    let resp = match station_client::request_proto::<
-        model::chat::CreateSessionRequest,
-        model::chat::CreateSessionResponse,
-    >(
-        Method::POST,
-        "/friend-chat/session/create",
-        &token,
-        None,
-        Some(&req),
     ) {
         Ok(r) => r,
         Err(e) => return station_error_proto(e, "station request failed"),
