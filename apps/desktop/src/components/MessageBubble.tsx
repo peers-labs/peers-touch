@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, Tag, Dropdown, TextArea, toast } from '@lobehub/ui';
 import type { MenuProps } from '@lobehub/ui';
-import { theme } from 'antd';
+import { theme, Button } from 'antd';
 import {
   Wrench,
   Loader2,
@@ -37,7 +37,7 @@ import {
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact, ToolCallInfo } from '../store/chat';
 import { extractMessageArtifacts, useChatStore } from '../store/chat';
 import { useAgentStore } from '../store/agent';
-import { parseAgentChatConfig } from '../services/desktop_api';
+import { parseAgentChatConfig, api } from '../services/desktop_api';
 import { LazyMarkdown as Markdown } from './LazyMarkdown';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import MessageCard, { type CardData } from './MessageCard';
@@ -598,7 +598,8 @@ function DiagnosticsBlock({
   const failedTools = toolCalls.filter((tool) => tool.status === 'error' || tool.status === 'denied').length;
   const pendingTools = toolCalls.filter((tool) => tool.pending || tool.status === 'approval_required').length;
   const failedDelegations = delegationResults.filter((item) => item.status === 'failed' || item.status === 'timeout').length;
-  const hasDiagnostics = !!message.thinking || !!message.error || !!message.model || !!message.processDuration || toolCalls.length > 0 || knowledgeChunks.length > 0 || delegationResults.length > 0 || memoryEnabled || compressionEnabled;
+  const hasRuntimeDiagnostics = !!message.thinking || !!message.error || !!message.processDuration || toolCalls.length > 0 || knowledgeChunks.length > 0 || delegationResults.length > 0;
+  const hasDiagnostics = hasRuntimeDiagnostics;
 
   if (!hasDiagnostics) return null;
 
@@ -607,7 +608,7 @@ function DiagnosticsBlock({
       borderRadius: 8,
       border: `1px solid ${message.error ? token.colorErrorBorder : token.colorBorderSecondary}`,
       background: message.error ? token.colorErrorBg : token.colorFillQuaternary,
-      marginBottom: 8,
+      marginBottom: message.content ? 6 : 0,
       overflow: 'hidden',
     }}>
       <div
@@ -709,6 +710,57 @@ function DiagnosticsBlock({
   );
 }
 
+type ThemeToken = ReturnType<typeof theme.useToken>['token'];
+
+function ThinkingIndicator({ token }: { token: ThemeToken }) {
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '4px 0',
+        color: token.colorTextSecondary,
+        fontSize: 13,
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: token.colorPrimary,
+          opacity: 0.6,
+          animation: 'ptPulse 1.2s ease-in-out infinite',
+        }}
+      />
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: token.colorPrimary,
+          opacity: 0.6,
+          animation: 'ptPulse 1.2s ease-in-out infinite',
+          animationDelay: '0.2s',
+        }}
+      />
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: token.colorPrimary,
+          opacity: 0.6,
+          animation: 'ptPulse 1.2s ease-in-out infinite',
+          animationDelay: '0.4s',
+        }}
+      />
+      <style>{`@keyframes ptPulse { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); } 40% { opacity: 0.9; transform: scale(1); } }`}</style>
+    </div>
+  );
+}
+
 export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
@@ -719,6 +771,7 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [collapsed, setCollapsed] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const editRef = useRef<any>(null);
 
   const branchFromMessage = useChatStore(s => s.branchFromMessage);
@@ -735,6 +788,8 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
   const activeChatConfig = activeAgent ? parseAgentChatConfig(activeAgent) : {};
   const messageModel = message.model ? availableModels.find((model) => model.id === message.model) : undefined;
   const providerName = messageModel?.provider_name || messageModel?.provider_id || activeAgent?.provider || '';
+  const agentDisplayName = activeAgent?.title || activeAgent?.name;
+  const userDisplayName = userAvatar?.name;
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
   useEffect(() => {
     if (editing && editRef.current) {
@@ -953,7 +1008,7 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
         paddingInlineEnd: isUser ? 0 : 36,
       }}
     >
-      {/* Header: avatar + timestamp */}
+      {/* Header: avatar + name + model + timestamp (single compact row) */}
       <Flexbox
         direction={isUser ? 'horizontal-reverse' : 'horizontal'}
         align="center"
@@ -963,6 +1018,23 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
           <UserSquareAvatar remoteUrl={userAvatar?.url} name={userAvatar?.name} size={32} radius={8} />
         ) : (
           <AgentIconTile size={32} />
+        )}
+        <strong style={{ fontSize: 13, color: token.colorText, fontWeight: 600 }}>
+          {isUser ? (userDisplayName || t('chat.message.you')) : (agentDisplayName || t('chat.message.assistant'))}
+        </strong>
+        {!isUser && message.model && !message.loading && (
+          <Flexbox horizontal align="center" gap={3} style={{ opacity: 0.85 }}>
+            {messageModel && (
+              <ProviderIcon
+                providerId={messageModel.provider_id || ''}
+                providerName={messageModel.provider_name}
+                size={11}
+              />
+            )}
+            <span style={{ fontSize: 11, color: token.colorTextQuaternary }}>
+              {messageModel?.display_name || message.model}
+            </span>
+          </Flexbox>
         )}
         <span
           style={{
@@ -988,12 +1060,12 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
         }}
       >
         {/* Message bubble — LobeChat style:
-            User: colorFillTertiary bg, no border, content-based width, borderRadiusLG
-            Assistant: colorBgContainer bg, no border, full width, borderRadiusLG */}
+            User: colorFillTertiary bg, content-based width, padded, borderRadiusLG
+            Assistant: transparent, flush markdown, no padding (no chrome) */}
         <div
           style={{
             borderRadius: token.borderRadiusLG,
-            padding: editing ? 4 : '8px 12px',
+            padding: isUser ? (editing ? 4 : '8px 12px') : 0,
             background: isUser ? token.colorFillTertiary : 'transparent',
             alignSelf: isUser ? 'flex-end' : 'flex-start',
           }}
@@ -1105,10 +1177,7 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
               </Flexbox>
             </Flexbox>
           ) : message.loading && !message.content && !(message.toolCalls && message.toolCalls.length > 0) ? (
-            <Loader2
-              size={16}
-              style={{ animation: 'spin 1s linear infinite', color: token.colorPrimary }}
-            />
+            <ThinkingIndicator token={token} />
           ) : collapsed ? (
             <div
               style={{ fontSize: 13, color: token.colorTextDescription, fontStyle: 'italic', cursor: 'pointer' }}
@@ -1169,43 +1238,40 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
               }}
             >
               <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-              <span>{message.error}</span>
+              <div style={{ flex: 1 }}>
+                <div>{message.error}</div>
+                {message.resolution && (
+                  <Button
+                    type="primary"
+                    size="small"
+                    danger
+                    style={{ marginTop: 8 }}
+                    onClick={async () => {
+                      try {
+                        const result = await api.resolveErrorAction(message.resolution!);
+                        if (result.message) {
+                          toast.success(result.message);
+                        } else if (result.reauth) {
+                          toast.success('Authentication opened. Complete sign-in then retry.');
+                        } else if (result.opened) {
+                          toast.success('Settings opened. Configure your credentials.');
+                        }
+                      } catch (err: any) {
+                        toast.error(err?.message || 'Failed to perform action');
+                      }
+                    }}
+                  >
+                    {message.resolution.label}
+                  </Button>
+                )}
+              </div>
             </div>
           )}
 
           {/* Streaming cursor handled by Markdown animated prop */}
         </div>
 
-        {/* Action bar — always in flow, visibility via opacity (LobeChat pattern: no layout shift) */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 2,
-            alignItems: 'center',
-            alignSelf: isUser ? 'flex-end' : 'flex-start',
-            background: hovered && !message.loading && !editing ? token.colorBgElevated : 'transparent',
-            borderRadius: 8,
-            boxShadow: hovered && !message.loading && !editing ? token.boxShadowTertiary : 'none',
-            padding: '2px 4px',
-            height: 28,
-            opacity: hovered && !message.loading && !editing ? 1 : 0,
-            pointerEvents: hovered && !message.loading && !editing ? 'auto' : 'none',
-            transition: 'opacity 0.2s',
-          }}
-        >
-          {message.error && (
-            <MiniButton icon={<RotateCcw size={14} />} title={t('chat.message.action.retry')} onClick={handleRetry} />
-          )}
-          <MiniButton icon={<RotateCcw size={14} />} title={t('chat.message.action.regenerate')} onClick={handleRegenerate} />
-          <MiniButton icon={<Edit size={14} />} title={t('chat.message.action.edit')} onClick={handleStartEdit} />
-          <MiniButton icon={copied ? <Check size={14} /> : <Copy size={14} />} title={t('chat.message.action.copy')} onClick={handleCopy} />
-          <Dropdown menu={{ items: isUser ? userMoreMenu : assistantMoreMenu }} trigger={['click']} placement={isUser ? 'bottomRight' : 'bottomLeft'}>
-            <div>
-              <MiniButton icon={<MoreHorizontal size={14} />} title={t('chat.message.action.more')} onClick={() => {}} />
-            </div>
-          </Dropdown>
-        </div>
-
+        {/* Audit row */}
         {(message.operation || message.replacementOf || message.replacedBy) && !message.loading && (
           <Flexbox horizontal align="center" gap={4}>
             {message.operation && (
@@ -1225,23 +1291,45 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
             )}
           </Flexbox>
         )}
-
-        {/* Model tag — assistant messages only, show provider logo + display_name */}
-        {!isUser && message.model && !message.loading && (
-          <Flexbox horizontal align="center" gap={4}>
-            {messageModel && (
-              <ProviderIcon
-                providerId={messageModel.provider_id || ''}
-                providerName={messageModel.provider_name}
-                size={12}
-              />
-            )}
-            <span style={{ fontSize: 11, color: token.colorTextQuaternary }}>
-              {messageModel?.display_name || message.model}
-            </span>
-          </Flexbox>
-        )}
       </Flexbox>
+
+      {/*
+        Action bar — LobeHub pattern: in normal flow BELOW the message body,
+        aligned to the message side (assistant: left, user: right) so the icons
+        sit directly under the content rather than at the far row edge.
+        Revealed on parent hover and kept visible while the more menu is open.
+      */}
+      {!message.loading && !editing && (
+        <div
+          data-message-actions
+          style={{
+            display: 'flex',
+            gap: 2,
+            alignItems: 'center',
+            alignSelf: isUser ? 'flex-end' : 'flex-start',
+            opacity: hovered || menuOpen ? 1 : 0,
+            pointerEvents: hovered || menuOpen ? 'auto' : 'none',
+            transition: 'opacity 0.2s',
+          }}
+        >
+          {message.error && (
+            <MiniButton icon={<RotateCcw size={14} />} title={t('chat.message.action.retry')} onClick={handleRetry} />
+          )}
+          <MiniButton icon={<RotateCcw size={14} />} title={t('chat.message.action.regenerate')} onClick={handleRegenerate} />
+          <MiniButton icon={<Edit size={14} />} title={t('chat.message.action.edit')} onClick={handleStartEdit} />
+          <MiniButton icon={copied ? <Check size={14} /> : <Copy size={14} />} title={t('chat.message.action.copy')} onClick={handleCopy} />
+          <Dropdown
+            menu={{ items: isUser ? userMoreMenu : assistantMoreMenu }}
+            trigger={['click']}
+            placement={isUser ? 'bottomRight' : 'bottomLeft'}
+            onOpenChange={setMenuOpen}
+          >
+            <div>
+              <MiniButton icon={<MoreHorizontal size={14} />} title={t('chat.message.action.more')} onClick={() => {}} />
+            </div>
+          </Dropdown>
+        </div>
+      )}
     </Flexbox>
   );
 }

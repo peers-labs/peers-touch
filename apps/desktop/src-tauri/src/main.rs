@@ -239,6 +239,11 @@ fn main() {
             agent_turn::agent_turn_trace_get,
             agent_turn::agent_resolve_local_tool_request,
             agent_turn::agent_decide_tool_approval,
+            agent_turn::agent_conversation_list,
+            agent_turn::agent_conversation_get,
+            agent_turn::agent_conversation_create,
+            agent_turn::agent_conversation_messages,
+            agent_turn::agent_conversation_archive,
             agent_orchestration::agent_collaboration_create,
             agent_orchestration::agent_collaboration_get,
             agent_orchestration::agent_collaboration_list,
@@ -588,7 +593,8 @@ fn main() {
             mls::mls_group_status,
             mls::mls_group_public_head,
             mls::mls_group_save,
-            mls::mls_group_load
+            mls::mls_group_load,
+            application::error_resolver::resolve_error_action
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

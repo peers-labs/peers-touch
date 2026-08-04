@@ -64,7 +64,7 @@ First, classify the work mode:
 | **Review/audit** | "Check", "review", "is this right", "validate", "audit" | Identify what to review → pick the right review skill (§3.6) |
 | **Unknown** | Cannot confidently classify into any of the above | Apply §3.7 (Uncertainty Protocol) |
 
-For standalone tasks, the agent skips DESIGN/PLAN stages but still operates
+For standalone tasks, the agent skips PRODUCT/DESIGN/PLAN stages but still operates
 under methodology: proper edits, proper checks, proper commits.
 
 ### 3.2 Stage Reasoning (for tracked/multi-step work)
@@ -78,6 +78,7 @@ If new multi-step: classify (§4) and add to registry
 
 | Stage | The agent is asking... | Key skill |
 |-------|----------------------|-----------|
+| PRODUCT | "Who is this for, what complete outcome and experience must we deliver?" | `pt-product-design-methodology` |
 | DESIGN | "What are the boundaries, ownership, contracts?" | `pt-architecture-design-methodology` |
 | PLAN | "What's the dependency order, what can parallelize?" | `pt-architecture-execution-methodology` + `pt-plan-and-document` |
 | EXECUTE | "What's the next step in the plan?" | `pt-execution-plan-guardian` |
@@ -121,6 +122,7 @@ proposes the correct-layer fix instead.
 
 - **Proto-first** — cross-platform contracts in proto before implementation
 - **Station owns truth** — client caches, Station decides
+- **Product outcome before architecture** — user journeys and acceptance constrain system design
 - **Architecture constrains implementation** — upper layers constrain lower
 - **Plan before code** — no freestyle on multi-step work
 - **Evidence before claims** — verify with commands, not assumptions
@@ -132,6 +134,7 @@ The agent must NOT do the work itself when a skill exists for it:
 
 | Situation | Do NOT freestyle | DO invoke |
 |-----------|-----------------|-----------|
+| Need to design a product/capability | Start from a feature checklist | `pt-product-design-methodology` |
 | Need to design architecture | Write design ad-hoc | `pt-architecture-design-methodology` |
 | Need to break down into steps | List steps from memory | `pt-architecture-execution-methodology` |
 | Need to write plan to file | Just dump markdown | `pt-plan-and-document` |
@@ -148,6 +151,7 @@ When the user wants to check, validate, or audit something:
 
 | What to review | How | Reference |
 |----------------|-----|-----------|
+| Product design quality | Use `pt-product-design-methodology` review gate | Users/jobs, benchmark disposition, journeys, states, prototype, acceptance |
 | Architecture docs (structure, naming, completeness) | Read `docs/global/architecture-document-standard.md` → check each file against spec | Required files, metadata, naming rules |
 | Architecture design quality | Generate architecture review prompt (per earlier pattern) → user sends to reviewer | Invariants, ownership table, forbidden relationships |
 | Execution plan quality | Generate plan review prompt (§7.2 of `pt-plan-and-document`) → user sends | Dependency order, scope, verification |
@@ -197,13 +201,15 @@ When starting new work:
 
 | Signal | Stage | Reasoning |
 |--------|-------|-----------|
-| Needs new boundary / ownership / contract decision | DESIGN | Architecture not yet defined |
-| Architecture exists, needs implementation breakdown | PLAN | Architecture accepted, plan needed |
+| New product/module/capability, workflow redesign, or benchmark rebuild | PRODUCT | Product outcome and acceptance are not yet defined |
+| Product accepted; needs new boundary / ownership / contract decision | DESIGN | Architecture not yet defined |
+| Product and architecture accepted; needs implementation breakdown | PLAN | Accepted contracts need an execution plan |
 | Plan exists and accepted | EXECUTE | Ready to implement |
-| Single-file bug / cosmetic fix | EXECUTE (small-fix) | Skip DESIGN+PLAN |
+| Single-file bug / cosmetic fix | EXECUTE (small-fix) | Skip PRODUCT+DESIGN+PLAN |
 | Code done, ready to ship | DELIVER | Package and submit |
 
-If unclear: "Is this a new architecture decision, or implementation of something already planned?"
+If unclear: "Is this a new product/capability, a new architecture decision, or
+implementation of something already accepted and planned?"
 
 ---
 
@@ -264,6 +270,10 @@ When showing status, flag entries with `last_session` >14 days:
 
 ```
 pt-god-view (methodology OS / entry point)
+  │
+  ├── PRODUCT stage
+  │     ├── pt-product-design-methodology
+  │     └── pt-prototype-design (when UI is material)
   │
   ├── DESIGN stage
   │     └── pt-architecture-design-methodology

@@ -242,17 +242,15 @@ pub(crate) fn post_json_with_auth(
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
         .json(&body);
-    let resp = with_device_id(resp)
-        .send()
-        .map_err(|e| {
-            let elapsed = start.elapsed().as_millis();
-            tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
-            StationClientError::new(
-                StationClientErrorKind::Network,
-                format!("request failed: {}", e),
-                None,
-            )
-        })?;
+    let resp = with_device_id(resp).send().map_err(|e| {
+        let elapsed = start.elapsed().as_millis();
+        tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
+        StationClientError::new(
+            StationClientErrorKind::Network,
+            format!("request failed: {}", e),
+            None,
+        )
+    })?;
 
     let status = resp.status();
     let elapsed = start.elapsed().as_millis();

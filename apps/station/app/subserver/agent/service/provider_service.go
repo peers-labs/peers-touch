@@ -63,7 +63,10 @@ const (
 	providerHTTPTimeout = 120 * time.Second
 )
 
-var apiVersionSuffix = regexp.MustCompile(`/v\d+$`)
+// apiVersionSuffix matches a base URL that already ends in a version segment,
+// e.g. "/v1", "/openai/v1", or Ark's "/api/v3". The version must be the final
+// path segment so "/v1/chat/completions" does not match it.
+var apiVersionSuffix = regexp.MustCompile(`(^|/)v\d+$`)
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -194,6 +197,9 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 
 	// Step 2 — Extract base_url and api_key from provider record.
 	baseURL, apiKey := s.extractConfig(provider.Config, provider.KeyVaults)
+	if baseURL == "" {
+		baseURL = strings.TrimSpace(provider.BaseURL)
+	}
 
 	// Step 3 — Resolve provider type.
 	providerType := req.ProviderType
@@ -620,14 +626,12 @@ func (s *ProviderService) callOpenAI(
 	}
 
 	if len(data.Choices) == 0 {
-		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
-			"empty openai-compatible response", nil)
+		return &ProviderCallResponse{Content: "", Model: data.Model, FinishReason: ""}, nil
 	}
 
 	content := data.Choices[0].Message.Content
 	if strings.TrimSpace(content) == "" {
-		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
-			"empty openai-compatible response", nil)
+		content = ""
 	}
 
 	return &ProviderCallResponse{
@@ -697,15 +701,21 @@ func (s *ProviderService) callOpenAIStream(
 		if !ok || delta.Content == "" {
 			continue
 		}
-		content.WriteString(delta.Content)
+		if delta.Type == "text" {
+			content.WriteString(delta.Content)
+		}
 		deltaSink(ctx, delta)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(content.String()) == "" {
-		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
-			"empty openai-compatible stream response", nil)
+		return &ProviderCallResponse{
+			Content:      "",
+			Model:        model,
+			FinishReason: finishReason,
+			Streamed:     true,
+		}, nil
 	}
 	return &ProviderCallResponse{
 		Content:      content.String(),
@@ -910,7 +920,9 @@ func (s *ProviderService) callAnthropicStream(
 		if !ok || delta.Content == "" {
 			continue
 		}
-		content.WriteString(delta.Content)
+		if delta.Type == "text" {
+			content.WriteString(delta.Content)
+		}
 		deltaSink(ctx, delta)
 	}
 	if err := scanner.Err(); err != nil {

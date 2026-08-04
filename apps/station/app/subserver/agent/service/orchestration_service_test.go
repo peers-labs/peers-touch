@@ -1350,7 +1350,7 @@ func TestLoadRuntimeProviderOverrideForNodeUsesPersistedPlan(t *testing.T) {
 		Effort:     "low",
 		ConfigJSON: "{}",
 	}
-	cfg := svc.turnConfigForNode(&task, &node, agent, runtimeProvider)
+	cfg := svc.turnConfigForNode("actor-1", &task, &node, agent, runtimeProvider)
 	if cfg.Provider != "openai" || cfg.Model != "gpt-4.1" || cfg.Effort != "high" {
 		t.Fatalf("expected TurnConfig to use provider plan override, got %+v", cfg)
 	}
@@ -2759,7 +2759,7 @@ func TestStationHumanDecisionResumeToolConsumesLiveDecision(t *testing.T) {
 	}
 
 	broker := NewLiveResumeBroker()
-	svc := NewTurnService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := NewTurnService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	svc.SetLiveResumeBroker(broker)
 	resultCh := make(chan struct {
 		output string
@@ -5336,15 +5336,21 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
                   )`,
 		`CREATE TABLE agent_providers (
                                   id text PRIMARY KEY,
+                                  actor_id varchar(36) NOT NULL DEFAULT '',
                                   name text NOT NULL,
+                                  display_name varchar(256),
+                                  base_url text,
                                   key_vaults text,
                                   config text,
+                                  hidden_models text,
                                   source_type text,
                                   check_model text,
                                   runtime_kind text,
                                   cli_command text,
+                                  models_command text,
                                   protocol text,
                                   enabled boolean NOT NULL DEFAULT true,
+                                  version bigint NOT NULL DEFAULT 1,
                                   created_at datetime NOT NULL,
                                   updated_at datetime NOT NULL
                   )`,
