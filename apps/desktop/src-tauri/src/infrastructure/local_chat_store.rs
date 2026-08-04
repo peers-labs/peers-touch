@@ -171,6 +171,13 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             sender_did UNINDEXED,
             content
         );
+        CREATE TABLE IF NOT EXISTS chat_decrypt_cache (
+            message_id TEXT NOT NULL PRIMARY KEY,
+            content TEXT NOT NULL,
+            message_type INTEGER NOT NULL,
+            attachments_json TEXT NOT NULL,
+            cached_at INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS crypto_sessions (
             session_id TEXT NOT NULL PRIMARY KEY,
             peer_did TEXT NOT NULL,
@@ -442,6 +449,46 @@ pub fn upsert_plaintext_records(
         }
     }
     Ok(indexed)
+}
+
+pub fn put_decrypt_cache(
+    user_scope: &str,
+    message_id: &str,
+    content: &str,
+    message_type: i32,
+    attachments_json: &str,
+    cached_at: i64,
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.execute(
+        "INSERT INTO chat_decrypt_cache(message_id, content, message_type, attachments_json, cached_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(message_id) DO UPDATE SET
+            content=excluded.content,
+            message_type=excluded.message_type,
+            attachments_json=excluded.attachments_json,
+            cached_at=excluded.cached_at",
+        params![message_id, content, message_type, attachments_json, cached_at],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn get_decrypt_cache(
+    user_scope: &str,
+    message_id: &str,
+) -> Result<Option<(String, i32, String, i64)>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT content, message_type, attachments_json, cached_at
+         FROM chat_decrypt_cache WHERE message_id = ?1",
+        params![message_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
 }
 
 fn json_string(value: &Value, keys: &[&str]) -> String {
@@ -871,6 +918,28 @@ pub fn crypto_session_handshake_delivered(
     .optional()
     .map(|value| value.unwrap_or(0) != 0)
     .map_err(|e| e.to_string())
+}
+
+pub fn reset_crypto_session(user_scope: &str, session_id: &str) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM crypto_skipped_keys WHERE session_id = ?1",
+        params![session_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM crypto_session_delivery WHERE session_id = ?1",
+        params![session_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM crypto_sessions WHERE session_id = ?1",
+        params![session_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
 }
 
 pub fn crypto_save_mls_state(
@@ -2258,6 +2327,18 @@ mod dr_persistence_tests {
 
     fn placeholder_chain() -> [u8; 32] {
         [0xAB; 32]
+    }
+
+    #[test]
+    fn decrypt_cache_round_trips_in_actor_scoped_database() {
+        let scope = unique_scope("decrypt-cache");
+        put_decrypt_cache(&scope, "message-1", "plaintext", 7, r#"[{"id":"a1"}]"#, 42).unwrap();
+
+        let cached = get_decrypt_cache(&scope, "message-1").unwrap().unwrap();
+        assert_eq!(cached.0, "plaintext");
+        assert_eq!(cached.1, 7);
+        assert_eq!(cached.2, r#"[{"id":"a1"}]"#);
+        assert_eq!(cached.3, 42);
     }
 
     #[test]
