@@ -20,6 +20,7 @@ export function ContactsPage() {
   const sessions = useSocialChatStore(s => s.sessions);
   const groups = useSocialChatStore(s => s.groups);
   const friendRequests = useSocialChatStore(s => s.friendRequests);
+  const peerProfiles = useSocialChatStore(s => s.peerProfiles);
   const currentUserDid = useSocialChatStore(s => s.currentUserDid);
   const selectSession = useSocialChatStore(s => s.selectSession);
   const selectGroup = useSocialChatStore(s => s.selectGroup);
@@ -51,7 +52,12 @@ export function ContactsPage() {
         ) : (
           <Flexbox gap={8}>
             {pendingRequests.map((req) => {
-              const peerLabel = req.senderDisplayName || req.senderId;
+              const cachedProfile = peerProfiles[req.senderId];
+              const peerLabel = cachedProfile?.display_name?.trim()
+                || cachedProfile?.username?.trim()
+                || req.senderDisplayName
+                || t('chat.social.sessionList.unknown');
+              const peerAvatar = cachedProfile?.avatar?.trim() || req.senderAvatar;
               return (
                 <Flexbox
                   key={req.id}
@@ -65,7 +71,7 @@ export function ContactsPage() {
                     background: token.colorFillQuaternary,
                   }}
                 >
-                  <UserSquareAvatar remoteUrl={req.senderAvatar} name={peerLabel} size={40} />
+                  <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={40} />
                   <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
                     <Text strong ellipsis style={{ fontSize: 13 }}>
                       {peerLabel}
