@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, SearchBar } from '@lobehub/ui';
-import { theme } from 'antd';
+import { ActionIcon, Dropdown, SearchBar, toast } from '@lobehub/ui';
+import type { MenuProps } from '@lobehub/ui';
+import { theme, Modal } from 'antd';
 import { useTranslation } from 'react-i18next';
 import {
   Plus,
@@ -21,9 +22,12 @@ import {
   Square,
   UserRound,
   Settings2,
+  Pin,
+  Download,
 } from 'lucide-react';
 import { useChatStore, type Session } from '../store/chat';
 import { useAgentStore } from '../store/agent';
+import { api, type Agent } from '../services/desktop_api';
 import { ChatPage } from './ChatPage';
 import { AgentProfilePage } from './AgentProfilePage';
 
@@ -71,6 +75,7 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
   const selectedAgent = useAgentStore((s) => s.selectedAgent);
   const setSelectedAgent = useAgentStore((s) => s.setSelectedAgent);
   const loadAgents = useAgentStore((s) => s.loadAgents);
+  const setDefaultAgent = useAgentStore((s) => s.setDefaultAgent);
   const agentSurfaces = useAgentStore((s) => s.agentSurfaces);
   const setAgentSurface = useAgentStore((s) => s.setAgentSurface);
   const currentSurface = agentSurfaces[selectedAgent] || 'chat';
@@ -232,6 +237,77 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
     }
   }, [selectedAgent, setAgentSurface]);
 
+  const handleEditAgent = useCallback((agent: Agent) => {
+    setSelectedAgent(agent.name);
+    setAgentSurface(agent.name, 'profile');
+  }, [setSelectedAgent, setAgentSurface]);
+
+  const handleToggleAgentPin = useCallback(async (agent: Agent) => {
+    try {
+      await api.updateAgent(agent.id, { pinned: !agent.pinned });
+      await loadAgents();
+      toast.success(t(agent.pinned ? 'agent.chat.toast.agentUnpinned' : 'agent.chat.toast.agentPinned', { name: agent.title || agent.name }));
+    } catch (e: any) {
+      toast.error(e?.message || t('agent.chat.toast.agentPinUpdateFailed'));
+    }
+  }, [loadAgents, t]);
+
+  const handleSetDefaultAgent = useCallback(async (agent: Agent) => {
+    try {
+      await setDefaultAgent(agent.id);
+      await loadAgents();
+      toast.success(t('agent.chat.toast.defaultAgentUpdated', { name: agent.title || agent.name }));
+    } catch (e: any) {
+      toast.error(e?.message || t('agent.chat.toast.defaultAgentUpdateFailed'));
+    }
+  }, [setDefaultAgent, loadAgents, t]);
+
+  const handleExportAgent = useCallback(async (agent: Agent) => {
+    try {
+      const pkg = await api.exportAgentPackage(agent.id);
+      const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${agent.name || agent.id}.agent.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success(t('agent.chat.toast.agentExported'));
+    } catch (e: any) {
+      toast.error(e?.message || t('agent.chat.toast.agentExportFailed'));
+    }
+  }, [t]);
+
+  const handleCloneAgent = useCallback(async (agent: Agent) => {
+    try {
+      const cloned = await api.duplicateAgent(agent.id, `${agent.name} copy`);
+      await loadAgents();
+      setSelectedAgent(cloned.name);
+      toast.success(t('agent.chat.toast.agentCloned', { name: cloned.title || cloned.name }));
+    } catch (e: any) {
+      toast.error(e?.message || t('agent.chat.toast.agentCloneFailed'));
+    }
+  }, [loadAgents, setSelectedAgent, t]);
+
+  const handleDeleteAgent = useCallback((agent: Agent) => {
+    Modal.confirm({
+      title: t('agent.chat.deleteConfirm.title'),
+      content: t('agent.chat.deleteConfirm.content', { name: agent.title || agent.name }),
+      okText: t('agent.chat.menu.delete'),
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: async () => {
+        try {
+          await api.deleteAgent(agent.id);
+          await loadAgents();
+          toast.success(t('agent.chat.toast.agentDeleted', { name: agent.title || agent.name }));
+        } catch (e: any) {
+          toast.error(e?.message || t('agent.chat.toast.agentDeleteFailed'));
+        }
+      },
+    });
+  }, [loadAgents, t]);
+
   return (
     <div ref={rootRef} style={{
       width: '100%',
@@ -294,13 +370,16 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
                 {filteredPinned.map((agent) => (
                   <AgentRow
                     key={agent.name}
-                    name={agent.name}
-                    title={agent.title}
-                    avatar={agent.avatar}
-                    desc={agent.description}
+                    agent={agent}
                     active={selectedAgent === agent.name}
-                    pinned
+                    isDefault={agent.isDefault}
                     onClick={() => handleSelectAgent(agent.name)}
+                    onTogglePin={() => handleToggleAgentPin(agent)}
+                    onSetDefault={() => handleSetDefaultAgent(agent)}
+                    onEdit={() => handleEditAgent(agent)}
+                    onExport={() => handleExportAgent(agent)}
+                    onClone={() => handleCloneAgent(agent)}
+                    onDelete={() => handleDeleteAgent(agent)}
                     token={token}
                   />
                 ))}
@@ -312,12 +391,16 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
                 {filteredOthers.map((agent) => (
                   <AgentRow
                     key={agent.name}
-                    name={agent.name}
-                    title={agent.title}
-                    avatar={agent.avatar}
-                    desc={agent.description}
+                    agent={agent}
                     active={selectedAgent === agent.name}
+                    isDefault={agent.isDefault}
                     onClick={() => handleSelectAgent(agent.name)}
+                    onTogglePin={() => handleToggleAgentPin(agent)}
+                    onSetDefault={() => handleSetDefaultAgent(agent)}
+                    onEdit={() => handleEditAgent(agent)}
+                    onExport={() => handleExportAgent(agent)}
+                    onClone={() => handleCloneAgent(agent)}
+                    onDelete={() => handleDeleteAgent(agent)}
                     token={token}
                   />
                 ))}
@@ -652,19 +735,44 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
   );
 }
 
-function AgentRow({ name, title, avatar, desc, active, pinned, onClick, token }: {
-  name: string; title?: string; avatar?: string; desc?: string; active: boolean; pinned?: boolean; onClick: () => void; token: any;
+function AgentRow({ agent, active, isDefault, onClick, onTogglePin, onSetDefault, onEdit, onExport, onClone, onDelete, token }: {
+  agent: Agent; active: boolean; isDefault?: boolean; onClick: () => void;
+  onTogglePin: () => void; onSetDefault: () => void; onEdit: () => void;
+  onExport: () => void; onClone: () => void; onDelete: () => void; token: any;
 }) {
-  const displayName = title || name;
+  const { t } = useTranslation('agent');
+  const displayName = agent.title || agent.name;
+  const menuItems: MenuProps['items'] = [
+    {
+      key: 'toggle-pin',
+      icon: <Pin size={14} />,
+      label: t(agent.pinned ? 'agent.chat.menu.unpin' : 'agent.chat.menu.pin'),
+      onClick: onTogglePin,
+    },
+    {
+      key: 'set-default',
+      icon: <Sparkles size={14} />,
+      label: t('agent.chat.menu.setDefault'),
+      onClick: onSetDefault,
+      disabled: isDefault,
+    },
+    { type: 'divider' },
+    { key: 'edit', icon: <Pencil size={14} />, label: t('agent.chat.menu.edit'), onClick: onEdit },
+    { key: 'clone', icon: <Copy size={14} />, label: t('agent.chat.menu.clone'), onClick: onClone },
+    { key: 'export', icon: <Download size={14} />, label: t('agent.chat.menu.export'), onClick: onExport },
+    { type: 'divider' },
+    { key: 'delete', icon: <Trash2 size={14} />, label: t('agent.chat.menu.delete'), danger: true, onClick: onDelete },
+  ];
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       title={displayName}
       style={{
         width: '100%',
         height: 48,
-        border: 0,
         borderRadius: 10,
         padding: '7px 8px',
         display: 'flex',
@@ -676,17 +784,33 @@ function AgentRow({ name, title, avatar, desc, active, pinned, onClick, token }:
         color: token.colorText,
       }}
     >
-      <AgentIcon label={displayName} name={name} avatar={avatar} size={30} active={active} token={token} />
+      <AgentIcon label={displayName} name={agent.name} avatar={agent.avatar} size={30} active={active} token={token} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: 12, fontWeight: 750, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {displayName}{pinned ? ' ★' : ''}
+          {displayName}{agent.pinned ? ' ★' : ''}
         </span>
         <span style={{ display: 'block', color: token.colorTextTertiary, fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {desc || ''}
+          {agent.description || ''}
         </span>
       </span>
-      <MoreHorizontal size={14} color={token.colorTextTertiary} />
-    </button>
+      <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+            cursor: 'pointer', color: token.colorTextTertiary,
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = token.colorFillSecondary; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+        >
+          <MoreHorizontal size={14} />
+        </div>
+      </Dropdown>
+    </div>
   );
 }
 
