@@ -1,8 +1,10 @@
 package actor
 
 import (
+	"context"
 	"testing"
 
+	identity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -58,5 +60,49 @@ func TestBackfillPresetAvatar(t *testing.T) {
 	}
 	if got := actors[1].Icon; got != custom.Icon {
 		t.Fatalf("custom avatar = %q, want %q", got, custom.Icon)
+	}
+}
+
+func TestEnsurePresetActorIdentityMigratesLegacyPTID(t *testing.T) {
+	gdb, err := gorm.Open(sqlite.Open("file:preset_actor_identity?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := gdb.AutoMigrate(&db.Actor{}, &identity.Identity{}, &identity.Key{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	const canonicalPTID = "ptid:v1:actor:peers:p:alice:fingerprint"
+	actorRecord := db.Actor{
+		ID:                347760575104679938,
+		PreferredUsername: "alice",
+		Email:             "alice@p.t",
+		PTID:              "alice",
+	}
+	if err := gdb.Create(&actorRecord).Error; err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	if err := gdb.Create(&identity.Identity{
+		PTID:        canonicalPTID,
+		Username:    "alice",
+		Namespace:   presetActorNamespace,
+		Type:        string(identity.TypePerson),
+		Fingerprint: "fingerprint",
+		Version:     "v1",
+		Status:      "active",
+	}).Error; err != nil {
+		t.Fatalf("create identity: %v", err)
+	}
+
+	if err := ensurePresetActorIdentity(context.Background(), gdb, &actorRecord); err != nil {
+		t.Fatalf("ensure identity: %v", err)
+	}
+
+	var stored db.Actor
+	if err := gdb.First(&stored, actorRecord.ID).Error; err != nil {
+		t.Fatalf("reload actor: %v", err)
+	}
+	if stored.PTID != canonicalPTID {
+		t.Fatalf("ptid = %q, want %q", stored.PTID, canonicalPTID)
 	}
 }

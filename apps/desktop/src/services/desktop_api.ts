@@ -612,6 +612,14 @@ export interface PresenceTransitionEvent {
   affected_sessions: string[];
 }
 
+export interface ActorSearchItem {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string;
+  avatar: string;
+}
+
 /**
  * Input for `oss_upload_attachment_chat` (field names match the Rust
  * `OssUploadAttachmentInput`). Chat uploads always carry a `bucket`
@@ -4633,7 +4641,7 @@ export const api = {
   // ── Actor API ──
 
   actorSearchActors: async (query: string) => {
-    const data = await invokeRustDataFromStatus<{ q: string }, { items: any[]; total: number }>(
+    const data = await invokeRustDataFromStatus<{ q: string }, { items: ActorSearchItem[]; total: number }>(
       'actor_search_actors', { q: query },
     );
     return { items: data?.items || [], total: data?.total || 0 };

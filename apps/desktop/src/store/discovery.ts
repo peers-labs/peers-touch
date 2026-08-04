@@ -87,16 +87,13 @@ export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery',
       const data = await desktopApi.actorSearchActors(trimmed);
       // Drop late results: only honour the *last* search the user issued.
       if (token !== inFlightSearchToken) return;
-      const items: DiscoveryUser[] = (data.items ?? []).map((raw: any) => ({
+      const items: DiscoveryUser[] = (data.items ?? []).map((raw) => ({
         id: String(raw.id ?? ''),
         username: String(raw.username ?? ''),
         displayName: String(raw.displayName ?? raw.username ?? ''),
         email: raw.email ? String(raw.email) : undefined,
-        actorId: raw.actorId ? String(raw.actorId) : undefined,
+        actorId: raw.id ? String(raw.id) : undefined,
         avatar: raw.avatar ? String(raw.avatar) : undefined,
-        homeStationDomain: raw.homeStationDomain || raw.home_station_domain
-          ? String(raw.homeStationDomain ?? raw.home_station_domain)
-          : undefined,
       }));
       set({ results: items, total: data.total ?? items.length, searching: false });
     } catch (err) {

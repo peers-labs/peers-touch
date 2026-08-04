@@ -2,15 +2,19 @@ package actor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	identity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
 	"github.com/peers-labs/peers-touch/station/frame/touch/crypto"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+const presetActorNamespace = "peers"
 
 type PresetActorConfig struct {
 	Username    string
@@ -28,6 +32,9 @@ func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
+		return err
+	}
+	if err := identity.NewStore(rds).AutoMigrate(); err != nil {
 		return err
 	}
 
@@ -51,6 +58,9 @@ func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
 
 		var exists db.Actor
 		if err := rds.Where("email = ?", email).Or("preferred_username = ?", p.Username).First(&exists).Error; err == nil {
+			if err := ensurePresetActorIdentity(ctx, rds, &exists); err != nil {
+				return fmt.Errorf("seed preset actor %s identity: %w", p.Username, err)
+			}
 			if err := backfillPresetAvatar(rds, &exists, p.Avatar); err != nil {
 				log.Warnf(ctx, "seed preset avatar for %s: %v", p.Username, err)
 			}
@@ -96,6 +106,9 @@ func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
 			log.Warnf(ctx, "seed create actor err: %v", err)
 			continue
 		}
+		if err := ensurePresetActorIdentity(ctx, rds, &a); err != nil {
+			return fmt.Errorf("seed preset actor %s identity: %w", p.Username, err)
+		}
 
 		meta := db.ActorTouchMeta{ActorID: a.ID}
 		if err := rds.Create(&meta).Error; err != nil {
@@ -111,4 +124,44 @@ func backfillPresetAvatar(rds *gorm.DB, actor *db.Actor, avatar string) error {
 		return nil
 	}
 	return rds.Model(actor).Update("icon", avatar).Error
+}
+
+func ensurePresetActorIdentity(ctx context.Context, rds *gorm.DB, actorRecord *db.Actor) error {
+	if _, err := identity.Parse(actorRecord.PTID); err == nil {
+		return nil
+	}
+
+	var existing identity.Identity
+	err := rds.WithContext(ctx).
+		Where("username = ? AND namespace = ?", actorRecord.PreferredUsername, presetActorNamespace).
+		Order("id ASC").
+		First(&existing).Error
+	switch {
+	case err == nil:
+		if _, parseErr := identity.Parse(existing.PTID); parseErr != nil {
+			return fmt.Errorf("stored preset identity is invalid: %w", parseErr)
+		}
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		created, createErr := identity.CreateIdentity(
+			ctx,
+			actorRecord.PreferredUsername,
+			presetActorNamespace,
+			identity.TypePerson,
+		)
+		if createErr != nil {
+			return createErr
+		}
+		existing = *created
+	default:
+		return err
+	}
+
+	if err := rds.WithContext(ctx).
+		Model(&db.Actor{}).
+		Where("id = ?", actorRecord.ID).
+		Update("ptid", existing.PTID).Error; err != nil {
+		return err
+	}
+	actorRecord.PTID = existing.PTID
+	return nil
 }

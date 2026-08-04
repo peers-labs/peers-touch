@@ -61,6 +61,7 @@ use crate::application::tts as app_tts;
 
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
+use crate::interface::tauri_commands::actor::actor_search_item_to_json;
 use crate::interface::tauri_commands::oss::{
     capture_screenshot_to_temp_file, safe_temp_filename, validate_chat_upload_scope,
     OssCaptureScreenshotInput, OssUploadAttachmentBytesInput,
@@ -1870,16 +1871,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     return to_json(e.into_app_result::<StubPayload>("Station request failed"));
                 }
             };
-            let items: Vec<Value> = resp
-                .items
-                .iter()
-                .map(|a| {
-                    json!({
-                        "id": a.id, "username": a.username, "displayName": a.display_name,
-                        "email": a.email, "actorId": a.actor_id.to_string(), "avatar": a.avatar,
-                    })
-                })
-                .collect();
+            let items: Vec<Value> = resp.items.iter().map(actor_search_item_to_json).collect();
             to_json(to_stub(
                 "actor_search_actors",
                 json!({"items": items, "total": resp.total}),

@@ -31,6 +31,16 @@ fn to_stub(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     })
 }
 
+pub(crate) fn actor_search_item_to_json(actor: &model::actor::Actor) -> serde_json::Value {
+    json!({
+        "id": actor.id,
+        "username": actor.username,
+        "displayName": actor.display_name,
+        "email": actor.email,
+        "avatar": actor.avatar,
+    })
+}
+
 #[tauri::command]
 pub fn actor_search_users(
     input: ActorSearchUsersInput,
@@ -56,20 +66,7 @@ pub fn actor_search_users(
         }
     };
 
-    let items: Vec<serde_json::Value> = resp
-        .items
-        .iter()
-        .map(|a| {
-            json!({
-                "id": a.id,
-                "username": a.username,
-                "displayName": a.display_name,
-                "email": a.email,
-                "actorId": a.actor_id,
-                "avatar": a.avatar,
-            })
-        })
-        .collect();
+    let items: Vec<serde_json::Value> = resp.items.iter().map(actor_search_item_to_json).collect();
 
     to_stub(
         "actor_search_users",
@@ -126,4 +123,26 @@ pub fn actor_get_my_profile(
     window: Window,
 ) -> AppResult<StubPayload> {
     actor_get_me(state, window)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actor_search_json_uses_ptid_without_internal_actor_id() {
+        let actor = model::actor::Actor {
+            id: "ptid:v1:actor:peers:p:alice:fingerprint".to_string(),
+            actor_id: 347760575104679938,
+            ..Default::default()
+        };
+
+        let value = actor_search_item_to_json(&actor);
+
+        assert_eq!(
+            value.get("id").and_then(serde_json::Value::as_str),
+            Some("ptid:v1:actor:peers:p:alice:fingerprint")
+        );
+        assert!(value.get("actorId").is_none());
+    }
 }
