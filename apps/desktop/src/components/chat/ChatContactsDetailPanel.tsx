@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button } from '@lobehub/ui';
@@ -6,41 +6,50 @@ import { Empty, theme } from 'antd';
 import { MessageCircle, Users } from 'lucide-react';
 
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
+import { presentError } from '../../services/errorPresenter';
+import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
+import { imServiceV1 } from '../../services/im-service';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import {
+  findContactConversation,
+  type ContactSelection,
+} from './contactSelection';
 
 interface ChatContactsDetailPanelProps {
+  selectedContact: ContactSelection | null;
   onMessage: () => void;
 }
 
-export function ChatContactsDetailPanel({ onMessage }: ChatContactsDetailPanelProps) {
+export function ChatContactsDetailPanel({
+  selectedContact,
+  onMessage,
+}: ChatContactsDetailPanelProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
+  const [openingConversation, setOpeningConversation] = useState(false);
   const {
-    activeTab,
-    activeSessionUlid,
-    activeGroupUlid,
     getIMConversations,
     peerProfiles,
     loadPeerProfile,
+    loadSessions,
+    selectSession,
+    selectGroup,
     restoreConversation,
   } = useActiveSocialChatSlice((s) => ({
-    activeTab: s.activeTab,
-    activeSessionUlid: s.activeSessionUlid,
-    activeGroupUlid: s.activeGroupUlid,
     getIMConversations: s.getIMConversations,
     peerProfiles: s.peerProfiles,
     loadPeerProfile: s.loadPeerProfile,
+    loadSessions: s.loadSessions,
+    selectSession: s.selectSession,
+    selectGroup: s.selectGroup,
     restoreConversation: s.restoreConversation,
   }));
 
-  const activeConversationId = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
-  const activeConversation = activeConversationId
-    ? getIMConversations().find(
-      (conversation) => conversation.kind === activeTab && conversation.id === activeConversationId,
-    )
+  const activeConversation = selectedContact
+    ? findContactConversation(selectedContact, getIMConversations())
     : undefined;
-  const isGroup = activeConversation?.kind === 'group';
-  const peerDid = activeConversation?.kind === 'friend' ? activeConversation.peerDid || '' : '';
+  const isGroup = selectedContact?.kind === 'group';
+  const peerDid = selectedContact?.kind === 'friend' ? selectedContact.peerDid : '';
   const cachedPeer = peerDid ? peerProfiles[peerDid] : undefined;
 
   // Lazy peer profile load. The cache is single-owner (socialChat store);
@@ -52,33 +61,34 @@ export function ChatContactsDetailPanel({ onMessage }: ChatContactsDetailPanelPr
   }, [peerDid, loadPeerProfile]);
 
   const profile = useMemo<PublicProfileModel | null>(() => {
-    if (activeConversation?.kind === 'group') {
+    if (selectedContact?.kind === 'group') {
       return {
-        displayName: activeConversation.title || t('chat.social.sessionList.unnamedGroup'),
-        did: activeConversation.id,
+        displayName: selectedContact.displayName,
+        avatar: selectedContact.avatar,
+        did: selectedContact.conversationId,
         relationLabel: t('chat.social.contacts.groupLabel'),
         relationTone: 'processing',
         stats: [
           {
             label: t('chat.social.detail.membersLabel'),
-            value: Number(activeConversation.memberCount ?? 0),
+            value: Number(activeConversation?.memberCount ?? selectedContact.memberCount),
           },
         ],
       };
     }
-    if (!activeConversation) return null;
+    if (!selectedContact) return null;
     const sessionFallback: PublicProfileModel = {
-      displayName: activeConversation.title || t('chat.social.sessionList.unknown'),
-      avatar: activeConversation.avatar || '',
+      displayName: selectedContact.displayName,
+      avatar: selectedContact.avatar || '',
       did: peerDid,
       relationLabel: t('chat.social.contacts.friendLabel'),
       relationTone: 'success',
     };
     if (!cachedPeer) return sessionFallback;
     return mergePeerProfile(sessionFallback, cachedPeer, t);
-  }, [activeConversation, cachedPeer, peerDid, t]);
+  }, [activeConversation, cachedPeer, peerDid, selectedContact, t]);
 
-  if (!activeConversation) {
+  if (!selectedContact) {
     return (
       <Flexbox
         flex={1}
@@ -95,6 +105,41 @@ export function ChatContactsDetailPanel({ onMessage }: ChatContactsDetailPanelPr
   }
 
   if (!profile) return null;
+
+  const handleMessage = async () => {
+    if (selectedContact.kind === 'group') {
+      selectGroup(selectedContact.conversationId);
+      restoreConversation('group', selectedContact.conversationId);
+      onMessage();
+      return;
+    }
+
+    setOpeningConversation(true);
+    try {
+      let conversation = findContactConversation(selectedContact, getIMConversations());
+
+      if (!conversation) {
+        await imServiceV1.conversation.createDirect(selectedContact.peerDid);
+        await loadSessions();
+        conversation = findContactConversation(selectedContact, getIMConversations());
+      }
+
+      if (!conversation) {
+        throw new Error('Direct conversation was not available after creation');
+      }
+
+      selectSession(conversation.id);
+      restoreConversation('friend', conversation.id);
+      onMessage();
+    } catch (error) {
+      presentError(error, {
+        mapper: mapChatError,
+        context: { operation: 'conversationAction' },
+      });
+    } finally {
+      setOpeningConversation(false);
+    }
+  };
 
   return (
     <Flexbox
@@ -127,10 +172,8 @@ export function ChatContactsDetailPanel({ onMessage }: ChatContactsDetailPanelPr
             size="large"
             type="primary"
             icon={<MessageCircle size={16} />}
-            onClick={() => {
-              if (activeConversation) restoreConversation(activeConversation.kind, activeConversation.id);
-              onMessage();
-            }}
+            loading={openingConversation}
+            onClick={() => void handleMessage()}
           >
             {t('chat.social.contacts.sendMessage')}
           </Button>
