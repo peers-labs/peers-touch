@@ -39,18 +39,21 @@ const (
 )
 
 type Message struct {
-	MessageID      string
-	ConversationID string
-	TurnID         string
-	ModelName      string
-	Role           MessageRole
-	Content        string
-	ReasoningJSON  json.RawMessage
-	ToolCallsJSON  json.RawMessage
-	MetadataJSON   json.RawMessage
-	ErrorJSON      json.RawMessage
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	MessageID         string
+	ConversationID    string
+	TurnID            string
+	ModelName         string
+	Role              MessageRole
+	Content           string
+	ReasoningJSON     json.RawMessage
+	ToolCallsJSON     json.RawMessage
+	MetadataJSON      json.RawMessage
+	ErrorJSON         json.RawMessage
+	Seq               int64
+	BranchID          string
+	ReplacesMessageID string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // ---------------------------------------------------------------------------

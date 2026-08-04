@@ -1,8 +1,8 @@
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use crate::domain::pin_lock::{self, EncryptedSession, PinProtection};
 use crate::infrastructure::avatar_cache;
 use crate::infrastructure::local_scope;
 use crate::infrastructure::storage::{self, StorageKind};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;

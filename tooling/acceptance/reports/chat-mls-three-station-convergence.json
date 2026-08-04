@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "gate": "chat-mls-three-station-convergence",
-  "generated_at_unix_ms": 1785725010538,
+  "generated_at_unix_ms": 1785743176259,
   "status": "pass",
-  "deployed_commit": "6acefbf39526",
+  "deployed_commit": "14ef5b871b6d",
   "federation_id": "fed_01KZ2Q3W7CY99JMYZRRATBT132",
-  "conversation_id": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+  "conversation_id": "e71f8451-3feb-4301-ab62-655cb7bdaaf3",
   "transitions": {
     "genesis_epoch": 1,
     "remote_add_device_epoch": 3,
@@ -25,36 +25,36 @@
   },
   "final_client_heads": {
     "alice": {
-      "conversationId": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+      "conversationId": "e71f8451-3feb-4301-ab62-655cb7bdaaf3",
       "mlsEpoch": 5,
-      "groupContextSha256": "c89b171b470a91664d28af09581b81bd59beac3b416a662932896dd78c7bba50",
-      "ratchetTreeSha256": "a704bb83f57d5ce9cb46871418ec99d4d848d5cb6962cb8afc8cb83de2b2df98",
-      "memberCredentialsSha256": "70fd40dec3f248451adb639c8bddfc50176333710ce5849114e50c3183fff232",
+      "groupContextSha256": "884e1e9fb0dd146179c66a855fc5fa9bc9fd89f21ff65417c0fb9073c2a716b2",
+      "ratchetTreeSha256": "fc042893dd8839873cbde2e8ccb26617e5e61172fd62217d5fd866cdf509349c",
+      "memberCredentialsSha256": "97ad2555ffa69c4d5099ee80f16ade4c9d555e16ecaf9020f96edfa1584d4975",
       "members": [
         {
-          "ptid": "ptid:v1:actor:peers:p:c6alice1785724935360:12207bfe6cfb3a0a18c5cffc8065c74a29a34a564fe92c5cb109c76b67f1e43cf360",
-          "deviceId": "01KZ2R091P7T60VXTAS5X8D09B"
+          "ptid": "ptid:v1:actor:peers:p:c6alice1785743099434:12204622f7df2c4429713db972e75b26cb1cf65599d7a8d37a542a6beeee4d46a17e",
+          "deviceId": "01KZ39AK2NPN91P8XMCY7YW6XR"
         },
         {
-          "ptid": "ptid:v1:actor:peers:p:c6charlie17857249401:1220d9fda590ab5b136bcc2198d39b3217a32f7f17e3c09f279274b507033628521c",
-          "deviceId": "01KZ2R0DA4N1RBF66QR386QKR7"
+          "ptid": "ptid:v1:actor:peers:p:c6charlie17857431039:1220fd3888f774a79380eb5bdca4efe007059e3cea34bab7f38173f71272b3dab7ac",
+          "deviceId": "01KZ39AQQ7KW3KJV86MS4A9R53"
         }
       ]
     },
     "charlie": {
-      "conversationId": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+      "conversationId": "e71f8451-3feb-4301-ab62-655cb7bdaaf3",
       "mlsEpoch": 5,
-      "groupContextSha256": "c89b171b470a91664d28af09581b81bd59beac3b416a662932896dd78c7bba50",
-      "ratchetTreeSha256": "a704bb83f57d5ce9cb46871418ec99d4d848d5cb6962cb8afc8cb83de2b2df98",
-      "memberCredentialsSha256": "70fd40dec3f248451adb639c8bddfc50176333710ce5849114e50c3183fff232",
+      "groupContextSha256": "884e1e9fb0dd146179c66a855fc5fa9bc9fd89f21ff65417c0fb9073c2a716b2",
+      "ratchetTreeSha256": "fc042893dd8839873cbde2e8ccb26617e5e61172fd62217d5fd866cdf509349c",
+      "memberCredentialsSha256": "97ad2555ffa69c4d5099ee80f16ade4c9d555e16ecaf9020f96edfa1584d4975",
       "members": [
         {
-          "ptid": "ptid:v1:actor:peers:p:c6alice1785724935360:12207bfe6cfb3a0a18c5cffc8065c74a29a34a564fe92c5cb109c76b67f1e43cf360",
-          "deviceId": "01KZ2R091P7T60VXTAS5X8D09B"
+          "ptid": "ptid:v1:actor:peers:p:c6alice1785743099434:12204622f7df2c4429713db972e75b26cb1cf65599d7a8d37a542a6beeee4d46a17e",
+          "deviceId": "01KZ39AK2NPN91P8XMCY7YW6XR"
         },
         {
-          "ptid": "ptid:v1:actor:peers:p:c6charlie17857249401:1220d9fda590ab5b136bcc2198d39b3217a32f7f17e3c09f279274b507033628521c",
-          "deviceId": "01KZ2R0DA4N1RBF66QR386QKR7"
+          "ptid": "ptid:v1:actor:peers:p:c6charlie17857431039:1220fd3888f774a79380eb5bdca4efe007059e3cea34bab7f38173f71272b3dab7ac",
+          "deviceId": "01KZ39AQQ7KW3KJV86MS4A9R53"
         }
       ]
     }
@@ -67,52 +67,52 @@
     "authority_station": "one",
     "recipient_station": "three",
     "command_path": "desktop-rust -> home -> authority -> committed-event",
-    "event_id": "cc6cc96c-8b61-4971-a638-f9b76ccecf72",
-    "event_hash": "bb5cfe085d3cbe5bd96ee661372593c6e98fe68c6cb4bb03120c8511de927a0c",
+    "event_id": "94b87847-f9ed-4aad-a1da-4bcb4bfd25c4",
+    "event_hash": "2d1c5da4ef1393b32a266b3b06b2bbbebb52be784e8dc73842d3b6568675cf2b",
     "recipient_decrypt": true
   },
   "access_tokens_present": false,
   "station_public_heads": {
     "one": {
       "source": "authority",
-      "conversation_id": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+      "conversation_id": "e71f8451-3feb-4301-ab62-655cb7bdaaf3",
       "federation_id": "fed_01KZ2Q3W7CY99JMYZRRATBT132",
       "authority_station_peer_id": "12D3KooWQZwHCzezsjLCSYpAm2wvwDL5xD4iZ48MjWKL7TXbKC1B",
       "authority_epoch": 1,
       "group_seq": 7,
-      "event_hash": "05e68c16ae8d27d23c860520b351b003ae6853eb86f1072f436763852be7dda1",
+      "event_hash": "6d67d086dd7a70d1fc8eb99d5a198a02218c6550ecab0df33b37e497f4b8b749",
       "membership_epoch": 5,
       "mls_epoch": 5,
-      "transition_id": "01KZ2R25G7MGGDBZ860X59H558",
-      "commit_sha256": "8bd14860dfcc5f264329a7adc691ea45eb9acb3ad75f3fe25de41f448c9fe663",
+      "transition_id": "01KZ39CKABZHBYXQRFH4WR5RMH",
+      "commit_sha256": "fd9e49e81718d8a65a389831a46e1e9cba3fda1b019f325d7b97482a2e1ad961",
       "status": "active"
     },
     "two": {
       "source": "follower",
-      "conversation_id": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+      "conversation_id": "e71f8451-3feb-4301-ab62-655cb7bdaaf3",
       "federation_id": "fed_01KZ2Q3W7CY99JMYZRRATBT132",
       "authority_station_peer_id": "12D3KooWQZwHCzezsjLCSYpAm2wvwDL5xD4iZ48MjWKL7TXbKC1B",
       "authority_epoch": 1,
       "group_seq": 7,
-      "event_hash": "05e68c16ae8d27d23c860520b351b003ae6853eb86f1072f436763852be7dda1",
+      "event_hash": "6d67d086dd7a70d1fc8eb99d5a198a02218c6550ecab0df33b37e497f4b8b749",
       "membership_epoch": 5,
       "mls_epoch": 5,
-      "transition_id": "01KZ2R25G7MGGDBZ860X59H558",
-      "commit_sha256": "8bd14860dfcc5f264329a7adc691ea45eb9acb3ad75f3fe25de41f448c9fe663",
+      "transition_id": "01KZ39CKABZHBYXQRFH4WR5RMH",
+      "commit_sha256": "fd9e49e81718d8a65a389831a46e1e9cba3fda1b019f325d7b97482a2e1ad961",
       "status": "active"
     },
     "three": {
       "source": "follower",
-      "conversation_id": "0d38e1c5-0113-4d1b-a796-9ea927296748",
+      "conversation_id": "e71f8451-3feb-4301-ab62-655cb7bdaaf3",
       "federation_id": "fed_01KZ2Q3W7CY99JMYZRRATBT132",
       "authority_station_peer_id": "12D3KooWQZwHCzezsjLCSYpAm2wvwDL5xD4iZ48MjWKL7TXbKC1B",
       "authority_epoch": 1,
       "group_seq": 7,
-      "event_hash": "05e68c16ae8d27d23c860520b351b003ae6853eb86f1072f436763852be7dda1",
+      "event_hash": "6d67d086dd7a70d1fc8eb99d5a198a02218c6550ecab0df33b37e497f4b8b749",
       "membership_epoch": 5,
       "mls_epoch": 5,
-      "transition_id": "01KZ2R25G7MGGDBZ860X59H558",
-      "commit_sha256": "8bd14860dfcc5f264329a7adc691ea45eb9acb3ad75f3fe25de41f448c9fe663",
+      "transition_id": "01KZ39CKABZHBYXQRFH4WR5RMH",
+      "commit_sha256": "fd9e49e81718d8a65a389831a46e1e9cba3fda1b019f325d7b97482a2e1ad961",
       "status": "active"
     }
   }

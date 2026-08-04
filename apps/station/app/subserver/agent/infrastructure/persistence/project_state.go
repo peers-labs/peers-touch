@@ -11,8 +11,8 @@ type ProjectState struct {
 	SourceEventID  string    `gorm:"type:varchar(36);index:idx_agent_project_states_event"`
 	SourceEventSeq int64     `gorm:"not null;default:0;index:idx_agent_project_states_event_seq"`
 	PayloadJSON    string    `gorm:"type:text"`
-	CreatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_project_states_created"`
-	UpdatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_project_states_updated"`
+	CreatedAt      time.Time `gorm:"not null;autoCreateTime;index:idx_agent_project_states_created"`
+	UpdatedAt      time.Time `gorm:"not null;autoUpdateTime;index:idx_agent_project_states_updated"`
 }
 
 func (ProjectState) TableName() string { return "agent_project_states" }

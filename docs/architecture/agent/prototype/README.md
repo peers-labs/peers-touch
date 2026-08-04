@@ -1,6 +1,6 @@
-# Agent LobeHub Prototype Review Entry
+# Historical LobeHub Benchmark Prototype Review Entry
 
-> **Status**: pending-review
+> **Status**: superseded
 > **Version**: v0.2
 > **Created**: 2026-07-07 | **Updated**: 2026-07-08
 > **Owner**: Peers-Touch Agent Team
@@ -11,7 +11,10 @@
 
 ## Purpose
 
-This is the pending-review entry for the Peers-Touch Agent LobeHub parity prototype.
+This is the historical review entry for the superseded LobeHub benchmark
+prototype. It preserves source comparison and decision evidence; it is not the
+Peers Touch product prototype. Current product review lives at
+`docs/architecture/agent/modern-chat-agent/prototype/README.md`.
 
 It records the Owner review result and the updated revision boundary:
 
