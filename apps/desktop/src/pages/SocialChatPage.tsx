@@ -10,6 +10,7 @@ import { ChatMessageArea } from '../components/chat/ChatMessageArea';
 import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
 import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
 import { CallSurface } from '../components/chat/CallSurface';
+import type { ContactSelection } from '../components/chat/contactSelection';
 import { api } from '../services/desktop_api';
 import { scheduleIdle } from '../kernel/boot';
 import { useActiveSocialChatSlice } from '../components/chat/useActiveSocialChatStore';
@@ -18,6 +19,11 @@ import { readFeatureFlags } from '../modules/settings/featureFlags';
 import { friendChatP2p } from '../modules/p2p/friendChatP2p';
 
 type ChatSubPage = 'chats' | 'contacts';
+
+interface OwnedContactSelection {
+  actorId: string;
+  contact: ContactSelection;
+}
 
 // Page contract:
 //   • All projection state (sessions, groups, friend requests, conversation
@@ -76,6 +82,11 @@ export function SocialChatPage() {
   }, [activePeerDid]);
 
   const [subPage, setSubPage] = useState<ChatSubPage>('chats');
+  const [ownedContactSelection, setOwnedContactSelection] = useState<OwnedContactSelection | null>(null);
+  const selectedContact = ownedContactSelection?.actorId === currentUserDid
+    ? ownedContactSelection.contact
+    : null;
+
   // Lazy-mount contacts panel: only create on first visit, then keep
   // alive. Pre-warm during the first idle window so the contacts tab
   // click is a pure visibility flip rather than a full subtree mount.
@@ -202,7 +213,12 @@ export function SocialChatPage() {
       </div>
       {contactsMounted && (
         <div style={{ display: subPage === 'contacts' ? 'contents' : 'none' }}>
-          <ChatContactsPanel />
+          <ChatContactsPanel
+            selectedContact={selectedContact}
+            onSelectContact={(contact) => {
+              setOwnedContactSelection({ actorId: currentUserDid || '', contact });
+            }}
+          />
         </div>
       )}
 
@@ -213,7 +229,10 @@ export function SocialChatPage() {
           {openThreadRootUlid ? <ChatThreadPanel /> : showDetail && <ChatDetailPanel />}
         </>
       ) : (
-        <ChatContactsDetailPanel onMessage={() => setSubPage('chats')} />
+        <ChatContactsDetailPanel
+          selectedContact={selectedContact}
+          onMessage={() => setSubPage('chats')}
+        />
       )}
       {/* Voice / video call surface — page-level so a ringing call
           stays visible regardless of which conversation is open. */}
