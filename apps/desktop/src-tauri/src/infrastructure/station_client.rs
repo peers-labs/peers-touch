@@ -9,7 +9,7 @@ use reqwest::Method;
 use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock, RwLock};
 
 // ---------------------------------------------------------------------------
 // Global station registry (initialized once during bootstrap)
@@ -21,19 +21,19 @@ static STATION_REGISTRY: OnceLock<StationRegistry> = OnceLock::new();
 // Device ID — canonical per-actor identifier injected as X-Device-ID
 // ---------------------------------------------------------------------------
 
-static DEVICE_ID: OnceLock<String> = OnceLock::new();
+static DEVICE_ID: LazyLock<RwLock<Option<String>>> = LazyLock::new(|| RwLock::new(None));
 
 pub(crate) fn set_device_id(id: String) {
-    let _ = DEVICE_ID.set(id);
+    *DEVICE_ID.write().expect("device id lock poisoned") = Some(id);
 }
 
-pub(crate) fn device_id() -> Option<&'static str> {
-    DEVICE_ID.get().map(|s| s.as_str())
+pub(crate) fn device_id() -> Option<String> {
+    DEVICE_ID.read().ok().and_then(|id| id.clone())
 }
 
 fn with_device_id(req: RequestBuilder) -> RequestBuilder {
-    match DEVICE_ID.get() {
-        Some(id) => req.header("X-Device-ID", id.as_str()),
+    match device_id() {
+        Some(id) => req.header("X-Device-ID", id),
         None => req,
     }
 }
@@ -891,18 +891,49 @@ pub(crate) fn request_json_auth(
     query: Option<&[(&str, String)]>,
     body: Option<&Value>,
 ) -> Result<Value, StationClientError> {
+    let current_device_id = device_id();
+    request_json_auth_with_optional_device_id(
+        method,
+        path,
+        token,
+        query,
+        body,
+        current_device_id.as_deref(),
+    )
+}
+
+pub(crate) fn request_json_auth_with_device_id(
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Value>,
+    device_id: &str,
+) -> Result<Value, StationClientError> {
+    request_json_auth_with_optional_device_id(method, path, token, query, body, Some(device_id))
+}
+
+fn request_json_auth_with_optional_device_id(
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Value>,
+    device_id: Option<&str>,
+) -> Result<Value, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
     tracing::debug!(method = %method, path = %path, "→ station (json, auth)");
 
     let start = std::time::Instant::now();
     let client = build_client()?;
 
-    let mut req = with_device_id(
-        client
-            .request(method.clone(), &url)
-            .bearer_auth(token)
-            .header("Accept", "application/json"),
-    );
+    let mut req = client
+        .request(method.clone(), &url)
+        .bearer_auth(token)
+        .header("Accept", "application/json");
+    if let Some(device_id) = device_id.filter(|id| !id.is_empty()) {
+        req = req.header("X-Device-ID", device_id);
+    }
 
     if let Some(q) = query {
         req = req.query(q);
