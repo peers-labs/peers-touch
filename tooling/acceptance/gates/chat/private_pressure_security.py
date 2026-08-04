@@ -89,6 +89,18 @@ def station_url() -> str:
     return os.environ.get("CHAT_PRIVATE_PRESSURE_STATION_URL", DEFAULT_STATION_URL).rstrip("/")
 
 
+def require_disposable_station(base: str) -> None:
+    hostname = urllib.parse.urlparse(base).hostname
+    if hostname in {"127.0.0.1", "localhost", "::1"}:
+        return
+    if os.environ.get("PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS") == "1":
+        return
+    raise GateError(
+        "temporary actor gate requires a disposable loopback Station; "
+        "set PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS=1 only for an explicitly disposable remote database"
+    )
+
+
 def out_dir() -> Path:
     return Path(os.environ.get("CHAT_PRIVATE_PRESSURE_OUT_DIR", DEFAULT_OUT_DIR))
 
@@ -419,6 +431,7 @@ def write_report(report: dict[str, Any]) -> Path:
 
 def main() -> int:
     base = station_url()
+    require_disposable_station(base)
     actor_count = env_int("CHAT_PRIVATE_PRESSURE_ACTORS", DEFAULT_ACTORS)
     message_count = env_int("CHAT_PRIVATE_PRESSURE_MESSAGES", DEFAULT_MESSAGES)
     workers = env_int("CHAT_PRIVATE_PRESSURE_WORKERS", DEFAULT_WORKERS)

@@ -1,0 +1,95 @@
+import { describe, expect, it } from 'vitest';
+import type { DesktopIMConversationProjection } from '../../store/socialProjection';
+import {
+  findContactConversation,
+  friendContactSelection,
+  type ContactSelection,
+} from './contactSelection';
+
+function conversation(
+  id: string,
+  kind: 'friend' | 'group',
+  peerDid?: string,
+): DesktopIMConversationProjection {
+  return {
+    id,
+    kind,
+    peerDid,
+    title: id,
+    avatar: '',
+    lastActivityMs: 0,
+    unread: 0,
+    visibleUnread: 0,
+    muted: false,
+    alertEnabled: true,
+    hidden: false,
+    syncStatus: 'live',
+  };
+}
+
+describe('findContactConversation', () => {
+  const conversations = [
+    conversation('dm-1', 'friend', 'ptid:alice'),
+    conversation('group-1', 'group'),
+  ];
+
+  it('does not treat a peer PTID as a conversation ID', () => {
+    const selection: ContactSelection = {
+      kind: 'friend',
+      peerDid: 'ptid:bob',
+      displayName: 'Bob',
+    };
+
+    expect(findContactConversation(selection, conversations)).toBeUndefined();
+  });
+
+  it('resolves an accepted contact after its direct conversation exists', () => {
+    const selection: ContactSelection = {
+      kind: 'friend',
+      peerDid: 'ptid:alice',
+      displayName: 'Alice',
+    };
+
+    expect(findContactConversation(selection, conversations)?.id).toBe('dm-1');
+  });
+
+  it('resolves saved groups by conversation ID', () => {
+    const selection: ContactSelection = {
+      kind: 'group',
+      conversationId: 'group-1',
+      displayName: 'Group',
+      memberCount: 2,
+    };
+
+    expect(findContactConversation(selection, conversations)?.id).toBe('group-1');
+  });
+
+  it('links an accepted request actor to an existing direct conversation', () => {
+    expect(friendContactSelection(
+      'ptid:alice',
+      'Alice',
+      'avatar',
+      conversations,
+    )).toEqual({
+      kind: 'friend',
+      conversationId: 'dm-1',
+      peerDid: 'ptid:alice',
+      displayName: 'Alice',
+      avatar: 'avatar',
+    });
+  });
+
+  it('keeps an accepted request actor selectable before a DM exists', () => {
+    expect(friendContactSelection(
+      'ptid:bob',
+      'Bob',
+      undefined,
+      conversations,
+    )).toEqual({
+      kind: 'friend',
+      peerDid: 'ptid:bob',
+      displayName: 'Bob',
+      avatar: undefined,
+    });
+  });
+});

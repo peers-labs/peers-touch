@@ -56,6 +56,18 @@ def station_url() -> str:
     return os.environ.get("CHAT_GROUP_ADMIN_STATION_URL", DEFAULT_STATION_URL).rstrip("/")
 
 
+def require_disposable_station(base: str) -> None:
+    hostname = urllib.parse.urlparse(base).hostname
+    if hostname in {"127.0.0.1", "localhost", "::1"}:
+        return
+    if os.environ.get("PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS") == "1":
+        return
+    raise GateError(
+        "temporary actor gate requires a disposable loopback Station; "
+        "set PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS=1 only for an explicitly disposable remote database"
+    )
+
+
 def expected_build() -> str:
     return os.environ.get("CHAT_GROUP_ADMIN_EXPECTED_BUILD", "").strip()
 
@@ -349,6 +361,7 @@ def list_messages(base: str, actor: ActorLogin, group_id: str, expect_error: boo
 
 def main() -> int:
     base = station_url()
+    require_disposable_station(base)
     print("Group Admin E2E")
     print("===============")
     print(f"station={base}")
