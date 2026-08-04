@@ -4,8 +4,6 @@ import i18n, { resolveI18nValue } from '../i18n/index';
 import {
   api,
   streamAgentCollaborationEvents,
-  type Message,
-  type MessageAttachment,
   type Session,
   type StreamEvent,
   type ChatAttachmentInput,
@@ -15,6 +13,8 @@ import { agentService } from '../services/agent-service';
 import { buildAgentRuntimeConfig } from '../services/agent-runtime-config';
 import { useAgentStore } from './agent';
 import { useAgentTopicStore } from './agentTopics';
+import { getDesktopAgentChatCache } from '../storage/desktopAgentChatCache';
+import type { CachedAgentConversation, CachedAgentMessage } from '@peers-touch/client-chat-core';
 
 export { useAgentStore } from './agent';
 export type { Session } from '../services/desktop_api';
@@ -87,6 +87,13 @@ export interface ChatComposerAttachment {
   attachment?: ChatAttachmentInput;
 }
 
+export interface ErrorResolutionAction {
+  type: 'reauthCli' | 'openProviderSettings' | 'checkConnection';
+  cliId?: string;
+  providerId?: string;
+  label: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'tool' | 'system';
@@ -103,6 +110,9 @@ export interface ChatMessage {
   timestamp: number;
   model?: string;
   error?: string;
+  errorDetail?: string;
+  resolution?: ErrorResolutionAction | null;
+  providerId?: string;
   thinking?: string;
   thinkingDone?: boolean;
   processDuration?: number;
@@ -110,6 +120,163 @@ export interface ChatMessage {
   operation?: 'regenerate' | 'retry' | 'branch';
   replacementOf?: string;
   replacedBy?: string;
+}
+
+const agentChatCache = getDesktopAgentChatCache();
+
+function cachedConversationToSession(conversation: CachedAgentConversation): Session {
+  return {
+    id: conversation.conversationId,
+    key: conversation.conversationId,
+    agent_name: conversation.agentId,
+    title: resolveI18nValue(conversation.title) || '',
+    message_count: 0,
+    model_override: conversation.modelName,
+    created_at: conversation.createdAt,
+    updated_at: conversation.updatedAt,
+  };
+}
+
+function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
+  const chatMessage: ChatMessage = {
+    id: message.messageId,
+    role: message.role,
+    content: message.content,
+    contentType: 'text',
+    timestamp: new Date(message.createdAt).getTime(),
+    model: message.modelName,
+  };
+  if (message.role === 'assistant' && message.reasoningJson) {
+    try {
+      const reasoning = JSON.parse(message.reasoningJson) as { text?: string; done?: boolean; duration_ms?: number };
+      chatMessage.thinking = reasoning.text;
+      chatMessage.thinkingDone = reasoning.done ?? true;
+      if (typeof reasoning.duration_ms === 'number') chatMessage.processDuration = reasoning.duration_ms;
+    } catch {
+      chatMessage.thinking = message.reasoningJson;
+      chatMessage.thinkingDone = true;
+    }
+  }
+  if (message.role === 'assistant' && message.toolCallsJson) {
+    try {
+      const parsed = JSON.parse(message.toolCallsJson) as Array<{ id?: string; name?: string; args?: string; result?: string }>;
+      chatMessage.toolCalls = parsed.map((toolCall) => ({
+        id: toolCall.id || toolCall.name || '',
+        name: toolCall.name || 'tool',
+        args: toolCall.args,
+        result: toolCall.result,
+        pending: false,
+      }));
+    } catch {
+      // Malformed persisted tool-call payload; render message without tool calls.
+    }
+  }
+  return chatMessage;
+}
+
+function foldToolMessages(messages: ChatMessage[]): ChatMessage[] {
+  const folded: ChatMessage[] = [];
+  for (const message of messages) {
+    if (message.role === 'tool' && folded.length > 0) {
+      const previous = folded[folded.length - 1];
+      if (previous.role === 'assistant') {
+        const nameMatch = message.content.match(/\*\*(\w+)\*\*/);
+        const existing = previous.toolCalls || [];
+        previous.toolCalls = [...existing, {
+          id: message.id,
+          name: nameMatch?.[1] || 'tool',
+          result: message.content,
+          pending: false,
+        }];
+        continue;
+      }
+    }
+    folded.push(message);
+  }
+  return folded;
+}
+
+function isOptimisticMessageId(id: string): boolean {
+  return id.startsWith('temp-');
+}
+
+function isInFlightMessage(message: ChatMessage): boolean {
+  return message.loading === true || Boolean(message.error);
+}
+
+function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): ChatMessage {
+  const hasCot = source.toolCalls
+    || source.thinking
+    || source.thinkingDone != null
+    || source.processDuration != null
+    || source.lastEventAt != null
+    || source.attachments?.length
+    || source.images?.length
+    || source.operation
+    || source.replacementOf
+    || source.replacedBy
+    || source.errorDetail
+    || source.resolution;
+  if (!hasCot) return target;
+  return {
+    ...target,
+    toolCalls: target.toolCalls ?? source.toolCalls,
+    thinking: target.thinking ?? source.thinking,
+    thinkingDone: target.thinkingDone ?? source.thinkingDone,
+    processDuration: target.processDuration ?? source.processDuration,
+    lastEventAt: target.lastEventAt ?? source.lastEventAt,
+    attachments: target.attachments ?? source.attachments,
+    images: target.images ?? source.images,
+    operation: target.operation ?? source.operation,
+    replacementOf: target.replacementOf ?? source.replacementOf,
+    replacedBy: target.replacedBy ?? source.replacedBy,
+    error: target.error ?? source.error,
+    errorDetail: target.errorDetail ?? source.errorDetail,
+    resolution: target.resolution ?? source.resolution,
+  };
+}
+
+export function mergeServerMessages(currentMessages: ChatMessage[], serverMessages: ChatMessage[]): ChatMessage[] {
+  const currentById = new Map<string, ChatMessage>();
+  for (const message of currentMessages) currentById.set(message.id, message);
+
+  const merged: ChatMessage[] = serverMessages.map((serverMessage) => {
+    const match = currentById.get(serverMessage.id);
+    if (!match) return serverMessage;
+    return carryChainOfThoughtFields(serverMessage, match);
+  });
+
+  const mergedIds = new Set(merged.map((message) => message.id));
+
+  for (const message of currentMessages) {
+    if (mergedIds.has(message.id)) continue;
+    const isLocalOnly = isOptimisticMessageId(message.id) || isInFlightMessage(message);
+    if (!isLocalOnly) continue;
+    if (isSupersededByServer(message, merged)) continue;
+    merged.push(message);
+  }
+
+  return merged;
+}
+
+function isSupersededByServer(localMessage: ChatMessage, serverMessages: ChatMessage[]): boolean {
+  if (localMessage.role === 'user') {
+    return serverMessages.some(
+      (serverMessage) => serverMessage.role === 'user'
+        && serverMessage.content === localMessage.content
+        && serverMessage.timestamp >= localMessage.timestamp - 1000,
+    );
+  }
+  if (localMessage.role === 'assistant') {
+    const serverHasCompletedReply = serverMessages.some(
+      (serverMessage) => serverMessage.role === 'assistant'
+        && !serverMessage.loading
+        && Boolean(serverMessage.content)
+        && serverMessage.timestamp >= localMessage.timestamp - 1000,
+    );
+    if (serverHasCompletedReply && (localMessage.loading || !localMessage.content)) return true;
+  }
+  return false;
 }
 
 function normalizeDelegationStatus(value: unknown): DelegationTaskStatus {
@@ -212,11 +379,22 @@ export function extractMessageArtifacts(message: Pick<ChatMessage, 'id' | 'role'
   return artifacts;
 }
 
+export interface ChatOperation {
+  sessionKey: string;
+  startedAt: number;
+  status: 'running';
+  assistantId: string;
+  abortController: AbortController;
+}
+
 interface ChatState {
   sessions: Session[];
   currentSessionKey: string;
   messages: ChatMessage[];
   isStreaming: boolean;
+  streamingStartedAt: number | null;
+  operations: Record<string, ChatOperation>;
+  sessionBuffers: Record<string, ChatMessage[]>;
   abortController: AbortController | null;
 
 
@@ -226,6 +404,7 @@ interface ChatState {
   mergeSessions: (sessions: Session[]) => void;
   mergeSessionModel: (key: string, model: string, agentId: string) => void;
   selectSession: (key: string, sessionOverride?: Session) => Promise<void>;
+  bootstrapSession: () => Promise<void>;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
   sendMessage: (content: string, attachments?: ChatComposerAttachment[]) => void;
@@ -235,6 +414,7 @@ interface ChatState {
   branchFromMessage: (messageId: string) => Promise<void>;
   decideToolApproval: (approvalId: string, approved: boolean) => Promise<void>;
   stopStreaming: () => void;
+  stopOperation: (sessionKey: string) => void;
   deleteMessage: (id: string) => Promise<void>;
   editMessage: (id: string, content: string) => Promise<void>;
 
@@ -252,25 +432,30 @@ function tempId() {
 }
 
 function presentChatRuntimeError(message: string): string {
-  if (/unknown command|agent_execute_turn_stream|chat_completion_stream|Failed to execute agent turn|no credentials|credential|provider/i.test(message)) {
+  if (/unknown command|agent_execute_turn_stream|chat_completion_stream|Failed to execute agent turn/.test(message)) {
+    return i18n.t("chat.runtime.unavailable", { ns: "chat", defaultValue: "The selected runtime is not ready. Check model credentials and try again." });
+  }
+  if (/no credentials|credential (not found|missing|invalid)|provider.*not found for actor|record not found/i.test(message)) {
     return i18n.t("chat.runtime.unavailable", { ns: "chat", defaultValue: "The selected runtime is not ready. Check model credentials and try again." });
   }
   return message;
 }
 
 export function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
+  const s = (v: unknown): string => typeof v === 'string' ? v : v != null ? String(v) : '';
+  const d = event.data;
   switch (event.event) {
     case 'text':
-      return { ...msg, content: msg.content + (event.data.content || ''), loading: true, lastEventAt: Date.now() };
+      return { ...msg, content: msg.content + s(d.content), loading: true, lastEventAt: Date.now() };
 
     case 'tool_call': {
       const existing = msg.toolCalls || [];
       return {
         ...msg,
         toolCalls: [...existing, {
-          id: event.data.id || tempId(),
-          name: event.data.name,
-          args: event.data.args,
+          id: s(d.id) || tempId(),
+          name: s(d.name),
+          args: s(d.args),
           pending: true,
           status: 'pending' as ToolCallStatus,
         }],
@@ -279,14 +464,15 @@ export function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMess
     }
 
     case 'tool_result': {
-      const delegationResults = event.data.name === 'delegate_task'
-        ? parseDelegationResults(event.data.content || event.data.result || '')
+      const isDelegate = s(d.name) === 'delegate_task';
+      const delegationResults = isDelegate
+        ? parseDelegationResults(s(d.content) || s(d.result))
         : [];
       const calls = (msg.toolCalls || []).map((tc) =>
-        (tc.id === event.data.id || tc.name === event.data.name) && tc.pending
+        (tc.id === s(d.id) || tc.name === s(d.name)) && tc.pending
           ? {
             ...tc,
-            result: event.data.content,
+            result: s(d.content),
             pending: false,
             status: 'success' as ToolCallStatus,
             delegationResults: delegationResults.length > 0 ? delegationResults : tc.delegationResults,
@@ -303,16 +489,16 @@ export function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMess
 
     case 'tool_approval_required': {
       const existing = msg.toolCalls || [];
-      const approvalId = event.data.approvalId || event.data.id || tempId();
+      const approvalId = s(d.approvalId) || s(d.id) || tempId();
       const nextCall: ToolCallInfo = {
-        id: event.data.id || event.data.toolCallId || approvalId,
-        name: event.data.name || event.data.toolName || 'local_mcp',
-        args: event.data.args || event.data.arguments,
+        id: s(d.id) || s(d.toolCallId) || approvalId,
+        name: s(d.name) || s(d.toolName) || 'local_mcp',
+        args: s(d.args) || s(d.arguments),
         pending: true,
         status: 'approval_required',
         approvalId,
-        serverName: event.data.serverName,
-        source: event.data.source,
+        serverName: s(d.serverName),
+        source: s(d.source),
       };
       const replaced = existing.some((tc) => tc.id === nextCall.id || tc.approvalId === approvalId);
       return {
@@ -325,15 +511,15 @@ export function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMess
     }
 
     case 'tool_approval_decision': {
-      const approved = event.data.approved === 'true' || event.data.approved === '1';
+      const approved = s(d.approved) === 'true' || s(d.approved) === '1';
       const calls = (msg.toolCalls || []).map((tc) =>
-        tc.approvalId === event.data.approvalId || tc.id === event.data.id
+        tc.approvalId === s(d.approvalId) || tc.id === s(d.id)
           ? {
             ...tc,
             pending: approved,
             status: approved ? 'approved' as ToolCallStatus : 'denied' as ToolCallStatus,
-            approvalActor: event.data.actor,
-            approvedAt: event.data.decidedAt,
+            approvalActor: s(d.actor),
+            approvedAt: s(d.decidedAt),
           }
           : tc,
       );
@@ -342,39 +528,48 @@ export function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMess
 
     case 'image': {
       const imgs = msg.images || [];
-      return { ...msg, images: [...imgs, event.data.url] };
+      return { ...msg, images: [...imgs, s(d.url)] };
     }
 
     case 'thinking':
       return {
         ...msg,
-        thinking: (msg.thinking || '') + (event.data.content || ''),
-        thinkingDone: !!event.data.done,
+        thinking: (msg.thinking || '') + s(d.content),
+        thinkingDone: !!d.done,
         lastEventAt: Date.now(),
       };
 
     case 'progress': {
-      if (event.data.stage === 'knowledge_retrieved' && event.data.result) {
+      if (s(d.stage) === 'knowledge_retrieved' && d.result) {
         return {
           ...msg,
-          knowledgeChunks: parseKnowledgeChunks(event.data.result),
+          knowledgeChunks: parseKnowledgeChunks(s(d.result)),
           lastEventAt: Date.now(),
         };
       }
       const progCalls = (msg.toolCalls || []).map((tc) =>
         tc.pending
-          ? { ...tc, progress: event.data.message || tc.progress, progressPct: event.data.pct != null ? Number(event.data.pct) : tc.progressPct }
+          ? { ...tc, progress: s(d.message) || tc.progress, progressPct: d.pct != null ? Number(d.pct) : tc.progressPct }
           : tc,
       );
       return { ...msg, toolCalls: progCalls, lastEventAt: Date.now() };
     }
 
     case 'error': {
-      log.error('chat', 'Stream error', { event: event.data });
+      log.error('chat', 'Stream error', { event: d });
+      const errMsg = s(d.error) || 'Unknown error';
       const errCalls = (msg.toolCalls || []).map((tc) =>
-        tc.pending ? { ...tc, result: `Error: ${event.data.error || 'Unknown'}`, pending: false, status: 'error' as ToolCallStatus } : tc,
+        tc.pending ? { ...tc, result: `Error: ${errMsg}`, pending: false, status: 'error' as ToolCallStatus } : tc,
       );
-      return { ...msg, toolCalls: errCalls, error: event.data.error, loading: false };
+      return {
+        ...msg,
+        toolCalls: errCalls,
+        error: errMsg,
+        errorDetail: s(d.detail),
+        resolution: (d.resolution && typeof d.resolution === 'object' ? d.resolution as ErrorResolutionAction : null),
+        providerId: s(d.providerId),
+        loading: false,
+      };
     }
 
     case 'done': {
@@ -385,7 +580,7 @@ export function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMess
         ...msg,
         toolCalls: doneCalls,
         loading: false,
-        model: event.data.model || msg.model,
+        model: s(d.model) || msg.model,
         processDuration: Math.round((Date.now() - msg.timestamp) / 1000),
       };
     }
@@ -421,16 +616,6 @@ function finalizeToolCalls(msg: ChatMessage, status: ToolCallStatus = 'success')
       tc.pending ? { ...tc, pending: false, status } : tc,
     ),
     loading: false,
-  };
-}
-
-function messageAttachmentToComposerAttachment(attachment: MessageAttachment): ChatComposerAttachment {
-  return {
-    cid: attachment.url || attachment.filename || tempId(),
-    filename: attachment.filename || attachment.url || '',
-    mime_type: attachment.mime_type || 'application/octet-stream',
-    size: 0,
-    url: attachment.url,
   };
 }
 
@@ -606,11 +791,62 @@ function findRegenerationPrompt(messages: ChatMessage[], messageId: string): {
   return { userMsg, msgIndex, responseIds };
 }
 
+function clearOperation(operations: Record<string, ChatOperation>, sessionKey: string): Record<string, ChatOperation> {
+  if (!operations[sessionKey]) return operations;
+  const next = { ...operations };
+  delete next[sessionKey];
+  return next;
+}
+
+function setBuffer(
+  buffers: Record<string, ChatMessage[]>,
+  sessionKey: string,
+  updater: (messages: ChatMessage[]) => ChatMessage[],
+): Record<string, ChatMessage[]> {
+  const current = buffers[sessionKey] || [];
+  return { ...buffers, [sessionKey]: updater(current) };
+}
+
+function clearBuffer(buffers: Record<string, ChatMessage[]>, sessionKey: string): Record<string, ChatMessage[]> {
+  if (!buffers[sessionKey]) return buffers;
+  const next = { ...buffers };
+  delete next[sessionKey];
+  return next;
+}
+
+async function loadSessionMessages(
+  key: string,
+  get: () => ChatState,
+  set: (partial: Partial<ChatState>) => void,
+): Promise<void> {
+  try {
+    const cached = await agentChatCache.getMessages(key);
+    if (get().currentSessionKey !== key) return;
+    const cachedMessages = foldToolMessages(cached.map(cachedMessageToChatMessage));
+    set({ messages: mergeServerMessages(get().messages, cachedMessages) });
+    void agentChatCache
+      .syncConversation(key)
+      .then((synced) => {
+        if (get().currentSessionKey !== key) return;
+        const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
+        set({ messages: mergeServerMessages(get().messages, serverMessages) });
+      })
+      .catch((syncError) => {
+        log.warn('chat', 'Background conversation sync failed; keeping cache', { key, error: String(syncError) });
+      });
+  } catch (error) {
+    log.error('chat', 'Failed to load messages from cache; preserving current view', { key, error: String(error) });
+  }
+}
+
 export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => ({
   sessions: [],
   currentSessionKey: 'main',
   messages: [],
   isStreaming: false,
+  streamingStartedAt: null,
+  operations: {},
+  sessionBuffers: {},
   abortController: null,
 
 
@@ -618,21 +854,32 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   loadSessions: async () => {
     log.info('chat', 'Loading sessions');
+    const agentId = useAgentStore.getState().selectedAgent;
+    if (!agentId) {
+      set({ sessions: [] });
+      return;
+    }
     try {
-      const raw = await api.listSessions();
-      const sessions = raw.map((s) => ({
-        ...s,
-        title: resolveI18nValue(s.title),
-      }));
-      log.info('chat', 'Sessions loaded', { count: sessions.length });
+      const conversations = await agentChatCache.listConversations(agentId);
+      const sessions = conversations.map(cachedConversationToSession);
+      log.info('chat', 'Sessions loaded from cache', { count: sessions.length });
       set({ sessions });
-      const { currentSessionKey } = get();
+      const { currentSessionKey, messages, operations } = get();
       const { selectedModel, defaultModel } = useAgentStore.getState();
       if (!selectedModel || selectedModel === defaultModel) {
         const current = sessions.find((s) => s.key === currentSessionKey);
         if (current?.model_override) {
           useAgentStore.getState().setSelectedModel(current.model_override);
         }
+      }
+      if (
+        !currentSessionKey.startsWith('draft:') &&
+        messages.length === 0 &&
+        !operations[currentSessionKey] &&
+        sessions.some((s) => s.key === currentSessionKey)
+      ) {
+        log.info('chat', 'Bootstrapping current session after sessions load', { key: currentSessionKey });
+        await loadSessionMessages(currentSessionKey, get, set);
       }
     } catch (e) {
       log.error('chat', 'Failed to load sessions', e);
@@ -676,73 +923,59 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       nextModel = modelIds.has(defaultModel) ? defaultModel : availableModels[0].id;
     }
     useAgentStore.getState().setSelectedModel(nextModel);
+    const liveOp = get().operations[key];
+    // Only adopt a buffered message list while a stream is actively running for
+    // this session. A buffer with no live operation is stale (e.g. left behind
+    // after an error) and must not short-circuit loading persisted history.
+    const liveBuffer = liveOp ? get().sessionBuffers[key] : undefined;
     set({
       currentSessionKey: key,
-      messages: [],
+      messages: liveBuffer ?? [],
+      isStreaming: !!liveOp,
+      streamingStartedAt: liveOp?.startedAt ?? null,
+      abortController: liveOp?.abortController ?? null,
     });
-    try {
-      const msgs = await api.getMessages(key);
-      if (get().currentSessionKey !== key) return;
-      const raw: ChatMessage[] = msgs.map((m: Message) => {
-        const msg: ChatMessage = {
-          id: m.id,
-          role: m.role as ChatMessage['role'],
-          content: m.content,
-          contentType: m.content_type || 'text',
-          images: m.attachments
-            ?.filter((a) => a.type === 'image')
-            .map((a) => a.url),
-          attachments: m.attachments?.map(messageAttachmentToComposerAttachment),
-          timestamp: new Date(m.created_at).getTime(),
-          model: m.model,
-        };
-        if (m.role === 'assistant' && m.tool_calls) {
-          try {
-            const parsed = JSON.parse(m.tool_calls) as Array<{ id?: string; name?: string; args?: string; result?: string }>;
-            msg.toolCalls = parsed.map((tc) => ({
-              id: tc.id || tc.name || '',
-              name: tc.name || 'tool',
-              args: tc.args,
-              result: tc.result,
-              pending: false,
-            }));
-          } catch {
-            /* ignore parse error */
-          }
-        }
-        return msg;
-      });
-      const chatMessages: ChatMessage[] = [];
-      for (const m of raw) {
-        if (m.role === 'tool' && chatMessages.length > 0) {
-          const prev = chatMessages[chatMessages.length - 1];
-          if (prev.role === 'assistant') {
-            const nameMatch = m.content.match(/\*\*(\w+)\*\*/);
-            const existing = prev.toolCalls || [];
-            prev.toolCalls = [...existing, {
-              id: m.id,
-              name: nameMatch?.[1] || 'tool',
-              result: m.content,
-              pending: false,
-            }];
-            continue;
-          }
-        }
-        chatMessages.push(m);
-      }
-      if (get().currentSessionKey !== key) return;
-      set({ messages: chatMessages });
-    } catch {
-      if (get().currentSessionKey === key) set({ messages: [] });
+    if (liveBuffer) return;
+    if (key.startsWith('draft:')) {
+      set({ messages: [] });
+      return;
     }
+    await loadSessionMessages(key, get, set);
+  },
+
+  bootstrapSession: async () => {
+    const key = get().currentSessionKey;
+    log.info('chat', 'Bootstrapping current session history', { key });
+    if (key.startsWith('draft:')) {
+      set({ messages: [] });
+      return;
+    }
+    const liveOp = get().operations[key];
+    if (liveOp) return;
+    await loadSessionMessages(key, get, set);
   },
 
   newSession: () => {
-    const key = `session-${Date.now()}`;
-    log.info('chat', 'New session created', { key });
-    const { defaultModel } = useAgentStore.getState();
+    const key = `draft:${Date.now()}`;
+    const { selectedAgent, defaultModel } = useAgentStore.getState();
+    const agentName = selectedAgent || 'assistant';
+    const now = new Date().toISOString();
+    const draftSession: Session = {
+      id: key,
+      key,
+      agent_name: agentName,
+      title: '',
+      message_count: 0,
+      created_at: now,
+      updated_at: now,
+    };
+    log.info('chat', 'New draft session created', { key, agentName });
     useAgentStore.getState().setSelectedModel(defaultModel);
-    set({ currentSessionKey: key, messages: [] });
+    set((state) => ({
+      currentSessionKey: key,
+      messages: [],
+      sessions: [draftSession, ...state.sessions.filter((s) => !s.key.startsWith('draft:'))],
+    }));
   },
 
   deleteSession: async (key: string) => {
@@ -769,93 +1002,18 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     log.debug('chat', 'Syncing messages', { key: get().currentSessionKey });
     const { currentSessionKey, messages: currentMessages } = get();
 
-    const cotFields = (m: ChatMessage) => ({
-      toolCalls: m.toolCalls,
-      thinking: m.thinking,
-      thinkingDone: m.thinkingDone,
-      processDuration: m.processDuration,
-      lastEventAt: m.lastEventAt,
-      error: m.error,
-      images: m.images,
-      attachments: m.attachments,
-      operation: m.operation,
-      replacementOf: m.replacementOf,
-      replacedBy: m.replacedBy,
-    });
-
-    const existingById = new Map<string, ChatMessage>();
-    const existingByIdx = new Map<number, ChatMessage>();
-    for (const [i, m] of currentMessages.entries()) {
-      existingById.set(m.id, m);
-      existingByIdx.set(i, m);
-    }
-
     try {
-      const msgs = await api.getMessages(currentSessionKey);
-      const raw: ChatMessage[] = msgs.map((m: Message) => ({
-        id: m.id,
-        role: m.role as ChatMessage['role'],
-        content: m.content,
-        contentType: m.content_type || 'text',
-        images: m.attachments
-          ?.filter((a) => a.type === 'image')
-          .map((a) => a.url),
-        attachments: m.attachments?.map(messageAttachmentToComposerAttachment),
-        timestamp: new Date(m.created_at).getTime(),
-        model: m.model,
-      }));
-      const chatMessages: ChatMessage[] = [];
-      for (const m of raw) {
-        if (m.role === 'tool' && chatMessages.length > 0) {
-          const prev = chatMessages[chatMessages.length - 1];
-          if (prev.role === 'assistant') {
-            const nameMatch = m.content.match(/\*\*(\w+)\*\*/);
-            const existing = prev.toolCalls || [];
-            prev.toolCalls = [...existing, {
-              id: m.id,
-              name: nameMatch?.[1] || 'tool',
-              result: m.content,
-              pending: false,
-            }];
-            continue;
-          }
-        }
-        chatMessages.push(m);
+      if (currentSessionKey.startsWith('draft:')) {
+        return;
       }
+      const synced = await agentChatCache.syncConversation(currentSessionKey);
+      if (get().currentSessionKey !== currentSessionKey) return;
+      const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
 
-      const merged = chatMessages.map((serverMsg, i) => {
-        const mem = existingById.get(serverMsg.id)
-          || (existingByIdx.get(i)?.role === serverMsg.role ? existingByIdx.get(i) : undefined);
-        if (mem) {
-          const cot = cotFields(mem);
-          const hasCOT = cot.toolCalls || cot.thinking || cot.processDuration != null || cot.attachments?.length;
-          if (hasCOT) return { ...serverMsg, ...cot };
-        }
-        return serverMsg;
-      });
-
-      const lastCurrent = currentMessages[currentMessages.length - 1];
-      if (lastCurrent?.error && lastCurrent.role === 'assistant') {
-        const serverHasIt = merged.some((m) => m.id === lastCurrent.id);
-        if (!serverHasIt) {
-          merged.push({ ...lastCurrent, loading: false });
-        }
-      }
-
-      const localUserCount = currentMessages.filter((m) => m.role !== 'system').length;
-      const mergedUserCount = merged.filter((m) => m.role !== 'system').length;
-      if (localUserCount > mergedUserCount) {
-        const hasCompletedContent = currentMessages.some(
-          (m) => m.role === 'assistant' && !m.loading && m.content,
-        );
-        if (hasCompletedContent) {
-          set({ messages: currentMessages });
-          return;
-        }
-      }
-
+      const merged = mergeServerMessages(currentMessages, serverMessages);
       set({ messages: merged });
-    } catch {
+    } catch (error) {
+      log.warn('chat', 'Failed to sync messages; keeping current view', { error: String(error) });
     }
   },
 
@@ -875,6 +1033,8 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   sendMessage: (content: string, attachments: ChatComposerAttachment[] = []) => {
     log.info('chat', 'Sending message', { sessionKey: get().currentSessionKey, contentLength: content.length });
     const { currentSessionKey } = get();
+    const isDraft = currentSessionKey.startsWith('draft:');
+    const effectiveConvId = isDraft ? '' : currentSessionKey;
     const agentState = useAgentStore.getState();
     const { selectedAgent, selectedModel, selectedProviderId, defaultModel, availableModels } = agentState;
     const agentName = selectedAgent || 'assistant';
@@ -909,17 +1069,14 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       model: usedModel || undefined,
     };
 
-    set((state) => ({
-      messages: [...state.messages, userMsg, assistantMsg],
-      isStreaming: true,
-    }));
-
+    const startedAt = Date.now();
     const assistantId = assistantMsg.id;
     let capturedTaskId = '';
+    let resolvedSessionKey = currentSessionKey;
 
     const controller = agentService.streamTurn(
       buildAgentTurnInput(
-        currentSessionKey,
+        effectiveConvId,
         agentName,
         content,
         attachments,
@@ -928,36 +1085,131 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         runtimeConfig,
       ),
       (event: StreamEvent) => {
-        if (event.data?.task_id) capturedTaskId = event.data.task_id;
+        if (typeof event.data?.task_id === 'string') capturedTaskId = event.data.task_id;
+        if (event.event === 'conversation_created' && typeof event.data?.conversation_id === 'string' && isDraft) {
+          const realConvId = event.data.conversation_id;
+          log.info('chat', 'Draft session resolved to real conversation', { draftKey: currentSessionKey, convId: realConvId });
+          resolvedSessionKey = realConvId;
+          set((state) => {
+            const byKey = new Map(state.sessions.map((s) => [s.key, s]));
+            const draft = byKey.get(currentSessionKey);
+            byKey.delete(currentSessionKey);
+            const now = new Date().toISOString();
+            byKey.set(realConvId, {
+              id: realConvId,
+              key: realConvId,
+              agent_name: draft?.agent_name || agentName,
+              title: draft?.title || '',
+              message_count: draft?.message_count || 0,
+              model_override: draft?.model_override,
+              created_at: draft?.created_at || now,
+              updated_at: now,
+            });
+            const nextOps = { ...state.operations };
+            const existing = nextOps[currentSessionKey];
+            delete nextOps[currentSessionKey];
+            if (existing) {
+              nextOps[realConvId] = { ...existing, sessionKey: realConvId };
+            }
+            const nextBuffers = { ...state.sessionBuffers };
+            const draftBuffer = nextBuffers[currentSessionKey];
+            delete nextBuffers[currentSessionKey];
+            if (draftBuffer) nextBuffers[realConvId] = draftBuffer;
+            const isCurrent = state.currentSessionKey === currentSessionKey;
+            return {
+              currentSessionKey: isCurrent ? realConvId : state.currentSessionKey,
+              sessions: Array.from(byKey.values()),
+              operations: nextOps,
+              sessionBuffers: nextBuffers,
+              ...(isCurrent ? { abortController: controller } : {}),
+            };
+          });
+        }
         set((state) => {
-          const msgs = [...state.messages];
-          const idx = msgs.findIndex((m) => m.id === assistantId);
-          if (idx === -1) return state;
-          msgs[idx] = applyStreamEvent(msgs[idx], event);
-          return { messages: msgs };
+          const isCurrent = state.currentSessionKey === resolvedSessionKey;
+          const applyTo = (list: ChatMessage[]): ChatMessage[] => {
+            const idx = list.findIndex((m) => m.id === assistantId);
+            if (idx === -1) return list;
+            const next = [...list];
+            next[idx] = applyStreamEvent(next[idx], event);
+            return next;
+          };
+          const sessionBuffers = setBuffer(state.sessionBuffers, resolvedSessionKey, applyTo);
+          if (!isCurrent) return { sessionBuffers };
+          return {
+            sessionBuffers,
+            messages: applyTo(state.messages),
+          };
         });
       },
       () => {
         log.info('chat', 'Stream complete');
-        set({ isStreaming: false, abortController: null });
+        set((state) => {
+          const isCurrent = state.currentSessionKey === resolvedSessionKey;
+          return {
+            isStreaming: isCurrent ? false : state.isStreaming,
+            streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
+            abortController: isCurrent ? null : state.abortController,
+            operations: clearOperation(state.operations, resolvedSessionKey),
+            sessionBuffers: clearBuffer(state.sessionBuffers, resolvedSessionKey),
+          };
+        });
         get().loadSessions();
-        reconcileChatTaskOutbox(capturedTaskId, agentName, currentSessionKey, () => get().syncMessages());
+        if (!resolvedSessionKey.startsWith('draft:')) {
+          void agentChatCache.syncConversation(resolvedSessionKey).catch((syncError) => {
+            log.warn('chat', 'Post-turn cache sync failed', { key: resolvedSessionKey, error: String(syncError) });
+          });
+        }
+        reconcileChatTaskOutbox(capturedTaskId, agentName, resolvedSessionKey, () => get().syncMessages());
       },
-      (err: Error) => {
+      (err: Error & { resolution?: ErrorResolutionAction; errorDetail?: string; providerId?: string }) => {
         log.error('chat', 'Send message failed', { error: err.message });
         set((state) => {
-          const msgs = state.messages.map((m) =>
-            m.id === assistantId
-              ? { ...m, error: presentChatRuntimeError(err.message), loading: false }
-              : m,
-          );
-          return { messages: msgs, isStreaming: false, abortController: null };
+          const isCurrent = state.currentSessionKey === resolvedSessionKey;
+          const applyError = (m: ChatMessage): ChatMessage => {
+            if (m.id !== assistantId) return m;
+            if (err.resolution) {
+              return {
+                ...m,
+                error: err.message,
+                errorDetail: err.errorDetail || m.errorDetail,
+                resolution: err.resolution,
+                providerId: err.providerId || m.providerId,
+                loading: false,
+              };
+            }
+            return { ...m, error: presentChatRuntimeError(err.message), loading: false };
+          };
+          return {
+            messages: isCurrent ? state.messages.map(applyError) : state.messages,
+            // The stream has terminated; drop the live buffer so a later
+            // selectSession reloads persisted history instead of adopting a
+            // stale in-memory list.
+            sessionBuffers: clearBuffer(state.sessionBuffers, resolvedSessionKey),
+            isStreaming: isCurrent ? false : state.isStreaming,
+            streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
+            abortController: isCurrent ? null : state.abortController,
+            operations: clearOperation(state.operations, resolvedSessionKey),
+          };
         });
-        reconcileTopicsAfterTurn(currentSessionKey);
+        reconcileTopicsAfterTurn(resolvedSessionKey);
       },
     );
 
-    set({ abortController: controller });
+    set((state) => {
+      const baseMessages = [...state.messages, userMsg, assistantMsg];
+      return {
+        messages: baseMessages,
+        isStreaming: true,
+        streamingStartedAt: startedAt,
+        abortController: controller,
+        operations: {
+          ...state.operations,
+          [currentSessionKey]: { sessionKey: currentSessionKey, startedAt, status: 'running', assistantId, abortController: controller },
+        },
+        sessionBuffers: { ...state.sessionBuffers, [currentSessionKey]: baseMessages },
+      };
+    });
   },
 
   regenerateMessage: async (messageId: string) => {
@@ -993,13 +1245,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       replacementOf: replacedId,
     };
 
-    set((state) => ({
-      messages: state.messages.map((m) => (
-        m.id === replacedId ? { ...m, replacedBy: assistantMsg.id } : m
-      )).concat(assistantMsg),
-      isStreaming: true,
-    }));
-
+    const startedAt = Date.now();
     const assistantId = assistantMsg.id;
     let capturedTaskId = '';
 
@@ -1014,30 +1260,74 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         runtimeConfig,
       ),
       (event: StreamEvent) => {
-        if (event.data?.task_id) capturedTaskId = event.data.task_id;
+        if (typeof event.data?.task_id === 'string') capturedTaskId = event.data.task_id;
         set((state) => {
-          const msgs = [...state.messages];
-          const idx = msgs.findIndex((m) => m.id === assistantId);
-          if (idx === -1) return state;
-          msgs[idx] = applyStreamEvent(msgs[idx], event);
-          return { messages: msgs };
+          const isCurrent = state.currentSessionKey === currentSessionKey;
+          const applyTo = (list: ChatMessage[]): ChatMessage[] => {
+            const idx = list.findIndex((m) => m.id === assistantId);
+            if (idx === -1) return list;
+            const next = [...list];
+            next[idx] = applyStreamEvent(next[idx], event);
+            return next;
+          };
+          const sessionBuffers = setBuffer(state.sessionBuffers, currentSessionKey, applyTo);
+          if (!isCurrent) return { sessionBuffers };
+          return { sessionBuffers, messages: applyTo(state.messages) };
         });
       },
       () => {
-        set({ isStreaming: false, abortController: null });
+        set((state) => {
+          const isCurrent = state.currentSessionKey === currentSessionKey;
+          return {
+            isStreaming: isCurrent ? false : state.isStreaming,
+            streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
+            abortController: isCurrent ? null : state.abortController,
+            operations: clearOperation(state.operations, currentSessionKey),
+            sessionBuffers: clearBuffer(state.sessionBuffers, currentSessionKey),
+          };
+        });
         get().loadSessions();
         reconcileChatTaskOutbox(capturedTaskId, agentName, currentSessionKey, () => get().syncMessages());
       },
-      (err: Error) => {
-        set((state) => ({
-          messages: state.messages.map((m) => m.id === assistantId ? { ...m, error: presentChatRuntimeError(err.message), loading: false } : m),
-          isStreaming: false, abortController: null,
-        }));
+      (err: Error & { resolution?: ErrorResolutionAction; errorDetail?: string; providerId?: string }) => {
+        set((state) => {
+          const isCurrent = state.currentSessionKey === currentSessionKey;
+          const applyError = (m: ChatMessage): ChatMessage => {
+            if (m.id !== assistantId) return m;
+            if (err.resolution) {
+              return { ...m, error: err.message, errorDetail: err.errorDetail, resolution: err.resolution, providerId: err.providerId, loading: false };
+            }
+            return { ...m, error: presentChatRuntimeError(err.message), loading: false };
+          };
+          return {
+            messages: isCurrent ? state.messages.map(applyError) : state.messages,
+            sessionBuffers: clearBuffer(state.sessionBuffers, currentSessionKey),
+            isStreaming: isCurrent ? false : state.isStreaming,
+            streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
+            abortController: isCurrent ? null : state.abortController,
+            operations: clearOperation(state.operations, currentSessionKey),
+          };
+        });
         reconcileTopicsAfterTurn(currentSessionKey);
       },
     );
 
-    set({ abortController: controller });
+    set((state) => {
+      const baseMessages = state.messages.map((m) => (
+        m.id === replacedId ? { ...m, replacedBy: assistantMsg.id } : m
+      )).concat(assistantMsg);
+      return {
+        messages: baseMessages,
+        isStreaming: true,
+        streamingStartedAt: startedAt,
+        abortController: controller,
+        operations: {
+          ...state.operations,
+          [currentSessionKey]: { sessionKey: currentSessionKey, startedAt, status: 'running', assistantId, abortController: controller },
+        },
+        sessionBuffers: { ...state.sessionBuffers, [currentSessionKey]: baseMessages },
+      };
+    });
   },
 
   retryMessage: async (messageId: string) => {
@@ -1073,13 +1363,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       replacementOf: replacedId,
     };
 
-    set((state) => ({
-      messages: state.messages.map((m) => (
-        m.id === replacedId ? { ...m, replacedBy: assistantMsg.id } : m
-      )).concat(assistantMsg),
-      isStreaming: true,
-    }));
-
+    const startedAt = Date.now();
     const assistantId = assistantMsg.id;
     let capturedTaskId = '';
 
@@ -1094,31 +1378,72 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         runtimeConfig,
       ),
       (event: StreamEvent) => {
-        if (event.data?.task_id) capturedTaskId = event.data.task_id;
+        if (typeof event.data?.task_id === 'string') capturedTaskId = event.data.task_id;
         set((state) => {
-          const msgs = [...state.messages];
-          const idx = msgs.findIndex((m) => m.id === assistantId);
-          if (idx === -1) return state;
-          msgs[idx] = applyStreamEvent(msgs[idx], event);
-          return { messages: msgs };
+          const isCurrent = state.currentSessionKey === currentSessionKey;
+          const applyTo = (list: ChatMessage[]): ChatMessage[] => {
+            const idx = list.findIndex((m) => m.id === assistantId);
+            if (idx === -1) return list;
+            const next = [...list];
+            next[idx] = applyStreamEvent(next[idx], event);
+            return next;
+          };
+          const sessionBuffers = setBuffer(state.sessionBuffers, currentSessionKey, applyTo);
+          if (!isCurrent) return { sessionBuffers };
+          return { sessionBuffers, messages: applyTo(state.messages) };
         });
       },
       () => {
-        set({ isStreaming: false, abortController: null });
+        set((state) => {
+          const isCurrent = state.currentSessionKey === currentSessionKey;
+          return {
+            isStreaming: isCurrent ? false : state.isStreaming,
+            streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
+            abortController: isCurrent ? null : state.abortController,
+            operations: clearOperation(state.operations, currentSessionKey),
+            sessionBuffers: clearBuffer(state.sessionBuffers, currentSessionKey),
+          };
+        });
         get().loadSessions();
         reconcileChatTaskOutbox(capturedTaskId, agentName, currentSessionKey, () => get().syncMessages());
       },
-      (err: Error) => {
-        set((state) => ({
-          messages: state.messages.map((m) => m.id === assistantId ? { ...m, error: presentChatRuntimeError(err.message), loading: false } : m),
-          isStreaming: false,
-          abortController: null,
-        }));
+      (err: Error & { resolution?: ErrorResolutionAction; errorDetail?: string; providerId?: string }) => {
+        set((state) => {
+          const isCurrent = state.currentSessionKey === currentSessionKey;
+          const applyError = (m: ChatMessage): ChatMessage => (m.id === assistantId
+            ? (err.resolution
+              ? { ...m, error: err.message, errorDetail: err.errorDetail, resolution: err.resolution, providerId: err.providerId, loading: false }
+              : { ...m, error: presentChatRuntimeError(err.message), loading: false })
+            : m);
+          return {
+            messages: isCurrent ? state.messages.map(applyError) : state.messages,
+            sessionBuffers: clearBuffer(state.sessionBuffers, currentSessionKey),
+            isStreaming: isCurrent ? false : state.isStreaming,
+            streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
+            abortController: isCurrent ? null : state.abortController,
+            operations: clearOperation(state.operations, currentSessionKey),
+          };
+        });
         reconcileTopicsAfterTurn(currentSessionKey);
       },
     );
 
-    set({ abortController: controller });
+    set((state) => {
+      const baseMessages = state.messages.map((m) => (
+        m.id === replacedId ? { ...m, replacedBy: assistantMsg.id } : m
+      )).concat(assistantMsg);
+      return {
+        messages: baseMessages,
+        isStreaming: true,
+        streamingStartedAt: startedAt,
+        abortController: controller,
+        operations: {
+          ...state.operations,
+          [currentSessionKey]: { sessionKey: currentSessionKey, startedAt, status: 'running', assistantId, abortController: controller },
+        },
+        sessionBuffers: { ...state.sessionBuffers, [currentSessionKey]: baseMessages },
+      };
+    });
   },
 
   deleteAndRegenerateMessage: async (messageId: string) => {
@@ -1223,17 +1548,28 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   },
 
   stopStreaming: () => {
-    log.info('chat', 'Streaming stopped');
-    const { abortController, currentSessionKey } = get();
-    if (abortController) {
-      abortController.abort();
-      api.stopChat(currentSessionKey).catch(() => {});
-      set((state) => ({
-        messages: state.messages.map((m) => m.loading ? finalizeToolCalls({ ...m, loading: false }, 'cancelled') : m),
-        isStreaming: false,
-        abortController: null,
-      }));
-    }
+    get().stopOperation(get().currentSessionKey);
+  },
+
+  stopOperation: (sessionKey: string) => {
+    log.info('chat', 'Streaming stopped', { sessionKey });
+    const op = get().operations[sessionKey];
+    if (!op) return;
+    op.abortController.abort();
+    api.stopChat(sessionKey).catch(() => {});
+    set((state) => {
+      const isCurrent = state.currentSessionKey === sessionKey;
+      const finalizeList = (list: ChatMessage[]): ChatMessage[] =>
+        list.map((m) => (m.loading ? finalizeToolCalls({ ...m, loading: false }, 'cancelled') : m));
+      return {
+        messages: isCurrent ? finalizeList(state.messages) : state.messages,
+        sessionBuffers: setBuffer(state.sessionBuffers, sessionKey, finalizeList),
+        isStreaming: isCurrent ? false : state.isStreaming,
+        streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
+        abortController: isCurrent ? null : state.abortController,
+        operations: clearOperation(state.operations, sessionKey),
+      };
+    });
   },
 
   deleteMessage: async (id: string) => {

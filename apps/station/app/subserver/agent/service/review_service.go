@@ -475,9 +475,9 @@ func (s *ReviewService) markReviewCreatedMemories(
 		Model(&persistence.Memory{}).
 		Where("agent_id = ? AND source_turn_id = ? AND created_at >= ?", agentID, turnID, triggeredAt).
 		Updates(map[string]interface{}{
-			"source":          "review",
+			"source":           "review",
 			"source_review_id": reviewID,
-			"trust_score":     0.4,
+			"trust_score":      0.4,
 		})
 }
 

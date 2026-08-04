@@ -1145,8 +1145,8 @@ func buildAtelierFullE2EProviderRuntimeEvidence(
 		"sessionId":                          strings.TrimSpace(sessionID),
 		"owner":                              "station",
 		"scope":                              "production-provider-runtime",
-                "providerProfileRefRedacted":         true,
-                "providerProfileRefHash":             atelierSHA256Hash(providerProfileRef),
+		"providerProfileRefRedacted":         true,
+		"providerProfileRefHash":             atelierSHA256Hash(providerProfileRef),
 		"providerRuntimeProven":              true,
 		"providerModelQualityProven":         true,
 		"streamingReplyUXProven":             true,
@@ -4276,7 +4276,7 @@ func isAtelierFetchableArtifactBodyKind(kind string) bool {
 }
 
 func atelierArtifactBodyHash(text string) string {
-        return atelierSHA256Hash(text)
+	return atelierSHA256Hash(text)
 }
 
 func atelierSHA256Hash(text string) string {

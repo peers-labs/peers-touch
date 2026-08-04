@@ -9,7 +9,11 @@ export type ClientStorageDomainId =
   | 'identity.trust'
   | 'profile.peer'
   | 'station.registry'
-  | 'runtime.projection';
+  | 'runtime.projection'
+  | 'agent.conversation'
+  | 'agent.message'
+  | 'agent.turn-event'
+  | 'agent.cursor';
 
 export type StorageScopeLevel = 'app' | 'station' | 'actor' | 'device' | 'session' | 'process';
 
@@ -35,6 +39,10 @@ export const CLIENT_STORAGE_DOMAINS: Record<ClientStorageDomainId, ClientStorage
   'profile.peer': { id: 'profile.peer', scope: 'actor', ttlMs: 30 * 60 * 1000, persistent: true },
   'station.registry': { id: 'station.registry', scope: 'app', ttlMs: null, persistent: true },
   'runtime.projection': { id: 'runtime.projection', scope: 'session', ttlMs: 5 * 60 * 1000, persistent: false },
+  'agent.conversation': { id: 'agent.conversation', scope: 'actor', ttlMs: null, persistent: true },
+  'agent.message': { id: 'agent.message', scope: 'actor', ttlMs: null, persistent: true },
+  'agent.turn-event': { id: 'agent.turn-event', scope: 'actor', ttlMs: null, persistent: true },
+  'agent.cursor': { id: 'agent.cursor', scope: 'actor', ttlMs: null, persistent: true },
 };
 
 export interface ClientStorageScope {

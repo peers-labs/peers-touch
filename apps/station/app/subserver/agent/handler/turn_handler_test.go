@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -61,8 +62,8 @@ func TestWriteTurnStreamEvent(t *testing.T) {
 }
 
 func TestTurnConfigFromRequestCarriesKnowledgeResources(t *testing.T) {
-	handlers := NewTurnHandlers(&service.TurnService{}, service.NewToolRegistryService(nil, nil), nil)
-	config := handlers.turnConfigFromRequest(&model.ExecuteTurnRequest{
+	handlers := NewTurnHandlers(&service.TurnService{}, service.NewToolRegistryService(nil, nil), nil, nil)
+	config := handlers.turnConfigFromRequest(context.Background(), &model.ExecuteTurnRequest{
 		ConversationId: "conv_1",
 		AgentId:        "agent_1",
 		UserInput:      "How do traces work?",

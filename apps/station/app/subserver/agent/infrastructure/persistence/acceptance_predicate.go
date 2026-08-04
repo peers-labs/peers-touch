@@ -15,8 +15,8 @@ type AcceptancePredicate struct {
 	SourceEventID  string    `gorm:"type:varchar(36);index:idx_agent_acceptance_predicates_event"`
 	SourceEventSeq int64     `gorm:"not null;default:0;index:idx_agent_acceptance_predicates_event_seq"`
 	PayloadJSON    string    `gorm:"type:text"`
-	CreatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_acceptance_predicates_created"`
-	UpdatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_acceptance_predicates_updated"`
+	CreatedAt      time.Time `gorm:"not null;autoCreateTime;index:idx_agent_acceptance_predicates_created"`
+	UpdatedAt      time.Time `gorm:"not null;autoUpdateTime;index:idx_agent_acceptance_predicates_updated"`
 }
 
 func (AcceptancePredicate) TableName() string { return "agent_acceptance_predicates" }

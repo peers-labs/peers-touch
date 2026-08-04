@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -16,17 +17,17 @@ const defaultTimeout = 5 * time.Minute
 type EventSink func(eventType string, data map[string]any)
 
 type CliTurnRequest struct {
-	ConversationID   string
-	AgentID          string
-	UserInput        string
-	CliCommand       string
-	Identity         string
+	ConversationID    string
+	AgentID           string
+	UserInput         string
+	CliCommand        string
+	Identity          string
 	AgentConfigPrompt string
-	Provider         string
-	Model            string
-	Effort           string
-	RuntimeBackend   string
-	AllowedRoots     []string
+	Provider          string
+	Model             string
+	Effort            string
+	RuntimeBackend    string
+	AllowedRoots      []string
 }
 
 type CliExecutor struct {
@@ -84,7 +85,8 @@ func (e *CliExecutor) Execute(ctx context.Context, req *CliTurnRequest, actorID 
 
 	process := exec.CommandContext(execCtx, cmd.Program, args...)
 	process.Dir = workDir
-	process.Env = append(os.Environ(),
+	process.Env = append(enrichedEnv(),
+		"RUST_LOG=error",
 		"PEERS_TOUCH_AGENT_ID="+req.AgentID,
 		"PEERS_TOUCH_CONVERSATION_ID="+req.ConversationID,
 		"PEERS_TOUCH_PROVIDER="+req.Provider,
@@ -128,6 +130,7 @@ func (e *CliExecutor) Execute(ctx context.Context, req *CliTurnRequest, actorID 
 		_ = stdinPipe.Close()
 	}
 
+	var streamErrMsg string
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 4096), 1024*1024)
 	for scanner.Scan() {
@@ -135,10 +138,60 @@ func (e *CliExecutor) Execute(ctx context.Context, req *CliTurnRequest, actorID 
 			break
 		}
 		line := scanner.Text()
-		sink("text", map[string]any{
-			"content": line + "\n",
-		})
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		var event map[string]any
+		if err := json.Unmarshal([]byte(trimmed), &event); err != nil {
+			if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+				continue
+			}
+			sink("text", map[string]any{
+				"content": trimmed + "\n",
+			})
+			continue
+		}
+
+		eventType, _ := event["type"].(string)
+		switch eventType {
+		case "message", "assistant", "response", "delta":
+			if text := extractCliContent(event); text != "" {
+				sink("text", map[string]any{"content": text})
+			}
+		case "thinking", "reasoning":
+			if text := extractCliContent(event); text != "" {
+				sink("thinking", map[string]any{"content": text})
+			}
+		case "error":
+			streamErrMsg = extractCliErrorMessage(event)
+			_ = process.Process.Kill()
+		case "turn.failed", "failed", "turn.error":
+			streamErrMsg = extractCliErrorMessage(event)
+			_ = process.Process.Kill()
+		case "done", "complete", "completed", "end", "turn.complete", "turn.completed", "turn.done":
+			goto scanDone
+		case "thread.started", "turn.started", "thread.created", "turn.created",
+			"initialized", "progress", "status", "stage", "tool_use", "tool_result":
+		case "item.completed":
+			if item, ok := event["item"].(map[string]any); ok {
+				itemType, _ := item["type"].(string)
+				if text := extractCliContent(item); text != "" {
+					if itemType == "reasoning" || itemType == "thinking" {
+						sink("thinking", map[string]any{"content": text})
+					} else {
+						sink("text", map[string]any{"content": text})
+					}
+				}
+			}
+		default:
+			if text := extractCliContent(event); text != "" {
+				sink("text", map[string]any{"content": text})
+			}
+		}
 	}
+scanDone:
 	if scanErr := scanner.Err(); scanErr != nil && execCtx.Err() == nil {
 		return fmt.Errorf("read cli stdout: %w", scanErr)
 	}
@@ -147,11 +200,18 @@ func (e *CliExecutor) Execute(ctx context.Context, req *CliTurnRequest, actorID 
 	stderrStr := strings.TrimSpace(string(stderrBytes))
 
 	if err := process.Wait(); err != nil {
+		if streamErrMsg != "" {
+			return fmt.Errorf("CLI provider error: %s", streamErrMsg)
+		}
 		exitMsg := stderrStr
 		if exitMsg == "" {
 			exitMsg = err.Error()
 		}
 		return fmt.Errorf("CLI provider exited with error: %s", exitMsg)
+	}
+
+	if streamErrMsg != "" {
+		return fmt.Errorf("CLI provider error: %s", streamErrMsg)
 	}
 
 	sink("done", map[string]any{
@@ -160,6 +220,52 @@ func (e *CliExecutor) Execute(ctx context.Context, req *CliTurnRequest, actorID 
 	})
 
 	return nil
+}
+
+func extractCliErrorMessage(event map[string]any) string {
+	if msg, ok := event["message"].(string); ok && msg != "" {
+		return msg
+	}
+	if errObj, ok := event["error"].(map[string]any); ok {
+		if msg, ok := errObj["message"].(string); ok && msg != "" {
+			return msg
+		}
+	}
+	if msg, ok := event["error"].(string); ok && msg != "" {
+		return msg
+	}
+	return "CLI error"
+}
+
+func extractCliContent(event map[string]any) string {
+	if content, ok := event["content"].(string); ok && content != "" {
+		return content
+	}
+	if text, ok := event["text"].(string); ok && text != "" {
+		return text
+	}
+	if delta, ok := event["delta"].(string); ok && delta != "" {
+		return delta
+	}
+	if contentArr, ok := event["content"].([]any); ok {
+		var parts []string
+		for _, item := range contentArr {
+			if obj, ok := item.(map[string]any); ok {
+				if objType, _ := obj["type"].(string); objType == "text" {
+					if t, ok := obj["text"].(string); ok && t != "" {
+						parts = append(parts, t)
+					}
+				}
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, "")
+		}
+	}
+	if msg, ok := event["message"].(map[string]any); ok {
+		return extractCliContent(msg)
+	}
+	return ""
 }
 
 // FetchModels executes a provider's models_command and parses the output.
@@ -174,9 +280,12 @@ func FetchModels(modelsCommand string) ([]string, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
-	cmd.Env = os.Environ()
+	cmd.Env = append(enrichedEnv(), "RUST_LOG=error")
 	out, err := cmd.Output()
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("execute models_command %q: %w: %s", modelsCommand, err, string(exitErr.Stderr))
+		}
 		return nil, fmt.Errorf("execute models_command %q: %w", modelsCommand, err)
 	}
 
@@ -241,8 +350,8 @@ func VerifyCliBinary(cliCommand string) CliVerifyResult {
 	path, lookErr := exec.LookPath(cmd.Program)
 	if lookErr != nil {
 		return CliVerifyResult{
-			Available:  false,
-			Program:    cmd.Program,
+			Available:   false,
+			Program:     cmd.Program,
 			InstallHint: installHint(cmd.AdapterName),
 		}
 	}
@@ -267,4 +376,26 @@ func installHint(adapter string) string {
 	default:
 		return "Install the CLI tool and ensure it is in PATH"
 	}
+}
+
+func enrichedEnv() []string {
+	env := os.Environ()
+	pathDirs := []string{
+		os.ExpandEnv("$HOME/.local/bin"),
+		os.ExpandEnv("$HOME/.cargo/bin"),
+		"/usr/local/bin",
+		"/opt/homebrew/bin",
+	}
+	existingPath := os.Getenv("PATH")
+	if existingPath != "" {
+		pathDirs = append(pathDirs, existingPath)
+	}
+	newPath := "PATH=" + strings.Join(pathDirs, ":")
+	for i, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			env[i] = newPath
+			return env
+		}
+	}
+	return append(env, newPath)
 }

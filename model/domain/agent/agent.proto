@@ -283,6 +283,12 @@ message AgentMessage {
   string error_json = 10;
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp updated_at = 12;
+  // Lineage: branch_id groups messages in a regenerate/edit branch.
+  // replaces_message_id points to the message this one replaces (sibling branch).
+  optional string branch_id = 13;
+  optional string replaces_message_id = 14;
+  // Monotonic sequence within a conversation for cursor replay.
+  int64 seq = 15;
 }
 
 message ExecuteTurnRequest {
@@ -343,6 +349,166 @@ message GetTurnTraceRequest {
 
 message GetTurnTraceResponse {
   TurnTraceEntry entry = 1;
+}
+
+// ============================================================================
+// Client Capability Session (D13 — platform-neutral opaque resource refs)
+// ============================================================================
+
+message ClientCapabilitySession {
+  string session_id = 1;
+  string platform = 2;
+  map<string, string> capabilities = 3;
+  string client_version = 4;
+}
+
+// ============================================================================
+// Sequenced Turn Event (for SSE streaming + cursor replay)
+// ============================================================================
+
+enum TurnEventType {
+  TURN_EVENT_TYPE_UNSPECIFIED = 0;
+  TURN_EVENT_TYPE_PROGRESS = 1;
+  TURN_EVENT_TYPE_TEXT = 2;
+  TURN_EVENT_TYPE_TEXT_DELTA = 3;
+  TURN_EVENT_TYPE_TOOL_CALL = 4;
+  TURN_EVENT_TYPE_TOOL_RESULT = 5;
+  TURN_EVENT_TYPE_LOCAL_TOOL_REQUEST = 6;
+  TURN_EVENT_TYPE_TOOL_APPROVAL_REQUIRED = 7;
+  TURN_EVENT_TYPE_TOOL_APPROVAL_DECISION = 8;
+  TURN_EVENT_TYPE_ERROR = 9;
+  TURN_EVENT_TYPE_DONE = 10;
+  TURN_EVENT_TYPE_KNOWLEDGE_RETRIEVED = 11;
+}
+
+message TurnEvent {
+  int64 seq = 1;
+  string turn_id = 2;
+  string conversation_id = 3;
+  string agent_id = 4;
+  TurnEventType type = 5;
+  string stage = 6;
+  string text = 7;
+  string tool_call_id = 8;
+  string tool_name = 9;
+  string arguments = 10;
+  string result = 11;
+  string source = 12;
+  string server_name = 13;
+  string error = 14;
+  int32 iteration = 15;
+  string model = 16;
+  google.protobuf.Timestamp created_at = 17;
+}
+
+// ============================================================================
+// Conversation CRUD API
+// ============================================================================
+
+enum ConversationStatus {
+  CONVERSATION_STATUS_UNSPECIFIED = 0;
+  CONVERSATION_STATUS_ACTIVE = 1;
+  CONVERSATION_STATUS_ARCHIVED = 2;
+  CONVERSATION_STATUS_COMPRESSED = 3;
+  CONVERSATION_STATUS_DELETED = 4;
+}
+
+message ListConversationsRequest {
+  string agent_id = 1;
+  ConversationStatus status = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message ListConversationsResponse {
+  repeated Conversation conversations = 1;
+  int32 total = 2;
+  bool has_more = 3;
+}
+
+message GetConversationRequest {
+  string conversation_id = 1;
+}
+
+message GetConversationResponse {
+  Conversation conversation = 1;
+}
+
+message CreateConversationRequest {
+  string agent_id = 1;
+  string title = 2;
+  optional string description = 3;
+  optional string model_name = 4;
+  optional string provider_id = 5;
+}
+
+message CreateConversationResponse {
+  Conversation conversation = 1;
+}
+
+message UpdateConversationRequest {
+  string conversation_id = 1;
+  optional string title = 2;
+  optional string description = 3;
+  optional string model_name = 4;
+  map<string, string> meta = 5;
+}
+
+message UpdateConversationResponse {
+  Conversation conversation = 1;
+}
+
+message ArchiveConversationRequest {
+  string conversation_id = 1;
+  bool permanent = 2;
+}
+
+message ArchiveConversationResponse {
+  bool success = 1;
+}
+
+// ============================================================================
+// Message listing + event streaming (cursor replay)
+// ============================================================================
+
+message ListMessagesRequest {
+  string conversation_id = 1;
+  optional int64 after_seq = 2;
+  optional int64 before_seq = 3;
+  int32 limit = 4;
+  bool include_turn_events = 5;
+}
+
+message ListMessagesResponse {
+  repeated AgentMessage messages = 1;
+  repeated TurnEvent turn_events = 2;
+  int64 next_cursor = 3;
+  bool has_more = 4;
+}
+
+message StreamConversationEventsRequest {
+  string conversation_id = 1;
+  optional string active_turn_id = 2;
+  int64 after_seq = 3;
+}
+
+message StreamConversationEventsResponse {
+  TurnEvent event = 1;
+}
+
+// ============================================================================
+// Local tool result submission (Desktop → Station during streaming)
+// ============================================================================
+
+message SubmitLocalToolResultRequest {
+  string turn_id = 1;
+  string tool_call_id = 2;
+  string content = 3;
+  bool is_error = 4;
+}
+
+message SubmitLocalToolResultResponse {
+  bool success = 1;
 }
 
 // ============================================================================

@@ -67,7 +67,6 @@ logs/
 # Dart tool
 **/.dart_tool
 **/node_modules
-pnpm-lock.yaml
 **/package-lock.json
 
 
@@ -81,6 +80,7 @@ apps/station/app/peers-touch-app
 apps/station/app/peers-touch-station
 apps/station/app/app
 apps/station/app/main
+apps/station/app/station-test
 apps/station/frame/example/**/server
 apps/station/.gomodcache/
 external

@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, Tag } from '@lobehub/ui';
+import { Tag } from '@lobehub/ui';
 import { theme } from 'antd';
-import { CheckCircle2, Compass, List, Settings2 } from 'lucide-react';
+import { CheckCircle2, Compass, Settings2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import { ChatInput } from '../components/ChatInput';
 import { MessageList } from '../components/MessageList';
+import { OpStatusTray } from '../components/OpStatusTray';
 
-export function ChatPage({ onOpenProfile, onToggleTopics, topicsOpen }: { onOpenProfile?: () => void; onToggleTopics?: () => void; topicsOpen?: boolean }) {
+export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void; narrow?: boolean }) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const messages = useChatStore((s) => s.messages);
@@ -29,24 +30,11 @@ export function ChatPage({ onOpenProfile, onToggleTopics, topicsOpen }: { onOpen
 
   const selectedAgentData = agents.find((a) => a.name === selectedAgent);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const [isNarrow, setIsNarrow] = useState(typeof window !== 'undefined' ? window.innerWidth < 900 : false);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const syncWidth = (width: number) => {
-      if (width <= 0) return;
-      setIsNarrow(width < 900);
-    };
-    syncWidth(root.getBoundingClientRect().width);
-    const observer = new ResizeObserver(([entry]) => syncWidth(entry.contentRect.width));
-    observer.observe(root);
-    return () => observer.disconnect();
-  }, []);
+  const isNarrow = narrow ?? false;
 
   useEffect(() => {
     if (!selectedAgent) return;
+    if (currentSessionKey.startsWith('draft:')) return;
     const isTransientKey = !sessions.some((s) => s.key === currentSessionKey);
     if (!isTransientKey) return;
     const existing = sessions.find((s) => s.agent_name === selectedAgent);
@@ -57,7 +45,7 @@ export function ChatPage({ onOpenProfile, onToggleTopics, topicsOpen }: { onOpen
 
   useEffect(() => {
     loadSessions();
-  }, [loadSessions]);
+  }, [loadSessions, selectedAgent]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -78,7 +66,7 @@ export function ChatPage({ onOpenProfile, onToggleTopics, topicsOpen }: { onOpen
   };
 
   return (
-    <div ref={rootRef} style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', background: '#fff', minHeight: 0 }}>
+    <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', background: '#fff', minHeight: 0 }}>
       {selectedAgentData ? (
         <>
           <Flexbox
@@ -116,30 +104,18 @@ export function ChatPage({ onOpenProfile, onToggleTopics, topicsOpen }: { onOpen
                 {selectedAgentData.description || t('agent.chat.welcome.fallbackDescription')}
               </div>
             </div>
-            {isNarrow ? (
-              <ActionIcon
-                icon={List}
-                title={topicsOpen ? t('agent.chat.topics.collapse') : t('agent.chat.topics.expand')}
-                size={{ blockSize: 28, size: 15 }}
-                onClick={onToggleTopics}
-                style={{
-                  flexShrink: 0,
-                  borderRadius: 8,
-                  background: topicsOpen ? '#eceaf6' : token.colorFillQuaternary,
-                  color: topicsOpen ? token.colorPrimary : token.colorTextSecondary,
-                  border: 0,
-                }}
-              />
-            ) : (
-              <button
-                type="button"
-                title={t('agent.list.agentSettings')}
-                onClick={onOpenProfile}
-                style={{ border: 0, background: 'transparent', color: token.colorTextTertiary, cursor: 'pointer', padding: 2, display: 'inline-flex', alignItems: 'center', borderRadius: 6 }}
-              >
-                <Settings2 size={15} />
-              </button>
-            )}
+            <Flexbox horizontal align="center" gap={6} style={{ flexShrink: 0 }}>
+              {!isNarrow && (
+                <button
+                  type="button"
+                  title={t('agent.list.agentSettings')}
+                  onClick={onOpenProfile}
+                  style={{ border: 0, background: 'transparent', color: token.colorTextTertiary, cursor: 'pointer', padding: 2, display: 'inline-flex', alignItems: 'center', borderRadius: 6 }}
+                >
+                  <Settings2 size={15} />
+                </button>
+              )}
+            </Flexbox>
           </Flexbox>
 
           <div
@@ -214,6 +190,9 @@ export function ChatPage({ onOpenProfile, onToggleTopics, topicsOpen }: { onOpen
           </div>
 
           <div style={{ width: contentWidth, margin: '0 auto 18px', flexShrink: 0 }}>
+            <div style={{ marginBottom: 8 }}>
+              <OpStatusTray />
+            </div>
             <ChatInput />
           </div>
         </>

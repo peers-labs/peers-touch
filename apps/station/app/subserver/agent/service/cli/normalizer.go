@@ -8,15 +8,15 @@ import (
 type PromptDelivery int
 
 const (
-	PromptViaStdin    PromptDelivery = iota
+	PromptViaStdin PromptDelivery = iota
 	PromptViaArgument
 )
 
 type NormalizedCommand struct {
-	Program       string
-	Args          []string
-	AdapterName   string
-	PromptMethod  PromptDelivery
+	Program      string
+	Args         []string
+	AdapterName  string
+	PromptMethod PromptDelivery
 }
 
 func NormalizeCommand(raw string) (NormalizedCommand, error) {
@@ -45,14 +45,14 @@ func expandAdapter(name string) (NormalizedCommand, error) {
 	case "trae", "traecli", "traex":
 		return NormalizedCommand{
 			Program:      "traecli",
-			Args:         []string{"exec", "--skip-git-repo-check", "-"},
+			Args:         []string{"--json", "exec", "--skip-git-repo-check", "-"},
 			AdapterName:  "trae",
 			PromptMethod: PromptViaStdin,
 		}, nil
 	case "codex":
 		return NormalizedCommand{
 			Program:      "codex",
-			Args:         []string{"exec", "--skip-git-repo-check", "-"},
+			Args:         []string{"--json", "exec", "--skip-git-repo-check", "-"},
 			AdapterName:  "codex",
 			PromptMethod: PromptViaStdin,
 		}, nil

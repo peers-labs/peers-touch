@@ -17,7 +17,11 @@ cleanup() {
   for pid in "${SUPERVISOR_PIDS[@]:-}"; do
     wait "$pid" >/dev/null 2>&1 || true
   done
-  rm -rf "$CONTROL_DIR"
+  if [[ "${PT_C6_KEEP_CONTROL_DIR:-0}" == "1" ]]; then
+    echo "C6 control directory preserved at $CONTROL_DIR" >&2
+  else
+    rm -rf "$CONTROL_DIR"
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -75,6 +79,7 @@ gateway_supervisor() {
     PT_GATEWAY_PORT="$port" \
     PT_PROFILE="$profile" \
     PEERS_STATION_URL="$station" \
+    PEERS_STORAGE_ROOT="$CONTROL_DIR/storage-${name}" \
       "$ARTIFACT" >"/tmp/${profile}.log" 2>&1 &
     child="$!"
     printf '%s\n' "$child" >"$CONTROL_DIR/${name}.pid"
@@ -126,6 +131,7 @@ station_three_supervisor() {
         -o BatchMode=yes \
         -o ConnectTimeout=10 \
         -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
         shuxian@10.37.94.156 \
         "docker restart pt-station-a-station-1" >/dev/null
       for _ in $(seq 1 120); do
@@ -257,6 +263,7 @@ collect_station_head() {
     -o BatchMode=yes \
     -o ConnectTimeout=10 \
     -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
     "shuxian@${host}" \
     "db=\$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' '${db_container}' | sed -n 's/^POSTGRES_DB=//p'); \
      user=\$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' '${db_container}' | sed -n 's/^POSTGRES_USER=//p'); \

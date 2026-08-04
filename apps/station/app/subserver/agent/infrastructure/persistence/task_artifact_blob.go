@@ -19,7 +19,7 @@ type TaskArtifactBlob struct {
 	RetentionPolicy string     `gorm:"type:varchar(64);index:idx_agent_task_artifact_blobs_retention_policy"`
 	RetentionStatus string     `gorm:"type:varchar(32);index:idx_agent_task_artifact_blobs_retention_status"`
 	BodyText        string     `gorm:"type:text"`
-	CreatedAt       time.Time  `gorm:"not null;default:now();index:idx_agent_task_artifact_blobs_created"`
+	CreatedAt       time.Time  `gorm:"not null;autoCreateTime;index:idx_agent_task_artifact_blobs_created"`
 	ExpiresAt       *time.Time `gorm:"index:idx_agent_task_artifact_blobs_expires"`
 }
 

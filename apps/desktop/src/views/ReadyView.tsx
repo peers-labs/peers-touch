@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { listen } from '@tauri-apps/api/event';
 import { GlobalLayout } from '../components/GlobalLayout';
 import { AppSideNav } from '../components/AppSideNav';
 import { PageRouter } from '../components/PageRouter';
@@ -72,6 +73,14 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
   useEffect(() => {
     notifyActiveAppletPage(router.page);
   }, [router.page]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ providerId?: string }>('provider:open-settings', () => {
+      navigation.navigateTo('settings');
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [navigation]);
 
   const sideNav = standaloneApplet ? null : (
     <ShellCommitProfiler owner="shell:side-nav" surface="side-nav">

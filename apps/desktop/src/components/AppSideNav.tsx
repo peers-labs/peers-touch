@@ -17,6 +17,7 @@ import {
 import { NotificationBell } from './NotificationBell';
 import { UserProfilePopover, useUserAvatar } from './UserProfilePopover';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
+import { AgentIconTile } from './agent/AgentIconTile';
 import AppletManager from '../applet/AppletManager';
 import { getModulesWithSidebar } from '../modules/registry';
 import { useAgentStore } from '../store/agent';
@@ -75,6 +76,7 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
     () => new Map(installedApplets.map((info) => [info.manifest.id, info.manifest])),
     [installedApplets],
   );
+  const pinnedAgents = useMemo(() => agents.filter((agent) => agent.pinned), [agents]);
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
@@ -83,6 +85,20 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
     markInteractionStarted('shell', `primary-nav:${pageId}`, { pageId });
     navigation.navigateTo(pageId);
   }, [navigation]);
+
+  const openPinnedAgent = useCallback((agentName: string) => {
+    const agent = agents.find((item) => item.name === agentName);
+    if (!agent) {
+      navigation.navigateTo('agent');
+      return;
+    }
+    markInteractionStarted('shell', 'primary-nav:pinned-agent', { agentName });
+    void openAgentChatSession(agent, {
+      draftTitle: t('agent.sidebar.newTopic', { ns: 'agent' }),
+      reason: 'global-pinned-agent',
+    });
+    navigation.navigateTo('agent');
+  }, [agents, navigation, t]);
 
   const navigateAgentChat = useCallback(() => {
     markInteractionStarted('shell', 'primary-nav:agent', { pageId: 'agent' });
@@ -242,6 +258,45 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
                 title={t('layout.nav.search')}
               />
             </PrimaryNavAnchor>
+            {pinnedAgents.length > 0 && (
+              <span
+                role="separator"
+                aria-label="pinned-agents"
+                style={{
+                  width: 24,
+                  height: 1,
+                  margin: '4px auto',
+                  background: token.colorBorderSecondary,
+                  display: 'block',
+                }}
+              />
+            )}
+            {pinnedAgents.map((agent) => {
+              const active = page === 'agent' && selectedAgent === agent.name;
+              return (
+                <PrimaryNavAnchor key={agent.id} pageId={`agent:${agent.name}`}>
+                  <button
+                    type="button"
+                    title={agent.title || agent.name}
+                    onClick={() => openPinnedAgent(agent.name)}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      border: 0,
+                      padding: 0,
+                      borderRadius: 10,
+                      background: active ? token.colorPrimaryBg : 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <AgentIconTile agent={agent} size={28} selected={active} subtle />
+                  </button>
+                </PrimaryNavAnchor>
+              );
+            })}
             <PrimaryNavAnchor pageId="chat">
               <ActionIcon
                 icon={MessageCircle}

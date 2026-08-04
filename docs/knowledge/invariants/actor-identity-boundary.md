@@ -1,12 +1,15 @@
 ---
+kind: invariant
+title: Actor Identity Boundary
 status: active
 owns:
-  - apps/station/app/subserver/*/
+  - apps/station/app/subserver/
   - apps/station/frame/core/social_gate/
   - apps/desktop/src/services/
   - apps/desktop/src-tauri/src/
   - model/domain/
 severity: critical
+detected: 2026-07-31
 ---
 
 # Actor Identity Boundary Invariant
@@ -92,6 +95,16 @@ message FetchKeyPackageRequest {
   string ptid = 1;
 }
 ```
+
+## How to verify
+
+- `rg 'uint64\\s+(actor_id|sender_id|recipient_id|owner_id)' model/domain`
+  must return no cross-boundary actor identifiers.
+- `rg 'actor_did|subject_did' model/domain apps/station/app/subserver
+  apps/desktop/src-tauri/src apps/desktop/src/services` must return no
+  self-invented actor identity aliases.
+- Station adapter tests must resolve `ptid` to numeric IDs only inside
+  persistence adapters.
 
 ## Rationale
 

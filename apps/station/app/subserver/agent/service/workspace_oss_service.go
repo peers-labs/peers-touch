@@ -44,8 +44,8 @@ func (s *WorkspaceOSSService) GetUploadPresignedURL(ctx context.Context, req *mo
 	}
 
 	return &model.GetWorkspaceFileUploadUrlResponse{
-		Url:      request.URL,
-		Path:     req.GetPath(),
+		Url:       request.URL,
+		Path:      req.GetPath(),
 		ExpiresIn: int64(ttl.Seconds()),
 	}, nil
 }
@@ -70,7 +70,7 @@ func (s *WorkspaceOSSService) GetDownloadPresignedURL(ctx context.Context, req *
 	}
 
 	return &model.GetWorkspaceFileDownloadUrlResponse{
-		Url:      request.URL,
+		Url:       request.URL,
 		ExpiresIn: int64(ttl.Seconds()),
 	}, nil
 }

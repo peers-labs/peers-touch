@@ -12,6 +12,11 @@ providers:
     api_key_url: https://console.volcengine.com/ark
     default_base_url: https://ark.cn-beijing.volces.com/api/v3
     models:
+      - id: ep-20260623145021-n4xdm
+        display_name: Doubao Seed 2.1 Pro (Ark endpoint)
+        type: chat
+        enabled: true
+        context_window: 256000
       - id: doubao-pro-256k
         display_name: Doubao Pro
         type: chat
@@ -206,7 +211,7 @@ providers:
     default_base_url: ""
     runtime_kind: cli
     credential_env_key: OPENAI_API_KEY
-    cli_command: codex exec --skip-git-repo-check -
+    cli_command: codex --json exec --skip-git-repo-check -
     models:
       - id: gpt-5-codex
         display_name: GPT-5 Codex
@@ -268,7 +273,7 @@ providers:
   - id: trae-cli
     name: TRAE CLI
     description: Local TRAE CLI adapter running in the Agent workspace
-    enabled: false
+    enabled: true
     builtin: true
     show_checker: false
     show_api_key: false
@@ -278,7 +283,7 @@ providers:
     api_key_url: ""
     default_base_url: ""
     runtime_kind: cli
-    cli_command: traecli exec --skip-git-repo-check -
+    cli_command: traecli --json exec --skip-git-repo-check -
     models_command: traecli debug models
     models:
       - id: GPT-5.5

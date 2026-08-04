@@ -12,7 +12,7 @@ type InterruptRequest struct {
 	Status            int32      `gorm:"not null;type:integer;index:idx_agent_interrupt_requests_status"`
 	PayloadJSON       string     `gorm:"type:text"`
 	ResumePayloadJSON string     `gorm:"type:text"`
-	CreatedAt         time.Time  `gorm:"not null;default:now();index:idx_agent_interrupt_requests_created"`
+	CreatedAt         time.Time  `gorm:"not null;autoCreateTime;index:idx_agent_interrupt_requests_created"`
 	ResolvedAt        *time.Time `gorm:"index:idx_agent_interrupt_requests_resolved"`
 	ConsumedAt        *time.Time `gorm:"index:idx_agent_interrupt_requests_consumed"`
 	ConsumedStepID    string     `gorm:"type:varchar(36);index:idx_agent_interrupt_requests_consumed_step"`

@@ -6,6 +6,7 @@ import {
   type AvailableModel,
   type Agent,
   type AgentChatConfig,
+  type AgentCreate,
   type AppletInfo,
   parseAgentChatConfig,
 } from '../services/desktop_api';
@@ -36,6 +37,7 @@ interface AgentState extends RevalidationState {
   loadAgents: () => Promise<void>;
   loadApplets: () => Promise<void>;
   toggleApplet: (id: string) => Promise<void>;
+  updateAgentProfile: (agentId: string, updates: Partial<AgentCreate>) => Promise<Agent>;
   updateAgentConfig: (agentName: string, updates: { chatConfig?: Partial<AgentChatConfig> }) => Promise<void>;
   getCurrentAgentChatConfig: () => AgentChatConfig;
 }
@@ -285,7 +287,46 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
     }
   },
 
-  updateAgentConfig: async (agentName: string, updates: { chatConfig?: Partial<AgentChatConfig> }) => {
+  updateAgentProfile: async (agentId, updates) => {
+    const { agents } = get();
+    const agent = agents.find((a) => a.id === agentId);
+    if (!agent) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    const previousAgents = agents;
+    const mutationKey = `agent-profile:${agentId}`;
+    const optimisticAgent: Agent = { ...agent, ...updates };
+
+    set((state) => ({
+      agents: state.agents.map((item) => (item.id === agentId ? optimisticAgent : item)),
+      error: null,
+      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
+    }));
+
+    try {
+      const updated = await api.updateAgent(agentId, updates);
+      const reconciled: Agent = {
+        ...updated,
+        title: resolveI18nValue(updated.title),
+        description: resolveI18nValue(updated.description),
+      };
+      set((state) => ({
+        agents: state.agents.map((item) => (item.id === reconciled.id ? reconciled : item)),
+        lastLoadedAt: Date.now(),
+      }));
+      return reconciled;
+    } catch (error) {
+      const message = toStoreError(error);
+      log.error('agent', 'Failed to update agent profile', { agentId, error: message });
+      set({ agents: previousAgents, error: message });
+      throw error;
+    } finally {
+      set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
+    }
+  },
+
+  updateAgentConfig: async (agentName, updates: { chatConfig?: Partial<AgentChatConfig> }) => {
     const { agents } = get();
     const agent = agents.find((a) => a.name === agentName);
     if (!agent) return;

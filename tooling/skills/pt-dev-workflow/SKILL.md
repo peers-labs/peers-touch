@@ -18,7 +18,7 @@ and manages cross-session continuity.
 ## Stage Pipeline
 
 ```
-DESIGN → PLAN → EXECUTE → DELIVER
+PRODUCT → DESIGN → PLAN → EXECUTE → DELIVER
 ```
 
 Each stage has a dedicated skill, a gate, and an artifact. See AGENTS.md §13.5
@@ -47,19 +47,32 @@ what they want to do and proceeds with task classification (§2).
 
 | Signal | Starting stage | Rationale |
 |--------|---------------|-----------|
-| User mentions new architecture / boundary / ownership / protocol | DESIGN | Needs design methodology |
-| Architecture exists, user says "plan" / "execute" / "implement" | PLAN | Needs execution breakdown |
+| User requests a new product/module/capability, workflow redesign, or benchmark rebuild | PRODUCT | Needs product outcome, experience, and acceptance contract |
+| Product contract accepted; user mentions new architecture / boundary / ownership / protocol | DESIGN | Needs architecture methodology |
+| Product and architecture accepted; user says "plan" / "execute" / "implement" | PLAN | Needs execution breakdown |
 | Plan exists and is accepted, user says "start coding" / "do it" | EXECUTE | Plan already passed review |
 | Code is done, user says "PR" / "submit" / "deliver" | DELIVER | Needs commit + PR |
-| Single-file bug fix / cosmetic tweak / "just fix X" | EXECUTE (via `pt-small-fix-discipline`) | Skip DESIGN+PLAN |
+| Single-file bug fix / cosmetic tweak / "just fix X" | EXECUTE (via `pt-small-fix-discipline`) | Skip PRODUCT+DESIGN+PLAN |
 
-If ambiguous, ask: "Is this a new architecture decision, or implementation of something already planned?"
+If ambiguous, ask whether this is a new product/capability, a new architecture
+decision, or implementation of something already accepted and planned.
 
 ---
 
 ## 3. Stage Dispatch
 
 Based on current `active_work.stage`, invoke the appropriate skill:
+
+### Stage: PRODUCT
+
+```
+Invoke: pt-product-design-methodology
+Also:   pt-prototype-design (when UI/interaction is material)
+Gate:   Product review passes; required prototype is confirmed or explicitly blocked
+Output: Product definition, benchmark disposition, experience/state contracts,
+        acceptance matrix, and optional executable prototype
+Next:   → DESIGN
+```
 
 ### Stage: DESIGN
 
@@ -176,6 +189,7 @@ Project memory's `active_work` is just an index pointing to it.
 
 | Stage | Primary skill | Supporting skills |
 |-------|--------------|-------------------|
+| PRODUCT | `pt-product-design-methodology` | `pt-prototype-design`, `pt-plan-and-document` (document routing only) |
 | DESIGN | `pt-architecture-design-methodology` | `pt-plan-and-document` (for doc落盘) |
 | PLAN | `pt-architecture-execution-methodology` + `pt-plan-and-document` | — |
 | EXECUTE | `pt-execution-plan-guardian` | `pt-read-before-edit`, `pt-desktop-runtime-projections`, `pt-small-fix-discipline`, `pt-completion-auditor` |

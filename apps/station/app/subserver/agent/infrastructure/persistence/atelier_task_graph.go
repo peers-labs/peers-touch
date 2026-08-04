@@ -15,8 +15,8 @@ type AtelierTaskGraphNode struct {
 	SourceEventID   string    `gorm:"type:varchar(36);index:idx_agent_atelier_task_graph_nodes_event"`
 	SourceEventSeq  int64     `gorm:"not null;default:0;index:idx_agent_atelier_task_graph_nodes_event_seq"`
 	PayloadJSON     string    `gorm:"type:text"`
-	CreatedAt       time.Time `gorm:"not null;default:now();index:idx_agent_atelier_task_graph_nodes_created"`
-	UpdatedAt       time.Time `gorm:"not null;default:now();index:idx_agent_atelier_task_graph_nodes_updated"`
+	CreatedAt       time.Time `gorm:"not null;autoCreateTime;index:idx_agent_atelier_task_graph_nodes_created"`
+	UpdatedAt       time.Time `gorm:"not null;autoUpdateTime;index:idx_agent_atelier_task_graph_nodes_updated"`
 }
 
 func (AtelierTaskGraphNode) TableName() string { return "agent_atelier_task_graph_nodes" }
@@ -31,8 +31,8 @@ type AtelierTaskGraphEdge struct {
 	SourceEventID  string    `gorm:"type:varchar(36);index:idx_agent_atelier_task_graph_edges_event"`
 	SourceEventSeq int64     `gorm:"not null;default:0;index:idx_agent_atelier_task_graph_edges_event_seq"`
 	PayloadJSON    string    `gorm:"type:text"`
-	CreatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_atelier_task_graph_edges_created"`
-	UpdatedAt      time.Time `gorm:"not null;default:now();index:idx_agent_atelier_task_graph_edges_updated"`
+	CreatedAt      time.Time `gorm:"not null;autoCreateTime;index:idx_agent_atelier_task_graph_edges_created"`
+	UpdatedAt      time.Time `gorm:"not null;autoUpdateTime;index:idx_agent_atelier_task_graph_edges_updated"`
 }
 
 func (AtelierTaskGraphEdge) TableName() string { return "agent_atelier_task_graph_edges" }

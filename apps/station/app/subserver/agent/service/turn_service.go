@@ -65,6 +65,7 @@ import (
 // TurnConfig holds per-execution configuration for a single turn.
 type TurnConfig struct {
 	AgentID            string
+	ActorID            string
 	ConversationID     string
 	Identity           string
 	AgentConfigPrompt  string
@@ -135,6 +136,7 @@ type TurnService struct {
 	toolRegistry     *ToolRegistryService
 	reviewService    *ReviewService
 	growthMetrics    *GrowthMetricsService
+	convService      *ConversationService
 	cliExecutor      *cli.CliExecutor
 	nudgeState       *domain.NudgeState
 	localToolBroker  *LocalToolBroker
@@ -156,6 +158,7 @@ func NewTurnService(
 	toolRegistry *ToolRegistryService,
 	reviewService *ReviewService,
 	growthMetrics *GrowthMetricsService,
+	convService *ConversationService,
 ) *TurnService {
 	return &TurnService{
 		errorClassifier:  errorClassifier,
@@ -170,6 +173,7 @@ func NewTurnService(
 		toolRegistry:     toolRegistry,
 		reviewService:    reviewService,
 		growthMetrics:    growthMetrics,
+		convService:      convService,
 		nudgeState:       domain.NewNudgeState(),
 		localToolBroker:  NewLocalToolBroker(),
 		liveResumeBroker: NewLiveResumeBroker(),
@@ -287,14 +291,13 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			nil)
 	}
 
-	// CLI routing: when CliCommand is set, delegate the entire turn to the CLI
-	// executor which spawns a local CLI process instead of calling the LLM provider.
-	if config.CliCommand != "" {
-		return s.executeCLITurn(ctx, config, turnID, userInput)
+	// Resolve agent identity/config defaults from DB when not provided per-turn.
+	if config.Identity == "" || config.AgentConfigPrompt == "" || config.Provider == "" || config.Model == "" {
+		s.resolveAgentDefaults(ctx, config)
 	}
 
-	logger.Infof(ctx, "turn started: turn_id=%s agent_id=%s conversation_id=%s",
-		turnID, config.AgentID, config.ConversationID)
+	logger.Infof(ctx, "turn started: turn_id=%s agent_id=%s conversation_id=%s provider=%s",
+		turnID, config.AgentID, config.ConversationID, config.Provider)
 	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 		Type:  "progress",
 		Stage: "turn_started",
@@ -309,13 +312,22 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		mp.OnTurnStart(turnID, userInput)
 	}
 
-	// Step 2 — Persist user message.
+	// Persist user message.
 	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleUser), userInput); err != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist user message")
 		return nil, err
 	}
 
-	// Step 3 — Preprocess context references (@file, @folder, @url, …).
+	// CLI routing: when CliCommand is set or provider is trae-cli, delegate
+	// to the CLI executor which spawns a local CLI process.
+	if config.CliCommand != "" || config.Provider == "trae-cli" {
+		if config.CliCommand == "" {
+			config.CliCommand = "traecli"
+		}
+		return s.executeCLITurn(ctx, config, turnID, userInput)
+	}
+
+	// Preprocess context references (@file, @folder, @url, …).
 	processedInput := userInput
 	if config.WorkspaceRoot != "" {
 		refResult, refErr := s.contextReference.Process(ctx, userInput, config.WorkspaceRoot, config.ContextWindowSize)
@@ -327,8 +339,6 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 				turnID, len(refResult.Expanded), len(refResult.Blocked), refResult.InjectedTokens)
 		}
 	}
-
-	// Step 4 — Assemble system prompt.
 	assemblyResult, err := s.promptAssembly.Assemble(
 		ctx,
 		config.AgentID,
@@ -433,6 +443,8 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		})
 		return nil, err
 	}
+
+	assistantResponse = stripToolCallMarkup(assistantResponse)
 
 	// Step 9 — Update nudge state counters and trigger background review.
 	// Fix 2026-04-11: use thread-safe accessor methods to avoid data race with
@@ -634,7 +646,7 @@ func (s *TurnService) runCompression(
 // produced by CompressionService.Compress and contains the conversation
 // text to summarize along with formatting instructions.
 func (s *TurnService) executeSummaryLLM(ctx context.Context, config *TurnConfig, summaryPrompt string) (string, error) {
-	credential, err := s.credentialPool.Lease(ctx, config.AgentID, config.Provider, domain.RotationRoundRobin)
+	credential, err := s.credentialPool.Lease(ctx, config.ActorID, config.Provider, domain.RotationRoundRobin)
 	if err != nil {
 		return "", fmt.Errorf("no credential for summary: %w", err)
 	}
@@ -754,13 +766,13 @@ func (s *TurnService) providerCallWithRetry(
 
 		// Turn-time revalidation: verify provider and model are valid before execution.
 		if attempt == 0 {
-			if revalErr := s.revalidateProviderState(ctx, config.AgentID, providerID, config.Model); revalErr != nil {
+			if revalErr := s.revalidateProviderState(ctx, config.ActorID, providerID, config.Model); revalErr != nil {
 				return "", providerCalls, false, revalErr
 			}
 		}
 
 		// Lease a credential for the provider.
-		credential, leaseErr := s.credentialPool.Lease(ctx, config.AgentID, providerID, strategy)
+		credential, leaseErr := s.credentialPool.Lease(ctx, config.ActorID, providerID, strategy)
 		if leaseErr != nil {
 			logger.Errorf(ctx, "credential lease failed: turn_id=%s attempt=%d err=%v",
 				turnID, attempt, leaseErr)
@@ -924,6 +936,16 @@ func (s *TurnService) processToolCalls(
 		iterations++
 		logger.Infof(ctx, "tool iteration %d: turn_id=%s tool_count=%d", iterations, turnID, len(toolCalls))
 
+		messages = append(messages, domain.Message{
+			MessageID:      generateID("msg"),
+			ConversationID: config.ConversationID,
+			TurnID:         turnID,
+			Role:           domain.MessageRoleAssistant,
+			Content:        *responsePtr,
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+		})
+
 		for _, tc := range toolCalls {
 			callStart := time.Now()
 			callID := generateID("toolcall")
@@ -1035,9 +1057,13 @@ func (s *TurnService) processToolCalls(
 			ctx, config, turnID, trace, systemPrompt, messages,
 		)
 		if reCallErr != nil {
-			logger.Errorf(ctx, "provider re-call failed after tool iteration %d: turn_id=%s err=%v",
+			logger.Warnf(ctx, "provider re-call failed after tool iteration %d (non-fatal): turn_id=%s err=%v",
 				iterations, turnID, reCallErr)
-			return iterations, reCallErr
+			*responsePtr = stripToolCallMarkup(*responsePtr)
+			if strings.TrimSpace(*responsePtr) == "" {
+				*responsePtr = "I've noted that information."
+			}
+			return iterations, nil
 		}
 
 		*responsePtr = nextResponse
@@ -1045,6 +1071,7 @@ func (s *TurnService) processToolCalls(
 
 	if iterations >= maxToolIterations {
 		logger.Warnf(ctx, "tool iteration hard limit reached: turn_id=%s iterations=%d", turnID, iterations)
+		*responsePtr = stripToolCallMarkup(*responsePtr)
 	}
 
 	return iterations, nil
@@ -1330,51 +1357,189 @@ type toolCallEntry struct {
 	Arguments string
 }
 
-// parseToolCalls attempts to extract structured tool calls from the assistant
-// response. The format follows the convention:
-//
-//	<tool_call>{"name":"tool_name","arguments":{...}}</tool_call>
-//
-// Returns an empty slice if no tool calls are found.
 func (s *TurnService) parseToolCalls(response string) []toolCallEntry {
 	var calls []toolCallEntry
+	calls = append(calls, parseToolCallsJSON(response)...)
+	calls = append(calls, parseToolCallsArk(response)...)
+	calls = append(calls, parseToolCallsSeedXML(response)...)
+	return calls
+}
 
+func parseToolCallsJSON(response string) []toolCallEntry {
+	var calls []toolCallEntry
 	const openTag = "<tool_call>"
 	const closeTag = "</tool_call>"
-
 	remaining := response
 	for {
-		startIdx := len(remaining) - len(remaining)
-		_ = startIdx
-
 		openIdx := indexOf(remaining, openTag)
 		if openIdx < 0 {
 			break
 		}
-
-		closeIdx := indexOf(remaining[openIdx:], closeTag)
-		if closeIdx < 0 {
+		closeRelIdx := indexOf(remaining[openIdx:], closeTag)
+		if closeRelIdx < 0 {
 			break
 		}
-
-		jsonStr := remaining[openIdx+len(openTag) : openIdx+closeIdx]
-
+		jsonStr := strings.TrimSpace(remaining[openIdx+len(openTag) : openIdx+closeRelIdx])
 		var parsed struct {
 			Name      string          `json:"name"`
 			Arguments json.RawMessage `json:"arguments"`
 		}
-
 		if err := json.Unmarshal([]byte(jsonStr), &parsed); err == nil && parsed.Name != "" {
-			calls = append(calls, toolCallEntry{
-				ToolName:  parsed.Name,
-				Arguments: string(parsed.Arguments),
-			})
+			args := string(parsed.Arguments)
+			if args == "" {
+				args = "{}"
+			}
+			calls = append(calls, toolCallEntry{ToolName: parsed.Name, Arguments: args})
 		}
-
-		remaining = remaining[openIdx+closeIdx+len(closeTag):]
+		remaining = remaining[openIdx+closeRelIdx+len(closeTag):]
 	}
-
 	return calls
+}
+
+func parseToolCallsArk(response string) []toolCallEntry {
+	var calls []toolCallEntry
+	const openTag = "<|FunctionCallBegin|>"
+	const closeTag = "<|FunctionCallEnd|>"
+	remaining := response
+	for {
+		openIdx := indexOf(remaining, openTag)
+		if openIdx < 0 {
+			break
+		}
+		closeRelIdx := indexOf(remaining[openIdx:], closeTag)
+		if closeRelIdx < 0 {
+			break
+		}
+		jsonStr := strings.TrimSpace(remaining[openIdx+len(openTag) : openIdx+closeRelIdx])
+		var arkCalls []struct {
+			Name       string          `json:"name"`
+			Parameters json.RawMessage `json:"parameters"`
+		}
+		if err := json.Unmarshal([]byte(jsonStr), &arkCalls); err == nil {
+			for _, ac := range arkCalls {
+				if ac.Name != "" {
+					args := string(ac.Parameters)
+					if args == "" {
+						args = "{}"
+					}
+					calls = append(calls, toolCallEntry{ToolName: ac.Name, Arguments: args})
+				}
+			}
+		}
+		remaining = remaining[openIdx+closeRelIdx+len(closeTag):]
+	}
+	return calls
+}
+
+func parseToolCallsSeedXML(response string) []toolCallEntry {
+	var calls []toolCallEntry
+	const openTag = "<seed:tool_call>"
+	const closeTag = "</seed:tool_call>"
+	remaining := response
+	for {
+		openIdx := indexOf(remaining, openTag)
+		if openIdx < 0 {
+			break
+		}
+		closeRelIdx := indexOf(remaining[openIdx:], closeTag)
+		if closeRelIdx < 0 {
+			break
+		}
+		block := remaining[openIdx+len(openTag) : openIdx+closeRelIdx]
+		funcOpen := "<function name=\""
+		fIdx := indexOf(block, funcOpen)
+		if fIdx >= 0 {
+			afterFunc := block[fIdx+len(funcOpen):]
+			endQuote := indexOf(afterFunc, "\"")
+			if endQuote > 0 {
+				funcName := afterFunc[:endQuote]
+				funcBodyStart := afterFunc[endQuote+1:]
+				funcClose := "</function>"
+				fcIdx := indexOf(funcBodyStart, funcClose)
+				if fcIdx >= 0 {
+					funcBody := funcBodyStart[:fcIdx]
+					params := parseSeedXMLParams(funcBody)
+					argsJSON, _ := json.Marshal(params)
+					if funcName != "" {
+						calls = append(calls, toolCallEntry{ToolName: funcName, Arguments: string(argsJSON)})
+					}
+				}
+			}
+		}
+		remaining = remaining[openIdx+closeRelIdx+len(closeTag):]
+	}
+	return calls
+}
+
+func parseSeedXMLParams(body string) map[string]string {
+	params := make(map[string]string)
+	remaining := body
+	pClose := "</parameter>"
+	for {
+		pOpenTag := "<parameter name=\""
+		pIdx := indexOf(remaining, pOpenTag)
+		if pIdx < 0 {
+			break
+		}
+		afterParam := remaining[pIdx+len(pOpenTag):]
+		endQuote := indexOf(afterParam, "\"")
+		if endQuote < 0 {
+			break
+		}
+		paramName := afterParam[:endQuote]
+		afterQuote := afterParam[endQuote+1:]
+		pClOffset := indexOf(afterQuote, pClose)
+		if pClOffset < 0 {
+			break
+		}
+		paramVal := strings.TrimSpace(afterQuote[:pClOffset])
+		if paramName != "" {
+			params[paramName] = paramVal
+		}
+		remaining = afterQuote[pClOffset+len(pClose):]
+	}
+	return params
+}
+
+func stripToolCallMarkup(response string) string {
+	cleaned := response
+	for {
+		openIdx := indexOf(cleaned, "<|FunctionCallBegin|>")
+		if openIdx < 0 {
+			break
+		}
+		closeRelIdx := indexOf(cleaned[openIdx:], "<|FunctionCallEnd|>")
+		if closeRelIdx < 0 {
+			cleaned = cleaned[:openIdx]
+			break
+		}
+		cleaned = cleaned[:openIdx] + cleaned[openIdx+closeRelIdx+len("<|FunctionCallEnd|>"):]
+	}
+	for {
+		openIdx := indexOf(cleaned, "<tool_call>")
+		if openIdx < 0 {
+			break
+		}
+		closeRelIdx := indexOf(cleaned[openIdx:], "</tool_call>")
+		if closeRelIdx < 0 {
+			cleaned = cleaned[:openIdx]
+			break
+		}
+		cleaned = cleaned[:openIdx] + cleaned[openIdx+closeRelIdx+len("</tool_call>"):]
+	}
+	for {
+		openIdx := indexOf(cleaned, "<seed:tool_call>")
+		if openIdx < 0 {
+			break
+		}
+		closeRelIdx := indexOf(cleaned[openIdx:], "</seed:tool_call>")
+		if closeRelIdx < 0 {
+			cleaned = cleaned[:openIdx]
+			break
+		}
+		cleaned = cleaned[:openIdx] + cleaned[openIdx+closeRelIdx+len("</seed:tool_call>"):]
+	}
+	return strings.TrimSpace(cleaned)
 }
 
 // indexOf returns the index of substr in s, or -1 if not found.
@@ -1427,6 +1592,22 @@ func (s *TurnService) persistMessage(ctx context.Context, conversationID, turnID
 		return err
 	}
 
+	var seq int64
+	if s.convService != nil {
+		seq, err = s.convService.NextSeq(ctx, conversationID)
+		if err != nil {
+			logger.Errorf(ctx, "NextSeq failed, computing fallback: conversation_id=%s err=%v", conversationID, err)
+		}
+	}
+	if seq <= 0 {
+		var maxSeq struct{ MaxSeq int64 }
+		db.WithContext(ctx).Model(&persistence.AgentMessage{}).
+			Where("conversation_id = ?", conversationID).
+			Select("COALESCE(MAX(seq), 0) as max_seq").
+			Scan(&maxSeq)
+		seq = maxSeq.MaxSeq + 1
+	}
+
 	now := time.Now()
 	msg := &persistence.AgentMessage{
 		ID:             generateID("msg"),
@@ -1434,13 +1615,14 @@ func (s *TurnService) persistMessage(ctx context.Context, conversationID, turnID
 		TurnID:         &turnID,
 		Role:           role,
 		Content:        &content,
+		Seq:            seq,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
 
 	if err := db.WithContext(ctx).Create(msg).Error; err != nil {
-		logger.Errorf(ctx, "failed to persist message: conversation_id=%s role=%s err=%v",
-			conversationID, role, err)
+		logger.Errorf(ctx, "failed to persist message: conversation_id=%s role=%s seq=%d err=%v",
+			conversationID, role, seq, err)
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to persist message", err)
 	}
@@ -1837,6 +2019,44 @@ func (s *TurnService) getDB(ctx context.Context) (*gorm.DB, error) {
 	return db, nil
 }
 
+func (s *TurnService) resolveAgentDefaults(ctx context.Context, config *TurnConfig) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return
+	}
+	var agent persistence.Agent
+	if err := db.WithContext(ctx).Where("id = ?", config.AgentID).First(&agent).Error; err != nil {
+		return
+	}
+	var cfg map[string]interface{}
+	_ = json.Unmarshal([]byte(agent.ConfigJSON), &cfg)
+	if cfg == nil {
+		return
+	}
+	extractStr := func(keys ...string) string {
+		for _, k := range keys {
+			if v, ok := cfg[k]; ok {
+				if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+					return s
+				}
+			}
+		}
+		return ""
+	}
+	if config.Identity == "" {
+		config.Identity = extractStr("identity", "soulMd", "soul_md", "soul", "systemPrompt", "system_prompt")
+	}
+	if config.AgentConfigPrompt == "" {
+		config.AgentConfigPrompt = extractStr("agentConfigPrompt", "agent_config_prompt", "agentsMd", "agents_md", "agents")
+	}
+	if config.Provider == "" {
+		config.Provider = strings.TrimSpace(agent.ProviderID)
+	}
+	if config.Model == "" {
+		config.Model = strings.TrimSpace(agent.ModelName)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // executeCLITurn — route the turn through the CLI executor instead of LLM
 // ---------------------------------------------------------------------------
@@ -1881,20 +2101,24 @@ func (s *TurnService) executeCLITurn(ctx context.Context, config *TurnConfig, tu
 	// Collect streamed output through the event sink adapter.
 	var responseBuilder strings.Builder
 	cliSink := func(eventType string, data map[string]any) {
-		// Forward CLI events to the turn event sink so the client receives streaming data.
 		turnEvent := TurnEvent{
 			Type:  eventType,
 			Stage: "cli_execution",
 		}
 		if text, ok := data["content"].(string); ok {
 			turnEvent.Text = text
-			responseBuilder.WriteString(text)
+			if eventType == "text" {
+				responseBuilder.WriteString(text)
+			}
 		}
 		s.emitTurnEvent(ctx, config, turnID, turnEvent)
 	}
 
 	// Derive actorID from context subject for workspace scoping.
-	actorID := config.AgentID
+	actorID := config.ActorID
+	if actorID == "" {
+		actorID = config.AgentID
+	}
 
 	cliErr := s.cliExecutor.Execute(ctx, cliReq, actorID, cliSink)
 	if cliErr != nil {

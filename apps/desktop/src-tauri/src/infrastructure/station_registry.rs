@@ -48,7 +48,9 @@ impl StationRegistry {
             .ok()
             .map(|u| u.trim_end_matches('/').to_string())
             .filter(|u| !u.is_empty())
-            .expect("PEERS_STATION_URL must be set — start via `make desktop` or `make desktop-web`");
+            .expect(
+                "PEERS_STATION_URL must be set — start via `make desktop` or `make desktop-web`",
+            );
 
         let (mut entries, active) = if let Ok(content) = std::fs::read_to_string(path) {
             if let Ok(data) = serde_json::from_str::<PersistedData>(&content) {
