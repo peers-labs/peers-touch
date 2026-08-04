@@ -49,11 +49,11 @@ const (
 	EventMemoryCreated    = "memory_created"
 	EventMemoryReplaced   = "memory_replaced"
 	EventMemoryRemoved    = "memory_removed"
-	EventMemoryUsed       = "memory_used"       // memory appeared in system prompt
+	EventMemoryUsed       = "memory_used" // memory appeared in system prompt
 	EventSkillCreated     = "skill_created"
 	EventSkillPatched     = "skill_patched"
 	EventSkillDeleted     = "skill_deleted"
-	EventSkillUsed        = "skill_used"         // skill was referenced by LLM
+	EventSkillUsed        = "skill_used" // skill was referenced by LLM
 	EventReviewTriggered  = "review_triggered"
 	EventReviewCompleted  = "review_completed"
 	EventReviewFailed     = "review_failed"
@@ -96,14 +96,14 @@ type GrowthSnapshot struct {
 	PositiveFeedback  int     `json:"positive_feedback"`
 	NegativeFeedback  int     `json:"negative_feedback"`
 	FeedbackRatio     float64 `json:"feedback_ratio"`      // positive / total, 0.0-1.0
-	ErrorRate         float64 `json:"error_rate"`           // failed turns / total turns
-	RetryRate         float64 `json:"retry_rate"`           // retried turns / total turns
-	ReviewSuccessRate float64 `json:"review_success_rate"`  // completed / triggered
+	ErrorRate         float64 `json:"error_rate"`          // failed turns / total turns
+	RetryRate         float64 `json:"retry_rate"`          // retried turns / total turns
+	ReviewSuccessRate float64 `json:"review_success_rate"` // completed / triggered
 
 	// Growth Trend (comparing this week vs last week)
 	MemoryGrowthRate float64 `json:"memory_growth_rate"` // delta / prev, can be negative
 	SkillGrowthRate  float64 `json:"skill_growth_rate"`
-	QualityTrend     float64 `json:"quality_trend"`      // delta feedback_ratio
+	QualityTrend     float64 `json:"quality_trend"` // delta feedback_ratio
 
 	// Composite Score
 	GrowthScore   float64 `json:"growth_score"`   // -1.0 (declining) to 1.0 (improving)
@@ -501,6 +501,7 @@ func (s *GrowthMetricsService) queryWindowMetrics(
 //   - review_success        20%
 //   - error_rate_improvement 20%
 //   - knowledge_growth      20%
+//
 // computeMemoryTrustHealth returns the average TrustScore of all memories
 // for the given agent. Returns 0.5 (neutral) if no memories exist.
 func (s *GrowthMetricsService) computeMemoryTrustHealth(
