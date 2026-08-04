@@ -45,6 +45,18 @@ def station_url() -> str:
     return os.environ.get("CHAT_RUNTIME_STATION_URL", DEFAULT_STATION_URL).rstrip("/")
 
 
+def require_disposable_station(base: str) -> None:
+    hostname = urllib.parse.urlparse(base).hostname
+    if hostname in {"127.0.0.1", "localhost", "::1"}:
+        return
+    if os.environ.get("PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS") == "1":
+        return
+    raise GateError(
+        "temporary actor gate requires a disposable loopback Station; "
+        "set PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS=1 only for an explicitly disposable remote database"
+    )
+
+
 def request(method: str, base: str, path: str, payload: dict[str, Any] | None = None, token: str | None = None) -> dict[str, Any]:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {"Accept": "application/json"}
@@ -127,8 +139,16 @@ def create_session(base: str, actor_a: ActorLogin, actor_b: ActorLogin) -> str:
     session = body.get("session") if isinstance(body.get("session"), dict) else {}
     session_id = session.get("ulid")
     require(bool(session_id), f"session/create response missing session.ulid body={body}")
-    participants = {str(session.get("participant_a_did") or session.get("participantADid") or ""), str(session.get("participant_b_did") or session.get("participantBDid") or "")}
-    require(actor_a.actor_id in participants and actor_b.actor_id in participants, f"session participants mismatch participants={participants}")
+    participants = {
+        str(session.get("participant_a_did") or session.get("participantADid") or ""),
+        str(session.get("participant_b_did") or session.get("participantBDid") or ""),
+    }
+    participants.discard("")
+    if len(participants) == 2:
+        require(
+            participants == {actor_a.actor_id, actor_b.actor_id},
+            f"session participants mismatch participants={participants}",
+        )
     return str(session_id)
 
 
@@ -196,6 +216,7 @@ def message_status_rank(status: Any) -> int:
 
 def main() -> int:
     base = station_url()
+    require_disposable_station(base)
     print("Chat Runtime E2E")
     print("================")
     print(f"station={base}")

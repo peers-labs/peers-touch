@@ -91,6 +91,7 @@
   "error.chat.scopeAndCursorRequired": "需要范围和游标",
   "error.chat.scopeRequired": "需要指定范围",
   "error.chat.sendFailed": "消息发送失败",
+  "error.chat.secureChannelUnavailable": "安全通道尚未就绪。对方可能需要先打开 Peers，才能接收加密消息。",
   "error.chat.senderKeySyncing": "群聊加密密钥还在同步，请稍后重试",
   "error.chat.setCursorFailed": "设置游标失败",
 

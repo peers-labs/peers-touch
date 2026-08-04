@@ -28,21 +28,3 @@ peers:
         outbox: "https://station.local/actor/carol/outbox"
         endpoints:
           sharedInbox: "https://station.local/inbox"
-      - id: "https://station.local/actor/dave"
-        username: "dave"
-        email: "dave@p.t"
-        display_name: "Dave ${PEERS_NODE_LABEL}"
-        password: "1"
-        inbox: "https://station.local/actor/dave/inbox"
-        outbox: "https://station.local/actor/dave/outbox"
-        endpoints:
-          sharedInbox: "https://station.local/inbox"
-      - id: "https://station.local/actor/eve"
-        username: "eve"
-        email: "eve@p.t"
-        display_name: "Eve ${PEERS_NODE_LABEL}"
-        password: "1"
-        inbox: "https://station.local/actor/eve/inbox"
-        outbox: "https://station.local/actor/eve/outbox"
-        endpoints:
-          sharedInbox: "https://station.local/inbox"

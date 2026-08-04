@@ -56,6 +56,14 @@ export const mapChatError: ErrorMapper<ChatErrorContext> = (error, context) => {
     return presentedError('chat.senderKeySyncing', 'error.chat.senderKeySyncing');
   }
 
+  if (
+    lowerMessage.includes('establishing secure channel')
+    || lowerMessage.includes('key bundle')
+    || lowerMessage.includes('encryption keys')
+  ) {
+    return presentedError('chat.secureChannelUnavailable', 'error.chat.secureChannelUnavailable');
+  }
+
   if (lowerMessage.includes('forbidden') || lowerMessage.includes('permission') || lowerMessage.includes('not member')) {
     return presentedError('chat.permissionDenied', 'error.chat.permissionDenied');
   }
