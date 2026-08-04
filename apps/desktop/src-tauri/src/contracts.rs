@@ -148,11 +148,6 @@ pub struct FriendChatListInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatCreateSessionInput {
-    pub participant_did: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendConversationSettingsInput {
     pub session_ulid: String,
 }
