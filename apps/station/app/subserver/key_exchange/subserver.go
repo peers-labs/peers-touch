@@ -72,7 +72,10 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	registerKeyExchangeFederationScope()
 
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
+	s.jwtWrapper = withCanonicalKeyExchangeSubject(
+		server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider)),
+		resolveKeyExchangeSubjectPTID,
+	)
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
