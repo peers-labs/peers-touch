@@ -290,6 +290,46 @@ function applyDecodedChatPayload<T extends FriendChatMessage | GroupMessage>(
   } as T;
 }
 
+type DecryptCacheEntry = {
+  content: string;
+  type: number;
+  attachments: unknown[];
+  cachedAt: number;
+};
+
+function persistDecryptCache(messageId: string, entry: DecryptCacheEntry): void {
+  api.chatDecryptCachePut({
+    message_id: messageId,
+    content: entry.content,
+    message_type: entry.type,
+    attachments_json: JSON.stringify(
+      entry.attachments,
+      (_key, value) => typeof value === 'bigint' ? value.toString() : value,
+    ),
+    cached_at: entry.cachedAt,
+  }).catch((error) => {
+    log.warn('socialChat', 'persist decrypt cache failed', error);
+  });
+}
+
+async function readDurableDecryptCache(messageId: string): Promise<DecryptCacheEntry | null> {
+  try {
+    const { entry } = await api.chatDecryptCacheGet(messageId);
+    if (!entry) return null;
+    const cached: DecryptCacheEntry = {
+      content: entry.content,
+      type: entry.message_type,
+      attachments: JSON.parse(entry.attachments_json) as unknown[],
+      cachedAt: entry.cached_at,
+    };
+    setDecryptCache(messageId, cached);
+    return cached;
+  } catch (error) {
+    log.warn('socialChat', 'read decrypt cache failed', error);
+    return null;
+  }
+}
+
 function cacheOwnCommittedMessage(
   event: CommittedConversationEvent,
   content: string,
@@ -297,12 +337,14 @@ function cacheOwnCommittedMessage(
   messageType?: number,
 ): void {
   if (event.payload.case !== 'messageCommitted' || !event.payload.value.messageId) return;
-  setDecryptCache(event.payload.value.messageId, {
+  const entry = {
     content,
     type: messageType ?? encryptedChatTransportMessageType(),
     attachments: attachments.map(groupAttachmentFromInput),
     cachedAt: Date.now(),
-  });
+  };
+  setDecryptCache(event.payload.value.messageId, entry);
+  persistDecryptCache(event.payload.value.messageId, entry);
 }
 export interface UnifiedConversation {
   type: 'friend' | 'group';
@@ -822,12 +864,14 @@ function socialMessageSentAtMs(msg: SocialMessage): number {
 
 function cacheDecryptedGroupMessage(message: GroupMessage, decoded: GroupMessage): void {
   if (!message.ulid) return;
-  setDecryptCache(message.ulid, {
+  const entry = {
     content: decoded.content,
     type: decoded.type || message.type,
     attachments: decoded.attachments as unknown[],
     cachedAt: Date.now(),
-  });
+  };
+  setDecryptCache(message.ulid, entry);
+  persistDecryptCache(message.ulid, entry);
 }
 
 function isMessageInThread(msg: SocialMessage, rootUlid: string): boolean {
@@ -993,6 +1037,10 @@ async function decodeGroupMessage(
   if (cached) {
     return { ...message, content: cached.content, type: cached.type || message.type, attachments: cached.attachments } as GroupMessage;
   }
+  const durable = await readDurableDecryptCache(message.ulid);
+  if (durable) {
+    return { ...message, content: durable.content, type: durable.type || message.type, attachments: durable.attachments } as GroupMessage;
+  }
   try {
     const cipherBytes = Uint8Array.from(atob(payloadB64), c => c.charCodeAt(0));
     const plaintext = await imServiceV1.mlsGroup.decrypt(groupUlid, cipherBytes);
@@ -1042,6 +1090,10 @@ async function decodeFriendMessage(
   if (cached) {
     return { ...message, content: cached.content, type: cached.type || message.type, attachments: cached.attachments } as FriendChatMessage;
   }
+  const durable = await readDurableDecryptCache(message.ulid);
+  if (durable) {
+    return { ...message, content: durable.content, type: durable.type || message.type, attachments: durable.attachments } as FriendChatMessage;
+  }
 
   try {
     const envelope = decodeFriendEncryptedEnvelope(message.encryptedPayload);
@@ -1062,7 +1114,9 @@ async function decodeFriendMessage(
       throw new Error('Double Ratchet plaintext is not a valid encrypted chat payload');
     }
     const result = applyDecodedChatPayload(message, payload);
-    setDecryptCache(message.ulid, { content: result.content, type: result.type, attachments: (result as { attachments?: unknown[] }).attachments ?? [], cachedAt: Date.now() });
+    const entry = { content: result.content, type: result.type, attachments: (result as { attachments?: unknown[] }).attachments ?? [], cachedAt: Date.now() };
+    setDecryptCache(message.ulid, entry);
+    persistDecryptCache(message.ulid, entry);
     return result;
   } catch (error) {
     log.warn('socialChat', 'friend decrypt failed', error);
@@ -1305,14 +1359,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   establishSession: async (sessionUlid, peerDid, initiatedBySend = false) => {
-    const { encryptionEnabled, sessionEncrypted, sessionSecurityState } = get();
-    if (!encryptionEnabled || sessionEncrypted[sessionUlid]) {
-      return sessionEncrypted[sessionUlid] ?? false;
-    }
-    const persisted = await api.cryptoSessionStatus(sessionUlid);
-    if (persisted.established && persisted.version === 1) {
-      get().setSessionSecurityState(sessionUlid, 'ready', 1);
-      return true;
+    const { encryptionEnabled, sessionSecurityState } = get();
+    if (!encryptionEnabled) {
+      return false;
     }
     if (sessionSecurityState[sessionUlid] === 'establishing') {
       return false;
@@ -1330,6 +1379,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       return false;
     }
     get().setSessionSecurityState(sessionUlid, 'establishing');
+    const persisted = await api.cryptoSessionStatus(sessionUlid);
+    if (persisted.established && persisted.version === 1) {
+      get().setSessionSecurityState(sessionUlid, 'ready', 1);
+      return true;
+    }
     try {
       const peerMember = get().conversationMembers[sessionUlid]?.find(
         (member) => member.ptid === peerDid,
