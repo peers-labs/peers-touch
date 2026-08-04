@@ -835,11 +835,6 @@ pub struct FriendChatAckInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatCreateSessionInput {
-    pub participant_did: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatSyncInput {
     pub session_ulid: String,
     pub limit: Option<u32>,

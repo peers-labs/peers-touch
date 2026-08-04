@@ -433,7 +433,6 @@ fn main() {
             tts::tts_synthesize,
             tts::tts_voices,
             friend_chat::friend_chat_list_sessions,
-            friend_chat::friend_chat_create_session,
             friend_chat::friend_chat_get_settings,
             friend_chat::friend_chat_update_settings,
             friend_chat::friend_chat_list_messages,
