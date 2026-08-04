@@ -2,7 +2,9 @@ package conversation
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -873,7 +875,7 @@ func (s *subServer) handleDkxSend(ctx context.Context, req *chat.SendDkxRequest)
 
 	env := &chat.StationEnvelope{
 		EnvelopeId:                 uuid.NewString(),
-		IdempotencyKey:             req.SessionId + ":" + subject.ID + ":" + req.Kind.String(),
+		IdempotencyKey:             dkxIdempotencyKey(req.SessionId, subject.ID, req.Kind, req.OpaqueKeyMaterial),
 		SenderPtid:                 subject.ID,
 		RecipientPtid:              req.RecipientPtid,
 		RecipientHomeStationPeerId: recipientStation,
@@ -887,6 +889,16 @@ func (s *subServer) handleDkxSend(ctx context.Context, req *chat.SendDkxRequest)
 	}
 
 	return &chat.SendDkxResponse{EnvelopeId: envelopeId}, nil
+}
+
+func dkxIdempotencyKey(
+	sessionID string,
+	senderPtid string,
+	kind chat.DirectKeyExchangeKind,
+	opaqueKeyMaterial []byte,
+) string {
+	digest := sha256.Sum256(opaqueKeyMaterial)
+	return fmt.Sprintf("%s:%s:%s:%x", sessionID, senderPtid, kind.String(), digest)
 }
 
 func conversationLocalAudience() string {
