@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import json
 import os
-import secrets
 import sys
 import time
 import urllib.error
@@ -15,6 +14,12 @@ NODES = {
     "two": os.environ.get("TESTNET_NODE_TWO_BASE", "http://10.37.118.48:18080"),
     "three": os.environ.get("TESTNET_NODE_THREE_BASE", "http://10.37.94.156:18080"),
 }
+DEMO_ACCOUNTS = {
+    "one": "alice@p.t",
+    "two": "bob@p.t",
+    "three": "carol@p.t",
+}
+DEMO_PASSWORD = "1"
 REPORT_PATH = Path(
     os.environ.get(
         "TESTNET_FEDERATION_REPORT",
@@ -52,21 +57,13 @@ def unwrap(body):
     return body
 
 
-def signup_and_login(node_name, base):
-    suffix = str(int(time.time() * 1000)) + secrets.token_hex(3)
-    name = f"c6{node_name}{suffix}"[:20]
-    email = f"{name}@testnet.local"
-    password = "C6TopologyAa1!"
-    request(
-        "POST",
-        base + "/actor/sign-up",
-        {"name": name, "email": email, "password": password},
-    )
+def login_demo_actor(node_name, base):
+    email = DEMO_ACCOUNTS[node_name]
     body = unwrap(
         request(
             "POST",
             base + "/actor/login",
-            {"email": email, "password": password, "device_type": "desktop"},
+            {"email": email, "password": DEMO_PASSWORD, "device_type": "desktop"},
         )
     )
     return {
@@ -171,7 +168,7 @@ def run():
         health[node_name] = federation_health(base)
         if not health[node_name].get("ready"):
             raise RuntimeError(f"Federation routing is not ready on {node_name}")
-        logins[node_name] = signup_and_login(node_name, base)
+        logins[node_name] = login_demo_actor(node_name, base)
         print(
             f"[{node_name}] station_peer_id="
             f"{health[node_name]['station_peer_id']}"
