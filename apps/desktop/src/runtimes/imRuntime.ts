@@ -610,11 +610,9 @@ function stopLeaveIntentPolling(): void {
 function handleConnectionStateChange(payload: { connected: boolean }): void {
   state.sseConnected = payload.connected
   if (payload.connected) {
-    stopResumePolling()
     triggerImmediateResume()
-  } else {
-    startResumePolling()
   }
+  startResumePolling()
 }
 
 // ---------------------------------------------------------------------------
