@@ -8,7 +8,10 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::application::chat_storage;
 use crate::application::session_resolver;
-use crate::contracts::{ChatIndexLocalInput, ChatSearchLocalInput, StubPayload};
+use crate::contracts::{
+    ChatDecryptCacheGetInput, ChatDecryptCachePutInput, ChatIndexLocalInput, ChatSearchLocalInput,
+    StubPayload,
+};
 use crate::domain::crypto::{self, CryptoSessionState, X25519KeyPair, X3DHBundle};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::local_chat_store;
@@ -145,6 +148,72 @@ pub fn chat_index_local_messages(
         "chat_index_local_messages",
         json!({ "indexed_count": indexed }),
     )
+}
+
+#[tauri::command]
+pub fn chat_decrypt_cache_get(
+    input: ChatDecryptCacheGetInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let user_scope = user_scope_from_state(&state, &window);
+    chat_decrypt_cache_get_for_scope(input, user_scope)
+}
+
+pub(crate) fn chat_decrypt_cache_get_for_scope(
+    input: ChatDecryptCacheGetInput,
+    user_scope: String,
+) -> AppResult<StubPayload> {
+    match local_chat_store::get_decrypt_cache(user_scope.as_str(), input.message_id.as_str()) {
+        Ok(Some((content, message_type, attachments_json, cached_at))) => to_stub(
+            "chat_decrypt_cache_get",
+            json!({
+                "entry": {
+                    "content": content,
+                    "message_type": message_type,
+                    "attachments_json": attachments_json,
+                    "cached_at": cached_at,
+                }
+            }),
+        ),
+        Ok(None) => to_stub("chat_decrypt_cache_get", json!({ "entry": null })),
+        Err(reason) => AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to read decrypt cache: {}", reason),
+            None,
+        ),
+    }
+}
+
+#[tauri::command]
+pub fn chat_decrypt_cache_put(
+    input: ChatDecryptCachePutInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let user_scope = user_scope_from_state(&state, &window);
+    chat_decrypt_cache_put_for_scope(input, user_scope)
+}
+
+pub(crate) fn chat_decrypt_cache_put_for_scope(
+    input: ChatDecryptCachePutInput,
+    user_scope: String,
+) -> AppResult<StubPayload> {
+    match local_chat_store::put_decrypt_cache(
+        user_scope.as_str(),
+        input.message_id.as_str(),
+        input.content.as_str(),
+        input.message_type,
+        input.attachments_json.as_str(),
+        input.cached_at,
+    ) {
+        Ok(()) => to_stub("chat_decrypt_cache_put", json!({ "stored": true })),
+        Err(reason) => AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to store decrypt cache: {}", reason),
+            None,
+        ),
+    }
 }
 
 #[tauri::command]
@@ -772,6 +841,33 @@ pub(crate) fn crypto_session_status_for_scope(
         "crypto_session_status",
         json!({ "established": false, "version": -1 }),
     )
+}
+
+#[tauri::command]
+pub fn crypto_reset_session(
+    session_id: String,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let user_scope = user_scope_from_state(&state, &window);
+    crypto_reset_session_for_scope(session_id, user_scope)
+}
+
+pub(crate) fn crypto_reset_session_for_scope(
+    session_id: String,
+    user_scope: String,
+) -> AppResult<StubPayload> {
+    if session_id.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "Session ID is required", None);
+    }
+    match local_chat_store::reset_crypto_session(user_scope.as_str(), session_id.as_str()) {
+        Ok(()) => to_stub("crypto_reset_session", json!({ "reset": true })),
+        Err(reason) => AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to reset secure channel: {}", reason),
+            None,
+        ),
+    }
 }
 
 #[tauri::command]
