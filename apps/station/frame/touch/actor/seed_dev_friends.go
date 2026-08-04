@@ -10,6 +10,8 @@ import (
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type devFriendSession struct {
@@ -22,9 +24,8 @@ type devFriendSession struct {
 
 func (devFriendSession) TableName() string { return "friend_chat_sessions" }
 
-// SeedDevFriendships creates mutual friend chat sessions between the
-// specified preset users. Idempotent: skips pairs that already have a session.
-// friendUsernames is the list of usernames that should all be friends.
+// SeedDevFriendships creates mutual social-graph edges between the specified
+// preset users and, when available, legacy friend chat sessions.
 func SeedDevFriendships(ctx context.Context, friendUsernames []string) error {
 	if len(friendUsernames) < 2 {
 		return nil
@@ -34,31 +35,55 @@ func SeedDevFriendships(ctx context.Context, friendUsernames []string) error {
 	if err != nil {
 		return err
 	}
+	return seedDevFriendshipsWithDB(ctx, rds, friendUsernames)
+}
 
-	if !rds.Migrator().HasTable("friend_chat_sessions") {
-		log.Infof(ctx, "[seed] friend_chat_sessions table not yet created, skipping friendship seed")
-		return nil
-	}
-
-	actorIDs := make(map[string]string)
+func seedDevFriendshipsWithDB(ctx context.Context, rds *gorm.DB, friendUsernames []string) error {
+	actorIDs := make(map[string]uint64)
 	for _, username := range friendUsernames {
 		var a db.Actor
 		if err := rds.Where("preferred_username = ?", username).First(&a).Error; err != nil {
 			log.Warnf(ctx, "[seed] actor %q not found, skipping friendship seed for them", username)
 			continue
 		}
-		actorIDs[username] = fmt.Sprintf("%d", a.ID)
+		actorIDs[username] = a.ID
 	}
 
-	seeded := 0
+	seededEdges := 0
+	seededSessions := 0
+	hasFollows := rds.Migrator().HasTable(&db.Follow{})
+	hasLegacySessions := rds.Migrator().HasTable("friend_chat_sessions")
 	for i := 0; i < len(friendUsernames); i++ {
 		for j := i + 1; j < len(friendUsernames); j++ {
-			aDID := actorIDs[friendUsernames[i]]
-			bDID := actorIDs[friendUsernames[j]]
-			if aDID == "" || bDID == "" {
+			aID := actorIDs[friendUsernames[i]]
+			bID := actorIDs[friendUsernames[j]]
+			if aID == 0 || bID == 0 {
 				continue
 			}
 
+			if hasFollows {
+				for _, edge := range []db.Follow{
+					{FollowerID: aID, FollowingID: bID, CreatedAt: time.Now()},
+					{FollowerID: bID, FollowingID: aID, CreatedAt: time.Now()},
+				} {
+					result := rds.Clauses(clause.OnConflict{DoNothing: true}).Create(&edge)
+					if result.Error != nil {
+						return fmt.Errorf(
+							"seed mutual follow %s↔%s: %w",
+							friendUsernames[i],
+							friendUsernames[j],
+							result.Error,
+						)
+					}
+					seededEdges += int(result.RowsAffected)
+				}
+			}
+
+			if !hasLegacySessions {
+				continue
+			}
+			aDID := fmt.Sprintf("%d", aID)
+			bDID := fmt.Sprintf("%d", bID)
 			var count int64
 			rds.Table("friend_chat_sessions").
 				Where("(participant_a_did = ? AND participant_b_did = ?) OR (participant_a_did = ? AND participant_b_did = ?)",
@@ -79,12 +104,23 @@ func SeedDevFriendships(ctx context.Context, friendUsernames []string) error {
 				log.Warnf(ctx, "[seed] friendship %s↔%s failed: %v", friendUsernames[i], friendUsernames[j], err)
 				continue
 			}
-			seeded++
+			seededSessions++
 		}
 	}
 
-	if seeded > 0 {
-		log.Infof(ctx, "[seed] dev friendships seeded: %d pairs", seeded)
+	if !hasFollows {
+		log.Infof(ctx, "[seed] follows table not yet created, skipping canonical friendship seed")
+	}
+	if !hasLegacySessions {
+		log.Infof(ctx, "[seed] friend_chat_sessions table not yet created, skipping legacy friendship seed")
+	}
+	if seededEdges > 0 || seededSessions > 0 {
+		log.Infof(
+			ctx,
+			"[seed] dev friendships seeded: %d social edges, %d legacy sessions",
+			seededEdges,
+			seededSessions,
+		)
 	}
 	return nil
 }
