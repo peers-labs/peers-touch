@@ -98,6 +98,15 @@ describe('strict chat encryption source contract', () => {
     );
   });
 
+  it('uses Rust crypto storage as session-readiness authority', () => {
+    expect(socialChatSource).toContain(
+      'const persisted = await api.cryptoSessionStatus(sessionUlid)',
+    );
+    expect(socialChatSource).not.toContain(
+      'if (!encryptionEnabled || sessionEncrypted[sessionUlid])',
+    );
+  });
+
   it('keeps failed direct sends as retryable message bubbles', () => {
     expect(socialChatSource).toContain('FriendMessageStatus.SENDING');
     expect(socialChatSource).toContain('FriendMessageStatus.FAILED');

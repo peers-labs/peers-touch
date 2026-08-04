@@ -1104,6 +1104,48 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ),
             )
         }
+        "chat_decrypt_cache_get" => {
+            let (_, user_scope) = match authenticated_crypto_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let input = match parse_args::<ChatDecryptCacheGetInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            to_json(
+                crate::interface::tauri_commands::crypto::chat_decrypt_cache_get_for_scope(
+                    input, user_scope,
+                ),
+            )
+        }
+        "chat_decrypt_cache_put" => {
+            let (_, user_scope) = match authenticated_crypto_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let input = match parse_args::<ChatDecryptCachePutInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            to_json(
+                crate::interface::tauri_commands::crypto::chat_decrypt_cache_put_for_scope(
+                    input, user_scope,
+                ),
+            )
+        }
+        "crypto_reset_session" => {
+            let (_, user_scope) = match authenticated_crypto_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(
+                crate::interface::tauri_commands::crypto::crypto_reset_session_for_scope(
+                    string_arg(&args, "session_id", "sessionId"),
+                    user_scope,
+                ),
+            )
+        }
         "crypto_mark_session_ready" => {
             let (_, user_scope) = match authenticated_crypto_context(state) {
                 Ok(context) => context,

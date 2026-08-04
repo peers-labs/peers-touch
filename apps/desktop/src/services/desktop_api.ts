@@ -4912,6 +4912,20 @@ export const api = {
       { messages },
     ),
 
+  chatDecryptCacheGet: (messageId: string) =>
+    invokeRustDataFromStatus<
+      { message_id: string },
+      { entry: { content: string; message_type: number; attachments_json: string; cached_at: number } | null }
+    >('chat_decrypt_cache_get', { message_id: messageId }),
+
+  chatDecryptCachePut: (input: {
+    message_id: string;
+    content: string;
+    message_type: number;
+    attachments_json: string;
+    cached_at: number;
+  }) => invokeRustDataFromStatus<typeof input, { stored: boolean }>('chat_decrypt_cache_put', input),
+
   friendChatSync: (sessionUlid: string, limit?: number, maxPages?: number) =>
     invokeRustDataFromStatus<FriendChatSyncInput, { synced_count: number; pages_fetched: number }>(
       'friend_chat_sync_from_station_scoped', { session_ulid: sessionUlid, limit, max_pages: maxPages },
@@ -5293,6 +5307,9 @@ export const api = {
 
   cryptoSessionStatus: (sessionId: string) =>
     invokeAppResultStub<{ established: boolean; version: number }>('crypto_session_status', { sessionId }),
+
+  cryptoResetSession: (sessionId: string) =>
+    invokeAppResultStub<{ reset: boolean }>('crypto_reset_session', { sessionId }),
 
   cryptoMarkSessionReady: (sessionId: string) =>
     invokeAppResultStub<{ established: boolean }>('crypto_mark_session_ready', { sessionId }),

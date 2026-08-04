@@ -404,6 +404,22 @@ pub struct ChatIndexLocalMessageInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ChatDecryptCacheGetInput {
+    pub message_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ChatDecryptCachePutInput {
+    pub message_id: String,
+    pub content: String,
+    pub message_type: i32,
+    pub attachments_json: String,
+    pub cached_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatScopeCursorSetInput {
     pub scope: String,
     pub cursor: String,
