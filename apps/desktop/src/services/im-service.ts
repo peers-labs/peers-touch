@@ -552,10 +552,26 @@ const conversationService: ConversationServiceContract = {
     })
   },
 
-  async react(conversationId: string, messageId: string, emoji: string, remove = false) {
-    await cmd('conversation_react', {
-      conversation_id: conversationId, message_id: messageId, emoji, remove,
-    })
+  async react(
+    conversationId,
+    messageId,
+    emoji,
+    senderPtid,
+    senderDeviceId,
+    observedMembershipEpoch,
+    remove = false,
+  ) {
+    await conversationService.submitCommand({
+      conversation_id: conversationId,
+      sender_ptid: senderPtid,
+      sender_device_id: senderDeviceId,
+      observed_membership_epoch: observedMembershipEpoch,
+      react: {
+        message_id: messageId,
+        emoji,
+        remove,
+      },
+    } as any)
   },
 
   async getConversation(conversationId) {

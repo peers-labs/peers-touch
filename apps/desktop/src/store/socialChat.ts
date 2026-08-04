@@ -74,6 +74,7 @@ import {
   type SocialMessage,
 } from './socialProjection';
 import {
+  friendRequestProfileDids,
   normalizeFriendRequestData,
   normalizeFriendRequests,
   normalizeConversations,
@@ -2245,7 +2246,24 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   reactToMessage: async (conversationId, messageId, emoji, remove = false) => {
     try {
-      await imServiceV1.conversation.react(conversationId, messageId, emoji, remove);
+      const state = get();
+      const conversation = state.conversations.find(
+        (item) => item.conversationId === conversationId,
+      );
+      const senderPtid = state.currentUserDid ?? '';
+      const senderDeviceId = localStorage.getItem('peers_im_device_id') ?? '';
+      if (!conversation || !senderPtid || !senderDeviceId) {
+        throw new Error('Reaction identity context is unavailable');
+      }
+      await imServiceV1.conversation.react(
+        conversationId,
+        messageId,
+        emoji,
+        senderPtid,
+        senderDeviceId,
+        Number(conversation.membershipEpoch),
+        remove,
+      );
       set((state) => {
         const existing = state.reactions[messageId] ?? [];
         const currentUserDid = state.currentUserDid ?? '';
@@ -2323,7 +2341,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const requests = normalizeFriendRequests(
         (data as Record<string, unknown>)?.requests ?? [],
       );
+      // #region debug-point A-D:friend-request-projection
+      fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'friend-request-notification-gap', runId: 'post-fix', hypothesisId: 'A,D', location: 'socialChat.loadFriendRequests:high-chat', msg: '[DEBUG] Friend request projection loaded', data: { authenticatedActorId: currentAuthenticatedActorId(), currentUserDid: get().currentUserDid, requests: requests.map((request) => ({ id: request.id, senderId: request.senderId, receiverId: request.receiverId, senderDisplayName: request.senderDisplayName, receiverDisplayName: request.receiverDisplayName, status: request.status })) }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       set({ friendRequests: requests });
+      await Promise.allSettled(
+        friendRequestProfileDids(requests, get().currentUserDid)
+          .map((did) => get().loadPeerProfile(did)),
+      );
     } catch {
       set({ friendRequests: [] });
     }
