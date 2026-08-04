@@ -57,7 +57,9 @@ detected: 2026-07-06
 
 Station 启动时，前 3 个 preset user（alice、bob、carol）会自动互相加为好友。
 
-实现：`frame/touch/actor/seed_dev_friends.go` → 在 `friend_chat_sessions` 表中幂等插入会话行。
+实现：`frame/touch/actor/seed_dev_friends.go` → 在 `follows` 表中幂等插入双向
+social graph 边，使 unified Conversation 的 relationship gate 认可该好友关系。
+若旧版 `friend_chat_sessions` 表存在，同时写入兼容会话行；该表不是好友关系权威。
 
 陌生人、权限隔离、压力与安全测试必须使用 disposable Station 数据，
 不得向共享开发 Station 持续注册临时 actor。
