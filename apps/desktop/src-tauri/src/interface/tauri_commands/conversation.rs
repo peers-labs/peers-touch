@@ -123,6 +123,20 @@ fn station_err(e: station_client::StationClientError, msg: &str) -> AppResult<Va
     e.into_app_result(msg)
 }
 
+fn genesis_owner_device_id(genesis: &Value) -> Option<&str> {
+    genesis
+        .get("changes")?
+        .as_array()?
+        .iter()
+        .find(|change| {
+            change.get("action").and_then(Value::as_i64) == Some(1)
+                && change.get("role").and_then(Value::as_i64) == Some(3)
+        })?
+        .get("device_id")?
+        .as_str()
+        .filter(|device_id| !device_id.is_empty())
+}
+
 // --- Conversation commands ---
 
 #[tauri::command]
@@ -161,18 +175,29 @@ pub fn conversation_create_group(
         Ok(t) => t,
         Err(e) => return e,
     };
+    let owner_device_id = match genesis_owner_device_id(&input.genesis_transition) {
+        Some(device_id) => device_id.to_owned(),
+        None => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "group genesis requires an owner device",
+                None,
+            );
+        }
+    };
     let body = json!({
         "name": input.name,
         "genesis_transition": input.genesis_transition,
         "federation_id": input.federation_id.unwrap_or_default(),
         "conversation_id": input.conversation_id,
     });
-    match station_client::request_json_auth(
+    match station_client::request_json_auth_with_device_id(
         Method::POST,
         "/conversation/group",
         &token,
         None,
         Some(&body),
+        &owner_device_id,
     ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "create group failed"),
