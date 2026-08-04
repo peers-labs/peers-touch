@@ -481,6 +481,7 @@ def main() -> int:
     station_url = os.environ.get("CHAT_DESKTOP_DOM_STATION_URL", DEFAULT_STATION).rstrip("/")
 
     chat_gateway.assert_gateway_station(gateway_url, station_url)
+    chat_gateway.require_disposable_station(station_url)
     actor_a = chat_gateway.signup_and_login(station_url, "a")
     actor_b = chat_gateway.signup_and_login(station_url, "b")
     session_id = chat_gateway.create_session(station_url, actor_a, actor_b)

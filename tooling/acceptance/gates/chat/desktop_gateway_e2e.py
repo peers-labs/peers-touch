@@ -57,6 +57,18 @@ def gateway_url() -> str:
     return os.environ.get("CHAT_DESKTOP_GATEWAY_URL", DEFAULT_GATEWAY_URL).rstrip("/")
 
 
+def require_disposable_station(base: str) -> None:
+    hostname = urllib.parse.urlparse(base).hostname
+    if hostname in {"127.0.0.1", "localhost", "::1"}:
+        return
+    if os.environ.get("PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS") == "1":
+        return
+    raise GateError(
+        "temporary actor gate requires a disposable loopback Station; "
+        "set PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS=1 only for an explicitly disposable remote database"
+    )
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise GateError(message)
@@ -298,6 +310,7 @@ def gateway_ack_read(gateway: str, message_id: str) -> None:
 def main() -> int:
     base = station_url()
     gateway = gateway_url()
+    require_disposable_station(base)
     print("Chat Desktop Gateway E2E")
     print("========================")
     print(f"station={base}")

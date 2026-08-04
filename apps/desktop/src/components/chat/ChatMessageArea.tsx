@@ -20,7 +20,7 @@ import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
-import { presentError, type PresentedError } from '../../services/errorPresenter';
+import { presentError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
 import {
   type ChatMessage,
@@ -34,7 +34,6 @@ import {
 } from './message/ChatMessageTimeline';
 import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
 import { ForwardPickerModal } from './ForwardPickerModal';
-import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
 const { Text } = Typography;
@@ -69,7 +68,7 @@ export function ChatMessageArea() {
   const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
-    loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
+    loadMessages, loadOlderMessages, sendFriendMessage, retryFriendMessage, sendGroupMessage, toggleDetail,
     deleteMessage, recallFriendMessage, editFriendMessage,
     recallGroupMessage, editGroupMessage, openThread,
     conversationLocalState,
@@ -98,6 +97,7 @@ export function ChatMessageArea() {
     loadMessages: s.loadMessages,
     loadOlderMessages: s.loadOlderMessages,
     sendFriendMessage: s.sendFriendMessage,
+    retryFriendMessage: s.retryFriendMessage,
     sendGroupMessage: s.sendGroupMessage,
     toggleDetail: s.toggleDetail,
     deleteMessage: s.deleteMessage,
@@ -139,7 +139,6 @@ export function ChatMessageArea() {
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
   const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null);
-  const [composerError, setComposerError] = useState<PresentedError | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
@@ -233,7 +232,6 @@ export function ChatMessageArea() {
     setReplyToUlid(null);
     setDeleteTarget(null);
     setDeletingMessage(false);
-    setComposerError(null);
   }, [activeUlid]);
 
   useEffect(() => {
@@ -411,7 +409,6 @@ export function ChatMessageArea() {
     setInputValue('');
     setReplyToUlid(null);
     setEditingUlid(null);
-    setComposerError(null);
     setSending(true);
     // Sending implies "stopped composing" — flip the bubble for the
     // peer immediately rather than waiting on the 4s idle timer.
@@ -456,14 +453,15 @@ export function ChatMessageArea() {
       }
     } catch (err) {
       log.error('chat', 'composer send failed', err);
-      setInputValue(content);
-      setReplyToUlid(replyRef ?? null);
-      const presentedError = presentError(err, {
+      if (activeTab === 'group') {
+        setInputValue(content);
+        setReplyToUlid(replyRef ?? null);
+      }
+      presentError(err, {
         mode: 'toast',
         mapper: mapChatError,
         context: { operation: 'send' },
       });
-      if (!presentedError.recoverable) setComposerError(presentedError);
     } finally {
       setSending(false);
     }
@@ -587,6 +585,8 @@ export function ChatMessageArea() {
   const headerSubtitle = activeTab === 'friend'
     ? sessionSecurityState[activeUlid] === 'establishing'
       ? t('chat.social.encryption.establishing')
+      : sessionSecurityState[activeUlid] === 'error'
+        ? t('chat.social.encryption.unavailable')
       : peerIsTyping
       ? t('chat.social.messageArea.typing')
       : ''
@@ -752,6 +752,20 @@ export function ChatMessageArea() {
               setEditingUlid(null);
               setReplyToUlid(messageUlid);
             }}
+            onRetry={(message) => {
+              if (activeTab !== 'friend' || !activeConversation?.peerDid) return;
+              void retryFriendMessage(
+                activeUlid,
+                message.ulid,
+                activeConversation.peerDid,
+              ).catch((error) => {
+                presentError(error, {
+                  mode: 'toast',
+                  mapper: mapChatError,
+                  context: { operation: 'send' },
+                });
+              });
+            }}
             resolveThreadStats={(message) => {
               const threadKey = socialThreadKey(activeKind, activeUlid, message.ulid);
               const threadSummary = threadCounts[threadKey];
@@ -765,12 +779,6 @@ export function ChatMessageArea() {
         )}
         <div ref={bottomRef} />
       </Flexbox>
-
-      {composerError && (
-        <Flexbox style={{ padding: '0 16px 12px', background: conversationSurfaceBackground }}>
-          <PresentedErrorAlert error={composerError} onClose={() => setComposerError(null)} />
-        </Flexbox>
-      )}
 
       <ChatComposer
         activeConversationId={activeUlid}

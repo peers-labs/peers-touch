@@ -20,6 +20,14 @@ const desktopApiSource = readFileSync(
   new URL('../services/desktop_api.ts', import.meta.url),
   'utf8',
 );
+const chatMessageAreaSource = readFileSync(
+  new URL('../components/chat/ChatMessageArea.tsx', import.meta.url),
+  'utf8',
+);
+const chatErrorMappingSource = readFileSync(
+  new URL('../services/errorMappings/chatErrorMapping.ts', import.meta.url),
+  'utf8',
+);
 const rustCryptoSource = readFileSync(
   new URL('../../src-tauri/src/interface/tauri_commands/crypto.rs', import.meta.url),
   'utf8',
@@ -76,6 +84,28 @@ describe('strict chat encryption source contract', () => {
     expect(rustCryptoSource).toContain('if negotiated_version != 1');
     expect(rustKeyExchangeSource).toContain('supported_versions: vec![1]');
     expect(rustGatewaySource).toContain('supported_versions: vec![1]');
+  });
+
+  it('routes federated X3DH bootstrap by PTID and peer Home Station', () => {
+    expect(socialChatSource).toContain("const actorPtid = get().currentUserDid || ''");
+    expect(socialChatSource).toContain('member.ptid !== actorPtid');
+    expect(socialChatSource).toContain('peerMember?.actorHomeStationPeerId');
+    expect(socialChatSource).toContain(
+      'get().establishSession(sessionUlid, receiverDid, true)',
+    );
+    expect(socialChatSource).not.toContain(
+      'const actorId = currentAuthenticatedActorId() ||',
+    );
+  });
+
+  it('keeps failed direct sends as retryable message bubbles', () => {
+    expect(socialChatSource).toContain('FriendMessageStatus.SENDING');
+    expect(socialChatSource).toContain('FriendMessageStatus.FAILED');
+    expect(socialChatSource).toContain('retryFriendMessage: async');
+    expect(chatMessageAreaSource).toContain('retryFriendMessage(');
+    expect(chatErrorMappingSource).toContain(
+      'error.chat.secureChannelUnavailable',
+    );
   });
 
   it('does not expose legacy crypto commands or delete history during startup', () => {
