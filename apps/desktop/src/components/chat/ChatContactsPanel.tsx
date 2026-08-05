@@ -32,6 +32,9 @@ export function ChatContactsPanel({
     friendRequests,
     peerProfiles,
     currentUserDid,
+    conversationRecords,
+    conversationMembers,
+    groupMembers,
     getIMConversations,
     selectSession,
     selectGroup,
@@ -41,6 +44,9 @@ export function ChatContactsPanel({
     friendRequests: s.friendRequests,
     peerProfiles: s.peerProfiles,
     currentUserDid: s.currentUserDid,
+    conversationRecords: s.conversations,
+    conversationMembers: s.conversationMembers,
+    groupMembers: s.groupMembers,
     getIMConversations: s.getIMConversations,
     selectSession: s.selectSession,
     selectGroup: s.selectGroup,
@@ -49,7 +55,29 @@ export function ChatContactsPanel({
   }));
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
-  const conversations = getIMConversations();
+  const conversations = useMemo(
+    () => {
+      // getIMConversations reads the store imperatively. Referencing its
+      // projection sources here makes async Conversation loads invalidate
+      // this memo without subscribing the panel to the whole social store.
+      void conversationRecords;
+      void conversationMembers;
+      void groupMembers;
+      void currentUserDid;
+      void friendRequests;
+      void peerProfiles;
+      return getIMConversations();
+    },
+    [
+      conversationMembers,
+      conversationRecords,
+      currentUserDid,
+      friendRequests,
+      getIMConversations,
+      groupMembers,
+      peerProfiles,
+    ],
+  );
   const groupConversations = conversations.filter((conversation) => conversation.kind === 'group');
   const friendConversations = conversations.filter((conversation) => conversation.kind === 'friend');
 
