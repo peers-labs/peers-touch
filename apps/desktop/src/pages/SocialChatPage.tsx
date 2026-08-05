@@ -45,7 +45,7 @@ export function SocialChatPage() {
     showDetail,
     openThreadRootUlid,
     setFriendP2pStatus,
-    sessions,
+    conversationMembers,
     activeSessionUlid,
     activeTab,
     currentUserDid,
@@ -53,7 +53,7 @@ export function SocialChatPage() {
     showDetail: state.showDetail,
     openThreadRootUlid: state.openThreadRootUlid,
     setFriendP2pStatus: state.setFriendP2pStatus,
-    sessions: state.sessions,
+    conversationMembers: state.conversationMembers,
     activeSessionUlid: state.activeSessionUlid,
     activeTab: state.activeTab,
     currentUserDid: state.currentUserDid,
@@ -71,10 +71,9 @@ export function SocialChatPage() {
   // --- Stabilize activePeerDid: only propagate when the actual string value changes ---
   const activePeerDid = useMemo(() => {
     if (activeTab !== 'friend' || !activeSessionUlid || !currentUserDid) return null;
-    const session = sessions.find((s) => s.ulid === activeSessionUlid);
-    if (!session) return null;
-    return session.participantADid === currentUserDid ? session.participantBDid : session.participantADid;
-  }, [activeTab, activeSessionUlid, currentUserDid, sessions]);
+    const members = conversationMembers[activeSessionUlid] ?? [];
+    return members.find((member) => member.ptid && member.ptid !== currentUserDid)?.ptid ?? null;
+  }, [activeTab, activeSessionUlid, conversationMembers, currentUserDid]);
 
   const activePeerDidRef = useRef(activePeerDid);
   useEffect(() => {

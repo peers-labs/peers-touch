@@ -10,7 +10,9 @@
 
 use std::sync::Arc;
 
+use reqwest::Method;
 use serde::Deserialize;
+use serde_json::{json, Value};
 use tauri::{AppHandle, State, Window};
 
 use crate::application::presence::PresenceSupervisor;
@@ -24,6 +26,34 @@ use crate::state::AppState;
 pub struct PresenceNotifyInput {
     /// Snake-case wire form of [`PresenceTrigger`]. See `domain::presence`.
     pub trigger: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PresenceQueryInput {
+    pub actor_ids: Vec<String>,
+}
+
+#[tauri::command]
+pub fn presence_query(
+    input: PresenceQueryInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    let body = json!({ "actor_ids": input.actor_ids });
+    match crate::infrastructure::station_client::request_json_auth(
+        Method::POST,
+        "/presence/query",
+        &token,
+        None,
+        Some(&body),
+    ) {
+        Ok(response) => AppResult::success(response),
+        Err(error) => error.into_app_result("presence query failed"),
+    }
 }
 
 /// Process a presence trigger for the window's bound actor.

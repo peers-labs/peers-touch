@@ -27,6 +27,10 @@ type sessionParticipant struct {
 	ParticipantBDID string `gorm:"column:participant_b_did"`
 }
 
+type conversationPeer struct {
+	PTID string `gorm:"column:ptid"`
+}
+
 type GormRepo struct {
 	db *gorm.DB
 }
@@ -148,6 +152,25 @@ func (r *GormRepo) ListAudience(actorID string) ([]string, error) {
 			seen[did] = struct{}{}
 			recipients = append(recipients, did)
 		}
+	}
+	var peers []conversationPeer
+	if err := r.db.Table("conversation_members AS self").
+		Select("peer.ptid").
+		Joins("JOIN conversation_members AS peer ON peer.conversation_id = self.conversation_id").
+		Where("self.ptid = ? AND self.member_status = ? AND peer.member_status = ? AND peer.ptid <> ?",
+			actorID, 1, 1, actorID).
+		Find(&peers).Error; err != nil {
+		return nil, err
+	}
+	for _, peer := range peers {
+		if peer.PTID == "" {
+			continue
+		}
+		if _, ok := seen[peer.PTID]; ok {
+			continue
+		}
+		seen[peer.PTID] = struct{}{}
+		recipients = append(recipients, peer.PTID)
 	}
 	return recipients, nil
 }

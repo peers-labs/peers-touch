@@ -35,6 +35,7 @@ import {
 import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
 import { ForwardPickerModal } from './ForwardPickerModal';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
+import { resolveChatPresenceTag } from '../../services/chatPresence';
 
 const { Text } = Typography;
 
@@ -90,6 +91,7 @@ export function ChatMessageArea() {
     typingPeers,
     threadCounts,
     reactToMessage,
+    conversationMembers,
   } = useActiveSocialChatSlice((s) => ({
     activeTab: s.activeTab,
     activeSessionUlid: s.activeSessionUlid,
@@ -125,6 +127,7 @@ export function ChatMessageArea() {
     typingPeers: s.typingPeers,
     threadCounts: s.threadCounts,
     reactToMessage: s.reactToMessage,
+    conversationMembers: s.conversationMembers,
   }));
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -175,12 +178,22 @@ export function ChatMessageArea() {
   // is a real third state.
   const peerOnlineIndicator = (() => {
     if (activeTab !== 'friend' || !activePeerDid) return null;
-    const known = activePeerDid in peerOnline;
-    if (!known) return null;
-    const online = peerOnline[activePeerDid];
-    const label = online ? 'Online' : 'Offline';
-    const bg = online ? token.colorSuccessBg : token.colorFillSecondary;
-    const color = online ? token.colorSuccess : token.colorTextQuaternary;
+    const members = activeUlid ? conversationMembers[activeUlid] ?? [] : [];
+    const selfStation = members.find((member) => member.ptid === currentUserDid)?.actorHomeStationPeerId;
+    const peerStation = members.find((member) => member.ptid === activePeerDid)?.actorHomeStationPeerId;
+    const p2pStatus = activeUlid ? friendP2pStatus[activeUlid] : undefined;
+    const tag = resolveChatPresenceTag({
+      presenceKnown: activePeerDid in peerOnline,
+      online: peerOnline[activePeerDid] ?? false,
+      sameStation: Boolean(selfStation && peerStation && selfStation === peerStation),
+      p2pState: p2pStatus?.state,
+      transport: p2pStatus?.transport,
+    });
+    if (!tag) return null;
+    const label = t(`chat.social.presence.${tag}`);
+    const active = tag !== 'offline';
+    const bg = active ? token.colorSuccessBg : token.colorFillSecondary;
+    const color = active ? token.colorSuccess : token.colorTextQuaternary;
     return (
       <span
         aria-label={label}

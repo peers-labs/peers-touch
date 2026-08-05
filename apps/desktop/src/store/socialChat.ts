@@ -44,6 +44,8 @@ import {
 } from '../gen/proto/domain/chat/conversation_pb';
 import { imServiceV1 } from '../services/im-service';
 import { DirectKeyExchangeKind } from '../services/im-service-contract';
+import { receiptTypeForMessageStatus } from '../services/chatReceipt';
+import { isPresenceOnline } from '../services/chatPresence';
 import { log } from '../utils/logger';
 import { getDecryptCache, setDecryptCache } from './decryptCache';
 import {
@@ -60,6 +62,7 @@ import {
   messageGroupSeq,
   mergeConversationMessages,
   messageSentMs,
+  preserveMessageReceiptStatuses,
   previewFromMessage,
   pruneTypingPeers,
   projectDesktopIMConversation,
@@ -658,7 +661,11 @@ interface SocialChatState {
 
   loadGroupUnreadCounts: () => Promise<void>;
   loadConversationPreviews: () => Promise<void>;
-  ackFriendMessages: (ulids: string[], status: number) => Promise<void>;
+  ackFriendMessages: (
+    conversationUlid: string,
+    messageUlids: string[],
+    status: FriendMessageStatus,
+  ) => Promise<void>;
   /**
    * Apply a realtime MessageReceipt to the local message store.
    *
@@ -1477,12 +1484,31 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }
 
       const actorPtid = get().currentUserDid || '';
+      const peerPtids = Array.from(new Set(
+        Object.values(memberMap)
+          .flat()
+          .map((member) => member.ptid)
+          .filter((ptid) => ptid && ptid !== actorPtid),
+      ));
+      const presenceStatuses = peerPtids.length > 0
+        ? await api.presenceQuery(peerPtids).catch((error) => {
+            log.warn('socialChat', 'presence query failed', error);
+            return { statuses: [] };
+          })
+        : { statuses: [] };
+      const peerOnline = { ...get().peerOnline };
+      for (const status of presenceStatuses.statuses) {
+        if (status.actor_id) {
+          peerOnline[status.actor_id] = isPresenceOnline(status.state);
+        }
+      }
       set({
         conversations: allConversations,
         conversationMembers: memberMap,
         groupMembers: groupMembersUpdate,
         sessions: [],
         groups: [],
+        peerOnline,
         loading: false,
         loadError: null,
       });
@@ -1552,7 +1578,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
             .filter((m) => m.senderDid !== did && m.status !== FriendMessageStatus.READ)
             .map((m) => m.ulid);
           if (unreadUlids.length > 0) {
-            get().ackFriendMessages(unreadUlids, FriendMessageStatus.READ).catch(() => {});
+            get().ackFriendMessages(ulid, unreadUlids, FriendMessageStatus.READ).catch(() => {});
           }
         }
       }
@@ -1612,11 +1638,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         // search index so UI state and search state cannot drift.
         msgs = await decodeGroupMessages(ulid, msgs as GroupMessage[], 'group decrypt failed');
       }
-      const visibleMsgs = filterClearedMessages(
-        msgs as SocialMessage[],
-        get().conversationLocalState,
-        activeTab,
-        ulid,
+      const visibleMsgs = preserveMessageReceiptStatuses(
+        get().messages[ulid] ?? [],
+        filterClearedMessages(
+          msgs as SocialMessage[],
+          get().conversationLocalState,
+          activeTab,
+          ulid,
+        ),
       );
       indexLocalSearchMessages(activeTab, ulid, visibleMsgs).catch((error) => {
         log.warn('socialChat', 'index loaded messages failed', error);
@@ -1643,7 +1672,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           .filter((m) => m.senderDid !== viewerDid && m.status !== FriendMessageStatus.READ)
           .map((m) => m.ulid);
         if (unreadUlids.length > 0) {
-          get().ackFriendMessages(unreadUlids, FriendMessageStatus.READ).catch(() => {});
+          get().ackFriendMessages(ulid, unreadUlids, FriendMessageStatus.READ).catch(() => {});
         }
       }
     } catch (error) {
@@ -2483,10 +2512,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     if (!hasAuthenticatedActor()) return;
   },
 
-  ackFriendMessages: async (ulids, status) => {
+  ackFriendMessages: async (conversationUlid, messageUlids, status) => {
+    const receiptType = receiptTypeForMessageStatus(status);
+    if (!receiptType || messageUlids.length === 0) return;
     try {
-      await api.friendChatAckMessages(ulids, status);
-      await get().loadSessions();
+      await Promise.all(
+        messageUlids.map((messageUlid) => (
+          imServiceV1.conversation.submitReceipt(conversationUlid, messageUlid, receiptType)
+        )),
+      );
     } catch (error) {
       log.error('socialChat', 'ackFriendMessages failed', error);
       throw error;
@@ -2549,7 +2583,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const viewerDid = get().currentUserDid;
       const friendMessage = projectedMessage as FriendChatMessage;
       if (viewerDid && friendMessage.senderDid !== viewerDid && friendMessage.status !== FriendMessageStatus.READ) {
-        get().ackFriendMessages([friendMessage.ulid], FriendMessageStatus.DELIVERED).catch((error) => {
+        const receiptStatus = get().activeTab === 'friend'
+          && get().activeSessionUlid === conversationUlid
+          ? FriendMessageStatus.READ
+          : FriendMessageStatus.DELIVERED;
+        get().ackFriendMessages(conversationUlid, [friendMessage.ulid], receiptStatus).catch((error) => {
           log.debug('socialChat', 'realtime delivered ack failed', error);
         });
       }

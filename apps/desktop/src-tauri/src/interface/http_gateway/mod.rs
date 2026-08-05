@@ -923,6 +923,31 @@ fn filter_incremental_messages(
 /// calling the same application-layer functions that tauri_commands use.
 fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) -> Value {
     match cmd {
+        "presence_notify" => {
+            let trigger = args.get("trigger").and_then(|value| value.as_str()).unwrap_or("");
+            let offline = matches!(
+                trigger,
+                "app_background" | "app_shutdown" | "identity_logged_out" | "network_offline"
+            );
+            proxy_authenticated_station_json(
+                state,
+                reqwest::Method::POST,
+                if offline { "/presence/offline" } else { "/presence/heartbeat" },
+                None,
+                Some(json!({ "reason": trigger })),
+                "presence notify",
+            )
+        }
+        "presence_query" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/presence/query",
+            None,
+            Some(json!({
+                "actor_ids": args.get("actor_ids").cloned().unwrap_or_else(|| json!([])),
+            })),
+            "presence query",
+        ),
         // =================================================================
         // Meta
         // =================================================================

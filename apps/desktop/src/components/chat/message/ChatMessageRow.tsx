@@ -124,7 +124,7 @@ function ReadReceipt({
     return <CheckCheck size={14} style={{ color: token.colorPrimary }} />;
   }
   if (status === FMS.DELIVERED) {
-    return <Check size={14} style={{ color: token.colorTextQuaternary }} />;
+    return <CheckCheck size={14} style={{ color: token.colorTextQuaternary }} />;
   }
   if (status === FMS.SENT) {
     return <Check size={14} style={{ color: token.colorTextQuaternary }} />;

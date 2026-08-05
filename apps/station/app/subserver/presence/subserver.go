@@ -10,8 +10,10 @@ import (
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 )
 
 const expireSweepInterval = 10 * time.Second
@@ -35,7 +37,10 @@ func NewPresenceSubServer(opts ...option.Option) server.Subserver {
 func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusStarting
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
+	s.jwtWrapper = serverwrapper.CanonicalSubject(
+		server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider)),
+		serverwrapper.SubjectResolver(touchactor.ResolveSubjectPTID),
+	)
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
