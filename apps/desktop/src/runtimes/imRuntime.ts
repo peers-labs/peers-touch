@@ -7,13 +7,16 @@ import {
 import { DirectKeyExchangeKind } from '../services/im-service-contract'
 import { DirectKeyExchangePayloadSchema } from '../gen/proto/domain/chat/envelope_pb'
 import { X3dhSessionInitSchema } from '../gen/proto/domain/chat/key_exchange_pb'
-import { CommittedConversationEventSchema } from '../gen/proto/domain/chat/conversation_pb'
+import {
+  CommittedConversationEventSchema,
+} from '../gen/proto/domain/chat/conversation_pb'
 import { useSocialChatStore } from '../store/socialChat'
 import { normalizeConversations } from '../store/socialNormalizers'
 import type { RuntimeDescriptor } from '../kernel/runtime'
 import { log } from '../utils/logger'
 import { EVENT, eventBus } from '../kernel/events'
 import { api } from '../services/desktop_api'
+import { decodeChatReceipt } from '../services/chatReceipt'
 
 interface IMState {
   initialized: boolean
@@ -432,8 +435,16 @@ async function processEnvelopePayload(
       }
       break
     }
-    case 4: // RECEIPT
+    case 4: { // RECEIPT
+      const receipt = decodeChatReceipt(payloadBytes)
+      if (!receipt) break
+      useSocialChatStore.getState().applyMessageReceipt(
+        receipt.conversationId,
+        receipt.messageId,
+        receipt.kind,
+      )
       break
+    }
     case 7: { // CONVERSATION_COMMAND_RESULT
       if (payloadBytes.length === 0) break
       const event = await consumeCommandResultDelivery(payloadBytes)
