@@ -120,7 +120,15 @@ export async function refreshSocialProjection(label: string, includeNotification
     ]);
 
     const refreshed = useSocialChatStore.getState();
+    const peerPtids = Array.from(new Set(
+      Object.values(refreshed.conversationMembers)
+        .flat()
+        .map((member) => member.ptid)
+        .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserDid),
+    ));
     await Promise.allSettled([
+      refreshed.loadCurrentUserProfile(),
+      ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
       refreshed.loadGroupUnreadCounts(),
       refreshed.loadConversationPreviews(),
     ]);
