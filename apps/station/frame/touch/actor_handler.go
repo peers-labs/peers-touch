@@ -750,14 +750,19 @@ func GetActorPublicProfileByID(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	actorID, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid actor id"})
-		return
-	}
-
 	baseURL := baseURLFrom(ctx)
-	resp, err := actor.GetWebProfileByID(c, actorID, baseURL)
+	var resp *actor.ProfileResponse
+	var err error
+	if strings.HasPrefix(idStr, "ptid:") {
+		resp, err = actor.GetWebProfileByPTID(c, idStr, baseURL)
+	} else {
+		actorID, parseErr := strconv.ParseUint(idStr, 10, 64)
+		if parseErr != nil {
+			ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid actor id"})
+			return
+		}
+		resp, err = actor.GetWebProfileByID(c, actorID, baseURL)
+	}
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, map[string]string{"error": "actor not found"})
