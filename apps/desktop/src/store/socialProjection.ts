@@ -225,6 +225,24 @@ export function mergeConversationMessages(existing: SocialMessage[], incoming: S
   });
 }
 
+export function preserveMessageReceiptStatuses(
+  existing: SocialMessage[],
+  reconciled: SocialMessage[],
+): SocialMessage[] {
+  const existingByUlid = new Map(existing.map((message) => [message.ulid, message]));
+  return reconciled.map((message) => {
+    if (!('status' in message)) return message;
+    const current = existingByUlid.get(message.ulid);
+    if (!current || !('status' in current) || current.status <= message.status) return message;
+    return {
+      ...message,
+      status: current.status,
+      deliveredAt: current.deliveredAt,
+      readAt: current.readAt,
+    };
+  });
+}
+
 export function previewFromMessage(message: SocialMessage): MessagePreview {
   const attachmentName = message.attachments?.[0]?.filename ?? '';
   return {
