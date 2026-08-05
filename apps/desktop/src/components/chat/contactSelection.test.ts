@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
 import {
@@ -91,5 +92,15 @@ describe('findContactConversation', () => {
       displayName: 'Bob',
       avatar: undefined,
     });
+  });
+});
+
+describe('contacts panel projection subscriptions', () => {
+  const source = readFileSync(new URL('./ChatContactsPanel.tsx', import.meta.url), 'utf8');
+
+  it('subscribes to unified Conversation and member projection changes', () => {
+    expect(source).toContain('conversationRecords: s.conversations');
+    expect(source).toContain('conversationMembers: s.conversationMembers');
+    expect(source).toContain('groupMembers: s.groupMembers');
   });
 });
