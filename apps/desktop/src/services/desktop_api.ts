@@ -611,6 +611,15 @@ export interface PresenceTransitionEvent {
   affected_sessions: string[];
 }
 
+export interface PresenceStatusView {
+  actor_id: string;
+  state: number | string;
+}
+
+export interface PresenceQueryView {
+  statuses: PresenceStatusView[];
+}
+
 export interface ActorSearchItem {
   id: string;
   username: string;
@@ -4883,6 +4892,17 @@ export const api = {
       log.debug('presence', 'presenceNotify failed', { trigger, error: err instanceof Error ? err.message : String(err) });
       return { command: 'presence_notify', status: '{"accepted":false}' };
     }),
+
+  presenceQuery: async (actorIds: string[]): Promise<PresenceQueryView> => {
+    const response = await invokeRustCommand<{ actor_ids: string[] }, PresenceQueryView>(
+      'presence_query',
+      { actor_ids: actorIds },
+    );
+    if (!response.ok || !response.data) {
+      throw new RustCommandException('presence_query', response.error);
+    }
+    return response.data;
+  },
 
   friendChatLocalSearch: (query: string, limit?: number) =>
     invokeRustDataFromStatus<ChatLocalSearchInput, { messages: any[] }>(
