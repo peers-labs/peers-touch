@@ -23,7 +23,6 @@ import { installEventStreamBridge, startEventStream, stopEventStream } from './e
 import { api, type NotificationData } from './desktop_api';
 import {
   FriendChatMessageSchema,
-  FriendMessageStatus,
   type FriendChatMessage,
 } from '../gen/proto/domain/chat/friend_chat_pb';
 import { GroupMessageSchema, type GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
@@ -349,13 +348,6 @@ function onMessageReceived(payload: RealtimeMessageReceivedPayload): void {
   const decodedMessage = decodeRealtimeMessage(payload, isKnownGroup);
   const isSelfEcho = Boolean(store.currentUserDid && payload.senderActorId === store.currentUserDid);
   const isActiveConversation = isVisibleConversation(store, payload.sessionUlid, isKnownGroup);
-
-  if (!isSelfEcho && !isKnownGroup && payload.messageUlid) {
-    const ackStatus = isActiveConversation ? FriendMessageStatus.READ : FriendMessageStatus.DELIVERED;
-    api.friendChatAckMessages([payload.messageUlid], ackStatus).catch((error) => {
-      log.warn('socialRealtime', 'auto message ack failed', error);
-    });
-  }
 
   const notificationSuppressed = conversationSuppressesAlerts(
     store.conversationLocalState[conversationKey(isKnownGroup ? 'group' : 'friend', payload.sessionUlid)],

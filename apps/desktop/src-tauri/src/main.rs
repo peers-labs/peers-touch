@@ -405,6 +405,7 @@ fn main() {
             account::account_reset_pin,
             account::account_get_device_id,
             presence::presence_notify,
+            presence::presence_query,
             oss::oss_pick_attachment_chat,
             oss::oss_upload_attachment_chat,
             oss::oss_upload_attachment_bytes_chat,
