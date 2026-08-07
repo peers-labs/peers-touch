@@ -56,7 +56,7 @@ tooling/fixtures/applets/             # deterministic source fixtures
 | ELC-4 | 分离 release audit 的 reviewed/raw 输入与输出 | ELC-3 | done |
 | ELC-5 | 将 Note live smoke harness 放入 artifacts，并只提交脱敏摘要 | ELC-3 | done |
 | ELC-6 | 执行 tree-wide cutover gate、package gates 和 contract gates | ELC-4, ELC-5 | done |
-| ELC-7 | 完成 debt audit、提交并创建非 draft PR | ELC-6 | in progress |
+| ELC-7 | 完成 debt audit、提交并创建非 draft PR | ELC-6 | done |
 
 ## 5. 验收标准
 
