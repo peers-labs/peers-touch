@@ -8,7 +8,7 @@ import {
   validateRuntimeInput,
 } from './atelier-full-e2e-runtime-inputs.mjs';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = process.env.PEERS_ATELIER_FULL_E2E_PREFLIGHT_EVIDENCE_PATH
   ? path.resolve(process.env.PEERS_ATELIER_FULL_E2E_PREFLIGHT_EVIDENCE_PATH)
   : path.join(evidenceDir, 'atelier-full-e2e-preflight.json');
@@ -40,7 +40,7 @@ const sourceInstrumentationRequirements = [
       'workspace_open_intent',
       'realIdeLaunchProven\": false',
     ],
-    requiredEvidencePath: 'applet-readiness-evidence/official-applet/atelier-full-e2e-workspace-open.json',
+    requiredEvidencePath: 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-workspace-open.json',
   },
   {
     id: 'real-ide-launch-side-evidence-producer',
@@ -51,7 +51,7 @@ const sourceInstrumentationRequirements = [
       'PEERS_ATELIER_FULL_E2E_IDE_LAUNCH_EVIDENCE',
       'realIdeLaunchProven\": true',
     ],
-    requiredEvidencePath: 'applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch.json',
+    requiredEvidencePath: 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-ide-launch.json',
   },
   {
     id: 'provider-runtime-side-evidence-producer',
@@ -62,13 +62,13 @@ const sourceInstrumentationRequirements = [
       'PEERS_ATELIER_FULL_E2E_PROVIDER_RUNTIME_EVIDENCE',
       'providerRuntimeProven',
     ],
-    requiredEvidencePath: 'applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime.json',
+    requiredEvidencePath: 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-provider-runtime.json',
   },
 ];
 
 const expectedEvidence = [
-  'applet-readiness-evidence/official-applet/atelier-real-product-gates-aggregate.json',
-  'applet-readiness-evidence/official-applet/atelier-projection-contract-gate.json',
+  'tooling/acceptance/evidence/applets/official-applet/atelier-real-product-gates-aggregate.json',
+  'tooling/acceptance/evidence/applets/official-applet/atelier-projection-contract-gate.json',
 ];
 
 const claimBoundary = {

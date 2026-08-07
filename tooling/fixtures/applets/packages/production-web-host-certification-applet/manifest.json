@@ -1,0 +1,106 @@
+{
+  "id": "production-web-host-certification-applet",
+  "name": "Production Web Host Certification Applet",
+  "version": "1.0.0",
+  "description": "External-style Production Web Host certification fixture for Applet runtime readiness evidence.",
+  "author": "External Producer",
+  "targets": [
+    "desktop",
+    "web"
+  ],
+  "entries": {
+    "lynx": "main.lynx.bundle"
+  },
+  "load": {
+    "desktop": {
+      "type": "lynx-web",
+      "entry": "main.lynx.bundle"
+    },
+    "web": {
+      "type": "lynx-web",
+      "entry": "main.lynx.bundle"
+    }
+  },
+  "bridge": {
+    "protocol": "peers-touch.applet.bridge",
+    "version": "1.0.0"
+  },
+  "permissions": [
+    "app.getContext",
+    "app.getLaunchOptions",
+    "lifecycle.onShow",
+    "lifecycle.onHide",
+    "lifecycle.onPause",
+    "lifecycle.onResume",
+    "lifecycle.reportReady",
+    "lifecycle.destroy",
+    "network.request",
+    "network.upload",
+    "network.download",
+    "storage.get",
+    "storage.set",
+    "storage.remove",
+    "storage.clear",
+    "storage.keys",
+    "storage.getInfo",
+    "config.get",
+    "system.getInfo",
+    "device.getSafeArea",
+    "device.getWindowInfo",
+    "device.vibrate",
+    "ui.showToast",
+    "ui.setNavigationBar",
+    "clipboard.getText",
+    "clipboard.setText",
+    "file.read",
+    "file.write",
+    "file.delete",
+    "file.list",
+    "file.getInfo",
+    "events.subscribe",
+    "events.unsubscribe",
+    "events.poll",
+    "skills.register",
+    "skills.list",
+    "skills.invoke",
+    "tasks.start",
+    "tasks.get",
+    "tasks.cancel",
+    "agent.startSession",
+    "agent.send",
+    "agent.stream",
+    "ai.generate",
+    "ai.chat",
+    "telemetry.track",
+    "telemetry.reportError"
+  ],
+  "services": [
+    {
+      "id": "primary-api",
+      "kind": "http",
+      "binding": "station-resolved",
+      "allowedMethods": [
+        "GET",
+        "POST"
+      ],
+      "allowedPaths": [
+        "/api/v1/*"
+      ],
+      "streaming": true
+    }
+  ],
+  "skills": [
+    {
+      "id": "generic-skill",
+      "inputSchema": "schemas/skill.input.json",
+      "streaming": true
+    }
+  ],
+  "integrity": {
+    "algorithm": "sha256",
+    "files": {
+      "main.lynx.bundle": "sha256:f8b604839abe8be89753675feb78f113995d791ea343eb019e47a9c33f42bf97",
+      "schemas/skill.input.json": "sha256:c4d95b9b646af64737800ef34eddcffa4b955b3584b4def475f09a49c3910c43"
+    }
+  }
+}

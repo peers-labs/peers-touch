@@ -7,7 +7,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 const repoRoot = process.cwd();
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-host-storage-attachment-browser-controlled-gate.json');
 const storageRoot = path.resolve('.local/atelier-host-storage-attachment-browser-controlled-gate', `run-${process.pid}-${Date.now()}`);
 const runId = `atelier-host-storage-browser-${process.pid}-${Date.now()}`;

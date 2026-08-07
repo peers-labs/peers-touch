@@ -9,7 +9,7 @@ const desktopPackageDir = path.join(repoRoot, 'apps/desktop/applets-dist/peers.n
 const desktopIndexPath = path.join(repoRoot, 'apps/desktop/applets-dist/index.json');
 const desktopManifestPath = path.join(desktopPackageDir, 'manifest.json');
 const bundlePath = path.join(desktopPackageDir, 'main.lynx.bundle');
-const evidenceDir = path.join(repoRoot, 'applet-readiness-evidence/official-applet');
+const evidenceDir = path.join(repoRoot, 'tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'note-desktop-injection-gate.json');
 
 function readJson(filePath) {

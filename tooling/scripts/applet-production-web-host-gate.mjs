@@ -7,15 +7,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { createServer as createViteServer } from 'vite';
+import { prepareAppletFixturePackage } from './lib/applet-readiness-paths.mjs';
 
 const rootDir = process.cwd();
 const packageArg = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
-const packageDir = path.resolve(
-  packageArg ?? 'applet-readiness-evidence/package/production-web-host-certification-applet',
-);
+const packageDir = packageArg ? path.resolve(packageArg) : prepareAppletFixturePackage('production-web-host-certification-applet');
 const usesDefaultFixture = !packageArg;
-const evidenceDir = path.resolve('applet-readiness-evidence/web/production-web-host-shell');
-const outputPath = path.resolve('applet-readiness-evidence/web/production-web-host-runtime-output.txt');
+const evidenceDir = path.resolve('.artifacts/applet-readiness/web/production-web-host-shell');
+const outputPath = path.resolve('.artifacts/applet-readiness/web/production-web-host-runtime-output.txt');
 const indexPath = path.join(evidenceDir, 'index.html');
 const shellJsPath = path.join(evidenceDir, 'shell.js');
 const sdkDistEntry = path.resolve('packages/applet-sdk/dist/index.js');
