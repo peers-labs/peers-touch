@@ -59,4 +59,4 @@ if (!evidence.ok) {
   process.exit(result.status ?? 1);
 }
 
-console.log(`PASS Atelier task lifecycle controlled gate: ${evidencePath}`);
+process.stdout.write(`PASS Atelier task lifecycle controlled gate: ${evidencePath}\n`);

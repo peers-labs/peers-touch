@@ -2992,7 +2992,7 @@ function runGate() {
 try {
   const evidence = runGate();
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier completion readiness audit controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier completion readiness audit controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,

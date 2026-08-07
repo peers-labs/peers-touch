@@ -343,7 +343,7 @@ try {
   assertNoRawAttachmentFields(evidence.browserIntake);
   assertNoRawAttachmentFields(evidence.attachment);
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier Host Storage attachment browser controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier Host Storage attachment browser controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,
