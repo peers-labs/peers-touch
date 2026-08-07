@@ -13,7 +13,7 @@ import {
   validateRuntimeInput,
 } from './atelier-full-e2e-runtime-inputs.mjs';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = process.env.PEERS_ATELIER_FULL_E2E_EVIDENCE_PATH
   ? path.resolve(process.env.PEERS_ATELIER_FULL_E2E_EVIDENCE_PATH)
   : path.join(evidenceDir, 'atelier-full-e2e.json');

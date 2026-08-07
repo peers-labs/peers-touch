@@ -3,14 +3,12 @@ import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { prepareAppletFixturePackage } from './lib/applet-readiness-paths.mjs';
 
-const packageDir = process.argv[2];
-if (!packageDir) {
-  process.stderr.write('usage: pnpm applet:desktop-e2e <package-dir> [--service service-id=http://127.0.0.1:port]\n');
-  process.exit(1);
-}
+const packageArg = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
+const packageDir = packageArg ? path.resolve(packageArg) : prepareAppletFixturePackage('generic-complex-applet');
 
-const evidenceRoot = path.resolve('applet-readiness-evidence');
+const evidenceRoot = path.resolve('.artifacts/applet-readiness');
 mkdirSync(path.join(evidenceRoot, 'desktop'), { recursive: true });
 
 function write(relative, content) {

@@ -1,0 +1,10 @@
+{
+  "appletId": "external-l3-cert-applet",
+  "event": "applet.readiness.flow.completed",
+  "ok": true,
+  "properties": {
+    "taskId": "apl-1780976846715-27"
+  },
+  "recordedAt": "2026-06-09T03:47:27.664Z",
+  "sessionId": "desktop-external-l3-cert-applet-apl-1780976846633-2"
+}

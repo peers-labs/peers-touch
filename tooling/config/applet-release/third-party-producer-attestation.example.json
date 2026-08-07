@@ -7,7 +7,7 @@
   "packagePath": "/absolute/path/outside/peers-touch/to/producer/package",
   "certificationOutput": "external-producer/certification-output.txt",
   "authorshipEvidenceFiles": [
-    "applet-readiness-evidence/release/third-party-authorship-notes.txt"
+    ".artifacts/applet-readiness/release/third-party-authorship-notes.txt"
   ],
   "reviewedBy": "reviewer name or handle",
   "reviewedAt": "2026-06-09T00:00:00.000Z"

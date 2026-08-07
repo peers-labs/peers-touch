@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const stationAppDir = path.join(repoRoot, 'apps', 'station', 'app');
-const evidenceDir = path.join(repoRoot, 'applet-readiness-evidence', 'station-backed-launch');
-const storeDir = path.join(evidenceDir, 'store-fixture');
+const evidenceDir = path.join(repoRoot, 'tooling/acceptance/evidence/applets', 'station-backed-launch');
+const storeDir = path.join(repoRoot, '.artifacts', 'applet-readiness', 'station-store');
 const dbPath = path.join(storeDir, 'store.sqlite');
 const storagePath = path.join(storeDir, 'bundles');
 

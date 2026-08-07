@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-real-product-gates-aggregate.json');
 const defaultTimeoutMs = Number.parseInt(process.env.PEERS_ATELIER_REAL_PRODUCT_GATE_TIMEOUT_MS ?? '900000', 10);
 const variantsTimeoutMs = Number.parseInt(process.env.PEERS_ATELIER_REAL_PRODUCT_VARIANTS_GATE_TIMEOUT_MS ?? '1800000', 10);
@@ -12,55 +12,55 @@ const variantsTimeoutMs = Number.parseInt(process.env.PEERS_ATELIER_REAL_PRODUCT
 const gates = [
   {
     script: 'applet:atelier-real-product-gate',
-    evidence: 'applet-readiness-evidence/official-applet/atelier-real-product-gate.json',
+    evidence: 'tooling/acceptance/evidence/applets/official-applet/atelier-real-product-gate.json',
     timeoutMs: defaultTimeoutMs,
   },
   {
     script: 'applet:atelier-product-window-gate',
-    evidence: 'applet-readiness-evidence/official-applet/atelier-product-window-gate.json',
+    evidence: 'tooling/acceptance/evidence/applets/official-applet/atelier-product-window-gate.json',
     timeoutMs: defaultTimeoutMs,
   },
   {
     script: 'applet:atelier-product-window-failure-matrix-gate',
-    evidence: 'applet-readiness-evidence/official-applet/atelier-product-window-failure-matrix-gate.json',
+    evidence: 'tooling/acceptance/evidence/applets/official-applet/atelier-product-window-failure-matrix-gate.json',
     timeoutMs: defaultTimeoutMs,
   },
   {
     script: 'applet:atelier-product-window-cross-restart-gate',
-    evidence: 'applet-readiness-evidence/official-applet/atelier-product-window-cross-restart-gate.json',
+    evidence: 'tooling/acceptance/evidence/applets/official-applet/atelier-product-window-cross-restart-gate.json',
     timeoutMs: defaultTimeoutMs,
   },
   {
     script: 'applet:atelier-decision-product-window-gate',
-    evidence: 'applet-readiness-evidence/official-applet/atelier-decision-product-window-gate.json',
+    evidence: 'tooling/acceptance/evidence/applets/official-applet/atelier-decision-product-window-gate.json',
     timeoutMs: defaultTimeoutMs,
   },
   {
     script: 'applet:atelier-live-resume-product-window-gate',
-    evidence: 'applet-readiness-evidence/official-applet/atelier-live-resume-product-window-gate.json',
+    evidence: 'tooling/acceptance/evidence/applets/official-applet/atelier-live-resume-product-window-gate.json',
     timeoutMs: defaultTimeoutMs,
   },
   {
     script: 'applet:atelier-artifact-gate-product-window-gate',
-    evidence: 'applet-readiness-evidence/official-applet/atelier-artifact-gate-product-window-gate.json',
+    evidence: 'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-product-window-gate.json',
     timeoutMs: defaultTimeoutMs,
   },
   {
     script: 'applet:atelier-artifact-body-fetch-product-window-gate',
-    evidence: 'applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json',
+    evidence: 'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-gate.json',
     timeoutMs: defaultTimeoutMs,
   },
   {
     script: 'applet:atelier-artifact-gate-recovery-product-window-gate',
-    evidence: 'applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-product-window-gate.json',
+    evidence: 'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-product-window-gate.json',
     timeoutMs: defaultTimeoutMs,
   },
   {
     script: 'applet:atelier-artifact-gate-recovery-variants-product-window-gate',
     evidence: [
-      'applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-accept-risk-product-window-gate.json',
-      'applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-continue-product-window-gate.json',
-      'applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-cancel-product-window-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-accept-risk-product-window-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-continue-product-window-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-cancel-product-window-gate.json',
     ],
     timeoutMs: variantsTimeoutMs,
   },

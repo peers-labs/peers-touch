@@ -5,18 +5,18 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-completion-readiness-audit-controlled-gate.json');
 const sharedFullE2EEvidencePath = path.join(evidenceDir, 'atelier-full-e2e.json');
 const sharedCompletionAuditEvidencePath = path.join(evidenceDir, 'atelier-completion-readiness-audit.json');
 const completionAuditScript = path.resolve('tooling/scripts/atelier-completion-readiness-audit.mjs');
 const controlledWorkDir = path.resolve('tmp/atelier-completion-readiness-audit-controlled-gate');
 const isolatedEvidenceRoot = path.join(controlledWorkDir, 'evidence-root');
-const isolatedEvidenceDir = path.join(isolatedEvidenceRoot, 'applet-readiness-evidence/official-applet');
+const isolatedEvidenceDir = path.join(isolatedEvidenceRoot, 'tooling/acceptance/evidence/applets/official-applet');
 const isolatedFullE2EEvidencePath = path.join(controlledWorkDir, 'atelier-full-e2e.fixture.json');
 const isolatedCompletionAuditEvidencePath = path.join(controlledWorkDir, 'atelier-completion-readiness-audit.fixture.json');
-const independentIdeLaunchEvidencePath = 'applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch.json';
-const independentProviderRuntimeEvidencePath = 'applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime.json';
+const independentIdeLaunchEvidencePath = 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-ide-launch.json';
+const independentProviderRuntimeEvidencePath = 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-provider-runtime.json';
 
 function controlledHash(value) {
   return `sha256:${createHash('sha256').update(String(value)).digest('hex')}`;
@@ -429,7 +429,7 @@ const expectedOperatorNextActions = {
       'PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE',
     ],
     expectedEvidencePaths: [
-      'applet-readiness-evidence/official-applet/atelier-full-e2e.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e.json',
     ],
     acceptanceCriteriaIncludes: [
       'evidenceClass=REAL_PRODUCT_PATH',
@@ -445,8 +445,8 @@ const expectedOperatorNextActions = {
       'PEERS_ATELIER_FULL_E2E_IDE',
     ],
     expectedEvidencePaths: [
-      'applet-readiness-evidence/official-applet/atelier-full-e2e-desktop-ready.json',
-      'applet-readiness-evidence/official-applet/atelier-full-e2e-workspace-open.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-desktop-ready.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-workspace-open.json',
     ],
     acceptanceCriteriaIncludes: [
       'launchId/sessionId match Desktop ready evidence',
@@ -461,7 +461,7 @@ const expectedOperatorNextActions = {
       'PEERS_ATELIER_FULL_E2E_IDE',
     ],
     expectedEvidencePaths: [
-      'applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-ide-launch.json',
     ],
     acceptanceCriteriaIncludes: [
       'independent current-launch Desktop Host evidence',
@@ -476,7 +476,7 @@ const expectedOperatorNextActions = {
       'PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE',
     ],
     expectedEvidencePaths: [
-      'applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-provider-runtime.json',
     ],
     acceptanceCriteriaIncludes: [
       'Station-owned and bound to the configured providerProfileRef',
@@ -553,10 +553,10 @@ function assertValidatedEvidenceCoverage(audit, label) {
   assert.ok(Array.isArray(audit.validatedEvidence), `${label} must include validatedEvidence array`);
   const paths = audit.validatedEvidence.map((entry) => entry?.path).filter(Boolean);
   for (const requiredPath of [
-    'applet-readiness-evidence/official-applet/atelier-full-e2e-runtime-inputs-controlled-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-full-e2e-preflight-controlled-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-full-e2e-fail-closed-controlled-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-full-e2e-final-evidence-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-runtime-inputs-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-preflight-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-fail-closed-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-final-evidence-controlled-gate.json',
   ]) {
     assert.ok(paths.includes(requiredPath), `${label} validatedEvidence must include ${requiredPath}`);
   }
@@ -700,7 +700,7 @@ const partialOkTrueRejectionFixtures = [
   {
     id: 'partial-ok-true-real-ide-launch-wrong-evidence-path',
     mutate: (fixture) => {
-      fixture.ideLaunch.path = 'applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch-copy.json';
+      fixture.ideLaunch.path = 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-ide-launch-copy.json';
     },
     expectedMessage: `real IDE launch evidence path must be ${independentIdeLaunchEvidencePath}`,
   },
@@ -826,7 +826,7 @@ const partialOkTrueRejectionFixtures = [
   {
     id: 'partial-ok-true-provider-runtime-wrong-evidence-path',
     mutate: (fixture) => {
-      fixture.providerRuntime.path = 'applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime-copy.json';
+      fixture.providerRuntime.path = 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-provider-runtime-copy.json';
     },
     expectedMessage: `provider/runtime quality evidence path must be ${independentProviderRuntimeEvidencePath}`,
   },
