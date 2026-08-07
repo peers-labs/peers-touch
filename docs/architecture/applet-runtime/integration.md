@@ -1,8 +1,8 @@
 # Applet Runtime Architecture — 集成与迁移
 
 > **Status**: draft
-> **Version**: v1.1
-> **Created**: 2026-05-19 | **Updated**: 2026-06-06
+> **Version**: v1.2
+> **Created**: 2026-05-19 | **Updated**: 2026-08-08
 > **Owner**: Architecture Team
 > **Module**: `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applets/`
 
@@ -126,7 +126,30 @@ Host 集成规则：
 
 ---
 
-## 6. 迁移阶段
+## 6. 与 Readiness Evidence 的集成
+
+Applet gate 使用三个不同生命周期的根目录：
+
+```text
+tooling/fixtures/applets/
+  → copy + build
+  → .artifacts/applet-readiness/
+  → sanitize + review
+  → tooling/acceptance/evidence/applets/
+```
+
+集成规则：
+
+- Gate 只能在 `.artifacts/applet-readiness/` 下写 raw output、generated package、bundle、database、screenshot 和 harness。
+- `tooling/fixtures/applets/` 是只读输入；构建前必须复制到 artifact package root。
+- `tooling/acceptance/evidence/applets/` 只接收脱敏 JSON/Markdown 摘要，不能保存运行时 harness 或 stdout/stderr。
+- Release audit 必须分别读取 reviewed evidence 与 raw artifact，并将自身 raw report 写回 artifact root。
+- 缺失 raw artifact、freshness 不成立或 reviewed evidence 含机器路径时，release audit 必须 fail-closed。
+- `applet-readiness-evidence/` 已被 D-10 删除；任何 live consumer 引用该根都是架构回归。
+
+---
+
+## 7. 迁移阶段
 
 ### Phase 0: Contract Freeze
 
@@ -218,9 +241,9 @@ Host 集成规则：
 
 ---
 
-## 7. 构建与分发链路
+## 8. 构建与分发链路
 
-### 6.1 构建工具
+### 8.1 构建工具
 
 | 工具 | 角色 |
 |------|------|
@@ -229,7 +252,7 @@ Host 集成规则：
 | `lynx.config.ts` | 声明 web / lynx 双构建目标 |
 | `applet-contract/scripts/generate-schemas.ts` | 从 TypeScript 生成 JSON Schema |
 
-### 6.2 构建产物
+### 8.2 构建产物
 
 ```text
 applets/<applet-id>/dist/
@@ -243,7 +266,7 @@ applets/<applet-id>/dist/
 - `integrity.json` 自动生成，内容为 `{ "main.lynx.bundle": "sha256:...", ... }`。
 - 构建完成后写入 `applet.json` 的 `integrity.files`。
 
-### 6.3 开发期（Dev）
+### 8.3 开发期（Dev）
 
 ```text
 Applet 开发者本地
@@ -258,7 +281,7 @@ Applet 开发者本地
 - 如果要联调 Desktop Gateway，启动 Tauri dev，`<lynx-host>` 指向本地 dev server URL。
 - Rspeedy 的 `--env lynx` 模式可用 Lynx DevTool 模拟器调试 Mobile 效果。
 
-### 6.4 生产期（Desktop）
+### 8.4 生产期（Desktop）
 
 ```text
 CI 构建
@@ -274,7 +297,7 @@ Desktop 加载路径：
 - 或 file-based: `{resource_dir}/applets-dist/<applet-id>/main.lynx.bundle`
 - 具体取决于 Tauri asset resolver 配置
 
-### 6.5 生产期（Mobile）
+### 8.5 生产期（Mobile）
 
 ```text
 CI 构建
@@ -290,7 +313,7 @@ Mobile 加载路径：
 
 未来可支持远程 bundle 下载（OTA），但第一阶段只做 bundled-in-app。
 
-### 6.6 版本管理
+### 8.6 版本管理
 
 - **bundle 版本 = `applet.json` 中的 `version` 字段**。
 - Desktop 和 Mobile 中 `index.json` 记录每个 applet 当前部署版本。
@@ -310,7 +333,7 @@ Mobile 加载路径：
 
 ---
 
-## 7. 风险与缓解
+## 9. 风险与缓解
 
 | 风险 | 影响 | 缓解 |
 |------|------|------|
@@ -322,7 +345,7 @@ Mobile 加载路径：
 
 ---
 
-## 8. 不做什么
+## 10. 不做什么
 
 不做：
 

@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { AppletError, AppletSDK, StandaloneBridgeAdapter } from '../../packages/applet-sdk/dist/index.js';
 
-const evidenceRoot = path.resolve('applet-readiness-evidence');
+const evidenceRoot = path.resolve('.artifacts/applet-readiness');
 mkdirSync(path.join(evidenceRoot, 'sdk'), { recursive: true });
 
 function write(relative, content) {

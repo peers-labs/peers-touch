@@ -5,10 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const evidenceDir = path.join(repoRoot, 'applet-readiness-evidence', 'desktop', 'lifecycle-smoothness-gate');
+const evidenceDir = path.join(repoRoot, 'tooling/acceptance/evidence/applets', 'desktop', 'lifecycle-smoothness-gate');
 const evidenceJsonPath = path.join(evidenceDir, 'lifecycle-smoothness-gate.json');
 const evidenceMdPath = path.join(evidenceDir, 'lifecycle-smoothness-gate.md');
-const outputPath = path.join(repoRoot, 'applet-readiness-evidence', 'desktop', 'lifecycle-smoothness-gate-output.txt');
+const outputPath = path.join(repoRoot, '.artifacts', 'applet-readiness', 'desktop', 'lifecycle-smoothness-gate-output.txt');
 
 function read(relativePath) {
   return readFileSync(path.join(repoRoot, relativePath), 'utf8');
@@ -136,6 +136,7 @@ function main() {
     vitest.stdout.trim(),
     vitest.stderr.trim(),
   ].filter(Boolean).join('\n');
+  mkdirSync(path.dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, `${output}\n`);
   process.stdout.write(`${output}\n`);
 }

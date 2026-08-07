@@ -1,8 +1,8 @@
 # Applet Runtime Architecture
 
 > **Status**: draft
-> **Version**: v1.5
-> **Created**: 2026-05-19 | **Updated**: 2026-07-02
+> **Version**: v1.6
+> **Created**: 2026-05-19 | **Updated**: 2026-08-08
 > **Owner**: Architecture Team
 > **Module**: `apps/applets/`, `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applet-contract/`
 
@@ -134,6 +134,7 @@ AI 不得只读 `execution-plans/2026-06-06-applet-runtime-formalization.md` 后
 
 | 文档 | 说明 |
 |------|------|
+| [execution-plans/2026-08-08-applet-evidence-layout-cutover.md](./execution-plans/2026-08-08-applet-evidence-layout-cutover.md) | **当前 evidence-layout 切换计划**：按 D-10 分离 reviewed evidence、source fixtures 与 ignored runtime artifacts，并删除旧根 |
 | [execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md](./execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md) | **Applet Runtime & Lifecycle 构建计划**：Desktop = Tauri WebView + Lynx for Web，Mobile = 原生 LynxView，保活归 Kernel；含 spike 验证、协议冻结、Applet Kernel、Desktop/Mobile adapter、hardening、旧运行时收敛 |
 | [execution-plans/2026-06-23-applet-capability-completion-plan.md](./execution-plans/2026-06-23-applet-capability-completion-plan.md) | **当前唯一任务级执行源**：完成 Applet 能力，覆盖 Note 产品化、Station Store、Applet Box、Gateway hardening、第三方认证、Web/Mobile parity、release audit |
 | [execution-plans/note-official-applet-progress.md](./execution-plans/note-official-applet-progress.md) | 历史进度输入：记录 Note 官方 applet 已完成证据和遗留缺口，后续执行必须映射到新完成计划 |

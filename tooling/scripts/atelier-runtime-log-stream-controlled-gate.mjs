@@ -6,7 +6,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 const repoRoot = process.cwd();
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-runtime-log-stream-controlled-gate.json');
 const streamId = `atelier-controlled-log-stream-${process.pid}-${Date.now()}`;
 const expectedMessages = [

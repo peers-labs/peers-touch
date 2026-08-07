@@ -6,9 +6,9 @@ import path from 'node:path';
 
 const rootDir = process.cwd();
 const packageDir = path.resolve('apps/desktop/applets-dist/peers.atelier');
-const genericEvidencePath = path.resolve('applet-readiness-evidence/desktop/product-window-gate/product-shell-evidence.json');
-const genericOutputPath = path.resolve('applet-readiness-evidence/desktop/product-window-gate-output.txt');
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const genericEvidencePath = path.resolve('tooling/acceptance/evidence/applets/desktop/product-window-gate/product-shell-evidence.json');
+const genericOutputPath = path.resolve('.artifacts/applet-readiness/desktop/product-window-gate-output.txt');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-product-window-failure-matrix-gate.json');
 const scenarios = [
   {

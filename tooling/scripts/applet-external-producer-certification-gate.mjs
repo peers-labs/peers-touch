@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 const rootDir = process.cwd();
-const evidenceRoot = path.resolve('applet-readiness-evidence');
+const evidenceRoot = path.resolve('.artifacts/applet-readiness');
 const evidenceDir = path.join(evidenceRoot, 'external-producer');
 const outputPath = path.join(evidenceDir, 'certification-output.txt');
 const allowRepoPackage = process.argv.includes('--allow-repo-package');

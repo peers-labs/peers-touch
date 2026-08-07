@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
-const evidenceDir = path.join(repoRoot, 'applet-readiness-evidence', 'official-applet');
+const evidenceDir = path.join(repoRoot, 'tooling/acceptance/evidence/applets', 'official-applet');
 const evidencePath = path.join(evidenceDir, 'note-reload-persistence-gate.json');
 
 function startGateServer() {

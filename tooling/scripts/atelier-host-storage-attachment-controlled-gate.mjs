@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-host-storage-attachment-controlled-gate.json');
 const storageRoot = path.resolve('.local/atelier-host-storage-attachment-controlled-gate', `run-${process.pid}-${Date.now()}`);
 const taskId = 'atelier-controlled-host-storage-task';

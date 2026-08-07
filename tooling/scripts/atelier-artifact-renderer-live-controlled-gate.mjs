@@ -6,7 +6,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 const repoRoot = process.cwd();
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-artifact-renderer-live-controlled-gate.json');
 const runId = `atelier-renderer-live-${process.pid}-${Date.now()}`;
 

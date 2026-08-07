@@ -19,7 +19,7 @@
         "truth_sources": [
           "docs/client/desktop/runtime-projections.md",
           "docs/client/common/ui-identity/frontend-component-tree-registry.md",
-          "applet-readiness-evidence/desktop/make-desktop-lifecycle-e2e.md",
+          "tooling/acceptance/evidence/applets/desktop/make-desktop-lifecycle-e2e.md",
           "tooling/acceptance/features/applet-desktop-lifecycle-smoothness.yaml",
           "tooling/acceptance/gates.yaml"
         ],

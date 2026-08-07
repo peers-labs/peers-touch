@@ -10,7 +10,7 @@ import {
   validateRuntimeInput,
 } from './atelier-full-e2e-runtime-inputs.mjs';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-full-e2e-runtime-inputs-controlled-gate.json');
 
 const claimBoundary = {

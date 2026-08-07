@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const rootDir = process.cwd();
-const evidenceRoot = path.resolve('applet-readiness-evidence');
+const evidenceRoot = path.resolve('.artifacts/applet-readiness');
 const outputDir = path.join(evidenceRoot, 'release');
 const outputPath = path.join(outputDir, 'product-capability-service-gate-output.txt');
 
