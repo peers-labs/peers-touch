@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 const rootDir = process.cwd();
-const evidenceDir = path.resolve('applet-readiness-evidence/checks');
+const evidenceDir = path.resolve('.artifacts/applet-readiness/checks');
 const outputPath = path.join(evidenceDir, 'platform-check-output.txt');
 
 mkdirSync(evidenceDir, { recursive: true });

@@ -175,7 +175,7 @@ Kernel 是权威：runtime 只按固定节奏喂 `now` / 采样级别，**由 Ke
 | Runtime wiring 单测 | `apps/desktop/src/runtimes/appletsRuntime.test.ts` | 目录 reconcile、lease acquire/release 幂等、冷启 register/ready/首帧 show（不 dispatch show）、A→B 切换保活 + LRU release、active-page 桥 hide/show、Kernel sweep 定时器、内存压力阈值路由、blur/focus pause-resume |
 | Kernel 单测 | `packages/applet-kernel/tests/*.test.mjs` | 状态机转换、LRU、TTL、内存压力、crash recovery（执行计划 §5 验收） |
 | Contract 单测 | `packages/applet-contract/tests/lifecycle.test.mjs` | 合法/非法转换、事件顺序 |
-| 平滑度门禁 | `tooling/scripts/applet-desktop-lifecycle-smoothness-gate.mjs` | 静态校验 explicit-close 延迟释放、close 先导航后释放、launcher 刷新不整屏 loading、A→B 切换 lease 语义，并跑 `pageRuntimeLease.test.ts` + `appletsRuntime.test.ts`，产出 `applet-readiness-evidence/desktop/lifecycle-smoothness-gate/` 证据 |
+| 平滑度门禁 | `tooling/scripts/applet-desktop-lifecycle-smoothness-gate.mjs` | 静态校验 explicit-close 延迟释放、close 先导航后释放、launcher 刷新不整屏 loading、A→B 切换 lease 语义，并跑 `pageRuntimeLease.test.ts` + `appletsRuntime.test.ts`，产出 `tooling/acceptance/evidence/applets/desktop/lifecycle-smoothness-gate/` 证据 |
 
 平台通用验证命令（`AGENTS.md §10`）：`cd apps/desktop && pnpm run check && pnpm run test && pnpm run build`。
 

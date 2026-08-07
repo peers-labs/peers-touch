@@ -386,7 +386,7 @@ pnpm applet:forbidden-producer-scan
 The smoke command or its wrapper must produce:
 
 ```text
-applet-readiness-evidence/
+tooling/acceptance/evidence/applets/
 ├── summary.md
 ├── contract/
 ├── sdk/
