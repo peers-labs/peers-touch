@@ -103,4 +103,4 @@ if (!ok) {
   process.exit(1);
 }
 
-console.log(`PASS Atelier confirmation ingress controlled gate: ${evidencePath}`);
+process.stdout.write(`PASS Atelier confirmation ingress controlled gate: ${evidencePath}\n`);
