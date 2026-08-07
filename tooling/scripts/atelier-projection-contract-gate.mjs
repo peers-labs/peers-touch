@@ -11026,4 +11026,4 @@ if (failures.length > 0) {
 }
 
 writeProjectionContractEvidence('PASS');
-console.log('Atelier projection contract gate passed.');
+process.stdout.write('Atelier projection contract gate passed.\n');
