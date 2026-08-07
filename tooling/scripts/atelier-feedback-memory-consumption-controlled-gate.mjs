@@ -89,7 +89,7 @@ function runGate() {
 try {
   const evidence = runGate();
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier feedback memory consumption controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier feedback memory consumption controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,
