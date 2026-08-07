@@ -13,7 +13,7 @@
   },
   "validatedEvidence": [
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-projection-contract-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-projection-contract-gate.json",
       "status": "PASS",
       "gate": "atelier:projection-contract-gate",
       "readiness": "NOT_READY",
@@ -116,14 +116,14 @@
         ],
         "requiredDocuments": [
           "docs/architecture/atelier/prototype/README.md",
-          "applet-readiness-evidence/official-applet/atelier-acceptance-evidence-report-2026-07-06.md",
-          "applet-readiness-evidence/official-applet/atelier-completion-audit-2026-07-06.md",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-acceptance-evidence-report-2026-07-06.md",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-completion-audit-2026-07-06.md",
           "tmp/atelier-master-goal.md"
         ],
         "notReadyBoundaryDocuments": [
           "docs/architecture/atelier/prototype/README.md",
-          "applet-readiness-evidence/official-applet/atelier-acceptance-evidence-report-2026-07-06.md",
-          "applet-readiness-evidence/official-applet/atelier-completion-audit-2026-07-06.md",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-acceptance-evidence-report-2026-07-06.md",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-completion-audit-2026-07-06.md",
           "tmp/atelier-master-goal.md"
         ]
       },
@@ -137,7 +137,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json",
       "status": "PASS",
       "gate": "atelier:bridge-runtime-gate",
       "readiness": "NOT_READY",
@@ -204,7 +204,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
       "status": "PASS",
       "gate": "atelier:official-frontend-gate",
       "readiness": "NOT_READY",
@@ -250,7 +250,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-official-status-ui-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-official-status-ui-gate.json",
       "status": "PASS",
       "gate": "atelier:official-status-ui-gate",
       "readiness": "NOT_READY",
@@ -273,7 +273,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-sdk-lynx-bridge-unit-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-sdk-lynx-bridge-unit-gate.json",
       "status": "PASS",
       "gate": "atelier:sdk-lynx-bridge-unit-gate",
       "readiness": "NOT_READY",
@@ -308,7 +308,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-message-send-ingress-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-message-send-ingress-controlled-gate.json",
       "ok": true,
       "gate": "atelier-message-send-ingress-controlled-gate",
       "readiness": "NOT_READY",
@@ -326,7 +326,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-feedback-submit-ingress-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-feedback-submit-ingress-controlled-gate.json",
       "ok": true,
       "gate": "atelier-feedback-submit-ingress-controlled-gate",
       "readiness": "NOT_READY",
@@ -344,7 +344,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-confirmation-ingress-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-ingress-controlled-gate.json",
       "ok": true,
       "gate": "atelier-confirmation-ingress-controlled-gate",
       "readiness": "NOT_READY",
@@ -362,7 +362,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-confirmation-outcome-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-outcome-controlled-gate.json",
       "ok": true,
       "gate": "atelier-confirmation-outcome-controlled-gate",
       "readiness": "NOT_READY",
@@ -384,7 +384,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-feedback-memory-consumption-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-feedback-memory-consumption-controlled-gate.json",
       "ok": true,
       "gate": "atelier-feedback-memory-consumption-controlled-gate",
       "readiness": "NOT_READY",
@@ -404,7 +404,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-workspace-open-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-workspace-open-controlled-gate.json",
       "ok": true,
       "gate": "atelier-workspace-open-controlled-gate",
       "readiness": "NOT_READY",
@@ -424,7 +424,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-task-lifecycle-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-task-lifecycle-controlled-gate.json",
       "ok": true,
       "gate": "atelier-task-lifecycle-controlled-gate",
       "readiness": "NOT_READY",
@@ -443,7 +443,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-runtime-log-stream-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-runtime-log-stream-controlled-gate.json",
       "ok": true,
       "gate": "atelier-runtime-log-stream-controlled-gate",
       "readiness": "NOT_READY",
@@ -461,7 +461,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-artifact-renderer-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-renderer-controlled-gate.json",
       "ok": true,
       "gate": "atelier-artifact-renderer-controlled-gate",
       "readiness": "NOT_READY",
@@ -484,7 +484,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-artifact-renderer-live-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-renderer-live-controlled-gate.json",
       "ok": true,
       "gate": "atelier-artifact-renderer-live-controlled-gate",
       "readiness": "NOT_READY",
@@ -504,7 +504,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-controlled-gate.json",
       "ok": true,
       "gate": "atelier-artifact-body-fetch-controlled-gate",
       "readiness": "NOT_READY",
@@ -524,7 +524,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-host-storage-attachment-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-host-storage-attachment-controlled-gate.json",
       "ok": true,
       "gate": "atelier-host-storage-attachment-controlled-gate",
       "readiness": "NOT_READY",
@@ -544,7 +544,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-host-storage-attachment-browser-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-host-storage-attachment-browser-controlled-gate.json",
       "ok": true,
       "gate": "atelier-host-storage-attachment-browser-controlled-gate",
       "readiness": "NOT_READY",
@@ -565,7 +565,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-direct-run-execution-evidence-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-direct-run-execution-evidence-controlled-gate.json",
       "ok": true,
       "gate": "atelier-direct-run-execution-evidence-controlled-gate",
       "readiness": "NOT_READY",
@@ -584,7 +584,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-budget-surface-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-budget-surface-controlled-gate.json",
       "ok": true,
       "gate": "atelier-budget-surface-controlled-gate",
       "readiness": "NOT_READY",
@@ -604,7 +604,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-full-e2e-runtime-inputs-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-runtime-inputs-controlled-gate.json",
       "ok": true,
       "gate": "atelier:full-e2e-runtime-inputs-controlled-gate",
       "readiness": "NOT_READY",
@@ -617,7 +617,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-full-e2e-preflight-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-preflight-controlled-gate.json",
       "ok": true,
       "gate": "atelier:full-e2e-preflight-controlled-gate",
       "readiness": "NOT_READY",
@@ -630,7 +630,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-full-e2e-fail-closed-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-fail-closed-controlled-gate.json",
       "ok": true,
       "gate": "atelier:full-e2e-fail-closed-controlled-gate",
       "readiness": "NOT_READY",
@@ -643,7 +643,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-full-e2e-final-evidence-controlled-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-final-evidence-controlled-gate.json",
       "ok": true,
       "gate": "atelier:full-e2e-final-evidence-controlled-gate",
       "readiness": "NOT_READY",
@@ -656,7 +656,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-source-dist-integrity-policy-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-source-dist-integrity-policy-gate.json",
       "ok": true,
       "status": "PASS",
       "gate": "atelier:source-dist-integrity-policy-gate",
@@ -675,7 +675,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-desktop-injection-gate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-desktop-injection-gate.json",
       "status": "PASS",
       "readiness": "NOT_READY",
       "evidenceClass": "REAL_PRODUCT_PATH",
@@ -685,7 +685,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-real-product-gates-aggregate.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-real-product-gates-aggregate.json",
       "ok": true,
       "gate": "atelier:real-product-gates",
       "readiness": "NOT_READY",
@@ -698,7 +698,7 @@
       ]
     },
     {
-      "path": "applet-readiness-evidence/official-applet/atelier-full-e2e-preflight.json",
+      "path": "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-preflight.json",
       "ok": true,
       "gate": "atelier:full-e2e-preflight",
       "readiness": "NOT_READY",
@@ -717,7 +717,7 @@
       "script": "applet:atelier-real-product-gate",
       "evidence": [
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-real-product-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-real-product-gate.json",
           "ok": true,
           "readiness": "NOT_READY",
           "evidenceClass": "REAL_PRODUCT_PATH",
@@ -734,7 +734,7 @@
       "script": "applet:atelier-product-window-gate",
       "evidence": [
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-product-window-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-product-window-gate.json",
           "ok": true,
           "gate": "applet:atelier-product-window-gate",
           "readiness": "NOT_READY",
@@ -752,7 +752,7 @@
       "script": "applet:atelier-product-window-failure-matrix-gate",
       "evidence": [
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-product-window-failure-matrix-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-product-window-failure-matrix-gate.json",
           "ok": true,
           "gate": "applet:atelier-product-window-failure-matrix-gate",
           "readiness": "NOT_READY",
@@ -778,7 +778,7 @@
       "script": "applet:atelier-product-window-cross-restart-gate",
       "evidence": [
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-product-window-cross-restart-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-product-window-cross-restart-gate.json",
           "ok": true,
           "gate": "applet:atelier-product-window-cross-restart-gate",
           "readiness": "NOT_READY",
@@ -796,7 +796,7 @@
       "script": "applet:atelier-decision-product-window-gate",
       "evidence": [
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-decision-product-window-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-decision-product-window-gate.json",
           "ok": true,
           "gate": "applet:atelier-decision-product-window-gate",
           "readiness": "NOT_READY",
@@ -814,7 +814,7 @@
       "script": "applet:atelier-live-resume-product-window-gate",
       "evidence": [
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-live-resume-product-window-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-live-resume-product-window-gate.json",
           "ok": true,
           "gate": "applet:atelier-live-resume-product-window-gate",
           "readiness": "NOT_READY",
@@ -832,7 +832,7 @@
       "script": "applet:atelier-artifact-gate-product-window-gate",
       "evidence": [
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-artifact-gate-product-window-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-product-window-gate.json",
           "ok": true,
           "gate": "applet:atelier-artifact-gate-product-window-gate",
           "readiness": "NOT_READY",
@@ -850,7 +850,7 @@
       "script": "applet:atelier-artifact-body-fetch-product-window-gate",
       "evidence": [
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
           "ok": true,
           "gate": "applet:atelier-artifact-body-fetch-product-window-gate",
           "readiness": "NOT_READY",
@@ -868,7 +868,7 @@
       "script": "applet:atelier-artifact-gate-recovery-product-window-gate",
       "evidence": [
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-product-window-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-product-window-gate.json",
           "ok": true,
           "gate": "applet:atelier-artifact-gate-product-window-gate",
           "readiness": "NOT_READY",
@@ -886,7 +886,7 @@
       "script": "applet:atelier-artifact-gate-recovery-variants-product-window-gate",
       "evidence": [
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-accept-risk-product-window-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-accept-risk-product-window-gate.json",
           "ok": true,
           "gate": "applet:atelier-artifact-gate-product-window-gate",
           "readiness": "NOT_READY",
@@ -899,7 +899,7 @@
           ]
         },
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-continue-product-window-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-continue-product-window-gate.json",
           "ok": true,
           "gate": "applet:atelier-artifact-gate-product-window-gate",
           "readiness": "NOT_READY",
@@ -912,7 +912,7 @@
           ]
         },
         {
-          "path": "applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-cancel-product-window-gate.json",
+          "path": "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-cancel-product-window-gate.json",
           "ok": true,
           "gate": "applet:atelier-artifact-gate-product-window-gate",
           "readiness": "NOT_READY",
@@ -951,7 +951,7 @@
             "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE"
           ],
           "expectedEvidencePaths": [
-            "applet-readiness-evidence/official-applet/atelier-full-e2e.json"
+            "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e.json"
           ],
           "acceptanceCriteria": [
             "atelier-full-e2e.json is ok=true with evidenceClass=REAL_PRODUCT_PATH",
@@ -975,8 +975,8 @@
             "PEERS_ATELIER_FULL_E2E_IDE"
           ],
           "expectedEvidencePaths": [
-            "applet-readiness-evidence/official-applet/atelier-full-e2e-desktop-ready.json",
-            "applet-readiness-evidence/official-applet/atelier-full-e2e-workspace-open.json"
+            "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-desktop-ready.json",
+            "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-workspace-open.json"
           ],
           "acceptanceCriteria": [
             "workspace.open evidence launchId/sessionId match Desktop ready evidence",
@@ -999,14 +999,14 @@
             "PEERS_ATELIER_FULL_E2E_IDE"
           ],
           "expectedEvidencePaths": [
-            "applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch.json"
+            "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-ide-launch.json"
           ],
           "acceptanceCriteria": [
             "IDE launch evidence is independent current-launch Desktop Host evidence",
             "IDE launch evidence proves launchOwner=desktop_host and does not expose file/shell/execute/openExternalUrl to the applet"
           ]
         },
-        "evidencePath": "applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch.json"
+        "evidencePath": "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-ide-launch.json"
       },
       {
         "id": "production-provider-runtime-quality",
@@ -1022,14 +1022,14 @@
             "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE"
           ],
           "expectedEvidencePaths": [
-            "applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime.json"
+            "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-provider-runtime.json"
           ],
           "acceptanceCriteria": [
             "provider/runtime evidence is Station-owned and bound to the configured providerProfileRef",
             "provider runtime, model quality, streaming UX, artifact persistence, and trace/checkpoint/resume are proven without exposing provider/runtime/artifact/trace controls to the applet"
           ]
         },
-        "evidencePath": "applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime.json"
+        "evidencePath": "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-provider-runtime.json"
       }
     ],
     "missingFinalEvidence": []
@@ -1053,7 +1053,7 @@
           "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE"
         ],
         "expectedEvidencePaths": [
-          "applet-readiness-evidence/official-applet/atelier-full-e2e.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e.json"
         ],
         "acceptanceCriteria": [
           "atelier-full-e2e.json is ok=true with evidenceClass=REAL_PRODUCT_PATH",
@@ -1077,8 +1077,8 @@
           "PEERS_ATELIER_FULL_E2E_IDE"
         ],
         "expectedEvidencePaths": [
-          "applet-readiness-evidence/official-applet/atelier-full-e2e-desktop-ready.json",
-          "applet-readiness-evidence/official-applet/atelier-full-e2e-workspace-open.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-desktop-ready.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-workspace-open.json"
         ],
         "acceptanceCriteria": [
           "workspace.open evidence launchId/sessionId match Desktop ready evidence",
@@ -1101,14 +1101,14 @@
           "PEERS_ATELIER_FULL_E2E_IDE"
         ],
         "expectedEvidencePaths": [
-          "applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-ide-launch.json"
         ],
         "acceptanceCriteria": [
           "IDE launch evidence is independent current-launch Desktop Host evidence",
           "IDE launch evidence proves launchOwner=desktop_host and does not expose file/shell/execute/openExternalUrl to the applet"
         ]
       },
-      "evidencePath": "applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch.json"
+      "evidencePath": "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-ide-launch.json"
     },
     {
       "id": "production-provider-runtime-quality",
@@ -1124,14 +1124,14 @@
           "PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE"
         ],
         "expectedEvidencePaths": [
-          "applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-provider-runtime.json"
         ],
         "acceptanceCriteria": [
           "provider/runtime evidence is Station-owned and bound to the configured providerProfileRef",
           "provider runtime, model quality, streaming UX, artifact persistence, and trace/checkpoint/resume are proven without exposing provider/runtime/artifact/trace controls to the applet"
         ]
       },
-      "evidencePath": "applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime.json"
+      "evidencePath": "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-provider-runtime.json"
     }
   ],
   "missingFinalEvidence": [],

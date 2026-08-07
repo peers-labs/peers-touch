@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/desktop');
+const evidenceDir = path.resolve('.artifacts/applet-readiness/desktop');
 const outputPath = path.join(evidenceDir, 'http-gateway-gate-output.txt');
 mkdirSync(evidenceDir, { recursive: true });
 

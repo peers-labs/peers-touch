@@ -1,1 +1,0 @@
-PASS service binding is enforced by executable Gateway tests. Services: primary-api:station-resolved:/api/v1/*

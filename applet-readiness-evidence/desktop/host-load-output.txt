@@ -1,1 +1,0 @@
-PASS Desktop package reader accepts complex external package shape and Lynx entry through executable applet tests.

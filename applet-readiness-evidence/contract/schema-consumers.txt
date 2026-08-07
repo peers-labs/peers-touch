@@ -1,1 +1,0 @@
-PASS generated JSON Schema is exported from the canonical applet-contract package and gated by applet:contract-test.
