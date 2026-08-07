@@ -4865,7 +4865,7 @@ try {
   });
   await import(pathToFileURL(outfile).href);
   writeEvidence('PASS');
-  console.log('Atelier official frontend gate passed.');
+  process.stdout.write('Atelier official frontend gate passed.\n');
 } catch (error) {
   writeEvidence('FAIL', error instanceof Error ? error.message : String(error));
   console.error('Atelier official frontend gate failed:');

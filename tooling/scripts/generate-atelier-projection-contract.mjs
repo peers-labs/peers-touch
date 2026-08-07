@@ -40,7 +40,7 @@ if (checkOnly && stale) {
   process.exit(1);
 }
 
-console.log(`${checkOnly ? 'PASS' : 'WROTE'} Atelier projection contract generated artifacts`);
+process.stdout.write(`${checkOnly ? 'PASS' : 'WROTE'} Atelier projection contract generated artifacts\n`);
 
 function validateContract(value) {
   assertString(value.id, 'id');

@@ -5765,7 +5765,7 @@ try {
   });
   await import(pathToFileURL(outfile).href);
   writeEvidence('PASS');
-  console.log('Atelier bridge runtime gate passed.');
+  process.stdout.write('Atelier bridge runtime gate passed.\n');
 } catch (error) {
   writeEvidence('FAIL', error instanceof Error ? error.message : String(error));
   console.error('Atelier bridge runtime gate failed:');

@@ -74,4 +74,4 @@ if (!ok) {
   process.exit(1);
 }
 
-console.log(`PASS Atelier message send ingress controlled gate: ${evidencePath}`);
+process.stdout.write(`PASS Atelier message send ingress controlled gate: ${evidencePath}\n`);

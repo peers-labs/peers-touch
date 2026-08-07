@@ -136,7 +136,7 @@ function runGate() {
 try {
   const evidence = runGate();
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier Host Storage attachment controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier Host Storage attachment controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,

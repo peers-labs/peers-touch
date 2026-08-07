@@ -262,7 +262,7 @@ async function runGate() {
 try {
   const evidence = await runGate();
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier runtime log stream controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier runtime log stream controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,

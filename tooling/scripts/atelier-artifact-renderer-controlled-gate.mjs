@@ -266,7 +266,7 @@ try {
     notCovered: claimBoundary.doesNotProve,
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier artifact renderer controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier artifact renderer controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,

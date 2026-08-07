@@ -88,4 +88,4 @@ if (!ok) {
   process.exit(1);
 }
 
-console.log(`PASS Atelier feedback submit ingress controlled gate: ${evidencePath}`);
+process.stdout.write(`PASS Atelier feedback submit ingress controlled gate: ${evidencePath}\n`);
