@@ -35,13 +35,15 @@ detected: 2026-07-06
 
 所有账号密码均为 `1`，PIN 均为 `111111`。
 
-| Account | Email | Display Name | 角色定位 | 默认互为好友 |
-|---------|-------|--------------|---------|-------------|
-| **alice** | `alice@p.t` | Alice ${LABEL} | 主测试用户 / 发起方 | ✅ |
-| **bob** | `bob@p.t` | Bob ${LABEL} | 对端用户 / 接收方 | ✅ |
-| **carol** | `carol@p.t` | Carol ${LABEL} | 第三方 / 跨站联邦用户 | ✅ |
+| Account | Email | Display Name | Avatar | 角色定位 | 默认互为好友 |
+|---------|-------|--------------|--------|---------|-------------|
+| **alice** | `alice@p.t` | Alice ${LABEL} | Coral | 主测试用户 / 发起方 | ✅ |
+| **bob** | `bob@p.t` | Bob ${LABEL} | Blue | 对端用户 / 接收方 | ✅ |
+| **carol** | `carol@p.t` | Carol ${LABEL} | Violet | 第三方 / 跨站联邦用户 | ✅ |
 
 > `${LABEL}` 展开为 `PEERS_NODE_LABEL` 环境变量（如 "One"、"Two"），方便区分多站同名用户。
+>
+> Station 为每个 demo account 提供不同的默认头像。启动时只回填空头像，不覆盖开发者已自定义的头像。
 
 ### 2.2 命名来源
 
