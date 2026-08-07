@@ -1,1 +1,0 @@
-PASS complex surface is implemented against BridgeAdapter method mapping for skills/tasks/agent/ai/telemetry.

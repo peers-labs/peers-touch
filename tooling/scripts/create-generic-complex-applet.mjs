@@ -66,7 +66,7 @@ for (const target of appletTargets) {
     throw new Error(`Unsupported generated fixture target: ${target}`);
   }
 }
-const outputDir = path.resolve(positional[0] ?? `applet-readiness-evidence/package/${appletId}`);
+const outputDir = path.resolve(positional[0] ?? `.artifacts/applet-readiness/packages/${appletId}`);
 const lynxToolchainDir = path.resolve('apps/desktop/applets-dev/hello-lynx/node_modules');
 mkdirSync(path.join(outputDir, 'schemas'), { recursive: true });
 mkdirSync(path.join(outputDir, 'src'), { recursive: true });
@@ -269,10 +269,15 @@ export function App() {
   );
 }
 `);
-writeFileSync(path.join(outputDir, 'lynx.config.ts'), `import { defineConfig } from '@lynx-js/rspeedy';
+writeFileSync(path.join(outputDir, 'lynx.config.ts'), `import path from 'node:path';
+import { defineConfig } from '@lynx-js/rspeedy';
 import { pluginReactLynx } from '@lynx-js/react-rsbuild-plugin';
 
+const repoRoot = process.env.PT_REPO_ROOT;
+if (!repoRoot) throw new Error('PT_REPO_ROOT is required for Applet fixture builds');
+
 export default defineConfig({
+  resolve: { alias: { '@peers-touch/applet-sdk': path.join(repoRoot, 'packages/applet-sdk/dist/index.js') } },
   plugins: [pluginReactLynx()],
   environments: {
     web: {},
@@ -296,7 +301,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const packageDir = path.dirname(fileURLToPath(import.meta.url));
-const workspaceRoot = path.resolve(packageDir, '../../..');
+const workspaceRoot = process.env.PT_REPO_ROOT ? path.resolve(process.env.PT_REPO_ROOT) : path.resolve(packageDir, '../../../..');
 const lynxToolchainDir = path.join(workspaceRoot, 'apps/desktop/applets-dev/hello-lynx/node_modules');
 const nodeModulesPath = path.join(packageDir, 'node_modules');
 
@@ -309,6 +314,7 @@ const result = spawnSync(path.join(nodeModulesPath, '.bin/rspeedy'), ['build'], 
   cwd: packageDir,
   encoding: 'utf8',
   stdio: 'pipe',
+  env: { ...process.env, PT_REPO_ROOT: workspaceRoot },
 });
 if (result.status !== 0) {
   throw new Error(['rspeedy build failed', result.stdout, result.stderr].join('\\n'));
@@ -345,6 +351,7 @@ const lynxBuild = spawnSync(path.join(nodeModulesPath, '.bin/rspeedy'), ['build'
   cwd: outputDir,
   encoding: 'utf8',
   stdio: 'pipe',
+  env: { ...process.env, PT_REPO_ROOT: path.resolve('.') },
 });
 if (lynxBuild.status !== 0) {
   throw new Error([

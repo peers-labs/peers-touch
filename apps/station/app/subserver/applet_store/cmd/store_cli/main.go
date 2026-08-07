@@ -100,7 +100,7 @@ func parseGlobalFlags() cliConfig {
 		}
 		root = wd
 	}
-	defaultRoot := filepath.Join(root, "applet-readiness-evidence", "station-store", "cli-store")
+	defaultRoot := filepath.Join(root, "tooling/acceptance/evidence/applets", "station-store", "cli-store")
 	if *dbPath == "" {
 		*dbPath = filepath.Join(defaultRoot, "store.sqlite")
 	}

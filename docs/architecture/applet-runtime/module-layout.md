@@ -1,8 +1,8 @@
 # Applet Runtime Architecture — 模块布局
 
 > **Status**: draft
-> **Version**: v1.2
-> **Created**: 2026-05-19 | **Updated**: 2026-06-17
+> **Version**: v1.3
+> **Created**: 2026-05-19 | **Updated**: 2026-08-08
 > **Owner**: Architecture Team
 > **Module**: `apps/applets/`, `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applet-contract/`
 
@@ -38,6 +38,10 @@ peers-touch/
 │   ├── applet-sdk/                     # Cross-platform SDK used by applets
 │   ├── applet-contract/                # Shared manifest/bridge/capability types
 │   └── applets/                        # Generic package/build tooling and non-product fixtures
+├── tooling/
+│   ├── acceptance/evidence/applets/     # Reviewed, redacted JSON/Markdown attestations
+│   └── fixtures/applets/                # Deterministic source fixtures
+├── .artifacts/applet-readiness/         # Ignored raw logs and generated runtime artifacts
 ├── apps/web/ or web host module         # Future formal Web Host if/when repo path exists
 └── docs/architecture/applet-runtime/   # This architecture source
 ```
@@ -48,7 +52,23 @@ Applet package producer 不属于 Peers-Touch 架构输入。Peers-Touch 只接�
 
 ---
 
-## 1.1 Official Applet Product Unit
+## 1.1 Readiness Evidence 与 Fixture
+
+三个根目录按生命周期互斥：
+
+| 路径 | 职责 | 允许内容 | 禁止内容 |
+|------|------|----------|----------|
+| `tooling/acceptance/evidence/applets/` | 可提交、可审阅的长期证明 | 脱敏 JSON、Markdown | 原始日志、绝对机器路径、bundle、数据库、截图、harness、fixture |
+| `tooling/fixtures/applets/` | Gate 的确定性源码输入 | manifest、package metadata、源码、schema、构建配置 | `dist/`、`node_modules/`、bundle、数据库 |
+| `.artifacts/applet-readiness/` | 单次运行的原始与生成材料 | stdout/stderr、bundle、SQLite、截图、harness、临时 package | 任何需要作为 Git 真源维护的内容 |
+
+Fixture 不能在源码目录内原地构建。Gate 必须复制到
+`.artifacts/applet-readiness/packages/<applet-id>/`，在 disposable copy 中构建，
+并只把经过脱敏和审阅的 JSON/Markdown 摘要提升到 reviewed evidence root。
+
+---
+
+## 1.2 Official Applet Product Unit
 
 标准目录：
 

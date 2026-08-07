@@ -1,8 +1,0 @@
-> peers-touch-monorepo@ applet:validate /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet
-> pnpm --filter @peers-touch/applet-contract run build && node tooling/scripts/applet-validate.mjs "applet-readiness-evidence/package/generic-complex-applet"
-
-
-> @peers-touch/applet-contract@0.1.0 build /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/packages/applet-contract
-> tsc
-
-PASS applet package validated: generic-complex-applet@1.0.0

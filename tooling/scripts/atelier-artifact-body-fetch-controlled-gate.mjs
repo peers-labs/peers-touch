@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-artifact-body-fetch-controlled-gate.json');
 const serviceSourcePath = 'apps/station/app/subserver/agent/service/atelier_projection.go';
 const serviceTestPath = 'apps/station/app/subserver/agent/service/atelier_projection_test.go';

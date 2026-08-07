@@ -1,1 +1,0 @@
-PASS SDK integrated adapters use Host bridge; standalone-only fallback is not integrated acceptance.

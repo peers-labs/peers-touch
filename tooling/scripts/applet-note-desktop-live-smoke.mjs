@@ -1,18 +1,28 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import path from 'node:path';
 import { createServer } from 'vite';
+import {
+  appletArtifactPath,
+  appletEvidenceRoot,
+} from './lib/applet-readiness-paths.mjs';
 
 const rootDir = process.cwd();
 const packageDir = path.resolve('apps/desktop/applets-dist/peers.note');
 const manifest = JSON.parse(readFileSync(path.join(packageDir, 'manifest.json'), 'utf8'));
 const bundleEntry = manifest.load?.desktop?.entry;
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet/note-desktop-live-smoke');
-const harnessHtmlPath = path.join(evidenceDir, 'index.html');
-const harnessJsPath = path.join(evidenceDir, 'harness.js');
-const outputPath = path.resolve('applet-readiness-evidence/official-applet/note-desktop-live-smoke.json');
+const artifactDir = appletArtifactPath('official-applet', 'note-desktop-live-smoke');
+const harnessHtmlPath = path.join(artifactDir, 'index.html');
+const harnessJsPath = path.join(artifactDir, 'harness.js');
+const rawOutputPath = path.join(artifactDir, 'report.json');
+const reviewedOutputPath = path.join(
+  appletEvidenceRoot,
+  'official-applet',
+  'note-desktop-live-smoke.json',
+);
 const staticHits = [];
 
 if (manifest.id !== 'peers.note') {
@@ -23,7 +33,8 @@ if (!bundleEntry) {
 }
 readFileSync(path.join(packageDir, bundleEntry));
 
-mkdirSync(evidenceDir, { recursive: true });
+mkdirSync(artifactDir, { recursive: true });
+mkdirSync(path.dirname(reviewedOutputPath), { recursive: true });
 
 writeFileSync(harnessHtmlPath, `<!doctype html>
 <html>
@@ -347,7 +358,7 @@ function cdpConnect(webSocketUrl) {
 
 async function runChrome(harnessUrl) {
   const debugPort = await freePort();
-  const userDataDir = path.resolve('.local/note-desktop-live-smoke', `chrome-${process.pid}-${Date.now()}`);
+  const userDataDir = path.join(artifactDir, `chrome-${process.pid}-${Date.now()}`);
   mkdirSync(userDataDir, { recursive: true });
 
   const chrome = spawn(chromePath(), [
@@ -447,6 +458,67 @@ async function runChrome(harnessUrl) {
       if (!chrome.killed) chrome.kill('SIGKILL');
     }, 1000).unref();
   }
+}
+
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function reviewedReport(rawReport) {
+  const invocations = rawReport.detail?.invocations ?? [];
+  const hostEvents = rawReport.detail?.hostEvents ?? [];
+  const diagnostics = rawReport.detail?.diagnostics ?? {};
+  const rawJson = `${JSON.stringify(rawReport, null, 2)}\n`;
+
+  return {
+    status: rawReport.status,
+    evidenceClass: rawReport.evidenceClass,
+    appletId: rawReport.appletId,
+    packageDir: rawReport.packageDir,
+    bundle: rawReport.bundle,
+    artifactReport: path.relative(rootDir, rawOutputPath),
+    artifactReportSha256: sha256(rawJson),
+    detail: {
+      sessionId: rawReport.detail?.sessionId ?? '',
+      viewState: rawReport.detail?.viewState ?? null,
+      invocationCount: invocations.length,
+      invokedCapabilities: [
+        ...new Set(
+          invocations
+            .filter((item) => item.command === 'applets_invoke')
+            .map((item) => `${item.input?.capability}.${item.input?.action}`),
+        ),
+      ].sort(),
+      hostEventTopics: [
+        ...new Set(
+          hostEvents.flatMap((item) =>
+            (Array.isArray(item.payload) ? item.payload : [item.payload])
+              .map((payload) => payload?.topic)
+              .filter(Boolean),
+          ),
+        ),
+      ].sort(),
+      networkRequests: rawReport.detail?.networkRequests ?? [],
+      diagnostics: {
+        consoleCount: diagnostics.console?.length ?? 0,
+        exceptionCount: diagnostics.exceptions?.length ?? 0,
+        networkFailureCount: diagnostics.networkFailures?.length ?? 0,
+        responseCount: diagnostics.responses?.length ?? 0,
+      },
+    },
+    staticHitCounts: Object.fromEntries(
+      Object.entries(
+        rawReport.staticHits.reduce((counts, item) => {
+          counts[item.kind] = (counts[item.kind] ?? 0) + 1;
+          return counts;
+        }, {}),
+      ).sort(([left], [right]) => left.localeCompare(right)),
+    ),
+    chromeStderr: {
+      bytes: Buffer.byteLength(rawReport.chromeStderr),
+      sha256: sha256(rawReport.chromeStderr),
+    },
+  };
 }
 
 const vitePort = await freePort();
@@ -549,12 +621,14 @@ try {
     staticHits,
     chromeStderr: chrome.stderr,
   };
-  writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(rawOutputPath, `${JSON.stringify(report, null, 2)}\n`);
+  const reviewed = reviewedReport(report);
+  writeFileSync(reviewedOutputPath, `${JSON.stringify(reviewed, null, 2)}\n`);
   if (report.status !== 'PASS') {
-    process.stderr.write(`${JSON.stringify(report, null, 2)}\n`);
+    process.stderr.write(`${JSON.stringify(reviewed, null, 2)}\n`);
     process.exit(1);
   }
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(reviewed, null, 2)}\n`);
 } finally {
   await server.close();
 }
