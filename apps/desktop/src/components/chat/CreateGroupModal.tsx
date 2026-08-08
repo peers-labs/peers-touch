@@ -227,6 +227,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
 
   return (
     <div
+      data-chat-create-group
       style={{
         position: 'fixed',
         inset: 0,
@@ -261,6 +262,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         <div style={{ width: 300, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${token.colorBorderSecondary}` }}>
           <div style={{ padding: '16px 16px 12px' }}>
             <Input
+              data-chat-create-group-search
               prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
               placeholder={t('chat.social.createGroup.searchContacts')}
               value={searchText}
@@ -300,6 +302,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
                     return (
                       <div
                         key={contact.did}
+                        data-chat-create-group-contact={contact.did}
                         onClick={() => toggleSelect(contact.did)}
                         style={{
                           display: 'flex',
@@ -440,6 +443,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
               {t('common.action.cancel', { ns: 'common' })}
             </button>
             <button
+              data-chat-create-group-submit
               onClick={handleFinish}
               disabled={selectedDids.size === 0 || creating}
               style={{
