@@ -387,7 +387,7 @@ Desktop 通过后，再推进：
 每次 AI 判断“是否支撑”时，必须生成一份 evidence bundle，至少包含：
 
 ```text
-applet-readiness-evidence/
+tooling/acceptance/evidence/applets/
 ├── summary.md
 ├── contract/
 │   ├── schema-source.txt

@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import path from 'node:path';
+import { prepareAppletFixturePackage } from './lib/applet-readiness-paths.mjs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'vite';
 
@@ -12,15 +13,15 @@ const productAppMode = process.argv.includes('--product-app');
 const expectTextArg = process.argv.find((arg) => arg.startsWith('--expect-text='));
 const expectText = expectTextArg ? expectTextArg.slice('--expect-text='.length) : '';
 const packageArg = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
-const packageDir = path.resolve(packageArg ?? 'applet-readiness-evidence/package/generic-complex-applet');
+const packageDir = packageArg ? path.resolve(packageArg) : prepareAppletFixturePackage('generic-complex-applet');
 const rootDir = process.cwd();
 const evidenceName = shellRoute
   ? (realHttpGateway ? 'product-shell-real-gateway-gate' : 'product-shell-gate')
   : (realHttpGateway ? 'product-host-real-gateway-gate' : 'product-host-gate');
-const evidenceDir = path.resolve('applet-readiness-evidence/desktop', evidenceName);
+const evidenceDir = path.resolve('.artifacts/applet-readiness/desktop', evidenceName);
 const harnessHtmlPath = path.join(evidenceDir, 'index.html');
 const harnessJsPath = path.join(evidenceDir, 'harness.js');
-const outputPath = path.resolve('applet-readiness-evidence/desktop', `${evidenceName}-output.txt`);
+const outputPath = path.resolve('.artifacts/applet-readiness/desktop', `${evidenceName}-output.txt`);
 const manifest = JSON.parse(readFileSync(path.join(packageDir, 'manifest.json'), 'utf8'));
 const bundleEntry = manifest.load?.desktop?.entry ?? manifest.entries?.lynx;
 const bundlePath = bundleEntry ? path.join(packageDir, bundleEntry) : '';

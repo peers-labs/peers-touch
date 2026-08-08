@@ -14,15 +14,16 @@ import {
 } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
+import { prepareAppletFixturePackage } from './lib/applet-readiness-paths.mjs';
 
 const rootDir = process.cwd();
 const skipBuild = process.argv.includes('--skip-build');
 const productAppMode = process.argv.includes('--product-app');
 const packageArg = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
 const usesDefaultFixture = !packageArg;
-const packageDir = path.resolve(packageArg ?? 'applet-readiness-evidence/package/generic-complex-applet');
-const evidenceDir = path.resolve('applet-readiness-evidence/desktop/product-window-gate');
-const outputPath = path.resolve('applet-readiness-evidence/desktop/product-window-gate-output.txt');
+const packageDir = packageArg ? path.resolve(packageArg) : prepareAppletFixturePackage('generic-complex-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/desktop/product-window-gate');
+const outputPath = path.resolve('.artifacts/applet-readiness/desktop/product-window-gate-output.txt');
 const windowEvidencePath = path.join(evidenceDir, 'product-shell-evidence.json');
 const lifecycleEvidencePath = path.join(evidenceDir, 'product-lifecycle-evidence.json');
 const sourceAppletRoot = path.resolve('apps/desktop/applets-dist');

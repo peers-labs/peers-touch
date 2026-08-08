@@ -37,6 +37,7 @@ tooling/docker/docker-compose.override.yml
 # Build artifacts
 build/
 dist/
+.artifacts/
 *.exe
 *.dll
 *.so

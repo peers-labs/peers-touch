@@ -31,8 +31,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:bridge-runtime-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "eventTopic": "atelier.projection.event",
       "subscriptionMethod": "atelier.events.subscribe",
@@ -241,9 +241,9 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:bridge-runtime-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-projection-contract-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-projection-contract-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "methodKeysMatchMethods": true,
       "runtimeMethodsExcludeEventSubscription": true,
@@ -389,8 +389,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:bridge-runtime-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
         ],
         "method": "atelier.project.createFromGoal",
         "intentOwner": "station",
@@ -489,9 +489,9 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:message-send-ingress-controlled-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-message-send-ingress-controlled-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-message-send-ingress-controlled-gate.json"
         ],
         "method": "atelier.message.send",
         "intentOwner": "station",
@@ -574,10 +574,10 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "applet:atelier-live-resume-product-window-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-decision-product-window-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-live-resume-product-window-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-decision-product-window-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-live-resume-product-window-gate.json"
         ],
         "method": "atelier.escalation.resolve",
         "intentOwner": "station",
@@ -658,8 +658,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:bridge-runtime-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
         ],
         "method": "atelier.task.setStatus",
         "intentOwner": "station",
@@ -735,8 +735,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:bridge-runtime-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
         ],
         "method": "atelier.task.purge",
         "intentOwner": "station",
@@ -813,8 +813,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:bridge-runtime-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
         ],
         "method": "atelier.provider.capabilities",
         "optionalFields": [
@@ -899,10 +899,10 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:feedback-memory-consumption-controlled-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-feedback-submit-ingress-controlled-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-feedback-memory-consumption-controlled-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-feedback-submit-ingress-controlled-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-feedback-memory-consumption-controlled-gate.json"
         ],
         "method": "atelier.feedback.submit",
         "intentOwner": "station",
@@ -1004,11 +1004,11 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:feedback-memory-consumption-controlled-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-confirmation-ingress-controlled-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-confirmation-outcome-controlled-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-feedback-memory-consumption-controlled-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-ingress-controlled-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-outcome-controlled-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-feedback-memory-consumption-controlled-gate.json"
         ],
         "method": "atelier.memory.confirmCandidate",
         "intentOwner": "station",
@@ -1096,10 +1096,10 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:confirmation-outcome-controlled-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-confirmation-ingress-controlled-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-confirmation-outcome-controlled-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-ingress-controlled-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-outcome-controlled-gate.json"
         ],
         "method": "atelier.feedback.confirmRerun",
         "intentOwner": "station",
@@ -1197,9 +1197,9 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:workspace-open-controlled-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-workspace-open-controlled-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-workspace-open-controlled-gate.json"
         ],
         "method": "atelier.workspace.open",
         "intentOwner": "desktop_host",
@@ -1307,11 +1307,11 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:bridge-runtime-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-controlled-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-evidence.json",
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-controlled-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-evidence.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
         ],
         "method": "atelier.artifact.body.fetch",
         "intentOwner": "station",
@@ -1466,8 +1466,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:bridge-runtime-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
         ],
         "method": "atelier.artifact.preview.open",
         "intentOwner": "desktop_host",
@@ -1610,8 +1610,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:bridge-runtime-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "field": "status",
       "domain": "workbench_lifecycle",
@@ -1686,8 +1686,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:bridge-runtime-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "roles": [
         "goal_owner",
@@ -1777,8 +1777,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:bridge-runtime-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "voiceStances": [
         "proposal",
@@ -1916,8 +1916,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:bridge-runtime-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "allowedKinds": [
         "user",
@@ -2196,8 +2196,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:bridge-runtime-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "coveredStatuses": [
         "loading",
@@ -2343,8 +2343,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:bridge-runtime-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "surfaceId": "projectSurface",
       "surfaceRole": "applet_read_only_projection_taxonomy",
@@ -2549,8 +2549,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:bridge-runtime-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "surfaceId": "workbenchSurface",
       "surfaceRole": "applet_projection_surface",
@@ -2644,9 +2644,9 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:budget-surface-controlled-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-budget-surface-controlled-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-budget-surface-controlled-gate.json"
       ],
       "descriptorField": "workspace.budget",
       "coveredStatuses": [
@@ -2738,8 +2738,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:bridge-runtime-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "allowedPreviewHints": [
         "markdown",
@@ -2846,8 +2846,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:bridge-runtime-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
         ],
         "surfaceId": "project_health",
         "displayFields": [
@@ -2925,8 +2925,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "atelier:bridge-runtime-gate"
         ],
         "evidenceFiles": [
-          "applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json",
-          "applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json"
+          "tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json",
+          "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
         ],
         "surfaceId": "task_graph",
         "displayFields": [
@@ -3020,7 +3020,7 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
       "gate": "atelier:direct-run-execution-evidence-controlled-gate",
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-direct-run-execution-evidence-controlled-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-direct-run-execution-evidence-controlled-gate.json"
       ],
       "source": "direct_run_execution_evidence_controlled_harness",
       "displayFields": [
@@ -3110,8 +3110,8 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "evidenceClass": "REAL_PRODUCT_PATH",
       "gate": "applet:atelier-artifact-body-fetch-product-window-gate",
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-evidence.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-evidence.json"
       ],
       "telemetryEvent": "atelier.artifact.body.fetched",
       "metadataOnly": true,
@@ -3136,9 +3136,9 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "atelier:projection-contract-gate"
       ],
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-controlled-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
-        "applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-evidence.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-controlled-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-gate.json",
+        "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-evidence.json"
       ],
       "owner": "station",
       "source": "agent_task_artifact_blobs",
@@ -3232,7 +3232,7 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
       "gate": "atelier:artifact-renderer-controlled-gate",
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-artifact-renderer-controlled-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-artifact-renderer-controlled-gate.json"
       ],
       "source": "desktop_host_adapter_unit_matrix",
       "surfaceKind": "host_sandbox_visual_surface",
@@ -3300,7 +3300,7 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
       "gate": "atelier:runtime-log-stream-controlled-gate",
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-runtime-log-stream-controlled-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-runtime-log-stream-controlled-gate.json"
       ],
       "source": "host_sandbox_cdp",
       "orderedLevels": [
@@ -3368,7 +3368,7 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
       "gate": "atelier:host-storage-attachment-controlled-gate",
       "evidenceFiles": [
-        "applet-readiness-evidence/official-applet/atelier-host-storage-attachment-controlled-gate.json"
+        "tooling/acceptance/evidence/applets/official-applet/atelier-host-storage-attachment-controlled-gate.json"
       ],
       "source": "host_storage_controlled_harness",
       "refScheme": "host-storage",

@@ -6,7 +6,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 const repoRoot = process.cwd();
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-runtime-log-stream-controlled-gate.json');
 const streamId = `atelier-controlled-log-stream-${process.pid}-${Date.now()}`;
 const expectedMessages = [
@@ -262,7 +262,7 @@ async function runGate() {
 try {
   const evidence = await runGate();
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier runtime log stream controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier runtime log stream controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,

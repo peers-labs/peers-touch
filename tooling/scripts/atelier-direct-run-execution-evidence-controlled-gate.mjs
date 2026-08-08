@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-direct-run-execution-evidence-controlled-gate.json');
 const contractPath = 'apps/applets/atelier/contracts/atelier-projection.contract.json';
 const officialGeneratedPath = 'apps/applets/atelier/frontend/src/domain/projection.contract.generated.ts';
@@ -85,7 +85,7 @@ function runGate() {
     evidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     gate: 'atelier:direct-run-execution-evidence-controlled-gate',
     evidenceFiles: [
-      'applet-readiness-evidence/official-applet/atelier-direct-run-execution-evidence-controlled-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-direct-run-execution-evidence-controlled-gate.json',
     ],
     source: 'direct_run_execution_evidence_controlled_harness',
     displayFields: directRunEvidence.displayFields,
@@ -180,7 +180,7 @@ function runGate() {
 try {
   const evidence = runGate();
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier DirectRun execution evidence controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier DirectRun execution evidence controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,

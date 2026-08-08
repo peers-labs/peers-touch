@@ -109,7 +109,7 @@ drift.
 - `docs/architecture/applet-runtime/README.md`
 - superseded execution-plan headers
 - current progress/evidence summaries, if updated
-- `applet-readiness-evidence/**` only through gate scripts
+- `tooling/acceptance/evidence/applets/**` only through gate scripts
 
 ### Deliverables
 
@@ -470,15 +470,15 @@ pnpm applet:l5-platform-audit
 
 | Evidence | Required by | Minimum path |
 |----------|-------------|--------------|
-| Plan reset baseline | P0 | `applet-readiness-evidence/plan-reset/` |
-| Note product acceptance | P1 | `applet-readiness-evidence/official-applet/` |
-| Station Store publish/install/revoke | P2 | `applet-readiness-evidence/station-store/` |
-| Applet Box product shell | P3 | `applet-readiness-evidence/desktop/` |
-| Gateway policy hardening | P4 | `applet-readiness-evidence/gateway/` |
-| Third-party certification | P5 | `applet-readiness-evidence/external-producer/` |
-| Web Host product acceptance | P6 | `applet-readiness-evidence/web/` |
-| Mobile runtime hardening | P6 | `applet-readiness-evidence/mobile/` |
-| Release audit | P7 | `applet-readiness-evidence/release/` |
+| Plan reset baseline | P0 | `tooling/acceptance/evidence/applets/plan-reset/` |
+| Note product acceptance | P1 | `tooling/acceptance/evidence/applets/official-applet/` |
+| Station Store publish/install/revoke | P2 | `tooling/acceptance/evidence/applets/station-store/` |
+| Applet Box product shell | P3 | `tooling/acceptance/evidence/applets/desktop/` |
+| Gateway policy hardening | P4 | `tooling/acceptance/evidence/applets/gateway/` |
+| Third-party certification | P5 | `tooling/acceptance/evidence/applets/external-producer/` |
+| Web Host product acceptance | P6 | `tooling/acceptance/evidence/applets/web/` |
+| Mobile runtime hardening | P6 | `tooling/acceptance/evidence/applets/mobile/` |
+| Release audit | P7 | `tooling/acceptance/evidence/applets/release/` |
 
 Every evidence file must include one of:
 

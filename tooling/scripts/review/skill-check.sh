@@ -188,6 +188,17 @@ else
     fi
   done < <(find "$fixtures_dir" -name expected.yml | sort)
 
+  debug_literal_fixture="$(mktemp -d)"
+  printf "export const forbiddenMethod = 'console.logs.subscribe';\n" \
+    > "$debug_literal_fixture/contract.ts"
+  if ! tooling/scripts/review/hard-rules.sh \
+    --fixture-dir "$debug_literal_fixture" >/tmp/pt-debug-literal.$$ 2>&1; then
+    cat /tmp/pt-debug-literal.$$
+    fail "hard-rules.sh must not treat console.log string data as an executable debug call"
+  fi
+  rm -rf "$debug_literal_fixture"
+  rm -f /tmp/pt-debug-literal.$$
+
   growth_fixture_count="$(find "$fixtures_dir" -mindepth 1 -maxdepth 1 -type d -name 'growth-*' | wc -l | tr -d ' ')"
   if [[ "$growth_fixture_count" -lt 4 ]]; then
     fail "expected at least 4 growth fixtures, found $growth_fixture_count"

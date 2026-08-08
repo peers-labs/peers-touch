@@ -66,7 +66,7 @@ assert.ok(schema.definitions.appletErrorCode.enum.includes('INVALID_SESSION'));
 assert.ok(schema.definitions.bridgeInvokeResponse.allOf.length > 0);
 
 const output = 'PASS applet contract tests\n';
-const evidenceDir = path.resolve('applet-readiness-evidence/sdk');
+const evidenceDir = path.resolve('.artifacts/applet-readiness/sdk');
 mkdirSync(evidenceDir, { recursive: true });
 writeFileSync(path.join(evidenceDir, 'contract-test-output.txt'), output);
 process.stdout.write(output);

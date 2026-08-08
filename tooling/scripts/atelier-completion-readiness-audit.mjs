@@ -3,23 +3,23 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = process.env.PEERS_ATELIER_COMPLETION_READINESS_AUDIT_EVIDENCE_PATH
   ? path.resolve(process.env.PEERS_ATELIER_COMPLETION_READINESS_AUDIT_EVIDENCE_PATH)
   : path.join(evidenceDir, 'atelier-completion-readiness-audit.json');
 const fullE2EEvidencePath = process.env.PEERS_ATELIER_COMPLETION_READINESS_AUDIT_FULL_E2E_PATH
   ? path.resolve(process.env.PEERS_ATELIER_COMPLETION_READINESS_AUDIT_FULL_E2E_PATH)
-  : 'applet-readiness-evidence/official-applet/atelier-full-e2e.json';
+  : 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e.json';
 const evidenceRoot = process.env.PEERS_ATELIER_COMPLETION_READINESS_AUDIT_EVIDENCE_ROOT
   ? path.resolve(process.env.PEERS_ATELIER_COMPLETION_READINESS_AUDIT_EVIDENCE_ROOT)
   : process.cwd();
 const projectionContractGateSourcePath = path.resolve('tooling/scripts/atelier-projection-contract-gate.mjs');
-const canonicalIdeLaunchEvidencePath = 'applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch.json';
-const canonicalProviderRuntimeEvidencePath = 'applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime.json';
+const canonicalIdeLaunchEvidencePath = 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-ide-launch.json';
+const canonicalProviderRuntimeEvidencePath = 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-provider-runtime.json';
 
 const requiredEvidence = [
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-projection-contract-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-projection-contract-gate.json',
     expectedGate: 'atelier:projection-contract-gate',
     expectedEvidenceClass: 'STATIC_CONTRACT_GATE',
     requiredProves: [
@@ -30,7 +30,7 @@ const requiredEvidence = [
     requiredDoesNotProve: ['complete Host + Station + applet E2E'],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
     expectedGate: 'atelier:bridge-runtime-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -95,7 +95,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
     expectedGate: 'atelier:official-frontend-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -139,7 +139,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-official-status-ui-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-official-status-ui-gate.json',
     expectedGate: 'atelier:official-status-ui-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -160,7 +160,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-sdk-lynx-bridge-unit-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-sdk-lynx-bridge-unit-gate.json',
     expectedGate: 'atelier:sdk-lynx-bridge-unit-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -193,7 +193,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-message-send-ingress-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-message-send-ingress-controlled-gate.json',
     expectedGate: 'atelier-message-send-ingress-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -209,7 +209,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-feedback-submit-ingress-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-feedback-submit-ingress-controlled-gate.json',
     expectedGate: 'atelier-feedback-submit-ingress-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -225,7 +225,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-confirmation-ingress-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-ingress-controlled-gate.json',
     expectedGate: 'atelier-confirmation-ingress-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -241,7 +241,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-confirmation-outcome-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-outcome-controlled-gate.json',
     expectedGate: 'atelier-confirmation-outcome-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -261,7 +261,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-feedback-memory-consumption-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-feedback-memory-consumption-controlled-gate.json',
     expectedGate: 'atelier-feedback-memory-consumption-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -279,7 +279,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-workspace-open-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-workspace-open-controlled-gate.json',
     expectedGate: 'atelier-workspace-open-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -297,7 +297,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-task-lifecycle-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-task-lifecycle-controlled-gate.json',
     expectedGate: 'atelier-task-lifecycle-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -314,7 +314,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-runtime-log-stream-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-runtime-log-stream-controlled-gate.json',
     expectedGate: 'atelier-runtime-log-stream-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -330,7 +330,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-artifact-renderer-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-renderer-controlled-gate.json',
     expectedGate: 'atelier-artifact-renderer-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -351,7 +351,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-artifact-renderer-live-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-renderer-live-controlled-gate.json',
     expectedGate: 'atelier-artifact-renderer-live-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -369,7 +369,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-controlled-gate.json',
     expectedGate: 'atelier-artifact-body-fetch-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -387,7 +387,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-host-storage-attachment-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-host-storage-attachment-controlled-gate.json',
     expectedGate: 'atelier-host-storage-attachment-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -405,7 +405,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-host-storage-attachment-browser-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-host-storage-attachment-browser-controlled-gate.json',
     expectedGate: 'atelier-host-storage-attachment-browser-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -424,7 +424,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-direct-run-execution-evidence-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-direct-run-execution-evidence-controlled-gate.json',
     expectedGate: 'atelier-direct-run-execution-evidence-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -441,7 +441,7 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-budget-surface-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-budget-surface-controlled-gate.json',
     expectedGate: 'atelier-budget-surface-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -459,35 +459,35 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-full-e2e-runtime-inputs-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-runtime-inputs-controlled-gate.json',
     expectedGate: 'atelier:full-e2e-runtime-inputs-controlled-gate',
     expectedEvidenceClass: 'READINESS_AUDIT',
     requiredProves: ['full E2E runtime input validation has an executable controlled matrix for missing, invalid, and present inputs'],
     requiredDoesNotProve: ['full Host + Station + applet E2E'],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-full-e2e-preflight-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-preflight-controlled-gate.json',
     expectedGate: 'atelier:full-e2e-preflight-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: ['full E2E preflight records missing runtime inputs in isolated evidence'],
     requiredDoesNotProve: ['real Desktop Host launch'],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-full-e2e-fail-closed-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-fail-closed-controlled-gate.json',
     expectedGate: 'atelier:full-e2e-fail-closed-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: ['full E2E runner missing runtime input branch exits non-zero and writes isolated NOT_READY evidence'],
     requiredDoesNotProve: ['real Desktop Host launch'],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-full-e2e-final-evidence-controlled-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-final-evidence-controlled-gate.json',
     expectedGate: 'atelier:full-e2e-final-evidence-controlled-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: ['full E2E runner validates current-launch Desktop ready, workspace open, IDE launch, and provider runtime evidence before ok=true'],
     requiredDoesNotProve: ['real Desktop Host launch'],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-source-dist-integrity-policy-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-source-dist-integrity-policy-gate.json',
     expectedGate: 'atelier:source-dist-integrity-policy-gate',
     expectedEvidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     requiredProves: [
@@ -503,19 +503,19 @@ const requiredEvidence = [
     ],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-desktop-injection-gate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-desktop-injection-gate.json',
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
     requiredDoesNotProve: ['real Desktop product window UI renders peers.atelier'],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-real-product-gates-aggregate.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-real-product-gates-aggregate.json',
     expectedGate: 'atelier:real-product-gates',
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
     requiredProves: ['bounded aggregate wrapper runs all Atelier real-product and product-window child gates to clean exit'],
     requiredDoesNotProve: ['global Atelier readiness'],
   },
   {
-    path: 'applet-readiness-evidence/official-applet/atelier-full-e2e-preflight.json',
+    path: 'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-preflight.json',
     expectedGate: 'atelier:full-e2e-preflight',
     expectedEvidenceClass: 'READINESS_AUDIT',
     requiredProves: [
@@ -545,7 +545,7 @@ const finalEvidenceRequirements = [
         'PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE',
       ],
       expectedEvidencePaths: [
-        'applet-readiness-evidence/official-applet/atelier-full-e2e.json',
+        'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e.json',
       ],
       acceptanceCriteria: [
         'atelier-full-e2e.json is ok=true with evidenceClass=REAL_PRODUCT_PATH',
@@ -566,8 +566,8 @@ const finalEvidenceRequirements = [
         'PEERS_ATELIER_FULL_E2E_IDE',
       ],
       expectedEvidencePaths: [
-        'applet-readiness-evidence/official-applet/atelier-full-e2e-desktop-ready.json',
-        'applet-readiness-evidence/official-applet/atelier-full-e2e-workspace-open.json',
+        'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-desktop-ready.json',
+        'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-workspace-open.json',
       ],
       acceptanceCriteria: [
         'workspace.open evidence launchId/sessionId match Desktop ready evidence',
@@ -587,7 +587,7 @@ const finalEvidenceRequirements = [
         'PEERS_ATELIER_FULL_E2E_IDE',
       ],
       expectedEvidencePaths: [
-        'applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch.json',
+        'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-ide-launch.json',
       ],
       acceptanceCriteria: [
         'IDE launch evidence is independent current-launch Desktop Host evidence',
@@ -607,7 +607,7 @@ const finalEvidenceRequirements = [
         'PEERS_ATELIER_FULL_E2E_PROVIDER_PROFILE',
       ],
       expectedEvidencePaths: [
-        'applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime.json',
+        'tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-provider-runtime.json',
       ],
       acceptanceCriteria: [
         'provider/runtime evidence is Station-owned and bound to the configured providerProfileRef',
@@ -620,14 +620,14 @@ const finalEvidenceRequirements = [
 const requiredRealProductAggregateGates = [
   {
     script: 'applet:atelier-real-product-gate',
-    evidence: ['applet-readiness-evidence/official-applet/atelier-real-product-gate.json'],
+    evidence: ['tooling/acceptance/evidence/applets/official-applet/atelier-real-product-gate.json'],
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
     requiredProves: ['/v1/workspace'],
     requiredDoesNotProve: ['arbitrary network failure outside controlled pre-replay/post-replay Station SSE EOF'],
   },
   {
     script: 'applet:atelier-product-window-gate',
-    evidence: ['applet-readiness-evidence/official-applet/atelier-product-window-gate.json'],
+    evidence: ['tooling/acceptance/evidence/applets/official-applet/atelier-product-window-gate.json'],
     expectedGate: 'applet:atelier-product-window-gate',
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
     requiredProves: ['packaged peers.atelier renders inside the normal Desktop product shell'],
@@ -635,7 +635,7 @@ const requiredRealProductAggregateGates = [
   },
   {
     script: 'applet:atelier-product-window-failure-matrix-gate',
-    evidence: ['applet-readiness-evidence/official-applet/atelier-product-window-failure-matrix-gate.json'],
+    evidence: ['tooling/acceptance/evidence/applets/official-applet/atelier-product-window-failure-matrix-gate.json'],
     expectedGate: 'applet:atelier-product-window-failure-matrix-gate',
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
     requiredProves: ['official peers.atelier reports controller.subscribe-rejected diagnostics from the real Desktop product window UI'],
@@ -643,7 +643,7 @@ const requiredRealProductAggregateGates = [
   },
   {
     script: 'applet:atelier-product-window-cross-restart-gate',
-    evidence: ['applet-readiness-evidence/official-applet/atelier-product-window-cross-restart-gate.json'],
+    evidence: ['tooling/acceptance/evidence/applets/official-applet/atelier-product-window-cross-restart-gate.json'],
     expectedGate: 'applet:atelier-product-window-cross-restart-gate',
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
     requiredProves: ['Desktop Gateway persists the Atelier projection cursor to the product-window storage root'],
@@ -651,7 +651,7 @@ const requiredRealProductAggregateGates = [
   },
   {
     script: 'applet:atelier-decision-product-window-gate',
-    evidence: ['applet-readiness-evidence/official-applet/atelier-decision-product-window-gate.json'],
+    evidence: ['tooling/acceptance/evidence/applets/official-applet/atelier-decision-product-window-gate.json'],
     expectedGate: 'applet:atelier-decision-product-window-gate',
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
     requiredProves: ['official peers.atelier submits a decision option through /v1/escalations:resolve service binding inside the real Desktop product window UI'],
@@ -659,7 +659,7 @@ const requiredRealProductAggregateGates = [
   },
   {
     script: 'applet:atelier-live-resume-product-window-gate',
-    evidence: ['applet-readiness-evidence/official-applet/atelier-live-resume-product-window-gate.json'],
+    evidence: ['tooling/acceptance/evidence/applets/official-applet/atelier-live-resume-product-window-gate.json'],
     expectedGate: 'applet:atelier-live-resume-product-window-gate',
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
     requiredProves: ['Station ResolveCollaborationInterrupt wakes an in-flight LiveResumeBroker waiter'],
@@ -667,7 +667,7 @@ const requiredRealProductAggregateGates = [
   },
   {
     script: 'applet:atelier-artifact-gate-product-window-gate',
-    evidence: ['applet-readiness-evidence/official-applet/atelier-artifact-gate-product-window-gate.json'],
+    evidence: ['tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-product-window-gate.json'],
     expectedGate: 'applet:atelier-artifact-gate-product-window-gate',
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
     requiredProves: ['official peers.atelier submits the Station-projected sandbox preview target through atelier.artifact.preview.open and receives a Desktop Host-owned rendered sandbox surface descriptor'],
@@ -675,7 +675,7 @@ const requiredRealProductAggregateGates = [
   },
   {
     script: 'applet:atelier-artifact-body-fetch-product-window-gate',
-    evidence: ['applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json'],
+    evidence: ['tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-gate.json'],
     expectedGate: 'applet:atelier-artifact-body-fetch-product-window-gate',
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
     requiredProves: ['official peers.atelier fetches the Station-owned safe text artifact body through /v1/artifact/body/fetch service binding in the normal Desktop product window'],
@@ -683,7 +683,7 @@ const requiredRealProductAggregateGates = [
   },
   {
     script: 'applet:atelier-artifact-gate-recovery-product-window-gate',
-    evidence: ['applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-product-window-gate.json'],
+    evidence: ['tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-product-window-gate.json'],
     expectedGate: 'applet:atelier-artifact-gate-product-window-gate',
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
     requiredProves: ['Station fixture keeps the blocking gate pending and does not grant applet artifact/gate production or execution capability'],
@@ -692,9 +692,9 @@ const requiredRealProductAggregateGates = [
   {
     script: 'applet:atelier-artifact-gate-recovery-variants-product-window-gate',
     evidence: [
-      'applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-accept-risk-product-window-gate.json',
-      'applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-continue-product-window-gate.json',
-      'applet-readiness-evidence/official-applet/atelier-artifact-gate-recovery-cancel-product-window-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-accept-risk-product-window-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-continue-product-window-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-gate-recovery-cancel-product-window-gate.json',
     ],
     expectedGate: 'applet:atelier-artifact-gate-product-window-gate',
     expectedEvidenceClass: 'REAL_PRODUCT_PATH',
@@ -766,7 +766,7 @@ function assertString(value, label) {
 function readIndependentFinalEvidence(relativePath, label, expectedPath) {
   const evidencePath = assertString(relativePath, `${label} evidence path`);
   assert.ok(
-    evidencePath.startsWith('applet-readiness-evidence/official-applet/'),
+    evidencePath.startsWith('tooling/acceptance/evidence/applets/official-applet/'),
     `${label} evidence path must stay under official applet evidence root`,
   );
   assert.equal(evidencePath, expectedPath, `${label} evidence path must be ${expectedPath}`);
@@ -923,8 +923,8 @@ function validateProjectionContractDocSyncSelfCheck(document, relativePath) {
   );
   for (const requiredDocument of [
     'docs/architecture/atelier/prototype/README.md',
-    'applet-readiness-evidence/official-applet/atelier-acceptance-evidence-report-2026-07-06.md',
-    'applet-readiness-evidence/official-applet/atelier-completion-audit-2026-07-06.md',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-acceptance-evidence-report-2026-07-06.md',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-completion-audit-2026-07-06.md',
     'tmp/atelier-master-goal.md',
   ]) {
     assert.ok(
@@ -946,7 +946,7 @@ function validateProjectionContractDocSyncSelfCheck(document, relativePath) {
 }
 
 function validateProductWindowFailureMatrixEvidence(document, relativePath) {
-  if (relativePath !== 'applet-readiness-evidence/official-applet/atelier-product-window-failure-matrix-gate.json') {
+  if (relativePath !== 'tooling/acceptance/evidence/applets/official-applet/atelier-product-window-failure-matrix-gate.json') {
     return undefined;
   }
   assert.equal(
@@ -1100,7 +1100,7 @@ function validateDescriptorSemanticRequirements() {
 }
 
 function validateRealProductAggregateCoverage() {
-  const aggregate = readJson('applet-readiness-evidence/official-applet/atelier-real-product-gates-aggregate.json');
+  const aggregate = readJson('tooling/acceptance/evidence/applets/official-applet/atelier-real-product-gates-aggregate.json');
   assert.equal(aggregate.ok, true, 'real-product aggregate evidence must be ok=true');
   assert.equal(aggregate.evidenceClass, 'REAL_PRODUCT_PATH', 'real-product aggregate evidence must be REAL_PRODUCT_PATH');
   assert.equal(aggregate.gate, 'atelier:real-product-gates', 'real-product aggregate evidence must use atelier:real-product-gates gate');

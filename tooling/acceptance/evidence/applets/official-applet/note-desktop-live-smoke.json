@@ -1,0 +1,45 @@
+{
+  "status": "PASS",
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.note",
+  "packageDir": "apps/desktop/applets-dist/peers.note",
+  "bundle": "main.lynx.bundle",
+  "historicalRawReport": {
+    "available": false,
+    "bytes": 57030,
+    "sha256": "4d9e578ec80b168dd077d6cbd3afd3ac97a7510f0e1c4c286b4da00c20215494",
+    "reason": "Historical raw report was removed during the D-10 evidence-layout cutover."
+  },
+  "detail": {
+    "sessionId": "note-live-smoke-session",
+    "invokedCapabilities": [
+      "lifecycle.destroy",
+      "lifecycle.reportReady",
+      "network.request",
+      "storage.get",
+      "telemetry.track"
+    ],
+    "hostEventTopics": [
+      "destroy",
+      "hide",
+      "ready",
+      "show"
+    ],
+    "networkRequests": [
+      {
+        "service": "note",
+        "method": "GET",
+        "path": "/v1/notes"
+      }
+    ],
+    "diagnostics": {
+      "exceptionCount": 0,
+      "networkFailureCount": 0
+    }
+  },
+  "redaction": {
+    "machinePathsRemoved": true,
+    "rawBrowserResponsesRemoved": true,
+    "rawChromeStderrRemoved": true
+  }
+}

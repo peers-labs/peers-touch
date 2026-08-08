@@ -20,7 +20,7 @@ const malformedResponseFixtures = JSON.parse(
     'utf8',
   ),
 );
-const evidenceDir = path.join(repoRoot, 'applet-readiness-evidence/official-applet');
+const evidenceDir = path.join(repoRoot, 'tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-bridge-runtime-gate.json');
 const coveredPaths = [
   'browser Atelier bridge runtime validates projection snapshots and malformed projection events fail closed',
@@ -5765,7 +5765,7 @@ try {
   });
   await import(pathToFileURL(outfile).href);
   writeEvidence('PASS');
-  console.log('Atelier bridge runtime gate passed.');
+  process.stdout.write('Atelier bridge runtime gate passed.\n');
 } catch (error) {
   writeEvidence('FAIL', error instanceof Error ? error.message : String(error));
   console.error('Atelier bridge runtime gate failed:');

@@ -4,8 +4,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
-const evidenceRoot = path.resolve('applet-readiness-evidence');
-const packageDir = path.join(evidenceRoot, 'package/generic-complex-applet');
+const evidenceRoot = path.resolve('.artifacts/applet-readiness');
+const packageDir = path.join(evidenceRoot, 'packages/generic-complex-applet');
 mkdirSync(path.join(evidenceRoot, 'developer-flow'), { recursive: true });
 
 function write(relative, content) {

@@ -1,8 +1,8 @@
 # Applet Runtime Architecture — 设计决策
 
 > **Status**: draft
-> **Version**: v1.1
-> **Created**: 2026-05-19 | **Updated**: 2026-06-06
+> **Version**: v1.2
+> **Created**: 2026-05-19 | **Updated**: 2026-08-08
 > **Owner**: Architecture Team
 > **Module**: `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applets/`
 
@@ -21,6 +21,7 @@
 | D-07 | Manifest / Bridge / Bundle 协议先于功能扩展稳定 | accepted |
 | D-08 | 第一阶段避免复杂 Web 图表依赖 | accepted |
 | D-09 | Web 是正式 Host，HarmonyOS 仅预留 | accepted |
+| D-10 | Applet 证据、fixture 与运行产物分层存放 | accepted |
 
 ---
 
@@ -305,3 +306,45 @@ Web 必须作为正式 Host 设计，具备 session、Gateway、permission、aud
 - Web Host 需要独立服务侧或 BFF 能力。
 - HarmonyOS 首批只做 contract 和拒载语义，不承诺运行。
 - SDK adapter 需要区分 `WebHostBridgeAdapter` 与 `StandaloneBridgeAdapter`。
+
+---
+
+## D-10: Applet 证据、fixture 与运行产物分层存放
+
+**Status**: accepted
+**Date**: 2026-08-08
+
+### Context
+
+历史目录 `applet-readiness-evidence/` 同时存放评审证据、测试源码、原始日志、生成 bundle、SQLite 数据库和浏览器 harness。该混合目录把可评审声明、确定性输入和可再生产物合并成一个真源，并将机器绝对路径与大体积生成文件提交到 Git。
+
+### Decision
+
+Applet readiness 材料按生命周期拆分为三个互斥根目录：
+
+- `tooling/acceptance/evidence/applets/`：只提交经过审阅和脱敏的 JSON/Markdown 证据。
+- `tooling/fixtures/applets/`：只提交用于构建和 gate 的确定性源码 fixture。
+- `.artifacts/applet-readiness/`：存放原始日志、生成 bundle、SQLite 数据库、截图和运行时 harness；整个 `.artifacts/` 不进入 Git。
+
+脚本必须显式区分这三个根目录。Release audit 从 reviewed evidence 与 raw artifacts 分别读取输入，并把自身原始输出写入 artifact 根。旧根目录被一次性删除，不提供 alias、symlink 或兼容读取路径。
+
+### Rationale
+
+- 评审者可以只审查稳定、脱敏、可比较的声明。
+- Fixture 保持源码属性，构建产物由 gate 在隔离 artifact 目录中重建。
+- 原始运行材料不污染版本库，也不会泄露本机路径。
+- Fail-closed audit 仍可要求原始证据存在，但不会把原始证据误当作长期真源。
+
+### Alternatives Considered
+
+- **保留旧根并增加子目录约定**：仍允许不同生命周期材料重新混放。
+- **把所有 evidence 都忽略**：失去可审查、可追踪的 release attestation。
+- **提交生成 bundle 以提高可复现性**：bundle 可由锁定依赖和 fixture 重建，提交二进制会制造漂移和仓库膨胀。
+- **保留兼容 symlink**：会形成双路径真源，阻碍旧引用清零。
+
+### Consequences
+
+- 所有 Applet/Atelier gate、audit、contract、fixture 和文档引用必须原子迁移。
+- 运行 gate 前需要准备 `.artifacts/applet-readiness/`，缺失原始证据时 release audit 必须失败。
+- CI 或开发者需要保留 artifact 时，应通过外部制品系统上传，而不是提交到 Git。
+- Tree-wide gate 必须拒绝旧根的 live 引用、reviewed evidence 中的机器路径，以及 fixture 中的生成产物。

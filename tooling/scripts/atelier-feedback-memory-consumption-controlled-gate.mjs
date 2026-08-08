@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-feedback-memory-consumption-controlled-gate.json');
 const contractPath = 'apps/applets/atelier/contracts/atelier-projection.contract.json';
 
@@ -48,14 +48,14 @@ function assertContractMetadata(contract) {
   assert.equal(feedback?.stationPlannerRiskVerifierFeedPolicyProven, true);
   assert.equal(feedback?.realPlannerRiskVerifierFeedbackConsumptionProven, false);
   assert(feedback.gates.includes('atelier:feedback-memory-consumption-controlled-gate'));
-  assert(feedback.evidenceFiles.includes('applet-readiness-evidence/official-applet/atelier-feedback-memory-consumption-controlled-gate.json'));
+  assert(feedback.evidenceFiles.includes('tooling/acceptance/evidence/applets/official-applet/atelier-feedback-memory-consumption-controlled-gate.json'));
 
   const memory = contract.methodPayloads?.['atelier.memory.confirmCandidate']?.controlledEvidence;
   assert.equal(memory?.stationPlannerRiskVerifierMemoryRetrievalProven, true);
   assert.equal(memory?.stationPromptMemorySnapshotConsumptionProven, true);
   assert.equal(memory?.realPlannerVerifierConsumptionProven, false);
   assert(memory.gates.includes('atelier:feedback-memory-consumption-controlled-gate'));
-  assert(memory.evidenceFiles.includes('applet-readiness-evidence/official-applet/atelier-feedback-memory-consumption-controlled-gate.json'));
+  assert(memory.evidenceFiles.includes('tooling/acceptance/evidence/applets/official-applet/atelier-feedback-memory-consumption-controlled-gate.json'));
 }
 
 function runGate() {
@@ -89,7 +89,7 @@ function runGate() {
 try {
   const evidence = runGate();
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier feedback memory consumption controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier feedback memory consumption controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,

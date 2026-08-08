@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.note",
+  "service": "note",
+  "scannedFiles": [
+    "apps/applets/note/frontend/src/application/useNoteController.ts",
+    "apps/applets/note/frontend/src/domain/note.ts",
+    "apps/applets/note/frontend/src/index.tsx",
+    "apps/applets/note/frontend/src/infrastructure/capability/draftRepository.ts",
+    "apps/applets/note/frontend/src/infrastructure/capability/serviceClient.ts",
+    "apps/applets/note/frontend/src/infrastructure/i18n/messages.ts",
+    "apps/applets/note/frontend/src/presentation/pages/NoteAppletPage.tsx"
+  ],
+  "networkRequestFiles": [
+    "apps/applets/note/frontend/src/infrastructure/capability/serviceClient.ts"
+  ],
+  "checks": {
+    "sdkDependency": "workspace:*",
+    "manifestServiceBinding": true,
+    "localizedUi": true
+  },
+  "warnings": [],
+  "errors": []
+}

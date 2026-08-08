@@ -6,14 +6,14 @@ import path from 'node:path';
 
 const rootDir = process.cwd();
 const packageDir = path.resolve('apps/desktop/applets-dist/peers.atelier');
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-product-window-cross-restart-gate.json');
 const firstRenderedEvidencePath = path.join(evidenceDir, 'atelier-product-window-cross-restart-first-rendered-evidence.json');
 const firstCreatedEvidencePath = path.join(evidenceDir, 'atelier-product-window-cross-restart-first-created-evidence.json');
 const firstProductShellEvidencePath = path.join(evidenceDir, 'atelier-product-window-cross-restart-first-product-shell-evidence.json');
 const secondProductShellEvidencePath = path.join(evidenceDir, 'atelier-product-window-cross-restart-second-product-shell-evidence.json');
-const genericEvidencePath = path.resolve('applet-readiness-evidence/desktop/product-window-gate/product-shell-evidence.json');
-const genericOutputPath = path.resolve('applet-readiness-evidence/desktop/product-window-gate-output.txt');
+const genericEvidencePath = path.resolve('tooling/acceptance/evidence/applets/desktop/product-window-gate/product-shell-evidence.json');
+const genericOutputPath = path.resolve('.artifacts/applet-readiness/desktop/product-window-gate-output.txt');
 const storageRoot = path.resolve('.local/applet-product-window-gate/atelier-cross-restart-storage');
 const cargoTargetDir = path.resolve('.local/applet-product-window-gate/atelier-cross-restart-cargo-target');
 const bundleRoot = path.join(cargoTargetDir, 'release', 'bundle');

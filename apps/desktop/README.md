@@ -92,17 +92,17 @@ Integrated Desktop Applets use `@peers-touch/applet-sdk`. The SDK maps public AP
 ### Applet Runtime Gates
 ```bash
 pnpm applet:developer-flow-gate
-pnpm applet:desktop-runtime-gate applet-readiness-evidence/package/generic-complex-applet
-pnpm applet:desktop-product-host-gate applet-readiness-evidence/package/generic-complex-applet
-pnpm applet:desktop-product-host-real-gateway-gate applet-readiness-evidence/package/generic-complex-applet
-pnpm applet:desktop-product-shell-real-gateway-gate applet-readiness-evidence/package/generic-complex-applet
+pnpm applet:desktop-runtime-gate
+pnpm applet:desktop-product-host-gate
+pnpm applet:desktop-product-host-real-gateway-gate
+pnpm applet:desktop-product-shell-real-gateway-gate
 pnpm applet:desktop-packaged-assets-gate
 pnpm applet:desktop-product-window-gate
 pnpm applet:web-host-runtime-gate
-node tooling/scripts/create-generic-complex-applet.mjs applet-readiness-evidence/package/external-certification-applet --id external-certification-applet --name "External Certification Applet" --package-name "@external/certification-applet" --description "External-style certification fixture for Desktop product-window applet readiness evidence." --author "External Producer"
-node tooling/scripts/applet-desktop-product-window-gate.mjs applet-readiness-evidence/package/external-certification-applet
+node tooling/scripts/create-generic-complex-applet.mjs .artifacts/applet-readiness/packages/external-certification-applet --id external-certification-applet --name "External Certification Applet" --package-name "@external/certification-applet" --description "External-style certification fixture for Desktop product-window applet readiness evidence." --author "External Producer"
+node tooling/scripts/applet-desktop-product-window-gate.mjs .artifacts/applet-readiness/packages/external-certification-applet
 pnpm applet:external-producer-certification-gate /tmp/peers-touch-external-l3-cert
-pnpm applet:desktop-e2e applet-readiness-evidence/package/generic-complex-applet
+pnpm applet:desktop-e2e
 ```
 
 `applet:desktop-product-host-gate` uses the real Desktop frontend `AppletManager` and `<lynx-host>` modules to load the generated package, create a session, route SDK calls to `applets_invoke`, deliver Host events back into the Lynx applet, and destroy the session on unmount. It is still a browser-hosted product Host gate, not a replacement for packaged Tauri product-window E2E.

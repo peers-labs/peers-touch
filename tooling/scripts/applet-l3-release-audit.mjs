@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import {
+  appletArtifactRoot,
+  appletEvidenceRoot,
+  appletFixtureRoot,
+} from './lib/applet-readiness-paths.mjs';
 
 const rootDir = process.cwd();
-const evidenceRoot = path.resolve('applet-readiness-evidence');
-const outputDir = path.join(evidenceRoot, 'release');
+const outputDir = path.join(appletArtifactRoot, 'release');
 const outputPath = path.join(outputDir, 'l3-readiness-audit-output.txt');
 const candidateOnly = process.argv.includes('--candidate-only');
 
 mkdirSync(outputDir, { recursive: true });
 
 function readEvidence(relativePath) {
-  const absolutePath = path.join(evidenceRoot, relativePath);
+  const absolutePath = path.join(appletArtifactRoot, relativePath);
   if (!relativePath || !existsSync(absolutePath) || !statSync(absolutePath).isFile()) {
     return { absolutePath, content: null };
   }
@@ -61,7 +65,11 @@ function evidenceCheck({ name, path: relativePath, required = [], forbidden = []
 }
 
 function readJsonEvidence(relativePath) {
-  const evidence = readEvidence(relativePath);
+  const absolutePath = path.join(appletEvidenceRoot, relativePath);
+  const evidence =
+    relativePath && existsSync(absolutePath) && statSync(absolutePath).isFile()
+      ? { absolutePath, content: readFileSync(absolutePath, 'utf8') }
+      : { absolutePath, content: null };
   if (!evidence.content) {
     return { error: `Missing evidence file: ${relativePath}` };
   }
@@ -112,8 +120,9 @@ function readJsonFile(filePath) {
   }
 }
 
-function pathContainsSegment(filePath, segment) {
-  return path.resolve(filePath).split(path.sep).includes(segment);
+function isWithin(candidate, root) {
+  const relative = path.relative(root, path.resolve(candidate));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 function containsText(content, needle) {
@@ -143,7 +152,8 @@ function isKnownSyntheticCertificationPackage(packagePath, manifest) {
   return (
     syntheticAppletIds.has(manifest?.id) ||
     syntheticBasenames.has(path.basename(packagePath)) ||
-    pathContainsSegment(packagePath, 'applet-readiness-evidence')
+    isWithin(packagePath, appletFixtureRoot) ||
+    isWithin(packagePath, appletArtifactRoot)
   );
 }
 
@@ -259,7 +269,7 @@ function currentDeveloperFlowFreshnessCheck() {
     'packages/applet-sdk/src',
     'tooling/scripts/applet-developer-flow-gate.mjs',
     'tooling/scripts/create-generic-complex-applet.mjs',
-    'applet-readiness-evidence/package/generic-complex-applet',
+    'tooling/fixtures/applets/packages/generic-complex-applet',
   ];
   const newestInput = newestInputMtimeMs(relevantInputs, failures);
   if (evidence.content && newestInput > statSync(evidence.absolutePath).mtimeMs + 1000) {
@@ -290,7 +300,7 @@ function currentWebHostRuntimeFreshnessCheck() {
     'packages/applet-sdk/tsconfig.json',
     'packages/applet-sdk/src',
     'tooling/scripts/applet-web-host-runtime-gate.mjs',
-    'applet-readiness-evidence/package/web-host-certification-applet',
+    'tooling/fixtures/applets/packages/web-host-certification-applet',
   ];
   const newestInput = newestInputMtimeMs(relevantInputs, failures);
   if (evidence.content && newestInput > statSync(evidence.absolutePath).mtimeMs + 1000) {
@@ -321,7 +331,7 @@ function currentProductionWebHostFreshnessCheck() {
     'packages/applet-sdk/tsconfig.json',
     'packages/applet-sdk/src',
     'tooling/scripts/applet-production-web-host-gate.mjs',
-    'applet-readiness-evidence/package/production-web-host-certification-applet',
+    'tooling/fixtures/applets/packages/production-web-host-certification-applet',
   ];
   const newestInput = newestInputMtimeMs(relevantInputs, failures);
   if (evidence.content && newestInput > statSync(evidence.absolutePath).mtimeMs + 1000) {
@@ -499,7 +509,7 @@ function currentDesktopRuntimeFreshnessCheck() {
       'apps/desktop/vite.config.ts',
       'apps/desktop/src/applet',
       'tooling/scripts/applet-desktop-runtime-gate.mjs',
-      'applet-readiness-evidence/package/generic-complex-applet',
+      'tooling/fixtures/applets/packages/generic-complex-applet',
     ],
     passDetail: 'Desktop Lynx runtime evidence is current relative to SDK, Desktop applet runtime, gate, and generated package inputs.',
     staleDetail: 'Desktop Lynx runtime evidence is older than relevant runtime inputs',
@@ -528,7 +538,7 @@ function currentDesktopProductHostFreshnessCheck() {
       'apps/desktop/src-tauri/src/infrastructure/station_client.rs',
       'apps/desktop/src-tauri/src/interface/http_gateway',
       'tooling/scripts/applet-desktop-product-host-gate.mjs',
-      'applet-readiness-evidence/package/generic-complex-applet',
+      'tooling/fixtures/applets/packages/generic-complex-applet',
     ],
     passDetail: 'Desktop product Host real Gateway evidence is current relative to SDK, product Host, Rust Gateway, gate, and generated package inputs.',
     staleDetail: 'Desktop product Host real Gateway evidence is older than relevant product Host/Gateway inputs',
@@ -557,7 +567,7 @@ function currentDesktopProductShellFreshnessCheck() {
       'apps/desktop/src-tauri/src/infrastructure/station_client.rs',
       'apps/desktop/src-tauri/src/interface/http_gateway',
       'tooling/scripts/applet-desktop-product-host-gate.mjs',
-      'applet-readiness-evidence/package/generic-complex-applet',
+      'tooling/fixtures/applets/packages/generic-complex-applet',
     ],
     passDetail: 'Desktop product shell real Gateway evidence is current relative to SDK, product shell routing, Rust Gateway, gate, and generated package inputs.',
     staleDetail: 'Desktop product shell real Gateway evidence is older than relevant product shell/Gateway inputs',
@@ -578,7 +588,7 @@ function currentDesktopProductWindowFreshnessCheck() {
       'apps/desktop/src-tauri/src',
       'apps/desktop/applets-dist',
       'tooling/scripts/applet-desktop-product-window-gate.mjs',
-      'applet-readiness-evidence/package/generic-complex-applet',
+      'tooling/fixtures/applets/packages/generic-complex-applet',
     ],
     passDetail: 'Desktop packaged product-window evidence is current relative to product shell, Rust Gateway, packaged applets, gate, and generated package inputs.',
     staleDetail: 'Desktop packaged product-window evidence is older than relevant packaged product-window inputs',
@@ -601,7 +611,7 @@ function currentDesktopLiveE2eFreshnessCheck() {
       'tooling/scripts/applet-desktop-e2e.mjs',
       'tooling/scripts/applet-validate.mjs',
       'tooling/scripts/applet-contract-test.mjs',
-      'applet-readiness-evidence/package/generic-complex-applet',
+      'tooling/fixtures/applets/packages/generic-complex-applet',
     ],
     passDetail: 'Desktop live E2E evidence is current relative to contract, SDK, Rust Gateway, controlled upstream gate, and generated package inputs.',
     staleDetail: 'Desktop live E2E evidence is older than relevant live Gateway inputs',
@@ -618,7 +628,7 @@ function currentProductCapabilityServiceFreshnessCheck() {
       'apps/desktop/src-tauri/src/application/applets',
       'apps/desktop/src-tauri/src/infrastructure/station_client.rs',
       'tooling/scripts/applet-product-capability-service-gate.mjs',
-      'applet-readiness-evidence/desktop/live-e2e-output.txt',
+      '.artifacts/applet-readiness/desktop/live-e2e-output.txt',
     ],
     passDetail: 'Product capability service executor evidence is current relative to Gateway executor source and live E2E evidence.',
     staleDetail: 'Product capability service executor evidence is older than relevant executor/live E2E inputs',

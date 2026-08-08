@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-confirmation-ingress-controlled-gate.json');
 
 const facadeTestPattern = 'TestDecodeAtelier(MemoryConfirmationJSON|RerunConfirmationJSON)(RejectsExecutionShapedFields|AcceptsReferencePayload)';
@@ -103,4 +103,4 @@ if (!ok) {
   process.exit(1);
 }
 
-console.log(`PASS Atelier confirmation ingress controlled gate: ${evidencePath}`);
+process.stdout.write(`PASS Atelier confirmation ingress controlled gate: ${evidencePath}\n`);
