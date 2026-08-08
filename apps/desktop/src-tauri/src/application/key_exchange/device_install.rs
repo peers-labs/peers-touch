@@ -24,3 +24,13 @@ pub fn get_or_create_device_id(actor_id: &str) -> Result<String, StorageError> {
     storage::write_string_atomic(&path, &id)?;
     Ok(id)
 }
+
+/// Mint a fresh current-device identity after history recovery.
+///
+/// Recovery never reuses the previous install's device address or sessions.
+pub fn rotate_device_id(actor_id: &str) -> Result<String, StorageError> {
+    let path = device_id_path(actor_id)?;
+    let id = Ulid::new().to_string();
+    storage::write_string_atomic(&path, &id)?;
+    Ok(id)
+}

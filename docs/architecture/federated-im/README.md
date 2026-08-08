@@ -96,7 +96,7 @@ The current group lifecycle source of truth defines local Station group behavior
 | --- | --- |
 | `docs/architecture/federation/README.md` | Federation entity, governance ledger, Station membership |
 | `docs/architecture/social-runtime/group-lifecycle.md` | Local group lifecycle and current implementation gap review |
-| `docs/architecture/encryption/group-sender-keys.md` | **Superseded by D-08 (MLS).** Retained for history; do not build new work on it |
+| `docs/architecture/encryption/README.md` | Current device-addressed direct encryption, MLS, delivery, and recovery contract |
 | `docs/architecture/realtime/event-stream.md` | Reliable event stream and recovery model |
 | `docs/global/architecture.md` | Station/Model/Client ownership rule |
 | `docs/global/first-principles.md` | Proto-first contracts and auth/security constraints |
