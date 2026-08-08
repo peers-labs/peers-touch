@@ -108,7 +108,6 @@ func newPostgresConversationRepo(db *gorm.DB) *postgresConversationRepo {
 }
 
 // NewPostgresRepository returns a Repository backed by the provided GORM DB.
-// Exported for use by adapter subservers (compat_chat) that share the same DB.
 func NewPostgresRepository(db *gorm.DB) Repository {
 	return newPostgresConversationRepo(db)
 }
