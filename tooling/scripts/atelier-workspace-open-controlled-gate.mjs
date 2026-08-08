@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-workspace-open-controlled-gate.json');
 const contractPath = 'apps/applets/atelier/contracts/atelier-projection.contract.json';
 const rustGatewayPath = 'apps/desktop/src-tauri/src/application/applets/mod.rs';
@@ -53,7 +53,7 @@ function assertContractMetadata() {
   assert.equal(workspaceOpen?.realWorkspaceResolverProven, false);
   assert.equal(workspaceOpen?.realSandboxRuntimeProven, false);
   assert(workspaceOpen.gates.includes('atelier:workspace-open-controlled-gate'));
-  assert(workspaceOpen.evidenceFiles.includes('applet-readiness-evidence/official-applet/atelier-workspace-open-controlled-gate.json'));
+  assert(workspaceOpen.evidenceFiles.includes('tooling/acceptance/evidence/applets/official-applet/atelier-workspace-open-controlled-gate.json'));
 }
 
 function assertRustAnchors() {
@@ -200,7 +200,7 @@ function runGate() {
 try {
   const evidence = runGate();
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier workspace open controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier workspace open controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,

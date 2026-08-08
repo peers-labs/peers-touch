@@ -139,14 +139,14 @@ All commands above passed.
 ## Evidence Files
 
 ```text
-applet-readiness-evidence/official-applet/official-contract-gate.json
-applet-readiness-evidence/official-applet/official-applet-skill-discovery.json
-applet-readiness-evidence/official-applet/note-frontend-sdk-gate.json
-applet-readiness-evidence/official-applet/note-desktop-injection-gate.json
-applet-readiness-evidence/official-applet/note-desktop-live-smoke.json
-applet-readiness-evidence/official-applet/note-real-product-gate.json
-applet-readiness-evidence/official-applet/note-mobile-contract-gate.json
-applet-readiness-evidence/mobile/native-manifest-gate-output.txt
+tooling/acceptance/evidence/applets/official-applet/official-contract-gate.json
+tooling/acceptance/evidence/applets/official-applet/official-applet-skill-discovery.json
+tooling/acceptance/evidence/applets/official-applet/note-frontend-sdk-gate.json
+tooling/acceptance/evidence/applets/official-applet/note-desktop-injection-gate.json
+tooling/acceptance/evidence/applets/official-applet/note-desktop-live-smoke.json
+tooling/acceptance/evidence/applets/official-applet/note-real-product-gate.json
+tooling/acceptance/evidence/applets/official-applet/note-mobile-contract-gate.json
+.artifacts/applet-readiness/mobile/native-manifest-gate-output.txt
 ```
 
 ## Next Step

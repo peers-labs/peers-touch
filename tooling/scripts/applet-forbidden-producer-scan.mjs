@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const configPath = path.resolve('tooling/config/applet-forbidden-producer-terms.txt');
-const evidenceDir = path.resolve('applet-readiness-evidence/producer-independence');
+const evidenceDir = path.resolve('.artifacts/applet-readiness/producer-independence');
 mkdirSync(evidenceDir, { recursive: true });
 
 if (!existsSync(configPath)) {
@@ -19,7 +19,8 @@ if (terms.length === 0) {
 }
 
 const scanRoots = [
-  'applet-readiness-evidence/package',
+  '.artifacts/applet-readiness/packages',
+  'tooling/fixtures/applets/packages',
   'apps/desktop/src/applet',
   'packages/applet-contract',
   'packages/applet-sdk',

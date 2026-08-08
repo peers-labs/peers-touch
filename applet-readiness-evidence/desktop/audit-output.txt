@@ -1,1 +1,0 @@
-PASS Gateway audit sink captures executable evidence for allowed call, permission deny, session destroy, network allow/error, network deny, and manifest anti-forge paths.

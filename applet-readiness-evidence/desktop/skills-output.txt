@@ -1,1 +1,0 @@
-PASS skills.register/list/invoke registry and typed stream result paths are covered by executable Gateway tests. Skills: generic-skill

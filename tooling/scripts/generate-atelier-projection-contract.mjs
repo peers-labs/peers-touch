@@ -40,7 +40,7 @@ if (checkOnly && stale) {
   process.exit(1);
 }
 
-console.log(`${checkOnly ? 'PASS' : 'WROTE'} Atelier projection contract generated artifacts`);
+process.stdout.write(`${checkOnly ? 'PASS' : 'WROTE'} Atelier projection contract generated artifacts\n`);
 
 function validateContract(value) {
   assertString(value.id, 'id');
@@ -203,8 +203,8 @@ function validateArtifactPreviewControlledEvidence(artifactPreview) {
     throw new Error('artifactPreview.controlledEvidence.gates must be atelier:projection-contract-gate, atelier:official-frontend-gate, atelier:bridge-runtime-gate');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'artifactPreview.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -324,7 +324,7 @@ function validateHostStorageAttachment(hostStorageAttachment) {
     throw new Error('hostStorageAttachment.controlledEvidence.gate must be atelier:host-storage-attachment-controlled-gate');
   }
   assertStringArray(hostStorageAttachment.controlledEvidence.evidenceFiles, 'hostStorageAttachment.controlledEvidence.evidenceFiles');
-  if (!hostStorageAttachment.controlledEvidence.evidenceFiles.includes('applet-readiness-evidence/official-applet/atelier-host-storage-attachment-controlled-gate.json')) {
+  if (!hostStorageAttachment.controlledEvidence.evidenceFiles.includes('tooling/acceptance/evidence/applets/official-applet/atelier-host-storage-attachment-controlled-gate.json')) {
     throw new Error('hostStorageAttachment.controlledEvidence.evidenceFiles must include Host Storage attachment evidence JSON');
   }
   if (hostStorageAttachment.controlledEvidence.source !== 'host_storage_controlled_harness') {
@@ -415,7 +415,7 @@ function validateRuntimeLogStream(runtimeLogStream) {
     throw new Error('runtimeLogStream.controlledEvidence.gate must be atelier:runtime-log-stream-controlled-gate');
   }
   assertStringArray(runtimeLogStream.controlledEvidence.evidenceFiles, 'runtimeLogStream.controlledEvidence.evidenceFiles');
-  if (!runtimeLogStream.controlledEvidence.evidenceFiles.includes('applet-readiness-evidence/official-applet/atelier-runtime-log-stream-controlled-gate.json')) {
+  if (!runtimeLogStream.controlledEvidence.evidenceFiles.includes('tooling/acceptance/evidence/applets/official-applet/atelier-runtime-log-stream-controlled-gate.json')) {
     throw new Error('runtimeLogStream.controlledEvidence.evidenceFiles must include runtime log stream evidence JSON');
   }
   if (runtimeLogStream.controlledEvidence.source !== runtimeLogStream.source) {
@@ -510,8 +510,8 @@ function validateArtifactBodyFetch(artifactBodyFetch, artifactPreview, workbench
   }
   assertStringArray(artifactBodyFetch.productWindowEvidence.evidenceFiles, 'artifactBodyFetch.productWindowEvidence.evidenceFiles');
   for (const evidenceFile of [
-    'applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-evidence.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-evidence.json',
   ]) {
     if (!artifactBodyFetch.productWindowEvidence.evidenceFiles.includes(evidenceFile)) {
       throw new Error(`artifactBodyFetch.productWindowEvidence.evidenceFiles must include ${evidenceFile}`);
@@ -580,11 +580,11 @@ function validateArtifactBodyFetchPayloadControlledEvidence(artifactBodyFetch, p
     throw new Error('methodPayloads.atelier.artifact.body.fetch.controlledEvidence.gates must match artifact body fetch evidence gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-controlled-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-evidence.json',
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-evidence.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'methodPayloads.atelier.artifact.body.fetch.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -653,9 +653,9 @@ function validateArtifactBodyFetchControlledEvidence(artifactBodyFetch) {
     throw new Error('artifactBodyFetch.controlledEvidence.gates must match controlled and focused product-window body fetch evidence gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-controlled-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-artifact-body-fetch-product-window-evidence.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-artifact-body-fetch-product-window-evidence.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'artifactBodyFetch.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -766,7 +766,7 @@ function validateArtifactRendererSurface(artifactRendererSurface, payload) {
     throw new Error('artifactRendererSurface.controlledEvidence.gate must be atelier:artifact-renderer-controlled-gate');
   }
   assertStringArray(artifactRendererSurface.controlledEvidence.evidenceFiles, 'artifactRendererSurface.controlledEvidence.evidenceFiles');
-  if (!artifactRendererSurface.controlledEvidence.evidenceFiles.includes('applet-readiness-evidence/official-applet/atelier-artifact-renderer-controlled-gate.json')) {
+  if (!artifactRendererSurface.controlledEvidence.evidenceFiles.includes('tooling/acceptance/evidence/applets/official-applet/atelier-artifact-renderer-controlled-gate.json')) {
     throw new Error('artifactRendererSurface.controlledEvidence.evidenceFiles must include artifact renderer evidence JSON');
   }
   if (artifactRendererSurface.controlledEvidence.source !== artifactRendererSurface.source) {
@@ -932,8 +932,8 @@ function validateReadOnlyProjectionSurfaceControlledEvidence(surfaceId, surface,
     throw new Error(`readOnlyProjectionSurfaces.${surfaceId}.controlledEvidence.gates must be atelier:official-frontend-gate, atelier:bridge-runtime-gate`);
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, `readOnlyProjectionSurfaces.${surfaceId}.controlledEvidence.evidenceFiles`);
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -1082,7 +1082,7 @@ function validateDirectRunExecutionControlledEvidence(directRunExecutionEvidence
     throw new Error('directRunExecutionEvidence.controlledEvidence.gate must be atelier:direct-run-execution-evidence-controlled-gate');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-direct-run-execution-evidence-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-direct-run-execution-evidence-controlled-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'directRunExecutionEvidence.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -1187,8 +1187,8 @@ function validateCreateFromGoalControlledEvidence(payload, intent, transport) {
     throw new Error('methodPayloads.atelier.project.createFromGoal.controlledEvidence.gates must match create-from-goal evidence gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'methodPayloads.atelier.project.createFromGoal.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -1313,8 +1313,8 @@ function validateArtifactPreviewOpenPayloadControlledEvidence(payload, intent, t
     throw new Error('methodPayloads.atelier.artifact.preview.open.controlledEvidence.gates must match artifact preview open evidence gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'methodPayloads.atelier.artifact.preview.open.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -1433,9 +1433,9 @@ function validateMessageSendControlledEvidence(payload, intent, transport) {
     throw new Error('methodPayloads.atelier.message.send.controlledEvidence.gates must match message send evidence gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-message-send-ingress-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-message-send-ingress-controlled-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'methodPayloads.atelier.message.send.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -1541,10 +1541,10 @@ function validateEscalationResolveControlledEvidence(payload, intent, transport)
     throw new Error('methodPayloads.atelier.escalation.resolve.controlledEvidence.gates must match escalation resolve evidence gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-decision-product-window-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-live-resume-product-window-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-decision-product-window-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-live-resume-product-window-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'methodPayloads.atelier.escalation.resolve.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -1633,10 +1633,10 @@ function validateFeedbackSubmitControlledEvidence(payload, intent, transport) {
     throw new Error('methodPayloads.atelier.feedback.submit.controlledEvidence.gates must match feedback submit evidence gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-feedback-submit-ingress-controlled-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-feedback-memory-consumption-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-feedback-submit-ingress-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-feedback-memory-consumption-controlled-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'methodPayloads.atelier.feedback.submit.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -1733,13 +1733,13 @@ function validateConfirmationControlledEvidence(payload, intent, transport, expe
     throw new Error(`methodPayloads.${expected.method}.controlledEvidence.gates must match confirmation evidence gates`);
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-confirmation-ingress-controlled-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-confirmation-outcome-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-ingress-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-outcome-controlled-gate.json',
   ];
   if (expected.method === 'atelier.memory.confirmCandidate') {
-    expectedEvidenceFiles.push('applet-readiness-evidence/official-applet/atelier-feedback-memory-consumption-controlled-gate.json');
+    expectedEvidenceFiles.push('tooling/acceptance/evidence/applets/official-applet/atelier-feedback-memory-consumption-controlled-gate.json');
   }
   assertStringArray(controlledEvidence.evidenceFiles, `methodPayloads.${expected.method}.controlledEvidence.evidenceFiles`);
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -1822,9 +1822,9 @@ function validateWorkspaceOpenControlledEvidence(payload, intent, transport) {
     throw new Error('methodPayloads.atelier.workspace.open.controlledEvidence.gates must match workspace open evidence gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-workspace-open-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-workspace-open-controlled-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'methodPayloads.atelier.workspace.open.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -1907,8 +1907,8 @@ function validateProviderCapabilitiesControlledEvidence(payload) {
     throw new Error('methodPayloads.atelier.provider.capabilities.controlledEvidence.gates must match provider capability discovery evidence gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'methodPayloads.atelier.provider.capabilities.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -2096,8 +2096,8 @@ function validateEventSubscriptionControlledEvidence(
     throw new Error('eventSubscription.controlledEvidence.gates must be atelier:official-frontend-gate, atelier:bridge-runtime-gate');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'eventSubscription.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -2260,8 +2260,8 @@ function validateAgentRoleAuthorityControlledEvidence(agentRoleAuthority, requir
     throw new Error('agentRoleAuthority.controlledEvidence.gates must be atelier:projection-contract-gate, atelier:official-frontend-gate, atelier:bridge-runtime-gate');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'agentRoleAuthority.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -2361,8 +2361,8 @@ function validateNegotiationProjectionControlledEvidence(negotiationProjection) 
     throw new Error('negotiationProjection.controlledEvidence.gates must be atelier:projection-contract-gate, atelier:official-frontend-gate, atelier:bridge-runtime-gate');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'negotiationProjection.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -2425,8 +2425,8 @@ function validateStreamBlocksControlledEvidence(streamBlocks) {
     throw new Error('streamBlocks.controlledEvidence.gates must be atelier:projection-contract-gate, atelier:official-frontend-gate, atelier:bridge-runtime-gate');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'streamBlocks.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -2557,8 +2557,8 @@ function validateViewSurfaceControlledEvidence(viewSurface) {
   }
   assertStringArray(controlledEvidence.evidenceFiles, 'viewSurface.controlledEvidence.evidenceFiles');
   for (const evidenceFile of [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ]) {
     if (!controlledEvidence.evidenceFiles.includes(evidenceFile)) {
       throw new Error(`viewSurface.controlledEvidence.evidenceFiles must include ${evidenceFile}`);
@@ -2758,8 +2758,8 @@ function validateProjectSurfaceControlledEvidence(projectSurface) {
     throw new Error('projectSurface.controlledEvidence.gates must match controlled project surface taxonomy gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'projectSurface.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -2896,8 +2896,8 @@ function validateWorkbenchSurfaceControlledEvidence(workbenchSurface) {
     throw new Error('workbenchSurface.controlledEvidence.gates must match controlled workbench taxonomy gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'workbenchSurface.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -2982,9 +2982,9 @@ function validateBudgetSurfaceControlledEvidence(budgetSurface) {
     throw new Error('budgetSurface.controlledEvidence.gates must match the controlled budget projection evidence gates');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-budget-surface-controlled-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-budget-surface-controlled-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'budgetSurface.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -3112,8 +3112,8 @@ function validateTaskSetStatusControlledEvidence(payload, intent, transport, tas
     payloadFields: ['requiredFields', 'allowedStatus', 'forbiddenActions'],
     expectedGates: ['atelier:projection-contract-gate', 'atelier:official-frontend-gate', 'atelier:bridge-runtime-gate'],
     expectedEvidenceFiles: [
-      'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-      'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
     ],
   });
   if (JSON.stringify(payload.allowedStatus) !== JSON.stringify(taskLifecycle.states)) {
@@ -3156,8 +3156,8 @@ function validateTaskPurgeControlledEvidence(payload, intent, transport, taskLif
     payloadFields: ['requiredFields', 'requiresStatus', 'forbiddenActions'],
     expectedGates: ['atelier:projection-contract-gate', 'atelier:official-frontend-gate', 'atelier:bridge-runtime-gate'],
     expectedEvidenceFiles: [
-      'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-      'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
     ],
   });
   if (payload.requiresStatus !== taskLifecycle.purgeRequiresStatus) {
@@ -3272,8 +3272,8 @@ function validateTaskLifecycleControlledEvidence(taskLifecycle) {
     throw new Error('taskLifecycle.controlledEvidence.gates must be atelier:official-frontend-gate, atelier:bridge-runtime-gate');
   }
   const expectedEvidenceFiles = [
-    'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-    'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+    'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
   ];
   assertStringArray(controlledEvidence.evidenceFiles, 'taskLifecycle.controlledEvidence.evidenceFiles');
   if (JSON.stringify(controlledEvidence.evidenceFiles) !== JSON.stringify(expectedEvidenceFiles)) {
@@ -3401,9 +3401,9 @@ function validateMethodGovernance(methodGovernance, contract) {
     evidenceClass: 'CONTROLLED_LOCAL_UPSTREAM',
     gates: ['atelier:projection-contract-gate', 'atelier:official-frontend-gate', 'atelier:bridge-runtime-gate'],
     evidenceFiles: [
-      'applet-readiness-evidence/official-applet/atelier-projection-contract-gate.json',
-      'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-      'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-projection-contract-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
     ],
     methodKeysMatchMethods: true,
     runtimeMethodsExcludeEventSubscription: true,

@@ -1,9 +1,0 @@
-PASS Desktop Tauri bundle applet gate
-PASS macOS app: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/src-tauri/target/release/bundle/macos/Peers Touch Desktop.app
-PASS executable: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/src-tauri/target/release/bundle/macos/Peers Touch Desktop.app/Contents/MacOS/peers-touch-desktop
-PASS dmg: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/src-tauri/target/release/bundle/dmg/Peers Touch Desktop_0.1.0_aarch64.dmg
-PASS frontendDist: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/dist
-PASS Desktop Lynx applets: generic-complex-applet, hello-lynx
-PASS integrity files checked: 363
-PASS executable mtime: 2026-06-10T16:13:23.975Z
-PASS newest applet asset mtime: 2026-06-10T16:12:39.770Z

@@ -1,1 +1,0 @@
-PASS applet contract schema generated: /Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/packages/applet-contract/dist/applet-contract.schema.json

@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import path from 'node:path';
 import { APPLET_BRIDGE_PROTOCOL, validateManifest } from '../../packages/applet-contract/dist/index.js';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/desktop');
+const evidenceDir = path.resolve('.artifacts/applet-readiness/desktop');
 const outputPath = path.join(evidenceDir, 'tauri-bundle-gate-output.txt');
 const desktopDist = path.resolve('apps/desktop/dist');
 const distAppletRoot = path.join(desktopDist, 'applets-dist');

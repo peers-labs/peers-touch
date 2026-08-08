@@ -20,7 +20,7 @@ const malformedResponseFixtures = JSON.parse(
     'utf8',
   ),
 );
-const evidenceDir = path.join(repoRoot, 'applet-readiness-evidence/official-applet');
+const evidenceDir = path.join(repoRoot, 'tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-official-frontend-gate.json');
 const coveredPaths = [
   'official Atelier frontend uses service binding for Station-owned methods',
@@ -4865,7 +4865,7 @@ try {
   });
   await import(pathToFileURL(outfile).href);
   writeEvidence('PASS');
-  console.log('Atelier official frontend gate passed.');
+  process.stdout.write('Atelier official frontend gate passed.\n');
 } catch (error) {
   writeEvidence('FAIL', error instanceof Error ? error.message : String(error));
   console.error('Atelier official frontend gate failed:');
