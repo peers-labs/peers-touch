@@ -10,7 +10,6 @@ import (
 
 	appmeta "github.com/peers-labs/peers-touch/station/app/subserver/app_meta"
 	appletstore "github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
-	compatchat "github.com/peers-labs/peers-touch/station/app/subserver/compat_chat"
 	convsub "github.com/peers-labs/peers-touch/station/app/subserver/conversation"
 	envelopesub "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
@@ -64,7 +63,6 @@ func main() {
 		server.WithSubServer("frontend_telemetry", frontendtelemetry.NewFrontendTelemetrySubServer),
 		server.WithSubServer("dashboard", dashboard.NewDashboardSubServer),
 		server.WithSubServer("federation", federation.NewFederationSubServer),
-		server.WithSubServer("compat_chat", compatchat.NewCompatChatSubServer),
 	)
 	if err != nil {
 		panic(err)
