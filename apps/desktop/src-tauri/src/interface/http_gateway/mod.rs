@@ -61,7 +61,6 @@ use crate::application::tts as app_tts;
 
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
-use crate::interface::tauri_commands::actor::actor_search_item_to_json;
 use crate::interface::tauri_commands::oss::{
     capture_screenshot_to_temp_file, safe_temp_filename, validate_chat_upload_scope,
     OssCaptureScreenshotInput, OssUploadAttachmentBytesInput,
@@ -923,31 +922,6 @@ fn filter_incremental_messages(
 /// calling the same application-layer functions that tauri_commands use.
 fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) -> Value {
     match cmd {
-        "presence_notify" => {
-            let trigger = args.get("trigger").and_then(|value| value.as_str()).unwrap_or("");
-            let offline = matches!(
-                trigger,
-                "app_background" | "app_shutdown" | "identity_logged_out" | "network_offline"
-            );
-            proxy_authenticated_station_json(
-                state,
-                reqwest::Method::POST,
-                if offline { "/presence/offline" } else { "/presence/heartbeat" },
-                None,
-                Some(json!({ "reason": trigger })),
-                "presence notify",
-            )
-        }
-        "presence_query" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/presence/query",
-            None,
-            Some(json!({
-                "actor_ids": args.get("actor_ids").cloned().unwrap_or_else(|| json!([])),
-            })),
-            "presence query",
-        ),
         // =================================================================
         // Meta
         // =================================================================
@@ -998,7 +972,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 }),
             ))
         }
-        "crypto_get_key_bundle" => {
+        "crypto_generate_key_bundle" => {
             let actor_id = match actor_id_from_state(state) {
                 Some(id) if !id.trim().is_empty() => id,
                 _ => {
@@ -1063,14 +1037,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 };
 
             to_json(to_stub(
-                "crypto_get_key_bundle",
+                "crypto_generate_key_bundle",
                 json!({
-                    "ik_pub": B64.encode(ik.verifying_key.to_bytes()),
-                    "spk_id": spk_id,
-                    "spk_pub": B64.encode(spk_pub_bytes),
-                    "spk_sig": B64.encode(spk_sig.to_bytes()),
-                    "opk_ids": opk_ids,
-                    "opk_pubs": opk_pubs.iter().map(|b| B64.encode(b)).collect::<Vec<String>>(),
+                    "identityPublicKey": B64.encode(ik.verifying_key.to_bytes()),
+                    "signedPreKey": {
+                        "keyId": spk_id.to_string(),
+                        "publicKey": B64.encode(spk_pub_bytes),
+                        "signature": B64.encode(spk_sig.to_bytes()),
+                        "createdAtUnixMs": i64::from(spk_id) * 1000,
+                    },
+                    "oneTimePreKeys": opk_ids.iter().zip(opk_pubs.iter()).map(|(id, key)| json!({
+                        "keyId": id.to_string(),
+                        "publicKey": B64.encode(key),
+                    })).collect::<Vec<Value>>(),
+                    "supportedVersions": [1],
                 }),
             ))
         }
@@ -1079,16 +1059,35 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            let negotiated_version = u32_arg(&args, "negotiated_version", "negotiatedVersion");
+            let supported_versions = args
+                .get("supported_versions")
+                .or_else(|| args.get("supportedVersions"))
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_u64)
+                        .filter_map(|value| u32::try_from(value).ok())
+                        .collect()
+                })
+                .unwrap_or_default();
             to_json(
                 crate::interface::tauri_commands::crypto::crypto_init_session_for_context(
                     string_arg(&args, "session_id", "sessionId"),
-                    string_arg(&args, "peer_did", "peerDid"),
-                    string_arg(&args, "peer_ik_pub", "peerIkPub"),
-                    string_arg(&args, "peer_spk_pub", "peerSpkPub"),
-                    string_arg(&args, "peer_spk_sig", "peerSpkSig"),
-                    optional_string_arg(&args, "peer_opk_pub", "peerOpkPub"),
-                    negotiated_version,
+                    string_arg(&args, "conversation_id", "conversationId"),
+                    args.get("session_generation")
+                        .or_else(|| args.get("sessionGeneration"))
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0),
+                    string_arg(&args, "peer_ptid", "peerPtid"),
+                    string_arg(&args, "peer_device_id", "peerDeviceId"),
+                    string_arg(&args, "peer_identity_public_key", "peerIdentityPublicKey"),
+                    string_arg(&args, "peer_signed_pre_key_id", "peerSignedPreKeyId"),
+                    string_arg(&args, "peer_signed_pre_key", "peerSignedPreKey"),
+                    string_arg(&args, "peer_signed_pre_key_sig", "peerSignedPreKeySig"),
+                    optional_string_arg(&args, "peer_one_time_pre_key_id", "peerOneTimePreKeyId"),
+                    optional_string_arg(&args, "peer_one_time_pre_key", "peerOneTimePreKey"),
+                    supported_versions,
                     actor_id,
                     user_scope,
                 ),
@@ -1102,14 +1101,24 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(
                 crate::interface::tauri_commands::crypto::crypto_accept_session_for_context(
                     string_arg(&args, "session_id", "sessionId"),
-                    string_arg(&args, "peer_did", "peerDid"),
+                    string_arg(&args, "conversation_id", "conversationId"),
+                    args.get("session_generation")
+                        .or_else(|| args.get("sessionGeneration"))
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0),
+                    string_arg(&args, "peer_ptid", "peerPtid"),
+                    string_arg(&args, "peer_device_id", "peerDeviceId"),
                     string_arg(&args, "sender_identity_key", "senderIdentityKey"),
                     string_arg(&args, "sender_ephemeral_key", "senderEphemeralKey"),
-                    string_arg(&args, "recipient_signed_prekey", "recipientSignedPrekey"),
+                    string_arg(
+                        &args,
+                        "recipient_signed_pre_key_id",
+                        "recipientSignedPreKeyId",
+                    ),
                     optional_string_arg(
                         &args,
-                        "recipient_one_time_prekey",
-                        "recipientOneTimePrekey",
+                        "recipient_one_time_pre_key_id",
+                        "recipientOneTimePreKeyId",
                     ),
                     u32_arg(&args, "negotiated_version", "negotiatedVersion"),
                     actor_id,
@@ -1129,44 +1138,48 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ),
             )
         }
-        "chat_decrypt_cache_get" => {
+        "crypto_list_sessions" => to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::InvalidArgument,
+            "crypto_list_sessions is available through the native Tauri boundary",
+            None,
+        )),
+        "crypto_list_sessions_for_peer" => to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::InvalidArgument,
+            format!(
+                "crypto_list_sessions_for_peer requires native endpoint context for {}",
+                string_arg(&args, "peer_ptid", "peerPtid")
+            ),
+            None,
+        )),
+        "crypto_encrypt" => {
             let (_, user_scope) = match authenticated_crypto_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            let input = match parse_args::<ChatDecryptCacheGetInput>(args) {
-                Ok(value) => value,
-                Err(error) => return error,
-            };
+            let session_ids = args
+                .get("session_ids")
+                .or_else(|| args.get("sessionIds"))
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
             to_json(
-                crate::interface::tauri_commands::crypto::chat_decrypt_cache_get_for_scope(
-                    input, user_scope,
-                ),
-            )
-        }
-        "chat_decrypt_cache_put" => {
-            let (_, user_scope) = match authenticated_crypto_context(state) {
-                Ok(context) => context,
-                Err(error) => return error,
-            };
-            let input = match parse_args::<ChatDecryptCachePutInput>(args) {
-                Ok(value) => value,
-                Err(error) => return error,
-            };
-            to_json(
-                crate::interface::tauri_commands::crypto::chat_decrypt_cache_put_for_scope(
-                    input, user_scope,
-                ),
-            )
-        }
-        "crypto_reset_session" => {
-            let (_, user_scope) = match authenticated_crypto_context(state) {
-                Ok(context) => context,
-                Err(error) => return error,
-            };
-            to_json(
-                crate::interface::tauri_commands::crypto::crypto_reset_session_for_scope(
-                    string_arg(&args, "session_id", "sessionId"),
+                crate::interface::tauri_commands::crypto::crypto_encrypt_for_scope(
+                    session_ids,
+                    string_arg(&args, "plaintext", "plaintext"),
+                    string_arg(&args, "command_id", "commandId"),
+                    args.get("content_type")
+                        .or_else(|| args.get("contentType"))
+                        .and_then(Value::as_i64)
+                        .and_then(|value| i32::try_from(value).ok())
+                        .unwrap_or(0),
+                    optional_string_arg(&args, "reply_to_message_id", "replyToMessageId"),
+                    optional_string_arg(&args, "thread_root_message_id", "threadRootMessageId"),
                     user_scope,
                 ),
             )
@@ -1938,7 +1951,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     return to_json(e.into_app_result::<StubPayload>("Station request failed"));
                 }
             };
-            let items: Vec<Value> = resp.items.iter().map(actor_search_item_to_json).collect();
+            let items: Vec<Value> = resp
+                .items
+                .iter()
+                .map(|a| {
+                    json!({
+                        "id": a.id, "username": a.username, "displayName": a.display_name,
+                        "email": a.email, "actorId": a.actor_id.to_string(), "avatar": a.avatar,
+                    })
+                })
+                .collect();
             to_json(to_stub(
                 "actor_search_actors",
                 json!({"items": items, "total": resp.total}),
@@ -4422,6 +4444,33 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => e,
             }
         }
+        "friend_chat_create_session" => {
+            let input = match parse_args::<FriendChatCreateSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            if input.participant_did.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "participant_did is required",
+                    None,
+                ));
+            }
+            match station_request_json(
+                Method::POST,
+                "/friend-chat/session/create",
+                &token,
+                None,
+                Some(json!({"participant_did": input.participant_did})),
+            ) {
+                Ok(data) => to_json(to_stub("friend_chat_create_session", data)),
+                Err(e) => e,
+            }
+        }
         "friend_chat_get_settings" => {
             let input = match parse_args::<FriendConversationSettingsInput>(args) {
                 Ok(v) => v,
@@ -4607,57 +4656,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ) {
                 Ok(data) => to_json(to_stub("friend_chat_thread_mark_read", data)),
                 Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
-            }
-        }
-        "friend_chat_send_message" => {
-            let input = match parse_args::<FriendChatSendInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let data = match station_request_json(
-                Method::POST,
-                "/friend-chat/message/send",
-                &token,
-                None,
-                Some(json!({
-                    "session_ulid": input.session_ulid, "receiver_did": input.receiver_did,
-                    "content": input.content,
-                    "encrypted_payload": input.encrypted_payload.unwrap_or_default(),
-                    "type": input.r#type.unwrap_or(1),
-                    "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
-                    "thread_root_ulid": input.thread_root_ulid.unwrap_or_default(),
-                    "attachments": input.attachments.unwrap_or_default(),
-                })),
-            ) {
-                Ok(d) => d,
-                Err(e) => return e,
-            };
-            let user_scope = user_scope_from_state(state);
-            let _ = chat_storage::ingest_friend_messages(user_scope.as_str(), &data);
-            to_json(to_stub("friend_chat_send_message", data))
-        }
-        "friend_chat_ack_messages" => {
-            let input = match parse_args::<FriendChatAckInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            match station_request_json(
-                Method::POST,
-                "/friend-chat/message/ack",
-                &token,
-                None,
-                Some(json!({"ulids": input.ulids, "status": input.status})),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_ack_messages", data)),
-                Err(e) => e,
             }
         }
         "friend_chat_sync_messages" => {
@@ -6922,22 +6920,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ),
             )
         }
-        "mls_group_status" => {
-            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupStatusInput>(
-                args,
-            ) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_status") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            to_json(AppResult::success(
-                json!({ "ready": mls.has_session(&input.conversation_id) }),
-            ))
-        }
         "mls_group_public_head" => {
             let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupStatusInput>(
                 args,
@@ -7159,56 +7141,19 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             })),
             "conversation create direct",
         ),
-        "conversation_create_group" => {
-            let genesis = args
-                .get("genesis_transition")
-                .cloned()
-                .unwrap_or_else(|| json!({}));
-            let owner_device_id = genesis
-                .get("changes")
-                .and_then(Value::as_array)
-                .and_then(|changes| {
-                    changes.iter().find(|change| {
-                        change.get("action").and_then(Value::as_i64) == Some(1)
-                            && change.get("role").and_then(Value::as_i64) == Some(3)
-                    })
-                })
-                .and_then(|change| change.get("device_id"))
-                .and_then(Value::as_str)
-                .filter(|device_id| !device_id.is_empty());
-            let Some(owner_device_id) = owner_device_id else {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::InvalidArgument,
-                    "group genesis requires an owner device",
-                    None,
-                ));
-            };
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            let body = json!({
+        "conversation_create_group" => proxy_authenticated_station_json(
+            state,
+            reqwest::Method::POST,
+            "/conversation/group",
+            None,
+            Some(json!({
                 "name": args.get("name").and_then(|v| v.as_str()).unwrap_or(""),
-                "genesis_transition": genesis,
+                "genesis_transition": args.get("genesis_transition").cloned().unwrap_or_else(|| json!({})),
                 "federation_id": args.get("federation_id").and_then(|v| v.as_str()).unwrap_or(""),
                 "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-            });
-            match crate::infrastructure::station_client::request_json_auth_with_device_id(
-                reqwest::Method::POST,
-                "/conversation/group",
-                &token,
-                None,
-                Some(&body),
-                owner_device_id,
-            ) {
-                Ok(response) => to_json(AppResult::success(response)),
-                Err(error) => to_json(AppResult::<Value>::fail(
-                    ErrorCode::InternalError,
-                    format!("conversation create group: {error}"),
-                    None,
-                )),
-            }
-        }
+            })),
+            "conversation create group",
+        ),
         "conversation_list" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,

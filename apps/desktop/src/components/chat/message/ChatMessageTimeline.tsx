@@ -14,7 +14,6 @@ import {
   type ChatMessage,
   type ChatSurfaceKind,
 } from './chatMessageModel';
-import { shouldVirtualizeChatMessageTimeline } from './chatMessageTimelinePolicy';
 import { ChatMessageRow, ChatMessageRowInteractionStyle } from './ChatMessageRow';
 
 const { Text } = Typography;
@@ -43,7 +42,6 @@ interface ChatMessageTimelineProps {
   onReact: (message: ChatMessage) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
-  onRetry: (message: ChatMessage) => void;
   resolveThreadStats: (message: ChatMessage) => ChatThreadStats;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
@@ -111,7 +109,6 @@ export function ChatMessageTimeline({
   onReact,
   onRecall,
   onReply,
-  onRetry,
   resolveThreadStats,
   scrollContainerRef,
 }: ChatMessageTimelineProps) {
@@ -119,15 +116,12 @@ export function ChatMessageTimeline({
     messages,
     resolveTimestampMs: messageTimestampMs,
   });
-  const shouldVirtualize = shouldVirtualizeChatMessageTimeline(surfaceItems.length);
 
   const measureRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   const virtualizer = useVirtualizer({
     count: surfaceItems.length,
-    enabled: shouldVirtualize,
     getScrollElement: () => scrollContainerRef.current,
-    getItemKey: (index) => surfaceItems[index]?.message.ulid ?? index,
     estimateSize: () => ESTIMATED_ROW_HEIGHT,
     overscan: 5,
     measureElement: (el) => el.getBoundingClientRect().height,
@@ -147,86 +141,64 @@ export function ChatMessageTimeline({
 
   const virtualItems = virtualizer.getVirtualItems();
 
-  const renderMessage = (item: (typeof surfaceItems)[number]) => {
-    const message = item.message;
-    const messageDate = item.timestampMs > 0 ? new Date(item.timestampMs) : null;
-    const threadStats = resolveThreadStats(message);
-
-    return (
-      <>
-        {item.showDateSeparator && messageDate && (
-          <DateSeparator date={messageDate} />
-        )}
-        <ChatMessageRow
-          activeConversationId={activeConversationId}
-          activeKind={activeKind}
-          currentUserDid={currentUserDid}
-          getSenderProfile={getSenderProfile}
-          highlighted={highlightedMessageUlid === message.ulid}
-          message={message}
-          messages={messages}
-          onDelete={onDelete}
-          onEdit={onEdit}
-          onForward={onForward}
-          onOpenThread={onOpenThread}
-          onReact={onReact}
-          onRecall={onRecall}
-          onReply={onReply}
-          onRetry={onRetry}
-          threadReplyCount={threadStats.replyCount}
-          threadUnreadCount={threadStats.unreadCount}
-          threadPreviewMessages={threadStats.previewMessages}
-          timelineGap={item.timelineGap}
-        />
-      </>
-    );
-  };
-
   return (
     <>
       <ChatMessageRowInteractionStyle />
-      {shouldVirtualize ? (
-        <div
-          style={{
-            height: virtualizer.getTotalSize(),
-            width: '100%',
-            position: 'relative',
-          }}
-        >
-          {virtualItems.map((virtualItem) => {
-            const item = surfaceItems[virtualItem.index];
-            return (
-              <div
-                key={virtualItem.key}
-                ref={measureRef(virtualItem.index)}
-                data-index={virtualItem.index}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${virtualItem.start}px)`,
-                  display: 'flex',
-                  flexDirection: 'column',
-                }}
-              >
-                {renderMessage(item)}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-          {surfaceItems.map((item) => (
+      <div
+        style={{
+          height: virtualizer.getTotalSize(),
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualItems.map((virtualItem) => {
+          const item = surfaceItems[virtualItem.index];
+          const message = item.message;
+          const messageDate = item.timestampMs > 0 ? new Date(item.timestampMs) : null;
+          const threadStats = resolveThreadStats(message);
+
+          return (
             <div
-              key={item.message.ulid}
-              style={{ display: 'flex', flexDirection: 'column', width: '100%' }}
+              key={message.ulid}
+              ref={measureRef(virtualItem.index)}
+              data-index={virtualItem.index}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualItem.start}px)`,
+                display: 'flex',
+                flexDirection: 'column',
+              }}
             >
-              {renderMessage(item)}
+              {item.showDateSeparator && messageDate && (
+                <DateSeparator date={messageDate} />
+              )}
+              <ChatMessageRow
+                activeConversationId={activeConversationId}
+                activeKind={activeKind}
+                currentUserDid={currentUserDid}
+                getSenderProfile={getSenderProfile}
+                highlighted={highlightedMessageUlid === message.ulid}
+                message={message}
+                messages={messages}
+                onDelete={onDelete}
+                onEdit={onEdit}
+                onForward={onForward}
+                onOpenThread={onOpenThread}
+                onReact={onReact}
+                onRecall={onRecall}
+                onReply={onReply}
+                threadReplyCount={threadStats.replyCount}
+                threadUnreadCount={threadStats.unreadCount}
+                threadPreviewMessages={threadStats.previewMessages}
+                timelineGap={item.timelineGap}
+              />
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </>
   );
 }

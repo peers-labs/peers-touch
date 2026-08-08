@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "id": "chat-native-visible-clients",
+  "domain": "chat",
+  "status": "active",
+  "owners": ["acceptance-framework", "chat"],
+  "source_paths": [
+    "tooling/acceptance/gates/chat/native_visible_runner.py",
+    "tooling/acceptance/gates/chat/native_*_runner.py",
+    "tooling/acceptance/gates/chat/native_visible_e2e.py",
+    "tooling/acceptance/gates/chat/native_visible_*_test.py",
+    "tooling/acceptance/playbooks/chat-native-visible-clients.md",
+    "apps/desktop/src/components/chat/**",
+    "apps/desktop/src/components/settings/RecoverySettings.tsx",
+    "apps/desktop/src/components/common/StationPicker.tsx",
+    "apps/desktop/src/pages/login/views/**"
+  ],
+  "required_gates": [
+    "chat-native-visible-static",
+    "chat-native-two-client-e2e",
+    "chat-native-multi-device-e2e",
+    "chat-native-recovery-e2e",
+    "chat-native-group-mls-e2e"
+  ],
+  "acceptance": {
+    "product_truths": [
+      "visible native Desktop clients use isolated profiles, ports, storage roots, and observer sockets",
+      "Station and every client record matching commit and canonical proto digest with workspace identity",
+      "direct multi-device recovery and MLS journeys emit bounded boundary telemetry and stop on first failure",
+      "failed message submission clears acceptance-injected composer text"
+    ],
+    "surfaces": [
+      {"type": "native-desktop", "selector": "[data-pt-text-input=\"chat-composer\"]"},
+      {"type": "native-desktop", "selector": "[data-message-ulid]"},
+      {"type": "native-desktop", "selector": "[data-session-security]"},
+      {"type": "native-desktop", "selector": "[data-group-security]"}
+    ]
+  },
+  "constraints": [
+    "live journeys must launch through make desktop",
+    "fixed sleeps and startup-order assumptions are forbidden",
+    "missing stale partial API-only browser-only or dirty-Station evidence fails closed"
+  ]
+}

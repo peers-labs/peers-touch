@@ -2,6 +2,7 @@ package envelope
 
 import (
 	"context"
+	"strings"
 
 	auth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
@@ -23,6 +24,10 @@ func (s *subServer) handleSubmit(ctx context.Context, req *chat.SubmitEnvelopeRe
 	}
 	if req.Envelope.IdempotencyKey == "" {
 		return nil, server.BadRequest("idempotency_key is required")
+	}
+	if req.Envelope.PayloadType ==
+		chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE {
+		return nil, server.BadRequest("direct key exchange must use /dkx/send")
 	}
 
 	req.Envelope.SenderPtid = subject.ID
@@ -49,13 +54,9 @@ func (s *subServer) handleAck(ctx context.Context, req *chat.AckEnvelopeRequest)
 		return nil, server.BadRequest("inbox_item_id is required")
 	}
 
-	// Header takes precedence; fall back to body field for backwards compatibility.
-	deviceID := req.DeviceId
-	if headerDeviceID := serverwrapper.GetDeviceID(ctx); headerDeviceID != "" {
-		deviceID = headerDeviceID
-	}
-	if deviceID == "" {
-		return nil, server.BadRequest("device_id is required")
+	deviceID, err := authenticatedEnvelopeDeviceID(ctx, req.DeviceId)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := s.service.Ack(ctx, subject.ID, deviceID, req.InboxItemId); err != nil {
@@ -70,13 +71,9 @@ func (s *subServer) handleResume(ctx context.Context, req *chat.ResumeEnvelopesR
 		return nil, server.Unauthorized("authentication required")
 	}
 
-	// Header takes precedence; fall back to body field for backwards compatibility.
-	deviceID := req.DeviceId
-	if headerDeviceID := serverwrapper.GetDeviceID(ctx); headerDeviceID != "" {
-		deviceID = headerDeviceID
-	}
-	if deviceID == "" {
-		return nil, server.BadRequest("device_id is required")
+	deviceID, err := authenticatedEnvelopeDeviceID(ctx, req.DeviceId)
+	if err != nil {
+		return nil, err
 	}
 
 	items, err := s.service.Resume(ctx, subject.ID, deviceID, req.AfterCursor)
@@ -110,4 +107,16 @@ func (s *subServer) handleFederationDeliver(ctx context.Context, req *chat.Feder
 		return nil, server.InternalErrorWithCause("federation deliver failed", err)
 	}
 	return &chat.FederationDeliverEnvelopeResponse{}, nil
+}
+
+func authenticatedEnvelopeDeviceID(ctx context.Context, requestedDeviceID string) (string, error) {
+	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
+	if deviceID == "" {
+		return "", server.BadRequest("X-Device-ID is required")
+	}
+	if requestedDeviceID = strings.TrimSpace(requestedDeviceID); requestedDeviceID != "" &&
+		requestedDeviceID != deviceID {
+		return "", server.BadRequest("device_id does not match authenticated X-Device-ID")
+	}
+	return deviceID, nil
 }

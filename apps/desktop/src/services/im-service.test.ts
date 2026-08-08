@@ -31,7 +31,12 @@ describe('normalizeConversationEvents', () => {
           message_id: 'message-1',
           sender_ptid: 'alice',
           sender_device_id: 'desktop',
-          encrypted_payload: 'AQID',
+          device_payloads: [{
+            recipient_ptid: 'bob',
+            recipient_device_id: 'mobile',
+            session_id: 'session-1',
+            encrypted_envelope: 'AQID',
+          }],
           content_type: 1,
         },
       },
@@ -42,7 +47,9 @@ describe('normalizeConversationEvents', () => {
     expect(event.committedAt?.seconds).toBe(1_785_634_845n)
     expect(event.payload.case).toBe('messageCommitted')
     if (event.payload.case !== 'messageCommitted') throw new Error('unexpected payload')
-    expect(event.payload.value.encryptedPayload).toEqual(new Uint8Array([1, 2, 3]))
+    expect(event.payload.value.devicePayloads).toHaveLength(1)
+    expect(event.payload.value.devicePayloads[0]?.encryptedEnvelope)
+      .toEqual(new Uint8Array([1, 2, 3]))
   })
 
   it('decodes canonical membership transition evidence', () => {
@@ -126,7 +133,7 @@ describe('conversation command submission', () => {
                   message_id: 'message-1',
                   sender_ptid: 'alice',
                   sender_device_id: 'desktop',
-                  encrypted_payload: 'BwgJ',
+                  group_encrypted_payload: 'BwgJ',
                   content_type: 1,
                 },
               },
@@ -142,7 +149,7 @@ describe('conversation command submission', () => {
       sender_ptid: 'alice',
       sender_device_id: 'desktop',
       send_message: {
-        encrypted_payload: 'BwgJ',
+        group_encrypted_payload: 'BwgJ',
         content_type: 1,
       },
     } as any)

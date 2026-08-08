@@ -173,7 +173,7 @@ liveDescribe('C6 MLS three-Station convergence', () => {
       sender_device_id: bob.deviceId,
       observed_membership_epoch: 2,
       send_message: {
-        encrypted_payload: Buffer.from(remoteCiphertext).toString('base64'),
+        group_encrypted_payload: Buffer.from(remoteCiphertext).toString('base64'),
         content_type: 1,
       },
     } as any)
@@ -184,7 +184,7 @@ liveDescribe('C6 MLS three-Station convergence', () => {
     await expect(
       imServiceV1.mlsGroup.decrypt(
         conversationId,
-        remoteEvent.payload.value.encryptedPayload,
+        remoteEvent.payload.value.groupEncryptedPayload,
       ),
     ).resolves.toEqual(remotePlaintext)
 

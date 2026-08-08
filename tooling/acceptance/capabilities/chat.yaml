@@ -211,6 +211,50 @@
           "Reconnect and missed-event replay after stream interruption"
         ]
       }
+    },
+    {
+      "id": "chat-native-visible-clients",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-native-visible-clients"],
+      "required_gates": [
+        "chat-native-visible-static",
+        "chat-native-two-client-e2e",
+        "chat-native-multi-device-e2e",
+        "chat-native-recovery-e2e",
+        "chat-native-group-mls-e2e"
+      ],
+      "synthetic_paths": [
+        "tooling/acceptance/gates/chat/native_visible_runner.py",
+        "apps/desktop/src/components/chat/ChatComposer.tsx",
+        "apps/desktop/src/components/settings/RecoverySettings.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "visible native Desktop windows",
+          "native Playwright observer sockets",
+          "Station deployment attestation and live app metadata",
+          "per-client source and workspace identity"
+        ],
+        "surfaces": [
+          "two-client direct messages",
+          "multi-device direct delivery",
+          "reinstall recovery",
+          "three-device MLS"
+        ],
+        "proven_by": [
+          "chat-native-two-client-e2e",
+          "chat-native-multi-device-e2e",
+          "chat-native-recovery-e2e",
+          "chat-native-group-mls-e2e"
+        ],
+        "proven_scope": [
+          "Only successful live runs with complete current source-bound reports prove W8 journeys"
+        ],
+        "unproven_scope": [
+          "W8 remains unproven until all four environment-evidence gates pass"
+        ]
+      }
     }
   ]
 }

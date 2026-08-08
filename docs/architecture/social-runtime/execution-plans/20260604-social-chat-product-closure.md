@@ -30,8 +30,7 @@ Read these before editing:
 | Architecture | `docs/architecture/social-runtime/design.md` | Shared abstraction: API Gateway -> Wire -> Normalizer -> Projection -> Runtime -> Host Adapter -> UI |
 | Architecture | `docs/architecture/social-runtime/integration.md` | Current Desktop/Mobile file mapping and convergence phases |
 | Architecture | `docs/architecture/realtime/event-stream.md` | SSE event stream contract |
-| Architecture | `docs/architecture/encryption/chat-ratchet-upgrade.md` | Double Ratchet migration and message version rules |
-| Architecture | `docs/architecture/encryption/group-sender-keys.md` | Group sender key expectations |
+| Architecture | `docs/architecture/encryption/README.md` | Device-addressed direct encryption, MLS, delivery, and recovery |
 | Architecture | `docs/architecture/social/moments.md` | Social audience and visibility rules |
 | Desktop platform | `docs/client/desktop/runtime-projections.md` | Page / Runtime / Boot contracts; pages cannot own freshness |
 | Station platform | `docs/.agent/station.md` | Station DDD and verification commands |
@@ -429,7 +428,7 @@ Read first:
 - docs/architecture/social-runtime/design.md
 - docs/architecture/social-runtime/integration.md
 - docs/architecture/social-runtime/execution-plans/20260604-social-chat-product-closure.md
-- docs/architecture/encryption/chat-ratchet-upgrade.md
+- docs/architecture/encryption/README.md
 - docs/client/desktop/runtime-projections.md
 - docs/.agent/station.md
 - docs/.agent/desktop.md

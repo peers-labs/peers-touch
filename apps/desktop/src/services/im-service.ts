@@ -552,26 +552,10 @@ const conversationService: ConversationServiceContract = {
     })
   },
 
-  async react(
-    conversationId,
-    messageId,
-    emoji,
-    senderPtid,
-    senderDeviceId,
-    observedMembershipEpoch,
-    remove = false,
-  ) {
-    await conversationService.submitCommand({
-      conversation_id: conversationId,
-      sender_ptid: senderPtid,
-      sender_device_id: senderDeviceId,
-      observed_membership_epoch: observedMembershipEpoch,
-      react: {
-        message_id: messageId,
-        emoji,
-        remove,
-      },
-    } as any)
+  async react(conversationId: string, messageId: string, emoji: string, remove = false) {
+    await cmd('conversation_react', {
+      conversation_id: conversationId, message_id: messageId, emoji, remove,
+    })
   },
 
   async getConversation(conversationId) {
@@ -1316,12 +1300,6 @@ const mlsGroupService: MlsGroupServiceContract = {
     }
   },
 
-  async status(conversationId) {
-    return cmd<any, { ready: boolean }>('mls_group_status', {
-      conversation_id: conversationId,
-    })
-  },
-
   async publicHead(conversationId) {
     const head = await cmd<any, {
       conversation_id: string
@@ -1354,9 +1332,20 @@ const mlsGroupService: MlsGroupServiceContract = {
 }
 
 const dkxService: DirectKeyExchangeServiceContract = {
-  async send(recipientPtid, sessionId, kind, opaqueKeyMaterial, recipientStationPeerId) {
+  async send(
+    recipientPtid,
+    recipientDeviceId,
+    sessionId,
+    kind,
+    opaqueKeyMaterial,
+    recipientStationPeerId,
+  ) {
+    if (!recipientPtid || !recipientDeviceId) {
+      throw new Error('direct key exchange requires a recipient endpoint');
+    }
     const resp = await cmd<any, { envelope_id: string }>('dkx_send', {
       recipient_ptid: recipientPtid,
+      recipient_device_id: recipientDeviceId,
       recipient_station_peer_id: recipientStationPeerId ?? '',
       session_id: sessionId,
       kind: kind as number,

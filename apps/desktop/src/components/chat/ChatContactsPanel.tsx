@@ -336,6 +336,7 @@ export function ChatContactsPanel({
               return (
                 <Flexbox
                   key={conversation.id}
+                  data-chat-contact-ptid={conversation.peerDid}
                   horizontal
                   align="center"
                   gap={9}
@@ -463,6 +464,7 @@ export function ChatContactsPanel({
               return (
                 <Flexbox
                   key={peerId}
+                  data-chat-contact-ptid={peerId}
                   horizontal
                   align="center"
                   gap={9}

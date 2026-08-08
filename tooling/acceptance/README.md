@@ -54,6 +54,26 @@ This creates a two-way proof:
 7. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
 8. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
 9. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
+10. For native Chat journeys, follow
+    `tooling/acceptance/playbooks/chat-native-visible-clients.md`; visible
+    observers, source matching, isolated profiles, bounded steps, and composer
+    cleanup are mandatory.
+
+### W8 Native Chat Operations
+
+`make acceptance-chat-native-static` runs unit and selector contracts without
+launching a live journey. Live targets are
+`acceptance-chat-native-two-client`, `acceptance-chat-native-multi-device`,
+`acceptance-chat-native-recovery`, and `acceptance-chat-native-group-mls`;
+`acceptance-chat-native-w8` runs all four.
+
+Live runs require `CHAT_NATIVE_STATION_URL`,
+`CHAT_NATIVE_STATION_ATTESTATION`, canonical actor PTIDs, pre-created accounts,
+and `CHAT_NATIVE_DEMO_PASSWORD`. The attestation JSON contains `commit`,
+`"workspaceDigest": "clean"`, and `protoDigest`. The digest covers source
+protos plus Desktop TypeScript and Station Go generated bindings.
+`CHAT_NATIVE_CLIENT_WORKTREES` accepts one worktree path per client, separated
+by commas; one path may be reused for local process-isolation checks.
 
 ## Desktop Performance Acceptance Logic
 

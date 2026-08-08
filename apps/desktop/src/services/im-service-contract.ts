@@ -26,15 +26,7 @@ export interface ConversationServiceContract {
   createGroup(input: CreateGroupConversationInput): Promise<CreateGroupConversationResult>
   submitCommand(command: ConversationCommand): Promise<CommittedConversationEvent>
   submitReceipt(conversationId: string, messageId: string, receiptType: ReceiptType): Promise<void>
-  react(
-    conversationId: string,
-    messageId: string,
-    emoji: string,
-    senderPtid: string,
-    senderDeviceId: string,
-    observedMembershipEpoch: number,
-    remove?: boolean,
-  ): Promise<void>
+  react(conversationId: string, messageId: string, emoji: string, remove?: boolean): Promise<void>
   getConversation(conversationId: string): Promise<Conversation>
   listConversations(): Promise<Conversation[]>
   getMembers(conversationId: string): Promise<ConversationMember[]>
@@ -149,7 +141,6 @@ export interface MlsGroupServiceContract {
     recipientDeviceId: string,
   ): Promise<MlsRecipientApplyResult>
   recipientStatus(conversationId: string): Promise<MlsRecipientStatusResult>
-  status(conversationId: string): Promise<{ ready: boolean }>
   publicHead(conversationId: string): Promise<MlsPublicHead>
   save(conversationId: string): Promise<void>
   load(conversationId: string): Promise<void>
@@ -279,7 +270,14 @@ export interface MlsMemberChangeResult {
 // --- Direct Key Exchange Service Contract (v1, P2) ---
 
 export interface DirectKeyExchangeServiceContract {
-  send(recipientPtid: string, sessionId: string, kind: DirectKeyExchangeKind, opaqueKeyMaterial: Uint8Array, recipientStationPeerId?: string): Promise<string>
+  send(
+    recipientPtid: string,
+    recipientDeviceId: string,
+    sessionId: string,
+    kind: DirectKeyExchangeKind,
+    opaqueKeyMaterial: Uint8Array,
+    recipientStationPeerId?: string,
+  ): Promise<string>
 }
 
 // --- Unified IM Service (aggregates above contracts) ---

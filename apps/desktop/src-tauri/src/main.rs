@@ -24,8 +24,8 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
-    applets, auth, channels, chat, conversation, cron, crypto, desktop_capture, federation,
-    friend_chat, frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice,
+    applets, auth, channels, chat, conversation, cron, crypto, crypto_backup, desktop_capture,
+    federation, friend_chat, frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice,
     key_exchange, mcp, memory, mls, model_config, notebook, notification, oauth2, oss, presence,
     profile, provider, realtime, search, settings, skills, skills_market, social, station, system,
     tools, tts,
@@ -52,7 +52,13 @@ fn main() {
         .plugin(desktop_capture::global_shortcut_plugin());
 
     #[cfg(feature = "e2e-testing")]
-    let builder = builder.plugin(tauri_plugin_playwright::init());
+    let builder = {
+        let socket_path = std::env::var("PT_PLAYWRIGHT_SOCKET")
+            .unwrap_or_else(|_| "/tmp/tauri-playwright.sock".to_string());
+        builder.plugin(tauri_plugin_playwright::init_with_config(
+            tauri_plugin_playwright::PluginConfig::new().socket_path(socket_path),
+        ))
+    };
 
     builder
         .manage(app_state)
@@ -405,7 +411,6 @@ fn main() {
             account::account_reset_pin,
             account::account_get_device_id,
             presence::presence_notify,
-            presence::presence_query,
             oss::oss_pick_attachment_chat,
             oss::oss_upload_attachment_chat,
             oss::oss_upload_attachment_bytes_chat,
@@ -434,14 +439,13 @@ fn main() {
             tts::tts_synthesize,
             tts::tts_voices,
             friend_chat::friend_chat_list_sessions,
+            friend_chat::friend_chat_create_session,
             friend_chat::friend_chat_get_settings,
             friend_chat::friend_chat_update_settings,
             friend_chat::friend_chat_list_messages,
             friend_chat::friend_chat_list_thread_messages,
             friend_chat::friend_chat_thread_counts,
             friend_chat::friend_chat_thread_mark_read,
-            friend_chat::friend_chat_send_message,
-            friend_chat::friend_chat_ack_messages,
             friend_chat::friend_chat_recall_message,
             friend_chat::friend_chat_edit_message,
             friend_chat::friend_chat_delete_message,
@@ -457,21 +461,28 @@ fn main() {
             key_exchange::key_exchange_fetch_bundle,
             crypto::chat_search_local,
             crypto::chat_index_local_messages,
-            crypto::chat_decrypt_cache_get,
-            crypto::chat_decrypt_cache_put,
             crypto::crypto_generate_identity,
+            crypto::crypto_get_identity,
             crypto::crypto_get_fingerprint,
             crypto::crypto_ratchet_telemetry_snapshot,
-            crypto::crypto_get_key_bundle,
+            crypto::crypto_generate_key_bundle,
             crypto::crypto_init_session,
             crypto::crypto_accept_session,
             crypto::crypto_session_status,
-            crypto::crypto_reset_session,
             crypto::crypto_mark_session_ready,
+            crypto::crypto_list_sessions,
+            crypto::crypto_list_sessions_for_peer,
+            crypto::crypto_encrypt,
+            crypto::crypto_decrypt,
             crypto::dr_encrypt,
             crypto::dr_decrypt,
             crypto::signaling_envelope_seal,
             crypto::signaling_envelope_open,
+            crypto_backup::crypto_generate_recovery_secret,
+            crypto_backup::crypto_backup_create,
+            crypto_backup::crypto_backup_restore_latest,
+            crypto_backup::crypto_backup_status,
+            crypto_backup::crypto_backup_list_revisions,
             friend_chat::friend_chat_local_search_scoped,
             friend_chat::friend_chat_set_cursor_scoped,
             friend_chat::friend_chat_get_cursor_scoped,
@@ -593,7 +604,6 @@ fn main() {
             mls::mls_recipient_record_authority_event,
             mls::mls_recipient_apply_delivery,
             mls::mls_recipient_status,
-            mls::mls_group_status,
             mls::mls_group_public_head,
             mls::mls_group_save,
             mls::mls_group_load,

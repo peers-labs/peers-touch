@@ -800,18 +800,6 @@ pub struct AttachmentInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatSendInput {
-    pub session_ulid: String,
-    pub receiver_did: String,
-    pub content: String,
-    pub encrypted_payload: Option<String>,
-    pub r#type: Option<i32>,
-    pub reply_to_ulid: Option<String>,
-    pub thread_root_ulid: Option<String>,
-    pub attachments: Option<Vec<AttachmentInput>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyExchangeUploadInput {
     pub ik_pub: String,
     pub spk_id: i32,
@@ -829,9 +817,8 @@ pub struct KeyExchangeFetchInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatAckInput {
-    pub ulids: Vec<String>,
-    pub status: i32,
+pub struct FriendChatCreateSessionInput {
+    pub participant_did: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

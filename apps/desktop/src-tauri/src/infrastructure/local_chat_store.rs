@@ -3,7 +3,11 @@ use super::storage::key_provider::PlatformKeyProvider;
 use super::storage::open_database;
 use super::storage::rotate_database_key;
 use crate::domain::crypto::double_ratchet::{DrSessionState, DrSkippedMessageKey};
-use crate::domain::crypto::CryptoSessionState;
+use crate::domain::crypto::{
+    AttachmentDecryptionMetadata, CryptoEndpoint, DirectSession, DirectSessionKey,
+    RecoveryConversation, RecoveryMessage, RecoverySnapshot, VerifiedFingerprint,
+    BACKUP_FORMAT_VERSION,
+};
 use crate::domain::storage::database::DatabaseOpenSpec;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -21,6 +25,27 @@ pub struct LocalChatRecord {
     pub reply_to_ulid: String,
     pub thread_root_ulid: String,
     pub sent_at: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct CryptoOutboxEntry {
+    pub command_id: String,
+    pub command_bytes: Vec<u8>,
+    pub created_at_unix_ms: i64,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug)]
+struct CryptoSessionState {
+    session_id: String,
+    peer_did: String,
+    send_chain_key: [u8; 32],
+    send_counter: u32,
+    recv_chain_key: [u8; 32],
+    recv_counter: u32,
+    established: bool,
+    is_initiator: bool,
+    pending_ephemeral: Option<[u8; 32]>,
 }
 
 // Per-user-scope connection pool.
@@ -159,6 +184,23 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_chat_messages_scope_sent ON chat_messages(scope, sent_at DESC);
         CREATE INDEX IF NOT EXISTS idx_chat_messages_scope_conv_sent ON chat_messages(scope, conversation_id, sent_at DESC);
+        CREATE TABLE IF NOT EXISTS conversation_metadata (
+            scope TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            metadata_json TEXT NOT NULL,
+            PRIMARY KEY(scope, conversation_id)
+        );
+        CREATE TABLE IF NOT EXISTS attachment_decryption_metadata (
+            message_id TEXT NOT NULL,
+            attachment_id TEXT NOT NULL,
+            metadata_json TEXT NOT NULL,
+            PRIMARY KEY(message_id, attachment_id)
+        );
+        CREATE TABLE IF NOT EXISTS verified_peer_fingerprints (
+            peer_ptid TEXT NOT NULL PRIMARY KEY,
+            fingerprint TEXT NOT NULL,
+            verified_at_unix_ms INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS chat_sync_cursor (
             scope TEXT NOT NULL PRIMARY KEY,
             cursor TEXT NOT NULL,
@@ -170,13 +212,6 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             conversation_id UNINDEXED,
             sender_did UNINDEXED,
             content
-        );
-        CREATE TABLE IF NOT EXISTS chat_decrypt_cache (
-            message_id TEXT NOT NULL PRIMARY KEY,
-            content TEXT NOT NULL,
-            message_type INTEGER NOT NULL,
-            attachments_json TEXT NOT NULL,
-            cached_at INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS crypto_sessions (
             session_id TEXT NOT NULL PRIMARY KEY,
@@ -195,6 +230,50 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             session_id TEXT NOT NULL PRIMARY KEY,
             handshake_delivered INTEGER NOT NULL DEFAULT 0,
             updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS direct_sessions (
+            session_id TEXT NOT NULL PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            self_ptid TEXT NOT NULL,
+            self_device_id TEXT NOT NULL,
+            peer_ptid TEXT NOT NULL,
+            peer_device_id TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            protocol_version INTEGER NOT NULL,
+            established INTEGER NOT NULL,
+            peer_identity_key BLOB NOT NULL,
+            root_key BLOB NOT NULL,
+            self_private_key BLOB NOT NULL,
+            self_public_key BLOB NOT NULL,
+            peer_ratchet_public_key BLOB,
+            send_chain_key BLOB,
+            receive_chain_key BLOB,
+            send_counter INTEGER NOT NULL,
+            receive_counter INTEGER NOT NULL,
+            previous_counter INTEGER NOT NULL,
+            updated_at_unix_ms INTEGER NOT NULL,
+            UNIQUE(
+                conversation_id,
+                self_ptid, self_device_id,
+                peer_ptid, peer_device_id,
+                generation
+            )
+        );
+        CREATE INDEX IF NOT EXISTS idx_direct_sessions_peer
+            ON direct_sessions(self_ptid, self_device_id, peer_ptid, established);
+        CREATE TABLE IF NOT EXISTS direct_skipped_message_keys (
+            session_id TEXT NOT NULL,
+            peer_ratchet_public_key BLOB NOT NULL,
+            counter INTEGER NOT NULL,
+            message_key BLOB NOT NULL,
+            PRIMARY KEY(session_id, peer_ratchet_public_key, counter),
+            FOREIGN KEY(session_id) REFERENCES direct_sessions(session_id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS crypto_outbox (
+            command_id TEXT NOT NULL PRIMARY KEY,
+            command_bytes BLOB NOT NULL,
+            state TEXT NOT NULL,
+            created_at_unix_ms INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS crypto_mls_state (
             conversation_id TEXT NOT NULL PRIMARY KEY,
@@ -449,46 +528,6 @@ pub fn upsert_plaintext_records(
         }
     }
     Ok(indexed)
-}
-
-pub fn put_decrypt_cache(
-    user_scope: &str,
-    message_id: &str,
-    content: &str,
-    message_type: i32,
-    attachments_json: &str,
-    cached_at: i64,
-) -> Result<(), String> {
-    let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-    conn.execute(
-        "INSERT INTO chat_decrypt_cache(message_id, content, message_type, attachments_json, cached_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)
-         ON CONFLICT(message_id) DO UPDATE SET
-            content=excluded.content,
-            message_type=excluded.message_type,
-            attachments_json=excluded.attachments_json,
-            cached_at=excluded.cached_at",
-        params![message_id, content, message_type, attachments_json, cached_at],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-pub fn get_decrypt_cache(
-    user_scope: &str,
-    message_id: &str,
-) -> Result<Option<(String, i32, String, i64)>, String> {
-    let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-    conn.query_row(
-        "SELECT content, message_type, attachments_json, cached_at
-         FROM chat_decrypt_cache WHERE message_id = ?1",
-        params![message_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-    )
-    .optional()
-    .map_err(|e| e.to_string())
 }
 
 fn json_string(value: &Value, keys: &[&str]) -> String {
@@ -838,7 +877,247 @@ pub fn search_local(
     }
 }
 
-pub fn save_crypto_session(user_scope: &str, session: &CryptoSessionState) -> Result<(), String> {
+fn optional_key_bytes(value: &Option<[u8; 32]>) -> Option<&[u8]> {
+    value.as_ref().map(|bytes| bytes.as_slice())
+}
+
+fn fixed_key(label: &str, bytes: Vec<u8>) -> Result<[u8; 32], String> {
+    bytes
+        .try_into()
+        .map_err(|value: Vec<u8>| format!("{label}: expected 32 bytes, got {}", value.len()))
+}
+
+fn upsert_direct_session(conn: &Connection, session: &DirectSession) -> Result<(), String> {
+    session.key.validate().map_err(|error| error.to_string())?;
+    let ratchet = &session.ratchet;
+    conn.execute(
+        "INSERT INTO direct_sessions(
+            session_id, conversation_id,
+            self_ptid, self_device_id, peer_ptid, peer_device_id, generation,
+            protocol_version, established, peer_identity_key,
+            root_key, self_private_key, self_public_key, peer_ratchet_public_key,
+            send_chain_key, receive_chain_key, send_counter, receive_counter,
+            previous_counter, updated_at_unix_ms
+        ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+            ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20
+        )
+        ON CONFLICT(session_id) DO UPDATE SET
+            conversation_id=excluded.conversation_id,
+            self_ptid=excluded.self_ptid,
+            self_device_id=excluded.self_device_id,
+            peer_ptid=excluded.peer_ptid,
+            peer_device_id=excluded.peer_device_id,
+            generation=excluded.generation,
+            protocol_version=excluded.protocol_version,
+            established=excluded.established,
+            peer_identity_key=excluded.peer_identity_key,
+            root_key=excluded.root_key,
+            self_private_key=excluded.self_private_key,
+            self_public_key=excluded.self_public_key,
+            peer_ratchet_public_key=excluded.peer_ratchet_public_key,
+            send_chain_key=excluded.send_chain_key,
+            receive_chain_key=excluded.receive_chain_key,
+            send_counter=excluded.send_counter,
+            receive_counter=excluded.receive_counter,
+            previous_counter=excluded.previous_counter,
+            updated_at_unix_ms=excluded.updated_at_unix_ms",
+        params![
+            session.session_id,
+            session.key.conversation_id,
+            session.key.local.ptid,
+            session.key.local.device_id,
+            session.key.peer.ptid,
+            session.key.peer.device_id,
+            i64::try_from(session.key.generation).map_err(|_| "session generation exceeds i64")?,
+            i64::from(session.protocol_version),
+            session.established as i64,
+            session.peer_identity_key.as_slice(),
+            ratchet.root_key.as_slice(),
+            ratchet.self_priv.as_slice(),
+            ratchet.self_pub.as_slice(),
+            optional_key_bytes(&ratchet.peer_pub),
+            optional_key_bytes(&ratchet.send_chain_key),
+            optional_key_bytes(&ratchet.recv_chain_key),
+            i64::from(ratchet.n_send),
+            i64::from(ratchet.n_recv),
+            i64::from(ratchet.n_prev),
+            session.updated_at_unix_ms,
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub fn save_direct_session(user_scope: &str, session: &DirectSession) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    upsert_direct_session(&conn, session)
+}
+
+pub fn load_direct_session(
+    user_scope: &str,
+    session_id: &str,
+) -> Result<Option<DirectSession>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    let row = conn
+        .query_row(
+            "SELECT conversation_id,
+                    self_ptid, self_device_id, peer_ptid, peer_device_id, generation,
+                    protocol_version, established, peer_identity_key,
+                    root_key, self_private_key, self_public_key, peer_ratchet_public_key,
+                    send_chain_key, receive_chain_key, send_counter, receive_counter,
+                    previous_counter, updated_at_unix_ms
+             FROM direct_sessions WHERE session_id = ?1",
+            params![session_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, Vec<u8>>(8)?,
+                    row.get::<_, Vec<u8>>(9)?,
+                    row.get::<_, Vec<u8>>(10)?,
+                    row.get::<_, Vec<u8>>(11)?,
+                    row.get::<_, Option<Vec<u8>>>(12)?,
+                    row.get::<_, Option<Vec<u8>>>(13)?,
+                    row.get::<_, Option<Vec<u8>>>(14)?,
+                    row.get::<_, i64>(15)?,
+                    row.get::<_, i64>(16)?,
+                    row.get::<_, i64>(17)?,
+                    row.get::<_, i64>(18)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let optional_fixed = |label: &str, value: Option<Vec<u8>>| {
+        value.map(|bytes| fixed_key(label, bytes)).transpose()
+    };
+    let generation = u64::try_from(row.5).map_err(|_| "negative session generation")?;
+    let key = DirectSessionKey::new(
+        row.0,
+        CryptoEndpoint::new(row.1, row.2).map_err(|error| error.to_string())?,
+        CryptoEndpoint::new(row.3, row.4).map_err(|error| error.to_string())?,
+        generation,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(Some(DirectSession {
+        session_id: session_id.to_string(),
+        key,
+        protocol_version: u32::try_from(row.6).map_err(|_| "invalid protocol version")?,
+        established: row.7 != 0,
+        peer_identity_key: fixed_key("peer identity key", row.8)?,
+        ratchet: DrSessionState {
+            session_id: session_id.to_string(),
+            root_key: fixed_key("root key", row.9)?,
+            self_priv: fixed_key("self private key", row.10)?,
+            self_pub: fixed_key("self public key", row.11)?,
+            peer_pub: optional_fixed("peer ratchet public key", row.12)?,
+            send_chain_key: optional_fixed("send chain key", row.13)?,
+            recv_chain_key: optional_fixed("receive chain key", row.14)?,
+            n_send: u32::try_from(row.15).map_err(|_| "invalid send counter")?,
+            n_recv: u32::try_from(row.16).map_err(|_| "invalid receive counter")?,
+            n_prev: u32::try_from(row.17).map_err(|_| "invalid previous counter")?,
+        },
+        updated_at_unix_ms: row.18,
+    }))
+}
+
+pub fn list_direct_sessions(
+    user_scope: &str,
+    local: &CryptoEndpoint,
+    peer_ptid: Option<&str>,
+) -> Result<Vec<DirectSession>, String> {
+    local.validate().map_err(|error| error.to_string())?;
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    let mut statement = conn
+        .prepare(
+            "SELECT session_id FROM direct_sessions
+             WHERE self_ptid = ?1 AND self_device_id = ?2
+               AND (?3 = '' OR peer_ptid = ?3)
+             ORDER BY peer_ptid, peer_device_id, generation",
+        )
+        .map_err(|error| error.to_string())?;
+    let ids = statement
+        .query_map(
+            params![local.ptid, local.device_id, peer_ptid.unwrap_or("")],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    drop(statement);
+    drop(conn);
+    ids.into_iter()
+        .map(|id| {
+            load_direct_session(user_scope, &id)?
+                .ok_or_else(|| format!("direct session disappeared during list: {id}"))
+        })
+        .collect()
+}
+
+pub fn persist_outbound_sessions_and_command(
+    user_scope: &str,
+    sessions: &[DirectSession],
+    command_id: &str,
+    command_bytes: &[u8],
+    created_at_unix_ms: i64,
+) -> Result<(), String> {
+    if sessions.is_empty() || command_id.trim().is_empty() || command_bytes.is_empty() {
+        return Err("outbound persistence requires sessions, command ID, and command bytes".into());
+    }
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let transaction = conn.transaction().map_err(|error| error.to_string())?;
+    for session in sessions {
+        upsert_direct_session(&transaction, session)?;
+    }
+    transaction
+        .execute(
+            "INSERT INTO crypto_outbox(command_id, command_bytes, state, created_at_unix_ms)
+             VALUES (?1, ?2, 'prepared', ?3)",
+            params![command_id, command_bytes, created_at_unix_ms],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())
+}
+
+pub fn load_crypto_outbox_entry(
+    user_scope: &str,
+    command_id: &str,
+) -> Result<Option<CryptoOutboxEntry>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT command_bytes, created_at_unix_ms
+             FROM crypto_outbox WHERE command_id = ?1",
+        params![command_id],
+        |row| {
+            Ok(CryptoOutboxEntry {
+                command_id: command_id.to_string(),
+                command_bytes: row.get(0)?,
+                created_at_unix_ms: row.get(1)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+fn save_crypto_session(user_scope: &str, session: &CryptoSessionState) -> Result<(), String> {
     let conn = open_connection(user_scope)?;
     let conn = conn.lock();
     let now = chrono_now();
@@ -918,28 +1197,6 @@ pub fn crypto_session_handshake_delivered(
     .optional()
     .map(|value| value.unwrap_or(0) != 0)
     .map_err(|e| e.to_string())
-}
-
-pub fn reset_crypto_session(user_scope: &str, session_id: &str) -> Result<(), String> {
-    let conn = open_connection(user_scope)?;
-    let mut conn = conn.lock();
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    tx.execute(
-        "DELETE FROM crypto_skipped_keys WHERE session_id = ?1",
-        params![session_id],
-    )
-    .map_err(|e| e.to_string())?;
-    tx.execute(
-        "DELETE FROM crypto_session_delivery WHERE session_id = ?1",
-        params![session_id],
-    )
-    .map_err(|e| e.to_string())?;
-    tx.execute(
-        "DELETE FROM crypto_sessions WHERE session_id = ?1",
-        params![session_id],
-    )
-    .map_err(|e| e.to_string())?;
-    tx.commit().map_err(|e| e.to_string())
 }
 
 pub fn crypto_save_mls_state(
@@ -1745,7 +2002,8 @@ pub fn crypto_accept_mls_transition(
     tx.commit().map_err(|e| e.to_string())
 }
 
-pub fn load_crypto_session(
+#[cfg(test)]
+fn load_crypto_session(
     user_scope: &str,
     session_id: &str,
 ) -> Result<Option<CryptoSessionState>, String> {
@@ -2082,79 +2340,47 @@ pub fn crypto_insert_opks(user_scope: &str, private_keys: &[Vec<u8>]) -> Result<
     Ok(ids)
 }
 
-pub fn crypto_load_signed_prekey_by_public(
-    user_scope: &str,
-    public_key: &[u8; 32],
-) -> Result<[u8; 32], String> {
+pub fn crypto_load_signed_prekey_by_id(user_scope: &str, id: u32) -> Result<[u8; 32], String> {
     let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-    let mut stmt = conn
-        .prepare("SELECT private_key FROM crypto_signed_prekey ORDER BY created_at DESC")
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map([], |row| row.get::<_, Vec<u8>>(0))
-        .map_err(|e| e.to_string())?;
-    for row in rows {
-        let private = row.map_err(|e| e.to_string())?;
-        if private.len() != 32 {
-            continue;
-        }
-        let mut private_key = [0u8; 32];
-        private_key.copy_from_slice(&private);
-        let derived = x25519_dalek::PublicKey::from(&x25519_dalek::StaticSecret::from(private_key));
-        if derived.to_bytes() == *public_key {
-            return Ok(private_key);
-        }
-    }
-    Err("signed pre-key is unavailable or has rotated".to_string())
+    let bytes = conn
+        .lock()
+        .query_row(
+            "SELECT private_key FROM crypto_signed_prekey WHERE id = ?1",
+            params![i64::from(id)],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("signed pre-key ID {id} is unavailable"))?;
+    fixed_key("signed pre-key", bytes)
 }
 
-pub fn crypto_consume_opk_by_public(
-    user_scope: &str,
-    public_key: &[u8; 32],
-) -> Result<[u8; 32], String> {
+pub fn crypto_consume_opk_by_id(user_scope: &str, id: u32) -> Result<[u8; 32], String> {
     let conn = open_connection(user_scope)?;
     let mut conn = conn.lock();
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    let matched = {
-        let mut stmt = tx
-            .prepare(
-                "SELECT id, private_key FROM crypto_one_time_prekey
-                 WHERE consumed = 0 ORDER BY id ASC",
-            )
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })
-            .map_err(|e| e.to_string())?;
-        let mut matched = None;
-        for row in rows {
-            let (id, private) = row.map_err(|e| e.to_string())?;
-            if private.len() != 32 {
-                continue;
-            }
-            let mut private_key = [0u8; 32];
-            private_key.copy_from_slice(&private);
-            let derived =
-                x25519_dalek::PublicKey::from(&x25519_dalek::StaticSecret::from(private_key));
-            if derived.to_bytes() == *public_key {
-                matched = Some((id, private_key));
-                break;
-            }
-        }
-        matched
-    };
-    let Some((id, private_key)) = matched else {
-        return Err("one-time pre-key is unavailable or already consumed".to_string());
-    };
-    tx.execute(
-        "UPDATE crypto_one_time_prekey SET consumed = 1 WHERE id = ?1 AND consumed = 0",
-        params![id],
-    )
-    .map_err(|e| e.to_string())?;
-    tx.commit().map_err(|e| e.to_string())?;
-    Ok(private_key)
+    let transaction = conn.transaction().map_err(|error| error.to_string())?;
+    let bytes = transaction
+        .query_row(
+            "SELECT private_key FROM crypto_one_time_prekey
+             WHERE id = ?1 AND consumed = 0",
+            params![i64::from(id)],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("one-time pre-key ID {id} is unavailable or consumed"))?;
+    let updated = transaction
+        .execute(
+            "UPDATE crypto_one_time_prekey SET consumed = 1
+             WHERE id = ?1 AND consumed = 0",
+            params![i64::from(id)],
+        )
+        .map_err(|error| error.to_string())?;
+    if updated != 1 {
+        return Err(format!("one-time pre-key ID {id} was not consumed"));
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    fixed_key("one-time pre-key", bytes)
 }
 
 /// FTS5 search with optional `scope` (`friend` / `group`) and `conversation_id` filters (empty = no filter).
@@ -2239,6 +2465,418 @@ pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, Strin
     result
 }
 
+// ---------------------------------------------------------------------------
+// Recovery snapshot persistence
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default)]
+pub struct RecoveryMetadata {
+    pub conversations: Vec<RecoveryConversation>,
+    pub attachments: Vec<AttachmentDecryptionMetadata>,
+    pub verified_fingerprints: Vec<VerifiedFingerprint>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecoveryRestoreCounts {
+    pub messages: usize,
+    pub conversations: usize,
+    pub attachments: usize,
+    pub verified_fingerprints: usize,
+}
+
+fn json_text(value: &Value) -> Result<String, String> {
+    serde_json::to_string(value).map_err(|error| error.to_string())
+}
+
+pub fn replace_recovery_metadata(
+    user_scope: &str,
+    metadata: &RecoveryMetadata,
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let transaction = conn.transaction().map_err(|error| error.to_string())?;
+    transaction
+        .execute_batch(
+            "DELETE FROM conversation_metadata;
+             DELETE FROM attachment_decryption_metadata;
+             DELETE FROM verified_peer_fingerprints;",
+        )
+        .map_err(|error| error.to_string())?;
+    for conversation in &metadata.conversations {
+        transaction
+            .execute(
+                "INSERT INTO conversation_metadata(scope, conversation_id, metadata_json)
+                 VALUES (?1, ?2, ?3)",
+                params![
+                    conversation.scope,
+                    conversation.conversation_id,
+                    json_text(&conversation.metadata)?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    for attachment in &metadata.attachments {
+        transaction
+            .execute(
+                "INSERT INTO attachment_decryption_metadata(
+                    message_id, attachment_id, metadata_json
+                 ) VALUES (?1, ?2, ?3)",
+                params![
+                    attachment.message_id,
+                    attachment.attachment_id,
+                    json_text(&attachment.metadata)?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    for fingerprint in &metadata.verified_fingerprints {
+        transaction
+            .execute(
+                "INSERT INTO verified_peer_fingerprints(
+                    peer_ptid, fingerprint, verified_at_unix_ms
+                 ) VALUES (?1, ?2, ?3)",
+                params![
+                    fingerprint.peer_ptid,
+                    fingerprint.fingerprint,
+                    fingerprint.verified_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    transaction.commit().map_err(|error| error.to_string())
+}
+
+pub fn build_recovery_snapshot(
+    user_scope: &str,
+    ptid: &str,
+    actor_identity_seed: [u8; 32],
+) -> Result<RecoverySnapshot, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+
+    let mut message_statement = conn
+        .prepare(
+            "SELECT scope, conversation_id, message_id, sender_did, content,
+                    reply_to_ulid, thread_root_ulid, sent_at
+             FROM chat_messages
+             ORDER BY sent_at ASC, message_id ASC",
+        )
+        .map_err(|error| error.to_string())?;
+    let messages = message_statement
+        .query_map([], |row| {
+            Ok(RecoveryMessage {
+                scope: row.get(0)?,
+                conversation_id: row.get(1)?,
+                message_id: row.get(2)?,
+                sender_ptid: row.get(3)?,
+                content: row.get(4)?,
+                reply_to_message_id: row.get(5)?,
+                thread_root_message_id: row.get(6)?,
+                sent_at_unix_ms: row.get(7)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+
+    let mut conversation_statement = conn
+        .prepare(
+            "SELECT scope, conversation_id, metadata_json
+             FROM conversation_metadata
+             ORDER BY scope, conversation_id",
+        )
+        .map_err(|error| error.to_string())?;
+    let conversation_rows = conversation_statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    let conversations = conversation_rows
+        .into_iter()
+        .map(|(scope, conversation_id, metadata)| {
+            Ok(RecoveryConversation {
+                scope,
+                conversation_id,
+                metadata: serde_json::from_str(&metadata).map_err(|error| error.to_string())?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let mut attachment_statement = conn
+        .prepare(
+            "SELECT message_id, attachment_id, metadata_json
+             FROM attachment_decryption_metadata
+             ORDER BY message_id, attachment_id",
+        )
+        .map_err(|error| error.to_string())?;
+    let attachment_rows = attachment_statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    let attachments = attachment_rows
+        .into_iter()
+        .map(|(message_id, attachment_id, metadata)| {
+            Ok(AttachmentDecryptionMetadata {
+                message_id,
+                attachment_id,
+                metadata: serde_json::from_str(&metadata).map_err(|error| error.to_string())?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let mut fingerprint_statement = conn
+        .prepare(
+            "SELECT peer_ptid, fingerprint, verified_at_unix_ms
+             FROM verified_peer_fingerprints
+             ORDER BY peer_ptid",
+        )
+        .map_err(|error| error.to_string())?;
+    let verified_fingerprints = fingerprint_statement
+        .query_map([], |row| {
+            Ok(VerifiedFingerprint {
+                peer_ptid: row.get(0)?,
+                fingerprint: row.get(1)?,
+                verified_at_unix_ms: row.get(2)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+
+    let snapshot = RecoverySnapshot {
+        format_version: BACKUP_FORMAT_VERSION,
+        ptid: ptid.to_string(),
+        actor_identity_seed,
+        messages,
+        conversations,
+        attachments,
+        verified_fingerprints,
+    };
+    snapshot.validate(ptid).map_err(|error| error.to_string())?;
+    Ok(snapshot)
+}
+
+pub fn restore_recovery_snapshot(
+    user_scope: &str,
+    snapshot: &RecoverySnapshot,
+) -> Result<RecoveryRestoreCounts, String> {
+    snapshot
+        .validate(&snapshot.ptid)
+        .map_err(|error| error.to_string())?;
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let transaction = conn.transaction().map_err(|error| error.to_string())?;
+
+    transaction
+        .execute_batch(
+            "DELETE FROM chat_messages_fts;
+             DELETE FROM chat_messages;
+             DELETE FROM group_messages;
+             DELETE FROM conversation_metadata;
+             DELETE FROM attachment_decryption_metadata;
+             DELETE FROM verified_peer_fingerprints;
+             DELETE FROM chat_sync_cursor;
+
+             DELETE FROM direct_skipped_message_keys;
+             DELETE FROM direct_sessions;
+             DELETE FROM crypto_outbox;
+             DELETE FROM crypto_skipped_keys;
+             DELETE FROM crypto_session_delivery;
+             DELETE FROM crypto_sessions;
+             DELETE FROM crypto_signed_prekey;
+             DELETE FROM crypto_one_time_prekey;
+
+             DELETE FROM crypto_mls_pending_transition;
+             DELETE FROM crypto_mls_recipient_event_buffer;
+             DELETE FROM crypto_mls_recipient_delivery_buffer;
+             DELETE FROM crypto_mls_recipient_applied;
+             DELETE FROM crypto_mls_recipient_applied_event;
+             DELETE FROM crypto_mls_local_accepted_transition;
+             DELETE FROM crypto_mls_recipient_head;
+             DELETE FROM crypto_mls_join_provider_pool;
+             DELETE FROM crypto_mls_identity;
+             DELETE FROM crypto_mls_state;",
+        )
+        .map_err(|error| error.to_string())?;
+
+    for message in &snapshot.messages {
+        upsert_record(
+            &transaction,
+            &LocalChatRecord {
+                scope: message.scope.clone(),
+                conversation_id: message.conversation_id.clone(),
+                message_id: message.message_id.clone(),
+                sender_did: message.sender_ptid.clone(),
+                content: message.content.clone(),
+                reply_to_ulid: message.reply_to_message_id.clone(),
+                thread_root_ulid: message.thread_root_message_id.clone(),
+                sent_at: message.sent_at_unix_ms,
+            },
+        )?;
+    }
+    for conversation in &snapshot.conversations {
+        transaction
+            .execute(
+                "INSERT INTO conversation_metadata(scope, conversation_id, metadata_json)
+                 VALUES (?1, ?2, ?3)",
+                params![
+                    conversation.scope,
+                    conversation.conversation_id,
+                    json_text(&conversation.metadata)?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    for attachment in &snapshot.attachments {
+        transaction
+            .execute(
+                "INSERT INTO attachment_decryption_metadata(
+                    message_id, attachment_id, metadata_json
+                 ) VALUES (?1, ?2, ?3)",
+                params![
+                    attachment.message_id,
+                    attachment.attachment_id,
+                    json_text(&attachment.metadata)?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    for fingerprint in &snapshot.verified_fingerprints {
+        transaction
+            .execute(
+                "INSERT INTO verified_peer_fingerprints(
+                    peer_ptid, fingerprint, verified_at_unix_ms
+                 ) VALUES (?1, ?2, ?3)",
+                params![
+                    fingerprint.peer_ptid,
+                    fingerprint.fingerprint,
+                    fingerprint.verified_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(RecoveryRestoreCounts {
+        messages: snapshot.messages.len(),
+        conversations: snapshot.conversations.len(),
+        attachments: snapshot.attachments.len(),
+        verified_fingerprints: snapshot.verified_fingerprints.len(),
+    })
+}
+
+#[cfg(test)]
+mod recovery_snapshot_tests {
+    use super::*;
+
+    fn scope(tag: &str) -> String {
+        format!("test-recovery-{tag}-{}", ulid::Ulid::new())
+    }
+
+    fn snapshot(ptid: &str, content: &str) -> RecoverySnapshot {
+        RecoverySnapshot {
+            format_version: BACKUP_FORMAT_VERSION,
+            ptid: ptid.into(),
+            actor_identity_seed: [7; 32],
+            messages: vec![RecoveryMessage {
+                scope: "friend".into(),
+                conversation_id: "conversation-1".into(),
+                message_id: "message-1".into(),
+                sender_ptid: ptid.into(),
+                content: content.into(),
+                reply_to_message_id: String::new(),
+                thread_root_message_id: String::new(),
+                sent_at_unix_ms: 10,
+            }],
+            conversations: vec![RecoveryConversation {
+                scope: "friend".into(),
+                conversation_id: "conversation-1".into(),
+                metadata: serde_json::json!({"peerPtid": "ptid:bob"}),
+            }],
+            attachments: vec![AttachmentDecryptionMetadata {
+                message_id: "message-1".into(),
+                attachment_id: "cid-1".into(),
+                metadata: serde_json::json!({"keyB64": "key", "nonceB64": "nonce"}),
+            }],
+            verified_fingerprints: vec![VerifiedFingerprint {
+                peer_ptid: "ptid:bob".into(),
+                fingerprint: "abcd".into(),
+                verified_at_unix_ms: 11,
+            }],
+        }
+    }
+
+    #[test]
+    fn restore_replaces_history_and_clears_live_crypto_state_atomically() {
+        let user_scope = scope("replace");
+        upsert_plaintext_records(
+            &user_scope,
+            &[LocalChatRecord {
+                scope: "friend".into(),
+                conversation_id: "old-conversation".into(),
+                message_id: "old-message".into(),
+                sender_did: "ptid:old".into(),
+                content: "old plaintext".into(),
+                reply_to_ulid: String::new(),
+                thread_root_ulid: String::new(),
+                sent_at: 1,
+            }],
+        )
+        .unwrap();
+        let conn = open_connection(&user_scope).unwrap();
+        conn.lock()
+            .execute(
+                "INSERT INTO crypto_outbox(command_id, command_bytes, state, created_at_unix_ms)
+                 VALUES ('old-command', X'01', 'prepared', 1)",
+                [],
+            )
+            .unwrap();
+
+        let expected = snapshot("ptid:alice", "restored plaintext");
+        let counts = restore_recovery_snapshot(&user_scope, &expected).unwrap();
+        assert_eq!(
+            counts,
+            RecoveryRestoreCounts {
+                messages: 1,
+                conversations: 1,
+                attachments: 1,
+                verified_fingerprints: 1,
+            }
+        );
+        let actual = build_recovery_snapshot(&user_scope, "ptid:alice", [7; 32]).unwrap();
+        assert_eq!(actual, expected);
+        assert!(load_crypto_outbox_entry(&user_scope, "old-command")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn invalid_snapshot_preserves_existing_history() {
+        let user_scope = scope("invalid");
+        let existing = snapshot("ptid:alice", "keep me");
+        restore_recovery_snapshot(&user_scope, &existing).unwrap();
+
+        let mut invalid = snapshot("ptid:alice", "replace me");
+        invalid.messages[0].conversation_id.clear();
+        assert!(restore_recovery_snapshot(&user_scope, &invalid).is_err());
+
+        let actual = build_recovery_snapshot(&user_scope, "ptid:alice", [7; 32]).unwrap();
+        assert_eq!(actual.messages[0].content, "keep me");
+    }
+}
+
 #[cfg(test)]
 mod search_tests {
     use super::*;
@@ -2311,6 +2949,7 @@ mod search_tests {
 mod dr_persistence_tests {
     use super::*;
     use crate::domain::crypto::double_ratchet::{decrypt, encrypt, init_initiator, init_responder};
+    use crate::domain::crypto::{CryptoEndpoint, DirectSession, DirectSessionKey, SessionManager};
     use rand::rngs::OsRng;
     use rand::RngCore;
     use x25519_dalek::{PublicKey, StaticSecret};
@@ -2339,6 +2978,27 @@ mod dr_persistence_tests {
         assert_eq!(cached.1, 7);
         assert_eq!(cached.2, r#"[{"id":"a1"}]"#);
         assert_eq!(cached.3, 42);
+    }
+
+    fn direct_session(session_id: &str, peer_device_id: &str) -> DirectSession {
+        let local = CryptoEndpoint::new("ptid:alice", "alice-device").unwrap();
+        let peer = CryptoEndpoint::new("ptid:bob", peer_device_id).unwrap();
+        let key = DirectSessionKey::new("conversation-1", local, peer, 1).unwrap();
+        let peer_private = StaticSecret::random_from_rng(&mut OsRng);
+        let ratchet = init_initiator(
+            session_id,
+            &[7; 32],
+            PublicKey::from(&peer_private).to_bytes(),
+        );
+        DirectSession {
+            session_id: session_id.to_string(),
+            key,
+            protocol_version: 1,
+            established: true,
+            peer_identity_key: [9; 32],
+            ratchet,
+            updated_at_unix_ms: 1,
+        }
     }
 
     #[test]
@@ -2513,23 +3173,98 @@ mod dr_persistence_tests {
     }
 
     #[test]
-    fn recipient_prekeys_are_resolved_by_public_key_and_opk_is_single_use() {
-        let scope = unique_scope("prekeys");
-        let signed_private = StaticSecret::random_from_rng(&mut OsRng);
-        let signed_public = PublicKey::from(&signed_private).to_bytes();
-        crypto_store_signed_prekey(&scope, 1, signed_private.to_bytes().as_slice()).unwrap();
+    fn endpoint_pair_sessions_persist_independently_for_two_peer_devices() {
+        let scope = unique_scope("endpoint-pairs");
+        let phone = direct_session("session-phone", "bob-phone");
+        let desktop = direct_session("session-desktop", "bob-desktop");
+        save_direct_session(&scope, &phone).unwrap();
+        save_direct_session(&scope, &desktop).unwrap();
+
+        let sessions = list_direct_sessions(&scope, &phone.key.local, Some("ptid:bob")).unwrap();
+        assert_eq!(sessions.len(), 2);
+        assert_ne!(
+            sessions[0].key.peer.device_id,
+            sessions[1].key.peer.device_id
+        );
+    }
+
+    #[test]
+    fn ratchets_and_exact_outbox_bytes_commit_atomically_and_retry_without_reencrypting() {
+        let scope = unique_scope("outbox");
+        let phone = direct_session("session-phone", "bob-phone");
+        let desktop = direct_session("session-desktop", "bob-desktop");
+        save_direct_session(&scope, &phone).unwrap();
+        save_direct_session(&scope, &desktop).unwrap();
+
+        let prepared =
+            SessionManager::prepare_fan_out(&[phone, desktop], b"hello", b"", 2).unwrap();
+        let command_bytes = b"exact-protobuf-command-bytes";
+        persist_outbound_sessions_and_command(
+            &scope,
+            &prepared.sessions,
+            "command-1",
+            command_bytes,
+            2,
+        )
+        .unwrap();
+
+        let replay = load_crypto_outbox_entry(&scope, "command-1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(replay.command_bytes, command_bytes);
         assert_eq!(
-            crypto_load_signed_prekey_by_public(&scope, &signed_public).unwrap(),
-            signed_private.to_bytes(),
+            load_direct_session(&scope, "session-phone")
+                .unwrap()
+                .unwrap()
+                .ratchet
+                .n_send,
+            1
         );
 
-        let opk_private = StaticSecret::random_from_rng(&mut OsRng);
-        let opk_public = PublicKey::from(&opk_private).to_bytes();
-        crypto_insert_opks(&scope, &[opk_private.to_bytes().to_vec()]).unwrap();
+        let second_advance =
+            SessionManager::prepare_fan_out(&prepared.sessions, b"do-not-commit", b"", 3).unwrap();
+        assert!(persist_outbound_sessions_and_command(
+            &scope,
+            &second_advance.sessions,
+            "command-1",
+            b"different-bytes",
+            3,
+        )
+        .is_err());
         assert_eq!(
-            crypto_consume_opk_by_public(&scope, &opk_public).unwrap(),
+            load_direct_session(&scope, "session-phone")
+                .unwrap()
+                .unwrap()
+                .ratchet
+                .n_send,
+            1
+        );
+        assert_eq!(
+            load_crypto_outbox_entry(&scope, "command-1")
+                .unwrap()
+                .unwrap()
+                .command_bytes,
+            command_bytes
+        );
+    }
+
+    #[test]
+    fn recipient_prekeys_are_resolved_by_exact_id_and_opk_is_single_use() {
+        let scope = unique_scope("prekeys");
+        let signed_private = StaticSecret::random_from_rng(&mut OsRng);
+        crypto_store_signed_prekey(&scope, 1, signed_private.to_bytes().as_slice()).unwrap();
+        assert_eq!(
+            crypto_load_signed_prekey_by_id(&scope, 1).unwrap(),
+            signed_private.to_bytes(),
+        );
+        assert!(crypto_load_signed_prekey_by_id(&scope, 2).is_err());
+
+        let opk_private = StaticSecret::random_from_rng(&mut OsRng);
+        let ids = crypto_insert_opks(&scope, &[opk_private.to_bytes().to_vec()]).unwrap();
+        assert_eq!(
+            crypto_consume_opk_by_id(&scope, ids[0] as u32).unwrap(),
             opk_private.to_bytes(),
         );
-        assert!(crypto_consume_opk_by_public(&scope, &opk_public).is_err());
+        assert!(crypto_consume_opk_by_id(&scope, ids[0] as u32).is_err());
     }
 }

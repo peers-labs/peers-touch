@@ -18,11 +18,10 @@ import type {
 } from '../kernel/events/types';
 import {
   GetSessionsResponseSchema,
+  CreateSessionResponseSchema,
   GetFriendConversationSettingsResponseSchema,
   UpdateFriendConversationSettingsResponseSchema,
   GetMessagesResponseSchema,
-  SendMessageResponseSchema,
-  MessageAckResponseSchema,
   RecallFriendMessageResponseSchema,
   EditFriendMessageResponseSchema,
   DeleteFriendMessageResponseSchema,
@@ -140,7 +139,6 @@ export type {
   GetSessionsResponse,
   CreateSessionResponse,
   GetMessagesResponse,
-  SendMessageResponse,
   SyncMessagesResponse,
   GetPendingResponse,
   PendingMessageInfo,
@@ -609,23 +607,6 @@ export interface PresenceTransitionEvent {
   trigger: PresenceTrigger;
   reconciled_count: number;
   affected_sessions: string[];
-}
-
-export interface PresenceStatusView {
-  actor_id: string;
-  state: number | string;
-}
-
-export interface PresenceQueryView {
-  statuses: PresenceStatusView[];
-}
-
-export interface ActorSearchItem {
-  id: string;
-  username: string;
-  displayName: string;
-  email: string;
-  avatar: string;
 }
 
 /**
@@ -4649,7 +4630,7 @@ export const api = {
   // ── Actor API ──
 
   actorSearchActors: async (query: string) => {
-    const data = await invokeRustDataFromStatus<{ q: string }, { items: ActorSearchItem[]; total: number }>(
+    const data = await invokeRustDataFromStatus<{ q: string }, { items: any[]; total: number }>(
       'actor_search_actors', { q: query },
     );
     return { items: data?.items || [], total: data?.total || 0 };
@@ -4722,6 +4703,9 @@ export const api = {
   friendChatListSessions: (limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_sessions', GetSessionsResponseSchema, { limit, offset }),
 
+  friendChatCreateSession: (participantDid: string) =>
+    invokeRustProto('friend_chat_create_session', CreateSessionResponseSchema, { participant_did: participantDid }),
+
   friendChatGetSettings: (sessionUlid: string) =>
     invokeRustProto('friend_chat_get_settings', GetFriendConversationSettingsResponseSchema, { session_ulid: sessionUlid }),
 
@@ -4787,36 +4771,6 @@ export const api = {
       root_ulid: rootUlid,
       last_read_ulid: lastReadUlid,
     }),
-
-  friendChatSendMessage: (
-    sessionUlid: string,
-    receiverDid: string,
-    content: string,
-    type?: number,
-    replyToUlid?: string,
-    attachments?: ChatAttachmentInput[],
-    encryptedPayload?: string,
-    clientUlid?: string,
-    threadRootUlid?: string,
-  ) =>
-    invokeRustProto('friend_chat_send_message', SendMessageResponseSchema, {
-      session_ulid: sessionUlid,
-      receiver_did: receiverDid,
-      content,
-      type,
-      reply_to_ulid: replyToUlid,
-      thread_root_ulid: threadRootUlid,
-      attachments,
-      ...(encryptedPayload != null && encryptedPayload !== ''
-        ? { encrypted_payload: encryptedPayload }
-        : {}),
-      ...(clientUlid != null && clientUlid !== ''
-        ? { client_ulid: clientUlid }
-        : {}),
-    }),
-
-  friendChatAckMessages: (ulids: string[], status: number) =>
-    invokeRustProto('friend_chat_ack_messages', MessageAckResponseSchema, { ulids, status }),
 
   /**
    * Recall a previously-sent friend chat message. Server enforces
@@ -4893,17 +4847,6 @@ export const api = {
       return { command: 'presence_notify', status: '{"accepted":false}' };
     }),
 
-  presenceQuery: async (actorIds: string[]): Promise<PresenceQueryView> => {
-    const response = await invokeRustCommand<{ actor_ids: string[] }, PresenceQueryView>(
-      'presence_query',
-      { actor_ids: actorIds },
-    );
-    if (!response.ok || !response.data) {
-      throw new RustCommandException('presence_query', response.error);
-    }
-    return response.data;
-  },
-
   friendChatLocalSearch: (query: string, limit?: number) =>
     invokeRustDataFromStatus<ChatLocalSearchInput, { messages: any[] }>(
       'friend_chat_local_search_scoped', { query, limit },
@@ -4931,20 +4874,6 @@ export const api = {
       'chat_index_local_messages',
       { messages },
     ),
-
-  chatDecryptCacheGet: (messageId: string) =>
-    invokeRustDataFromStatus<
-      { message_id: string },
-      { entry: { content: string; message_type: number; attachments_json: string; cached_at: number } | null }
-    >('chat_decrypt_cache_get', { message_id: messageId }),
-
-  chatDecryptCachePut: (input: {
-    message_id: string;
-    content: string;
-    message_type: number;
-    attachments_json: string;
-    cached_at: number;
-  }) => invokeRustDataFromStatus<typeof input, { stored: boolean }>('chat_decrypt_cache_put', input),
 
   friendChatSync: (sessionUlid: string, limit?: number, maxPages?: number) =>
     invokeRustDataFromStatus<FriendChatSyncInput, { synced_count: number; pages_fetched: number }>(
@@ -5288,72 +5217,6 @@ export const api = {
 
   cryptoGetKeyBundle: () =>
     invokeAppResultStub<CryptoKeyBundlePayload>('crypto_get_key_bundle'),
-
-  cryptoInitSession: (
-    sessionId: string,
-    peerDid: string,
-    peerIkPub: string,
-    peerSpkPub: string,
-    peerSpkSig: string,
-    peerOpkPub?: string,
-  ) =>
-    invokeAppResultStub<{
-      ephemeral_key: string;
-      sender_identity_key: string;
-      recipient_signed_prekey: string;
-      recipient_one_time_prekey: string;
-      negotiated_version: number;
-      established: boolean;
-    }>('crypto_init_session', {
-      sessionId,
-      peerDid,
-      peerIkPub,
-      peerSpkPub,
-      peerSpkSig,
-      ...(peerOpkPub != null && peerOpkPub !== '' ? { peerOpkPub } : {}),
-      negotiatedVersion: 1,
-    }),
-
-  cryptoAcceptSession: (input: {
-    sessionId: string;
-    peerDid: string;
-    senderIdentityKey: string;
-    senderEphemeralKey: string;
-    recipientSignedPrekey: string;
-    recipientOneTimePrekey?: string;
-    negotiatedVersion: 1;
-  }) =>
-    invokeAppResultStub<{ established: boolean; negotiated_version: number }>('crypto_accept_session', input),
-
-  cryptoSessionStatus: (sessionId: string) =>
-    invokeAppResultStub<{ established: boolean; version: number }>('crypto_session_status', { sessionId }),
-
-  cryptoResetSession: (sessionId: string) =>
-    invokeAppResultStub<{ reset: boolean }>('crypto_reset_session', { sessionId }),
-
-  cryptoMarkSessionReady: (sessionId: string) =>
-    invokeAppResultStub<{ established: boolean }>('crypto_mark_session_ready', { sessionId }),
-
-  drEncrypt: (sessionId: string, plaintext: string) =>
-    invokeAppResultStub<{
-      version: number;
-      ciphertext: string;
-      ratchet_pub: string;
-      counter: number;
-      prev_counter: number;
-      nonce: string;
-    }>('dr_encrypt', { sessionId, plaintext }),
-
-  drDecrypt: (input: {
-    sessionId: string;
-    ciphertext: string;
-    ratchetPub: string;
-    counter: number;
-    prevCounter: number;
-    nonce: string;
-    version: number;
-  }) =>
-    invokeAppResultStub<{ plaintext: string }>('dr_decrypt', input),
 
   keyExchangeUploadBundle: (bundle: CryptoKeyBundlePayload) =>
     invokeRustDataFromStatus<CryptoKeyBundlePayload, Record<string, unknown>>(

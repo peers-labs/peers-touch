@@ -305,9 +305,10 @@ impl MlsGroupManager {
         Ok(())
     }
 
-    pub fn encrypt(
+    pub fn encrypt_at_epoch(
         &self,
         conversation_id: &str,
+        expected_epoch: u64,
         plaintext: &[u8],
     ) -> Result<MlsGroupEncryptResult, String> {
         if self
@@ -322,6 +323,21 @@ impl MlsGroupManager {
         let session = sessions
             .get_mut(conversation_id)
             .ok_or("no MLS session for this conversation")?;
+        let actual_epoch = session.group.epoch().as_u64();
+        if actual_epoch != expected_epoch {
+            return Err(format!(
+                "MLS epoch mismatch: authority expects {expected_epoch}, local group is {actual_epoch}"
+            ));
+        }
+        let (_, local_credential) = self.actor_identity.snapshot()?;
+        let local_identity = local_credential.credential.serialized_content();
+        let local_leaf_active = session
+            .group
+            .members()
+            .any(|member| member.credential.serialized_content() == local_identity);
+        if !local_leaf_active {
+            return Err("local actor-device MLS leaf is not active".to_string());
+        }
 
         let mls_out = session
             .group
@@ -333,6 +349,43 @@ impl MlsGroupManager {
             .map_err(|e| format!("serialize message: {e:?}"))?;
 
         Ok(MlsGroupEncryptResult { ciphertext })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn encrypt(
+        &self,
+        conversation_id: &str,
+        plaintext: &[u8],
+    ) -> Result<MlsGroupEncryptResult, String> {
+        let epoch = self.group_epoch(conversation_id)?;
+        self.encrypt_at_epoch(conversation_id, epoch, plaintext)
+    }
+
+    pub fn is_local_leaf_active_at_epoch(
+        &self,
+        conversation_id: &str,
+        expected_epoch: u64,
+    ) -> Result<bool, String> {
+        if self
+            .pending_transitions
+            .lock()
+            .unwrap()
+            .contains_key(conversation_id)
+        {
+            return Ok(false);
+        }
+        let (_, local_credential) = self.actor_identity.snapshot()?;
+        let local_identity = local_credential.credential.serialized_content();
+        let sessions = self.sessions.lock().unwrap();
+        let session = match sessions.get(conversation_id) {
+            Some(session) => session,
+            None => return Ok(false),
+        };
+        Ok(session.group.epoch().as_u64() == expected_epoch
+            && session
+                .group
+                .members()
+                .any(|member| member.credential.serialized_content() == local_identity))
     }
 
     pub fn decrypt(&self, conversation_id: &str, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
@@ -1079,6 +1132,9 @@ mod tests {
         alice
             .accept_pending_transition("conv-remove-device", &removed.transition_id)
             .unwrap();
+        bob_device_1
+            .process_commit("conv-remove-device", &removed.commit_bytes)
+            .unwrap();
         bob_device_2
             .process_commit("conv-remove-device", &removed.commit_bytes)
             .unwrap();
@@ -1094,6 +1150,26 @@ mod tests {
             alice_head.member_credentials_sha256,
             bob_head.member_credentials_sha256
         );
+        assert!(!bob_device_1
+            .is_local_leaf_active_at_epoch("conv-remove-device", removed.to_mls_epoch)
+            .unwrap());
+        assert!(bob_device_1
+            .encrypt_at_epoch(
+                "conv-remove-device",
+                removed.to_mls_epoch,
+                b"revoked device must not send",
+            )
+            .is_err());
+        assert!(bob_device_2
+            .is_local_leaf_active_at_epoch("conv-remove-device", removed.to_mls_epoch)
+            .unwrap());
+        assert!(bob_device_2
+            .encrypt_at_epoch(
+                "conv-remove-device",
+                removed.from_mls_epoch,
+                b"stale epoch must not send",
+            )
+            .is_err());
         let ciphertext = alice
             .encrypt("conv-remove-device", b"sibling survives")
             .unwrap();
@@ -1701,6 +1777,10 @@ mod tests {
             .expect("export pending genesis");
 
         let restored = MlsGroupManager::new();
+        restored
+            .actor_identity()
+            .init("ptid:test:alice", "alice-device")
+            .unwrap();
         let recovered = restored
             .import_pending_transition("conv-genesis-restart", &pending)
             .expect("restore pending genesis");
@@ -1782,8 +1862,14 @@ mod tests {
             .import_session_state("conv-cold-start", &bob_state)
             .expect("restore bob");
 
+        assert!(restored_alice
+            .is_local_leaf_active_at_epoch("conv-cold-start", 1)
+            .unwrap());
+        assert!(restored_alice
+            .encrypt_at_epoch("conv-cold-start", 0, b"stale after restart")
+            .is_err());
         let encrypted = restored_alice
-            .encrypt("conv-cold-start", b"after cold start")
+            .encrypt_at_epoch("conv-cold-start", 1, b"after cold start")
             .expect("encrypt");
         let plaintext = restored_bob
             .decrypt("conv-cold-start", &encrypted.ciphertext)

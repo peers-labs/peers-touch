@@ -13,6 +13,7 @@ pub mod chat;
 pub mod conversation;
 pub mod cron;
 pub mod crypto;
+pub mod crypto_backup;
 pub mod desktop_capture;
 pub mod federation;
 pub mod friend_chat;

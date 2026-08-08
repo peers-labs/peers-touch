@@ -258,8 +258,13 @@ func runInjectedOrdinaryCommand(t *testing.T, failAt int) int {
 		SenderDeviceId: "alice-device",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
-				EncryptedPayload: []byte("opaque-ciphertext"),
-				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+				DevicePayloads: []*chat.DeviceEncryptedPayload{{
+					RecipientPtid:     "bob",
+					RecipientDeviceId: "bob-device",
+					SessionId:         "alice-device:bob-device",
+					EncryptedEnvelope: []byte("opaque-ciphertext"),
+				}},
+				ContentType: chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
 			},
 		},
 	})

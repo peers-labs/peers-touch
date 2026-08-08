@@ -19,7 +19,7 @@ This document defines:
 
 This document does not define:
 
-- E2E encryption protocol details (see `encryption/e2e-encryption-architecture.md`)
+- E2E encryption protocol details (see `encryption/README.md`)
 - Global/public search (actor discovery, group discovery) — separate concern
 - AI agent message search (separate subserver, existing implementation)
 

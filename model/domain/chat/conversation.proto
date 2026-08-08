@@ -163,16 +163,26 @@ message ConversationCommand {
 }
 
 message SendMessageCommand {
-  bytes encrypted_payload = 1;
+  repeated DeviceEncryptedPayload device_payloads = 1;
   MessageContentType content_type = 2;
   string reply_to_message_id = 3;
   string thread_root_message_id = 4;
   repeated EncryptedAttachment attachments = 5;
+  bytes group_encrypted_payload = 6;
 }
 
 message EditMessageCommand {
   string target_message_id = 1;
-  bytes encrypted_payload = 2;
+  repeated DeviceEncryptedPayload device_payloads = 2;
+  bytes group_encrypted_payload = 3;
+}
+
+// One independently encrypted copy of a direct message for one active device.
+message DeviceEncryptedPayload {
+  string recipient_ptid = 1;
+  string recipient_device_id = 2;
+  string session_id = 3;
+  bytes encrypted_envelope = 4;
 }
 
 message RetractMessageCommand {
@@ -425,19 +435,21 @@ message MessageCommittedEvent {
   string message_id = 1;
   string sender_ptid = 2;
   string sender_device_id = 3;
-  bytes encrypted_payload = 4;
+  repeated DeviceEncryptedPayload device_payloads = 4;
   MessageContentType content_type = 5;
   string reply_to_message_id = 6;
   string thread_root_message_id = 7;
   repeated EncryptedAttachment attachments = 8;
   google.protobuf.Timestamp client_ts = 9;
+  bytes group_encrypted_payload = 10;
 }
 
 message MessageEditedEvent {
   string message_id = 1;
   string editor_ptid = 2;
-  bytes encrypted_payload = 3;
+  repeated DeviceEncryptedPayload device_payloads = 3;
   google.protobuf.Timestamp edited_at = 4;
+  bytes group_encrypted_payload = 5;
 }
 
 message MessageRetractedEvent {

@@ -228,10 +228,11 @@ message RevokeDeviceResponse {}
 
 message SendDkxRequest {
   string recipient_ptid = 1;
-  string recipient_station_peer_id = 2;
-  string session_id = 3;
-  DirectKeyExchangeKind kind = 4;
-  bytes opaque_key_material = 5;
+  string recipient_device_id = 2;
+  string recipient_station_peer_id = 3;
+  string session_id = 4;
+  DirectKeyExchangeKind kind = 5;
+  bytes opaque_key_material = 6;
 }
 
 message SendDkxResponse {

@@ -22,7 +22,7 @@
 - Station 社交/聊天/通知子服务内部 DDD 设计。
 - Desktop 或 Mobile 的视觉设计细节。
 - iOS/Android push SDK、Desktop tray/menu 等宿主能力的具体插件实现。
-- Group chat E2EE 密文格式细节；见 `docs/architecture/encryption/group-sender-keys.md`。
+- Chat 设备级私聊与 MLS 密文格式；见 `docs/architecture/encryption/README.md`。
 - Group chat 生命周期业务真源；见 `group-lifecycle.md`。
 - 跨 Station / Federation IM 架构；见 `docs/architecture/federated-im/README.md`。
 
@@ -75,4 +75,4 @@ Peers-Touch 的社交能力需要在 Desktop 与 Mobile 上长期共同演进。
 | `docs/architecture/runtime/desktop-runtime-architecture.md` | Desktop 多运行单元边界 |
 | `docs/architecture/notification/notification-architecture.md` | 通知系统真源 |
 | `docs/architecture/realtime/event-stream.md` | Realtime event stream 真源 |
-| `docs/architecture/encryption/group-sender-keys.md` | 群 Sender Keys 加密与 SKDM 分发设计 |
+| `docs/architecture/encryption/README.md` | 设备级私聊、MLS、投递与恢复设计 |

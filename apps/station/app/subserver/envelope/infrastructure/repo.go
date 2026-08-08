@@ -216,7 +216,7 @@ func (r *PostgresRepository) MarkInboxAcked(ctx context.Context, inboxItemID str
 func (r *PostgresRepository) UnackedInboxItems(ctx context.Context, recipientDID, deviceID string, afterCursor string, limit int) ([]*chat.DeviceInboxItem, error) {
 	var models []InboxModel
 	q := r.db.WithContext(ctx).
-		Where("recipient_did = ? AND (recipient_device_id = ? OR recipient_device_id = '') AND status != ?",
+		Where("recipient_did = ? AND recipient_device_id = ? AND status != ?",
 			recipientDID, deviceID, int32(chat.InboxItemStatus_INBOX_ITEM_STATUS_ACKED),
 		)
 	if afterCursor != "" {
