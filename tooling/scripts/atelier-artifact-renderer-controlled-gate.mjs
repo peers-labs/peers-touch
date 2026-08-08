@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-artifact-renderer-controlled-gate.json');
 const hostSourcePath = 'apps/desktop/src/applet/AtelierArtifactPreviewHost.ts';
 const hostTestPath = 'apps/desktop/src/applet/AtelierArtifactPreviewHost.test.ts';
@@ -266,7 +266,7 @@ try {
     notCovered: claimBoundary.doesNotProve,
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier artifact renderer controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier artifact renderer controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,

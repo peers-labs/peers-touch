@@ -1,1 +1,0 @@
-PASS packages/applet-contract is the canonical type source for manifest, bridge, capability, complex events.

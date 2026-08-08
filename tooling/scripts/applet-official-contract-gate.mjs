@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));

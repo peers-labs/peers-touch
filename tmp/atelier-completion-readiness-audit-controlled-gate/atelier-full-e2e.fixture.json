@@ -36,7 +36,7 @@
     }
   },
   "ideLaunch": {
-    "path": "applet-readiness-evidence/official-applet/atelier-full-e2e-ide-launch.json",
+    "path": "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-ide-launch.json",
     "status": "PASS",
     "ideTargetRedacted": true,
     "ideTargetMatchesConfigured": true,
@@ -45,7 +45,7 @@
     "realIdeLaunchProven": true
   },
   "providerRuntime": {
-    "path": "applet-readiness-evidence/official-applet/atelier-full-e2e-provider-runtime.json",
+    "path": "tooling/acceptance/evidence/applets/official-applet/atelier-full-e2e-provider-runtime.json",
     "status": "PASS",
     "owner": "station",
     "scope": "production-provider-runtime",
