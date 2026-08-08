@@ -154,13 +154,6 @@ fn get_messages_response_to_value(resp: &model::chat::GetMessagesResponse) -> Va
     })
 }
 
-fn send_message_response_to_value(resp: &model::chat::SendMessageResponse) -> Value {
-    json!({
-        "message": resp.message.as_ref().map(friend_chat_message_to_json),
-        "relayStatus": resp.relay_status,
-    })
-}
-
 fn sync_messages_response_to_value(resp: &model::chat::SyncMessagesResponse) -> Value {
     json!({
         "synced": resp.synced,
@@ -174,22 +167,6 @@ fn presence_update_response_to_value(resp: &model::presence::PresenceUpdateRespo
         "sessionId": resp.session_id,
         "state": resp.state,
         "leaseExpiresAt": ts_millis(&resp.lease_expires_at),
-    })
-}
-
-fn pending_message_info_to_json(p: &model::chat::PendingMessageInfo) -> Value {
-    json!({
-        "ulid": p.ulid,
-        "senderDid": p.sender_did,
-        "sessionUlid": p.session_ulid,
-        "encryptedPayload": bytes_to_b64(&p.encrypted_payload),
-        "createdAt": p.created_at,
-    })
-}
-
-fn get_pending_response_to_value(resp: &model::chat::GetPendingResponse) -> Value {
-    json!({
-        "messages": resp.messages.iter().map(pending_message_info_to_json).collect::<Vec<_>>(),
     })
 }
 
@@ -754,56 +731,6 @@ pub fn mark_friend_thread_read(
     )
 }
 
-pub fn send_friend_message(
-    token: &str,
-    session_ulid: &str,
-    receiver_did: &str,
-    content: &str,
-    msg_type: i32,
-    reply_to_ulid: &str,
-) -> StationResult<Value> {
-    let req = model::chat::SendMessageRequest {
-        session_ulid: session_ulid.to_string(),
-        receiver_did: receiver_did.to_string(),
-        r#type: msg_type,
-        content: content.to_string(),
-        attachments: Vec::new(),
-        reply_to_ulid: reply_to_ulid.to_string(),
-        thread_root_ulid: String::new(),
-        encrypted_payload: Vec::new(),
-        client_ulid: String::new(),
-    };
-    let resp = station_client::request_proto::<
-        model::chat::SendMessageRequest,
-        model::chat::SendMessageResponse,
-    >(
-        Method::POST,
-        "/friend-chat/message/send",
-        token,
-        None,
-        Some(&req),
-    )?;
-    Ok(send_message_response_to_value(&resp))
-}
-
-pub fn ack_friend_messages(token: &str, ulids: &[String], status: i32) -> StationResult<Value> {
-    let req = model::chat::MessageAckRequest {
-        ulids: ulids.to_vec(),
-        status,
-    };
-    let _resp = station_client::request_proto::<
-        model::chat::MessageAckRequest,
-        model::chat::MessageAckResponse,
-    >(
-        Method::POST,
-        "/friend-chat/message/ack",
-        token,
-        None,
-        Some(&req),
-    )?;
-    Ok(json!({}))
-}
-
 pub fn list_groups(token: &str, limit: u32, offset: u32) -> StationResult<Value> {
     let query = vec![("limit", limit.to_string()), ("offset", offset.to_string())];
     let resp = station_client::request_proto::<(), model::chat::ListGroupsResponse>(
@@ -1131,18 +1058,6 @@ pub fn presence_offline(token: &str, reason: &str) -> StationResult<Value> {
         model::presence::PresenceUpdateResponse,
     >(Method::POST, "/presence/offline", token, None, Some(&req))?;
     Ok(presence_update_response_to_value(&resp))
-}
-
-pub fn friend_chat_pending(token: &str) -> StationResult<Value> {
-    let query = vec![("limit", "50".to_string())];
-    let resp = station_client::request_proto::<(), model::chat::GetPendingResponse>(
-        Method::GET,
-        "/friend-chat/pending",
-        token,
-        Some(&query),
-        None::<&()>,
-    )?;
-    Ok(get_pending_response_to_value(&resp))
 }
 
 pub fn friend_chat_stats(token: &str) -> StationResult<Value> {

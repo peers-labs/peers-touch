@@ -148,6 +148,11 @@ pub struct FriendChatListInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatCreateSessionInput {
+    pub participant_did: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendConversationSettingsInput {
     pub session_ulid: String,
 }
@@ -208,21 +213,6 @@ pub struct AttachmentInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatSendInput {
-    pub session_ulid: String,
-    pub receiver_did: String,
-    pub content: String,
-    /// Base64-encoded ciphertext when sending E2E encrypted messages (optional).
-    pub encrypted_payload: Option<String>,
-    /// Client-generated idempotency key. Shared by direct + relay send attempts.
-    pub client_ulid: Option<String>,
-    pub r#type: Option<i32>,
-    pub reply_to_ulid: Option<String>,
-    pub thread_root_ulid: Option<String>,
-    pub attachments: Option<Vec<AttachmentInput>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatSendFriendRequestInput {
     pub receiver_did: String,
     pub message: Option<String>,
@@ -273,12 +263,6 @@ pub struct KeyExchangeFetchInput {
     pub did: String,
     pub device_id: Option<String>,
     pub home_station_peer_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatAckInput {
-    pub ulids: Vec<String>,
-    pub status: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -401,22 +385,6 @@ pub struct ChatIndexLocalMessageInput {
     pub reply_to_ulid: Option<String>,
     pub thread_root_ulid: Option<String>,
     pub sent_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ChatDecryptCacheGetInput {
-    pub message_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ChatDecryptCachePutInput {
-    pub message_id: String,
-    pub content: String,
-    pub message_type: i32,
-    pub attachments_json: String,
-    pub cached_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

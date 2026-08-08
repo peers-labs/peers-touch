@@ -12,20 +12,15 @@ import {
 
 const socialChatSource = readFileSync(new URL('./socialChat.ts', import.meta.url), 'utf8');
 const imRuntimeSource = readFileSync(new URL('../runtimes/imRuntime.ts', import.meta.url), 'utf8');
+const cryptoRuntimeSource = readFileSync(new URL('../runtimes/cryptoRuntime.ts', import.meta.url), 'utf8');
+const imServiceSource = readFileSync(new URL('../services/im-service.ts', import.meta.url), 'utf8');
+const appRuntimeSource = readFileSync(new URL('../services/appRuntime.ts', import.meta.url), 'utf8');
 const featureFlagsSource = readFileSync(
   new URL('../modules/settings/featureFlags.ts', import.meta.url),
   'utf8',
 );
 const desktopApiSource = readFileSync(
   new URL('../services/desktop_api.ts', import.meta.url),
-  'utf8',
-);
-const chatMessageAreaSource = readFileSync(
-  new URL('../components/chat/ChatMessageArea.tsx', import.meta.url),
-  'utf8',
-);
-const chatErrorMappingSource = readFileSync(
-  new URL('../services/errorMappings/chatErrorMapping.ts', import.meta.url),
   'utf8',
 );
 const rustCryptoSource = readFileSync(
@@ -42,6 +37,14 @@ const rustGatewaySource = readFileSync(
 );
 const rustMainSource = readFileSync(
   new URL('../../src-tauri/src/main.rs', import.meta.url),
+  'utf8',
+);
+const rustFriendChatSource = readFileSync(
+  new URL('../../src-tauri/src/interface/tauri_commands/friend_chat.rs', import.meta.url),
+  'utf8',
+);
+const rustPresenceSource = readFileSync(
+  new URL('../../src-tauri/src/application/presence/mod.rs', import.meta.url),
   'utf8',
 );
 const localChatStoreSource = readFileSync(
@@ -71,50 +74,45 @@ describe('strict chat encryption source contract', () => {
     expect(socialChatSource).not.toContain('version: 0,');
   });
 
+  it('makes cryptoRuntime the sole direct-session orchestrator', () => {
+    expect(appRuntimeSource).toContain('registerRuntime(cryptoRuntime)');
+    expect(cryptoRuntimeSource).toContain('cryptoService.fetchPeerBundles(peerPtid)');
+    expect(cryptoRuntimeSource).toContain('cryptoService.fetchPeerBundles(localAddress.ptid)');
+    expect(cryptoRuntimeSource).toContain('peerAddress.deviceId');
+    expect(cryptoRuntimeSource).toContain('DirectSessionInitSchema');
+    expect(cryptoRuntimeSource).toContain('cryptoService.encryptSessions');
+    expect(cryptoRuntimeSource).not.toContain('cryptoService.encrypt(');
+    expect(imServiceSource).toContain('recipient_device_id: recipientDeviceId');
+    expect(socialChatSource).not.toContain('establishSession:');
+    expect(socialChatSource).not.toContain('api.drEncrypt');
+    expect(socialChatSource).not.toContain('api.drDecrypt');
+    expect(socialChatSource).not.toContain('api.cryptoInitSession');
+  });
+
+  it('uses repeated device payloads and local-device selection for direct messages', () => {
+    expect(socialChatSource).toContain('devicePayloads');
+    expect(socialChatSource).toContain('payload.recipientDeviceId === localAddress.deviceId');
+    expect(socialChatSource).toContain('encryptDirectPayloads');
+    expect(socialChatSource).toContain('decryptDirectPayload');
+    expect(imRuntimeSource).toContain('senderDeviceId');
+    expect(imRuntimeSource).toContain('recipientDeviceId !== localDeviceId');
+    expect(imRuntimeSource).toContain('acceptInboundSession');
+  });
+
   it('does not render schema-invalid decrypted bytes as raw message content', () => {
     expect(socialChatSource).not.toContain('new TextDecoder().decode(plaintext)');
     expect(socialChatSource).not.toContain('content: plaintextB64');
   });
 
   it('advertises and accepts only Double Ratchet version 1', () => {
-    expect(socialChatSource).toContain('supported_versions: [1]');
+    const cryptoServiceSource = readFileSync(new URL('../services/crypto-service.ts', import.meta.url), 'utf8');
+    expect(cryptoServiceSource).toContain('supported_versions');
     expect(socialChatSource).not.toContain('cryptoDrEnabled');
     expect(imRuntimeSource).not.toContain('cryptoDrEnabled');
     expect(featureFlagsSource).not.toContain('cryptoDrEnabled');
     expect(rustCryptoSource).toContain('if negotiated_version != 1');
     expect(rustKeyExchangeSource).toContain('supported_versions: vec![1]');
     expect(rustGatewaySource).toContain('supported_versions: vec![1]');
-  });
-
-  it('routes federated X3DH bootstrap by PTID and peer Home Station', () => {
-    expect(socialChatSource).toContain("const actorPtid = get().currentUserDid || ''");
-    expect(socialChatSource).toContain('member.ptid !== actorPtid');
-    expect(socialChatSource).toContain('peerMember?.actorHomeStationPeerId');
-    expect(socialChatSource).toContain(
-      'get().establishSession(sessionUlid, receiverDid, true)',
-    );
-    expect(socialChatSource).not.toContain(
-      'const actorId = currentAuthenticatedActorId() ||',
-    );
-  });
-
-  it('uses Rust crypto storage as session-readiness authority', () => {
-    expect(socialChatSource).toContain(
-      'const persisted = await api.cryptoSessionStatus(sessionUlid)',
-    );
-    expect(socialChatSource).not.toContain(
-      'if (!encryptionEnabled || sessionEncrypted[sessionUlid])',
-    );
-  });
-
-  it('keeps failed direct sends as retryable message bubbles', () => {
-    expect(socialChatSource).toContain('FriendMessageStatus.SENDING');
-    expect(socialChatSource).toContain('FriendMessageStatus.FAILED');
-    expect(socialChatSource).toContain('retryFriendMessage: async');
-    expect(chatMessageAreaSource).toContain('retryFriendMessage(');
-    expect(chatErrorMappingSource).toContain(
-      'error.chat.secureChannelUnavailable',
-    );
   });
 
   it('does not expose legacy crypto commands or delete history during startup', () => {
@@ -126,6 +124,23 @@ describe('strict chat encryption source contract', () => {
     expect(rustMainSource).not.toContain('conversation_decrypt_message');
     expect(localChatStoreSource).not.toContain('wipe_legacy_group_plaintext');
     expect(localChatStoreSource).not.toContain('legacy_group_plaintext_wipe');
+  });
+
+  it('exposes one Conversation send and receipt path with no friend-chat fallback', () => {
+    for (const source of [
+      desktopApiSource,
+      rustFriendChatSource,
+      rustGatewaySource,
+      rustMainSource,
+      rustPresenceSource,
+    ]) {
+      expect(source).not.toContain('friend_chat_send_message');
+      expect(source).not.toContain('friend_chat_ack_messages');
+      expect(source).not.toContain('/friend-chat/message/send');
+      expect(source).not.toContain('/friend-chat/message/ack');
+    }
+    expect(socialChatSource).toContain('conversation.submitCommand');
+    expect(socialChatSource).toContain('conversation.submitReceipt');
   });
 
   it('retires every Desktop Sender Keys command surface', () => {
@@ -140,6 +155,25 @@ describe('strict chat encryption source contract', () => {
     expect(rustGatewaySource).not.toContain('"crypto_group_decrypt"');
     expect(desktopClientStorageSource).not.toContain('crypto.sender-key-ledger');
     expect(identityHandlersSource).not.toContain('crypto.sender-key-ledger');
+  });
+
+  it('requires the active MLS epoch and registered device for group mutations', () => {
+    const section = (start: string, end: string) => {
+      const offset = socialChatSource.indexOf(start);
+      return socialChatSource.slice(offset, socialChatSource.indexOf(end, offset));
+    };
+    const sendPath = section('sendGroupMessage: async', 'loadGroupMembers: async');
+    const recallPath = section('recallGroupMessage: async', 'editGroupMessage: async');
+    const editPath = section('editGroupMessage: async', 'applyMessageMutation:');
+    expect(sendPath).toContain('mlsGroup.recipientStatus(groupUlid)');
+    expect(sendPath).toContain("status.status !== 'active'");
+    expect(sendPath).toContain('status.mlsEpoch !== projectedMlsEpoch');
+    for (const path of [sendPath, recallPath, editPath]) {
+      expect(path).toContain('const localAddress = getLocalCryptoAddress()');
+      expect(path).toContain('sender_device_id: localAddress.deviceId');
+      expect(path).not.toContain("localStorage.getItem('peers_im_device_id')");
+    }
+    expect(imServiceSource).not.toContain("'mls_group_status'");
   });
 });
 

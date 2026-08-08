@@ -875,6 +875,45 @@ where
     Ok(result)
 }
 
+pub(crate) fn put_crypto_backup(
+    token: &str,
+    request: &crate::model::chat::PutCryptoBackupRequest,
+) -> Result<crate::model::chat::PutCryptoBackupResponse, StationClientError> {
+    request_proto(
+        Method::POST,
+        "/key-exchange/backup/crypto",
+        token,
+        None,
+        Some(request),
+    )
+}
+
+pub(crate) fn get_latest_crypto_backup(
+    token: &str,
+) -> Result<crate::model::chat::GetLatestCryptoBackupResponse, StationClientError> {
+    request_proto::<(), crate::model::chat::GetLatestCryptoBackupResponse>(
+        Method::GET,
+        "/key-exchange/backup/crypto/latest",
+        token,
+        None,
+        None,
+    )
+}
+
+pub(crate) fn list_crypto_backup_revisions(
+    token: &str,
+    limit: u32,
+) -> Result<crate::model::chat::ListCryptoBackupRevisionsResponse, StationClientError> {
+    let query = [("limit", limit.to_string())];
+    request_proto::<(), crate::model::chat::ListCryptoBackupRevisionsResponse>(
+        Method::GET,
+        "/key-exchange/backup/crypto/revisions",
+        token,
+        Some(&query),
+        None,
+    )
+}
+
 /// Authenticated JSON request — minimal helper for OSS subserver
 /// endpoints that speak plain JSON (not the `PeersResponse`
 /// protobuf envelope). Returns the parsed JSON body verbatim on
