@@ -158,7 +158,7 @@ function MemberPreviewCard({ member }: { member: GroupMemberDisplay }) {
   const { t } = useTranslation('chat');
   const role = Number(member.role ?? GroupRole.MEMBER);
   return (
-    <Flexbox align="center" gap={6} style={{ width: 64, minWidth: 0 }}>
+    <Flexbox data-chat-group-member={member.ptid} align="center" gap={6} style={{ width: 66, minWidth: 0 }}>
       <MemberAvatar member={member} size={42} />
       <Text ellipsis style={{ width: '100%', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>
         {member.displayName}
@@ -1418,6 +1418,7 @@ export function ChatDetailPanel() {
             )}
             <Flexbox horizontal align="center" justify="space-between" gap={8} style={{ marginTop: 4, minWidth: 0, flexWrap: 'wrap' }}>
               <Button
+                data-chat-group-add-member-open
                 type="dashed"
                 icon={<UserPlus size={14} />}
                 size="small"
@@ -1438,6 +1439,7 @@ export function ChatDetailPanel() {
                   </Button>
                 )}
                 <Button
+                  data-chat-group-manage-members
                   type="link"
                   size="small"
                   style={{ fontSize: 12, padding: 0 }}
@@ -1727,6 +1729,7 @@ export function ChatDetailPanel() {
                       {member.muted ? t('chat.social.detail.unmuteMember') : t('chat.social.detail.muteMember')}
                     </Button>
                     <Button
+                      data-chat-group-remove-member={member.ptid}
                       type="text"
                       size="small"
                       danger
@@ -1749,7 +1752,10 @@ export function ChatDetailPanel() {
         okText={t('chat.social.detail.addMember')}
         cancelText={t('chat.social.messageArea.cancel')}
         confirmLoading={inviteSubmitting}
-        okButtonProps={{ disabled: inviteDids.length === 0 }}
+        okButtonProps={{
+          'data-chat-group-add-member-submit': 'true',
+          disabled: inviteDids.length === 0,
+        }}
         onOk={() => void submitGroupInvites()}
         onCancel={() => {
           setInviteModalOpen(false);
@@ -1759,6 +1765,7 @@ export function ChatDetailPanel() {
         <Flexbox gap={8}>
           <Text type="secondary">{t('chat.social.detail.addMemberDesc')}</Text>
           <Select
+            data-chat-group-add-member-select
             mode="multiple"
             value={inviteDids}
             options={inviteCandidates.map((candidate) => ({

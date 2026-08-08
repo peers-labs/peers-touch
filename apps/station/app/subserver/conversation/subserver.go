@@ -708,14 +708,13 @@ func (s *subServer) handleUploadKeyPackage(ctx context.Context, req *chat.Upload
 		return nil, server.Unauthorized("authentication required")
 	}
 
-	// Header takes precedence; fall back to body field for backwards compatibility.
-	deviceID := req.DeviceId
-	if headerDeviceID := serverwrapper.GetDeviceID(ctx); headerDeviceID != "" {
-		deviceID = headerDeviceID
-	}
-
+	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
 	if deviceID == "" {
-		return nil, server.BadRequest("device_id is required")
+		return nil, server.BadRequest("X-Device-ID is required")
+	}
+	if requestedDeviceID := strings.TrimSpace(req.DeviceId); requestedDeviceID != "" &&
+		requestedDeviceID != deviceID {
+		return nil, server.BadRequest("device_id does not match authenticated X-Device-ID")
 	}
 	if len(req.Data) == 0 {
 		return nil, server.BadRequest("data is required")
@@ -790,14 +789,18 @@ func (s *subServer) handleDeviceRegister(ctx context.Context, req *chat.Register
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.DeviceId == "" {
-		return nil, server.BadRequest("device_id is required")
+	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
+	if deviceID == "" {
+		return nil, server.BadRequest("X-Device-ID is required")
+	}
+	if strings.TrimSpace(req.DeviceId) != deviceID {
+		return nil, server.BadRequest("device_id must match authenticated X-Device-ID")
 	}
 
 	if err := s.deviceStore.RegisterLocal(
 		ctx,
 		subject.ID,
-		req.DeviceId,
+		deviceID,
 		req.Label,
 		s.localStationID,
 		req.SigningKeyId,
@@ -854,8 +857,37 @@ func (s *subServer) handleDkxSend(ctx context.Context, req *chat.SendDkxRequest)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.RecipientPtid == "" || req.SessionId == "" || len(req.OpaqueKeyMaterial) == 0 {
-		return nil, server.BadRequest("recipient_ptid, session_id, and opaque_key_material are required")
+	senderDeviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
+	recipientPtid := strings.TrimSpace(req.RecipientPtid)
+	recipientDeviceID := strings.TrimSpace(req.RecipientDeviceId)
+	if senderDeviceID == "" ||
+		recipientPtid == "" ||
+		recipientDeviceID == "" ||
+		req.SessionId == "" ||
+		len(req.OpaqueKeyMaterial) == 0 {
+		return nil, server.BadRequest(
+			"sender X-Device-ID, recipient_ptid, recipient_device_id, session_id, and opaque_key_material are required",
+		)
+	}
+	senderDevices, err := s.deviceStore.ListActive(ctx, subject.ID)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("resolve sender device failed", err)
+	}
+	activeDevices, err := s.deviceStore.ListActive(ctx, recipientPtid)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("resolve recipient device failed", err)
+	}
+	recipientStation, err := resolveDkxDeviceRoute(
+		subject.ID,
+		senderDeviceID,
+		recipientPtid,
+		recipientDeviceID,
+		req.RecipientStationPeerId,
+		senderDevices,
+		activeDevices,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	dkxPayload := &chat.DirectKeyExchangePayload{
@@ -868,16 +900,14 @@ func (s *subServer) handleDkxSend(ctx context.Context, req *chat.SendDkxRequest)
 		return nil, server.InternalErrorWithCause("marshal dkx payload failed", err)
 	}
 
-	recipientStation := req.RecipientStationPeerId
-	if recipientStation == "" {
-		recipientStation = s.localStationID
-	}
-
 	env := &chat.StationEnvelope{
 		EnvelopeId:                 uuid.NewString(),
-		IdempotencyKey:             dkxIdempotencyKey(req.SessionId, subject.ID, req.Kind, req.OpaqueKeyMaterial),
+		ConversationId:             req.SessionId,
+		IdempotencyKey:             dkxIdempotencyKey(req.SessionId, subject.ID, senderDeviceID, recipientPtid, recipientDeviceID, req.Kind, req.OpaqueKeyMaterial),
 		SenderPtid:                 subject.ID,
-		RecipientPtid:              req.RecipientPtid,
+		SenderDeviceId:             senderDeviceID,
+		RecipientPtid:              recipientPtid,
+		RecipientDeviceId:          recipientDeviceID,
 		RecipientHomeStationPeerId: recipientStation,
 		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE,
 		PayloadBytes:               payloadBytes,
@@ -891,14 +921,70 @@ func (s *subServer) handleDkxSend(ctx context.Context, req *chat.SendDkxRequest)
 	return &chat.SendDkxResponse{EnvelopeId: envelopeId}, nil
 }
 
+func resolveDkxDeviceRoute(
+	senderPtid string,
+	senderDeviceID string,
+	recipientPtid string,
+	recipientDeviceID string,
+	requestedStation string,
+	senderDevices []touchactor.DeviceRecord,
+	recipientDevices []touchactor.DeviceRecord,
+) (string, error) {
+	if recipientPtid == senderPtid && recipientDeviceID == senderDeviceID {
+		return "", server.BadRequest("DKX sender and recipient endpoints must differ")
+	}
+	senderActive := false
+	for _, device := range senderDevices {
+		if device.DeviceID == senderDeviceID {
+			senderActive = true
+			break
+		}
+	}
+	if !senderActive {
+		return "", server.BadRequest("X-Device-ID is not an active sender device")
+	}
+	recipientStation := ""
+	for _, device := range recipientDevices {
+		if device.DeviceID == recipientDeviceID {
+			recipientStation = strings.TrimSpace(device.HomeStationPeerID)
+			break
+		}
+	}
+	if recipientStation == "" {
+		return "", server.BadRequest("recipient_device_id is not active for recipient_ptid")
+	}
+	if requestedStation = strings.TrimSpace(requestedStation); requestedStation != "" &&
+		requestedStation != recipientStation {
+		return "", server.BadRequest(
+			"recipient_station_peer_id does not match the registered recipient device",
+		)
+	}
+	return recipientStation, nil
+}
+
 func dkxIdempotencyKey(
 	sessionID string,
 	senderPtid string,
+	senderDeviceID string,
+	recipientPtid string,
+	recipientDeviceID string,
 	kind chat.DirectKeyExchangeKind,
 	opaqueKeyMaterial []byte,
 ) string {
 	digest := sha256.Sum256(opaqueKeyMaterial)
-	return fmt.Sprintf("%s:%s:%s:%x", sessionID, senderPtid, kind.String(), digest)
+	tuple := strings.Join(
+		[]string{
+			sessionID,
+			senderPtid,
+			senderDeviceID,
+			recipientPtid,
+			recipientDeviceID,
+			kind.String(),
+		},
+		"\x00",
+	)
+	tupleDigest := sha256.Sum256(append([]byte(tuple), digest[:]...))
+	return fmt.Sprintf("dkx:%x", tupleDigest)
 }
 
 func conversationLocalAudience() string {

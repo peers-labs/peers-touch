@@ -258,7 +258,7 @@ func newHomeProposalFixture(
 		SenderDeviceId: "alice-device",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
-				EncryptedPayload: []byte("opaque-mls-ciphertext"),
+				GroupEncryptedPayload: []byte("opaque-mls-ciphertext"),
 			},
 		},
 	}

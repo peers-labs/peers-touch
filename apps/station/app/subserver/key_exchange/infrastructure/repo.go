@@ -71,7 +71,28 @@ func (r *GormRepo) AutoMigrate() error {
 			}
 		}
 	}
-	return r.db.AutoMigrate(&IdentityKeyModel{}, &SignedPreKeyModel{}, &OneTimePreKeyModel{})
+	if err := r.db.AutoMigrate(
+		&IdentityKeyModel{},
+		&SignedPreKeyModel{},
+		&OneTimePreKeyModel{},
+		&CryptoBackupHeadModel{},
+		&CryptoBackupRevisionModel{},
+	); err != nil {
+		return err
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, model := range []any{
+			&OneTimePreKeyModel{},
+			&SignedPreKeyModel{},
+			&IdentityKeyModel{},
+		} {
+			if err := tx.Where("device_id IN ?", []string{"", "legacy"}).
+				Delete(model).Error; err != nil {
+				return fmt.Errorf("key_exchange: remove unaddressed legacy bundle rows: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 func (r *GormRepo) UpsertIdentityKey(actorDID, deviceID string, ikPub []byte, fingerprint string, publishedAtUnixMs int64, supportedVersions []uint32) error {

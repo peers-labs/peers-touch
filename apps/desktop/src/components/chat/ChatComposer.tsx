@@ -762,6 +762,7 @@ export function ChatComposer({
             <Tooltip title={canSend ? t('chat.composer.send') : t('chat.social.composer.sendDisabled')}>
               <button
                 type="button"
+                data-chat-send
                 aria-label={t('chat.composer.send')}
                 onClick={() => {
                   submit().catch((error) => {

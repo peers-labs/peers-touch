@@ -1,20 +1,23 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use prost::Message;
 use rand::rngs::OsRng;
 use serde_json::json;
 use tauri::{State, Window};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::application::chat_storage;
+use crate::application::key_exchange::device_install;
 use crate::application::session_resolver;
-use crate::contracts::{
-    ChatDecryptCacheGetInput, ChatDecryptCachePutInput, ChatIndexLocalInput, ChatSearchLocalInput,
-    StubPayload,
+use crate::contracts::{ChatIndexLocalInput, ChatSearchLocalInput, StubPayload};
+use crate::domain::crypto::{
+    self, CryptoEndpoint, DirectSessionKey, PreKeyBundle, SessionManager, X25519KeyPair,
+    X3dhReceiverInput,
 };
-use crate::domain::crypto::{self, CryptoSessionState, X25519KeyPair, X3DHBundle};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::local_chat_store;
+use crate::model::chat::{DeviceEncryptedPayload, SendMessageCommand};
 use crate::state::AppState;
 use ed25519_dalek::Signer;
 
@@ -34,6 +37,12 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+fn local_endpoint(actor_id: &str) -> Result<CryptoEndpoint, String> {
+    let device_id =
+        device_install::get_or_create_device_id(actor_id).map_err(|error| format!("{error:?}"))?;
+    CryptoEndpoint::new(actor_id, device_id).map_err(|error| error.to_string())
+}
+
 fn now_unix_seconds_i32() -> i32 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -46,7 +55,7 @@ fn dr_operation_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-fn to_stub(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
+pub(crate) fn to_stub(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
         command: command.to_string(),
         status: data.to_string(),
@@ -151,72 +160,6 @@ pub fn chat_index_local_messages(
 }
 
 #[tauri::command]
-pub fn chat_decrypt_cache_get(
-    input: ChatDecryptCacheGetInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let user_scope = user_scope_from_state(&state, &window);
-    chat_decrypt_cache_get_for_scope(input, user_scope)
-}
-
-pub(crate) fn chat_decrypt_cache_get_for_scope(
-    input: ChatDecryptCacheGetInput,
-    user_scope: String,
-) -> AppResult<StubPayload> {
-    match local_chat_store::get_decrypt_cache(user_scope.as_str(), input.message_id.as_str()) {
-        Ok(Some((content, message_type, attachments_json, cached_at))) => to_stub(
-            "chat_decrypt_cache_get",
-            json!({
-                "entry": {
-                    "content": content,
-                    "message_type": message_type,
-                    "attachments_json": attachments_json,
-                    "cached_at": cached_at,
-                }
-            }),
-        ),
-        Ok(None) => to_stub("chat_decrypt_cache_get", json!({ "entry": null })),
-        Err(reason) => AppResult::fail(
-            ErrorCode::InternalError,
-            format!("Failed to read decrypt cache: {}", reason),
-            None,
-        ),
-    }
-}
-
-#[tauri::command]
-pub fn chat_decrypt_cache_put(
-    input: ChatDecryptCachePutInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let user_scope = user_scope_from_state(&state, &window);
-    chat_decrypt_cache_put_for_scope(input, user_scope)
-}
-
-pub(crate) fn chat_decrypt_cache_put_for_scope(
-    input: ChatDecryptCachePutInput,
-    user_scope: String,
-) -> AppResult<StubPayload> {
-    match local_chat_store::put_decrypt_cache(
-        user_scope.as_str(),
-        input.message_id.as_str(),
-        input.content.as_str(),
-        input.message_type,
-        input.attachments_json.as_str(),
-        input.cached_at,
-    ) {
-        Ok(()) => to_stub("chat_decrypt_cache_put", json!({ "stored": true })),
-        Err(reason) => AppResult::fail(
-            ErrorCode::InternalError,
-            format!("Failed to store decrypt cache: {}", reason),
-            None,
-        ),
-    }
-}
-
-#[tauri::command]
 pub fn crypto_generate_identity(
     state: State<'_, Arc<AppState>>,
     window: Window,
@@ -245,14 +188,34 @@ pub fn crypto_generate_identity(
         }
     };
     let fp = crypto::identity_fingerprint_hex(&kp.verifying_key);
-    let public_key = hex::encode(kp.verifying_key.to_bytes());
+    let endpoint = match local_endpoint(&actor_id) {
+        Ok(endpoint) => endpoint,
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Device identity operation failed: {reason}"),
+                None,
+            );
+        }
+    };
     to_stub(
         "crypto_generate_identity",
         json!({
+            "ptid": actor_id,
+            "deviceId": endpoint.device_id,
+            "identityPublicKey": B64.encode(kp.verifying_key.to_bytes()),
             "fingerprint": fp,
-            "public_key": public_key,
+            "createdAtUnixMs": now_ms(),
         }),
     )
+}
+
+#[tauri::command]
+pub fn crypto_get_identity(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    crypto_generate_identity(state, window)
 }
 
 #[tauri::command]
@@ -303,7 +266,7 @@ pub fn crypto_ratchet_telemetry_snapshot() -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn crypto_get_key_bundle(
+pub fn crypto_generate_key_bundle(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
@@ -372,17 +335,29 @@ pub fn crypto_get_key_bundle(
     let ik_pub_b64 = B64.encode(ik.verifying_key.to_bytes());
     let spk_pub_b64 = B64.encode(spk_pub_bytes);
     let spk_sig_b64 = B64.encode(spk_sig.to_bytes());
-    let opk_pubs_b64: Vec<String> = opk_pubs.iter().map(|b| B64.encode(b)).collect();
+    let one_time_pre_keys = opk_ids
+        .iter()
+        .zip(opk_pubs.iter())
+        .map(|(id, public_key)| {
+            json!({
+                "keyId": id.to_string(),
+                "publicKey": B64.encode(public_key),
+            })
+        })
+        .collect::<Vec<_>>();
 
     to_stub(
-        "crypto_get_key_bundle",
+        "crypto_generate_key_bundle",
         json!({
-            "ik_pub": ik_pub_b64,
-            "spk_id": spk_id,
-            "spk_pub": spk_pub_b64,
-            "spk_sig": spk_sig_b64,
-            "opk_ids": opk_ids,
-            "opk_pubs": opk_pubs_b64,
+            "identityPublicKey": ik_pub_b64,
+            "signedPreKey": {
+                "keyId": spk_id.to_string(),
+                "publicKey": spk_pub_b64,
+                "signature": spk_sig_b64,
+                "createdAtUnixMs": now_ms(),
+            },
+            "oneTimePreKeys": one_time_pre_keys,
+            "supportedVersions": [1],
         }),
     )
 }
@@ -402,12 +377,17 @@ fn decode_b64_fixed<const N: usize>(label: &str, data: &str) -> Result<[u8; N], 
 #[tauri::command]
 pub fn crypto_init_session(
     session_id: String,
-    peer_did: String,
-    peer_ik_pub: String,
-    peer_spk_pub: String,
-    peer_spk_sig: String,
-    peer_opk_pub: Option<String>,
-    negotiated_version: u32,
+    conversation_id: String,
+    session_generation: u64,
+    peer_ptid: String,
+    peer_device_id: String,
+    peer_identity_public_key: String,
+    peer_signed_pre_key_id: String,
+    peer_signed_pre_key: String,
+    peer_signed_pre_key_sig: String,
+    peer_one_time_pre_key_id: Option<String>,
+    peer_one_time_pre_key: Option<String>,
+    supported_versions: Vec<u32>,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
@@ -424,12 +404,17 @@ pub fn crypto_init_session(
     let user_scope = user_scope_from_state(&state, &window);
     crypto_init_session_for_context(
         session_id,
-        peer_did,
-        peer_ik_pub,
-        peer_spk_pub,
-        peer_spk_sig,
-        peer_opk_pub,
-        negotiated_version,
+        conversation_id,
+        session_generation,
+        peer_ptid,
+        peer_device_id,
+        peer_identity_public_key,
+        peer_signed_pre_key_id,
+        peer_signed_pre_key,
+        peer_signed_pre_key_sig,
+        peer_one_time_pre_key_id,
+        peer_one_time_pre_key,
+        supported_versions,
         actor_id,
         user_scope,
     )
@@ -438,30 +423,53 @@ pub fn crypto_init_session(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn crypto_init_session_for_context(
     session_id: String,
-    peer_did: String,
-    peer_ik_pub: String,
-    peer_spk_pub: String,
-    peer_spk_sig: String,
-    peer_opk_pub: Option<String>,
-    negotiated_version: u32,
+    conversation_id: String,
+    session_generation: u64,
+    peer_ptid: String,
+    peer_device_id: String,
+    peer_identity_public_key: String,
+    peer_signed_pre_key_id: String,
+    peer_signed_pre_key: String,
+    peer_signed_pre_key_sig: String,
+    peer_one_time_pre_key_id: Option<String>,
+    peer_one_time_pre_key: Option<String>,
+    supported_versions: Vec<u32>,
     actor_id: String,
     user_scope: String,
 ) -> AppResult<StubPayload> {
-    if session_id.trim().is_empty() || peer_did.trim().is_empty() {
+    if session_id.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "Session ID is required", None);
+    }
+    if !supported_versions.contains(&1) {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "Session ID and peer DID are required",
+            "No supported direct-session protocol version",
             None,
         );
     }
-    if negotiated_version != 1 {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "Double Ratchet version 1 is required",
-            None,
-        );
-    }
-    let version = 1;
+    let local = match local_endpoint(&actor_id) {
+        Ok(endpoint) => endpoint,
+        Err(reason) => {
+            return AppResult::fail(ErrorCode::InternalError, reason, None);
+        }
+    };
+    let peer = match CryptoEndpoint::new(peer_ptid, peer_device_id) {
+        Ok(endpoint) => endpoint,
+        Err(reason) => {
+            return AppResult::fail(ErrorCode::InvalidArgument, reason.to_string(), None);
+        }
+    };
+    let key = match DirectSessionKey::new(
+        conversation_id,
+        local.clone(),
+        peer.clone(),
+        session_generation,
+    ) {
+        Ok(key) => key,
+        Err(reason) => {
+            return AppResult::fail(ErrorCode::InvalidArgument, reason.to_string(), None);
+        }
+    };
     let identity_key_ref =
         crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
             .identity_key_ref();
@@ -476,114 +484,130 @@ pub(crate) fn crypto_init_session_for_context(
         }
     };
 
-    let ik_arr = match decode_b64_fixed::<32>("peer_ik_pub", &peer_ik_pub) {
+    let ik_arr = match decode_b64_fixed::<32>("peer_identity_public_key", &peer_identity_public_key)
+    {
+        Ok(b) => b,
+        Err(e) => {
+            return AppResult::fail(ErrorCode::InvalidArgument, e, None);
+        }
+    };
+    let spk_arr = match decode_b64_fixed::<32>("peer_signed_pre_key", &peer_signed_pre_key) {
+        Ok(b) => b,
+        Err(e) => {
+            return AppResult::fail(ErrorCode::InvalidArgument, e, None);
+        }
+    };
+    let sig_raw = match B64.decode(peer_signed_pre_key_sig.trim()) {
         Ok(b) => b,
         Err(e) => {
             return AppResult::fail(
                 ErrorCode::InvalidArgument,
-                format!("Invalid peer identity key: {}", e),
+                format!("Invalid signed pre-key signature: {e}"),
                 None,
             );
         }
     };
-    let spk_arr = match decode_b64_fixed::<32>("peer_spk_pub", &peer_spk_pub) {
-        Ok(b) => b,
-        Err(e) => {
+    let spk_id = match peer_signed_pre_key_id.parse::<u32>() {
+        Ok(id) => id,
+        Err(_) => {
             return AppResult::fail(
                 ErrorCode::InvalidArgument,
-                format!("Invalid peer signed pre-key: {}", e),
+                "Invalid signed pre-key ID",
                 None,
             );
         }
     };
-    let sig_raw = match B64.decode(peer_spk_sig.trim()) {
-        Ok(b) => b,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                format!("Invalid base64 for peer_spk_sig: {}", e),
-                None,
-            );
-        }
-    };
-    let opk = match peer_opk_pub.as_ref().filter(|s| !s.trim().is_empty()) {
-        Some(s) => match decode_b64_fixed::<32>("peer_opk_pub", s) {
-            Ok(b) => Some(b),
-            Err(e) => {
+    let opk_id = match peer_one_time_pre_key_id.as_deref() {
+        Some(value) => match value.parse::<u32>() {
+            Ok(id) => Some(id),
+            Err(_) => {
                 return AppResult::fail(
                     ErrorCode::InvalidArgument,
-                    format!("Invalid peer one-time pre-key: {}", e),
+                    "Invalid one-time pre-key ID",
                     None,
                 );
             }
         },
         None => None,
     };
+    if opk_id.is_some() != peer_one_time_pre_key.is_some() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "One-time pre-key ID and public key must be supplied together",
+            None,
+        );
+    }
+    let opk = match peer_one_time_pre_key.as_ref() {
+        Some(s) => match decode_b64_fixed::<32>("peer_one_time_pre_key", s) {
+            Ok(b) => Some(b),
+            Err(e) => {
+                return AppResult::fail(ErrorCode::InvalidArgument, e, None);
+            }
+        },
+        None => None,
+    };
 
-    let bundle = X3DHBundle {
+    let bundle = PreKeyBundle {
         ik_pub: ik_arr,
         spk_pub: spk_arr,
         spk_sig: sig_raw,
         opk_pub: opk,
+        spk_id,
+        opk_id,
     };
-
-    let x3 = match crypto::x3dh_sender(&ik, &bundle) {
-        Ok(x) => x,
+    let (session, x3dh) = match SessionManager::establish_sender_session(
+        session_id.clone(),
+        key.clone(),
+        1,
+        &ik,
+        &bundle,
+        now_ms(),
+    ) {
+        Ok(result) => result,
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                format!("X3DH key agreement failed: {}", reason),
+                format!("X3DH key agreement failed: {reason}"),
                 None,
             );
         }
     };
-    let session = CryptoSessionState::from_x3dh_bootstrap(
-        session_id.clone(),
-        peer_did,
-        true,
-        Some(x3.ephemeral_pub),
-    );
-
-    if let Err(reason) = local_chat_store::save_crypto_session(user_scope.as_str(), &session) {
+    if let Err(reason) = local_chat_store::save_direct_session(user_scope.as_str(), &session) {
         return AppResult::fail(
             ErrorCode::InternalError,
-            format!("Failed to save crypto session: {}", reason),
+            format!("Failed to save direct session: {reason}"),
             None,
         );
     }
-    if let Err(reason) = local_chat_store::set_crypto_session_handshake_delivered(
-        user_scope.as_str(),
-        session_id.as_str(),
-        false,
-    ) {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!(
-                "Failed to initialize secure-channel delivery state: {}",
-                reason
-            ),
-            None,
-        );
-    }
-    let dr =
-        crypto::double_ratchet::init_initiator(session_id.as_str(), &x3.shared_secret, spk_arr);
-    if let Err(reason) = local_chat_store::save_dr_session(user_scope.as_str(), &dr) {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!("Failed to save Double Ratchet session: {}", reason),
-            None,
-        );
-    }
+    let init = crate::model::chat::DirectSessionInit {
+        session_id: session_id.clone(),
+        conversation_id: key.conversation_id.clone(),
+        sender: Some(crate::model::chat::CryptoEndpoint {
+            ptid: local.ptid,
+            device_id: local.device_id,
+        }),
+        recipient: Some(crate::model::chat::CryptoEndpoint {
+            ptid: peer.ptid,
+            device_id: peer.device_id,
+        }),
+        sender_identity_key: ik.verifying_key.to_bytes().to_vec(),
+        sender_ephemeral_key: x3dh.ephemeral_pub.to_vec(),
+        recipient_signed_prekey_id: x3dh.spk_id,
+        recipient_one_time_prekey_id: x3dh.opk_id,
+        protocol_version: 1,
+        session_generation,
+    };
 
     to_stub(
         "crypto_init_session",
         json!({
-            "ephemeral_key": B64.encode(x3.ephemeral_pub),
-            "sender_identity_key": B64.encode(ik.verifying_key.to_bytes()),
-            "recipient_signed_prekey": B64.encode(spk_arr),
-            "recipient_one_time_prekey": opk.map(|value| B64.encode(value)).unwrap_or_default(),
-            "negotiated_version": version,
-            "established": true,
+            "sessionId": session_id,
+            "ephemeralPublicKey": B64.encode(x3dh.ephemeral_pub),
+            "usedSignedPreKeyId": x3dh.spk_id.to_string(),
+            "usedOneTimePreKeyId": x3dh.opk_id.map(|id| id.to_string()),
+            "negotiatedVersion": 1,
+            "established": false,
+            "directSessionInit": B64.encode(init.encode_to_vec()),
         }),
     )
 }
@@ -591,11 +615,14 @@ pub(crate) fn crypto_init_session_for_context(
 #[tauri::command]
 pub fn crypto_accept_session(
     session_id: String,
-    peer_did: String,
+    conversation_id: String,
+    session_generation: u64,
+    peer_ptid: String,
+    peer_device_id: String,
     sender_identity_key: String,
     sender_ephemeral_key: String,
-    recipient_signed_prekey: String,
-    recipient_one_time_prekey: Option<String>,
+    recipient_signed_pre_key_id: String,
+    recipient_one_time_pre_key_id: Option<String>,
     negotiated_version: u32,
     state: State<'_, Arc<AppState>>,
     window: Window,
@@ -613,11 +640,14 @@ pub fn crypto_accept_session(
     let user_scope = user_scope_from_state(&state, &window);
     crypto_accept_session_for_context(
         session_id,
-        peer_did,
+        conversation_id,
+        session_generation,
+        peer_ptid,
+        peer_device_id,
         sender_identity_key,
         sender_ephemeral_key,
-        recipient_signed_prekey,
-        recipient_one_time_prekey,
+        recipient_signed_pre_key_id,
+        recipient_one_time_pre_key_id,
         negotiated_version,
         actor_id,
         user_scope,
@@ -627,21 +657,20 @@ pub fn crypto_accept_session(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn crypto_accept_session_for_context(
     session_id: String,
-    peer_did: String,
+    conversation_id: String,
+    session_generation: u64,
+    peer_ptid: String,
+    peer_device_id: String,
     sender_identity_key: String,
     sender_ephemeral_key: String,
-    recipient_signed_prekey: String,
-    recipient_one_time_prekey: Option<String>,
+    recipient_signed_pre_key_id: String,
+    recipient_one_time_pre_key_id: Option<String>,
     negotiated_version: u32,
     actor_id: String,
     user_scope: String,
 ) -> AppResult<StubPayload> {
-    if session_id.trim().is_empty() || peer_did.trim().is_empty() {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "Session ID and peer DID are required",
-            None,
-        );
+    if session_id.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "Session ID is required", None);
     }
     if negotiated_version != 1 {
         return AppResult::fail(
@@ -650,6 +679,22 @@ pub(crate) fn crypto_accept_session_for_context(
             None,
         );
     }
+    let local = match local_endpoint(&actor_id) {
+        Ok(endpoint) => endpoint,
+        Err(reason) => return AppResult::fail(ErrorCode::InternalError, reason, None),
+    };
+    let peer = match CryptoEndpoint::new(peer_ptid, peer_device_id) {
+        Ok(endpoint) => endpoint,
+        Err(reason) => {
+            return AppResult::fail(ErrorCode::InvalidArgument, reason.to_string(), None)
+        }
+    };
+    let key = match DirectSessionKey::new(conversation_id, local, peer, session_generation) {
+        Ok(key) => key,
+        Err(reason) => {
+            return AppResult::fail(ErrorCode::InvalidArgument, reason.to_string(), None)
+        }
+    };
     let sender_ik = match decode_b64_fixed::<32>("sender_identity_key", &sender_identity_key) {
         Ok(value) => value,
         Err(reason) => {
@@ -663,16 +708,19 @@ pub(crate) fn crypto_accept_session_for_context(
                 return AppResult::fail(ErrorCode::InvalidArgument, reason, None);
             }
         };
-    let signed_prekey =
-        match decode_b64_fixed::<32>("recipient_signed_prekey", &recipient_signed_prekey) {
-            Ok(value) => value,
-            Err(reason) => {
-                return AppResult::fail(ErrorCode::InvalidArgument, reason, None);
-            }
-        };
-    let signed_prekey_private = match local_chat_store::crypto_load_signed_prekey_by_public(
+    let signed_prekey_id = match recipient_signed_pre_key_id.parse::<u32>() {
+        Ok(id) => id,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "Invalid signed pre-key ID",
+                None,
+            )
+        }
+    };
+    let signed_prekey_private = match local_chat_store::crypto_load_signed_prekey_by_id(
         user_scope.as_str(),
-        &signed_prekey,
+        signed_prekey_id,
     ) {
         Ok(value) => value,
         Err(reason) => {
@@ -686,25 +734,21 @@ pub(crate) fn crypto_accept_session_for_context(
             );
         }
     };
-    let signed_prekey_pair = X25519KeyPair {
-        private: StaticSecret::from(signed_prekey_private),
-        public: PublicKey::from(signed_prekey),
-    };
-    let one_time_prekey = match recipient_one_time_prekey
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
+    let signed_prekey_pair = X25519KeyPair::from_private_bytes(signed_prekey_private);
+    let one_time_prekey = match recipient_one_time_pre_key_id.as_deref() {
         Some(value) => {
-            let public = match decode_b64_fixed::<32>("recipient_one_time_prekey", value) {
-                Ok(value) => value,
-                Err(reason) => {
-                    return AppResult::fail(ErrorCode::InvalidArgument, reason, None);
+            let id = match value.parse::<u32>() {
+                Ok(id) => id,
+                Err(_) => {
+                    return AppResult::fail(
+                        ErrorCode::InvalidArgument,
+                        "Invalid one-time pre-key ID",
+                        None,
+                    )
                 }
             };
-            let private = match local_chat_store::crypto_consume_opk_by_public(
-                user_scope.as_str(),
-                &public,
-            ) {
+            let private = match local_chat_store::crypto_consume_opk_by_id(user_scope.as_str(), id)
+            {
                 Ok(value) => value,
                 Err(reason) => {
                     return AppResult::fail(
@@ -717,10 +761,7 @@ pub(crate) fn crypto_accept_session_for_context(
                     );
                 }
             };
-            Some(X25519KeyPair {
-                private: StaticSecret::from(private),
-                public: PublicKey::from(public),
-            })
+            Some(X25519KeyPair::from_private_bytes(private))
         }
         None => None,
     };
@@ -737,12 +778,23 @@ pub(crate) fn crypto_accept_session_for_context(
             );
         }
     };
-    let shared_secret = match crypto::x3dh_receiver(
+    let input = X3dhReceiverInput {
+        sender_ik_pub: sender_ik,
+        sender_ephemeral_pub: sender_ephemeral,
+        spk_id: signed_prekey_id,
+        opk_id: recipient_one_time_pre_key_id
+            .as_deref()
+            .and_then(|value| value.parse::<u32>().ok()),
+    };
+    let session = match SessionManager::establish_receiver_session(
+        session_id.clone(),
+        key,
+        negotiated_version,
         &identity,
         &signed_prekey_pair,
         one_time_prekey.as_ref(),
-        &sender_ik,
-        &sender_ephemeral,
+        &input,
+        now_ms(),
     ) {
         Ok(value) => value,
         Err(reason) => {
@@ -753,43 +805,19 @@ pub(crate) fn crypto_accept_session_for_context(
             );
         }
     };
-    let session =
-        CryptoSessionState::from_x3dh_bootstrap(session_id.clone(), peer_did, false, None);
-    if let Err(reason) = local_chat_store::save_crypto_session(user_scope.as_str(), &session) {
+    if let Err(reason) = local_chat_store::save_direct_session(user_scope.as_str(), &session) {
         return AppResult::fail(
             ErrorCode::InternalError,
             format!("Failed to save crypto session: {}", reason),
             None,
         );
     }
-    let dr = crypto::double_ratchet::init_responder(
-        session_id.as_str(),
-        &shared_secret,
-        signed_prekey_private,
-    );
-    if let Err(reason) = local_chat_store::save_dr_session(user_scope.as_str(), &dr) {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!("Failed to save Double Ratchet session: {}", reason),
-            None,
-        );
-    }
-    if let Err(reason) = local_chat_store::set_crypto_session_handshake_delivered(
-        user_scope.as_str(),
-        session_id.as_str(),
-        true,
-    ) {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!("Failed to persist secure-channel readiness: {}", reason),
-            None,
-        );
-    }
     to_stub(
         "crypto_accept_session",
         json!({
+            "sessionId": session_id,
             "established": true,
-            "negotiated_version": negotiated_version,
+            "negotiatedVersion": negotiated_version,
         }),
     )
 }
@@ -808,66 +836,35 @@ pub(crate) fn crypto_session_status_for_scope(
     session_id: String,
     user_scope: String,
 ) -> AppResult<StubPayload> {
-    let delivered = match local_chat_store::crypto_session_handshake_delivered(
-        user_scope.as_str(),
-        session_id.as_str(),
-    ) {
-        Ok(value) => value,
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to load secure-channel delivery state: {}", reason),
-                None,
-            );
-        }
-    };
-    match local_chat_store::load_dr_session(user_scope.as_str(), session_id.as_str()) {
-        Ok(Some(_)) => {
-            return to_stub(
-                "crypto_session_status",
-                json!({ "established": delivered, "version": 1 }),
-            );
-        }
-        Ok(None) => {}
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to load secure channel: {}", reason),
-                None,
-            );
-        }
-    }
-    to_stub(
-        "crypto_session_status",
-        json!({ "established": false, "version": -1 }),
-    )
-}
-
-#[tauri::command]
-pub fn crypto_reset_session(
-    session_id: String,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let user_scope = user_scope_from_state(&state, &window);
-    crypto_reset_session_for_scope(session_id, user_scope)
-}
-
-pub(crate) fn crypto_reset_session_for_scope(
-    session_id: String,
-    user_scope: String,
-) -> AppResult<StubPayload> {
-    if session_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Session ID is required", None);
-    }
-    match local_chat_store::reset_crypto_session(user_scope.as_str(), session_id.as_str()) {
-        Ok(()) => to_stub("crypto_reset_session", json!({ "reset": true })),
+    match local_chat_store::load_direct_session(&user_scope, &session_id) {
+        Ok(Some(session)) => to_stub("crypto_session_status", session_status_json(&session)),
+        Ok(None) => AppResult::fail(ErrorCode::NotFound, "Direct session not found", None),
         Err(reason) => AppResult::fail(
             ErrorCode::InternalError,
-            format!("Failed to reset secure channel: {}", reason),
+            format!("Failed to load direct session: {reason}"),
             None,
         ),
     }
+}
+
+fn session_status_json(session: &crypto::DirectSession) -> serde_json::Value {
+    json!({
+        "sessionId": session.session_id,
+        "conversationId": session.key.conversation_id,
+        "localAddress": {
+            "ptid": session.key.local.ptid,
+            "deviceId": session.key.local.device_id,
+        },
+        "peerAddress": {
+            "ptid": session.key.peer.ptid,
+            "deviceId": session.key.peer.device_id,
+        },
+        "sessionGeneration": session.key.generation,
+        "established": session.established,
+        "version": session.protocol_version,
+        "ratchetCounter": session.ratchet.n_send,
+        "lastActivityUnixMs": session.updated_at_unix_ms,
+    })
 }
 
 #[tauri::command]
@@ -884,18 +881,280 @@ pub(crate) fn crypto_mark_session_ready_for_scope(
     session_id: String,
     user_scope: String,
 ) -> AppResult<StubPayload> {
-    match local_chat_store::set_crypto_session_handshake_delivered(
-        user_scope.as_str(),
-        session_id.as_str(),
-        true,
-    ) {
+    let mut session = match local_chat_store::load_direct_session(&user_scope, &session_id) {
+        Ok(Some(session)) => session,
+        Ok(None) => return AppResult::fail(ErrorCode::NotFound, "Direct session not found", None),
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to load direct session: {reason}"),
+                None,
+            )
+        }
+    };
+    session.established = true;
+    session.updated_at_unix_ms = now_ms();
+    match local_chat_store::save_direct_session(&user_scope, &session) {
         Ok(()) => to_stub("crypto_mark_session_ready", json!({ "established": true })),
         Err(reason) => AppResult::fail(
             ErrorCode::InternalError,
-            format!("Failed to persist secure-channel readiness: {}", reason),
+            format!("Failed to persist direct-session readiness: {reason}"),
             None,
         ),
     }
+}
+
+#[tauri::command]
+pub fn crypto_list_sessions(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    crypto_list_sessions_for_context(None, &state, &window)
+}
+
+#[tauri::command]
+pub fn crypto_list_sessions_for_peer(
+    peer_ptid: String,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    crypto_list_sessions_for_context(Some(peer_ptid), &state, &window)
+}
+
+fn crypto_list_sessions_for_context(
+    peer_ptid: Option<String>,
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> AppResult<StubPayload> {
+    let actor_id = match actor_id_from_state(state, window) {
+        Some(actor_id) if !actor_id.trim().is_empty() => actor_id,
+        _ => return AppResult::fail(ErrorCode::Unauthorized, "Authentication required", None),
+    };
+    let local = match local_endpoint(&actor_id) {
+        Ok(endpoint) => endpoint,
+        Err(reason) => return AppResult::fail(ErrorCode::InternalError, reason, None),
+    };
+    let user_scope = user_scope_from_state(state, window);
+    match local_chat_store::list_direct_sessions(&user_scope, &local, peer_ptid.as_deref()) {
+        Ok(sessions) => to_stub(
+            if peer_ptid.is_some() {
+                "crypto_list_sessions_for_peer"
+            } else {
+                "crypto_list_sessions"
+            },
+            serde_json::Value::Array(sessions.iter().map(session_status_json).collect()),
+        ),
+        Err(reason) => AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to list direct sessions: {reason}"),
+            None,
+        ),
+    }
+}
+
+#[tauri::command]
+pub fn crypto_encrypt(
+    session_ids: Vec<String>,
+    plaintext: String,
+    command_id: String,
+    content_type: i32,
+    reply_to_message_id: Option<String>,
+    thread_root_message_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    crypto_encrypt_for_scope(
+        session_ids,
+        plaintext,
+        command_id,
+        content_type,
+        reply_to_message_id,
+        thread_root_message_id,
+        user_scope_from_state(&state, &window),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn crypto_encrypt_for_scope(
+    session_ids: Vec<String>,
+    plaintext: String,
+    command_id: String,
+    content_type: i32,
+    reply_to_message_id: Option<String>,
+    thread_root_message_id: Option<String>,
+    user_scope: String,
+) -> AppResult<StubPayload> {
+    let _guard = dr_operation_lock()
+        .lock()
+        .expect("crypto operation lock poisoned");
+    if session_ids.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "At least one direct-session ID is required",
+            None,
+        );
+    }
+    let sessions = match session_ids
+        .iter()
+        .map(|session_id| {
+            local_chat_store::load_direct_session(&user_scope, session_id)?
+                .ok_or_else(|| format!("Direct session not found: {session_id}"))
+        })
+        .collect::<Result<Vec<_>, String>>()
+    {
+        Ok(sessions) => sessions,
+        Err(reason) => return AppResult::fail(ErrorCode::NotFound, reason, None),
+    };
+    let now = now_ms();
+    let prepared = match SessionManager::prepare_fan_out(&sessions, plaintext.as_bytes(), b"", now)
+    {
+        Ok(prepared) => prepared,
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Direct-message encryption failed: {reason}"),
+                None,
+            )
+        }
+    };
+
+    let payloads = prepared
+        .ciphertexts
+        .iter()
+        .map(|ciphertext| {
+            let envelope = json!({
+                "version": ciphertext.wire.version,
+                "ciphertext": B64.encode(&ciphertext.wire.ciphertext),
+                "ratchetPublicKey": B64.encode(ciphertext.wire.sender_dh),
+                "counter": ciphertext.wire.n_send,
+                "previousCounter": ciphertext.wire.n_prev,
+                "nonce": B64.encode(ciphertext.wire.nonce),
+            })
+            .to_string()
+            .into_bytes();
+            DeviceEncryptedPayload {
+                recipient_ptid: ciphertext.recipient.ptid.clone(),
+                recipient_device_id: ciphertext.recipient.device_id.clone(),
+                session_id: ciphertext.session_id.clone(),
+                encrypted_envelope: envelope,
+            }
+        })
+        .collect::<Vec<_>>();
+    let command = SendMessageCommand {
+        device_payloads: payloads.clone(),
+        content_type,
+        reply_to_message_id: reply_to_message_id.unwrap_or_default(),
+        thread_root_message_id: thread_root_message_id.unwrap_or_default(),
+        attachments: Vec::new(),
+        group_encrypted_payload: Vec::new(),
+    };
+    let command_bytes = command.encode_to_vec();
+    if let Err(reason) = local_chat_store::persist_outbound_sessions_and_command(
+        &user_scope,
+        &prepared.sessions,
+        &command_id,
+        &command_bytes,
+        now,
+    ) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to atomically persist ratchets and outbox command: {reason}"),
+            None,
+        );
+    }
+    to_stub(
+        "crypto_encrypt",
+        json!({
+            "commandId": command_id,
+            "commandBytes": B64.encode(command_bytes),
+            "devicePayloads": prepared.ciphertexts.iter().map(|ciphertext| json!({
+                "recipientPtid": ciphertext.recipient.ptid,
+                "recipientDeviceId": ciphertext.recipient.device_id,
+                "sessionId": ciphertext.session_id,
+                "version": ciphertext.wire.version,
+                "ciphertext": B64.encode(&ciphertext.wire.ciphertext),
+                "ratchetPublicKey": B64.encode(ciphertext.wire.sender_dh),
+                "counter": ciphertext.wire.n_send,
+                "previousCounter": ciphertext.wire.n_prev,
+                "nonce": B64.encode(ciphertext.wire.nonce),
+            })).collect::<Vec<_>>(),
+        }),
+    )
+}
+
+#[tauri::command]
+pub fn crypto_decrypt(
+    session_id: String,
+    ciphertext: String,
+    ratchet_public_key: String,
+    counter: u32,
+    previous_counter: u32,
+    nonce: String,
+    version: u32,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let _guard = dr_operation_lock()
+        .lock()
+        .expect("crypto operation lock poisoned");
+    let user_scope = user_scope_from_state(&state, &window);
+    let mut session = match local_chat_store::load_direct_session(&user_scope, &session_id) {
+        Ok(Some(session)) => session,
+        Ok(None) => return AppResult::fail(ErrorCode::NotFound, "Direct session not found", None),
+        Err(reason) => return AppResult::fail(ErrorCode::InternalError, reason, None),
+    };
+    let wire = crypto::DrCiphertextWire {
+        version,
+        sender_dh: match decode_b64_fixed::<32>("ratchet_public_key", &ratchet_public_key) {
+            Ok(value) => value,
+            Err(reason) => return AppResult::fail(ErrorCode::InvalidArgument, reason, None),
+        },
+        n_send: counter,
+        n_prev: previous_counter,
+        nonce: match decode_b64_fixed::<12>("nonce", &nonce) {
+            Ok(value) => value,
+            Err(reason) => return AppResult::fail(ErrorCode::InvalidArgument, reason, None),
+        },
+        ciphertext: match B64.decode(ciphertext) {
+            Ok(value) => value,
+            Err(reason) => {
+                return AppResult::fail(
+                    ErrorCode::InvalidArgument,
+                    format!("Invalid ciphertext: {reason}"),
+                    None,
+                )
+            }
+        },
+    };
+    let outcome = match crypto::double_ratchet::decrypt(&session.ratchet, &wire, &[], b"") {
+        Ok(outcome) => outcome,
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Direct-message decryption failed: {reason}"),
+                None,
+            )
+        }
+    };
+    session.ratchet = outcome.advanced_state;
+    session.updated_at_unix_ms = now_ms();
+    if let Err(reason) = local_chat_store::save_direct_session(&user_scope, &session) {
+        return AppResult::fail(ErrorCode::InternalError, reason, None);
+    }
+    let plaintext = match String::from_utf8(outcome.plaintext) {
+        Ok(plaintext) => plaintext,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "Decrypted plaintext is not UTF-8",
+                None,
+            )
+        }
+    };
+    to_stub(
+        "crypto_decrypt",
+        json!({ "plaintext": plaintext, "version": version }),
+    )
 }
 
 #[tauri::command]
