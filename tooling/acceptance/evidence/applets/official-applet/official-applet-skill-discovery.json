@@ -1,0 +1,31 @@
+{
+  "status": "PASS",
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "checks": [
+    {
+      "name": "skill-file",
+      "path": "tooling/skills/official-applet-development/SKILL.md",
+      "exists": true,
+      "missingTerms": []
+    },
+    {
+      "name": "agents-registration",
+      "path": "AGENTS.md",
+      "exists": true,
+      "missingTerms": []
+    },
+    {
+      "name": "runtime-readme-link",
+      "path": "docs/architecture/applet-runtime/README.md",
+      "exists": true,
+      "missingTerms": []
+    },
+    {
+      "name": "contract-link",
+      "path": "docs/architecture/applet-runtime/official-applet-architecture-contract.md",
+      "exists": true,
+      "missingTerms": []
+    }
+  ],
+  "errors": []
+}
