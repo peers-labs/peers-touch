@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-budget-surface-controlled-gate.json');
 const contractPath = 'apps/applets/atelier/contracts/atelier-projection.contract.json';
 
@@ -69,9 +69,9 @@ function runGate() {
       'atelier:budget-surface-controlled-gate',
     ],
     evidenceFiles: [
-      'applet-readiness-evidence/official-applet/atelier-official-frontend-gate.json',
-      'applet-readiness-evidence/official-applet/atelier-bridge-runtime-gate.json',
-      'applet-readiness-evidence/official-applet/atelier-budget-surface-controlled-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-official-frontend-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json',
+      'tooling/acceptance/evidence/applets/official-applet/atelier-budget-surface-controlled-gate.json',
     ],
     descriptorField: 'workspace.budget',
     coveredStatuses: ['ok', 'warning', 'danger', 'blocked'],
@@ -119,7 +119,7 @@ function runGate() {
 try {
   const evidence = runGate();
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier budget surface controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier budget surface controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,

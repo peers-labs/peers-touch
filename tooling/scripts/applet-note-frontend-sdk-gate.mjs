@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const appletDir = path.resolve('apps/applets/note');
 const frontendDir = path.join(appletDir, 'frontend');
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'note-frontend-sdk-gate.json');
 
 function collectFiles(dirPath) {
