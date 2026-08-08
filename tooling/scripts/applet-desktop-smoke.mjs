@@ -2,14 +2,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { prepareAppletFixturePackage } from './lib/applet-readiness-paths.mjs';
 
-const packageDir = process.argv[2];
-if (!packageDir) {
-  process.stderr.write('usage: pnpm applet:desktop-smoke <package-dir>\n');
-  process.exit(1);
-}
+const packageArg = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
+const packageDir = packageArg ? path.resolve(packageArg) : prepareAppletFixturePackage('generic-complex-applet');
 
-const evidenceRoot = path.resolve('applet-readiness-evidence');
+const evidenceRoot = path.resolve('.artifacts/applet-readiness');
 for (const dir of ['contract', 'sdk', 'package', 'desktop', 'producer-independence']) {
   mkdirSync(path.join(evidenceRoot, dir), { recursive: true });
 }

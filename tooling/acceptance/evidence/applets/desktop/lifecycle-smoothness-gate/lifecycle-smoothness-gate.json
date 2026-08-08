@@ -1,0 +1,53 @@
+{
+  "status": "PASS",
+  "evidenceClass": "LOCAL_ACCEPTANCE_GATE",
+  "gate": "applet-desktop-lifecycle-smoothness",
+  "checks": [
+    {
+      "id": "explicit-close-release-deferred",
+      "status": "PASS",
+      "message": "`requestPageRuntimeRelease` must defer explicit close release until after the navigation frame."
+    },
+    {
+      "id": "close-navigates-before-release",
+      "status": "PASS",
+      "message": "`AppletRuntimePage` close must navigate home before requesting runtime release."
+    },
+    {
+      "id": "launcher-refresh-keeps-content",
+      "status": "PASS",
+      "message": "`AppletsPage` must only show fullscreen loading during empty initial load, not refresh/wakeup with existing content."
+    },
+    {
+      "id": "page-lease-test-covers-defer",
+      "status": "PASS",
+      "message": "`pageRuntimeLease.test.ts` must assert explicit close release is deferred."
+    },
+    {
+      "id": "runtime-test-covers-switch-lru",
+      "status": "PASS",
+      "message": "`appletsRuntime.test.ts` must cover A->B switch, close B, and evict A lease semantics."
+    },
+    {
+      "id": "desktop-lifecycle-vitest",
+      "status": "PASS",
+      "message": "Targeted Desktop runtime lease tests must pass."
+    }
+  ],
+  "commands": [
+    {
+      "command": "pnpm --dir apps/desktop exec vitest run src/kernel/pageRuntimeLease.test.ts src/runtimes/appletsRuntime.test.ts",
+      "status": "PASS"
+    }
+  ],
+  "provenScope": [
+    "A->B applet runtime switch acquires the second applet without releasing the previous LRU applet.",
+    "Explicit close releases only the closed applet page after navigation has already moved to launcher.",
+    "LRU eviction remains the release path for the previous hidden applet.",
+    "Launcher wakeup/refresh with existing applets does not fall back to fullscreen loading."
+  ],
+  "unprovenScope": [
+    "This local acceptance gate is not a packaged Desktop product-window browser E2E.",
+    "Full visual A->B switching with two installed applet cards still requires a product-window harness with two catalog entries."
+  ]
+}

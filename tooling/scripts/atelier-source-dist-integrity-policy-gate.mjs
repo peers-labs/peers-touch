@@ -9,7 +9,7 @@ const bundleName = 'main.lynx.bundle';
 const sourceManifestPath = path.join(repoRoot, 'apps/applets/atelier/applet.manifest.json');
 const desktopManifestPath = path.join(repoRoot, 'apps/desktop/applets-dist/peers.atelier/manifest.json');
 const bundlePath = path.join(repoRoot, 'apps/desktop/applets-dist/peers.atelier/main.lynx.bundle');
-const evidenceDir = path.join(repoRoot, 'applet-readiness-evidence/official-applet');
+const evidenceDir = path.join(repoRoot, 'tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-source-dist-integrity-policy-gate.json');
 const gate = 'atelier:source-dist-integrity-policy-gate';
 

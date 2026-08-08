@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidenceDir = path.resolve('applet-readiness-evidence/official-applet');
+const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-confirmation-outcome-controlled-gate.json');
 const contractPath = 'apps/applets/atelier/contracts/atelier-projection.contract.json';
 
@@ -54,7 +54,7 @@ function assertOutcomeMetadata(contract) {
   assert.equal(memory?.appletMemoryWriteExposed, false, 'memory confirmation must not expose applet memory write');
   assert.equal(memory?.realMemoryWriteE2EProven, false, 'memory confirmation must keep real E2E unproven');
   assert(memory.gates.includes('atelier:confirmation-outcome-controlled-gate'));
-  assert(memory.evidenceFiles.includes('applet-readiness-evidence/official-applet/atelier-confirmation-outcome-controlled-gate.json'));
+  assert(memory.evidenceFiles.includes('tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-outcome-controlled-gate.json'));
 
   const rerun = contract.methodPayloads?.['atelier.feedback.confirmRerun']?.controlledEvidence;
   assert.equal(rerun?.stationOwnedRerunTaskCreationProven, true, 'rerun confirmation must prove Station-owned task creation');
@@ -65,7 +65,7 @@ function assertOutcomeMetadata(contract) {
   assert.equal(rerun?.appletRerunExecutionExposed, false, 'rerun confirmation must not expose applet rerun execution');
   assert.equal(rerun?.realRerunTaskCreationE2EProven, false, 'rerun confirmation must keep real E2E unproven');
   assert(rerun.gates.includes('atelier:confirmation-outcome-controlled-gate'));
-  assert(rerun.evidenceFiles.includes('applet-readiness-evidence/official-applet/atelier-confirmation-outcome-controlled-gate.json'));
+  assert(rerun.evidenceFiles.includes('tooling/acceptance/evidence/applets/official-applet/atelier-confirmation-outcome-controlled-gate.json'));
 }
 
 function runGate() {
@@ -111,7 +111,7 @@ function runGate() {
 try {
   const evidence = runGate();
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`PASS Atelier confirmation outcome controlled gate: ${evidencePath}`);
+  process.stdout.write(`PASS Atelier confirmation outcome controlled gate: ${evidencePath}\n`);
 } catch (error) {
   const evidence = {
     ok: false,
