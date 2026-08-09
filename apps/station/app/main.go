@@ -15,6 +15,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	frontendtelemetry "github.com/peers-labs/peers-touch/station/app/subserver/frontend_telemetry"
 	keyexchange "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange"
+	messagingsub "github.com/peers-labs/peers-touch/station/app/subserver/messaging"
 	notifsubserver "github.com/peers-labs/peers-touch/station/app/subserver/notification"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
 	officialapplets "github.com/peers-labs/peers-touch/station/app/subserver/official_applets"
@@ -54,6 +55,7 @@ func main() {
 		server.WithSubServer("conversation", convsub.NewConversationSubServer),
 		server.WithSubServer("presence", presence.NewPresenceSubServer),
 		server.WithSubServer("key_exchange", keyexchange.NewKeyExchangeSubServer),
+		server.WithSubServer("messaging", messagingsub.NewMessagingSubServer),
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
 		server.WithSubServer("social", social.NewSocialSubServer),
 		server.WithSubServer("notification", notifsubserver.NewNotificationSubServer),

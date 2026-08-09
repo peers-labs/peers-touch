@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "domain/chat/command.proto";
+import "domain/chat/conversation.proto";
+import "domain/chat/endpoint.proto";
+import "domain/chat/event.proto";
+import "domain/chat/federation.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+message MessagingConversationView {
+  string conversation_id = 1;
+  ConversationKind kind = 2;
+  string name = 3;
+  string owner_ptid = 4;
+  repeated string member_ptids = 5;
+  int64 membership_epoch = 6;
+  int64 mls_epoch = 7;
+  bool active = 8;
+  string authority_station_id = 9;
+}
+
+message CreateMessagingDirectConversationRequest {
+  string peer_ptid = 1;
+  CryptoEndpoint creator = 2;
+}
+
+message CreateMessagingDirectConversationResponse {
+  MessagingConversationView conversation = 1;
+}
+
+message ListMessagingConversationsRequest {}
+
+message ListMessagingConversationsResponse {
+  repeated MessagingConversationView conversations = 1;
+}
+
+message ReservedMessagingMlsKeyPackage {
+  CryptoEndpoint target = 1;
+  string package_id = 2;
+  bytes key_package = 3;
+  bytes key_package_sha256 = 4;
+}
+
+message PrepareMessagingGroupGenesisRequest {
+  string conversation_id = 1;
+  string name = 2;
+  repeated string member_ptids = 3;
+  CryptoEndpoint creator = 4;
+}
+
+message PrepareMessagingGroupGenesisResponse {
+  string authority_plan_id = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  string authority_station_id = 3;
+  repeated CryptoEndpoint prospective_endpoints = 4;
+  repeated ReservedMessagingMlsKeyPackage reserved_key_packages = 5;
+  repeated FederatedEndpointManifest endpoint_manifests = 6;
+  bytes authority_plan_sha256 = 7;
+}
+
+message PrepareMessagingMembershipTransitionRequest {
+  string conversation_id = 1;
+  CryptoEndpoint sender = 2;
+  MessagingMembershipAction action = 3;
+  string target_ptid = 4;
+  string target_device_id = 5;
+  string role = 6;
+}
+
+message PrepareMessagingMembershipTransitionResponse {
+  string authority_plan_id = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  string authority_station_id = 3;
+  int64 authority_sequence = 4;
+  bytes authority_hash = 5;
+  int64 from_membership_epoch = 6;
+  int64 from_mls_epoch = 7;
+  repeated CryptoEndpoint pre_endpoints = 8;
+  repeated CryptoEndpoint post_endpoints = 9;
+  repeated CryptoEndpoint added_endpoints = 10;
+  repeated CryptoEndpoint removed_endpoints = 11;
+  repeated ReservedMessagingMlsKeyPackage reserved_key_packages = 12;
+  repeated FederatedEndpointManifest endpoint_manifests = 13;
+  bytes authority_plan_sha256 = 14;
+}
+
+message PrepareMessagingSendRequest {
+  string conversation_id = 1;
+  CryptoEndpoint sender = 2;
+}
+
+message PrepareMessagingSendResponse {
+  string conversation_id = 1;
+  ConversationKind conversation_kind = 2;
+  int64 authority_sequence = 3;
+  bytes authority_hash = 4;
+  int64 membership_epoch = 5;
+  int64 mls_epoch = 6;
+  repeated CryptoEndpoint required_endpoints = 7;
+  bytes delivery_plan_sha256 = 8;
+}
+
+enum MessagingCommandRejectCode {
+  MESSAGING_COMMAND_REJECT_CODE_UNSPECIFIED = 0;
+  MESSAGING_COMMAND_REJECT_CODE_STALE_DELIVERY_PLAN = 1;
+  MESSAGING_COMMAND_REJECT_CODE_CONVERSATION_STATE = 2;
+  MESSAGING_COMMAND_REJECT_CODE_SENDER_UNAUTHORIZED = 3;
+  MESSAGING_COMMAND_REJECT_CODE_DELIVERY_SET = 4;
+  MESSAGING_COMMAND_REJECT_CODE_UNSUPPORTED_COMMAND = 5;
+  MESSAGING_COMMAND_REJECT_CODE_AUTHORITY_PLAN_STALE = 6;
+  MESSAGING_COMMAND_REJECT_CODE_AUTHORITY_PLAN_EXPIRED = 7;
+}
+
+message SubmitMessagingCommandRequest {
+  ChatCommand command = 1;
+}
+
+message SubmitMessagingCommandResponse {
+  ConversationEvent event = 1;
+  MessagingCommandRejectCode reject_code = 2;
+  PrepareMessagingSendResponse current_send_plan = 3;
+}
