@@ -30,6 +30,9 @@ type VerifiedClaims struct {
 	Custom    map[string]string
 	IssuedAt  time.Time
 	ExpiresAt time.Time
+
+	signingKeyID string
+	signingKey   ed25519.PublicKey
 }
 
 // Get fetches a custom claim value. Returns ("", false) when
@@ -41,6 +44,17 @@ func (c VerifiedClaims) Get(key string) (string, bool) {
 	}
 	v, ok := c.Custom[key]
 	return v, ok
+}
+
+// SigningKeyID returns the key ID whose Ed25519 signature authenticated this
+// request. Capturing it during verification avoids a second mutable-store lookup.
+func (c VerifiedClaims) SigningKeyID() string {
+	return c.signingKeyID
+}
+
+// SigningPublicKey returns a copy of the key that authenticated this request.
+func (c VerifiedClaims) SigningPublicKey() ed25519.PublicKey {
+	return append(ed25519.PublicKey(nil), c.signingKey...)
 }
 
 // ErrNotFederationToken is the sentinel returned when the JOSE
@@ -132,13 +146,15 @@ func Verify(
 	store.TouchLastSeen(ctx, peeked.Issuer, time.Now())
 
 	return &VerifiedClaims{
-		Scope:     full.Scope,
-		Issuer:    full.Issuer,
-		Audience:  full.audienceSingle(),
-		Subject:   full.Subject,
-		Custom:    full.Custom,
-		IssuedAt:  asTime(full.IssuedAt),
-		ExpiresAt: asTime(full.ExpiresAt),
+		Scope:        full.Scope,
+		Issuer:       full.Issuer,
+		Audience:     full.audienceSingle(),
+		Subject:      full.Subject,
+		Custom:       full.Custom,
+		IssuedAt:     asTime(full.IssuedAt),
+		ExpiresAt:    asTime(full.ExpiresAt),
+		signingKeyID: headerKid,
+		signingKey:   append(ed25519.PublicKey(nil), pub...),
 	}, nil
 }
 

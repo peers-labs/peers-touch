@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "domain/chat/endpoint.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+enum MessagingReceiptKind {
+  MESSAGING_RECEIPT_KIND_UNSPECIFIED = 0;
+  MESSAGING_RECEIPT_KIND_DEVICE_CONSUMED = 1;
+  MESSAGING_RECEIPT_KIND_ACTOR_READ = 2;
+}
+
+message DeviceConsumptionReceipt {
+  string receipt_id = 1;
+  string conversation_id = 2;
+  string event_id = 3;
+  CryptoEndpoint consumer = 4;
+  int64 event_sequence = 5;
+  int64 lane_sequence = 6;
+  bytes payload_sha256 = 7;
+  google.protobuf.Timestamp consumed_at = 8;
+}
+
+message ActorReadCursor {
+  string conversation_id = 1;
+  string reader_ptid = 2;
+  int64 last_read_sequence = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message SubmitMessagingReceiptRequest {
+  MessagingReceiptKind kind = 1;
+  DeviceConsumptionReceipt device_consumed = 2;
+  ActorReadCursor actor_read = 3;
+}
+
+message SubmitMessagingReceiptResponse {}
+
+message MessageDeliveryAggregate {
+  string conversation_id = 1;
+  string event_id = 2;
+  int64 event_sequence = 3;
+  uint32 required_device_count = 4;
+  uint32 consumed_device_count = 5;
+  uint32 revoked_device_count = 6;
+  bool delivered = 7;
+  bool fully_delivered = 8;
+  bool read = 9;
+}

@@ -18,6 +18,7 @@ import (
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 )
 
 const (
@@ -54,6 +55,7 @@ type subServer struct {
 	federationFetchWrapper server.Wrapper
 	service                *application.Service
 	repo                   *infrastructure.GormRepo
+	deviceStore            *touchactor.DeviceStore
 	peerKeys               authfed.PeerKeyStore
 	keyCache               *authfed.KeyCache
 	localStationID         string
@@ -89,6 +91,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 
 	s.repo = repo
 	s.service = application.NewService(repo)
+	s.deviceStore = touchactor.NewDeviceStore(rds)
 	s.peerKeys = authfed.NewPeerKeyStoreGORMWithDB(rds)
 	s.keyCache = authfed.Singleton()
 	s.localStationID = keyExchangeLocalFederationAudience()
