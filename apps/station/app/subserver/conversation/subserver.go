@@ -84,7 +84,6 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		&conversationCommandProposalModel{},
 		&mlsLeaveIntentModel{},
 		&readCursorModel{},
-		&KeyPackage{},
 	); err != nil {
 		return err
 	}
@@ -95,6 +94,9 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.repo = repo
 	s.proposalStore = newCommandProposalStore(rds)
 	s.kpStore = NewKeyPackageStore(rds)
+	if err := s.kpStore.AutoMigrate(); err != nil {
+		return err
+	}
 	s.deviceStore = touchactor.NewDeviceStore(rds)
 	if err := s.deviceStore.AutoMigrate(); err != nil {
 		return err
