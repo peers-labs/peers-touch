@@ -86,6 +86,7 @@ type AuthorityRepository interface {
 		leftSequence int64,
 	) error
 	GetMember(ctx context.Context, conversationID string, ptid string) (*AuthorityMember, error)
+	ListActiveMembers(ctx context.Context, conversationID string) ([]AuthorityMember, error)
 	ListConversationsForActor(ctx context.Context, ptid string) ([]AuthorityConversationView, error)
 	LockConversation(ctx context.Context, conversationID string) (*AuthorityConversation, error)
 	ListActiveMemberDevices(ctx context.Context, conversationID string) ([]AuthorityMemberDevice, error)
