@@ -123,7 +123,7 @@ func (s *AuthorityPlanService) PrepareGroupGenesis(
 			return messaging.ErrSenderUnauthorized
 		}
 
-		now := s.clock().UTC()
+		now := s.clock().UTC().Truncate(time.Microsecond)
 		expiresAt := now.Add(s.policy.ReservationTTL)
 		planID := uuid.NewString()
 		reserved := make([]*chat.ReservedMessagingMlsKeyPackage, 0, len(endpoints)-1)
@@ -349,7 +349,7 @@ func (s *AuthorityPlanService) PrepareMembershipTransition(
 			return endpointKey(removedEndpoints[i]) < endpointKey(removedEndpoints[j])
 		})
 
-		now := s.clock().UTC()
+		now := s.clock().UTC().Truncate(time.Microsecond)
 		expiresAt := now.Add(s.policy.ReservationTTL)
 		planID := uuid.NewString()
 		reserved := make([]*chat.ReservedMessagingMlsKeyPackage, 0, len(addedEndpoints))
