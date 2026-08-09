@@ -67,6 +67,24 @@ message MessagingMembershipChangeCommitted {
   string role = 5;
 }
 
+message ConversationAuthorityMember {
+  string ptid = 1;
+  string role = 2;
+}
+
+// Complete public state after one membership transition. It is embedded in
+// the authority event hash so a freshly added MLS endpoint can atomically
+// establish its first local projection and future hash-chain checkpoint.
+message ConversationAuthoritySnapshot {
+  ConversationKind kind = 1;
+  string name = 2;
+  string owner_ptid = 3;
+  repeated ConversationAuthorityMember active_members = 4;
+  repeated CryptoEndpoint active_endpoints = 5;
+  int64 membership_epoch = 6;
+  int64 mls_epoch = 7;
+}
+
 message MembershipTransitionCommittedFact {
   string transition_id = 1;
   int64 from_membership_epoch = 2;
@@ -76,6 +94,7 @@ message MembershipTransitionCommittedFact {
   repeated MessagingMembershipChangeCommitted changes = 6;
   bytes mls_commit_sha256 = 7;
   string leave_intent_id = 8;
+  ConversationAuthoritySnapshot post_state = 9;
 }
 
 // Sending-endpoint lane payload. It advances the same authority chain without
