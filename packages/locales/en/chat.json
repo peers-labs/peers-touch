@@ -650,6 +650,7 @@
   "chat.social.createGroup.title": "Start Group Chat",
   "chat.social.createGroup.searchContacts": "Search contacts...",
   "chat.social.createGroup.noContacts": "No contacts found",
+  "chat.social.createGroup.selectHint": "Select at least one contact",
   "chat.social.createGroup.cancel": "Cancel",
   "chat.social.createGroup.finish": "Finish",
   "chat.social.createGroup.defaultName": "Group ({{count}})",
