@@ -76,7 +76,8 @@ pub fn account_switch(
                 .and_then(|g| g.token.clone())
                 .unwrap_or_default();
             if !token.is_empty() {
-                let actor = ActorRef::new_person(id);
+                let mut actor = ActorRef::new_person(id);
+                actor.ptid = auth_service::canonical_ptid_for_token(&token).unwrap_or_default();
                 state.sessions.bind(ActiveSession::new(
                     window.label(),
                     switched_id.clone(),
@@ -263,7 +264,7 @@ pub fn account_unlock(
 
     // Write to AppState and per-actor session store (debug gateway still uses `AppState.session`)
     let session = crate::domain::auth::session::from_station_response(
-        extract_actor_id_from_account(&account_id_clone),
+        session_vault::actor_id_from_account_id(&account_id_clone),
         token.clone(),
     );
 
@@ -296,7 +297,9 @@ pub fn account_unlock(
     // Bind the unlocked session to *this* window before broadcasting. If another
     // local window already owns this actor, the new unlock wins and the old
     // window is routed through the same global session-revoked flow.
-    let actor = ActorRef::new_person(session.actor_id.clone());
+    let mut actor = ActorRef::new_person(session.actor_id.clone());
+    let canonical_ptid = auth_service::canonical_ptid_for_token(&token);
+    actor.ptid = canonical_ptid.clone().unwrap_or_default();
     let kicked = state.sessions.bind_exclusive(ActiveSession::new(
         window.label(),
         account_id_clone.clone(),
@@ -314,11 +317,25 @@ pub fn account_unlock(
             tracing::warn!(window = %kicked_session.window_label, error = %error, "account_unlock: failed to emit local session kick");
         }
     }
+    if let Err(error) = auth_service::activate_messaging_profile(
+        &state,
+        &account_id_clone,
+        &session.actor_id,
+        &token,
+    ) {
+        tracing::warn!(
+            account_id = %account_id_clone,
+            actor_id = %session.actor_id,
+            error = %error,
+            "unlocked session retained while durable messaging activation awaits retry"
+        );
+    }
 
     let unlock_payload = AppResult::success(AuthSessionPayload {
         command: "account_unlock".to_string(),
         status: "authenticated".to_string(),
         actor_id: Some(session.actor_id.clone()),
+        ptid: canonical_ptid,
         name: p_name,
         email: p_email,
         avatar_url: p_avatar,
@@ -405,12 +422,4 @@ pub fn account_begin_pin_recovery(window: Window, input: AccountIdInput) -> AppR
 #[tauri::command]
 pub fn account_reset_pin(window: Window, input: AccountResetPinInput) -> AppResult<StubPayload> {
     application_account::account_reset_pin(input, &window.label())
-}
-
-/// Extract actor_id from account_id format like "password:abc" or "github:123".
-fn extract_actor_id_from_account(account_id: &str) -> String {
-    account_id
-        .split_once(':')
-        .map(|(_, id)| id.to_string())
-        .unwrap_or_else(|| account_id.to_string())
 }

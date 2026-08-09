@@ -83,3 +83,18 @@ fn sha256_short(value: &str) -> String {
     let digest = Sha256::digest(value.as_bytes());
     hex::encode(&digest[..12])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::actor_id_from_account_id;
+
+    #[test]
+    fn extracts_actor_from_station_scoped_account_id() {
+        assert_eq!(
+            actor_id_from_account_id(
+                "station:station_peer_12D3KooWQZwHCzezsjLCSYpAm2wvwDL5xD4iZ48MjWKL7TXbKC1B:password:347760575490555906"
+            ),
+            "347760575490555906"
+        );
+    }
+}
