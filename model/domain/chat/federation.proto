@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "domain/chat/endpoint.proto";
+import "domain/chat/queue.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+message FederatedDeviceQueueWrite {
+  CryptoEndpoint recipient = 1;
+  string event_id = 2;
+  string conversation_id = 3;
+  string idempotency_key = 4;
+  DeviceQueuePayloadType payload_type = 5;
+  bytes opaque_payload = 6;
+  bytes payload_sha256 = 7;
+}
+
+message FederatedDeviceQueueBatch {
+  repeated FederatedDeviceQueueWrite writes = 1;
+}
+
+enum MessagingFederationPayloadType {
+  MESSAGING_FEDERATION_PAYLOAD_TYPE_UNSPECIFIED = 0;
+  MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH = 1;
+  MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_COMMAND = 2;
+  MESSAGING_FEDERATION_PAYLOAD_TYPE_AUTHORITY_RESULT = 3;
+}
+
+message FederatedEndpointManifestEntry {
+  CryptoEndpoint endpoint = 1;
+  string signing_key_id = 2;
+  repeated bytes public_material_sha256 = 3;
+}
+
+message FederatedEndpointManifestSigningInput {
+  uint32 format_version = 1;
+  string manifest_id = 2;
+  string actor_ptid = 3;
+  string home_station_id = 4;
+  uint64 directory_version = 5;
+  repeated FederatedEndpointManifestEntry active_endpoints = 6;
+  google.protobuf.Timestamp issued_at = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  string signing_key_id = 9;
+}
+
+message FederatedEndpointManifest {
+  uint32 format_version = 1;
+  string manifest_id = 2;
+  string actor_ptid = 3;
+  string home_station_id = 4;
+  uint64 directory_version = 5;
+  repeated FederatedEndpointManifestEntry active_endpoints = 6;
+  google.protobuf.Timestamp issued_at = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  string signing_key_id = 9;
+  bytes station_signature = 10;
+}
+
+message GetFederatedEndpointManifestRequest {
+  string actor_ptid = 1;
+}
+
+message GetFederatedEndpointManifestResponse {
+  FederatedEndpointManifest manifest = 1;
+}
+
+// Canonical deterministic input for the detached Station signature.
+message MessagingFederationFrameSigningInput {
+  uint32 format_version = 1;
+  string frame_id = 2;
+  string source_station_id = 3;
+  string target_station_id = 4;
+  string idempotency_key = 5;
+  MessagingFederationPayloadType payload_type = 6;
+  string conversation_id = 7;
+  string event_id = 8;
+  int64 authority_sequence = 9;
+  bytes opaque_payload = 10;
+  bytes payload_sha256 = 11;
+  google.protobuf.Timestamp issued_at = 12;
+  google.protobuf.Timestamp expires_at = 13;
+  string signing_key_id = 14;
+}
+
+message MessagingFederationFrame {
+  uint32 format_version = 1;
+  string frame_id = 2;
+  string source_station_id = 3;
+  string target_station_id = 4;
+  string idempotency_key = 5;
+  MessagingFederationPayloadType payload_type = 6;
+  string conversation_id = 7;
+  string event_id = 8;
+  int64 authority_sequence = 9;
+  bytes opaque_payload = 10;
+  bytes payload_sha256 = 11;
+  google.protobuf.Timestamp issued_at = 12;
+  google.protobuf.Timestamp expires_at = 13;
+  string signing_key_id = 14;
+  bytes station_signature = 15;
+}
+
+message DeliverMessagingFederationFrameRequest {
+  MessagingFederationFrame frame = 1;
+}
+
+message DeliverMessagingFederationFrameResponse {
+  bool accepted = 1;
+  bool duplicate = 2;
+}

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -444,6 +445,11 @@ func (s *subServer) handleSubmitCommand(ctx context.Context, req *chat.SubmitCon
 
 	event, err := s.service.SubmitCommand(ctx, req.Command)
 	if err != nil {
+		slog.ErrorContext(ctx, "conversation command failed",
+			"conversation_id", req.Command.ConversationId,
+			"command_id", req.Command.CommandId,
+			"error", err,
+		)
 		return nil, mapConversationServiceError(err)
 	}
 	return &chat.SubmitConversationCommandResponse{Event: event}, nil
@@ -719,6 +725,13 @@ func (s *subServer) handleUploadKeyPackage(ctx context.Context, req *chat.Upload
 	if len(req.Data) == 0 {
 		return nil, server.BadRequest("data is required")
 	}
+	active, err := s.deviceStore.IsVerifiedActive(ctx, subject.ID, deviceID)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("verify messaging device failed", err)
+	}
+	if !active {
+		return nil, server.Forbidden("verified active messaging device required")
+	}
 
 	if err := s.kpStore.Upload(ctx, subject.ID, deviceID, s.localStationID, req.Data); err != nil {
 		return nil, server.InternalErrorWithCause("upload keypackage failed", err)
@@ -863,10 +876,11 @@ func (s *subServer) handleDkxSend(ctx context.Context, req *chat.SendDkxRequest)
 	if senderDeviceID == "" ||
 		recipientPtid == "" ||
 		recipientDeviceID == "" ||
+		req.ConversationId == "" ||
 		req.SessionId == "" ||
 		len(req.OpaqueKeyMaterial) == 0 {
 		return nil, server.BadRequest(
-			"sender X-Device-ID, recipient_ptid, recipient_device_id, session_id, and opaque_key_material are required",
+			"sender X-Device-ID, recipient_ptid, recipient_device_id, conversation_id, session_id, and opaque_key_material are required",
 		)
 	}
 	senderDevices, err := s.deviceStore.ListActive(ctx, subject.ID)
@@ -902,7 +916,7 @@ func (s *subServer) handleDkxSend(ctx context.Context, req *chat.SendDkxRequest)
 
 	env := &chat.StationEnvelope{
 		EnvelopeId:                 uuid.NewString(),
-		ConversationId:             req.SessionId,
+		ConversationId:             req.ConversationId,
 		IdempotencyKey:             dkxIdempotencyKey(req.SessionId, subject.ID, senderDeviceID, recipientPtid, recipientDeviceID, req.Kind, req.OpaqueKeyMaterial),
 		SenderPtid:                 subject.ID,
 		SenderDeviceId:             senderDeviceID,
