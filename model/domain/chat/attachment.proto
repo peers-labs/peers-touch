@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+// Station-visible descriptor. Encryption keys and plaintext metadata remain
+// inside the end-to-end encrypted message payload.
+message EncryptedObjectDescriptor {
+  string object_id = 1;
+  string storage_ref = 2;
+  uint64 ciphertext_size = 3;
+  bytes ciphertext_sha256 = 4;
+  string media_type = 5;
+  uint32 chunk_size = 6;
+  uint32 chunk_count = 7;
+}
+
+message AttachmentPlaintextMetadata {
+  string attachment_id = 1;
+  string filename = 2;
+  string mime_type = 3;
+  uint64 plaintext_size = 4;
+  bytes plaintext_sha256 = 5;
+  bytes object_key = 6;
+  bytes base_nonce = 7;
+  EncryptedObjectDescriptor object = 8;
+}

@@ -233,6 +233,7 @@ message SendDkxRequest {
   string session_id = 4;
   DirectKeyExchangeKind kind = 5;
   bytes opaque_key_material = 6;
+  string conversation_id = 7;
 }
 
 message SendDkxResponse {
