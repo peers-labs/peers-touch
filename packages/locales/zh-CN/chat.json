@@ -648,6 +648,7 @@
   "chat.social.createGroup.title": "发起群聊",
   "chat.social.createGroup.searchContacts": "搜索联系人...",
   "chat.social.createGroup.noContacts": "未找到联系人",
+  "chat.social.createGroup.selectHint": "请至少选择一位联系人",
   "chat.social.createGroup.cancel": "取消",
   "chat.social.createGroup.finish": "完成",
   "chat.social.createGroup.defaultName": "群聊（{{count}}人）",
