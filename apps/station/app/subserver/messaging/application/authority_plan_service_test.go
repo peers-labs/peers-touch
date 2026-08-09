@@ -44,7 +44,7 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 	if err := uow.AutoMigrate(); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Unix(1_700_000_000, 0).UTC()
+	now := time.Unix(1_700_000_000, 789).UTC()
 	service, err := application.NewAuthorityPlanService(
 		uow,
 		"station-local",
@@ -113,6 +113,9 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 		len(response.ProspectiveEndpoints) != 3 ||
 		len(response.ReservedKeyPackages) != 2 {
 		t.Fatalf("group genesis plan = %+v", response)
+	}
+	if response.ExpiresAt.AsTime().Nanosecond()%1_000 != 0 {
+		t.Fatalf("group genesis expiry is not PostgreSQL-safe: %s", response.ExpiresAt.AsTime())
 	}
 
 	for name, model := range map[string]any{
