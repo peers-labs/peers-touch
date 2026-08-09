@@ -6,7 +6,6 @@ import { theme } from 'antd';
 import { Search, X } from 'lucide-react';
 import { peerOfSession, useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { api } from '../../services/desktop_api';
 import { imServiceV1 } from '../../services/im-service';
 import { log } from '../../utils/logger';
 import { useActiveChatSessionSlice, useActiveSocialChatSlice } from './useActiveSocialChatStore';
@@ -168,40 +167,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
     const conversationId = crypto.randomUUID();
     useSocialChatStore.getState().setGroupSecurityState(conversationId, 'establishing');
     try {
-      const device = await api.accountGetDeviceId();
-      const registry = await api.stationList();
-      const activeStation = registry.entries.find(entry => entry.url === registry.active_url);
-      const station = activeStation?.peer_id
-        ? activeStation
-        : await api.stationProbe(registry.active_url);
-      if (!device.device_id || !station.peer_id) {
-        throw new Error('Local device or Station identity is unavailable');
-      }
-      const members = await Promise.all(memberDids.map(async (ptid) => {
-        const fetched = await imServiceV1.keyPackage.fetch(ptid);
-        if (
-          !fetched.available
-          || !fetched.data
-          || !fetched.deviceId
-          || !fetched.homeStationPeerId
-        ) {
-          throw new Error(`MLS KeyPackage routing is unavailable for ${ptid}`);
-        }
-        return {
-          ptid,
-          deviceId: fetched.deviceId,
-          homeStationPeerId: fetched.homeStationPeerId,
-          keyPackage: fetched.data,
-        };
-      }));
-      await imServiceV1.mlsGroup.createAuthorizedGroup({
-        conversationId,
-        name: groupName,
-        ownerPtid: ownDid,
-        ownerDeviceId: device.device_id,
-        ownerHomeStationPeerId: station.peer_id,
-        members,
-      });
+      await imServiceV1.messaging.createGroup(conversationId, groupName, memberDids);
       useSocialChatStore.getState().setGroupSecurityState(conversationId, 'ready');
       await loadGroups();
       await loadSessions();
@@ -246,6 +212,9 @@ export function CreateGroupModal({ open, onClose }: Props) {
         }}
       />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-group-dialog-title"
         style={{
           position: 'relative',
           width: 640,
@@ -300,17 +269,25 @@ export function CreateGroupModal({ open, onClose }: Props) {
                   {items.map((contact) => {
                     const selected = selectedDids.has(contact.did);
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={contact.did}
                         data-chat-create-group-contact={contact.did}
+                        aria-label={contact.name}
+                        aria-pressed={selected}
                         onClick={() => toggleSelect(contact.did)}
                         style={{
+                          width: '100%',
                           display: 'flex',
                           alignItems: 'center',
                           gap: 10,
                           padding: '7px 16px',
+                          border: 'none',
                           cursor: 'pointer',
                           background: selected ? token.colorFillQuaternary : 'transparent',
+                          color: 'inherit',
+                          font: 'inherit',
+                          textAlign: 'left',
                           transition: 'background 0.1s',
                         }}
                         onMouseEnter={(e) => {
@@ -359,7 +336,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
                         >
                           {contact.name}
                         </span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -370,7 +347,10 @@ export function CreateGroupModal({ open, onClose }: Props) {
 
         {/* Right panel — selected + actions */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '20px 24px 0', fontSize: 15, fontWeight: 600, color: token.colorText }}>
+          <div
+            id="create-group-dialog-title"
+            style={{ padding: '20px 24px 0', fontSize: 15, fontWeight: 600, color: token.colorText }}
+          >
             {t('chat.social.createGroup.title')}
           </div>
 
