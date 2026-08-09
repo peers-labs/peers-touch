@@ -35,7 +35,51 @@ func NewKeyPackageStore(db *gorm.DB) *KeyPackageStore {
 }
 
 func (s *KeyPackageStore) AutoMigrate() error {
-	return s.db.AutoMigrate(&KeyPackage{})
+	if err := s.db.AutoMigrate(&KeyPackage{}); err != nil {
+		return err
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var keyPackages []KeyPackage
+		if err := tx.
+			Where("data_sha256 IS NULL OR length(data_sha256) <> ?", sha256.Size).
+			Order("id ASC").
+			Find(&keyPackages).Error; err != nil {
+			return err
+		}
+		for _, keyPackage := range keyPackages {
+			if len(keyPackage.Data) == 0 {
+				if err := tx.Delete(&KeyPackage{}, keyPackage.ID).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			hash := sha256.Sum256(keyPackage.Data)
+			var duplicateCount int64
+			if err := tx.Model(&KeyPackage{}).
+				Where(
+					"id <> ? AND ptid = ? AND device_id = ? AND data_sha256 = ?",
+					keyPackage.ID,
+					keyPackage.Ptid,
+					keyPackage.DeviceID,
+					hash[:],
+				).
+				Count(&duplicateCount).Error; err != nil {
+				return err
+			}
+			if duplicateCount > 0 {
+				if err := tx.Delete(&KeyPackage{}, keyPackage.ID).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if err := tx.Model(&KeyPackage{}).
+				Where("id = ?", keyPackage.ID).
+				Update("data_sha256", hash[:]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Upload stores a new KeyPackage for the given actor/device.
