@@ -219,6 +219,28 @@ func (r *AuthorityRepository) GetMember(
 	}, nil
 }
 
+func (r *AuthorityRepository) ListActiveMembers(
+	ctx context.Context,
+	conversationID string,
+) ([]messaging.AuthorityMember, error) {
+	var models []AuthorityMemberModel
+	if err := r.db.WithContext(ctx).
+		Where("conversation_id = ? AND active = ?", conversationID, true).
+		Order("ptid ASC").
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	members := make([]messaging.AuthorityMember, 0, len(models))
+	for _, model := range models {
+		members = append(members, messaging.AuthorityMember{
+			PTID:   model.PTID,
+			Role:   model.Role,
+			Active: model.Active,
+		})
+	}
+	return members, nil
+}
+
 func (r *AuthorityRepository) RemoveMember(
 	ctx context.Context,
 	conversationID string,

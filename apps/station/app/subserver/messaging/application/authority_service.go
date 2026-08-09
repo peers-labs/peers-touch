@@ -405,6 +405,25 @@ func commitMembershipTransitionFromPlan(
 			Role:          change.Role,
 		})
 	}
+	if err := applyMembershipMutation(
+		ctx,
+		repositories,
+		&request,
+		&snapshot,
+		conversation.CurrentSequence+1,
+	); err != nil {
+		return nil, err
+	}
+	postState, err := buildConversationAuthoritySnapshot(
+		ctx,
+		repositories,
+		conversation,
+		toMembershipEpoch,
+		toMlsEpoch,
+	)
+	if err != nil {
+		return nil, err
+	}
 	event := &chat.ConversationEvent{
 		EventId:         eventID,
 		ConversationId:  command.ConversationId,
@@ -425,6 +444,7 @@ func commitMembershipTransitionFromPlan(
 				Changes:             committedChanges,
 				MlsCommitSha256:     transition.MlsCommitSha256,
 				LeaveIntentId:       transition.LeaveIntentId,
+				PostState:           postState,
 			},
 		},
 	}
@@ -442,15 +462,6 @@ func commitMembershipTransitionFromPlan(
 		return nil, err
 	}
 	if err := repositories.Authority.AppendEvent(ctx, event); err != nil {
-		return nil, err
-	}
-	if err := applyMembershipMutation(
-		ctx,
-		repositories,
-		&request,
-		&snapshot,
-		event.Sequence,
-	); err != nil {
 		return nil, err
 	}
 	if err := repositories.Authority.AdvanceEpochs(
@@ -1315,6 +1326,64 @@ func listRequiredEndpoints(
 	return endpoints, nil
 }
 
+func buildConversationAuthoritySnapshot(
+	ctx context.Context,
+	repositories messaging.AuthorityRepositories,
+	conversation *messaging.AuthorityConversation,
+	membershipEpoch int64,
+	mlsEpoch int64,
+) (*chat.ConversationAuthoritySnapshot, error) {
+	if conversation == nil || membershipEpoch <= 0 || mlsEpoch <= 0 {
+		return nil, messaging.ErrConversationState
+	}
+	members, err := repositories.Authority.ListActiveMembers(ctx, conversation.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	devices, err := repositories.Authority.ListActiveMemberDevices(ctx, conversation.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	activeMembers := make([]*chat.ConversationAuthorityMember, 0, len(members))
+	for _, member := range members {
+		if !member.Active || strings.TrimSpace(member.PTID) == "" || strings.TrimSpace(member.Role) == "" {
+			return nil, messaging.ErrConversationState
+		}
+		activeMembers = append(activeMembers, &chat.ConversationAuthorityMember{
+			Ptid: member.PTID,
+			Role: member.Role,
+		})
+	}
+	activeEndpoints := make([]*chat.CryptoEndpoint, 0, len(devices))
+	for _, device := range devices {
+		if !device.Active || device.Endpoint == nil {
+			return nil, messaging.ErrConversationState
+		}
+		activeEndpoints = append(activeEndpoints, device.Endpoint)
+	}
+	sort.Slice(activeEndpoints, func(i, j int) bool {
+		return endpointKey(activeEndpoints[i]) < endpointKey(activeEndpoints[j])
+	})
+	var kind chat.ConversationKind
+	switch conversation.Kind {
+	case messaging.AuthorityConversationKindGroup:
+		kind = chat.ConversationKind_CONVERSATION_KIND_GROUP
+	case messaging.AuthorityConversationKindDirect:
+		kind = chat.ConversationKind_CONVERSATION_KIND_DIRECT
+	default:
+		return nil, messaging.ErrConversationState
+	}
+	return &chat.ConversationAuthoritySnapshot{
+		Kind:            kind,
+		Name:            conversation.Name,
+		OwnerPtid:       conversation.OwnerPTID,
+		ActiveMembers:   activeMembers,
+		ActiveEndpoints: activeEndpoints,
+		MembershipEpoch: membershipEpoch,
+		MlsEpoch:        mlsEpoch,
+	}, nil
+}
+
 func buildEventAndPayloads(
 	ctx context.Context,
 	repositories messaging.AuthorityRepositories,
@@ -1484,6 +1553,10 @@ func buildMembershipTransitionEventAndPayloads(
 	if len(expectedChanges) != 0 {
 		return nil, nil, messaging.ErrDeliverySet
 	}
+	postState, err := buildConversationAuthoritySnapshot(ctx, repositories, conversation, 1, 1)
+	if err != nil {
+		return nil, nil, err
+	}
 	markerBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
 		&chat.PublicEventMarker{
 			ConversationId:  command.ConversationId,
@@ -1562,6 +1635,7 @@ func buildMembershipTransitionEventAndPayloads(
 				Changes:             committedChanges,
 				MlsCommitSha256:     transition.MlsCommitSha256,
 				LeaveIntentId:       transition.LeaveIntentId,
+				PostState:           postState,
 			},
 		},
 	}
