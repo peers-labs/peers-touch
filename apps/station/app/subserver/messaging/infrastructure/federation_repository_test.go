@@ -178,6 +178,72 @@ func TestFederationExpiredLeaseCanBeReclaimedAndOldGenerationIsFenced(t *testing
 	}
 }
 
+func TestFederationDeliveredClearsPreviousRetryError(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := infrastructure.NewFederationRepository(db)
+	if err := repository.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Unix(1_700_000_000, 0).UTC()
+	frame := signedFederationFrame(t, "frame-1", "idempotency-1", now)
+	if err := repository.EnqueueFederationFrame(ctx, frame, now); err != nil {
+		t.Fatal(err)
+	}
+	first, err := repository.ClaimFederationFrames(
+		ctx,
+		"dispatcher-1",
+		1,
+		now,
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.ScheduleFederationRetry(
+		ctx,
+		"frame-1",
+		"dispatcher-1",
+		first[0].LeaseGeneration,
+		now.Add(time.Minute),
+		"network",
+	); err != nil {
+		t.Fatal(err)
+	}
+	second, err := repository.ClaimFederationFrames(
+		ctx,
+		"dispatcher-2",
+		1,
+		now.Add(time.Minute),
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.MarkFederationDelivered(
+		ctx,
+		"frame-1",
+		"dispatcher-2",
+		second[0].LeaseGeneration,
+		now.Add(time.Minute),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var persisted infrastructure.FederationOutboxModel
+	if err := db.Where("frame_id = ?", "frame-1").First(&persisted).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persisted.State != "delivered" || persisted.LastErrorCode != "" {
+		t.Fatalf("delivered frame retained stale error: %+v", persisted)
+	}
+}
+
 func TestFederationOutboxFencesConversationAuthoritySequence(t *testing.T) {
 	repository := newFederationRepository(t)
 	ctx := context.Background()
