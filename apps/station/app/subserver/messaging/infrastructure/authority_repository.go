@@ -83,9 +83,10 @@ func (*AuthorityCommandReceiptModel) TableName() string {
 // ActorDeviceReadModel maps the identity-owned actor_devices table without
 // taking migration or mutation ownership.
 type ActorDeviceReadModel struct {
-	PTID     string `gorm:"column:ptid"`
-	DeviceID string `gorm:"column:device_id"`
-	Revoked  bool   `gorm:"column:revoked"`
+	PTID              string `gorm:"column:ptid"`
+	DeviceID          string `gorm:"column:device_id"`
+	HomeStationPeerID string `gorm:"column:home_station_peer_id"`
+	Revoked           bool   `gorm:"column:revoked"`
 }
 
 type ActorIdentityReadModel struct {
@@ -620,6 +621,31 @@ func (d *DeviceDirectory) ActorIdentityPublicKey(
 		return nil, fmt.Errorf("messaging: invalid actor identity public key")
 	}
 	return append([]byte(nil), identity.PublicKey...), nil
+}
+
+func (d *DeviceDirectory) HomeStationID(
+	ctx context.Context,
+	endpoint *chat.CryptoEndpoint,
+) (string, error) {
+	if endpoint == nil || endpoint.Ptid == "" || endpoint.DeviceId == "" {
+		return "", messaging.ErrNotFound
+	}
+	var record ActorDeviceReadModel
+	if err := d.db.WithContext(ctx).
+		Where(
+			"ptid = ? AND device_id = ? AND revoked = ? AND verification_source <> ?",
+			endpoint.Ptid,
+			endpoint.DeviceId,
+			false,
+			0,
+		).
+		First(&record).Error; err != nil {
+		return "", mapNotFound(err)
+	}
+	if record.HomeStationPeerID == "" {
+		return "", fmt.Errorf("messaging: endpoint has no Home Station")
+	}
+	return record.HomeStationPeerID, nil
 }
 
 func (d *DeviceDirectory) ListActiveEndpoints(
