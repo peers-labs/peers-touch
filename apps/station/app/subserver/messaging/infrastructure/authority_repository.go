@@ -93,8 +93,9 @@ type ActorDeviceReadModel struct {
 }
 
 type ActorIdentityReadModel struct {
-	PTID      string `gorm:"column:ptid"`
-	PublicKey []byte `gorm:"column:public_key"`
+	PTID           string `gorm:"column:ptid"`
+	PublicKey      []byte `gorm:"column:public_key"`
+	ProfileVersion int64  `gorm:"column:profile_version"`
 }
 
 func (*ActorIdentityReadModel) TableName() string {
