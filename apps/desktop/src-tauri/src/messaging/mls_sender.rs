@@ -252,6 +252,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 1,
+            authority_station_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MembershipTransitionCommitted(
                 MembershipTransitionCommittedFact {
                     transition_id: transition.transition_id.clone(),
