@@ -100,7 +100,7 @@ fn latest_revision(
 > {
     station_client::request_proto_for_device(
         Method::GET,
-        "/messaging/recovery/revision",
+        "/messaging/recovery/latest",
         &session.token,
         None,
         None::<&GetLatestRecoveryRevisionRequest>,
