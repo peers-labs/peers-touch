@@ -7,10 +7,10 @@ use super::{
     ConversationMessageProjection, ConversationProjection, DirectSessionBootstrapper,
     DrainProgress, GroupGenesisPreparer, MembershipTransitionIntentInput,
     MembershipTransitionPreparer, MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore,
-    MlsKeyPackagePublisher, PendingMembershipIntent, PreKeyPublisher, QueueDrain, SendPreparer,
-    SendTextIntent, StationCommandTransport, StationDeviceTransport, StationGroupGenesisTransport,
-    StationKeyBundleTransport, StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
-    StationPreKeyTransport, StationQueueTransport,
+    MlsKeyPackagePublisher, PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher,
+    QueueDrain, SendPreparer, SendTextIntent, StationCommandTransport, StationDeviceTransport,
+    StationGroupGenesisTransport, StationKeyBundleTransport, StationMembershipTransitionTransport,
+    StationMlsKeyPackageTransport, StationPreKeyTransport, StationQueueTransport,
 };
 use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::domain::crypto::IdentityKeyPair;
@@ -44,6 +44,13 @@ pub struct EngineEndpoint {
     pub device_id: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubmitTextOutcome {
+    pub command_id: Option<String>,
+    pub message_id: String,
+    pub state: &'static str,
+}
+
 pub struct MessagingEngine {
     profile_id: String,
     endpoint: EngineEndpoint,
@@ -54,6 +61,7 @@ pub struct MessagingEngine {
     consumer: Arc<MessagingItemConsumer>,
     drain_lock: Mutex<()>,
     dispatch_lock: Mutex<()>,
+    send_intent_lock: Mutex<()>,
     membership_transition_lock: Mutex<()>,
     runtime_consumer_epoch: Arc<AtomicU64>,
     projection_notifier: Mutex<Option<MessagingProjectionNotifier>>,
@@ -184,6 +192,7 @@ impl MessagingEngine {
             consumer,
             drain_lock: Mutex::new(()),
             dispatch_lock: Mutex::new(()),
+            send_intent_lock: Mutex::new(()),
             membership_transition_lock: Mutex::new(()),
             runtime_consumer_epoch: Arc::new(AtomicU64::new(0)),
             projection_notifier: Mutex::new(None),
@@ -365,22 +374,83 @@ impl MessagingEngine {
         conversation_id: &str,
         conversation_kind: ConversationKind,
         plaintext: &str,
-    ) -> Result<(String, String), String> {
-        if plaintext.is_empty() {
-            return Err("messaging plaintext is required".to_string());
+    ) -> Result<SubmitTextOutcome, String> {
+        let _guard = self
+            .send_intent_lock
+            .lock()
+            .map_err(|_| "messaging send intent lock poisoned".to_string())?;
+        if conversation_id.trim().is_empty()
+            || plaintext.is_empty()
+            || conversation_kind == ConversationKind::Unspecified
+        {
+            return Err("messaging text intent is incomplete".to_string());
         }
-        let command_id = Ulid::new().to_string();
         let message_id = Ulid::new().to_string();
-        let plan = self.prepare_send_plan(token, conversation_id)?;
-        if plan.conversation_kind != conversation_kind as i32 {
+        let draft = PendingMessageDraft {
+            conversation_id: conversation_id.to_string(),
+            conversation_kind: conversation_kind as i32,
+            message_id: message_id.clone(),
+            sender_ptid: self.endpoint.ptid.clone(),
+            sender_device_id: self.endpoint.device_id.clone(),
+            plaintext: plaintext.to_string(),
+            attempt_count: 0,
+            created_at_unix_ms: now_unix_ms(),
+        };
+        self.store.create_message_draft(&draft)?;
+        match self.prepare_message_draft(token, &draft) {
+            Ok(command_id) => Ok(SubmitTextOutcome {
+                command_id: Some(command_id),
+                message_id,
+                state: "pending",
+            }),
+            Err(_) => {
+                self.schedule_message_draft_retry(&draft, now_unix_ms())?;
+                Ok(SubmitTextOutcome {
+                    command_id: None,
+                    message_id,
+                    state: "draft",
+                })
+            }
+        }
+    }
+
+    pub fn resume_message_draft_once(&self, token: &str, now_unix_ms: i64) -> Result<bool, String> {
+        let _guard = self
+            .send_intent_lock
+            .lock()
+            .map_err(|_| "messaging send intent lock poisoned".to_string())?;
+        let Some(draft) = self.store.next_due_message_draft(now_unix_ms)? else {
+            return Ok(false);
+        };
+        if self.prepare_message_draft(token, &draft).is_err() {
+            self.schedule_message_draft_retry(&draft, now_unix_ms)?;
+        }
+        Ok(true)
+    }
+
+    fn prepare_message_draft(
+        &self,
+        token: &str,
+        draft: &PendingMessageDraft,
+    ) -> Result<String, String> {
+        if draft.sender_ptid != self.endpoint.ptid
+            || draft.sender_device_id != self.endpoint.device_id
+        {
+            return Err("messaging draft endpoint mismatch".to_string());
+        }
+        let conversation_kind = ConversationKind::try_from(draft.conversation_kind)
+            .map_err(|_| "messaging draft conversation kind is invalid".to_string())?;
+        let plan = self.prepare_send_plan(token, &draft.conversation_id)?;
+        if plan.conversation_kind != draft.conversation_kind {
             return Err("messaging conversation kind does not match Station plan".to_string());
         }
+        let command_id = Ulid::new().to_string();
         let intent = SendTextIntent {
             command_id: &command_id,
-            message_id: &message_id,
-            conversation_id,
-            plaintext,
-            client_timestamp_unix_ms: now_unix_ms(),
+            message_id: &draft.message_id,
+            conversation_id: &draft.conversation_id,
+            plaintext: &draft.plaintext,
+            client_timestamp_unix_ms: draft.created_at_unix_ms,
         };
         match conversation_kind {
             ConversationKind::Direct => {
@@ -393,7 +463,7 @@ impl MessagingEngine {
                     actor_identity,
                 )?
                 .prepare_missing(
-                    conversation_id,
+                    &draft.conversation_id,
                     &plan.required_endpoints,
                     intent.client_timestamp_unix_ms,
                     &StationKeyBundleTransport::new(
@@ -408,7 +478,25 @@ impl MessagingEngine {
                 return Err("messaging conversation kind is required".to_string());
             }
         };
-        Ok((command_id, message_id))
+        Ok(command_id)
+    }
+
+    fn schedule_message_draft_retry(
+        &self,
+        draft: &PendingMessageDraft,
+        now_unix_ms: i64,
+    ) -> Result<(), String> {
+        let exponent = draft.attempt_count.min(8);
+        let delay_ms = 1_000_i64
+            .checked_mul(1_i64 << exponent)
+            .unwrap_or(300_000)
+            .min(300_000);
+        self.store.schedule_message_draft_retry(
+            &draft.conversation_id,
+            &draft.message_id,
+            now_unix_ms.saturating_add(delay_ms),
+            "prepare_failed",
+        )
     }
 
     pub fn conversation_messages(
