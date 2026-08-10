@@ -144,7 +144,14 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 		t.Fatalf("plan count = %d, reserved KeyPackages = %d", planCount, reservedCount)
 	}
 
-	authority, err := application.NewAuthorityService(uow, func() time.Time { return now })
+	authority, err := application.NewAuthorityService(
+		uow,
+		"station-local",
+		messaging.FederationFrameSignFunc(func(context.Context, *chat.MessagingFederationFrame) error {
+			return nil
+		}),
+		func() time.Time { return now },
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

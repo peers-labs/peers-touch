@@ -30,6 +30,25 @@ type FederationOutboxClaim struct {
 	AttemptCount    uint32
 }
 
+type FederationFrameSigner interface {
+	SignFederationFrame(
+		ctx context.Context,
+		frame *chat.MessagingFederationFrame,
+	) error
+}
+
+type FederationFrameSignFunc func(
+	ctx context.Context,
+	frame *chat.MessagingFederationFrame,
+) error
+
+func (fn FederationFrameSignFunc) SignFederationFrame(
+	ctx context.Context,
+	frame *chat.MessagingFederationFrame,
+) error {
+	return fn(ctx, frame)
+}
+
 type FederationOutboxRepository interface {
 	EnqueueFederationFrame(
 		ctx context.Context,
