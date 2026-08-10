@@ -179,7 +179,12 @@ impl SendPreparer {
             command_bytes: &command_bytes,
             advanced_sessions: &advanced_sessions,
             session_inits: &session_inits,
-            projection: pending_projection(intent, &self.endpoint, &plan.delivery_plan_sha256),
+            projection: pending_projection(
+                intent,
+                &self.endpoint,
+                plan.conversation_kind,
+                &plan.delivery_plan_sha256,
+            ),
         })?;
         Ok(command)
     }
@@ -216,7 +221,12 @@ impl SendPreparer {
             session_state: &prepared.session_state,
             membership_epoch: plan.membership_epoch,
             mls_epoch: plan.mls_epoch,
-            projection: pending_projection(intent, &self.endpoint, &plan.delivery_plan_sha256),
+            projection: pending_projection(
+                intent,
+                &self.endpoint,
+                plan.conversation_kind,
+                &plan.delivery_plan_sha256,
+            ),
         })?;
         self.mls_manager
             .install_prepared_outbound_application(intent.conversation_id, &prepared)?;
@@ -315,11 +325,13 @@ fn build_text_command(
 fn pending_projection<'a>(
     intent: &'a SendTextIntent<'a>,
     endpoint: &'a EngineEndpoint,
+    conversation_kind: i32,
     delivery_plan_sha256: &'a [u8],
 ) -> PendingSenderProjection<'a> {
     PendingSenderProjection {
         command_id: intent.command_id,
         conversation_id: intent.conversation_id,
+        conversation_kind,
         message_id: intent.message_id,
         sender_ptid: &endpoint.ptid,
         sender_device_id: &endpoint.device_id,
