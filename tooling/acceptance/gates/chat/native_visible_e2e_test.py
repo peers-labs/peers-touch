@@ -168,5 +168,23 @@ class ComposerCleanupTest(unittest.TestCase):
         self.assertEqual(client.observer.fills, ["injected text", ""])
 
 
+class NativeObserverFillTest(unittest.TestCase):
+    def test_textarea_fill_uses_the_textarea_setter_and_input_event(self) -> None:
+        observer = object.__new__(runner.NativeObserver)
+        scripts: list[str] = []
+
+        def evaluate(script: str) -> Any:
+            scripts.append(script)
+            return "TEXTAREA" if len(scripts) == 1 else True
+
+        observer.eval = evaluate
+        observer.fill('[data-pt-text-input="chat-composer"]', 'exact "plaintext"')
+
+        self.assertEqual(len(scripts), 2)
+        self.assertIn("HTMLTextAreaElement.prototype", scripts[1])
+        self.assertIn("new InputEvent('input'", scripts[1])
+        self.assertIn('exact \\"plaintext\\"', scripts[1])
+
+
 if __name__ == "__main__":
     unittest.main()
