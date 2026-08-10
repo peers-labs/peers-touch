@@ -80,6 +80,7 @@ func newAuthorityFixture(
 		messaging.FederationFrameSignFunc(func(context.Context, *chat.MessagingFederationFrame) error {
 			return nil
 		}),
+		testEndpointManifestResolver(t, db, now),
 		func() time.Time { return now },
 	)
 	if err != nil {
@@ -128,10 +129,11 @@ func directCommand(conversationID, commandID string) *chat.ChatCommand {
 		}
 	}
 	return &chat.ChatCommand{
-		CommandId:       commandID,
-		ConversationId:  conversationID,
-		Sender:          &chat.CryptoEndpoint{Ptid: "alice", DeviceId: "alice-1"},
-		ClientTimestamp: timestamppb.New(time.Unix(1_700_000_000, 0)),
+		CommandId:          commandID,
+		ConversationId:     conversationID,
+		AuthorityStationId: "station:local",
+		Sender:             &chat.CryptoEndpoint{Ptid: "alice", DeviceId: "alice-1"},
+		ClientTimestamp:    timestamppb.New(time.Unix(1_700_000_000, 0)),
 		Payload: &chat.ChatCommand_SendMessage{
 			SendMessage: &chat.SendMessageIntent{
 				MessageId:   "message-" + commandID,
@@ -152,8 +154,9 @@ func bindSendPlan(
 ) {
 	t.Helper()
 	plan, err := service.PrepareSend(context.Background(), &chat.PrepareMessagingSendRequest{
-		ConversationId: command.ConversationId,
-		Sender:         command.Sender,
+		ConversationId:     command.ConversationId,
+		Sender:             command.Sender,
+		AuthorityStationId: command.AuthorityStationId,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -396,8 +399,9 @@ func TestStaleDeliveryPlanRejectsBeforeAuthorityMutation(t *testing.T) {
 	fresh, err := service.PrepareSend(
 		context.Background(),
 		&chat.PrepareMessagingSendRequest{
-			ConversationId: command.ConversationId,
-			Sender:         command.Sender,
+			ConversationId:     command.ConversationId,
+			Sender:             command.Sender,
+			AuthorityStationId: command.AuthorityStationId,
 		},
 	)
 	if err != nil {
@@ -440,10 +444,11 @@ func TestGroupMlsPayloadFansOutToActiveLeaves(t *testing.T) {
 	mlsPayload := []byte("openmls application ciphertext")
 	mlsHash := sha256.Sum256(mlsPayload)
 	command := &chat.ChatCommand{
-		CommandId:       "group-command-1",
-		ConversationId:  "group-1",
-		Sender:          &chat.CryptoEndpoint{Ptid: "alice", DeviceId: "alice-1"},
-		ClientTimestamp: timestamppb.New(time.Unix(1_700_000_000, 0)),
+		CommandId:          "group-command-1",
+		ConversationId:     "group-1",
+		AuthorityStationId: "station:local",
+		Sender:             &chat.CryptoEndpoint{Ptid: "alice", DeviceId: "alice-1"},
+		ClientTimestamp:    timestamppb.New(time.Unix(1_700_000_000, 0)),
 		Payload: &chat.ChatCommand_SendMessage{SendMessage: &chat.SendMessageIntent{
 			MessageId:                   "group-message-1",
 			ContentKind:                 chat.MessagingContentKind_MESSAGING_CONTENT_KIND_TEXT,

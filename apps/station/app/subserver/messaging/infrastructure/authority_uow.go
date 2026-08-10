@@ -39,6 +39,13 @@ func (u *AuthorityUnitOfWork) AutoMigrate() error {
 	if err := NewFederationRepository(u.db).AutoMigrate(); err != nil {
 		return err
 	}
+	endpointManifests, err := NewEndpointManifestRepository(u.db)
+	if err != nil {
+		return err
+	}
+	if err := endpointManifests.AutoMigrate(); err != nil {
+		return err
+	}
 	queue, err := NewQueueRepository(u.db, u.limits)
 	if err != nil {
 		return err
@@ -55,13 +62,18 @@ func (u *AuthorityUnitOfWork) Execute(
 		if err != nil {
 			return err
 		}
+		endpointManifests, err := NewEndpointManifestRepository(tx)
+		if err != nil {
+			return err
+		}
 		return fn(messaging.AuthorityRepositories{
-			Authority:   NewAuthorityRepository(tx),
-			Devices:     NewDeviceDirectory(tx),
-			Queue:       queue,
-			Federation:  NewFederationRepository(tx),
-			KeyPackages: NewMlsKeyPackageStore(tx),
-			Plans:       NewAuthorityPlanRepository(tx),
+			Authority:         NewAuthorityRepository(tx),
+			Devices:           NewDeviceDirectory(tx),
+			Queue:             queue,
+			Federation:        NewFederationRepository(tx),
+			EndpointManifests: endpointManifests,
+			KeyPackages:       NewMlsKeyPackageStore(tx),
+			Plans:             NewAuthorityPlanRepository(tx),
 		})
 	})
 }

@@ -67,7 +67,15 @@ func TestDirectConversationGenesisIsAtomicAndIdempotent(t *testing.T) {
 	if err := db.Create(&devices).Error; err != nil {
 		t.Fatal(err)
 	}
-	service, err := application.NewConversationService(uow, func() time.Time { return now })
+	service, err := application.NewConversationService(
+		uow,
+		"station:local",
+		messaging.FederationFrameSignFunc(func(context.Context, *chat.MessagingFederationFrame) error {
+			return nil
+		}),
+		testEndpointManifestResolver(t, db, now),
+		func() time.Time { return now },
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

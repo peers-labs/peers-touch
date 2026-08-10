@@ -61,10 +61,11 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return err
 	}
+	stationURLResolver := envelopesub.NewGORMStationURLResolver(database)
 	federationTransport, err := infrastructure.NewHTTPFederationTransport(
 		&http.Client{Timeout: 15 * time.Second},
 		tokenMinter,
-		envelopesub.NewGORMStationURLResolver(database),
+		stationURLResolver,
 		nil,
 	)
 	if err != nil {
@@ -103,7 +104,8 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 			BaseBackoff:   time.Second,
 			MaxBackoff:    time.Minute,
 		},
-		FederationTransport: federationTransport,
+		FederationTransport:          federationTransport,
+		FederationStationURLResolver: stationURLResolver,
 	})
 	if err != nil {
 		return err
@@ -199,6 +201,22 @@ func (s *subServer) Handlers() []server.Handler {
 			s.handleGetLatestRecovery, logID, s.jwtWrapper),
 		server.NewTypedHandler("messaging-federation-deliver", "/messaging/federation/deliver", server.POST,
 			s.composition.FederationHandler.DeliverAuthenticated, logID, s.composition.FederationAuth),
+		server.NewTypedHandler(
+			"messaging-federation-endpoint-manifest",
+			"/messaging/federation/endpoint-manifest",
+			server.POST,
+			s.composition.EndpointManifestHandler.GetAuthenticated,
+			logID,
+			s.composition.EndpointManifestAuth,
+		),
+		server.NewTypedHandler(
+			"messaging-federation-command-prepare",
+			"/messaging/federation/command/prepare",
+			server.POST,
+			s.composition.AuthorityPrepareHandler.PrepareAuthenticated,
+			logID,
+			s.composition.AuthorityPrepareAuth,
+		),
 	}
 }
 
@@ -306,6 +324,18 @@ func (s *subServer) handlePrepareSend(
 	if err != nil {
 		return nil, err
 	}
+	if request == nil ||
+		request.Sender == nil ||
+		request.Sender.Ptid != ptid ||
+		request.Sender.DeviceId != deviceID {
+		return nil, server.Forbidden(
+			"send preparation endpoint does not match authenticated endpoint",
+		)
+	}
+	if request.AuthorityStationId != messagingLocalStationID() {
+		response, err := s.composition.AuthorityPrepareFetcher.PrepareSend(ctx, request)
+		return response, mapMessagingError(err)
+	}
 	response, err := s.composition.CommandHandler.PrepareSend(ctx, ptid, deviceID, request)
 	return response, mapMessagingError(err)
 }
@@ -317,6 +347,24 @@ func (s *subServer) handleSubmitCommand(
 	ptid, deviceID, err := messagingEndpoint(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if request == nil ||
+		request.Command == nil ||
+		request.Command.Sender == nil ||
+		request.Command.Sender.Ptid != ptid ||
+		request.Command.Sender.DeviceId != deviceID {
+		return nil, server.Forbidden("command sender does not match authenticated endpoint")
+	}
+	if request.Command.AuthorityStationId != messagingLocalStationID() {
+		if err := s.composition.AuthorityCommandForwarder.Forward(
+			ctx,
+			request.Command,
+		); err != nil {
+			return nil, mapMessagingError(err)
+		}
+		return &chat.SubmitMessagingCommandResponse{
+			AcceptedForForwarding: true,
+		}, nil
 	}
 	response, err := s.composition.CommandHandler.Submit(ctx, ptid, deviceID, request)
 	return response, mapMessagingError(err)

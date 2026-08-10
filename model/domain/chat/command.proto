@@ -120,6 +120,7 @@ message ChatCommand {
   int64 observed_mls_epoch = 5;
   google.protobuf.Timestamp client_timestamp = 6;
   bytes delivery_plan_sha256 = 7;
+  string authority_station_id = 8;
 
   oneof payload {
     SendMessageIntent send_message = 20;
