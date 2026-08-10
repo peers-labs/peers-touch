@@ -15,7 +15,8 @@ use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::session_vault;
 use crate::infrastructure::station_client::{self, StationClientErrorKind};
 use crate::messaging::{
-    decode_recovery_revision, encode_recovery_revision, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+    decode_recovery_revision, encode_recovery_revision, MessagingEngine,
+    INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
 };
 use crate::model::chat::{
     GetLatestRecoveryRevisionRequest, GetLatestRecoveryRevisionResponse,
@@ -27,7 +28,7 @@ use super::crypto::to_stub;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CryptoBackupCreateInput {
+pub struct MessagingRecoveryCreateInput {
     recovery_phrase: String,
 }
 
@@ -91,6 +92,26 @@ fn revision_json(revision: &GetLatestRecoveryRevisionResponse) -> serde_json::Va
     })
 }
 
+fn identity_json(engine: &MessagingEngine) -> Result<serde_json::Value, String> {
+    let enrollment = engine
+        .store()
+        .device_enrollment()?
+        .ok_or_else(|| "messaging recovery identity is unavailable".to_string())?;
+    let certificate = enrollment.certificate;
+    if certificate.ptid != engine.endpoint().ptid
+        || certificate.device_id != engine.endpoint().device_id
+        || certificate.actor_identity_key_fingerprint.len() != 32
+    {
+        return Err("messaging recovery identity binding is invalid".to_string());
+    }
+    Ok(json!({
+        "ready": true,
+        "ptid": certificate.ptid,
+        "deviceId": certificate.device_id,
+        "fingerprint": hex::encode(certificate.actor_identity_key_fingerprint),
+    }))
+}
+
 fn latest_revision(
     session: &RecoverySession,
     device_id: &str,
@@ -98,18 +119,28 @@ fn latest_revision(
     GetLatestRecoveryRevisionResponse,
     crate::infrastructure::station_client::StationClientError,
 > {
-    station_client::request_proto_for_device(
+    let mut revision: GetLatestRecoveryRevisionResponse = station_client::request_proto_for_device(
         Method::GET,
         "/messaging/recovery/latest",
         &session.token,
         None,
         None::<&GetLatestRecoveryRevisionRequest>,
         device_id,
-    )
+    )?;
+    #[cfg(feature = "e2e-testing")]
+    if std::env::var_os("PT_MESSAGING_RECOVERY_CORRUPT_LATEST_FILE")
+        .map(std::path::PathBuf::from)
+        .is_some_and(|path| path.is_file())
+    {
+        if let Some(first) = revision.encrypted_archive.first_mut() {
+            *first ^= 1;
+        }
+    }
+    Ok(revision)
 }
 
 #[tauri::command]
-pub fn crypto_generate_recovery_secret(
+pub fn messaging_recovery_generate_phrase(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
@@ -120,7 +151,7 @@ pub fn crypto_generate_recovery_secret(
         Ok(phrase) => {
             let words = phrase.split_whitespace().collect::<Vec<_>>();
             to_stub(
-                "crypto_generate_recovery_secret",
+                "messaging_recovery_generate_phrase",
                 json!({ "words": words, "wordCount": words.len() }),
             )
         }
@@ -133,8 +164,8 @@ pub fn crypto_generate_recovery_secret(
 }
 
 #[tauri::command]
-pub fn crypto_backup_create(
-    input: CryptoBackupCreateInput,
+pub fn messaging_recovery_create_revision(
+    input: MessagingRecoveryCreateInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
@@ -149,17 +180,6 @@ pub fn crypto_backup_create(
             None,
         );
     }
-    let identity = match crypto::load_identity_key(&identity_key_ref(&session.actor_id)) {
-        Ok(Some(identity)) => identity,
-        Ok(None) => return AppResult::fail(ErrorCode::NotFound, "crypto identity not found", None),
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("failed to load actor identity: {error}"),
-                None,
-            )
-        }
-    };
     let engine = match state.messaging_engines.get(&session.account_id) {
         Ok(Some(engine)) => engine,
         Ok(None) => {
@@ -171,10 +191,7 @@ pub fn crypto_backup_create(
         }
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    let archive = match engine.build_recovery_archive(
-        identity.seed_bytes(),
-        INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
-    ) {
+    let archive = match engine.build_recovery_archive(INITIAL_ACTOR_IDENTITY_PROFILE_VERSION) {
         Ok(archive) => archive,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
@@ -206,7 +223,7 @@ pub fn crypto_backup_create(
         Err(error) => return error.into_app_result("failed to upload recovery revision"),
     };
     to_stub(
-        "crypto_backup_create",
+        "messaging_recovery_create_revision",
         json!({
             "backup": {
                 "backupId": response.revision_id,
@@ -224,7 +241,7 @@ pub fn crypto_backup_create(
 }
 
 #[tauri::command]
-pub fn crypto_backup_restore_latest(
+pub fn messaging_recovery_restore_latest(
     recovery_phrase: String,
     state: State<'_, Arc<AppState>>,
     window: Window,
@@ -298,32 +315,25 @@ pub fn crypto_backup_restore_latest(
     {
         Ok(enrollment) => enrollment,
         Err(error) => {
-            if let Some(seed) = previous_seed {
-                let _ = crypto::store_identity_key(&key_ref, &seed);
+            let rollback_result = match previous_seed {
+                Some(seed) => crypto::store_identity_key(&key_ref, &seed),
+                None => crypto::identity::delete_identity_key(&key_ref),
+            };
+            if let Err(rollback_error) = rollback_result {
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    format!("{error}; failed to roll back actor identity: {rollback_error}"),
+                    None,
+                );
             }
             return AppResult::fail(ErrorCode::InternalError, error, None);
         }
     };
     let restored_device_id = enrollment.certificate.device_id.clone();
-    if let Err(error) = state.messaging_engines.activate_profile(
-        session.account_id.clone(),
-        archive.ptid.clone(),
-        archive.actor_identity_seed,
-        archive.actor_profile_version,
-    ) {
-        return AppResult::fail(ErrorCode::InternalError, error, None);
-    }
-    if let Err(error) = state.messaging_engines.activate_profile_worker(
-        &session.account_id,
-        session.token.clone(),
-        archive.actor_identity_seed,
-    ) {
-        return AppResult::fail(ErrorCode::InternalError, error, None);
-    }
     station_client::set_device_id(restored_device_id.clone());
     let restored_identity = crypto::IdentityKeyPair::from_seed(&archive.actor_identity_seed);
     to_stub(
-        "crypto_backup_restore_latest",
+        "messaging_recovery_restore_latest",
         json!({
             "backup": revision_json(&revision),
             "deviceId": restored_device_id,
@@ -340,7 +350,7 @@ pub fn crypto_backup_restore_latest(
 }
 
 #[tauri::command]
-pub fn crypto_backup_status(
+pub fn messaging_recovery_status(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
@@ -359,21 +369,25 @@ pub fn crypto_backup_status(
         }
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
+    let identity = match identity_json(engine.as_ref()) {
+        Ok(identity) => identity,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
     match latest_revision(&session, &engine.endpoint().device_id) {
         Ok(revision) => to_stub(
-            "crypto_backup_status",
-            json!({ "exists": true, "latest": revision_json(&revision) }),
+            "messaging_recovery_status",
+            json!({ "identity": identity, "exists": true, "latest": revision_json(&revision) }),
         ),
         Err(error) if matches!(error.kind, StationClientErrorKind::HttpStatus(404)) => to_stub(
-            "crypto_backup_status",
-            json!({ "exists": false, "latest": serde_json::Value::Null }),
+            "messaging_recovery_status",
+            json!({ "identity": identity, "exists": false, "latest": serde_json::Value::Null }),
         ),
         Err(error) => error.into_app_result("failed to fetch recovery backup status"),
     }
 }
 
 #[tauri::command]
-pub fn crypto_backup_list_revisions(
+pub fn messaging_recovery_list_revisions(
     limit: Option<u32>,
     state: State<'_, Arc<AppState>>,
     window: Window,
@@ -396,12 +410,13 @@ pub fn crypto_backup_list_revisions(
     };
     match latest_revision(&session, &engine.endpoint().device_id) {
         Ok(revision) => to_stub(
-            "crypto_backup_list_revisions",
+            "messaging_recovery_list_revisions",
             json!({ "backups": [revision_json(&revision)] }),
         ),
-        Err(error) if matches!(error.kind, StationClientErrorKind::HttpStatus(404)) => {
-            to_stub("crypto_backup_list_revisions", json!({ "backups": [] }))
-        }
+        Err(error) if matches!(error.kind, StationClientErrorKind::HttpStatus(404)) => to_stub(
+            "messaging_recovery_list_revisions",
+            json!({ "backups": [] }),
+        ),
         Err(error) => error.into_app_result("failed to list recovery backup revisions"),
     }
 }
