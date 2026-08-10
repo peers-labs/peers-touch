@@ -43,9 +43,16 @@ func (s *FederatedMlsKeyPackageClaimService) Claim(
 		return nil, fmt.Errorf("messaging: federated MLS KeyPackage claim target is required")
 	}
 	now := s.clock().UTC().Truncate(time.Microsecond)
-	if request.PlanExpiresAt == nil ||
-		!request.PlanExpiresAt.AsTime().After(now) ||
-		request.PlanExpiresAt.AsTime().After(now.Add(maxFederatedMlsKeyPackageClaimTTL)) {
+	if request.PlanExpiresAt == nil {
+		return nil, messaging.ErrAuthorityPlanExpired
+	}
+	expiresAt := request.PlanExpiresAt.AsTime().UTC()
+	if !expiresAt.After(now.Add(-messaging.FederationClockSkewBudget)) ||
+		expiresAt.After(
+			now.
+				Add(maxFederatedMlsKeyPackageClaimTTL).
+				Add(messaging.FederationClockSkewBudget),
+		) {
 		return nil, messaging.ErrAuthorityPlanExpired
 	}
 	homeStationID, err := s.devices.HomeStationID(ctx, request.Target)
