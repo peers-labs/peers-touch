@@ -28,11 +28,6 @@ pub mod x3dh;
 pub mod signaling_envelope;
 pub mod telemetry;
 
-pub use backup::{
-    decrypt_snapshot, encrypt_snapshot, AttachmentDecryptionMetadata, BackupKdfParameters,
-    EncryptedBackup, RecoveryConversation, RecoveryMessage, RecoverySnapshot, VerifiedFingerprint,
-    BACKUP_FORMAT_VERSION,
-};
 pub use device_registry::{DeviceInfo, DeviceRegistry, PeerDeviceList};
 pub use double_ratchet::{
     DrCiphertextWire, DrDecryptOutcome, DrSessionState, DrSkippedMessageKey, MAX_SKIP,
