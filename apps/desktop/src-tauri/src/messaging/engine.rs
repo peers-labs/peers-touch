@@ -3,14 +3,15 @@ use super::identity::{
 };
 use super::recovery::{restore_profile_database_atomically, MessagingRecoveryArchive};
 use super::{
-    CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy,
+    AttachmentTransferWorker, CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy,
     ConversationMessageProjection, ConversationProjection, DirectSessionBootstrapper,
     DrainProgress, GroupGenesisPreparer, MembershipTransitionIntentInput,
     MembershipTransitionPreparer, MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore,
     MlsKeyPackagePublisher, PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher,
-    QueueDrain, SendPreparer, SendTextIntent, StationCommandTransport, StationDeviceTransport,
-    StationGroupGenesisTransport, StationKeyBundleTransport, StationMembershipTransitionTransport,
-    StationMlsKeyPackageTransport, StationPreKeyTransport, StationQueueTransport,
+    QueueDrain, SendPreparer, SendTextIntent, StationAttachmentTransferTransport,
+    StationCommandTransport, StationDeviceTransport, StationGroupGenesisTransport,
+    StationKeyBundleTransport, StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
+    StationPreKeyTransport, StationQueueTransport,
 };
 use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::domain::crypto::IdentityKeyPair;
@@ -209,6 +210,23 @@ impl MessagingEngine {
 
     pub fn store(&self) -> &MessagingStore {
         self.store.as_ref()
+    }
+
+    pub fn attachment_transfer_worker(
+        &self,
+        token: String,
+    ) -> Result<AttachmentTransferWorker, String> {
+        let transport = StationAttachmentTransferTransport::new(
+            token,
+            CryptoEndpoint {
+                ptid: self.endpoint.ptid.clone(),
+                device_id: self.endpoint.device_id.clone(),
+            },
+        )?;
+        Ok(AttachmentTransferWorker::new(
+            self.store.clone(),
+            Arc::new(transport),
+        ))
     }
 
     pub fn build_recovery_archive(
