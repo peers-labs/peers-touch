@@ -217,6 +217,14 @@ func (s *subServer) Handlers() []server.Handler {
 			logID,
 			s.composition.AuthorityPrepareAuth,
 		),
+		server.NewTypedHandler(
+			"messaging-federation-mls-key-package-claim",
+			"/messaging/federation/mls-key-package/claim",
+			server.POST,
+			s.composition.MlsKeyPackageClaimHandler.ClaimAuthenticated,
+			logID,
+			s.composition.MlsKeyPackageClaimAuth,
+		),
 	}
 }
 
