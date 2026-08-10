@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	FederationClockSkewBudget      = time.Minute
 	FederationScope                = "messaging-frame-deliver"
 	EndpointManifestScope          = "messaging-endpoint-manifest-read"
 	AuthorityPrepareScope          = "messaging-authority-prepare"
