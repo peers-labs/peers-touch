@@ -37,6 +37,7 @@ pub struct MessageProjection {
 pub struct PendingSenderProjection<'a> {
     pub command_id: &'a str,
     pub conversation_id: &'a str,
+    pub conversation_kind: i32,
     pub message_id: &'a str,
     pub sender_ptid: &'a str,
     pub sender_device_id: &'a str,
@@ -48,10 +49,13 @@ pub struct PendingSenderProjection<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingMessageDraft {
     pub conversation_id: String,
+    pub conversation_kind: i32,
     pub message_id: String,
     pub sender_ptid: String,
     pub sender_device_id: String,
     pub plaintext: String,
+    pub attempt_count: u32,
+    pub created_at_unix_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1405,6 +1409,114 @@ impl MessagingStore {
         Ok(())
     }
 
+    pub fn create_message_draft(&self, draft: &PendingMessageDraft) -> Result<(), String> {
+        if draft.conversation_id.trim().is_empty()
+            || draft.conversation_kind <= 0
+            || draft.message_id.trim().is_empty()
+            || draft.sender_ptid.trim().is_empty()
+            || draft.sender_device_id.trim().is_empty()
+            || draft.plaintext.is_empty()
+            || draft.created_at_unix_ms <= 0
+        {
+            return Err("messaging draft intent is incomplete".to_string());
+        }
+        let changed = self
+            .connection()?
+            .execute(
+                "INSERT INTO messaging_pending_messages(
+                    conversation_id, conversation_kind, message_id,
+                    sender_ptid, sender_device_id, plaintext, state,
+                    attempt_count, next_attempt_at_unix_ms, last_error_code,
+                    created_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'draft', 0, ?7, '', ?7)
+                 ON CONFLICT(conversation_id, message_id) DO NOTHING",
+                params![
+                    draft.conversation_id,
+                    draft.conversation_kind,
+                    draft.message_id,
+                    draft.sender_ptid,
+                    draft.sender_device_id,
+                    draft.plaintext,
+                    draft.created_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging draft identity already exists".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn next_due_message_draft(
+        &self,
+        now_unix_ms: i64,
+    ) -> Result<Option<PendingMessageDraft>, String> {
+        if now_unix_ms <= 0 {
+            return Err("messaging draft retry time is invalid".to_string());
+        }
+        self.connection()?
+            .query_row(
+                "SELECT conversation_id, conversation_kind, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        attempt_count, created_at_unix_ms
+                 FROM messaging_pending_messages
+                 WHERE state = 'draft' AND next_attempt_at_unix_ms <= ?1
+                 ORDER BY next_attempt_at_unix_ms ASC, created_at_unix_ms ASC, message_id ASC
+                 LIMIT 1",
+                params![now_unix_ms],
+                |row| {
+                    Ok(PendingMessageDraft {
+                        conversation_id: row.get(0)?,
+                        conversation_kind: row.get(1)?,
+                        message_id: row.get(2)?,
+                        sender_ptid: row.get(3)?,
+                        sender_device_id: row.get(4)?,
+                        plaintext: row.get(5)?,
+                        attempt_count: row.get(6)?,
+                        created_at_unix_ms: row.get(7)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn schedule_message_draft_retry(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        next_attempt_at_unix_ms: i64,
+        error_code: &str,
+    ) -> Result<(), String> {
+        if conversation_id.trim().is_empty()
+            || message_id.trim().is_empty()
+            || next_attempt_at_unix_ms <= 0
+            || error_code.trim().is_empty()
+        {
+            return Err("messaging draft retry is incomplete".to_string());
+        }
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE messaging_pending_messages
+                 SET attempt_count = attempt_count + 1,
+                     next_attempt_at_unix_ms = ?3,
+                     last_error_code = ?4
+                 WHERE conversation_id = ?1 AND message_id = ?2 AND state = 'draft'",
+                params![
+                    conversation_id,
+                    message_id,
+                    next_attempt_at_unix_ms,
+                    error_code
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging draft retry was not applied".to_string());
+        }
+        Ok(())
+    }
+
     pub fn pending_sender_projection(
         &self,
         command_id: &str,
@@ -1436,8 +1548,9 @@ impl MessagingStore {
         }
         self.connection()?
             .query_row(
-                "SELECT p.conversation_id, p.message_id, p.sender_ptid,
-                        p.sender_device_id, p.plaintext
+                "SELECT p.conversation_id, p.conversation_kind, p.message_id,
+                        p.sender_ptid, p.sender_device_id, p.plaintext,
+                        p.attempt_count, p.created_at_unix_ms
                  FROM messaging_command_attempts a
                  JOIN messaging_pending_messages p
                    ON p.conversation_id = a.conversation_id
@@ -1447,10 +1560,13 @@ impl MessagingStore {
                 |row| {
                     Ok(PendingMessageDraft {
                         conversation_id: row.get(0)?,
-                        message_id: row.get(1)?,
-                        sender_ptid: row.get(2)?,
-                        sender_device_id: row.get(3)?,
-                        plaintext: row.get(4)?,
+                        conversation_kind: row.get(1)?,
+                        message_id: row.get(2)?,
+                        sender_ptid: row.get(3)?,
+                        sender_device_id: row.get(4)?,
+                        plaintext: row.get(5)?,
+                        attempt_count: row.get(6)?,
+                        created_at_unix_ms: row.get(7)?,
                     })
                 },
             )
@@ -3626,16 +3742,20 @@ fn persist_prepared_command(
     let pending_changed = transaction
         .execute(
             "INSERT INTO messaging_pending_messages(
-                conversation_id, message_id, sender_ptid,
-                sender_device_id, plaintext, state, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6)
+                conversation_id, conversation_kind, message_id, sender_ptid,
+                sender_device_id, plaintext, state, attempt_count,
+                next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', 0, ?7, '', ?7)
              ON CONFLICT(conversation_id, message_id) DO UPDATE SET
-                state='pending'
+                state='pending',
+                conversation_kind=excluded.conversation_kind,
+                last_error_code=''
              WHERE messaging_pending_messages.sender_ptid = excluded.sender_ptid
                AND messaging_pending_messages.sender_device_id = excluded.sender_device_id
                AND messaging_pending_messages.plaintext = excluded.plaintext",
             params![
                 projection.conversation_id,
+                projection.conversation_kind,
                 projection.message_id,
                 projection.sender_ptid,
                 projection.sender_device_id,
@@ -3986,11 +4106,15 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 WHERE state IN ('pending_plan', 'prepared', 'superseded');
              CREATE TABLE IF NOT EXISTS messaging_pending_messages (
                 conversation_id TEXT NOT NULL,
+                conversation_kind INTEGER NOT NULL,
                 message_id TEXT NOT NULL,
                 sender_ptid TEXT NOT NULL,
                 sender_device_id TEXT NOT NULL,
                 plaintext TEXT NOT NULL,
                 state TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL,
+                next_attempt_at_unix_ms INTEGER NOT NULL,
+                last_error_code TEXT NOT NULL,
                 created_at_unix_ms INTEGER NOT NULL,
                 PRIMARY KEY(conversation_id, message_id)
              );
@@ -4113,6 +4237,43 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             )
             .map_err(|error| error.to_string())?;
     }
+    let pending_columns = connection
+        .prepare("PRAGMA table_info(messaging_pending_messages)")
+        .map_err(|error| error.to_string())?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    for (column, definition) in [
+        ("conversation_kind", "INTEGER NOT NULL DEFAULT 0"),
+        ("attempt_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("next_attempt_at_unix_ms", "INTEGER NOT NULL DEFAULT 0"),
+        ("last_error_code", "TEXT NOT NULL DEFAULT ''"),
+    ] {
+        if !pending_columns.iter().any(|existing| existing == column) {
+            connection
+                .execute(
+                    &format!(
+                        "ALTER TABLE messaging_pending_messages ADD COLUMN {column} {definition}"
+                    ),
+                    [],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    connection
+        .execute(
+            "UPDATE messaging_pending_messages
+             SET conversation_kind = COALESCE(
+                 NULLIF(conversation_kind, 0),
+                 (SELECT kind FROM messaging_conversations
+                  WHERE messaging_conversations.conversation_id =
+                        messaging_pending_messages.conversation_id),
+                 0
+             )",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -4163,6 +4324,7 @@ mod tests {
             projection: PendingSenderProjection {
                 command_id,
                 conversation_id: "conversation-1",
+                conversation_kind: 1,
                 message_id: command_id,
                 sender_ptid: "ptid:alice",
                 sender_device_id: "alice-device",
@@ -4274,6 +4436,7 @@ mod tests {
             projection: PendingSenderProjection {
                 command_id: "command-overflow",
                 conversation_id: "conversation-1",
+                conversation_kind: 1,
                 message_id: "message-overflow",
                 sender_ptid: "ptid:alice",
                 sender_device_id: "alice-device",
@@ -4312,6 +4475,7 @@ mod tests {
                 projection: PendingSenderProjection {
                     command_id: "group-command",
                     conversation_id: "group-1",
+                    conversation_kind: 2,
                     message_id: "group-message",
                     sender_ptid: "ptid:alice",
                     sender_device_id: "alice-device",
@@ -4339,6 +4503,39 @@ mod tests {
             )
             .unwrap();
         assert_eq!(pending, 1);
+    }
+
+    #[test]
+    fn draft_intent_is_projected_and_retried_with_durable_backoff() {
+        let store = MessagingStore::in_memory().unwrap();
+        let draft = PendingMessageDraft {
+            conversation_id: "group-1".to_string(),
+            conversation_kind: 2,
+            message_id: "message-draft".to_string(),
+            sender_ptid: "ptid:alice".to_string(),
+            sender_device_id: "alice-device".to_string(),
+            plaintext: "survives prepare failure".to_string(),
+            attempt_count: 0,
+            created_at_unix_ms: 100,
+        };
+        store.create_message_draft(&draft).unwrap();
+        assert_eq!(
+            store.next_due_message_draft(100).unwrap(),
+            Some(draft.clone())
+        );
+        let projection = store.conversation_message_projections("group-1").unwrap();
+        assert_eq!(projection.len(), 1);
+        assert_eq!(projection[0].message_id, "message-draft");
+        assert_eq!(projection[0].state, "draft");
+        assert_eq!(projection[0].plaintext, "survives prepare failure");
+
+        store
+            .schedule_message_draft_retry("group-1", "message-draft", 1_100, "prepare_failed")
+            .unwrap();
+        assert_eq!(store.next_due_message_draft(1_099).unwrap(), None);
+        let retried = store.next_due_message_draft(1_100).unwrap().unwrap();
+        assert_eq!(retried.attempt_count, 1);
+        assert_eq!(retried.message_id, draft.message_id);
     }
 
     #[test]
