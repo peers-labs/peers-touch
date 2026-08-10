@@ -182,6 +182,7 @@ func (r *FederationRepository) MarkFederationDelivered(
 		map[string]any{
 			"state":            federationOutboxDelivered,
 			"delivered_at":     deliveredAt,
+			"last_error_code":  "",
 			"lease_owner":      "",
 			"lease_expires_at": nil,
 		},
