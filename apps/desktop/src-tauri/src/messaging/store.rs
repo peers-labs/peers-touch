@@ -59,6 +59,30 @@ pub struct PendingMessageDraft {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachmentTransferRecord {
+    pub attachment_id: String,
+    pub conversation_id: String,
+    pub message_id: String,
+    pub authority_station_id: String,
+    pub direction: i32,
+    pub state: i32,
+    pub upload_id: String,
+    pub generation: u64,
+    pub descriptor_sha256: Vec<u8>,
+    pub completed_chunk_bitmap: Vec<u8>,
+    pub source_local_ref: String,
+    pub partial_local_ref: String,
+    pub object_key: Vec<u8>,
+    pub base_nonce: Vec<u8>,
+    pub plaintext_size: u64,
+    pub chunk_size: u32,
+    pub attempt_count: u32,
+    pub next_attempt_at_unix_ms: i64,
+    pub last_error_code: i32,
+    pub updated_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingPreKeyBundle {
     pub signed_prekey_id: i32,
     pub signed_prekey_private: [u8; 32],
@@ -1443,6 +1467,140 @@ impl MessagingStore {
             .map_err(|error| error.to_string())?;
         if changed != 1 {
             return Err("messaging draft identity already exists".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn create_attachment_transfer(
+        &self,
+        transfer: &AttachmentTransferRecord,
+    ) -> Result<bool, String> {
+        validate_attachment_transfer(transfer)?;
+        let generation =
+            i64::try_from(transfer.generation).map_err(|_| "attachment generation overflow")?;
+        let plaintext_size = i64::try_from(transfer.plaintext_size)
+            .map_err(|_| "attachment plaintext size overflow")?;
+        let changed = self
+            .connection()?
+            .execute(
+                "INSERT INTO messaging_attachment_transfers(
+                    attachment_id, conversation_id, message_id, authority_station_id,
+                    direction, state, upload_id, generation, descriptor_sha256,
+                    completed_chunk_bitmap, source_local_ref, partial_local_ref,
+                    object_key, base_nonce, plaintext_size, chunk_size, attempt_count,
+                    next_attempt_at_unix_ms, last_error_code, updated_at_unix_ms
+                 ) VALUES (
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                    ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20
+                 )
+                 ON CONFLICT(attachment_id) DO NOTHING",
+                params![
+                    transfer.attachment_id,
+                    transfer.conversation_id,
+                    transfer.message_id,
+                    transfer.authority_station_id,
+                    transfer.direction,
+                    transfer.state,
+                    transfer.upload_id,
+                    generation,
+                    transfer.descriptor_sha256,
+                    transfer.completed_chunk_bitmap,
+                    transfer.source_local_ref,
+                    transfer.partial_local_ref,
+                    transfer.object_key,
+                    transfer.base_nonce,
+                    plaintext_size,
+                    transfer.chunk_size,
+                    transfer.attempt_count,
+                    transfer.next_attempt_at_unix_ms,
+                    transfer.last_error_code,
+                    transfer.updated_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed == 1 {
+            return Ok(true);
+        }
+        let existing = self
+            .attachment_transfer(&transfer.attachment_id)?
+            .ok_or_else(|| "messaging attachment transfer conflict is unavailable".to_string())?;
+        if existing != *transfer {
+            return Err("messaging attachment transfer identity conflict".to_string());
+        }
+        Ok(false)
+    }
+
+    pub fn attachment_transfer(
+        &self,
+        attachment_id: &str,
+    ) -> Result<Option<AttachmentTransferRecord>, String> {
+        if attachment_id.trim().is_empty() {
+            return Err("messaging attachment ID is required".to_string());
+        }
+        self.connection()?
+            .query_row(
+                "SELECT attachment_id, conversation_id, message_id, authority_station_id,
+                        direction, state, upload_id, generation, descriptor_sha256,
+                        completed_chunk_bitmap, source_local_ref, partial_local_ref,
+                        object_key, base_nonce, plaintext_size, chunk_size, attempt_count,
+                        next_attempt_at_unix_ms, last_error_code, updated_at_unix_ms
+                 FROM messaging_attachment_transfers
+                 WHERE attachment_id = ?1",
+                params![attachment_id],
+                attachment_transfer_from_row,
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn update_attachment_transfer_progress(
+        &self,
+        attachment_id: &str,
+        state: i32,
+        upload_id: &str,
+        generation: u64,
+        completed_chunk_bitmap: &[u8],
+        attempt_count: u32,
+        next_attempt_at_unix_ms: i64,
+        last_error_code: i32,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        if attachment_id.trim().is_empty()
+            || state <= 0
+            || completed_chunk_bitmap.is_empty()
+            || updated_at_unix_ms <= 0
+        {
+            return Err("messaging attachment progress is incomplete".to_string());
+        }
+        let generation = i64::try_from(generation).map_err(|_| "attachment generation overflow")?;
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE messaging_attachment_transfers
+                 SET state = ?2,
+                     upload_id = ?3,
+                     generation = ?4,
+                     completed_chunk_bitmap = ?5,
+                     attempt_count = ?6,
+                     next_attempt_at_unix_ms = ?7,
+                     last_error_code = ?8,
+                     updated_at_unix_ms = ?9
+                 WHERE attachment_id = ?1",
+                params![
+                    attachment_id,
+                    state,
+                    upload_id,
+                    generation,
+                    completed_chunk_bitmap,
+                    attempt_count,
+                    next_attempt_at_unix_ms,
+                    last_error_code,
+                    updated_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging attachment progress target is unavailable".to_string());
         }
         Ok(())
     }
@@ -3946,6 +4104,59 @@ fn load_direct_session(
     }))
 }
 
+fn validate_attachment_transfer(transfer: &AttachmentTransferRecord) -> Result<(), String> {
+    if transfer.attachment_id.trim().is_empty()
+        || transfer.conversation_id.trim().is_empty()
+        || transfer.message_id.trim().is_empty()
+        || transfer.authority_station_id.trim().is_empty()
+        || transfer.direction <= 0
+        || transfer.state <= 0
+        || transfer.descriptor_sha256.len() != 32
+        || transfer.completed_chunk_bitmap.is_empty()
+        || (transfer.source_local_ref.trim().is_empty()
+            && transfer.partial_local_ref.trim().is_empty())
+        || transfer.object_key.len() != 32
+        || transfer.base_nonce.len() != 12
+        || transfer.base_nonce[8..] != [0, 0, 0, 0]
+        || transfer.plaintext_size == 0
+        || transfer.plaintext_size > super::attachment::ATTACHMENT_MAX_PLAINTEXT_SIZE
+        || transfer.chunk_size == 0
+        || transfer.chunk_size > super::attachment::ATTACHMENT_CHUNK_SIZE
+        || transfer.next_attempt_at_unix_ms < 0
+        || transfer.updated_at_unix_ms <= 0
+    {
+        return Err("messaging attachment transfer is incomplete".to_string());
+    }
+    Ok(())
+}
+
+fn attachment_transfer_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<AttachmentTransferRecord> {
+    Ok(AttachmentTransferRecord {
+        attachment_id: row.get(0)?,
+        conversation_id: row.get(1)?,
+        message_id: row.get(2)?,
+        authority_station_id: row.get(3)?,
+        direction: row.get(4)?,
+        state: row.get(5)?,
+        upload_id: row.get(6)?,
+        generation: row.get(7)?,
+        descriptor_sha256: row.get(8)?,
+        completed_chunk_bitmap: row.get(9)?,
+        source_local_ref: row.get(10)?,
+        partial_local_ref: row.get(11)?,
+        object_key: row.get(12)?,
+        base_nonce: row.get(13)?,
+        plaintext_size: row.get(14)?,
+        chunk_size: row.get(15)?,
+        attempt_count: row.get(16)?,
+        next_attempt_at_unix_ms: row.get(17)?,
+        last_error_code: row.get(18)?,
+        updated_at_unix_ms: row.get(19)?,
+    })
+}
+
 fn migrate(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch(
@@ -4198,6 +4409,30 @@ fn migrate(connection: &Connection) -> Result<(), String> {
              );
              CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_projection_message
                 ON messaging_message_projections(conversation_id, message_id);
+             CREATE TABLE IF NOT EXISTS messaging_attachment_transfers (
+                attachment_id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                authority_station_id TEXT NOT NULL,
+                direction INTEGER NOT NULL,
+                state INTEGER NOT NULL,
+                upload_id TEXT NOT NULL,
+                generation INTEGER NOT NULL,
+                descriptor_sha256 BLOB NOT NULL CHECK(length(descriptor_sha256) = 32),
+                completed_chunk_bitmap BLOB NOT NULL,
+                source_local_ref TEXT NOT NULL,
+                partial_local_ref TEXT NOT NULL,
+                object_key BLOB NOT NULL CHECK(length(object_key) = 32),
+                base_nonce BLOB NOT NULL CHECK(length(base_nonce) = 12),
+                plaintext_size INTEGER NOT NULL,
+                chunk_size INTEGER NOT NULL,
+                attempt_count INTEGER NOT NULL,
+                next_attempt_at_unix_ms INTEGER NOT NULL,
+                last_error_code INTEGER NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_messaging_attachment_transfers_due
+                ON messaging_attachment_transfers(state, next_attempt_at_unix_ms);
              CREATE TABLE IF NOT EXISTS messaging_attachment_metadata (
                 message_id TEXT NOT NULL,
                 attachment_id TEXT NOT NULL,
@@ -4292,6 +4527,31 @@ fn migrate(connection: &Connection) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn attachment_transfer() -> AttachmentTransferRecord {
+        AttachmentTransferRecord {
+            attachment_id: "attachment-1".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            message_id: "message-1".to_string(),
+            authority_station_id: "station-authority".to_string(),
+            direction: 1,
+            state: 1,
+            upload_id: String::new(),
+            generation: 0,
+            descriptor_sha256: vec![1; 32],
+            completed_chunk_bitmap: vec![0],
+            source_local_ref: "source-ref".to_string(),
+            partial_local_ref: String::new(),
+            object_key: vec![2; 32],
+            base_nonce: vec![0; 12],
+            plaintext_size: 17,
+            chunk_size: 16,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 10,
+            last_error_code: 0,
+            updated_at_unix_ms: 10,
+        }
+    }
 
     fn direct_session(receive_counter: u32) -> DirectSession {
         let session_id = "session-1".to_string();
@@ -4426,6 +4686,45 @@ mod tests {
                 .unwrap();
             assert_eq!(count, 1, "table {table}");
         }
+    }
+
+    #[test]
+    fn attachment_transfer_checkpoint_is_exact_and_durable() {
+        let store = MessagingStore::in_memory().unwrap();
+        let transfer = attachment_transfer();
+        assert!(store.create_attachment_transfer(&transfer).unwrap());
+        assert!(!store.create_attachment_transfer(&transfer).unwrap());
+
+        let mut conflicting = transfer.clone();
+        conflicting.message_id = "message-conflict".to_string();
+        assert!(store.create_attachment_transfer(&conflicting).is_err());
+
+        store
+            .update_attachment_transfer_progress(
+                &transfer.attachment_id,
+                2,
+                "upload-1",
+                7,
+                &[1],
+                1,
+                20,
+                8,
+                11,
+            )
+            .unwrap();
+        let persisted = store
+            .attachment_transfer(&transfer.attachment_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.state, 2);
+        assert_eq!(persisted.upload_id, "upload-1");
+        assert_eq!(persisted.generation, 7);
+        assert_eq!(persisted.completed_chunk_bitmap, vec![1]);
+        assert_eq!(persisted.object_key, vec![2; 32]);
+        assert_eq!(persisted.base_nonce, vec![0; 12]);
+        assert_eq!(persisted.attempt_count, 1);
+        assert_eq!(persisted.next_attempt_at_unix_ms, 20);
+        assert_eq!(persisted.last_error_code, 8);
     }
 
     #[test]
