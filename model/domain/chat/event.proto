@@ -135,6 +135,7 @@ message ConversationEvent {
   repeated bytes delivery_commitments = 9;
   int64 membership_epoch = 10;
   int64 mls_epoch = 11;
+  string authority_station_id = 12;
 
   oneof payload {
     MessageCommittedFact message_committed = 20;

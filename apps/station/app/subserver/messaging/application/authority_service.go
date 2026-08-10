@@ -22,26 +22,33 @@ const deliveryCommitmentDomain = "peers-touch/device-delivery-commitment"
 const deliveryPlanDomain = "peers-touch/messaging-send-delivery-plan"
 
 type AuthorityService struct {
-	unitOfWork     messaging.AuthorityUnitOfWork
-	localStationID string
-	frameSigner    messaging.FederationFrameSigner
-	clock          func() time.Time
+	unitOfWork       messaging.AuthorityUnitOfWork
+	localStationID   string
+	frameSigner      messaging.FederationFrameSigner
+	manifestResolver messaging.EndpointManifestResolver
+	clock            func() time.Time
 }
 
 func NewAuthorityService(
 	unitOfWork messaging.AuthorityUnitOfWork,
 	localStationID string,
 	frameSigner messaging.FederationFrameSigner,
+	manifestResolver messaging.EndpointManifestResolver,
 	clock func() time.Time,
 ) (*AuthorityService, error) {
-	if unitOfWork == nil || localStationID == "" || frameSigner == nil || clock == nil {
+	if unitOfWork == nil ||
+		localStationID == "" ||
+		frameSigner == nil ||
+		manifestResolver == nil ||
+		clock == nil {
 		return nil, fmt.Errorf("messaging: authority dependencies are required")
 	}
 	return &AuthorityService{
-		unitOfWork:     unitOfWork,
-		localStationID: localStationID,
-		frameSigner:    frameSigner,
-		clock:          clock,
+		unitOfWork:       unitOfWork,
+		localStationID:   localStationID,
+		frameSigner:      frameSigner,
+		manifestResolver: manifestResolver,
+		clock:            clock,
 	}, nil
 }
 
@@ -53,11 +60,19 @@ func (s *AuthorityService) PrepareSend(
 		request.ConversationId == "" ||
 		request.Sender == nil ||
 		request.Sender.Ptid == "" ||
-		request.Sender.DeviceId == "" {
+		request.Sender.DeviceId == "" ||
+		request.AuthorityStationId != s.localStationID {
 		return nil, fmt.Errorf("messaging: complete send preparation identity is required")
 	}
+	actors, err := s.activeConversationActors(ctx, request.ConversationId)
+	if err != nil {
+		return nil, err
+	}
+	if err := resolveEndpointManifests(ctx, s.manifestResolver, actors); err != nil {
+		return nil, err
+	}
 	var plan *chat.PrepareMessagingSendResponse
-	err := s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+	err = s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
 		conversation, err := repositories.Authority.LockConversation(
 			ctx,
 			request.ConversationId,
@@ -75,7 +90,14 @@ func (s *AuthorityService) PrepareSend(
 		if !active {
 			return messaging.ErrSenderUnauthorized
 		}
-		plan, err = buildSendPlan(ctx, repositories, conversation, request.Sender)
+		plan, err = buildSendPlan(
+			ctx,
+			repositories,
+			conversation,
+			request.Sender,
+			s.localStationID,
+			s.clock().UTC(),
+		)
 		return err
 	})
 	if err != nil {
@@ -84,12 +106,54 @@ func (s *AuthorityService) PrepareSend(
 	return plan, nil
 }
 
+func (s *AuthorityService) activeConversationActors(
+	ctx context.Context,
+	conversationID string,
+) ([]string, error) {
+	var actors []string
+	err := s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+		devices, err := repositories.Authority.ListActiveMemberDevices(ctx, conversationID)
+		if err != nil {
+			return err
+		}
+		actorSet := make(map[string]struct{})
+		for _, device := range devices {
+			if device.Active && device.Endpoint != nil {
+				actorSet[device.Endpoint.Ptid] = struct{}{}
+			}
+		}
+		actors = make([]string, 0, len(actorSet))
+		for actor := range actorSet {
+			actors = append(actors, actor)
+		}
+		sort.Strings(actors)
+		return nil
+	})
+	return actors, err
+}
+
+func resolveEndpointManifests(
+	ctx context.Context,
+	resolver messaging.EndpointManifestResolver,
+	actorPTIDs []string,
+) error {
+	for _, actorPTID := range actorPTIDs {
+		if _, err := resolver.ResolveEndpointManifest(ctx, actorPTID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *AuthorityService) Submit(
 	ctx context.Context,
 	command *chat.ChatCommand,
 ) (*chat.ConversationEvent, error) {
 	if command == nil || command.CommandId == "" || command.ConversationId == "" ||
-		command.Sender == nil || command.Sender.Ptid == "" || command.Sender.DeviceId == "" {
+		command.Sender == nil ||
+		command.Sender.Ptid == "" ||
+		command.Sender.DeviceId == "" ||
+		command.AuthorityStationId != s.localStationID {
 		return nil, fmt.Errorf("messaging: complete command identity is required")
 	}
 	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(command)
@@ -175,7 +239,14 @@ func (s *AuthorityService) Submit(
 		if !active {
 			return messaging.ErrSenderUnauthorized
 		}
-		plan, err := buildSendPlan(ctx, repositories, conversation, command.Sender)
+		plan, err := buildSendPlan(
+			ctx,
+			repositories,
+			conversation,
+			command.Sender,
+			s.localStationID,
+			s.clock().UTC(),
+		)
 		if err != nil {
 			return err
 		}
@@ -201,6 +272,7 @@ func (s *AuthorityService) Submit(
 		if err != nil {
 			return err
 		}
+		event.AuthorityStationId = s.localStationID
 		if conversation.CurrentSequence > 0 {
 			head, err := repositories.Authority.GetLastEvent(ctx, command.ConversationId)
 			if err != nil {
@@ -425,15 +497,16 @@ func commitMembershipTransitionFromPlan(
 		return nil, err
 	}
 	event := &chat.ConversationEvent{
-		EventId:         eventID,
-		ConversationId:  command.ConversationId,
-		Sequence:        conversation.CurrentSequence + 1,
-		CommandId:       command.CommandId,
-		Actor:           command.Sender,
-		CommittedAt:     timestamppb.New(now),
-		MembershipEpoch: toMembershipEpoch,
-		MlsEpoch:        toMlsEpoch,
-		PreviousHash:    append([]byte(nil), head.EventHash...),
+		EventId:            eventID,
+		ConversationId:     command.ConversationId,
+		Sequence:           conversation.CurrentSequence + 1,
+		CommandId:          command.CommandId,
+		Actor:              command.Sender,
+		CommittedAt:        timestamppb.New(now),
+		MembershipEpoch:    toMembershipEpoch,
+		MlsEpoch:           toMlsEpoch,
+		PreviousHash:       append([]byte(nil), head.EventHash...),
+		AuthorityStationId: localStationID,
 		Payload: &chat.ConversationEvent_MembershipTransitionCommitted{
 			MembershipTransitionCommitted: &chat.MembershipTransitionCommittedFact{
 				TransitionId:        transition.TransitionId,
@@ -926,6 +999,7 @@ func commitGroupGenesisFromPlan(
 		command.Sender,
 		actors,
 		currentEndpoints,
+		localStationID,
 		now,
 	)
 	if err != nil {
@@ -1148,6 +1222,7 @@ func buildConversationCreatedEvent(
 	creator *chat.CryptoEndpoint,
 	memberPTIDs []string,
 	endpoints []*chat.CryptoEndpoint,
+	authorityStationID string,
 	now time.Time,
 ) (*chat.ConversationEvent, []*chat.PreparedEndpointPayload, error) {
 	eventID := "created:" + conversation.ConversationID
@@ -1171,14 +1246,15 @@ func buildConversationCreatedEvent(
 		})
 	}
 	event := &chat.ConversationEvent{
-		EventId:         eventID,
-		ConversationId:  conversation.ConversationID,
-		Sequence:        1,
-		CommandId:       "create:" + conversation.ConversationID,
-		Actor:           creator,
-		CommittedAt:     timestamppb.New(now),
-		MembershipEpoch: 0,
-		MlsEpoch:        0,
+		EventId:            eventID,
+		ConversationId:     conversation.ConversationID,
+		Sequence:           1,
+		CommandId:          "create:" + conversation.ConversationID,
+		Actor:              creator,
+		CommittedAt:        timestamppb.New(now),
+		MembershipEpoch:    0,
+		MlsEpoch:           0,
+		AuthorityStationId: authorityStationID,
 		Payload: &chat.ConversationEvent_ConversationCreated{
 			ConversationCreated: &chat.ConversationCreatedFact{
 				Kind:        chat.ConversationKind_CONVERSATION_KIND_GROUP,
@@ -1243,7 +1319,11 @@ func enqueueEventPayloads(
 			OpaquePayload:  deliveryBytes,
 			PayloadSha256:  deliveryHash[:],
 		}
-		homeStationID, err := repositories.Devices.HomeStationID(ctx, payload.Recipient)
+		homeStationID, err := repositories.EndpointManifests.HomeStationForEndpoint(
+			ctx,
+			payload.Recipient,
+			now,
+		)
 		if err != nil {
 			return err
 		}
@@ -1269,8 +1349,33 @@ func enqueueEventPayloads(
 	}
 	sort.Strings(targets)
 	for _, target := range targets {
+		actorSet := make(map[string]struct{})
+		for _, write := range remoteWrites[target] {
+			actorSet[write.Recipient.Ptid] = struct{}{}
+		}
+		actors := make([]string, 0, len(actorSet))
+		for actor := range actorSet {
+			actors = append(actors, actor)
+		}
+		sort.Strings(actors)
+		manifests, err := repositories.EndpointManifests.ListVerifiedManifests(
+			ctx,
+			actors,
+			now,
+		)
+		if err != nil {
+			return err
+		}
+		for _, manifest := range manifests {
+			if manifest.HomeStationId != target {
+				return messaging.ErrEndpointManifestConflict
+			}
+		}
 		batchBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
-			&chat.FederatedDeviceQueueBatch{Writes: remoteWrites[target]},
+			&chat.FederatedDeviceQueueBatch{
+				Writes:            remoteWrites[target],
+				EndpointManifests: manifests,
+			},
 		)
 		if err != nil {
 			return err
@@ -1306,6 +1411,8 @@ func buildSendPlan(
 	repositories messaging.AuthorityRepositories,
 	conversation *messaging.AuthorityConversation,
 	sender *chat.CryptoEndpoint,
+	authorityStationID string,
+	now time.Time,
 ) (*chat.PrepareMessagingSendResponse, error) {
 	endpoints, err := listRequiredEndpoints(ctx, repositories, conversation.ConversationID)
 	if err != nil {
@@ -1342,13 +1449,28 @@ func buildSendPlan(
 		authorityHash = append([]byte(nil), head.EventHash...)
 	}
 	plan := &chat.PrepareMessagingSendResponse{
-		ConversationId:    conversation.ConversationID,
-		ConversationKind:  kind,
-		AuthoritySequence: conversation.CurrentSequence,
-		AuthorityHash:     authorityHash,
-		MembershipEpoch:   conversation.MembershipEpoch,
-		MlsEpoch:          conversation.MlsEpoch,
-		RequiredEndpoints: endpoints,
+		ConversationId:     conversation.ConversationID,
+		ConversationKind:   kind,
+		AuthoritySequence:  conversation.CurrentSequence,
+		AuthorityHash:      authorityHash,
+		MembershipEpoch:    conversation.MembershipEpoch,
+		MlsEpoch:           conversation.MlsEpoch,
+		RequiredEndpoints:  endpoints,
+		AuthorityStationId: authorityStationID,
+	}
+	actorPTIDs := make([]string, 0)
+	for _, endpoint := range endpoints {
+		if len(actorPTIDs) == 0 || actorPTIDs[len(actorPTIDs)-1] != endpoint.Ptid {
+			actorPTIDs = append(actorPTIDs, endpoint.Ptid)
+		}
+	}
+	plan.EndpointManifests, err = repositories.EndpointManifests.ListVerifiedManifests(
+		ctx,
+		actorPTIDs,
+		now.UTC(),
+	)
+	if err != nil {
+		return nil, err
 	}
 	planBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(plan)
 	if err != nil {
@@ -1687,14 +1809,15 @@ func buildMembershipTransitionEventAndPayloads(
 		return nil, nil, err
 	}
 	event := &chat.ConversationEvent{
-		EventId:         eventID,
-		ConversationId:  command.ConversationId,
-		Sequence:        conversation.CurrentSequence + 1,
-		CommandId:       command.CommandId,
-		Actor:           command.Sender,
-		CommittedAt:     timestamppb.New(now),
-		MembershipEpoch: 1,
-		MlsEpoch:        1,
+		EventId:            eventID,
+		ConversationId:     command.ConversationId,
+		Sequence:           conversation.CurrentSequence + 1,
+		CommandId:          command.CommandId,
+		Actor:              command.Sender,
+		CommittedAt:        timestamppb.New(now),
+		MembershipEpoch:    1,
+		MlsEpoch:           1,
+		AuthorityStationId: command.AuthorityStationId,
 		Payload: &chat.ConversationEvent_MembershipTransitionCommitted{
 			MembershipTransitionCommitted: &chat.MembershipTransitionCommittedFact{
 				TransitionId:        transition.TransitionId,
