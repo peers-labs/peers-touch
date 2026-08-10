@@ -269,15 +269,24 @@ impl MlsTransitionProcessor {
         {
             return Err("messaging MLS transition binding mismatch".to_string());
         }
+        validate_authority_snapshot(event, transition.post_state.as_ref())?;
         let join_projection = if queue_kind == MlsQueuePayloadKind::Welcome {
-            Some(join_checkpoint_projection(
-                event,
-                transition,
-                &self.endpoint,
-                now,
-            )?)
+            let (local_sequence, _) = self.store.authority_head(&event.conversation_id)?;
+            if local_sequence == 0
+                || self
+                    .store
+                    .has_mls_retired_checkpoint(&event.conversation_id)?
+            {
+                Some(join_checkpoint_projection(
+                    event,
+                    transition,
+                    &self.endpoint,
+                    now,
+                )?)
+            } else {
+                None
+            }
         } else {
-            validate_authority_snapshot(event, transition.post_state.as_ref())?;
             None
         };
         let changes = transition
@@ -353,7 +362,7 @@ impl ClaimedItemConsumer for MlsTransitionProcessor {
     }
 }
 
-fn validate_authority_snapshot(
+pub(super) fn validate_authority_snapshot(
     event: &crate::model::chat::ConversationEvent,
     snapshot: Option<&ConversationAuthoritySnapshot>,
 ) -> Result<(), String> {
@@ -431,6 +440,15 @@ fn join_checkpoint_projection(
     if !local_added || !local_member || !local_endpoint {
         return Err("messaging MLS Welcome is not a local join checkpoint".to_string());
     }
+    authority_snapshot_projection(event, snapshot, now)
+}
+
+pub(super) fn authority_snapshot_projection(
+    event: &crate::model::chat::ConversationEvent,
+    snapshot: &ConversationAuthoritySnapshot,
+    now: i64,
+) -> Result<ConversationProjection, String> {
+    validate_authority_snapshot(event, Some(snapshot))?;
     Ok(ConversationProjection {
         conversation_id: event.conversation_id.clone(),
         kind: snapshot.kind,

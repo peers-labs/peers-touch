@@ -674,11 +674,11 @@ func buildPlannedTransitionPayloads(
 	}
 	for _, endpoint := range snapshot.RemovedEndpoints {
 		marker, err := proto.MarshalOptions{Deterministic: true}.Marshal(
-			&chat.PublicEventMarker{
+			&chat.MlsRetirementMarker{
 				ConversationId:  command.ConversationId,
 				EventId:         eventID,
-				CommandId:       command.CommandId,
-				SendingEndpoint: command.Sender,
+				TransitionId:    transition.TransitionId,
+				RemovedEndpoint: endpoint,
 			},
 		)
 		if err != nil {
@@ -687,7 +687,7 @@ func buildPlannedTransitionPayloads(
 		hash := sha256.Sum256(marker)
 		payloads = append(payloads, &chat.PreparedEndpointPayload{
 			Recipient:     endpoint,
-			Kind:          chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_PUBLIC_EVENT,
+			Kind:          chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_RETIREMENT,
 			OpaquePayload: marker,
 			PayloadSha256: hash[:],
 		})
