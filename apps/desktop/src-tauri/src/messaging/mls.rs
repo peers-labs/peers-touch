@@ -451,6 +451,7 @@ pub(super) fn authority_snapshot_projection(
     validate_authority_snapshot(event, Some(snapshot))?;
     Ok(ConversationProjection {
         conversation_id: event.conversation_id.clone(),
+        authority_station_id: event.authority_station_id.clone(),
         kind: snapshot.kind,
         name: snapshot.name.clone(),
         owner_ptid: snapshot.owner_ptid.clone(),
@@ -560,6 +561,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 1,
+            authority_station_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MessageCommitted(
                 MessageCommittedFact {
                     message_id: "message-1".to_string(),
@@ -645,6 +647,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 1,
+            authority_station_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MembershipTransitionCommitted(
                 MembershipTransitionCommittedFact {
                     transition_id: transition_id.to_string(),
@@ -745,6 +748,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 2,
             mls_epoch: 2,
+            authority_station_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MembershipTransitionCommitted(
                 MembershipTransitionCommittedFact {
                     transition_id: transition_id.to_string(),
