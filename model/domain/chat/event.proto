@@ -106,6 +106,16 @@ message PublicEventMarker {
   CryptoEndpoint sending_endpoint = 4;
 }
 
+// Ordered endpoint payload that retires local MLS state after this endpoint
+// leaves the post-transition leaf set. Rejoin is only possible through a
+// later, fully bound MLS Welcome checkpoint.
+message MlsRetirementMarker {
+  string conversation_id = 1;
+  string event_id = 2;
+  string transition_id = 3;
+  CryptoEndpoint removed_endpoint = 4;
+}
+
 message ConversationStateMarker {
   string conversation_id = 1;
   string event_id = 2;
