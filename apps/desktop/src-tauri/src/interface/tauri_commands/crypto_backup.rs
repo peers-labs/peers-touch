@@ -1,81 +1,73 @@
-//! Station-backed recovery backup commands.
+//! Canonical Messaging Platform recovery commands.
 
 use std::sync::Arc;
 
+use reqwest::Method;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::json;
 use tauri::{State, Window};
+use ulid::Ulid;
 
-use crate::application::key_exchange::device_install;
 use crate::application::session_resolver;
 use crate::contracts::StubPayload;
-use crate::domain::crypto::{
-    self, AttachmentDecryptionMetadata, BackupKdfParameters, EncryptedBackup, RecoveryConversation,
-    VerifiedFingerprint,
-};
+use crate::domain::crypto;
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::local_chat_store::{self, RecoveryMetadata};
+use crate::infrastructure::session_vault;
 use crate::infrastructure::station_client::{self, StationClientErrorKind};
-use crate::model::chat;
+use crate::messaging::{
+    decode_recovery_revision, encode_recovery_revision, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+};
+use crate::model::chat::{
+    GetLatestRecoveryRevisionRequest, GetLatestRecoveryRevisionResponse,
+    PutRecoveryRevisionRequest, PutRecoveryRevisionResponse,
+};
 use crate::state::AppState;
 
 use super::crypto::to_stub;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BackupConversationInput {
-    scope: String,
-    conversation_id: String,
-    metadata: Value,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupAttachmentInput {
-    message_id: String,
-    attachment_id: String,
-    metadata: Value,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VerifiedFingerprintInput {
-    peer_ptid: String,
-    fingerprint: String,
-    verified_at_unix_ms: i64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct CryptoBackupCreateInput {
     recovery_phrase: String,
-    #[serde(default)]
-    conversations: Vec<BackupConversationInput>,
-    #[serde(default)]
-    attachments: Vec<BackupAttachmentInput>,
-    #[serde(default)]
-    verified_fingerprints: Vec<VerifiedFingerprintInput>,
+}
+
+struct RecoverySession {
+    account_id: String,
+    actor_id: String,
+    ptid: String,
+    token: String,
 }
 
 fn require_session(
     state: &State<'_, Arc<AppState>>,
     window: &Window,
-) -> Result<(String, String), AppResult<StubPayload>> {
-    let ptid = session_resolver::actor_id_for_window(state.inner(), window)
+) -> Result<RecoverySession, AppResult<StubPayload>> {
+    let account_id = session_vault::active_account_id()
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
+    let actor_id = session_resolver::actor_id_for_window(state.inner(), window)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
+    let ptid = session_resolver::ptid_for_window(state.inner(), window).ok_or_else(|| {
+        AppResult::fail(
+            ErrorCode::Unauthorized,
+            "authenticated session has no canonical PTID",
+            None,
+        )
+    })?;
     let token = session_resolver::token_for_window(state.inner(), window)
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
-    Ok((ptid, token))
+    Ok(RecoverySession {
+        account_id,
+        actor_id,
+        ptid,
+        token,
+    })
 }
 
-fn identity_key_ref(ptid: &str) -> String {
-    crate::infrastructure::local_scope::LocalScope::from_actor(ptid).identity_key_ref()
-}
-
-fn user_scope(ptid: &str) -> String {
-    crate::infrastructure::local_scope::user_scope_for_actor(Some(ptid))
+fn identity_key_ref(actor_id: &str) -> String {
+    crate::infrastructure::local_scope::LocalScope::from_actor(actor_id).identity_key_ref()
 }
 
 fn timestamp_ms(timestamp: Option<&prost_types::Timestamp>) -> i64 {
@@ -89,49 +81,31 @@ fn timestamp_ms(timestamp: Option<&prost_types::Timestamp>) -> i64 {
         .unwrap_or_default()
 }
 
-fn revision_json(revision: &chat::CryptoBackupRevision) -> Value {
+fn revision_json(revision: &GetLatestRecoveryRevisionResponse) -> serde_json::Value {
     json!({
-        "backupId": revision.backup_id,
-        "revision": revision.revision,
+        "backupId": revision.revision_id,
+        "revision": revision.revision_id,
+        "formatVersion": revision.format_version,
         "createdAtUnixMs": timestamp_ms(revision.created_at.as_ref()),
-        "blobSizeBytes": revision.encrypted_blob.len(),
+        "blobSizeBytes": revision.encrypted_archive.len(),
     })
 }
 
-fn encrypted_from_revision(
-    revision: &chat::CryptoBackupRevision,
-) -> Result<EncryptedBackup, AppResult<StubPayload>> {
-    let kdf = revision.kdf.as_ref().ok_or_else(|| {
-        AppResult::fail(
-            ErrorCode::InternalError,
-            "backup revision has no KDF parameters",
-            None,
-        )
-    })?;
-    let nonce: [u8; crypto::backup::BACKUP_NONCE_BYTES] =
-        revision.nonce.clone().try_into().map_err(|_| {
-            AppResult::fail(ErrorCode::InternalError, "backup nonce is invalid", None)
-        })?;
-    let integrity_tag: [u8; crypto::backup::BACKUP_TAG_BYTES] =
-        revision.integrity_tag.clone().try_into().map_err(|_| {
-            AppResult::fail(
-                ErrorCode::InternalError,
-                "backup integrity tag is invalid",
-                None,
-            )
-        })?;
-    Ok(EncryptedBackup {
-        encrypted_blob: revision.encrypted_blob.clone(),
-        nonce,
-        integrity_tag,
-        kdf: BackupKdfParameters {
-            salt: kdf.salt.clone(),
-            memory_cost_kib: kdf.memory_cost_kib,
-            time_cost: kdf.time_cost,
-            parallelism: kdf.parallelism,
-            output_length: kdf.output_length,
-        },
-    })
+fn latest_revision(
+    session: &RecoverySession,
+    device_id: &str,
+) -> Result<
+    GetLatestRecoveryRevisionResponse,
+    crate::infrastructure::station_client::StationClientError,
+> {
+    station_client::request_proto_for_device(
+        Method::GET,
+        "/messaging/recovery/revision",
+        &session.token,
+        None,
+        None::<&GetLatestRecoveryRevisionRequest>,
+        device_id,
+    )
 }
 
 #[tauri::command]
@@ -164,7 +138,7 @@ pub fn crypto_backup_create(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let (ptid, token) = match require_session(&state, &window) {
+    let session = match require_session(&state, &window) {
         Ok(session) => session,
         Err(error) => return error,
     };
@@ -175,7 +149,7 @@ pub fn crypto_backup_create(
             None,
         );
     }
-    let identity = match crypto::load_identity_key(&identity_key_ref(&ptid)) {
+    let identity = match crypto::load_identity_key(&identity_key_ref(&session.actor_id)) {
         Ok(Some(identity)) => identity,
         Ok(None) => return AppResult::fail(ErrorCode::NotFound, "crypto identity not found", None),
         Err(error) => {
@@ -186,97 +160,67 @@ pub fn crypto_backup_create(
             )
         }
     };
-
-    let metadata = RecoveryMetadata {
-        conversations: input
-            .conversations
-            .into_iter()
-            .map(|value| RecoveryConversation {
-                scope: value.scope,
-                conversation_id: value.conversation_id,
-                metadata: value.metadata,
-            })
-            .collect(),
-        attachments: input
-            .attachments
-            .into_iter()
-            .map(|value| AttachmentDecryptionMetadata {
-                message_id: value.message_id,
-                attachment_id: value.attachment_id,
-                metadata: value.metadata,
-            })
-            .collect(),
-        verified_fingerprints: input
-            .verified_fingerprints
-            .into_iter()
-            .map(|value| VerifiedFingerprint {
-                peer_ptid: value.peer_ptid,
-                fingerprint: value.fingerprint,
-                verified_at_unix_ms: value.verified_at_unix_ms,
-            })
-            .collect(),
-    };
-    let scope = user_scope(&ptid);
-    if let Err(error) = local_chat_store::replace_recovery_metadata(&scope, &metadata) {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!("failed to persist recovery metadata: {error}"),
-            None,
-        );
-    }
-    let snapshot =
-        match local_chat_store::build_recovery_snapshot(&scope, &ptid, identity.seed_bytes()) {
-            Ok(snapshot) => snapshot,
-            Err(error) => {
-                return AppResult::fail(
-                    ErrorCode::InternalError,
-                    format!("failed to build recovery snapshot: {error}"),
-                    None,
-                )
-            }
-        };
-    let encrypted = match crypto::encrypt_snapshot(&input.recovery_phrase, &snapshot) {
-        Ok(encrypted) => encrypted,
-        Err(error) => {
+    let engine = match state.messaging_engines.get(&session.account_id) {
+        Ok(Some(engine)) => engine,
+        Ok(None) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                format!("failed to encrypt recovery snapshot: {error}"),
+                "messaging recovery requires an active profile engine",
                 None,
             )
         }
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    let request = chat::PutCryptoBackupRequest {
-        encrypted_blob: encrypted.encrypted_blob,
-        nonce: encrypted.nonce.to_vec(),
-        integrity_tag: encrypted.integrity_tag.to_vec(),
-        kdf: Some(chat::BackupKdfParameters {
-            salt: encrypted.kdf.salt,
-            memory_cost_kib: encrypted.kdf.memory_cost_kib,
-            time_cost: encrypted.kdf.time_cost,
-            parallelism: encrypted.kdf.parallelism,
-            output_length: encrypted.kdf.output_length,
+    let archive = match engine.build_recovery_archive(
+        identity.seed_bytes(),
+        INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+    ) {
+        Ok(archive) => archive,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let encoded = match encode_recovery_revision(
+        &input.recovery_phrase,
+        &Ulid::new().to_string(),
+        &engine.endpoint().device_id,
+        crate::messaging::now_unix_ms(),
+        &archive,
+    ) {
+        Ok(encoded) => encoded,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let request = PutRecoveryRevisionRequest {
+        revision_id: encoded.revision_id.clone(),
+        format_version: encoded.format_version,
+        encrypted_archive: encoded.bytes,
+        encrypted_archive_sha256: encoded.sha256.to_vec(),
+    };
+    let response: PutRecoveryRevisionResponse = match station_client::request_proto_for_device(
+        Method::POST,
+        "/messaging/recovery/revision",
+        &session.token,
+        None,
+        Some(&request),
+        &engine.endpoint().device_id,
+    ) {
+        Ok(response) => response,
+        Err(error) => return error.into_app_result("failed to upload recovery revision"),
+    };
+    to_stub(
+        "crypto_backup_create",
+        json!({
+            "backup": {
+                "backupId": response.revision_id,
+                "revision": response.revision_id,
+                "formatVersion": request.format_version,
+                "createdAtUnixMs": timestamp_ms(response.created_at.as_ref()),
+                "blobSizeBytes": request.encrypted_archive.len(),
+            },
+            "messageCount": archive.messages.len(),
+            "conversationCount": archive.conversations.len(),
+            "attachmentCount": archive.attachments.len(),
+            "verifiedFingerprintCount": archive.trust.len(),
         }),
-    };
-    match station_client::put_crypto_backup(&token, &request) {
-        Ok(response) => match response.backup {
-            Some(revision) => to_stub(
-                "crypto_backup_create",
-                json!({
-                    "backup": revision_json(&revision),
-                    "messageCount": snapshot.messages.len(),
-                    "conversationCount": snapshot.conversations.len(),
-                    "attachmentCount": snapshot.attachments.len(),
-                    "verifiedFingerprintCount": snapshot.verified_fingerprints.len(),
-                }),
-            ),
-            None => AppResult::fail(
-                ErrorCode::InternalError,
-                "Station returned no backup revision",
-                None,
-            ),
-        },
-        Err(error) => error.into_app_result("failed to upload recovery backup"),
-    }
+    )
 }
 
 #[tauri::command]
@@ -285,7 +229,7 @@ pub fn crypto_backup_restore_latest(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let (ptid, token) = match require_session(&state, &window) {
+    let session = match require_session(&state, &window) {
         Ok(session) => session,
         Err(error) => return error,
     };
@@ -296,37 +240,41 @@ pub fn crypto_backup_restore_latest(
             None,
         );
     }
-    let response = match station_client::get_latest_crypto_backup(&token) {
-        Ok(response) => response,
-        Err(error) => return error.into_app_result("failed to fetch latest recovery backup"),
-    };
-    let revision = match response.backup {
-        Some(revision) if revision.ptid == ptid => revision,
-        Some(_) => {
+    let engine = match state.messaging_engines.get(&session.account_id) {
+        Ok(Some(engine)) => engine,
+        Ok(None) => {
             return AppResult::fail(
-                ErrorCode::Forbidden,
-                "backup revision belongs to another actor",
+                ErrorCode::InternalError,
+                "messaging recovery requires an active profile engine",
                 None,
             )
         }
-        None => return AppResult::fail(ErrorCode::NotFound, "backup not found", None),
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    let encrypted = match encrypted_from_revision(&revision) {
-        Ok(encrypted) => encrypted,
-        Err(error) => return error,
+    let device_id = engine.endpoint().device_id.clone();
+    drop(engine);
+    let revision = match latest_revision(&session, &device_id) {
+        Ok(revision) => revision,
+        Err(error) => return error.into_app_result("failed to fetch latest recovery revision"),
     };
-    let snapshot = match crypto::decrypt_snapshot(&recovery_phrase, &ptid, &encrypted) {
-        Ok(snapshot) => snapshot,
+    let archive = match decode_recovery_revision(
+        &recovery_phrase,
+        &session.ptid,
+        &revision.revision_id,
+        &revision.encrypted_archive,
+        &revision.encrypted_archive_sha256,
+    ) {
+        Ok(archive) => archive,
         Err(_) => {
             return AppResult::fail(
                 ErrorCode::InvalidArgument,
-                "recovery phrase or backup integrity is invalid",
+                "recovery phrase or archive integrity is invalid",
                 None,
             )
         }
     };
 
-    let key_ref = identity_key_ref(&ptid);
+    let key_ref = identity_key_ref(&session.actor_id);
     let previous_seed = match crypto::load_identity_key(&key_ref) {
         Ok(identity) => identity.map(|value| value.seed_bytes()),
         Err(error) => {
@@ -337,51 +285,56 @@ pub fn crypto_backup_restore_latest(
             )
         }
     };
-    if let Err(error) = crypto::store_identity_key(&key_ref, &snapshot.actor_identity_seed) {
+    if let Err(error) = crypto::store_identity_key(&key_ref, &archive.actor_identity_seed) {
         return AppResult::fail(
             ErrorCode::InternalError,
             format!("failed to restore actor identity: {error}"),
             None,
         );
     }
-    let counts = match local_chat_store::restore_recovery_snapshot(&user_scope(&ptid), &snapshot) {
-        Ok(counts) => counts,
+    let enrollment = match state
+        .messaging_engines
+        .restore_profile(&session.account_id, &archive)
+    {
+        Ok(enrollment) => enrollment,
         Err(error) => {
-            if let Some(previous_seed) = previous_seed {
-                let _ = crypto::store_identity_key(&key_ref, &previous_seed);
+            if let Some(seed) = previous_seed {
+                let _ = crypto::store_identity_key(&key_ref, &seed);
             }
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("failed to restore SQLCipher history: {error}"),
-                None,
-            );
+            return AppResult::fail(ErrorCode::InternalError, error, None);
         }
     };
-    let device_id = match device_install::rotate_device_id(&ptid) {
-        Ok(device_id) => device_id,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("history restored but fresh device enrollment failed: {error}"),
-                None,
-            )
-        }
-    };
-    station_client::set_device_id(device_id.clone());
-    let restored_identity = crypto::IdentityKeyPair::from_seed(&snapshot.actor_identity_seed);
+    let restored_device_id = enrollment.certificate.device_id.clone();
+    if let Err(error) = state.messaging_engines.activate_profile(
+        session.account_id.clone(),
+        archive.ptid.clone(),
+        archive.actor_identity_seed,
+        archive.actor_profile_version,
+    ) {
+        return AppResult::fail(ErrorCode::InternalError, error, None);
+    }
+    if let Err(error) = state.messaging_engines.activate_profile_worker(
+        &session.account_id,
+        session.token.clone(),
+        archive.actor_identity_seed,
+    ) {
+        return AppResult::fail(ErrorCode::InternalError, error, None);
+    }
+    station_client::set_device_id(restored_device_id.clone());
+    let restored_identity = crypto::IdentityKeyPair::from_seed(&archive.actor_identity_seed);
     to_stub(
         "crypto_backup_restore_latest",
         json!({
             "backup": revision_json(&revision),
-            "deviceId": device_id,
+            "deviceId": restored_device_id,
             "fingerprint": crypto::fingerprint_hex(restored_identity.verifying_key()),
-            "messageCount": counts.messages,
-            "conversationCount": counts.conversations,
-            "attachmentCount": counts.attachments,
-            "verifiedFingerprintCount": counts.verified_fingerprints,
-            "conversations": snapshot.conversations,
-            "attachments": snapshot.attachments,
-            "verifiedFingerprints": snapshot.verified_fingerprints,
+            "messageCount": archive.messages.len(),
+            "conversationCount": archive.conversations.len(),
+            "attachmentCount": archive.attachments.len(),
+            "verifiedFingerprintCount": archive.trust.len(),
+            "conversations": archive.conversations,
+            "attachments": archive.attachments,
+            "verifiedFingerprints": archive.trust,
         }),
     )
 }
@@ -391,21 +344,29 @@ pub fn crypto_backup_status(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let (_, token) = match require_session(&state, &window) {
+    let session = match require_session(&state, &window) {
         Ok(session) => session,
         Err(error) => return error,
     };
-    match station_client::get_latest_crypto_backup(&token) {
-        Ok(response) => to_stub(
+    let engine = match state.messaging_engines.get(&session.account_id) {
+        Ok(Some(engine)) => engine,
+        Ok(None) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "messaging recovery requires an active profile engine",
+                None,
+            )
+        }
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    match latest_revision(&session, &engine.endpoint().device_id) {
+        Ok(revision) => to_stub(
             "crypto_backup_status",
-            json!({
-                "exists": response.backup.is_some(),
-                "latest": response.backup.as_ref().map(revision_json),
-            }),
+            json!({ "exists": true, "latest": revision_json(&revision) }),
         ),
         Err(error) if matches!(error.kind, StationClientErrorKind::HttpStatus(404)) => to_stub(
             "crypto_backup_status",
-            json!({ "exists": false, "latest": Value::Null }),
+            json!({ "exists": false, "latest": serde_json::Value::Null }),
         ),
         Err(error) => error.into_app_result("failed to fetch recovery backup status"),
     }
@@ -417,17 +378,30 @@ pub fn crypto_backup_list_revisions(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let (_, token) = match require_session(&state, &window) {
+    let _ = limit;
+    let session = match require_session(&state, &window) {
         Ok(session) => session,
         Err(error) => return error,
     };
-    match station_client::list_crypto_backup_revisions(&token, limit.unwrap_or(5).clamp(1, 5)) {
-        Ok(response) => to_stub(
+    let engine = match state.messaging_engines.get(&session.account_id) {
+        Ok(Some(engine)) => engine,
+        Ok(None) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "messaging recovery requires an active profile engine",
+                None,
+            )
+        }
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    match latest_revision(&session, &engine.endpoint().device_id) {
+        Ok(revision) => to_stub(
             "crypto_backup_list_revisions",
-            json!({
-                "backups": response.backups.iter().map(revision_json).collect::<Vec<_>>(),
-            }),
+            json!({ "backups": [revision_json(&revision)] }),
         ),
+        Err(error) if matches!(error.kind, StationClientErrorKind::HttpStatus(404)) => {
+            to_stub("crypto_backup_list_revisions", json!({ "backups": [] }))
+        }
         Err(error) => error.into_app_result("failed to list recovery backup revisions"),
     }
 }
