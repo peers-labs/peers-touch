@@ -213,9 +213,13 @@ impl MessagingEngine {
 
     pub fn build_recovery_archive(
         &self,
-        actor_identity_seed: [u8; 32],
         actor_profile_version: u64,
     ) -> Result<MessagingRecoveryArchive, String> {
+        let actor_identity_seed = self
+            .actor_identity
+            .as_ref()
+            .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
+            .seed_bytes();
         self.store.build_recovery_archive(
             &self.endpoint.ptid,
             actor_identity_seed,
@@ -705,13 +709,13 @@ impl MessagingEngine {
         Ok(Some(device))
     }
 
-    pub fn publish_prekeys(
-        &self,
-        token: &str,
-        actor_identity: &IdentityKeyPair,
-    ) -> Result<(), String> {
+    pub fn publish_prekeys(&self, token: &str) -> Result<(), String> {
+        let actor_identity = self
+            .actor_identity
+            .as_ref()
+            .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?;
         PreKeyPublisher::new(self.store.clone(), self.endpoint.clone())?.publish(
-            actor_identity,
+            actor_identity.as_ref(),
             now_unix_ms(),
             &StationPreKeyTransport::new(token.to_string(), self.endpoint.device_id.clone())?,
         )
@@ -829,12 +833,7 @@ impl EngineRegistry {
         Ok(())
     }
 
-    pub fn activate_profile_worker(
-        &self,
-        profile_id: &str,
-        token: String,
-        actor_identity_seed: [u8; 32],
-    ) -> Result<(), String> {
+    pub fn activate_profile_worker(&self, profile_id: &str, token: String) -> Result<(), String> {
         let engine = self
             .engines
             .lock()
@@ -851,7 +850,7 @@ impl EngineRegistry {
         }
         workers.insert(
             profile_id.to_string(),
-            MessagingLifecycleWorker::start(engine, token, actor_identity_seed)?,
+            MessagingLifecycleWorker::start(engine, token)?,
         );
         Ok(())
     }
@@ -902,13 +901,59 @@ impl EngineRegistry {
         profile_id: &str,
         archive: &MessagingRecoveryArchive,
     ) -> Result<FreshDeviceEnrollment, String> {
-        let worker = self
-            .workers
-            .lock()
-            .map_err(|_| "messaging worker registry lock poisoned".to_string())?
-            .remove(profile_id);
-        if let Some(worker) = worker {
-            worker.stop()?;
+        let (previous_ptid, previous_seed, previous_profile_version) = {
+            let engines = self
+                .engines
+                .lock()
+                .map_err(|_| "messaging engine registry lock poisoned".to_string())?;
+            let engine = engines.get(profile_id).ok_or_else(|| {
+                "messaging recovery requires an active profile engine".to_string()
+            })?;
+            // The registry and its active lifecycle worker each hold one Arc.
+            if engine.endpoint.ptid != archive.ptid || Arc::strong_count(engine) != 2 {
+                return Err(
+                    "messaging recovery requires exclusive ownership of the matching profile"
+                        .to_string(),
+                );
+            }
+            let previous_seed = engine
+                .actor_identity
+                .as_ref()
+                .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
+                .seed_bytes();
+            let previous_profile_version = engine
+                .store
+                .device_enrollment()?
+                .ok_or_else(|| "messaging profile device enrollment is unavailable".to_string())?
+                .certificate
+                .observed_profile_version;
+            (
+                engine.endpoint.ptid.clone(),
+                previous_seed,
+                previous_profile_version,
+            )
+        };
+        let (worker, worker_token) = {
+            let mut workers = self
+                .workers
+                .lock()
+                .map_err(|_| "messaging worker registry lock poisoned".to_string())?;
+            let worker = workers.get(profile_id).ok_or_else(|| {
+                "messaging recovery requires an active profile worker".to_string()
+            })?;
+            let token = worker.token()?;
+            let worker = workers
+                .remove(profile_id)
+                .ok_or_else(|| "messaging profile worker disappeared".to_string())?;
+            (worker, token)
+        };
+        if let Err(error) = worker.stop() {
+            return match self.restart_existing_profile_worker(profile_id, worker_token) {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(format!(
+                    "{error}; messaging recovery worker rollback failed: {rollback_error}"
+                )),
+            };
         }
         let mut engines = self
             .engines
@@ -917,32 +962,105 @@ impl EngineRegistry {
         let engine = engines
             .remove(profile_id)
             .ok_or_else(|| "messaging recovery requires an active profile engine".to_string())?;
-        if engine.endpoint.ptid != archive.ptid || Arc::strong_count(&engine) != 1 {
+        if Arc::strong_count(&engine) != 1 {
             engines.insert(profile_id.to_string(), engine);
+            drop(engines);
+            self.restart_existing_profile_worker(profile_id, worker_token)?;
             return Err(
                 "messaging recovery requires exclusive ownership of the matching profile"
                     .to_string(),
             );
         }
-        let endpoint = engine.endpoint.clone();
         if let Err(error) = engine.store.prepare_for_atomic_replace() {
             engines.insert(profile_id.to_string(), engine);
+            drop(engines);
+            self.restart_existing_profile_worker(profile_id, worker_token)?;
             return Err(error);
         }
         drop(engine);
         drop(engines);
 
         match restore_profile_database_atomically(profile_id, archive) {
-            Ok(enrollment) => Ok(enrollment),
+            Ok(enrollment) => {
+                let engine = Arc::new(MessagingEngine::open_profile(
+                    profile_id.to_string(),
+                    archive.ptid.clone(),
+                    archive.actor_identity_seed,
+                    archive.actor_profile_version,
+                )?);
+                self.install_profile_runtime(profile_id, engine, worker_token)?;
+                Ok(enrollment)
+            }
             Err(error) => {
-                let reopened = Arc::new(MessagingEngine::open(profile_id.to_string(), endpoint)?);
-                self.engines
-                    .lock()
-                    .map_err(|_| "messaging engine registry lock poisoned".to_string())?
-                    .insert(profile_id.to_string(), reopened);
-                Err(error)
+                let rollback = MessagingEngine::open_profile(
+                    profile_id.to_string(),
+                    previous_ptid,
+                    previous_seed,
+                    previous_profile_version,
+                )
+                .and_then(|engine| {
+                    self.install_profile_runtime(profile_id, Arc::new(engine), worker_token)
+                });
+                match rollback {
+                    Ok(()) => Err(error),
+                    Err(rollback_error) => Err(format!(
+                        "{error}; messaging recovery runtime rollback failed: {rollback_error}"
+                    )),
+                }
             }
         }
+    }
+
+    fn restart_existing_profile_worker(
+        &self,
+        profile_id: &str,
+        token: String,
+    ) -> Result<(), String> {
+        let engine = self
+            .engines
+            .lock()
+            .map_err(|_| "messaging engine registry lock poisoned".to_string())?
+            .get(profile_id)
+            .cloned()
+            .ok_or_else(|| "messaging recovery rollback profile is unavailable".to_string())?;
+        let worker = MessagingLifecycleWorker::start(engine, token)?;
+        self.workers
+            .lock()
+            .map_err(|_| "messaging worker registry lock poisoned".to_string())?
+            .insert(profile_id.to_string(), worker);
+        Ok(())
+    }
+
+    fn install_profile_runtime(
+        &self,
+        profile_id: &str,
+        engine: Arc<MessagingEngine>,
+        token: String,
+    ) -> Result<(), String> {
+        let notifier = self
+            .projection_notifier
+            .lock()
+            .map_err(|_| "messaging projection notifier registry lock poisoned".to_string())?
+            .clone();
+        engine.set_projection_notifier(notifier)?;
+        let worker = MessagingLifecycleWorker::start(engine.clone(), token)?;
+        let mut engines = self
+            .engines
+            .lock()
+            .map_err(|_| "messaging engine registry lock poisoned".to_string())?;
+        let mut workers = self
+            .workers
+            .lock()
+            .map_err(|_| "messaging worker registry lock poisoned".to_string())?;
+        if engines.contains_key(profile_id) || workers.contains_key(profile_id) {
+            drop(workers);
+            drop(engines);
+            worker.stop()?;
+            return Err("messaging profile runtime is already active".to_string());
+        }
+        engines.insert(profile_id.to_string(), engine);
+        workers.insert(profile_id.to_string(), worker);
+        Ok(())
     }
 
     #[cfg(test)]
@@ -1101,5 +1219,43 @@ mod tests {
             store,
         )
         .is_err());
+    }
+
+    #[test]
+    fn restore_exclusive_ownership_rejection_keeps_profile_runtime_active() {
+        let registry = EngineRegistry::default();
+        let engine = Arc::new(
+            MessagingEngine::from_profile_store(
+                "alice-profile".to_string(),
+                "ptid:alice".to_string(),
+                [17; 32],
+                3,
+                Arc::new(MessagingStore::in_memory().unwrap()),
+            )
+            .unwrap(),
+        );
+        registry
+            .engines
+            .lock()
+            .unwrap()
+            .insert("alice-profile".to_string(), engine.clone());
+        registry
+            .activate_profile_worker("alice-profile", "token-a".to_string())
+            .unwrap();
+        let archive = MessagingRecoveryArchive {
+            ptid: "ptid:alice".to_string(),
+            actor_identity_seed: [17; 32],
+            actor_profile_version: 3,
+            conversations: Vec::new(),
+            messages: Vec::new(),
+            attachments: Vec::new(),
+            trust: Vec::new(),
+        };
+
+        assert!(registry.restore_profile("alice-profile", &archive).is_err());
+        let registered = registry.get("alice-profile").unwrap().unwrap();
+        assert!(Arc::ptr_eq(&engine, &registered));
+        assert!(registry.wake_profile("alice-profile").is_ok());
+        registry.deactivate("alice-profile").unwrap();
     }
 }

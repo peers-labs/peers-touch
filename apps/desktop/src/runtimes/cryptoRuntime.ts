@@ -3,7 +3,6 @@
 // Runtime descriptor managing the crypto subsystem lifecycle:
 // - Identity initialization on bootstrap
 // - Key rotation scheduling
-// - Backup scheduling
 // - Safety number change detection
 // - Multi-device session establishment coordination
 
@@ -12,26 +11,20 @@ import type { RuntimeDescriptor } from '../kernel/runtime';
 import { log } from '../utils/logger';
 import { EVENT, eventBus } from '../kernel/events';
 import { CryptoServiceError, cryptoService } from '../services/crypto-service';
-import type {
-  CryptoBackupCreateResult,
-  CryptoBackupRestoreResult,
-  CryptoDeviceAddress,
-  RecoveryBackupMetadata,
-} from '../services/crypto-service';
+import { api } from '../services/desktop_api';
+import type { CryptoDeviceAddress } from '../services/crypto-service';
 import { imServiceV1 } from '../services/im-service';
 import { DirectKeyExchangeKind } from '../services/im-service-contract';
 import {
   DirectSessionInitSchema,
   type DirectSessionInit,
-} from '../gen/proto/domain/chat/key_exchange_pb';
+} from '../gen/proto/domain/chat/direct_crypto_pb';
 import {
   DeviceEncryptedPayloadSchema,
   type DeviceEncryptedPayload,
 } from '../gen/proto/domain/chat/conversation_pb';
 import { EncryptedMessageSchema } from '../gen/proto/domain/chat/friend_chat_pb';
 import { useCryptoStore } from '../store/cryptoStore';
-import { useSocialChatStore } from '../store/socialChat';
-import { readDesktopDomainValueSync } from '../storage/desktopClientStorage';
 
 // ---------------------------------------------------------------------------
 // Internal state (not exposed to UI — runtime-private)
@@ -42,7 +35,6 @@ interface CryptoRuntimeState {
   actorPtid: string | null;
   deviceId: string | null;
   keyRotationTimerId: ReturnType<typeof setInterval> | null;
-  backupTimerId: ReturnType<typeof setInterval> | null;
 }
 
 const state: CryptoRuntimeState = {
@@ -50,15 +42,84 @@ const state: CryptoRuntimeState = {
   actorPtid: null,
   deviceId: null,
   keyRotationTimerId: null,
-  backupTimerId: null,
 };
 
 // Intervals
 const KEY_ROTATION_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
-const BACKUP_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const ONE_TIME_KEY_LOW_THRESHOLD = 5;
 
 let eventUnsubscribers: Array<() => void> = [];
+let bootstrapPromise: Promise<void> | null = null;
+let bootstrapGeneration = 0;
+
+async function enrollLocalDevice(
+  actorPtid: string,
+  deviceId: string,
+): Promise<void> {
+  const signingIdentity = await imServiceV1.mlsGroup.initIdentity(actorPtid, deviceId);
+  if (signingIdentity.ptid !== actorPtid) {
+    throw new Error('device signing identity does not match the authenticated actor');
+  }
+  await imServiceV1.device.register(
+    deviceId,
+    navigator.userAgent,
+    signingIdentity.publicKey,
+    signingIdentity.signingKeyId,
+  );
+  log.info('crypto-runtime', 'local device enrolled', { actorPtid, deviceId });
+}
+
+async function initializeCryptoRuntime(_actorId: string): Promise<void> {
+  const generation = bootstrapGeneration;
+  const profile = await api.actorGetMyProfile();
+  const canonicalPtid = profile.id?.trim() ?? '';
+  if (!canonicalPtid.startsWith('ptid:')) {
+    throw new Error('authenticated actor has no canonical PTID');
+  }
+
+  const identity = await cryptoService.generateIdentity(canonicalPtid);
+  await enrollLocalDevice(identity.ptid, identity.deviceId);
+  const bundle = await cryptoService.generateKeyBundle();
+  await cryptoService.uploadKeyBundle(bundle, identity.deviceId);
+
+  if (generation !== bootstrapGeneration) return;
+  state.actorPtid = identity.ptid;
+  state.deviceId = identity.deviceId;
+  state.initialized = true;
+
+  const store = useCryptoStore.getState();
+  store.setInitialized(identity.ptid, identity.deviceId, identity.fingerprint);
+  store.setEncryptionEnabled(true);
+
+  await Promise.all([
+    refreshDeviceList(),
+    checkAndRotateKeys(),
+    checkSafetyNumbers(),
+  ]);
+
+  log.info('crypto-runtime', 'bootstrap complete', {
+    ptid: identity.ptid,
+    deviceId: identity.deviceId,
+  });
+}
+
+export async function ensureCryptoRuntimeReady(actorId: string): Promise<void> {
+  if (state.initialized) return;
+  if (!bootstrapPromise) {
+    const pending = initializeCryptoRuntime(actorId)
+      .catch((err) => {
+        log.error('crypto-runtime', 'bootstrap failed', { err });
+        useCryptoStore.getState().setEncryptionEnabled(false);
+        state.initialized = false;
+        throw err;
+      })
+      .finally(() => {
+        if (bootstrapPromise === pending) bootstrapPromise = null;
+      });
+    bootstrapPromise = pending;
+  }
+  await bootstrapPromise;
+}
 
 // ---------------------------------------------------------------------------
 // Key rotation
@@ -76,7 +137,7 @@ async function checkAndRotateKeys(): Promise<void> {
         oneTimePreKeysRemaining: status.oneTimePreKeysRemaining,
       });
       const newBundle = await cryptoService.rotateKeys();
-      await cryptoService.uploadKeyBundle(newBundle);
+      await cryptoService.uploadKeyBundle(newBundle, state.deviceId!);
       // Re-check status after rotation
       const updatedStatus = await cryptoService.getKeyRotationStatus();
       useCryptoStore.getState().setKeyRotationStatus(updatedStatus);
@@ -86,144 +147,6 @@ async function checkAndRotateKeys(): Promise<void> {
     }
   } catch (err) {
     log.warn('crypto-runtime', 'key rotation check failed', { err });
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Backup scheduling
-// ---------------------------------------------------------------------------
-
-async function checkAndScheduleBackup(): Promise<void> {
-  if (!state.initialized) return;
-  try {
-    const status = await cryptoService.getBackupStatus();
-    useCryptoStore.getState().setBackupStatus(status);
-  } catch (err) {
-    log.warn('crypto-runtime', 'backup check failed', { err });
-  }
-}
-
-function jsonSafe(value: unknown): unknown {
-  return JSON.parse(JSON.stringify(value, (_key, item: unknown) => {
-    if (typeof item === 'bigint') return item.toString();
-    if (item instanceof Uint8Array) {
-      return bytesToBase64(item);
-    }
-    return item;
-  })) as unknown;
-}
-
-function collectRecoveryBackupMetadata(): RecoveryBackupMetadata {
-  const social = useSocialChatStore.getState();
-  const conversations = [
-    ...social.sessions
-      .filter(session => session.ulid)
-      .map(session => ({
-        scope: 'friend' as const,
-        conversationId: session.ulid,
-        metadata: jsonSafe(session),
-      })),
-    ...social.groups
-      .filter(group => group.ulid)
-      .map(group => ({
-        scope: 'group' as const,
-        conversationId: group.ulid,
-        metadata: jsonSafe(group),
-      })),
-  ];
-
-  const attachments = new Map<string, RecoveryBackupMetadata['attachments'][number]>();
-  const messageSets = [
-    ...Object.values(social.messages),
-    ...Object.values(social.threadMessages),
-  ];
-  for (const messages of messageSets) {
-    for (const message of messages) {
-      const messageId = message.ulid;
-      const messageAttachments = (message as typeof message & { attachments?: unknown[] }).attachments;
-      if (!messageId || !Array.isArray(messageAttachments)) continue;
-      for (const [index, attachment] of messageAttachments.entries()) {
-        if (!attachment || typeof attachment !== 'object') continue;
-        const record = attachment as Record<string, unknown>;
-        const attachmentId = String(
-          record.cid ?? record.id ?? record.filename ?? `attachment-${index}`,
-        );
-        attachments.set(`${messageId}\u0000${attachmentId}`, {
-          messageId,
-          attachmentId,
-          metadata: jsonSafe(record),
-        });
-      }
-    }
-  }
-
-  const actorPtid = state.actorPtid ?? social.currentUserDid ?? '';
-  const trust = readDesktopDomainValueSync<Record<string, {
-    peerDid?: string;
-    verifiedFingerprint?: string;
-    verifiedAt?: number;
-  }>>('identity.trust', `socialChat:trust:${actorPtid || 'anon'}`) ?? {};
-  const verifiedFingerprints = Object.values(trust)
-    .filter(record => Boolean(record.peerDid && record.verifiedFingerprint))
-    .map(record => ({
-      peerPtid: record.peerDid!,
-      fingerprint: record.verifiedFingerprint!,
-      verifiedAtUnixMs: record.verifiedAt ?? 0,
-    }));
-  return {
-    conversations,
-    attachments: Array.from(attachments.values()),
-    verifiedFingerprints,
-  };
-}
-
-export async function refreshRecoveryBackupStatus(): Promise<void> {
-  const status = await cryptoService.getBackupStatus();
-  useCryptoStore.getState().setBackupStatus(status);
-}
-
-export async function createRecoveryBackup(
-  recoveryPhrase: string,
-): Promise<CryptoBackupCreateResult> {
-  const store = useCryptoStore.getState();
-  store.setBackupInProgress(true);
-  try {
-    const result = await cryptoService.createBackup(
-      recoveryPhrase,
-      collectRecoveryBackupMetadata(),
-    );
-    store.setBackupResult(result);
-    return result;
-  } finally {
-    useCryptoStore.getState().setBackupInProgress(false);
-  }
-}
-
-export async function restoreLatestRecoveryBackup(
-  recoveryPhrase: string,
-): Promise<CryptoBackupRestoreResult> {
-  const store = useCryptoStore.getState();
-  store.setRestoreInProgress(true);
-  try {
-    const result = await cryptoService.restoreLatestBackup(recoveryPhrase);
-    state.deviceId = result.deviceId;
-    state.initialized = true;
-    useCryptoStore.getState().setInitialized(
-      state.actorPtid ?? '',
-      result.deviceId,
-      result.fingerprint,
-    );
-    const bundle = await cryptoService.generateKeyBundle();
-    await cryptoService.uploadKeyBundle(bundle);
-    useCryptoStore.getState().setBackupResult(result);
-    log.info('crypto-runtime', 'recovery restored and fresh device enrolled', {
-      revision: result.backup.revision,
-      deviceId: result.deviceId,
-      messageCount: result.messageCount,
-    });
-    return result;
-  } finally {
-    useCryptoStore.getState().setRestoreInProgress(false);
   }
 }
 
@@ -326,6 +249,7 @@ async function establishSessionTarget(
   await imServiceV1.dkx.send(
     peerAddress.ptid,
     peerAddress.deviceId,
+    conversationId,
     sessionId,
     DirectKeyExchangeKind.INITIAL_MESSAGE,
     toBinary(DirectSessionInitSchema, directInit),
@@ -372,6 +296,19 @@ export async function ensurePeerSessions(
     );
     if (peerBundles.length === 0 || uniqueBundles.length === 0) {
       throw new Error(`no active device bundles are available for ${peerPtid}`);
+    }
+
+    const activeSessionIds = new Set(uniqueBundles.map(bundle => buildSessionId(
+      conversationId,
+      localAddress,
+      { ptid: bundle.ptid, deviceId: bundle.deviceId },
+      sessionGenerationForBundle(bundle),
+    )));
+    const store = useCryptoStore.getState();
+    for (const sessionId of Object.keys(store.sessionSecurity)) {
+      if (sessionId.startsWith(`${conversationId}:`) && !activeSessionIds.has(sessionId)) {
+        store.removeSessionSecurity(sessionId);
+      }
     }
 
     const targets: DirectSessionTarget[] = [];
@@ -658,13 +595,23 @@ function updateConversationSecurityAggregate(conversationId: string): void {
 // Event handlers
 // ---------------------------------------------------------------------------
 
-function handleIdentityChanged(): void {
-  // On identity change (logout/switch), reset crypto state
+function resetCryptoIdentity(): void {
   const store = useCryptoStore.getState();
   store.reset();
   state.initialized = false;
   state.actorPtid = null;
   state.deviceId = null;
+}
+
+async function handleIdentityChanged(): Promise<void> {
+  if (!state.actorPtid) return;
+  try {
+    const profile = await api.actorGetMyProfile();
+    if (profile.id === state.actorPtid) return;
+  } catch {
+    // A missing authenticated profile is a logout boundary.
+  }
+  resetCryptoIdentity();
 }
 
 function handleResync(): void {
@@ -692,20 +639,6 @@ function stopKeyRotationPolling(): void {
   }
 }
 
-function startBackupPolling(): void {
-  if (state.backupTimerId) return;
-  state.backupTimerId = setInterval(() => {
-    void checkAndScheduleBackup();
-  }, BACKUP_CHECK_INTERVAL_MS);
-}
-
-function stopBackupPolling(): void {
-  if (state.backupTimerId) {
-    clearInterval(state.backupTimerId);
-    state.backupTimerId = null;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Runtime descriptor
 // ---------------------------------------------------------------------------
@@ -716,16 +649,18 @@ export const cryptoRuntime: RuntimeDescriptor = {
 
   install(): void {
     eventUnsubscribers = [
-      eventBus.subscribe(EVENT.AUTH_IDENTITY_CHANGED, handleIdentityChanged),
+      eventBus.subscribe(EVENT.AUTH_IDENTITY_CHANGED, () => {
+        void handleIdentityChanged();
+      }),
       eventBus.subscribe(EVENT.REALTIME_RESYNC, handleResync),
     ];
     startKeyRotationPolling();
-    startBackupPolling();
   },
 
   teardown(): void {
+    bootstrapGeneration += 1;
+    bootstrapPromise = null;
     stopKeyRotationPolling();
-    stopBackupPolling();
     for (const unsub of eventUnsubscribers) unsub();
     eventUnsubscribers = [];
     state.initialized = false;
@@ -736,41 +671,7 @@ export const cryptoRuntime: RuntimeDescriptor = {
 
   async bootstrap(actorId: string | null): Promise<void> {
     if (!actorId) return;
-    if (state.initialized) return;
-
-    try {
-      // Initialize or load the crypto identity from the Rust backend
-      const identity = await cryptoService.generateIdentity();
-
-      state.actorPtid = identity.ptid;
-      state.deviceId = identity.deviceId;
-      state.initialized = true;
-
-      const store = useCryptoStore.getState();
-      store.setInitialized(identity.ptid, identity.deviceId, identity.fingerprint);
-      store.setEncryptionEnabled(true);
-
-      // Generate and upload initial key bundle
-      const bundle = await cryptoService.generateKeyBundle();
-      await cryptoService.uploadKeyBundle(bundle);
-
-      // Initial checks
-      await Promise.all([
-        refreshDeviceList(),
-        checkAndRotateKeys(),
-        checkAndScheduleBackup(),
-        checkSafetyNumbers(),
-      ]);
-
-      log.info('crypto-runtime', 'bootstrap complete', {
-        ptid: identity.ptid,
-        deviceId: identity.deviceId,
-      });
-    } catch (err) {
-      log.error('crypto-runtime', 'bootstrap failed', { err });
-      useCryptoStore.getState().setEncryptionEnabled(false);
-      state.initialized = false;
-    }
+    await ensureCryptoRuntimeReady(actorId);
   },
 
   async reconcile(reason: string): Promise<void> {
@@ -778,7 +679,6 @@ export const cryptoRuntime: RuntimeDescriptor = {
     log.info('crypto-runtime', 'reconcile triggered', { reason });
     await Promise.all([
       checkAndRotateKeys(),
-      checkAndScheduleBackup(),
       refreshDeviceList(),
     ]);
   },

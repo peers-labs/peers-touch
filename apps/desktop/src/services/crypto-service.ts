@@ -122,58 +122,6 @@ export interface DeviceEnrollment {
   isCurrentDevice: boolean;
 }
 
-export interface CryptoBackupRevision {
-  backupId: string;
-  revision: number;
-  createdAtUnixMs: number;
-  blobSizeBytes: number;
-}
-
-export interface CryptoBackupStatus {
-  exists: boolean;
-  latest: CryptoBackupRevision | null;
-}
-
-export interface RecoveryConversation {
-  scope: 'friend' | 'group';
-  conversationId: string;
-  metadata: unknown;
-}
-
-export interface RecoveryAttachment {
-  messageId: string;
-  attachmentId: string;
-  metadata: unknown;
-}
-
-export interface RecoveryVerifiedFingerprint {
-  peerPtid: string;
-  fingerprint: string;
-  verifiedAtUnixMs: number;
-}
-
-export interface RecoveryBackupMetadata {
-  conversations: RecoveryConversation[];
-  attachments: RecoveryAttachment[];
-  verifiedFingerprints: RecoveryVerifiedFingerprint[];
-}
-
-export interface CryptoBackupCreateResult {
-  backup: CryptoBackupRevision;
-  messageCount: number;
-  conversationCount: number;
-  attachmentCount: number;
-  verifiedFingerprintCount: number;
-}
-
-export interface CryptoBackupRestoreResult extends CryptoBackupCreateResult {
-  deviceId: string;
-  fingerprint: string;
-  conversations: RecoveryConversation[];
-  attachments: RecoveryAttachment[];
-  verifiedFingerprints: RecoveryVerifiedFingerprint[];
-}
-
 /** Safety number (fingerprint) for a session. */
 export interface SafetyNumber {
   sessionId: string;
@@ -260,13 +208,13 @@ export const cryptoService = {
   // ── Identity ──────────────────────────────────────────────────────────────
 
   /** Generate or load the local device crypto identity. */
-  generateIdentity(): Promise<CryptoIdentity> {
-    return invokeCryptoCommand<CryptoIdentity>('crypto_generate_identity');
+  generateIdentity(ptid: string): Promise<CryptoIdentity> {
+    return invokeCryptoCommand<CryptoIdentity>('crypto_generate_identity', { ptid });
   },
 
   /** Get current device identity without regeneration. */
-  getIdentity(): Promise<CryptoIdentity> {
-    return invokeCryptoCommand<CryptoIdentity>('crypto_get_identity');
+  getIdentity(ptid: string): Promise<CryptoIdentity> {
+    return invokeCryptoCommand<CryptoIdentity>('crypto_get_identity', { ptid });
   },
 
   // ── Device enrollment ─────────────────────────────────────────────────────
@@ -319,7 +267,7 @@ export const cryptoService = {
   },
 
   /** Upload key bundle to Station. */
-  async uploadKeyBundle(bundle: CryptoKeyBundle): Promise<void> {
+  async uploadKeyBundle(bundle: CryptoKeyBundle, deviceId: string): Promise<void> {
     await api.keyExchangeUploadBundle({
       ik_pub: bundle.identityPublicKey,
       spk_id: Number(bundle.signedPreKey.keyId),
@@ -328,6 +276,7 @@ export const cryptoService = {
       opk_ids: bundle.oneTimePreKeys.map(key => Number(key.keyId)),
       opk_pubs: bundle.oneTimePreKeys.map(key => key.publicKey),
       supported_versions: bundle.supportedVersions,
+      device_id: deviceId,
     });
   },
 
@@ -512,44 +461,4 @@ export const cryptoService = {
     });
   },
 
-  // ── Backup / Restore ──────────────────────────────────────────────────────
-
-  getBackupStatus(): Promise<CryptoBackupStatus> {
-    return invokeCryptoCommand<CryptoBackupStatus>('crypto_backup_status');
-  },
-
-  listBackupRevisions(limit = 5): Promise<{ backups: CryptoBackupRevision[] }> {
-    return invokeCryptoCommand<{ backups: CryptoBackupRevision[] }>(
-      'crypto_backup_list_revisions',
-      { limit },
-    );
-  },
-
-  createBackup(
-    recoveryPhrase: string,
-    metadata: RecoveryBackupMetadata,
-  ): Promise<CryptoBackupCreateResult> {
-    return invokeCryptoCommand<CryptoBackupCreateResult>(
-      'crypto_backup_create',
-      {
-        input: {
-          recoveryPhrase,
-          ...metadata,
-        },
-      },
-    );
-  },
-
-  restoreLatestBackup(recoveryPhrase: string): Promise<CryptoBackupRestoreResult> {
-    return invokeCryptoCommand<CryptoBackupRestoreResult>(
-      'crypto_backup_restore_latest',
-      { recoveryPhrase },
-    );
-  },
-
-  generateRecoverySecret(): Promise<{ words: string[]; wordCount: number }> {
-    return invokeCryptoCommand<{ words: string[]; wordCount: number }>(
-      'crypto_generate_recovery_secret',
-    );
-  },
 } as const;

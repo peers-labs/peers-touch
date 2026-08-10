@@ -1590,6 +1590,7 @@ impl MessagingStore {
                 "SELECT conversation_id, authority_station_id, kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                  FROM messaging_conversations
+                 WHERE authority_station_id <> ''
                  ORDER BY conversation_id",
             )
             .map_err(|error| error.to_string())?;
@@ -1642,6 +1643,10 @@ impl MessagingStore {
                 "SELECT conversation_id, event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext, committed_at_unix_ms
                  FROM messaging_message_projections
+                 WHERE conversation_id IN (
+                     SELECT conversation_id FROM messaging_conversations
+                     WHERE authority_station_id <> ''
+                 )
                  ORDER BY conversation_id, event_sequence, event_id",
             )
             .map_err(|error| error.to_string())?;
@@ -1665,6 +1670,13 @@ impl MessagingStore {
             .prepare(
                 "SELECT message_id, attachment_id, metadata
                  FROM messaging_attachment_metadata
+                 WHERE message_id IN (
+                     SELECT message_id FROM messaging_message_projections
+                     WHERE conversation_id IN (
+                         SELECT conversation_id FROM messaging_conversations
+                         WHERE authority_station_id <> ''
+                     )
+                 )
                  ORDER BY message_id, attachment_id",
             )
             .map_err(|error| error.to_string())?;
@@ -4536,6 +4548,60 @@ mod tests {
         let retried = store.next_due_message_draft(1_100).unwrap().unwrap();
         assert_eq!(retried.attempt_count, 1);
         assert_eq!(retried.message_id, draft.message_id);
+    }
+
+    #[test]
+    fn recovery_export_excludes_pre_cut_conversations_and_messages() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        for (conversation_id, authority_station_id, message_id) in [
+            ("legacy-conversation", "", "legacy-message"),
+            (
+                "canonical-conversation",
+                "station-authority",
+                "canonical-message",
+            ),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO messaging_conversations(
+                        conversation_id, authority_station_id, kind, name, owner_ptid,
+                        membership_epoch, mls_epoch, active, updated_at_unix_ms
+                     ) VALUES (?1, ?2, 1, '', 'ptid:alice', 1, 0, 1, 100)",
+                    params![conversation_id, authority_station_id],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_conversation_members(conversation_id, ptid, active)
+                     VALUES (?1, 'ptid:alice', 1), (?1, 'ptid:bob', 1)",
+                    params![conversation_id],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        delivery_state, committed_at_unix_ms
+                     ) VALUES (?1, ?2, 1, ?3, 'ptid:alice', 'alice-device',
+                               'plaintext', 'consumed', 100)",
+                    params![conversation_id, format!("event-{message_id}"), message_id],
+                )
+                .unwrap();
+        }
+        drop(connection);
+
+        let archive = store
+            .build_recovery_archive("ptid:alice", [42; 32], 1)
+            .unwrap();
+        assert_eq!(archive.conversations.len(), 1);
+        assert_eq!(
+            archive.conversations[0].conversation_id,
+            "canonical-conversation"
+        );
+        assert_eq!(archive.messages.len(), 1);
+        assert_eq!(archive.messages[0].message_id, "canonical-message");
     }
 
     #[test]

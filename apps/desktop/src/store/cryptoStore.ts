@@ -1,21 +1,13 @@
 // Zustand store for crypto UI state. Exposes reactive state for:
 // - Session security states per conversation
 // - Device list management
-// - Backup status
 // - Safety number change notifications
 // - Key rotation status
 //
 // This store is the single source of truth for all crypto-related UI.
 import { createDesktopStore } from './createDesktopStore';
 import { log } from '../utils/logger';
-import type {
-  CryptoBackupCreateResult,
-  CryptoBackupRestoreResult,
-  CryptoBackupStatus,
-  CryptoDeviceAddress,
-  DeviceEnrollment,
-  KeyRotationStatus,
-} from '../services/crypto-service';
+import type { CryptoDeviceAddress, DeviceEnrollment, KeyRotationStatus } from '../services/crypto-service';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,19 +34,6 @@ export interface ConversationSecuritySummary {
   /** Aggregate level: weakest link across all peer device sessions. */
   aggregateLevel: SessionSecurityLevel;
   deviceSessions: SessionSecurityInfo[];
-}
-
-export interface BackupUIState {
-  exists: boolean;
-  lastBackupUnixMs: number;
-  latestRevision: number;
-  messageCount: number;
-  conversationCount: number;
-  attachmentCount: number;
-  verifiedFingerprintCount: number;
-  backupInProgress: boolean;
-  restoreInProgress: boolean;
-  recoveryPromptDismissed: boolean;
 }
 
 export interface SafetyNumberChangeAlert {
@@ -89,9 +68,6 @@ interface CryptoStoreState {
   devices: DeviceEnrollment[];
   devicesLoading: boolean;
 
-  // Backup state
-  backup: BackupUIState;
-
   // Safety number change alerts (unacknowledged)
   safetyNumberAlerts: SafetyNumberChangeAlert[];
 
@@ -120,13 +96,6 @@ interface CryptoStoreActions {
   setDevices(devices: DeviceEnrollment[]): void;
   setDevicesLoading(loading: boolean): void;
 
-  // Backup
-  setBackupStatus(status: CryptoBackupStatus): void;
-  setBackupResult(result: CryptoBackupCreateResult | CryptoBackupRestoreResult): void;
-  setBackupInProgress(inProgress: boolean): void;
-  setRestoreInProgress(inProgress: boolean): void;
-  dismissRecoveryPrompt(): void;
-
   // Safety number alerts
   pushSafetyNumberAlert(alert: Omit<SafetyNumberChangeAlert, 'dismissed'>): void;
   dismissSafetyNumberAlert(sessionId: string): void;
@@ -142,19 +111,6 @@ type CryptoStore = CryptoStoreState & CryptoStoreActions;
 // Initial state
 // ---------------------------------------------------------------------------
 
-const INITIAL_BACKUP: BackupUIState = {
-  exists: false,
-  lastBackupUnixMs: 0,
-  latestRevision: 0,
-  messageCount: 0,
-  conversationCount: 0,
-  attachmentCount: 0,
-  verifiedFingerprintCount: 0,
-  backupInProgress: false,
-  restoreInProgress: false,
-  recoveryPromptDismissed: false,
-};
-
 const INITIAL_STATE: CryptoStoreState = {
   initialized: false,
   ownPtid: null,
@@ -165,7 +121,6 @@ const INITIAL_STATE: CryptoStoreState = {
   conversationSecurity: {},
   devices: [],
   devicesLoading: false,
-  backup: { ...INITIAL_BACKUP },
   safetyNumberAlerts: [],
   keyRotationStatus: null,
 };
@@ -284,44 +239,6 @@ export const useCryptoStore = createDesktopStore<CryptoStore>(
       set({ devicesLoading: loading });
     },
 
-    setBackupStatus(status) {
-      set({
-        backup: {
-          ...get().backup,
-          exists: status.exists,
-          lastBackupUnixMs: status.latest?.createdAtUnixMs ?? 0,
-          latestRevision: status.latest?.revision ?? 0,
-        },
-      });
-    },
-
-    setBackupResult(result) {
-      set({
-        backup: {
-          ...get().backup,
-          exists: true,
-          lastBackupUnixMs: result.backup.createdAtUnixMs,
-          latestRevision: result.backup.revision,
-          messageCount: result.messageCount,
-          conversationCount: result.conversationCount,
-          attachmentCount: result.attachmentCount,
-          verifiedFingerprintCount: result.verifiedFingerprintCount,
-        },
-      });
-    },
-
-    setBackupInProgress(inProgress) {
-      set({ backup: { ...get().backup, backupInProgress: inProgress } });
-    },
-
-    setRestoreInProgress(inProgress) {
-      set({ backup: { ...get().backup, restoreInProgress: inProgress } });
-    },
-
-    dismissRecoveryPrompt() {
-      set({ backup: { ...get().backup, recoveryPromptDismissed: true } });
-    },
-
     pushSafetyNumberAlert(alert) {
       const existing = get().safetyNumberAlerts;
       // Replace if already exists for same session
@@ -365,12 +282,4 @@ export function selectConversationSecurityLevel(
   return (
     useCryptoStore.getState().conversationSecurity[conversationId]?.aggregateLevel ?? 'idle'
   );
-}
-
-/** Whether backup needs attention (no backup or backup too old). */
-export function selectBackupNeedsAttention(): boolean {
-  const { backup } = useCryptoStore.getState();
-  if (!backup.exists) return true;
-  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-  return Date.now() - backup.lastBackupUnixMs > ONE_WEEK_MS;
 }

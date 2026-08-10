@@ -83,6 +83,53 @@ fn string_field(value: &Value, snake_case: &str, camel_case: &str) -> String {
         .to_string()
 }
 
+pub(crate) fn canonical_ptid_for_token(token: &str) -> Option<String> {
+    station_client::request_proto::<(), ActorProfile>(
+        reqwest::Method::GET,
+        "/api/v1/social/users/me",
+        token,
+        None,
+        None::<&()>,
+    )
+    .ok()
+    .map(|profile| profile.id)
+    .filter(|ptid| ptid.starts_with("ptid:"))
+}
+
+pub(crate) fn activate_messaging_profile(
+    state: &AppState,
+    account_id: &str,
+    actor_id: &str,
+    token: &str,
+) -> Result<(), String> {
+    if account_id.trim().is_empty() || actor_id.trim().is_empty() || token.trim().is_empty() {
+        return Err("messaging activation identity is incomplete".to_string());
+    }
+    let ptid = canonical_ptid_for_token(token)
+        .ok_or_else(|| "messaging activation could not resolve canonical PTID".to_string())?;
+    let identity_key_ref =
+        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id).identity_key_ref();
+    let actor_identity = crate::domain::crypto::get_or_create_identity(&identity_key_ref)
+        .map_err(|error| format!("messaging actor identity unavailable: {error}"))?;
+    let actor_identity_seed = actor_identity.seed_bytes();
+    state.messaging_engines.activate_profile(
+        account_id.to_string(),
+        ptid,
+        actor_identity_seed,
+        crate::messaging::INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+    )?;
+    state
+        .messaging_engines
+        .activate_profile_worker(account_id, token.to_string())
+}
+
+pub(crate) fn deactivate_messaging_profile(
+    state: &AppState,
+    account_id: &str,
+) -> Result<(), String> {
+    state.messaging_engines.deactivate(account_id).map(|_| ())
+}
+
 /// Performs a no-auth POST to a Station access endpoint and returns the
 /// `data` envelope object. Network and unexpected-shape failures map to a
 /// typed `AppResult` error generic over the caller's payload type.
@@ -381,7 +428,6 @@ fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthS
     {
         return error;
     }
-
     // Download avatar to local cache immediately so the account picker shows
     // the correct image on next app start without waiting for sync_user_profile.
     let avatar_local_path = if !avatar.is_empty() {
@@ -394,11 +440,22 @@ fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthS
 
     // Mark session as restorable (will be encrypted once PIN is set)
     mark_account_has_session(&account_id, &session.token);
+    if let Err(error) =
+        activate_messaging_profile(state, &account_id, &session.actor_id, &session.token)
+    {
+        tracing::warn!(
+            account_id = %account_id,
+            actor_id = %session.actor_id,
+            error = %error,
+            "authenticated session retained while durable messaging activation awaits retry"
+        );
+    }
 
     AppResult::success(AuthSessionPayload {
         command: command.to_string(),
         status: "authenticated".to_string(),
         actor_id: Some(actor_id),
+        ptid: canonical_ptid_for_token(&access_token),
         name: Some(name),
         email: Some(email_str),
         avatar_url: Some(avatar),
@@ -414,6 +471,9 @@ pub fn auth_logout(state: &AppState) -> AppResult<AuthSessionPayload> {
         .and_then(|s| s.active_account_id);
     if let Some(ref account_id) = active_account_id {
         let _ = crate::infrastructure::auth_identity::clear_account_session(account_id);
+        if let Err(error) = deactivate_messaging_profile(state, account_id) {
+            tracing::warn!(account_id = %account_id, error = %error, "failed to deactivate messaging profile");
+        }
     }
 
     let bound_actor = state.session.lock().ok().and_then(|g| g.actor_id.clone());
@@ -430,12 +490,25 @@ pub fn auth_logout(state: &AppState) -> AppResult<AuthSessionPayload> {
         command: "auth_logout".to_string(),
         status: "logged_out".to_string(),
         actor_id: None,
+        ptid: None,
         name: None,
         email: None,
         avatar_url: None,
         avatar_local_path: None,
         login_method: None,
     })
+}
+
+pub(crate) fn detach_for_station_switch(
+    state: &AppState,
+) -> Result<(), AppResult<AuthSessionPayload>> {
+    if let Err(error) = state.messaging_engines.deactivate_all() {
+        tracing::warn!(error = %error, "failed to deactivate messaging engines for Station switch");
+    }
+    for session in state.sessions.clear() {
+        crate::infrastructure::event_stream::stop(&session.actor.actor_id);
+    }
+    clear_session(state)
 }
 
 pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
@@ -533,6 +606,16 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
     {
         return error;
     }
+    if let Err(error) =
+        activate_messaging_profile(state, &account_id, &session.actor_id, &session.token)
+    {
+        tracing::warn!(
+            account_id = %account_id,
+            actor_id = %session.actor_id,
+            error = %error,
+            "restored session retained while durable messaging activation awaits retry"
+        );
+    }
     let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
     let (p_name, p_email, p_avatar, p_local_avatar, p_method) = match &profile {
         Some(p) => (
@@ -548,6 +631,7 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
         command: "auth_restore_session".to_string(),
         status: "restored".to_string(),
         actor_id: Some(session.actor_id.clone()),
+        ptid: canonical_ptid_for_token(&session.token),
         name: p_name,
         email: p_email,
         avatar_url: p_avatar,
@@ -600,10 +684,21 @@ pub fn auth_validate_token(
     {
         return error;
     }
+    if let Err(error) =
+        activate_messaging_profile(state, &account_id, &session.actor_id, &session.token)
+    {
+        tracing::warn!(
+            account_id = %account_id,
+            actor_id = %session.actor_id,
+            error = %error,
+            "validated session retained while durable messaging activation awaits retry"
+        );
+    }
     AppResult::success(AuthSessionPayload {
         command: "auth_validate_token".to_string(),
         status: "valid".to_string(),
         actor_id: Some(session.actor_id.clone()),
+        ptid: canonical_ptid_for_token(&session.token),
         name: None,
         email: None,
         avatar_url: None,
@@ -795,6 +890,16 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
     {
         return error;
     }
+    if let Err(error) =
+        activate_messaging_profile(state, &account_id, &session.actor_id, &session.token)
+    {
+        tracing::warn!(
+            account_id = %account_id,
+            actor_id = %session.actor_id,
+            error = %error,
+            "OAuth session retained while durable messaging activation awaits retry"
+        );
+    }
 
     let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&actor_id);
     let (p_name, p_email, p_avatar, p_local_avatar) = match &profile {
@@ -817,6 +922,7 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         command: "ensure_station_session".to_string(),
         status: "authenticated".to_string(),
         actor_id: Some(actor_id),
+        ptid: canonical_ptid_for_token(&session.token),
         name: p_name,
         email: p_email,
         avatar_url: p_avatar,

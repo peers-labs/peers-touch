@@ -24,12 +24,8 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { SettingsItemCard, SettingsRow, SettingsSection } from './SettingsLayout';
-import { cryptoService } from '../../services/crypto-service';
-import {
-  createRecoveryBackup,
-  restoreLatestRecoveryBackup,
-} from '../../runtimes/cryptoRuntime';
-import { useCryptoStore } from '../../store/cryptoStore';
+import { messagingRecoveryService } from '../../services/messaging-recovery-service';
+import { useMessagingRecoveryStore } from '../../store/messagingRecovery';
 import { log } from '../../utils/logger';
 
 const { Text } = Typography;
@@ -246,8 +242,13 @@ export function RecoverySettings() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
 
-  const backup = useCryptoStore((s) => s.backup);
-  const initialized = useCryptoStore((s) => s.initialized);
+  const identity = useMessagingRecoveryStore((s) => s.identity);
+  const backupExists = useMessagingRecoveryStore((s) => s.exists);
+  const latestRevision = useMessagingRecoveryStore((s) => s.latest);
+  const creating = useMessagingRecoveryStore((s) => s.creating);
+  const restoring = useMessagingRecoveryStore((s) => s.restoring);
+  const createRevision = useMessagingRecoveryStore((s) => s.createRevision);
+  const restoreLatest = useMessagingRecoveryStore((s) => s.restoreLatest);
 
   const [recoveryWords, setRecoveryWords] = useState<string[] | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -256,7 +257,7 @@ export function RecoverySettings() {
   const handleGenerateRecoverySecret = async () => {
     setGenerating(true);
     try {
-      const result = await cryptoService.generateRecoverySecret();
+      const result = await messagingRecoveryService.generatePhrase();
       setRecoveryWords(result.words);
     } catch (err) {
       log.error('RecoverySettings', 'failed to generate recovery secret', { err });
@@ -273,7 +274,7 @@ export function RecoverySettings() {
     }
 
     try {
-      await createRecoveryBackup(recoveryWords.join(' '));
+      await createRevision(recoveryWords.join(' '));
       toast.success(t('provider.account.recovery.backupCreated'));
     } catch (err) {
       log.error('RecoverySettings', 'backup creation failed', { err });
@@ -283,7 +284,7 @@ export function RecoverySettings() {
 
   const handleRestore = async (words: string[]) => {
     try {
-      const result = await restoreLatestRecoveryBackup(words.join(' '));
+      const result = await restoreLatest(words.join(' '));
       toast.success(
         t('provider.account.recovery.restoreSuccess', {
           count: result.messageCount,
@@ -316,7 +317,7 @@ export function RecoverySettings() {
     });
   };
 
-  if (!initialized) {
+  if (!identity?.ready) {
     return (
       <SettingsSection
         icon={<Shield size={18} style={{ color: token.colorTextTertiary }} />}
@@ -341,7 +342,7 @@ export function RecoverySettings() {
           <Flexbox gap={12}>
             <Flexbox horizontal align="center" justify="space-between">
               <Flexbox horizontal align="center" gap={8}>
-                {backup.exists ? (
+                {backupExists ? (
                   <CheckCircle2 size={16} style={{ color: token.colorSuccess }} />
                 ) : (
                   <AlertTriangle size={16} style={{ color: token.colorWarning }} />
@@ -350,14 +351,14 @@ export function RecoverySettings() {
                   {t('provider.account.recovery.backupStatus')}
                 </Text>
               </Flexbox>
-              {(backup.backupInProgress || backup.restoreInProgress) && <Spin size="small" />}
+              {(creating || restoring) && <Spin size="small" />}
             </Flexbox>
 
-            {backup.exists ? (
+            {backupExists ? (
               <Flexbox gap={4}>
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   {t('provider.account.recovery.lastBackup', {
-                    time: formatBackupTime(backup.lastBackupUnixMs),
+                    time: formatBackupTime(latestRevision?.createdAtUnixMs ?? 0),
                   })}
                 </Text>
               </Flexbox>
@@ -415,8 +416,8 @@ export function RecoverySettings() {
               icon={<Upload size={14} />}
               type="primary"
               onClick={handleCreateBackup}
-              loading={backup.backupInProgress}
-              disabled={!recoveryWords || backup.backupInProgress || backup.restoreInProgress}
+              loading={creating}
+              disabled={!recoveryWords || creating || restoring}
             >
               {t('provider.account.recovery.createBackup')}
             </Button>
@@ -426,7 +427,7 @@ export function RecoverySettings() {
             data-recovery-restore-open
             icon={<Download size={14} />}
             onClick={() => setRestoreOpen(true)}
-            disabled={backup.backupInProgress || backup.restoreInProgress}
+            disabled={creating || restoring}
           >
             {t('provider.account.recovery.restoreFromBackup')}
           </Button>
@@ -435,7 +436,7 @@ export function RecoverySettings() {
         open={restoreOpen}
         onClose={() => setRestoreOpen(false)}
         onRestore={handleRestore}
-        restoring={backup.restoreInProgress}
+        restoring={restoring}
         t={t}
       />
     </SettingsSection>
