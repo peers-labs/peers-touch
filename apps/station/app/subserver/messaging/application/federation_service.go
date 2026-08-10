@@ -74,13 +74,25 @@ func (s *FederationService) Deliver(
 	sourceStationPublicKey ed25519.PublicKey,
 	now time.Time,
 ) (*chat.DeliverMessagingFederationFrameResponse, error) {
-	if err := VerifyFederationFrame(
+	if err := VerifyFederationFrameAuthenticity(
 		frame,
 		expectedTargetStationID,
 		sourceStationPublicKey,
-		now,
 	); err != nil {
 		return nil, err
+	}
+	duplicate, err := s.unitOfWork.MatchFederationFrame(ctx, frame)
+	if err != nil {
+		return nil, err
+	}
+	if duplicate {
+		return &chat.DeliverMessagingFederationFrameResponse{
+			Accepted:  true,
+			Duplicate: true,
+		}, nil
+	}
+	if frame.ExpiresAt.AsTime().Before(now) || frame.IssuedAt.AsTime().After(now.Add(time.Minute)) {
+		return nil, messaging.ErrFederationFrameExpired
 	}
 	if frame.ConversationId == "" {
 		return nil, messaging.ErrFederationFrameInvalid

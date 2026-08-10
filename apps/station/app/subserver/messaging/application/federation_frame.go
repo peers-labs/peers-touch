@@ -41,6 +41,24 @@ func VerifyFederationFrame(
 	publicKey ed25519.PublicKey,
 	now time.Time,
 ) error {
+	if err := VerifyFederationFrameAuthenticity(
+		frame,
+		expectedTargetStationID,
+		publicKey,
+	); err != nil {
+		return err
+	}
+	if frame.ExpiresAt.AsTime().Before(now) || frame.IssuedAt.AsTime().After(now.Add(time.Minute)) {
+		return messaging.ErrFederationFrameExpired
+	}
+	return nil
+}
+
+func VerifyFederationFrameAuthenticity(
+	frame *chat.MessagingFederationFrame,
+	expectedTargetStationID string,
+	publicKey ed25519.PublicKey,
+) error {
 	if frame == nil ||
 		expectedTargetStationID == "" ||
 		frame.TargetStationId != expectedTargetStationID ||
@@ -50,9 +68,6 @@ func VerifyFederationFrame(
 	}
 	if err := validateFederationFrameShape(frame); err != nil {
 		return err
-	}
-	if frame.ExpiresAt.AsTime().Before(now) || frame.IssuedAt.AsTime().After(now.Add(time.Minute)) {
-		return messaging.ErrFederationFrameExpired
 	}
 	input := federationFrameSigningInput(frame)
 	bytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(input)
