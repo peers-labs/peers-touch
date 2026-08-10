@@ -3,11 +3,7 @@ use super::storage::key_provider::PlatformKeyProvider;
 use super::storage::open_database;
 use super::storage::rotate_database_key;
 use crate::domain::crypto::double_ratchet::{DrSessionState, DrSkippedMessageKey};
-use crate::domain::crypto::{
-    AttachmentDecryptionMetadata, CryptoEndpoint, DirectSession, DirectSessionKey,
-    RecoveryConversation, RecoveryMessage, RecoverySnapshot, VerifiedFingerprint,
-    BACKUP_FORMAT_VERSION,
-};
+use crate::domain::crypto::{CryptoEndpoint, DirectSession, DirectSessionKey};
 use crate::domain::storage::database::DatabaseOpenSpec;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -184,23 +180,6 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_chat_messages_scope_sent ON chat_messages(scope, sent_at DESC);
         CREATE INDEX IF NOT EXISTS idx_chat_messages_scope_conv_sent ON chat_messages(scope, conversation_id, sent_at DESC);
-        CREATE TABLE IF NOT EXISTS conversation_metadata (
-            scope TEXT NOT NULL,
-            conversation_id TEXT NOT NULL,
-            metadata_json TEXT NOT NULL,
-            PRIMARY KEY(scope, conversation_id)
-        );
-        CREATE TABLE IF NOT EXISTS attachment_decryption_metadata (
-            message_id TEXT NOT NULL,
-            attachment_id TEXT NOT NULL,
-            metadata_json TEXT NOT NULL,
-            PRIMARY KEY(message_id, attachment_id)
-        );
-        CREATE TABLE IF NOT EXISTS verified_peer_fingerprints (
-            peer_ptid TEXT NOT NULL PRIMARY KEY,
-            fingerprint TEXT NOT NULL,
-            verified_at_unix_ms INTEGER NOT NULL
-        );
         CREATE TABLE IF NOT EXISTS chat_sync_cursor (
             scope TEXT NOT NULL PRIMARY KEY,
             cursor TEXT NOT NULL,
@@ -528,6 +507,37 @@ pub fn upsert_plaintext_records(
         }
     }
     Ok(indexed)
+}
+
+pub fn get_plaintext_record(
+    user_scope: &str,
+    message_id: &str,
+) -> Result<Option<LocalChatRecord>, String> {
+    let conn = open_connection(user_scope)?;
+    let result = conn
+        .lock()
+        .query_row(
+            "SELECT scope, conversation_id, message_id, sender_did, content,
+                    reply_to_ulid, thread_root_ulid, sent_at
+             FROM chat_messages
+             WHERE message_id = ?1",
+            params![message_id],
+            |row| {
+                Ok(LocalChatRecord {
+                    scope: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    message_id: row.get(2)?,
+                    sender_did: row.get(3)?,
+                    content: row.get(4)?,
+                    reply_to_ulid: row.get(5)?,
+                    thread_root_ulid: row.get(6)?,
+                    sent_at: row.get(7)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string());
+    result
 }
 
 fn json_string(value: &Value, keys: &[&str]) -> String {
@@ -2465,418 +2475,6 @@ pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, Strin
     result
 }
 
-// ---------------------------------------------------------------------------
-// Recovery snapshot persistence
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Debug, Default)]
-pub struct RecoveryMetadata {
-    pub conversations: Vec<RecoveryConversation>,
-    pub attachments: Vec<AttachmentDecryptionMetadata>,
-    pub verified_fingerprints: Vec<VerifiedFingerprint>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RecoveryRestoreCounts {
-    pub messages: usize,
-    pub conversations: usize,
-    pub attachments: usize,
-    pub verified_fingerprints: usize,
-}
-
-fn json_text(value: &Value) -> Result<String, String> {
-    serde_json::to_string(value).map_err(|error| error.to_string())
-}
-
-pub fn replace_recovery_metadata(
-    user_scope: &str,
-    metadata: &RecoveryMetadata,
-) -> Result<(), String> {
-    let conn = open_connection(user_scope)?;
-    let mut conn = conn.lock();
-    let transaction = conn.transaction().map_err(|error| error.to_string())?;
-    transaction
-        .execute_batch(
-            "DELETE FROM conversation_metadata;
-             DELETE FROM attachment_decryption_metadata;
-             DELETE FROM verified_peer_fingerprints;",
-        )
-        .map_err(|error| error.to_string())?;
-    for conversation in &metadata.conversations {
-        transaction
-            .execute(
-                "INSERT INTO conversation_metadata(scope, conversation_id, metadata_json)
-                 VALUES (?1, ?2, ?3)",
-                params![
-                    conversation.scope,
-                    conversation.conversation_id,
-                    json_text(&conversation.metadata)?,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-    }
-    for attachment in &metadata.attachments {
-        transaction
-            .execute(
-                "INSERT INTO attachment_decryption_metadata(
-                    message_id, attachment_id, metadata_json
-                 ) VALUES (?1, ?2, ?3)",
-                params![
-                    attachment.message_id,
-                    attachment.attachment_id,
-                    json_text(&attachment.metadata)?,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-    }
-    for fingerprint in &metadata.verified_fingerprints {
-        transaction
-            .execute(
-                "INSERT INTO verified_peer_fingerprints(
-                    peer_ptid, fingerprint, verified_at_unix_ms
-                 ) VALUES (?1, ?2, ?3)",
-                params![
-                    fingerprint.peer_ptid,
-                    fingerprint.fingerprint,
-                    fingerprint.verified_at_unix_ms,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-    }
-    transaction.commit().map_err(|error| error.to_string())
-}
-
-pub fn build_recovery_snapshot(
-    user_scope: &str,
-    ptid: &str,
-    actor_identity_seed: [u8; 32],
-) -> Result<RecoverySnapshot, String> {
-    let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-
-    let mut message_statement = conn
-        .prepare(
-            "SELECT scope, conversation_id, message_id, sender_did, content,
-                    reply_to_ulid, thread_root_ulid, sent_at
-             FROM chat_messages
-             ORDER BY sent_at ASC, message_id ASC",
-        )
-        .map_err(|error| error.to_string())?;
-    let messages = message_statement
-        .query_map([], |row| {
-            Ok(RecoveryMessage {
-                scope: row.get(0)?,
-                conversation_id: row.get(1)?,
-                message_id: row.get(2)?,
-                sender_ptid: row.get(3)?,
-                content: row.get(4)?,
-                reply_to_message_id: row.get(5)?,
-                thread_root_message_id: row.get(6)?,
-                sent_at_unix_ms: row.get(7)?,
-            })
-        })
-        .map_err(|error| error.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())?;
-
-    let mut conversation_statement = conn
-        .prepare(
-            "SELECT scope, conversation_id, metadata_json
-             FROM conversation_metadata
-             ORDER BY scope, conversation_id",
-        )
-        .map_err(|error| error.to_string())?;
-    let conversation_rows = conversation_statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })
-        .map_err(|error| error.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())?;
-    let conversations = conversation_rows
-        .into_iter()
-        .map(|(scope, conversation_id, metadata)| {
-            Ok(RecoveryConversation {
-                scope,
-                conversation_id,
-                metadata: serde_json::from_str(&metadata).map_err(|error| error.to_string())?,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-
-    let mut attachment_statement = conn
-        .prepare(
-            "SELECT message_id, attachment_id, metadata_json
-             FROM attachment_decryption_metadata
-             ORDER BY message_id, attachment_id",
-        )
-        .map_err(|error| error.to_string())?;
-    let attachment_rows = attachment_statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })
-        .map_err(|error| error.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())?;
-    let attachments = attachment_rows
-        .into_iter()
-        .map(|(message_id, attachment_id, metadata)| {
-            Ok(AttachmentDecryptionMetadata {
-                message_id,
-                attachment_id,
-                metadata: serde_json::from_str(&metadata).map_err(|error| error.to_string())?,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-
-    let mut fingerprint_statement = conn
-        .prepare(
-            "SELECT peer_ptid, fingerprint, verified_at_unix_ms
-             FROM verified_peer_fingerprints
-             ORDER BY peer_ptid",
-        )
-        .map_err(|error| error.to_string())?;
-    let verified_fingerprints = fingerprint_statement
-        .query_map([], |row| {
-            Ok(VerifiedFingerprint {
-                peer_ptid: row.get(0)?,
-                fingerprint: row.get(1)?,
-                verified_at_unix_ms: row.get(2)?,
-            })
-        })
-        .map_err(|error| error.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())?;
-
-    let snapshot = RecoverySnapshot {
-        format_version: BACKUP_FORMAT_VERSION,
-        ptid: ptid.to_string(),
-        actor_identity_seed,
-        messages,
-        conversations,
-        attachments,
-        verified_fingerprints,
-    };
-    snapshot.validate(ptid).map_err(|error| error.to_string())?;
-    Ok(snapshot)
-}
-
-pub fn restore_recovery_snapshot(
-    user_scope: &str,
-    snapshot: &RecoverySnapshot,
-) -> Result<RecoveryRestoreCounts, String> {
-    snapshot
-        .validate(&snapshot.ptid)
-        .map_err(|error| error.to_string())?;
-    let conn = open_connection(user_scope)?;
-    let mut conn = conn.lock();
-    let transaction = conn.transaction().map_err(|error| error.to_string())?;
-
-    transaction
-        .execute_batch(
-            "DELETE FROM chat_messages_fts;
-             DELETE FROM chat_messages;
-             DELETE FROM group_messages;
-             DELETE FROM conversation_metadata;
-             DELETE FROM attachment_decryption_metadata;
-             DELETE FROM verified_peer_fingerprints;
-             DELETE FROM chat_sync_cursor;
-
-             DELETE FROM direct_skipped_message_keys;
-             DELETE FROM direct_sessions;
-             DELETE FROM crypto_outbox;
-             DELETE FROM crypto_skipped_keys;
-             DELETE FROM crypto_session_delivery;
-             DELETE FROM crypto_sessions;
-             DELETE FROM crypto_signed_prekey;
-             DELETE FROM crypto_one_time_prekey;
-
-             DELETE FROM crypto_mls_pending_transition;
-             DELETE FROM crypto_mls_recipient_event_buffer;
-             DELETE FROM crypto_mls_recipient_delivery_buffer;
-             DELETE FROM crypto_mls_recipient_applied;
-             DELETE FROM crypto_mls_recipient_applied_event;
-             DELETE FROM crypto_mls_local_accepted_transition;
-             DELETE FROM crypto_mls_recipient_head;
-             DELETE FROM crypto_mls_join_provider_pool;
-             DELETE FROM crypto_mls_identity;
-             DELETE FROM crypto_mls_state;",
-        )
-        .map_err(|error| error.to_string())?;
-
-    for message in &snapshot.messages {
-        upsert_record(
-            &transaction,
-            &LocalChatRecord {
-                scope: message.scope.clone(),
-                conversation_id: message.conversation_id.clone(),
-                message_id: message.message_id.clone(),
-                sender_did: message.sender_ptid.clone(),
-                content: message.content.clone(),
-                reply_to_ulid: message.reply_to_message_id.clone(),
-                thread_root_ulid: message.thread_root_message_id.clone(),
-                sent_at: message.sent_at_unix_ms,
-            },
-        )?;
-    }
-    for conversation in &snapshot.conversations {
-        transaction
-            .execute(
-                "INSERT INTO conversation_metadata(scope, conversation_id, metadata_json)
-                 VALUES (?1, ?2, ?3)",
-                params![
-                    conversation.scope,
-                    conversation.conversation_id,
-                    json_text(&conversation.metadata)?,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-    }
-    for attachment in &snapshot.attachments {
-        transaction
-            .execute(
-                "INSERT INTO attachment_decryption_metadata(
-                    message_id, attachment_id, metadata_json
-                 ) VALUES (?1, ?2, ?3)",
-                params![
-                    attachment.message_id,
-                    attachment.attachment_id,
-                    json_text(&attachment.metadata)?,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-    }
-    for fingerprint in &snapshot.verified_fingerprints {
-        transaction
-            .execute(
-                "INSERT INTO verified_peer_fingerprints(
-                    peer_ptid, fingerprint, verified_at_unix_ms
-                 ) VALUES (?1, ?2, ?3)",
-                params![
-                    fingerprint.peer_ptid,
-                    fingerprint.fingerprint,
-                    fingerprint.verified_at_unix_ms,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-    }
-    transaction.commit().map_err(|error| error.to_string())?;
-    Ok(RecoveryRestoreCounts {
-        messages: snapshot.messages.len(),
-        conversations: snapshot.conversations.len(),
-        attachments: snapshot.attachments.len(),
-        verified_fingerprints: snapshot.verified_fingerprints.len(),
-    })
-}
-
-#[cfg(test)]
-mod recovery_snapshot_tests {
-    use super::*;
-
-    fn scope(tag: &str) -> String {
-        format!("test-recovery-{tag}-{}", ulid::Ulid::new())
-    }
-
-    fn snapshot(ptid: &str, content: &str) -> RecoverySnapshot {
-        RecoverySnapshot {
-            format_version: BACKUP_FORMAT_VERSION,
-            ptid: ptid.into(),
-            actor_identity_seed: [7; 32],
-            messages: vec![RecoveryMessage {
-                scope: "friend".into(),
-                conversation_id: "conversation-1".into(),
-                message_id: "message-1".into(),
-                sender_ptid: ptid.into(),
-                content: content.into(),
-                reply_to_message_id: String::new(),
-                thread_root_message_id: String::new(),
-                sent_at_unix_ms: 10,
-            }],
-            conversations: vec![RecoveryConversation {
-                scope: "friend".into(),
-                conversation_id: "conversation-1".into(),
-                metadata: serde_json::json!({"peerPtid": "ptid:bob"}),
-            }],
-            attachments: vec![AttachmentDecryptionMetadata {
-                message_id: "message-1".into(),
-                attachment_id: "cid-1".into(),
-                metadata: serde_json::json!({"keyB64": "key", "nonceB64": "nonce"}),
-            }],
-            verified_fingerprints: vec![VerifiedFingerprint {
-                peer_ptid: "ptid:bob".into(),
-                fingerprint: "abcd".into(),
-                verified_at_unix_ms: 11,
-            }],
-        }
-    }
-
-    #[test]
-    fn restore_replaces_history_and_clears_live_crypto_state_atomically() {
-        let user_scope = scope("replace");
-        upsert_plaintext_records(
-            &user_scope,
-            &[LocalChatRecord {
-                scope: "friend".into(),
-                conversation_id: "old-conversation".into(),
-                message_id: "old-message".into(),
-                sender_did: "ptid:old".into(),
-                content: "old plaintext".into(),
-                reply_to_ulid: String::new(),
-                thread_root_ulid: String::new(),
-                sent_at: 1,
-            }],
-        )
-        .unwrap();
-        let conn = open_connection(&user_scope).unwrap();
-        conn.lock()
-            .execute(
-                "INSERT INTO crypto_outbox(command_id, command_bytes, state, created_at_unix_ms)
-                 VALUES ('old-command', X'01', 'prepared', 1)",
-                [],
-            )
-            .unwrap();
-
-        let expected = snapshot("ptid:alice", "restored plaintext");
-        let counts = restore_recovery_snapshot(&user_scope, &expected).unwrap();
-        assert_eq!(
-            counts,
-            RecoveryRestoreCounts {
-                messages: 1,
-                conversations: 1,
-                attachments: 1,
-                verified_fingerprints: 1,
-            }
-        );
-        let actual = build_recovery_snapshot(&user_scope, "ptid:alice", [7; 32]).unwrap();
-        assert_eq!(actual, expected);
-        assert!(load_crypto_outbox_entry(&user_scope, "old-command")
-            .unwrap()
-            .is_none());
-    }
-
-    #[test]
-    fn invalid_snapshot_preserves_existing_history() {
-        let user_scope = scope("invalid");
-        let existing = snapshot("ptid:alice", "keep me");
-        restore_recovery_snapshot(&user_scope, &existing).unwrap();
-
-        let mut invalid = snapshot("ptid:alice", "replace me");
-        invalid.messages[0].conversation_id.clear();
-        assert!(restore_recovery_snapshot(&user_scope, &invalid).is_err());
-
-        let actual = build_recovery_snapshot(&user_scope, "ptid:alice", [7; 32]).unwrap();
-        assert_eq!(actual.messages[0].content, "keep me");
-    }
-}
-
 #[cfg(test)]
 mod search_tests {
     use super::*;
@@ -2966,18 +2564,6 @@ mod dr_persistence_tests {
 
     fn placeholder_chain() -> [u8; 32] {
         [0xAB; 32]
-    }
-
-    #[test]
-    fn decrypt_cache_round_trips_in_actor_scoped_database() {
-        let scope = unique_scope("decrypt-cache");
-        put_decrypt_cache(&scope, "message-1", "plaintext", 7, r#"[{"id":"a1"}]"#, 42).unwrap();
-
-        let cached = get_decrypt_cache(&scope, "message-1").unwrap().unwrap();
-        assert_eq!(cached.0, "plaintext");
-        assert_eq!(cached.1, 7);
-        assert_eq!(cached.2, r#"[{"id":"a1"}]"#);
-        assert_eq!(cached.3, 42);
     }
 
     fn direct_session(session_id: &str, peer_device_id: &str) -> DirectSession {
