@@ -22,18 +22,27 @@ const deliveryCommitmentDomain = "peers-touch/device-delivery-commitment"
 const deliveryPlanDomain = "peers-touch/messaging-send-delivery-plan"
 
 type AuthorityService struct {
-	unitOfWork messaging.AuthorityUnitOfWork
-	clock      func() time.Time
+	unitOfWork     messaging.AuthorityUnitOfWork
+	localStationID string
+	frameSigner    messaging.FederationFrameSigner
+	clock          func() time.Time
 }
 
 func NewAuthorityService(
 	unitOfWork messaging.AuthorityUnitOfWork,
+	localStationID string,
+	frameSigner messaging.FederationFrameSigner,
 	clock func() time.Time,
 ) (*AuthorityService, error) {
-	if unitOfWork == nil || clock == nil {
-		return nil, fmt.Errorf("messaging: authority unit of work and clock are required")
+	if unitOfWork == nil || localStationID == "" || frameSigner == nil || clock == nil {
+		return nil, fmt.Errorf("messaging: authority dependencies are required")
 	}
-	return &AuthorityService{unitOfWork: unitOfWork, clock: clock}, nil
+	return &AuthorityService{
+		unitOfWork:     unitOfWork,
+		localStationID: localStationID,
+		frameSigner:    frameSigner,
+		clock:          clock,
+	}, nil
 }
 
 func (s *AuthorityService) PrepareSend(
@@ -126,6 +135,8 @@ func (s *AuthorityService) Submit(
 					command,
 					commandHash[:],
 					transition,
+					s.localStationID,
+					s.frameSigner,
 					s.clock().UTC(),
 				)
 			case messaging.AuthorityPlanKindMembershipTransition:
@@ -136,6 +147,8 @@ func (s *AuthorityService) Submit(
 					commandHash[:],
 					transition,
 					plan,
+					s.localStationID,
+					s.frameSigner,
 					s.clock().UTC(),
 				)
 			default:
@@ -224,32 +237,17 @@ func (s *AuthorityService) Submit(
 		if err != nil {
 			return err
 		}
-		for _, payload := range payloads {
-			delivery := &chat.DeviceEventDelivery{
-				Event:                        event,
-				Recipient:                    payload.Recipient,
-				PayloadKind:                  payload.Kind,
-				EndpointPayload:              payload.OpaquePayload,
-				EndpointPayloadSha256:        payload.PayloadSha256,
-				DeliveryCommitment:           deliveryCommitment(eventID, command.ConversationId, payload),
-				SenderActorIdentityPublicKey: senderActorIdentityKey,
-			}
-			deliveryBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(delivery)
-			if err != nil {
-				return err
-			}
-			deliveryHash := sha256.Sum256(deliveryBytes)
-			if _, err := repositories.Queue.Enqueue(ctx, &chat.DeviceQueueItem{
-				Recipient:      payload.Recipient,
-				EventId:        event.EventId,
-				ConversationId: event.ConversationId,
-				IdempotencyKey: "event:" + event.EventId,
-				PayloadType:    chat.DeviceQueuePayloadType_DEVICE_QUEUE_PAYLOAD_TYPE_CONVERSATION_EVENT,
-				OpaquePayload:  deliveryBytes,
-				PayloadSha256:  deliveryHash[:],
-			}); err != nil {
-				return err
-			}
+		if err := enqueueEventPayloads(
+			ctx,
+			repositories,
+			event,
+			payloads,
+			senderActorIdentityKey,
+			s.localStationID,
+			s.frameSigner,
+			s.clock().UTC(),
+		); err != nil {
+			return err
 		}
 		eventBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(event)
 		if err != nil {
@@ -280,6 +278,8 @@ func commitMembershipTransitionFromPlan(
 	commandHash []byte,
 	transition *chat.MembershipTransitionIntent,
 	plan *messaging.AuthorityPlan,
+	localStationID string,
+	frameSigner messaging.FederationFrameSigner,
 	now time.Time,
 ) (*chat.ConversationEvent, error) {
 	if plan == nil ||
@@ -487,6 +487,9 @@ func commitMembershipTransitionFromPlan(
 		event,
 		payloads,
 		senderActorIdentityKey,
+		localStationID,
+		frameSigner,
+		now,
 	); err != nil {
 		return nil, err
 	}
@@ -791,6 +794,8 @@ func commitGroupGenesisFromPlan(
 	command *chat.ChatCommand,
 	commandHash []byte,
 	transition *chat.MembershipTransitionIntent,
+	localStationID string,
+	frameSigner messaging.FederationFrameSigner,
 	now time.Time,
 ) (*chat.ConversationEvent, error) {
 	if transition.AuthorityPlanId == "" ||
@@ -942,6 +947,9 @@ func commitGroupGenesisFromPlan(
 		createdEvent,
 		createdPayloads,
 		senderActorIdentityKey,
+		localStationID,
+		frameSigner,
+		now,
 	); err != nil {
 		return nil, err
 	}
@@ -987,6 +995,9 @@ func commitGroupGenesisFromPlan(
 		event,
 		payloads,
 		senderActorIdentityKey,
+		localStationID,
+		frameSigner,
+		now,
 	); err != nil {
 		return nil, err
 	}
@@ -1196,7 +1207,14 @@ func enqueueEventPayloads(
 	event *chat.ConversationEvent,
 	payloads []*chat.PreparedEndpointPayload,
 	senderActorIdentityKey []byte,
+	localStationID string,
+	frameSigner messaging.FederationFrameSigner,
+	now time.Time,
 ) error {
+	if event == nil || localStationID == "" || frameSigner == nil {
+		return messaging.ErrFederationFrameInvalid
+	}
+	remoteWrites := make(map[string][]*chat.FederatedDeviceQueueWrite)
 	for _, payload := range payloads {
 		delivery := &chat.DeviceEventDelivery{
 			Event:                 event,
@@ -1216,7 +1234,7 @@ func enqueueEventPayloads(
 			return err
 		}
 		deliveryHash := sha256.Sum256(deliveryBytes)
-		if _, err := repositories.Queue.Enqueue(ctx, &chat.DeviceQueueItem{
+		write := &chat.FederatedDeviceQueueWrite{
 			Recipient:      payload.Recipient,
 			EventId:        event.EventId,
 			ConversationId: event.ConversationId,
@@ -1224,7 +1242,59 @@ func enqueueEventPayloads(
 			PayloadType:    chat.DeviceQueuePayloadType_DEVICE_QUEUE_PAYLOAD_TYPE_CONVERSATION_EVENT,
 			OpaquePayload:  deliveryBytes,
 			PayloadSha256:  deliveryHash[:],
+		}
+		homeStationID, err := repositories.Devices.HomeStationID(ctx, payload.Recipient)
+		if err != nil {
+			return err
+		}
+		if homeStationID != localStationID {
+			remoteWrites[homeStationID] = append(remoteWrites[homeStationID], write)
+			continue
+		}
+		if _, err := repositories.Queue.Enqueue(ctx, &chat.DeviceQueueItem{
+			Recipient:      write.Recipient,
+			EventId:        write.EventId,
+			ConversationId: write.ConversationId,
+			IdempotencyKey: write.IdempotencyKey,
+			PayloadType:    write.PayloadType,
+			OpaquePayload:  write.OpaquePayload,
+			PayloadSha256:  write.PayloadSha256,
 		}); err != nil {
+			return err
+		}
+	}
+	targets := make([]string, 0, len(remoteWrites))
+	for target := range remoteWrites {
+		targets = append(targets, target)
+	}
+	sort.Strings(targets)
+	for _, target := range targets {
+		batchBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+			&chat.FederatedDeviceQueueBatch{Writes: remoteWrites[target]},
+		)
+		if err != nil {
+			return err
+		}
+		batchHash := sha256.Sum256(batchBytes)
+		idempotencyKey := "event:" + event.EventId + ":station:" + target
+		frame := &chat.MessagingFederationFrame{
+			FrameId:           uuid.NewSHA1(uuid.NameSpaceOID, []byte(localStationID+"\x00"+idempotencyKey)).String(),
+			SourceStationId:   localStationID,
+			TargetStationId:   target,
+			IdempotencyKey:    idempotencyKey,
+			PayloadType:       chat.MessagingFederationPayloadType_MESSAGING_FEDERATION_PAYLOAD_TYPE_DEVICE_QUEUE_BATCH,
+			ConversationId:    event.ConversationId,
+			EventId:           event.EventId,
+			AuthoritySequence: event.Sequence,
+			OpaquePayload:     batchBytes,
+			PayloadSha256:     batchHash[:],
+			IssuedAt:          timestamppb.New(now),
+			ExpiresAt:         timestamppb.New(now.Add(5 * time.Minute)),
+		}
+		if err := frameSigner.SignFederationFrame(ctx, frame); err != nil {
+			return err
+		}
+		if err := repositories.Federation.EnqueueFederationFrame(ctx, frame, now); err != nil {
 			return err
 		}
 	}
