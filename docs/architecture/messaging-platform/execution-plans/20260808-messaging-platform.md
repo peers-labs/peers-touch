@@ -1,7 +1,7 @@
 # Messaging Platform — 执行计划
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-08-08 | **Updated**: 2026-08-10
 > **Owner**: Messaging Platform Team
 
@@ -25,7 +25,8 @@
 - `../module-layout.md`
 - `../integration.md`
 
-当前状态：`PLAN_APPROVED`（Owner approved 2026-08-08）。执行从 `MP-W00` 开始。
+当前状态：base plan `PLAN_APPROVED`（Owner approved 2026-08-08）；
+MP-W10 attachment amendment `PLAN_APPROVED`（Owner approved 2026-08-10）。
 
 ## 2. Scope And Non-Scope
 
@@ -71,7 +72,7 @@
 | MP-W07 Multi-device/OpenMLS | C05/C06/C09 | A01-A08 | D06-D07/D18 | G03/G05/G06/G09 |
 | MP-W08 Backup/recovery | C07/C08 | A05/A07 | D08 | G07/G08/G12 |
 | MP-W09 Mobile parity | C01-C14 | A01-A12 | D01-D12 | contract/native mobile cells |
-| MP-W10 Attachments/search | C13/C14 | A05/A11 | D11 | G13/G14 |
+| MP-W10 Attachments/search | C13/C14 | A05/A11/A12 | D11/D23-D25 | G13/G14 |
 | MP-W11 Cutover/deletion/final audit | all | A01-A12 | D10/D12 | G01-G14 |
 
 ## 5. Dependency DAG
@@ -83,13 +84,20 @@ MP-W00
        └──> MP-W03
               │
 MP-W02 + MP-W03
-       └──> MP-W04 ──> MP-W05 ──> MP-W10
+       └──> MP-W04 ──> MP-W05
               ├────────> MP-W07
-              └────────> MP-W11-R ──> MP-W08
+              └────────> MP-W11-R
+
+MP-W01 ──────────────────────────────> MP-W10-A
+MP-W02 + MP-W06 + MP-W10-A ─────────> MP-W10-B
+MP-W03 + MP-W04 + MP-W10-A ─────────> MP-W10-C
+MP-W10-B + MP-W10-C ─────────────────> MP-W10-D
+MP-W05 + MP-W10-D ───────────────────> MP-W10-E
+MP-W11-R + MP-W10-D ─────────────────> MP-W08
 
 MP-W01 + MP-W03 + MP-W04 ──> MP-W09
 
-W02/W05/W06/W07/W08/W09/W10 + W11-R ──> MP-W11 final closure
+W02/W05/W06/W07/W08/W09/W10-E + W11-R ──> MP-W11 final closure
 ```
 
 可并行：
@@ -97,6 +105,7 @@ W02/W05/W06/W07/W08/W09/W10 + W11-R ──> MP-W11 final closure
 - W02 Station substrate 与 W03 Device Engine substrate。
 - W06 federation、W07 MLS、W08 recovery 在 W04 稳定后并行。
 - W09 Mobile adapter 可在 shared contracts/engine semantics 稳定后并行。
+- W10-B Authority transfer 与 W10-C Engine transfer 在 W10-A contracts 完成后并行。
 
 禁止并行：
 
@@ -126,6 +135,31 @@ architecture.
 
 This amendment changes execution order only. It does not change MP-D08, topology,
 contracts, persistence ownership or recovery semantics.
+
+### 2026-08-10 Plan Amendment: MP-W10 Attachment Data Plane And Search
+
+Owner accepted `MP-D23`–`MP-D25` on 2026-08-10. Repository inventory proved that
+existing AES-GCM/OSS/renderer utilities are reusable primitives, but the canonical
+Messaging Engine has text-only payloads, Station has no resumable transfer/grant owner,
+download is whole-file, and search remains legacy renderer/Station-owned.
+
+MP-W10 is therefore split by stable responsibility:
+
+- `MP-W10-A Contract Closure`: canonical private content, descriptor crypto/chunk
+  commitments, transfer/grant requests, typed errors and generated bindings.
+- `MP-W10-B Authority Transfer`: Authority-owned upload sessions, parts, immutable
+  objects, event-time recipient grants, ranged download, Home-to-Authority signed
+  streaming proxy, quota and orphan GC.
+- `MP-W10-C Engine Transfer`: Engine-owned chunk encryption, durable upload/download
+  checkpoints, hash/AEAD validation, atomic cache promotion and typed projection states.
+- `MP-W10-D Message/Recovery/Search`: Direct/OpenMLS private content, atomic
+  message+attachment+FTS receive/send transactions, recovery metadata/readback and FTS rebuild.
+- `MP-W10-E Native Cutover`: renderer typed intent/projection cutover, legacy attachment/search
+  owner deletion, high-chat/group-chat native MP-G13/G14 evidence.
+
+The subworkstreams do not create intermediate product readiness. Only W10-E may close MP-W10.
+W08 attachment/trust closure depends on W10-D because recovery cannot prove metadata that no
+canonical send/receive transaction owns.
 
 ### Atomic Cutover Groups
 
@@ -415,18 +449,98 @@ Gate：
 
 ### MP-W10: Attachments And Search
 
+#### MP-W10-A: Contract Closure
+
 交付物：
 
-- encrypted object descriptors、upload/download resume、hash validation；
-- SQLCipher attachment projection；
-- local plaintext FTS；
-- backup/restore integration。
+- `attachment.proto` 定义 `MessagePrivateContent`、suite/nonce enums、whole/per-chunk
+  commitments、bounded descriptor；
+- typed begin/status/part/complete/cancel/download metadata contracts 与 errors；
+- Station Go、Desktop Rust/TS、Mobile generated bindings；
+- cross-language AES-GCM known-answer vectors。
 
 Gate：
 
-- attachment send/download/offline/restart/recovery；
-- search exact result；
-- Station storage/logs 无 plaintext/key。
+- proto generation/check；
+- descriptor malformed/limit vectors；
+- no generated hand edits；
+- source/generated digest evidence。
+
+#### MP-W10-B: Authority Transfer
+
+交付物：
+
+- Authority upload/session/part/object/grant repositories and UOW；
+- exact replay/conflicting-part/expiry/cancel/finalize/orphan-GC semantics；
+- message authority transaction attaches object and recipient PTID grants；
+- `Range + If-Match` download with `200/206/412/416`；
+- signed Home-to-Authority streaming proxy and canonical membership authorization；
+- bounded admission、audit、redacted logs and metrics。
+
+Gate：
+
+- SQLite/PostgreSQL competing part/finalize/grant transaction tests；
+- local/remote Station upload/download, restart and authorization tests；
+- removed actor historical grant vs post-removal denial；
+- Station row/log scan has no filename/key/nonce/plaintext hash。
+
+#### MP-W10-C: Engine Transfer
+
+交付物：
+
+- Engine attachment encrypt/upload/download workers and durable SQLCipher checkpoints；
+- chunk/whole ciphertext hash、AEAD、whole plaintext hash validation；
+- partial-file checkpoint binding and atomic final-cache promotion；
+- retry/cancel/shutdown/overload states；
+- no whole-file buffering and bounded memory instrumentation。
+
+Gate：
+
+- every chunk interruption + process restart vectors；
+- duplicate/corrupt/wrong-ETag/partial-file mismatch fail closed；
+- memory bound and 100 MiB 25%/50%/75% resume evidence；
+- no UI-owned key/hash/resume cursor。
+
+#### MP-W10-D: Message, Recovery And Search
+
+交付物：
+
+- Direct/OpenMLS encrypt/decrypt typed `MessagePrivateContent`；
+- sender draft and receiver consumption transaction include typed attachments；
+- SQLCipher message/attachment/FTS/marker/cursor/receipt atomicity；
+- local bounded FTS text/filename query；
+- recovery archive restores descriptor/private metadata/trust and rebuilds FTS；
+- transfer checkpoint/cache excluded from backup。
+
+Gate：
+
+- Direct/MLS sender/receiver crash tests；
+- ACK absent on attachment/FTS commit failure；
+- fresh restore exact attachment/trust metadata and exact search result；
+- no SPK/OPK/ratchet/MLS/transfer checkpoint in archive。
+
+#### MP-W10-E: Native Cutover
+
+交付物：
+
+- Desktop UI submits typed attachment intents and reads Engine projection only；
+- high-chat/group-chat native cross-Station Direct and MLS attachment journeys；
+- upload/download offline/restart/fresh-recovery evidence；
+- legacy chat attachment send/decrypt/search owners and fallback routes deleted；
+- MP-G13/G14 report with exact source/output hashes and object/event/message IDs。
+
+Gate：
+
+- both clients run through `make station` / `make desktop`；
+- exact bytes and visible metadata on receiver；
+- Bob-to-Alice and Alice-to-Bob Direct plus MLS attachment；
+- local search works offline before conversation open；
+- tree-wide old-owner zero-reference and Station plaintext/key/query scan。
+
+Non-claim：
+
+- W10-A through W10-D are internal closures, not attachment product readiness；
+- one-shot upload、whole-file fetch、API-only or browser-only evidence cannot close MP-W10。
 
 ### MP-W11: Atomic Cutover And Completion Audit
 
@@ -458,9 +572,13 @@ Gate：
 | MP-W06 | completed | W02/W04 + accepted MP-D19 | Signed endpoint manifests, authority routing, authenticated one-shot remote MLS KeyPackage claims, typed frames, durable ordered outbox/inbox and target lane ingest are deployed on both Stations. Native `high-chat`/`group-chat` E2E created cross-Station OpenMLS group `86c91c22-8fc6-4071-a70a-8df6d2483e30`; authority sequence `1..6`, Bob lane `8..13`, exact bidirectional plaintext, ACK-after-commit and cold restart passed. Station-2 outage retained sequence 6 in retry and delivered message `01KZN88P96QZM2CA9T6WSY1EVS` after reconnect. Exact expired frame replay returned duplicate success with one inbox row and no extra queue item. Old owner deletion remains MP-W11 scope. |
 | MP-W07 | completed | W02/W03/W04 + accepted MP-D18/MP-D20/MP-D21 | Hidden genesis, actor/device add/remove, one-device-one-leaf, removal isolation, safe rejoin, bidirectional exact plaintext and cold restart pass. Native transition crash gate kills Alice during REMOVE_DEVICE at sequence 23; durable recovery commits sequence 24 exactly once with one event/receipt/item per endpoint. Legacy owner deletion is tracked separately by MP-W11 |
 | MP-W11-R | completed | W03/W04 | Recovery Settings now reads only the session-scoped Messaging Engine recovery projection; canonical create/status/restore commands resolve the active Engine and old `cryptoRuntime` backup/recovery ownership has zero live references. Native high-chat created revision `01KZNF6YXN5WS7R8WVM1R5JSW9`. Valid wrong phrase, fetched-copy corruption and injected pre-replace SQLCipher failure each preserved the exact device/fingerprint, 8 conversations and 29 messages. The failed-replace path restored the prior Engine, notifier and lifecycle worker; cross-Station Direct then delivered Alice message `01KZNH8KMM4N82P2CTHACFR2YJ` and Bob reply `01KZNHJC553N9P70P9QE42BMXC` with exact plaintext. |
-| MP-W08 | in progress | W03/W04 + accepted MP-D15/MP-D22 + W11-R | Canonical Messaging archive hard-cut replaces active legacy command path. Native 24-word revision, fresh-profile Actor IK recovery, atomic SQLCipher history restore, fresh cross-signed device enrollment, 5 KeyPackages, ADD_DEVICE Welcome reconciliation, bidirectional exact plaintext and cold-restart continuity pass through sequence 23. Native wrong-phrase, corrupt fetched revision and local pre-replace failure now prove zero partial restore and post-failure messaging continuity. Attachment/trust product recovery journeys remain pending. |
+| MP-W08 | in progress | W03/W04 + accepted MP-D15/MP-D22 + W11-R + W10-D | Canonical Messaging archive hard-cut replaces active legacy command path. Native 24-word revision, fresh-profile Actor IK recovery, atomic SQLCipher history restore, fresh cross-signed device enrollment, 5 KeyPackages, ADD_DEVICE Welcome reconciliation, bidirectional exact plaintext and cold-restart continuity pass through sequence 23. Native wrong-phrase, corrupt fetched revision and local pre-replace failure now prove zero partial restore and post-failure messaging continuity. Attachment/trust product recovery journeys wait for W10-D. |
 | MP-W09 | pending | W01/W03/W04 + accepted MP-D16 | Portable shared-core architecture accepted; execution-plan decomposition required before atomic Desktop/Mobile cutover |
-| MP-W10 | pending | W04/W05 | — |
+| MP-W10-A | completed | W01 + accepted MP-D23/MP-D24 | `attachment.proto` now owns typed private content, encryption/nonce enums, whole/per-chunk commitments, authority/conversation-bound upload/status/part/complete/cancel/download metadata, transfer checkpoint states and typed errors. `model/build.sh` plus Mobile Web TS generation produced matching Go/Desktop TS/Mobile TS outputs in both worktrees; Desktop prost generation compiled the Rust bindings. Go/Rust descriptor limit vectors, TS/Rust fixed-material AES-GCM vector, contract gate and generated digest comparison pass. The obsolete Kotlin/Swift branches of `proto-gen-mobile.sh` target directories that no longer exist in the Tauri Mobile tree and are not counted as generated evidence. |
+| MP-W10-B | in progress | W02/W06/W10-A | Authority transfer/grant/data-plane closure |
+| MP-W10-C | in progress | W03/W04/W10-A | Engine descriptor validation, canonical chunk AAD/nonce contract and cross-language vector landed; transfer/checkpoint/integrity workers remain |
+| MP-W10-D | pending | W10-B/W10-C | Message transaction/recovery/FTS closure |
+| MP-W10-E | pending | W05/W10-D | Native cutover, deletion and MP-G13/G14 |
 | MP-W11 | in progress | W02-W10 | Legacy `backup.proto`, KeyExchange backup repository/domain/tests, Desktop old transport and all three `/key-exchange/backup/crypto*` routes deleted; deployed route probes return 404 while canonical `/messaging/recovery/latest` remains registered (401 without auth). Legacy local snapshot codec and other old Messaging owners still require tree-wide deletion |
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
