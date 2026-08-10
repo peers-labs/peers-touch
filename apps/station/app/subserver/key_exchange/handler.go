@@ -35,9 +35,6 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("ke-federated-fetch-bundle", "/key-exchange/keys/bundle/federated-fetch", server.POST, s.handleFederatedFetchKeyBundle, logIDWrapper, s.federationFetchWrapper),
 		server.NewTypedHandler("ke-replenish", "/key-exchange/keys/replenish", server.POST, s.handleReplenishOPKs, logIDWrapper, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("ke-opk-count", "/key-exchange/keys/count", server.GET, s.handleOPKCount, logIDWrapper, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("ke-backup-put", "/key-exchange/backup/crypto", server.POST, s.handlePutCryptoBackup, logIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("ke-backup-latest", "/key-exchange/backup/crypto/latest", server.GET, s.handleGetLatestCryptoBackup, logIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("ke-backup-list", "/key-exchange/backup/crypto/revisions", server.GET, s.handleListCryptoBackups, logIDWrapper, s.jwtWrapper),
 	}
 }
 
