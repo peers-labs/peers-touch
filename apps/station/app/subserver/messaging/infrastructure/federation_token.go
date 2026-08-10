@@ -72,6 +72,23 @@ func RegisterMessagingFederationScope() {
 				},
 			},
 		})
+		scope.MustRegister(scope.Scope{
+			Name:        messaging.AttachmentTransferScope,
+			Description: "proxy an authenticated attachment transfer to its Authority Station",
+			Policy: scope.Policy{
+				TTLMax:           time.Minute,
+				AudienceRequired: true,
+				AllowedClaimKeys: []string{
+					messaging.FederationClaimConversationID,
+					messaging.FederationClaimActorPTID,
+					messaging.FederationClaimDeviceID,
+					messaging.FederationClaimAttachmentAction,
+					messaging.FederationClaimAttachmentResourceID,
+					messaging.FederationClaimSourceStationID,
+					messaging.FederationClaimTargetStationID,
+				},
+			},
+		})
 	})
 }
 
@@ -200,6 +217,43 @@ func (m *PeerJWTFederationTokenMinter) MintMlsKeyPackageClaim(
 				Format(time.RFC3339Nano),
 			messaging.FederationClaimSourceStationID: m.sourceStationID,
 			messaging.FederationClaimTargetStationID: targetStationID,
+		},
+	})
+}
+
+func (m *PeerJWTFederationTokenMinter) MintAttachmentTransfer(
+	ctx context.Context,
+	targetStationID string,
+	conversationID string,
+	endpoint *chat.CryptoEndpoint,
+	action string,
+	resourceID string,
+) (string, error) {
+	if targetStationID == "" ||
+		targetStationID == m.sourceStationID ||
+		conversationID == "" ||
+		endpoint == nil ||
+		endpoint.Ptid == "" ||
+		endpoint.DeviceId == "" ||
+		action == "" ||
+		resourceID == "" {
+		return "", fmt.Errorf("messaging: attachment transfer token binding is invalid")
+	}
+	RegisterMessagingFederationScope()
+	return authfed.Mint(ctx, m.keyCache, authfed.MintRequest{
+		Scope:    messaging.AttachmentTransferScope,
+		Issuer:   m.sourceStationID,
+		Audience: targetStationID,
+		Subject:  m.sourceStationID,
+		TTL:      time.Minute,
+		Custom: map[string]string{
+			messaging.FederationClaimConversationID:       conversationID,
+			messaging.FederationClaimActorPTID:            endpoint.Ptid,
+			messaging.FederationClaimDeviceID:             endpoint.DeviceId,
+			messaging.FederationClaimAttachmentAction:     action,
+			messaging.FederationClaimAttachmentResourceID: resourceID,
+			messaging.FederationClaimSourceStationID:      m.sourceStationID,
+			messaging.FederationClaimTargetStationID:      targetStationID,
 		},
 	})
 }

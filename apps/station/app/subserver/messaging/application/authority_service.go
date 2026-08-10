@@ -290,6 +290,30 @@ func (s *AuthorityService) Submit(
 		if err := repositories.Authority.AppendEvent(ctx, event); err != nil {
 			return err
 		}
+		if send := command.GetSendMessage(); send != nil && len(send.Attachments) > 0 {
+			members, err := repositories.Authority.ListActiveMembers(
+				ctx,
+				command.ConversationId,
+			)
+			if err != nil {
+				return err
+			}
+			recipientPTIDs := make([]string, 0, len(members))
+			for _, member := range members {
+				recipientPTIDs = append(recipientPTIDs, member.PTID)
+			}
+			if err := repositories.Attachments.GrantMessageObjects(
+				ctx,
+				command.ConversationId,
+				send.MessageId,
+				command.Sender.Ptid,
+				send.Attachments,
+				recipientPTIDs,
+				s.clock().UTC(),
+			); err != nil {
+				return err
+			}
+		}
 		if transition := command.GetMembershipTransition(); transition != nil {
 			if err := repositories.Authority.AdvanceEpochs(
 				ctx,

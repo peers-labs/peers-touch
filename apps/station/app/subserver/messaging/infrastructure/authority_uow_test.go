@@ -107,6 +107,25 @@ func seedDirectConversation(t *testing.T, db *gorm.DB, conversationID string) {
 	if err := db.Create(&devices).Error; err != nil {
 		t.Fatal(err)
 	}
+	actorMembers := []infrastructure.AuthorityMemberModel{
+		{
+			ConversationID: conversationID,
+			PTID:           "alice",
+			Role:           "owner",
+			Active:         true,
+			JoinedSequence: 1,
+		},
+		{
+			ConversationID: conversationID,
+			PTID:           "bob",
+			Role:           "member",
+			Active:         true,
+			JoinedSequence: 1,
+		},
+	}
+	if err := db.Create(&actorMembers).Error; err != nil {
+		t.Fatal(err)
+	}
 	members := []infrastructure.AuthorityMemberDeviceModel{
 		{ConversationID: conversationID, PTID: "alice", DeviceID: "alice-1", Active: true},
 		{ConversationID: conversationID, PTID: "alice", DeviceID: "alice-2", Active: true},
@@ -174,6 +193,13 @@ func TestAuthorityCommitAtomicallyFansOutAndReplays(t *testing.T) {
 	seedDirectConversation(t, db, "direct-1")
 	ctx := context.Background()
 	command := directCommand("direct-1", "command-1")
+	descriptor := seedAttachmentObject(
+		t,
+		db,
+		command.ConversationId,
+		command.GetSendMessage().MessageId,
+	)
+	command.GetSendMessage().Attachments = []*chat.EncryptedObjectDescriptor{descriptor}
 	bindSendPlan(t, service, command)
 
 	event, err := service.Submit(ctx, command)
@@ -239,6 +265,73 @@ func TestAuthorityCommitAtomicallyFansOutAndReplays(t *testing.T) {
 	if eventCount != 1 || receiptCount != 1 || queueCount != 3 {
 		t.Fatalf("replay duplicated state: events=%d receipts=%d queue=%d", eventCount, receiptCount, queueCount)
 	}
+	var grantCount int64
+	if err := db.Model(&infrastructure.AttachmentGrantModel{}).
+		Where("object_id = ?", descriptor.ObjectId).
+		Count(&grantCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if grantCount != 2 {
+		t.Fatalf("attachment grants = %d, want 2 actor grants", grantCount)
+	}
+	granted, err := infrastructure.NewAttachmentRepository(db).GetGrantedObject(
+		ctx,
+		command.ConversationId,
+		descriptor.ObjectId,
+		"bob",
+	)
+	if err != nil || granted.MessageID != command.GetSendMessage().MessageId {
+		t.Fatalf("bob attachment grant = %+v, err = %v", granted, err)
+	}
+}
+
+func seedAttachmentObject(
+	t *testing.T,
+	db *gorm.DB,
+	conversationID string,
+	messageID string,
+) *chat.EncryptedObjectDescriptor {
+	t.Helper()
+	now := time.Unix(1_700_000_000, 0).UTC()
+	upload := attachmentUploadFixture(now)
+	upload.UploadID = uuid.NewString()
+	upload.IdempotencyKey = uuid.NewString()
+	upload.ConversationID = conversationID
+	upload.MessageID = messageID
+	repository := infrastructure.NewAttachmentRepository(db)
+	if _, _, err := repository.CreateUpload(context.Background(), upload); err != nil {
+		t.Fatal(err)
+	}
+	descriptor := &chat.EncryptedObjectDescriptor{
+		ObjectId:              uuid.NewString(),
+		StorageRef:            uuid.NewString(),
+		CiphertextSize:        upload.Object.CiphertextSize,
+		CiphertextSha256:      upload.Object.CiphertextSha256,
+		MediaType:             upload.Object.MediaType,
+		ChunkSize:             upload.Object.ChunkSize,
+		ChunkCount:            upload.Object.ChunkCount,
+		EncryptionSuite:       upload.Object.EncryptionSuite,
+		TagSize:               upload.Object.TagSize,
+		NonceStrategy:         upload.Object.NonceStrategy,
+		ChunkCiphertextSha256: upload.Object.ChunkCiphertextSha256,
+	}
+	if err := repository.CompleteUpload(
+		context.Background(),
+		upload.UploadID,
+		upload.Generation,
+		&messaging.AttachmentObject{
+			Descriptor:     descriptor,
+			StorageKey:     "objects/" + descriptor.StorageRef,
+			UploaderPTID:   "alice",
+			ConversationID: conversationID,
+			MessageID:      messageID,
+			CreatedAt:      now,
+		},
+		now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	return descriptor
 }
 
 func TestAuthorityCommitAtomicallyPartitionsRemoteHomeStationDelivery(t *testing.T) {
@@ -303,6 +396,14 @@ func TestQueueQuotaRollsBackEntireAuthorityCommit(t *testing.T) {
 	seedDirectConversation(t, db, "direct-quota")
 
 	command := directCommand("direct-quota", "command-quota")
+	command.GetSendMessage().Attachments = []*chat.EncryptedObjectDescriptor{
+		seedAttachmentObject(
+			t,
+			db,
+			command.ConversationId,
+			command.GetSendMessage().MessageId,
+		),
+	}
 	bindSendPlan(t, service, command)
 	_, err := service.Submit(context.Background(), command)
 	if !errors.Is(err, messaging.ErrQueueQuotaExceeded) {
@@ -313,6 +414,7 @@ func TestQueueQuotaRollsBackEntireAuthorityCommit(t *testing.T) {
 		"receipts": &infrastructure.AuthorityCommandReceiptModel{},
 		"items":    &infrastructure.DeviceQueueItemModel{},
 		"lanes":    &infrastructure.DeviceQueueLaneModel{},
+		"grants":   &infrastructure.AttachmentGrantModel{},
 	} {
 		var count int64
 		if err := db.Model(model).Count(&count).Error; err != nil {
