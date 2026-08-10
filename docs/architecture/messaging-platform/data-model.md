@@ -404,10 +404,14 @@ crypto advance / transition apply
 ```text
 validated replacement database
 + history/index/trust
-+ fresh-install marker
++ per-conversation recovery_ready marker
 ```
 
 使用 atomic file replacement；失败时保留原数据库。
+
+`recovery_ready`只能由validated archive staging写入。对应conversation完成fresh-device
+ADD Welcome checkpoint时，它与current MLS state、authority head、cursor、consumption
+marker和receipt在同一transaction清除；restored message projections不删除。
 
 ## 5. Queue State Machine
 

@@ -456,6 +456,9 @@ SSE/push wake
   `waiting-for-epoch`且不得ACK。
 - Recovery 恢复 actor identity/history/trust，排除 SPK/OPK、ratchet、MLS live state。
 - fresh install 完成 restore 后才 enroll fresh device，随后重建 sessions/leaves。
+- Restore为每个conversation写one-shot `recovery_ready`；只有当前fresh endpoint的
+  ADD Welcome可在无head/session/marker时原子安装current checkpoint并清除该状态，
+  同时保留archive中的合法旧history。
 
 ## 12. Attachments And Search
 
