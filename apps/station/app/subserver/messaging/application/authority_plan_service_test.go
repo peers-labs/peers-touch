@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"errors"
+	"sort"
 	"testing"
 	"time"
 
@@ -51,6 +53,7 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 		uow,
 		"station-local",
 		manifestResolver,
+		planRemoteKeyPackageClaimer{},
 		application.AuthorityPlanPolicy{ReservationTTL: 5 * time.Minute},
 		func() time.Time { return now },
 	)
@@ -719,6 +722,149 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 	}
 }
 
+func TestPrepareGroupGenesisClaimsRemoteKeyPackageBoundToManifest(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(
+		&touchactor.ActorIdentityRecord{},
+		&touchactor.DeviceRecord{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	uow, err := infrastructure.NewAuthorityUnitOfWork(
+		db,
+		messaging.QueueLimits{MaxUnackedItems: 100, MaxUnackedBytes: 1024 * 1024},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := uow.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_700_000_000, 0).UTC()
+	aliceIdentity := bytes.Repeat([]byte{1}, ed25519.PublicKeySize)
+	aliceFingerprint := sha256.Sum256(aliceIdentity)
+	if err := db.Create(&touchactor.ActorIdentityRecord{
+		PTID:           "alice",
+		PublicKey:      aliceIdentity,
+		Fingerprint:    aliceFingerprint[:],
+		ProfileVersion: 1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	aliceDevice := planVerifiedDevice("alice", "alice-1", now)
+	if err := db.Create(&aliceDevice).Error; err != nil {
+		t.Fatal(err)
+	}
+	remoteMaterial := []byte("remote-bob-key-package")
+	remoteHash := sha256.Sum256(remoteMaterial)
+	manifestResolver := mixedPlanEndpointManifestResolver(
+		t,
+		db,
+		now,
+		remoteHash[:],
+	)
+	remoteClaimer := &remotePlanKeyPackageClaimer{
+		material: remoteMaterial,
+		hash:     remoteHash[:],
+	}
+	service, err := application.NewAuthorityPlanService(
+		uow,
+		"station-local",
+		manifestResolver,
+		remoteClaimer,
+		application.AuthorityPlanPolicy{ReservationTTL: 5 * time.Minute},
+		func() time.Time { return now },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response, err := service.PrepareGroupGenesis(
+		context.Background(),
+		&chat.PrepareMessagingGroupGenesisRequest{
+			ConversationId: "remote-group",
+			Name:           "Alice and Bob",
+			MemberPtids:    []string{"bob"},
+			Creator: &chat.CryptoEndpoint{
+				Ptid:     "alice",
+				DeviceId: "alice-1",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remoteClaimer.calls != 1 ||
+		remoteClaimer.homeStationID != "station-remote" ||
+		remoteClaimer.request == nil ||
+		remoteClaimer.request.AuthorityPlanId != response.AuthorityPlanId ||
+		remoteClaimer.request.Target.Ptid != "bob" ||
+		remoteClaimer.request.Target.DeviceId != "bob-1" {
+		t.Fatalf("remote claim binding = %+v", remoteClaimer)
+	}
+	if len(response.ReservedKeyPackages) != 1 ||
+		response.ReservedKeyPackages[0].Target.Ptid != "bob" ||
+		!bytes.Equal(response.ReservedKeyPackages[0].KeyPackage, remoteMaterial) ||
+		!bytes.Equal(response.ReservedKeyPackages[0].KeyPackageSha256, remoteHash[:]) {
+		t.Fatalf("remote reserved KeyPackage = %+v", response.ReservedKeyPackages)
+	}
+	var planCount, localPackageCount int64
+	if err := db.Model(&infrastructure.AuthorityPlanModel{}).Count(&planCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&infrastructure.MlsKeyPackageModel{}).
+		Count(&localPackageCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if planCount != 1 || localPackageCount != 0 {
+		t.Fatalf("plans=%d local packages=%d, want 1/0", planCount, localPackageCount)
+	}
+}
+
+type planRemoteKeyPackageClaimer struct{}
+
+func (planRemoteKeyPackageClaimer) ClaimMlsKeyPackage(
+	context.Context,
+	string,
+	*chat.ClaimFederatedMlsKeyPackageRequest,
+) (*chat.ClaimFederatedMlsKeyPackageResponse, error) {
+	return nil, errors.New("unexpected remote MLS KeyPackage claim")
+}
+
+type remotePlanKeyPackageClaimer struct {
+	calls         int
+	homeStationID string
+	request       *chat.ClaimFederatedMlsKeyPackageRequest
+	material      []byte
+	hash          []byte
+}
+
+func (c *remotePlanKeyPackageClaimer) ClaimMlsKeyPackage(
+	_ context.Context,
+	homeStationID string,
+	request *chat.ClaimFederatedMlsKeyPackageRequest,
+) (*chat.ClaimFederatedMlsKeyPackageResponse, error) {
+	c.calls++
+	c.homeStationID = homeStationID
+	c.request = proto.Clone(request).(*chat.ClaimFederatedMlsKeyPackageRequest)
+	return &chat.ClaimFederatedMlsKeyPackageResponse{
+		Target:               proto.Clone(request.Target).(*chat.CryptoEndpoint),
+		PackageId:            "remote-package-1",
+		KeyPackage:           append([]byte(nil), c.material...),
+		KeyPackageSha256:     append([]byte(nil), c.hash...),
+		HomeStationId:        homeStationID,
+		IrreversiblyConsumed: true,
+	}, nil
+}
+
 func membershipTransitionCommand(
 	commandID string,
 	transitionID string,
@@ -800,6 +946,85 @@ func planEndpointManifestResolver(
 			"station-local",
 			now,
 		)
+		if err != nil {
+			return nil, err
+		}
+		if err := application.SignEndpointManifest(
+			manifest,
+			"test-station-key",
+			privateKey,
+		); err != nil {
+			return nil, err
+		}
+		manifestBytes, manifestHash, err := application.EndpointManifestSHA256(manifest)
+		if err != nil {
+			return nil, err
+		}
+		if err := repository.SaveVerifiedManifest(
+			ctx,
+			manifest,
+			manifestBytes,
+			manifestHash,
+		); err != nil {
+			return nil, err
+		}
+		return manifest, nil
+	})
+}
+
+func mixedPlanEndpointManifestResolver(
+	t *testing.T,
+	db *gorm.DB,
+	now time.Time,
+	remoteKeyPackageHash []byte,
+) messaging.EndpointManifestResolver {
+	t.Helper()
+	repository, err := infrastructure.NewEndpointManifestRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateKey := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+	return messaging.EndpointManifestResolveFunc(func(
+		ctx context.Context,
+		actorPTID string,
+	) (*chat.FederatedEndpointManifest, error) {
+		var manifest *chat.FederatedEndpointManifest
+		if actorPTID == "alice" {
+			manifest, err = repository.BuildLocalManifestSnapshot(
+				ctx,
+				actorPTID,
+				"station-local",
+				now,
+			)
+		} else {
+			deviceKeyHash := sha256.Sum256(bytes.Repeat([]byte{2}, ed25519.PublicKeySize))
+			materialHashes := [][]byte{
+				append([]byte(nil), deviceKeyHash[:]...),
+				append([]byte(nil), remoteKeyPackageHash...),
+			}
+			sort.Slice(materialHashes, func(i, j int) bool {
+				return bytes.Compare(materialHashes[i], materialHashes[j]) < 0
+			})
+			manifest = &chat.FederatedEndpointManifest{
+				FormatVersion:    application.EndpointManifestFormatVersion,
+				ManifestId:       "remote-bob-manifest",
+				ActorPtid:        "bob",
+				HomeStationId:    "station-remote",
+				DirectoryVersion: 1,
+				ActiveEndpoints: []*chat.FederatedEndpointManifestEntry{{
+					Endpoint: &chat.CryptoEndpoint{
+						Ptid:     "bob",
+						DeviceId: "bob-1",
+					},
+					SigningKeyId:         "key:bob-1",
+					PublicMaterialSha256: materialHashes,
+				}},
+				IssuedAt:               timestamppb.New(now),
+				ExpiresAt:              timestamppb.New(now.Add(5 * time.Minute)),
+				ActorIdentityPublicKey: bytes.Repeat([]byte{3}, ed25519.PublicKeySize),
+				ActorProfileVersion:    1,
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
