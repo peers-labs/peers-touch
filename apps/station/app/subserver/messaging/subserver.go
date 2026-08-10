@@ -683,8 +683,8 @@ func (s *subServer) handleAttachmentUploadStatus(
 	if err != nil {
 		return err
 	}
-	authorityStationID := request.Header()["X-Peers-Authority-Station-ID"]
-	conversationID := request.Header()["X-Peers-Conversation-ID"]
+	authorityStationID := requestHeader(request, "X-Peers-Authority-Station-ID")
+	conversationID := requestHeader(request, "X-Peers-Conversation-ID")
 	if authorityStationID != "" && authorityStationID != messagingLocalStationID() {
 		return s.forwardAttachmentRequest(
 			ctx,
@@ -727,7 +727,7 @@ func (s *subServer) handleAttachmentChunk(
 		return err
 	}
 	metadataBytes, err := base64.StdEncoding.DecodeString(
-		strings.TrimSpace(request.Header()["X-Peers-Attachment-Metadata-Bin"]),
+		strings.TrimSpace(requestHeader(request, "X-Peers-Attachment-Metadata-Bin")),
 	)
 	if err != nil || len(metadataBytes) == 0 {
 		return server.BadRequest("attachment part metadata is required")
@@ -857,7 +857,7 @@ func (s *subServer) handleAttachmentObject(
 	if err != nil {
 		return err
 	}
-	authorityStationID := request.Header()["X-Peers-Authority-Station-ID"]
+	authorityStationID := requestHeader(request, "X-Peers-Authority-Station-ID")
 	if authorityStationID != "" && authorityStationID != messagingLocalStationID() {
 		return s.forwardAttachmentRequest(
 			ctx,
@@ -870,11 +870,11 @@ func (s *subServer) handleAttachmentObject(
 			objectID,
 		)
 	}
-	expectedETag, err := attachmentETag(request.Header()["If-Match"])
+	expectedETag, err := attachmentETag(requestHeader(request, "If-Match"))
 	if err != nil {
 		return err
 	}
-	start, end, partial, err := attachmentRange(request.Header()["Range"])
+	start, end, partial, err := attachmentRange(requestHeader(request, "Range"))
 	if err != nil {
 		return err
 	}
@@ -1006,7 +1006,7 @@ func (s *subServer) handleFederatedAttachmentUploadStatus(
 	if err != nil {
 		return err
 	}
-	conversationID := request.Header()["X-Peers-Conversation-ID"]
+	conversationID := requestHeader(request, "X-Peers-Conversation-ID")
 	endpoint, err := s.federatedAttachmentEndpoint(
 		ctx,
 		conversationID,
@@ -1149,11 +1149,11 @@ func (s *subServer) handleFederatedAttachmentObject(
 	if err != nil {
 		return err
 	}
-	expectedETag, err := attachmentETag(request.Header()["If-Match"])
+	expectedETag, err := attachmentETag(requestHeader(request, "If-Match"))
 	if err != nil {
 		return err
 	}
-	start, end, partial, err := attachmentRange(request.Header()["Range"])
+	start, end, partial, err := attachmentRange(requestHeader(request, "Range"))
 	if err != nil {
 		return err
 	}
@@ -1333,7 +1333,7 @@ func attachmentRange(value string) (int64, int64, bool, error) {
 }
 
 func positiveUintHeader(request server.Request, name string, bits int) (uint64, error) {
-	value, err := strconv.ParseUint(strings.TrimSpace(request.Header()[name]), 10, bits)
+	value, err := strconv.ParseUint(strings.TrimSpace(requestHeader(request, name)), 10, bits)
 	if err != nil || value == 0 {
 		return 0, server.BadRequest(name + " must be a positive integer")
 	}
@@ -1344,7 +1344,7 @@ func attachmentPartMetadata(
 	request server.Request,
 ) (*chat.PutAttachmentChunkRequest, error) {
 	metadataBytes, err := base64.StdEncoding.DecodeString(
-		strings.TrimSpace(request.Header()["X-Peers-Attachment-Metadata-Bin"]),
+		strings.TrimSpace(requestHeader(request, "X-Peers-Attachment-Metadata-Bin")),
 	)
 	if err != nil || len(metadataBytes) == 0 {
 		return nil, server.BadRequest("attachment part metadata is required")
@@ -1354,6 +1354,15 @@ func attachmentPartMetadata(
 		return nil, server.BadRequest("attachment part metadata is invalid")
 	}
 	return metadata, nil
+}
+
+func requestHeader(request server.Request, name string) string {
+	for headerName, value := range request.Header() {
+		if strings.EqualFold(headerName, name) {
+			return value
+		}
+	}
+	return ""
 }
 
 func writeProtoResponse(response server.Response, message proto.Message) error {
