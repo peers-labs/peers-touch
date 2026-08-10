@@ -302,7 +302,7 @@ pub fn messaging_send_text(
         Ok(value) => value,
         Err(error) => return error,
     };
-    let (command_id, message_id) = match engine.submit_text(
+    let outcome = match engine.submit_text(
         &token,
         &input.conversation_id,
         conversation_kind,
@@ -315,9 +315,9 @@ pub fn messaging_send_text(
         return AppResult::fail(ErrorCode::InternalError, error, None);
     }
     AppResult::success(json!({
-        "command_id": command_id,
-        "message_id": message_id,
-        "state": "pending",
+        "command_id": outcome.command_id.unwrap_or_default(),
+        "message_id": outcome.message_id,
+        "state": outcome.state,
     }))
 }
 
