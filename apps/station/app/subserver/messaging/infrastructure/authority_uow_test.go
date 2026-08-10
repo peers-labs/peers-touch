@@ -74,7 +74,14 @@ func newAuthorityFixture(
 			t.Fatal(err)
 		}
 	}
-	service, err := application.NewAuthorityService(uow, func() time.Time { return now })
+	service, err := application.NewAuthorityService(
+		uow,
+		"station:local",
+		messaging.FederationFrameSignFunc(func(context.Context, *chat.MessagingFederationFrame) error {
+			return nil
+		}),
+		func() time.Time { return now },
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,6 +235,60 @@ func TestAuthorityCommitAtomicallyFansOutAndReplays(t *testing.T) {
 	db.Model(&infrastructure.DeviceQueueItemModel{}).Count(&queueCount)
 	if eventCount != 1 || receiptCount != 1 || queueCount != 3 {
 		t.Fatalf("replay duplicated state: events=%d receipts=%d queue=%d", eventCount, receiptCount, queueCount)
+	}
+}
+
+func TestAuthorityCommitAtomicallyPartitionsRemoteHomeStationDelivery(t *testing.T) {
+	db, service := newAuthorityFixture(t, messaging.QueueLimits{
+		MaxUnackedItems: 100,
+		MaxUnackedBytes: 1024 * 1024,
+	})
+	seedDirectConversation(t, db, "direct-federated")
+	if err := db.Model(&touchactor.DeviceRecord{}).
+		Where("ptid = ? AND device_id = ?", "bob", "bob-1").
+		Update("home_station_peer_id", "station:remote").Error; err != nil {
+		t.Fatal(err)
+	}
+	command := directCommand("direct-federated", "command-federated")
+	bindSendPlan(t, service, command)
+
+	event, err := service.Submit(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(event.DeliveryCommitments) != 3 {
+		t.Fatalf("delivery commitments = %d, want 3", len(event.DeliveryCommitments))
+	}
+	var queueCount int64
+	if err := db.Model(&infrastructure.DeviceQueueItemModel{}).Count(&queueCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if queueCount != 2 {
+		t.Fatalf("local queue rows = %d, want 2", queueCount)
+	}
+	var outbox infrastructure.FederationOutboxModel
+	if err := db.First(&outbox).Error; err != nil {
+		t.Fatal(err)
+	}
+	if outbox.SourceStationID != "station:local" ||
+		outbox.TargetStationID != "station:remote" ||
+		outbox.State != "pending" {
+		t.Fatalf("federation outbox = %+v", outbox)
+	}
+	frame := &chat.MessagingFederationFrame{}
+	if err := proto.Unmarshal(outbox.FrameBytes, frame); err != nil {
+		t.Fatal(err)
+	}
+	batch := &chat.FederatedDeviceQueueBatch{}
+	if err := proto.Unmarshal(frame.OpaquePayload, batch); err != nil {
+		t.Fatal(err)
+	}
+	if frame.EventId != event.EventId ||
+		frame.AuthoritySequence != event.Sequence ||
+		len(batch.Writes) != 1 ||
+		batch.Writes[0].Recipient.Ptid != "bob" ||
+		batch.Writes[0].Recipient.DeviceId != "bob-1" {
+		t.Fatalf("federation frame = %+v batch=%+v", frame, batch)
 	}
 }
 

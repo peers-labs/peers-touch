@@ -42,7 +42,14 @@ func TestPostgresConcurrentAuthorityAndLaneSequences(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Unix(1_700_000_000, 0).UTC()
-	service, err := application.NewAuthorityService(uow, func() time.Time { return now })
+	service, err := application.NewAuthorityService(
+		uow,
+		"station:local",
+		messaging.FederationFrameSignFunc(func(context.Context, *chat.MessagingFederationFrame) error {
+			return nil
+		}),
+		func() time.Time { return now },
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

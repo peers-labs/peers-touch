@@ -93,8 +93,14 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	if err != nil {
 		return nil, err
 	}
+	frameSigner, err := infrastructure.NewFederationFrameSigner(authfed.Singleton())
+	if err != nil {
+		return nil, err
+	}
 	authorityService, err := application.NewAuthorityService(
 		authorityUnitOfWork,
+		config.LocalStationID,
+		frameSigner,
 		config.Clock,
 	)
 	if err != nil {

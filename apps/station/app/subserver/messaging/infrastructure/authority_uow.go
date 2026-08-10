@@ -36,6 +36,9 @@ func (u *AuthorityUnitOfWork) AutoMigrate() error {
 	if err := NewAuthorityPlanRepository(u.db).AutoMigrate(); err != nil {
 		return err
 	}
+	if err := NewFederationRepository(u.db).AutoMigrate(); err != nil {
+		return err
+	}
 	queue, err := NewQueueRepository(u.db, u.limits)
 	if err != nil {
 		return err
@@ -56,6 +59,7 @@ func (u *AuthorityUnitOfWork) Execute(
 			Authority:   NewAuthorityRepository(tx),
 			Devices:     NewDeviceDirectory(tx),
 			Queue:       queue,
+			Federation:  NewFederationRepository(tx),
 			KeyPackages: NewMlsKeyPackageStore(tx),
 			Plans:       NewAuthorityPlanRepository(tx),
 		})
