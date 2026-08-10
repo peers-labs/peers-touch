@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/application"
@@ -17,37 +18,46 @@ import (
 )
 
 type CompositionConfig struct {
-	Database                   *gorm.DB
-	Clock                      func() time.Time
-	LocalStationID             string
-	PeerKeys                   authfed.PeerKeyStore
-	QueueLimits                domain.QueueLimits
-	QueuePolicy                application.QueuePolicy
-	FederationPolicy           application.FederationPolicy
-	RecoveryPolicy             application.RecoveryPolicy
-	AuthorityPlanPolicy        application.AuthorityPlanPolicy
-	FederationDispatcherID     string
-	FederationDispatcherPolicy worker.FederationDispatcherPolicy
-	FederationTransport        worker.FederationTransport
+	Database                     *gorm.DB
+	Clock                        func() time.Time
+	LocalStationID               string
+	PeerKeys                     authfed.PeerKeyStore
+	QueueLimits                  domain.QueueLimits
+	QueuePolicy                  application.QueuePolicy
+	FederationPolicy             application.FederationPolicy
+	RecoveryPolicy               application.RecoveryPolicy
+	AuthorityPlanPolicy          application.AuthorityPlanPolicy
+	FederationDispatcherID       string
+	FederationDispatcherPolicy   worker.FederationDispatcherPolicy
+	FederationTransport          worker.FederationTransport
+	FederationStationURLResolver infrastructure.FederationStationURLResolver
+	FederationRelay              infrastructure.FederationRelayAccess
 }
 
 // Composition is the single dependency graph for the target Station Messaging
 // Platform. W02-W04/W06 use it without route registration; W05 will register
 // these handlers as the sole production messaging owner.
 type Composition struct {
-	AuthorityService     *application.AuthorityService
-	ConversationService  *application.ConversationService
-	DeviceService        *application.DeviceService
-	QueueService         *application.QueueService
-	FederationService    *application.FederationService
-	RecoveryService      *application.RecoveryService
-	AuthorityPlanService *application.AuthorityPlanService
+	AuthorityService          *application.AuthorityService
+	ConversationService       *application.ConversationService
+	DeviceService             *application.DeviceService
+	QueueService              *application.QueueService
+	FederationService         *application.FederationService
+	EndpointManifestService   *application.EndpointManifestService
+	RecoveryService           *application.RecoveryService
+	AuthorityPlanService      *application.AuthorityPlanService
+	AuthorityCommandForwarder *application.AuthorityCommandForwarder
 
-	CommandHandler    *httpinterface.CommandHandler
-	DeviceHandler     *httpinterface.DeviceHandler
-	QueueHandler      *httpinterface.QueueHandler
-	FederationHandler *httpinterface.FederationHandler
-	FederationAuth    server.Wrapper
+	CommandHandler          *httpinterface.CommandHandler
+	DeviceHandler           *httpinterface.DeviceHandler
+	QueueHandler            *httpinterface.QueueHandler
+	FederationHandler       *httpinterface.FederationHandler
+	FederationAuth          server.Wrapper
+	EndpointManifestHandler *httpinterface.EndpointManifestHandler
+	EndpointManifestAuth    server.Wrapper
+	AuthorityPrepareHandler *httpinterface.AuthorityPrepareHandler
+	AuthorityPrepareAuth    server.Wrapper
+	AuthorityPrepareFetcher *infrastructure.HTTPAuthorityPrepareFetcher
 
 	FederationDispatcher *worker.FederationDispatcher
 
@@ -63,7 +73,8 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		config.Clock == nil ||
 		config.LocalStationID == "" ||
 		config.PeerKeys == nil ||
-		config.FederationTransport == nil {
+		config.FederationTransport == nil ||
+		(config.FederationStationURLResolver == nil && config.FederationRelay == nil) {
 		return nil, fmt.Errorf("messaging: composition dependencies are invalid")
 	}
 	authorityUnitOfWork, err := infrastructure.NewAuthorityUnitOfWork(
@@ -97,10 +108,57 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	if err != nil {
 		return nil, err
 	}
+	endpointManifestRepository, err := infrastructure.NewEndpointManifestRepository(
+		config.Database,
+	)
+	if err != nil {
+		return nil, err
+	}
+	tokenMinter, err := infrastructure.NewPeerJWTFederationTokenMinter(
+		authfed.Singleton(),
+		config.LocalStationID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	manifestFetcher, err := infrastructure.NewHTTPFederatedEndpointManifestFetcher(
+		&http.Client{Timeout: 15 * time.Second},
+		tokenMinter,
+		config.FederationStationURLResolver,
+		config.FederationRelay,
+		config.PeerKeys,
+		endpointManifestRepository,
+		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
+	endpointManifestService, err := application.NewEndpointManifestService(
+		endpointManifestRepository,
+		deviceDirectory,
+		frameSigner,
+		manifestFetcher,
+		config.LocalStationID,
+		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
+	authorityPrepareFetcher, err := infrastructure.NewHTTPAuthorityPrepareFetcher(
+		&http.Client{Timeout: 15 * time.Second},
+		tokenMinter,
+		config.FederationStationURLResolver,
+		config.FederationRelay,
+		config.LocalStationID,
+	)
+	if err != nil {
+		return nil, err
+	}
 	authorityService, err := application.NewAuthorityService(
 		authorityUnitOfWork,
 		config.LocalStationID,
 		frameSigner,
+		endpointManifestService,
 		config.Clock,
 	)
 	if err != nil {
@@ -108,6 +166,9 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	}
 	conversationService, err := application.NewConversationService(
 		authorityUnitOfWork,
+		config.LocalStationID,
+		frameSigner,
+		endpointManifestService,
 		config.Clock,
 	)
 	if err != nil {
@@ -116,6 +177,7 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	authorityPlanService, err := application.NewAuthorityPlanService(
 		authorityUnitOfWork,
 		config.LocalStationID,
+		endpointManifestService,
 		config.AuthorityPlanPolicy,
 		config.Clock,
 	)
@@ -138,6 +200,9 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	federationService, err := application.NewFederationService(
 		federationInbox,
 		deviceDirectory,
+		authorityService,
+		endpointManifestService,
+		frameSigner,
 		config.FederationPolicy,
 	)
 	if err != nil {
@@ -172,7 +237,30 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	if err != nil {
 		return nil, err
 	}
+	endpointManifestHandler, err := httpinterface.NewEndpointManifestHandler(
+		endpointManifestService,
+	)
+	if err != nil {
+		return nil, err
+	}
+	authorityPrepareHandler, err := httpinterface.NewAuthorityPrepareHandler(
+		authorityService,
+		deviceDirectory,
+	)
+	if err != nil {
+		return nil, err
+	}
 	federationOutbox := infrastructure.NewFederationRepository(config.Database)
+	authorityCommandForwarder, err := application.NewAuthorityCommandForwarder(
+		deviceDirectory,
+		federationOutbox,
+		frameSigner,
+		config.LocalStationID,
+		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
 	federationDispatcher, err := worker.NewFederationDispatcher(
 		config.FederationDispatcherID,
 		federationOutbox,
@@ -186,19 +274,34 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	infrastructure.RegisterMessagingFederationScope()
 
 	return &Composition{
-		AuthorityService:     authorityService,
-		ConversationService:  conversationService,
-		DeviceService:        deviceService,
-		QueueService:         queueService,
-		FederationService:    federationService,
-		RecoveryService:      recoveryService,
-		AuthorityPlanService: authorityPlanService,
-		CommandHandler:       commandHandler,
-		DeviceHandler:        deviceHandler,
-		QueueHandler:         queueHandler,
-		FederationHandler:    federationHandler,
+		AuthorityService:          authorityService,
+		ConversationService:       conversationService,
+		DeviceService:             deviceService,
+		QueueService:              queueService,
+		FederationService:         federationService,
+		EndpointManifestService:   endpointManifestService,
+		RecoveryService:           recoveryService,
+		AuthorityPlanService:      authorityPlanService,
+		AuthorityCommandForwarder: authorityCommandForwarder,
+		CommandHandler:            commandHandler,
+		DeviceHandler:             deviceHandler,
+		QueueHandler:              queueHandler,
+		FederationHandler:         federationHandler,
+		EndpointManifestHandler:   endpointManifestHandler,
+		AuthorityPrepareHandler:   authorityPrepareHandler,
+		AuthorityPrepareFetcher:   authorityPrepareFetcher,
 		FederationAuth: serverwrapper.RequireFederationToken(
 			domain.FederationScope,
+			config.PeerKeys,
+			httpadapter.StaticAudience(config.LocalStationID),
+		),
+		EndpointManifestAuth: serverwrapper.RequireFederationToken(
+			domain.EndpointManifestScope,
+			config.PeerKeys,
+			httpadapter.StaticAudience(config.LocalStationID),
+		),
+		AuthorityPrepareAuth: serverwrapper.RequireFederationToken(
+			domain.AuthorityPrepareScope,
 			config.PeerKeys,
 			httpadapter.StaticAudience(config.LocalStationID),
 		),
