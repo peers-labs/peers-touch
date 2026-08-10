@@ -3003,6 +3003,19 @@ impl MessagingStore {
             )
             .optional()
             .map_err(|error| error.to_string())?;
+        if let Some((sequence, hash)) = &authority_head {
+            if input.event_sequence <= *sequence {
+                if input.event_sequence == *sequence && input.event_hash != hash {
+                    return Err("messaging authority event replay hash mismatch".to_string());
+                }
+                commit_subsumed_receive(&transaction, input)?;
+                if fail_point == ReceiveFailPoint::BeforeCommit {
+                    return Err("injected receive failure before commit".to_string());
+                }
+                transaction.commit().map_err(|error| error.to_string())?;
+                return Ok(ReceiveCommitResult::Committed);
+            }
+        }
         match authority_head {
             Some((sequence, hash))
                 if input.event_sequence == sequence + 1 && input.previous_event_hash == hash => {}
@@ -3172,6 +3185,61 @@ impl MessagingStore {
     pub(super) fn in_memory() -> Result<Self, String> {
         Self::from_connection(Connection::open_in_memory().map_err(|error| error.to_string())?)
     }
+}
+
+fn commit_subsumed_receive(
+    transaction: &Transaction<'_>,
+    input: &ReceiveCommitCore<'_>,
+) -> Result<(), String> {
+    transaction
+        .execute(
+            "INSERT INTO messaging_consumption_markers(
+                item_id, event_id, conversation_id, payload_sha256, consumed_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                input.item_id,
+                input.event_id,
+                input.conversation_id,
+                input.payload_sha256,
+                input.consumed_at_unix_ms
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO messaging_lane_cursor(id, lane_sequence, consumer_epoch, updated_at_unix_ms)
+             VALUES (1, ?1, ?2, ?3)
+             ON CONFLICT(id) DO UPDATE SET
+                lane_sequence=excluded.lane_sequence,
+                consumer_epoch=excluded.consumer_epoch,
+                updated_at_unix_ms=excluded.updated_at_unix_ms",
+            params![
+                input.lane_sequence,
+                i64::try_from(input.consumer_epoch).map_err(|_| "consumer epoch exceeds i64")?,
+                input.consumed_at_unix_ms
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "UPDATE messaging_inbox_items SET state = 'consumed' WHERE item_id = ?1",
+            params![input.item_id],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO messaging_receipt_outbox(
+                receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, 'pending', ?4)",
+            params![
+                input.receipt_id,
+                input.event_id,
+                input.receipt_bytes,
+                input.consumed_at_unix_ms
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn direct_receive_core<'a>(input: &'a DirectReceiveCommit<'a>) -> ReceiveCommitCore<'a> {
@@ -4500,6 +4568,89 @@ mod tests {
                 .unwrap();
             assert_eq!(prekey_state, "available");
         }
+    }
+
+    #[test]
+    fn subsumed_event_advances_lane_without_replaying_crypto_or_projection() {
+        let store = MessagingStore::in_memory().unwrap();
+        let payload_hash = [13_u8; 32];
+        store
+            .persist_claimed_item(
+                "subsumed-item-1",
+                "event-1",
+                "conversation-1",
+                1,
+                1,
+                &payload_hash,
+                b"subsumed delivery",
+                90,
+            )
+            .unwrap();
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_authority_heads(
+                    conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                 ) VALUES ('conversation-1', 2, ?1, 90)",
+                params![[22_u8; 32].as_slice()],
+            )
+            .unwrap();
+        let session = direct_session(5);
+        let projection = projection();
+        let input = DirectReceiveCommit {
+            item_id: "subsumed-item-1",
+            event_id: "event-1",
+            conversation_id: "conversation-1",
+            lane_sequence: 1,
+            consumer_epoch: 1,
+            payload_sha256: &payload_hash,
+            event_hash: &[11; 32],
+            previous_event_hash: &[],
+            session: &session,
+            new_skipped: &[],
+            consumed_skipped: None,
+            consumed_one_time_prekey_id: None,
+            projection: &projection,
+            receipt_id: "subsumed-receipt-1",
+            receipt_bytes: b"receipt",
+            consumed_at_unix_ms: 100,
+        };
+
+        assert_eq!(
+            store.commit_direct_receive(&input).unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        let connection = store.connection().unwrap();
+        for table in ["direct_sessions", "messaging_message_projections"] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0, "subsumed event mutated {table}");
+        }
+        for table in [
+            "messaging_consumption_markers",
+            "messaging_lane_cursor",
+            "messaging_receipt_outbox",
+        ] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 1, "subsumed event omitted {table}");
+        }
+        let head: (i64, Vec<u8>) = connection
+            .query_row(
+                "SELECT event_sequence, event_hash
+                 FROM messaging_authority_heads WHERE conversation_id = 'conversation-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(head, (2, vec![22_u8; 32]));
     }
 
     #[test]
