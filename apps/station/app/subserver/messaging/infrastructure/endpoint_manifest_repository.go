@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/application"
 	messaging "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"google.golang.org/protobuf/proto"
@@ -99,6 +100,14 @@ func (r *EndpointManifestRepository) BuildLocalManifestSnapshot(
 		if len(devices) == 0 {
 			return messaging.ErrNotFound
 		}
+		var identity ActorIdentityReadModel
+		if err := tx.Where("ptid = ?", actorPTID).First(&identity).Error; err != nil {
+			return mapNotFound(err)
+		}
+		if len(identity.PublicKey) != ed25519.PublicKeySize ||
+			identity.ProfileVersion <= 0 {
+			return messaging.ErrEndpointManifestInvalid
+		}
 		entries := make([]*chat.FederatedEndpointManifestEntry, 0, len(devices))
 		for _, device := range devices {
 			publicKeyHash := sha256.Sum256(device.PublicKey)
@@ -137,10 +146,12 @@ func (r *EndpointManifestRepository) BuildLocalManifestSnapshot(
 		}
 		stateBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
 			&chat.FederatedEndpointManifestSigningInput{
-				FormatVersion:   application.EndpointManifestFormatVersion,
-				ActorPtid:       actorPTID,
-				HomeStationId:   homeStationID,
-				ActiveEndpoints: entries,
+				FormatVersion:          application.EndpointManifestFormatVersion,
+				ActorPtid:              actorPTID,
+				HomeStationId:          homeStationID,
+				ActiveEndpoints:        entries,
+				ActorIdentityPublicKey: identity.PublicKey,
+				ActorProfileVersion:    uint64(identity.ProfileVersion),
 			},
 		)
 		if err != nil {
@@ -157,11 +168,13 @@ func (r *EndpointManifestRepository) BuildLocalManifestSnapshot(
 			return err
 		}
 		currentState := &chat.FederatedEndpointManifest{
-			FormatVersion:    application.EndpointManifestFormatVersion,
-			ActorPtid:        actorPTID,
-			HomeStationId:    homeStationID,
-			DirectoryVersion: version,
-			ActiveEndpoints:  entries,
+			FormatVersion:          application.EndpointManifestFormatVersion,
+			ActorPtid:              actorPTID,
+			HomeStationId:          homeStationID,
+			DirectoryVersion:       version,
+			ActiveEndpoints:        entries,
+			ActorIdentityPublicKey: append([]byte(nil), identity.PublicKey...),
+			ActorProfileVersion:    uint64(identity.ProfileVersion),
 		}
 		var cached FederatedEndpointManifestModel
 		cacheErr := tx.Where(
@@ -192,14 +205,16 @@ func (r *EndpointManifestRepository) BuildLocalManifestSnapshot(
 			),
 		).String()
 		manifest = &chat.FederatedEndpointManifest{
-			FormatVersion:    application.EndpointManifestFormatVersion,
-			ManifestId:       manifestID,
-			ActorPtid:        actorPTID,
-			HomeStationId:    homeStationID,
-			DirectoryVersion: version,
-			ActiveEndpoints:  entries,
-			IssuedAt:         timestamppb.New(now),
-			ExpiresAt:        timestamppb.New(now.Add(endpointManifestTTL)),
+			FormatVersion:          application.EndpointManifestFormatVersion,
+			ManifestId:             manifestID,
+			ActorPtid:              actorPTID,
+			HomeStationId:          homeStationID,
+			DirectoryVersion:       version,
+			ActiveEndpoints:        entries,
+			IssuedAt:               timestamppb.New(now),
+			ExpiresAt:              timestamppb.New(now.Add(endpointManifestTTL)),
+			ActorIdentityPublicKey: append([]byte(nil), identity.PublicKey...),
+			ActorProfileVersion:    uint64(identity.ProfileVersion),
 		}
 		return nil
 	})
@@ -224,6 +239,9 @@ func (r *EndpointManifestRepository) SaveVerifiedManifest(
 		return messaging.ErrEndpointManifestInvalid
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := saveVerifiedManifestActorIdentity(tx, manifest); err != nil {
+			return err
+		}
 		var existing FederatedEndpointManifestModel
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where(
@@ -263,6 +281,49 @@ func (r *EndpointManifestRepository) SaveVerifiedManifest(
 				"expires_at":        manifest.ExpiresAt.AsTime().UTC(),
 			}).Error
 	})
+}
+
+func saveVerifiedManifestActorIdentity(
+	tx *gorm.DB,
+	manifest *chat.FederatedEndpointManifest,
+) error {
+	if len(manifest.ActorIdentityPublicKey) != ed25519.PublicKeySize ||
+		manifest.ActorProfileVersion == 0 ||
+		manifest.ActorProfileVersion > uint64(1<<63-1) {
+		return messaging.ErrEndpointManifestInvalid
+	}
+	now := manifest.IssuedAt.AsTime().UTC()
+	fingerprint := sha256.Sum256(manifest.ActorIdentityPublicKey)
+	var existing touchactor.ActorIdentityRecord
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("ptid = ?", manifest.ActorPtid).
+		First(&existing).Error
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return tx.Create(&touchactor.ActorIdentityRecord{
+			PTID:           manifest.ActorPtid,
+			PublicKey:      append([]byte(nil), manifest.ActorIdentityPublicKey...),
+			Fingerprint:    fingerprint[:],
+			ProfileVersion: int64(manifest.ActorProfileVersion),
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		}).Error
+	case err != nil:
+		return err
+	case !bytes.Equal(existing.PublicKey, manifest.ActorIdentityPublicKey) ||
+		!bytes.Equal(existing.Fingerprint, fingerprint[:]) ||
+		manifest.ActorProfileVersion < uint64(existing.ProfileVersion):
+		return messaging.ErrEndpointManifestConflict
+	case manifest.ActorProfileVersion > uint64(existing.ProfileVersion):
+		return tx.Model(&touchactor.ActorIdentityRecord{}).
+			Where("ptid = ?", manifest.ActorPtid).
+			Updates(map[string]any{
+				"profile_version": int64(manifest.ActorProfileVersion),
+				"updated_at":      now,
+			}).Error
+	default:
+		return nil
+	}
 }
 
 func (r *EndpointManifestRepository) ListVerifiedManifests(
@@ -406,18 +467,22 @@ func sameEndpointManifestState(
 		return false
 	}
 	leftInput := &chat.FederatedEndpointManifestSigningInput{
-		FormatVersion:    left.FormatVersion,
-		ActorPtid:        left.ActorPtid,
-		HomeStationId:    left.HomeStationId,
-		DirectoryVersion: left.DirectoryVersion,
-		ActiveEndpoints:  left.ActiveEndpoints,
+		FormatVersion:          left.FormatVersion,
+		ActorPtid:              left.ActorPtid,
+		HomeStationId:          left.HomeStationId,
+		DirectoryVersion:       left.DirectoryVersion,
+		ActiveEndpoints:        left.ActiveEndpoints,
+		ActorIdentityPublicKey: left.ActorIdentityPublicKey,
+		ActorProfileVersion:    left.ActorProfileVersion,
 	}
 	rightInput := &chat.FederatedEndpointManifestSigningInput{
-		FormatVersion:    right.FormatVersion,
-		ActorPtid:        right.ActorPtid,
-		HomeStationId:    right.HomeStationId,
-		DirectoryVersion: right.DirectoryVersion,
-		ActiveEndpoints:  right.ActiveEndpoints,
+		FormatVersion:          right.FormatVersion,
+		ActorPtid:              right.ActorPtid,
+		HomeStationId:          right.HomeStationId,
+		DirectoryVersion:       right.DirectoryVersion,
+		ActiveEndpoints:        right.ActiveEndpoints,
+		ActorIdentityPublicKey: right.ActorIdentityPublicKey,
+		ActorProfileVersion:    right.ActorProfileVersion,
 	}
 	return proto.Equal(leftInput, rightInput)
 }
