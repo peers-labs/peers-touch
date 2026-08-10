@@ -361,6 +361,17 @@ Gate：
 - wrong phrase/corrupt revision/local commit failure 均 zero partial restore；
 - 恢复设备可发送和接收新消息。
 
+MP-D22 native recovery evidence（2026-08-10）：
+
+- Carol3从canonical Messaging SQLCipher生成24-word/Argon2id revision：
+  1 conversation、3 messages、9225 encrypted bytes；
+- 完全fresh Carol4密码登录先因错误Actor IK fail closed，phrase restore后恢复相同fingerprint；
+- restore生成fresh cross-signed device并发布5个OpenMLS KeyPackages；
+- 3条sequence 17-19 plaintext以`restored`状态精确回读；
+- ADD_DEVICE sequence 20原子安装recovery-ready Welcome并ACK；
+- sequence 21/22双向exact plaintext通过；
+- cold restart保留restored/post-recovery history并继续exact消费sequence 23。
+
 ### MP-W09: Mobile Parity
 
 交付物：
@@ -419,7 +430,7 @@ Gate：
 | MP-W05 | in progress | W04 | MP-D14/MP-D17 accepted; authenticated send plan + stale fencing + Direct/OpenMLS prepare + durable retry/draft + supersede/reprepare + marker pass; production `/messaging/*` subserver and typed Tauri send/projection surface are registered; Direct/Group create/list and core React text send/load delegate to Engine. Mutations, receipts and remaining frontend/old runtime owners still require cutover |
 | MP-W06 | in progress | W02/W04 + accepted MP-D19 | Signed endpoint manifest/authority routing contracts generated across Go/Rust/Desktop TS/Mobile TS; signed typed frame + verified peer-JWT key evidence + exact inbound claims/frame binding + real auth middleware chain + fenced durable outbox/dispatcher + atomic target inbox/device-lane ingest tests pass; authority producer, manifest service, command forwarding and two-Station native gates pending |
 | MP-W07 | in progress | W02/W03/W04 + accepted MP-D18/MP-D20/MP-D21 | Hidden genesis atomically commits sequence 1/2 and native Alice/Bob projection; add/remove actor with Carol multi-device leaves, durable intent retry, removal cutoff and post-removal exact plaintext pass. MP-D20 fresh join passes native empty-history, hashed checkpoint, bidirectional exact plaintext, independent ACK and cold-restart continuity through sequence 11. MP-D21 ADD_DEVICE/REMOVE_DEVICE/retirement/rejoin passes absence isolation, bidirectional exact plaintext and cold-restart continuity through sequence 19. Transition kill/restart and old-owner deletion remain pending |
-| MP-W08 | in progress | W03/W04 | MP-D15 accepted; deterministic certificate + Actor IK pinning + verified-only queue eligibility + durable retry + atomic restore pass; production enrollment/recovery routes are active; ACTIVE-gated SQLCipher SPK/OPK and OpenMLS KeyPackage generation, exact-byte retry, provider-pool restart recovery, and Station verified-device publication gates pass. Native fresh password login currently generates a different Actor IK and enrollment correctly fails closed; secure Actor IK recovery/device-link journey remains pending |
+| MP-W08 | in progress | W03/W04 + accepted MP-D15/MP-D22 | Canonical Messaging archive hard-cut replaces active legacy command path. Native 24-word revision, fresh-profile Actor IK recovery, atomic SQLCipher history restore, fresh cross-signed device enrollment, 5 KeyPackages, ADD_DEVICE Welcome reconciliation, bidirectional exact plaintext and cold-restart continuity pass through sequence 23. Native wrong-phrase/commit-failure evidence plus attachment/trust product journeys remain pending |
 | MP-W09 | pending | W01/W03/W04 + accepted MP-D16 | Portable shared-core architecture accepted; execution-plan decomposition required before atomic Desktop/Mobile cutover |
 | MP-W10 | pending | W04/W05 | — |
 | MP-W11 | pending | W02-W10 | — |
