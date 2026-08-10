@@ -433,7 +433,7 @@ Gate：
 | MP-W08 | in progress | W03/W04 + accepted MP-D15/MP-D22 | Canonical Messaging archive hard-cut replaces active legacy command path. Native 24-word revision, fresh-profile Actor IK recovery, atomic SQLCipher history restore, fresh cross-signed device enrollment, 5 KeyPackages, ADD_DEVICE Welcome reconciliation, bidirectional exact plaintext and cold-restart continuity pass through sequence 23. Native wrong-phrase/commit-failure evidence plus attachment/trust product journeys remain pending |
 | MP-W09 | pending | W01/W03/W04 + accepted MP-D16 | Portable shared-core architecture accepted; execution-plan decomposition required before atomic Desktop/Mobile cutover |
 | MP-W10 | pending | W04/W05 | — |
-| MP-W11 | pending | W02-W10 | — |
+| MP-W11 | in progress | W02-W10 | Legacy `backup.proto`, KeyExchange backup repository/domain/tests, Desktop old transport and all three `/key-exchange/backup/crypto*` routes deleted; deployed route probes return 404 while canonical `/messaging/recovery/latest` remains registered (401 without auth). Legacy local snapshot codec and other old Messaging owners still require tree-wide deletion |
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
