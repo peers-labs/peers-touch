@@ -177,3 +177,57 @@ func TestFederationExpiredLeaseCanBeReclaimedAndOldGenerationIsFenced(t *testing
 		t.Fatalf("retry claimed early: %+v", early)
 	}
 }
+
+func TestFederationOutboxFencesConversationAuthoritySequence(t *testing.T) {
+	repository := newFederationRepository(t)
+	ctx := context.Background()
+	now := time.Unix(1_700_000_000, 0).UTC()
+	second := signedFederationFrame(t, "frame-2", "event-2", now)
+	second.ConversationId = "conversation-1"
+	second.AuthoritySequence = 2
+	first := signedFederationFrame(t, "frame-1", "event-1", now)
+	first.ConversationId = "conversation-1"
+	first.AuthoritySequence = 1
+	if err := repository.EnqueueFederationFrame(ctx, second, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.EnqueueFederationFrame(ctx, first, now); err != nil {
+		t.Fatal(err)
+	}
+
+	firstClaims, err := repository.ClaimFederationFrames(
+		ctx,
+		"dispatcher-1",
+		10,
+		now,
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firstClaims) != 1 || firstClaims[0].Frame.AuthoritySequence != 1 {
+		t.Fatalf("first claims = %+v", firstClaims)
+	}
+	if err := repository.MarkFederationDelivered(
+		ctx,
+		firstClaims[0].Frame.FrameId,
+		"dispatcher-1",
+		firstClaims[0].LeaseGeneration,
+		now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	secondClaims, err := repository.ClaimFederationFrames(
+		ctx,
+		"dispatcher-2",
+		10,
+		now,
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondClaims) != 1 || secondClaims[0].Frame.AuthoritySequence != 2 {
+		t.Fatalf("second claims = %+v", secondClaims)
+	}
+}

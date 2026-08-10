@@ -26,6 +26,8 @@ type FederationOutboxModel struct {
 	FrameID         string     `gorm:"column:frame_id;size:128;primaryKey"`
 	SourceStationID string     `gorm:"column:source_station_id;size:255;not null;uniqueIndex:uidx_federation_idempotency"`
 	TargetStationID string     `gorm:"column:target_station_id;size:255;not null;index"`
+	ConversationID  string     `gorm:"column:conversation_id;size:128;not null;default:'';index:idx_federation_lane,priority:1"`
+	AuthoritySeq    int64      `gorm:"column:authority_sequence;not null;default:0;index:idx_federation_lane,priority:2"`
 	IdempotencyKey  string     `gorm:"column:idempotency_key;size:255;not null;uniqueIndex:uidx_federation_idempotency"`
 	FrameBytes      []byte     `gorm:"column:frame_bytes;type:bytea;not null"`
 	FrameSHA256     []byte     `gorm:"column:frame_sha256;type:bytea;not null"`
@@ -73,6 +75,8 @@ func (r *FederationRepository) EnqueueFederationFrame(
 		FrameID:         frame.FrameId,
 		SourceStationID: frame.SourceStationId,
 		TargetStationID: frame.TargetStationId,
+		ConversationID:  frame.ConversationId,
+		AuthoritySeq:    frame.AuthoritySequence,
 		IdempotencyKey:  frame.IdempotencyKey,
 		FrameBytes:      frameBytes,
 		FrameSHA256:     frameHash[:],
@@ -122,7 +126,17 @@ func (r *FederationRepository) ClaimFederationFrames(
 				federationOutboxClaimed,
 				now,
 			).
-			Order("created_at ASC, frame_id ASC").
+			Where(
+				"authority_sequence <= 0 OR NOT EXISTS ("+
+					"SELECT 1 FROM messaging_federation_outbox AS predecessor "+
+					"WHERE predecessor.target_station_id = messaging_federation_outbox.target_station_id "+
+					"AND predecessor.conversation_id = messaging_federation_outbox.conversation_id "+
+					"AND predecessor.authority_sequence > 0 "+
+					"AND predecessor.authority_sequence < messaging_federation_outbox.authority_sequence "+
+					"AND predecessor.state NOT IN ?)",
+				[]string{federationOutboxDelivered, federationOutboxDeadLetter},
+			).
+			Order("created_at ASC, target_station_id ASC, conversation_id ASC, authority_sequence ASC, frame_id ASC").
 			Limit(limit).
 			Find(&models).Error; err != nil {
 			return err
