@@ -28,6 +28,7 @@ type AuthorityPlanService struct {
 	unitOfWork       messaging.AuthorityUnitOfWork
 	localStation     string
 	manifestResolver messaging.EndpointManifestResolver
+	remoteClaimer    messaging.RemoteMlsKeyPackageClaimer
 	policy           AuthorityPlanPolicy
 	clock            func() time.Time
 }
@@ -36,12 +37,14 @@ func NewAuthorityPlanService(
 	unitOfWork messaging.AuthorityUnitOfWork,
 	localStation string,
 	manifestResolver messaging.EndpointManifestResolver,
+	remoteClaimer messaging.RemoteMlsKeyPackageClaimer,
 	policy AuthorityPlanPolicy,
 	clock func() time.Time,
 ) (*AuthorityPlanService, error) {
 	if unitOfWork == nil ||
 		strings.TrimSpace(localStation) == "" ||
 		manifestResolver == nil ||
+		remoteClaimer == nil ||
 		policy.ReservationTTL <= 0 ||
 		clock == nil {
 		return nil, fmt.Errorf("messaging: authority plan dependencies are invalid")
@@ -50,6 +53,7 @@ func NewAuthorityPlanService(
 		unitOfWork:       unitOfWork,
 		localStation:     localStation,
 		manifestResolver: manifestResolver,
+		remoteClaimer:    remoteClaimer,
 		policy:           policy,
 		clock:            clock,
 	}, nil
@@ -83,12 +87,37 @@ func (s *AuthorityPlanService) PrepareGroupGenesis(
 		actors = append(actors, actor)
 	}
 	sort.Strings(actors)
-	if err := resolveEndpointManifests(ctx, s.manifestResolver, actors); err != nil {
+	manifests, err := resolveEndpointManifestSnapshots(ctx, s.manifestResolver, actors)
+	if err != nil {
+		return nil, err
+	}
+	endpoints, err := endpointsFromManifestSnapshots(actors, manifests)
+	if err != nil {
+		return nil, err
+	}
+	if !containsEndpoint(endpoints, request.Creator) {
+		return nil, messaging.ErrSenderUnauthorized
+	}
+	now := s.clock().UTC().Truncate(time.Microsecond)
+	expiresAt := now.Add(s.policy.ReservationTTL)
+	planID := uuid.NewString()
+	if err := s.preflightGroupGenesis(ctx, request); err != nil {
+		return nil, err
+	}
+	remoteReserved, err := s.claimRemoteKeyPackages(
+		ctx,
+		planID,
+		expiresAt,
+		endpoints,
+		request.Creator,
+		manifests,
+	)
+	if err != nil {
 		return nil, err
 	}
 
 	var response *chat.PrepareMessagingGroupGenesisResponse
-	err := s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+	err = s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
 		if _, err := repositories.Authority.LockConversation(
 			ctx,
 			request.ConversationId,
@@ -104,46 +133,24 @@ func (s *AuthorityPlanService) PrepareGroupGenesis(
 		if !active {
 			return messaging.ErrSenderUnauthorized
 		}
-
-		endpoints := make([]*chat.CryptoEndpoint, 0)
-		for _, actor := range actors {
-			actorEndpoints, err := repositories.Devices.ListActiveEndpoints(ctx, actor)
-			if err != nil {
-				return err
-			}
-			if len(actorEndpoints) == 0 {
-				return fmt.Errorf("messaging: actor %s has no active device", actor)
-			}
-			endpoints = append(endpoints, actorEndpoints...)
+		currentManifests, err := repositories.EndpointManifests.ListVerifiedManifests(
+			ctx,
+			actors,
+			now,
+		)
+		if err != nil {
+			return err
 		}
-		sort.Slice(endpoints, func(i, j int) bool {
-			return endpointKey(endpoints[i]) < endpointKey(endpoints[j])
-		})
-		creatorPresent := false
-		for _, endpoint := range endpoints {
-			if endpointKey(endpoint) == endpointKey(request.Creator) {
-				creatorPresent = true
-				break
-			}
+		if !sameManifestSnapshots(manifests, currentManifests) {
+			return messaging.ErrAuthorityPlanStale
 		}
-		if !creatorPresent {
-			return messaging.ErrSenderUnauthorized
-		}
-
-		now := s.clock().UTC().Truncate(time.Microsecond)
-		expiresAt := now.Add(s.policy.ReservationTTL)
-		planID := uuid.NewString()
 		reserved := make([]*chat.ReservedMessagingMlsKeyPackage, 0, len(endpoints)-1)
 		for _, endpoint := range endpoints {
 			if endpointKey(endpoint) == endpointKey(request.Creator) {
 				continue
 			}
-			keyPackage, err := repositories.KeyPackages.Reserve(
-				ctx,
-				planID,
-				endpoint,
-				now,
-				expiresAt,
+			keyPackage, err := s.bindKeyPackage(
+				ctx, repositories, planID, endpoint, now, expiresAt, manifests, remoteReserved,
 			)
 			if err != nil {
 				return err
@@ -156,14 +163,7 @@ func (s *AuthorityPlanService) PrepareGroupGenesis(
 			AuthorityStationId:   s.localStation,
 			ProspectiveEndpoints: endpoints,
 			ReservedKeyPackages:  reserved,
-		}
-		response.EndpointManifests, err = repositories.EndpointManifests.ListVerifiedManifests(
-			ctx,
-			actors,
-			now,
-		)
-		if err != nil {
-			return err
+			EndpointManifests:    currentManifests,
 		}
 		planHash, err := hashAuthorityPlan(request, response)
 		if err != nil {
@@ -197,6 +197,220 @@ func (s *AuthorityPlanService) PrepareGroupGenesis(
 	return response, nil
 }
 
+func (s *AuthorityPlanService) preflightGroupGenesis(
+	ctx context.Context,
+	request *chat.PrepareMessagingGroupGenesisRequest,
+) error {
+	return s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+		if _, err := repositories.Authority.LockConversation(
+			ctx,
+			request.ConversationId,
+		); err == nil {
+			return messaging.ErrCommandConflict
+		} else if !errors.Is(err, messaging.ErrNotFound) {
+			return err
+		}
+		active, err := repositories.Devices.IsActive(ctx, request.Creator)
+		if err != nil {
+			return err
+		}
+		if !active {
+			return messaging.ErrSenderUnauthorized
+		}
+		return nil
+	})
+}
+
+func resolveEndpointManifestSnapshots(
+	ctx context.Context,
+	resolver messaging.EndpointManifestResolver,
+	actorPTIDs []string,
+) ([]*chat.FederatedEndpointManifest, error) {
+	manifests := make([]*chat.FederatedEndpointManifest, 0, len(actorPTIDs))
+	for _, actorPTID := range actorPTIDs {
+		manifest, err := resolver.ResolveEndpointManifest(ctx, actorPTID)
+		if err != nil {
+			return nil, err
+		}
+		if manifest == nil || manifest.ActorPtid != actorPTID {
+			return nil, messaging.ErrEndpointManifestInvalid
+		}
+		manifests = append(manifests, manifest)
+	}
+	return manifests, nil
+}
+
+func endpointsFromManifestSnapshots(
+	actorPTIDs []string,
+	manifests []*chat.FederatedEndpointManifest,
+) ([]*chat.CryptoEndpoint, error) {
+	if len(actorPTIDs) == 0 || len(actorPTIDs) != len(manifests) {
+		return nil, messaging.ErrEndpointManifestInvalid
+	}
+	endpoints := make([]*chat.CryptoEndpoint, 0)
+	for index, actorPTID := range actorPTIDs {
+		manifest := manifests[index]
+		if manifest == nil ||
+			manifest.ActorPtid != actorPTID ||
+			manifest.HomeStationId == "" ||
+			len(manifest.ActiveEndpoints) == 0 {
+			return nil, messaging.ErrEndpointManifestInvalid
+		}
+		for _, entry := range manifest.ActiveEndpoints {
+			if entry == nil ||
+				entry.Endpoint == nil ||
+				entry.Endpoint.Ptid != actorPTID ||
+				entry.Endpoint.DeviceId == "" {
+				return nil, messaging.ErrEndpointManifestInvalid
+			}
+			endpoints = append(endpoints, &chat.CryptoEndpoint{
+				Ptid:     entry.Endpoint.Ptid,
+				DeviceId: entry.Endpoint.DeviceId,
+			})
+		}
+	}
+	sort.Slice(endpoints, func(i, j int) bool {
+		return endpointKey(endpoints[i]) < endpointKey(endpoints[j])
+	})
+	for index := 1; index < len(endpoints); index++ {
+		if endpointKey(endpoints[index-1]) == endpointKey(endpoints[index]) {
+			return nil, messaging.ErrEndpointManifestConflict
+		}
+	}
+	return endpoints, nil
+}
+
+func sameManifestSnapshots(
+	expected []*chat.FederatedEndpointManifest,
+	actual []*chat.FederatedEndpointManifest,
+) bool {
+	if len(expected) != len(actual) {
+		return false
+	}
+	for index := range expected {
+		if !proto.Equal(expected[index], actual[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *AuthorityPlanService) claimRemoteKeyPackages(
+	ctx context.Context,
+	planID string,
+	expiresAt time.Time,
+	endpoints []*chat.CryptoEndpoint,
+	excluded *chat.CryptoEndpoint,
+	manifests []*chat.FederatedEndpointManifest,
+) (map[string]*chat.ReservedMessagingMlsKeyPackage, error) {
+	claimed := make(map[string]*chat.ReservedMessagingMlsKeyPackage)
+	for _, endpoint := range endpoints {
+		if excluded != nil && endpointKey(endpoint) == endpointKey(excluded) {
+			continue
+		}
+		manifest, entry, err := manifestEntryForEndpoint(manifests, endpoint)
+		if err != nil {
+			return nil, err
+		}
+		if manifest.HomeStationId == s.localStation {
+			continue
+		}
+		response, err := s.remoteClaimer.ClaimMlsKeyPackage(
+			ctx,
+			manifest.HomeStationId,
+			&chat.ClaimFederatedMlsKeyPackageRequest{
+				AuthorityPlanId:    planID,
+				AuthorityStationId: s.localStation,
+				Target: &chat.CryptoEndpoint{
+					Ptid:     endpoint.Ptid,
+					DeviceId: endpoint.DeviceId,
+				},
+				PlanExpiresAt: timestamppb.New(expiresAt),
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+		if response == nil ||
+			response.Target == nil ||
+			endpointKey(response.Target) != endpointKey(endpoint) ||
+			response.HomeStationId != manifest.HomeStationId ||
+			response.PackageId == "" ||
+			len(response.KeyPackage) == 0 ||
+			len(response.KeyPackageSha256) != sha256.Size ||
+			!response.IrreversiblyConsumed {
+			return nil, messaging.ErrMlsKeyPackageClaimConflict
+		}
+		hash := sha256.Sum256(response.KeyPackage)
+		if !bytes.Equal(hash[:], response.KeyPackageSha256) ||
+			!containsMaterialHash(entry.PublicMaterialSha256, response.KeyPackageSha256) {
+			return nil, messaging.ErrMlsKeyPackageClaimConflict
+		}
+		claimed[endpointKey(endpoint)] = &chat.ReservedMessagingMlsKeyPackage{
+			Target: &chat.CryptoEndpoint{
+				Ptid:     endpoint.Ptid,
+				DeviceId: endpoint.DeviceId,
+			},
+			PackageId:        response.PackageId,
+			KeyPackage:       append([]byte(nil), response.KeyPackage...),
+			KeyPackageSha256: append([]byte(nil), response.KeyPackageSha256...),
+		}
+	}
+	return claimed, nil
+}
+
+func (s *AuthorityPlanService) bindKeyPackage(
+	ctx context.Context,
+	repositories messaging.AuthorityRepositories,
+	planID string,
+	endpoint *chat.CryptoEndpoint,
+	now time.Time,
+	expiresAt time.Time,
+	manifests []*chat.FederatedEndpointManifest,
+	remote map[string]*chat.ReservedMessagingMlsKeyPackage,
+) (*chat.ReservedMessagingMlsKeyPackage, error) {
+	manifest, _, err := manifestEntryForEndpoint(manifests, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	if manifest.HomeStationId == s.localStation {
+		return repositories.KeyPackages.Reserve(ctx, planID, endpoint, now, expiresAt)
+	}
+	keyPackage := remote[endpointKey(endpoint)]
+	if keyPackage == nil {
+		return nil, messaging.ErrMlsKeyPackageClaimConflict
+	}
+	return keyPackage, nil
+}
+
+func manifestEntryForEndpoint(
+	manifests []*chat.FederatedEndpointManifest,
+	endpoint *chat.CryptoEndpoint,
+) (*chat.FederatedEndpointManifest, *chat.FederatedEndpointManifestEntry, error) {
+	for _, manifest := range manifests {
+		if manifest == nil || manifest.ActorPtid != endpoint.Ptid {
+			continue
+		}
+		for _, entry := range manifest.ActiveEndpoints {
+			if entry != nil &&
+				entry.Endpoint != nil &&
+				endpointKey(entry.Endpoint) == endpointKey(endpoint) {
+				return manifest, entry, nil
+			}
+		}
+	}
+	return nil, nil, messaging.ErrEndpointManifestConflict
+}
+
+func containsMaterialHash(hashes [][]byte, target []byte) bool {
+	for _, hash := range hashes {
+		if bytes.Equal(hash, target) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *AuthorityPlanService) PrepareMembershipTransition(
 	ctx context.Context,
 	request *chat.PrepareMessagingMembershipTransitionRequest,
@@ -227,7 +441,26 @@ func (s *AuthorityPlanService) PrepareMembershipTransition(
 	if err != nil {
 		return nil, err
 	}
-	if err := resolveEndpointManifests(ctx, s.manifestResolver, actors); err != nil {
+	manifests, err := resolveEndpointManifestSnapshots(ctx, s.manifestResolver, actors)
+	if err != nil {
+		return nil, err
+	}
+	now := s.clock().UTC().Truncate(time.Microsecond)
+	expiresAt := now.Add(s.policy.ReservationTTL)
+	planID := uuid.NewString()
+	preflightAdded, err := s.preflightMembershipTransition(ctx, request, manifests)
+	if err != nil {
+		return nil, err
+	}
+	remoteReserved, err := s.claimRemoteKeyPackages(
+		ctx,
+		planID,
+		expiresAt,
+		preflightAdded,
+		nil,
+		manifests,
+	)
+	if err != nil {
 		return nil, err
 	}
 
@@ -305,8 +538,8 @@ func (s *AuthorityPlanService) PrepareMembershipTransition(
 			if memberErr != nil && !errors.Is(memberErr, messaging.ErrNotFound) {
 				return memberErr
 			}
-			addedEndpoints, err = repositories.Devices.ListActiveEndpoints(
-				ctx,
+			addedEndpoints, err = endpointsForActorFromManifests(
+				manifests,
 				request.TargetPtid,
 			)
 			if err != nil {
@@ -324,11 +557,8 @@ func (s *AuthorityPlanService) PrepareMembershipTransition(
 				Ptid:     request.TargetPtid,
 				DeviceId: request.TargetDeviceId,
 			}
-			targetActive, err := repositories.Devices.IsActive(ctx, target)
-			if err != nil {
-				return err
-			}
-			if !targetActive || containsEndpoint(preEndpoints, target) {
+			if !containsManifestEndpoint(manifests, target) ||
+				containsEndpoint(preEndpoints, target) {
 				return messaging.ErrCommandConflict
 			}
 			addedEndpoints = []*chat.CryptoEndpoint{target}
@@ -370,18 +600,25 @@ func (s *AuthorityPlanService) PrepareMembershipTransition(
 		sort.Slice(removedEndpoints, func(i, j int) bool {
 			return endpointKey(removedEndpoints[i]) < endpointKey(removedEndpoints[j])
 		})
+		if !sameEndpointSet(addedEndpoints, preflightAdded) {
+			return messaging.ErrAuthorityPlanStale
+		}
+		currentManifests, err := repositories.EndpointManifests.ListVerifiedManifests(
+			ctx,
+			actors,
+			now,
+		)
+		if err != nil {
+			return err
+		}
+		if !sameManifestSnapshots(manifests, currentManifests) {
+			return messaging.ErrAuthorityPlanStale
+		}
 
-		now := s.clock().UTC().Truncate(time.Microsecond)
-		expiresAt := now.Add(s.policy.ReservationTTL)
-		planID := uuid.NewString()
 		reserved := make([]*chat.ReservedMessagingMlsKeyPackage, 0, len(addedEndpoints))
 		for _, endpoint := range addedEndpoints {
-			keyPackage, err := repositories.KeyPackages.Reserve(
-				ctx,
-				planID,
-				endpoint,
-				now,
-				expiresAt,
+			keyPackage, err := s.bindKeyPackage(
+				ctx, repositories, planID, endpoint, now, expiresAt, manifests, remoteReserved,
 			)
 			if err != nil {
 				return err
@@ -401,14 +638,7 @@ func (s *AuthorityPlanService) PrepareMembershipTransition(
 			AddedEndpoints:      addedEndpoints,
 			RemovedEndpoints:    removedEndpoints,
 			ReservedKeyPackages: reserved,
-		}
-		response.EndpointManifests, err = repositories.EndpointManifests.ListVerifiedManifests(
-			ctx,
-			actors,
-			now,
-		)
-		if err != nil {
-			return err
+			EndpointManifests:   currentManifests,
 		}
 		planHash, err := hashAuthorityPlan(request, response)
 		if err != nil {
@@ -440,6 +670,165 @@ func (s *AuthorityPlanService) PrepareMembershipTransition(
 		return nil, err
 	}
 	return response, nil
+}
+
+func (s *AuthorityPlanService) preflightMembershipTransition(
+	ctx context.Context,
+	request *chat.PrepareMessagingMembershipTransitionRequest,
+	manifests []*chat.FederatedEndpointManifest,
+) ([]*chat.CryptoEndpoint, error) {
+	var added []*chat.CryptoEndpoint
+	err := s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+		conversation, err := repositories.Authority.LockConversation(
+			ctx,
+			request.ConversationId,
+		)
+		if err != nil {
+			return err
+		}
+		if conversation.Kind != messaging.AuthorityConversationKindGroup ||
+			!conversation.Active ||
+			conversation.CurrentSequence <= 0 ||
+			conversation.MembershipEpoch <= 0 ||
+			conversation.MlsEpoch <= 0 {
+			return messaging.ErrConversationState
+		}
+		active, err := repositories.Devices.IsActive(ctx, request.Sender)
+		if err != nil {
+			return err
+		}
+		if !active {
+			return messaging.ErrSenderUnauthorized
+		}
+		senderMember, err := repositories.Authority.GetMember(
+			ctx,
+			request.ConversationId,
+			request.Sender.Ptid,
+		)
+		if err != nil || !senderMember.Active || senderMember.Role != "owner" {
+			return messaging.ErrSenderUnauthorized
+		}
+		if request.TargetPtid == conversation.OwnerPTID &&
+			(request.Action == chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_REMOVE_ACTOR ||
+				request.Action == chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_REMOVE_DEVICE) {
+			return messaging.ErrConversationState
+		}
+		head, err := repositories.Authority.GetLastEvent(ctx, request.ConversationId)
+		if err != nil {
+			return err
+		}
+		if head.Sequence != conversation.CurrentSequence || len(head.EventHash) != sha256.Size {
+			return messaging.ErrConversationState
+		}
+		memberDevices, err := repositories.Authority.ListActiveMemberDevices(
+			ctx,
+			request.ConversationId,
+		)
+		if err != nil {
+			return err
+		}
+		preEndpoints := make([]*chat.CryptoEndpoint, 0, len(memberDevices))
+		for _, device := range memberDevices {
+			if device.Active && device.Endpoint != nil {
+				preEndpoints = append(preEndpoints, device.Endpoint)
+			}
+		}
+		targetMember, memberErr := repositories.Authority.GetMember(
+			ctx,
+			request.ConversationId,
+			request.TargetPtid,
+		)
+		switch request.Action {
+		case chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_ADD_ACTOR:
+			if memberErr == nil && targetMember.Active {
+				return messaging.ErrCommandConflict
+			}
+			if memberErr != nil && !errors.Is(memberErr, messaging.ErrNotFound) {
+				return memberErr
+			}
+			added, err = endpointsForActorFromManifests(manifests, request.TargetPtid)
+			if err != nil {
+				return err
+			}
+		case chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_ADD_DEVICE:
+			if memberErr != nil || !targetMember.Active {
+				return messaging.ErrConversationState
+			}
+			target := &chat.CryptoEndpoint{
+				Ptid:     request.TargetPtid,
+				DeviceId: request.TargetDeviceId,
+			}
+			if !containsManifestEndpoint(manifests, target) ||
+				containsEndpoint(preEndpoints, target) {
+				return messaging.ErrCommandConflict
+			}
+			added = []*chat.CryptoEndpoint{target}
+		case chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_REMOVE_ACTOR,
+			chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_REMOVE_DEVICE:
+			if memberErr != nil || !targetMember.Active {
+				return messaging.ErrConversationState
+			}
+		default:
+			return messaging.ErrUnsupportedCommand
+		}
+		sort.Slice(added, func(i, j int) bool {
+			return endpointKey(added[i]) < endpointKey(added[j])
+		})
+		return nil
+	})
+	return added, err
+}
+
+func endpointsForActorFromManifests(
+	manifests []*chat.FederatedEndpointManifest,
+	actorPTID string,
+) ([]*chat.CryptoEndpoint, error) {
+	for _, manifest := range manifests {
+		if manifest == nil || manifest.ActorPtid != actorPTID {
+			continue
+		}
+		endpoints := make([]*chat.CryptoEndpoint, 0, len(manifest.ActiveEndpoints))
+		for _, entry := range manifest.ActiveEndpoints {
+			if entry == nil ||
+				entry.Endpoint == nil ||
+				entry.Endpoint.Ptid != actorPTID ||
+				entry.Endpoint.DeviceId == "" {
+				return nil, messaging.ErrEndpointManifestInvalid
+			}
+			endpoints = append(endpoints, &chat.CryptoEndpoint{
+				Ptid:     entry.Endpoint.Ptid,
+				DeviceId: entry.Endpoint.DeviceId,
+			})
+		}
+		if len(endpoints) == 0 {
+			return nil, messaging.ErrAuthorityPlanStale
+		}
+		sort.Slice(endpoints, func(i, j int) bool {
+			return endpointKey(endpoints[i]) < endpointKey(endpoints[j])
+		})
+		return endpoints, nil
+	}
+	return nil, messaging.ErrEndpointManifestInvalid
+}
+
+func containsManifestEndpoint(
+	manifests []*chat.FederatedEndpointManifest,
+	target *chat.CryptoEndpoint,
+) bool {
+	_, _, err := manifestEntryForEndpoint(manifests, target)
+	return err == nil
+}
+
+func sameEndpointSet(left []*chat.CryptoEndpoint, right []*chat.CryptoEndpoint) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if endpointKey(left[index]) != endpointKey(right[index]) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *AuthorityPlanService) activeTransitionActors(

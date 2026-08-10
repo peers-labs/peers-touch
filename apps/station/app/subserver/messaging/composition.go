@@ -47,17 +47,21 @@ type Composition struct {
 	RecoveryService           *application.RecoveryService
 	AuthorityPlanService      *application.AuthorityPlanService
 	AuthorityCommandForwarder *application.AuthorityCommandForwarder
+	MlsKeyPackageClaimService *application.FederatedMlsKeyPackageClaimService
 
-	CommandHandler          *httpinterface.CommandHandler
-	DeviceHandler           *httpinterface.DeviceHandler
-	QueueHandler            *httpinterface.QueueHandler
-	FederationHandler       *httpinterface.FederationHandler
-	FederationAuth          server.Wrapper
-	EndpointManifestHandler *httpinterface.EndpointManifestHandler
-	EndpointManifestAuth    server.Wrapper
-	AuthorityPrepareHandler *httpinterface.AuthorityPrepareHandler
-	AuthorityPrepareAuth    server.Wrapper
-	AuthorityPrepareFetcher *infrastructure.HTTPAuthorityPrepareFetcher
+	CommandHandler             *httpinterface.CommandHandler
+	DeviceHandler              *httpinterface.DeviceHandler
+	QueueHandler               *httpinterface.QueueHandler
+	FederationHandler          *httpinterface.FederationHandler
+	FederationAuth             server.Wrapper
+	EndpointManifestHandler    *httpinterface.EndpointManifestHandler
+	EndpointManifestAuth       server.Wrapper
+	AuthorityPrepareHandler    *httpinterface.AuthorityPrepareHandler
+	AuthorityPrepareAuth       server.Wrapper
+	AuthorityPrepareFetcher    *infrastructure.HTTPAuthorityPrepareFetcher
+	MlsKeyPackageClaimHandler  *httpinterface.MlsKeyPackageClaimHandler
+	MlsKeyPackageClaimAuth     server.Wrapper
+	RemoteMlsKeyPackageClaimer *infrastructure.HTTPMlsKeyPackageClaimer
 
 	FederationDispatcher *worker.FederationDispatcher
 
@@ -66,6 +70,7 @@ type Composition struct {
 	federationInbox     *infrastructure.FederationInboxUnitOfWork
 	federationOutbox    *infrastructure.FederationRepository
 	recoveryRepository  *infrastructure.RecoveryRepository
+	mlsClaimRepository  *infrastructure.FederatedMlsKeyPackageClaimStore
 }
 
 func NewComposition(config CompositionConfig) (*Composition, error) {
@@ -92,6 +97,12 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		return nil, err
 	}
 	deviceDirectory := infrastructure.NewDeviceDirectory(config.Database)
+	mlsClaimRepository, err := infrastructure.NewFederatedMlsKeyPackageClaimStore(
+		config.Database,
+	)
+	if err != nil {
+		return nil, err
+	}
 	deviceRepository, err := infrastructure.NewDeviceRepository(config.Database)
 	if err != nil {
 		return nil, err
@@ -117,6 +128,15 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	tokenMinter, err := infrastructure.NewPeerJWTFederationTokenMinter(
 		authfed.Singleton(),
 		config.LocalStationID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	remoteMlsKeyPackageClaimer, err := infrastructure.NewHTTPMlsKeyPackageClaimer(
+		&http.Client{Timeout: 15 * time.Second},
+		tokenMinter,
+		config.FederationStationURLResolver,
+		config.FederationRelay,
 	)
 	if err != nil {
 		return nil, err
@@ -178,7 +198,17 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		authorityUnitOfWork,
 		config.LocalStationID,
 		endpointManifestService,
+		remoteMlsKeyPackageClaimer,
 		config.AuthorityPlanPolicy,
+		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
+	mlsKeyPackageClaimService, err := application.NewFederatedMlsKeyPackageClaimService(
+		mlsClaimRepository,
+		deviceDirectory,
+		config.LocalStationID,
 		config.Clock,
 	)
 	if err != nil {
@@ -189,6 +219,12 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		deviceDirectory,
 		config.QueuePolicy,
 		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
+	mlsKeyPackageClaimHandler, err := httpinterface.NewMlsKeyPackageClaimHandler(
+		mlsKeyPackageClaimService,
 	)
 	if err != nil {
 		return nil, err
@@ -274,22 +310,25 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	infrastructure.RegisterMessagingFederationScope()
 
 	return &Composition{
-		AuthorityService:          authorityService,
-		ConversationService:       conversationService,
-		DeviceService:             deviceService,
-		QueueService:              queueService,
-		FederationService:         federationService,
-		EndpointManifestService:   endpointManifestService,
-		RecoveryService:           recoveryService,
-		AuthorityPlanService:      authorityPlanService,
-		AuthorityCommandForwarder: authorityCommandForwarder,
-		CommandHandler:            commandHandler,
-		DeviceHandler:             deviceHandler,
-		QueueHandler:              queueHandler,
-		FederationHandler:         federationHandler,
-		EndpointManifestHandler:   endpointManifestHandler,
-		AuthorityPrepareHandler:   authorityPrepareHandler,
-		AuthorityPrepareFetcher:   authorityPrepareFetcher,
+		AuthorityService:           authorityService,
+		ConversationService:        conversationService,
+		DeviceService:              deviceService,
+		QueueService:               queueService,
+		FederationService:          federationService,
+		EndpointManifestService:    endpointManifestService,
+		RecoveryService:            recoveryService,
+		AuthorityPlanService:       authorityPlanService,
+		AuthorityCommandForwarder:  authorityCommandForwarder,
+		MlsKeyPackageClaimService:  mlsKeyPackageClaimService,
+		CommandHandler:             commandHandler,
+		DeviceHandler:              deviceHandler,
+		QueueHandler:               queueHandler,
+		FederationHandler:          federationHandler,
+		EndpointManifestHandler:    endpointManifestHandler,
+		AuthorityPrepareHandler:    authorityPrepareHandler,
+		AuthorityPrepareFetcher:    authorityPrepareFetcher,
+		MlsKeyPackageClaimHandler:  mlsKeyPackageClaimHandler,
+		RemoteMlsKeyPackageClaimer: remoteMlsKeyPackageClaimer,
 		FederationAuth: serverwrapper.RequireFederationToken(
 			domain.FederationScope,
 			config.PeerKeys,
@@ -305,12 +344,18 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 			config.PeerKeys,
 			httpadapter.StaticAudience(config.LocalStationID),
 		),
+		MlsKeyPackageClaimAuth: serverwrapper.RequireFederationToken(
+			domain.MlsKeyPackageClaimScope,
+			config.PeerKeys,
+			httpadapter.StaticAudience(config.LocalStationID),
+		),
 		FederationDispatcher: federationDispatcher,
 		deviceRepository:     deviceRepository,
 		authorityUnitOfWork:  authorityUnitOfWork,
 		federationInbox:      federationInbox,
 		federationOutbox:     federationOutbox,
 		recoveryRepository:   recoveryRepository,
+		mlsClaimRepository:   mlsClaimRepository,
 	}, nil
 }
 
@@ -328,6 +373,9 @@ func (c *Composition) Migrate() error {
 		return err
 	}
 	if err := c.federationOutbox.AutoMigrate(); err != nil {
+		return err
+	}
+	if err := c.mlsClaimRepository.AutoMigrate(); err != nil {
 		return err
 	}
 	return c.recoveryRepository.AutoMigrate()

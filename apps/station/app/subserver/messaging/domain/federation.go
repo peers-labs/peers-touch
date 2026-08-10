@@ -12,12 +12,17 @@ const (
 	FederationScope                = "messaging-frame-deliver"
 	EndpointManifestScope          = "messaging-endpoint-manifest-read"
 	AuthorityPrepareScope          = "messaging-authority-prepare"
+	MlsKeyPackageClaimScope        = "messaging-mls-key-package-claim"
 	FederationClaimFrameID         = "frame_id"
 	FederationClaimIdempotencyKey  = "idempotency_key"
 	FederationClaimSourceStationID = "source_station_id"
 	FederationClaimTargetStationID = "target_station_id"
 	FederationClaimActorPTID       = "actor_ptid"
 	FederationClaimConversationID  = "conversation_id"
+	FederationClaimAuthorityPlanID = "authority_plan_id"
+	FederationClaimTargetPTID      = "target_ptid"
+	FederationClaimTargetDeviceID  = "target_device_id"
+	FederationClaimPlanExpiresAt   = "plan_expires_at"
 )
 
 var (
@@ -31,6 +36,7 @@ var (
 	ErrEndpointManifestExpired    = errors.New("messaging: endpoint manifest is expired")
 	ErrEndpointManifestRollback   = errors.New("messaging: endpoint manifest version rollback")
 	ErrEndpointManifestConflict   = errors.New("messaging: endpoint manifest version conflict")
+	ErrMlsKeyPackageClaimConflict = errors.New("messaging: MLS KeyPackage claim conflicts with persisted binding")
 )
 
 type FederationOutboxClaim struct {
@@ -103,6 +109,23 @@ type RemoteEndpointManifestFetcher interface {
 		homeStationID string,
 		actorPTID string,
 	) (*chat.FederatedEndpointManifest, error)
+}
+
+type RemoteMlsKeyPackageClaimer interface {
+	ClaimMlsKeyPackage(
+		ctx context.Context,
+		homeStationID string,
+		request *chat.ClaimFederatedMlsKeyPackageRequest,
+	) (*chat.ClaimFederatedMlsKeyPackageResponse, error)
+}
+
+type FederatedMlsKeyPackageClaimRepository interface {
+	ClaimIrreversibly(
+		ctx context.Context,
+		request *chat.ClaimFederatedMlsKeyPackageRequest,
+		homeStationID string,
+		claimedAt time.Time,
+	) (*chat.ClaimFederatedMlsKeyPackageResponse, error)
 }
 
 type EndpointManifestRepository interface {

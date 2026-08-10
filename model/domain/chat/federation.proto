@@ -79,6 +79,26 @@ message GetFederatedEndpointManifestResponse {
   FederatedEndpointManifest manifest = 1;
 }
 
+// Cross-Station MLS material cannot participate in the Authority Station's
+// database transaction. The Home Station therefore atomically claims and burns
+// one KeyPackage before returning its bytes. A failed authority plan may waste
+// the package, but the package can never be reused by another Welcome.
+message ClaimFederatedMlsKeyPackageRequest {
+  string authority_plan_id = 1;
+  string authority_station_id = 2;
+  CryptoEndpoint target = 3;
+  google.protobuf.Timestamp plan_expires_at = 4;
+}
+
+message ClaimFederatedMlsKeyPackageResponse {
+  CryptoEndpoint target = 1;
+  string package_id = 2;
+  bytes key_package = 3;
+  bytes key_package_sha256 = 4;
+  string home_station_id = 5;
+  bool irreversibly_consumed = 6;
+}
+
 // Canonical deterministic input for the detached Station signature.
 message MessagingFederationFrameSigningInput {
   uint32 format_version = 1;

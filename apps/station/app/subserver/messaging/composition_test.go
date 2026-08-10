@@ -95,6 +95,10 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 		composition.FederationAuth == nil ||
 		composition.EndpointManifestHandler == nil ||
 		composition.EndpointManifestAuth == nil ||
+		composition.MlsKeyPackageClaimService == nil ||
+		composition.MlsKeyPackageClaimHandler == nil ||
+		composition.MlsKeyPackageClaimAuth == nil ||
+		composition.RemoteMlsKeyPackageClaimer == nil ||
 		composition.FederationDispatcher == nil {
 		t.Fatal("composition omitted a target Messaging Platform owner")
 	}
@@ -109,6 +113,7 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 		&infrastructure.FederationOutboxModel{},
 		&infrastructure.EndpointDirectoryVersionModel{},
 		&infrastructure.FederatedEndpointManifestModel{},
+		&infrastructure.FederatedMlsKeyPackageClaimModel{},
 		&infrastructure.RecoveryRevisionModel{},
 		&touchactor.ActorIdentityRecord{},
 		&touchactor.DeviceRecord{},
