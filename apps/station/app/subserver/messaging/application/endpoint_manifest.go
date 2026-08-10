@@ -93,18 +93,22 @@ func SameEndpointManifestState(
 	}
 	return proto.Equal(
 		&chat.FederatedEndpointManifestSigningInput{
-			FormatVersion:    left.FormatVersion,
-			ActorPtid:        left.ActorPtid,
-			HomeStationId:    left.HomeStationId,
-			DirectoryVersion: left.DirectoryVersion,
-			ActiveEndpoints:  left.ActiveEndpoints,
+			FormatVersion:          left.FormatVersion,
+			ActorPtid:              left.ActorPtid,
+			HomeStationId:          left.HomeStationId,
+			DirectoryVersion:       left.DirectoryVersion,
+			ActiveEndpoints:        left.ActiveEndpoints,
+			ActorIdentityPublicKey: left.ActorIdentityPublicKey,
+			ActorProfileVersion:    left.ActorProfileVersion,
 		},
 		&chat.FederatedEndpointManifestSigningInput{
-			FormatVersion:    right.FormatVersion,
-			ActorPtid:        right.ActorPtid,
-			HomeStationId:    right.HomeStationId,
-			DirectoryVersion: right.DirectoryVersion,
-			ActiveEndpoints:  right.ActiveEndpoints,
+			FormatVersion:          right.FormatVersion,
+			ActorPtid:              right.ActorPtid,
+			HomeStationId:          right.HomeStationId,
+			DirectoryVersion:       right.DirectoryVersion,
+			ActiveEndpoints:        right.ActiveEndpoints,
+			ActorIdentityPublicKey: right.ActorIdentityPublicKey,
+			ActorProfileVersion:    right.ActorProfileVersion,
 		},
 	)
 }
@@ -115,6 +119,8 @@ func validateEndpointManifestShape(manifest *chat.FederatedEndpointManifest) err
 		manifest.ActorPtid == "" ||
 		manifest.HomeStationId == "" ||
 		manifest.DirectoryVersion == 0 ||
+		len(manifest.ActorIdentityPublicKey) != ed25519.PublicKeySize ||
+		manifest.ActorProfileVersion == 0 ||
 		len(manifest.ActiveEndpoints) == 0 ||
 		manifest.IssuedAt == nil ||
 		manifest.ExpiresAt == nil ||
@@ -160,14 +166,16 @@ func endpointManifestSigningInput(
 	manifest *chat.FederatedEndpointManifest,
 ) *chat.FederatedEndpointManifestSigningInput {
 	return &chat.FederatedEndpointManifestSigningInput{
-		FormatVersion:    manifest.FormatVersion,
-		ManifestId:       manifest.ManifestId,
-		ActorPtid:        manifest.ActorPtid,
-		HomeStationId:    manifest.HomeStationId,
-		DirectoryVersion: manifest.DirectoryVersion,
-		ActiveEndpoints:  manifest.ActiveEndpoints,
-		IssuedAt:         manifest.IssuedAt,
-		ExpiresAt:        manifest.ExpiresAt,
-		SigningKeyId:     manifest.SigningKeyId,
+		FormatVersion:          manifest.FormatVersion,
+		ManifestId:             manifest.ManifestId,
+		ActorPtid:              manifest.ActorPtid,
+		HomeStationId:          manifest.HomeStationId,
+		DirectoryVersion:       manifest.DirectoryVersion,
+		ActiveEndpoints:        manifest.ActiveEndpoints,
+		IssuedAt:               manifest.IssuedAt,
+		ExpiresAt:              manifest.ExpiresAt,
+		SigningKeyId:           manifest.SigningKeyId,
+		ActorIdentityPublicKey: manifest.ActorIdentityPublicKey,
+		ActorProfileVersion:    manifest.ActorProfileVersion,
 	}
 }

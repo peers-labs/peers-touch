@@ -331,18 +331,20 @@ func (x *FederatedEndpointManifestEntry) GetPublicMaterialSha256() [][]byte {
 }
 
 type FederatedEndpointManifestSigningInput struct {
-	state            protoimpl.MessageState            `protogen:"open.v1"`
-	FormatVersion    uint32                            `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
-	ManifestId       string                            `protobuf:"bytes,2,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
-	ActorPtid        string                            `protobuf:"bytes,3,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
-	HomeStationId    string                            `protobuf:"bytes,4,opt,name=home_station_id,json=homeStationId,proto3" json:"home_station_id,omitempty"`
-	DirectoryVersion uint64                            `protobuf:"varint,5,opt,name=directory_version,json=directoryVersion,proto3" json:"directory_version,omitempty"`
-	ActiveEndpoints  []*FederatedEndpointManifestEntry `protobuf:"bytes,6,rep,name=active_endpoints,json=activeEndpoints,proto3" json:"active_endpoints,omitempty"`
-	IssuedAt         *timestamppb.Timestamp            `protobuf:"bytes,7,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
-	ExpiresAt        *timestamppb.Timestamp            `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	SigningKeyId     string                            `protobuf:"bytes,9,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state                  protoimpl.MessageState            `protogen:"open.v1"`
+	FormatVersion          uint32                            `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	ManifestId             string                            `protobuf:"bytes,2,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	ActorPtid              string                            `protobuf:"bytes,3,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
+	HomeStationId          string                            `protobuf:"bytes,4,opt,name=home_station_id,json=homeStationId,proto3" json:"home_station_id,omitempty"`
+	DirectoryVersion       uint64                            `protobuf:"varint,5,opt,name=directory_version,json=directoryVersion,proto3" json:"directory_version,omitempty"`
+	ActiveEndpoints        []*FederatedEndpointManifestEntry `protobuf:"bytes,6,rep,name=active_endpoints,json=activeEndpoints,proto3" json:"active_endpoints,omitempty"`
+	IssuedAt               *timestamppb.Timestamp            `protobuf:"bytes,7,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt              *timestamppb.Timestamp            `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	SigningKeyId           string                            `protobuf:"bytes,9,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	ActorIdentityPublicKey []byte                            `protobuf:"bytes,10,opt,name=actor_identity_public_key,json=actorIdentityPublicKey,proto3" json:"actor_identity_public_key,omitempty"`
+	ActorProfileVersion    uint64                            `protobuf:"varint,11,opt,name=actor_profile_version,json=actorProfileVersion,proto3" json:"actor_profile_version,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *FederatedEndpointManifestSigningInput) Reset() {
@@ -438,20 +440,36 @@ func (x *FederatedEndpointManifestSigningInput) GetSigningKeyId() string {
 	return ""
 }
 
+func (x *FederatedEndpointManifestSigningInput) GetActorIdentityPublicKey() []byte {
+	if x != nil {
+		return x.ActorIdentityPublicKey
+	}
+	return nil
+}
+
+func (x *FederatedEndpointManifestSigningInput) GetActorProfileVersion() uint64 {
+	if x != nil {
+		return x.ActorProfileVersion
+	}
+	return 0
+}
+
 type FederatedEndpointManifest struct {
-	state            protoimpl.MessageState            `protogen:"open.v1"`
-	FormatVersion    uint32                            `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
-	ManifestId       string                            `protobuf:"bytes,2,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
-	ActorPtid        string                            `protobuf:"bytes,3,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
-	HomeStationId    string                            `protobuf:"bytes,4,opt,name=home_station_id,json=homeStationId,proto3" json:"home_station_id,omitempty"`
-	DirectoryVersion uint64                            `protobuf:"varint,5,opt,name=directory_version,json=directoryVersion,proto3" json:"directory_version,omitempty"`
-	ActiveEndpoints  []*FederatedEndpointManifestEntry `protobuf:"bytes,6,rep,name=active_endpoints,json=activeEndpoints,proto3" json:"active_endpoints,omitempty"`
-	IssuedAt         *timestamppb.Timestamp            `protobuf:"bytes,7,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
-	ExpiresAt        *timestamppb.Timestamp            `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	SigningKeyId     string                            `protobuf:"bytes,9,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
-	StationSignature []byte                            `protobuf:"bytes,10,opt,name=station_signature,json=stationSignature,proto3" json:"station_signature,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state                  protoimpl.MessageState            `protogen:"open.v1"`
+	FormatVersion          uint32                            `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	ManifestId             string                            `protobuf:"bytes,2,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	ActorPtid              string                            `protobuf:"bytes,3,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
+	HomeStationId          string                            `protobuf:"bytes,4,opt,name=home_station_id,json=homeStationId,proto3" json:"home_station_id,omitempty"`
+	DirectoryVersion       uint64                            `protobuf:"varint,5,opt,name=directory_version,json=directoryVersion,proto3" json:"directory_version,omitempty"`
+	ActiveEndpoints        []*FederatedEndpointManifestEntry `protobuf:"bytes,6,rep,name=active_endpoints,json=activeEndpoints,proto3" json:"active_endpoints,omitempty"`
+	IssuedAt               *timestamppb.Timestamp            `protobuf:"bytes,7,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt              *timestamppb.Timestamp            `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	SigningKeyId           string                            `protobuf:"bytes,9,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	StationSignature       []byte                            `protobuf:"bytes,10,opt,name=station_signature,json=stationSignature,proto3" json:"station_signature,omitempty"`
+	ActorIdentityPublicKey []byte                            `protobuf:"bytes,11,opt,name=actor_identity_public_key,json=actorIdentityPublicKey,proto3" json:"actor_identity_public_key,omitempty"`
+	ActorProfileVersion    uint64                            `protobuf:"varint,12,opt,name=actor_profile_version,json=actorProfileVersion,proto3" json:"actor_profile_version,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *FederatedEndpointManifest) Reset() {
@@ -552,6 +570,20 @@ func (x *FederatedEndpointManifest) GetStationSignature() []byte {
 		return x.StationSignature
 	}
 	return nil
+}
+
+func (x *FederatedEndpointManifest) GetActorIdentityPublicKey() []byte {
+	if x != nil {
+		return x.ActorIdentityPublicKey
+	}
+	return nil
+}
+
+func (x *FederatedEndpointManifest) GetActorProfileVersion() uint64 {
+	if x != nil {
+		return x.ActorProfileVersion
+	}
+	return 0
 }
 
 type GetFederatedEndpointManifestRequest struct {
@@ -1065,7 +1097,7 @@ const file_domain_chat_federation_proto_rawDesc = "" +
 	"\x1eFederatedEndpointManifestEntry\x12E\n" +
 	"\bendpoint\x18\x01 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\bendpoint\x12$\n" +
 	"\x0esigning_key_id\x18\x02 \x01(\tR\fsigningKeyId\x124\n" +
-	"\x16public_material_sha256\x18\x03 \x03(\fR\x14publicMaterialSha256\"\xe3\x03\n" +
+	"\x16public_material_sha256\x18\x03 \x03(\fR\x14publicMaterialSha256\"\xd2\x04\n" +
 	"%FederatedEndpointManifestSigningInput\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x1f\n" +
 	"\vmanifest_id\x18\x02 \x01(\tR\n" +
@@ -1078,7 +1110,10 @@ const file_domain_chat_federation_proto_rawDesc = "" +
 	"\tissued_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
 	"\n" +
 	"expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12$\n" +
-	"\x0esigning_key_id\x18\t \x01(\tR\fsigningKeyId\"\x84\x04\n" +
+	"\x0esigning_key_id\x18\t \x01(\tR\fsigningKeyId\x129\n" +
+	"\x19actor_identity_public_key\x18\n" +
+	" \x01(\fR\x16actorIdentityPublicKey\x122\n" +
+	"\x15actor_profile_version\x18\v \x01(\x04R\x13actorProfileVersion\"\xf3\x04\n" +
 	"\x19FederatedEndpointManifest\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x1f\n" +
 	"\vmanifest_id\x18\x02 \x01(\tR\n" +
@@ -1093,7 +1128,9 @@ const file_domain_chat_federation_proto_rawDesc = "" +
 	"expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12$\n" +
 	"\x0esigning_key_id\x18\t \x01(\tR\fsigningKeyId\x12+\n" +
 	"\x11station_signature\x18\n" +
-	" \x01(\fR\x10stationSignature\"D\n" +
+	" \x01(\fR\x10stationSignature\x129\n" +
+	"\x19actor_identity_public_key\x18\v \x01(\fR\x16actorIdentityPublicKey\x122\n" +
+	"\x15actor_profile_version\x18\f \x01(\x04R\x13actorProfileVersion\"D\n" +
 	"#GetFederatedEndpointManifestRequest\x12\x1d\n" +
 	"\n" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\"x\n" +

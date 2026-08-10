@@ -52,6 +52,8 @@ message FederatedEndpointManifestSigningInput {
   google.protobuf.Timestamp issued_at = 7;
   google.protobuf.Timestamp expires_at = 8;
   string signing_key_id = 9;
+  bytes actor_identity_public_key = 10;
+  uint64 actor_profile_version = 11;
 }
 
 message FederatedEndpointManifest {
@@ -65,6 +67,8 @@ message FederatedEndpointManifest {
   google.protobuf.Timestamp expires_at = 8;
   string signing_key_id = 9;
   bytes station_signature = 10;
+  bytes actor_identity_public_key = 11;
+  uint64 actor_profile_version = 12;
 }
 
 message GetFederatedEndpointManifestRequest {
