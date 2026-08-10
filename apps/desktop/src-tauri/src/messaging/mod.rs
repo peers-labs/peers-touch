@@ -1,4 +1,5 @@
 mod attachment;
+mod attachment_transfer;
 mod command_outbox;
 mod consumer;
 mod conversation_state;
@@ -27,6 +28,10 @@ pub use attachment::{
     attachment_chunk_aad, attachment_chunk_nonce, decrypt_attachment_chunk,
     encrypt_attachment_chunk, validate_encrypted_object_descriptor,
     validate_encrypted_object_upload_spec, AttachmentCryptoMaterial, EncryptedAttachmentChunk,
+};
+pub use attachment_transfer::{
+    AttachmentTransferTransport, AttachmentTransferWorker, PreparedAttachmentUpload,
+    StationAttachmentTransferTransport, ATTACHMENT_TRANSFER_MEMORY_OVERHEAD,
 };
 pub use command_outbox::{
     CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, CommandSubmitFailure,
