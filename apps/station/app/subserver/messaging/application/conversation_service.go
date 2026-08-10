@@ -17,18 +17,34 @@ import (
 )
 
 type ConversationService struct {
-	uow   messaging.AuthorityUnitOfWork
-	clock func() time.Time
+	uow              messaging.AuthorityUnitOfWork
+	localStationID   string
+	frameSigner      messaging.FederationFrameSigner
+	manifestResolver messaging.EndpointManifestResolver
+	clock            func() time.Time
 }
 
 func NewConversationService(
 	uow messaging.AuthorityUnitOfWork,
+	localStationID string,
+	frameSigner messaging.FederationFrameSigner,
+	manifestResolver messaging.EndpointManifestResolver,
 	clock func() time.Time,
 ) (*ConversationService, error) {
-	if uow == nil || clock == nil {
-		return nil, fmt.Errorf("messaging: conversation service requires unit of work and clock")
+	if uow == nil ||
+		localStationID == "" ||
+		frameSigner == nil ||
+		manifestResolver == nil ||
+		clock == nil {
+		return nil, fmt.Errorf("messaging: conversation service dependencies are invalid")
 	}
-	return &ConversationService{uow: uow, clock: clock}, nil
+	return &ConversationService{
+		uow:              uow,
+		localStationID:   localStationID,
+		frameSigner:      frameSigner,
+		manifestResolver: manifestResolver,
+		clock:            clock,
+	}, nil
 }
 
 func (s *ConversationService) CreateDirect(
@@ -44,6 +60,11 @@ func (s *ConversationService) CreateDirect(
 		return nil, fmt.Errorf("messaging: direct conversation identity is invalid")
 	}
 	conversationID := deterministicDirectConversationID(creator.Ptid, peerPTID)
+	actors := []string{creator.Ptid, peerPTID}
+	sort.Strings(actors)
+	if err := resolveEndpointManifests(ctx, s.manifestResolver, actors); err != nil {
+		return nil, err
+	}
 	var view *chat.MessagingConversationView
 	err := s.uow.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
 		active, err := repositories.Devices.IsActive(ctx, creator)
@@ -53,8 +74,6 @@ func (s *ConversationService) CreateDirect(
 		if !active {
 			return messaging.ErrSenderUnauthorized
 		}
-		actors := []string{creator.Ptid, peerPTID}
-		sort.Strings(actors)
 		endpoints := make([]*chat.CryptoEndpoint, 0)
 		for _, ptid := range actors {
 			actorEndpoints, err := repositories.Devices.ListActiveEndpoints(ctx, ptid)
@@ -131,7 +150,7 @@ func (s *ConversationService) CreateDirect(
 			}
 			conversation = existing
 		}
-		view = conversationView(conversation, actors)
+		view = conversationView(conversation, actors, s.localStationID)
 		return nil
 	})
 	return view, err
@@ -159,7 +178,10 @@ func (s *ConversationService) List(
 		}
 		views = make([]*chat.MessagingConversationView, 0, len(rows))
 		for _, row := range rows {
-			views = append(views, conversationView(row.Conversation, row.MemberPTIDs))
+			views = append(
+				views,
+				conversationView(row.Conversation, row.MemberPTIDs, s.localStationID),
+			)
 		}
 		return nil
 	})
@@ -196,14 +218,15 @@ func (s *ConversationService) appendCreatedEvent(
 		})
 	}
 	event := &chat.ConversationEvent{
-		EventId:         eventID,
-		ConversationId:  conversation.ConversationID,
-		Sequence:        1,
-		CommandId:       commandID,
-		Actor:           creator,
-		CommittedAt:     timestamppb.New(s.clock().UTC()),
-		MembershipEpoch: conversation.MembershipEpoch,
-		MlsEpoch:        conversation.MlsEpoch,
+		EventId:            eventID,
+		ConversationId:     conversation.ConversationID,
+		Sequence:           1,
+		CommandId:          commandID,
+		Actor:              creator,
+		CommittedAt:        timestamppb.New(s.clock().UTC()),
+		MembershipEpoch:    conversation.MembershipEpoch,
+		MlsEpoch:           conversation.MlsEpoch,
+		AuthorityStationId: s.localStationID,
 		Payload: &chat.ConversationEvent_ConversationCreated{
 			ConversationCreated: &chat.ConversationCreatedFact{
 				Kind:        conversationKind(conversation.Kind),
@@ -236,34 +259,16 @@ func (s *ConversationService) appendCreatedEvent(
 	if err != nil {
 		return err
 	}
-	for _, payload := range payloads {
-		delivery := &chat.DeviceEventDelivery{
-			Event:                        event,
-			Recipient:                    payload.Recipient,
-			PayloadKind:                  payload.Kind,
-			EndpointPayload:              payload.OpaquePayload,
-			EndpointPayloadSha256:        payload.PayloadSha256,
-			DeliveryCommitment:           deliveryCommitment(eventID, conversation.ConversationID, payload),
-			SenderActorIdentityPublicKey: senderActorIdentityKey,
-		}
-		deliveryBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(delivery)
-		if err != nil {
-			return err
-		}
-		deliveryHash := sha256.Sum256(deliveryBytes)
-		if _, err := repositories.Queue.Enqueue(ctx, &chat.DeviceQueueItem{
-			Recipient:      payload.Recipient,
-			EventId:        event.EventId,
-			ConversationId: event.ConversationId,
-			IdempotencyKey: "event:" + event.EventId,
-			PayloadType:    chat.DeviceQueuePayloadType_DEVICE_QUEUE_PAYLOAD_TYPE_CONVERSATION_EVENT,
-			OpaquePayload:  deliveryBytes,
-			PayloadSha256:  deliveryHash[:],
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
+	return enqueueEventPayloads(
+		ctx,
+		repositories,
+		event,
+		payloads,
+		senderActorIdentityKey,
+		s.localStationID,
+		s.frameSigner,
+		s.clock().UTC(),
+	)
 }
 
 func deterministicDirectConversationID(actorA string, actorB string) string {
@@ -276,16 +281,18 @@ func deterministicDirectConversationID(actorA string, actorB string) string {
 func conversationView(
 	conversation *messaging.AuthorityConversation,
 	memberPTIDs []string,
+	authorityStationID string,
 ) *chat.MessagingConversationView {
 	return &chat.MessagingConversationView{
-		ConversationId:  conversation.ConversationID,
-		Kind:            conversationKind(conversation.Kind),
-		Name:            conversation.Name,
-		OwnerPtid:       conversation.OwnerPTID,
-		MemberPtids:     append([]string(nil), memberPTIDs...),
-		MembershipEpoch: conversation.MembershipEpoch,
-		MlsEpoch:        conversation.MlsEpoch,
-		Active:          conversation.Active,
+		ConversationId:     conversation.ConversationID,
+		Kind:               conversationKind(conversation.Kind),
+		Name:               conversation.Name,
+		OwnerPtid:          conversation.OwnerPTID,
+		MemberPtids:        append([]string(nil), memberPTIDs...),
+		MembershipEpoch:    conversation.MembershipEpoch,
+		MlsEpoch:           conversation.MlsEpoch,
+		Active:             conversation.Active,
+		AuthorityStationId: authorityStationID,
 	}
 }
 
