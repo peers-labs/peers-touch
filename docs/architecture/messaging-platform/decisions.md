@@ -32,6 +32,7 @@
 | MP-D19 | Federation routing 使用签名的短期 endpoint manifest | accepted |
 | MP-D20 | Fresh MLS member 以 join event 建立 authority checkpoint | accepted |
 | MP-D21 | Removed MLS endpoint 使用 retirement/rejoin checkpoint | accepted |
+| MP-D22 | Recovery-ready projection 通过 Welcome 建立 current checkpoint | accepted |
 
 ---
 
@@ -424,6 +425,53 @@ transaction原子替换MLS state/projection/authority head，清除retired check
 - 同endpoint ADD_DEVICE Welcome原子rejoin且不恢复缺席plaintext；
 - rejoin后双向exact plaintext、cold restart和后续strict continuity通过；
 - forged retirement/rejoin、错误endpoint、错误snapshot和partial commit全部零ACK。
+
+Owner accepted on 2026-08-10.
+
+## MP-D22: Recovery-Ready Projection 通过 Welcome 建立 Current Checkpoint
+
+**Status**: accepted
+**Date**: 2026-08-10
+
+### Context
+
+MP-D08要求fresh install先恢复Actor IK、history与projection，再生成fresh device并重建
+sessions/leaves。MP-D20要求无authority head的Welcome只能安装到empty local conversation。
+因此正确恢复出的非空projection会被empty-store predicate拒绝，无法完成ADD_DEVICE。
+
+### Decision
+
+Canonical recovery staging为每个恢复的conversation写入one-shot
+`recovery_ready=true`。它只表示该projection/history来自已验证archive，且尚未绑定当前
+device的authority head与MLS state。
+
+Fresh device的ADD Welcome只有满足以下条件才可使用recovery checkpoint：
+
+- 本地无该conversation authority head、MLS group或consumption marker；
+- conversation projection存在且`recovery_ready=true`；
+- archive PTID等于当前认证PTID；
+- Welcome、ADD change、当前endpoint和hashed post-state完全绑定；
+- delivery/event/payload hashes与commitment全部通过。
+
+同一个SQLCipher transaction安装Welcome-derived MLS state、current snapshot projection、
+authority head、cursor、marker与receipt，并把`recovery_ready`置false。已恢复message
+projections保留不变。普通非空projection、手工设置flag或第二次checkpoint全部fail
+closed。
+
+### Consequences
+
+- recovery readiness是conversation-local durable state，不是全局UI状态；
+- archive history可以在加入current MLS epoch前可见，但该device在checkpoint前不能发送；
+- current snapshot可更新恢复时的name/members/epochs，同时保留合法旧history；
+- 多conversation恢复分别完成one-shot reconciliation。
+
+### Acceptance
+
+- fresh profile使用24-word phrase恢复exact history和Actor IK；
+- fresh cross-signed device成功enroll并发布KeyPackages；
+- ADD_DEVICE Welcome在非空recovery-ready store原子安装并清除flag；
+- checkpoint前发送失败，checkpoint后双向exact plaintext；
+- wrong phrase、forged Welcome、普通非空projection和partial commit均零破坏、零ACK。
 
 Owner accepted on 2026-08-10.
 

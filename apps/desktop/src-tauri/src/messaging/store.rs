@@ -1609,8 +1609,9 @@ impl MessagingStore {
                 .execute(
                     "INSERT INTO messaging_conversations(
                         conversation_id, kind, name, owner_ptid,
-                        membership_epoch, mls_epoch, active, updated_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        membership_epoch, mls_epoch, active, updated_at_unix_ms,
+                        recovery_ready
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1)",
                     params![
                         conversation.conversation_id,
                         conversation.kind,
@@ -2135,8 +2136,9 @@ impl MessagingStore {
                     .execute(
                         "INSERT INTO messaging_conversations(
                             conversation_id, kind, name, owner_ptid,
-                            membership_epoch, mls_epoch, active, updated_at_unix_ms
-                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)
+                            membership_epoch, mls_epoch, active, updated_at_unix_ms,
+                            recovery_ready
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, 0)
                          ON CONFLICT(conversation_id) DO UPDATE SET
                             kind=excluded.kind,
                             name=excluded.name,
@@ -2144,7 +2146,8 @@ impl MessagingStore {
                             membership_epoch=excluded.membership_epoch,
                             mls_epoch=excluded.mls_epoch,
                             active=1,
-                            updated_at_unix_ms=excluded.updated_at_unix_ms",
+                            updated_at_unix_ms=excluded.updated_at_unix_ms,
+                            recovery_ready=0",
                         params![
                             projection.conversation_id,
                             projection.kind,
@@ -2990,19 +2993,27 @@ impl MessagingStore {
                 && input.event_sequence > 1
                 && input.previous_event_hash.len() == 32 =>
             {
-                let existing: i64 = transaction
+                let live_state: i64 = transaction
                     .query_row(
                         "SELECT
-                            (SELECT COUNT(*) FROM messaging_conversations WHERE conversation_id = ?1)
-                          + (SELECT COUNT(*) FROM messaging_mls_groups WHERE conversation_id = ?1)
+                            (SELECT COUNT(*) FROM messaging_mls_groups WHERE conversation_id = ?1)
                           + (SELECT COUNT(*) FROM messaging_consumption_markers WHERE conversation_id = ?1)",
                         params![input.conversation_id],
                         |row| row.get(0),
                     )
                     .map_err(|error| error.to_string())?;
-                if existing != 0 {
+                let projection_state: Option<bool> = transaction
+                    .query_row(
+                        "SELECT recovery_ready FROM messaging_conversations
+                         WHERE conversation_id = ?1",
+                        params![input.conversation_id],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|error| error.to_string())?;
+                if live_state != 0 || projection_state == Some(false) {
                     return Err(
-                        "messaging MLS join checkpoint requires empty local conversation state"
+                        "messaging MLS join checkpoint requires empty or recovery-ready local state"
                             .to_string(),
                     );
                 }
@@ -3723,7 +3734,8 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 membership_epoch INTEGER NOT NULL,
                 mls_epoch INTEGER NOT NULL,
                 active INTEGER NOT NULL,
-                updated_at_unix_ms INTEGER NOT NULL
+                updated_at_unix_ms INTEGER NOT NULL,
+                recovery_ready INTEGER NOT NULL DEFAULT 0
              );
              CREATE TABLE IF NOT EXISTS messaging_conversation_members (
                 conversation_id TEXT NOT NULL,
@@ -3960,7 +3972,26 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 created_at_unix_ms INTEGER NOT NULL
              );",
         )
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    let has_recovery_ready = connection
+        .prepare("PRAGMA table_info(messaging_conversations)")
+        .map_err(|error| error.to_string())?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?
+        .iter()
+        .any(|column| column == "recovery_ready");
+    if !has_recovery_ready {
+        connection
+            .execute(
+                "ALTER TABLE messaging_conversations
+                 ADD COLUMN recovery_ready INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
