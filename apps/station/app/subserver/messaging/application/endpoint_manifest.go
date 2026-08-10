@@ -113,6 +113,36 @@ func SameEndpointManifestState(
 	)
 }
 
+func SameEndpointManifestRoutingState(
+	left *chat.FederatedEndpointManifest,
+	right *chat.FederatedEndpointManifest,
+) bool {
+	if left == nil ||
+		right == nil ||
+		left.FormatVersion != right.FormatVersion ||
+		left.ActorPtid != right.ActorPtid ||
+		left.HomeStationId != right.HomeStationId ||
+		!bytes.Equal(left.ActorIdentityPublicKey, right.ActorIdentityPublicKey) ||
+		left.ActorProfileVersion != right.ActorProfileVersion ||
+		len(left.ActiveEndpoints) != len(right.ActiveEndpoints) {
+		return false
+	}
+	for index := range left.ActiveEndpoints {
+		leftEntry := left.ActiveEndpoints[index]
+		rightEntry := right.ActiveEndpoints[index]
+		if leftEntry == nil ||
+			rightEntry == nil ||
+			leftEntry.Endpoint == nil ||
+			rightEntry.Endpoint == nil ||
+			leftEntry.Endpoint.Ptid != rightEntry.Endpoint.Ptid ||
+			leftEntry.Endpoint.DeviceId != rightEntry.Endpoint.DeviceId ||
+			leftEntry.SigningKeyId != rightEntry.SigningKeyId {
+			return false
+		}
+	}
+	return true
+}
+
 func validateEndpointManifestShape(manifest *chat.FederatedEndpointManifest) error {
 	if manifest.FormatVersion != EndpointManifestFormatVersion ||
 		manifest.ManifestId == "" ||

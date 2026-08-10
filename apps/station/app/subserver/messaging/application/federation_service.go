@@ -259,12 +259,15 @@ func (s *FederationService) validateEndpointManifests(
 		if err != nil {
 			return nil, err
 		}
-		if manifest.DirectoryVersion < current.DirectoryVersion {
-			return nil, messaging.ErrEndpointManifestRollback
-		}
-		if manifest.DirectoryVersion > current.DirectoryVersion ||
-			!SameEndpointManifestState(manifest, current) {
+		if manifest.DirectoryVersion > current.DirectoryVersion {
 			return nil, messaging.ErrEndpointManifestConflict
+		}
+		if manifest.DirectoryVersion == current.DirectoryVersion {
+			if !SameEndpointManifestState(manifest, current) {
+				return nil, messaging.ErrEndpointManifestConflict
+			}
+		} else if !SameEndpointManifestRoutingState(manifest, current) {
+			return nil, messaging.ErrEndpointManifestRollback
 		}
 		byActor[manifest.ActorPtid] = manifest
 	}
