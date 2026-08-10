@@ -97,7 +97,10 @@ func TestFederatedMlsKeyPackageClaimRejectsExpiryWithoutConsumption(t *testing.T
 	}
 	_, err = store.ClaimIrreversibly(
 		context.Background(),
-		federatedMlsClaimRequest("expired-plan", now),
+		federatedMlsClaimRequest(
+			"expired-plan",
+			now.Add(-messaging.FederationClockSkewBudget),
+		),
 		"station-home",
 		now,
 	)
