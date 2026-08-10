@@ -306,6 +306,13 @@ pub fn restore_profile_database_atomically(
         staging.validate_integrity()?;
         staging.prepare_for_atomic_replace()?;
         drop(staging);
+        #[cfg(feature = "e2e-testing")]
+        if std::env::var_os("PT_MESSAGING_RECOVERY_FAIL_BEFORE_REPLACE_FILE")
+            .map(PathBuf::from)
+            .is_some_and(|path| path.is_file())
+        {
+            return Err("injected messaging recovery failure before replace".to_string());
+        }
         remove_sidecars(&final_path)?;
         atomic_replace_file(&staging_path, &final_path)?;
         Ok(fresh_device.enrollment)
