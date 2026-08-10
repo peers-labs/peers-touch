@@ -91,6 +91,7 @@ message PrepareMessagingMembershipTransitionResponse {
 message PrepareMessagingSendRequest {
   string conversation_id = 1;
   CryptoEndpoint sender = 2;
+  string authority_station_id = 3;
 }
 
 message PrepareMessagingSendResponse {
@@ -102,6 +103,13 @@ message PrepareMessagingSendResponse {
   int64 mls_epoch = 6;
   repeated CryptoEndpoint required_endpoints = 7;
   bytes delivery_plan_sha256 = 8;
+  repeated FederatedEndpointManifest endpoint_manifests = 9;
+  string authority_station_id = 10;
+}
+
+message FederatedPrepareMessagingSendRequest {
+  PrepareMessagingSendRequest request = 1;
+  string source_home_station_id = 2;
 }
 
 enum MessagingCommandRejectCode {
@@ -123,4 +131,5 @@ message SubmitMessagingCommandResponse {
   ConversationEvent event = 1;
   MessagingCommandRejectCode reject_code = 2;
   PrepareMessagingSendResponse current_send_plan = 3;
+  bool accepted_for_forwarding = 4;
 }

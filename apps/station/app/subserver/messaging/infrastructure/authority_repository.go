@@ -83,10 +83,13 @@ func (*AuthorityCommandReceiptModel) TableName() string {
 // ActorDeviceReadModel maps the identity-owned actor_devices table without
 // taking migration or mutation ownership.
 type ActorDeviceReadModel struct {
-	PTID              string `gorm:"column:ptid"`
-	DeviceID          string `gorm:"column:device_id"`
-	HomeStationPeerID string `gorm:"column:home_station_peer_id"`
-	Revoked           bool   `gorm:"column:revoked"`
+	PTID               string `gorm:"column:ptid"`
+	DeviceID           string `gorm:"column:device_id"`
+	HomeStationPeerID  string `gorm:"column:home_station_peer_id"`
+	SigningKeyID       string `gorm:"column:signing_key_id"`
+	PublicKey          []byte `gorm:"column:public_key"`
+	VerificationSource int32  `gorm:"column:verification_source"`
+	Revoked            bool   `gorm:"column:revoked"`
 }
 
 type ActorIdentityReadModel struct {
@@ -621,6 +624,38 @@ func (d *DeviceDirectory) ActorIdentityPublicKey(
 		return nil, fmt.Errorf("messaging: invalid actor identity public key")
 	}
 	return append([]byte(nil), identity.PublicKey...), nil
+}
+
+func (d *DeviceDirectory) ActorHomeStationID(
+	ctx context.Context,
+	ptid string,
+) (string, error) {
+	if ptid == "" {
+		return "", messaging.ErrNotFound
+	}
+	var records []ActorDeviceReadModel
+	if err := d.db.WithContext(ctx).
+		Select("home_station_peer_id").
+		Where(
+			"ptid = ? AND revoked = ? AND verification_source <> ? "+
+				"AND length(public_key) = ? AND home_station_peer_id <> ''",
+			ptid,
+			false,
+			0,
+			32,
+		).
+		Group("home_station_peer_id").
+		Order("home_station_peer_id ASC").
+		Find(&records).Error; err != nil {
+		return "", err
+	}
+	if len(records) == 0 {
+		return "", messaging.ErrNotFound
+	}
+	if len(records) != 1 {
+		return "", messaging.ErrEndpointManifestConflict
+	}
+	return records[0].HomeStationPeerID, nil
 }
 
 func (d *DeviceDirectory) HomeStationID(

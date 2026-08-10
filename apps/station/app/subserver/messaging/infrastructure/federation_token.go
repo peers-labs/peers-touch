@@ -30,6 +30,32 @@ func RegisterMessagingFederationScope() {
 				},
 			},
 		})
+		scope.MustRegister(scope.Scope{
+			Name:        messaging.EndpointManifestScope,
+			Description: "read a signed messaging endpoint manifest from its Home Station",
+			Policy: scope.Policy{
+				TTLMax:           time.Minute,
+				AudienceRequired: true,
+				AllowedClaimKeys: []string{
+					messaging.FederationClaimActorPTID,
+					messaging.FederationClaimSourceStationID,
+					messaging.FederationClaimTargetStationID,
+				},
+			},
+		})
+		scope.MustRegister(scope.Scope{
+			Name:        messaging.AuthorityPrepareScope,
+			Description: "prepare a messaging command at its Authority Station",
+			Policy: scope.Policy{
+				TTLMax:           time.Minute,
+				AudienceRequired: true,
+				AllowedClaimKeys: []string{
+					messaging.FederationClaimConversationID,
+					messaging.FederationClaimSourceStationID,
+					messaging.FederationClaimTargetStationID,
+				},
+			},
+		})
 	})
 }
 
@@ -73,6 +99,54 @@ func (m *PeerJWTFederationTokenMinter) Mint(
 			messaging.FederationClaimIdempotencyKey:  frame.IdempotencyKey,
 			messaging.FederationClaimSourceStationID: frame.SourceStationId,
 			messaging.FederationClaimTargetStationID: frame.TargetStationId,
+		},
+	})
+}
+
+func (m *PeerJWTFederationTokenMinter) MintEndpointManifestRead(
+	ctx context.Context,
+	targetStationID string,
+	actorPTID string,
+) (string, error) {
+	if targetStationID == "" || actorPTID == "" || targetStationID == m.sourceStationID {
+		return "", fmt.Errorf("messaging: endpoint manifest token binding is invalid")
+	}
+	RegisterMessagingFederationScope()
+	return authfed.Mint(ctx, m.keyCache, authfed.MintRequest{
+		Scope:    messaging.EndpointManifestScope,
+		Issuer:   m.sourceStationID,
+		Audience: targetStationID,
+		Subject:  m.sourceStationID,
+		TTL:      time.Minute,
+		Custom: map[string]string{
+			messaging.FederationClaimActorPTID:       actorPTID,
+			messaging.FederationClaimSourceStationID: m.sourceStationID,
+			messaging.FederationClaimTargetStationID: targetStationID,
+		},
+	})
+}
+
+func (m *PeerJWTFederationTokenMinter) MintAuthorityPrepare(
+	ctx context.Context,
+	targetStationID string,
+	conversationID string,
+) (string, error) {
+	if targetStationID == "" ||
+		conversationID == "" ||
+		targetStationID == m.sourceStationID {
+		return "", fmt.Errorf("messaging: authority prepare token binding is invalid")
+	}
+	RegisterMessagingFederationScope()
+	return authfed.Mint(ctx, m.keyCache, authfed.MintRequest{
+		Scope:    messaging.AuthorityPrepareScope,
+		Issuer:   m.sourceStationID,
+		Audience: targetStationID,
+		Subject:  m.sourceStationID,
+		TTL:      time.Minute,
+		Custom: map[string]string{
+			messaging.FederationClaimConversationID:  conversationID,
+			messaging.FederationClaimSourceStationID: m.sourceStationID,
+			messaging.FederationClaimTargetStationID: targetStationID,
 		},
 	})
 }

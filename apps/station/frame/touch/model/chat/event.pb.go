@@ -1037,6 +1037,7 @@ type ConversationEvent struct {
 	DeliveryCommitments [][]byte               `protobuf:"bytes,9,rep,name=delivery_commitments,json=deliveryCommitments,proto3" json:"delivery_commitments,omitempty"`
 	MembershipEpoch     int64                  `protobuf:"varint,10,opt,name=membership_epoch,json=membershipEpoch,proto3" json:"membership_epoch,omitempty"`
 	MlsEpoch            int64                  `protobuf:"varint,11,opt,name=mls_epoch,json=mlsEpoch,proto3" json:"mls_epoch,omitempty"`
+	AuthorityStationId  string                 `protobuf:"bytes,12,opt,name=authority_station_id,json=authorityStationId,proto3" json:"authority_station_id,omitempty"`
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*ConversationEvent_MessageCommitted
@@ -1157,6 +1158,13 @@ func (x *ConversationEvent) GetMlsEpoch() int64 {
 		return x.MlsEpoch
 	}
 	return 0
+}
+
+func (x *ConversationEvent) GetAuthorityStationId() string {
+	if x != nil {
+		return x.AuthorityStationId
+	}
+	return ""
 }
 
 func (x *ConversationEvent) GetPayload() isConversationEvent_Payload {
@@ -1479,7 +1487,7 @@ const file_domain_chat_event_proto_rawDesc = "" +
 	"\x10removed_endpoint\x18\x04 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\x0fremovedEndpoint\"]\n" +
 	"\x17ConversationStateMarker\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
-	"\bevent_id\x18\x02 \x01(\tR\aeventId\"\x9b\n" +
+	"\bevent_id\x18\x02 \x01(\tR\aeventId\"\xcd\n" +
 	"\n" +
 	"\x11ConversationEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12'\n" +
@@ -1495,7 +1503,8 @@ const file_domain_chat_event_proto_rawDesc = "" +
 	"\x14delivery_commitments\x18\t \x03(\fR\x13deliveryCommitments\x12)\n" +
 	"\x10membership_epoch\x18\n" +
 	" \x01(\x03R\x0fmembershipEpoch\x12\x1b\n" +
-	"\tmls_epoch\x18\v \x01(\x03R\bmlsEpoch\x12^\n" +
+	"\tmls_epoch\x18\v \x01(\x03R\bmlsEpoch\x120\n" +
+	"\x14authority_station_id\x18\f \x01(\tR\x12authorityStationId\x12^\n" +
 	"\x11message_committed\x18\x14 \x01(\v2/.peers_touch.model.chat.v1.MessageCommittedFactH\x00R\x10messageCommitted\x12U\n" +
 	"\x0emessage_edited\x18\x15 \x01(\v2,.peers_touch.model.chat.v1.MessageEditedFactH\x00R\rmessageEdited\x12^\n" +
 	"\x11message_retracted\x18\x16 \x01(\v2/.peers_touch.model.chat.v1.MessageRetractedFactH\x00R\x10messageRetracted\x12a\n" +

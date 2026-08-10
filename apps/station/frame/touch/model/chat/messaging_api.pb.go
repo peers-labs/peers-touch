@@ -831,11 +831,12 @@ func (x *PrepareMessagingMembershipTransitionResponse) GetAuthorityPlanSha256() 
 }
 
 type PrepareMessagingSendRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	Sender         *CryptoEndpoint        `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ConversationId     string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	Sender             *CryptoEndpoint        `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`
+	AuthorityStationId string                 `protobuf:"bytes,3,opt,name=authority_station_id,json=authorityStationId,proto3" json:"authority_station_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *PrepareMessagingSendRequest) Reset() {
@@ -882,16 +883,25 @@ func (x *PrepareMessagingSendRequest) GetSender() *CryptoEndpoint {
 	return nil
 }
 
+func (x *PrepareMessagingSendRequest) GetAuthorityStationId() string {
+	if x != nil {
+		return x.AuthorityStationId
+	}
+	return ""
+}
+
 type PrepareMessagingSendResponse struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	ConversationId     string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	ConversationKind   ConversationKind       `protobuf:"varint,2,opt,name=conversation_kind,json=conversationKind,proto3,enum=peers_touch.model.chat.v1.ConversationKind" json:"conversation_kind,omitempty"`
-	AuthoritySequence  int64                  `protobuf:"varint,3,opt,name=authority_sequence,json=authoritySequence,proto3" json:"authority_sequence,omitempty"`
-	AuthorityHash      []byte                 `protobuf:"bytes,4,opt,name=authority_hash,json=authorityHash,proto3" json:"authority_hash,omitempty"`
-	MembershipEpoch    int64                  `protobuf:"varint,5,opt,name=membership_epoch,json=membershipEpoch,proto3" json:"membership_epoch,omitempty"`
-	MlsEpoch           int64                  `protobuf:"varint,6,opt,name=mls_epoch,json=mlsEpoch,proto3" json:"mls_epoch,omitempty"`
-	RequiredEndpoints  []*CryptoEndpoint      `protobuf:"bytes,7,rep,name=required_endpoints,json=requiredEndpoints,proto3" json:"required_endpoints,omitempty"`
-	DeliveryPlanSha256 []byte                 `protobuf:"bytes,8,opt,name=delivery_plan_sha256,json=deliveryPlanSha256,proto3" json:"delivery_plan_sha256,omitempty"`
+	state              protoimpl.MessageState       `protogen:"open.v1"`
+	ConversationId     string                       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	ConversationKind   ConversationKind             `protobuf:"varint,2,opt,name=conversation_kind,json=conversationKind,proto3,enum=peers_touch.model.chat.v1.ConversationKind" json:"conversation_kind,omitempty"`
+	AuthoritySequence  int64                        `protobuf:"varint,3,opt,name=authority_sequence,json=authoritySequence,proto3" json:"authority_sequence,omitempty"`
+	AuthorityHash      []byte                       `protobuf:"bytes,4,opt,name=authority_hash,json=authorityHash,proto3" json:"authority_hash,omitempty"`
+	MembershipEpoch    int64                        `protobuf:"varint,5,opt,name=membership_epoch,json=membershipEpoch,proto3" json:"membership_epoch,omitempty"`
+	MlsEpoch           int64                        `protobuf:"varint,6,opt,name=mls_epoch,json=mlsEpoch,proto3" json:"mls_epoch,omitempty"`
+	RequiredEndpoints  []*CryptoEndpoint            `protobuf:"bytes,7,rep,name=required_endpoints,json=requiredEndpoints,proto3" json:"required_endpoints,omitempty"`
+	DeliveryPlanSha256 []byte                       `protobuf:"bytes,8,opt,name=delivery_plan_sha256,json=deliveryPlanSha256,proto3" json:"delivery_plan_sha256,omitempty"`
+	EndpointManifests  []*FederatedEndpointManifest `protobuf:"bytes,9,rep,name=endpoint_manifests,json=endpointManifests,proto3" json:"endpoint_manifests,omitempty"`
+	AuthorityStationId string                       `protobuf:"bytes,10,opt,name=authority_station_id,json=authorityStationId,proto3" json:"authority_station_id,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -982,6 +992,72 @@ func (x *PrepareMessagingSendResponse) GetDeliveryPlanSha256() []byte {
 	return nil
 }
 
+func (x *PrepareMessagingSendResponse) GetEndpointManifests() []*FederatedEndpointManifest {
+	if x != nil {
+		return x.EndpointManifests
+	}
+	return nil
+}
+
+func (x *PrepareMessagingSendResponse) GetAuthorityStationId() string {
+	if x != nil {
+		return x.AuthorityStationId
+	}
+	return ""
+}
+
+type FederatedPrepareMessagingSendRequest struct {
+	state               protoimpl.MessageState       `protogen:"open.v1"`
+	Request             *PrepareMessagingSendRequest `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	SourceHomeStationId string                       `protobuf:"bytes,2,opt,name=source_home_station_id,json=sourceHomeStationId,proto3" json:"source_home_station_id,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *FederatedPrepareMessagingSendRequest) Reset() {
+	*x = FederatedPrepareMessagingSendRequest{}
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FederatedPrepareMessagingSendRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FederatedPrepareMessagingSendRequest) ProtoMessage() {}
+
+func (x *FederatedPrepareMessagingSendRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FederatedPrepareMessagingSendRequest.ProtoReflect.Descriptor instead.
+func (*FederatedPrepareMessagingSendRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *FederatedPrepareMessagingSendRequest) GetRequest() *PrepareMessagingSendRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *FederatedPrepareMessagingSendRequest) GetSourceHomeStationId() string {
+	if x != nil {
+		return x.SourceHomeStationId
+	}
+	return ""
+}
+
 type SubmitMessagingCommandRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Command       *ChatCommand           `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
@@ -991,7 +1067,7 @@ type SubmitMessagingCommandRequest struct {
 
 func (x *SubmitMessagingCommandRequest) Reset() {
 	*x = SubmitMessagingCommandRequest{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[12]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1003,7 +1079,7 @@ func (x *SubmitMessagingCommandRequest) String() string {
 func (*SubmitMessagingCommandRequest) ProtoMessage() {}
 
 func (x *SubmitMessagingCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[12]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1016,7 +1092,7 @@ func (x *SubmitMessagingCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitMessagingCommandRequest.ProtoReflect.Descriptor instead.
 func (*SubmitMessagingCommandRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{12}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SubmitMessagingCommandRequest) GetCommand() *ChatCommand {
@@ -1027,17 +1103,18 @@ func (x *SubmitMessagingCommandRequest) GetCommand() *ChatCommand {
 }
 
 type SubmitMessagingCommandResponse struct {
-	state           protoimpl.MessageState        `protogen:"open.v1"`
-	Event           *ConversationEvent            `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
-	RejectCode      MessagingCommandRejectCode    `protobuf:"varint,2,opt,name=reject_code,json=rejectCode,proto3,enum=peers_touch.model.chat.v1.MessagingCommandRejectCode" json:"reject_code,omitempty"`
-	CurrentSendPlan *PrepareMessagingSendResponse `protobuf:"bytes,3,opt,name=current_send_plan,json=currentSendPlan,proto3" json:"current_send_plan,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state                 protoimpl.MessageState        `protogen:"open.v1"`
+	Event                 *ConversationEvent            `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
+	RejectCode            MessagingCommandRejectCode    `protobuf:"varint,2,opt,name=reject_code,json=rejectCode,proto3,enum=peers_touch.model.chat.v1.MessagingCommandRejectCode" json:"reject_code,omitempty"`
+	CurrentSendPlan       *PrepareMessagingSendResponse `protobuf:"bytes,3,opt,name=current_send_plan,json=currentSendPlan,proto3" json:"current_send_plan,omitempty"`
+	AcceptedForForwarding bool                          `protobuf:"varint,4,opt,name=accepted_for_forwarding,json=acceptedForForwarding,proto3" json:"accepted_for_forwarding,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *SubmitMessagingCommandResponse) Reset() {
 	*x = SubmitMessagingCommandResponse{}
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[13]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1049,7 +1126,7 @@ func (x *SubmitMessagingCommandResponse) String() string {
 func (*SubmitMessagingCommandResponse) ProtoMessage() {}
 
 func (x *SubmitMessagingCommandResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_messaging_api_proto_msgTypes[13]
+	mi := &file_domain_chat_messaging_api_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1062,7 +1139,7 @@ func (x *SubmitMessagingCommandResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitMessagingCommandResponse.ProtoReflect.Descriptor instead.
 func (*SubmitMessagingCommandResponse) Descriptor() ([]byte, []int) {
-	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{13}
+	return file_domain_chat_messaging_api_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SubmitMessagingCommandResponse) GetEvent() *ConversationEvent {
@@ -1084,6 +1161,13 @@ func (x *SubmitMessagingCommandResponse) GetCurrentSendPlan() *PrepareMessagingS
 		return x.CurrentSendPlan
 	}
 	return nil
+}
+
+func (x *SubmitMessagingCommandResponse) GetAcceptedForForwarding() bool {
+	if x != nil {
+		return x.AcceptedForForwarding
+	}
+	return false
 }
 
 var File_domain_chat_messaging_api_proto protoreflect.FileDescriptor
@@ -1155,10 +1239,11 @@ const file_domain_chat_messaging_api_proto_rawDesc = "" +
 	"\x11removed_endpoints\x18\v \x03(\v2).peers_touch.model.chat.v1.CryptoEndpointR\x10removedEndpoints\x12m\n" +
 	"\x15reserved_key_packages\x18\f \x03(\v29.peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackageR\x13reservedKeyPackages\x12c\n" +
 	"\x12endpoint_manifests\x18\r \x03(\v24.peers_touch.model.chat.v1.FederatedEndpointManifestR\x11endpointManifests\x122\n" +
-	"\x15authority_plan_sha256\x18\x0e \x01(\fR\x13authorityPlanSha256\"\x89\x01\n" +
+	"\x15authority_plan_sha256\x18\x0e \x01(\fR\x13authorityPlanSha256\"\xbb\x01\n" +
 	"\x1bPrepareMessagingSendRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12A\n" +
-	"\x06sender\x18\x02 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\x06sender\"\xcb\x03\n" +
+	"\x06sender\x18\x02 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\x06sender\x120\n" +
+	"\x14authority_station_id\x18\x03 \x01(\tR\x12authorityStationId\"\xe2\x04\n" +
 	"\x1cPrepareMessagingSendResponse\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12X\n" +
 	"\x11conversation_kind\x18\x02 \x01(\x0e2+.peers_touch.model.chat.v1.ConversationKindR\x10conversationKind\x12-\n" +
@@ -1167,14 +1252,21 @@ const file_domain_chat_messaging_api_proto_rawDesc = "" +
 	"\x10membership_epoch\x18\x05 \x01(\x03R\x0fmembershipEpoch\x12\x1b\n" +
 	"\tmls_epoch\x18\x06 \x01(\x03R\bmlsEpoch\x12X\n" +
 	"\x12required_endpoints\x18\a \x03(\v2).peers_touch.model.chat.v1.CryptoEndpointR\x11requiredEndpoints\x120\n" +
-	"\x14delivery_plan_sha256\x18\b \x01(\fR\x12deliveryPlanSha256\"a\n" +
+	"\x14delivery_plan_sha256\x18\b \x01(\fR\x12deliveryPlanSha256\x12c\n" +
+	"\x12endpoint_manifests\x18\t \x03(\v24.peers_touch.model.chat.v1.FederatedEndpointManifestR\x11endpointManifests\x120\n" +
+	"\x14authority_station_id\x18\n" +
+	" \x01(\tR\x12authorityStationId\"\xad\x01\n" +
+	"$FederatedPrepareMessagingSendRequest\x12P\n" +
+	"\arequest\x18\x01 \x01(\v26.peers_touch.model.chat.v1.PrepareMessagingSendRequestR\arequest\x123\n" +
+	"\x16source_home_station_id\x18\x02 \x01(\tR\x13sourceHomeStationId\"a\n" +
 	"\x1dSubmitMessagingCommandRequest\x12@\n" +
-	"\acommand\x18\x01 \x01(\v2&.peers_touch.model.chat.v1.ChatCommandR\acommand\"\xa1\x02\n" +
+	"\acommand\x18\x01 \x01(\v2&.peers_touch.model.chat.v1.ChatCommandR\acommand\"\xd9\x02\n" +
 	"\x1eSubmitMessagingCommandResponse\x12B\n" +
 	"\x05event\x18\x01 \x01(\v2,.peers_touch.model.chat.v1.ConversationEventR\x05event\x12V\n" +
 	"\vreject_code\x18\x02 \x01(\x0e25.peers_touch.model.chat.v1.MessagingCommandRejectCodeR\n" +
 	"rejectCode\x12c\n" +
-	"\x11current_send_plan\x18\x03 \x01(\v27.peers_touch.model.chat.v1.PrepareMessagingSendResponseR\x0fcurrentSendPlan*\xc8\x03\n" +
+	"\x11current_send_plan\x18\x03 \x01(\v27.peers_touch.model.chat.v1.PrepareMessagingSendResponseR\x0fcurrentSendPlan\x126\n" +
+	"\x17accepted_for_forwarding\x18\x04 \x01(\bR\x15acceptedForForwarding*\xc8\x03\n" +
 	"\x1aMessagingCommandRejectCode\x12-\n" +
 	")MESSAGING_COMMAND_REJECT_CODE_UNSPECIFIED\x10\x00\x125\n" +
 	"1MESSAGING_COMMAND_REJECT_CODE_STALE_DELIVERY_PLAN\x10\x01\x124\n" +
@@ -1198,7 +1290,7 @@ func file_domain_chat_messaging_api_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_chat_messaging_api_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_chat_messaging_api_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_domain_chat_messaging_api_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_domain_chat_messaging_api_proto_goTypes = []any{
 	(MessagingCommandRejectCode)(0),                      // 0: peers_touch.model.chat.v1.MessagingCommandRejectCode
 	(*MessagingConversationView)(nil),                    // 1: peers_touch.model.chat.v1.MessagingConversationView
@@ -1213,48 +1305,51 @@ var file_domain_chat_messaging_api_proto_goTypes = []any{
 	(*PrepareMessagingMembershipTransitionResponse)(nil), // 10: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse
 	(*PrepareMessagingSendRequest)(nil),                  // 11: peers_touch.model.chat.v1.PrepareMessagingSendRequest
 	(*PrepareMessagingSendResponse)(nil),                 // 12: peers_touch.model.chat.v1.PrepareMessagingSendResponse
-	(*SubmitMessagingCommandRequest)(nil),                // 13: peers_touch.model.chat.v1.SubmitMessagingCommandRequest
-	(*SubmitMessagingCommandResponse)(nil),               // 14: peers_touch.model.chat.v1.SubmitMessagingCommandResponse
-	(ConversationKind)(0),                                // 15: peers_touch.model.chat.v1.ConversationKind
-	(*CryptoEndpoint)(nil),                               // 16: peers_touch.model.chat.v1.CryptoEndpoint
-	(*timestamppb.Timestamp)(nil),                        // 17: google.protobuf.Timestamp
-	(*FederatedEndpointManifest)(nil),                    // 18: peers_touch.model.chat.v1.FederatedEndpointManifest
-	(MessagingMembershipAction)(0),                       // 19: peers_touch.model.chat.v1.MessagingMembershipAction
-	(*ChatCommand)(nil),                                  // 20: peers_touch.model.chat.v1.ChatCommand
-	(*ConversationEvent)(nil),                            // 21: peers_touch.model.chat.v1.ConversationEvent
+	(*FederatedPrepareMessagingSendRequest)(nil),         // 13: peers_touch.model.chat.v1.FederatedPrepareMessagingSendRequest
+	(*SubmitMessagingCommandRequest)(nil),                // 14: peers_touch.model.chat.v1.SubmitMessagingCommandRequest
+	(*SubmitMessagingCommandResponse)(nil),               // 15: peers_touch.model.chat.v1.SubmitMessagingCommandResponse
+	(ConversationKind)(0),                                // 16: peers_touch.model.chat.v1.ConversationKind
+	(*CryptoEndpoint)(nil),                               // 17: peers_touch.model.chat.v1.CryptoEndpoint
+	(*timestamppb.Timestamp)(nil),                        // 18: google.protobuf.Timestamp
+	(*FederatedEndpointManifest)(nil),                    // 19: peers_touch.model.chat.v1.FederatedEndpointManifest
+	(MessagingMembershipAction)(0),                       // 20: peers_touch.model.chat.v1.MessagingMembershipAction
+	(*ChatCommand)(nil),                                  // 21: peers_touch.model.chat.v1.ChatCommand
+	(*ConversationEvent)(nil),                            // 22: peers_touch.model.chat.v1.ConversationEvent
 }
 var file_domain_chat_messaging_api_proto_depIdxs = []int32{
-	15, // 0: peers_touch.model.chat.v1.MessagingConversationView.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
-	16, // 1: peers_touch.model.chat.v1.CreateMessagingDirectConversationRequest.creator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	16, // 0: peers_touch.model.chat.v1.MessagingConversationView.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
+	17, // 1: peers_touch.model.chat.v1.CreateMessagingDirectConversationRequest.creator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
 	1,  // 2: peers_touch.model.chat.v1.CreateMessagingDirectConversationResponse.conversation:type_name -> peers_touch.model.chat.v1.MessagingConversationView
 	1,  // 3: peers_touch.model.chat.v1.ListMessagingConversationsResponse.conversations:type_name -> peers_touch.model.chat.v1.MessagingConversationView
-	16, // 4: peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage.target:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	16, // 5: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisRequest.creator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	17, // 6: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.expires_at:type_name -> google.protobuf.Timestamp
-	16, // 7: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.prospective_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	17, // 4: peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage.target:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	17, // 5: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisRequest.creator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	18, // 6: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.expires_at:type_name -> google.protobuf.Timestamp
+	17, // 7: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.prospective_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
 	6,  // 8: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.reserved_key_packages:type_name -> peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage
-	18, // 9: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
-	16, // 10: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	19, // 11: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
-	17, // 12: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	16, // 13: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.pre_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	16, // 14: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.post_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	16, // 15: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.added_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	16, // 16: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.removed_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	19, // 9: peers_touch.model.chat.v1.PrepareMessagingGroupGenesisResponse.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
+	17, // 10: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	20, // 11: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
+	18, // 12: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	17, // 13: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.pre_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	17, // 14: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.post_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	17, // 15: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.added_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	17, // 16: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.removed_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
 	6,  // 17: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.reserved_key_packages:type_name -> peers_touch.model.chat.v1.ReservedMessagingMlsKeyPackage
-	18, // 18: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
-	16, // 19: peers_touch.model.chat.v1.PrepareMessagingSendRequest.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	15, // 20: peers_touch.model.chat.v1.PrepareMessagingSendResponse.conversation_kind:type_name -> peers_touch.model.chat.v1.ConversationKind
-	16, // 21: peers_touch.model.chat.v1.PrepareMessagingSendResponse.required_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	20, // 22: peers_touch.model.chat.v1.SubmitMessagingCommandRequest.command:type_name -> peers_touch.model.chat.v1.ChatCommand
-	21, // 23: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	0,  // 24: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.reject_code:type_name -> peers_touch.model.chat.v1.MessagingCommandRejectCode
-	12, // 25: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.current_send_plan:type_name -> peers_touch.model.chat.v1.PrepareMessagingSendResponse
-	26, // [26:26] is the sub-list for method output_type
-	26, // [26:26] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	19, // 18: peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
+	17, // 19: peers_touch.model.chat.v1.PrepareMessagingSendRequest.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	16, // 20: peers_touch.model.chat.v1.PrepareMessagingSendResponse.conversation_kind:type_name -> peers_touch.model.chat.v1.ConversationKind
+	17, // 21: peers_touch.model.chat.v1.PrepareMessagingSendResponse.required_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	19, // 22: peers_touch.model.chat.v1.PrepareMessagingSendResponse.endpoint_manifests:type_name -> peers_touch.model.chat.v1.FederatedEndpointManifest
+	11, // 23: peers_touch.model.chat.v1.FederatedPrepareMessagingSendRequest.request:type_name -> peers_touch.model.chat.v1.PrepareMessagingSendRequest
+	21, // 24: peers_touch.model.chat.v1.SubmitMessagingCommandRequest.command:type_name -> peers_touch.model.chat.v1.ChatCommand
+	22, // 25: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	0,  // 26: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.reject_code:type_name -> peers_touch.model.chat.v1.MessagingCommandRejectCode
+	12, // 27: peers_touch.model.chat.v1.SubmitMessagingCommandResponse.current_send_plan:type_name -> peers_touch.model.chat.v1.PrepareMessagingSendResponse
+	28, // [28:28] is the sub-list for method output_type
+	28, // [28:28] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_messaging_api_proto_init() }
@@ -1273,7 +1368,7 @@ func file_domain_chat_messaging_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_messaging_api_proto_rawDesc), len(file_domain_chat_messaging_api_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   14,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

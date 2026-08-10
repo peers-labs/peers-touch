@@ -881,6 +881,7 @@ type ChatCommand struct {
 	ObservedMlsEpoch        int64                  `protobuf:"varint,5,opt,name=observed_mls_epoch,json=observedMlsEpoch,proto3" json:"observed_mls_epoch,omitempty"`
 	ClientTimestamp         *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=client_timestamp,json=clientTimestamp,proto3" json:"client_timestamp,omitempty"`
 	DeliveryPlanSha256      []byte                 `protobuf:"bytes,7,opt,name=delivery_plan_sha256,json=deliveryPlanSha256,proto3" json:"delivery_plan_sha256,omitempty"`
+	AuthorityStationId      string                 `protobuf:"bytes,8,opt,name=authority_station_id,json=authorityStationId,proto3" json:"authority_station_id,omitempty"`
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*ChatCommand_SendMessage
@@ -972,6 +973,13 @@ func (x *ChatCommand) GetDeliveryPlanSha256() []byte {
 		return x.DeliveryPlanSha256
 	}
 	return nil
+}
+
+func (x *ChatCommand) GetAuthorityStationId() string {
+	if x != nil {
+		return x.AuthorityStationId
+	}
+	return ""
 }
 
 func (x *ChatCommand) GetPayload() isChatCommand_Payload {
@@ -1157,7 +1165,7 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"\x0fleave_intent_id\x18\t \x01(\tR\rleaveIntentId\x12*\n" +
 	"\x11authority_plan_id\x18\n" +
 	" \x01(\tR\x0fauthorityPlanId\x122\n" +
-	"\x15authority_plan_sha256\x18\v \x01(\fR\x13authorityPlanSha256\"\xf7\a\n" +
+	"\x15authority_plan_sha256\x18\v \x01(\fR\x13authorityPlanSha256\"\xa9\b\n" +
 	"\vChatCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12'\n" +
@@ -1166,7 +1174,8 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"\x19observed_membership_epoch\x18\x04 \x01(\x03R\x17observedMembershipEpoch\x12,\n" +
 	"\x12observed_mls_epoch\x18\x05 \x01(\x03R\x10observedMlsEpoch\x12E\n" +
 	"\x10client_timestamp\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0fclientTimestamp\x120\n" +
-	"\x14delivery_plan_sha256\x18\a \x01(\fR\x12deliveryPlanSha256\x12Q\n" +
+	"\x14delivery_plan_sha256\x18\a \x01(\fR\x12deliveryPlanSha256\x120\n" +
+	"\x14authority_station_id\x18\b \x01(\tR\x12authorityStationId\x12Q\n" +
 	"\fsend_message\x18\x14 \x01(\v2,.peers_touch.model.chat.v1.SendMessageIntentH\x00R\vsendMessage\x12Q\n" +
 	"\fedit_message\x18\x15 \x01(\v2,.peers_touch.model.chat.v1.EditMessageIntentH\x00R\veditMessage\x12Z\n" +
 	"\x0fretract_message\x18\x16 \x01(\v2/.peers_touch.model.chat.v1.RetractMessageIntentH\x00R\x0eretractMessage\x12G\n" +

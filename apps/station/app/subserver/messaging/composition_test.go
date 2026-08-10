@@ -26,6 +26,15 @@ func (compositionFederationTransport) Deliver(
 	return worker.FederationDeliveryResult{Delivered: true}
 }
 
+type compositionStationURLResolver struct{}
+
+func (compositionStationURLResolver) ResolveActiveStationURL(
+	context.Context,
+	string,
+) (string, error) {
+	return "https://station.example", nil
+}
+
 func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *testing.T) {
 	db, err := gorm.Open(
 		sqlite.Open("file:messaging-composition-"+uuid.NewString()+"?mode=memory&cache=shared"),
@@ -67,7 +76,8 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 			BaseBackoff:   time.Second,
 			MaxBackoff:    time.Minute,
 		},
-		FederationTransport: compositionFederationTransport{},
+		FederationTransport:          compositionFederationTransport{},
+		FederationStationURLResolver: compositionStationURLResolver{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,12 +86,15 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 		composition.DeviceService == nil ||
 		composition.QueueService == nil ||
 		composition.FederationService == nil ||
+		composition.EndpointManifestService == nil ||
 		composition.RecoveryService == nil ||
 		composition.AuthorityPlanService == nil ||
 		composition.DeviceHandler == nil ||
 		composition.QueueHandler == nil ||
 		composition.FederationHandler == nil ||
 		composition.FederationAuth == nil ||
+		composition.EndpointManifestHandler == nil ||
+		composition.EndpointManifestAuth == nil ||
 		composition.FederationDispatcher == nil {
 		t.Fatal("composition omitted a target Messaging Platform owner")
 	}
@@ -94,6 +107,8 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 		&infrastructure.DeviceQueueItemModel{},
 		&infrastructure.FederationInboxModel{},
 		&infrastructure.FederationOutboxModel{},
+		&infrastructure.EndpointDirectoryVersionModel{},
+		&infrastructure.FederatedEndpointManifestModel{},
 		&infrastructure.RecoveryRevisionModel{},
 		&touchactor.ActorIdentityRecord{},
 		&touchactor.DeviceRecord{},

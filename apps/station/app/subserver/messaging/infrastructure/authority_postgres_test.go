@@ -48,6 +48,7 @@ func TestPostgresConcurrentAuthorityAndLaneSequences(t *testing.T) {
 		messaging.FederationFrameSignFunc(func(context.Context, *chat.MessagingFederationFrame) error {
 			return nil
 		}),
+		testEndpointManifestResolver(t, db, now),
 		func() time.Time { return now },
 	)
 	if err != nil {
@@ -117,10 +118,11 @@ func TestPostgresConcurrentAuthorityAndLaneSequences(t *testing.T) {
 			}
 		}
 		return &chat.ChatCommand{
-			CommandId:       commandID,
-			ConversationId:  conversationID,
-			Sender:          &chat.CryptoEndpoint{Ptid: alice, DeviceId: "device-1"},
-			ClientTimestamp: timestamppb.New(now),
+			CommandId:          commandID,
+			ConversationId:     conversationID,
+			AuthorityStationId: "station:local",
+			Sender:             &chat.CryptoEndpoint{Ptid: alice, DeviceId: "device-1"},
+			ClientTimestamp:    timestamppb.New(now),
 			Payload: &chat.ChatCommand_SendMessage{SendMessage: &chat.SendMessageIntent{
 				MessageId:   "message-" + commandID,
 				ContentKind: chat.MessagingContentKind_MESSAGING_CONTENT_KIND_TEXT,

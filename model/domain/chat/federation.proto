@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package peers_touch.model.chat.v1;
 
+import "domain/chat/command.proto";
 import "domain/chat/endpoint.proto";
 import "domain/chat/queue.proto";
 import "google/protobuf/timestamp.proto";
@@ -20,6 +21,12 @@ message FederatedDeviceQueueWrite {
 
 message FederatedDeviceQueueBatch {
   repeated FederatedDeviceQueueWrite writes = 1;
+  repeated FederatedEndpointManifest endpoint_manifests = 2;
+}
+
+message FederatedAuthorityCommand {
+  ChatCommand command = 1;
+  string source_home_station_id = 2;
 }
 
 enum MessagingFederationPayloadType {

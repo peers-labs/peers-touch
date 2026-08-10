@@ -25,29 +25,33 @@ type AuthorityPlanPolicy struct {
 }
 
 type AuthorityPlanService struct {
-	unitOfWork   messaging.AuthorityUnitOfWork
-	localStation string
-	policy       AuthorityPlanPolicy
-	clock        func() time.Time
+	unitOfWork       messaging.AuthorityUnitOfWork
+	localStation     string
+	manifestResolver messaging.EndpointManifestResolver
+	policy           AuthorityPlanPolicy
+	clock            func() time.Time
 }
 
 func NewAuthorityPlanService(
 	unitOfWork messaging.AuthorityUnitOfWork,
 	localStation string,
+	manifestResolver messaging.EndpointManifestResolver,
 	policy AuthorityPlanPolicy,
 	clock func() time.Time,
 ) (*AuthorityPlanService, error) {
 	if unitOfWork == nil ||
 		strings.TrimSpace(localStation) == "" ||
+		manifestResolver == nil ||
 		policy.ReservationTTL <= 0 ||
 		clock == nil {
 		return nil, fmt.Errorf("messaging: authority plan dependencies are invalid")
 	}
 	return &AuthorityPlanService{
-		unitOfWork:   unitOfWork,
-		localStation: localStation,
-		policy:       policy,
-		clock:        clock,
+		unitOfWork:       unitOfWork,
+		localStation:     localStation,
+		manifestResolver: manifestResolver,
+		policy:           policy,
+		clock:            clock,
 	}, nil
 }
 
@@ -74,6 +78,14 @@ func (s *AuthorityPlanService) PrepareGroupGenesis(
 	if len(actorSet) < 2 {
 		return nil, fmt.Errorf("messaging: group genesis requires at least two actors")
 	}
+	actors := make([]string, 0, len(actorSet))
+	for actor := range actorSet {
+		actors = append(actors, actor)
+	}
+	sort.Strings(actors)
+	if err := resolveEndpointManifests(ctx, s.manifestResolver, actors); err != nil {
+		return nil, err
+	}
 
 	var response *chat.PrepareMessagingGroupGenesisResponse
 	err := s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
@@ -93,11 +105,6 @@ func (s *AuthorityPlanService) PrepareGroupGenesis(
 			return messaging.ErrSenderUnauthorized
 		}
 
-		actors := make([]string, 0, len(actorSet))
-		for actor := range actorSet {
-			actors = append(actors, actor)
-		}
-		sort.Strings(actors)
 		endpoints := make([]*chat.CryptoEndpoint, 0)
 		for _, actor := range actors {
 			actorEndpoints, err := repositories.Devices.ListActiveEndpoints(ctx, actor)
@@ -149,6 +156,14 @@ func (s *AuthorityPlanService) PrepareGroupGenesis(
 			AuthorityStationId:   s.localStation,
 			ProspectiveEndpoints: endpoints,
 			ReservedKeyPackages:  reserved,
+		}
+		response.EndpointManifests, err = repositories.EndpointManifests.ListVerifiedManifests(
+			ctx,
+			actors,
+			now,
+		)
+		if err != nil {
+			return err
 		}
 		planHash, err := hashAuthorityPlan(request, response)
 		if err != nil {
@@ -208,9 +223,16 @@ func (s *AuthorityPlanService) PrepareMembershipTransition(
 	default:
 		return nil, messaging.ErrUnsupportedCommand
 	}
+	actors, err := s.activeTransitionActors(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if err := resolveEndpointManifests(ctx, s.manifestResolver, actors); err != nil {
+		return nil, err
+	}
 
 	var response *chat.PrepareMessagingMembershipTransitionResponse
-	err := s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+	err = s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
 		conversation, err := repositories.Authority.LockConversation(
 			ctx,
 			request.ConversationId,
@@ -380,6 +402,14 @@ func (s *AuthorityPlanService) PrepareMembershipTransition(
 			RemovedEndpoints:    removedEndpoints,
 			ReservedKeyPackages: reserved,
 		}
+		response.EndpointManifests, err = repositories.EndpointManifests.ListVerifiedManifests(
+			ctx,
+			actors,
+			now,
+		)
+		if err != nil {
+			return err
+		}
 		planHash, err := hashAuthorityPlan(request, response)
 		if err != nil {
 			return err
@@ -410,6 +440,41 @@ func (s *AuthorityPlanService) PrepareMembershipTransition(
 		return nil, err
 	}
 	return response, nil
+}
+
+func (s *AuthorityPlanService) activeTransitionActors(
+	ctx context.Context,
+	request *chat.PrepareMessagingMembershipTransitionRequest,
+) ([]string, error) {
+	actorSet := make(map[string]struct{})
+	err := s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+		members, err := repositories.Authority.ListActiveMembers(
+			ctx,
+			request.ConversationId,
+		)
+		if err != nil {
+			return err
+		}
+		for _, member := range members {
+			if member.Active {
+				actorSet[member.PTID] = struct{}{}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if request.Action == chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_ADD_ACTOR ||
+		request.Action == chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_ADD_DEVICE {
+		actorSet[request.TargetPtid] = struct{}{}
+	}
+	actors := make([]string, 0, len(actorSet))
+	for actor := range actorSet {
+		actors = append(actors, actor)
+	}
+	sort.Strings(actors)
+	return actors, nil
 }
 
 func containsEndpoint(endpoints []*chat.CryptoEndpoint, target *chat.CryptoEndpoint) bool {

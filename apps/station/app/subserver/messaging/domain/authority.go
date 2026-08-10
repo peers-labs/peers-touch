@@ -111,6 +111,7 @@ type AuthorityRepository interface {
 type DeviceDirectory interface {
 	IsActive(ctx context.Context, endpoint *chat.CryptoEndpoint) (bool, error)
 	ActorIdentityPublicKey(ctx context.Context, ptid string) ([]byte, error)
+	ActorHomeStationID(ctx context.Context, ptid string) (string, error)
 	HomeStationID(ctx context.Context, endpoint *chat.CryptoEndpoint) (string, error)
 	ListActiveEndpoints(ctx context.Context, ptid string) ([]*chat.CryptoEndpoint, error)
 }
@@ -128,12 +129,13 @@ type MlsKeyPackageRepository interface {
 }
 
 type AuthorityRepositories struct {
-	Authority   AuthorityRepository
-	Devices     DeviceDirectory
-	Queue       QueueRepository
-	Federation  FederationOutboxRepository
-	KeyPackages MlsKeyPackageRepository
-	Plans       AuthorityPlanRepository
+	Authority         AuthorityRepository
+	Devices           DeviceDirectory
+	Queue             QueueRepository
+	Federation        FederationOutboxRepository
+	EndpointManifests EndpointManifestRepository
+	KeyPackages       MlsKeyPackageRepository
+	Plans             AuthorityPlanRepository
 }
 
 type AuthorityUnitOfWork interface {

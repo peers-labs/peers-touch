@@ -3,6 +3,7 @@ package application_test
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"testing"
 	"time"
@@ -45,9 +46,11 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 		t.Fatal(err)
 	}
 	now := time.Unix(1_700_000_000, 789).UTC()
+	manifestResolver := planEndpointManifestResolver(t, db, now)
 	service, err := application.NewAuthorityPlanService(
 		uow,
 		"station-local",
+		manifestResolver,
 		application.AuthorityPlanPolicy{ReservationTTL: 5 * time.Minute},
 		func() time.Time { return now },
 	)
@@ -150,6 +153,7 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 		messaging.FederationFrameSignFunc(func(context.Context, *chat.MessagingFederationFrame) error {
 			return nil
 		}),
+		manifestResolver,
 		func() time.Time { return now },
 	)
 	if err != nil {
@@ -187,6 +191,7 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 	command := &chat.ChatCommand{
 		CommandId:               "genesis-command",
 		ConversationId:          "group-1",
+		AuthorityStationId:      "station-local",
 		Sender:                  response.ProspectiveEndpoints[0],
 		ObservedMembershipEpoch: 0,
 		ObservedMlsEpoch:        0,
@@ -337,6 +342,7 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 	addCommand := &chat.ChatCommand{
 		CommandId:               "add-carol-command",
 		ConversationId:          "group-1",
+		AuthorityStationId:      transitionPlan.AuthorityStationId,
 		Sender:                  response.ProspectiveEndpoints[0],
 		ObservedMembershipEpoch: transitionPlan.FromMembershipEpoch,
 		ObservedMlsEpoch:        transitionPlan.FromMlsEpoch,
@@ -451,6 +457,7 @@ func TestPrepareGroupGenesisReservesKeyPackagesWithoutPublishingConversation(t *
 	removeCommand := &chat.ChatCommand{
 		CommandId:               "remove-carol-command",
 		ConversationId:          "group-1",
+		AuthorityStationId:      removePlan.AuthorityStationId,
 		Sender:                  response.ProspectiveEndpoints[0],
 		ObservedMembershipEpoch: removePlan.FromMembershipEpoch,
 		ObservedMlsEpoch:        removePlan.FromMlsEpoch,
@@ -728,6 +735,7 @@ func membershipTransitionCommand(
 	return &chat.ChatCommand{
 		CommandId:               commandID,
 		ConversationId:          "group-1",
+		AuthorityStationId:      plan.AuthorityStationId,
 		Sender:                  sender,
 		ObservedMembershipEpoch: plan.FromMembershipEpoch,
 		ObservedMlsEpoch:        plan.FromMlsEpoch,
@@ -769,4 +777,51 @@ func planVerifiedDevice(
 		VerificationSource: int32(actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION),
 		CreatedAt:          createdAt,
 	}
+}
+
+func planEndpointManifestResolver(
+	t *testing.T,
+	db *gorm.DB,
+	now time.Time,
+) messaging.EndpointManifestResolver {
+	t.Helper()
+	repository, err := infrastructure.NewEndpointManifestRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateKey := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+	return messaging.EndpointManifestResolveFunc(func(
+		ctx context.Context,
+		actorPTID string,
+	) (*chat.FederatedEndpointManifest, error) {
+		manifest, err := repository.BuildLocalManifestSnapshot(
+			ctx,
+			actorPTID,
+			"station-local",
+			now,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if err := application.SignEndpointManifest(
+			manifest,
+			"test-station-key",
+			privateKey,
+		); err != nil {
+			return nil, err
+		}
+		manifestBytes, manifestHash, err := application.EndpointManifestSHA256(manifest)
+		if err != nil {
+			return nil, err
+		}
+		if err := repository.SaveVerifiedManifest(
+			ctx,
+			manifest,
+			manifestBytes,
+			manifestHash,
+		); err != nil {
+			return nil, err
+		}
+		return manifest, nil
+	})
 }
