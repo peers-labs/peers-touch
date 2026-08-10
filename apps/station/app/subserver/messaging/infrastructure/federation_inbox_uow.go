@@ -47,6 +47,34 @@ func (u *FederationInboxUnitOfWork) AutoMigrate() error {
 	return queue.AutoMigrate()
 }
 
+func (u *FederationInboxUnitOfWork) MatchFederationFrame(
+	ctx context.Context,
+	frame *chat.MessagingFederationFrame,
+) (bool, error) {
+	frameBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(frame)
+	if err != nil {
+		return false, err
+	}
+	frameHash := sha256.Sum256(frameBytes)
+	var existing FederationInboxModel
+	err = u.db.WithContext(ctx).Where(
+		"source_station_id = ? AND idempotency_key = ?",
+		frame.SourceStationId,
+		frame.IdempotencyKey,
+	).First(&existing).Error
+	if err == gorm.ErrRecordNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if existing.FrameID != frame.FrameId ||
+		!bytes.Equal(existing.FrameSHA256, frameHash[:]) {
+		return false, messaging.ErrFederationFrameConflict
+	}
+	return true, nil
+}
+
 func (u *FederationInboxUnitOfWork) IngestFederationFrame(
 	ctx context.Context,
 	frame *chat.MessagingFederationFrame,

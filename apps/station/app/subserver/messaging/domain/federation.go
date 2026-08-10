@@ -204,6 +204,10 @@ type FederationOutboxRepository interface {
 }
 
 type FederationInboxUnitOfWork interface {
+	MatchFederationFrame(
+		ctx context.Context,
+		frame *chat.MessagingFederationFrame,
+	) (bool, error)
 	IngestFederationFrame(
 		ctx context.Context,
 		frame *chat.MessagingFederationFrame,
