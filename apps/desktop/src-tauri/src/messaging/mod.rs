@@ -24,8 +24,9 @@ mod transport;
 mod verification;
 
 pub use attachment::{
-    attachment_chunk_aad, attachment_chunk_nonce, validate_encrypted_object_descriptor,
-    validate_encrypted_object_upload_spec,
+    attachment_chunk_aad, attachment_chunk_nonce, decrypt_attachment_chunk,
+    encrypt_attachment_chunk, validate_encrypted_object_descriptor,
+    validate_encrypted_object_upload_spec, AttachmentCryptoMaterial, EncryptedAttachmentChunk,
 };
 pub use command_outbox::{
     CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, CommandSubmitFailure,
@@ -69,9 +70,9 @@ pub use recovery::{
 };
 pub use send::{DirectSessionBootstrap, SendPreparer, SendTextIntent};
 pub use store::{
-    CommandOutboxEntry, ConversationMessageProjection, ConversationProjection,
-    ConversationStateReceiveCommit, DirectReceiveCommit, DirectSendCommit, MessageProjection,
-    MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
+    AttachmentTransferRecord, CommandOutboxEntry, ConversationMessageProjection,
+    ConversationProjection, ConversationStateReceiveCommit, DirectReceiveCommit, DirectSendCommit,
+    MessageProjection, MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
     MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, MlsTransitionSendCommit,
     PendingMembershipIntent, PendingMessageDraft, PendingMlsKeyPackage, PendingMlsTransitionState,
     PendingPreKeyBundle, PendingSenderProjection, PublicEventReceiveCommit, ReceiveCommitResult,
