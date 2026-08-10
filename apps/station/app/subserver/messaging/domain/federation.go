@@ -9,21 +9,25 @@ import (
 )
 
 const (
-	FederationClockSkewBudget      = time.Minute
-	FederationScope                = "messaging-frame-deliver"
-	EndpointManifestScope          = "messaging-endpoint-manifest-read"
-	AuthorityPrepareScope          = "messaging-authority-prepare"
-	MlsKeyPackageClaimScope        = "messaging-mls-key-package-claim"
-	FederationClaimFrameID         = "frame_id"
-	FederationClaimIdempotencyKey  = "idempotency_key"
-	FederationClaimSourceStationID = "source_station_id"
-	FederationClaimTargetStationID = "target_station_id"
-	FederationClaimActorPTID       = "actor_ptid"
-	FederationClaimConversationID  = "conversation_id"
-	FederationClaimAuthorityPlanID = "authority_plan_id"
-	FederationClaimTargetPTID      = "target_ptid"
-	FederationClaimTargetDeviceID  = "target_device_id"
-	FederationClaimPlanExpiresAt   = "plan_expires_at"
+	FederationClockSkewBudget           = time.Minute
+	FederationScope                     = "messaging-frame-deliver"
+	EndpointManifestScope               = "messaging-endpoint-manifest-read"
+	AuthorityPrepareScope               = "messaging-authority-prepare"
+	MlsKeyPackageClaimScope             = "messaging-mls-key-package-claim"
+	AttachmentTransferScope             = "messaging-attachment-transfer"
+	FederationClaimFrameID              = "frame_id"
+	FederationClaimIdempotencyKey       = "idempotency_key"
+	FederationClaimSourceStationID      = "source_station_id"
+	FederationClaimTargetStationID      = "target_station_id"
+	FederationClaimActorPTID            = "actor_ptid"
+	FederationClaimConversationID       = "conversation_id"
+	FederationClaimAuthorityPlanID      = "authority_plan_id"
+	FederationClaimTargetPTID           = "target_ptid"
+	FederationClaimTargetDeviceID       = "target_device_id"
+	FederationClaimPlanExpiresAt        = "plan_expires_at"
+	FederationClaimDeviceID             = "device_id"
+	FederationClaimAttachmentAction     = "attachment_action"
+	FederationClaimAttachmentResourceID = "attachment_resource_id"
 )
 
 var (

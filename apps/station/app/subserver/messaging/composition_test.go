@@ -11,6 +11,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/infrastructure"
 	"github.com/peers-labs/peers-touch/station/app/subserver/messaging/worker"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"gorm.io/driver/sqlite"
@@ -43,6 +44,12 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	attachmentBlobs, err := infrastructure.NewAttachmentBlobStore(
+		storage.NewLocalBackend(t.TempDir()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	composition, err := NewComposition(CompositionConfig{
 		Database:       db,
 		Clock:          time.Now,
@@ -68,6 +75,10 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 		AuthorityPlanPolicy: application.AuthorityPlanPolicy{
 			ReservationTTL: time.Minute,
 		},
+		AttachmentPolicy: application.AttachmentPolicy{
+			UploadTTL: time.Hour,
+		},
+		AttachmentBlobStore:    attachmentBlobs,
 		FederationDispatcherID: "dispatcher:local",
 		FederationDispatcherPolicy: worker.FederationDispatcherPolicy{
 			BatchSize:     50,
@@ -99,6 +110,7 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 		composition.MlsKeyPackageClaimHandler == nil ||
 		composition.MlsKeyPackageClaimAuth == nil ||
 		composition.RemoteMlsKeyPackageClaimer == nil ||
+		composition.AttachmentService == nil ||
 		composition.FederationDispatcher == nil {
 		t.Fatal("composition omitted a target Messaging Platform owner")
 	}
@@ -113,6 +125,10 @@ func TestCompositionBuildsTargetMessagingGraphWithoutProductionRegistration(t *t
 		&infrastructure.FederationOutboxModel{},
 		&infrastructure.EndpointDirectoryVersionModel{},
 		&infrastructure.FederatedEndpointManifestModel{},
+		&infrastructure.AttachmentUploadModel{},
+		&infrastructure.AttachmentUploadPartModel{},
+		&infrastructure.AttachmentObjectModel{},
+		&infrastructure.AttachmentGrantModel{},
 		&infrastructure.FederatedMlsKeyPackageClaimModel{},
 		&infrastructure.RecoveryRevisionModel{},
 		&touchactor.ActorIdentityRecord{},

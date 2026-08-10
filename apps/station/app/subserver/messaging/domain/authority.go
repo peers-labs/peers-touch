@@ -136,6 +136,7 @@ type AuthorityRepositories struct {
 	EndpointManifests EndpointManifestRepository
 	KeyPackages       MlsKeyPackageRepository
 	Plans             AuthorityPlanRepository
+	Attachments       AttachmentRepository
 }
 
 type AuthorityUnitOfWork interface {

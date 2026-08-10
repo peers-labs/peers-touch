@@ -36,6 +36,9 @@ func (u *AuthorityUnitOfWork) AutoMigrate() error {
 	if err := NewAuthorityPlanRepository(u.db).AutoMigrate(); err != nil {
 		return err
 	}
+	if err := NewAttachmentRepository(u.db).AutoMigrate(); err != nil {
+		return err
+	}
 	if err := NewFederationRepository(u.db).AutoMigrate(); err != nil {
 		return err
 	}
@@ -74,6 +77,7 @@ func (u *AuthorityUnitOfWork) Execute(
 			EndpointManifests: endpointManifests,
 			KeyPackages:       NewMlsKeyPackageStore(tx),
 			Plans:             NewAuthorityPlanRepository(tx),
+			Attachments:       NewAttachmentRepository(tx),
 		})
 	})
 }

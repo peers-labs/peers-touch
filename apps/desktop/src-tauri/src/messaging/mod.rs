@@ -1,3 +1,4 @@
+mod attachment;
 mod command_outbox;
 mod consumer;
 mod conversation_state;
@@ -22,6 +23,10 @@ mod store;
 mod transport;
 mod verification;
 
+pub use attachment::{
+    attachment_chunk_aad, attachment_chunk_nonce, validate_encrypted_object_descriptor,
+    validate_encrypted_object_upload_spec,
+};
 pub use command_outbox::{
     CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, CommandSubmitFailure,
     CommandTransport,
