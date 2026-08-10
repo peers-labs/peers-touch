@@ -1,8 +1,8 @@
 # Messaging Platform — 执行计划
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-08 | **Updated**: 2026-08-08
+> **Version**: v1.1
+> **Created**: 2026-08-08 | **Updated**: 2026-08-10
 > **Owner**: Messaging Platform Team
 
 ---
@@ -85,11 +85,11 @@ MP-W00
 MP-W02 + MP-W03
        └──> MP-W04 ──> MP-W05 ──> MP-W10
               ├────────> MP-W07
-              └────────> MP-W08
+              └────────> MP-W11-R ──> MP-W08
 
 MP-W01 + MP-W03 + MP-W04 ──> MP-W09
 
-W02/W05/W06/W07/W08/W09/W10 ──> MP-W11
+W02/W05/W06/W07/W08/W09/W10 + W11-R ──> MP-W11 final closure
 ```
 
 可并行：
@@ -103,6 +103,29 @@ W02/W05/W06/W07/W08/W09/W10 ──> MP-W11
 - Proto source 与 generated consumer adaptation。
 - 同一 responsibility 的 old/new owner cutover。
 - receive transaction 与 ACK semantics。
+
+### 2026-08-10 Plan Amendment: MP-W11-R Recovery Owner Cutover
+
+Repository and native UI evidence proved that `RecoverySettings` is still gated by the
+legacy `cryptoRuntime` identity bootstrap, while backup encoding, SQLCipher restore,
+fresh-device enrollment and history projection are already owned by the Rust Messaging
+Engine. This leaves W08 dependent on an old owner and violates the accepted single-owner
+architecture.
+
+`MP-W11-R` is therefore moved before W08 as an atomic cutover closure:
+
+1. Messaging Engine identity/projection becomes the only readiness source consumed by
+   Recovery Settings.
+2. Recovery create/status/restore commands resolve only the active profile Engine and
+   its canonical archive.
+3. Legacy crypto identity generation, key-bundle publication and recovery bootstrap
+   callers are deleted from the Recovery UI/runtime path; no fallback remains.
+4. Tree search proves the Recovery surface has zero live dependency on the old owner.
+5. Native high-chat source plus group-chat fresh profile proves happy-path restore and
+   wrong-phrase/corrupt/local-commit-failure zero-partial behavior before W08 can close.
+
+This amendment changes execution order only. It does not change MP-D08, topology,
+contracts, persistence ownership or recovery semantics.
 
 ### Atomic Cutover Groups
 
