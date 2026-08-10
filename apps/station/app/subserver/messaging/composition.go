@@ -27,6 +27,8 @@ type CompositionConfig struct {
 	FederationPolicy             application.FederationPolicy
 	RecoveryPolicy               application.RecoveryPolicy
 	AuthorityPlanPolicy          application.AuthorityPlanPolicy
+	AttachmentPolicy             application.AttachmentPolicy
+	AttachmentBlobStore          domain.AttachmentBlobStore
 	FederationDispatcherID       string
 	FederationDispatcherPolicy   worker.FederationDispatcherPolicy
 	FederationTransport          worker.FederationTransport
@@ -48,6 +50,7 @@ type Composition struct {
 	AuthorityPlanService      *application.AuthorityPlanService
 	AuthorityCommandForwarder *application.AuthorityCommandForwarder
 	MlsKeyPackageClaimService *application.FederatedMlsKeyPackageClaimService
+	AttachmentService         *application.AttachmentService
 
 	CommandHandler             *httpinterface.CommandHandler
 	DeviceHandler              *httpinterface.DeviceHandler
@@ -62,6 +65,9 @@ type Composition struct {
 	MlsKeyPackageClaimHandler  *httpinterface.MlsKeyPackageClaimHandler
 	MlsKeyPackageClaimAuth     server.Wrapper
 	RemoteMlsKeyPackageClaimer *infrastructure.HTTPMlsKeyPackageClaimer
+	AttachmentProxy            *infrastructure.HTTPAttachmentProxy
+	AttachmentFederationAuth   server.Wrapper
+	DeviceDirectory            domain.DeviceDirectory
 
 	FederationDispatcher *worker.FederationDispatcher
 
@@ -78,6 +84,7 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		config.Clock == nil ||
 		config.LocalStationID == "" ||
 		config.PeerKeys == nil ||
+		config.AttachmentBlobStore == nil ||
 		config.FederationTransport == nil ||
 		(config.FederationStationURLResolver == nil && config.FederationRelay == nil) {
 		return nil, fmt.Errorf("messaging: composition dependencies are invalid")
@@ -134,6 +141,15 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	}
 	remoteMlsKeyPackageClaimer, err := infrastructure.NewHTTPMlsKeyPackageClaimer(
 		&http.Client{Timeout: 15 * time.Second},
+		tokenMinter,
+		config.FederationStationURLResolver,
+		config.FederationRelay,
+	)
+	if err != nil {
+		return nil, err
+	}
+	attachmentProxy, err := infrastructure.NewHTTPAttachmentProxy(
+		&http.Client{},
 		tokenMinter,
 		config.FederationStationURLResolver,
 		config.FederationRelay,
@@ -254,6 +270,16 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	if err != nil {
 		return nil, err
 	}
+	attachmentService, err := application.NewAttachmentService(
+		authorityUnitOfWork,
+		config.AttachmentBlobStore,
+		config.LocalStationID,
+		config.AttachmentPolicy,
+		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
 	deviceHandler, err := httpinterface.NewDeviceHandler(deviceService)
 	if err != nil {
 		return nil, err
@@ -320,6 +346,7 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		AuthorityPlanService:       authorityPlanService,
 		AuthorityCommandForwarder:  authorityCommandForwarder,
 		MlsKeyPackageClaimService:  mlsKeyPackageClaimService,
+		AttachmentService:          attachmentService,
 		CommandHandler:             commandHandler,
 		DeviceHandler:              deviceHandler,
 		QueueHandler:               queueHandler,
@@ -329,6 +356,7 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		AuthorityPrepareFetcher:    authorityPrepareFetcher,
 		MlsKeyPackageClaimHandler:  mlsKeyPackageClaimHandler,
 		RemoteMlsKeyPackageClaimer: remoteMlsKeyPackageClaimer,
+		AttachmentProxy:            attachmentProxy,
 		FederationAuth: serverwrapper.RequireFederationToken(
 			domain.FederationScope,
 			config.PeerKeys,
@@ -349,6 +377,12 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 			config.PeerKeys,
 			httpadapter.StaticAudience(config.LocalStationID),
 		),
+		AttachmentFederationAuth: serverwrapper.RequireFederationToken(
+			domain.AttachmentTransferScope,
+			config.PeerKeys,
+			httpadapter.StaticAudience(config.LocalStationID),
+		),
+		DeviceDirectory:      deviceDirectory,
 		FederationDispatcher: federationDispatcher,
 		deviceRepository:     deviceRepository,
 		authorityUnitOfWork:  authorityUnitOfWork,
