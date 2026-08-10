@@ -1,10 +1,8 @@
 package application
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
@@ -17,9 +15,6 @@ type Repository interface {
 	UploadOneTimePreKeys(actorDID, deviceID string, keys []domain.OneTimePreKey) error
 	FetchKeyBundles(actorDID, filterDeviceID string) ([]domain.KeyBundle, error)
 	CountAvailableOPKs(actorDID, deviceID string) (int64, error)
-	PutCryptoBackup(ctx context.Context, ptid string, input domain.NewCryptoBackup) (*domain.CryptoBackupRevision, error)
-	GetLatestCryptoBackup(ctx context.Context, ptid string) (*domain.CryptoBackupRevision, error)
-	ListCryptoBackups(ctx context.Context, ptid string, limit int) ([]domain.CryptoBackupRevision, error)
 }
 
 type Service struct {
@@ -78,45 +73,6 @@ func (s *Service) ReplenishOPKs(actorDID, deviceID string, keys []domain.OneTime
 
 func (s *Service) CountOPKs(actorDID, deviceID string) (int64, error) {
 	return s.repo.CountAvailableOPKs(actorDID, deviceID)
-}
-
-func (s *Service) PutCryptoBackup(
-	ctx context.Context,
-	ptid string,
-	input domain.NewCryptoBackup,
-) (*domain.CryptoBackupRevision, error) {
-	if ptid == "" {
-		return nil, errors.New("authenticated PTID is required")
-	}
-	if err := domain.ValidateNewCryptoBackup(input); err != nil {
-		return nil, err
-	}
-	return s.repo.PutCryptoBackup(ctx, ptid, input)
-}
-
-func (s *Service) GetLatestCryptoBackup(
-	ctx context.Context,
-	ptid string,
-) (*domain.CryptoBackupRevision, error) {
-	if ptid == "" {
-		return nil, errors.New("authenticated PTID is required")
-	}
-	return s.repo.GetLatestCryptoBackup(ctx, ptid)
-}
-
-func (s *Service) ListCryptoBackups(
-	ctx context.Context,
-	ptid string,
-	limit uint32,
-) ([]domain.CryptoBackupRevision, error) {
-	if ptid == "" {
-		return nil, errors.New("authenticated PTID is required")
-	}
-	normalizedLimit := int(limit)
-	if normalizedLimit == 0 || normalizedLimit > domain.BackupRetentionLimit {
-		normalizedLimit = domain.BackupRetentionLimit
-	}
-	return s.repo.ListCryptoBackups(ctx, ptid, normalizedLimit)
 }
 
 func computeFingerprint(ikPub []byte) string {

@@ -75,8 +75,6 @@ func (r *GormRepo) AutoMigrate() error {
 		&IdentityKeyModel{},
 		&SignedPreKeyModel{},
 		&OneTimePreKeyModel{},
-		&CryptoBackupHeadModel{},
-		&CryptoBackupRevisionModel{},
 	); err != nil {
 		return err
 	}

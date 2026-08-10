@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "plan": "docs/architecture/messaging-platform/execution-plans/20260808-messaging-platform.md",
+  "workstreams": {
+    "MP-W00": [
+      "docs/README.md",
+      "docs/architecture/messaging-platform/",
+      "tooling/acceptance/",
+      "tooling/scripts/messaging-platform-",
+      "tooling/scripts/dev-desktop-app.sh"
+    ],
+    "MP-W01": [
+      "model/domain/chat/",
+      "packages/model/",
+      "apps/desktop/src/gen/proto/domain/chat/",
+      "apps/mobile/src/gen/proto/domain/chat/",
+      "apps/station/frame/touch/model/chat/",
+      "apps/desktop/src-tauri/build.rs",
+      "tooling/scripts/proto-gen-mobile.sh"
+    ],
+    "MP-W02": [
+      "apps/station/app/subserver/conversation/",
+      "apps/station/app/subserver/envelope/",
+      "apps/station/app/subserver/key_exchange/",
+      "apps/station/app/subserver/messaging/"
+    ],
+    "MP-W03": [
+      "apps/desktop/src-tauri/src/application/key_exchange/",
+      "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+      "apps/desktop/src-tauri/src/application/crypto/",
+      "apps/desktop/src-tauri/src/domain/crypto/",
+      "apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs",
+      "apps/desktop/src-tauri/src/interface/tauri_commands/crypto.rs",
+      "apps/desktop/src/services/crypto-service.ts",
+      "apps/desktop/src-tauri/src/messaging/"
+    ],
+    "MP-W04": [
+      "apps/desktop/src-tauri/src/messaging/inbox/",
+      "apps/desktop/src-tauri/src/messaging/store/",
+      "apps/desktop/src-tauri/src/interface/tauri_commands/conversation.rs",
+      "apps/desktop/src/runtimes/imRuntime.ts",
+      "apps/desktop/src/runtimes/cryptoRuntime.ts"
+    ],
+    "MP-W05": [
+      "apps/desktop/src/messaging/",
+      "apps/desktop/src/services/im-service.ts",
+      "apps/desktop/src/store/socialChat",
+      "apps/desktop/src/components/chat/",
+      "apps/desktop/src-tauri/src/messaging/outbox/",
+      "apps/desktop/src-tauri/src/messaging/receipt/"
+    ],
+    "MP-W06": [
+      "apps/station/app/subserver/federation/",
+      "apps/station/app/subserver/messaging/infrastructure/federation/"
+    ],
+    "MP-W07": [
+      "apps/desktop/src-tauri/src/interface/tauri_commands/mls.rs",
+      "apps/desktop/src-tauri/src/messaging/mls/",
+      "apps/mobile/src/features/group/",
+      "apps/mobile/src-tauri/src/domain/crypto/sender_keys.rs",
+      "apps/mobile/src-tauri/src/domain/crypto/sender_key_store.rs"
+    ],
+    "MP-W08": [
+      "model/domain/chat/recovery.proto",
+      "apps/desktop/src-tauri/src/interface/tauri_commands/crypto_backup.rs",
+      "apps/desktop/src-tauri/src/messaging/recovery/",
+      "apps/desktop/src/components/settings/RecoverySettings.tsx"
+    ],
+    "MP-W09": [
+      "apps/mobile/"
+    ],
+    "MP-W10": [
+      "apps/desktop/src-tauri/src/messaging/attachment/",
+      "apps/desktop/src-tauri/src/messaging/search/",
+      "apps/desktop/src/services/mediaRuntime.ts"
+    ],
+    "MP-W11": [
+      "docs/architecture/encryption/",
+      "docs/architecture/federated-im/",
+      "docs/architecture/social-runtime/",
+      "docs/architecture/realtime/event-stream.md",
+      "apps/desktop/src/services/desktop_api.ts",
+      "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+      "apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs",
+      "apps/desktop/src-tauri/src/main.rs"
+    ]
+  }
+}

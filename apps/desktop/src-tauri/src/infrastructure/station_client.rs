@@ -183,9 +183,9 @@ pub(crate) fn station_base_url() -> String {
     // Falls back to env var before bootstrap completes or if registry
     // was never set up (e.g. unit tests running without full bootstrap).
     match STATION_REGISTRY.get() {
-        Some(reg) => reg.active_url(),
+        Some(reg) => reg.active_url().unwrap_or_default(),
         None => std::env::var("PEERS_STATION_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:18080".to_string())
+            .unwrap_or_default()
             .trim_end_matches('/')
             .to_string(),
     }
@@ -193,7 +193,7 @@ pub(crate) fn station_base_url() -> String {
 
 pub(crate) fn active_station_peer_id() -> Option<String> {
     let reg = STATION_REGISTRY.get()?;
-    let active = reg.active_url();
+    let active = reg.active_url()?;
     reg.list()
         .into_iter()
         .find(|entry| entry.url.trim_end_matches('/') == active.trim_end_matches('/'))
@@ -583,6 +583,82 @@ where
     Ok(result)
 }
 
+/// Profile-scoped authenticated protobuf call for typed handlers that return
+/// the response message directly. Long-lived runtimes provide their endpoint
+/// explicitly instead of reading the legacy global device header.
+pub(crate) fn request_proto_for_device<Req, Payload>(
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Req>,
+    device_id: &str,
+) -> Result<Payload, StationClientError>
+where
+    Req: Message,
+    Payload: Message + Default,
+{
+    if device_id.trim().is_empty() {
+        return Err(StationClientError::new(
+            StationClientErrorKind::Decode,
+            "profile-scoped request requires device ID",
+            None,
+        ));
+    }
+    let url = format!("{}{}", station_base_url(), path);
+    let start = std::time::Instant::now();
+    let client = build_client()?;
+    let mut req = client
+        .request(method.clone(), &url)
+        .bearer_auth(token)
+        .header("X-Device-ID", device_id);
+    if let Some(q) = query {
+        req = req.query(q);
+    }
+    if let Some(body) = body {
+        req = req
+            .header("Content-Type", "application/protobuf")
+            .body(body.encode_to_vec());
+    } else {
+        req = req.header("Content-Type", "application/protobuf");
+    }
+    let response = req
+        .header("Accept", "application/protobuf")
+        .send()
+        .map_err(|error| {
+            StationClientError::new(
+                StationClientErrorKind::Network,
+                format!("request failed: {error}"),
+                None,
+            )
+        })?;
+    let status = response.status();
+    let bytes = response.bytes().map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("read body failed: {error}"),
+            None,
+        )
+    })?;
+    if !status.is_success() {
+        let body = String::from_utf8_lossy(&bytes).to_string();
+        return Err(build_error_for_status(status.as_u16(), path, &body));
+    }
+    tracing::debug!(
+        path = %path,
+        status = status.as_u16(),
+        elapsed_ms = start.elapsed().as_millis(),
+        "← station OK (profile-scoped proto)"
+    );
+    Payload::decode(bytes.as_ref()).map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("decode proto response failed: {error}"),
+            None,
+        )
+    })
+}
+
 /// POST protobuf without auth (e.g. oauth-bridge). Expects `PeersResponse` wire format.
 pub(crate) fn post_peers_proto_no_auth<Req, Payload>(
     path: &str,
@@ -873,45 +949,6 @@ where
     );
 
     Ok(result)
-}
-
-pub(crate) fn put_crypto_backup(
-    token: &str,
-    request: &crate::model::chat::PutCryptoBackupRequest,
-) -> Result<crate::model::chat::PutCryptoBackupResponse, StationClientError> {
-    request_proto(
-        Method::POST,
-        "/key-exchange/backup/crypto",
-        token,
-        None,
-        Some(request),
-    )
-}
-
-pub(crate) fn get_latest_crypto_backup(
-    token: &str,
-) -> Result<crate::model::chat::GetLatestCryptoBackupResponse, StationClientError> {
-    request_proto::<(), crate::model::chat::GetLatestCryptoBackupResponse>(
-        Method::GET,
-        "/key-exchange/backup/crypto/latest",
-        token,
-        None,
-        None,
-    )
-}
-
-pub(crate) fn list_crypto_backup_revisions(
-    token: &str,
-    limit: u32,
-) -> Result<crate::model::chat::ListCryptoBackupRevisionsResponse, StationClientError> {
-    let query = [("limit", limit.to_string())];
-    request_proto::<(), crate::model::chat::ListCryptoBackupRevisionsResponse>(
-        Method::GET,
-        "/key-exchange/backup/crypto/revisions",
-        token,
-        Some(&query),
-        None,
-    )
 }
 
 /// Authenticated JSON request — minimal helper for OSS subserver
