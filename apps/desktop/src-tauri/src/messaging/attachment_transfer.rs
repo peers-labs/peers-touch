@@ -5,8 +5,9 @@ use super::attachment::{
 use super::{AttachmentTransferRecord, MessagingStore};
 use crate::model::chat::{
     AttachmentTransferState, BeginAttachmentUploadRequest, BeginAttachmentUploadResponse,
-    CompleteAttachmentUploadRequest, CompleteAttachmentUploadResponse, CryptoEndpoint,
-    EncryptedObjectDescriptor, EncryptedObjectUploadSpec, PutAttachmentChunkRequest,
+    CancelAttachmentUploadRequest, CancelAttachmentUploadResponse, CompleteAttachmentUploadRequest,
+    CompleteAttachmentUploadResponse, CryptoEndpoint, EncryptedObjectDescriptor,
+    EncryptedObjectUploadSpec, PutAttachmentChunkRequest,
 };
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
@@ -54,6 +55,8 @@ pub trait AttachmentTransferTransport: Send + Sync {
         start: u64,
         end: u64,
     ) -> Result<Vec<u8>, String>;
+
+    fn cancel_upload(&self, transfer: &AttachmentTransferRecord) -> Result<(), String>;
 }
 
 pub struct AttachmentTransferWorker {
@@ -264,6 +267,35 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
         }
         Self::require_success(response)
     }
+
+    fn cancel_upload(&self, transfer: &AttachmentTransferRecord) -> Result<(), String> {
+        let request = CancelAttachmentUploadRequest {
+            upload_id: transfer.upload_id.clone(),
+            generation: transfer.generation,
+            authority_station_id: transfer.authority_station_id.clone(),
+            conversation_id: transfer.conversation_id.clone(),
+        };
+        let body = Self::require_success(
+            self.request(
+                reqwest::Method::POST,
+                &format!(
+                    "/messaging/attachments/uploads/{}/cancel",
+                    transfer.upload_id
+                ),
+            )
+            .header(CONTENT_TYPE, "application/x-protobuf")
+            .header(ACCEPT, "application/x-protobuf")
+            .body(request.encode_to_vec())
+            .send()
+            .map_err(|error| error.to_string())?,
+        )?;
+        let response = CancelAttachmentUploadResponse::decode(body.as_slice())
+            .map_err(|error| error.to_string())?;
+        if response.state != AttachmentTransferState::Cancelled as i32 {
+            return Err("messaging attachment cancellation state mismatch".to_string());
+        }
+        Ok(())
+    }
 }
 
 impl AttachmentTransferWorker {
@@ -466,6 +498,31 @@ impl AttachmentTransferWorker {
             now_unix_ms,
         )?;
         Ok(true)
+    }
+
+    pub fn cancel(&self, attachment_id: &str, now_unix_ms: i64) -> Result<(), String> {
+        let transfer = self.required_transfer(attachment_id)?;
+        if transfer.state == AttachmentTransferState::Complete as i32 {
+            return Err("messaging attachment completed transfer cannot be cancelled".to_string());
+        }
+        if transfer.state == AttachmentTransferState::Cancelled as i32 {
+            return Ok(());
+        }
+        if !transfer.upload_id.is_empty() {
+            self.transport.cancel_upload(&transfer)?;
+        }
+        discard_partial(&transfer.partial_local_ref)?;
+        self.store.update_attachment_transfer_progress(
+            attachment_id,
+            AttachmentTransferState::Cancelled as i32,
+            &transfer.upload_id,
+            transfer.generation,
+            &transfer.completed_chunk_bitmap,
+            transfer.attempt_count,
+            0,
+            0,
+            now_unix_ms,
+        )
     }
 
     fn required_transfer(&self, attachment_id: &str) -> Result<AttachmentTransferRecord, String> {
@@ -707,6 +764,7 @@ mod tests {
         retain_uploads: bool,
         corrupt_download_once: Mutex<Option<u32>>,
         reject_etag: Mutex<bool>,
+        cancel_calls: Mutex<usize>,
     }
 
     impl MemoryTransport {
@@ -719,6 +777,7 @@ mod tests {
                 retain_uploads: true,
                 corrupt_download_once: Mutex::new(None),
                 reject_etag: Mutex::new(false),
+                cancel_calls: Mutex::new(0),
             }
         }
 
@@ -809,6 +868,11 @@ mod tests {
                 bytes[0] ^= 1;
             }
             Ok(bytes)
+        }
+
+        fn cancel_upload(&self, _transfer: &AttachmentTransferRecord) -> Result<(), String> {
+            *self.cancel_calls.lock().unwrap() += 1;
+            Ok(())
         }
     }
 
@@ -1178,6 +1242,42 @@ mod tests {
                 AttachmentTransferState::Complete as i32
             );
         }
+        let _ = fs::remove_file(source);
+    }
+
+    #[test]
+    fn explicit_cancel_aborts_remote_session_and_persists_terminal_state() {
+        let source = temp_path("cancel-source");
+        let partial = temp_path("cancel-partial");
+        fs::write(&source, vec![1_u8; 1024 * 1024]).unwrap();
+        fs::write(&partial, vec![2_u8; 1024]).unwrap();
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        let mut record = transfer(
+            "cancel-transfer",
+            &source,
+            &partial,
+            1024 * 1024,
+            1024 * 1024,
+        );
+        record.upload_id = "upload-cancel".to_string();
+        record.generation = 7;
+        store.create_attachment_transfer(&record).unwrap();
+        let transport = Arc::new(MemoryTransport::new());
+        let worker = AttachmentTransferWorker::new(store.clone(), transport.clone());
+
+        worker.cancel("cancel-transfer", 10).unwrap();
+        worker.cancel("cancel-transfer", 11).unwrap();
+
+        assert_eq!(*transport.cancel_calls.lock().unwrap(), 1);
+        assert!(!partial.exists());
+        assert_eq!(
+            store
+                .attachment_transfer("cancel-transfer")
+                .unwrap()
+                .unwrap()
+                .state,
+            AttachmentTransferState::Cancelled as i32
+        );
         let _ = fs::remove_file(source);
     }
 
