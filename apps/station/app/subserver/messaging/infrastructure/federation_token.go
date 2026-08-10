@@ -56,6 +56,22 @@ func RegisterMessagingFederationScope() {
 				},
 			},
 		})
+		scope.MustRegister(scope.Scope{
+			Name:        messaging.MlsKeyPackageClaimScope,
+			Description: "irreversibly claim one MLS KeyPackage from its Home Station",
+			Policy: scope.Policy{
+				TTLMax:           time.Minute,
+				AudienceRequired: true,
+				AllowedClaimKeys: []string{
+					messaging.FederationClaimAuthorityPlanID,
+					messaging.FederationClaimTargetPTID,
+					messaging.FederationClaimTargetDeviceID,
+					messaging.FederationClaimPlanExpiresAt,
+					messaging.FederationClaimSourceStationID,
+					messaging.FederationClaimTargetStationID,
+				},
+			},
+		})
 	})
 }
 
@@ -145,6 +161,43 @@ func (m *PeerJWTFederationTokenMinter) MintAuthorityPrepare(
 		TTL:      time.Minute,
 		Custom: map[string]string{
 			messaging.FederationClaimConversationID:  conversationID,
+			messaging.FederationClaimSourceStationID: m.sourceStationID,
+			messaging.FederationClaimTargetStationID: targetStationID,
+		},
+	})
+}
+
+func (m *PeerJWTFederationTokenMinter) MintMlsKeyPackageClaim(
+	ctx context.Context,
+	targetStationID string,
+	request *chat.ClaimFederatedMlsKeyPackageRequest,
+) (string, error) {
+	if targetStationID == "" ||
+		targetStationID == m.sourceStationID ||
+		request == nil ||
+		request.AuthorityPlanId == "" ||
+		request.AuthorityStationId != m.sourceStationID ||
+		request.Target == nil ||
+		request.Target.Ptid == "" ||
+		request.Target.DeviceId == "" ||
+		request.PlanExpiresAt == nil {
+		return "", fmt.Errorf("messaging: MLS KeyPackage claim token binding is invalid")
+	}
+	RegisterMessagingFederationScope()
+	return authfed.Mint(ctx, m.keyCache, authfed.MintRequest{
+		Scope:    messaging.MlsKeyPackageClaimScope,
+		Issuer:   m.sourceStationID,
+		Audience: targetStationID,
+		Subject:  m.sourceStationID,
+		TTL:      time.Minute,
+		Custom: map[string]string{
+			messaging.FederationClaimAuthorityPlanID: request.AuthorityPlanId,
+			messaging.FederationClaimTargetPTID:      request.Target.Ptid,
+			messaging.FederationClaimTargetDeviceID:  request.Target.DeviceId,
+			messaging.FederationClaimPlanExpiresAt: request.PlanExpiresAt.
+				AsTime().
+				UTC().
+				Format(time.RFC3339Nano),
 			messaging.FederationClaimSourceStationID: m.sourceStationID,
 			messaging.FederationClaimTargetStationID: targetStationID,
 		},
