@@ -1,6 +1,7 @@
 package infrastructure_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -174,10 +175,12 @@ func testBatchManifest() *chat.FederatedEndpointManifest {
 				PublicMaterialSha256: [][]byte{materialHash[:]},
 			},
 		},
-		IssuedAt:         timestamppb.New(time.Unix(1_700_000_000, 0).UTC()),
-		ExpiresAt:        timestamppb.New(time.Unix(1_700_000_000, 0).UTC().Add(time.Minute)),
-		SigningKeyId:     "station-key",
-		StationSignature: make([]byte, ed25519.SignatureSize),
+		IssuedAt:               timestamppb.New(time.Unix(1_700_000_000, 0).UTC()),
+		ExpiresAt:              timestamppb.New(time.Unix(1_700_000_000, 0).UTC().Add(time.Minute)),
+		SigningKeyId:           "station-key",
+		StationSignature:       make([]byte, ed25519.SignatureSize),
+		ActorIdentityPublicKey: bytes.Repeat([]byte{1}, ed25519.PublicKeySize),
+		ActorProfileVersion:    1,
 	}
 }
 
