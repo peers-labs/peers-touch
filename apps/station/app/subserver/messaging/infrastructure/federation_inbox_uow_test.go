@@ -214,7 +214,13 @@ func TestFederationIngestAtomicallyWritesOnlyActiveDeviceLanesAndDeduplicates(t 
 		queueRows[0].EventID != "event-1" {
 		t.Fatalf("queue rows = %+v", queueRows)
 	}
-	replay, err := service.Deliver(context.Background(), frame, "station-b", publicKey, now)
+	replay, err := service.Deliver(
+		context.Background(),
+		frame,
+		"station-b",
+		publicKey,
+		now.Add(2*time.Minute),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
