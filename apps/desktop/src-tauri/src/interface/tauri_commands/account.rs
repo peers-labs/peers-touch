@@ -408,10 +408,23 @@ pub fn account_remove_pin(input: AccountRemovePinInput) -> AppResult<StubPayload
 
 #[tauri::command]
 pub fn account_authorize_pin_recovery(
+    state: State<'_, Arc<AppState>>,
     window: Window,
     input: AccountAuthorizePinRecoveryInput,
 ) -> AppResult<StubPayload> {
-    application_account::account_authorize_pin_recovery(&input.recovery_id, &window.label())
+    let Some(session) = state.sessions.get(&window.label()) else {
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "PIN recovery requires a fresh window session",
+            None,
+        );
+    };
+    application_account::account_authorize_pin_recovery(
+        &input.recovery_id,
+        &window.label(),
+        &session.account_id,
+        &session.jwt,
+    )
 }
 
 #[tauri::command]

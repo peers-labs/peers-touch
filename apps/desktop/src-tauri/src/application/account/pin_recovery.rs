@@ -115,3 +115,38 @@ pub enum RecoveryGrantError {
     GrantInvalid,
     AccountMismatch,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authorization_binds_fresh_window_session_to_target_account() {
+        let recovery_id = begin_recovery("main", "account-alice", "password");
+
+        authorize_grant(&recovery_id, "main", "account-alice", "fresh-window-jwt").unwrap();
+
+        assert_eq!(
+            consume_grant(&recovery_id, "main").unwrap(),
+            ("account-alice".to_string(), "fresh-window-jwt".to_string())
+        );
+        assert!(matches!(
+            consume_grant(&recovery_id, "main"),
+            Err(RecoveryGrantError::GrantInvalid)
+        ));
+    }
+
+    #[test]
+    fn authorization_rejects_a_different_account_or_window() {
+        let recovery_id = begin_recovery("main", "account-alice", "password");
+
+        assert!(matches!(
+            authorize_grant(&recovery_id, "main", "account-bob", "bob-jwt"),
+            Err(RecoveryGrantError::AccountMismatch)
+        ));
+        assert!(matches!(
+            authorize_grant(&recovery_id, "settings", "account-alice", "alice-jwt"),
+            Err(RecoveryGrantError::GrantInvalid)
+        ));
+    }
+}
