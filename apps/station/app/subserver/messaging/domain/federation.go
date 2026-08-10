@@ -10,10 +10,14 @@ import (
 
 const (
 	FederationScope                = "messaging-frame-deliver"
+	EndpointManifestScope          = "messaging-endpoint-manifest-read"
+	AuthorityPrepareScope          = "messaging-authority-prepare"
 	FederationClaimFrameID         = "frame_id"
 	FederationClaimIdempotencyKey  = "idempotency_key"
 	FederationClaimSourceStationID = "source_station_id"
 	FederationClaimTargetStationID = "target_station_id"
+	FederationClaimActorPTID       = "actor_ptid"
+	FederationClaimConversationID  = "conversation_id"
 )
 
 var (
@@ -22,6 +26,11 @@ var (
 	ErrFederationFrameConflict    = errors.New("messaging: federation frame idempotency conflict")
 	ErrFederationFrameExpired     = errors.New("messaging: federation frame is expired")
 	ErrFederationDispatcherFenced = errors.New("messaging: federation dispatcher lease is fenced")
+	ErrEndpointManifestInvalid    = errors.New("messaging: endpoint manifest is invalid")
+	ErrEndpointManifestSignature  = errors.New("messaging: endpoint manifest signature is invalid")
+	ErrEndpointManifestExpired    = errors.New("messaging: endpoint manifest is expired")
+	ErrEndpointManifestRollback   = errors.New("messaging: endpoint manifest version rollback")
+	ErrEndpointManifestConflict   = errors.New("messaging: endpoint manifest version conflict")
 )
 
 type FederationOutboxClaim struct {
@@ -35,6 +44,90 @@ type FederationFrameSigner interface {
 		ctx context.Context,
 		frame *chat.MessagingFederationFrame,
 	) error
+}
+
+type EndpointManifestSigner interface {
+	SignEndpointManifest(
+		ctx context.Context,
+		manifest *chat.FederatedEndpointManifest,
+	) error
+}
+
+type LocalEndpointManifestVerifier interface {
+	VerifyLocalEndpointManifest(
+		ctx context.Context,
+		manifest *chat.FederatedEndpointManifest,
+		expectedHomeStationID string,
+		now time.Time,
+	) error
+}
+
+type LocalEndpointManifestVerifyFunc func(
+	ctx context.Context,
+	manifest *chat.FederatedEndpointManifest,
+	expectedHomeStationID string,
+	now time.Time,
+) error
+
+func (fn LocalEndpointManifestVerifyFunc) VerifyLocalEndpointManifest(
+	ctx context.Context,
+	manifest *chat.FederatedEndpointManifest,
+	expectedHomeStationID string,
+	now time.Time,
+) error {
+	return fn(ctx, manifest, expectedHomeStationID, now)
+}
+
+type EndpointManifestResolver interface {
+	ResolveEndpointManifest(
+		ctx context.Context,
+		actorPTID string,
+	) (*chat.FederatedEndpointManifest, error)
+}
+
+type EndpointManifestResolveFunc func(
+	ctx context.Context,
+	actorPTID string,
+) (*chat.FederatedEndpointManifest, error)
+
+func (fn EndpointManifestResolveFunc) ResolveEndpointManifest(
+	ctx context.Context,
+	actorPTID string,
+) (*chat.FederatedEndpointManifest, error) {
+	return fn(ctx, actorPTID)
+}
+
+type RemoteEndpointManifestFetcher interface {
+	FetchEndpointManifest(
+		ctx context.Context,
+		homeStationID string,
+		actorPTID string,
+	) (*chat.FederatedEndpointManifest, error)
+}
+
+type EndpointManifestRepository interface {
+	BuildLocalManifestSnapshot(
+		ctx context.Context,
+		actorPTID string,
+		homeStationID string,
+		now time.Time,
+	) (*chat.FederatedEndpointManifest, error)
+	SaveVerifiedManifest(
+		ctx context.Context,
+		manifest *chat.FederatedEndpointManifest,
+		manifestBytes []byte,
+		manifestSHA256 []byte,
+	) error
+	ListVerifiedManifests(
+		ctx context.Context,
+		actorPTIDs []string,
+		now time.Time,
+	) ([]*chat.FederatedEndpointManifest, error)
+	HomeStationForEndpoint(
+		ctx context.Context,
+		endpoint *chat.CryptoEndpoint,
+		now time.Time,
+	) (string, error)
 }
 
 type FederationFrameSignFunc func(

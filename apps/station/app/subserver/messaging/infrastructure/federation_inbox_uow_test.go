@@ -32,6 +32,22 @@ func (a federationDeviceAccess) IsActiveDevice(
 	return a.active[ptid+"\x00"+deviceID], nil
 }
 
+func (a federationDeviceAccess) HomeStationID(
+	_ context.Context,
+	_ *chat.CryptoEndpoint,
+) (string, error) {
+	return "station-b", nil
+}
+
+type federationAuthorityService struct{}
+
+func (federationAuthorityService) Submit(
+	context.Context,
+	*chat.ChatCommand,
+) (*chat.ConversationEvent, error) {
+	return &chat.ConversationEvent{}, nil
+}
+
 func newFederationInboxFixture(
 	t *testing.T,
 	limits messaging.QueueLimits,
@@ -52,6 +68,21 @@ func newFederationInboxFixture(
 	service, err := application.NewFederationService(
 		uow,
 		devices,
+		federationAuthorityService{},
+		messaging.EndpointManifestResolveFunc(func(
+			context.Context,
+			string,
+		) (*chat.FederatedEndpointManifest, error) {
+			return testBatchManifest(), nil
+		}),
+		messaging.LocalEndpointManifestVerifyFunc(func(
+			context.Context,
+			*chat.FederatedEndpointManifest,
+			string,
+			time.Time,
+		) error {
+			return nil
+		}),
 		application.FederationPolicy{MaxBatchWrites: 100},
 	)
 	if err != nil {
@@ -83,10 +114,15 @@ func signedBatchFrame(
 ) *chat.MessagingFederationFrame {
 	t.Helper()
 	batchBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
-		&chat.FederatedDeviceQueueBatch{Writes: []*chat.FederatedDeviceQueueWrite{
-			federatedWrite("ptid:alice", "active-device"),
-			federatedWrite("ptid:alice", "revoked-device"),
-		}},
+		&chat.FederatedDeviceQueueBatch{
+			Writes: []*chat.FederatedDeviceQueueWrite{
+				federatedWrite("ptid:alice", "active-device"),
+				federatedWrite("ptid:alice", "revoked-device"),
+			},
+			EndpointManifests: []*chat.FederatedEndpointManifest{
+				testBatchManifest(),
+			},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -110,6 +146,39 @@ func signedBatchFrame(
 		t.Fatal(err)
 	}
 	return frame
+}
+
+func testBatchManifest() *chat.FederatedEndpointManifest {
+	materialHash := sha256.Sum256([]byte("device-material"))
+	return &chat.FederatedEndpointManifest{
+		FormatVersion:    application.EndpointManifestFormatVersion,
+		ManifestId:       "manifest-1",
+		ActorPtid:        "ptid:alice",
+		HomeStationId:    "station-b",
+		DirectoryVersion: 1,
+		ActiveEndpoints: []*chat.FederatedEndpointManifestEntry{
+			{
+				Endpoint: &chat.CryptoEndpoint{
+					Ptid:     "ptid:alice",
+					DeviceId: "active-device",
+				},
+				SigningKeyId:         "active-key",
+				PublicMaterialSha256: [][]byte{materialHash[:]},
+			},
+			{
+				Endpoint: &chat.CryptoEndpoint{
+					Ptid:     "ptid:alice",
+					DeviceId: "revoked-device",
+				},
+				SigningKeyId:         "revoked-key",
+				PublicMaterialSha256: [][]byte{materialHash[:]},
+			},
+		},
+		IssuedAt:         timestamppb.New(time.Unix(1_700_000_000, 0).UTC()),
+		ExpiresAt:        timestamppb.New(time.Unix(1_700_000_000, 0).UTC().Add(time.Minute)),
+		SigningKeyId:     "station-key",
+		StationSignature: make([]byte, ed25519.SignatureSize),
+	}
 }
 
 func TestFederationIngestAtomicallyWritesOnlyActiveDeviceLanesAndDeduplicates(t *testing.T) {
