@@ -69,7 +69,7 @@ func (s *FederatedMlsKeyPackageClaimStore) ClaimIrreversibly(
 	}
 	claimedAt = claimedAt.UTC().Truncate(time.Microsecond)
 	expiresAt := request.PlanExpiresAt.AsTime().UTC().Truncate(time.Microsecond)
-	if !expiresAt.After(claimedAt) {
+	if !expiresAt.After(claimedAt.Add(-messaging.FederationClockSkewBudget)) {
 		return nil, messaging.ErrAuthorityPlanExpired
 	}
 
