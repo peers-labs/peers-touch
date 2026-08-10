@@ -26,6 +26,7 @@ enum PreparedEndpointPayloadKind {
   PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_WELCOME = 4;
   PREPARED_ENDPOINT_PAYLOAD_KIND_PUBLIC_EVENT = 5;
   PREPARED_ENDPOINT_PAYLOAD_KIND_CONVERSATION_STATE = 6;
+  PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_RETIREMENT = 7;
 }
 
 // A command payload prepared for exactly one endpoint. The authority validates

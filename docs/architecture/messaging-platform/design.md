@@ -447,6 +447,11 @@ SSE/push wake
 - Fresh MLS endpoint不接收加入前event replay。只有本地无该conversation任何
   head/session/projection/marker，且Welcome、ADD change、snapshot和当前endpoint完全
   绑定时，Engine才可将join event原子安装为首个authority checkpoint。
+- Removed MLS endpoint接收typed retirement payload，在同一个local transaction中删除
+  live MLS state、记录retired checkpoint、推进authority head/cursor/marker并写receipt。
+- 同一有效endpoint重新加入时，Welcome只有与本地retired checkpoint、ADD change和
+  post-state完整绑定，才可跨缺席sequence原子替换MLS state并建立rejoin checkpoint；
+  缺席期间events/plaintext不补发。
 - Join checkpoint之后恢复普通严格连续sequence规则；其他gap进入
   `waiting-for-epoch`且不得ACK。
 - Recovery 恢复 actor identity/history/trust，排除 SPK/OPK、ratchet、MLS live state。

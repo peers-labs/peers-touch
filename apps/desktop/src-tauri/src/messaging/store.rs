@@ -253,6 +253,27 @@ pub struct MlsTransitionReceiveCommit<'a> {
     pub consumed_at_unix_ms: i64,
 }
 
+pub struct MlsRetirementReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub transition_id: &'a str,
+    pub endpoint_ptid: &'a str,
+    pub endpoint_device_id: &'a str,
+    pub membership_epoch: i64,
+    pub mls_epoch: i64,
+    pub projection: &'a ConversationProjection,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
 struct ReceiveCommitCore<'a> {
     item_id: &'a str,
     event_id: &'a str,
@@ -1573,6 +1594,7 @@ impl MessagingStore {
                  DELETE FROM messaging_mls_pending_transitions;
                  DELETE FROM messaging_mls_key_packages;
                  DELETE FROM messaging_mls_join_provider_pool;
+                 DELETE FROM messaging_mls_retired_checkpoints;
                  DELETE FROM messaging_mls_groups;
                  DELETE FROM messaging_mls_actor_identity;
                  DELETE FROM messaging_attachment_metadata;
@@ -2114,7 +2136,15 @@ impl MessagingStore {
                         "INSERT INTO messaging_conversations(
                             conversation_id, kind, name, owner_ptid,
                             membership_epoch, mls_epoch, active, updated_at_unix_ms
-                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)",
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)
+                         ON CONFLICT(conversation_id) DO UPDATE SET
+                            kind=excluded.kind,
+                            name=excluded.name,
+                            owner_ptid=excluded.owner_ptid,
+                            membership_epoch=excluded.membership_epoch,
+                            mls_epoch=excluded.mls_epoch,
+                            active=1,
+                            updated_at_unix_ms=excluded.updated_at_unix_ms",
                         params![
                             projection.conversation_id,
                             projection.kind,
@@ -2124,6 +2154,13 @@ impl MessagingStore {
                             projection.mls_epoch,
                             input.consumed_at_unix_ms
                         ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                transaction
+                    .execute(
+                        "DELETE FROM messaging_conversation_members
+                         WHERE conversation_id = ?1",
+                        params![projection.conversation_id],
                     )
                     .map_err(|error| error.to_string())?;
                 for ptid in &projection.member_ptids {
@@ -2136,6 +2173,13 @@ impl MessagingStore {
                         )
                         .map_err(|error| error.to_string())?;
                 }
+                transaction
+                    .execute(
+                        "DELETE FROM messaging_mls_retired_checkpoints
+                         WHERE conversation_id = ?1",
+                        params![projection.conversation_id],
+                    )
+                    .map_err(|error| error.to_string())?;
             } else {
                 let conversation_changed = transaction
                     .execute(
@@ -2179,6 +2223,118 @@ impl MessagingStore {
         })
     }
 
+    pub fn commit_mls_retirement(
+        &self,
+        input: &MlsRetirementReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        let core = mls_retirement_receive_core(input);
+        validate_receive_core(&core)?;
+        if input.transition_id.trim().is_empty()
+            || input.endpoint_ptid.trim().is_empty()
+            || input.endpoint_device_id.trim().is_empty()
+            || input.event_sequence <= 0
+            || input.membership_epoch <= 0
+            || input.mls_epoch <= 0
+            || input.projection.conversation_id != input.conversation_id
+            || input.projection.membership_epoch != input.membership_epoch
+            || input.projection.mls_epoch != input.mls_epoch
+            || input.projection.member_ptids.is_empty()
+        {
+            return Err("messaging MLS retirement binding is invalid".to_string());
+        }
+        self.commit_receive_core(&core, ReceiveFailPoint::None, |transaction| {
+            transaction
+                .execute(
+                    "DELETE FROM messaging_mls_groups WHERE conversation_id = ?1",
+                    params![input.conversation_id],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "DELETE FROM messaging_mls_pending_transitions
+                     WHERE conversation_id = ?1",
+                    params![input.conversation_id],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "INSERT INTO messaging_mls_retired_checkpoints(
+                        conversation_id, transition_id, event_id,
+                        retirement_sequence, retirement_hash,
+                        endpoint_ptid, endpoint_device_id,
+                        membership_epoch, mls_epoch, retired_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                     ON CONFLICT(conversation_id) DO UPDATE SET
+                        transition_id=excluded.transition_id,
+                        event_id=excluded.event_id,
+                        retirement_sequence=excluded.retirement_sequence,
+                        retirement_hash=excluded.retirement_hash,
+                        endpoint_ptid=excluded.endpoint_ptid,
+                        endpoint_device_id=excluded.endpoint_device_id,
+                        membership_epoch=excluded.membership_epoch,
+                        mls_epoch=excluded.mls_epoch,
+                        retired_at_unix_ms=excluded.retired_at_unix_ms",
+                    params![
+                        input.conversation_id,
+                        input.transition_id,
+                        input.event_id,
+                        input.event_sequence,
+                        input.event_hash,
+                        input.endpoint_ptid,
+                        input.endpoint_device_id,
+                        input.membership_epoch,
+                        input.mls_epoch,
+                        input.consumed_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "INSERT INTO messaging_conversations(
+                        conversation_id, kind, name, owner_ptid,
+                        membership_epoch, mls_epoch, active, updated_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                     ON CONFLICT(conversation_id) DO UPDATE SET
+                        kind=excluded.kind,
+                        name=excluded.name,
+                        owner_ptid=excluded.owner_ptid,
+                        membership_epoch=excluded.membership_epoch,
+                        mls_epoch=excluded.mls_epoch,
+                        active=excluded.active,
+                        updated_at_unix_ms=excluded.updated_at_unix_ms",
+                    params![
+                        input.projection.conversation_id,
+                        input.projection.kind,
+                        input.projection.name,
+                        input.projection.owner_ptid,
+                        input.projection.membership_epoch,
+                        input.projection.mls_epoch,
+                        input.projection.active,
+                        input.consumed_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "DELETE FROM messaging_conversation_members
+                     WHERE conversation_id = ?1",
+                    params![input.conversation_id],
+                )
+                .map_err(|error| error.to_string())?;
+            for ptid in &input.projection.member_ptids {
+                transaction
+                    .execute(
+                        "INSERT INTO messaging_conversation_members(
+                            conversation_id, ptid, active
+                         ) VALUES (?1, ?2, 1)",
+                        params![input.conversation_id, ptid],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        })
+    }
+
     pub fn load_mls_session_state(&self, conversation_id: &str) -> Result<Option<Vec<u8>>, String> {
         self.connection()?
             .query_row(
@@ -2187,6 +2343,19 @@ impl MessagingStore {
                 |row| row.get(0),
             )
             .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn has_mls_retired_checkpoint(&self, conversation_id: &str) -> Result<bool, String> {
+        self.connection()?
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM messaging_mls_retired_checkpoints
+                    WHERE conversation_id = ?1
+                 )",
+                params![conversation_id],
+                |row| row.get(0),
+            )
             .map_err(|error| error.to_string())
     }
 
@@ -2795,6 +2964,27 @@ impl MessagingStore {
         match authority_head {
             Some((sequence, hash))
                 if input.event_sequence == sequence + 1 && input.previous_event_hash == hash => {}
+            Some((sequence, hash))
+                if input.allow_join_checkpoint
+                    && input.event_sequence > sequence
+                    && input.previous_event_hash.len() == 32 =>
+            {
+                let retired: i64 = transaction
+                    .query_row(
+                        "SELECT COUNT(*) FROM messaging_mls_retired_checkpoints
+                         WHERE conversation_id = ?1
+                           AND retirement_sequence = ?2
+                           AND retirement_hash = ?3",
+                        params![input.conversation_id, sequence, hash],
+                        |row| row.get(0),
+                    )
+                    .map_err(|error| error.to_string())?;
+                if retired != 1 {
+                    return Err(
+                        "messaging MLS rejoin checkpoint has no matching retirement".to_string()
+                    );
+                }
+            }
             None if input.event_sequence == 1 && input.previous_event_hash.is_empty() => {}
             None if input.allow_join_checkpoint
                 && input.event_sequence > 1
@@ -3047,6 +3237,27 @@ fn mls_transition_receive_core<'a>(
         previous_event_hash: input.previous_event_hash,
         event_sequence: input.event_sequence,
         allow_join_checkpoint: input.join_projection.is_some(),
+        projection: None,
+        receipt_id: input.receipt_id,
+        receipt_bytes: input.receipt_bytes,
+        consumed_at_unix_ms: input.consumed_at_unix_ms,
+    }
+}
+
+fn mls_retirement_receive_core<'a>(
+    input: &'a MlsRetirementReceiveCommit<'a>,
+) -> ReceiveCommitCore<'a> {
+    ReceiveCommitCore {
+        item_id: input.item_id,
+        event_id: input.event_id,
+        conversation_id: input.conversation_id,
+        lane_sequence: input.lane_sequence,
+        consumer_epoch: input.consumer_epoch,
+        payload_sha256: input.payload_sha256,
+        event_hash: input.event_hash,
+        previous_event_hash: input.previous_event_hash,
+        event_sequence: input.event_sequence,
+        allow_join_checkpoint: false,
         projection: None,
         receipt_id: input.receipt_id,
         receipt_bytes: input.receipt_bytes,
@@ -3579,6 +3790,18 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 membership_epoch INTEGER NOT NULL,
                 mls_epoch INTEGER NOT NULL,
                 updated_at_unix_ms INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS messaging_mls_retired_checkpoints (
+                conversation_id TEXT PRIMARY KEY,
+                transition_id TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                retirement_sequence INTEGER NOT NULL,
+                retirement_hash BLOB NOT NULL CHECK(length(retirement_hash) = 32),
+                endpoint_ptid TEXT NOT NULL,
+                endpoint_device_id TEXT NOT NULL,
+                membership_epoch INTEGER NOT NULL,
+                mls_epoch INTEGER NOT NULL,
+                retired_at_unix_ms INTEGER NOT NULL
              );
              CREATE TABLE IF NOT EXISTS messaging_mls_pending_transitions (
                 conversation_id TEXT PRIMARY KEY,

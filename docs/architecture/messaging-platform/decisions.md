@@ -31,6 +31,7 @@
 | MP-D18 | MLS genesis 与 membership transition 使用短期 authority plan | accepted |
 | MP-D19 | Federation routing 使用签名的短期 endpoint manifest | accepted |
 | MP-D20 | Fresh MLS member 以 join event 建立 authority checkpoint | accepted |
+| MP-D21 | Removed MLS endpoint 使用 retirement/rejoin checkpoint | accepted |
 
 ---
 
@@ -355,6 +356,76 @@ receipt；commit 成功后才 ACK。后续 event 必须从该 join event 严格�
 - restart/replay不重复安装Welcome或projection。
 
 Owner accepted through the standing completion directive on 2026-08-10.
+
+## MP-D21: Removed MLS Endpoint 使用 Retirement/Rejoin Checkpoint
+
+**Status**: accepted
+**Date**: 2026-08-10
+
+### Context
+
+`REMOVE_DEVICE`/`REMOVE_ACTOR`提交后，被移除endpoint仍需消费一个有序authority item，
+才能在durable ACK前退役本地MLS state。当前Station把removed endpoint包装成
+`PUBLIC_EVENT`，Desktop却只能把membership public marker解释为发送端pending-transition
+确认，因此真实REMOVE_DEVICE在removed endpoint失败为
+`messaging MLS sender marker binding mismatch`。
+
+被移除endpoint在缺席期间不会收到group events。若同一仍有效
+`(PTID, device_id)`稍后重新加入，它会收到新的Welcome，但本地保留旧authority head和
+MLS session，不能按普通连续event处理，也不能伪装成MP-D20的empty-store fresh join。
+
+### Decision
+
+新增typed `MLS_RETIREMENT` endpoint payload，禁止继续以`PUBLIC_EVENT`承载removed
+endpoint语义。Payload绑定conversation、event、transition、removed endpoint和
+post-transition snapshot。
+
+Engine只在transition changes明确`REMOVE_ACTOR`或`REMOVE_DEVICE`当前endpoint，且
+post-state不再包含当前endpoint时接受retirement。它在一个SQLCipher transaction中：
+
+- 删除该conversation的live MLS group与pending transition；
+- 写入`retired` checkpoint，包括retirement sequence/hash、epochs和本地endpoint；
+- 更新snapshot-derived conversation/member projection；
+- 推进authority head、lane cursor和consumption marker；
+- 写receipt；commit成功后才ACK。
+
+Retired endpoint不接收缺席期间group events，也不得发送。后续同一endpoint的
+`MLS_WELCOME`只有在transition明确重新添加它、snapshot包含它、完整delivery绑定通过，
+并且本地状态恰好是matching retired checkpoint时，才可作为rejoin checkpoint。Rejoin
+transaction原子替换MLS state/projection/authority head，清除retired checkpoint并ACK。
+缺席期间plaintext/history不补发。
+
+### Rationale
+
+- retirement与sender echo是不同的协议事实，使用不同typed payload；
+- endpoint退出、缺席和rejoin各自有durable local state，不依赖UI推断；
+- 同一有效设备可被正常重新邀请，无需轮换全局device identity；
+- rejoin不泄漏缺席期间历史，未来event重新恢复严格hash-chain continuity。
+
+### Alternatives Considered
+
+- removed endpoint静默丢弃item：拒绝，lane无法ACK且live MLS state仍可误发送。
+- 继续复用`PUBLIC_EVENT`并按endpoint分支：拒绝，保持两个不同语义共用一个wire kind。
+- 永久禁止同一device_id重新加入：拒绝，不符合多设备群聊产品体验。
+- 给removed endpoint补发缺席events：拒绝，违反membership confidentiality和原delivery
+  commitments。
+
+### Consequences
+
+- proto、Station payload builder和portable Engine consumer需要共同新增retirement kind；
+- SQLCipher增加每conversation retired checkpoint；
+- rejoin Welcome可跨越缺席sequence，但仅能从matching retired checkpoint进入；
+- transition或local commit失败保持旧state且不ACK。
+
+### Acceptance
+
+- REMOVE_DEVICE item在removed endpoint原子retire并ACK；
+- removal后的group message不生成该endpoint queue item；
+- 同endpoint ADD_DEVICE Welcome原子rejoin且不恢复缺席plaintext；
+- rejoin后双向exact plaintext、cold restart和后续strict continuity通过；
+- forged retirement/rejoin、错误endpoint、错误snapshot和partial commit全部零ACK。
+
+Owner accepted on 2026-08-10.
 
 ## MP-D18: MLS Genesis 与 Membership Transition 使用短期 Authority Plan
 

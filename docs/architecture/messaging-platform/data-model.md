@@ -442,6 +442,25 @@ PENDING/CLAIMED --terminal--> DEAD_LETTER
 2. marker 存在但 hash 不同：安全错误，进入 dead-letter/diagnostic。
 3. marker 不存在：执行正常 receive transaction。
 
+### 6.1 MLS Endpoint Retirement And Rejoin
+
+```text
+ACTIVE
+  -- MLS_RETIREMENT(REMOVE_ACTOR|REMOVE_DEVICE) -->
+RETIRED(retirement_sequence, retirement_hash, endpoint, epochs)
+  -- MLS_WELCOME(ADD_ACTOR|ADD_DEVICE) -->
+ACTIVE(new_join_sequence, new_join_hash, new MLS state)
+```
+
+`RETIRED` transaction删除live `messaging_mls_groups`和pending transition，但保留
+conversation projection与retired checkpoint。Retired endpoint没有发送资格，也不接收
+缺席期间device-lane items。
+
+Rejoin transaction要求Welcome的local endpoint、ADD change、post-state和本地retired
+checkpoint完全绑定。它原子安装新MLS state、更新projection/authority head、清除retired
+checkpoint并提交marker/cursor/receipt。任何普通非连续event、无retired checkpoint的
+非fresh Welcome或伪造snapshot均fail closed。
+
 ## 7. Retention And Backpressure
 
 - queue batch 和 lease 数量有硬上限；
