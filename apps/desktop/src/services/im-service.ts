@@ -15,6 +15,7 @@ import type {
   MemberSettingsResult,
   CreateGroupConversationResult,
   MlsLeaveIntentView,
+  MessagingServiceContract,
 } from './im-service-contract'
 import { DirectKeyExchangeKind } from './im-service-contract'
 import type {
@@ -877,56 +878,6 @@ const mlsGroupService: MlsGroupServiceContract = {
     return accepted
   },
 
-  async addAuthorizedMember(input) {
-    const prepared = await mlsGroupService.addMember(
-      input.conversationId,
-      input.member,
-    )
-    const welcomeSha256 = await sha256(prepared.welcomeBytes)
-    const transition = create(MembershipTransitionCommandSchema, {
-      transitionId: prepared.transitionId,
-      fromMembershipEpoch: BigInt(input.observedMembershipEpoch),
-      fromMlsEpoch: BigInt(prepared.fromMlsEpoch),
-      toMlsEpoch: BigInt(prepared.toMlsEpoch),
-      changes: [create(MembershipTransitionChangeSchema, {
-        ptid: input.member.ptid,
-        actorHomeStationPeerId: input.member.homeStationPeerId,
-        action: MembershipTransitionAction.ADD,
-        role: MemberRole.MEMBER,
-        deviceId: input.member.deviceId,
-      })],
-      opaqueMlsCommitBytes: prepared.commitBytes,
-      commitSha256: prepared.commitSha256,
-      welcomeDeliveries: [create(MlsWelcomeDeliverySchema, {
-        recipientPtid: input.member.ptid,
-        recipientDeviceId: input.member.deviceId,
-        recipientHomeStationPeerId: input.member.homeStationPeerId,
-        opaqueWelcomeBytes: prepared.welcomeBytes,
-        welcomeSha256,
-      })],
-      idempotencyKey: `membership:${prepared.transitionId}`,
-    })
-    let event: CommittedConversationEvent
-    try {
-      event = await submitAuthorizedMembershipTransition(
-        input.conversationId,
-        input.senderPtid,
-        input.senderDeviceId,
-        input.observedMembershipEpoch,
-        transition,
-      )
-    } catch (error) {
-      await discardRejectedTransition(input.conversationId, error)
-      throw error
-    }
-    await mlsGroupService.acceptPending(input.conversationId, prepared.transitionId)
-    await mlsGroupService.recordAuthorityEvent(
-      toBinary(CommittedConversationEventSchema, event),
-      input.senderDeviceId,
-    )
-    return event
-  },
-
   async addAuthorizedDevice(input) {
     const prepared = await mlsGroupService.addMember(
       input.conversationId,
@@ -953,45 +904,6 @@ const mlsGroupService: MlsGroupServiceContract = {
         opaqueWelcomeBytes: prepared.welcomeBytes,
         welcomeSha256,
       })],
-      idempotencyKey: `membership:${prepared.transitionId}`,
-    })
-    let event: CommittedConversationEvent
-    try {
-      event = await submitAuthorizedMembershipTransition(
-        input.conversationId,
-        input.senderPtid,
-        input.senderDeviceId,
-        input.observedMembershipEpoch,
-        transition,
-      )
-    } catch (error) {
-      await discardRejectedTransition(input.conversationId, error)
-      throw error
-    }
-    await mlsGroupService.acceptPending(input.conversationId, prepared.transitionId)
-    await mlsGroupService.recordAuthorityEvent(
-      toBinary(CommittedConversationEventSchema, event),
-      input.senderDeviceId,
-    )
-    return event
-  },
-
-  async removeAuthorizedMember(input) {
-    const prepared = await mlsGroupService.removeMember(
-      input.conversationId,
-      input.memberPtid,
-    )
-    const transition = create(MembershipTransitionCommandSchema, {
-      transitionId: prepared.transitionId,
-      fromMembershipEpoch: BigInt(input.observedMembershipEpoch),
-      fromMlsEpoch: BigInt(prepared.fromMlsEpoch),
-      toMlsEpoch: BigInt(prepared.toMlsEpoch),
-      changes: [create(MembershipTransitionChangeSchema, {
-        ptid: input.memberPtid,
-        action: MembershipTransitionAction.REMOVE,
-      })],
-      opaqueMlsCommitBytes: prepared.commitBytes,
-      commitSha256: prepared.commitSha256,
       idempotencyKey: `membership:${prepared.transitionId}`,
     })
     let event: CommittedConversationEvent
@@ -1335,6 +1247,7 @@ const dkxService: DirectKeyExchangeServiceContract = {
   async send(
     recipientPtid,
     recipientDeviceId,
+    conversationId,
     sessionId,
     kind,
     opaqueKeyMaterial,
@@ -1347,11 +1260,137 @@ const dkxService: DirectKeyExchangeServiceContract = {
       recipient_ptid: recipientPtid,
       recipient_device_id: recipientDeviceId,
       recipient_station_peer_id: recipientStationPeerId ?? '',
+      conversation_id: conversationId,
       session_id: sessionId,
       kind: kind as number,
       opaque_key_material: bytesToBase64(opaqueKeyMaterial),
     })
     return resp.envelope_id
+  },
+}
+
+const messagingService: MessagingServiceContract = {
+  async createDirect(peerPtid) {
+    const response = await cmd<
+      { peer_ptid: string },
+      { conversation_id: string; state: 'projected' }
+    >('messaging_create_direct', { peer_ptid: peerPtid })
+    return {
+      conversationId: response.conversation_id,
+      state: response.state,
+    }
+  },
+
+  async createGroup(conversationId, name, memberPtids) {
+    const response = await cmd<
+      { conversation_id: string; name: string; member_ptids: string[] },
+      { conversation_id: string; state: 'projected' }
+    >('messaging_create_group', {
+      conversation_id: conversationId,
+      name,
+      member_ptids: memberPtids,
+    })
+    return {
+      conversationId: response.conversation_id,
+      state: response.state,
+    }
+  },
+
+  async submitMembershipIntent(intent) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        action: 'add_actor' | 'remove_actor'
+        target_ptid: string
+      },
+      { command_id: string; state: 'pending' }
+    >('messaging_membership_transition', {
+      conversation_id: intent.conversationId,
+      action: intent.action,
+      target_ptid: intent.targetPtid,
+    })
+    return {
+      commandId: response.command_id,
+      state: response.state,
+    }
+  },
+
+  async listConversations() {
+    const response = await cmd<
+      void,
+      {
+        conversations: Array<{
+          conversation_id: string
+          kind: number
+          name: string
+          owner_ptid: string
+          member_ptids: string[]
+          membership_epoch: number
+          mls_epoch: number
+          active: boolean
+          updated_at_unix_ms: number
+        }>
+      }
+    >('messaging_list_conversations')
+    return response.conversations.map(conversation => ({
+      conversationId: conversation.conversation_id,
+      kind: conversation.kind as 1 | 2,
+      name: conversation.name,
+      ownerPtid: conversation.owner_ptid,
+      memberPtids: conversation.member_ptids,
+      membershipEpoch: conversation.membership_epoch,
+      mlsEpoch: conversation.mls_epoch,
+      active: conversation.active,
+      updatedAtUnixMs: conversation.updated_at_unix_ms,
+    }))
+  },
+
+  async sendText(conversationId, conversationKind, plaintext) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        conversation_kind: 'direct' | 'group'
+        plaintext: string
+      },
+      { command_id: string; message_id: string; state: 'draft' | 'pending' }
+    >('messaging_send_text', {
+      conversation_id: conversationId,
+      conversation_kind: conversationKind,
+      plaintext,
+    })
+    return {
+      commandId: response.command_id,
+      messageId: response.message_id,
+      state: response.state,
+    }
+  },
+
+  async listMessages(conversationId) {
+    const response = await cmd<
+      { conversation_id: string },
+      {
+        messages: Array<{
+          event_id?: string
+          event_sequence?: number
+          message_id: string
+          sender_ptid: string
+          sender_device_id: string
+          plaintext: string
+          state: string
+          timestamp_unix_ms: number
+        }>
+      }
+    >('messaging_list_messages', { conversation_id: conversationId })
+    return response.messages.map(message => ({
+      eventId: message.event_id,
+      eventSequence: message.event_sequence,
+      messageId: message.message_id,
+      senderPtid: message.sender_ptid,
+      senderDeviceId: message.sender_device_id,
+      plaintext: message.plaintext,
+      state: message.state,
+      timestampUnixMs: message.timestamp_unix_ms,
+    }))
   },
 }
 
@@ -1362,6 +1401,7 @@ export const imServiceV1: IMServiceV1 = {
   device: deviceService,
   mlsGroup: mlsGroupService,
   dkx: dkxService,
+  messaging: messagingService,
 }
 
 export { DirectKeyExchangeKind }
