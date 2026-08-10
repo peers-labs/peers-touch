@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -58,6 +59,21 @@ func (s *EndpointManifestService) ResolveEndpointManifest(
 		return nil, err
 	}
 	if homeStationID != s.localStation {
+		cached, cacheErr := s.repository.ListVerifiedManifests(
+			ctx,
+			[]string{actorPTID},
+			s.clock().UTC(),
+		)
+		if cacheErr == nil {
+			if len(cached) != 1 || cached[0].HomeStationId != homeStationID {
+				return nil, messaging.ErrEndpointManifestConflict
+			}
+			return cached[0], nil
+		}
+		if !errors.Is(cacheErr, messaging.ErrEndpointManifestExpired) &&
+			!errors.Is(cacheErr, messaging.ErrNotFound) {
+			return nil, cacheErr
+		}
 		return s.remote.FetchEndpointManifest(ctx, homeStationID, actorPTID)
 	}
 	return s.BuildLocalEndpointManifest(ctx, actorPTID)
