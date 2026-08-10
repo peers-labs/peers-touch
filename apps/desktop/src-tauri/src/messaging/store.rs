@@ -1605,6 +1605,43 @@ impl MessagingStore {
         Ok(())
     }
 
+    pub fn update_attachment_transfer_prepared(
+        &self,
+        attachment_id: &str,
+        descriptor_sha256: &[u8],
+        partial_local_ref: &str,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        if attachment_id.trim().is_empty()
+            || descriptor_sha256.len() != 32
+            || partial_local_ref.trim().is_empty()
+            || updated_at_unix_ms <= 0
+        {
+            return Err("messaging attachment preparation is incomplete".to_string());
+        }
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE messaging_attachment_transfers
+                 SET descriptor_sha256 = ?2,
+                     partial_local_ref = ?3,
+                     updated_at_unix_ms = ?4
+                 WHERE attachment_id = ?1
+                   AND (descriptor_sha256 = zeroblob(32) OR descriptor_sha256 = ?2)",
+                params![
+                    attachment_id,
+                    descriptor_sha256,
+                    partial_local_ref,
+                    updated_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging attachment descriptor commitment changed".to_string());
+        }
+        Ok(())
+    }
+
     pub fn next_due_message_draft(
         &self,
         now_unix_ms: i64,
