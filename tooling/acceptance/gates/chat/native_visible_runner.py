@@ -248,6 +248,30 @@ class NativeObserver:
         self.command({"type": "click", "selector": selector, "timeout_ms": int(timeout * 1000)})
 
     def fill(self, selector: str, text: str, timeout: float = DEFAULT_TIMEOUT) -> None:
+        tag_name = self.eval(
+            f"document.querySelector({json.dumps(selector)})?.tagName||''"
+        )
+        if tag_name == "TEXTAREA":
+            result = self.eval(
+                f"""(()=>{{
+                  const element=document.querySelector({json.dumps(selector)});
+                  if(!(element instanceof HTMLTextAreaElement)) return false;
+                  const setter=Object.getOwnPropertyDescriptor(
+                    HTMLTextAreaElement.prototype,'value'
+                  )?.set;
+                  if(!setter) return false;
+                  setter.call(element,{json.dumps(text)});
+                  element.dispatchEvent(new InputEvent('input',{{
+                    bubbles:true,
+                    inputType:'insertText',
+                    data:{json.dumps(text)}
+                  }}));
+                  element.dispatchEvent(new Event('change',{{bubbles:true}}));
+                  return element.value==={json.dumps(text)};
+                }})()"""
+            )
+            require(result is True, f"observer textarea fill failed for {selector}")
+            return
         self.command(
             {"type": "fill", "selector": selector, "text": text, "timeout_ms": int(timeout * 1000)}
         )
