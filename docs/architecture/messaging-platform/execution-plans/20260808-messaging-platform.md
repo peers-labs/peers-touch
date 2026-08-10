@@ -344,6 +344,10 @@ MP-D21 closure evidence（2026-08-10）：
 - 同endpoint sequence 16 rejoin，缺席sequence 15 plaintext不补发；
 - sequence 17/18双向exact plaintext通过；
 - cold restart保留sequence 17/18并继续exact消费sequence 19。
+- 在REMOVE_DEVICE invoke期间`SIGKILL` Alice Desktop，Station authority保持sequence 23；
+  冷启动/PIN unlock后durable intent自动恢复并只提交sequence 24一次；
+- sequence 24只有一个event、一个command receipt，每recipient只有一个queue item，
+  removed leaf的`left_sequence=24`。
 
 ### MP-W08: Backup And Fresh-Install Recovery
 
@@ -429,7 +433,7 @@ Gate：
 | MP-W04 | in progress | W02/W03 | Real Direct queue decrypt + delivery/session/AAD binding + atomic ratchet/plaintext/marker/cursor/receipt commit + replay-before-decrypt + post-commit ACK + Engine drain/checkpoint resume + explicit device transport/handler tests pass; production activation waits secure per-profile enrollment and W05 cutover |
 | MP-W05 | in progress | W04 | MP-D14/MP-D17 accepted; authenticated send plan + stale fencing + Direct/OpenMLS prepare + durable retry/draft + supersede/reprepare + marker pass; production `/messaging/*` subserver and typed Tauri send/projection surface are registered; Direct/Group create/list and core React text send/load delegate to Engine. Mutations, receipts and remaining frontend/old runtime owners still require cutover |
 | MP-W06 | in progress | W02/W04 + accepted MP-D19 | Signed endpoint manifest/authority routing contracts generated across Go/Rust/Desktop TS/Mobile TS; signed typed frame + verified peer-JWT key evidence + exact inbound claims/frame binding + real auth middleware chain + fenced durable outbox/dispatcher + atomic target inbox/device-lane ingest tests pass; authority producer, manifest service, command forwarding and two-Station native gates pending |
-| MP-W07 | in progress | W02/W03/W04 + accepted MP-D18/MP-D20/MP-D21 | Hidden genesis atomically commits sequence 1/2 and native Alice/Bob projection; add/remove actor with Carol multi-device leaves, durable intent retry, removal cutoff and post-removal exact plaintext pass. MP-D20 fresh join passes native empty-history, hashed checkpoint, bidirectional exact plaintext, independent ACK and cold-restart continuity through sequence 11. MP-D21 ADD_DEVICE/REMOVE_DEVICE/retirement/rejoin passes absence isolation, bidirectional exact plaintext and cold-restart continuity through sequence 19. Transition kill/restart and old-owner deletion remain pending |
+| MP-W07 | completed | W02/W03/W04 + accepted MP-D18/MP-D20/MP-D21 | Hidden genesis, actor/device add/remove, one-device-one-leaf, removal isolation, safe rejoin, bidirectional exact plaintext and cold restart pass. Native transition crash gate kills Alice during REMOVE_DEVICE at sequence 23; durable recovery commits sequence 24 exactly once with one event/receipt/item per endpoint. Legacy owner deletion is tracked separately by MP-W11 |
 | MP-W08 | in progress | W03/W04 + accepted MP-D15/MP-D22 | Canonical Messaging archive hard-cut replaces active legacy command path. Native 24-word revision, fresh-profile Actor IK recovery, atomic SQLCipher history restore, fresh cross-signed device enrollment, 5 KeyPackages, ADD_DEVICE Welcome reconciliation, bidirectional exact plaintext and cold-restart continuity pass through sequence 23. Native wrong-phrase/commit-failure evidence plus attachment/trust product journeys remain pending |
 | MP-W09 | pending | W01/W03/W04 + accepted MP-D16 | Portable shared-core architecture accepted; execution-plan decomposition required before atomic Desktop/Mobile cutover |
 | MP-W10 | pending | W04/W05 | — |
