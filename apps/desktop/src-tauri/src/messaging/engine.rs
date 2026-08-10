@@ -305,6 +305,9 @@ impl MessagingEngine {
         if conversation_id.trim().is_empty() {
             return Err("messaging send plan requires conversation ID".to_string());
         }
+        let authority_station_id = self
+            .store
+            .conversation_authority_station_id(conversation_id)?;
         StationCommandTransport::new(token.to_string(), self.endpoint.device_id.clone())?
             .prepare_send(&PrepareMessagingSendRequest {
                 conversation_id: conversation_id.to_string(),
@@ -312,6 +315,7 @@ impl MessagingEngine {
                     ptid: self.endpoint.ptid.clone(),
                     device_id: self.endpoint.device_id.clone(),
                 }),
+                authority_station_id,
             })
     }
 

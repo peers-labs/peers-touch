@@ -82,6 +82,7 @@ pub struct ConversationMessageProjection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationProjection {
     pub conversation_id: String,
+    pub authority_station_id: String,
     pub kind: i32,
     pub name: String,
     pub owner_ptid: String,
@@ -1276,7 +1277,7 @@ impl MessagingStore {
         let connection = self.connection()?;
         let mut statement = connection
             .prepare(
-                "SELECT conversation_id, kind, name, owner_ptid,
+                "SELECT conversation_id, authority_station_id, kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                  FROM messaging_conversations
                  WHERE active = 1
@@ -1287,13 +1288,14 @@ impl MessagingStore {
             .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
-                    row.get::<_, i32>(1)?,
-                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i32>(2)?,
                     row.get::<_, String>(3)?,
-                    row.get::<_, i64>(4)?,
+                    row.get::<_, String>(4)?,
                     row.get::<_, i64>(5)?,
-                    row.get::<_, bool>(6)?,
-                    row.get::<_, i64>(7)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, bool>(7)?,
+                    row.get::<_, i64>(8)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -1303,6 +1305,7 @@ impl MessagingStore {
             .map(
                 |(
                     conversation_id,
+                    authority_station_id,
                     kind,
                     name,
                     owner_ptid,
@@ -1325,6 +1328,7 @@ impl MessagingStore {
                         .map_err(|error| error.to_string())?;
                     Ok(ConversationProjection {
                         conversation_id,
+                        authority_station_id,
                         kind,
                         name,
                         owner_ptid,
@@ -1339,6 +1343,31 @@ impl MessagingStore {
             .collect()
     }
 
+    pub fn conversation_authority_station_id(
+        &self,
+        conversation_id: &str,
+    ) -> Result<String, String> {
+        if conversation_id.trim().is_empty() {
+            return Err("messaging conversation authority lookup requires ID".to_string());
+        }
+        let authority_station_id = self
+            .connection()?
+            .query_row(
+                "SELECT authority_station_id
+                 FROM messaging_conversations
+                 WHERE conversation_id = ?1 AND active = 1",
+                params![conversation_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging conversation projection is unavailable".to_string())?;
+        if authority_station_id.trim().is_empty() {
+            return Err("messaging conversation authority Station is unavailable".to_string());
+        }
+        Ok(authority_station_id)
+    }
+
     #[cfg(test)]
     pub fn install_test_conversation_projection(
         &self,
@@ -1349,9 +1378,9 @@ impl MessagingStore {
         self.connection()?
             .execute(
                 "INSERT INTO messaging_conversations(
-                    conversation_id, kind, name, owner_ptid,
+                    conversation_id, authority_station_id, kind, name, owner_ptid,
                     membership_epoch, mls_epoch, active, updated_at_unix_ms
-                 ) VALUES (?1, 2, 'test group', 'ptid:alice', ?2, ?3, 1, 1)",
+                 ) VALUES (?1, 'station-local', 2, 'test group', 'ptid:alice', ?2, ?3, 1, 1)",
                 params![conversation_id, membership_epoch, mls_epoch],
             )
             .map_err(|error| error.to_string())?;
@@ -1442,7 +1471,7 @@ impl MessagingStore {
         let connection = self.connection()?;
         let mut conversation_statement = connection
             .prepare(
-                "SELECT conversation_id, kind, name, owner_ptid,
+                "SELECT conversation_id, authority_station_id, kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                  FROM messaging_conversations
                  ORDER BY conversation_id",
@@ -1452,13 +1481,14 @@ impl MessagingStore {
             .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
-                    row.get::<_, i32>(1)?,
-                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i32>(2)?,
                     row.get::<_, String>(3)?,
-                    row.get::<_, i64>(4)?,
+                    row.get::<_, String>(4)?,
                     row.get::<_, i64>(5)?,
-                    row.get::<_, bool>(6)?,
-                    row.get::<_, i64>(7)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, bool>(7)?,
+                    row.get::<_, i64>(8)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -1480,14 +1510,15 @@ impl MessagingStore {
                 .map_err(|error| error.to_string())?;
             conversations.push(RecoveryConversationProjection {
                 conversation_id: row.0,
-                kind: row.1,
-                name: row.2,
-                owner_ptid: row.3,
+                authority_station_id: row.1,
+                kind: row.2,
+                name: row.3,
+                owner_ptid: row.4,
                 member_ptids,
-                membership_epoch: row.4,
-                mls_epoch: row.5,
-                active: row.6,
-                updated_at_unix_ms: row.7,
+                membership_epoch: row.5,
+                mls_epoch: row.6,
+                active: row.7,
+                updated_at_unix_ms: row.8,
             });
         }
         let mut message_statement = connection
@@ -1608,12 +1639,13 @@ impl MessagingStore {
             transaction
                 .execute(
                     "INSERT INTO messaging_conversations(
-                        conversation_id, kind, name, owner_ptid,
+                        conversation_id, authority_station_id, kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms,
                         recovery_ready
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1)",
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1)",
                     params![
                         conversation.conversation_id,
+                        conversation.authority_station_id,
                         conversation.kind,
                         conversation.name,
                         conversation.owner_ptid,
@@ -1906,10 +1938,11 @@ impl MessagingStore {
             transaction
                 .execute(
                     "INSERT INTO messaging_conversations(
-                        conversation_id, kind, name, owner_ptid,
+                        conversation_id, authority_station_id, kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                      ON CONFLICT(conversation_id) DO UPDATE SET
+                        authority_station_id=excluded.authority_station_id,
                         kind=excluded.kind,
                         name=excluded.name,
                         owner_ptid=excluded.owner_ptid,
@@ -1919,6 +1952,7 @@ impl MessagingStore {
                         updated_at_unix_ms=excluded.updated_at_unix_ms",
                     params![
                         input.projection.conversation_id,
+                        input.projection.authority_station_id,
                         input.projection.kind,
                         input.projection.name,
                         input.projection.owner_ptid,
@@ -2135,11 +2169,12 @@ impl MessagingStore {
                 transaction
                     .execute(
                         "INSERT INTO messaging_conversations(
-                            conversation_id, kind, name, owner_ptid,
+                            conversation_id, authority_station_id, kind, name, owner_ptid,
                             membership_epoch, mls_epoch, active, updated_at_unix_ms,
                             recovery_ready
-                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, 0)
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, 0)
                          ON CONFLICT(conversation_id) DO UPDATE SET
+                            authority_station_id=excluded.authority_station_id,
                             kind=excluded.kind,
                             name=excluded.name,
                             owner_ptid=excluded.owner_ptid,
@@ -2150,6 +2185,7 @@ impl MessagingStore {
                             recovery_ready=0",
                         params![
                             projection.conversation_id,
+                            projection.authority_station_id,
                             projection.kind,
                             projection.name,
                             projection.owner_ptid,
@@ -2239,6 +2275,7 @@ impl MessagingStore {
             || input.membership_epoch <= 0
             || input.mls_epoch <= 0
             || input.projection.conversation_id != input.conversation_id
+            || input.projection.authority_station_id.trim().is_empty()
             || input.projection.membership_epoch != input.membership_epoch
             || input.projection.mls_epoch != input.mls_epoch
             || input.projection.member_ptids.is_empty()
@@ -2294,10 +2331,11 @@ impl MessagingStore {
             transaction
                 .execute(
                     "INSERT INTO messaging_conversations(
-                        conversation_id, kind, name, owner_ptid,
+                        conversation_id, authority_station_id, kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                      ON CONFLICT(conversation_id) DO UPDATE SET
+                        authority_station_id=excluded.authority_station_id,
                         kind=excluded.kind,
                         name=excluded.name,
                         owner_ptid=excluded.owner_ptid,
@@ -2307,6 +2345,7 @@ impl MessagingStore {
                         updated_at_unix_ms=excluded.updated_at_unix_ms",
                     params![
                         input.projection.conversation_id,
+                        input.projection.authority_station_id,
                         input.projection.kind,
                         input.projection.name,
                         input.projection.owner_ptid,
@@ -3308,6 +3347,7 @@ fn validate_conversation_state_receive(
     validate_receive_core(&conversation_state_receive_core(input))?;
     let projection = input.projection;
     if projection.conversation_id != input.conversation_id
+        || projection.authority_station_id.trim().is_empty()
         || projection.kind == 0
         || projection.owner_ptid.trim().is_empty()
         || projection.member_ptids.len() < 2
@@ -3728,6 +3768,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
              );
              CREATE TABLE IF NOT EXISTS messaging_conversations (
                 conversation_id TEXT PRIMARY KEY,
+                authority_station_id TEXT NOT NULL,
                 kind INTEGER NOT NULL,
                 name TEXT NOT NULL,
                 owner_ptid TEXT NOT NULL,
@@ -3973,13 +4014,26 @@ fn migrate(connection: &Connection) -> Result<(), String> {
              );",
         )
         .map_err(|error| error.to_string())?;
-    let has_recovery_ready = connection
+    let conversation_columns = connection
         .prepare("PRAGMA table_info(messaging_conversations)")
         .map_err(|error| error.to_string())?
         .query_map([], |row| row.get::<_, String>(1))
         .map_err(|error| error.to_string())?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+    let has_authority_station_id = conversation_columns
+        .iter()
+        .any(|column| column == "authority_station_id");
+    if !has_authority_station_id {
+        connection
+            .execute(
+                "ALTER TABLE messaging_conversations
+                 ADD COLUMN authority_station_id TEXT NOT NULL DEFAULT ''",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    let has_recovery_ready = conversation_columns
         .iter()
         .any(|column| column == "recovery_ready");
     if !has_recovery_ready {
@@ -4071,6 +4125,7 @@ mod tests {
             actor_profile_version: 3,
             conversations: vec![RecoveryConversationProjection {
                 conversation_id: "restored-conversation".to_string(),
+                authority_station_id: "station-local".to_string(),
                 kind: 1,
                 name: String::new(),
                 owner_ptid: "ptid:alice".to_string(),
