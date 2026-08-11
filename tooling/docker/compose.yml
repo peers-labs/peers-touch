@@ -55,6 +55,9 @@ services:
     profiles: [station]
     environment:
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
+      # Canonical Station-owned durable files, including Messaging attachment
+      # blobs, must resolve inside the named peers_data volume.
+      PEERS_DATA_DIR: /app/data
       # DSN points at the project's bridge-internal postgres service. Never
       # at the host. POSTGRES_DB / PEERS_DB_PASSWORD come from .env.<project>.
       PEERS_DB_DSN: host=postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_touch} port=5432 sslmode=disable TimeZone=Asia/Shanghai
@@ -159,6 +162,7 @@ services:
     profiles: [relay]
     environment:
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
+      PEERS_DATA_DIR: /app/data
       PEERS_DB_DSN: host=postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_relay} port=5432 sslmode=disable TimeZone=Asia/Shanghai
       PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH: /app/data/oss
       # The Relay itself is the federation seed; it does not chase any

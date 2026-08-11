@@ -2501,7 +2501,12 @@ mod tests {
             assert!(matches!(
                 progress,
                 AttachmentTransferProgress::RetryScheduled { .. }
-            ));
+            ), "restart preparation progress={progress:?} state={} error_code={} bitmap={:?} has_upload_id={}",
+                persisted.state,
+                persisted.last_error_code,
+                persisted.completed_chunk_bitmap,
+                !persisted.upload_id.is_empty(),
+            );
             assert_eq!(persisted.state, AttachmentTransferState::RetryWait as i32);
             assert_eq!(persisted.completed_chunk_bitmap, vec![1]);
             assert!(!persisted.upload_id.is_empty());
