@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -105,6 +106,7 @@ func (s *AttachmentService) Begin(
 		UpdatedAt:                  now,
 	}
 	var persisted *messaging.AttachmentUpload
+	var inserted bool
 	err = s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
 		conversation, err := repositories.Authority.LockConversation(ctx, request.ConversationId)
 		if err != nil {
@@ -127,12 +129,34 @@ func (s *AttachmentService) Begin(
 		if !active {
 			return messaging.ErrSenderUnauthorized
 		}
-		persisted, _, err = repositories.Attachments.CreateUpload(ctx, upload)
-		return err
+		persisted, inserted, err = repositories.Attachments.CreateUpload(ctx, upload)
+		if err != nil {
+			return err
+		}
+		return repositories.Attachments.AppendAudit(ctx, messaging.AttachmentAuditRecord{
+			AuditID:        uuid.NewString(),
+			Action:         messaging.AttachmentAuditBegin,
+			Outcome:        attachmentAuditOutcome(inserted),
+			ConversationID: persisted.ConversationID,
+			MessageID:      persisted.MessageID,
+			AttachmentID:   persisted.AttachmentID,
+			UploadID:       persisted.UploadID,
+			ActorPTID:      authenticated.Ptid,
+			DeviceID:       authenticated.DeviceId,
+			ByteCount:      persisted.Object.CiphertextSize,
+			CreatedAt:      now,
+		})
 	})
 	if err != nil {
 		return nil, err
 	}
+	logAttachmentLifecycle(
+		ctx,
+		messaging.AttachmentAuditBegin,
+		attachmentAuditOutcome(inserted),
+		persisted.Object.CiphertextSize,
+		0,
+	)
 	return beginUploadResponse(persisted, s.localStationID), nil
 }
 
@@ -258,18 +282,41 @@ func (s *AttachmentService) PutChunk(
 		}
 		bitmap = append([]byte(nil), locked.ReceivedChunkBitmap...)
 		setChunkReceived(bitmap, request.ChunkIndex)
-		return repositories.Attachments.SetUploadBitmap(
+		if err := repositories.Attachments.SetUploadBitmap(
 			ctx,
 			request.UploadId,
 			request.Generation,
 			bitmap,
 			s.clock().UTC(),
-		)
+		); err != nil {
+			return err
+		}
+		return repositories.Attachments.AppendAudit(ctx, messaging.AttachmentAuditRecord{
+			AuditID:        uuid.NewString(),
+			Action:         messaging.AttachmentAuditPart,
+			Outcome:        attachmentAuditOutcome(!duplicate),
+			ConversationID: locked.ConversationID,
+			MessageID:      locked.MessageID,
+			AttachmentID:   locked.AttachmentID,
+			UploadID:       locked.UploadID,
+			ActorPTID:      authenticated.Ptid,
+			DeviceID:       authenticated.DeviceId,
+			ChunkIndex:     request.ChunkIndex,
+			ByteCount:      request.CiphertextSize,
+			CreatedAt:      s.clock().UTC(),
+		})
 	})
 	if err != nil {
 		_ = s.blobs.Delete(ctx, storageKey)
 		return nil, err
 	}
+	logAttachmentLifecycle(
+		ctx,
+		messaging.AttachmentAuditPart,
+		attachmentAuditOutcome(!duplicate),
+		request.CiphertextSize,
+		request.ChunkIndex,
+	)
 	return &chat.PutAttachmentChunkResponse{
 		ChunkIndex:          request.ChunkIndex,
 		Duplicate:           duplicate,
@@ -311,7 +358,23 @@ func (s *AttachmentService) Complete(
 		}
 		if upload.State == chat.AttachmentTransferState_ATTACHMENT_TRANSFER_STATE_COMPLETE {
 			existing, err = repositories.Attachments.GetObject(ctx, upload.ObjectID)
-			return err
+			if err != nil {
+				return err
+			}
+			return repositories.Attachments.AppendAudit(ctx, messaging.AttachmentAuditRecord{
+				AuditID:        uuid.NewString(),
+				Action:         messaging.AttachmentAuditComplete,
+				Outcome:        messaging.AttachmentAuditOutcomeReplay,
+				ConversationID: upload.ConversationID,
+				MessageID:      upload.MessageID,
+				AttachmentID:   upload.AttachmentID,
+				UploadID:       upload.UploadID,
+				ObjectID:       existing.Descriptor.ObjectId,
+				ActorPTID:      authenticated.Ptid,
+				DeviceID:       authenticated.DeviceId,
+				ByteCount:      existing.Descriptor.CiphertextSize,
+				CreatedAt:      s.clock().UTC(),
+			})
 		}
 		if upload.State != chat.AttachmentTransferState_ATTACHMENT_TRANSFER_STATE_TRANSFERRING {
 			return messaging.ErrAttachmentState
@@ -329,6 +392,13 @@ func (s *AttachmentService) Complete(
 		return nil, err
 	}
 	if existing != nil {
+		logAttachmentLifecycle(
+			ctx,
+			messaging.AttachmentAuditComplete,
+			messaging.AttachmentAuditOutcomeReplay,
+			existing.Descriptor.CiphertextSize,
+			0,
+		)
 		return &chat.CompleteAttachmentUploadResponse{
 			Object:    proto.Clone(existing.Descriptor).(*chat.EncryptedObjectDescriptor),
 			Duplicate: true,
@@ -372,13 +442,29 @@ func (s *AttachmentService) Complete(
 		if !bytes.Equal(locked.DescriptorCommitmentSHA256, upload.DescriptorCommitmentSHA256) {
 			return messaging.ErrAttachmentConflict
 		}
-		return repositories.Attachments.CompleteUpload(
+		if err := repositories.Attachments.CompleteUpload(
 			ctx,
 			upload.UploadID,
 			upload.Generation,
 			object,
 			s.clock().UTC(),
-		)
+		); err != nil {
+			return err
+		}
+		return repositories.Attachments.AppendAudit(ctx, messaging.AttachmentAuditRecord{
+			AuditID:        uuid.NewString(),
+			Action:         messaging.AttachmentAuditComplete,
+			Outcome:        messaging.AttachmentAuditOutcomeCommitted,
+			ConversationID: upload.ConversationID,
+			MessageID:      upload.MessageID,
+			AttachmentID:   upload.AttachmentID,
+			UploadID:       upload.UploadID,
+			ObjectID:       descriptor.ObjectId,
+			ActorPTID:      authenticated.Ptid,
+			DeviceID:       authenticated.DeviceId,
+			ByteCount:      descriptor.CiphertextSize,
+			CreatedAt:      s.clock().UTC(),
+		})
 	})
 	if err != nil {
 		_ = s.blobs.Delete(ctx, storageKey)
@@ -387,6 +473,13 @@ func (s *AttachmentService) Complete(
 	for _, part := range parts {
 		_ = s.blobs.Delete(ctx, part.StorageKey)
 	}
+	logAttachmentLifecycle(
+		ctx,
+		messaging.AttachmentAuditComplete,
+		messaging.AttachmentAuditOutcomeCommitted,
+		descriptor.CiphertextSize,
+		0,
+	)
 	return &chat.CompleteAttachmentUploadResponse{Object: descriptor}, nil
 }
 
@@ -414,16 +507,37 @@ func (s *AttachmentService) Cancel(
 		if upload.ConversationID != request.ConversationId {
 			return messaging.ErrAttachmentConflict
 		}
-		return repositories.Attachments.CancelUpload(
+		if err := repositories.Attachments.CancelUpload(
 			ctx,
 			request.UploadId,
 			request.Generation,
 			s.clock().UTC(),
-		)
+		); err != nil {
+			return err
+		}
+		return repositories.Attachments.AppendAudit(ctx, messaging.AttachmentAuditRecord{
+			AuditID:        uuid.NewString(),
+			Action:         messaging.AttachmentAuditCancel,
+			Outcome:        messaging.AttachmentAuditOutcomeCommitted,
+			ConversationID: upload.ConversationID,
+			MessageID:      upload.MessageID,
+			AttachmentID:   upload.AttachmentID,
+			UploadID:       upload.UploadID,
+			ActorPTID:      authenticated.Ptid,
+			DeviceID:       authenticated.DeviceId,
+			CreatedAt:      s.clock().UTC(),
+		})
 	})
 	if err != nil {
 		return nil, err
 	}
+	logAttachmentLifecycle(
+		ctx,
+		messaging.AttachmentAuditCancel,
+		messaging.AttachmentAuditOutcomeCommitted,
+		0,
+		0,
+	)
 	return &chat.CancelAttachmentUploadResponse{
 		State: chat.AttachmentTransferState_ATTACHMENT_TRANSFER_STATE_CANCELLED,
 	}, nil
@@ -506,7 +620,82 @@ func (s *AttachmentService) OpenGrantedObject(
 		_ = reader.Close()
 		return nil, nil, 0, messaging.ErrAttachmentConflict
 	}
+	if err := s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+		return repositories.Attachments.AppendAudit(ctx, messaging.AttachmentAuditRecord{
+			AuditID:        uuid.NewString(),
+			Action:         messaging.AttachmentAuditDownload,
+			Outcome:        messaging.AttachmentAuditOutcomeCommitted,
+			ConversationID: request.ConversationId,
+			MessageID:      object.MessageID,
+			AttachmentID:   object.AttachmentID,
+			ObjectID:       object.Descriptor.ObjectId,
+			EventID:        object.EventID,
+			ActorPTID:      recipient.Ptid,
+			DeviceID:       recipient.DeviceId,
+			ByteCount:      uint64(end - start + 1),
+			CreatedAt:      s.clock().UTC(),
+		})
+	}); err != nil {
+		_ = reader.Close()
+		return nil, nil, 0, err
+	}
+	logAttachmentLifecycle(
+		ctx,
+		messaging.AttachmentAuditDownload,
+		messaging.AttachmentAuditOutcomeCommitted,
+		uint64(end-start+1),
+		0,
+	)
 	return object, reader, totalSize, nil
+}
+
+func (s *AttachmentService) MetricsSnapshot(
+	ctx context.Context,
+) (*messaging.AttachmentMetricsSnapshot, error) {
+	var snapshot *messaging.AttachmentMetricsSnapshot
+	err := s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+		var err error
+		snapshot, err = repositories.Attachments.MetricsSnapshot(ctx)
+		return err
+	})
+	return snapshot, err
+}
+
+func (s *AttachmentService) PublishMetrics(ctx context.Context) error {
+	snapshot, err := s.MetricsSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	publishAttachmentMetricSnapshot(snapshot)
+	return nil
+}
+
+func attachmentAuditOutcome(inserted bool) string {
+	if inserted {
+		return messaging.AttachmentAuditOutcomeCommitted
+	}
+	return messaging.AttachmentAuditOutcomeReplay
+}
+
+func logAttachmentLifecycle(
+	ctx context.Context,
+	action string,
+	outcome string,
+	byteCount uint64,
+	chunkIndex uint32,
+) {
+	slog.InfoContext(
+		ctx,
+		"messaging attachment lifecycle",
+		"action",
+		action,
+		"outcome",
+		outcome,
+		"byte_count",
+		byteCount,
+		"chunk_index",
+		chunkIndex,
+	)
 }
 
 func AttachmentUploadCommitment(
