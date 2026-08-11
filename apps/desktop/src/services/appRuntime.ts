@@ -13,8 +13,6 @@ import { appletsRuntime } from '../runtimes/appletsRuntime';
 import { momentsRuntime } from '../runtimes/momentsRuntime';
 import { agentCapabilityRuntime } from '../runtimes/agentCapabilityRuntime';
 import { agentTopicRuntime } from '../runtimes/agentTopicRuntime';
-import { cryptoRuntime } from '../runtimes/cryptoRuntime';
-import { imRuntime } from '../runtimes/imRuntime';
 import { messagingRecoveryRuntime } from '../runtimes/messagingRecoveryRuntime';
 import { log } from '../utils/logger';
 
@@ -35,8 +33,6 @@ function registerKernelRuntimes(): void {
   registerRuntime(momentsRuntime);
   registerRuntime(agentCapabilityRuntime);
   registerRuntime(agentTopicRuntime);
-  registerRuntime(cryptoRuntime);
-  registerRuntime(imRuntime);
   registerRuntime(messagingRecoveryRuntime);
 }
 
@@ -119,8 +115,6 @@ export function teardownAppRuntime(): void {
   teardownRuntime(momentsRuntime.id);
   teardownRuntime(agentCapabilityRuntime.id);
   teardownRuntime(agentTopicRuntime.id);
-  teardownRuntime(imRuntime.id);
-  teardownRuntime(cryptoRuntime.id);
   teardownRuntime(messagingRecoveryRuntime.id);
   teardownMediaRuntime();
   teardownNavigationBadgeProjection();

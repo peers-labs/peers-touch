@@ -20,7 +20,7 @@ import type {
 } from '../kernel/events/types';
 import { useMediaRuntimeStore } from './mediaRuntime';
 import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
-import { api, type NotificationData } from './desktop_api';
+import { type NotificationData } from './desktop_api';
 import {
   FriendChatMessageSchema,
   type FriendChatMessage,
@@ -36,8 +36,6 @@ import { log } from '../utils/logger';
 
 const TYPING_TTL_MS = 6_000;
 const TYPING_SWEEP_INTERVAL_MS = 1_500;
-const COLD_SYNC_LIMIT = 50;
-const COLD_SYNC_MAX_PAGES = 2;
 const SOCIAL_RECONCILE_INTERVAL_MS = 30_000;
 const EXTERNAL_HOST_RECONCILE_DEBOUNCE_MS = 1_000;
 const GROUP_FEDERATION_REFRESH_DEBOUNCE_MS = 250;
@@ -262,7 +260,6 @@ function isVisibleConversation(
 
 async function refreshFriendMessage(payload: RealtimeMessageReceivedPayload, shouldLoadMessages: boolean): Promise<void> {
   const store = useSocialChatStore.getState();
-  await api.friendChatSync(payload.sessionUlid, COLD_SYNC_LIMIT, 1);
   if (shouldLoadMessages) {
     await store.loadMessages(payload.sessionUlid, 'friend');
   }
@@ -272,7 +269,6 @@ async function refreshFriendMessage(payload: RealtimeMessageReceivedPayload, sho
 
 async function refreshGroupMessage(groupUlid: string, shouldLoadMessages: boolean): Promise<void> {
   const store = useSocialChatStore.getState();
-  await api.groupChatSync(groupUlid, COLD_SYNC_LIMIT, 1);
   if (shouldLoadMessages) {
     await store.loadMessages(groupUlid, 'group');
     await store.markGroupRead(groupUlid);
@@ -482,21 +478,8 @@ function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
 }
 
 async function syncKnownConversations(): Promise<void> {
-  const store = useSocialChatStore.getState();
-  const sessions = store.sessions.slice();
-  const groups = store.groups.slice();
-
-  for (const session of sessions) {
-    await api.friendChatSync(session.ulid, COLD_SYNC_LIMIT, COLD_SYNC_MAX_PAGES).catch((error) => {
-      log.warn('socialRealtime', 'friend cold sync failed', { sessionUlid: session.ulid, error });
-    });
-  }
-
-  for (const group of groups) {
-    await api.groupChatSync(group.ulid, COLD_SYNC_LIMIT, COLD_SYNC_MAX_PAGES).catch((error) => {
-      log.warn('socialRealtime', 'group cold sync failed', { groupUlid: group.ulid, error });
-    });
-  }
+  // Engine lifecycle worker drains from Station automatically at startup.
+  // No legacy sync needed — UI reads from Engine projection.
 }
 
 async function executeColdResync(payload: RealtimeResyncPayload): Promise<void> {

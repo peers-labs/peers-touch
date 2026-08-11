@@ -408,6 +408,11 @@ export function SearchMessagesModal({
                   return (
                     <Flexbox
                       key={`${r.scope}-${r.conversationId}-${r.messageId}`}
+                      data-messaging-search-result
+                      data-messaging-search-conversation-id={r.conversationId}
+                      data-messaging-search-message-id={r.messageId}
+                      data-messaging-search-scope={r.scope}
+                      data-messaging-search-kind={kind}
                       horizontal
                       align="flex-start"
                       gap={10}

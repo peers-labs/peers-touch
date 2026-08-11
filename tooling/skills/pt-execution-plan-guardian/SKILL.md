@@ -40,8 +40,21 @@ For architecture-level or cross-layer work:
 - Code reality invalidates plan inventory/dependencies but not architecture ->
   `PLAN_AMENDMENT_REQUIRED`.
 
-Stop and route to the owning skill. Do not repair DESIGN or PLAN inside an
-execution turn.
+### Amendment Escalation Rules
+
+**Hard stop (requires user/architect input):**
+- `EXECUTION_BLOCKED_BY_PRODUCT` — no product contract exists.
+- `EXECUTION_BLOCKED_BY_DESIGN` — no accepted architecture exists.
+- `DESIGN_AMENDMENT_REQUIRED` — execution reveals undefined semantics.
+- `PRODUCT_AMENDMENT_REQUIRED` — execution reveals undefined journeys/states.
+
+**Self-amend and continue (no user confirmation needed):**
+- `EXECUTION_BLOCKED_BY_PLAN` — when architecture IS accepted (design doc defines it, proto contracts exist) but no workstream tracks it. The agent adds the workstream entry to the plan, then proceeds.
+- `PLAN_AMENDMENT_REQUIRED` — when the architecture remains valid and the amendment is mechanical (inventory update, dependency reorder, new deliverable for already-designed capability). The agent updates the plan inline and continues execution.
+
+**Rationale**: If the architecture source already covers the work (design.md defines the contracts, proto files implement them), blocking on user confirmation for a plan bookkeeping entry adds latency without reducing risk. The agent is capable of writing a workstream entry. What it is NOT capable of is inventing architecture — that's where the hard stops apply.
+
+The agent must still **document what it self-amended** in its progress report so the user can audit the change.
 
 ## Invoke When
 
@@ -260,8 +273,11 @@ readiness document instead of a free-form claim.
 Never:
 
 - Execute an architecture migration from `design.md` alone.
-- Author missing architecture decisions or execution-plan phases while coding.
-- Continue after `DESIGN_AMENDMENT_REQUIRED` or `PLAN_AMENDMENT_REQUIRED`.
+- Author missing architecture decisions while coding.
+- Continue after `DESIGN_AMENDMENT_REQUIRED` or `PRODUCT_AMENDMENT_REQUIRED`
+  (these are hard stops — user/architect must resolve them).
+- Self-amend the plan in ways that change architecture boundaries, ownership,
+  contracts, or acceptance gates (that's design, not plan bookkeeping).
 - Say "Phase 3 completed" without specifying which plan owns Phase 3.
 - Use a local task phase name that collides with a formal plan phase without
   clarification.

@@ -1,7 +1,7 @@
 # Messaging Platform — 集成与原子切换
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-08-08 | **Updated**: 2026-08-10
 > **Owner**: Messaging Platform Team
 
@@ -49,6 +49,7 @@ new contract/owner ready
 | Group crypto | OpenMLS engine | MLS journey gate passes | Sender Keys/Megolm zero |
 | Group membership | Station authority plan + Engine logical intent | D18 accepted；genesis/add/remove/restart gates pass | Web KeyPackage/epoch/MLS transition orchestration zero |
 | Recovery | Engine + opaque repository | fresh-install gate passes | local-only backup assumptions zero |
+| Attachment transfer | Authority transfer service + Engine checkpoint | D23-D25 accepted；native offline/restart/recovery gates pass | legacy chat OSS ACL/send/search paths zero |
 | UI projection | messaging runtime/store | native visible gates pass | decode/ACK/network retry in UI zero |
 | Mobile | same contract/engine responsibilities | parity and native build gates pass | friend/group old send/ACK zero |
 | Docs | Messaging Platform set | all current links point here | conflicting current-source claims zero |
@@ -135,6 +136,49 @@ signed Home Station endpoint manifests
 
 不能把现有outbox/dispatcher单测当成跨Station能力证明；必须有authority producer、
 Home Station route truth、target ingest和两个独立数据库的native receiver evidence。
+
+### 3.4 Attachment Data-Plane Cutover
+
+> `MP-D23`–`MP-D25` amendment status: accepted (Owner accepted 2026-08-10).
+
+```text
+canonical attachment proto + transfer/grant contracts
+  -> Authority transfer service owns opaque object sessions and grants
+  -> Home Station exposes only signed streaming proxy
+  -> Engine owns chunk crypto/checkpoint/projection/FTS
+  -> send/receive/recovery transactions include typed attachment metadata
+  -> native cross-Station offline/restart/recovery/search gates pass
+  -> delete legacy chat OSS ACL, Web attachment key owner and Station search route
+```
+
+Retained：
+
+- generic OSS backend/blob/CAS adapters，只作为 Authority transfer service 的 opaque
+  byte-store port；
+- existing AES-GCM chunk algorithm only after its suite/nonce/tag/hash semantics move into
+  canonical proto and cross-language known-answer tests；
+- `oss://` resolver only as an internal `storage_ref` adapter, not as authorization truth。
+
+Replaced：
+
+- renderer-owned attachment encryption/upload orchestration；
+- legacy friend/group attachment fields and Station conversation search；
+- whole-file cache download/direct-final-path writes；
+- legacy `friend_chat_sessions`-based chat object permission。
+
+Required deletion proof：
+
+- UI 不调用 upload part/complete、decrypt/hash-accept 或维护 durable transfer cursor；
+- Station Messaging authority 是 descriptor validation 与 recipient grant 的唯一 owner；
+- `conversation_search_messages` 和 server plaintext search 在 canonical Chat path zero refs；
+- attachment filename/key/nonce/plaintext hash 不出现在 Station row/log/federation frame。
+
+该 cutover 不能保留以下 fallback：
+
+- canonical send 失败后回落 legacy friend/group attachment send；
+- resume 失败后无 hash 地 whole-file accept；
+- remote object 失败后返回 public/bearer URL；
+- FTS 未命中时调用 Station plaintext search。
 
 ## 4. Required Tree-Wide Guards
 
