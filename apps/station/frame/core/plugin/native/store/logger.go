@@ -60,17 +60,17 @@ func (l *gormLogger) Trace(ctx context.Context, begin time.Time, fc func() (sql 
 	}
 
 	elapsed := time.Since(begin)
-	sql, rows := fc()
+	_, rows := fc()
 
 	switch {
 	case err != nil && l.logLevel >= gormlogger.Error && !errors.Is(err, gorm.ErrRecordNotFound):
-		logger.Errorf(ctx, "GORM query error: latency=%.3fms rows=%d sql=%s error=%v",
-			float64(elapsed.Nanoseconds())/1e6, rows, sql, err)
+		logger.Errorf(ctx, "GORM query error: latency=%.3fms rows=%d error=%v",
+			float64(elapsed.Nanoseconds())/1e6, rows, err)
 	case elapsed > 200*time.Millisecond && l.logLevel >= gormlogger.Warn:
-		logger.Warnf(ctx, "GORM slow query: latency=%.3fms rows=%d sql=%s",
-			float64(elapsed.Nanoseconds())/1e6, rows, sql)
+		logger.Warnf(ctx, "GORM slow query: latency=%.3fms rows=%d",
+			float64(elapsed.Nanoseconds())/1e6, rows)
 	case l.logLevel >= gormlogger.Info:
-		logger.Infof(ctx, "GORM query: latency=%.3fms rows=%d sql=%s",
-			float64(elapsed.Nanoseconds())/1e6, rows, sql)
+		logger.Infof(ctx, "GORM query: latency=%.3fms rows=%d",
+			float64(elapsed.Nanoseconds())/1e6, rows)
 	}
 }
