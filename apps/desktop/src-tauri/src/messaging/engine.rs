@@ -3,7 +3,8 @@ use super::identity::{
 };
 use super::recovery::{restore_profile_database_atomically, MessagingRecoveryArchive};
 use super::{
-    AttachmentTransferWorker, CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy,
+    AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferWorker,
+    CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy,
     ConversationMessageProjection, ConversationProjection, DirectSessionBootstrapper,
     DrainProgress, GroupGenesisPreparer, MembershipTransitionIntentInput,
     MembershipTransitionPreparer, MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore,
@@ -64,6 +65,7 @@ pub struct MessagingEngine {
     dispatch_lock: Mutex<()>,
     send_intent_lock: Mutex<()>,
     membership_transition_lock: Mutex<()>,
+    attachment_transfer_control: Arc<AttachmentTransferControl>,
     runtime_consumer_epoch: Arc<AtomicU64>,
     projection_notifier: Mutex<Option<MessagingProjectionNotifier>>,
 }
@@ -195,6 +197,7 @@ impl MessagingEngine {
             dispatch_lock: Mutex::new(()),
             send_intent_lock: Mutex::new(()),
             membership_transition_lock: Mutex::new(()),
+            attachment_transfer_control: Arc::new(AttachmentTransferControl::new()),
             runtime_consumer_epoch: Arc::new(AtomicU64::new(0)),
             projection_notifier: Mutex::new(None),
         })
@@ -223,10 +226,16 @@ impl MessagingEngine {
                 device_id: self.endpoint.device_id.clone(),
             },
         )?;
-        Ok(AttachmentTransferWorker::new(
+        AttachmentTransferWorker::with_control(
             self.store.clone(),
             Arc::new(transport),
-        ))
+            self.attachment_transfer_control.clone(),
+            AttachmentRetryPolicy::default(),
+        )
+    }
+
+    pub fn request_attachment_transfer_shutdown(&self) {
+        self.attachment_transfer_control.request_shutdown();
     }
 
     pub fn build_recovery_archive(
@@ -752,6 +761,12 @@ impl MessagingEngine {
                 self.endpoint.device_id.clone(),
             )?,
         )
+    }
+}
+
+impl Drop for MessagingEngine {
+    fn drop(&mut self) {
+        self.attachment_transfer_control.request_shutdown();
     }
 }
 
