@@ -46,6 +46,7 @@ const (
 	defaultAttachmentUploadTTL    = 24 * time.Hour
 	defaultAttachmentGCTick       = time.Hour
 	defaultAttachmentGCBatch      = 100
+	defaultAttachmentMetricsTick  = 15 * time.Second
 	defaultAttachmentRetryAfter   = time.Second
 )
 
@@ -192,6 +193,28 @@ func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
 				slog.WarnContext(
 					runContext,
 					"messaging attachment cleanup failed; retry remains scheduled",
+					"error",
+					err,
+				)
+			}
+			select {
+			case <-runContext.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	s.wait.Add(1)
+	go func() {
+		defer s.wait.Done()
+		ticker := time.NewTicker(defaultAttachmentMetricsTick)
+		defer ticker.Stop()
+		for {
+			if err := s.composition.AttachmentService.PublishMetrics(runContext); err != nil &&
+				runContext.Err() == nil {
+				slog.WarnContext(
+					runContext,
+					"messaging attachment metrics refresh failed",
 					"error",
 					err,
 				)
