@@ -22,6 +22,14 @@ type gormLogger struct {
 	logLevel gormlogger.LogLevel
 }
 
+func (*gormLogger) ParamsFilter(
+	_ context.Context,
+	sql string,
+	_ ...interface{},
+) (string, []interface{}) {
+	return sql, nil
+}
+
 func (l *gormLogger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
 	newLogger := *l
 	newLogger.logLevel = level
