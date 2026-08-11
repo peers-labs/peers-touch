@@ -321,8 +321,8 @@ Total: ~20 unified commands vs. 69 bifurcated ones.
 **Transport**: All structured commands use `request_peers_proto` (Protocol 1). The existing `envelope_submit`/`envelope_ack`/`envelope_resume` commands currently using `request_json_auth` must be migrated to proto as part of this phase.
 
 **Non-proto commands** (correct as-is, no change needed):
-- `oss_upload_attachment_chat` / `oss_upload_attachment_bytes_chat` — Protocol 2 (multipart/form-data)
-- `oss_capture_screenshot_chat` — local file operation, no Station call
+- Social IM attachment upload/download is owned by the Messaging Engine; the old chat OSS commands are deleted.
+- Agent encrypted bytes use `oss_upload_agent_attachment_bytes`; generic OSS tooling uses `oss_pick_local_file` / `oss_upload_local_file`.
 - Realtime event stream — Protocol 3 (SSE with proto payloads)
 
 ### P2.2 — Unify chat_storage.rs

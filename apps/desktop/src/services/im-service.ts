@@ -643,15 +643,6 @@ const conversationService: ConversationServiceContract = {
     })
   },
 
-  async searchMessages(conversationId, query, limit) {
-    const resp = await cmd<any, { events: unknown[]; has_more: boolean }>('conversation_search_messages', {
-      conversation_id: conversationId,
-      query,
-      limit: limit ?? 20,
-    })
-    return { events: normalizeConversationEvents(resp.events), hasMore: resp.has_more ?? false }
-  },
-
   async syncFromStation(conversationId, limit) {
     const resp = await cmd<any, { events: unknown[]; has_more: boolean }>('conversation_sync_from_station', {
       conversation_id: conversationId,
@@ -1345,22 +1336,81 @@ const messagingService: MessagingServiceContract = {
     }))
   },
 
-  async sendText(conversationId, conversationKind, plaintext) {
+  async pickAttachmentSource() {
+    const response = await cmd<
+      void,
+      { file_path: string; filename: string; mime_type: string; size: number }
+    >('messaging_pick_attachment_source')
+    return {
+      filePath: response.file_path,
+      filename: response.filename,
+      mimeType: response.mime_type,
+      size: response.size,
+    }
+  },
+
+  async stageAttachmentSource(filename, bytes) {
+    const response = await cmd<
+      { filename: string; bytes: number[] },
+      { local_path: string }
+    >('messaging_stage_attachment_source', {
+      filename,
+      bytes: Array.from(bytes),
+    })
+    return response.local_path
+  },
+
+  async discardAttachmentSource(filePath) {
+    await cmd<
+      { file_path: string },
+      { discarded: boolean }
+    >('messaging_discard_attachment_source', { file_path: filePath })
+  },
+
+  async captureAttachmentSource() {
+    const response = await cmd<
+      void,
+      { file_path: string; filename: string; mime_type: string }
+    >('messaging_capture_attachment_source')
+    return {
+      filePath: response.file_path,
+      filename: response.filename,
+      mimeType: response.mime_type,
+    }
+  },
+
+  async sendMessage(conversationId, conversationKind, plaintext, attachments = []) {
     const response = await cmd<
       {
         conversation_id: string
         conversation_kind: 'direct' | 'group'
         plaintext: string
+        attachments: Array<{
+          file_path: string
+          filename: string
+          mime_type: string
+        }>
       },
-      { command_id: string; message_id: string; state: 'draft' | 'pending' }
-    >('messaging_send_text', {
+      {
+        command_id: string
+        message_id: string
+        attachment_ids: string[]
+        state: 'draft' | 'pending' | 'attachment_failed'
+      }
+    >('messaging_send_message', {
       conversation_id: conversationId,
       conversation_kind: conversationKind,
       plaintext,
+      attachments: attachments.map(attachment => ({
+        file_path: attachment.filePath,
+        filename: attachment.filename,
+        mime_type: attachment.mimeType,
+      })),
     })
     return {
-      commandId: response.command_id,
+      commandId: response.command_id || undefined,
       messageId: response.message_id,
+      attachmentIds: response.attachment_ids,
       state: response.state,
     }
   },
@@ -1376,6 +1426,16 @@ const messagingService: MessagingServiceContract = {
           sender_ptid: string
           sender_device_id: string
           plaintext: string
+          attachments: Array<{
+            attachment_id: string
+            filename: string
+            mime_type: string
+            plaintext_size: number
+            object_id: string
+            storage_ref: string
+            ciphertext_size: number
+            availability_state: 'uploading' | 'remote' | 'local' | 'failed'
+          }>
           state: string
           timestamp_unix_ms: number
         }>
@@ -1388,9 +1448,87 @@ const messagingService: MessagingServiceContract = {
       senderPtid: message.sender_ptid,
       senderDeviceId: message.sender_device_id,
       plaintext: message.plaintext,
+      attachments: message.attachments.map(attachment => ({
+        attachmentId: attachment.attachment_id,
+        filename: attachment.filename,
+        mimeType: attachment.mime_type,
+        plaintextSize: attachment.plaintext_size,
+        objectId: attachment.object_id,
+        storageRef: attachment.storage_ref,
+        ciphertextSize: attachment.ciphertext_size,
+        availabilityState: attachment.availability_state,
+      })),
       state: message.state,
       timestampUnixMs: message.timestamp_unix_ms,
     }))
+  },
+
+  async searchMessages(conversationId, query, options = {}) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        query: string
+        before_timestamp_unix_ms?: number
+        before_message_id?: string
+        limit: number
+      },
+      {
+        messages: Array<{
+          event_id?: string
+          event_sequence?: number
+          message_id: string
+          sender_ptid: string
+          sender_device_id: string
+          plaintext: string
+          attachments: Array<{
+            attachment_id: string
+            filename: string
+            mime_type: string
+            plaintext_size: number
+            object_id: string
+            storage_ref: string
+            ciphertext_size: number
+            availability_state: 'uploading' | 'remote' | 'local' | 'failed'
+          }>
+          state: string
+          timestamp_unix_ms: number
+        }>
+      }
+    >('messaging_search_messages', {
+      conversation_id: conversationId,
+      query,
+      before_timestamp_unix_ms: options.beforeTimestampUnixMs,
+      before_message_id: options.beforeMessageId,
+      limit: options.limit ?? 50,
+    })
+    return response.messages.map(message => ({
+      eventId: message.event_id,
+      eventSequence: message.event_sequence,
+      messageId: message.message_id,
+      senderPtid: message.sender_ptid,
+      senderDeviceId: message.sender_device_id,
+      plaintext: message.plaintext,
+      attachments: message.attachments.map(attachment => ({
+        attachmentId: attachment.attachment_id,
+        filename: attachment.filename,
+        mimeType: attachment.mime_type,
+        plaintextSize: attachment.plaintext_size,
+        objectId: attachment.object_id,
+        storageRef: attachment.storage_ref,
+        ciphertextSize: attachment.ciphertext_size,
+        availabilityState: attachment.availability_state,
+      })),
+      state: message.state,
+      timestampUnixMs: message.timestamp_unix_ms,
+    }))
+  },
+
+  async openAttachment(attachmentId) {
+    const response = await cmd<
+      { attachment_id: string },
+      { local_path: string }
+    >('messaging_open_attachment', { attachment_id: attachmentId })
+    return response.local_path
   },
 }
 

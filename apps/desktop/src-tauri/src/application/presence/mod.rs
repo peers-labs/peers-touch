@@ -2,13 +2,13 @@
 //!
 //! See `domain::presence` for the vocabulary; this module is the side-effecting
 //! part that interprets [`PresenceTrigger`]s against the running supervisor's
-//! state and runs the **reconcile pipeline**:
+//! state and renews the Station presence lease:
 //!
 //!   1. `POST /presence/heartbeat`
-//!   2. `GET  /friend-chat/pending`
-//!   3. `friend_chat_sync_from_station` for every distinct session id
-//!   4. `POST /friend-chat/message/ack` to clear station's queue
-//!   5. Tauri event `presence.synced { actor_id, count, sessions }`
+//!   2. Tauri event `presence.synced { actor_id, count, sessions }`
+//!
+//! Durable message reconciliation belongs to the Envelope runtime and
+//! `/envelope/resume`; Presence does not own a second message queue.
 //!
 //! # Why a supervisor and not a free function
 //!
@@ -28,11 +28,10 @@
 //! `AppShutdown`, `Manual`) bypass the cooldown — those are user-initiated
 //! and dropping them would mean a logout never tells station we're gone.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 
 use crate::application::chat_storage;
@@ -285,65 +284,13 @@ impl PresenceSupervisor {
         token: &str,
         trigger: PresenceTrigger,
     ) -> ReconcileOutcome {
-        // Step 1: renew the actor presence lease so station stops queuing for us.
+        // Renew the actor presence lease. Durable message recovery is owned by
+        // the Envelope runtime, which resumes its actor-device inbox separately.
         if let Err(e) = chat_storage::presence_heartbeat(token, trigger.as_wire()) {
             tracing::warn!(actor = actor_id, ?trigger, error = %e, "presence: /presence/heartbeat failed");
             return ReconcileOutcome::failed();
         }
-
-        // Step 2: drain whatever station has been holding for us.
-        let pending = match chat_storage::friend_chat_pending(token) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(actor = actor_id, ?trigger, error = %e, "presence: /pending failed");
-                // Treat /pending failure as a soft success: we *did* mark
-                // ourselves online, even if we couldn't drain the queue.
-                // The next heartbeat will retry.
-                return ReconcileOutcome::ok(0, Vec::new());
-            }
-        };
-
-        let (ulids, sessions) = collect_pending(&pending);
-        if ulids.is_empty() {
-            tracing::debug!(actor = actor_id, ?trigger, "presence: pending queue empty");
-            return ReconcileOutcome::ok(0, Vec::new());
-        }
-
-        tracing::info!(
-            actor = actor_id,
-            ?trigger,
-            count = ulids.len(),
-            sessions = sessions.len(),
-            "presence: draining pending queue"
-        );
-
-        // Step 3: pull each affected session into the local cursor-aware
-        // store so the conversation list and message panel reflect the
-        // catch-up. Failures are logged and continued — the goal is
-        // best-effort drain, not transactional consistency.
-        let user_scope = crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id));
-        for sid in &sessions {
-            if let Err(e) = chat_storage::sync_friend_from_station(token, &user_scope, sid, 50, 1) {
-                tracing::warn!(
-                    actor = actor_id,
-                    session = sid,
-                    error = %e,
-                    "presence: per-session sync failed during reconcile"
-                );
-            }
-        }
-
-        // Step 4: ack so station drops the in-memory queue. We pass
-        // status `1` (DELIVERED) which mirrors the convention used by
-        // `friend_chat_ack_messages` upstream.
-        if let Err(e) = chat_storage::ack_friend_messages(token, &ulids, 1) {
-            tracing::warn!(actor = actor_id, error = %e, "presence: /ack failed");
-            // Not a hard failure — the queue will be re-served on the
-            // next /pending. We still report success so the supervisor
-            // moves to Online and the cooldown applies.
-        }
-
-        ReconcileOutcome::ok(ulids.len() as u32, sessions)
+        ReconcileOutcome::ok(0, Vec::new())
     }
 }
 
@@ -371,77 +318,9 @@ impl ReconcileOutcome {
     }
 }
 
-/// Extract `(unique_ulids, unique_session_ulids)` from a `/pending`
-/// response. The wire shape is whatever `chat_storage::get_pending_response_to_value`
-/// produced; we walk it as untyped JSON to stay decoupled from the proto
-/// model imports inside this module (and it's a tiny payload).
-fn collect_pending(pending: &Value) -> (Vec<String>, Vec<String>) {
-    let messages = pending
-        .get("messages")
-        .and_then(|v| v.as_array())
-        .map(|a| a.as_slice())
-        .unwrap_or(&[]);
-
-    let mut ulids = Vec::with_capacity(messages.len());
-    let mut session_set: HashSet<String> = HashSet::new();
-    let mut sessions = Vec::with_capacity(messages.len());
-    for msg in messages {
-        if let Some(ulid) = msg.get("ulid").and_then(|v| v.as_str()) {
-            if !ulid.is_empty() {
-                ulids.push(ulid.to_string());
-            }
-        }
-        if let Some(sid) = msg.get("session_ulid").and_then(|v| v.as_str()) {
-            if !sid.is_empty() && session_set.insert(sid.to_string()) {
-                sessions.push(sid.to_string());
-            }
-        }
-    }
-    (ulids, sessions)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn collect_pending_dedupes_session_ulids_and_preserves_order() {
-        let payload = json!({
-            "messages": [
-                { "ulid": "m1", "session_ulid": "s1" },
-                { "ulid": "m2", "session_ulid": "s1" },
-                { "ulid": "m3", "session_ulid": "s2" },
-                { "ulid": "m4", "session_ulid": "s1" },
-            ]
-        });
-        let (ulids, sessions) = collect_pending(&payload);
-        assert_eq!(ulids, vec!["m1", "m2", "m3", "m4"]);
-        assert_eq!(sessions, vec!["s1", "s2"]);
-    }
-
-    #[test]
-    fn collect_pending_handles_missing_fields() {
-        let payload = json!({
-            "messages": [
-                { "ulid": "" },
-                { "session_ulid": "" },
-                { "session_ulid": "s1" },
-                { "ulid": "m2", "session_ulid": "s1" },
-            ]
-        });
-        let (ulids, sessions) = collect_pending(&payload);
-        assert_eq!(ulids, vec!["m2"]);
-        assert_eq!(sessions, vec!["s1"]);
-    }
-
-    #[test]
-    fn collect_pending_handles_empty_payload() {
-        let payload = json!({ "messages": [] });
-        let (ulids, sessions) = collect_pending(&payload);
-        assert!(ulids.is_empty());
-        assert!(sessions.is_empty());
-    }
 
     #[test]
     fn supervisor_starts_offline_for_unknown_actor() {

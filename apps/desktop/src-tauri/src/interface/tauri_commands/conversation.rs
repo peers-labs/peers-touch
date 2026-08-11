@@ -1,3 +1,4 @@
+use crate::application::key_exchange::device_install;
 use crate::application::session_resolver;
 use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::error::{AppResult, ErrorCode};
@@ -748,19 +749,24 @@ pub fn device_register(
         Ok(t) => t,
         Err(e) => return e,
     };
+    let device_id = input.device_id.trim();
+    if device_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "device_id is required", None);
+    }
     let body = json!({
-        "device_id": input.device_id,
+        "device_id": device_id,
         "label": input.label.unwrap_or_default(),
         "public_key": input.public_key.unwrap_or_default(),
         "signing_key_id": input.signing_key_id.unwrap_or_default(),
         "profile_version": 1,
     });
-    match station_client::request_json_auth(
+    match station_client::request_json_auth_with_device_id(
         Method::POST,
         "/device/register",
         &token,
         None,
         Some(&body),
+        device_id,
     ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "device register failed"),
@@ -812,7 +818,9 @@ pub fn device_revoke(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DkxSendInput {
     pub recipient_ptid: String,
+    pub recipient_device_id: String,
     pub recipient_station_peer_id: Option<String>,
+    pub conversation_id: String,
     pub session_id: String,
     pub kind: i32,
     pub opaque_key_material: String,
@@ -828,14 +836,37 @@ pub fn dkx_send(
         Ok(t) => t,
         Err(e) => return e,
     };
+    let actor_id = user_scope_from_state(&state, &window);
+    if actor_id.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    let sender_device_id = match device_install::get_or_create_device_id(&actor_id) {
+        Ok(device_id) => device_id,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("device_id: {error}"),
+                None,
+            );
+        }
+    };
     let body = json!({
         "recipient_ptid": input.recipient_ptid,
+        "recipient_device_id": input.recipient_device_id,
         "recipient_station_peer_id": input.recipient_station_peer_id.unwrap_or_default(),
+        "conversation_id": input.conversation_id,
         "session_id": input.session_id,
         "kind": input.kind,
         "opaque_key_material": input.opaque_key_material,
     });
-    match station_client::request_json_auth(Method::POST, "/dkx/send", &token, None, Some(&body)) {
+    match station_client::request_json_auth_with_device_id(
+        Method::POST,
+        "/dkx/send",
+        &token,
+        None,
+        Some(&body),
+        &sender_device_id,
+    ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "dkx send failed"),
     }
@@ -1066,40 +1097,6 @@ pub fn conversation_update_member_settings(
     ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "update member settings failed"),
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationSearchInput {
-    pub conversation_id: String,
-    pub query: String,
-    pub limit: Option<i32>,
-}
-
-#[tauri::command]
-pub fn conversation_search_messages(
-    input: ConversationSearchInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
-    let token = match get_token(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let query = vec![
-        ("conversation_id", input.conversation_id),
-        ("q", input.query),
-        ("limit", input.limit.unwrap_or(20).to_string()),
-    ];
-    match station_client::request_json_auth(
-        Method::GET,
-        "/conversation/messages/search",
-        &token,
-        Some(&query),
-        None,
-    ) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => station_err(e, "search messages failed"),
     }
 }
 

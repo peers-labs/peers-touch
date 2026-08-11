@@ -3,13 +3,14 @@ use super::identity::{
 };
 use super::recovery::{restore_profile_database_atomically, MessagingRecoveryArchive};
 use super::{
-    AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferWorker,
-    CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy,
+    AttachmentCryptoMaterial, AttachmentDownloadProjection, AttachmentRetryPolicy,
+    AttachmentTransferControl, AttachmentTransferProgress, AttachmentTransferRecord,
+    AttachmentTransferWorker, CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy,
     ConversationMessageProjection, ConversationProjection, DirectSessionBootstrapper,
     DrainProgress, GroupGenesisPreparer, MembershipTransitionIntentInput,
     MembershipTransitionPreparer, MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore,
-    MlsKeyPackagePublisher, PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher,
-    QueueDrain, SendPreparer, SendTextIntent, StationAttachmentTransferTransport,
+    MlsKeyPackagePublisher, PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft,
+    PreKeyPublisher, QueueDrain, SendPreparer, SendTextIntent, StationAttachmentTransferTransport,
     StationCommandTransport, StationDeviceTransport, StationGroupGenesisTransport,
     StationKeyBundleTransport, StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
     StationPreKeyTransport, StationQueueTransport,
@@ -18,13 +19,17 @@ use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::domain::crypto::IdentityKeyPair;
 use crate::domain::mls_group::MlsGroupManager;
 use crate::model::chat::{
-    ChatCommand, ConversationKind, CreateMessagingDirectConversationRequest,
-    CreateMessagingDirectConversationResponse, CryptoEndpoint, EnrollMessagingDeviceRequest,
-    MessagingDevice, MessagingDeviceStatus, MessagingMembershipAction, PrepareMessagingSendRequest,
-    PrepareMessagingSendResponse,
+    AttachmentTransferState, ChatCommand, ConversationKind,
+    CreateMessagingDirectConversationRequest, CreateMessagingDirectConversationResponse,
+    CryptoEndpoint, EnrollMessagingDeviceRequest, MessagingDevice, MessagingDeviceStatus,
+    MessagingMembershipAction, PrepareMessagingSendRequest, PrepareMessagingSendResponse,
 };
 use reqwest::Method;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -47,10 +52,18 @@ pub struct EngineEndpoint {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SubmitTextOutcome {
+pub struct SubmitMessageOutcome {
     pub command_id: Option<String>,
     pub message_id: String,
+    pub attachment_ids: Vec<String>,
     pub state: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalAttachmentIntent {
+    pub source_local_ref: String,
+    pub filename: String,
+    pub mime_type: String,
 }
 
 pub struct MessagingEngine {
@@ -157,6 +170,7 @@ impl MessagingEngine {
         store: Arc<MessagingStore>,
         profile_actor_identity: Option<Arc<IdentityKeyPair>>,
     ) -> Result<Self, String> {
+        store.reconcile_completed_attachment_uploads()?;
         let mls_actor_identity = Arc::new(ActorDeviceIdentity::new());
         match store.load_mls_actor_identity()? {
             Some((ptid, device_id, state)) => {
@@ -236,6 +250,143 @@ impl MessagingEngine {
 
     pub fn request_attachment_transfer_shutdown(&self) {
         self.attachment_transfer_control.request_shutdown();
+    }
+
+    pub fn stage_attachment_source(&self, filename: &str, bytes: &[u8]) -> Result<String, String> {
+        if filename.trim().is_empty()
+            || filename.len() > 1024
+            || bytes.is_empty()
+            || bytes.len() as u64 > super::attachment::ATTACHMENT_MAX_PLAINTEXT_SIZE
+        {
+            return Err("messaging attachment source is invalid".to_string());
+        }
+        let root = attachment_source_root(&self.profile_id)?;
+        std::fs::create_dir_all(&root)
+            .map_err(|error| format!("create messaging attachment source directory: {error}"))?;
+        let path = root.join(Ulid::new().to_string());
+        let mut options = OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options
+            .open(&path)
+            .map_err(|error| format!("create messaging attachment source: {error}"))?;
+        file.write_all(bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|error| format!("persist messaging attachment source: {error}"))?;
+        Ok(path.display().to_string())
+    }
+
+    pub fn discard_staged_attachment_source(&self, source_local_ref: &str) -> Result<(), String> {
+        let path = Path::new(source_local_ref);
+        if !managed_attachment_source(&self.profile_id, path)? {
+            return Err("messaging attachment source is not Engine-managed".to_string());
+        }
+        match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("remove messaging attachment source: {error}")),
+        }
+    }
+
+    pub fn cleanup_completed_attachment_sources(&self) -> Result<usize, String> {
+        let mut cleaned = 0;
+        for (attachment_id, source_local_ref) in self.store.completed_attachment_source_paths()? {
+            let path = Path::new(&source_local_ref);
+            if !managed_attachment_source(&self.profile_id, path)? {
+                continue;
+            }
+            match std::fs::remove_file(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(format!(
+                        "remove completed messaging attachment source: {error}"
+                    ))
+                }
+            }
+            self.store
+                .clear_completed_attachment_source(&attachment_id, &source_local_ref)?;
+            cleaned += 1;
+        }
+        Ok(cleaned)
+    }
+
+    pub fn open_attachment(&self, token: &str, attachment_id: &str) -> Result<String, String> {
+        if token.trim().is_empty() || attachment_id.trim().is_empty() {
+            return Err("messaging attachment open intent is incomplete".to_string());
+        }
+        let projection = self
+            .store
+            .attachment_download_projection(attachment_id)?
+            .ok_or_else(|| "messaging attachment projection is unavailable".to_string())?;
+        let expected_plaintext_sha256: [u8; 32] = projection
+            .metadata
+            .plaintext_sha256
+            .as_slice()
+            .try_into()
+            .map_err(|_| "messaging attachment plaintext commitment is invalid".to_string())?;
+        if let Some(cache_path) = projection.local_cache_path.as_deref() {
+            let path = Path::new(cache_path);
+            if path.is_file() && sha256_path(path)? == expected_plaintext_sha256 {
+                return Ok(cache_path.to_string());
+            }
+        }
+        let download_transfer =
+            attachment_download_transfer(&self.profile_id, &projection, now_unix_ms())?;
+        match self.store.attachment_transfer(attachment_id)? {
+            Some(transfer) if transfer.direction == 1 => {
+                let source = Path::new(&transfer.source_local_ref);
+                if source.is_file() && sha256_path(source)? == expected_plaintext_sha256 {
+                    return Ok(transfer.source_local_ref);
+                }
+                self.store
+                    .replace_completed_upload_with_download(&download_transfer)?;
+            }
+            Some(transfer) if transfer.direction == 2 => {}
+            Some(_) => return Err("messaging attachment transfer direction is invalid".to_string()),
+            None => {
+                self.store.create_attachment_transfer(&download_transfer)?;
+            }
+        }
+        let object = projection
+            .metadata
+            .object
+            .as_ref()
+            .ok_or_else(|| "messaging attachment descriptor is missing".to_string())?;
+        let cache_path = attachment_cache_path(&self.profile_id, attachment_id)?;
+        let worker = self.attachment_transfer_worker(token.to_string())?;
+        match worker.run_download_once(
+            attachment_id,
+            object,
+            &expected_plaintext_sha256,
+            &cache_path,
+            now_unix_ms(),
+        )? {
+            AttachmentTransferProgress::Complete => Ok(cache_path.display().to_string()),
+            AttachmentTransferProgress::Deferred { .. }
+            | AttachmentTransferProgress::RetryScheduled { .. } => {
+                Err("messaging attachment download is pending".to_string())
+            }
+            AttachmentTransferProgress::Terminal { .. } => {
+                Err("messaging attachment download failed".to_string())
+            }
+        }
+    }
+
+    pub fn resume_attachment_download_once(
+        &self,
+        token: &str,
+        now_unix_ms: i64,
+    ) -> Result<bool, String> {
+        let Some(attachment_id) = self.store.next_due_attachment_download(now_unix_ms)? else {
+            return Ok(false);
+        };
+        self.open_attachment(token, &attachment_id)?;
+        Ok(true)
     }
 
     pub fn build_recovery_archive(
@@ -399,24 +550,68 @@ impl MessagingEngine {
         .prepare_group_text(plan, intent)
     }
 
-    pub fn submit_text(
+    pub fn submit_message(
         &self,
         token: &str,
         conversation_id: &str,
         conversation_kind: ConversationKind,
         plaintext: &str,
-    ) -> Result<SubmitTextOutcome, String> {
+        attachment_intents: &[LocalAttachmentIntent],
+    ) -> Result<SubmitMessageOutcome, String> {
         let _guard = self
             .send_intent_lock
             .lock()
             .map_err(|_| "messaging send intent lock poisoned".to_string())?;
         if conversation_id.trim().is_empty()
-            || plaintext.is_empty()
+            || (plaintext.is_empty() && attachment_intents.is_empty())
             || conversation_kind == ConversationKind::Unspecified
+            || attachment_intents.len() > super::private_content::MESSAGE_MAX_ATTACHMENT_COUNT
         {
-            return Err("messaging text intent is incomplete".to_string());
+            return Err("messaging message intent is incomplete".to_string());
         }
+        let conversation = self
+            .store
+            .conversation_projections()?
+            .into_iter()
+            .find(|conversation| conversation.conversation_id == conversation_id)
+            .ok_or_else(|| "messaging conversation projection is unavailable".to_string())?;
+        if conversation.kind != conversation_kind as i32
+            || conversation.authority_station_id.trim().is_empty()
+        {
+            return Err("messaging conversation projection does not match intent".to_string());
+        }
+
         let message_id = Ulid::new().to_string();
+        let created_at_unix_ms = now_unix_ms();
+        let mut uploads = attachment_intents
+            .iter()
+            .map(|intent| {
+                prepare_local_attachment_upload(
+                    conversation_id,
+                    &message_id,
+                    &conversation.authority_station_id,
+                    intent,
+                    created_at_unix_ms,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let aggregate_plaintext_size = uploads.iter().try_fold(0_u64, |total, upload| {
+            total
+                .checked_add(upload.transfer.plaintext_size)
+                .ok_or_else(|| "messaging attachment aggregate size exceeds policy".to_string())
+        })?;
+        if aggregate_plaintext_size > super::attachment::ATTACHMENT_MAX_PLAINTEXT_SIZE {
+            return Err("messaging attachment aggregate size exceeds policy".to_string());
+        }
+        uploads.sort_by(|left, right| {
+            left.transfer
+                .attachment_id
+                .cmp(&right.transfer.attachment_id)
+        });
+        let attachment_ids = uploads
+            .iter()
+            .map(|upload| upload.transfer.attachment_id.clone())
+            .collect::<Vec<_>>();
         let draft = PendingMessageDraft {
             conversation_id: conversation_id.to_string(),
             conversation_kind: conversation_kind as i32,
@@ -424,25 +619,73 @@ impl MessagingEngine {
             sender_ptid: self.endpoint.ptid.clone(),
             sender_device_id: self.endpoint.device_id.clone(),
             plaintext: plaintext.to_string(),
+            attachments: Vec::new(),
             attempt_count: 0,
-            created_at_unix_ms: now_unix_ms(),
+            created_at_unix_ms,
         };
-        self.store.create_message_draft(&draft)?;
-        match self.prepare_message_draft(token, &draft) {
-            Ok(command_id) => Ok(SubmitTextOutcome {
+        if uploads.is_empty() {
+            self.store.create_message_draft(&draft)?;
+        } else {
+            self.store
+                .create_message_draft_with_uploads(&draft, &uploads)?;
+            let worker = self.attachment_transfer_worker(token.to_string())?;
+            for attachment_id in &attachment_ids {
+                match worker.run_upload_once(attachment_id, now_unix_ms())? {
+                    AttachmentTransferProgress::Complete => {}
+                    AttachmentTransferProgress::Deferred { .. }
+                    | AttachmentTransferProgress::RetryScheduled { .. } => {
+                        return Ok(SubmitMessageOutcome {
+                            command_id: None,
+                            message_id,
+                            attachment_ids,
+                            state: "draft",
+                        });
+                    }
+                    AttachmentTransferProgress::Terminal { .. } => {
+                        return Ok(SubmitMessageOutcome {
+                            command_id: None,
+                            message_id,
+                            attachment_ids,
+                            state: "attachment_failed",
+                        });
+                    }
+                }
+            }
+        }
+        let ready_draft = self
+            .store
+            .message_draft(&message_id)?
+            .ok_or_else(|| "messaging completed draft is unavailable".to_string())?;
+        match self.prepare_message_draft(token, &ready_draft) {
+            Ok(command_id) => Ok(SubmitMessageOutcome {
                 command_id: Some(command_id),
                 message_id,
+                attachment_ids,
                 state: "pending",
             }),
             Err(_) => {
-                self.schedule_message_draft_retry(&draft, now_unix_ms())?;
-                Ok(SubmitTextOutcome {
+                self.schedule_message_draft_retry(&ready_draft, now_unix_ms())?;
+                Ok(SubmitMessageOutcome {
                     command_id: None,
                     message_id,
+                    attachment_ids,
                     state: "draft",
                 })
             }
         }
+    }
+
+    pub fn resume_attachment_upload_once(
+        &self,
+        token: &str,
+        now_unix_ms: i64,
+    ) -> Result<bool, String> {
+        let Some(attachment_id) = self.store.next_due_attachment_upload(now_unix_ms)? else {
+            return Ok(false);
+        };
+        self.attachment_transfer_worker(token.to_string())?
+            .run_upload_once(&attachment_id, now_unix_ms)?;
+        Ok(true)
     }
 
     pub fn resume_message_draft_once(&self, token: &str, now_unix_ms: i64) -> Result<bool, String> {
@@ -481,6 +724,7 @@ impl MessagingEngine {
             message_id: &draft.message_id,
             conversation_id: &draft.conversation_id,
             plaintext: &draft.plaintext,
+            attachments: &draft.attachments,
             client_timestamp_unix_ms: draft.created_at_unix_ms,
         };
         match conversation_kind {
@@ -535,6 +779,17 @@ impl MessagingEngine {
         conversation_id: &str,
     ) -> Result<Vec<ConversationMessageProjection>, String> {
         self.store.conversation_message_projections(conversation_id)
+    }
+
+    pub fn search_messages(
+        &self,
+        conversation_id: &str,
+        query: &str,
+        before: Option<(i64, &str)>,
+        limit: usize,
+    ) -> Result<Vec<ConversationMessageProjection>, String> {
+        self.store
+            .search_message_projections(conversation_id, query, before, limit)
     }
 
     pub fn create_direct_conversation(
@@ -654,38 +909,6 @@ impl MessagingEngine {
         )?
         .prepare(&intent.intent_id, &input, &plan, now_unix_ms())?;
         Ok(true)
-    }
-
-    pub fn reprepare_superseded_text(
-        &self,
-        superseded_command_id: &str,
-        plan: &PrepareMessagingSendResponse,
-        now_unix_ms: i64,
-    ) -> Result<ChatCommand, String> {
-        let draft = self.store.superseded_message_draft(superseded_command_id)?;
-        if draft.sender_ptid != self.endpoint.ptid
-            || draft.sender_device_id != self.endpoint.device_id
-            || draft.conversation_id != plan.conversation_id
-        {
-            return Err("messaging superseded draft endpoint mismatch".to_string());
-        }
-        let replacement_command_id = Ulid::new().to_string();
-        let intent = SendTextIntent {
-            command_id: &replacement_command_id,
-            message_id: &draft.message_id,
-            conversation_id: &draft.conversation_id,
-            plaintext: &draft.plaintext,
-            client_timestamp_unix_ms: now_unix_ms,
-        };
-        match ConversationKind::try_from(plan.conversation_kind)
-            .map_err(|_| "messaging replacement plan kind is invalid".to_string())?
-        {
-            ConversationKind::Direct => self.prepare_direct_text(plan, &intent),
-            ConversationKind::Group => self.prepare_group_text(plan, &intent),
-            ConversationKind::Unspecified => {
-                Err("messaging replacement plan kind is unspecified".to_string())
-            }
-        }
     }
 
     pub fn enroll_pending_device(
@@ -1126,6 +1349,167 @@ fn validate_identity(profile_id: &str, endpoint: &EngineEndpoint) -> Result<(), 
         return Err("messaging engine requires profile and complete endpoint".to_string());
     }
     Ok(())
+}
+
+fn prepare_local_attachment_upload(
+    conversation_id: &str,
+    message_id: &str,
+    authority_station_id: &str,
+    intent: &LocalAttachmentIntent,
+    created_at_unix_ms: i64,
+) -> Result<PendingAttachmentUpload, String> {
+    if intent.source_local_ref.trim().is_empty()
+        || intent.filename.trim().is_empty()
+        || intent.filename.len() > 1024
+        || intent.mime_type.trim().is_empty()
+        || intent.mime_type.len() > 255
+        || created_at_unix_ms <= 0
+    {
+        return Err("messaging local attachment intent is incomplete".to_string());
+    }
+    let source = std::fs::canonicalize(Path::new(&intent.source_local_ref))
+        .map_err(|error| format!("resolve messaging attachment source: {error}"))?;
+    let metadata = source
+        .metadata()
+        .map_err(|error| format!("stat messaging attachment source: {error}"))?;
+    if !metadata.is_file() {
+        return Err("messaging attachment source is not a file".to_string());
+    }
+    let material = AttachmentCryptoMaterial::generate(metadata.len())?;
+    let mut plaintext = File::open(&source)
+        .map_err(|error| format!("open messaging attachment source: {error}"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0_u8; super::attachment::ATTACHMENT_CHUNK_SIZE as usize];
+    loop {
+        let read = plaintext
+            .read(&mut buffer)
+            .map_err(|error| format!("hash messaging attachment source: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let attachment_id = Ulid::new().to_string();
+    let partial_local_ref = format!("{}.peers-transfer-{}.part", source.display(), attachment_id);
+    let chunk_count = material.chunk_count();
+    Ok(PendingAttachmentUpload {
+        transfer: AttachmentTransferRecord {
+            attachment_id,
+            conversation_id: conversation_id.to_string(),
+            message_id: message_id.to_string(),
+            authority_station_id: authority_station_id.to_string(),
+            direction: 1,
+            state: AttachmentTransferState::Queued as i32,
+            upload_id: String::new(),
+            generation: 0,
+            descriptor_sha256: vec![0; 32],
+            completed_chunk_bitmap: vec![0; chunk_count.div_ceil(8) as usize],
+            source_local_ref: source.display().to_string(),
+            partial_local_ref,
+            object_key: material.object_key().to_vec(),
+            base_nonce: material.base_nonce().to_vec(),
+            plaintext_size: material.plaintext_size(),
+            chunk_size: material.chunk_size(),
+            attempt_count: 0,
+            next_attempt_at_unix_ms: created_at_unix_ms,
+            last_error_code: 0,
+            updated_at_unix_ms: created_at_unix_ms,
+        },
+        filename: intent.filename.clone(),
+        mime_type: intent.mime_type.clone(),
+        plaintext_sha256: hasher.finalize().to_vec(),
+    })
+}
+
+fn attachment_download_transfer(
+    profile_id: &str,
+    projection: &AttachmentDownloadProjection,
+    created_at_unix_ms: i64,
+) -> Result<AttachmentTransferRecord, String> {
+    let object = projection
+        .metadata
+        .object
+        .as_ref()
+        .ok_or_else(|| "messaging attachment descriptor is missing".to_string())?;
+    let cache_path = attachment_cache_path(profile_id, &projection.metadata.attachment_id)?;
+    let partial_local_ref = format!("{}.part", cache_path.display());
+    Ok(AttachmentTransferRecord {
+        attachment_id: projection.metadata.attachment_id.clone(),
+        conversation_id: projection.conversation_id.clone(),
+        message_id: projection.message_id.clone(),
+        authority_station_id: projection.authority_station_id.clone(),
+        direction: 2,
+        state: AttachmentTransferState::Queued as i32,
+        upload_id: String::new(),
+        generation: 0,
+        descriptor_sha256: vec![0; 32],
+        completed_chunk_bitmap: vec![0; object.chunk_count.div_ceil(8) as usize],
+        source_local_ref: String::new(),
+        partial_local_ref,
+        object_key: projection.metadata.object_key.clone(),
+        base_nonce: projection.metadata.base_nonce.clone(),
+        plaintext_size: projection.metadata.plaintext_size,
+        chunk_size: object.chunk_size,
+        attempt_count: 0,
+        next_attempt_at_unix_ms: created_at_unix_ms,
+        last_error_code: 0,
+        updated_at_unix_ms: created_at_unix_ms,
+    })
+}
+
+fn attachment_source_root(profile_id: &str) -> Result<PathBuf, String> {
+    if profile_id.trim().is_empty() {
+        return Err("messaging attachment source profile is required".to_string());
+    }
+    let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
+    Ok(std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join(".peers-touch")
+        .join("messaging-sources")
+        .join(profile_hash))
+}
+
+fn managed_attachment_source(profile_id: &str, path: &Path) -> Result<bool, String> {
+    let root = attachment_source_root(profile_id)?;
+    Ok(path.parent() == Some(root.as_path())
+        && path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| {
+                value.len() == 26 && value.chars().all(|ch| ch.is_ascii_alphanumeric())
+            }))
+}
+
+fn attachment_cache_path(profile_id: &str, attachment_id: &str) -> Result<PathBuf, String> {
+    if profile_id.trim().is_empty() || attachment_id.trim().is_empty() {
+        return Err("messaging attachment cache identity is incomplete".to_string());
+    }
+    let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
+    let root = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join(".peers-touch")
+        .join("messaging-cache")
+        .join(profile_hash);
+    Ok(root.join(attachment_id))
+}
+
+fn sha256_path(path: &Path) -> Result<[u8; 32], String> {
+    let mut file =
+        File::open(path).map_err(|error| format!("open messaging attachment cache: {error}"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0_u8; super::attachment::ATTACHMENT_CHUNK_SIZE as usize];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("hash messaging attachment cache: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher.finalize().into())
 }
 
 pub(crate) fn now_unix_ms() -> i64 {

@@ -9,7 +9,8 @@ use crate::domain::storage::database::DatabaseOpenSpec;
 use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
 use crate::infrastructure::storage::{open_database, resolve_database_path};
 use crate::model::chat::{
-    RecoveryArchiveManifest, RecoveryArchiveSection, RecoveryArchiveSectionKind,
+    AttachmentPlaintextMetadata, RecoveryArchiveManifest, RecoveryArchiveSection,
+    RecoveryArchiveSectionKind,
 };
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -21,7 +22,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
 
-pub const MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 1;
+pub const MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecoveryMessageProjection {
@@ -337,6 +338,11 @@ fn validate_archive_identity(
 }
 
 pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(), String> {
+    let message_ids = archive
+        .messages
+        .iter()
+        .map(|message| message.message_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
     if archive.ptid.trim().is_empty()
         || archive.actor_profile_version == 0
         || archive.conversations.iter().any(|conversation| {
@@ -358,7 +364,18 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
                 || message.sender_device_id.trim().is_empty()
         })
         || archive.attachments.iter().any(|attachment| {
-            attachment.message_id.trim().is_empty() || attachment.attachment_id.trim().is_empty()
+            attachment.message_id.trim().is_empty()
+                || attachment.attachment_id.trim().is_empty()
+                || !message_ids.contains(attachment.message_id.as_str())
+                || AttachmentPlaintextMetadata::decode(attachment.metadata.as_slice())
+                    .ok()
+                    .filter(|metadata| metadata.attachment_id == attachment.attachment_id)
+                    .and_then(|metadata| {
+                        super::private_content::validate_attachment_plaintext_metadata(&metadata)
+                            .ok()
+                            .map(|_| metadata)
+                    })
+                    .is_none()
         })
         || archive
             .trust
@@ -485,6 +502,7 @@ fn remove_database_files(path: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     use crate::domain::crypto::{DeviceSigningKey, IdentityKeyPair};
+    use crate::messaging::private_content::test_attachment_metadata;
 
     const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
 
@@ -518,7 +536,7 @@ mod tests {
             attachments: vec![RecoveryAttachmentMetadata {
                 message_id: "message-1".to_string(),
                 attachment_id: "attachment-1".to_string(),
-                metadata: b"encrypted object metadata".to_vec(),
+                metadata: test_attachment_metadata("attachment-1").encode_to_vec(),
             }],
             trust: vec![RecoveryTrustRecord {
                 peer_ptid: "ptid:bob".to_string(),

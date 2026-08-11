@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex, OnceLock};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use prost::Message;
@@ -7,10 +8,9 @@ use serde_json::json;
 use tauri::{State, Window};
 use x25519_dalek::{PublicKey, StaticSecret};
 
-use crate::application::chat_storage;
 use crate::application::key_exchange::device_install;
 use crate::application::session_resolver;
-use crate::contracts::{ChatIndexLocalInput, ChatSearchLocalInput, StubPayload};
+use crate::contracts::StubPayload;
 use crate::domain::crypto::{
     self, CryptoEndpoint, DirectSessionKey, PreKeyBundle, SessionManager, X25519KeyPair,
     X3dhReceiverInput,
@@ -37,10 +37,33 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+fn actor_ptid_bindings() -> &'static RwLock<HashMap<String, String>> {
+    static BINDINGS: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
+    BINDINGS.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn bind_actor_ptid(actor_id: &str, ptid: &str) -> Result<(), String> {
+    let ptid = ptid.trim();
+    if !ptid.starts_with("ptid:") {
+        return Err("canonical PTID is required for crypto identity".to_string());
+    }
+    actor_ptid_bindings()
+        .write()
+        .map_err(|_| "crypto identity binding lock poisoned".to_string())?
+        .insert(actor_id.to_string(), ptid.to_string());
+    Ok(())
+}
+
 fn local_endpoint(actor_id: &str) -> Result<CryptoEndpoint, String> {
+    let ptid = actor_ptid_bindings()
+        .read()
+        .map_err(|_| "crypto identity binding lock poisoned".to_string())?
+        .get(actor_id)
+        .cloned()
+        .ok_or_else(|| "crypto identity has no canonical PTID binding".to_string())?;
     let device_id =
         device_install::get_or_create_device_id(actor_id).map_err(|error| format!("{error:?}"))?;
-    CryptoEndpoint::new(actor_id, device_id).map_err(|error| error.to_string())
+    CryptoEndpoint::new(ptid, device_id).map_err(|error| error.to_string())
 }
 
 fn now_unix_seconds_i32() -> i32 {
@@ -62,105 +85,9 @@ pub(crate) fn to_stub(command: &str, data: serde_json::Value) -> AppResult<StubP
     })
 }
 
-/// Unified local FTS search (friend / group / both) with optional conversation filter.
-#[tauri::command]
-pub fn chat_search_local(
-    input: ChatSearchLocalInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    if input.query.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Search query is required", None);
-    }
-    let user_scope = user_scope_from_state(&state, &window);
-    let limit = input.limit.unwrap_or(30).clamp(1, 200) as usize;
-    let scope_filter = input.scope.trim();
-    let conv = input
-        .conversation_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("");
-    let items = match chat_storage::search_messages_unified(
-        user_scope.as_str(),
-        input.query.as_str(),
-        scope_filter,
-        conv,
-        limit,
-    ) {
-        Ok(items) => items,
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to search local messages: {}", reason),
-                None,
-            );
-        }
-    };
-    to_stub("chat_search_local", json!({ "results": items }))
-}
-
-#[tauri::command]
-pub fn chat_index_local_messages(
-    input: ChatIndexLocalInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let user_scope = user_scope_from_state(&state, &window);
-    let records = input
-        .messages
-        .into_iter()
-        .filter_map(|item| {
-            let scope = item.scope.trim();
-            if scope != "friend" && scope != "group" {
-                return None;
-            }
-            let conversation_id = item.conversation_id.trim();
-            let message_id = item.message_id.trim();
-            let content = item.content.trim();
-            if conversation_id.is_empty() || message_id.is_empty() || content.is_empty() {
-                return None;
-            }
-            Some(local_chat_store::LocalChatRecord {
-                scope: scope.to_string(),
-                conversation_id: conversation_id.to_string(),
-                message_id: message_id.to_string(),
-                sender_did: item.sender_did.trim().to_string(),
-                content: content.to_string(),
-                reply_to_ulid: item
-                    .reply_to_ulid
-                    .as_deref()
-                    .map(str::trim)
-                    .unwrap_or("")
-                    .to_string(),
-                thread_root_ulid: item
-                    .thread_root_ulid
-                    .as_deref()
-                    .map(str::trim)
-                    .unwrap_or("")
-                    .to_string(),
-                sent_at: item.sent_at,
-            })
-        })
-        .collect::<Vec<_>>();
-    let indexed = match chat_storage::index_plaintext_messages(user_scope.as_str(), &records) {
-        Ok(count) => count,
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to index local messages: {}", reason),
-                None,
-            );
-        }
-    };
-    to_stub(
-        "chat_index_local_messages",
-        json!({ "indexed_count": indexed }),
-    )
-}
-
 #[tauri::command]
 pub fn crypto_generate_identity(
+    ptid: String,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
@@ -174,6 +101,9 @@ pub fn crypto_generate_identity(
             );
         }
     };
+    if let Err(reason) = bind_actor_ptid(&actor_id, &ptid) {
+        return AppResult::fail(ErrorCode::InvalidArgument, reason, None);
+    }
     let identity_key_ref =
         crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
             .identity_key_ref();
@@ -201,7 +131,7 @@ pub fn crypto_generate_identity(
     to_stub(
         "crypto_generate_identity",
         json!({
-            "ptid": actor_id,
+            "ptid": ptid,
             "deviceId": endpoint.device_id,
             "identityPublicKey": B64.encode(kp.verifying_key.to_bytes()),
             "fingerprint": fp,
@@ -212,10 +142,11 @@ pub fn crypto_generate_identity(
 
 #[tauri::command]
 pub fn crypto_get_identity(
+    ptid: String,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    crypto_generate_identity(state, window)
+    crypto_generate_identity(ptid, state, window)
 }
 
 #[tauri::command]

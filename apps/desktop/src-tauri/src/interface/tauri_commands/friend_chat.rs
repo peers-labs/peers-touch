@@ -2,13 +2,13 @@ use crate::application::chat_storage;
 use crate::application::session_resolver;
 use crate::contracts::{
     AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput,
-    ChatScopeCursorSetInput, FriendChatAcceptFriendRequestInput, FriendChatAckInput,
-    FriendChatBlockUserInput, FriendChatDeleteInput, FriendChatEditInput,
+    ChatScopeCursorSetInput, FriendChatAcceptFriendRequestInput, FriendChatBlockUserInput,
+    FriendChatCreateSessionInput, FriendChatDeleteInput, FriendChatEditInput,
     FriendChatListBlockedUsersInput, FriendChatListFriendRequestsInput, FriendChatListInput,
     FriendChatListMessagesInput, FriendChatPendingInput, FriendChatRecallInput,
-    FriendChatRejectFriendRequestInput, FriendChatSendFriendRequestInput, FriendChatSendInput,
-    FriendChatSyncInput, FriendChatSyncMessagesInput, FriendChatThreadCountsInput,
-    FriendChatThreadInput, FriendChatThreadReadInput, FriendConversationSettingsInput,
+    FriendChatRejectFriendRequestInput, FriendChatSendFriendRequestInput, FriendChatSyncInput,
+    FriendChatSyncMessagesInput, FriendChatThreadCountsInput, FriendChatThreadInput,
+    FriendChatThreadReadInput, FriendConversationSettingsInput,
     FriendConversationSettingsUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
@@ -16,7 +16,6 @@ use crate::infrastructure::station_client;
 use crate::model;
 use crate::model::chat as model_chat;
 use crate::state::AppState;
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use prost::Message;
 use reqwest::Method;
 use serde_json::{json, Value};
@@ -319,6 +318,42 @@ pub fn friend_chat_list_sessions(
 }
 
 #[tauri::command]
+pub fn friend_chat_create_session(
+    input: FriendChatCreateSessionInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.participant_did.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "participant_did is required",
+            None,
+        );
+    }
+    let req = model::chat::CreateSessionRequest {
+        participant_did: input.participant_did,
+    };
+    let resp = match station_client::request_proto::<
+        model::chat::CreateSessionRequest,
+        model::chat::CreateSessionResponse,
+    >(
+        Method::POST,
+        "/friend-chat/session/create",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
 pub fn friend_chat_list_messages(
     input: FriendChatListMessagesInput,
     state: State<'_, Arc<AppState>>,
@@ -433,102 +468,6 @@ pub fn friend_chat_thread_mark_read(
         Err(error) => return fail_station_error_stub(error),
     };
     to_stub("friend_chat_thread_mark_read", data)
-}
-
-#[tauri::command]
-pub fn friend_chat_send_message(
-    input: FriendChatSendInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    if input.session_ulid.trim().is_empty() || input.receiver_did.trim().is_empty() {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "session_ulid and receiver_did are required",
-            None,
-        );
-    }
-
-    let mut encrypted_payload: Vec<u8> = Vec::new();
-    if let Some(ref b64) = input.encrypted_payload {
-        let t = b64.trim();
-        if !t.is_empty() {
-            encrypted_payload = match B64.decode(t.as_bytes()) {
-                Ok(b) => b,
-                Err(e) => {
-                    return AppResult::fail(
-                        ErrorCode::InvalidArgument,
-                        format!("Invalid encrypted_payload: {}", e),
-                        None,
-                    );
-                }
-            };
-        }
-    }
-
-    let req = model::chat::SendMessageRequest {
-        session_ulid: input.session_ulid,
-        receiver_did: input.receiver_did,
-        r#type: input.r#type.unwrap_or(1),
-        content: input.content,
-        attachments: map_attachments(&input.attachments.unwrap_or_default()),
-        reply_to_ulid: input.reply_to_ulid.unwrap_or_default(),
-        thread_root_ulid: input.thread_root_ulid.unwrap_or_default(),
-        encrypted_payload,
-        client_ulid: input.client_ulid.unwrap_or_default(),
-    };
-
-    let resp = match station_client::request_proto::<
-        model::chat::SendMessageRequest,
-        model::chat::SendMessageResponse,
-    >(
-        Method::POST,
-        "/friend-chat/message/send",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "station request failed"),
-    };
-    AppResult::success(resp.encode_to_vec())
-}
-
-#[tauri::command]
-pub fn friend_chat_ack_messages(
-    input: FriendChatAckInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    if input.ulids.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "ulids is required", None);
-    }
-    let req = model::chat::MessageAckRequest {
-        ulids: input.ulids,
-        status: input.status,
-    };
-    let resp = match station_client::request_proto::<
-        model::chat::MessageAckRequest,
-        model::chat::MessageAckResponse,
-    >(
-        Method::POST,
-        "/friend-chat/message/ack",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "station request failed"),
-    };
-    AppResult::success(resp.encode_to_vec())
 }
 
 #[tauri::command]

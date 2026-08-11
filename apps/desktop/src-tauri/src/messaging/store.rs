@@ -8,6 +8,11 @@ use crate::domain::crypto::{CryptoEndpoint, DirectSession, DirectSessionKey};
 use crate::domain::storage::database::DatabaseOpenSpec;
 use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
 use crate::infrastructure::storage::open_database;
+use crate::model::chat::{
+    AttachmentPlaintextMetadata, AttachmentTransferState, EncryptedObjectDescriptor,
+    EncryptedObjectUploadSpec,
+};
+use prost::Message;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -31,7 +36,16 @@ pub struct MessageProjection {
     pub sender_ptid: String,
     pub sender_device_id: String,
     pub plaintext: String,
+    pub attachments: Vec<AttachmentPlaintextMetadata>,
     pub committed_at_unix_ms: i64,
+    /// The message_id of the parent message this is replying to, if any.
+    pub reply_to_message_id: Option<String>,
+    /// Latest edited plaintext content (None if never edited).
+    pub edited_text: Option<String>,
+    /// Timestamp of last edit in unix milliseconds (None if never edited).
+    pub edited_at_unix_ms: Option<i64>,
+    /// Whether the message has been retracted/deleted.
+    pub retracted: bool,
 }
 
 pub struct PendingSenderProjection<'a> {
@@ -42,6 +56,8 @@ pub struct PendingSenderProjection<'a> {
     pub sender_ptid: &'a str,
     pub sender_device_id: &'a str,
     pub plaintext: &'a str,
+    pub attachments: &'a [AttachmentPlaintextMetadata],
+    pub private_content: &'a [u8],
     pub delivery_plan_sha256: &'a [u8],
     pub created_at_unix_ms: i64,
 }
@@ -54,8 +70,26 @@ pub struct PendingMessageDraft {
     pub sender_ptid: String,
     pub sender_device_id: String,
     pub plaintext: String,
+    pub attachments: Vec<AttachmentPlaintextMetadata>,
     pub attempt_count: u32,
     pub created_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingAttachmentUpload {
+    pub transfer: AttachmentTransferRecord,
+    pub filename: String,
+    pub mime_type: String,
+    pub plaintext_sha256: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachmentDownloadProjection {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub authority_station_id: String,
+    pub metadata: AttachmentPlaintextMetadata,
+    pub local_cache_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,8 +137,17 @@ pub struct ConversationMessageProjection {
     pub sender_ptid: String,
     pub sender_device_id: String,
     pub plaintext: String,
+    pub attachments: Vec<AttachmentPlaintextMetadata>,
     pub state: String,
     pub timestamp_unix_ms: i64,
+    /// The message_id of the parent message this is replying to, if any.
+    pub reply_to_message_id: Option<String>,
+    /// Latest edited plaintext content (None if never edited).
+    pub edited_text: Option<String>,
+    /// Timestamp of last edit in unix milliseconds (None if never edited).
+    pub edited_at_unix_ms: Option<i64>,
+    /// Whether the message has been retracted/deleted.
+    pub retracted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -215,6 +258,7 @@ pub struct PublicEventReceiveCommit<'a> {
     pub previous_event_hash: &'a [u8],
     pub sender_ptid: &'a str,
     pub sender_device_id: &'a str,
+    pub attachments: &'a [EncryptedObjectDescriptor],
     pub committed_at_unix_ms: i64,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
@@ -235,6 +279,33 @@ pub struct DirectReceiveCommit<'a> {
     pub consumed_skipped: Option<([u8; 32], u32)>,
     pub consumed_one_time_prekey_id: Option<i32>,
     pub projection: &'a MessageProjection,
+    pub reply_to_message_id: Option<&'a str>,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+/// Atomic commit for a Direct-encrypted message edit.
+/// Persists session advancement, skipped keys, consumption marker, and the
+/// edit UPDATE in one transaction — same atomicity guarantee as
+/// `DirectReceiveCommit` but without inserting a new message projection.
+pub struct DirectEditCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub event_sequence: i64,
+    pub session: &'a DirectSession,
+    pub new_skipped: &'a [DrSkippedMessageKey],
+    pub consumed_skipped: Option<([u8; 32], u32)>,
+    pub consumed_one_time_prekey_id: Option<i32>,
+    pub message_id: &'a str,
+    pub edited_text: &'a str,
+    pub edited_at_unix_ms: i64,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
@@ -253,6 +324,7 @@ pub struct MlsReceiveCommit<'a> {
     pub membership_epoch: i64,
     pub mls_epoch: i64,
     pub projection: &'a MessageProjection,
+    pub reply_to_message_id: Option<&'a str>,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
@@ -331,6 +403,8 @@ enum ReceiveFailPoint {
     None,
     AfterCrypto,
     AfterProjection,
+    AfterAttachments,
+    AfterSearch,
     BeforeCommit,
 }
 
@@ -910,7 +984,8 @@ impl MessagingStore {
             .map_err(|error| error.to_string())?;
         let pending_changed = transaction
             .execute(
-                "UPDATE messaging_pending_messages AS p SET state = 'pending'
+                "UPDATE messaging_pending_messages AS p
+                 SET state = 'draft', last_error_code = 'stale_delivery_plan'
                  WHERE EXISTS (
                     SELECT 1 FROM messaging_command_attempts a
                     WHERE a.command_id = ?1
@@ -1225,10 +1300,12 @@ impl MessagingStore {
         if conversation_id.trim().is_empty() || message_id.trim().is_empty() {
             return Err("messaging projection identity is required".to_string());
         }
-        self.connection()?
+        let connection = self.connection()?;
+        let projection = connection
             .query_row(
                 "SELECT event_id, event_sequence, sender_ptid, sender_device_id,
-                        plaintext, delivery_state, committed_at_unix_ms
+                        plaintext, delivery_state, committed_at_unix_ms,
+                        reply_to_message_id, edited_text, edited_at_unix_ms, retracted
                  FROM messaging_message_projections
                  WHERE conversation_id = ?1 AND message_id = ?2",
                 params![conversation_id, message_id],
@@ -1243,14 +1320,65 @@ impl MessagingStore {
                             sender_ptid: row.get(2)?,
                             sender_device_id: row.get(3)?,
                             plaintext: row.get(4)?,
+                            attachments: Vec::new(),
                             committed_at_unix_ms: row.get(6)?,
+                            reply_to_message_id: row.get(7)?,
+                            edited_text: row.get(8)?,
+                            edited_at_unix_ms: row.get(9)?,
+                            retracted: row.get::<_, i64>(10).unwrap_or(0) != 0,
                         },
                         delivery_state,
                     ))
                 },
             )
             .optional()
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        let Some((mut projection, delivery_state)) = projection else {
+            return Ok(None);
+        };
+        let mut statement = connection
+            .prepare(
+                "SELECT attachment_id, filename, mime_type, plaintext_size,
+                        plaintext_sha256, object_key, base_nonce, descriptor_bytes
+                 FROM messaging_attachment_projections
+                 WHERE message_id = ?1
+                 ORDER BY attachment_id",
+            )
+            .map_err(|error| error.to_string())?;
+        projection.attachments = statement
+            .query_map(params![message_id], |row| {
+                let descriptor_bytes = row.get::<_, Vec<u8>>(7)?;
+                let object = crate::model::chat::EncryptedObjectDescriptor::decode(
+                    descriptor_bytes.as_slice(),
+                )
+                .map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        descriptor_bytes.len(),
+                        rusqlite::types::Type::Blob,
+                        Box::new(error),
+                    )
+                })?;
+                Ok(AttachmentPlaintextMetadata {
+                    attachment_id: row.get(0)?,
+                    filename: row.get(1)?,
+                    mime_type: row.get(2)?,
+                    plaintext_size: row.get::<_, i64>(3)?.try_into().map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            8,
+                            rusqlite::types::Type::Integer,
+                            Box::new(error),
+                        )
+                    })?,
+                    plaintext_sha256: row.get(4)?,
+                    object_key: row.get(5)?,
+                    base_nonce: row.get(6)?,
+                    object: Some(object),
+                })
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(Some((projection, delivery_state)))
     }
 
     pub fn conversation_message_projections(
@@ -1265,13 +1393,15 @@ impl MessagingStore {
             .prepare(
                 "SELECT event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext,
-                        delivery_state, committed_at_unix_ms
+                        delivery_state, committed_at_unix_ms,
+                        reply_to_message_id, edited_text, edited_at_unix_ms, retracted
                  FROM messaging_message_projections
                  WHERE conversation_id = ?1
                  UNION ALL
                  SELECT NULL, NULL, pending.message_id,
                         pending.sender_ptid, pending.sender_device_id,
-                        pending.plaintext, pending.state, pending.created_at_unix_ms
+                        pending.plaintext, pending.state, pending.created_at_unix_ms,
+                        NULL, NULL, NULL, 0
                  FROM messaging_pending_messages pending
                  WHERE pending.conversation_id = ?1
                    AND NOT EXISTS (
@@ -1282,7 +1412,7 @@ impl MessagingStore {
                  ORDER BY 8 ASC, 3 ASC",
             )
             .map_err(|error| error.to_string())?;
-        let rows = statement
+        let mut rows = statement
             .query_map(params![conversation_id], |row| {
                 Ok(ConversationMessageProjection {
                     event_id: row.get(0)?,
@@ -1291,13 +1421,101 @@ impl MessagingStore {
                     sender_ptid: row.get(3)?,
                     sender_device_id: row.get(4)?,
                     plaintext: row.get(5)?,
+                    attachments: Vec::new(),
                     state: row.get(6)?,
                     timestamp_unix_ms: row.get(7)?,
+                    reply_to_message_id: row.get(8)?,
+                    edited_text: row.get(9)?,
+                    edited_at_unix_ms: row.get(10)?,
+                    retracted: row.get::<_, i64>(11).unwrap_or(0) != 0,
                 })
             })
             .map_err(|error| error.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| error.to_string())?;
+        for row in &mut rows {
+            row.attachments = load_visible_message_attachments(&connection, &row.message_id)?;
+        }
+        Ok(rows)
+    }
+
+    pub fn search_message_projections(
+        &self,
+        conversation_id: &str,
+        query: &str,
+        before: Option<(i64, &str)>,
+        limit: usize,
+    ) -> Result<Vec<ConversationMessageProjection>, String> {
+        if conversation_id.trim().is_empty()
+            || query.trim().is_empty()
+            || limit == 0
+            || limit > 100
+            || before.is_some_and(|(timestamp, message_id)| {
+                timestamp <= 0 || message_id.trim().is_empty()
+            })
+        {
+            return Err("messaging search input is invalid".to_string());
+        }
+        let search_query = fts_phrase_query(query)?;
+        let (before_timestamp, before_message_id) = before.unwrap_or((i64::MAX, "\u{10ffff}"));
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT message.event_id, message.event_sequence, message.message_id,
+                        message.sender_ptid, message.sender_device_id, message.plaintext,
+                        message.delivery_state, message.committed_at_unix_ms,
+                        message.reply_to_message_id, message.edited_text,
+                        message.edited_at_unix_ms, message.retracted
+                 FROM messaging_message_search_fts
+                 JOIN messaging_message_projections message
+                   ON message.conversation_id = messaging_message_search_fts.conversation_id
+                  AND message.message_id = messaging_message_search_fts.message_id
+                 WHERE messaging_message_search_fts MATCH ?1
+                   AND messaging_message_search_fts.conversation_id = ?2
+                   AND (
+                     message.committed_at_unix_ms < ?3
+                     OR (
+                       message.committed_at_unix_ms = ?3
+                       AND message.message_id < ?4
+                     )
+                   )
+                 ORDER BY message.committed_at_unix_ms DESC, message.message_id DESC
+                 LIMIT ?5",
+            )
+            .map_err(|error| error.to_string())?;
+        let mut rows = statement
+            .query_map(
+                params![
+                    search_query,
+                    conversation_id,
+                    before_timestamp,
+                    before_message_id,
+                    i64::try_from(limit).map_err(|_| "messaging search limit exceeds i64")?
+                ],
+                |row| {
+                    Ok(ConversationMessageProjection {
+                        event_id: Some(row.get(0)?),
+                        event_sequence: Some(row.get(1)?),
+                        message_id: row.get(2)?,
+                        sender_ptid: row.get(3)?,
+                        sender_device_id: row.get(4)?,
+                        plaintext: row.get(5)?,
+                        attachments: Vec::new(),
+                        state: row.get(6)?,
+                        timestamp_unix_ms: row.get(7)?,
+                        reply_to_message_id: row.get(8)?,
+                        edited_text: row.get(9)?,
+                        edited_at_unix_ms: row.get(10)?,
+                        retracted: row.get::<_, i64>(11).unwrap_or(0) != 0,
+                    })
+                },
+            )
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        for row in &mut rows {
+            row.attachments = load_attachment_metadata(&connection, &row.message_id)?;
+        }
         Ok(rows)
     }
 
@@ -1434,18 +1652,24 @@ impl MessagingStore {
     }
 
     pub fn create_message_draft(&self, draft: &PendingMessageDraft) -> Result<(), String> {
+        let private_content = super::private_content::encode_message_private_content(
+            &draft.plaintext,
+            &draft.attachments,
+        )?;
         if draft.conversation_id.trim().is_empty()
             || draft.conversation_kind <= 0
             || draft.message_id.trim().is_empty()
             || draft.sender_ptid.trim().is_empty()
             || draft.sender_device_id.trim().is_empty()
-            || draft.plaintext.is_empty()
             || draft.created_at_unix_ms <= 0
         {
             return Err("messaging draft intent is incomplete".to_string());
         }
-        let changed = self
-            .connection()?
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let changed = transaction
             .execute(
                 "INSERT INTO messaging_pending_messages(
                     conversation_id, conversation_kind, message_id,
@@ -1467,6 +1691,200 @@ impl MessagingStore {
             .map_err(|error| error.to_string())?;
         if changed != 1 {
             return Err("messaging draft identity already exists".to_string());
+        }
+        persist_sender_content(
+            &transaction,
+            &draft.conversation_id,
+            &draft.message_id,
+            &draft.plaintext,
+            &draft.attachments,
+            &private_content,
+        )?;
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    pub fn create_message_draft_with_uploads(
+        &self,
+        draft: &PendingMessageDraft,
+        uploads: &[PendingAttachmentUpload],
+    ) -> Result<(), String> {
+        if uploads.is_empty()
+            || !draft.attachments.is_empty()
+            || draft.conversation_id.trim().is_empty()
+            || draft.conversation_kind <= 0
+            || draft.message_id.trim().is_empty()
+            || draft.sender_ptid.trim().is_empty()
+            || draft.sender_device_id.trim().is_empty()
+            || draft.created_at_unix_ms <= 0
+        {
+            return Err("messaging attachment draft intent is incomplete".to_string());
+        }
+        let mut previous_attachment_id: Option<&str> = None;
+        for upload in uploads {
+            validate_attachment_transfer(&upload.transfer)?;
+            if upload.transfer.conversation_id != draft.conversation_id
+                || upload.transfer.message_id != draft.message_id
+                || upload.transfer.direction != 1
+                || upload.transfer.state != AttachmentTransferState::Queued as i32
+                || upload.filename.trim().is_empty()
+                || upload.filename.len() > 1024
+                || upload.mime_type.trim().is_empty()
+                || upload.mime_type.len() > 255
+                || upload.plaintext_sha256.len() != 32
+                || previous_attachment_id
+                    .is_some_and(|previous| previous >= upload.transfer.attachment_id.as_str())
+            {
+                return Err("messaging staged attachment is invalid".to_string());
+            }
+            previous_attachment_id = Some(upload.transfer.attachment_id.as_str());
+        }
+
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "INSERT INTO messaging_pending_messages(
+                    conversation_id, conversation_kind, message_id,
+                    sender_ptid, sender_device_id, plaintext, state,
+                    attempt_count, next_attempt_at_unix_ms, last_error_code,
+                    created_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'draft', 0, ?7, '', ?7)
+                 ON CONFLICT(conversation_id, message_id) DO NOTHING",
+                params![
+                    draft.conversation_id,
+                    draft.conversation_kind,
+                    draft.message_id,
+                    draft.sender_ptid,
+                    draft.sender_device_id,
+                    draft.plaintext,
+                    draft.created_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging draft identity already exists".to_string());
+        }
+        for upload in uploads {
+            let transfer = &upload.transfer;
+            let generation =
+                i64::try_from(transfer.generation).map_err(|_| "attachment generation overflow")?;
+            let plaintext_size = i64::try_from(transfer.plaintext_size)
+                .map_err(|_| "attachment plaintext size overflow")?;
+            transaction
+                .execute(
+                    "INSERT INTO messaging_attachment_drafts(
+                        attachment_id, conversation_id, message_id, filename,
+                        mime_type, plaintext_sha256, descriptor_bytes,
+                        created_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7)",
+                    params![
+                        transfer.attachment_id,
+                        transfer.conversation_id,
+                        transfer.message_id,
+                        upload.filename,
+                        upload.mime_type,
+                        upload.plaintext_sha256,
+                        draft.created_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "INSERT INTO messaging_attachment_transfers(
+                        attachment_id, conversation_id, message_id, authority_station_id,
+                        direction, state, upload_id, generation, descriptor_sha256,
+                        completed_chunk_bitmap, source_local_ref, partial_local_ref,
+                        object_key, base_nonce, plaintext_size, chunk_size, attempt_count,
+                        next_attempt_at_unix_ms, last_error_code, updated_at_unix_ms
+                     ) VALUES (
+                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                        ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20
+                     )",
+                    params![
+                        transfer.attachment_id,
+                        transfer.conversation_id,
+                        transfer.message_id,
+                        transfer.authority_station_id,
+                        transfer.direction,
+                        transfer.state,
+                        transfer.upload_id,
+                        generation,
+                        transfer.descriptor_sha256,
+                        transfer.completed_chunk_bitmap,
+                        transfer.source_local_ref,
+                        transfer.partial_local_ref,
+                        transfer.object_key,
+                        transfer.base_nonce,
+                        plaintext_size,
+                        transfer.chunk_size,
+                        transfer.attempt_count,
+                        transfer.next_attempt_at_unix_ms,
+                        transfer.last_error_code,
+                        transfer.updated_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    pub fn validate_sender_attachments_ready(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        attachments: &[AttachmentPlaintextMetadata],
+    ) -> Result<(), String> {
+        for attachment in attachments {
+            super::private_content::validate_attachment_plaintext_metadata(attachment)?;
+            let object = attachment
+                .object
+                .as_ref()
+                .ok_or_else(|| "messaging attachment descriptor is missing".to_string())?;
+            let upload_spec = EncryptedObjectUploadSpec {
+                ciphertext_size: object.ciphertext_size,
+                ciphertext_sha256: object.ciphertext_sha256.clone(),
+                media_type: object.media_type.clone(),
+                chunk_size: object.chunk_size,
+                chunk_count: object.chunk_count,
+                encryption_suite: object.encryption_suite,
+                tag_size: object.tag_size,
+                nonce_strategy: object.nonce_strategy,
+                chunk_ciphertext_sha256: object.chunk_ciphertext_sha256.clone(),
+            };
+            let transfer = self
+                .attachment_transfer(&attachment.attachment_id)?
+                .ok_or_else(|| {
+                    "messaging attachment is not durably complete for send".to_string()
+                })?;
+            let descriptor_commitment = super::attachment_transfer::upload_commitment_fields(
+                conversation_id,
+                message_id,
+                &attachment.attachment_id,
+                &transfer.authority_station_id,
+                &upload_spec,
+            );
+            let bitmap_complete = transfer.completed_chunk_bitmap.len()
+                == object.chunk_count.div_ceil(8) as usize
+                && (0..object.chunk_count).all(|chunk_index| {
+                    transfer.completed_chunk_bitmap[chunk_index as usize / 8]
+                        & (1 << (chunk_index % 8))
+                        != 0
+                });
+            if transfer.conversation_id != conversation_id
+                || transfer.message_id != message_id
+                || transfer.direction != 1
+                || transfer.state != AttachmentTransferState::Complete as i32
+                || transfer.descriptor_sha256 != descriptor_commitment
+                || transfer.object_key != attachment.object_key
+                || transfer.base_nonce != attachment.base_nonce
+                || transfer.plaintext_size != attachment.plaintext_size
+                || transfer.chunk_size != object.chunk_size
+                || !bitmap_complete
+            {
+                return Err("messaging attachment is not durably complete for send".to_string());
+            }
         }
         Ok(())
     }
@@ -1530,6 +1948,75 @@ impl MessagingStore {
         Ok(false)
     }
 
+    pub fn replace_completed_upload_with_download(
+        &self,
+        download: &AttachmentTransferRecord,
+    ) -> Result<(), String> {
+        validate_attachment_transfer(download)?;
+        if download.direction != 2
+            || download.state != AttachmentTransferState::Queued as i32
+            || download.generation != 0
+            || !download.upload_id.is_empty()
+            || download.descriptor_sha256 != vec![0; 32]
+            || download
+                .completed_chunk_bitmap
+                .iter()
+                .any(|byte| *byte != 0)
+            || !download.source_local_ref.is_empty()
+        {
+            return Err("messaging attachment download replacement is invalid".to_string());
+        }
+        let plaintext_size = i64::try_from(download.plaintext_size)
+            .map_err(|_| "attachment plaintext size overflow")?;
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE messaging_attachment_transfers
+                 SET direction = 2,
+                     state = ?2,
+                     upload_id = '',
+                     generation = 0,
+                     descriptor_sha256 = zeroblob(32),
+                     completed_chunk_bitmap = ?3,
+                     source_local_ref = '',
+                     partial_local_ref = ?4,
+                     attempt_count = 0,
+                     next_attempt_at_unix_ms = ?5,
+                     last_error_code = 0,
+                     updated_at_unix_ms = ?5
+                 WHERE attachment_id = ?1
+                   AND conversation_id = ?6
+                   AND message_id = ?7
+                   AND authority_station_id = ?8
+                   AND direction = 1
+                   AND state = ?9
+                   AND object_key = ?10
+                   AND base_nonce = ?11
+                   AND plaintext_size = ?12
+                   AND chunk_size = ?13",
+                params![
+                    download.attachment_id,
+                    AttachmentTransferState::Queued as i32,
+                    download.completed_chunk_bitmap,
+                    download.partial_local_ref,
+                    download.updated_at_unix_ms,
+                    download.conversation_id,
+                    download.message_id,
+                    download.authority_station_id,
+                    AttachmentTransferState::Complete as i32,
+                    download.object_key,
+                    download.base_nonce,
+                    plaintext_size,
+                    download.chunk_size,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging completed upload could not become a download".to_string());
+        }
+        Ok(())
+    }
+
     pub fn attachment_transfer(
         &self,
         attachment_id: &str,
@@ -1551,6 +2038,424 @@ impl MessagingStore {
             )
             .optional()
             .map_err(|error| error.to_string())
+    }
+
+    pub fn attachment_download_projection(
+        &self,
+        attachment_id: &str,
+    ) -> Result<Option<AttachmentDownloadProjection>, String> {
+        if attachment_id.trim().is_empty() {
+            return Err("messaging attachment ID is required".to_string());
+        }
+        let projection = self
+            .connection()?
+            .query_row(
+                "SELECT message.conversation_id, attachment.message_id,
+                        conversation.authority_station_id,
+                        attachment.filename, attachment.mime_type,
+                        attachment.plaintext_size, attachment.plaintext_sha256,
+                        attachment.object_key, attachment.base_nonce,
+                        attachment.descriptor_bytes, attachment.local_cache_path
+                 FROM messaging_attachment_projections attachment
+                 JOIN messaging_message_projections message
+                   ON message.message_id = attachment.message_id
+                 JOIN messaging_conversations conversation
+                   ON conversation.conversation_id = message.conversation_id
+                 WHERE attachment.attachment_id = ?1",
+                params![attachment_id],
+                |row| {
+                    let descriptor_bytes = row.get::<_, Vec<u8>>(9)?;
+                    let object = EncryptedObjectDescriptor::decode(descriptor_bytes.as_slice())
+                        .map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                descriptor_bytes.len(),
+                                rusqlite::types::Type::Blob,
+                                Box::new(error),
+                            )
+                        })?;
+                    Ok(AttachmentDownloadProjection {
+                        conversation_id: row.get(0)?,
+                        message_id: row.get(1)?,
+                        authority_station_id: row.get(2)?,
+                        metadata: AttachmentPlaintextMetadata {
+                            attachment_id: attachment_id.to_string(),
+                            filename: row.get(3)?,
+                            mime_type: row.get(4)?,
+                            plaintext_size: row.get::<_, i64>(5)?.try_into().map_err(|error| {
+                                rusqlite::Error::FromSqlConversionFailure(
+                                    8,
+                                    rusqlite::types::Type::Integer,
+                                    Box::new(error),
+                                )
+                            })?,
+                            plaintext_sha256: row.get(6)?,
+                            object_key: row.get(7)?,
+                            base_nonce: row.get(8)?,
+                            object: Some(object),
+                        },
+                        local_cache_path: row.get(10)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if let Some(projection) = projection.as_ref() {
+            super::private_content::validate_attachment_plaintext_metadata(&projection.metadata)?;
+            if projection.conversation_id.trim().is_empty()
+                || projection.message_id.trim().is_empty()
+                || projection.authority_station_id.trim().is_empty()
+            {
+                return Err("messaging attachment download projection is incomplete".to_string());
+            }
+        }
+        Ok(projection)
+    }
+
+    pub fn attachment_upload_media_type(&self, attachment_id: &str) -> Result<String, String> {
+        if attachment_id.trim().is_empty() {
+            return Err("messaging attachment ID is required".to_string());
+        }
+        let media_type = self
+            .connection()?
+            .query_row(
+                "SELECT mime_type FROM messaging_attachment_drafts
+                 WHERE attachment_id = ?1",
+                params![attachment_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if let Some(media_type) = media_type {
+            return Ok(media_type);
+        }
+        Ok("application/octet-stream".to_string())
+    }
+
+    pub fn next_due_attachment_upload(&self, now_unix_ms: i64) -> Result<Option<String>, String> {
+        if now_unix_ms <= 0 {
+            return Err("messaging attachment retry time is invalid".to_string());
+        }
+        self.connection()?
+            .query_row(
+                "SELECT attachment_id
+                 FROM messaging_attachment_transfers
+                 WHERE direction = 1
+                   AND state IN (?1, ?2, ?3)
+                   AND next_attempt_at_unix_ms <= ?4
+                 ORDER BY next_attempt_at_unix_ms ASC, updated_at_unix_ms ASC, attachment_id ASC
+                 LIMIT 1",
+                params![
+                    AttachmentTransferState::Queued as i32,
+                    AttachmentTransferState::Transferring as i32,
+                    AttachmentTransferState::RetryWait as i32,
+                    now_unix_ms,
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn next_due_attachment_download(&self, now_unix_ms: i64) -> Result<Option<String>, String> {
+        if now_unix_ms <= 0 {
+            return Err("messaging attachment retry time is invalid".to_string());
+        }
+        self.connection()?
+            .query_row(
+                "SELECT attachment_id
+                 FROM messaging_attachment_transfers
+                 WHERE direction = 2
+                   AND state IN (?1, ?2, ?3)
+                   AND next_attempt_at_unix_ms <= ?4
+                 ORDER BY next_attempt_at_unix_ms ASC, updated_at_unix_ms ASC, attachment_id ASC
+                 LIMIT 1",
+                params![
+                    AttachmentTransferState::Queued as i32,
+                    AttachmentTransferState::Transferring as i32,
+                    AttachmentTransferState::RetryWait as i32,
+                    now_unix_ms,
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn completed_attachment_source_paths(&self) -> Result<Vec<(String, String)>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT attachment_id, source_local_ref
+                 FROM messaging_attachment_transfers
+                 WHERE direction = 1
+                   AND state = ?1
+                   AND source_local_ref <> ''
+                 ORDER BY attachment_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map(params![AttachmentTransferState::Complete as i32], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
+    }
+
+    pub fn clear_completed_attachment_source(
+        &self,
+        attachment_id: &str,
+        source_local_ref: &str,
+    ) -> Result<(), String> {
+        if attachment_id.trim().is_empty() || source_local_ref.trim().is_empty() {
+            return Err("messaging attachment source cleanup is incomplete".to_string());
+        }
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE messaging_attachment_transfers
+                 SET source_local_ref = ''
+                 WHERE attachment_id = ?1
+                   AND direction = 1
+                   AND state = ?2
+                   AND source_local_ref = ?3",
+                params![
+                    attachment_id,
+                    AttachmentTransferState::Complete as i32,
+                    source_local_ref
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging attachment source cleanup was not fenced".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn reconcile_completed_attachment_uploads(&self) -> Result<usize, String> {
+        self.connection()?
+            .execute(
+                "UPDATE messaging_attachment_transfers AS transfer
+                 SET state = ?1,
+                     next_attempt_at_unix_ms = 0,
+                     last_error_code = 0
+                 WHERE transfer.direction = 1
+                   AND transfer.state != ?1
+                   AND EXISTS (
+                     SELECT 1
+                     FROM messaging_attachment_drafts AS draft
+                     WHERE draft.attachment_id = transfer.attachment_id
+                       AND draft.message_id = transfer.message_id
+                       AND draft.descriptor_bytes IS NOT NULL
+                   )",
+                params![AttachmentTransferState::Complete as i32],
+            )
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn complete_attachment_upload(
+        &self,
+        transfer: &AttachmentTransferRecord,
+        descriptor: &EncryptedObjectDescriptor,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        super::attachment::validate_encrypted_object_descriptor(descriptor)?;
+        validate_attachment_transfer(transfer)?;
+        if updated_at_unix_ms <= 0 {
+            return Err("messaging attachment completion time is invalid".to_string());
+        }
+        let upload_spec = EncryptedObjectUploadSpec {
+            ciphertext_size: descriptor.ciphertext_size,
+            ciphertext_sha256: descriptor.ciphertext_sha256.clone(),
+            media_type: descriptor.media_type.clone(),
+            chunk_size: descriptor.chunk_size,
+            chunk_count: descriptor.chunk_count,
+            encryption_suite: descriptor.encryption_suite,
+            tag_size: descriptor.tag_size,
+            nonce_strategy: descriptor.nonce_strategy,
+            chunk_ciphertext_sha256: descriptor.chunk_ciphertext_sha256.clone(),
+        };
+        let expected_commitment = super::attachment_transfer::upload_commitment_fields(
+            &transfer.conversation_id,
+            &transfer.message_id,
+            &transfer.attachment_id,
+            &transfer.authority_station_id,
+            &upload_spec,
+        );
+        if transfer.descriptor_sha256 != expected_commitment {
+            return Err("messaging attachment completion descriptor mismatch".to_string());
+        }
+        let generation =
+            i64::try_from(transfer.generation).map_err(|_| "attachment generation overflow")?;
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let draft_media_type = transaction
+            .query_row(
+                "SELECT mime_type FROM messaging_attachment_drafts
+                 WHERE attachment_id = ?1
+                   AND conversation_id = ?2
+                   AND message_id = ?3",
+                params![
+                    transfer.attachment_id,
+                    transfer.conversation_id,
+                    transfer.message_id
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let mime_type = draft_media_type
+            .as_deref()
+            .unwrap_or(descriptor.media_type.as_str());
+        if mime_type != descriptor.media_type {
+            return Err("messaging attachment completion media type mismatch".to_string());
+        }
+        let transfer_changed = transaction
+            .execute(
+                "UPDATE messaging_attachment_transfers
+                 SET state = ?2,
+                     upload_id = ?3,
+                     generation = ?4,
+                     completed_chunk_bitmap = ?5,
+                     attempt_count = ?6,
+                     next_attempt_at_unix_ms = 0,
+                     last_error_code = 0,
+                     updated_at_unix_ms = ?7
+                 WHERE attachment_id = ?1
+                   AND descriptor_sha256 = ?8
+                   AND state IN (?9, ?10)",
+                params![
+                    transfer.attachment_id,
+                    AttachmentTransferState::Complete as i32,
+                    transfer.upload_id,
+                    generation,
+                    transfer.completed_chunk_bitmap,
+                    transfer.attempt_count,
+                    updated_at_unix_ms,
+                    expected_commitment.as_slice(),
+                    AttachmentTransferState::Transferring as i32,
+                    AttachmentTransferState::Verifying as i32,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let descriptor_bytes = descriptor.encode_to_vec();
+        let draft_changed = transaction
+            .execute(
+                "UPDATE messaging_attachment_drafts
+                 SET descriptor_bytes = ?2
+                 WHERE attachment_id = ?1
+                   AND (descriptor_bytes IS NULL OR descriptor_bytes = ?2)",
+                params![transfer.attachment_id, descriptor_bytes],
+            )
+            .map_err(|error| error.to_string())?;
+        let draft_fenced = match draft_media_type {
+            Some(_) => draft_changed == 1,
+            None => draft_changed == 0,
+        };
+        if transfer_changed != 1 || !draft_fenced {
+            return Err("messaging attachment completion was not fenced".to_string());
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    pub fn complete_attachment_download(
+        &self,
+        transfer: &AttachmentTransferRecord,
+        descriptor: &EncryptedObjectDescriptor,
+        cache_path: &str,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        super::attachment::validate_encrypted_object_descriptor(descriptor)?;
+        validate_attachment_transfer(transfer)?;
+        if transfer.direction != 2
+            || cache_path.trim().is_empty()
+            || updated_at_unix_ms <= 0
+            || transfer.completed_chunk_bitmap.len() != descriptor.chunk_count.div_ceil(8) as usize
+            || !(0..descriptor.chunk_count).all(|chunk_index| {
+                transfer.completed_chunk_bitmap[chunk_index as usize / 8] & (1 << (chunk_index % 8))
+                    != 0
+            })
+        {
+            return Err("messaging attachment download completion is incomplete".to_string());
+        }
+        let descriptor_bytes = descriptor.encode_to_vec();
+        let descriptor_sha256: [u8; 32] = Sha256::digest(&descriptor_bytes).into();
+        if transfer.descriptor_sha256 != descriptor_sha256 {
+            return Err("messaging attachment download descriptor mismatch".to_string());
+        }
+        let generation =
+            i64::try_from(transfer.generation).map_err(|_| "attachment generation overflow")?;
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let projection_exists = transaction
+            .query_row(
+                "SELECT 1 FROM messaging_attachment_projections
+                 WHERE attachment_id = ?1
+                   AND message_id = ?2
+                   AND descriptor_bytes = ?3",
+                params![
+                    transfer.attachment_id,
+                    transfer.message_id,
+                    descriptor_bytes
+                ],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .is_some();
+        let transfer_changed = transaction
+            .execute(
+                "UPDATE messaging_attachment_transfers
+                 SET state = ?2,
+                     completed_chunk_bitmap = ?3,
+                     attempt_count = ?4,
+                     next_attempt_at_unix_ms = 0,
+                     last_error_code = 0,
+                     updated_at_unix_ms = ?5
+                 WHERE attachment_id = ?1
+                   AND direction = 2
+                   AND generation = ?6
+                   AND descriptor_sha256 = ?7
+                   AND state IN (?8, ?9, ?10, ?11)",
+                params![
+                    transfer.attachment_id,
+                    AttachmentTransferState::Complete as i32,
+                    transfer.completed_chunk_bitmap,
+                    transfer.attempt_count,
+                    updated_at_unix_ms,
+                    generation,
+                    descriptor_sha256.as_slice(),
+                    AttachmentTransferState::Queued as i32,
+                    AttachmentTransferState::Transferring as i32,
+                    AttachmentTransferState::Verifying as i32,
+                    AttachmentTransferState::Complete as i32,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let projection_changed = transaction
+            .execute(
+                "UPDATE messaging_attachment_projections
+                 SET availability_state = 'local', local_cache_path = ?2
+                 WHERE attachment_id = ?1
+                   AND message_id = ?3
+                   AND descriptor_bytes = ?4",
+                params![
+                    transfer.attachment_id,
+                    cache_path,
+                    transfer.message_id,
+                    descriptor_bytes
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if transfer_changed != 1 || projection_changed != usize::from(projection_exists) {
+            return Err("messaging attachment download completion was not fenced".to_string());
+        }
+        transaction.commit().map_err(|error| error.to_string())
     }
 
     pub fn update_attachment_transfer_progress(
@@ -1649,13 +2554,20 @@ impl MessagingStore {
         if now_unix_ms <= 0 {
             return Err("messaging draft retry time is invalid".to_string());
         }
-        self.connection()?
+        let connection = self.connection()?;
+        let draft = connection
             .query_row(
                 "SELECT conversation_id, conversation_kind, message_id,
                         sender_ptid, sender_device_id, plaintext,
                         attempt_count, created_at_unix_ms
-                 FROM messaging_pending_messages
-                 WHERE state = 'draft' AND next_attempt_at_unix_ms <= ?1
+                 FROM messaging_pending_messages pending
+                 WHERE state = 'draft'
+                   AND next_attempt_at_unix_ms <= ?1
+                   AND NOT EXISTS (
+                     SELECT 1 FROM messaging_attachment_drafts attachment
+                     WHERE attachment.message_id = pending.message_id
+                       AND attachment.descriptor_bytes IS NULL
+                   )
                  ORDER BY next_attempt_at_unix_ms ASC, created_at_unix_ms ASC, message_id ASC
                  LIMIT 1",
                 params![now_unix_ms],
@@ -1667,13 +2579,69 @@ impl MessagingStore {
                         sender_ptid: row.get(3)?,
                         sender_device_id: row.get(4)?,
                         plaintext: row.get(5)?,
+                        attachments: Vec::new(),
                         attempt_count: row.get(6)?,
                         created_at_unix_ms: row.get(7)?,
                     })
                 },
             )
             .optional()
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        let Some(mut draft) = draft else {
+            return Ok(None);
+        };
+        draft.attachments = load_pending_message_attachments(&connection, &draft.message_id)?;
+        super::private_content::encode_message_private_content(
+            &draft.plaintext,
+            &draft.attachments,
+        )?;
+        Ok(Some(draft))
+    }
+
+    pub fn message_draft(&self, message_id: &str) -> Result<Option<PendingMessageDraft>, String> {
+        if message_id.trim().is_empty() {
+            return Err("messaging draft message ID is required".to_string());
+        }
+        let connection = self.connection()?;
+        let draft = connection
+            .query_row(
+                "SELECT conversation_id, conversation_kind, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        attempt_count, created_at_unix_ms
+                 FROM messaging_pending_messages pending
+                 WHERE message_id = ?1
+                   AND state = 'draft'
+                   AND NOT EXISTS (
+                     SELECT 1 FROM messaging_attachment_drafts attachment
+                     WHERE attachment.message_id = pending.message_id
+                       AND attachment.descriptor_bytes IS NULL
+                   )",
+                params![message_id],
+                |row| {
+                    Ok(PendingMessageDraft {
+                        conversation_id: row.get(0)?,
+                        conversation_kind: row.get(1)?,
+                        message_id: row.get(2)?,
+                        sender_ptid: row.get(3)?,
+                        sender_device_id: row.get(4)?,
+                        plaintext: row.get(5)?,
+                        attachments: Vec::new(),
+                        attempt_count: row.get(6)?,
+                        created_at_unix_ms: row.get(7)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let Some(mut draft) = draft else {
+            return Ok(None);
+        };
+        draft.attachments = load_pending_message_attachments(&connection, &draft.message_id)?;
+        super::private_content::encode_message_private_content(
+            &draft.plaintext,
+            &draft.attachments,
+        )?;
+        Ok(Some(draft))
     }
 
     pub fn schedule_message_draft_retry(
@@ -1732,42 +2700,6 @@ impl MessagingStore {
             )
             .optional()
             .map_err(|error| error.to_string())
-    }
-
-    pub fn superseded_message_draft(
-        &self,
-        command_id: &str,
-    ) -> Result<PendingMessageDraft, String> {
-        if command_id.trim().is_empty() {
-            return Err("messaging superseded command ID is required".to_string());
-        }
-        self.connection()?
-            .query_row(
-                "SELECT p.conversation_id, p.conversation_kind, p.message_id,
-                        p.sender_ptid, p.sender_device_id, p.plaintext,
-                        p.attempt_count, p.created_at_unix_ms
-                 FROM messaging_command_attempts a
-                 JOIN messaging_pending_messages p
-                   ON p.conversation_id = a.conversation_id
-                  AND p.message_id = a.message_id
-                 WHERE a.command_id = ?1 AND a.state = 'superseded'",
-                params![command_id],
-                |row| {
-                    Ok(PendingMessageDraft {
-                        conversation_id: row.get(0)?,
-                        conversation_kind: row.get(1)?,
-                        message_id: row.get(2)?,
-                        sender_ptid: row.get(3)?,
-                        sender_device_id: row.get(4)?,
-                        plaintext: row.get(5)?,
-                        attempt_count: row.get(6)?,
-                        created_at_unix_ms: row.get(7)?,
-                    })
-                },
-            )
-            .optional()
-            .map_err(|error| error.to_string())?
-            .ok_or_else(|| "messaging superseded draft is unavailable".to_string())
     }
 
     pub fn build_recovery_archive(
@@ -1863,8 +2795,10 @@ impl MessagingStore {
             .map_err(|error| error.to_string())?;
         let mut attachment_statement = connection
             .prepare(
-                "SELECT message_id, attachment_id, metadata
-                 FROM messaging_attachment_metadata
+                "SELECT message_id, attachment_id, filename, mime_type,
+                        plaintext_size, plaintext_sha256, object_key, base_nonce,
+                        descriptor_bytes
+                 FROM messaging_attachment_projections
                  WHERE message_id IN (
                      SELECT message_id FROM messaging_message_projections
                      WHERE conversation_id IN (
@@ -1877,10 +2811,38 @@ impl MessagingStore {
             .map_err(|error| error.to_string())?;
         let attachments = attachment_statement
             .query_map([], |row| {
+                let descriptor_bytes = row.get::<_, Vec<u8>>(8)?;
+                let object = crate::model::chat::EncryptedObjectDescriptor::decode(
+                    descriptor_bytes.as_slice(),
+                )
+                .map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        descriptor_bytes.len(),
+                        rusqlite::types::Type::Blob,
+                        Box::new(error),
+                    )
+                })?;
+                let attachment_id = row.get::<_, String>(1)?;
+                let metadata = AttachmentPlaintextMetadata {
+                    attachment_id: attachment_id.clone(),
+                    filename: row.get(2)?,
+                    mime_type: row.get(3)?,
+                    plaintext_size: row.get::<_, i64>(4)?.try_into().map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            8,
+                            rusqlite::types::Type::Integer,
+                            Box::new(error),
+                        )
+                    })?,
+                    plaintext_sha256: row.get(5)?,
+                    object_key: row.get(6)?,
+                    base_nonce: row.get(7)?,
+                    object: Some(object),
+                };
                 Ok(RecoveryAttachmentMetadata {
                     message_id: row.get(0)?,
-                    attachment_id: row.get(1)?,
-                    metadata: row.get(2)?,
+                    attachment_id,
+                    metadata: metadata.encode_to_vec(),
                 })
             })
             .map_err(|error| error.to_string())?
@@ -1951,7 +2913,10 @@ impl MessagingStore {
                  DELETE FROM messaging_mls_retired_checkpoints;
                  DELETE FROM messaging_mls_groups;
                  DELETE FROM messaging_mls_actor_identity;
-                 DELETE FROM messaging_attachment_metadata;
+                 DELETE FROM messaging_attachment_transfers;
+                 DELETE FROM messaging_attachment_drafts;
+                 DELETE FROM messaging_attachment_projections;
+                 DELETE FROM messaging_message_search_fts;
                  DELETE FROM messaging_trust;
                  DELETE FROM messaging_conversation_members;
                  DELETE FROM messaging_conversations;
@@ -1996,8 +2961,10 @@ impl MessagingStore {
                     "INSERT INTO messaging_message_projections(
                         conversation_id, event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext,
-                        delivery_state, committed_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'restored', ?8)",
+                        delivery_state, committed_at_unix_ms,
+                        reply_to_message_id, edited_text, edited_at_unix_ms, retracted
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'restored', ?8,
+                               NULL, NULL, NULL, 0)",
                     params![
                         message.conversation_id,
                         message.event_id,
@@ -2012,15 +2979,62 @@ impl MessagingStore {
                 .map_err(|error| error.to_string())?;
         }
         for attachment in &archive.attachments {
+            let metadata = AttachmentPlaintextMetadata::decode(attachment.metadata.as_slice())
+                .map_err(|_| "messaging recovery attachment metadata is invalid".to_string())?;
+            super::private_content::validate_attachment_plaintext_metadata(&metadata)?;
+            let object = metadata
+                .object
+                .as_ref()
+                .ok_or_else(|| "messaging recovery attachment descriptor is missing".to_string())?;
             transaction
                 .execute(
-                    "INSERT INTO messaging_attachment_metadata(
-                        message_id, attachment_id, metadata
-                     ) VALUES (?1, ?2, ?3)",
+                    "INSERT INTO messaging_attachment_projections(
+                        message_id, attachment_id, object_id, storage_ref,
+                        filename, mime_type, plaintext_size, plaintext_sha256,
+                        object_key, base_nonce, descriptor_bytes,
+                        availability_state, local_cache_path
+                     ) VALUES (
+                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                        'remote', NULL
+                     )",
                     params![
                         attachment.message_id,
                         attachment.attachment_id,
-                        attachment.metadata
+                        object.object_id,
+                        object.storage_ref,
+                        metadata.filename,
+                        metadata.mime_type,
+                        i64::try_from(metadata.plaintext_size)
+                            .map_err(|_| "attachment plaintext size exceeds i64")?,
+                        metadata.plaintext_sha256,
+                        metadata.object_key,
+                        metadata.base_nonce,
+                        object.encode_to_vec(),
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for message in &archive.messages {
+            let attachment_filenames = transaction
+                .query_row(
+                    "SELECT COALESCE(group_concat(filename, char(10)), '')
+                     FROM messaging_attachment_projections
+                     WHERE message_id = ?1
+                     ORDER BY attachment_id",
+                    params![message.message_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "INSERT INTO messaging_message_search_fts(
+                        conversation_id, message_id, plaintext, attachment_filenames
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        message.conversation_id,
+                        message.message_id,
+                        message.plaintext,
+                        attachment_filenames
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -2156,6 +3170,92 @@ impl MessagingStore {
         })
     }
 
+    /// Atomic commit for a Direct-encrypted message edit.
+    /// Persists ratchet state advancement, skipped keys, consumption marker,
+    /// and the edit UPDATE in a single transaction.
+    pub fn commit_direct_edit(
+        &self,
+        input: &DirectEditCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        if input.message_id.trim().is_empty() || input.edited_at_unix_ms <= 0 {
+            return Err("messaging direct edit requires message_id and valid timestamp".to_string());
+        }
+        let core = ReceiveCommitCore {
+            item_id: input.item_id,
+            event_id: input.event_id,
+            conversation_id: input.conversation_id,
+            lane_sequence: input.lane_sequence,
+            consumer_epoch: input.consumer_epoch,
+            payload_sha256: input.payload_sha256,
+            event_hash: input.event_hash,
+            previous_event_hash: input.previous_event_hash,
+            event_sequence: input.event_sequence,
+            allow_join_checkpoint: false,
+            projection: None,
+            receipt_id: input.receipt_id,
+            receipt_bytes: input.receipt_bytes,
+            consumed_at_unix_ms: input.consumed_at_unix_ms,
+        };
+        self.commit_receive_core(&core, ReceiveFailPoint::None, |transaction| {
+            if let Some(prekey_id) = input.consumed_one_time_prekey_id {
+                let changed = transaction
+                    .execute(
+                        "UPDATE messaging_one_time_prekeys SET state = 'consumed'
+                         WHERE prekey_id = ?1 AND state = 'available'",
+                        params![prekey_id],
+                    )
+                    .map_err(|error| error.to_string())?;
+                if changed != 1 {
+                    return Err("messaging one-time prekey was not consumed".to_string());
+                }
+            }
+            upsert_direct_session(transaction, input.session)?;
+            for skipped in input.new_skipped {
+                transaction
+                    .execute(
+                        "INSERT OR IGNORE INTO direct_skipped_message_keys(
+                            session_id, peer_ratchet_public_key, counter, message_key
+                         ) VALUES (?1, ?2, ?3, ?4)",
+                        params![
+                            skipped.session_id,
+                            skipped.peer_pub.as_slice(),
+                            i64::from(skipped.counter),
+                            skipped.message_key.as_slice()
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
+            if let Some((peer_public, counter)) = input.consumed_skipped {
+                transaction
+                    .execute(
+                        "DELETE FROM direct_skipped_message_keys
+                         WHERE session_id = ?1
+                           AND peer_ratchet_public_key = ?2
+                           AND counter = ?3",
+                        params![
+                            input.session.session_id,
+                            peer_public.as_slice(),
+                            i64::from(counter)
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
+            // Apply the edit to the existing message projection within the same transaction.
+            let changed = transaction
+                .execute(
+                    "UPDATE messaging_message_projections
+                     SET edited_text = ?1, edited_at_unix_ms = ?2
+                     WHERE message_id = ?3",
+                    params![input.edited_text, input.edited_at_unix_ms, input.message_id],
+                )
+                .map_err(|error| error.to_string())?;
+            if changed == 0 {
+                return Err("messaging direct edit target message not found".to_string());
+            }
+            Ok(())
+        })
+    }
+
     pub fn commit_public_event(
         &self,
         input: &PublicEventReceiveCommit<'_>,
@@ -2193,13 +3293,36 @@ impl MessagingStore {
             {
                 return Err("messaging public-event pending projection mismatch".to_string());
             }
+            let attachment_metadata = load_attachment_metadata(transaction, input.message_id)?;
+            let private_descriptors = attachment_metadata
+                .iter()
+                .map(|attachment| attachment.object.clone())
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| "messaging sender attachment descriptor is missing".to_string())?;
+            if private_descriptors != input.attachments {
+                return Err("messaging public-event attachment descriptor mismatch".to_string());
+            }
+            let private_content = super::private_content::encode_message_private_content(
+                &pending.4,
+                &attachment_metadata,
+            )?;
+            persist_sender_content(
+                transaction,
+                input.conversation_id,
+                input.message_id,
+                &pending.4,
+                &attachment_metadata,
+                &private_content,
+            )?;
             transaction
                 .execute(
                     "INSERT INTO messaging_message_projections(
                         conversation_id, event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext,
-                        delivery_state, committed_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'accepted', ?8)",
+                        delivery_state, committed_at_unix_ms,
+                        reply_to_message_id, edited_text, edited_at_unix_ms, retracted
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'accepted', ?8,
+                               NULL, NULL, NULL, 0)",
                     params![
                         input.conversation_id,
                         input.event_id,
@@ -3407,8 +4530,10 @@ impl MessagingStore {
                     "INSERT INTO messaging_message_projections(
                         conversation_id, event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext,
-                        delivery_state, committed_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'consumed', ?8)
+                        delivery_state, committed_at_unix_ms,
+                        reply_to_message_id, edited_text, edited_at_unix_ms, retracted
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'consumed', ?8,
+                               ?9, NULL, NULL, 0)
                      ON CONFLICT(conversation_id, event_id) DO NOTHING",
                     params![
                         projection.conversation_id,
@@ -3418,7 +4543,8 @@ impl MessagingStore {
                         projection.sender_ptid,
                         projection.sender_device_id,
                         projection.plaintext,
-                        projection.committed_at_unix_ms
+                        projection.committed_at_unix_ms,
+                        projection.reply_to_message_id
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -3427,9 +4553,71 @@ impl MessagingStore {
                     "messaging projection identity already exists without marker".to_string(),
                 );
             }
+            if fail_point == ReceiveFailPoint::AfterProjection {
+                return Err("injected receive failure after projection".to_string());
+            }
+            for attachment in &projection.attachments {
+                super::private_content::validate_attachment_plaintext_metadata(attachment)?;
+                let object = attachment
+                    .object
+                    .as_ref()
+                    .ok_or_else(|| "messaging attachment descriptor is missing".to_string())?;
+                transaction
+                    .execute(
+                        "INSERT INTO messaging_attachment_projections(
+                            message_id, attachment_id, object_id, storage_ref,
+                            filename, mime_type, plaintext_size, plaintext_sha256,
+                            object_key, base_nonce, descriptor_bytes,
+                            availability_state, local_cache_path
+                         ) VALUES (
+                            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                            'remote', NULL
+                         )",
+                        params![
+                            projection.message_id,
+                            attachment.attachment_id,
+                            object.object_id,
+                            object.storage_ref,
+                            attachment.filename,
+                            attachment.mime_type,
+                            i64::try_from(attachment.plaintext_size)
+                                .map_err(|_| "attachment plaintext size exceeds i64")?,
+                            attachment.plaintext_sha256,
+                            attachment.object_key,
+                            attachment.base_nonce,
+                            object.encode_to_vec(),
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
         }
-        if fail_point == ReceiveFailPoint::AfterProjection {
-            return Err("injected receive failure after projection".to_string());
+        if fail_point == ReceiveFailPoint::AfterAttachments {
+            return Err("injected receive failure after attachments".to_string());
+        }
+
+        if let Some(projection) = input.projection {
+            let attachment_filenames = projection
+                .attachments
+                .iter()
+                .map(|attachment| attachment.filename.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            transaction
+                .execute(
+                    "INSERT INTO messaging_message_search_fts(
+                        conversation_id, message_id, plaintext, attachment_filenames
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        projection.conversation_id,
+                        projection.message_id,
+                        projection.plaintext,
+                        attachment_filenames,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        if fail_point == ReceiveFailPoint::AfterSearch {
+            return Err("injected receive failure after search index".to_string());
         }
 
         transaction
@@ -3502,6 +4690,221 @@ impl MessagingStore {
         }
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(ReceiveCommitResult::Committed)
+    }
+
+    // --- Edit, Retract, Reactions, Pins, Read Cursors ---
+
+    /// Apply an edit to a previously committed message projection.
+    /// Returns Ok(()) even if no row matched (idempotent).
+    pub fn apply_message_edit(
+        &self,
+        message_id: &str,
+        edited_text: &str,
+        edited_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        let connection = self.connection()?;
+        if edited_text.is_empty() {
+            connection
+                .execute(
+                    "UPDATE messaging_message_projections
+                     SET edited_at_unix_ms = ?1
+                     WHERE message_id = ?2",
+                    params![edited_at_unix_ms, message_id],
+                )
+                .map_err(|error| format!("messaging store apply_message_edit: {error}"))?;
+        } else {
+            connection
+                .execute(
+                    "UPDATE messaging_message_projections
+                     SET edited_text = ?1, edited_at_unix_ms = ?2
+                     WHERE message_id = ?3",
+                    params![edited_text, edited_at_unix_ms, message_id],
+                )
+                .map_err(|error| format!("messaging store apply_message_edit: {error}"))?;
+        }
+        Ok(())
+    }
+
+    /// Mark a message as retracted/deleted.
+    /// Returns Ok(()) even if no row matched (idempotent).
+    pub fn apply_message_retract(&self, message_id: &str) -> Result<(), String> {
+        let connection = self.connection()?;
+        connection
+            .execute(
+                "UPDATE messaging_message_projections
+                 SET retracted = 1
+                 WHERE message_id = ?1",
+                params![message_id],
+            )
+            .map_err(|error| format!("messaging store apply_message_retract: {error}"))?;
+        Ok(())
+    }
+
+    /// Add or remove a reaction on a message.
+    pub fn apply_reaction(
+        &self,
+        message_id: &str,
+        actor_ptid: &str,
+        reaction: &str,
+        removed: bool,
+        created_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        let connection = self.connection()?;
+        if removed {
+            connection
+                .execute(
+                    "DELETE FROM message_reactions
+                     WHERE message_id = ?1 AND actor_ptid = ?2 AND reaction = ?3",
+                    params![message_id, actor_ptid, reaction],
+                )
+                .map_err(|error| format!("messaging store apply_reaction delete: {error}"))?;
+        } else {
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO message_reactions(message_id, actor_ptid, reaction, created_at_unix_ms)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![message_id, actor_ptid, reaction, created_at_unix_ms],
+                )
+                .map_err(|error| format!("messaging store apply_reaction insert: {error}"))?;
+        }
+        Ok(())
+    }
+
+    /// Add or remove a pin on a message within a conversation.
+    pub fn apply_pin(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        actor_ptid: &str,
+        removed: bool,
+        pinned_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        let connection = self.connection()?;
+        if removed {
+            connection
+                .execute(
+                    "DELETE FROM message_pins
+                     WHERE conversation_id = ?1 AND message_id = ?2",
+                    params![conversation_id, message_id],
+                )
+                .map_err(|error| format!("messaging store apply_pin delete: {error}"))?;
+        } else {
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO message_pins(conversation_id, message_id, actor_ptid, pinned_at_unix_ms)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![conversation_id, message_id, actor_ptid, pinned_at_unix_ms],
+                )
+                .map_err(|error| format!("messaging store apply_pin insert: {error}"))?;
+        }
+        Ok(())
+    }
+
+    /// Update the read cursor for a participant in a conversation.
+    /// Uses MAX to ensure the cursor only advances forward.
+    pub fn update_read_cursor(
+        &self,
+        conversation_id: &str,
+        actor_ptid: &str,
+        sequence: i64,
+        now: i64,
+    ) -> Result<(), String> {
+        let connection = self.connection()?;
+        connection
+            .execute(
+                "INSERT INTO read_cursors(conversation_id, actor_ptid, last_read_sequence, updated_at_unix_ms)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(conversation_id, actor_ptid) DO UPDATE SET
+                    last_read_sequence = MAX(read_cursors.last_read_sequence, excluded.last_read_sequence),
+                    updated_at_unix_ms = excluded.updated_at_unix_ms",
+                params![conversation_id, actor_ptid, sequence, now],
+            )
+            .map_err(|error| format!("messaging store update_read_cursor: {error}"))?;
+        Ok(())
+    }
+
+    /// Returns all reactions for a message as (actor_ptid, reaction, created_at_unix_ms).
+    pub fn reactions_for_message(
+        &self,
+        message_id: &str,
+    ) -> Result<Vec<(String, String, i64)>, String> {
+        if message_id.trim().is_empty() {
+            return Err("messaging reactions query requires message_id".to_string());
+        }
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT actor_ptid, reaction, created_at_unix_ms
+                 FROM message_reactions
+                 WHERE message_id = ?1
+                 ORDER BY created_at_unix_ms ASC",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map(params![message_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
+    }
+
+    /// Returns all pins for a conversation as (message_id, actor_ptid, pinned_at_unix_ms).
+    pub fn pins_for_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<(String, String, i64)>, String> {
+        if conversation_id.trim().is_empty() {
+            return Err("messaging pins query requires conversation_id".to_string());
+        }
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT message_id, actor_ptid, pinned_at_unix_ms
+                 FROM message_pins
+                 WHERE conversation_id = ?1
+                 ORDER BY pinned_at_unix_ms ASC",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map(params![conversation_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
+    }
+
+    /// Mark a claimed item as consumed after successful processing.
+    /// Returns Ok(()) even if no row matched (idempotent).
+    pub fn mark_consumed(
+        &self,
+        item_id: &str,
+        event_id: &str,
+        conversation_id: &str,
+        payload_sha256: &[u8],
+        now: i64,
+    ) -> Result<(), String> {
+        let connection = self.connection()?;
+        connection
+            .execute(
+                "UPDATE messaging_inbox_items
+                 SET state = 'consumed'
+                 WHERE item_id = ?1 AND payload_sha256 = ?2",
+                params![item_id, payload_sha256],
+            )
+            .map_err(|error| format!("messaging store mark_consumed: {error}"))?;
+        connection
+            .execute(
+                "INSERT OR IGNORE INTO messaging_consumption_markers(
+                    item_id, event_id, conversation_id, payload_sha256, consumed_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![item_id, event_id, conversation_id, payload_sha256, now],
+            )
+            .map_err(|error| format!("messaging store mark_consumed marker: {error}"))?;
+        Ok(())
     }
 
     #[cfg(test)]
@@ -3834,7 +5237,6 @@ fn validate_pending_sender_projection(
         || projection.message_id.trim().is_empty()
         || projection.sender_ptid.trim().is_empty()
         || projection.sender_device_id.trim().is_empty()
-        || projection.plaintext.is_empty()
         || projection.delivery_plan_sha256.len() != 32
         || projection.created_at_unix_ms <= 0
     {
@@ -3907,6 +5309,266 @@ fn pending_owner_transition_is_valid(
     ))
 }
 
+fn persist_sender_content(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    message_id: &str,
+    plaintext: &str,
+    attachments: &[AttachmentPlaintextMetadata],
+    private_content: &[u8],
+) -> Result<(), String> {
+    let decoded = super::private_content::decode_message_private_content(private_content)?;
+    if decoded.text != plaintext || decoded.attachments != attachments {
+        return Err("messaging sender private content does not match projection".to_string());
+    }
+    for attachment in attachments {
+        let object = attachment
+            .object
+            .as_ref()
+            .ok_or_else(|| "messaging attachment descriptor is missing".to_string())?;
+        let changed = transaction
+            .execute(
+                "INSERT INTO messaging_attachment_projections(
+                    message_id, attachment_id, object_id, storage_ref,
+                    filename, mime_type, plaintext_size, plaintext_sha256,
+                    object_key, base_nonce, descriptor_bytes,
+                    availability_state, local_cache_path
+                 ) VALUES (
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                    'local', NULL
+                 )
+                 ON CONFLICT(message_id, attachment_id) DO UPDATE SET
+                    availability_state=messaging_attachment_projections.availability_state
+                 WHERE messaging_attachment_projections.object_id = excluded.object_id
+                   AND messaging_attachment_projections.storage_ref = excluded.storage_ref
+                   AND messaging_attachment_projections.filename = excluded.filename
+                   AND messaging_attachment_projections.mime_type = excluded.mime_type
+                   AND messaging_attachment_projections.plaintext_size = excluded.plaintext_size
+                   AND messaging_attachment_projections.plaintext_sha256 = excluded.plaintext_sha256
+                   AND messaging_attachment_projections.object_key = excluded.object_key
+                   AND messaging_attachment_projections.base_nonce = excluded.base_nonce
+                   AND messaging_attachment_projections.descriptor_bytes = excluded.descriptor_bytes",
+                params![
+                    message_id,
+                    attachment.attachment_id,
+                    object.object_id,
+                    object.storage_ref,
+                    attachment.filename,
+                    attachment.mime_type,
+                    i64::try_from(attachment.plaintext_size)
+                        .map_err(|_| "attachment plaintext size exceeds i64")?,
+                    attachment.plaintext_sha256,
+                    attachment.object_key,
+                    attachment.base_nonce,
+                    object.encode_to_vec(),
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging sender attachment projection conflicts".to_string());
+        }
+    }
+    let stored_count = transaction
+        .query_row(
+            "SELECT COUNT(*) FROM messaging_attachment_projections WHERE message_id = ?1",
+            params![message_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if stored_count
+        != i64::try_from(attachments.len()).map_err(|_| "messaging attachment count exceeds i64")?
+    {
+        return Err("messaging sender attachment set conflicts".to_string());
+    }
+    transaction
+        .execute(
+            "DELETE FROM messaging_message_search_fts
+             WHERE conversation_id = ?1 AND message_id = ?2",
+            params![conversation_id, message_id],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO messaging_message_search_fts(
+                conversation_id, message_id, plaintext, attachment_filenames
+             ) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                conversation_id,
+                message_id,
+                plaintext,
+                attachments
+                    .iter()
+                    .map(|attachment| attachment.filename.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn load_attachment_metadata(
+    connection: &Connection,
+    message_id: &str,
+) -> Result<Vec<AttachmentPlaintextMetadata>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT attachment_id, filename, mime_type, plaintext_size,
+                    plaintext_sha256, object_key, base_nonce, descriptor_bytes
+             FROM messaging_attachment_projections
+             WHERE message_id = ?1
+             ORDER BY attachment_id",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![message_id], |row| {
+            let descriptor_bytes = row.get::<_, Vec<u8>>(7)?;
+            let object = EncryptedObjectDescriptor::decode(descriptor_bytes.as_slice()).map_err(
+                |error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        descriptor_bytes.len(),
+                        rusqlite::types::Type::Blob,
+                        Box::new(error),
+                    )
+                },
+            )?;
+            Ok(AttachmentPlaintextMetadata {
+                attachment_id: row.get(0)?,
+                filename: row.get(1)?,
+                mime_type: row.get(2)?,
+                plaintext_size: row.get::<_, i64>(3)?.try_into().map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        8,
+                        rusqlite::types::Type::Integer,
+                        Box::new(error),
+                    )
+                })?,
+                plaintext_sha256: row.get(4)?,
+                object_key: row.get(5)?,
+                base_nonce: row.get(6)?,
+                object: Some(object),
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    for attachment in &rows {
+        super::private_content::validate_attachment_plaintext_metadata(attachment)?;
+    }
+    Ok(rows)
+}
+
+fn load_staged_attachment_metadata(
+    connection: &Connection,
+    message_id: &str,
+) -> Result<Vec<AttachmentPlaintextMetadata>, String> {
+    let total = connection
+        .query_row(
+            "SELECT COUNT(*) FROM messaging_attachment_drafts WHERE message_id = ?1",
+            params![message_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if total == 0 {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT draft.attachment_id, draft.filename, draft.mime_type,
+                    transfer.plaintext_size, draft.plaintext_sha256,
+                    transfer.object_key, transfer.base_nonce, draft.descriptor_bytes
+             FROM messaging_attachment_drafts draft
+             JOIN messaging_attachment_transfers transfer
+               ON transfer.attachment_id = draft.attachment_id
+             WHERE draft.message_id = ?1
+               AND draft.descriptor_bytes IS NOT NULL
+               AND transfer.state = ?2
+             ORDER BY draft.attachment_id",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(
+            params![message_id, AttachmentTransferState::Complete as i32],
+            |row| {
+                let descriptor_bytes = row.get::<_, Vec<u8>>(7)?;
+                let object = EncryptedObjectDescriptor::decode(descriptor_bytes.as_slice())
+                    .map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            descriptor_bytes.len(),
+                            rusqlite::types::Type::Blob,
+                            Box::new(error),
+                        )
+                    })?;
+                Ok(AttachmentPlaintextMetadata {
+                    attachment_id: row.get(0)?,
+                    filename: row.get(1)?,
+                    mime_type: row.get(2)?,
+                    plaintext_size: row.get::<_, i64>(3)?.try_into().map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            8,
+                            rusqlite::types::Type::Integer,
+                            Box::new(error),
+                        )
+                    })?,
+                    plaintext_sha256: row.get(4)?,
+                    object_key: row.get(5)?,
+                    base_nonce: row.get(6)?,
+                    object: Some(object),
+                })
+            },
+        )
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    if rows.len() != total as usize {
+        return Err("messaging attachment uploads are not complete".to_string());
+    }
+    for attachment in &rows {
+        super::private_content::validate_attachment_plaintext_metadata(attachment)?;
+    }
+    Ok(rows)
+}
+
+fn load_pending_message_attachments(
+    connection: &Connection,
+    message_id: &str,
+) -> Result<Vec<AttachmentPlaintextMetadata>, String> {
+    let canonical = load_attachment_metadata(connection, message_id)?;
+    if !canonical.is_empty() {
+        return Ok(canonical);
+    }
+    load_staged_attachment_metadata(connection, message_id)
+}
+
+fn load_visible_message_attachments(
+    connection: &Connection,
+    message_id: &str,
+) -> Result<Vec<AttachmentPlaintextMetadata>, String> {
+    let canonical = load_attachment_metadata(connection, message_id)?;
+    if !canonical.is_empty() {
+        return Ok(canonical);
+    }
+    let (total, complete) = connection
+        .query_row(
+            "SELECT COUNT(*),
+                    SUM(CASE WHEN descriptor_bytes IS NOT NULL THEN 1 ELSE 0 END)
+             FROM messaging_attachment_drafts
+             WHERE message_id = ?1",
+            params![message_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                ))
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    if total == 0 || total != complete {
+        return Ok(Vec::new());
+    }
+    load_staged_attachment_metadata(connection, message_id)
+}
+
 fn persist_prepared_command(
     transaction: &Transaction<'_>,
     command_bytes: &[u8],
@@ -3973,6 +5635,33 @@ fn persist_prepared_command(
         .map_err(|error| error.to_string())?;
     if pending_changed != 1 {
         return Err("messaging pending logical message conflicts with existing draft".to_string());
+    }
+    persist_sender_content(
+        transaction,
+        projection.conversation_id,
+        projection.message_id,
+        projection.plaintext,
+        projection.attachments,
+        projection.private_content,
+    )?;
+    let staged_count = transaction
+        .query_row(
+            "SELECT COUNT(*) FROM messaging_attachment_drafts WHERE message_id = ?1",
+            params![projection.message_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let staged_deleted = transaction
+        .execute(
+            "DELETE FROM messaging_attachment_drafts WHERE message_id = ?1",
+            params![projection.message_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if staged_count > 0
+        && (staged_count as usize != projection.attachments.len()
+            || staged_deleted != projection.attachments.len())
+    {
+        return Err("messaging staged attachment promotion mismatch".to_string());
     }
     transaction
         .execute(
@@ -4139,6 +5828,14 @@ fn load_direct_session(
         },
         updated_at_unix_ms: row.18,
     }))
+}
+
+fn fts_phrase_query(query: &str) -> Result<String, String> {
+    let normalized = query.trim();
+    if normalized.is_empty() || normalized.chars().count() > 256 {
+        return Err("messaging search query exceeds policy".to_string());
+    }
+    Ok(format!("\"{}\"", normalized.replace('"', "\"\"")))
 }
 
 fn validate_attachment_transfer(transfer: &AttachmentTransferRecord) -> Result<(), String> {
@@ -4442,10 +6139,35 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 plaintext TEXT NOT NULL,
                 delivery_state TEXT NOT NULL,
                 committed_at_unix_ms INTEGER NOT NULL,
+                reply_to_message_id TEXT,
+                edited_text TEXT,
+                edited_at_unix_ms INTEGER,
+                retracted INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY(conversation_id, event_id)
              );
              CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_projection_message
                 ON messaging_message_projections(conversation_id, message_id);
+             CREATE TABLE IF NOT EXISTS message_reactions (
+                message_id TEXT NOT NULL,
+                actor_ptid TEXT NOT NULL,
+                reaction TEXT NOT NULL,
+                created_at_unix_ms INTEGER NOT NULL,
+                PRIMARY KEY (message_id, actor_ptid, reaction)
+             ) WITHOUT ROWID;
+             CREATE TABLE IF NOT EXISTS message_pins (
+                conversation_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                actor_ptid TEXT NOT NULL,
+                pinned_at_unix_ms INTEGER NOT NULL,
+                PRIMARY KEY (conversation_id, message_id)
+             ) WITHOUT ROWID;
+             CREATE TABLE IF NOT EXISTS read_cursors (
+                conversation_id TEXT NOT NULL,
+                actor_ptid TEXT NOT NULL,
+                last_read_sequence INTEGER NOT NULL DEFAULT 0,
+                updated_at_unix_ms INTEGER NOT NULL,
+                PRIMARY KEY (conversation_id, actor_ptid)
+             ) WITHOUT ROWID;
              CREATE TABLE IF NOT EXISTS messaging_attachment_transfers (
                 attachment_id TEXT PRIMARY KEY,
                 conversation_id TEXT NOT NULL,
@@ -4470,11 +6192,41 @@ fn migrate(connection: &Connection) -> Result<(), String> {
              );
              CREATE INDEX IF NOT EXISTS idx_messaging_attachment_transfers_due
                 ON messaging_attachment_transfers(state, next_attempt_at_unix_ms);
-             CREATE TABLE IF NOT EXISTS messaging_attachment_metadata (
+             CREATE TABLE IF NOT EXISTS messaging_attachment_drafts (
+                attachment_id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                plaintext_sha256 BLOB NOT NULL CHECK(length(plaintext_sha256) = 32),
+                descriptor_bytes BLOB,
+                created_at_unix_ms INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_messaging_attachment_drafts_message
+                ON messaging_attachment_drafts(message_id, attachment_id);
+             DROP TABLE IF EXISTS messaging_attachment_metadata;
+             CREATE TABLE IF NOT EXISTS messaging_attachment_projections (
                 message_id TEXT NOT NULL,
                 attachment_id TEXT NOT NULL,
-                metadata BLOB NOT NULL,
+                object_id TEXT NOT NULL,
+                storage_ref TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                plaintext_size INTEGER NOT NULL,
+                plaintext_sha256 BLOB NOT NULL CHECK(length(plaintext_sha256) = 32),
+                object_key BLOB NOT NULL CHECK(length(object_key) = 32),
+                base_nonce BLOB NOT NULL CHECK(length(base_nonce) = 12),
+                descriptor_bytes BLOB NOT NULL,
+                availability_state TEXT NOT NULL,
+                local_cache_path TEXT,
                 PRIMARY KEY(message_id, attachment_id)
+             );
+             CREATE VIRTUAL TABLE IF NOT EXISTS messaging_message_search_fts USING fts5(
+                conversation_id UNINDEXED,
+                message_id UNINDEXED,
+                plaintext,
+                attachment_filenames,
+                tokenize = 'unicode61'
              );
              CREATE TABLE IF NOT EXISTS messaging_trust (
                 peer_ptid TEXT PRIMARY KEY,
@@ -4558,12 +6310,41 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             [],
         )
         .map_err(|error| error.to_string())?;
+
+    // Migrate messaging_message_projections with new columns for edit, retract, reply support.
+    let projection_columns = connection
+        .prepare("PRAGMA table_info(messaging_message_projections)")
+        .map_err(|error| error.to_string())?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    for (column, definition) in [
+        ("reply_to_message_id", "TEXT"),
+        ("edited_text", "TEXT"),
+        ("edited_at_unix_ms", "INTEGER"),
+        ("retracted", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
+        if !projection_columns.iter().any(|existing| existing == column) {
+            connection
+                .execute(
+                    &format!(
+                        "ALTER TABLE messaging_message_projections ADD COLUMN {column} {definition}"
+                    ),
+                    [],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::messaging::private_content::test_attachment_metadata;
+    use crate::model::chat::AttachmentTransferErrorCode;
 
     fn attachment_transfer() -> AttachmentTransferRecord {
         AttachmentTransferRecord {
@@ -4626,6 +6407,8 @@ mod tests {
         command_bytes: &[u8],
         created_at_unix_ms: i64,
     ) -> Result<(), String> {
+        let private_content =
+            crate::messaging::encode_message_private_content("sender plaintext", &[])?;
         store.persist_direct_send(&DirectSendCommit {
             command_bytes,
             advanced_sessions: &[direct_session(0)],
@@ -4638,6 +6421,8 @@ mod tests {
                 sender_ptid: "ptid:alice",
                 sender_device_id: "alice-device",
                 plaintext: "sender plaintext",
+                attachments: &[],
+                private_content: &private_content,
                 delivery_plan_sha256: &[1; 32],
                 created_at_unix_ms,
             },
@@ -4653,7 +6438,12 @@ mod tests {
             sender_ptid: "ptid:bob".to_string(),
             sender_device_id: "bob-device".to_string(),
             plaintext: "exact plaintext".to_string(),
+            attachments: Vec::new(),
             committed_at_unix_ms: 100,
+            reply_to_message_id: None,
+            edited_text: None,
+            edited_at_unix_ms: None,
+            retracted: false,
         }
     }
 
@@ -4687,7 +6477,7 @@ mod tests {
             attachments: vec![RecoveryAttachmentMetadata {
                 message_id: "restored-message".to_string(),
                 attachment_id: "attachment-1".to_string(),
-                metadata: b"metadata".to_vec(),
+                metadata: test_attachment_metadata("attachment-1").encode_to_vec(),
             }],
             trust: vec![RecoveryTrustRecord {
                 peer_ptid: "ptid:bob".to_string(),
@@ -4765,6 +6555,43 @@ mod tests {
     }
 
     #[test]
+    fn descriptor_backed_upload_reconciles_stale_terminal_state() {
+        let store = MessagingStore::in_memory().unwrap();
+        let mut transfer = attachment_transfer();
+        transfer.state = AttachmentTransferState::Terminal as i32;
+        transfer.next_attempt_at_unix_ms = 20;
+        transfer.last_error_code = AttachmentTransferErrorCode::PartConflict as i32;
+        assert!(store.create_attachment_transfer(&transfer).unwrap());
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_attachment_drafts(
+                    attachment_id, conversation_id, message_id, filename,
+                    mime_type, plaintext_sha256, descriptor_bytes, created_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, 'proof.txt', 'text/plain', ?4, ?5, 10)",
+                params![
+                    transfer.attachment_id,
+                    transfer.conversation_id,
+                    transfer.message_id,
+                    vec![3_u8; 32],
+                    vec![4_u8],
+                ],
+            )
+            .unwrap();
+
+        assert_eq!(store.reconcile_completed_attachment_uploads().unwrap(), 1);
+        let reconciled = store
+            .attachment_transfer(&transfer.attachment_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(reconciled.state, AttachmentTransferState::Complete as i32);
+        assert_eq!(reconciled.next_attempt_at_unix_ms, 0);
+        assert_eq!(reconciled.last_error_code, 0);
+        assert_eq!(store.reconcile_completed_attachment_uploads().unwrap(), 0);
+    }
+
+    #[test]
     fn direct_send_failure_rolls_back_command_projection_and_ratchet() {
         let store = MessagingStore::in_memory().unwrap();
         let mut session = direct_session(0);
@@ -4777,6 +6604,8 @@ mod tests {
             u64::MAX,
         )
         .unwrap();
+        let private_content =
+            crate::messaging::encode_message_private_content("must roll back", &[]).unwrap();
         let result = store.persist_direct_send(&DirectSendCommit {
             command_bytes: b"exact bytes",
             advanced_sessions: &[session],
@@ -4789,6 +6618,8 @@ mod tests {
                 sender_ptid: "ptid:alice",
                 sender_device_id: "alice-device",
                 plaintext: "must roll back",
+                attachments: &[],
+                private_content: &private_content,
                 delivery_plan_sha256: &[1; 32],
                 created_at_unix_ms: 10,
             },
@@ -4814,6 +6645,8 @@ mod tests {
     #[test]
     fn mls_send_persists_state_command_and_pending_projection_atomically() {
         let store = MessagingStore::in_memory().unwrap();
+        let private_content =
+            crate::messaging::encode_message_private_content("group plaintext", &[]).unwrap();
         store
             .persist_mls_send(&MlsSendCommit {
                 command_bytes: b"exact MLS command",
@@ -4828,6 +6661,8 @@ mod tests {
                     sender_ptid: "ptid:alice",
                     sender_device_id: "alice-device",
                     plaintext: "group plaintext",
+                    attachments: &[],
+                    private_content: &private_content,
                     delivery_plan_sha256: &[1; 32],
                     created_at_unix_ms: 10,
                 },
@@ -4863,6 +6698,7 @@ mod tests {
             sender_ptid: "ptid:alice".to_string(),
             sender_device_id: "alice-device".to_string(),
             plaintext: "survives prepare failure".to_string(),
+            attachments: Vec::new(),
             attempt_count: 0,
             created_at_unix_ms: 100,
         };
@@ -4919,9 +6755,11 @@ mod tests {
                     "INSERT INTO messaging_message_projections(
                         conversation_id, event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext,
-                        delivery_state, committed_at_unix_ms
+                        delivery_state, committed_at_unix_ms,
+                        reply_to_message_id, edited_text, edited_at_unix_ms, retracted
                      ) VALUES (?1, ?2, 1, ?3, 'ptid:alice', 'alice-device',
-                               'plaintext', 'consumed', 100)",
+                               'plaintext', 'consumed', 100,
+                               NULL, NULL, NULL, 0)",
                     params![conversation_id, format!("event-{message_id}"), message_id],
                 )
                 .unwrap();
@@ -5026,7 +6864,8 @@ mod tests {
             )
             .unwrap();
         let session = direct_session(4);
-        let projection = projection();
+        let mut projection = projection();
+        projection.attachments = vec![test_attachment_metadata("attachment-1")];
         let input = DirectReceiveCommit {
             item_id: "item-1",
             event_id: "event-1",
@@ -5041,6 +6880,7 @@ mod tests {
             consumed_skipped: None,
             consumed_one_time_prekey_id: None,
             projection: &projection,
+            reply_to_message_id: None,
             receipt_id: "receipt-1",
             receipt_bytes: b"receipt",
             consumed_at_unix_ms: 100,
@@ -5058,6 +6898,8 @@ mod tests {
         for table in [
             "direct_sessions",
             "messaging_message_projections",
+            "messaging_attachment_projections",
+            "messaging_message_search_fts",
             "messaging_consumption_markers",
             "messaging_lane_cursor",
             "messaging_authority_heads",
@@ -5085,6 +6927,8 @@ mod tests {
         for fail_point in [
             ReceiveFailPoint::AfterCrypto,
             ReceiveFailPoint::AfterProjection,
+            ReceiveFailPoint::AfterAttachments,
+            ReceiveFailPoint::AfterSearch,
             ReceiveFailPoint::BeforeCommit,
         ] {
             let store = MessagingStore::in_memory().unwrap();
@@ -5112,7 +6956,8 @@ mod tests {
                 )
                 .unwrap();
             let session = direct_session(5);
-            let projection = projection();
+            let mut projection = projection();
+            projection.attachments = vec![test_attachment_metadata("attachment-1")];
             let input = DirectReceiveCommit {
                 item_id: "item-1",
                 event_id: "event-1",
@@ -5127,6 +6972,7 @@ mod tests {
                 consumed_skipped: None,
                 consumed_one_time_prekey_id: Some(7),
                 projection: &projection,
+                reply_to_message_id: None,
                 receipt_id: "receipt-1",
                 receipt_bytes: b"receipt",
                 consumed_at_unix_ms: 100,
@@ -5138,6 +6984,8 @@ mod tests {
             for table in [
                 "direct_sessions",
                 "messaging_message_projections",
+                "messaging_attachment_projections",
+                "messaging_message_search_fts",
                 "messaging_consumption_markers",
                 "messaging_lane_cursor",
                 "messaging_authority_heads",
@@ -5211,6 +7059,7 @@ mod tests {
             consumed_skipped: None,
             consumed_one_time_prekey_id: None,
             projection: &projection,
+            reply_to_message_id: None,
             receipt_id: "subsumed-receipt-1",
             receipt_bytes: b"receipt",
             consumed_at_unix_ms: 100,
@@ -5282,6 +7131,7 @@ mod tests {
             membership_epoch: 2,
             mls_epoch: 3,
             projection: &projection,
+            reply_to_message_id: None,
             receipt_id: "mls-receipt-1",
             receipt_bytes: b"receipt",
             consumed_at_unix_ms: 100,
@@ -5333,6 +7183,7 @@ mod tests {
             membership_epoch: 2,
             mls_epoch: 3,
             projection: &projection,
+            reply_to_message_id: None,
             receipt_id: "mls-receipt-1",
             receipt_bytes: b"receipt",
             consumed_at_unix_ms: 100,
@@ -5374,6 +7225,38 @@ mod tests {
             .build_recovery_archive("ptid:alice", [42; 32], 3)
             .unwrap();
         assert_eq!(exported, recovery_archive());
+        let restored = store
+            .message_projection("restored-conversation", "restored-message")
+            .unwrap()
+            .unwrap()
+            .0;
+        assert_eq!(
+            restored.attachments,
+            vec![test_attachment_metadata("attachment-1")]
+        );
+        assert_eq!(
+            store
+                .search_message_projections(
+                    "restored-conversation",
+                    "restored plaintext",
+                    None,
+                    10,
+                )
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            store
+                .search_message_projections("restored-conversation", "report.txt", None, 10,)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(store
+            .search_message_projections("other-conversation", "report.txt", None, 10)
+            .unwrap()
+            .is_empty());
         let connection = store.connection().unwrap();
         for table in [
             "direct_sessions",
@@ -5399,6 +7282,125 @@ mod tests {
                 .unwrap();
             assert_eq!(count, 0, "live table {table}");
         }
+    }
+
+    #[test]
+    fn completed_download_atomically_promotes_recipient_cache_projection() {
+        let store = MessagingStore::in_memory().unwrap();
+        store
+            .populate_recovery_staging(&recovery_archive())
+            .unwrap();
+        let projection = store
+            .attachment_download_projection("attachment-1")
+            .unwrap()
+            .unwrap();
+        let descriptor = projection.metadata.object.clone().unwrap();
+        let descriptor_sha256 = Sha256::digest(descriptor.encode_to_vec()).to_vec();
+        let transfer = AttachmentTransferRecord {
+            attachment_id: "attachment-1".to_string(),
+            conversation_id: projection.conversation_id,
+            message_id: projection.message_id,
+            authority_station_id: projection.authority_station_id,
+            direction: 2,
+            state: AttachmentTransferState::Transferring as i32,
+            upload_id: String::new(),
+            generation: 0,
+            descriptor_sha256,
+            completed_chunk_bitmap: vec![0xff; descriptor.chunk_count.div_ceil(8) as usize],
+            source_local_ref: String::new(),
+            partial_local_ref: "/tmp/attachment-1.part".to_string(),
+            object_key: projection.metadata.object_key,
+            base_nonce: projection.metadata.base_nonce,
+            plaintext_size: projection.metadata.plaintext_size,
+            chunk_size: descriptor.chunk_size,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 100,
+            last_error_code: 0,
+            updated_at_unix_ms: 100,
+        };
+        store.create_attachment_transfer(&transfer).unwrap();
+        store
+            .complete_attachment_download(&transfer, &descriptor, "/tmp/attachment-1.cache", 101)
+            .unwrap();
+
+        let promoted = store
+            .attachment_download_projection("attachment-1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            promoted.local_cache_path.as_deref(),
+            Some("/tmp/attachment-1.cache")
+        );
+        assert_eq!(
+            store
+                .attachment_transfer("attachment-1")
+                .unwrap()
+                .unwrap()
+                .state,
+            AttachmentTransferState::Complete as i32
+        );
+    }
+
+    #[test]
+    fn completed_upload_becomes_fenced_sender_download_checkpoint() {
+        let store = MessagingStore::in_memory().unwrap();
+        store
+            .populate_recovery_staging(&recovery_archive())
+            .unwrap();
+        let projection = store
+            .attachment_download_projection("attachment-1")
+            .unwrap()
+            .unwrap();
+        let descriptor = projection.metadata.object.as_ref().unwrap();
+        let upload = AttachmentTransferRecord {
+            attachment_id: projection.metadata.attachment_id.clone(),
+            conversation_id: projection.conversation_id.clone(),
+            message_id: projection.message_id.clone(),
+            authority_station_id: projection.authority_station_id.clone(),
+            direction: 1,
+            state: AttachmentTransferState::Complete as i32,
+            upload_id: "upload-1".to_string(),
+            generation: 7,
+            descriptor_sha256: Sha256::digest(descriptor.encode_to_vec()).to_vec(),
+            completed_chunk_bitmap: vec![0xff; descriptor.chunk_count.div_ceil(8) as usize],
+            source_local_ref: "/tmp/completed-upload-source".to_string(),
+            partial_local_ref: String::new(),
+            object_key: projection.metadata.object_key.clone(),
+            base_nonce: projection.metadata.base_nonce.clone(),
+            plaintext_size: projection.metadata.plaintext_size,
+            chunk_size: descriptor.chunk_size,
+            attempt_count: 2,
+            next_attempt_at_unix_ms: 0,
+            last_error_code: 0,
+            updated_at_unix_ms: 100,
+        };
+        store.create_attachment_transfer(&upload).unwrap();
+
+        let download = AttachmentTransferRecord {
+            direction: 2,
+            state: AttachmentTransferState::Queued as i32,
+            upload_id: String::new(),
+            generation: 0,
+            descriptor_sha256: vec![0; 32],
+            completed_chunk_bitmap: vec![0; descriptor.chunk_count.div_ceil(8) as usize],
+            source_local_ref: String::new(),
+            partial_local_ref: "/tmp/sender-cache.part".to_string(),
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 101,
+            updated_at_unix_ms: 101,
+            ..upload.clone()
+        };
+        store
+            .replace_completed_upload_with_download(&download)
+            .unwrap();
+
+        assert_eq!(
+            store.attachment_transfer("attachment-1").unwrap().unwrap(),
+            download
+        );
+        assert!(store
+            .replace_completed_upload_with_download(&download)
+            .is_err());
     }
 
     #[test]

@@ -1,14 +1,15 @@
 use super::{
-    DirectSendCommit, EngineEndpoint, MessagingStore, MlsSendCommit, PendingSenderProjection,
+    encode_message_private_content, DirectSendCommit, EngineEndpoint, MessagingStore,
+    MlsSendCommit, PendingSenderProjection,
 };
 use crate::domain::crypto::double_ratchet::{self, DrCiphertextWire};
 use crate::domain::crypto::{CryptoEndpoint as SessionEndpoint, DirectSession};
 use crate::domain::mls_group::MlsGroupManager;
 use crate::model::chat::{
-    chat_command, ChatCommand, ConversationKind, CryptoEndpoint, DirectCiphertextAad,
-    DirectDeviceCiphertext, DirectSessionInit, DoubleRatchetCiphertext, MessagingContentKind,
-    PrepareMessagingSendResponse, PreparedEndpointPayload, PreparedEndpointPayloadKind,
-    SendMessageIntent,
+    chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationKind, CryptoEndpoint,
+    DirectCiphertextAad, DirectDeviceCiphertext, DirectSessionInit, DoubleRatchetCiphertext,
+    MessagingContentKind, PrepareMessagingSendResponse, PreparedEndpointPayload,
+    PreparedEndpointPayloadKind, SendMessageIntent,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -19,6 +20,7 @@ pub struct SendTextIntent<'a> {
     pub message_id: &'a str,
     pub conversation_id: &'a str,
     pub plaintext: &'a str,
+    pub attachments: &'a [AttachmentPlaintextMetadata],
     pub client_timestamp_unix_ms: i64,
 }
 
@@ -64,6 +66,11 @@ impl SendPreparer {
         bootstraps: &[DirectSessionBootstrap],
     ) -> Result<ChatCommand, String> {
         validate_send_context(plan, intent, &self.endpoint, ConversationKind::Direct)?;
+        self.store.validate_sender_attachments_ready(
+            intent.conversation_id,
+            intent.message_id,
+            intent.attachments,
+        )?;
         validate_authority_head(&self.store, plan)?;
         let local = model_endpoint(&self.endpoint);
         let peers = plan
@@ -111,6 +118,7 @@ impl SendPreparer {
         let mut advanced_sessions = Vec::with_capacity(sessions.len());
         let mut session_inits = Vec::new();
         let mut payloads = Vec::with_capacity(sessions.len());
+        let private_content = encode_message_private_content(intent.plaintext, intent.attachments)?;
         for (mut session, session_init) in sessions {
             if session.key.local.ptid != self.endpoint.ptid
                 || session.key.local.device_id != self.endpoint.device_id
@@ -148,9 +156,8 @@ impl SendPreparer {
                 protocol_version: direct.protocol_version,
             }
             .encode_to_vec();
-            let wire =
-                double_ratchet::encrypt(&mut session.ratchet, intent.plaintext.as_bytes(), &aad)
-                    .map_err(|error| format!("messaging Direct encrypt failed: {error}"))?;
+            let wire = double_ratchet::encrypt(&mut session.ratchet, &private_content, &aad)
+                .map_err(|error| format!("messaging Direct encrypt failed: {error}"))?;
             session.established = true;
             session.updated_at_unix_ms = intent.client_timestamp_unix_ms;
             let ratchet_ciphertext = ratchet_proto(&wire);
@@ -173,7 +180,7 @@ impl SendPreparer {
             payloads,
             Vec::new(),
             Vec::new(),
-        );
+        )?;
         let command_bytes = command.encode_to_vec();
         self.store.persist_direct_send(&DirectSendCommit {
             command_bytes: &command_bytes,
@@ -184,6 +191,7 @@ impl SendPreparer {
                 &self.endpoint,
                 plan.conversation_kind,
                 &plan.delivery_plan_sha256,
+                &private_content,
             ),
         })?;
         Ok(command)
@@ -195,13 +203,19 @@ impl SendPreparer {
         intent: &SendTextIntent<'_>,
     ) -> Result<ChatCommand, String> {
         validate_send_context(plan, intent, &self.endpoint, ConversationKind::Group)?;
+        self.store.validate_sender_attachments_ready(
+            intent.conversation_id,
+            intent.message_id,
+            intent.attachments,
+        )?;
         validate_authority_head(&self.store, plan)?;
         let expected_mls_epoch = u64::try_from(plan.mls_epoch)
             .map_err(|_| "messaging MLS epoch is invalid".to_string())?;
+        let private_content = encode_message_private_content(intent.plaintext, intent.attachments)?;
         let prepared = self.mls_manager.prepare_outbound_application(
             intent.conversation_id,
             expected_mls_epoch,
-            intent.plaintext.as_bytes(),
+            &private_content,
         )?;
         if prepared.mls_epoch != expected_mls_epoch {
             return Err("messaging prepared MLS epoch mismatch".to_string());
@@ -214,7 +228,7 @@ impl SendPreparer {
             Vec::new(),
             prepared.ciphertext.clone(),
             payload_hash,
-        );
+        )?;
         let command_bytes = command.encode_to_vec();
         self.store.persist_mls_send(&MlsSendCommit {
             command_bytes: &command_bytes,
@@ -226,6 +240,7 @@ impl SendPreparer {
                 &self.endpoint,
                 plan.conversation_kind,
                 &plan.delivery_plan_sha256,
+                &private_content,
             ),
         })?;
         self.mls_manager
@@ -240,10 +255,10 @@ fn validate_send_context(
     endpoint: &EngineEndpoint,
     expected_kind: ConversationKind,
 ) -> Result<(), String> {
+    let private_content = encode_message_private_content(intent.plaintext, intent.attachments)?;
     if intent.command_id.trim().is_empty()
         || intent.message_id.trim().is_empty()
         || intent.conversation_id.trim().is_empty()
-        || intent.plaintext.is_empty()
         || intent.client_timestamp_unix_ms <= 0
         || plan.conversation_id != intent.conversation_id
         || plan.authority_station_id.trim().is_empty()
@@ -255,6 +270,9 @@ fn validate_send_context(
             != expected_kind
     {
         return Err("messaging send context is incomplete".to_string());
+    }
+    if private_content.is_empty() {
+        return Err("messaging private content is empty".to_string());
     }
     let local = model_endpoint(endpoint);
     let mut previous: Option<(&str, &str)> = None;
@@ -296,8 +314,18 @@ fn build_text_command(
     direct_payloads: Vec<PreparedEndpointPayload>,
     mls_payload: Vec<u8>,
     mls_payload_sha256: Vec<u8>,
-) -> ChatCommand {
-    ChatCommand {
+) -> Result<ChatCommand, String> {
+    let attachments = intent
+        .attachments
+        .iter()
+        .map(|attachment| {
+            attachment
+                .object
+                .clone()
+                .ok_or_else(|| "messaging attachment descriptor is missing".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ChatCommand {
         command_id: intent.command_id.to_string(),
         conversation_id: intent.conversation_id.to_string(),
         sender: Some(model_endpoint(endpoint)),
@@ -314,12 +342,12 @@ fn build_text_command(
             content_kind: MessagingContentKind::Text as i32,
             reply_to_message_id: String::new(),
             thread_root_message_id: String::new(),
-            attachments: Vec::new(),
+            attachments,
             direct_payloads,
             mls_application_payload: mls_payload,
             mls_application_payload_sha256: mls_payload_sha256,
         })),
-    }
+    })
 }
 
 fn pending_projection<'a>(
@@ -327,6 +355,7 @@ fn pending_projection<'a>(
     endpoint: &'a EngineEndpoint,
     conversation_kind: i32,
     delivery_plan_sha256: &'a [u8],
+    private_content: &'a [u8],
 ) -> PendingSenderProjection<'a> {
     PendingSenderProjection {
         command_id: intent.command_id,
@@ -336,6 +365,8 @@ fn pending_projection<'a>(
         sender_ptid: &endpoint.ptid,
         sender_device_id: &endpoint.device_id,
         plaintext: intent.plaintext,
+        attachments: intent.attachments,
+        private_content,
         delivery_plan_sha256,
         created_at_unix_ms: intent.client_timestamp_unix_ms,
     }
@@ -365,6 +396,9 @@ mod tests {
     use crate::domain::crypto::double_ratchet::DrSessionState;
     use crate::domain::crypto::{DirectSession, DirectSessionKey};
     use crate::domain::mls_group::MlsMemberKeyPackage;
+    use crate::messaging::private_content::test_attachment_metadata;
+    use crate::messaging::{decode_message_private_content, AttachmentTransferRecord};
+    use crate::model::chat::{AttachmentTransferState, EncryptedObjectUploadSpec};
 
     fn session(peer_ptid: &str, peer_device_id: &str, seed: u8) -> DirectSession {
         let session_id = format!("session-{peer_ptid}-{peer_device_id}");
@@ -394,6 +428,109 @@ mod tests {
             },
             updated_at_unix_ms: 10,
         }
+    }
+
+    fn install_completed_upload(
+        store: &MessagingStore,
+        conversation_id: &str,
+        message_id: &str,
+        authority_station_id: &str,
+        attachment: &AttachmentPlaintextMetadata,
+    ) {
+        let object = attachment.object.as_ref().unwrap();
+        let upload_spec = EncryptedObjectUploadSpec {
+            ciphertext_size: object.ciphertext_size,
+            ciphertext_sha256: object.ciphertext_sha256.clone(),
+            media_type: object.media_type.clone(),
+            chunk_size: object.chunk_size,
+            chunk_count: object.chunk_count,
+            encryption_suite: object.encryption_suite,
+            tag_size: object.tag_size,
+            nonce_strategy: object.nonce_strategy,
+            chunk_ciphertext_sha256: object.chunk_ciphertext_sha256.clone(),
+        };
+        let descriptor_sha256 = crate::messaging::attachment_transfer::upload_commitment_fields(
+            conversation_id,
+            message_id,
+            &attachment.attachment_id,
+            authority_station_id,
+            &upload_spec,
+        )
+        .to_vec();
+        let mut completed_chunk_bitmap = vec![0; object.chunk_count.div_ceil(8) as usize];
+        for chunk_index in 0..object.chunk_count {
+            completed_chunk_bitmap[chunk_index as usize / 8] |= 1 << (chunk_index % 8);
+        }
+        store
+            .create_attachment_transfer(&AttachmentTransferRecord {
+                attachment_id: attachment.attachment_id.clone(),
+                conversation_id: conversation_id.to_string(),
+                message_id: message_id.to_string(),
+                authority_station_id: authority_station_id.to_string(),
+                direction: 1,
+                state: AttachmentTransferState::Complete as i32,
+                upload_id: format!("upload-{}", attachment.attachment_id),
+                generation: 1,
+                descriptor_sha256,
+                completed_chunk_bitmap,
+                source_local_ref: format!("/tmp/source-{}", attachment.attachment_id),
+                partial_local_ref: String::new(),
+                object_key: attachment.object_key.clone(),
+                base_nonce: attachment.base_nonce.clone(),
+                plaintext_size: attachment.plaintext_size,
+                chunk_size: object.chunk_size,
+                attempt_count: 0,
+                next_attempt_at_unix_ms: 1,
+                last_error_code: 0,
+                updated_at_unix_ms: 1,
+            })
+            .unwrap();
+    }
+
+    fn decrypt_direct_payload(
+        payload: &PreparedEndpointPayload,
+        conversation_id: &str,
+        seed: u8,
+    ) -> crate::model::chat::MessagePrivateContent {
+        let direct = DirectDeviceCiphertext::decode(payload.opaque_payload.as_slice()).unwrap();
+        let ratchet = direct.ratchet_ciphertext.as_ref().unwrap();
+        let wire = DrCiphertextWire {
+            version: ratchet.wire_version,
+            sender_dh: ratchet
+                .sender_ratchet_public_key
+                .as_slice()
+                .try_into()
+                .unwrap(),
+            n_send: ratchet.message_counter,
+            n_prev: ratchet.previous_chain_length,
+            nonce: ratchet.nonce.as_slice().try_into().unwrap(),
+            ciphertext: ratchet.ciphertext.clone(),
+        };
+        let receiver = DrSessionState {
+            session_id: direct.session_id.clone(),
+            root_key: [seed + 1; 32],
+            self_priv: [seed + 7; 32],
+            self_pub: [seed + 8; 32],
+            peer_pub: Some([seed + 3; 32]),
+            send_chain_key: None,
+            recv_chain_key: Some([seed + 5; 32]),
+            n_send: 0,
+            n_recv: 0,
+            n_prev: 0,
+        };
+        let aad = DirectCiphertextAad {
+            command_id: direct.command_id,
+            message_id: direct.message_id,
+            conversation_id: conversation_id.to_string(),
+            sender: direct.sender,
+            recipient: direct.recipient,
+            session_id: direct.session_id,
+            session_generation: direct.session_generation,
+            protocol_version: direct.protocol_version,
+        }
+        .encode_to_vec();
+        let outcome = double_ratchet::decrypt(&receiver, &wire, &[], &aad).unwrap();
+        decode_message_private_content(&outcome.plaintext).unwrap()
     }
 
     #[test]
@@ -439,6 +576,32 @@ mod tests {
             endpoint_manifests: Vec::new(),
             authority_station_id: "station-local".to_string(),
         };
+        let attachment = test_attachment_metadata("attachment-1");
+        let rejected = preparer
+            .prepare_direct_text(
+                &plan,
+                &SendTextIntent {
+                    command_id: "command-incomplete-upload",
+                    message_id: "message-1",
+                    conversation_id: "conversation-1",
+                    plaintext: "exact plaintext",
+                    attachments: std::slice::from_ref(&attachment),
+                    client_timestamp_unix_ms: 99,
+                },
+            )
+            .unwrap_err();
+        assert_eq!(
+            rejected,
+            "messaging attachment is not durably complete for send"
+        );
+        assert!(store.next_command(99).unwrap().is_none());
+        install_completed_upload(
+            &store,
+            "conversation-1",
+            "message-1",
+            "station-local",
+            &attachment,
+        );
         let command = preparer
             .prepare_direct_text(
                 &plan,
@@ -447,6 +610,7 @@ mod tests {
                     message_id: "message-1",
                     conversation_id: "conversation-1",
                     plaintext: "exact plaintext",
+                    attachments: std::slice::from_ref(&attachment),
                     client_timestamp_unix_ms: 100,
                 },
             )
@@ -456,6 +620,7 @@ mod tests {
             chat_command::Payload::SendMessage(send) => send,
             _ => panic!("unexpected command payload"),
         };
+        assert_eq!(send.attachments, vec![attachment.object.clone().unwrap()]);
         assert_eq!(send.direct_payloads.len(), 2);
         assert_eq!(
             send.direct_payloads
@@ -464,6 +629,14 @@ mod tests {
                 .collect::<Vec<_>>(),
             plan.required_endpoints[1..]
         );
+        let bob_payload = send
+            .direct_payloads
+            .iter()
+            .find(|payload| payload.recipient.as_ref().unwrap().ptid == "ptid:bob")
+            .unwrap();
+        let private_content = decrypt_direct_payload(bob_payload, "conversation-1", 30);
+        assert_eq!(private_content.text, "exact plaintext");
+        assert_eq!(private_content.attachments, vec![attachment.clone()]);
         assert_eq!(
             store.next_command(100).unwrap().unwrap().command_bytes,
             command.encode_to_vec()
@@ -489,15 +662,18 @@ mod tests {
         store
             .mark_command_superseded("command-1", &command.encode_to_vec(), 0)
             .unwrap();
+        let reloaded = store.next_due_message_draft(100).unwrap().unwrap();
+        assert_eq!(reloaded.attachments, vec![attachment.clone()]);
         plan.delivery_plan_sha256 = vec![10; 32];
         let replacement = preparer
             .prepare_direct_text(
                 &plan,
                 &SendTextIntent {
                     command_id: "command-2",
-                    message_id: "message-1",
-                    conversation_id: "conversation-1",
-                    plaintext: "exact plaintext",
+                    message_id: &reloaded.message_id,
+                    conversation_id: &reloaded.conversation_id,
+                    plaintext: &reloaded.plaintext,
+                    attachments: &reloaded.attachments,
                     client_timestamp_unix_ms: 110,
                 },
             )
@@ -519,7 +695,7 @@ mod tests {
     }
 
     #[test]
-    fn group_prepare_persists_advanced_openmls_state_and_bob_decrypts_exact_plaintext() {
+    fn group_prepare_persists_attachment_only_private_content_and_public_descriptor() {
         let store = Arc::new(MessagingStore::in_memory().unwrap());
         let alice = Arc::new(MlsGroupManager::new());
         let bob = MlsGroupManager::new();
@@ -572,6 +748,14 @@ mod tests {
             endpoint_manifests: Vec::new(),
             authority_station_id: "station-local".to_string(),
         };
+        let attachment = test_attachment_metadata("group-attachment-1");
+        install_completed_upload(
+            &store,
+            "group-1",
+            "group-message-1",
+            "station-local",
+            &attachment,
+        );
         let command = preparer
             .prepare_group_text(
                 &plan,
@@ -579,7 +763,8 @@ mod tests {
                     command_id: "group-command-1",
                     message_id: "group-message-1",
                     conversation_id: "group-1",
-                    plaintext: "exact group plaintext",
+                    plaintext: "",
+                    attachments: std::slice::from_ref(&attachment),
                     client_timestamp_unix_ms: 100,
                 },
             )
@@ -589,15 +774,17 @@ mod tests {
             _ => panic!("unexpected command payload"),
         };
         assert!(send.direct_payloads.is_empty());
+        assert_eq!(send.attachments, vec![attachment.object.clone().unwrap()]);
         assert_eq!(
             Sha256::digest(&send.mls_application_payload).as_slice(),
             send.mls_application_payload_sha256
         );
-        assert_eq!(
-            bob.decrypt("group-1", &send.mls_application_payload)
-                .unwrap(),
-            b"exact group plaintext"
-        );
+        let decrypted = bob
+            .decrypt("group-1", &send.mls_application_payload)
+            .unwrap();
+        let private_content = decode_message_private_content(&decrypted).unwrap();
+        assert!(private_content.text.is_empty());
+        assert_eq!(private_content.attachments, vec![attachment]);
         assert_eq!(
             store.next_command(100).unwrap().unwrap().command_bytes,
             command.encode_to_vec()

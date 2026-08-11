@@ -17,6 +17,7 @@ mod mls_key_packages;
 mod mls_retirement;
 mod mls_sender;
 mod prekeys;
+mod private_content;
 mod public_event;
 mod recovery;
 mod send;
@@ -51,8 +52,8 @@ pub use drain::{
 };
 pub(crate) use engine::now_unix_ms;
 pub use engine::{
-    EngineEndpoint, EngineRegistry, MessagingEngine, MessagingProjectionChange,
-    MessagingProjectionNotifier,
+    EngineEndpoint, EngineRegistry, LocalAttachmentIntent, MessagingEngine,
+    MessagingProjectionChange, MessagingProjectionNotifier, SubmitMessageOutcome,
 };
 pub use group_genesis::{GroupGenesisPreparer, StationGroupGenesisTransport};
 pub use identity::{FreshDeviceEnrollment, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION};
@@ -69,6 +70,11 @@ pub use mls_key_packages::{
 pub use mls_retirement::MlsRetirementProcessor;
 pub use mls_sender::MlsSenderTransitionProcessor;
 pub use prekeys::{PreKeyPublisher, PreKeyTransport, StationPreKeyTransport};
+pub use private_content::{
+    decode_message_private_content, encode_message_private_content,
+    validate_attachment_plaintext_metadata, validate_message_private_content,
+    MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
+};
 pub use public_event::PublicEventProcessor;
 pub use recovery::{
     decode_recovery_revision, encode_recovery_revision, EncodedRecoveryRevision,
@@ -77,10 +83,12 @@ pub use recovery::{
 };
 pub use send::{DirectSessionBootstrap, SendPreparer, SendTextIntent};
 pub use store::{
-    AttachmentTransferRecord, CommandOutboxEntry, ConversationMessageProjection,
-    ConversationProjection, ConversationStateReceiveCommit, DirectReceiveCommit, DirectSendCommit,
-    MessageProjection, MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
-    MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, MlsTransitionSendCommit,
+    AttachmentDownloadProjection, AttachmentTransferRecord, CommandOutboxEntry,
+    ConversationMessageProjection, ConversationProjection, ConversationStateReceiveCommit,
+    DirectEditCommit, DirectReceiveCommit, DirectSendCommit, MessageProjection, MessagingStore,
+    MlsReceiveCommit,
+    MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
+    MlsTransitionReceiveCommit, MlsTransitionSendCommit, PendingAttachmentUpload,
     PendingMembershipIntent, PendingMessageDraft, PendingMlsKeyPackage, PendingMlsTransitionState,
     PendingPreKeyBundle, PendingSenderProjection, PublicEventReceiveCommit, ReceiveCommitResult,
 };

@@ -123,6 +123,14 @@ pub fn stop(actor_id: &str) {
     }
 }
 
+/// Stop every Station-scoped event stream before changing Station binding.
+pub fn stop_all() {
+    let mut map = registry().lock().expect("event_stream registry poisoned");
+    for (_, flag) in map.drain() {
+        flag.store(true, Ordering::Relaxed);
+    }
+}
+
 /// True if a supervisor is registered for the actor (it may not be
 /// connected yet — registration happens before the first connect).
 pub fn is_running(actor_id: &str) -> bool {

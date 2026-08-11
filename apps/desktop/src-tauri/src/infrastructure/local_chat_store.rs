@@ -509,37 +509,6 @@ pub fn upsert_plaintext_records(
     Ok(indexed)
 }
 
-pub fn get_plaintext_record(
-    user_scope: &str,
-    message_id: &str,
-) -> Result<Option<LocalChatRecord>, String> {
-    let conn = open_connection(user_scope)?;
-    let result = conn
-        .lock()
-        .query_row(
-            "SELECT scope, conversation_id, message_id, sender_did, content,
-                    reply_to_ulid, thread_root_ulid, sent_at
-             FROM chat_messages
-             WHERE message_id = ?1",
-            params![message_id],
-            |row| {
-                Ok(LocalChatRecord {
-                    scope: row.get(0)?,
-                    conversation_id: row.get(1)?,
-                    message_id: row.get(2)?,
-                    sender_did: row.get(3)?,
-                    content: row.get(4)?,
-                    reply_to_ulid: row.get(5)?,
-                    thread_root_ulid: row.get(6)?,
-                    sent_at: row.get(7)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(|error| error.to_string());
-    result
-}
-
 fn json_string(value: &Value, keys: &[&str]) -> String {
     for key in keys {
         if let Some(s) = value.get(*key).and_then(|v| v.as_str()) {

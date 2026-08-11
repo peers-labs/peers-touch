@@ -46,7 +46,8 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { log } from '../../utils/logger';
-import { api, type ChatAttachmentInput } from '../../services/desktop_api';
+import { imServiceV1 } from '../../services/im-service';
+import type { MessagingLocalAttachmentIntent } from '../../services/im-service-contract';
 import {
   useChatAttachmentDrafts,
   type ChatDraftAttachment,
@@ -56,7 +57,6 @@ import { useChatVoiceRecorder } from './composer/useChatVoiceRecorder';
 import { useActiveChatSettingsSlice } from './useActiveSocialChatStore';
 import { formatChatScreenshotShortcut } from '../../utils/chatScreenshotShortcut';
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
-import { uploadChatAttachmentFile } from '../../services/chatAttachments';
 import {
   markTextInputIntent,
   markTextInputVisible,
@@ -78,7 +78,7 @@ const DEFAULT_EMOJI_GROUPS = [
 
 export interface ChatComposerDraft {
   text: string;
-  attachments: ChatAttachmentInput[];
+  attachments: MessagingLocalAttachmentIntent[];
   messageType?: number;
 }
 
@@ -188,7 +188,6 @@ export function ChatComposer({
     uploading,
     failed,
     addFiles,
-    addPath,
     appendReadyAttachment,
     clearDrafts,
     removeDraft,
@@ -203,14 +202,28 @@ export function ChatComposer({
   const sendRecordedVoice = async (file: File) => {
     if (disabled || editing || sending || voiceSending) return;
     setVoiceSending(true);
+    let stagedPath: string | undefined;
     try {
-      const attachment = await uploadChatAttachmentFile({ conversationId: activeConversationId }, file);
+      stagedPath = await imServiceV1.messaging.stageAttachmentSource(
+        file.name,
+        new Uint8Array(await file.arrayBuffer()),
+      );
+      const attachment: MessagingLocalAttachmentIntent = {
+        filePath: stagedPath,
+        filename: file.name,
+        mimeType: file.type || 'audio/webm',
+      };
       await onSend({
         text: '',
         attachments: [attachment],
         messageType: chatMessageTypeForAttachments([attachment]),
       });
     } catch (error) {
+      if (stagedPath) {
+        await imServiceV1.messaging.discardAttachmentSource(stagedPath).catch((discardError) => {
+          log.warn('chat', 'discard failed voice attachment source', discardError);
+        });
+      }
       log.error('chat', 'voice message send failed', error);
       toast.error(t('chat.social.composer.voiceSendFailed'));
     } finally {
@@ -279,8 +292,7 @@ export function ChatComposer({
   const handlePickAttachment = async () => {
     if (disabled || editing || recording) return;
     try {
-      const filePath = await api.ossPickAttachmentChat();
-      addPath(filePath);
+      appendReadyAttachment(await imServiceV1.messaging.pickAttachmentSource());
     } catch (error) {
       log.warn('chat', 'composer native attachment picker cancelled or failed', error);
     }
@@ -399,7 +411,7 @@ export function ChatComposer({
       attachments: readyAttachments,
       messageType,
     });
-    clearDrafts();
+    clearDrafts(false);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {

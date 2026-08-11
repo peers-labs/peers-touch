@@ -50,7 +50,11 @@ function requestIdle(callback: () => void, timeoutMs: number): () => void {
 }
 
 function requestFrame(callback: () => void): () => void {
-  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+  if (
+    typeof window === 'undefined'
+    || typeof window.requestAnimationFrame !== 'function'
+    || window.document?.visibilityState === 'hidden'
+  ) {
     const handle = setTimeout(callback, 0);
     return () => clearTimeout(handle);
   }

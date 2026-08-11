@@ -51,6 +51,8 @@ type Composition struct {
 	AuthorityCommandForwarder *application.AuthorityCommandForwarder
 	MlsKeyPackageClaimService *application.FederatedMlsKeyPackageClaimService
 	AttachmentService         *application.AttachmentService
+	TypingService             *application.TypingService
+	ReceiptService            *application.ReceiptService
 
 	CommandHandler             *httpinterface.CommandHandler
 	DeviceHandler              *httpinterface.DeviceHandler
@@ -67,6 +69,8 @@ type Composition struct {
 	RemoteMlsKeyPackageClaimer *infrastructure.HTTPMlsKeyPackageClaimer
 	AttachmentProxy            *infrastructure.HTTPAttachmentProxy
 	AttachmentFederationAuth   server.Wrapper
+	TypingHandler              *httpinterface.TypingHandler
+	ReceiptHandler             *httpinterface.ReceiptHandler
 	DeviceDirectory            domain.DeviceDirectory
 
 	FederationDispatcher *worker.FederationDispatcher
@@ -77,6 +81,7 @@ type Composition struct {
 	federationOutbox    *infrastructure.FederationRepository
 	recoveryRepository  *infrastructure.RecoveryRepository
 	mlsClaimRepository  *infrastructure.FederatedMlsKeyPackageClaimStore
+	readCursorRepo      *infrastructure.ReadCursorRepository
 }
 
 func NewComposition(config CompositionConfig) (*Composition, error) {
@@ -335,6 +340,36 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 	}
 	infrastructure.RegisterMessagingFederationScope()
 
+	typingService, err := application.NewTypingService(
+		authorityUnitOfWork,
+		config.LocalStationID,
+		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
+	readCursorRepo, err := infrastructure.NewReadCursorRepository(config.Database)
+	if err != nil {
+		return nil, err
+	}
+	receiptService, err := application.NewReceiptService(
+		authorityUnitOfWork,
+		readCursorRepo,
+		config.LocalStationID,
+		config.Clock,
+	)
+	if err != nil {
+		return nil, err
+	}
+	typingHandler, err := httpinterface.NewTypingHandler(typingService)
+	if err != nil {
+		return nil, err
+	}
+	receiptHandler, err := httpinterface.NewReceiptHandler(receiptService)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Composition{
 		AuthorityService:           authorityService,
 		ConversationService:        conversationService,
@@ -347,6 +382,8 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		AuthorityCommandForwarder:  authorityCommandForwarder,
 		MlsKeyPackageClaimService:  mlsKeyPackageClaimService,
 		AttachmentService:          attachmentService,
+		TypingService:              typingService,
+		ReceiptService:             receiptService,
 		CommandHandler:             commandHandler,
 		DeviceHandler:              deviceHandler,
 		QueueHandler:               queueHandler,
@@ -357,6 +394,8 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		MlsKeyPackageClaimHandler:  mlsKeyPackageClaimHandler,
 		RemoteMlsKeyPackageClaimer: remoteMlsKeyPackageClaimer,
 		AttachmentProxy:            attachmentProxy,
+		TypingHandler:              typingHandler,
+		ReceiptHandler:             receiptHandler,
 		FederationAuth: serverwrapper.RequireFederationToken(
 			domain.FederationScope,
 			config.PeerKeys,
@@ -390,6 +429,7 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		federationOutbox:     federationOutbox,
 		recoveryRepository:   recoveryRepository,
 		mlsClaimRepository:   mlsClaimRepository,
+		readCursorRepo:       readCursorRepo,
 	}, nil
 }
 
@@ -412,5 +452,8 @@ func (c *Composition) Migrate() error {
 	if err := c.mlsClaimRepository.AutoMigrate(); err != nil {
 		return err
 	}
-	return c.recoveryRepository.AutoMigrate()
+	if err := c.recoveryRepository.AutoMigrate(); err != nil {
+		return err
+	}
+	return c.readCursorRepo.AutoMigrate()
 }

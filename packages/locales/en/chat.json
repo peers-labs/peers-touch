@@ -549,6 +549,8 @@
   "chat.social.messageArea.voicePlay": "Play voice message",
   "chat.social.messageArea.attachmentOpen": "Open",
   "chat.social.messageArea.attachmentOpenOrDownload": "Open or download attachment",
+  "chat.social.messageArea.attachmentStateUploading": "Uploading...",
+  "chat.social.messageArea.attachmentStateFailed": "Attachment failed",
   "chat.social.messageArea.actionReply": "Reply",
   "chat.social.messageArea.actionReact": "React",
   "chat.social.messageArea.actionEdit": "Edit",

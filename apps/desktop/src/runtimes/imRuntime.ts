@@ -6,9 +6,13 @@ import {
 } from '../services/im-service'
 import { DirectKeyExchangeKind } from '../services/im-service-contract'
 import { DirectKeyExchangePayloadSchema } from '../gen/proto/domain/chat/envelope_pb'
-import { DirectSessionInitSchema } from '../gen/proto/domain/chat/key_exchange_pb'
+import { DirectSessionInitSchema } from '../gen/proto/domain/chat/direct_crypto_pb'
 import { CommittedConversationEventSchema } from '../gen/proto/domain/chat/conversation_pb'
-import { acceptInboundSession } from './cryptoRuntime'
+import {
+  acceptInboundSession,
+  ensureCryptoRuntimeReady,
+  getLocalCryptoAddress,
+} from './cryptoRuntime'
 import { useSocialChatStore } from '../store/socialChat'
 import { normalizeConversations } from '../store/socialNormalizers'
 import type { RuntimeDescriptor } from '../kernel/runtime'
@@ -87,27 +91,6 @@ async function getDeviceId(): Promise<string> {
   }
   state.deviceId = id
   return id
-}
-
-async function registerDevice(
-  _actorId: string,
-  signingIdentity: { signingKeyId: string; publicKey: Uint8Array },
-): Promise<string> {
-  const deviceId = await getDeviceId()
-  await imServiceV1.device.register(
-    deviceId,
-    navigator.userAgent,
-    signingIdentity.publicKey,
-    signingIdentity.signingKeyId,
-  )
-  log.info('im-runtime', 'device registered', { deviceId })
-  return deviceId
-}
-
-async function initMlsIdentity(actorId: string, deviceId: string) {
-  const identity = await imServiceV1.mlsGroup.initIdentity(actorId, deviceId)
-  log.info('im-runtime', 'MLS identity initialized')
-  return identity
 }
 
 const KEY_PACKAGE_TARGET = 10
@@ -605,10 +588,7 @@ function stopLeaveIntentPolling(): void {
 function handleConnectionStateChange(payload: { connected: boolean }): void {
   state.sseConnected = payload.connected
   if (payload.connected) {
-    stopResumePolling()
     triggerImmediateResume()
-  } else {
-    startResumePolling()
   }
 }
 
@@ -650,15 +630,12 @@ export const imRuntime: RuntimeDescriptor = {
     if (!actorId) return
     if (state.initialized) return
 
-    const profile = await api.actorGetMyProfile()
-    const deviceId = await getDeviceId()
-    const signingIdentity = await initMlsIdentity(profile.id, deviceId)
-    const actorPtid = signingIdentity.ptid
-    if (!actorPtid.startsWith('ptid:')) {
-      throw new Error('authenticated actor has no canonical PTID')
-    }
+    await ensureCryptoRuntimeReady(actorId)
+    const localAddress = getLocalCryptoAddress()
+    if (!localAddress) throw new Error('crypto runtime did not expose a local device address')
+    const { ptid: actorPtid, deviceId } = localAddress
+    state.deviceId = deviceId
     state.actorPtid = actorPtid
-    await registerDevice(actorPtid, signingIdentity)
     await uploadKeyPackages()
     await loadConversations()
     await restoreMlsSessions()

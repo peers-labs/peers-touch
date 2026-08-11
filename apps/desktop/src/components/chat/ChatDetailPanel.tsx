@@ -42,7 +42,7 @@ import {
   type GroupMember,
 } from '../../gen/proto/domain/chat/group_chat_pb';
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
-import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
+import { useMessagingAttachmentUrl } from './AttachmentItem';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
 import { getGroupMemberControlState } from './chatGroupPermissions';
 import { presentError } from '../../services/errorPresenter';
@@ -288,14 +288,17 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [previewFailed, setPreviewFailed] = useState(false);
-  const openUrl = useOssAttachmentUrl(item.attachment.cid);
-  const previewCid = item.isImage
-    ? (item.attachment.thumbnailCid || item.attachment.cid)
-    : item.attachment.thumbnailCid;
-  const previewUrl = useOssAttachmentUrl(previewCid);
+  const { src: openUrl, resolve } = useMessagingAttachmentUrl(
+    item.attachment,
+    item.kind === 'media',
+  );
+  const previewUrl = openUrl;
   const filename = item.attachment.filename?.trim() || t('chat.social.detail.unnamedAttachment');
   const sizeLabel = formatChatAttachmentSize(item.attachment.size);
-  const canOpen = Boolean(openUrl);
+  const canOpen = Boolean(
+    (item.attachment as DetailAttachment & { attachmentId?: string }).attachmentId
+      || item.attachment.cid?.startsWith('messaging:'),
+  );
   const isMedia = item.kind === 'media';
   const tooltip = canOpen
     ? t('chat.social.detail.openAttachment')
@@ -309,8 +312,9 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
     return () => cancelAnimationFrame(frame);
   }, [previewUrl, item.attachment.cid]);
 
-  const handleOpen = () => {
-    if (openUrl) window.open(openUrl, '_blank');
+  const handleOpen = async () => {
+    const resolved = openUrl ?? await resolve();
+    if (resolved) window.open(resolved, '_blank');
   };
 
   if (isMedia) {
@@ -836,7 +840,7 @@ export function ChatDetailPanel() {
       return;
     }
     try {
-      const uploaded = await api.ossUploadAttachmentChat({
+      const uploaded = await api.ossUploadLocalFile({
         file_path: filePath,
         bucket: 'chat-backgrounds',
         visibility: 'private',
@@ -923,52 +927,20 @@ export function ChatDetailPanel() {
   };
 
   const submitGroupInvites = async () => {
-    if (!activeUlid || !currentUserDid || inviteDids.length === 0) return;
+    if (!activeUlid || inviteDids.length === 0) return;
     setInviteSubmitting(true);
     const pendingDids = [...inviteDids];
     try {
       setGroupSecurityState(activeUlid, 'establishing');
-      const device = await api.accountGetDeviceId();
-      if (!device.device_id) throw new Error('Local device identity is unavailable');
-      const invitees = new Map<string, {
-        data: Uint8Array;
-        deviceId: string;
-        homeStationPeerId: string;
-      }>();
       for (const did of pendingDids) {
-        const fetched = await imServiceV1.keyPackage.fetch(did);
-        if (
-          !fetched.available
-          || !fetched.data
-          || !fetched.deviceId
-          || !fetched.homeStationPeerId
-        ) {
-          throw new Error(`MLS KeyPackage routing is unavailable for ${did}`);
-        }
-        invitees.set(did, {
-          data: fetched.data,
-          deviceId: fetched.deviceId,
-          homeStationPeerId: fetched.homeStationPeerId,
-        });
-      }
-      for (const did of pendingDids) {
-        const conversation = await imServiceV1.conversation.getConversation(activeUlid);
-        const invitee = invitees.get(did)!;
-        await imServiceV1.mlsGroup.addAuthorizedMember({
+        await imServiceV1.messaging.submitMembershipIntent({
           conversationId: activeUlid,
-          senderPtid: currentUserDid,
-          senderDeviceId: device.device_id,
-          observedMembershipEpoch: Number(conversation.membershipEpoch),
-          member: {
-            ptid: did,
-            deviceId: invitee.deviceId,
-            homeStationPeerId: invitee.homeStationPeerId,
-            keyPackage: invitee.data,
-          },
-        });
+          action: 'add_actor',
+          targetPtid: did,
+        })
       }
       setGroupSecurityState(activeUlid, 'ready');
-      await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
+      await loadSessions();
       setInviteDids([]);
       setInviteModalOpen(false);
       toast.success(t('chat.social.detail.addMemberSuccess'));
@@ -993,22 +965,14 @@ export function ChatDetailPanel() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          if (!currentUserDid) throw new Error('Authenticated actor is unavailable');
           setGroupSecurityState(activeUlid, 'establishing');
-          const [device, conversation] = await Promise.all([
-            api.accountGetDeviceId(),
-            imServiceV1.conversation.getConversation(activeUlid),
-          ]);
-          if (!device.device_id) throw new Error('Local device identity is unavailable');
-          await imServiceV1.mlsGroup.removeAuthorizedMember({
+          await imServiceV1.messaging.submitMembershipIntent({
             conversationId: activeUlid,
-            senderPtid: currentUserDid,
-            senderDeviceId: device.device_id,
-            observedMembershipEpoch: Number(conversation.membershipEpoch),
-            memberPtid: member.ptid,
-          });
+            action: 'remove_actor',
+            targetPtid: member.ptid,
+          })
           setGroupSecurityState(activeUlid, 'ready');
-          await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
+          await loadSessions();
           toast.success(t('chat.social.detail.removeMemberSuccess'));
         } catch (error) {
           setGroupSecurityState(activeUlid, 'error');

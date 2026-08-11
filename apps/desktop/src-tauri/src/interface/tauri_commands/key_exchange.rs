@@ -64,6 +64,7 @@ pub fn key_exchange_upload_bundle(
             return AppResult::fail(ErrorCode::InternalError, format!("device_id: {e}"), None);
         }
     };
+    station_client::set_device_id(device_id.clone());
     let req = kemodel::UploadKeyBundleRequest {
         ik_pub: input.ik_pub,
         spk_id: input.spk_id,
@@ -129,9 +130,11 @@ pub fn key_exchange_fetch_bundle(
                 "device_id": b.device_id,
                 "ik_pub": b.ik_pub,
                 "fingerprint": wire::identity_fingerprint_hex(&b.ik_pub),
+                "spk_id": b.spk_id,
                 "spk_pub": b.spk_pub,
                 "spk_sig": b.spk_sig,
                 "opks": b.opks,
+                "opk_ids": b.opk_ids,
                 "published_at_unix_ms": b.published_at_unix_ms,
                 "supported_versions": b.supported_versions,
             })

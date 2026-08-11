@@ -1,6 +1,7 @@
 use super::{
-    verify_device_event_delivery, ClaimedItemConsumer, DirectReceiveCommit, EngineEndpoint,
-    MessageProjection, MessagingStore, ReceiveCommitResult,
+    decode_message_private_content, verify_device_event_delivery, ClaimedItemConsumer,
+    DirectEditCommit, DirectReceiveCommit, EngineEndpoint, MessageProjection, MessagingStore,
+    ReceiveCommitResult,
 };
 use crate::domain::crypto::double_ratchet::{self, DrCiphertextWire};
 use crate::domain::crypto::{
@@ -95,16 +96,26 @@ impl DirectMessageProcessor {
             .event
             .as_ref()
             .ok_or_else(|| "messaging Direct delivery has no event".to_string())?;
-        let message = match event.payload.as_ref() {
-            Some(conversation_event::Payload::MessageCommitted(message)) => message,
-            _ => return Err("messaging Direct delivery has no message fact".to_string()),
+        let (message_id, is_edit, committed_fact) = match event.payload.as_ref() {
+            Some(conversation_event::Payload::MessageCommitted(message)) => {
+                if MessagingContentKind::try_from(message.content_kind)
+                    .map_err(|_| "messaging Direct content kind is invalid".to_string())?
+                    != MessagingContentKind::Text
+                {
+                    return Err(
+                        "messaging Direct processor only accepts text projections".to_string(),
+                    );
+                }
+                (message.message_id.as_str(), false, Some(message))
+            }
+            Some(conversation_event::Payload::MessageEdited(fact)) => {
+                if fact.message_id.trim().is_empty() {
+                    return Err("messaging Direct edit has no message ID".to_string());
+                }
+                (fact.message_id.as_str(), true, None)
+            }
+            _ => return Err("messaging Direct delivery has unsupported event type".to_string()),
         };
-        if MessagingContentKind::try_from(message.content_kind)
-            .map_err(|_| "messaging Direct content kind is invalid".to_string())?
-            != MessagingContentKind::Text
-        {
-            return Err("messaging Direct processor only accepts text projections".to_string());
-        }
         let direct = DirectDeviceCiphertext::decode(delivery.endpoint_payload.as_slice())
             .map_err(|_| "messaging Direct ciphertext payload is invalid".to_string())?;
         if let Some(init) = direct.session_init.as_ref() {
@@ -114,7 +125,11 @@ impl DirectMessageProcessor {
                 return Err("messaging Direct sender identity is not authority-bound".to_string());
             }
         }
-        validate_direct_bindings(event, message, &direct, &self.endpoint)?;
+        // Binding validation uses the full MessageCommittedFact; skip for edits
+        // which carry only a MessageEditedFact without sender/message_id bindings.
+        if let Some(message) = committed_fact {
+            validate_direct_bindings(event, message, &direct, &self.endpoint)?;
+        }
 
         let ratchet = direct
             .ratchet_ciphertext
@@ -160,8 +175,7 @@ impl DirectMessageProcessor {
         let aad = encode_direct_ciphertext_aad(event.conversation_id.as_str(), &direct);
         let outcome = double_ratchet::decrypt(&session.ratchet, &wire, &skipped, &aad)
             .map_err(|error| format!("messaging Direct decrypt failed: {error}"))?;
-        let plaintext = String::from_utf8(outcome.plaintext)
-            .map_err(|_| "messaging Direct plaintext is not valid UTF-8".to_string())?;
+        let private_content = decode_message_private_content(&outcome.plaintext)?;
         session.ratchet = outcome.advanced_state;
         session.updated_at_unix_ms = now;
 
@@ -175,24 +189,7 @@ impl DirectMessageProcessor {
                     .saturating_add(i64::from(timestamp.nanos) / 1_000_000)
             })
             .unwrap_or(now);
-        let projection = MessageProjection {
-            conversation_id: event.conversation_id.clone(),
-            event_id: event.event_id.clone(),
-            event_sequence: event.sequence,
-            message_id: message.message_id.clone(),
-            sender_ptid: direct
-                .sender
-                .as_ref()
-                .map(|endpoint| endpoint.ptid.clone())
-                .unwrap_or_default(),
-            sender_device_id: direct
-                .sender
-                .as_ref()
-                .map(|endpoint| endpoint.device_id.clone())
-                .unwrap_or_default(),
-            plaintext,
-            committed_at_unix_ms,
-        };
+
         let receipt = DeviceConsumptionReceipt {
             receipt_id: format!("device-consumed:{}", item.item_id),
             conversation_id: event.conversation_id.clone(),
@@ -210,26 +207,88 @@ impl DirectMessageProcessor {
             }),
         };
         let receipt_bytes = receipt.encode_to_vec();
-        let input = DirectReceiveCommit {
-            item_id: &item.item_id,
-            event_id: &event.event_id,
-            conversation_id: &event.conversation_id,
-            lane_sequence: item.lane_sequence,
-            consumer_epoch,
-            payload_sha256: &item.payload_sha256,
-            event_hash: &event.event_hash,
-            previous_event_hash: &event.previous_hash,
-            session: &session,
-            new_skipped: &outcome.new_skipped,
-            consumed_skipped: outcome.consumed_skipped,
-            consumed_one_time_prekey_id,
-            projection: &projection,
-            receipt_id: &receipt.receipt_id,
-            receipt_bytes: &receipt_bytes,
-            consumed_at_unix_ms: now,
-        };
-        if self.store.commit_direct_receive(&input)? == ReceiveCommitResult::Committed {
-            crate::domain::crypto::telemetry::record_dr_decrypt();
+
+        if is_edit {
+            // Edit path: decrypt succeeded, apply the edit to the existing
+            // projection and persist session state atomically.
+            let input = DirectEditCommit {
+                item_id: &item.item_id,
+                event_id: &event.event_id,
+                conversation_id: &event.conversation_id,
+                lane_sequence: item.lane_sequence,
+                consumer_epoch,
+                payload_sha256: &item.payload_sha256,
+                event_hash: &event.event_hash,
+                previous_event_hash: &event.previous_hash,
+                event_sequence: event.sequence,
+                session: &session,
+                new_skipped: &outcome.new_skipped,
+                consumed_skipped: outcome.consumed_skipped,
+                consumed_one_time_prekey_id,
+                message_id,
+                edited_text: &private_content.text,
+                edited_at_unix_ms: committed_at_unix_ms,
+                receipt_id: &receipt.receipt_id,
+                receipt_bytes: &receipt_bytes,
+                consumed_at_unix_ms: now,
+            };
+            if self.store.commit_direct_edit(&input)? == ReceiveCommitResult::Committed {
+                crate::domain::crypto::telemetry::record_dr_decrypt();
+            }
+        } else {
+            // New message path: build full projection and commit.
+            let reply_to = committed_fact.and_then(|fact| {
+                if fact.reply_to_message_id.is_empty() {
+                    None
+                } else {
+                    Some(fact.reply_to_message_id.clone())
+                }
+            });
+            let projection = MessageProjection {
+                conversation_id: event.conversation_id.clone(),
+                event_id: event.event_id.clone(),
+                event_sequence: event.sequence,
+                message_id: message_id.to_string(),
+                sender_ptid: direct
+                    .sender
+                    .as_ref()
+                    .map(|endpoint| endpoint.ptid.clone())
+                    .unwrap_or_default(),
+                sender_device_id: direct
+                    .sender
+                    .as_ref()
+                    .map(|endpoint| endpoint.device_id.clone())
+                    .unwrap_or_default(),
+                plaintext: private_content.text,
+                attachments: private_content.attachments,
+                committed_at_unix_ms,
+                reply_to_message_id: reply_to,
+                edited_text: None,
+                edited_at_unix_ms: None,
+                retracted: false,
+            };
+            let input = DirectReceiveCommit {
+                item_id: &item.item_id,
+                event_id: &event.event_id,
+                conversation_id: &event.conversation_id,
+                lane_sequence: item.lane_sequence,
+                consumer_epoch,
+                payload_sha256: &item.payload_sha256,
+                event_hash: &event.event_hash,
+                previous_event_hash: &event.previous_hash,
+                session: &session,
+                new_skipped: &outcome.new_skipped,
+                consumed_skipped: outcome.consumed_skipped,
+                consumed_one_time_prekey_id,
+                projection: &projection,
+                reply_to_message_id: projection.reply_to_message_id.as_deref(),
+                receipt_id: &receipt.receipt_id,
+                receipt_bytes: &receipt_bytes,
+                consumed_at_unix_ms: now,
+            };
+            if self.store.commit_direct_receive(&input)? == ReceiveCommitResult::Committed {
+                crate::domain::crypto::telemetry::record_dr_decrypt();
+            }
         }
         Ok(())
     }
@@ -474,7 +533,10 @@ mod tests {
         };
         let aad = encode_direct_ciphertext_aad("conversation-1", &direct);
         let mut alice_state = alice_ratchet;
-        let wire = encrypt(&mut alice_state, b"exact direct plaintext", &aad).unwrap();
+        let private_content =
+            crate::messaging::encode_message_private_content("exact direct plaintext", &[])
+                .unwrap();
+        let wire = encrypt(&mut alice_state, &private_content, &aad).unwrap();
         let ratchet = DoubleRatchetCiphertext {
             wire_version: wire.version,
             sender_ratchet_public_key: wire.sender_dh.to_vec(),
@@ -546,6 +608,9 @@ mod tests {
             ..Default::default()
         };
         let processor = DirectMessageProcessor::new(store.clone(), recipient, now).unwrap();
+        store
+            .install_test_conversation_projection("conversation-1", 1, 0)
+            .unwrap();
 
         processor.consume(&item, 3).unwrap();
         let committed = store.load_direct_session(session_id).unwrap().unwrap();

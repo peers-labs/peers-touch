@@ -17,15 +17,6 @@ import type {
   SessionRevokedPayload,
 } from '../kernel/events/types';
 import {
-  GetSessionsResponseSchema,
-  CreateSessionResponseSchema,
-  GetFriendConversationSettingsResponseSchema,
-  UpdateFriendConversationSettingsResponseSchema,
-  GetMessagesResponseSchema,
-  RecallFriendMessageResponseSchema,
-  EditFriendMessageResponseSchema,
-  DeleteFriendMessageResponseSchema,
-  SyncMessagesResponseSchema,
   GetPendingResponseSchema,
   GetStatsResponseSchema,
   SendFriendRequestResponseSchema,
@@ -38,10 +29,6 @@ import {
   GetFriendshipStatusResponseSchema,
 } from '../gen/proto/domain/chat/friend_chat_pb';
 import {
-  ListGroupsResponseSchema,
-  GetGroupMessagesResponseSchema,
-  GetUnreadCountResponseSchema,
-  MarkGroupReadResponseSchema,
   CreateGroupResponseSchema,
   GetGroupResponseSchema,
   UpdateGroupResponseSchema,
@@ -56,7 +43,6 @@ import {
   RecallGroupMessageResponseSchema,
   EditGroupMessageResponseSchema,
   DeleteGroupMessageResponseSchema,
-  SearchGroupMessagesResponseSchema,
   UpdateMyNicknameResponseSchema,
   GetGroupSettingsResponseSchema,
   UpdateGroupSettingsResponseSchema,
@@ -253,7 +239,7 @@ const ALWAYS_QUIET_COMMANDS = new Set([
   'logs_tail',
   'frontend_log',
   'visitor_heartbeat',
-  'oss_upload_attachment_bytes_chat',
+  'oss_upload_agent_attachment_bytes',
   'ice_session_candidates_get',
   'ice_session_candidate_post',
   'ice_session_offer_get',
@@ -276,7 +262,6 @@ const PROD_QUIET_COMMANDS = new Set([
   'friend_chat_sync_from_station_scoped',
   'friend_chat_list_sessions',
   'friend_chat_list_messages',
-  'chat_index_local_messages',
 ]);
 
 const APPLET_AUDIT_FLUSH_COMMANDS = new Set([
@@ -610,12 +595,12 @@ export interface PresenceTransitionEvent {
 }
 
 /**
- * Input for `oss_upload_attachment_chat` (field names match the Rust
+ * Input for `oss_upload_local_file` (field names match the Rust
  * `OssUploadAttachmentInput`). Chat uploads always carry a `bucket`
  * and `visibility`; `chat_session_id` is required when
  * `visibility === 'chat'` and ignored otherwise.
  */
-export interface ChatUploadAttachmentInput {
+export interface OssUploadLocalFileInput {
   file_path: string;
   bucket: string;
   visibility: 'public' | 'chat' | 'private';
@@ -623,14 +608,7 @@ export interface ChatUploadAttachmentInput {
   chat_session_id?: string | null;
 }
 
-export interface ChatScreenshotAttachmentInput {
-  bucket: string;
-  visibility: 'public' | 'chat' | 'private';
-  /** Required when `visibility` is `chat`. */
-  chat_session_id?: string | null;
-}
-
-export interface ChatUploadAttachmentBytesInput {
+export interface AgentUploadAttachmentBytesInput {
   filename: string;
   mime_type: string;
   bytes: number[];
@@ -641,7 +619,7 @@ export interface ChatUploadAttachmentBytesInput {
 }
 
 /**
- * Payload returned by `oss_upload_attachment_chat` /
+ * Payload returned by `oss_upload_local_file` /
  * `oss_upload_attachment_social`.
  *
  * `cid` is the federated URI (`oss://{host}/{key}`) the message /
@@ -3038,47 +3016,6 @@ export interface ContextActionDispatchInput {
   payload?: Record<string, unknown>;
 }
 
-export interface FriendChatSyncInput {
-  session_ulid: string;
-  limit?: number;
-  max_pages?: number;
-}
-
-export interface ChatSearchLocalResultRow {
-  scope: string;
-  conversation_id: string;
-  message_id: string;
-  sender_did: string;
-  content: string;
-  sent_at: number;
-  message_type?: number;
-  type?: number;
-  reply_to_ulid?: string;
-  replyToUlid?: string;
-  thread_root_ulid?: string;
-  threadRootUlid?: string;
-  attachments?: unknown[];
-  filename?: string;
-  mime_type?: string;
-}
-
-export interface ChatIndexLocalMessageInput {
-  scope: 'friend' | 'group';
-  conversation_id: string;
-  message_id: string;
-  sender_did: string;
-  content: string;
-  reply_to_ulid?: string;
-  thread_root_ulid?: string;
-  sent_at: number;
-}
-
-export interface GroupChatSyncInput {
-  group_ulid: string;
-  limit?: number;
-  max_pages?: number;
-}
-
 export interface ChatLocalSearchInput {
   query: string;
   limit?: number;
@@ -3124,7 +3061,31 @@ export interface StationEntry {
 
 export interface StationListResponse {
   entries: StationEntry[];
-  active_url: string;
+  active_url?: string | null;
+  binding: StationBindingState;
+}
+
+export type StationBindingPhase =
+  | 'unbound'
+  | 'connecting'
+  | 'access_gate'
+  | 'bound'
+  | 'switching'
+  | 'failed';
+
+export interface StationBindingError {
+  code: string;
+  message: string;
+  retryable: boolean;
+}
+
+export interface StationBindingState {
+  phase: StationBindingPhase;
+  selected_url?: string | null;
+  bound_url?: string | null;
+  target_url?: string | null;
+  generation: number;
+  error?: StationBindingError | null;
 }
 
 export interface StationProbeResult {
@@ -3175,18 +3136,6 @@ export const api = {
       'chat_screenshot_shortcut_register',
       input,
     ),
-
-  chatListConversations: () =>
-    invokeRustCommand<void, TauriStubPayload>('chat_list_conversations'),
-
-  chatListMessages: (input: ChatListMessagesInput) =>
-    invokeRustCommand<ChatListMessagesInput, TauriStubPayload>('chat_list_messages', input),
-
-  chatSendMessage: (input: ChatSendMessageInput) =>
-    invokeRustCommand<ChatSendMessageInput, TauriStubPayload>('chat_send_message', input),
-
-  chatMarkRead: (input: ChatMarkReadInput) =>
-    invokeRustCommand<ChatMarkReadInput, TauriStubPayload>('chat_mark_read', input),
 
   timelineList: (input: TimelineListInput) =>
     invokeRustCommand<TimelineListInput, TauriStubPayload>('timeline_list', input),
@@ -3242,15 +3191,15 @@ export const api = {
    * Chat consumer — open the native picker (any MIME) and return the
    * absolute path of the selected file. Rejects when the user cancels.
    */
-  ossPickAttachmentChat: async (): Promise<string> => {
+  ossPickLocalFile: async (): Promise<string> => {
     const response = await invokeRustCommand<void, TauriStubPayload>(
-      'oss_pick_attachment_chat',
+      'oss_pick_local_file',
     );
     if (response.ok && response.data?.status) {
       return response.data.status;
     }
     throw new Error(
-      response.error?.message || 'oss_pick_attachment_chat failed',
+      response.error?.message || 'oss_pick_local_file failed',
     );
   },
 
@@ -3263,27 +3212,15 @@ export const api = {
    * `application/oss/mod.rs::ChatAttachmentUploaded` for the
    * authoritative shape.
    */
-  ossUploadAttachmentChat: (input: ChatUploadAttachmentInput) =>
-    invokeRustDataFromStatus<ChatUploadAttachmentInput, OssAttachmentUploaded>(
-      'oss_upload_attachment_chat',
+  ossUploadLocalFile: (input: OssUploadLocalFileInput) =>
+    invokeRustDataFromStatus<OssUploadLocalFileInput, OssAttachmentUploaded>(
+      'oss_upload_local_file',
       input,
     ),
 
-  ossUploadAttachmentBytesChat: (input: ChatUploadAttachmentBytesInput) =>
-    invokeRustDataFromStatus<ChatUploadAttachmentBytesInput, OssAttachmentUploaded>(
-      'oss_upload_attachment_bytes_chat',
-      input,
-    ),
-
-  ossUploadEncryptedAttachmentChat: (input: ChatUploadAttachmentInput) =>
-    invokeRustDataFromStatus<ChatUploadAttachmentInput, SocialEncryptedAttachmentUploaded>(
-      'oss_upload_encrypted_attachment_chat',
-      input,
-    ),
-
-  ossCaptureScreenshotChat: (input: ChatScreenshotAttachmentInput) =>
-    invokeRustDataFromStatus<ChatScreenshotAttachmentInput, OssAttachmentUploaded>(
-      'oss_capture_screenshot_chat',
+  ossUploadAgentAttachmentBytes: (input: AgentUploadAttachmentBytesInput) =>
+    invokeRustDataFromStatus<AgentUploadAttachmentBytesInput, OssAttachmentUploaded>(
+      'oss_upload_agent_attachment_bytes',
       input,
     ),
 
@@ -4700,136 +4637,6 @@ export const api = {
       federation_id: federationId,
     }),
 
-  friendChatListSessions: (limit?: number, offset?: number) =>
-    invokeRustProto('friend_chat_list_sessions', GetSessionsResponseSchema, { limit, offset }),
-
-  friendChatCreateSession: (participantDid: string) =>
-    invokeRustProto('friend_chat_create_session', CreateSessionResponseSchema, { participant_did: participantDid }),
-
-  friendChatGetSettings: (sessionUlid: string) =>
-    invokeRustProto('friend_chat_get_settings', GetFriendConversationSettingsResponseSchema, { session_ulid: sessionUlid }),
-
-  friendChatUpdateSettings: (
-    sessionUlid: string,
-    settings: { isMuted?: boolean; isPinned?: boolean; alertEnabled?: boolean; background?: string; clearedAt?: number },
-  ) =>
-    invokeRustProto('friend_chat_update_settings', UpdateFriendConversationSettingsResponseSchema, {
-      session_ulid: sessionUlid,
-      ...(settings.isMuted !== undefined ? { is_muted: settings.isMuted } : {}),
-      ...(settings.isPinned !== undefined ? { is_pinned: settings.isPinned } : {}),
-      ...(settings.alertEnabled !== undefined ? { alert_enabled: settings.alertEnabled } : {}),
-      ...(settings.background !== undefined ? { background: settings.background } : {}),
-      ...(settings.clearedAt !== undefined ? { cleared_at_unix_ms: settings.clearedAt } : {}),
-    }),
-
-  friendChatListMessages: (sessionUlid: string, beforeUlid?: string, limit?: number) =>
-    invokeRustProto('friend_chat_list_messages', GetMessagesResponseSchema, { session_ulid: sessionUlid, before_ulid: beforeUlid, limit }),
-
-  friendChatListThreadMessages: (
-    sessionUlid: string,
-    rootUlid: string,
-    limit?: number,
-    maxPages?: number,
-    afterUlid?: string,
-  ) =>
-    invokeRustDataFromStatus<
-      { session_ulid: string; root_ulid: string; limit?: number; max_pages?: number; after_ulid?: string },
-      {
-        root?: unknown | null;
-        replies?: unknown[];
-        messages?: unknown[];
-        replyCount?: number;
-        hitPageCap?: boolean;
-        hasMore?: boolean;
-        has_more?: boolean;
-        nextCursor?: string;
-        next_cursor?: string;
-      }
-    >('friend_chat_list_thread_messages', {
-      session_ulid: sessionUlid,
-      root_ulid: rootUlid,
-      limit,
-      max_pages: maxPages,
-      after_ulid: afterUlid,
-    }),
-
-  friendChatThreadCounts: (sessionUlid: string, rootUlids: string[]) =>
-    invokeRustDataFromStatus<
-      { session_ulid: string; root_ulids: string[] },
-      { counts: ChatThreadCount[] }
-    >('friend_chat_thread_counts', {
-      session_ulid: sessionUlid,
-      root_ulids: rootUlids,
-    }),
-
-  friendChatThreadMarkRead: (sessionUlid: string, rootUlid: string, lastReadUlid?: string) =>
-    invokeRustDataFromStatus<
-      { session_ulid: string; root_ulid: string; last_read_ulid?: string },
-      { success: boolean }
-    >('friend_chat_thread_mark_read', {
-      session_ulid: sessionUlid,
-      root_ulid: rootUlid,
-      last_read_ulid: lastReadUlid,
-    }),
-
-  /**
-   * Recall a previously-sent friend chat message. Server enforces
-   * sender ownership and the recall window (currently 5 minutes —
-   * see `application.DefaultMutationWindow`). On success Station
-   * pushes a `MessageMutation` event over SSE so peers update in
-   * realtime; this call's response is empty.
-   */
-  friendChatRecallMessage: (sessionUlid: string, messageUlid: string) =>
-    invokeRustProto(
-      'friend_chat_recall_message',
-      RecallFriendMessageResponseSchema,
-      {
-        session_ulid: sessionUlid,
-        message_ulid: messageUlid,
-      },
-    ),
-
-  /**
-   * Edit a previously-sent friend chat message. At least one of
-   * `newContent` or `newEncryptedPayload` must be non-empty; both
-   * may be provided when an E2EE chat still keeps a plaintext
-   * search index. Subject to the same window as recall.
-   */
-  friendChatEditMessage: (
-    sessionUlid: string,
-    messageUlid: string,
-    newContent?: string,
-    newEncryptedPayload?: Uint8Array,
-  ) =>
-    invokeRustProto(
-      'friend_chat_edit_message',
-      EditFriendMessageResponseSchema,
-      {
-        session_ulid: sessionUlid,
-        message_ulid: messageUlid,
-        ...(newContent != null && newContent !== '' ? { new_content: newContent } : {}),
-        ...(newEncryptedPayload != null && newEncryptedPayload.byteLength > 0
-          ? { new_encrypted_payload: Array.from(newEncryptedPayload) }
-          : {}),
-      },
-    ),
-
-  /**
-   * Hard-delete a friend chat message. Unlike recall this removes
-   * the row entirely (and its attachment metadata). Server-side
-   * the parent session's last_message_* pointer is repaired when
-   * the deleted ulid was the head.
-   */
-  friendChatDeleteMessage: (sessionUlid: string, messageUlid: string) =>
-    invokeRustProto(
-      'friend_chat_delete_message',
-      DeleteFriendMessageResponseSchema,
-      {
-        session_ulid: sessionUlid,
-        message_ulid: messageUlid,
-      },
-    ),
-
   /**
    * Fire a presence trigger to the Rust supervisor. Always resolves; the
    * supervisor decides whether to act based on cooldown / state. See
@@ -4851,37 +4658,6 @@ export const api = {
     invokeRustDataFromStatus<ChatLocalSearchInput, { messages: any[] }>(
       'friend_chat_local_search_scoped', { query, limit },
     ).then(r => r.messages || []),
-
-  /** Unified local message search (SQLCipher FTS5) — friend + group, optional scope and conversation filters. */
-  chatSearchLocal: async (
-    query: string,
-    scope?: string,
-    conversationId?: string,
-    limit?: number,
-  ): Promise<{ results: ChatSearchLocalResultRow[] }> =>
-    invokeRustDataFromStatus<
-      { query: string; scope?: string; conversation_id?: string; limit?: number },
-      { results: ChatSearchLocalResultRow[] }
-    >('chat_search_local', {
-      query,
-      scope: scope ?? '',
-      conversation_id: conversationId,
-      limit: limit ?? 30,
-    }),
-
-  chatIndexLocalMessages: (messages: ChatIndexLocalMessageInput[]) =>
-    invokeRustDataFromStatus<{ messages: ChatIndexLocalMessageInput[] }, { indexed_count: number }>(
-      'chat_index_local_messages',
-      { messages },
-    ),
-
-  friendChatSync: (sessionUlid: string, limit?: number, maxPages?: number) =>
-    invokeRustDataFromStatus<FriendChatSyncInput, { synced_count: number; pages_fetched: number }>(
-      'friend_chat_sync_from_station_scoped', { session_ulid: sessionUlid, limit, max_pages: maxPages },
-    ),
-
-  friendChatSyncMessages: (messagesJson: string) =>
-    invokeRustProto('friend_chat_sync_messages', SyncMessagesResponseSchema, { session_ulid: '', messages_json: messagesJson }),
 
   /**
    * Start the unified realtime SSE consumer for the current actor.
@@ -5014,74 +4790,10 @@ export const api = {
   friendChatGetStats: () =>
     invokeRustProto('friend_chat_get_stats', GetStatsResponseSchema),
 
-  groupChatListGroups: (limit?: number, offset?: number) =>
-    invokeRustProto('group_chat_list_groups', ListGroupsResponseSchema, { limit, offset }),
-
-  groupChatListMessages: (groupUlid: string, beforeUlid?: string, limit?: number) =>
-    invokeRustProto('group_chat_list_messages', GetGroupMessagesResponseSchema, { group_ulid: groupUlid, before_ulid: beforeUlid, limit }),
-
-  groupChatListThreadMessages: (
-    groupUlid: string,
-    rootUlid: string,
-    limit?: number,
-    maxPages?: number,
-    afterUlid?: string,
-  ) =>
-    invokeRustDataFromStatus<
-      { group_ulid: string; root_ulid: string; limit?: number; max_pages?: number; after_ulid?: string },
-      {
-        root?: unknown | null;
-        replies?: unknown[];
-        messages?: unknown[];
-        replyCount?: number;
-        hitPageCap?: boolean;
-        hasMore?: boolean;
-        has_more?: boolean;
-        nextCursor?: string;
-        next_cursor?: string;
-      }
-    >('group_chat_list_thread_messages', {
-      group_ulid: groupUlid,
-      root_ulid: rootUlid,
-      limit,
-      max_pages: maxPages,
-      after_ulid: afterUlid,
-    }),
-
-  groupChatThreadCounts: (groupUlid: string, rootUlids: string[]) =>
-    invokeRustDataFromStatus<
-      { group_ulid: string; root_ulids: string[] },
-      { counts: ChatThreadCount[] }
-    >('group_chat_thread_counts', {
-      group_ulid: groupUlid,
-      root_ulids: rootUlids,
-    }),
-
-  groupChatThreadMarkRead: (groupUlid: string, rootUlid: string, lastReadUlid?: string) =>
-    invokeRustDataFromStatus<
-      { group_ulid: string; root_ulid: string; last_read_ulid?: string },
-      { success: boolean }
-    >('group_chat_thread_mark_read', {
-      group_ulid: groupUlid,
-      root_ulid: rootUlid,
-      last_read_ulid: lastReadUlid,
-    }),
-
-  groupChatUnreadCount: (groupUlid?: string) =>
-    invokeRustProto('group_chat_unread_count', GetUnreadCountResponseSchema, { group_ulid: groupUlid }),
-
-  groupChatMarkRead: (groupUlid: string) =>
-    invokeRustProto('group_chat_mark_read', MarkGroupReadResponseSchema, { group_ulid: groupUlid }),
-
   groupChatLocalSearch: (query: string, limit?: number) =>
     invokeRustDataFromStatus<ChatLocalSearchInput, { messages: any[] }>(
       'group_chat_local_search_scoped', { query, limit },
     ).then(r => r.messages || []),
-
-  groupChatSync: (groupUlid: string, limit?: number, maxPages?: number) =>
-    invokeRustDataFromStatus<GroupChatSyncInput, { synced_count: number; pages_fetched: number }>(
-      'group_chat_sync_from_station_scoped', { group_ulid: groupUlid, limit, max_pages: maxPages },
-    ),
 
   groupChatCreateGroup: (
     name: string,
@@ -5169,9 +4881,6 @@ export const api = {
 
   groupChatDeleteMessage: (groupUlid: string, messageUlid: string) =>
     invokeRustProto('group_chat_delete_message', DeleteGroupMessageResponseSchema, { group_ulid: groupUlid, message_ulid: messageUlid }),
-
-  groupChatSearchMessages: (groupUlid: string, query: string, limit?: number) =>
-    invokeRustProto('group_chat_search_messages', SearchGroupMessagesResponseSchema, { group_ulid: groupUlid, query, limit }),
 
   groupChatUpdateNickname: (groupUlid: string, nickname: string) =>
     invokeRustProto('group_chat_update_nickname', UpdateMyNicknameResponseSchema, { group_ulid: groupUlid, nickname }),
@@ -5332,13 +5041,22 @@ export const api = {
     invokeRustDataFromStatus<void, StationListResponse>('station_list'),
 
   stationSetActive: (url: string) =>
-    invokeRustDataFromStatus<{ url: string }, { active_url: string }>('station_set_active', { url }),
+    invokeRustDataFromStatus<
+      { url: string },
+      { active_url?: string | null; binding: StationBindingState }
+    >('station_set_active', { url }),
+
+  stationBindingComplete: () =>
+    invokeRustDataFromStatus<void, StationBindingState>('station_binding_complete'),
 
   stationAdd: (url: string) =>
     invokeRustDataFromStatus<{ url: string }, StationEntry>('station_add', { url }),
 
   stationRemove: (url: string) =>
-    invokeRustDataFromStatus<{ url: string }, { removed: string }>('station_remove', { url }),
+    invokeRustDataFromStatus<
+      { url: string },
+      { removed: string; was_selected: boolean; binding: StationBindingState }
+    >('station_remove', { url }),
 
   stationProbe: (url: string) =>
     invokeRustDataFromStatus<{ url: string }, StationProbeResult>('station_probe', { url }),
@@ -5404,6 +5122,7 @@ export interface CryptoKeyBundlePayload {
   opk_ids: number[];
   opk_pubs: string[];
   supported_versions?: number[];
+  device_id: string;
 }
 
 /** One device-published bundle from Station (`FetchKeyBundleResponse.bundles`). */

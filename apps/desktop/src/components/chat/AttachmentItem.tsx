@@ -1,15 +1,21 @@
 // Render a single chat message attachment.
 //
-// Image attachments resolve through the OSS resolver — we never
-// render a hard-coded `/api/files/...` URL because the federated
-// `oss://{host}/{key}` cid carries the source-of-truth station and
-// the local file cache is the preferred backing store.
+// Attachment bytes resolve through the Messaging Engine. The renderer
+// receives only a verified local cache path and never handles keys,
+// nonces, hashes, transfer checkpoints, or ciphertext URLs.
 //
 // Non-image attachments render as compact cards that open the
 // resolved URL in the system browser. Image attachments render as
 // images first; filename metadata is intentionally hidden.
 
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography, Tooltip } from 'antd';
@@ -31,12 +37,55 @@ import {
   chatMediaKindForAttachment,
   formatChatAttachmentSize,
 } from '@peers-touch/client-chat-core';
-import { useDecryptedOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
+import { imServiceV1 } from '../../services/im-service';
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
+import { log } from '../../utils/logger';
 
 const { Text } = Typography;
 
 type Attachment = ChatAttachmentLike;
+
+function messagingAttachmentId(attachment: Attachment): string {
+  const explicit = (attachment as Attachment & { attachmentId?: string }).attachmentId?.trim();
+  if (explicit) return explicit;
+  return attachment.cid?.startsWith('messaging:') ? attachment.cid.slice('messaging:'.length) : '';
+}
+
+function messagingAttachmentState(
+  attachment: Attachment,
+): 'uploading' | 'remote' | 'local' | 'failed' | 'unknown' {
+  const state = (attachment as Attachment & { availabilityState?: string }).availabilityState;
+  return state === 'uploading' || state === 'remote' || state === 'local' || state === 'failed'
+    ? state
+    : 'unknown';
+}
+
+export function useMessagingAttachmentUrl(
+  attachment: Attachment,
+  eager: boolean,
+): { src: string | null; resolve: () => Promise<string | null> } {
+  const attachmentId = messagingAttachmentId(attachment);
+  const [src, setSrc] = useState<string | null>(null);
+  const resolve = useCallback(async () => {
+    if (!attachmentId) return null;
+    try {
+      const localPath = await imServiceV1.messaging.openAttachment(attachmentId);
+      const next = convertFileSrc(localPath);
+      setSrc(next);
+      return next;
+    } catch (error) {
+      log.warn('chat', 'open Engine attachment failed', { attachmentId, error });
+      return null;
+    }
+  }, [attachmentId]);
+
+  useEffect(() => {
+    setSrc(null);
+    if (eager) void resolve();
+  }, [eager, resolve]);
+
+  return { src, resolve };
+}
 
 export type ChatAttachmentVisibilityHint = 'public' | 'chat' | 'private';
 
@@ -265,13 +314,17 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const [previewFailed, setPreviewFailed] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioDuration, setAudioDuration] = useState('');
-  const src = useDecryptedOssAttachmentUrl(
-    attachment as Parameters<typeof useDecryptedOssAttachmentUrl>[0],
-  );
   const attachmentKind = chatMediaKindForAttachment(attachment);
+  const attachmentId = messagingAttachmentId(attachment);
+  const availabilityState = messagingAttachmentState(attachment);
+  const canOpen = Boolean(attachmentId);
   const isImage = attachmentKind === 'image';
   const isVideo = attachmentKind === 'video';
   const isAudio = attachmentKind === 'audio';
+  const { src, resolve } = useMessagingAttachmentUrl(
+    attachment,
+    isImage || isVideo || isAudio,
+  );
   const chip = visibilityChip(visibilityHint, t, isOwn, token);
   const showHint = chip !== null;
   const filename = attachment.filename?.trim() || t('chat.social.messageArea.attachmentUnnamed');
@@ -282,6 +335,11 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   ));
   const actionLabel = t('chat.social.messageArea.attachmentOpen');
   const openTitle = t('chat.social.messageArea.attachmentOpenOrDownload');
+  const transferStateLabel = availabilityState === 'uploading'
+    ? t('chat.social.messageArea.attachmentStateUploading')
+    : availabilityState === 'failed'
+      ? t('chat.social.messageArea.attachmentStateFailed')
+      : '';
   const canPreviewImage = Boolean(isImage && src && !previewFailed);
   const cardBackground = isOwn
     ? hovered
@@ -301,24 +359,31 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
     setAudioPlaying(false);
   }, [attachment.cid, src]);
 
-  const openAttachment = () => {
-    if (src) window.open(src, '_blank');
+  const openAttachment = async () => {
+    const resolved = src ?? await resolve();
+    if (resolved) window.open(resolved, '_blank');
   };
 
   const handleKeyDown = (ev: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!src) return;
+    if (!canOpen) return;
     if (ev.key === 'Enter' || ev.key === ' ') {
       ev.preventDefault();
-      openAttachment();
+      void openAttachment();
     }
   };
 
   if (isImage) {
     return (
-      <Flexbox gap={3} style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}>
+      <Flexbox
+        gap={3}
+        data-messaging-attachment-id={attachmentId || undefined}
+        data-messaging-attachment-kind={attachmentKind}
+        data-messaging-attachment-state={availabilityState}
+        style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}
+      >
         <Flexbox
-          role={src ? 'button' : undefined}
-          tabIndex={src ? 0 : undefined}
+          role={canOpen ? 'button' : undefined}
+          tabIndex={canOpen ? 0 : undefined}
           onClick={openAttachment}
           onKeyDown={handleKeyDown}
           onMouseEnter={() => setHovered(true)}
@@ -330,7 +395,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             borderRadius: 6,
             background: 'transparent',
             boxShadow: hovered ? token.boxShadowTertiary : 'none',
-            cursor: src ? 'pointer' : 'default',
+            cursor: canOpen ? 'pointer' : 'default',
             transition: 'background 120ms ease, box-shadow 120ms ease',
           }}
         >
@@ -370,6 +435,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             {sizeLabel}
           </Text>
         )}
+        {transferStateLabel && <Text type="secondary" style={{ fontSize: 10 }}>{transferStateLabel}</Text>}
         {showHint && chip && <VisibilityBadge chip={chip} />}
       </Flexbox>
     );
@@ -377,7 +443,13 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
 
   if (src && isVideo) {
     return (
-      <Flexbox gap={3} style={{ maxWidth: '100%' }}>
+      <Flexbox
+        gap={3}
+        data-messaging-attachment-id={attachmentId || undefined}
+        data-messaging-attachment-kind={attachmentKind}
+        data-messaging-attachment-state={availabilityState}
+        style={{ maxWidth: '100%' }}
+      >
         <Flexbox
           gap={6}
           onMouseEnter={() => setHovered(true)}
@@ -420,6 +492,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             />
           </Flexbox>
         </Flexbox>
+        {transferStateLabel && <Text type="secondary" style={{ fontSize: 10 }}>{transferStateLabel}</Text>}
         {showHint && chip && <VisibilityBadge chip={chip} />}
       </Flexbox>
     );
@@ -448,7 +521,13 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
     const voiceSecondaryColor = isOwn ? 'rgba(17,24,39,0.72)' : token.colorTextSecondary;
 
     return (
-      <Flexbox gap={3} style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}>
+      <Flexbox
+        gap={3}
+        data-messaging-attachment-id={attachmentId || undefined}
+        data-messaging-attachment-kind={attachmentKind}
+        data-messaging-attachment-state={availabilityState}
+        style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}
+      >
         {src && (
           <audio
             ref={audioRef}
@@ -499,18 +578,25 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
           </Flexbox>
           <Volume2 size={22} color={voiceSecondaryColor} />
         </button>
+        {transferStateLabel && <Text type="secondary" style={{ fontSize: 10 }}>{transferStateLabel}</Text>}
         {showHint && chip && <VisibilityBadge chip={chip} />}
       </Flexbox>
     );
   }
 
   return (
-    <Flexbox gap={3} style={{ maxWidth: '100%' }}>
+    <Flexbox
+      gap={3}
+      data-messaging-attachment-id={attachmentId || undefined}
+      data-messaging-attachment-kind={attachmentKind}
+      data-messaging-attachment-state={availabilityState}
+      style={{ maxWidth: '100%' }}
+    >
       <Flexbox
         horizontal
         align="center"
-        role={src ? 'button' : undefined}
-        tabIndex={src ? 0 : undefined}
+        role={canOpen ? 'button' : undefined}
+        tabIndex={canOpen ? 0 : undefined}
         style={{
           width: 'min(260px, 100%)',
           maxWidth: '100%',
@@ -519,7 +605,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
           borderRadius: 8,
           background: cardBackground,
           boxShadow: hovered ? token.boxShadowTertiary : 'none',
-          cursor: src ? 'pointer' : 'default',
+          cursor: canOpen ? 'pointer' : 'default',
           opacity: src ? 1 : 0.72,
           transition: 'background 120ms ease, box-shadow 120ms ease',
         }}
@@ -542,6 +628,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
           typeLabel={typeLabel}
         />
       </Flexbox>
+      {transferStateLabel && <Text type="secondary" style={{ fontSize: 10 }}>{transferStateLabel}</Text>}
       {showHint && chip && <VisibilityBadge chip={chip} />}
     </Flexbox>
   );

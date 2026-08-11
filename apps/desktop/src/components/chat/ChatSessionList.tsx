@@ -130,7 +130,7 @@ export function ChatSessionList() {
 
     if (c.kind === 'friend' && c.peerDid) {
       try {
-        await imServiceV1.conversation.createDirect(c.peerDid);
+        await imServiceV1.messaging.createDirect(c.peerDid);
         await loadSessions();
         const created = getIMConversations().find((conv) => conv.peerDid === c.peerDid);
         if (created) {

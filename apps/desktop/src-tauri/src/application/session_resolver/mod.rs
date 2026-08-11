@@ -12,6 +12,7 @@
 use std::sync::Arc;
 use tauri::Window;
 
+use crate::domain::identity::ActorRef;
 use crate::state::AppState;
 
 /// JWT token bound to the actor that this window is authenticated as.
@@ -32,7 +33,7 @@ pub fn token_for_window(state: &Arc<AppState>, window: &Window) -> Option<String
 
 /// Station-internal actor id bound to this window's session.
 pub fn actor_id_for_window(state: &Arc<AppState>, window: &Window) -> Option<String> {
-    if let Some(actor) = state.sessions.actor(window.label()) {
+    if let Some(actor) = actor_for_window(state, window) {
         if !actor.actor_id.trim().is_empty() {
             return Some(actor.actor_id);
         }
@@ -43,4 +44,19 @@ pub fn actor_id_for_window(state: &Arc<AppState>, window: &Window) -> Option<Str
         .ok()
         .and_then(|g| g.actor_id.clone())
         .filter(|s| !s.trim().is_empty())
+}
+
+/// Complete Station actor identity bound to this Tauri window.
+///
+/// Unlike the deprecated process-global session, the window registry carries
+/// both the local numeric actor id and the canonical PTID.
+pub fn actor_for_window(state: &Arc<AppState>, window: &Window) -> Option<ActorRef> {
+    state.sessions.actor(window.label())
+}
+
+/// Canonical PTID bound to this Tauri window.
+pub fn ptid_for_window(state: &Arc<AppState>, window: &Window) -> Option<String> {
+    actor_for_window(state, window)
+        .map(|actor| actor.ptid)
+        .filter(|ptid| ptid.starts_with("ptid:"))
 }

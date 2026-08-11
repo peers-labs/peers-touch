@@ -1,6 +1,7 @@
 use crate::infrastructure::i18n::I18nService;
 use crate::infrastructure::storage::StorageLayout;
 use crate::infrastructure::window_session_registry::WindowSessionRegistry;
+use crate::messaging::EngineRegistry;
 use std::sync::Mutex;
 
 #[derive(Default, Clone)]
@@ -30,6 +31,7 @@ pub struct AppState {
     pub realtime: Mutex<RealtimeState>,
     pub storage: StorageLayout,
     pub i18n: I18nService,
+    pub messaging_engines: EngineRegistry,
     /// Per-window `ActiveSession` registry. Coexists with `session` until
     /// PR-3 finishes the migration.
     pub sessions: WindowSessionRegistry,
@@ -43,6 +45,7 @@ impl AppState {
             realtime: Mutex::new(RealtimeState::default()),
             storage: layout,
             i18n,
+            messaging_engines: EngineRegistry::default(),
             sessions: WindowSessionRegistry::new(),
         }
     }

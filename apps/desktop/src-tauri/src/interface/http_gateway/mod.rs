@@ -62,8 +62,7 @@ use crate::application::tts as app_tts;
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
 use crate::interface::tauri_commands::oss::{
-    capture_screenshot_to_temp_file, safe_temp_filename, validate_chat_upload_scope,
-    OssCaptureScreenshotInput, OssUploadAttachmentBytesInput,
+    safe_temp_filename, validate_oss_upload_scope, OssUploadAttachmentBytesInput,
 };
 use crate::model;
 use prost::Message;
@@ -661,7 +660,7 @@ fn authenticated_crypto_context(state: &AppState) -> Result<(String, String), Va
     Ok((actor_id, user_scope_from_state(state)))
 }
 
-fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> Value {
+fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> Value {
     let input = match parse_args::<OssUploadAttachmentBytesInput>(args) {
         Ok(v) => v,
         Err(e) => return e,
@@ -679,7 +678,7 @@ fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> V
     }
 
     let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
+    let (bucket, visibility, chat_sid) = match validate_oss_upload_scope(
         input.bucket.as_str(),
         vis.as_str(),
         &input.chat_session_id,
@@ -692,21 +691,21 @@ fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> V
     let chat_sid = chat_sid.map(str::to_string);
     let filename = safe_temp_filename(input.filename.as_str());
     let mime_override = input.mime_type.trim().to_string();
-    let temp_path = std::env::temp_dir().join(format!("peers-chat-{}-{}", Ulid::new(), filename));
+    let temp_path = std::env::temp_dir().join(format!("peers-agent-{}-{}", Ulid::new(), filename));
 
     if let Err(error) = std::fs::write(&temp_path, input.bytes) {
         return to_json(AppResult::<StubPayload>::fail(
             ErrorCode::InternalError,
-            format!("write temp chat attachment: {error}"),
+            format!("write temp Agent attachment: {error}"),
             None,
         ));
     }
-    let cleanup = app_oss::TempFileCleanup::new(temp_path.clone(), "http chat attachment");
+    let cleanup = app_oss::TempFileCleanup::new(temp_path.clone(), "HTTP Agent attachment");
 
     let result = app_oss::upload_attachment_with_mime(
         temp_path.to_string_lossy().as_ref(),
         &token,
-        "chat",
+        "agent",
         bucket.as_str(),
         visibility.as_str(),
         chat_sid.as_deref(),
@@ -715,47 +714,6 @@ fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> V
         } else {
             Some(mime_override.as_str())
         },
-    );
-    cleanup.remove_now();
-    to_json(result)
-}
-
-fn dispatch_oss_capture_screenshot_chat(args: Value, state: &AppState) -> Value {
-    let input = match parse_args::<OssCaptureScreenshotInput>(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-
-    let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
-        input.bucket.as_str(),
-        vis.as_str(),
-        &input.chat_session_id,
-    ) {
-        Ok(scope) => scope,
-        Err(error) => return to_json(error),
-    };
-    let bucket = bucket.to_string();
-    let visibility = visibility.to_string();
-    let chat_sid = chat_sid.map(str::to_string);
-
-    let path = match capture_screenshot_to_temp_file() {
-        Ok(path) => path,
-        Err(error) => return to_json(error),
-    };
-    let cleanup = app_oss::TempFileCleanup::new(path.clone(), "http chat screenshot");
-    let result = app_oss::upload_attachment_with_mime(
-        path.to_string_lossy().as_ref(),
-        &token,
-        "chat",
-        bucket.as_str(),
-        visibility.as_str(),
-        chat_sid.as_deref(),
-        Some("image/png"),
     );
     cleanup.remove_now();
     to_json(result)
@@ -1922,10 +1880,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // =================================================================
         // OSS (state-dependent)
         // =================================================================
-        "oss_upload_attachment_bytes_chat" => {
-            dispatch_oss_upload_attachment_bytes_chat(args, state)
+        "oss_upload_agent_attachment_bytes" => {
+            dispatch_oss_upload_agent_attachment_bytes(args, state)
         }
-        "oss_capture_screenshot_chat" => dispatch_oss_capture_screenshot_chat(args, state),
 
         // =================================================================
         // Actor (state-dependent, proto-based)
@@ -4244,6 +4201,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     command: "account_unlock".to_string(),
                     status: "authenticated".to_string(),
                     actor_id: Some(session.actor_id),
+                    ptid: crate::application::auth::service::canonical_ptid_for_token(&token),
                     name: p_name,
                     email: p_email,
                     avatar_url: p_avatar,

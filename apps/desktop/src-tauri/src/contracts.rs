@@ -17,6 +17,8 @@ pub struct AuthSessionPayload {
     pub command: String,
     pub status: String,
     pub actor_id: Option<String>,
+    #[serde(default)]
+    pub ptid: Option<String>,
     pub name: Option<String>,
     pub email: Option<String>,
     pub avatar_url: Option<String>,
@@ -355,36 +357,6 @@ pub struct GroupChatSyncInput {
 pub struct ChatLocalSearchInput {
     pub query: String,
     pub limit: Option<u32>,
-}
-
-/// Unified local FTS search (friend + group), with optional scope and conversation filters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ChatSearchLocalInput {
-    pub query: String,
-    #[serde(default)]
-    pub scope: String,
-    pub conversation_id: Option<String>,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ChatIndexLocalInput {
-    pub messages: Vec<ChatIndexLocalMessageInput>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ChatIndexLocalMessageInput {
-    pub scope: String,
-    pub conversation_id: String,
-    pub message_id: String,
-    pub sender_did: String,
-    pub content: String,
-    pub reply_to_ulid: Option<String>,
-    pub thread_root_ulid: Option<String>,
-    pub sent_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

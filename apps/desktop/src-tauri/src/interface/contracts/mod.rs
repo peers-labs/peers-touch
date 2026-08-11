@@ -870,16 +870,6 @@ pub struct ChatLocalSearchInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ChatSearchLocalInput {
-    pub query: String,
-    #[serde(default)]
-    pub scope: String,
-    pub conversation_id: Option<String>,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatScopeCursorGetInput {
     pub scope: String,
 }

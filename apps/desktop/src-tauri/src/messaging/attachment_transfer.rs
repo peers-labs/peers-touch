@@ -16,11 +16,12 @@ use prost::Message;
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, IF_MATCH, RANGE};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub const ATTACHMENT_TRANSFER_MEMORY_OVERHEAD: usize = 16 * 1024 * 1024;
@@ -121,6 +122,13 @@ pub enum AttachmentTransferProgress {
 pub struct AttachmentTransferControl {
     shutdown: AtomicBool,
     active: AtomicUsize,
+    active_attachment_ids: Mutex<HashSet<String>>,
+}
+
+#[derive(Debug)]
+enum AttachmentAdmissionError {
+    AlreadyActive,
+    Failure(AttachmentTransferFailure),
 }
 
 impl AttachmentTransferControl {
@@ -128,6 +136,7 @@ impl AttachmentTransferControl {
         Self {
             shutdown: AtomicBool::new(false),
             active: AtomicUsize::new(0),
+            active_attachment_ids: Mutex::new(HashSet::new()),
         }
     }
 
@@ -146,8 +155,22 @@ impl AttachmentTransferControl {
         Ok(())
     }
 
-    fn try_admit(&self) -> Result<AttachmentTransferPermit<'_>, AttachmentTransferFailure> {
-        self.check_running()?;
+    fn try_admit(
+        &self,
+        attachment_id: &str,
+    ) -> Result<AttachmentTransferPermit<'_>, AttachmentAdmissionError> {
+        self.check_running()
+            .map_err(AttachmentAdmissionError::Failure)?;
+        let mut active_attachment_ids = self.active_attachment_ids.lock().map_err(|_| {
+            AttachmentAdmissionError::Failure(AttachmentTransferFailure::retryable(
+                AttachmentTransferErrorCode::RetryLater,
+                None,
+                "messaging attachment transfer admission lock is poisoned".to_string(),
+            ))
+        })?;
+        if active_attachment_ids.contains(attachment_id) {
+            return Err(AttachmentAdmissionError::AlreadyActive);
+        }
         let admitted = self
             .active
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
@@ -155,13 +178,19 @@ impl AttachmentTransferControl {
             })
             .is_ok();
         if !admitted {
-            return Err(AttachmentTransferFailure::retryable(
-                AttachmentTransferErrorCode::RetryLater,
-                None,
-                "messaging attachment transfer admission is full".to_string(),
+            return Err(AttachmentAdmissionError::Failure(
+                AttachmentTransferFailure::retryable(
+                    AttachmentTransferErrorCode::RetryLater,
+                    None,
+                    "messaging attachment transfer admission is full".to_string(),
+                ),
             ));
         }
-        Ok(AttachmentTransferPermit { control: self })
+        active_attachment_ids.insert(attachment_id.to_string());
+        Ok(AttachmentTransferPermit {
+            control: self,
+            attachment_id: attachment_id.to_string(),
+        })
     }
 }
 
@@ -173,10 +202,14 @@ impl Default for AttachmentTransferControl {
 
 struct AttachmentTransferPermit<'a> {
     control: &'a AttachmentTransferControl,
+    attachment_id: String,
 }
 
 impl Drop for AttachmentTransferPermit<'_> {
     fn drop(&mut self) {
+        if let Ok(mut active_attachment_ids) = self.control.active_attachment_ids.lock() {
+            active_attachment_ids.remove(&self.attachment_id);
+        }
         self.control.active.fetch_sub(1, Ordering::AcqRel);
     }
 }
@@ -618,9 +651,16 @@ impl AttachmentTransferWorker {
         if let Some(progress) = self.preflight(attachment_id, now_unix_ms)? {
             return Ok(progress);
         }
-        let _permit = match self.control.try_admit() {
+        let _permit = match self.control.try_admit(attachment_id) {
             Ok(permit) => permit,
-            Err(failure) => return self.persist_failure(attachment_id, now_unix_ms, failure),
+            Err(AttachmentAdmissionError::AlreadyActive) => {
+                return Ok(AttachmentTransferProgress::Deferred {
+                    next_attempt_at_unix_ms: now_unix_ms,
+                })
+            }
+            Err(AttachmentAdmissionError::Failure(failure)) => {
+                return self.persist_failure(attachment_id, now_unix_ms, failure)
+            }
         };
         match self.upload_once(attachment_id, now_unix_ms) {
             Ok(true) => Ok(AttachmentTransferProgress::Complete),
@@ -640,9 +680,16 @@ impl AttachmentTransferWorker {
         if let Some(progress) = self.preflight(attachment_id, now_unix_ms)? {
             return Ok(progress);
         }
-        let _permit = match self.control.try_admit() {
+        let _permit = match self.control.try_admit(attachment_id) {
             Ok(permit) => permit,
-            Err(failure) => return self.persist_failure(attachment_id, now_unix_ms, failure),
+            Err(AttachmentAdmissionError::AlreadyActive) => {
+                return Ok(AttachmentTransferProgress::Deferred {
+                    next_attempt_at_unix_ms: now_unix_ms,
+                })
+            }
+            Err(AttachmentAdmissionError::Failure(failure)) => {
+                return self.persist_failure(attachment_id, now_unix_ms, failure)
+            }
         };
         match self.download_once(
             attachment_id,
@@ -665,8 +712,17 @@ impl AttachmentTransferWorker {
         self.control.check_running()?;
         let mut transfer = self.required_transfer(attachment_id)?;
         let material = material_from_transfer(&transfer).map_err(integrity_failure)?;
-        let prepared = prepare_upload(Path::new(&transfer.source_local_ref), &material, &transfer)
-            .map_err(integrity_failure)?;
+        let media_type = self
+            .store
+            .attachment_upload_media_type(attachment_id)
+            .map_err(store_failure)?;
+        let prepared = prepare_upload_with_media_type(
+            Path::new(&transfer.source_local_ref),
+            &material,
+            &transfer,
+            &media_type,
+        )
+        .map_err(integrity_failure)?;
         self.store
             .update_attachment_transfer_prepared(
                 attachment_id,
@@ -675,6 +731,7 @@ impl AttachmentTransferWorker {
                 now_unix_ms,
             )
             .map_err(store_failure)?;
+        transfer = self.required_transfer(attachment_id)?;
         if transfer.upload_id.is_empty() {
             let (upload_id, generation, bitmap) =
                 self.transport.begin_upload(&transfer, &prepared)?;
@@ -731,17 +788,9 @@ impl AttachmentTransferWorker {
                 "messaging attachment completion hash mismatch".to_string(),
             ));
         }
-        self.store.update_attachment_transfer_progress(
-            attachment_id,
-            AttachmentTransferState::Complete as i32,
-            &transfer.upload_id,
-            transfer.generation,
-            &transfer.completed_chunk_bitmap,
-            transfer.attempt_count,
-            0,
-            0,
-            now_unix_ms,
-        )?;
+        self.store
+            .complete_attachment_upload(&transfer, &descriptor, now_unix_ms)
+            .map_err(store_failure)?;
         Ok(true)
     }
 
@@ -782,8 +831,33 @@ impl AttachmentTransferWorker {
                 now_unix_ms,
             )
             .map_err(store_failure)?;
+        transfer = self.required_transfer(attachment_id)?;
         validate_bitmap(&transfer.completed_chunk_bitmap, descriptor.chunk_count)
             .map_err(integrity_failure)?;
+        if cache_path.exists() {
+            if (0..descriptor.chunk_count)
+                .all(|index| chunk_complete(&transfer.completed_chunk_bitmap, index))
+                && sha256_file(cache_path)? == *expected_plaintext_sha256
+            {
+                self.store
+                    .complete_attachment_download(
+                        &transfer,
+                        descriptor,
+                        cache_path.to_str().ok_or_else(|| {
+                            integrity_failure(
+                                "messaging attachment cache path is invalid".to_string(),
+                            )
+                        })?,
+                        now_unix_ms,
+                    )
+                    .map_err(store_failure)?;
+                return Ok(true);
+            }
+            fs::remove_file(cache_path).map_err(|error| error.to_string())?;
+            return Err(integrity_failure(
+                "messaging attachment promoted cache is invalid".to_string(),
+            ));
+        }
         validate_partial_file(&transfer, &material, descriptor).map_err(integrity_failure)?;
 
         let partial_path = Path::new(&transfer.partial_local_ref);
@@ -863,17 +937,16 @@ impl AttachmentTransferWorker {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
         fs::rename(partial_path, cache_path).map_err(|error| error.to_string())?;
-        self.store.update_attachment_transfer_progress(
-            attachment_id,
-            AttachmentTransferState::Complete as i32,
-            &transfer.upload_id,
-            transfer.generation,
-            &transfer.completed_chunk_bitmap,
-            transfer.attempt_count,
-            0,
-            0,
-            now_unix_ms,
-        )?;
+        self.store
+            .complete_attachment_download(
+                &transfer,
+                descriptor,
+                cache_path.to_str().ok_or_else(|| {
+                    integrity_failure("messaging attachment cache path is invalid".to_string())
+                })?,
+                now_unix_ms,
+            )
+            .map_err(store_failure)?;
         Ok(true)
     }
 
@@ -941,6 +1014,9 @@ impl AttachmentTransferWorker {
         failure: AttachmentTransferFailure,
     ) -> Result<AttachmentTransferProgress, String> {
         let transfer = self.required_transfer(attachment_id)?;
+        if transfer.state == AttachmentTransferState::Complete as i32 {
+            return Ok(AttachmentTransferProgress::Complete);
+        }
         let attempt_count = transfer.attempt_count.saturating_add(1);
         if failure.retryable {
             let policy_delay = retry_delay_ms(
@@ -1005,11 +1081,15 @@ fn retry_delay_ms(
         .min(maximum_delay_ms)
 }
 
-fn prepare_upload(
+fn prepare_upload_with_media_type(
     path: &Path,
     material: &AttachmentCryptoMaterial,
     transfer: &AttachmentTransferRecord,
+    media_type: &str,
 ) -> Result<PreparedAttachmentUpload, String> {
+    if media_type.trim().is_empty() || media_type.len() > 255 {
+        return Err("messaging attachment media type is invalid".to_string());
+    }
     let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
     if metadata.len() != material.plaintext_size() {
         return Err("messaging attachment source size changed".to_string());
@@ -1028,7 +1108,7 @@ fn prepare_upload(
     let object = EncryptedObjectUploadSpec {
         ciphertext_size,
         ciphertext_sha256: whole.finalize().to_vec(),
-        media_type: "application/octet-stream".to_string(),
+        media_type: media_type.to_string(),
         chunk_size: material.chunk_size(),
         chunk_count: material.chunk_count(),
         encryption_suite: crate::model::chat::AttachmentEncryptionSuite::Aes256GcmChunked as i32,
@@ -1049,6 +1129,15 @@ fn prepare_upload(
     })
 }
 
+#[cfg(test)]
+fn prepare_upload(
+    path: &Path,
+    material: &AttachmentCryptoMaterial,
+    transfer: &AttachmentTransferRecord,
+) -> Result<PreparedAttachmentUpload, String> {
+    prepare_upload_with_media_type(path, material, transfer, "application/octet-stream")
+}
+
 fn upload_commitment(request: &BeginAttachmentUploadRequest) -> Result<Vec<u8>, String> {
     let object = request
         .object
@@ -1064,7 +1153,7 @@ fn upload_commitment(request: &BeginAttachmentUploadRequest) -> Result<Vec<u8>, 
     .to_vec())
 }
 
-fn upload_commitment_fields(
+pub(super) fn upload_commitment_fields(
     conversation_id: &str,
     message_id: &str,
     attachment_id: &str,
@@ -2216,7 +2305,7 @@ mod tests {
         fs::write(&source, vec![4_u8; 1024 * 1024]).unwrap();
         let control = Arc::new(AttachmentTransferControl::new());
         let permits = (0..ATTACHMENT_MAX_ACTIVE_TRANSFERS)
-            .map(|_| control.try_admit().unwrap())
+            .map(|index| control.try_admit(&format!("active-{index}")).unwrap())
             .collect::<Vec<_>>();
         let store = Arc::new(MessagingStore::in_memory().unwrap());
         let record = transfer(
@@ -2253,6 +2342,28 @@ mod tests {
         ));
         assert!(transport.upload_calls.lock().unwrap().is_empty());
         let _ = fs::remove_file(source);
+    }
+
+    #[test]
+    fn transfer_control_admits_each_attachment_once_until_release() {
+        let control = AttachmentTransferControl::new();
+        let first = control.try_admit("attachment-1").unwrap();
+
+        assert!(matches!(
+            control.try_admit("attachment-1"),
+            Err(AttachmentAdmissionError::AlreadyActive)
+        ));
+        let second = control.try_admit("attachment-2").unwrap();
+        assert_eq!(control.active.load(Ordering::Acquire), 2);
+
+        drop(first);
+        let first_again = control.try_admit("attachment-1").unwrap();
+        assert_eq!(control.active.load(Ordering::Acquire), 2);
+
+        drop(first_again);
+        drop(second);
+        assert_eq!(control.active.load(Ordering::Acquire), 0);
+        assert!(control.active_attachment_ids.lock().unwrap().is_empty());
     }
 
     #[test]
