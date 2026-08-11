@@ -47,10 +47,11 @@ set -e
 # /app/data is a named volume; subdirectories must be created at runtime
 # (mkdir from the Dockerfile would be shadowed by the empty volume mount).
 # Each subdirectory hosts a single concern so the volume layout is greppable:
-#   /app/data/oss               — OSS local-backend store (cf. PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH)
-#   /app/data/libp2pIdentity.key — transport identity (paths.docker.yml)
-#   /app/data/bootstrap.key      — bootstrap subserver identity (paths.docker.yml)
-mkdir -p /app/data/oss
+#   /app/data/oss                   — OSS local-backend store
+#   /app/data/messaging-attachments — Messaging encrypted attachment blobs
+#   /app/data/libp2pIdentity.key     — transport identity (paths.docker.yml)
+#   /app/data/bootstrap.key          — bootstrap subserver identity (paths.docker.yml)
+mkdir -p /app/data/oss /app/data/messaging-attachments
 
 # ── Node label pattern injection ──────────────────────────────────────────────
 # Expand ${PEERS_NODE_LABEL} in actor.yml using envsubst.
