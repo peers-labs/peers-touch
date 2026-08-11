@@ -20,6 +20,17 @@ const (
 
 	AttachmentObjectStateCompleteUnattached = "complete_unattached"
 	AttachmentObjectStateAttached           = "attached"
+
+	AttachmentAuditBegin    = "begin"
+	AttachmentAuditPart     = "part"
+	AttachmentAuditComplete = "complete"
+	AttachmentAuditCancel   = "cancel"
+	AttachmentAuditExpire   = "expire"
+	AttachmentAuditAttach   = "attach"
+	AttachmentAuditDownload = "download"
+
+	AttachmentAuditOutcomeCommitted = "committed"
+	AttachmentAuditOutcomeReplay    = "replay"
 )
 
 var (
@@ -76,6 +87,37 @@ type AttachmentObject struct {
 	CreatedAt      time.Time
 }
 
+type AttachmentAuditRecord struct {
+	AuditID        string
+	Action         string
+	Outcome        string
+	ConversationID string
+	MessageID      string
+	AttachmentID   string
+	UploadID       string
+	ObjectID       string
+	EventID        string
+	ActorPTID      string
+	DeviceID       string
+	ChunkIndex     uint32
+	ByteCount      uint64
+	CreatedAt      time.Time
+}
+
+type AttachmentMetric struct {
+	Action  string
+	Outcome string
+	Count   int64
+	Bytes   uint64
+}
+
+type AttachmentMetricsSnapshot struct {
+	Events                    []AttachmentMetric
+	ActiveUploads             int64
+	CompleteUnattachedObjects int64
+	AttachedObjects           int64
+}
+
 type AttachmentRepository interface {
 	CreateUpload(ctx context.Context, upload *AttachmentUpload) (*AttachmentUpload, bool, error)
 	GetUpload(ctx context.Context, uploadID string, generation uint64) (*AttachmentUpload, error)
@@ -115,6 +157,8 @@ type AttachmentRepository interface {
 		objectID string,
 		recipientPTID string,
 	) (*AttachmentObject, error)
+	AppendAudit(ctx context.Context, record AttachmentAuditRecord) error
+	MetricsSnapshot(ctx context.Context) (*AttachmentMetricsSnapshot, error)
 }
 
 type AttachmentBlobStore interface {

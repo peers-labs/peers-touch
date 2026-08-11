@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	messaging "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"google.golang.org/protobuf/proto"
@@ -86,6 +87,27 @@ func (*AttachmentGrantModel) TableName() string {
 	return "messaging_attachment_grants"
 }
 
+type AttachmentAuditModel struct {
+	AuditID        string    `gorm:"column:audit_id;size:64;primaryKey"`
+	Action         string    `gorm:"column:action;size:32;not null;index:idx_messaging_attachment_audit_metric"`
+	Outcome        string    `gorm:"column:outcome;size:32;not null;index:idx_messaging_attachment_audit_metric"`
+	ConversationID string    `gorm:"column:conversation_id;size:128;index"`
+	MessageID      string    `gorm:"column:message_id;size:128"`
+	AttachmentID   string    `gorm:"column:attachment_id;size:128"`
+	UploadID       string    `gorm:"column:upload_id;size:64;index"`
+	ObjectID       string    `gorm:"column:object_id;size:64;index"`
+	EventID        string    `gorm:"column:event_id;size:64;index"`
+	ActorPTID      string    `gorm:"column:actor_ptid;size:255"`
+	DeviceID       string    `gorm:"column:device_id;size:255"`
+	ChunkIndex     uint32    `gorm:"column:chunk_index;not null"`
+	ByteCount      uint64    `gorm:"column:byte_count;not null"`
+	CreatedAt      time.Time `gorm:"column:created_at;not null;index"`
+}
+
+func (*AttachmentAuditModel) TableName() string {
+	return "messaging_attachment_audit"
+}
+
 type AttachmentRepository struct {
 	db *gorm.DB
 }
@@ -100,6 +122,7 @@ func (r *AttachmentRepository) AutoMigrate() error {
 		&AttachmentUploadPartModel{},
 		&AttachmentObjectModel{},
 		&AttachmentGrantModel{},
+		&AttachmentAuditModel{},
 	)
 }
 
@@ -475,6 +498,22 @@ func (r *AttachmentRepository) ExpireUploads(
 		}).Error; err != nil {
 		return nil, err
 	}
+	for _, upload := range uploads {
+		if err := r.AppendAudit(ctx, messaging.AttachmentAuditRecord{
+			AuditID:        uuid.NewString(),
+			Action:         messaging.AttachmentAuditExpire,
+			Outcome:        messaging.AttachmentAuditOutcomeCommitted,
+			ConversationID: upload.ConversationID,
+			MessageID:      upload.MessageID,
+			AttachmentID:   upload.AttachmentID,
+			UploadID:       upload.UploadID,
+			ActorPTID:      upload.UploaderPTID,
+			DeviceID:       upload.UploaderDeviceID,
+			CreatedAt:      now,
+		}); err != nil {
+			return nil, err
+		}
+	}
 	var models []AttachmentUploadPartModel
 	if err := r.db.WithContext(ctx).
 		Where("upload_id IN ?", uploadIDs).
@@ -603,6 +642,7 @@ func (r *AttachmentRepository) GrantMessageObjects(
 		if result.Error != nil {
 			return result.Error
 		}
+		auditOutcome := messaging.AttachmentAuditOutcomeCommitted
 		if result.RowsAffected == 0 {
 			var attached AttachmentObjectModel
 			if err := r.db.WithContext(ctx).
@@ -613,6 +653,22 @@ func (r *AttachmentRepository) GrantMessageObjects(
 				attached.EventID != eventID {
 				return messaging.ErrAttachmentState
 			}
+			auditOutcome = messaging.AttachmentAuditOutcomeReplay
+		}
+		if err := r.AppendAudit(ctx, messaging.AttachmentAuditRecord{
+			AuditID:        uuid.NewString(),
+			Action:         messaging.AttachmentAuditAttach,
+			Outcome:        auditOutcome,
+			ConversationID: conversationID,
+			MessageID:      messageID,
+			AttachmentID:   object.AttachmentID,
+			ObjectID:       descriptor.ObjectId,
+			EventID:        eventID,
+			ActorPTID:      senderPTID,
+			ByteCount:      descriptor.CiphertextSize,
+			CreatedAt:      grantedAt,
+		}); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -662,6 +718,112 @@ func (r *AttachmentRepository) GetGrantedObject(
 		return nil, err
 	}
 	return attachmentObjectFromModel(model)
+}
+
+func (r *AttachmentRepository) AppendAudit(
+	ctx context.Context,
+	record messaging.AttachmentAuditRecord,
+) error {
+	if record.AuditID == "" ||
+		!validAttachmentAuditAction(record.Action) ||
+		!validAttachmentAuditOutcome(record.Outcome) ||
+		record.CreatedAt.IsZero() {
+		return messaging.ErrAttachmentDescriptor
+	}
+	return r.db.WithContext(ctx).Create(&AttachmentAuditModel{
+		AuditID:        record.AuditID,
+		Action:         record.Action,
+		Outcome:        record.Outcome,
+		ConversationID: record.ConversationID,
+		MessageID:      record.MessageID,
+		AttachmentID:   record.AttachmentID,
+		UploadID:       record.UploadID,
+		ObjectID:       record.ObjectID,
+		EventID:        record.EventID,
+		ActorPTID:      record.ActorPTID,
+		DeviceID:       record.DeviceID,
+		ChunkIndex:     record.ChunkIndex,
+		ByteCount:      record.ByteCount,
+		CreatedAt:      record.CreatedAt,
+	}).Error
+}
+
+func validAttachmentAuditAction(action string) bool {
+	switch action {
+	case messaging.AttachmentAuditBegin,
+		messaging.AttachmentAuditPart,
+		messaging.AttachmentAuditComplete,
+		messaging.AttachmentAuditCancel,
+		messaging.AttachmentAuditExpire,
+		messaging.AttachmentAuditAttach,
+		messaging.AttachmentAuditDownload:
+		return true
+	default:
+		return false
+	}
+}
+
+func validAttachmentAuditOutcome(outcome string) bool {
+	switch outcome {
+	case messaging.AttachmentAuditOutcomeCommitted,
+		messaging.AttachmentAuditOutcomeReplay:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *AttachmentRepository) MetricsSnapshot(
+	ctx context.Context,
+) (*messaging.AttachmentMetricsSnapshot, error) {
+	type metricRow struct {
+		Action    string
+		Outcome   string
+		Count     int64
+		ByteCount uint64
+	}
+	var rows []metricRow
+	if err := r.db.WithContext(ctx).
+		Model(&AttachmentAuditModel{}).
+		Select("action, outcome, count(*) AS count, coalesce(sum(byte_count), 0) AS byte_count").
+		Group("action, outcome").
+		Order("action ASC, outcome ASC").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	snapshot := &messaging.AttachmentMetricsSnapshot{
+		Events: make([]messaging.AttachmentMetric, 0, len(rows)),
+	}
+	for _, row := range rows {
+		snapshot.Events = append(snapshot.Events, messaging.AttachmentMetric{
+			Action:  row.Action,
+			Outcome: row.Outcome,
+			Count:   row.Count,
+			Bytes:   row.ByteCount,
+		})
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&AttachmentUploadModel{}).
+		Where("state IN ?", []int32{
+			int32(chat.AttachmentTransferState_ATTACHMENT_TRANSFER_STATE_QUEUED),
+			int32(chat.AttachmentTransferState_ATTACHMENT_TRANSFER_STATE_TRANSFERRING),
+		}).
+		Count(&snapshot.ActiveUploads).Error; err != nil {
+		return nil, err
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&AttachmentObjectModel{}).
+		Where("state = ?", messaging.AttachmentObjectStateCompleteUnattached).
+		Count(&snapshot.CompleteUnattachedObjects).Error; err != nil {
+		return nil, err
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&AttachmentObjectModel{}).
+		Where("state = ?", messaging.AttachmentObjectStateAttached).
+		Count(&snapshot.AttachedObjects).Error; err != nil {
+		return nil, err
+	}
+	return snapshot, nil
 }
 
 func attachmentUploadModel(
