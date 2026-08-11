@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"errors"
 	"io"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +25,12 @@ import (
 
 func TestAttachmentServiceStreamsExactReplayAndFinalizes(t *testing.T) {
 	ctx := context.Background()
+	var lifecycleLog bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&lifecycleLog, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
 	now := time.Unix(1_700_000_000, 0).UTC()
 	db, err := gorm.Open(
 		sqlite.Open("file:messaging-attachment-service-"+uuid.NewString()+"?mode=memory&cache=shared"),
@@ -295,4 +303,88 @@ func TestAttachmentServiceStreamsExactReplayAndFinalizes(t *testing.T) {
 		_ = reader.Close()
 		t.Fatal("expired temporary part still exists")
 	}
+	snapshot, err := service.MetricsSnapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ActiveUploads != 0 ||
+		snapshot.CompleteUnattachedObjects != 0 ||
+		snapshot.AttachedObjects != 1 {
+		t.Fatalf("attachment gauges = %+v", snapshot)
+	}
+	assertAttachmentMetric(
+		t,
+		snapshot,
+		messaging.AttachmentAuditBegin,
+		messaging.AttachmentAuditOutcomeCommitted,
+		2,
+		uint64(len(ciphertext))*2,
+	)
+	assertAttachmentMetric(
+		t,
+		snapshot,
+		messaging.AttachmentAuditPart,
+		messaging.AttachmentAuditOutcomeReplay,
+		1,
+		uint64(len(ciphertext)),
+	)
+	assertAttachmentMetric(
+		t,
+		snapshot,
+		messaging.AttachmentAuditDownload,
+		messaging.AttachmentAuditOutcomeCommitted,
+		1,
+		6,
+	)
+	assertAttachmentMetric(
+		t,
+		snapshot,
+		messaging.AttachmentAuditExpire,
+		messaging.AttachmentAuditOutcomeCommitted,
+		1,
+		0,
+	)
+	logged := lifecycleLog.String()
+	for _, forbidden := range []string{
+		"conversation-1",
+		"message-1",
+		"attachment-1",
+		"alice-device",
+		completed.Object.ObjectId,
+		"filename",
+		"object_key",
+		"base_nonce",
+		"plaintext_sha256",
+	} {
+		if strings.Contains(logged, forbidden) {
+			t.Fatalf("private attachment metadata reached logs: %q", forbidden)
+		}
+	}
+}
+
+func assertAttachmentMetric(
+	t *testing.T,
+	snapshot *messaging.AttachmentMetricsSnapshot,
+	action string,
+	outcome string,
+	count int64,
+	bytes uint64,
+) {
+	t.Helper()
+	for _, metric := range snapshot.Events {
+		if metric.Action == action && metric.Outcome == outcome {
+			if metric.Count != count || metric.Bytes != bytes {
+				t.Fatalf(
+					"metric %s/%s = %+v, want count=%d bytes=%d",
+					action,
+					outcome,
+					metric,
+					count,
+					bytes,
+				)
+			}
+			return
+		}
+	}
+	t.Fatalf("metric %s/%s is absent: %+v", action, outcome, snapshot.Events)
 }

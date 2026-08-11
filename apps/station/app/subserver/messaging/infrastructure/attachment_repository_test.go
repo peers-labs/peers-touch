@@ -16,6 +16,14 @@ import (
 
 func newAttachmentRepository(t *testing.T) *infrastructure.AttachmentRepository {
 	t.Helper()
+	repository, _ := newAttachmentRepositoryWithDB(t)
+	return repository
+}
+
+func newAttachmentRepositoryWithDB(
+	t *testing.T,
+) (*infrastructure.AttachmentRepository, *gorm.DB) {
+	t.Helper()
 	db, err := gorm.Open(
 		sqlite.Open("file:messaging-attachment-"+uuid.NewString()+"?mode=memory&cache=shared"),
 		&gorm.Config{},
@@ -27,7 +35,7 @@ func newAttachmentRepository(t *testing.T) *infrastructure.AttachmentRepository 
 	if err := repository.AutoMigrate(); err != nil {
 		t.Fatal(err)
 	}
-	return repository
+	return repository, db
 }
 
 func attachmentUploadFixture(now time.Time) *messaging.AttachmentUpload {
@@ -188,5 +196,51 @@ func TestAttachmentRepositoryEnforcesActiveUploadQuotaAfterExactReplay(t *testin
 	excess.AttachmentID = uuid.NewString()
 	if _, _, err := repository.CreateUpload(ctx, excess); !errors.Is(err, messaging.ErrAttachmentQuota) {
 		t.Fatalf("excess upload error = %v", err)
+	}
+}
+
+func TestAttachmentAuditSchemaAndRowsExcludePrivateMetadata(t *testing.T) {
+	ctx := context.Background()
+	now := time.Unix(1_700_000_000, 0).UTC()
+	repository, db := newAttachmentRepositoryWithDB(t)
+	if err := repository.AppendAudit(ctx, messaging.AttachmentAuditRecord{
+		AuditID:        uuid.NewString(),
+		Action:         messaging.AttachmentAuditPart,
+		Outcome:        messaging.AttachmentAuditOutcomeCommitted,
+		ConversationID: "conversation-1",
+		MessageID:      "message-1",
+		AttachmentID:   "attachment-1",
+		UploadID:       "upload-1",
+		ActorPTID:      "alice",
+		DeviceID:       "alice-device",
+		ChunkIndex:     7,
+		ByteCount:      1024,
+		CreatedAt:      now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	columns, err := db.Migrator().ColumnTypes(&infrastructure.AttachmentAuditModel{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	forbidden := map[string]struct{}{
+		"filename":         {},
+		"object_key":       {},
+		"base_nonce":       {},
+		"plaintext_sha256": {},
+	}
+	for _, column := range columns {
+		if _, exists := forbidden[column.Name()]; exists {
+			t.Fatalf("private metadata column reached Station audit: %s", column.Name())
+		}
+	}
+	var rows []infrastructure.AttachmentAuditModel
+	if err := db.Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 ||
+		rows[0].Action != messaging.AttachmentAuditPart ||
+		rows[0].ByteCount != 1024 {
+		t.Fatalf("audit rows = %+v", rows)
 	}
 }
