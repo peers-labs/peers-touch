@@ -4,10 +4,10 @@ use super::attachment::{
 };
 use super::{AttachmentTransferRecord, MessagingStore};
 use crate::model::chat::{
-    AttachmentTransferState, BeginAttachmentUploadRequest, BeginAttachmentUploadResponse,
-    CancelAttachmentUploadRequest, CancelAttachmentUploadResponse, CompleteAttachmentUploadRequest,
-    CompleteAttachmentUploadResponse, CryptoEndpoint, EncryptedObjectDescriptor,
-    EncryptedObjectUploadSpec, PutAttachmentChunkRequest,
+    AttachmentTransferErrorCode, AttachmentTransferState, BeginAttachmentUploadRequest,
+    BeginAttachmentUploadResponse, CancelAttachmentUploadRequest, CancelAttachmentUploadResponse,
+    CompleteAttachmentUploadRequest, CompleteAttachmentUploadResponse, CryptoEndpoint,
+    EncryptedObjectDescriptor, EncryptedObjectUploadSpec, PutAttachmentChunkRequest,
 };
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
@@ -18,9 +18,166 @@ use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub const ATTACHMENT_TRANSFER_MEMORY_OVERHEAD: usize = 16 * 1024 * 1024;
+const ATTACHMENT_MAX_ACTIVE_TRANSFERS: usize = 4;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachmentTransferFailure {
+    pub code: AttachmentTransferErrorCode,
+    pub retry_after_ms: Option<i64>,
+    pub retryable: bool,
+    pub detail: String,
+}
+
+impl AttachmentTransferFailure {
+    fn retryable(
+        code: AttachmentTransferErrorCode,
+        retry_after_ms: Option<i64>,
+        detail: String,
+    ) -> Self {
+        Self {
+            code,
+            retry_after_ms,
+            retryable: true,
+            detail,
+        }
+    }
+
+    fn terminal(code: AttachmentTransferErrorCode, detail: String) -> Self {
+        Self {
+            code,
+            retry_after_ms: None,
+            retryable: false,
+            detail,
+        }
+    }
+}
+
+impl std::fmt::Display for AttachmentTransferFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}: {}", self.code.as_str_name(), self.detail)
+    }
+}
+
+impl std::error::Error for AttachmentTransferFailure {}
+
+impl From<String> for AttachmentTransferFailure {
+    fn from(detail: String) -> Self {
+        Self::retryable(AttachmentTransferErrorCode::RetryLater, None, detail)
+    }
+}
+
+fn integrity_failure(detail: String) -> AttachmentTransferFailure {
+    AttachmentTransferFailure::terminal(AttachmentTransferErrorCode::IntegrityFailed, detail)
+}
+
+fn store_failure(detail: String) -> AttachmentTransferFailure {
+    if detail == "messaging attachment descriptor commitment changed" {
+        return AttachmentTransferFailure::terminal(
+            AttachmentTransferErrorCode::DescriptorMismatch,
+            detail,
+        );
+    }
+    detail.into()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttachmentRetryPolicy {
+    pub initial_delay_ms: i64,
+    pub maximum_delay_ms: i64,
+}
+
+impl Default for AttachmentRetryPolicy {
+    fn default() -> Self {
+        Self {
+            initial_delay_ms: 1_000,
+            maximum_delay_ms: 300_000,
+        }
+    }
+}
+
+impl AttachmentRetryPolicy {
+    fn validate(self) -> Result<Self, String> {
+        if self.initial_delay_ms <= 0 || self.maximum_delay_ms < self.initial_delay_ms {
+            return Err("messaging attachment retry policy is invalid".to_string());
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttachmentTransferProgress {
+    Complete,
+    Deferred { next_attempt_at_unix_ms: i64 },
+    RetryScheduled { next_attempt_at_unix_ms: i64 },
+    Terminal { code: AttachmentTransferErrorCode },
+}
+
+pub struct AttachmentTransferControl {
+    shutdown: AtomicBool,
+    active: AtomicUsize,
+}
+
+impl AttachmentTransferControl {
+    pub(crate) fn new() -> Self {
+        Self {
+            shutdown: AtomicBool::new(false),
+            active: AtomicUsize::new(0),
+        }
+    }
+
+    pub(crate) fn request_shutdown(&self) {
+        self.shutdown.store(true, Ordering::Release);
+    }
+
+    fn check_running(&self) -> Result<(), AttachmentTransferFailure> {
+        if self.shutdown.load(Ordering::Acquire) {
+            return Err(AttachmentTransferFailure::retryable(
+                AttachmentTransferErrorCode::RetryLater,
+                None,
+                "messaging attachment transfer is shutting down".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn try_admit(&self) -> Result<AttachmentTransferPermit<'_>, AttachmentTransferFailure> {
+        self.check_running()?;
+        let admitted = self
+            .active
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+                (active < ATTACHMENT_MAX_ACTIVE_TRANSFERS).then_some(active + 1)
+            })
+            .is_ok();
+        if !admitted {
+            return Err(AttachmentTransferFailure::retryable(
+                AttachmentTransferErrorCode::RetryLater,
+                None,
+                "messaging attachment transfer admission is full".to_string(),
+            ));
+        }
+        Ok(AttachmentTransferPermit { control: self })
+    }
+}
+
+impl Default for AttachmentTransferControl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+struct AttachmentTransferPermit<'a> {
+    control: &'a AttachmentTransferControl,
+}
+
+impl Drop for AttachmentTransferPermit<'_> {
+    fn drop(&mut self) {
+        self.control.active.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PreparedAttachmentUpload {
@@ -33,19 +190,19 @@ pub trait AttachmentTransferTransport: Send + Sync {
         &self,
         transfer: &AttachmentTransferRecord,
         prepared: &PreparedAttachmentUpload,
-    ) -> Result<(String, u64, Vec<u8>), String>;
+    ) -> Result<(String, u64, Vec<u8>), AttachmentTransferFailure>;
 
     fn put_upload_chunk(
         &self,
         transfer: &AttachmentTransferRecord,
         chunk: &EncryptedAttachmentChunk,
-    ) -> Result<(), String>;
+    ) -> Result<(), AttachmentTransferFailure>;
 
     fn complete_upload(
         &self,
         transfer: &AttachmentTransferRecord,
         prepared: &PreparedAttachmentUpload,
-    ) -> Result<EncryptedObjectDescriptor, String>;
+    ) -> Result<EncryptedObjectDescriptor, AttachmentTransferFailure>;
 
     fn get_download_chunk(
         &self,
@@ -54,14 +211,19 @@ pub trait AttachmentTransferTransport: Send + Sync {
         chunk_index: u32,
         start: u64,
         end: u64,
-    ) -> Result<Vec<u8>, String>;
+    ) -> Result<Vec<u8>, AttachmentTransferFailure>;
 
-    fn cancel_upload(&self, transfer: &AttachmentTransferRecord) -> Result<(), String>;
+    fn cancel_upload(
+        &self,
+        transfer: &AttachmentTransferRecord,
+    ) -> Result<(), AttachmentTransferFailure>;
 }
 
 pub struct AttachmentTransferWorker {
     store: Arc<MessagingStore>,
     transport: Arc<dyn AttachmentTransferTransport>,
+    control: Arc<AttachmentTransferControl>,
+    retry_policy: AttachmentRetryPolicy,
 }
 
 pub struct StationAttachmentTransferTransport {
@@ -101,18 +263,60 @@ impl StationAttachmentTransferTransport {
             .header("X-Device-ID", &self.device_id)
     }
 
-    fn require_success(response: reqwest::blocking::Response) -> Result<Vec<u8>, String> {
+    fn require_success(
+        response: reqwest::blocking::Response,
+    ) -> Result<Vec<u8>, AttachmentTransferFailure> {
         let status = response.status();
-        let body = response.bytes().map_err(|error| error.to_string())?;
+        let retry_after_ms = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<i64>().ok())
+            .map(|seconds| seconds.saturating_mul(1_000));
+        let body = response
+            .bytes()
+            .map_err(|error| transport_error(error.to_string()))?;
         if !status.is_success() {
-            return Err(format!(
-                "messaging attachment station status {}: {}",
-                status,
-                String::from_utf8_lossy(&body)
-            ));
+            let detail = format!("messaging attachment station status {status}");
+            return Err(match status.as_u16() {
+                401 | 403 => AttachmentTransferFailure::terminal(
+                    AttachmentTransferErrorCode::NotGranted,
+                    detail,
+                ),
+                409 => AttachmentTransferFailure::terminal(
+                    AttachmentTransferErrorCode::PartConflict,
+                    detail,
+                ),
+                412 => AttachmentTransferFailure::terminal(
+                    AttachmentTransferErrorCode::DescriptorMismatch,
+                    detail,
+                ),
+                416 => AttachmentTransferFailure::terminal(
+                    AttachmentTransferErrorCode::RangeInvalid,
+                    detail,
+                ),
+                429 => AttachmentTransferFailure::retryable(
+                    AttachmentTransferErrorCode::QuotaExceeded,
+                    retry_after_ms,
+                    detail,
+                ),
+                500..=599 => AttachmentTransferFailure::retryable(
+                    AttachmentTransferErrorCode::RetryLater,
+                    retry_after_ms,
+                    detail,
+                ),
+                _ => AttachmentTransferFailure::terminal(
+                    AttachmentTransferErrorCode::DescriptorMismatch,
+                    detail,
+                ),
+            });
         }
         Ok(body.to_vec())
     }
+}
+
+fn transport_error(detail: String) -> AttachmentTransferFailure {
+    AttachmentTransferFailure::retryable(AttachmentTransferErrorCode::RetryLater, None, detail)
 }
 
 impl AttachmentTransferTransport for StationAttachmentTransferTransport {
@@ -120,7 +324,7 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
         &self,
         transfer: &AttachmentTransferRecord,
         prepared: &PreparedAttachmentUpload,
-    ) -> Result<(String, u64, Vec<u8>), String> {
+    ) -> Result<(String, u64, Vec<u8>), AttachmentTransferFailure> {
         let mut request = BeginAttachmentUploadRequest {
             conversation_id: transfer.conversation_id.clone(),
             message_id: transfer.message_id.clone(),
@@ -141,15 +345,22 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             .header(ACCEPT, "application/x-protobuf")
             .body(request.encode_to_vec())
             .send()
-            .map_err(|error| error.to_string())?,
+            .map_err(|error| transport_error(error.to_string()))?,
         )?;
-        let response = BeginAttachmentUploadResponse::decode(body.as_slice())
-            .map_err(|error| error.to_string())?;
+        let response = BeginAttachmentUploadResponse::decode(body.as_slice()).map_err(|error| {
+            AttachmentTransferFailure::terminal(
+                AttachmentTransferErrorCode::DescriptorMismatch,
+                error.to_string(),
+            )
+        })?;
         if response.authority_station_id != transfer.authority_station_id
             || response.upload_id.trim().is_empty()
             || response.generation == 0
         {
-            return Err("messaging attachment begin response binding mismatch".to_string());
+            return Err(AttachmentTransferFailure::terminal(
+                AttachmentTransferErrorCode::DescriptorMismatch,
+                "messaging attachment begin response binding mismatch".to_string(),
+            ));
         }
         Ok((
             response.upload_id,
@@ -162,7 +373,7 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
         &self,
         transfer: &AttachmentTransferRecord,
         chunk: &EncryptedAttachmentChunk,
-    ) -> Result<(), String> {
+    ) -> Result<(), AttachmentTransferFailure> {
         let metadata = PutAttachmentChunkRequest {
             upload_id: transfer.upload_id.clone(),
             generation: transfer.generation,
@@ -190,7 +401,7 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             )
             .body(chunk.ciphertext.clone())
             .send()
-            .map_err(|error| error.to_string())?,
+            .map_err(|error| transport_error(error.to_string()))?,
         )?;
         Ok(())
     }
@@ -199,7 +410,7 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
         &self,
         transfer: &AttachmentTransferRecord,
         prepared: &PreparedAttachmentUpload,
-    ) -> Result<EncryptedObjectDescriptor, String> {
+    ) -> Result<EncryptedObjectDescriptor, AttachmentTransferFailure> {
         let request = CompleteAttachmentUploadRequest {
             upload_id: transfer.upload_id.clone(),
             generation: transfer.generation,
@@ -219,12 +430,22 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             .header(ACCEPT, "application/x-protobuf")
             .body(request.encode_to_vec())
             .send()
-            .map_err(|error| error.to_string())?,
+            .map_err(|error| transport_error(error.to_string()))?,
         )?;
         CompleteAttachmentUploadResponse::decode(body.as_slice())
-            .map_err(|error| error.to_string())?
+            .map_err(|error| {
+                AttachmentTransferFailure::terminal(
+                    AttachmentTransferErrorCode::DescriptorMismatch,
+                    error.to_string(),
+                )
+            })?
             .object
-            .ok_or_else(|| "messaging attachment completion omitted descriptor".to_string())
+            .ok_or_else(|| {
+                AttachmentTransferFailure::terminal(
+                    AttachmentTransferErrorCode::DescriptorMismatch,
+                    "messaging attachment completion omitted descriptor".to_string(),
+                )
+            })
     }
 
     fn get_download_chunk(
@@ -234,13 +455,18 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
         _chunk_index: u32,
         start: u64,
         end: u64,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, AttachmentTransferFailure> {
         let mut url = reqwest::Url::parse(&format!(
             "{}/messaging/attachments/objects/{}",
             crate::infrastructure::station_client::station_base_url(),
             descriptor.object_id
         ))
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            AttachmentTransferFailure::terminal(
+                AttachmentTransferErrorCode::DescriptorMismatch,
+                error.to_string(),
+            )
+        })?;
         url.query_pairs_mut()
             .append_pair("conversation_id", &transfer.conversation_id);
         let response = self
@@ -258,17 +484,22 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             )
             .header(RANGE, format!("bytes={start}-{end}"))
             .send()
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| transport_error(error.to_string()))?;
         if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-            return Err(format!(
-                "messaging attachment range status {}",
-                response.status()
-            ));
+            return Self::require_success(response).and_then(|_| {
+                Err(AttachmentTransferFailure::terminal(
+                    AttachmentTransferErrorCode::RangeInvalid,
+                    "messaging attachment range response was not partial".to_string(),
+                ))
+            });
         }
         Self::require_success(response)
     }
 
-    fn cancel_upload(&self, transfer: &AttachmentTransferRecord) -> Result<(), String> {
+    fn cancel_upload(
+        &self,
+        transfer: &AttachmentTransferRecord,
+    ) -> Result<(), AttachmentTransferFailure> {
         let request = CancelAttachmentUploadRequest {
             upload_id: transfer.upload_id.clone(),
             generation: transfer.generation,
@@ -287,43 +518,124 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             .header(ACCEPT, "application/x-protobuf")
             .body(request.encode_to_vec())
             .send()
-            .map_err(|error| error.to_string())?,
+            .map_err(|error| transport_error(error.to_string()))?,
         )?;
-        let response = CancelAttachmentUploadResponse::decode(body.as_slice())
-            .map_err(|error| error.to_string())?;
+        let response =
+            CancelAttachmentUploadResponse::decode(body.as_slice()).map_err(|error| {
+                AttachmentTransferFailure::terminal(
+                    AttachmentTransferErrorCode::DescriptorMismatch,
+                    error.to_string(),
+                )
+            })?;
         if response.state != AttachmentTransferState::Cancelled as i32 {
-            return Err("messaging attachment cancellation state mismatch".to_string());
+            return Err(AttachmentTransferFailure::terminal(
+                AttachmentTransferErrorCode::DescriptorMismatch,
+                "messaging attachment cancellation state mismatch".to_string(),
+            ));
         }
         Ok(())
     }
 }
 
 impl AttachmentTransferWorker {
-    pub fn new(
+    #[cfg(test)]
+    fn new(store: Arc<MessagingStore>, transport: Arc<dyn AttachmentTransferTransport>) -> Self {
+        Self::with_control(
+            store,
+            transport,
+            Arc::new(AttachmentTransferControl::new()),
+            AttachmentRetryPolicy::default(),
+        )
+        .expect("default attachment transfer policy must be valid")
+    }
+
+    pub(crate) fn with_control(
         store: Arc<MessagingStore>,
         transport: Arc<dyn AttachmentTransferTransport>,
-    ) -> Self {
-        Self { store, transport }
+        control: Arc<AttachmentTransferControl>,
+        retry_policy: AttachmentRetryPolicy,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            store,
+            transport,
+            control,
+            retry_policy: retry_policy.validate()?,
+        })
     }
 
     pub fn memory_bound(chunk_size: u32) -> usize {
         2 * chunk_size as usize + ATTACHMENT_TRANSFER_MEMORY_OVERHEAD
     }
 
-    pub fn upload_once(&self, attachment_id: &str, now_unix_ms: i64) -> Result<bool, String> {
-        let mut transfer = self.required_transfer(attachment_id)?;
-        let material = material_from_transfer(&transfer)?;
-        let prepared = prepare_upload(Path::new(&transfer.source_local_ref), &material, &transfer)?;
-        self.store.update_attachment_transfer_prepared(
+    pub fn run_upload_once(
+        &self,
+        attachment_id: &str,
+        now_unix_ms: i64,
+    ) -> Result<AttachmentTransferProgress, String> {
+        if let Some(progress) = self.preflight(attachment_id, now_unix_ms)? {
+            return Ok(progress);
+        }
+        let _permit = match self.control.try_admit() {
+            Ok(permit) => permit,
+            Err(failure) => return self.persist_failure(attachment_id, now_unix_ms, failure),
+        };
+        match self.upload_once(attachment_id, now_unix_ms) {
+            Ok(true) => Ok(AttachmentTransferProgress::Complete),
+            Ok(false) => Err("messaging attachment upload made no progress".to_string()),
+            Err(failure) => self.persist_failure(attachment_id, now_unix_ms, failure),
+        }
+    }
+
+    pub fn run_download_once(
+        &self,
+        attachment_id: &str,
+        descriptor: &EncryptedObjectDescriptor,
+        expected_plaintext_sha256: &[u8; 32],
+        cache_path: &Path,
+        now_unix_ms: i64,
+    ) -> Result<AttachmentTransferProgress, String> {
+        if let Some(progress) = self.preflight(attachment_id, now_unix_ms)? {
+            return Ok(progress);
+        }
+        let _permit = match self.control.try_admit() {
+            Ok(permit) => permit,
+            Err(failure) => return self.persist_failure(attachment_id, now_unix_ms, failure),
+        };
+        match self.download_once(
             attachment_id,
-            &prepared.descriptor_sha256,
-            &transfer.partial_local_ref,
+            descriptor,
+            expected_plaintext_sha256,
+            cache_path,
             now_unix_ms,
-        )?;
+        ) {
+            Ok(true) => Ok(AttachmentTransferProgress::Complete),
+            Ok(false) => Err("messaging attachment download made no progress".to_string()),
+            Err(failure) => self.persist_failure(attachment_id, now_unix_ms, failure),
+        }
+    }
+
+    fn upload_once(
+        &self,
+        attachment_id: &str,
+        now_unix_ms: i64,
+    ) -> Result<bool, AttachmentTransferFailure> {
+        self.control.check_running()?;
+        let mut transfer = self.required_transfer(attachment_id)?;
+        let material = material_from_transfer(&transfer).map_err(integrity_failure)?;
+        let prepared = prepare_upload(Path::new(&transfer.source_local_ref), &material, &transfer)
+            .map_err(integrity_failure)?;
+        self.store
+            .update_attachment_transfer_prepared(
+                attachment_id,
+                &prepared.descriptor_sha256,
+                &transfer.partial_local_ref,
+                now_unix_ms,
+            )
+            .map_err(store_failure)?;
         if transfer.upload_id.is_empty() {
             let (upload_id, generation, bitmap) =
                 self.transport.begin_upload(&transfer, &prepared)?;
-            validate_bitmap(&bitmap, material.chunk_count())?;
+            validate_bitmap(&bitmap, material.chunk_count()).map_err(integrity_failure)?;
             self.store.update_attachment_transfer_progress(
                 attachment_id,
                 AttachmentTransferState::Transferring as i32,
@@ -341,15 +653,19 @@ impl AttachmentTransferWorker {
         let mut source =
             File::open(&transfer.source_local_ref).map_err(|error| error.to_string())?;
         for chunk_index in 0..material.chunk_count() {
+            self.control.check_running()?;
             if chunk_complete(&transfer.completed_chunk_bitmap, chunk_index) {
                 continue;
             }
             let plaintext = read_plaintext_chunk(&mut source, &material, chunk_index)?;
-            let encrypted = encrypt_attachment_chunk(&material, chunk_index, &plaintext)?;
+            let encrypted = encrypt_attachment_chunk(&material, chunk_index, &plaintext)
+                .map_err(integrity_failure)?;
             if encrypted.ciphertext_sha256
                 != prepared.object.chunk_ciphertext_sha256[chunk_index as usize].as_slice()
             {
-                return Err("messaging attachment prepared chunk changed".to_string());
+                return Err(integrity_failure(
+                    "messaging attachment prepared chunk changed".to_string(),
+                ));
             }
             self.transport.put_upload_chunk(&transfer, &encrypted)?;
             set_chunk_complete(&mut transfer.completed_chunk_bitmap, chunk_index);
@@ -366,9 +682,11 @@ impl AttachmentTransferWorker {
             )?;
         }
         let descriptor = self.transport.complete_upload(&transfer, &prepared)?;
-        validate_encrypted_object_descriptor(&descriptor)?;
+        validate_encrypted_object_descriptor(&descriptor).map_err(integrity_failure)?;
         if descriptor.ciphertext_sha256 != prepared.object.ciphertext_sha256 {
-            return Err("messaging attachment completion hash mismatch".to_string());
+            return Err(integrity_failure(
+                "messaging attachment completion hash mismatch".to_string(),
+            ));
         }
         self.store.update_attachment_transfer_progress(
             attachment_id,
@@ -384,21 +702,24 @@ impl AttachmentTransferWorker {
         Ok(true)
     }
 
-    pub fn download_once(
+    fn download_once(
         &self,
         attachment_id: &str,
         descriptor: &EncryptedObjectDescriptor,
         expected_plaintext_sha256: &[u8; 32],
         cache_path: &Path,
         now_unix_ms: i64,
-    ) -> Result<bool, String> {
-        validate_encrypted_object_descriptor(descriptor)?;
+    ) -> Result<bool, AttachmentTransferFailure> {
+        self.control.check_running()?;
+        validate_encrypted_object_descriptor(descriptor).map_err(integrity_failure)?;
         let mut transfer = self.required_transfer(attachment_id)?;
-        let material = material_from_transfer(&transfer)?;
+        let material = material_from_transfer(&transfer).map_err(integrity_failure)?;
         if descriptor.chunk_count != material.chunk_count()
             || descriptor.chunk_size != material.chunk_size()
         {
-            return Err("messaging attachment descriptor/material mismatch".to_string());
+            return Err(integrity_failure(
+                "messaging attachment descriptor/material mismatch".to_string(),
+            ));
         }
         let descriptor_hash: [u8; 32] =
             Sha256::digest(prost::Message::encode_to_vec(descriptor)).into();
@@ -406,16 +727,21 @@ impl AttachmentTransferWorker {
             && transfer.descriptor_sha256 != descriptor_hash
         {
             discard_partial(&transfer.partial_local_ref)?;
-            return Err("messaging attachment descriptor commitment changed".to_string());
+            return Err(integrity_failure(
+                "messaging attachment descriptor commitment changed".to_string(),
+            ));
         }
-        self.store.update_attachment_transfer_prepared(
-            attachment_id,
-            &descriptor_hash,
-            &transfer.partial_local_ref,
-            now_unix_ms,
-        )?;
-        validate_bitmap(&transfer.completed_chunk_bitmap, descriptor.chunk_count)?;
-        validate_partial_file(&transfer, &material, descriptor)?;
+        self.store
+            .update_attachment_transfer_prepared(
+                attachment_id,
+                &descriptor_hash,
+                &transfer.partial_local_ref,
+                now_unix_ms,
+            )
+            .map_err(store_failure)?;
+        validate_bitmap(&transfer.completed_chunk_bitmap, descriptor.chunk_count)
+            .map_err(integrity_failure)?;
+        validate_partial_file(&transfer, &material, descriptor).map_err(integrity_failure)?;
 
         let partial_path = Path::new(&transfer.partial_local_ref);
         if let Some(parent) = partial_path.parent() {
@@ -428,6 +754,7 @@ impl AttachmentTransferWorker {
             .open(partial_path)
             .map_err(|error| error.to_string())?;
         for chunk_index in 0..descriptor.chunk_count {
+            self.control.check_running()?;
             if chunk_complete(&transfer.completed_chunk_bitmap, chunk_index) {
                 continue;
             }
@@ -445,7 +772,11 @@ impl AttachmentTransferWorker {
             let expected_hash: [u8; 32] = descriptor.chunk_ciphertext_sha256[chunk_index as usize]
                 .as_slice()
                 .try_into()
-                .map_err(|_| "messaging attachment chunk commitment is invalid".to_string())?;
+                .map_err(|_| {
+                    integrity_failure(
+                        "messaging attachment chunk commitment is invalid".to_string(),
+                    )
+                })?;
             let plaintext = decrypt_attachment_chunk(
                 &material,
                 &EncryptedAttachmentChunk {
@@ -453,7 +784,8 @@ impl AttachmentTransferWorker {
                     ciphertext,
                     ciphertext_sha256: expected_hash,
                 },
-            )?;
+            )
+            .map_err(integrity_failure)?;
             partial
                 .seek(SeekFrom::Start(
                     u64::from(chunk_index) * u64::from(material.chunk_size()),
@@ -480,7 +812,9 @@ impl AttachmentTransferWorker {
         drop(partial);
         if sha256_file(partial_path)? != *expected_plaintext_sha256 {
             discard_partial(&transfer.partial_local_ref)?;
-            return Err("messaging attachment plaintext hash mismatch".to_string());
+            return Err(integrity_failure(
+                "messaging attachment plaintext hash mismatch".to_string(),
+            ));
         }
         if let Some(parent) = cache_path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -509,7 +843,9 @@ impl AttachmentTransferWorker {
             return Ok(());
         }
         if !transfer.upload_id.is_empty() {
-            self.transport.cancel_upload(&transfer)?;
+            self.transport
+                .cancel_upload(&transfer)
+                .map_err(|failure| failure.to_string())?;
         }
         discard_partial(&transfer.partial_local_ref)?;
         self.store.update_attachment_transfer_progress(
@@ -530,6 +866,100 @@ impl AttachmentTransferWorker {
             .attachment_transfer(attachment_id)?
             .ok_or_else(|| "messaging attachment transfer is unavailable".to_string())
     }
+
+    fn preflight(
+        &self,
+        attachment_id: &str,
+        now_unix_ms: i64,
+    ) -> Result<Option<AttachmentTransferProgress>, String> {
+        let transfer = self.required_transfer(attachment_id)?;
+        if transfer.state == AttachmentTransferState::Complete as i32 {
+            return Ok(Some(AttachmentTransferProgress::Complete));
+        }
+        if transfer.state == AttachmentTransferState::Cancelled as i32
+            || transfer.state == AttachmentTransferState::Terminal as i32
+        {
+            return Err("messaging attachment transfer is terminal".to_string());
+        }
+        if transfer.state == AttachmentTransferState::RetryWait as i32
+            && transfer.next_attempt_at_unix_ms > now_unix_ms
+        {
+            return Ok(Some(AttachmentTransferProgress::Deferred {
+                next_attempt_at_unix_ms: transfer.next_attempt_at_unix_ms,
+            }));
+        }
+        Ok(None)
+    }
+
+    fn persist_failure(
+        &self,
+        attachment_id: &str,
+        now_unix_ms: i64,
+        failure: AttachmentTransferFailure,
+    ) -> Result<AttachmentTransferProgress, String> {
+        let transfer = self.required_transfer(attachment_id)?;
+        let attempt_count = transfer.attempt_count.saturating_add(1);
+        if failure.retryable {
+            let policy_delay = retry_delay_ms(
+                attachment_id,
+                attempt_count,
+                self.retry_policy.initial_delay_ms,
+                self.retry_policy.maximum_delay_ms,
+            );
+            let delay = failure
+                .retry_after_ms
+                .unwrap_or(0)
+                .max(policy_delay)
+                .min(self.retry_policy.maximum_delay_ms);
+            let next_attempt_at_unix_ms = now_unix_ms.saturating_add(delay);
+            self.store.update_attachment_transfer_progress(
+                attachment_id,
+                AttachmentTransferState::RetryWait as i32,
+                &transfer.upload_id,
+                transfer.generation,
+                &transfer.completed_chunk_bitmap,
+                attempt_count,
+                next_attempt_at_unix_ms,
+                failure.code as i32,
+                now_unix_ms,
+            )?;
+            return Ok(AttachmentTransferProgress::RetryScheduled {
+                next_attempt_at_unix_ms,
+            });
+        }
+        self.store.update_attachment_transfer_progress(
+            attachment_id,
+            AttachmentTransferState::Terminal as i32,
+            &transfer.upload_id,
+            transfer.generation,
+            &transfer.completed_chunk_bitmap,
+            attempt_count,
+            0,
+            failure.code as i32,
+            now_unix_ms,
+        )?;
+        Ok(AttachmentTransferProgress::Terminal { code: failure.code })
+    }
+}
+
+fn retry_delay_ms(
+    attachment_id: &str,
+    attempt_count: u32,
+    initial_delay_ms: i64,
+    maximum_delay_ms: i64,
+) -> i64 {
+    let exponent = attempt_count.saturating_sub(1).min(30);
+    let base = initial_delay_ms
+        .saturating_mul(1_i64 << exponent)
+        .min(maximum_delay_ms);
+    let mut hash = Sha256::new();
+    hash.update(attachment_id.as_bytes());
+    hash.update(attempt_count.to_be_bytes());
+    let digest = hash.finalize();
+    let jitter_percent = 75 + i64::from(digest[0] % 51);
+    base.saturating_mul(jitter_percent)
+        .saturating_div(100)
+        .min(maximum_delay_ms)
 }
 
 fn prepare_upload(
@@ -794,7 +1224,7 @@ mod tests {
             &self,
             _transfer: &AttachmentTransferRecord,
             prepared: &PreparedAttachmentUpload,
-        ) -> Result<(String, u64, Vec<u8>), String> {
+        ) -> Result<(String, u64, Vec<u8>), AttachmentTransferFailure> {
             Ok((
                 "upload-1".to_string(),
                 1,
@@ -806,11 +1236,11 @@ mod tests {
             &self,
             _transfer: &AttachmentTransferRecord,
             chunk: &EncryptedAttachmentChunk,
-        ) -> Result<(), String> {
+        ) -> Result<(), AttachmentTransferFailure> {
             self.upload_calls.lock().unwrap().push(chunk.chunk_index);
             if *self.fail_upload_once.lock().unwrap() == Some(chunk.chunk_index) {
                 *self.fail_upload_once.lock().unwrap() = None;
-                return Err("injected upload interruption".to_string());
+                return Err(transport_error("injected upload interruption".to_string()));
             }
             if self.retain_uploads {
                 self.chunks
@@ -825,7 +1255,7 @@ mod tests {
             &self,
             _transfer: &AttachmentTransferRecord,
             prepared: &PreparedAttachmentUpload,
-        ) -> Result<EncryptedObjectDescriptor, String> {
+        ) -> Result<EncryptedObjectDescriptor, AttachmentTransferFailure> {
             Ok(EncryptedObjectDescriptor {
                 object_id: "object-1".to_string(),
                 storage_ref: "opaque-1".to_string(),
@@ -848,13 +1278,18 @@ mod tests {
             chunk_index: u32,
             _start: u64,
             _end: u64,
-        ) -> Result<Vec<u8>, String> {
+        ) -> Result<Vec<u8>, AttachmentTransferFailure> {
             if *self.reject_etag.lock().unwrap() {
-                return Err("messaging attachment range status 412 Precondition Failed".to_string());
+                return Err(AttachmentTransferFailure::terminal(
+                    AttachmentTransferErrorCode::DescriptorMismatch,
+                    "messaging attachment range status 412 Precondition Failed".to_string(),
+                ));
             }
             if *self.fail_download_once.lock().unwrap() == Some(chunk_index) {
                 *self.fail_download_once.lock().unwrap() = None;
-                return Err("injected download interruption".to_string());
+                return Err(transport_error(
+                    "injected download interruption".to_string(),
+                ));
             }
             let mut bytes = self
                 .chunks
@@ -862,7 +1297,12 @@ mod tests {
                 .unwrap()
                 .get(&chunk_index)
                 .cloned()
-                .ok_or_else(|| "missing remote chunk".to_string())?;
+                .ok_or_else(|| {
+                    AttachmentTransferFailure::terminal(
+                        AttachmentTransferErrorCode::IntegrityFailed,
+                        "missing remote chunk".to_string(),
+                    )
+                })?;
             if *self.corrupt_download_once.lock().unwrap() == Some(chunk_index) {
                 *self.corrupt_download_once.lock().unwrap() = None;
                 bytes[0] ^= 1;
@@ -870,10 +1310,79 @@ mod tests {
             Ok(bytes)
         }
 
-        fn cancel_upload(&self, _transfer: &AttachmentTransferRecord) -> Result<(), String> {
+        fn cancel_upload(
+            &self,
+            _transfer: &AttachmentTransferRecord,
+        ) -> Result<(), AttachmentTransferFailure> {
             *self.cancel_calls.lock().unwrap() += 1;
             Ok(())
         }
+    }
+
+    struct GeneratedDownloadTransport {
+        plaintext_size: u64,
+        chunk_size: u32,
+        download_calls: Mutex<Vec<u32>>,
+    }
+
+    impl AttachmentTransferTransport for GeneratedDownloadTransport {
+        fn begin_upload(
+            &self,
+            _transfer: &AttachmentTransferRecord,
+            _prepared: &PreparedAttachmentUpload,
+        ) -> Result<(String, u64, Vec<u8>), AttachmentTransferFailure> {
+            Err(test_unsupported_transport_operation())
+        }
+
+        fn put_upload_chunk(
+            &self,
+            _transfer: &AttachmentTransferRecord,
+            _chunk: &EncryptedAttachmentChunk,
+        ) -> Result<(), AttachmentTransferFailure> {
+            Err(test_unsupported_transport_operation())
+        }
+
+        fn complete_upload(
+            &self,
+            _transfer: &AttachmentTransferRecord,
+            _prepared: &PreparedAttachmentUpload,
+        ) -> Result<EncryptedObjectDescriptor, AttachmentTransferFailure> {
+            Err(test_unsupported_transport_operation())
+        }
+
+        fn get_download_chunk(
+            &self,
+            _transfer: &AttachmentTransferRecord,
+            _descriptor: &EncryptedObjectDescriptor,
+            chunk_index: u32,
+            _start: u64,
+            _end: u64,
+        ) -> Result<Vec<u8>, AttachmentTransferFailure> {
+            self.download_calls.lock().unwrap().push(chunk_index);
+            let material = AttachmentCryptoMaterial::from_parts(
+                [7; 32],
+                [0; 12],
+                self.plaintext_size,
+                self.chunk_size,
+            )
+            .map_err(AttachmentTransferFailure::from)?;
+            let plaintext = vec![0; plaintext_chunk_size(&material, chunk_index)?];
+            Ok(encrypt_attachment_chunk(&material, chunk_index, &plaintext)?.ciphertext)
+        }
+
+        fn cancel_upload(
+            &self,
+            _transfer: &AttachmentTransferRecord,
+        ) -> Result<(), AttachmentTransferFailure> {
+            Err(test_unsupported_transport_operation())
+        }
+    }
+
+    fn test_unsupported_transport_operation() -> AttachmentTransferFailure {
+        AttachmentTransferFailure::terminal(
+            AttachmentTransferErrorCode::DescriptorMismatch,
+            "unsupported test transport operation".to_string(),
+        )
     }
 
     fn temp_path(label: &str) -> PathBuf {
@@ -1246,6 +1755,66 @@ mod tests {
     }
 
     #[test]
+    fn hundred_mib_download_resumes_at_quarter_boundaries() {
+        const SIZE: u64 = 100 * 1024 * 1024;
+        const CHUNKS: u32 = 100;
+        let source = temp_path("hundred-mib-download-source");
+        let source_file = File::create(&source).unwrap();
+        source_file.set_len(SIZE).unwrap();
+        let material =
+            AttachmentCryptoMaterial::from_parts([7; 32], [0; 12], SIZE, 1024 * 1024).unwrap();
+        let descriptor_record = transfer(
+            "descriptor",
+            &source,
+            &temp_path("descriptor-partial"),
+            SIZE,
+            1024 * 1024,
+        );
+        let prepared = prepare_upload(&source, &material, &descriptor_record).unwrap();
+        let descriptor = MemoryTransport::new()
+            .complete_upload(&descriptor_record, &prepared)
+            .unwrap();
+        let plaintext_hash = sha256_file(&source).unwrap();
+
+        for completed_chunks in [25_u32, 50, 75] {
+            let attachment_id = format!("hundred-mib-download-{completed_chunks}");
+            let partial = temp_path(&format!("hundred-mib-download-partial-{completed_chunks}"));
+            let cache = temp_path(&format!("hundred-mib-download-cache-{completed_chunks}"));
+            let partial_file = File::create(&partial).unwrap();
+            partial_file
+                .set_len(u64::from(completed_chunks) * 1024 * 1024)
+                .unwrap();
+            let store = Arc::new(MessagingStore::in_memory().unwrap());
+            let mut record = transfer(&attachment_id, &source, &partial, SIZE, 1024 * 1024);
+            record.direction = 2;
+            record.source_local_ref.clear();
+            for index in 0..completed_chunks {
+                set_chunk_complete(&mut record.completed_chunk_bitmap, index);
+            }
+            store.create_attachment_transfer(&record).unwrap();
+            let transport = Arc::new(GeneratedDownloadTransport {
+                plaintext_size: SIZE,
+                chunk_size: 1024 * 1024,
+                download_calls: Mutex::new(Vec::new()),
+            });
+            let worker = AttachmentTransferWorker::new(store, transport.clone());
+
+            worker
+                .download_once(&attachment_id, &descriptor, &plaintext_hash, &cache, 10)
+                .unwrap();
+
+            let calls = transport.download_calls.lock().unwrap();
+            assert_eq!(calls.len(), (CHUNKS - completed_chunks) as usize);
+            assert_eq!(calls.first().copied(), Some(completed_chunks));
+            assert_eq!(calls.last().copied(), Some(CHUNKS - 1));
+            assert_eq!(sha256_file(&cache).unwrap(), plaintext_hash);
+            assert!(!partial.exists());
+            let _ = fs::remove_file(cache);
+        }
+        let _ = fs::remove_file(source);
+    }
+
+    #[test]
     fn explicit_cancel_aborts_remote_session_and_persists_terminal_state() {
         let source = temp_path("cancel-source");
         let partial = temp_path("cancel-partial");
@@ -1278,6 +1847,181 @@ mod tests {
                 .state,
             AttachmentTransferState::Cancelled as i32
         );
+        let _ = fs::remove_file(source);
+    }
+
+    #[test]
+    fn retryable_failure_persists_jittered_backoff_and_respects_due_time() {
+        let source = temp_path("retry-source");
+        let partial = temp_path("retry-partial");
+        fs::write(&source, vec![3_u8; 1024 * 1024]).unwrap();
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        let record = transfer(
+            "retry-transfer",
+            &source,
+            &partial,
+            1024 * 1024,
+            1024 * 1024,
+        );
+        store.create_attachment_transfer(&record).unwrap();
+        let transport = Arc::new(MemoryTransport::new());
+        *transport.fail_upload_once.lock().unwrap() = Some(0);
+        let worker = AttachmentTransferWorker::new(store.clone(), transport.clone());
+
+        let scheduled = worker.run_upload_once("retry-transfer", 10_000).unwrap();
+        let next_attempt_at_unix_ms = match scheduled {
+            AttachmentTransferProgress::RetryScheduled {
+                next_attempt_at_unix_ms,
+            } => next_attempt_at_unix_ms,
+            other => panic!("expected retry, got {other:?}"),
+        };
+        assert!((10_750..=11_250).contains(&next_attempt_at_unix_ms));
+        let persisted = store
+            .attachment_transfer("retry-transfer")
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.state, AttachmentTransferState::RetryWait as i32);
+        assert_eq!(persisted.attempt_count, 1);
+        assert_eq!(
+            persisted.last_error_code,
+            AttachmentTransferErrorCode::RetryLater as i32
+        );
+        assert_eq!(
+            worker
+                .run_upload_once("retry-transfer", next_attempt_at_unix_ms - 1)
+                .unwrap(),
+            AttachmentTransferProgress::Deferred {
+                next_attempt_at_unix_ms
+            }
+        );
+        assert_eq!(*transport.upload_calls.lock().unwrap(), vec![0]);
+
+        assert_eq!(
+            worker
+                .run_upload_once("retry-transfer", next_attempt_at_unix_ms)
+                .unwrap(),
+            AttachmentTransferProgress::Complete
+        );
+        let _ = fs::remove_file(source);
+    }
+
+    #[test]
+    fn integrity_failure_is_terminal_and_not_retried() {
+        let source = temp_path("terminal-source");
+        let partial = temp_path("terminal-partial");
+        fs::write(&source, [1_u8]).unwrap();
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        let record = transfer(
+            "terminal-transfer",
+            &source,
+            &partial,
+            1024 * 1024,
+            1024 * 1024,
+        );
+        store.create_attachment_transfer(&record).unwrap();
+        let worker = AttachmentTransferWorker::new(store.clone(), Arc::new(MemoryTransport::new()));
+
+        assert_eq!(
+            worker.run_upload_once("terminal-transfer", 10_000).unwrap(),
+            AttachmentTransferProgress::Terminal {
+                code: AttachmentTransferErrorCode::IntegrityFailed
+            }
+        );
+        let persisted = store
+            .attachment_transfer("terminal-transfer")
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.state, AttachmentTransferState::Terminal as i32);
+        assert_eq!(persisted.next_attempt_at_unix_ms, 0);
+        assert!(worker.run_upload_once("terminal-transfer", 20_000).is_err());
+        let _ = fs::remove_file(source);
+    }
+
+    #[test]
+    fn server_retry_after_takes_precedence_and_remains_capped() {
+        let source = temp_path("retry-after-source");
+        let partial = temp_path("retry-after-partial");
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        let record = transfer(
+            "retry-after-transfer",
+            &source,
+            &partial,
+            1024 * 1024,
+            1024 * 1024,
+        );
+        store.create_attachment_transfer(&record).unwrap();
+        let worker = AttachmentTransferWorker::new(store.clone(), Arc::new(MemoryTransport::new()));
+
+        assert_eq!(
+            worker
+                .persist_failure(
+                    "retry-after-transfer",
+                    10_000,
+                    AttachmentTransferFailure::retryable(
+                        AttachmentTransferErrorCode::QuotaExceeded,
+                        Some(600_000),
+                        "station quota".to_string(),
+                    ),
+                )
+                .unwrap(),
+            AttachmentTransferProgress::RetryScheduled {
+                next_attempt_at_unix_ms: 310_000
+            }
+        );
+        let persisted = store
+            .attachment_transfer("retry-after-transfer")
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.next_attempt_at_unix_ms, 310_000);
+        assert_eq!(
+            persisted.last_error_code,
+            AttachmentTransferErrorCode::QuotaExceeded as i32
+        );
+    }
+
+    #[test]
+    fn shutdown_and_fifth_active_transfer_are_durably_deferred() {
+        let source = temp_path("bounded-source");
+        let partial = temp_path("bounded-partial");
+        fs::write(&source, vec![4_u8; 1024 * 1024]).unwrap();
+        let control = Arc::new(AttachmentTransferControl::new());
+        let permits = (0..ATTACHMENT_MAX_ACTIVE_TRANSFERS)
+            .map(|_| control.try_admit().unwrap())
+            .collect::<Vec<_>>();
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        let record = transfer(
+            "bounded-transfer",
+            &source,
+            &partial,
+            1024 * 1024,
+            1024 * 1024,
+        );
+        store.create_attachment_transfer(&record).unwrap();
+        let transport = Arc::new(MemoryTransport::new());
+        let worker = AttachmentTransferWorker::with_control(
+            store.clone(),
+            transport.clone(),
+            control.clone(),
+            AttachmentRetryPolicy::default(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            worker.run_upload_once("bounded-transfer", 10_000).unwrap(),
+            AttachmentTransferProgress::RetryScheduled { .. }
+        ));
+        drop(permits);
+        let due = store
+            .attachment_transfer("bounded-transfer")
+            .unwrap()
+            .unwrap()
+            .next_attempt_at_unix_ms;
+        control.request_shutdown();
+        assert!(matches!(
+            worker.run_upload_once("bounded-transfer", due).unwrap(),
+            AttachmentTransferProgress::RetryScheduled { .. }
+        ));
+        assert!(transport.upload_calls.lock().unwrap().is_empty());
         let _ = fs::remove_file(source);
     }
 
