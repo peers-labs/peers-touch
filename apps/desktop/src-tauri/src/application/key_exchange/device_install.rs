@@ -4,8 +4,9 @@ use ulid::Ulid;
 /// Returns `auth/sessions/<station_actor_scope>/device_id` under app data.
 fn device_id_path(actor_id: &str) -> Result<std::path::PathBuf, StorageError> {
     let scope = crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id));
+    let profile = std::env::var("PT_PROFILE").unwrap_or_else(|_| "desktop".to_string());
     storage::app_file_path(
-        "desktop",
+        &profile,
         StorageKind::Data,
         &["auth", "sessions", &scope, "device_id"],
     )

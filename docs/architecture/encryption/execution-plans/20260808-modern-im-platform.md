@@ -123,8 +123,8 @@ Required cells:
 | W2 | done | focused Station tests PASS |
 | W3 | done | Rust check PASS; native evidence pending W8 |
 | W4 | done | TypeScript check and focused tests PASS |
-| W5 | in progress | Station/clients compile; multi-device native evidence pending |
-| W6 | in progress | Station opaque revision store done; client history closure in progress |
+| W5 | done | Native active-device plaintext PASS; revoked device post-revoke inbox count `0` |
+| W6 | done | Revision 2 fresh-storage restore PASS; exact plaintext and fresh device enrollment verified |
 | W7 | in progress | MLS ownership and device-leaf closure in progress |
 | W8 | in progress | visible-client operational runner in progress |
 | W9 | pending | |

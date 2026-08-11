@@ -38,7 +38,6 @@ export interface ConversationServiceContract {
   getUnread(conversationId: string): Promise<number>
   getMemberSettings(conversationId: string): Promise<MemberSettingsResult>
   updateMemberSettings(conversationId: string, settings: Partial<MemberSettingsResult>): Promise<void>
-  searchMessages(conversationId: string, query: string, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
   syncFromStation(conversationId: string, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
 }
 
@@ -282,8 +281,27 @@ export interface MessagingProjection {
   senderPtid: string
   senderDeviceId: string
   plaintext: string
+  attachments: MessagingAttachmentProjection[]
   state: string
   timestampUnixMs: number
+}
+
+export interface MessagingAttachmentProjection {
+  attachmentId: string
+  filename: string
+  mimeType: string
+  plaintextSize: number
+  objectId: string
+  storageRef: string
+  ciphertextSize: number
+  availabilityState: 'uploading' | 'remote' | 'local' | 'failed'
+}
+
+export interface MessagingLocalAttachmentIntent {
+  filePath: string
+  filename: string
+  mimeType: string
+  size?: number
 }
 
 export interface MessagingConversationProjection {
@@ -309,12 +327,32 @@ export interface MessagingServiceContract {
     intent: MessagingActorMembershipIntent,
   ): Promise<{ commandId: string; state: 'pending' }>
   listConversations(): Promise<MessagingConversationProjection[]>
-  sendText(
+  pickAttachmentSource(): Promise<MessagingLocalAttachmentIntent>
+  stageAttachmentSource(filename: string, bytes: Uint8Array): Promise<string>
+  discardAttachmentSource(filePath: string): Promise<void>
+  captureAttachmentSource(): Promise<MessagingLocalAttachmentIntent>
+  sendMessage(
     conversationId: string,
     conversationKind: 'direct' | 'group',
     plaintext: string,
-  ): Promise<{ commandId: string; messageId: string; state: 'draft' | 'pending' }>
+    attachments?: readonly MessagingLocalAttachmentIntent[],
+  ): Promise<{
+    commandId?: string
+    messageId: string
+    attachmentIds: string[]
+    state: 'draft' | 'pending' | 'attachment_failed'
+  }>
   listMessages(conversationId: string): Promise<MessagingProjection[]>
+  searchMessages(
+    conversationId: string,
+    query: string,
+    options?: {
+      beforeTimestampUnixMs?: number
+      beforeMessageId?: string
+      limit?: number
+    },
+  ): Promise<MessagingProjection[]>
+  openAttachment(attachmentId: string): Promise<string>
 }
 
 export type MessagingActorMembershipIntent =

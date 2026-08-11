@@ -834,3 +834,37 @@ describe('recipient MLS runtime boundary', () => {
     })
   })
 })
+
+describe('Messaging membership intent boundary', () => {
+  it.each([
+    ['add_actor', 'ptid:test:carol'],
+    ['remove_actor', 'ptid:test:bob'],
+  ] as const)('submits %s without exposing crypto or epoch fields', async (action, targetPtid) => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: { command_id: `command-${action}`, state: 'pending' },
+    })
+
+    await expect(imServiceV1.messaging.submitMembershipIntent({
+      conversationId: 'group-1',
+      action,
+      targetPtid,
+    })).resolves.toEqual({
+      commandId: `command-${action}`,
+      state: 'pending',
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith('messaging_membership_transition', {
+      input: {
+        conversation_id: 'group-1',
+        action,
+        target_ptid: targetPtid,
+      },
+    })
+    const input = invokeMock.mock.calls[0]?.[1]?.input
+    expect(input).not.toHaveProperty('sender_device_id')
+    expect(input).not.toHaveProperty('observed_membership_epoch')
+    expect(input).not.toHaveProperty('key_package')
+    expect(input).not.toHaveProperty('mls_commit')
+  })
+})
