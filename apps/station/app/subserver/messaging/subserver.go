@@ -402,6 +402,10 @@ func (s *subServer) Handlers() []server.Handler {
 			logID,
 			s.composition.MlsKeyPackageClaimAuth,
 		),
+		server.NewTypedHandler("messaging-typing-submit", "/messaging/typing/submit", server.POST,
+			s.handleSubmitTyping, logID, deviceID, s.jwtWrapper),
+		server.NewTypedHandler("messaging-receipt-submit", "/messaging/receipt/submit", server.POST,
+			s.handleSubmitReceipt, logID, deviceID, s.jwtWrapper),
 	}
 }
 
@@ -626,6 +630,46 @@ func (s *subServer) handleGetLatestRecovery(
 	}
 	response, err := s.composition.RecoveryService.GetLatest(ctx, subject.ID)
 	return response, mapMessagingError(err)
+}
+
+func (s *subServer) handleSubmitTyping(
+	ctx context.Context,
+	request *chat.ConversationCommand,
+) (*chat.SubmitMessagingReceiptResponse, error) {
+	ptid, deviceID, err := messagingEndpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if request == nil || request.GetTyping() == nil {
+		return nil, server.BadRequest("typing command is required")
+	}
+	if request.SenderPtid != ptid || request.SenderDeviceId != deviceID {
+		return nil, server.Forbidden("typing sender does not match authenticated endpoint")
+	}
+	if strings.TrimSpace(request.ConversationId) == "" {
+		return nil, server.BadRequest("conversation_id is required")
+	}
+	if err := s.composition.TypingHandler.SubmitTyping(
+		ctx, ptid, deviceID, request.ConversationId, request.GetTyping().IsTyping,
+	); err != nil {
+		return nil, mapMessagingError(err)
+	}
+	return &chat.SubmitMessagingReceiptResponse{}, nil
+}
+
+func (s *subServer) handleSubmitReceipt(
+	ctx context.Context,
+	request *chat.SubmitMessagingReceiptRequest,
+) (*chat.SubmitMessagingReceiptResponse, error) {
+	ptid, deviceID, err := messagingEndpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.composition.ReceiptHandler.Submit(ctx, ptid, deviceID, request)
+	if err != nil {
+		return nil, mapMessagingError(err)
+	}
+	return response, nil
 }
 
 func (s *subServer) handleBeginAttachmentUpload(

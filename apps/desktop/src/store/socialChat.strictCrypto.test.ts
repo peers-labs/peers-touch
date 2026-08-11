@@ -12,7 +12,6 @@ import {
 
 const socialChatSource = readFileSync(new URL('./socialChat.ts', import.meta.url), 'utf8');
 const imRuntimeSource = readFileSync(new URL('../runtimes/imRuntime.ts', import.meta.url), 'utf8');
-const cryptoRuntimeSource = readFileSync(new URL('../runtimes/cryptoRuntime.ts', import.meta.url), 'utf8');
 const imServiceSource = readFileSync(new URL('../services/im-service.ts', import.meta.url), 'utf8');
 const appRuntimeSource = readFileSync(new URL('../services/appRuntime.ts', import.meta.url), 'utf8');
 const featureFlagsSource = readFileSync(
@@ -74,14 +73,11 @@ describe('strict chat encryption source contract', () => {
     expect(socialChatSource).not.toContain('version: 0,');
   });
 
-  it('makes cryptoRuntime the sole direct-session orchestrator', () => {
-    expect(appRuntimeSource).toContain('registerRuntime(cryptoRuntime)');
-    expect(cryptoRuntimeSource).toContain('cryptoService.fetchPeerBundles(peerPtid)');
-    expect(cryptoRuntimeSource).toContain('cryptoService.fetchPeerBundles(localAddress.ptid)');
-    expect(cryptoRuntimeSource).toContain('peerAddress.deviceId');
-    expect(cryptoRuntimeSource).toContain('DirectSessionInitSchema');
-    expect(cryptoRuntimeSource).toContain('cryptoService.encryptSessions');
-    expect(cryptoRuntimeSource).not.toContain('cryptoService.encrypt(');
+  it('keeps the frontend crypto and inbox runtimes out of the composition root', () => {
+    expect(appRuntimeSource).not.toContain('registerRuntime(cryptoRuntime)');
+    expect(appRuntimeSource).not.toContain('registerRuntime(imRuntime)');
+    expect(appRuntimeSource).not.toContain('teardownRuntime(cryptoRuntime.id)');
+    expect(appRuntimeSource).not.toContain('teardownRuntime(imRuntime.id)');
     expect(imServiceSource).toContain('recipient_device_id: recipientDeviceId');
     expect(socialChatSource).not.toContain('establishSession:');
     expect(socialChatSource).not.toContain('api.drEncrypt');
@@ -89,14 +85,16 @@ describe('strict chat encryption source contract', () => {
     expect(socialChatSource).not.toContain('api.cryptoInitSession');
   });
 
-  it('uses repeated device payloads and local-device selection for direct messages', () => {
-    expect(socialChatSource).toContain('devicePayloads');
-    expect(socialChatSource).toContain('payload.recipientDeviceId === localAddress.deviceId');
-    expect(socialChatSource).toContain('encryptDirectPayloads');
-    expect(socialChatSource).toContain('decryptDirectPayload');
-    expect(imRuntimeSource).toContain('senderDeviceId');
-    expect(imRuntimeSource).toContain('recipientDeviceId !== localDeviceId');
-    expect(imRuntimeSource).toContain('acceptInboundSession');
+  it('does not let dormant frontend runtimes enroll another active device', () => {
+    expect(appRuntimeSource).not.toContain("from '../runtimes/cryptoRuntime'");
+    expect(appRuntimeSource).not.toContain("from '../runtimes/imRuntime'");
+  });
+
+  it('reads Direct plaintext and attachments only from Engine projections', () => {
+    expect(socialChatSource).toContain('messaging.listMessages');
+    expect(socialChatSource).toContain('projection.attachments.map');
+    expect(socialChatSource).not.toContain('payload.recipientDeviceId === localAddress.deviceId');
+    expect(socialChatSource).not.toContain('decryptDirectPayload');
   });
 
   it('does not render schema-invalid decrypted bytes as raw message content', () => {
@@ -139,7 +137,7 @@ describe('strict chat encryption source contract', () => {
       expect(source).not.toContain('/friend-chat/message/send');
       expect(source).not.toContain('/friend-chat/message/ack');
     }
-    expect(socialChatSource).toContain('conversation.submitCommand');
+    expect(socialChatSource).toContain('messaging.sendMessage');
     expect(socialChatSource).toContain('conversation.submitReceipt');
   });
 
@@ -157,7 +155,7 @@ describe('strict chat encryption source contract', () => {
     expect(identityHandlersSource).not.toContain('crypto.sender-key-ledger');
   });
 
-  it('requires the active MLS epoch and registered device for group mutations', () => {
+  it('delegates text send to the Engine while legacy group mutations remain device-bound', () => {
     const section = (start: string, end: string) => {
       const offset = socialChatSource.indexOf(start);
       return socialChatSource.slice(offset, socialChatSource.indexOf(end, offset));
@@ -165,10 +163,11 @@ describe('strict chat encryption source contract', () => {
     const sendPath = section('sendGroupMessage: async', 'loadGroupMembers: async');
     const recallPath = section('recallGroupMessage: async', 'editGroupMessage: async');
     const editPath = section('editGroupMessage: async', 'applyMessageMutation:');
-    expect(sendPath).toContain('mlsGroup.recipientStatus(groupUlid)');
-    expect(sendPath).toContain("status.status !== 'active'");
-    expect(sendPath).toContain('status.mlsEpoch !== projectedMlsEpoch');
-    for (const path of [sendPath, recallPath, editPath]) {
+    expect(sendPath).toContain("messaging.sendMessage(groupUlid, 'group', content, attachments)");
+    expect(sendPath).not.toContain('mlsGroup.encrypt');
+    expect(sendPath).not.toContain('conversation.submitCommand');
+    expect(sendPath).not.toContain('getLocalCryptoAddress()');
+    for (const path of [recallPath, editPath]) {
       expect(path).toContain('const localAddress = getLocalCryptoAddress()');
       expect(path).toContain('sender_device_id: localAddress.deviceId');
       expect(path).not.toContain("localStorage.getItem('peers_im_device_id')");

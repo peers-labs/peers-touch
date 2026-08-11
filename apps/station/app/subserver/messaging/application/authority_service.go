@@ -1620,6 +1620,59 @@ func buildEventAndPayloads(
 			now,
 		)
 	}
+
+	// Edit carries encrypted payloads (same structure as SendMessage).
+	if edit := command.GetEditMessage(); edit != nil {
+		return buildEditMessageEventAndPayloads(
+			ctx,
+			repositories,
+			conversation,
+			command,
+			edit,
+			eventID,
+			now,
+		)
+	}
+
+	// Retract is metadata-only: all endpoints receive a PublicEventMarker.
+	if retract := command.GetRetractMessage(); retract != nil {
+		return buildRetractMessageEventAndPayloads(
+			ctx,
+			repositories,
+			conversation,
+			command,
+			retract,
+			eventID,
+			now,
+		)
+	}
+
+	// Reaction is metadata-only: all endpoints receive a PublicEventMarker.
+	if reaction := command.GetReaction(); reaction != nil {
+		return buildReactionEventAndPayloads(
+			ctx,
+			repositories,
+			conversation,
+			command,
+			reaction,
+			eventID,
+			now,
+		)
+	}
+
+	// Pin is metadata-only: all endpoints receive a PublicEventMarker.
+	if pin := command.GetPinMessage(); pin != nil {
+		return buildPinMessageEventAndPayloads(
+			ctx,
+			repositories,
+			conversation,
+			command,
+			pin,
+			eventID,
+			now,
+		)
+	}
+
 	send := command.GetSendMessage()
 	if send == nil || send.MessageId == "" {
 		return nil, nil, messaging.ErrUnsupportedCommand
@@ -1867,6 +1920,316 @@ func buildMembershipTransitionEventAndPayloads(
 		return bytes.Compare(event.DeliveryCommitments[i], event.DeliveryCommitments[j]) < 0
 	})
 	return event, payloads, nil
+}
+
+// buildEditMessageEventAndPayloads handles the EditMessage command.
+// Edit carries encrypted payloads identical in structure to SendMessage
+// (Direct payloads for direct conversations, MLS application payload for groups).
+func buildEditMessageEventAndPayloads(
+	ctx context.Context,
+	repositories messaging.AuthorityRepositories,
+	conversation *messaging.AuthorityConversation,
+	command *chat.ChatCommand,
+	edit *chat.EditMessageIntent,
+	eventID string,
+	now time.Time,
+) (*chat.ConversationEvent, []*chat.PreparedEndpointPayload, error) {
+	if edit.MessageId == "" {
+		return nil, nil, messaging.ErrUnsupportedCommand
+	}
+	if len(edit.DirectPayloads) == 0 && len(edit.MlsApplicationPayload) == 0 {
+		return nil, nil, messaging.ErrDeliverySet
+	}
+
+	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	markerBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&chat.PublicEventMarker{
+			ConversationId:  command.ConversationId,
+			EventId:         eventID,
+			CommandId:       command.CommandId,
+			SendingEndpoint: command.Sender,
+		},
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	markerHash := sha256.Sum256(markerBytes)
+	marker := &chat.PreparedEndpointPayload{
+		Recipient:     command.Sender,
+		Kind:          chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_PUBLIC_EVENT,
+		OpaquePayload: markerBytes,
+		PayloadSha256: markerHash[:],
+	}
+
+	var payloads []*chat.PreparedEndpointPayload
+	switch conversation.Kind {
+	case messaging.AuthorityConversationKindDirect:
+		payloads = append(payloads, edit.DirectPayloads...)
+		payloads = append(payloads, marker)
+	case messaging.AuthorityConversationKindGroup:
+		if len(edit.MlsApplicationPayload) == 0 ||
+			len(edit.MlsApplicationPayloadSha256) != sha256.Size {
+			return nil, nil, messaging.ErrDeliverySet
+		}
+		hash := sha256.Sum256(edit.MlsApplicationPayload)
+		if !bytes.Equal(hash[:], edit.MlsApplicationPayloadSha256) {
+			return nil, nil, messaging.ErrDeliverySet
+		}
+		for _, endpoint := range endpoints {
+			if endpointKey(endpoint) == endpointKey(command.Sender) {
+				payloads = append(payloads, marker)
+				continue
+			}
+			payloads = append(payloads, &chat.PreparedEndpointPayload{
+				Recipient:     endpoint,
+				Kind:          chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_APPLICATION,
+				OpaquePayload: edit.MlsApplicationPayload,
+				PayloadSha256: edit.MlsApplicationPayloadSha256,
+			})
+		}
+	default:
+		return nil, nil, messaging.ErrConversationState
+	}
+	if err := validateDeliverySet(endpoints, payloads); err != nil {
+		return nil, nil, err
+	}
+
+	event := &chat.ConversationEvent{
+		EventId:         eventID,
+		ConversationId:  command.ConversationId,
+		Sequence:        conversation.CurrentSequence + 1,
+		CommandId:       command.CommandId,
+		Actor:           command.Sender,
+		CommittedAt:     timestamppb.New(now),
+		MembershipEpoch: conversation.MembershipEpoch,
+		MlsEpoch:        conversation.MlsEpoch,
+		Payload: &chat.ConversationEvent_MessageEdited{
+			MessageEdited: &chat.MessageEditedFact{
+				MessageId: edit.MessageId,
+				Editor:    command.Sender,
+				EditedAt:  timestamppb.New(now),
+			},
+		},
+	}
+	for _, payload := range payloads {
+		event.DeliveryCommitments = append(
+			event.DeliveryCommitments,
+			deliveryCommitment(eventID, command.ConversationId, payload),
+		)
+	}
+	sort.Slice(event.DeliveryCommitments, func(i, j int) bool {
+		return bytes.Compare(event.DeliveryCommitments[i], event.DeliveryCommitments[j]) < 0
+	})
+	return event, payloads, nil
+}
+
+// buildRetractMessageEventAndPayloads handles the RetractMessage command.
+// Retraction is metadata-only: all endpoints receive a PublicEventMarker.
+func buildRetractMessageEventAndPayloads(
+	ctx context.Context,
+	repositories messaging.AuthorityRepositories,
+	conversation *messaging.AuthorityConversation,
+	command *chat.ChatCommand,
+	retract *chat.RetractMessageIntent,
+	eventID string,
+	now time.Time,
+) (*chat.ConversationEvent, []*chat.PreparedEndpointPayload, error) {
+	if retract.MessageId == "" {
+		return nil, nil, messaging.ErrUnsupportedCommand
+	}
+
+	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	payloads, err := buildMetadataOnlyPayloads(command, eventID, endpoints)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateDeliverySet(endpoints, payloads); err != nil {
+		return nil, nil, err
+	}
+
+	event := &chat.ConversationEvent{
+		EventId:         eventID,
+		ConversationId:  command.ConversationId,
+		Sequence:        conversation.CurrentSequence + 1,
+		CommandId:       command.CommandId,
+		Actor:           command.Sender,
+		CommittedAt:     timestamppb.New(now),
+		MembershipEpoch: conversation.MembershipEpoch,
+		MlsEpoch:        conversation.MlsEpoch,
+		Payload: &chat.ConversationEvent_MessageRetracted{
+			MessageRetracted: &chat.MessageRetractedFact{
+				MessageId:   retract.MessageId,
+				Retractor:   command.Sender,
+				RetractedAt: timestamppb.New(now),
+			},
+		},
+	}
+	for _, payload := range payloads {
+		event.DeliveryCommitments = append(
+			event.DeliveryCommitments,
+			deliveryCommitment(eventID, command.ConversationId, payload),
+		)
+	}
+	sort.Slice(event.DeliveryCommitments, func(i, j int) bool {
+		return bytes.Compare(event.DeliveryCommitments[i], event.DeliveryCommitments[j]) < 0
+	})
+	return event, payloads, nil
+}
+
+// buildReactionEventAndPayloads handles the Reaction command.
+// Reaction is metadata-only: all endpoints receive a PublicEventMarker.
+func buildReactionEventAndPayloads(
+	ctx context.Context,
+	repositories messaging.AuthorityRepositories,
+	conversation *messaging.AuthorityConversation,
+	command *chat.ChatCommand,
+	reaction *chat.ReactionIntent,
+	eventID string,
+	now time.Time,
+) (*chat.ConversationEvent, []*chat.PreparedEndpointPayload, error) {
+	if reaction.MessageId == "" || reaction.Reaction == "" {
+		return nil, nil, messaging.ErrUnsupportedCommand
+	}
+
+	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	payloads, err := buildMetadataOnlyPayloads(command, eventID, endpoints)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateDeliverySet(endpoints, payloads); err != nil {
+		return nil, nil, err
+	}
+
+	event := &chat.ConversationEvent{
+		EventId:         eventID,
+		ConversationId:  command.ConversationId,
+		Sequence:        conversation.CurrentSequence + 1,
+		CommandId:       command.CommandId,
+		Actor:           command.Sender,
+		CommittedAt:     timestamppb.New(now),
+		MembershipEpoch: conversation.MembershipEpoch,
+		MlsEpoch:        conversation.MlsEpoch,
+		Payload: &chat.ConversationEvent_ReactionCommitted{
+			ReactionCommitted: &chat.ReactionCommittedFact{
+				MessageId: reaction.MessageId,
+				Actor:     command.Sender,
+				Reaction:  reaction.Reaction,
+				Removed:   reaction.Remove,
+			},
+		},
+	}
+	for _, payload := range payloads {
+		event.DeliveryCommitments = append(
+			event.DeliveryCommitments,
+			deliveryCommitment(eventID, command.ConversationId, payload),
+		)
+	}
+	sort.Slice(event.DeliveryCommitments, func(i, j int) bool {
+		return bytes.Compare(event.DeliveryCommitments[i], event.DeliveryCommitments[j]) < 0
+	})
+	return event, payloads, nil
+}
+
+// buildPinMessageEventAndPayloads handles the PinMessage command.
+// Pin is metadata-only: all endpoints receive a PublicEventMarker.
+func buildPinMessageEventAndPayloads(
+	ctx context.Context,
+	repositories messaging.AuthorityRepositories,
+	conversation *messaging.AuthorityConversation,
+	command *chat.ChatCommand,
+	pin *chat.PinMessageIntent,
+	eventID string,
+	now time.Time,
+) (*chat.ConversationEvent, []*chat.PreparedEndpointPayload, error) {
+	if pin.MessageId == "" {
+		return nil, nil, messaging.ErrUnsupportedCommand
+	}
+
+	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	payloads, err := buildMetadataOnlyPayloads(command, eventID, endpoints)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateDeliverySet(endpoints, payloads); err != nil {
+		return nil, nil, err
+	}
+
+	event := &chat.ConversationEvent{
+		EventId:         eventID,
+		ConversationId:  command.ConversationId,
+		Sequence:        conversation.CurrentSequence + 1,
+		CommandId:       command.CommandId,
+		Actor:           command.Sender,
+		CommittedAt:     timestamppb.New(now),
+		MembershipEpoch: conversation.MembershipEpoch,
+		MlsEpoch:        conversation.MlsEpoch,
+		Payload: &chat.ConversationEvent_MessagePinCommitted{
+			MessagePinCommitted: &chat.MessagePinCommittedFact{
+				MessageId: pin.MessageId,
+				Actor:     command.Sender,
+				Removed:   pin.Remove,
+			},
+		},
+	}
+	for _, payload := range payloads {
+		event.DeliveryCommitments = append(
+			event.DeliveryCommitments,
+			deliveryCommitment(eventID, command.ConversationId, payload),
+		)
+	}
+	sort.Slice(event.DeliveryCommitments, func(i, j int) bool {
+		return bytes.Compare(event.DeliveryCommitments[i], event.DeliveryCommitments[j]) < 0
+	})
+	return event, payloads, nil
+}
+
+// buildMetadataOnlyPayloads constructs a PublicEventMarker payload for every
+// endpoint in the conversation. Used by metadata-only commands (retract, react, pin)
+// where no encrypted content needs to be delivered.
+func buildMetadataOnlyPayloads(
+	command *chat.ChatCommand,
+	eventID string,
+	endpoints []*chat.CryptoEndpoint,
+) ([]*chat.PreparedEndpointPayload, error) {
+	markerBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&chat.PublicEventMarker{
+			ConversationId:  command.ConversationId,
+			EventId:         eventID,
+			CommandId:       command.CommandId,
+			SendingEndpoint: command.Sender,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	markerHash := sha256.Sum256(markerBytes)
+
+	payloads := make([]*chat.PreparedEndpointPayload, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		payloads = append(payloads, &chat.PreparedEndpointPayload{
+			Recipient:     endpoint,
+			Kind:          chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_PUBLIC_EVENT,
+			OpaquePayload: markerBytes,
+			PayloadSha256: markerHash[:],
+		})
+	}
+	return payloads, nil
 }
 
 func validateDeliverySet(
