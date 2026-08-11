@@ -20,6 +20,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 pub const ATTACHMENT_TRANSFER_MEMORY_OVERHEAD: usize = 16 * 1024 * 1024;
 const ATTACHMENT_MAX_ACTIVE_TRANSFERS: usize = 4;
@@ -245,7 +246,11 @@ impl StationAttachmentTransferTransport {
             token,
             device_id: endpoint.device_id.clone(),
             endpoint,
-            client: Client::new(),
+            client: Client::builder()
+                .connect_timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(30))
+                .build()
+                .map_err(|error| format!("build messaging attachment client: {error}"))?,
         })
     }
 
@@ -2022,6 +2027,159 @@ mod tests {
             AttachmentTransferProgress::RetryScheduled { .. }
         ));
         assert!(transport.upload_calls.lock().unwrap().is_empty());
+        let _ = fs::remove_file(source);
+    }
+
+    #[test]
+    #[ignore = "requires a native Desktop profile, session file, and live Station"]
+    fn live_engine_worker_uploads_through_station_transport() {
+        #[derive(serde::Deserialize)]
+        struct NativeSession {
+            actor_id: String,
+            token: String,
+        }
+
+        let profile_id = std::env::var("MESSAGING_ATTACHMENT_ENGINE_PROFILE_ID")
+            .expect("MESSAGING_ATTACHMENT_ENGINE_PROFILE_ID is required");
+        let ptid = std::env::var("MESSAGING_ATTACHMENT_PTID")
+            .expect("MESSAGING_ATTACHMENT_PTID is required");
+        let device_id = std::env::var("MESSAGING_ATTACHMENT_DEVICE_ID")
+            .expect("MESSAGING_ATTACHMENT_DEVICE_ID is required");
+        let token_file = std::env::var("MESSAGING_ATTACHMENT_TOKEN_FILE")
+            .expect("MESSAGING_ATTACHMENT_TOKEN_FILE is required");
+        let expected_station_url =
+            std::env::var("PEERS_STATION_URL").expect("PEERS_STATION_URL is required");
+        assert_eq!(
+            crate::infrastructure::station_client::station_base_url(),
+            expected_station_url.trim_end_matches('/'),
+            "live attachment gate resolved a different active Station"
+        );
+        let session: NativeSession = serde_json::from_slice(
+            &fs::read(token_file).expect("native Desktop session file must be readable"),
+        )
+        .expect("native Desktop session file must be valid");
+        assert!(!session.token.trim().is_empty());
+        assert!(
+            profile_id.ends_with(&session.actor_id),
+            "native session actor must match the Engine profile"
+        );
+
+        let explicit_route = std::env::var("MESSAGING_ATTACHMENT_CONVERSATION_ID")
+            .ok()
+            .zip(std::env::var("MESSAGING_ATTACHMENT_AUTHORITY_STATION_ID").ok());
+        let projection = if explicit_route.is_some() {
+            None
+        } else {
+            let profile_store = MessagingStore::open(&profile_id).unwrap();
+            if let Some(enrollment) = profile_store.device_enrollment().unwrap() {
+                assert_eq!(enrollment.certificate.ptid, ptid);
+                assert_eq!(enrollment.certificate.device_id, device_id);
+            }
+            let projection = profile_store
+                .conversation_projections()
+                .unwrap()
+                .into_iter()
+                .find(|projection| {
+                    projection.active && !projection.authority_station_id.is_empty()
+                });
+            drop(profile_store);
+            projection
+        };
+        if let Some(projection) = &projection {
+            assert!(
+                projection.member_ptids.iter().any(|member| member == &ptid),
+                "native endpoint must be an active conversation member"
+            );
+        }
+
+        let engine = crate::messaging::MessagingEngine::in_memory(
+            format!("attachment-live-{}", Ulid::new()),
+            crate::messaging::EngineEndpoint {
+                ptid: ptid.clone(),
+                device_id: device_id.clone(),
+            },
+        )
+        .unwrap();
+        let (conversation_id, authority_station_id) = match (explicit_route, projection) {
+            (Some(route), _) => route,
+            (None, Some(projection)) => {
+                (projection.conversation_id, projection.authority_station_id)
+            }
+            (None, None) => {
+                use crate::model::chat::{
+                    ListMessagingConversationsRequest, ListMessagingConversationsResponse,
+                };
+                use reqwest::Method;
+
+                let peer_ptid = std::env::var("MESSAGING_ATTACHMENT_PEER_PTID")
+                    .expect("MESSAGING_ATTACHMENT_PEER_PTID is required without a local route");
+                let conversation_id = engine
+                    .create_direct_conversation(&session.token, &peer_ptid)
+                    .unwrap();
+                let response = crate::infrastructure::station_client::request_proto_for_device::<
+                    ListMessagingConversationsRequest,
+                    ListMessagingConversationsResponse,
+                >(
+                    Method::GET,
+                    "/messaging/conversation/list",
+                    &session.token,
+                    None,
+                    None::<&ListMessagingConversationsRequest>,
+                    &device_id,
+                )
+                .unwrap();
+                let authority_station_id = response
+                    .conversations
+                    .into_iter()
+                    .find(|conversation| conversation.conversation_id == conversation_id)
+                    .map(|conversation| conversation.authority_station_id)
+                    .filter(|authority| !authority.is_empty())
+                    .expect("created conversation must expose its Authority Station");
+                (conversation_id, authority_station_id)
+            }
+        };
+        let source = temp_path("live-engine-source");
+        let partial = temp_path("live-engine-partial");
+        let plaintext = vec![11_u8; 1024 * 1024 + 41];
+        fs::write(&source, &plaintext).unwrap();
+        let attachment_id = Ulid::new().to_string();
+        let record = AttachmentTransferRecord {
+            attachment_id: attachment_id.clone(),
+            conversation_id,
+            message_id: Ulid::new().to_string(),
+            authority_station_id,
+            direction: 1,
+            state: AttachmentTransferState::Queued as i32,
+            upload_id: String::new(),
+            generation: 0,
+            descriptor_sha256: vec![0; 32],
+            completed_chunk_bitmap: vec![0],
+            source_local_ref: source.display().to_string(),
+            partial_local_ref: partial.display().to_string(),
+            object_key: vec![19; 32],
+            base_nonce: vec![0; 12],
+            plaintext_size: plaintext.len() as u64,
+            chunk_size: 1024 * 1024,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 1,
+            last_error_code: 0,
+            updated_at_unix_ms: 1,
+        };
+        engine.store().create_attachment_transfer(&record).unwrap();
+        let worker = engine.attachment_transfer_worker(session.token).unwrap();
+
+        assert_eq!(
+            worker.run_upload_once(&attachment_id, 10_000).unwrap(),
+            AttachmentTransferProgress::Complete
+        );
+        let persisted = engine
+            .store()
+            .attachment_transfer(&attachment_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.state, AttachmentTransferState::Complete as i32);
+        assert_eq!(persisted.completed_chunk_bitmap, vec![3]);
+        assert!(!persisted.upload_id.is_empty());
         let _ = fs::remove_file(source);
     }
 
