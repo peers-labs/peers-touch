@@ -433,6 +433,85 @@ func TestQueueQuotaRollsBackEntireAuthorityCommit(t *testing.T) {
 	}
 }
 
+func TestRemovedActorKeepsHistoricalAttachmentGrantButGetsNoFutureGrant(t *testing.T) {
+	db, service := newAuthorityFixture(t, messaging.QueueLimits{
+		MaxUnackedItems: 100,
+		MaxUnackedBytes: 1024 * 1024,
+	})
+	const conversationID = "direct-attachment-removal"
+	seedDirectConversation(t, db, conversationID)
+	ctx := context.Background()
+	attachments := infrastructure.NewAttachmentRepository(db)
+
+	historicalCommand := directCommand(conversationID, "command-before-removal")
+	historicalDescriptor := seedAttachmentObject(
+		t,
+		db,
+		conversationID,
+		historicalCommand.GetSendMessage().MessageId,
+	)
+	historicalCommand.GetSendMessage().Attachments =
+		[]*chat.EncryptedObjectDescriptor{historicalDescriptor}
+	bindSendPlan(t, service, historicalCommand)
+	if _, err := service.Submit(ctx, historicalCommand); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.Model(&infrastructure.AuthorityMemberModel{}).
+		Where("conversation_id = ? AND ptid = ?", conversationID, "bob").
+		Updates(map[string]any{"active": false, "left_sequence": 2}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&infrastructure.AuthorityMemberDeviceModel{}).
+		Where("conversation_id = ? AND ptid = ?", conversationID, "bob").
+		Updates(map[string]any{"active": false, "left_sequence": 2}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	historical, err := attachments.GetGrantedObject(
+		ctx,
+		conversationID,
+		historicalDescriptor.ObjectId,
+		"bob",
+	)
+	if err != nil || historical.Descriptor.ObjectId != historicalDescriptor.ObjectId {
+		t.Fatalf("historical grant=%+v err=%v", historical, err)
+	}
+
+	futureCommand := directCommand(conversationID, "command-after-removal")
+	futureCommand.GetSendMessage().DirectPayloads =
+		futureCommand.GetSendMessage().DirectPayloads[:1]
+	futureDescriptor := seedAttachmentObject(
+		t,
+		db,
+		conversationID,
+		futureCommand.GetSendMessage().MessageId,
+	)
+	futureCommand.GetSendMessage().Attachments =
+		[]*chat.EncryptedObjectDescriptor{futureDescriptor}
+	bindSendPlan(t, service, futureCommand)
+	if _, err := service.Submit(ctx, futureCommand); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := attachments.GetGrantedObject(
+		ctx,
+		conversationID,
+		futureDescriptor.ObjectId,
+		"bob",
+	); !errors.Is(err, messaging.ErrAttachmentNotGranted) {
+		t.Fatalf("removed actor future grant error=%v", err)
+	}
+	if _, err := attachments.GetGrantedObject(
+		ctx,
+		conversationID,
+		futureDescriptor.ObjectId,
+		"alice",
+	); err != nil {
+		t.Fatalf("active actor future grant error=%v", err)
+	}
+}
+
 func TestRevokedDeviceReceivesNoFutureQueueItem(t *testing.T) {
 	db, service := newAuthorityFixture(t, messaging.QueueLimits{
 		MaxUnackedItems: 100,
