@@ -17,6 +17,9 @@ const (
 	AttachmentMaxPlaintextSize  uint64 = 2 * 1024 * 1024 * 1024
 	AttachmentMaxActiveUploads         = 4
 	AttachmentMaxMessageObjects        = 10
+
+	AttachmentObjectStateCompleteUnattached = "complete_unattached"
+	AttachmentObjectStateAttached           = "attached"
 )
 
 var (
@@ -67,6 +70,9 @@ type AttachmentObject struct {
 	UploaderPTID   string
 	ConversationID string
 	MessageID      string
+	AttachmentID   string
+	EventID        string
+	State          string
 	CreatedAt      time.Time
 }
 
@@ -97,6 +103,7 @@ type AttachmentRepository interface {
 		ctx context.Context,
 		conversationID string,
 		messageID string,
+		eventID string,
 		senderPTID string,
 		descriptors []*chat.EncryptedObjectDescriptor,
 		recipientPTIDs []string,

@@ -54,14 +54,19 @@ func (*AttachmentUploadPartModel) TableName() string {
 }
 
 type AttachmentObjectModel struct {
-	ObjectID        string    `gorm:"column:object_id;size:64;primaryKey"`
-	StorageRef      string    `gorm:"column:storage_ref;size:128;not null;uniqueIndex"`
-	DescriptorBytes []byte    `gorm:"column:descriptor_bytes;type:bytea;not null"`
-	StorageKey      string    `gorm:"column:storage_key;size:255;not null"`
-	UploaderPTID    string    `gorm:"column:uploader_ptid;size:255;not null"`
-	ConversationID  string    `gorm:"column:conversation_id;size:128;not null;index"`
-	MessageID       string    `gorm:"column:message_id;size:128;not null"`
-	CreatedAt       time.Time `gorm:"column:created_at;not null"`
+	ObjectID         string    `gorm:"column:object_id;size:64;primaryKey"`
+	StorageRef       string    `gorm:"column:storage_ref;size:128;not null;uniqueIndex"`
+	DescriptorBytes  []byte    `gorm:"column:descriptor_bytes;type:bytea;not null"`
+	StorageKey       string    `gorm:"column:storage_key;size:255;not null"`
+	UploaderPTID     string    `gorm:"column:uploader_ptid;size:255;not null"`
+	ConversationID   string    `gorm:"column:conversation_id;size:128;not null;index"`
+	MessageID        string    `gorm:"column:message_id;size:128;not null"`
+	AttachmentID     string    `gorm:"column:attachment_id;size:128;not null;default:''"`
+	CiphertextSize   uint64    `gorm:"column:ciphertext_size;not null;default:0"`
+	CiphertextSHA256 []byte    `gorm:"column:ciphertext_sha256;type:bytea"`
+	EventID          string    `gorm:"column:event_id;size:64;index"`
+	State            string    `gorm:"column:state;size:32;not null;default:complete_unattached;index"`
+	CreatedAt        time.Time `gorm:"column:created_at;not null"`
 }
 
 func (*AttachmentObjectModel) TableName() string {
@@ -73,6 +78,7 @@ type AttachmentGrantModel struct {
 	ConversationID string    `gorm:"column:conversation_id;size:128;primaryKey"`
 	RecipientPTID  string    `gorm:"column:recipient_ptid;size:255;primaryKey"`
 	MessageID      string    `gorm:"column:message_id;size:128;not null"`
+	EventID        string    `gorm:"column:event_id;size:64;not null;default:'';index"`
 	GrantedAt      time.Time `gorm:"column:granted_at;not null"`
 }
 
@@ -321,14 +327,19 @@ func (r *AttachmentRepository) CompleteUpload(
 		return err
 	}
 	model := AttachmentObjectModel{
-		ObjectID:        object.Descriptor.ObjectId,
-		StorageRef:      object.Descriptor.StorageRef,
-		DescriptorBytes: descriptorBytes,
-		StorageKey:      object.StorageKey,
-		UploaderPTID:    object.UploaderPTID,
-		ConversationID:  object.ConversationID,
-		MessageID:       object.MessageID,
-		CreatedAt:       object.CreatedAt,
+		ObjectID:         object.Descriptor.ObjectId,
+		StorageRef:       object.Descriptor.StorageRef,
+		DescriptorBytes:  descriptorBytes,
+		StorageKey:       object.StorageKey,
+		UploaderPTID:     object.UploaderPTID,
+		ConversationID:   object.ConversationID,
+		MessageID:        object.MessageID,
+		AttachmentID:     object.AttachmentID,
+		CiphertextSize:   object.Descriptor.CiphertextSize,
+		CiphertextSHA256: append([]byte(nil), object.Descriptor.CiphertextSha256...),
+		EventID:          object.EventID,
+		State:            messaging.AttachmentObjectStateCompleteUnattached,
+		CreatedAt:        object.CreatedAt,
 	}
 	if err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
@@ -344,7 +355,10 @@ func (r *AttachmentRepository) CompleteUpload(
 		persisted.StorageKey != model.StorageKey ||
 		persisted.UploaderPTID != model.UploaderPTID ||
 		persisted.ConversationID != model.ConversationID ||
-		persisted.MessageID != model.MessageID {
+		persisted.MessageID != model.MessageID ||
+		persisted.AttachmentID != model.AttachmentID ||
+		persisted.CiphertextSize != model.CiphertextSize ||
+		!bytes.Equal(persisted.CiphertextSHA256, model.CiphertextSHA256) {
 		return messaging.ErrAttachmentConflict
 	}
 	result := r.db.WithContext(ctx).
@@ -500,11 +514,15 @@ func (r *AttachmentRepository) GrantMessageObjects(
 	ctx context.Context,
 	conversationID string,
 	messageID string,
+	eventID string,
 	senderPTID string,
 	descriptors []*chat.EncryptedObjectDescriptor,
 	recipientPTIDs []string,
 	grantedAt time.Time,
 ) error {
+	if eventID == "" {
+		return messaging.ErrAttachmentDescriptor
+	}
 	if len(descriptors) > messaging.AttachmentMaxMessageObjects {
 		return messaging.ErrAttachmentQuota
 	}
@@ -534,20 +552,66 @@ func (r *AttachmentRepository) GrantMessageObjects(
 			!bytes.Equal(object.DescriptorBytes, descriptorBytes) {
 			return messaging.ErrAttachmentConflict
 		}
+		if object.State != messaging.AttachmentObjectStateCompleteUnattached &&
+			!(object.State == messaging.AttachmentObjectStateAttached &&
+				object.EventID == eventID) {
+			return messaging.ErrAttachmentState
+		}
 		for _, recipientPTID := range recipientPTIDs {
 			if recipientPTID == "" {
 				return messaging.ErrAttachmentDescriptor
 			}
+			grant := AttachmentGrantModel{
+				ObjectID:       descriptor.ObjectId,
+				ConversationID: conversationID,
+				RecipientPTID:  recipientPTID,
+				MessageID:      messageID,
+				EventID:        eventID,
+				GrantedAt:      grantedAt,
+			}
 			if err := r.db.WithContext(ctx).
 				Clauses(clause.OnConflict{DoNothing: true}).
-				Create(&AttachmentGrantModel{
-					ObjectID:       descriptor.ObjectId,
-					ConversationID: conversationID,
-					RecipientPTID:  recipientPTID,
-					MessageID:      messageID,
-					GrantedAt:      grantedAt,
-				}).Error; err != nil {
+				Create(&grant).Error; err != nil {
 				return err
+			}
+			var persistedGrant AttachmentGrantModel
+			if err := r.db.WithContext(ctx).First(
+				&persistedGrant,
+				"object_id = ? AND conversation_id = ? AND recipient_ptid = ?",
+				descriptor.ObjectId,
+				conversationID,
+				recipientPTID,
+			).Error; err != nil {
+				return err
+			}
+			if persistedGrant.MessageID != messageID || persistedGrant.EventID != eventID {
+				return messaging.ErrAttachmentConflict
+			}
+		}
+		result := r.db.WithContext(ctx).
+			Model(&AttachmentObjectModel{}).
+			Where(
+				"object_id = ? AND state = ? AND event_id = ?",
+				descriptor.ObjectId,
+				messaging.AttachmentObjectStateCompleteUnattached,
+				"",
+			).
+			Updates(map[string]any{
+				"event_id": eventID,
+				"state":    messaging.AttachmentObjectStateAttached,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			var attached AttachmentObjectModel
+			if err := r.db.WithContext(ctx).
+				First(&attached, "object_id = ?", descriptor.ObjectId).Error; err != nil {
+				return err
+			}
+			if attached.State != messaging.AttachmentObjectStateAttached ||
+				attached.EventID != eventID {
+				return messaging.ErrAttachmentState
 			}
 		}
 	}
@@ -666,6 +730,9 @@ func attachmentObjectFromModel(
 		UploaderPTID:   model.UploaderPTID,
 		ConversationID: model.ConversationID,
 		MessageID:      model.MessageID,
+		AttachmentID:   model.AttachmentID,
+		EventID:        model.EventID,
+		State:          model.State,
 		CreatedAt:      model.CreatedAt,
 	}, nil
 }

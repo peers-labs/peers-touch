@@ -195,6 +195,7 @@ func TestAttachmentServiceStreamsExactReplayAndFinalizes(t *testing.T) {
 			ctx,
 			"conversation-1",
 			"message-1",
+			"event-1",
 			"alice",
 			[]*chat.EncryptedObjectDescriptor{completed.Object},
 			[]string{"alice"},
