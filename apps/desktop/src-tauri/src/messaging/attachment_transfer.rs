@@ -1473,6 +1473,64 @@ mod tests {
     }
 
     #[test]
+    fn upload_resumes_after_interruption_at_every_chunk() {
+        let source = temp_path("upload-every-chunk-source");
+        let partial = temp_path("upload-every-chunk-partial");
+        let plaintext = vec![37_u8; 2 * 1024 * 1024 + 41];
+        fs::write(&source, &plaintext).unwrap();
+
+        for interrupted_chunk in 0..3 {
+            let attachment_id = format!("upload-every-chunk-{interrupted_chunk}");
+            let store = Arc::new(MessagingStore::in_memory().unwrap());
+            let record = transfer(
+                &attachment_id,
+                &source,
+                &partial,
+                plaintext.len() as u64,
+                1024 * 1024,
+            );
+            store.create_attachment_transfer(&record).unwrap();
+            let transport = Arc::new(MemoryTransport::new());
+            *transport.fail_upload_once.lock().unwrap() = Some(interrupted_chunk);
+            let worker = AttachmentTransferWorker::new(store.clone(), transport.clone());
+
+            assert!(worker.upload_once(&attachment_id, 10).is_err());
+            let interrupted = store.attachment_transfer(&attachment_id).unwrap().unwrap();
+            for chunk_index in 0..3 {
+                assert_eq!(
+                    chunk_complete(&interrupted.completed_chunk_bitmap, chunk_index),
+                    chunk_index < interrupted_chunk
+                );
+            }
+
+            worker.upload_once(&attachment_id, 11).unwrap();
+            let calls = transport.upload_calls.lock().unwrap();
+            for chunk_index in 0..3 {
+                assert_eq!(
+                    calls
+                        .iter()
+                        .filter(|called| **called == chunk_index)
+                        .count(),
+                    if chunk_index == interrupted_chunk {
+                        2
+                    } else {
+                        1
+                    }
+                );
+            }
+            assert_eq!(
+                store
+                    .attachment_transfer(&attachment_id)
+                    .unwrap()
+                    .unwrap()
+                    .state,
+                AttachmentTransferState::Complete as i32
+            );
+        }
+        let _ = fs::remove_file(source);
+    }
+
+    #[test]
     fn download_resumes_then_atomically_promotes_verified_plaintext() {
         let source = temp_path("download-source");
         let partial = temp_path("download-partial");
@@ -1549,6 +1607,82 @@ mod tests {
         assert!(!partial.exists());
         let _ = fs::remove_file(source);
         let _ = fs::remove_file(cache);
+    }
+
+    #[test]
+    fn download_resumes_after_interruption_at_every_chunk() {
+        let source = temp_path("download-every-chunk-source");
+        let plaintext = vec![53_u8; 2 * 1024 * 1024 + 41];
+        fs::write(&source, &plaintext).unwrap();
+        let material = AttachmentCryptoMaterial::from_parts(
+            [7; 32],
+            [0; 12],
+            plaintext.len() as u64,
+            1024 * 1024,
+        )
+        .unwrap();
+        let upload_record = transfer(
+            "download-every-chunk-upload",
+            &source,
+            &temp_path("download-every-chunk-unused"),
+            plaintext.len() as u64,
+            1024 * 1024,
+        );
+        let prepared = prepare_upload(&source, &material, &upload_record).unwrap();
+        let transport = Arc::new(MemoryTransport::new());
+        for chunk_index in 0..material.chunk_count() {
+            let mut file = File::open(&source).unwrap();
+            let plaintext_chunk = read_plaintext_chunk(&mut file, &material, chunk_index).unwrap();
+            let encrypted =
+                encrypt_attachment_chunk(&material, chunk_index, &plaintext_chunk).unwrap();
+            transport
+                .chunks
+                .lock()
+                .unwrap()
+                .insert(chunk_index, encrypted.ciphertext);
+        }
+        let descriptor = transport
+            .complete_upload(&upload_record, &prepared)
+            .unwrap();
+        let plaintext_hash: [u8; 32] = Sha256::digest(&plaintext).into();
+
+        for interrupted_chunk in 0..3 {
+            let attachment_id = format!("download-every-chunk-{interrupted_chunk}");
+            let partial = temp_path(&format!("download-every-chunk-partial-{interrupted_chunk}"));
+            let cache = temp_path(&format!("download-every-chunk-cache-{interrupted_chunk}"));
+            let store = Arc::new(MessagingStore::in_memory().unwrap());
+            let mut record = transfer(
+                &attachment_id,
+                &source,
+                &partial,
+                plaintext.len() as u64,
+                1024 * 1024,
+            );
+            record.direction = 2;
+            record.source_local_ref.clear();
+            store.create_attachment_transfer(&record).unwrap();
+            *transport.fail_download_once.lock().unwrap() = Some(interrupted_chunk);
+            let worker = AttachmentTransferWorker::new(store.clone(), transport.clone());
+
+            assert!(worker
+                .download_once(&attachment_id, &descriptor, &plaintext_hash, &cache, 10,)
+                .is_err());
+            let interrupted = store.attachment_transfer(&attachment_id).unwrap().unwrap();
+            for chunk_index in 0..3 {
+                assert_eq!(
+                    chunk_complete(&interrupted.completed_chunk_bitmap, chunk_index),
+                    chunk_index < interrupted_chunk
+                );
+            }
+
+            worker
+                .download_once(&attachment_id, &descriptor, &plaintext_hash, &cache, 11)
+                .unwrap();
+            assert_eq!(fs::read(&cache).unwrap(), plaintext);
+            assert!(!partial.exists());
+            let _ = fs::remove_file(cache);
+        }
+        let _ = fs::remove_file(source);
     }
 
     #[test]
