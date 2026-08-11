@@ -499,13 +499,6 @@ pub fn ingest_group_messages(user_scope: &str, payload: &Value) -> Result<(), St
     local_chat_store::ingest_group_payload(user_scope, payload)
 }
 
-pub fn index_plaintext_messages(
-    user_scope: &str,
-    records: &[LocalChatRecord],
-) -> Result<usize, String> {
-    local_chat_store::upsert_plaintext_records(user_scope, records)
-}
-
 pub fn search_friend_messages(
     user_scope: &str,
     query: &str,
@@ -520,16 +513,6 @@ pub fn search_group_messages(
     limit: usize,
 ) -> Result<Vec<LocalChatRecord>, String> {
     local_chat_store::search_local(user_scope, Some("group"), None, query, limit)
-}
-
-pub fn search_messages_unified(
-    user_scope: &str,
-    query: &str,
-    scope_filter: &str,
-    conversation_id: &str,
-    limit: usize,
-) -> Result<Vec<LocalChatRecord>, String> {
-    local_chat_store::search_local_unified(user_scope, query, scope_filter, conversation_id, limit)
 }
 
 pub fn set_scope_cursor(user_scope: &str, scope: &str, cursor: &str) -> Result<(), String> {

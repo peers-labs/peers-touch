@@ -1,11 +1,17 @@
 // Station registry tauri commands — dynamic URL picker for testnet/multi-node setups.
 
 use serde::Deserialize;
+use std::sync::Arc;
+use tauri::{State, Window};
 
+use crate::application::auth::service as auth_service;
+use crate::application::session_resolver;
+use crate::application::station_binding::{self, StationBindingError};
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::infrastructure::station_registry::StationEntry;
+use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct StationUrlInput {
@@ -20,6 +26,7 @@ pub fn station_list() -> AppResult<StubPayload> {
     let payload = serde_json::json!({
         "entries": entries,
         "active_url": active,
+        "binding": station_binding::service().state(),
     });
     AppResult::success(StubPayload {
         command: "station_list".to_string(),
@@ -28,16 +35,81 @@ pub fn station_list() -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn station_set_active(input: StationUrlInput) -> AppResult<StubPayload> {
+pub fn station_set_active(
+    input: StationUrlInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    station_set_active_with_state(input, state.inner())
+}
+
+pub(crate) fn station_set_active_with_state(
+    input: StationUrlInput,
+    state: &AppState,
+) -> AppResult<StubPayload> {
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let reg = station_client::station_registry();
-    reg.set_active(&input.url);
-    let payload = serde_json::json!({ "active_url": input.url });
+    let registry = station_client::station_registry();
+    let previous = station_binding::service().state();
+    let requested_url = input.url.trim().trim_end_matches('/');
+    let already_bound = previous.phase
+        == crate::application::station_binding::StationBindingPhase::Bound
+        && previous.bound_url.as_deref() == Some(requested_url);
+    let binding = match station_binding::service().switch(registry, &input.url) {
+        Ok(binding) => binding,
+        Err(error) => return binding_error(error),
+    };
+    if !already_bound {
+        if let Err(error) = auth_service::detach_for_station_switch(state) {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Could not clear the previous Station session",
+                error.error.map(|error| {
+                    serde_json::json!({
+                        "code": "station_session_clear_failed",
+                        "reason": error.message,
+                    })
+                }),
+            );
+        }
+    }
+    let payload = serde_json::json!({
+        "active_url": binding.selected_url,
+        "binding": binding,
+    });
     AppResult::success(StubPayload {
         command: "station_set_active".to_string(),
         status: serde_json::to_string(&payload).unwrap_or_default(),
+    })
+}
+
+#[tauri::command]
+pub fn station_binding_complete(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    station_binding_complete_authenticated(
+        session_resolver::token_for_window(&state, &window).is_some(),
+    )
+}
+
+pub(crate) fn station_binding_complete_authenticated(
+    authenticated: bool,
+) -> AppResult<StubPayload> {
+    if !authenticated {
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            Some(serde_json::json!({ "code": "station_authentication_required" })),
+        );
+    }
+    let binding = match station_binding::service().mark_bound() {
+        Ok(binding) => binding,
+        Err(error) => return binding_error(error),
+    };
+    AppResult::success(StubPayload {
+        command: "station_binding_complete".to_string(),
+        status: serde_json::to_string(&binding).unwrap_or_default(),
     })
 }
 
@@ -59,7 +131,9 @@ pub fn station_add(input: StationUrlInput) -> AppResult<StubPayload> {
         online,
     };
     let reg = station_client::station_registry();
-    reg.add(entry.clone());
+    if let Err(error) = reg.add(entry.clone()) {
+        return registry_error("station_add", error);
+    }
     AppResult::success(StubPayload {
         command: "station_add".to_string(),
         status: serde_json::to_string(&entry).unwrap_or_default(),
@@ -67,13 +141,45 @@ pub fn station_add(input: StationUrlInput) -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn station_remove(input: StationUrlInput) -> AppResult<StubPayload> {
+pub fn station_remove(
+    input: StationUrlInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    station_remove_with_state(input, state.inner())
+}
+
+pub(crate) fn station_remove_with_state(
+    input: StationUrlInput,
+    state: &AppState,
+) -> AppResult<StubPayload> {
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let reg = station_client::station_registry();
-    reg.remove(&input.url);
-    let payload = serde_json::json!({ "removed": input.url });
+    let registry = station_client::station_registry();
+    let (binding, was_selected) =
+        match station_binding::service().remove_station(registry, &input.url) {
+            Ok(result) => result,
+            Err(error) => return binding_error(error),
+        };
+    if was_selected {
+        if let Err(error) = auth_service::detach_for_station_switch(state) {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Could not clear the previous Station session",
+                error.error.map(|error| {
+                    serde_json::json!({
+                        "code": "station_session_clear_failed",
+                        "reason": error.message,
+                    })
+                }),
+            );
+        }
+    }
+    let payload = serde_json::json!({
+        "removed": input.url,
+        "was_selected": was_selected,
+        "binding": binding,
+    });
     AppResult::success(StubPayload {
         command: "station_remove".to_string(),
         status: serde_json::to_string(&payload).unwrap_or_default(),
@@ -87,13 +193,15 @@ pub fn station_probe(input: StationUrlInput) -> AppResult<StubPayload> {
     }
     let (online, label, peer_id, peers_count) = station_client::probe_station(&input.url);
     let reg = station_client::station_registry();
-    reg.update_probe(
+    if let Err(error) = reg.update_probe(
         &input.url,
         label.clone(),
         peer_id.clone(),
         peers_count,
         online,
-    );
+    ) {
+        return registry_error("station_probe", error);
+    }
     let payload = serde_json::json!({
         "url": input.url,
         "online": online,
@@ -105,4 +213,52 @@ pub fn station_probe(input: StationUrlInput) -> AppResult<StubPayload> {
         command: "station_probe".to_string(),
         status: serde_json::to_string(&payload).unwrap_or_default(),
     })
+}
+
+fn registry_error(command: &str, error: std::io::Error) -> AppResult<StubPayload> {
+    let code = match error.kind() {
+        std::io::ErrorKind::InvalidInput => ErrorCode::InvalidArgument,
+        std::io::ErrorKind::NotFound => ErrorCode::NotFound,
+        _ => ErrorCode::InternalError,
+    };
+    AppResult::fail(
+        code,
+        format!("{command} could not persist the Station selection"),
+        Some(serde_json::json!({
+            "code": "station_registry_persist_failed",
+            "reason": error.kind().to_string(),
+        })),
+    )
+}
+
+fn binding_error(error: StationBindingError) -> AppResult<StubPayload> {
+    let code = match error.code.as_str() {
+        "station_unselected" => ErrorCode::InvalidArgument,
+        "station_not_registered" => ErrorCode::NotFound,
+        "station_switch_in_progress" => ErrorCode::Conflict,
+        _ => ErrorCode::InternalError,
+    };
+    AppResult::fail(
+        code,
+        error.message.clone(),
+        Some(serde_json::json!({
+            "code": error.code,
+            "retryable": error.retryable,
+        })),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn station_binding_complete_requires_authenticated_session() {
+        let result = station_binding_complete_authenticated(false);
+        assert!(!result.ok);
+        assert_eq!(
+            result.error.map(|error| error.code),
+            Some(ErrorCode::Unauthorized)
+        );
+    }
 }

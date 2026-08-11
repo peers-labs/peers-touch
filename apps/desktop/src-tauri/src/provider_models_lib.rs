@@ -1,10 +1,15 @@
 pub mod error;
-#[path = "state/mod.rs"]
-pub mod state;
 
 // Minimal model re-export so station_client.rs can resolve `crate::model::common::PeersResponse`
 // in the lib crate context. The full model tree lives in the binary crate (main.rs).
 pub mod model {
+    pub mod chat {
+        pub mod v1 {
+            include!(concat!(env!("OUT_DIR"), "/peers_touch.model.chat.v1.rs"));
+        }
+        pub use v1::*;
+    }
+
     pub mod common {
         pub mod v1 {
             include!(concat!(env!("OUT_DIR"), "/peers_touch.model.common.v1.rs"));
@@ -24,11 +29,6 @@ pub mod infrastructure {
     pub(crate) mod station_registry;
     #[path = "storage/mod.rs"]
     pub mod storage;
-    // Mirrors the bin crate so `state::AppState` can build under `cargo test
-    // --lib`. PR-3 will cull the lib crate down once the registry is wired
-    // through every command path.
-    #[path = "window_session_registry/mod.rs"]
-    pub mod window_session_registry;
 }
 
 pub mod domain {
@@ -50,6 +50,4 @@ pub mod interface {
 pub mod application {
     #[path = "provider/mod.rs"]
     pub mod provider;
-    #[path = "session_resolver/mod.rs"]
-    pub mod session_resolver;
 }

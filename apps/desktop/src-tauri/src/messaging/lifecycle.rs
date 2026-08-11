@@ -178,6 +178,15 @@ fn run_cycle(engine: &MessagingEngine, token: &str) -> Result<(), String> {
     if let Err(error) = engine.resume_membership_intent_once(token) {
         failures.push(format!("membership intent: {error}"));
     }
+    if let Err(error) = engine.resume_attachment_upload_once(token, super::engine::now_unix_ms()) {
+        failures.push(format!("attachment upload: {error}"));
+    }
+    if let Err(error) = engine.cleanup_completed_attachment_sources() {
+        failures.push(format!("attachment source cleanup: {error}"));
+    }
+    if let Err(error) = engine.resume_attachment_download_once(token, super::engine::now_unix_ms()) {
+        failures.push(format!("attachment download: {error}"));
+    }
     if let Err(error) = engine.resume_message_draft_once(token, super::engine::now_unix_ms()) {
         failures.push(format!("message draft: {error}"));
     }

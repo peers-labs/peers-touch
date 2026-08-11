@@ -14,6 +14,7 @@ import {
 import {
   socialThreadKey,
 } from '../../store/socialChat';
+import { useCryptoStore } from '../../store/cryptoStore';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
@@ -84,7 +85,6 @@ export function ChatMessageArea() {
     scrollToMessageUlid,
     setScrollToMessageUlid,
     encryptionEnabled,
-    sessionSecurityState,
     groupSecurityState,
     friendP2pStatus,
     peerOnline,
@@ -118,7 +118,6 @@ export function ChatMessageArea() {
     scrollToMessageUlid: s.scrollToMessageUlid,
     setScrollToMessageUlid: s.setScrollToMessageUlid,
     encryptionEnabled: s.encryptionEnabled,
-    sessionSecurityState: s.sessionSecurityState,
     groupSecurityState: s.groupSecurityState,
     friendP2pStatus: s.friendP2pStatus,
     peerOnline: s.peerOnline,
@@ -145,6 +144,9 @@ export function ChatMessageArea() {
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
+  const directSecurityState = useCryptoStore((state) => (
+    activeUlid ? state.conversationSecurity[activeUlid]?.aggregateLevel ?? 'idle' : 'idle'
+  ));
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
   const activeConversation = activeUlid
     ? getIMConversations().find((conversation) => conversation.kind === activeKind && conversation.id === activeUlid)
@@ -586,7 +588,7 @@ export function ChatMessageArea() {
     activeBackgroundImageUrl || undefined,
   );
   const headerSubtitle = activeTab === 'friend'
-    ? sessionSecurityState[activeUlid] === 'establishing'
+    ? directSecurityState === 'establishing'
       ? t('chat.social.encryption.establishing')
       : peerIsTyping
       ? t('chat.social.messageArea.typing')
@@ -597,12 +599,12 @@ export function ChatMessageArea() {
         ? t('chat.social.encryption.cryptoDesynced')
         : subtitle;
   const conversationEncrypted = activeTab === 'friend'
-    ? sessionSecurityState[activeUlid] === 'ready'
+    ? directSecurityState === 'ready'
     : groupSecurityState[activeUlid] === 'ready';
 
   return (
     <Flexbox
-      data-session-security={activeTab === 'friend' ? sessionSecurityState[activeUlid] || 'unknown' : undefined}
+      data-session-security={activeTab === 'friend' ? directSecurityState : undefined}
       data-group-security={activeTab === 'group' ? groupSecurityState[activeUlid] || 'unknown' : undefined}
       flex={1}
       gap={0}

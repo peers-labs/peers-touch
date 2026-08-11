@@ -1,7 +1,7 @@
 # Messaging Platform — 设计决策
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-08-08 | **Updated**: 2026-08-10
 > **Owner**: Messaging Platform Team
 
@@ -33,6 +33,9 @@
 | MP-D20 | Fresh MLS member 以 join event 建立 authority checkpoint | accepted |
 | MP-D21 | Removed MLS endpoint 使用 retirement/rejoin checkpoint | accepted |
 | MP-D22 | Recovery-ready projection 通过 Welcome 建立 current checkpoint | accepted |
+| MP-D23 | Attachment object 与 transfer session 由 Conversation Authority 拥有 | accepted |
+| MP-D24 | Attachment resume 使用 immutable chunk commitments | accepted |
+| MP-D25 | Attachment projection 与 plaintext FTS 由 Engine SQLCipher 拥有 | accepted |
 
 ---
 
@@ -274,6 +277,114 @@ Command response 只更新 durable command submission state，不改变 authorit
 ### Acceptance
 
 Owner accepted on 2026-08-09.
+
+## MP-D23: Attachment Object 与 Transfer Session 由 Conversation Authority 拥有
+
+**Status**: accepted
+**Date**: 2026-08-10
+
+### Context
+
+现有 chat attachment 上传到客户端绑定的 Home Station OSS，authorization 仍查询
+legacy friend-chat tables。跨 Station recipient 无法用自己的 Home token 直接访问
+object host，也没有一个 owner 能把 object grant 与 authority event 原子绑定。
+
+### Decision
+
+Conversation Authority Station 是 canonical attachment object host。它拥有 resumable
+transfer session、opaque bytes、descriptor validation、message-event grant、quota、
+orphan GC 和 audit。远端客户端通过自己的 Home Station 以 signed federation data-plane
+stream 代理到 Authority；大对象不进入 durable messaging control outbox。
+
+Message commit 将 completed object 与 `event_id`、conversation 和当时 committed recipient
+PTIDs 原子绑定。下载授权读取该 immutable grant，不读取当前 membership。
+
+### Rationale
+
+- authorization 与 event recipient truth 在同一 owner 和 transaction；
+- removed actor 保留其已收到历史附件，不能读取后续附件；
+- Home Station 不需要复制 conversation ACL 或对象 metadata；
+- Station 仍只看到 ciphertext descriptor，不看到 private metadata/key。
+
+### Alternatives Considered
+
+- object 留在 uploader Home Station：拒绝，需要跨 Station 复制 authority membership
+  与 historical grant，形成第二真源。
+- bearer URL 放入 E2EE payload：拒绝，泄露后无法绑定 actor、撤销或审计。
+- bytes 放入 device queue/federation outbox：拒绝，阻塞 ordered control lane。
+
+### Consequences
+
+正面：单一 ACL owner、可审计、跨站拓扑明确。负面：remote upload/download 必须经过
+Home-to-Authority streaming proxy，Authority 承担 conversation object capacity。
+
+## MP-D24: Attachment Resume 使用 Immutable Chunk Commitments
+
+**Status**: accepted
+**Date**: 2026-08-10
+
+### Context
+
+现有 AES-GCM chunk encryption 计算 whole hashes，但 upload/download 是 whole-file
+best effort。仅保存 byte offset 无法证明 partial file 未损坏，也无法安全重放 part。
+
+### Decision
+
+Descriptor 固定 suite、chunk size/count、tag size、nonce strategy、whole ciphertext
+hash 和 ordered per-chunk ciphertext hashes。Upload part 使用
+`(upload_id, chunk_index)` 幂等；相同 hash exact replay，不同 hash conflict。
+Complete 重算 whole size/hash。Download 使用 immutable ETag、`Range + If-Match`，
+Engine 每完成一个 chunk 后持久化 bitmap/hash checkpoint。
+
+### Rationale
+
+每个 chunk 可独立验证、重试和解密；restart 不信任未验证的 partial bytes；whole hash
+仍提供完整 object commitment。
+
+### Alternatives Considered
+
+- 仅 whole-file hash：拒绝，resume 后必须重新下载或重新 hash 整个 partial file。
+- 仅 byte offset：拒绝，无法检测 partial corruption。
+- per-part server checksum 但不进 descriptor：拒绝，recipient 无 E2EE commitment。
+- Merkle tree：暂不采用，复杂度高于当前 bounded attachment size 的收益。
+
+### Consequences
+
+正面：精确 resume、conflict detection、跨端 known-answer 可测。负面：descriptor 大小
+按 chunk count 线性增长，因此必须限制 attachment size 与最大 chunk count。
+
+## MP-D25: Attachment Projection 与 Plaintext FTS 由 Engine SQLCipher 拥有
+
+**Status**: accepted
+**Date**: 2026-08-10
+
+### Context
+
+当前 SQLCipher 只有 opaque recovery metadata table，send/receive transaction 不写
+attachment row；搜索仍调用 Station conversation route，违反 plaintext local-only。
+
+### Decision
+
+Messaging Engine 在同一 SQLCipher transaction 写 message、typed attachment metadata、
+FTS text/filename、consumption marker、cursor 和 receipt。Transfer checkpoints 也是
+Engine-owned durable local state，但不进入 recovery。Recovery 保存 descriptor/private
+metadata，并从 validated archive 重建 FTS；fresh device 按需重新下载 bytes。
+
+### Rationale
+
+plaintext/search/attachment metadata 共享一个 transaction owner；失败时不 ACK；Station
+不需要 plaintext index。
+
+### Alternatives Considered
+
+- Web store/localStorage index：拒绝，无法与 receive/restore 原子提交。
+- Station FTS：拒绝，泄露 plaintext 和 filename。
+- 独立 local search database：拒绝，产生 message projection 与 index split-brain。
+
+### Consequences
+
+正面：离线搜索、atomic restore、单一 owner。负面：SQLCipher 写放大，restore 必须重建
+FTS，并需要 bounded indexing/backfill gate。
 
 ## MP-D20: Fresh MLS Member 以 Join Event 建立 Authority Checkpoint
 

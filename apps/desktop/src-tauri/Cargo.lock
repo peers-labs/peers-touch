@@ -3321,6 +3321,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "messaging-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "hex",
+ "prost",
+ "prost-build",
+ "prost-types",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "ulid",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4089,6 +4110,7 @@ dependencies = [
  "hex",
  "hkdf",
  "keyring",
+ "messaging-core",
  "openmls",
  "openmls_basic_credential",
  "openmls_memory_storage 0.5.0",
