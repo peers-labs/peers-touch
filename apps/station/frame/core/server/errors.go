@@ -8,9 +8,12 @@ import (
 // HandlerError represents an error that can be returned from typed handlers
 // It includes HTTP status code and error message
 type HandlerError struct {
-	Code    int
-	Message string
-	Err     error
+	Code        int
+	Message     string
+	Err         error
+	Body        []byte
+	ContentType string
+	Headers     map[string]string
 }
 
 func (e *HandlerError) Error() string {
@@ -38,6 +41,22 @@ func NewHandlerErrorWithCause(code int, message string, err error) *HandlerError
 		Code:    code,
 		Message: message,
 		Err:     err,
+	}
+}
+
+func NewHandlerErrorWithResponse(
+	code int,
+	message string,
+	contentType string,
+	body []byte,
+	headers map[string]string,
+) *HandlerError {
+	return &HandlerError{
+		Code:        code,
+		Message:     message,
+		Body:        body,
+		ContentType: contentType,
+		Headers:     headers,
 	}
 }
 
