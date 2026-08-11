@@ -162,6 +162,7 @@ func exerciseCompetingAttachmentTransactions(t *testing.T, database *gorm.DB) {
 				context.Background(),
 				upload.ConversationID,
 				upload.MessageID,
+				"event-1",
 				upload.Uploader.Ptid,
 				[]*chat.EncryptedObjectDescriptor{descriptor},
 				[]string{"alice", "bob"},

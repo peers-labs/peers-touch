@@ -135,6 +135,7 @@ func TestAttachmentRepositoryExactReplayConflictFinalizeAndGrant(t *testing.T) {
 		ctx,
 		upload.ConversationID,
 		upload.MessageID,
+		"event-1",
 		"alice",
 		[]*chat.EncryptedObjectDescriptor{descriptor},
 		[]string{"alice", "bob"},
