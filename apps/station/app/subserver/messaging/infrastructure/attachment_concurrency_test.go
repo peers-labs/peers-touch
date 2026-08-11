@@ -202,6 +202,20 @@ func exerciseCompetingAttachmentTransactions(t *testing.T, database *gorm.DB) {
 			grantCount,
 		)
 	}
+	var attachmentAudits []infrastructure.AttachmentAuditModel
+	if err := database.
+		Where("action = ?", messaging.AttachmentAuditAttach).
+		Find(&attachmentAudits).Error; err != nil {
+		t.Fatal(err)
+	}
+	outcomes := make(map[string]int)
+	for _, audit := range attachmentAudits {
+		outcomes[audit.Outcome]++
+	}
+	if outcomes[messaging.AttachmentAuditOutcomeCommitted] != 1 ||
+		outcomes[messaging.AttachmentAuditOutcomeReplay] != 1 {
+		t.Fatalf("competing attachment audit outcomes=%v", outcomes)
+	}
 	for _, recipient := range []string{"alice", "bob"} {
 		granted, err := repository.GetGrantedObject(
 			context.Background(),
