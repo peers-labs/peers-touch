@@ -30,8 +30,10 @@ pub use attachment::{
     validate_encrypted_object_upload_spec, AttachmentCryptoMaterial, EncryptedAttachmentChunk,
 };
 pub use attachment_transfer::{
-    AttachmentTransferTransport, AttachmentTransferWorker, PreparedAttachmentUpload,
-    StationAttachmentTransferTransport, ATTACHMENT_TRANSFER_MEMORY_OVERHEAD,
+    AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferFailure,
+    AttachmentTransferProgress, AttachmentTransferTransport, AttachmentTransferWorker,
+    PreparedAttachmentUpload, StationAttachmentTransferTransport,
+    ATTACHMENT_TRANSFER_MEMORY_OVERHEAD,
 };
 pub use command_outbox::{
     CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, CommandSubmitFailure,
