@@ -4,10 +4,11 @@ use super::attachment::{
 };
 use super::{AttachmentTransferRecord, MessagingStore};
 use crate::model::chat::{
-    AttachmentTransferErrorCode, AttachmentTransferState, BeginAttachmentUploadRequest,
-    BeginAttachmentUploadResponse, CancelAttachmentUploadRequest, CancelAttachmentUploadResponse,
-    CompleteAttachmentUploadRequest, CompleteAttachmentUploadResponse, CryptoEndpoint,
-    EncryptedObjectDescriptor, EncryptedObjectUploadSpec, PutAttachmentChunkRequest,
+    AttachmentTransferError, AttachmentTransferErrorCode, AttachmentTransferState,
+    BeginAttachmentUploadRequest, BeginAttachmentUploadResponse, CancelAttachmentUploadRequest,
+    CancelAttachmentUploadResponse, CompleteAttachmentUploadRequest,
+    CompleteAttachmentUploadResponse, CryptoEndpoint, EncryptedObjectDescriptor,
+    EncryptedObjectUploadSpec, PutAttachmentChunkRequest,
 };
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
@@ -282,6 +283,9 @@ impl StationAttachmentTransferTransport {
             .bytes()
             .map_err(|error| transport_error(error.to_string()))?;
         if !status.is_success() {
+            if let Some(failure) = decode_typed_transfer_failure(&body, retry_after_ms) {
+                return Err(failure);
+            }
             let detail = format!("messaging attachment station status {status}");
             return Err(match status.as_u16() {
                 401 | 403 => AttachmentTransferFailure::terminal(
@@ -318,6 +322,40 @@ impl StationAttachmentTransferTransport {
         }
         Ok(body.to_vec())
     }
+}
+
+fn decode_typed_transfer_failure(
+    body: &[u8],
+    header_retry_after_ms: Option<i64>,
+) -> Option<AttachmentTransferFailure> {
+    let typed = AttachmentTransferError::decode(body).ok()?;
+    let code = AttachmentTransferErrorCode::try_from(typed.code).ok()?;
+    if code == AttachmentTransferErrorCode::Unspecified {
+        return None;
+    }
+    let typed_retry_after_ms = typed.retry_after.and_then(|duration| {
+        if duration.seconds < 0 || !(0..1_000_000_000).contains(&duration.nanos) {
+            return None;
+        }
+        duration.seconds.checked_mul(1_000).and_then(|millis| {
+            millis.checked_add(i64::from(duration.nanos).saturating_add(999_999) / 1_000_000)
+        })
+    });
+    let detail = format!("messaging attachment station error {}", code.as_str_name());
+    Some(
+        if matches!(
+            code,
+            AttachmentTransferErrorCode::QuotaExceeded | AttachmentTransferErrorCode::RetryLater
+        ) {
+            AttachmentTransferFailure::retryable(
+                code,
+                typed_retry_after_ms.or(header_retry_after_ms),
+                detail,
+            )
+        } else {
+            AttachmentTransferFailure::terminal(code, detail)
+        },
+    )
 }
 
 fn transport_error(detail: String) -> AttachmentTransferFailure {
@@ -2074,6 +2112,59 @@ mod tests {
         assert_eq!(persisted.next_attempt_at_unix_ms, 0);
         assert!(worker.run_upload_once("terminal-transfer", 20_000).is_err());
         let _ = fs::remove_file(source);
+    }
+
+    #[test]
+    fn canonical_station_error_body_overrides_http_fallback() {
+        let retry_later = AttachmentTransferError {
+            code: AttachmentTransferErrorCode::RetryLater as i32,
+            retry_after: Some(prost_types::Duration {
+                seconds: 1,
+                nanos: 250_000_000,
+            }),
+        }
+        .encode_to_vec();
+        assert_eq!(
+            decode_typed_transfer_failure(&retry_later, Some(5_000)),
+            Some(AttachmentTransferFailure::retryable(
+                AttachmentTransferErrorCode::RetryLater,
+                Some(1_250),
+                "messaging attachment station error ATTACHMENT_TRANSFER_ERROR_CODE_RETRY_LATER"
+                    .to_string(),
+            ))
+        );
+
+        let conflict = AttachmentTransferError {
+            code: AttachmentTransferErrorCode::PartConflict as i32,
+            retry_after: None,
+        }
+        .encode_to_vec();
+        assert_eq!(
+            decode_typed_transfer_failure(&conflict, None),
+            Some(AttachmentTransferFailure::terminal(
+                AttachmentTransferErrorCode::PartConflict,
+                "messaging attachment station error ATTACHMENT_TRANSFER_ERROR_CODE_PART_CONFLICT"
+                    .to_string(),
+            ))
+        );
+        let invalid_duration = AttachmentTransferError {
+            code: AttachmentTransferErrorCode::RetryLater as i32,
+            retry_after: Some(prost_types::Duration {
+                seconds: 1,
+                nanos: 1_000_000_000,
+            }),
+        }
+        .encode_to_vec();
+        assert_eq!(
+            decode_typed_transfer_failure(&invalid_duration, Some(5_000)),
+            Some(AttachmentTransferFailure::retryable(
+                AttachmentTransferErrorCode::RetryLater,
+                Some(5_000),
+                "messaging attachment station error ATTACHMENT_TRANSFER_ERROR_CODE_RETRY_LATER"
+                    .to_string(),
+            ))
+        );
+        assert_eq!(decode_typed_transfer_failure(b"not protobuf", None), None);
     }
 
     #[test]

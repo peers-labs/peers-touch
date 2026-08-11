@@ -35,6 +35,7 @@ import (
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 const (
@@ -45,6 +46,7 @@ const (
 	defaultAttachmentUploadTTL    = 24 * time.Hour
 	defaultAttachmentGCTick       = time.Hour
 	defaultAttachmentGCBatch      = 100
+	defaultAttachmentRetryAfter   = time.Second
 )
 
 type subServer struct {
@@ -616,7 +618,7 @@ func (s *subServer) handleBeginAttachmentUpload(
 		request.AuthorityStationId != messagingLocalStationID() {
 		body, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
 		if err != nil {
-			return nil, err
+			return nil, mapAttachmentError(err)
 		}
 		proxyResponse, err := s.composition.AttachmentProxy.Forward(
 			ctx,
@@ -636,17 +638,24 @@ func (s *subServer) handleBeginAttachmentUpload(
 			},
 		)
 		if err != nil {
-			return nil, err
+			return nil, mapAttachmentError(err)
 		}
 		defer proxyResponse.Body.Close()
 		responseBody, err := io.ReadAll(io.LimitReader(proxyResponse.Body, 2<<20))
 		if err != nil {
-			return nil, err
+			return nil, mapAttachmentError(err)
 		}
 		if proxyResponse.StatusCode < 200 || proxyResponse.StatusCode >= 300 {
-			return nil, server.NewHandlerError(
+			headers := map[string]string{}
+			if retryAfter := proxyResponse.Header.Get("Retry-After"); retryAfter != "" {
+				headers["Retry-After"] = retryAfter
+			}
+			return nil, server.NewHandlerErrorWithResponse(
 				proxyResponse.StatusCode,
 				strings.TrimSpace(string(responseBody)),
+				proxyResponse.Header.Get("Content-Type"),
+				responseBody,
+				headers,
 			)
 		}
 		result := &chat.BeginAttachmentUploadResponse{}
@@ -654,7 +663,7 @@ func (s *subServer) handleBeginAttachmentUpload(
 			return nil, err
 		}
 		if result.AuthorityStationId != request.AuthorityStationId {
-			return nil, domain.ErrAttachmentConflict
+			return nil, mapAttachmentError(domain.ErrAttachmentConflict)
 		}
 		return result, nil
 	}
@@ -663,7 +672,7 @@ func (s *subServer) handleBeginAttachmentUpload(
 		endpoint,
 		request,
 	)
-	return response, mapMessagingError(err)
+	return response, mapAttachmentError(err)
 }
 
 func (s *subServer) handleAttachmentUploadStatus(
@@ -708,7 +717,7 @@ func (s *subServer) handleAttachmentUploadStatus(
 		},
 	)
 	if err != nil {
-		return mapMessagingError(err)
+		return mapAttachmentError(err)
 	}
 	return writeProtoResponse(response, result)
 }
@@ -759,7 +768,7 @@ func (s *subServer) handleAttachmentChunk(
 		request.Body(),
 	)
 	if err != nil {
-		return mapMessagingError(err)
+		return mapAttachmentError(err)
 	}
 	return writeProtoResponse(response, result)
 }
@@ -799,7 +808,7 @@ func (s *subServer) handleCompleteAttachmentUpload(
 	}
 	result, err := s.composition.AttachmentService.Complete(ctx, endpoint, input)
 	if err != nil {
-		return mapMessagingError(err)
+		return mapAttachmentError(err)
 	}
 	return writeProtoResponse(response, result)
 }
@@ -839,7 +848,7 @@ func (s *subServer) handleCancelAttachmentUpload(
 	}
 	result, err := s.composition.AttachmentService.Cancel(ctx, endpoint, input)
 	if err != nil {
-		return mapMessagingError(err)
+		return mapAttachmentError(err)
 	}
 	return writeProtoResponse(response, result)
 }
@@ -891,13 +900,21 @@ func (s *subServer) handleAttachmentObject(
 		end,
 	)
 	if errors.Is(err, domain.ErrAttachmentETag) {
-		return server.NewHandlerError(http.StatusPreconditionFailed, err.Error())
+		return attachmentHandlerError(
+			http.StatusPreconditionFailed,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_DESCRIPTOR_MISMATCH,
+			0,
+		)
 	}
 	if errors.Is(err, domain.ErrAttachmentRange) {
-		return server.NewHandlerError(http.StatusRequestedRangeNotSatisfiable, err.Error())
+		return attachmentHandlerError(
+			http.StatusRequestedRangeNotSatisfiable,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_RANGE_INVALID,
+			0,
+		)
 	}
 	if err != nil {
-		return mapMessagingError(err)
+		return mapAttachmentError(err)
 	}
 	defer reader.Close()
 	if end == -1 {
@@ -955,7 +972,7 @@ func (s *subServer) forwardAttachmentRequest(
 		},
 	)
 	if err != nil {
-		return err
+		return mapAttachmentError(err)
 	}
 	defer proxyResponse.Body.Close()
 	for _, name := range []string{
@@ -991,10 +1008,10 @@ func (s *subServer) handleFederatedBeginAttachmentUpload(
 		request.MessageId,
 	)
 	if err != nil {
-		return nil, mapMessagingError(err)
+		return nil, mapAttachmentError(err)
 	}
 	response, err := s.composition.AttachmentService.Begin(ctx, endpoint, request)
-	return response, mapMessagingError(err)
+	return response, mapAttachmentError(err)
 }
 
 func (s *subServer) handleFederatedAttachmentUploadStatus(
@@ -1031,7 +1048,7 @@ func (s *subServer) handleFederatedAttachmentUploadStatus(
 		},
 	)
 	if err != nil {
-		return mapMessagingError(err)
+		return mapAttachmentError(err)
 	}
 	return writeProtoResponse(response, result)
 }
@@ -1068,7 +1085,7 @@ func (s *subServer) handleFederatedAttachmentChunk(
 		request.Body(),
 	)
 	if err != nil {
-		return mapMessagingError(err)
+		return mapAttachmentError(err)
 	}
 	return writeProtoResponse(response, result)
 }
@@ -1097,7 +1114,7 @@ func (s *subServer) handleFederatedCompleteAttachmentUpload(
 	}
 	result, err := s.composition.AttachmentService.Complete(ctx, endpoint, input)
 	if err != nil {
-		return mapMessagingError(err)
+		return mapAttachmentError(err)
 	}
 	return writeProtoResponse(response, result)
 }
@@ -1126,7 +1143,7 @@ func (s *subServer) handleFederatedCancelAttachmentUpload(
 	}
 	result, err := s.composition.AttachmentService.Cancel(ctx, endpoint, input)
 	if err != nil {
-		return mapMessagingError(err)
+		return mapAttachmentError(err)
 	}
 	return writeProtoResponse(response, result)
 }
@@ -1170,13 +1187,21 @@ func (s *subServer) handleFederatedAttachmentObject(
 		end,
 	)
 	if errors.Is(err, domain.ErrAttachmentETag) {
-		return server.NewHandlerError(http.StatusPreconditionFailed, err.Error())
+		return attachmentHandlerError(
+			http.StatusPreconditionFailed,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_DESCRIPTOR_MISMATCH,
+			0,
+		)
 	}
 	if errors.Is(err, domain.ErrAttachmentRange) {
-		return server.NewHandlerError(http.StatusRequestedRangeNotSatisfiable, err.Error())
+		return attachmentHandlerError(
+			http.StatusRequestedRangeNotSatisfiable,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_RANGE_INVALID,
+			0,
+		)
 	}
 	if err != nil {
-		return mapMessagingError(err)
+		return mapAttachmentError(err)
 	}
 	defer reader.Close()
 	if end == -1 {
@@ -1393,6 +1418,59 @@ func messagingEndpoint(ctx context.Context) (string, string, error) {
 	return subject.ID, deviceID, nil
 }
 
+func attachmentHandlerError(
+	status int,
+	code chat.AttachmentTransferErrorCode,
+	retryAfter time.Duration,
+) error {
+	response := &chat.AttachmentTransferError{Code: code}
+	headers := map[string]string{}
+	if retryAfter > 0 {
+		response.RetryAfter = durationpb.New(retryAfter)
+		seconds := int64((retryAfter + time.Second - 1) / time.Second)
+		headers["Retry-After"] = strconv.FormatInt(seconds, 10)
+	}
+	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(response)
+	if err != nil {
+		return server.InternalErrorWithCause(
+			"encode attachment transfer error",
+			err,
+		)
+	}
+	return server.NewHandlerErrorWithResponse(
+		status,
+		code.String(),
+		"application/x-protobuf",
+		body,
+		headers,
+	)
+}
+
+func mapAttachmentError(err error) error {
+	if err == nil {
+		return nil
+	}
+	mapped := mapMessagingError(err)
+	var handlerError *server.HandlerError
+	if errors.As(mapped, &handlerError) && len(handlerError.Body) > 0 {
+		return mapped
+	}
+	if errors.Is(err, httpinterface.ErrEndpointBinding) ||
+		errors.Is(err, application.ErrDeviceUnauthorized) ||
+		errors.Is(err, domain.ErrSenderUnauthorized) {
+		return attachmentHandlerError(
+			http.StatusForbidden,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_NOT_GRANTED,
+			0,
+		)
+	}
+	return attachmentHandlerError(
+		http.StatusServiceUnavailable,
+		chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_RETRY_LATER,
+		defaultAttachmentRetryAfter,
+	)
+}
+
 func mapMessagingError(err error) error {
 	switch {
 	case err == nil:
@@ -1400,7 +1478,11 @@ func mapMessagingError(err error) error {
 	case errors.Is(err, httpinterface.ErrEndpointBinding):
 		return server.Forbidden(err.Error())
 	case errors.Is(err, httpinterface.ErrAttachmentTransferBinding):
-		return server.Forbidden(err.Error())
+		return attachmentHandlerError(
+			http.StatusForbidden,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_NOT_GRANTED,
+			0,
+		)
 	case errors.Is(err, application.ErrDeviceUnauthorized),
 		errors.Is(err, domain.ErrSenderUnauthorized):
 		return server.Forbidden(err.Error())
@@ -1415,20 +1497,54 @@ func mapMessagingError(err error) error {
 		errors.Is(err, domain.ErrConsumerFenced),
 		errors.Is(err, domain.ErrPayloadHash):
 		return server.Conflict(err.Error())
+	case errors.Is(err, domain.ErrAttachmentExpired):
+		return attachmentHandlerError(
+			http.StatusConflict,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_UPLOAD_EXPIRED,
+			0,
+		)
 	case errors.Is(err, domain.ErrAttachmentConflict),
-		errors.Is(err, domain.ErrAttachmentState),
-		errors.Is(err, domain.ErrAttachmentExpired):
-		return server.Conflict(err.Error())
+		errors.Is(err, domain.ErrAttachmentState):
+		return attachmentHandlerError(
+			http.StatusConflict,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_PART_CONFLICT,
+			0,
+		)
 	case errors.Is(err, domain.ErrAttachmentNotGranted):
-		return server.Forbidden(err.Error())
+		return attachmentHandlerError(
+			http.StatusForbidden,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_NOT_GRANTED,
+			0,
+		)
 	case errors.Is(err, domain.ErrAttachmentQuota):
-		return server.NewHandlerError(http.StatusTooManyRequests, err.Error())
+		return attachmentHandlerError(
+			http.StatusTooManyRequests,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_QUOTA_EXCEEDED,
+			0,
+		)
+	case errors.Is(err, domain.ErrAttachmentETag):
+		return attachmentHandlerError(
+			http.StatusPreconditionFailed,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_DESCRIPTOR_MISMATCH,
+			0,
+		)
+	case errors.Is(err, domain.ErrAttachmentRange):
+		return attachmentHandlerError(
+			http.StatusRequestedRangeNotSatisfiable,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_RANGE_INVALID,
+			0,
+		)
+	case errors.Is(err, domain.ErrAttachmentDescriptor),
+		errors.Is(err, domain.ErrAttachmentTooLarge):
+		return attachmentHandlerError(
+			http.StatusBadRequest,
+			chat.AttachmentTransferErrorCode_ATTACHMENT_TRANSFER_ERROR_CODE_DESCRIPTOR_MISMATCH,
+			0,
+		)
 	case errors.Is(err, domain.ErrDeliverySet),
 		errors.Is(err, domain.ErrUnsupportedCommand),
 		errors.Is(err, domain.ErrRecoveryIntegrity),
-		errors.Is(err, domain.ErrRecoveryTooLarge),
-		errors.Is(err, domain.ErrAttachmentDescriptor),
-		errors.Is(err, domain.ErrAttachmentTooLarge):
+		errors.Is(err, domain.ErrRecoveryTooLarge):
 		return server.BadRequest(err.Error())
 	default:
 		return server.InternalErrorWithCause("messaging operation failed", err)
