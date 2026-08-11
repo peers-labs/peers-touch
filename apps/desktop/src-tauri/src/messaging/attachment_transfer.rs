@@ -2039,6 +2039,62 @@ mod tests {
             token: String,
         }
 
+        struct FailBeforeSecondChunk {
+            inner: StationAttachmentTransferTransport,
+        }
+
+        impl AttachmentTransferTransport for FailBeforeSecondChunk {
+            fn begin_upload(
+                &self,
+                transfer: &AttachmentTransferRecord,
+                prepared: &PreparedAttachmentUpload,
+            ) -> Result<(String, u64, Vec<u8>), AttachmentTransferFailure> {
+                self.inner.begin_upload(transfer, prepared)
+            }
+
+            fn put_upload_chunk(
+                &self,
+                transfer: &AttachmentTransferRecord,
+                chunk: &EncryptedAttachmentChunk,
+            ) -> Result<(), AttachmentTransferFailure> {
+                if chunk.chunk_index == 1 {
+                    return Err(AttachmentTransferFailure::retryable(
+                        AttachmentTransferErrorCode::RetryLater,
+                        None,
+                        "injected process interruption before chunk 1".to_string(),
+                    ));
+                }
+                self.inner.put_upload_chunk(transfer, chunk)
+            }
+
+            fn complete_upload(
+                &self,
+                transfer: &AttachmentTransferRecord,
+                prepared: &PreparedAttachmentUpload,
+            ) -> Result<EncryptedObjectDescriptor, AttachmentTransferFailure> {
+                self.inner.complete_upload(transfer, prepared)
+            }
+
+            fn get_download_chunk(
+                &self,
+                transfer: &AttachmentTransferRecord,
+                descriptor: &EncryptedObjectDescriptor,
+                chunk_index: u32,
+                start: u64,
+                end: u64,
+            ) -> Result<Vec<u8>, AttachmentTransferFailure> {
+                self.inner
+                    .get_download_chunk(transfer, descriptor, chunk_index, start, end)
+            }
+
+            fn cancel_upload(
+                &self,
+                transfer: &AttachmentTransferRecord,
+            ) -> Result<(), AttachmentTransferFailure> {
+                self.inner.cancel_upload(transfer)
+            }
+        }
+
         let profile_id = std::env::var("MESSAGING_ATTACHMENT_ENGINE_PROFILE_ID")
             .expect("MESSAGING_ATTACHMENT_ENGINE_PROFILE_ID is required");
         let ptid = std::env::var("MESSAGING_ATTACHMENT_PTID")
@@ -2092,14 +2148,23 @@ mod tests {
             );
         }
 
-        let engine = crate::messaging::MessagingEngine::in_memory(
-            format!("attachment-live-{}", Ulid::new()),
-            crate::messaging::EngineEndpoint {
-                ptid: ptid.clone(),
-                device_id: device_id.clone(),
-            },
-        )
-        .unwrap();
+        let endpoint = crate::messaging::EngineEndpoint {
+            ptid: ptid.clone(),
+            device_id: device_id.clone(),
+        };
+        let restart_phase = std::env::var("MESSAGING_ATTACHMENT_RESTART_PHASE").ok();
+        let engine = match restart_phase.as_deref() {
+            Some("prepare" | "resume") => {
+                crate::messaging::MessagingEngine::open(profile_id.clone(), endpoint.clone())
+                    .unwrap()
+            }
+            Some(phase) => panic!("unsupported attachment restart phase: {phase}"),
+            None => crate::messaging::MessagingEngine::in_memory(
+                format!("attachment-live-{}", Ulid::new()),
+                endpoint.clone(),
+            )
+            .unwrap(),
+        };
         let (conversation_id, authority_station_id) = match (explicit_route, projection) {
             (Some(route), _) => route,
             (None, Some(projection)) => {
@@ -2138,11 +2203,20 @@ mod tests {
                 (conversation_id, authority_station_id)
             }
         };
-        let source = temp_path("live-engine-source");
+        let source = match restart_phase.as_deref() {
+            Some(_) => std::env::var("MESSAGING_ATTACHMENT_SOURCE_FILE")
+                .map(std::path::PathBuf::from)
+                .expect("MESSAGING_ATTACHMENT_SOURCE_FILE is required for restart evidence"),
+            None => temp_path("live-engine-source"),
+        };
         let partial = temp_path("live-engine-partial");
         let plaintext = vec![11_u8; 1024 * 1024 + 41];
         fs::write(&source, &plaintext).unwrap();
-        let attachment_id = Ulid::new().to_string();
+        let attachment_id = match restart_phase.as_deref() {
+            Some(_) => std::env::var("MESSAGING_ATTACHMENT_ID")
+                .expect("MESSAGING_ATTACHMENT_ID is required for restart evidence"),
+            None => Ulid::new().to_string(),
+        };
         let record = AttachmentTransferRecord {
             attachment_id: attachment_id.clone(),
             conversation_id,
@@ -2165,18 +2239,50 @@ mod tests {
             last_error_code: 0,
             updated_at_unix_ms: 1,
         };
-        engine.store().create_attachment_transfer(&record).unwrap();
-        let worker = engine.attachment_transfer_worker(session.token).unwrap();
+        if engine
+            .store()
+            .attachment_transfer(&attachment_id)
+            .unwrap()
+            .is_none()
+        {
+            engine.store().create_attachment_transfer(&record).unwrap();
+        }
+        let worker = match restart_phase.as_deref() {
+            Some("prepare") => AttachmentTransferWorker::new(
+                Arc::new(MessagingStore::open(&profile_id).unwrap()),
+                Arc::new(FailBeforeSecondChunk {
+                    inner: StationAttachmentTransferTransport::new(
+                        session.token,
+                        CryptoEndpoint { ptid, device_id },
+                    )
+                    .unwrap(),
+                }),
+            ),
+            _ => engine.attachment_transfer_worker(session.token).unwrap(),
+        };
 
-        assert_eq!(
-            worker.run_upload_once(&attachment_id, 10_000).unwrap(),
-            AttachmentTransferProgress::Complete
-        );
+        let now_unix_ms = if restart_phase.as_deref() == Some("resume") {
+            1_000_000
+        } else {
+            20_000
+        };
+        let progress = worker.run_upload_once(&attachment_id, now_unix_ms).unwrap();
         let persisted = engine
             .store()
             .attachment_transfer(&attachment_id)
             .unwrap()
             .unwrap();
+        if restart_phase.as_deref() == Some("prepare") {
+            assert!(matches!(
+                progress,
+                AttachmentTransferProgress::RetryScheduled { .. }
+            ));
+            assert_eq!(persisted.state, AttachmentTransferState::RetryWait as i32);
+            assert_eq!(persisted.completed_chunk_bitmap, vec![1]);
+            assert!(!persisted.upload_id.is_empty());
+            return;
+        }
+        assert_eq!(progress, AttachmentTransferProgress::Complete);
         assert_eq!(persisted.state, AttachmentTransferState::Complete as i32);
         assert_eq!(persisted.completed_chunk_bitmap, vec![3]);
         assert!(!persisted.upload_id.is_empty());
