@@ -306,6 +306,7 @@ func (s *AuthorityService) Submit(
 				ctx,
 				command.ConversationId,
 				send.MessageId,
+				event.EventId,
 				command.Sender.Ptid,
 				send.Attachments,
 				recipientPTIDs,
