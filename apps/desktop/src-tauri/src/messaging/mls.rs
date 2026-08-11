@@ -1,7 +1,7 @@
 use super::{
-    verify_device_event_delivery, ClaimedItemConsumer, ConversationProjection, EngineEndpoint,
-    MessageProjection, MessagingStore, MlsReceiveCommit, MlsTransitionReceiveCommit,
-    ReceiveCommitResult,
+    decode_message_private_content, verify_device_event_delivery, ClaimedItemConsumer,
+    ConversationProjection, EngineEndpoint, MessageProjection, MessagingStore, MlsReceiveCommit,
+    MlsTransitionReceiveCommit, ReceiveCommitResult,
 };
 use crate::domain::mls_group::{MlsGroupManager, MlsPreparedReceive};
 use crate::model::chat::{
@@ -70,9 +70,17 @@ impl MlsApplicationProcessor {
             .event
             .as_ref()
             .ok_or_else(|| "messaging MLS delivery has no event".to_string())?;
-        let message = match event.payload.as_ref() {
-            Some(conversation_event::Payload::MessageCommitted(message)) => message,
-            _ => return Err("messaging MLS application has no message fact".to_string()),
+        let (message_id, is_edit, committed_fact) = match event.payload.as_ref() {
+            Some(conversation_event::Payload::MessageCommitted(message)) => {
+                (message.message_id.as_str(), false, Some(message))
+            }
+            Some(conversation_event::Payload::MessageEdited(fact)) => {
+                if fact.message_id.trim().is_empty() {
+                    return Err("messaging MLS edit has no message ID".to_string());
+                }
+                (fact.message_id.as_str(), true, None)
+            }
+            _ => return Err("messaging MLS application has unsupported event type".to_string()),
         };
         if !self.manager.has_session(&event.conversation_id) {
             let state = self
@@ -85,8 +93,7 @@ impl MlsApplicationProcessor {
         let prepared = self
             .manager
             .prepare_application_message(&event.conversation_id, &delivery.endpoint_payload)?;
-        let plaintext = String::from_utf8(prepared.plaintext.clone())
-            .map_err(|_| "messaging MLS plaintext is not valid UTF-8".to_string())?;
+        let private_content = decode_message_private_content(&prepared.plaintext)?;
         let committed_at_unix_ms = event
             .committed_at
             .as_ref()
@@ -97,6 +104,19 @@ impl MlsApplicationProcessor {
                     .saturating_add(i64::from(timestamp.nanos) / 1_000_000)
             })
             .unwrap_or(now);
+
+        if is_edit {
+            self.store
+                .apply_message_edit(message_id, &private_content.text, committed_at_unix_ms)?;
+            self.store
+                .mark_consumed(&item.item_id, &event.event_id, &event.conversation_id, &item.payload_sha256, now)?;
+            self.manager
+                .install_prepared_application(&event.conversation_id, &prepared)?;
+            return Ok(());
+        }
+
+        let message = committed_fact
+            .ok_or_else(|| "messaging MLS application has no message fact".to_string())?;
         let projection = MessageProjection {
             conversation_id: event.conversation_id.clone(),
             event_id: event.event_id.clone(),
@@ -112,8 +132,17 @@ impl MlsApplicationProcessor {
                 .as_ref()
                 .map(|endpoint| endpoint.device_id.clone())
                 .unwrap_or_default(),
-            plaintext,
+            plaintext: private_content.text,
+            attachments: private_content.attachments,
             committed_at_unix_ms,
+            reply_to_message_id: if message.reply_to_message_id.is_empty() {
+                None
+            } else {
+                Some(message.reply_to_message_id.clone())
+            },
+            edited_text: None,
+            edited_at_unix_ms: None,
+            retracted: false,
         };
         let receipt = DeviceConsumptionReceipt {
             receipt_id: format!("device-consumed:{}", item.item_id),
@@ -145,6 +174,7 @@ impl MlsApplicationProcessor {
             membership_epoch: event.membership_epoch,
             mls_epoch: event.mls_epoch,
             projection: &projection,
+            reply_to_message_id: projection.reply_to_message_id.as_deref(),
             receipt_id: &receipt.receipt_id,
             receipt_bytes: &receipt_bytes,
             consumed_at_unix_ms: now,
@@ -819,8 +849,10 @@ mod tests {
             .accept_pending_transition("group-1", &created.transition_id)
             .unwrap();
         bob.join_group("group-1", &created.welcome_bytes).unwrap();
+        let private_content =
+            crate::messaging::encode_message_private_content("exact group plaintext", &[]).unwrap();
         let ciphertext = alice
-            .encrypt_at_epoch("group-1", 1, b"exact group plaintext")
+            .encrypt_at_epoch("group-1", 1, &private_content)
             .unwrap()
             .ciphertext;
         let store = Arc::new(MessagingStore::in_memory().unwrap());

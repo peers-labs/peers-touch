@@ -72,7 +72,7 @@ Every response MUST follow this format:
 
 ---
 
-## 4. God-View Integration
+## 4. God-View Integration — Mandatory Execution Discipline
 
 After the English check, the agent enters **pt-god-view mode** for the task portion:
 
@@ -91,6 +91,20 @@ User message arrives
   → Skill dispatch (architecture / execution / commit / etc.)
   → Task output
 ```
+
+### Hard Gate: No Freestyle Execution
+
+**When the user requests execution** ("做完", "execute", "继续", "land it", "并行做", etc.), the agent MUST NOT immediately write code. Instead:
+
+1. **Identify the plan source**: Does an execution plan exist for this work? Check `docs/architecture/*/execution-plans/`.
+2. **Check coverage**: Is the requested work already tracked as a workstream/phase in that plan?
+3. **If tracked** → dispatch to `pt-execution-plan-guardian` → execute per plan.
+4. **If NOT tracked but architecture exists** (design doc defines it, proto exists) → the agent MUST self-amend the plan (add workstream entry) THEN execute. No user confirmation needed for mechanical amendments.
+5. **If architecture is missing** → `EXECUTION_BLOCKED_BY_DESIGN` → stop and tell user.
+
+**This gate is non-negotiable while pt-ew is active.** The only way to bypass it is for the user to explicitly say "skip the plan" / "不用走规划" / "just code it directly."
+
+The agent must never interpret "do it fast" / "不要打扰我" / "直接做" as permission to skip the skill chain. Speed means "execute the chain faster," not "skip the chain."
 
 ---
 

@@ -137,17 +137,10 @@ liveDescribe('C6 MLS three-Station convergence', () => {
 
     await requestControl('charlie', 'stop')
     await activate(alice)
-    await imServiceV1.mlsGroup.addAuthorizedMember({
+    await imServiceV1.messaging.submitMembershipIntent({
       conversationId,
-      senderPtid: alice.ptid,
-      senderDeviceId: alice.deviceId,
-      observedMembershipEpoch: 1,
-      member: {
-        ptid: charlie.ptid,
-        deviceId: charlie.deviceId,
-        homeStationPeerId: charlie.homeStationPeerId,
-        keyPackage: charlie.keyPackage,
-      },
+      action: 'add_actor',
+      targetPtid: charlie.ptid,
     })
     await pumpMls(bob, conversationId, 2)
     await sleep(1_500)

@@ -145,66 +145,6 @@ describe('api group admin bridge', () => {
   })
 })
 
-describe('api friend crypto bridge', () => {
-  beforeEach(() => {
-    vi.mocked(invoke).mockResolvedValue({
-      ok: true,
-      data: {
-        command: 'crypto_friend',
-        status: JSON.stringify({
-          ephemeral_key: 'ephemeral',
-          established: true,
-          ciphertext: 'ciphertext',
-          counter: 1,
-          plaintext: 'plaintext',
-        }),
-      },
-    })
-  })
-
-  it('initializes sessions with Tauri camelCase args', async () => {
-    await api.cryptoInitSession('session-1', 'did:peer:bob', 'ik', 'spk', 'sig', 'opk')
-
-    expect(invoke).toHaveBeenCalledWith('crypto_init_session', {
-      sessionId: 'session-1',
-      peerDid: 'did:peer:bob',
-      peerIkPub: 'ik',
-      peerSpkPub: 'spk',
-      peerSpkSig: 'sig',
-      peerOpkPub: 'opk',
-      negotiatedVersion: 1,
-    })
-  })
-
-  it('bridges Double Ratchet encrypt and decrypt headers', async () => {
-    await api.drEncrypt('session-1', 'plaintext-b64')
-    await api.drDecrypt({
-      sessionId: 'session-1',
-      ciphertext: 'ciphertext-b64',
-      ratchetPub: 'ratchet-pub-b64',
-      counter: 3,
-      prevCounter: 1,
-      nonce: 'nonce-b64',
-      version: 1,
-    })
-
-    expect(invoke).toHaveBeenNthCalledWith(1, 'dr_encrypt', {
-      sessionId: 'session-1',
-      plaintext: 'plaintext-b64',
-    })
-    expect(invoke).toHaveBeenNthCalledWith(2, 'dr_decrypt', {
-      sessionId: 'session-1',
-      ciphertext: 'ciphertext-b64',
-      ratchetPub: 'ratchet-pub-b64',
-      counter: 3,
-      prevCounter: 1,
-      nonce: 'nonce-b64',
-      version: 1,
-    })
-  })
-
-})
-
 describe('api.listApplets', () => {
   it('returns applets array', async () => {
     vi.mocked(invoke).mockResolvedValue({

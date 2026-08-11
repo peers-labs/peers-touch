@@ -78,6 +78,15 @@ impl WindowSessionRegistry {
         map.remove(window_label)
     }
 
+    /// Remove every window session during a process-wide Station cutover.
+    pub fn clear(&self) -> Vec<ActiveSession> {
+        let mut map = self
+            .inner
+            .write()
+            .expect("WindowSessionRegistry write lock poisoned");
+        map.drain().map(|(_, session)| session).collect()
+    }
+
     /// Snapshot the session bound to `window_label`.
     pub fn get(&self, window_label: &str) -> Option<ActiveSession> {
         let map = self
@@ -108,10 +117,9 @@ impl WindowSessionRegistry {
 
     /// Snapshot every bound session.
     ///
-    /// Used at process shutdown so the presence supervisor can fire one
-    /// `AppShutdown` trigger per (actor, jwt) pair — no other callers
-    /// should need this; per-window paths must go through `get` /
-    /// `actor` / `token` instead.
+    /// Used for process shutdown and for routing account-scoped native
+    /// projection invalidations to the windows bound to that account.
+    /// Request paths must still go through `get` / `actor` / `token`.
     pub fn snapshot_all(&self) -> Vec<ActiveSession> {
         let map = self
             .inner

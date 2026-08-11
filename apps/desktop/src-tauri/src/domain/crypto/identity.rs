@@ -102,7 +102,7 @@ impl IdentityKeyPair {
 pub struct DeviceSigningKey {
     signing_key: SigningKey,
     verifying_key: VerifyingKey,
-    /// Signature of (device_verifying_key || device_id) by the actor's IK.
+    /// Signature of the canonical MessagingDeviceCertificate by the actor's IK.
     cross_signature: Signature,
     device_id: String,
 }
@@ -116,12 +116,18 @@ impl Drop for DeviceSigningKey {
 }
 
 impl DeviceSigningKey {
-    /// Generate a new DSK and cross-sign it with the given identity key.
-    pub fn generate(ik: &IdentityKeyPair, device_id: &str) -> Self {
+    /// Generate a new DSK and cross-sign caller-provided canonical certificate bytes.
+    pub fn generate_cross_signed<F>(
+        ik: &IdentityKeyPair,
+        device_id: &str,
+        certificate_bytes: F,
+    ) -> Self
+    where
+        F: FnOnce(&VerifyingKey) -> Vec<u8>,
+    {
         let signing_key = SigningKey::generate(&mut OsRng);
         let verifying_key = signing_key.verifying_key();
-        let cross_msg = Self::cross_sign_message(&verifying_key, device_id);
-        let cross_signature = ik.sign(&cross_msg);
+        let cross_signature = ik.sign(&certificate_bytes(&verifying_key));
         Self {
             signing_key,
             verifying_key,
@@ -146,6 +152,10 @@ impl DeviceSigningKey {
         &self.verifying_key
     }
 
+    pub fn seed_bytes(&self) -> [u8; 32] {
+        self.signing_key.to_bytes()
+    }
+
     pub fn cross_signature(&self) -> &Signature {
         &self.cross_signature
     }
@@ -158,20 +168,14 @@ impl DeviceSigningKey {
         self.signing_key.sign(msg)
     }
 
-    /// Verify that this DSK was genuinely cross-signed by the given IK.
-    pub fn verify_cross_signature(&self, ik_verifying: &VerifyingKey) -> Result<(), CryptoError> {
-        let msg = Self::cross_sign_message(&self.verifying_key, &self.device_id);
+    pub fn verify_cross_signature(
+        &self,
+        ik_verifying: &VerifyingKey,
+        certificate_bytes: &[u8],
+    ) -> Result<(), CryptoError> {
         ik_verifying
-            .verify(&msg, &self.cross_signature)
+            .verify(certificate_bytes, &self.cross_signature)
             .map_err(|e| CryptoError::SignatureVerification(e.to_string()))
-    }
-
-    fn cross_sign_message(device_vk: &VerifyingKey, device_id: &str) -> Vec<u8> {
-        let mut msg = Vec::with_capacity(32 + device_id.len() + 16);
-        msg.extend_from_slice(b"peers-touch:dsk:v1:");
-        msg.extend_from_slice(device_vk.as_bytes());
-        msg.extend_from_slice(device_id.as_bytes());
-        msg
     }
 }
 
@@ -465,17 +469,23 @@ mod tests {
     #[test]
     fn device_signing_key_cross_signature_verifies() {
         let ik = IdentityKeyPair::generate();
-        let dsk = DeviceSigningKey::generate(&ik, "device-001");
-        assert!(dsk.verify_cross_signature(ik.verifying_key()).is_ok());
+        let certificate = b"canonical certificate";
+        let dsk =
+            DeviceSigningKey::generate_cross_signed(&ik, "device-001", |_| certificate.to_vec());
+        assert!(dsk
+            .verify_cross_signature(ik.verifying_key(), certificate)
+            .is_ok());
     }
 
     #[test]
     fn device_signing_key_wrong_ik_fails() {
         let ik = IdentityKeyPair::generate();
         let other_ik = IdentityKeyPair::generate();
-        let dsk = DeviceSigningKey::generate(&ik, "device-002");
+        let certificate = b"canonical certificate";
+        let dsk =
+            DeviceSigningKey::generate_cross_signed(&ik, "device-002", |_| certificate.to_vec());
         assert!(dsk
-            .verify_cross_signature(other_ik.verifying_key())
+            .verify_cross_signature(other_ik.verifying_key(), certificate)
             .is_err());
     }
 

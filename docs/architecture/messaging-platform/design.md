@@ -1,7 +1,7 @@
 # Messaging Platform — 架构设计
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-08-08 | **Updated**: 2026-08-10
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/`, `apps/desktop/`, `apps/mobile/`
@@ -462,10 +462,149 @@ SSE/push wake
 
 ## 12. Attachments And Search
 
-- control command 只携带 encrypted object descriptors、hash、size 和 content type。
-- object bytes 通过独立上传/下载平面，支持断点、完整性和 authorization。
-- attachment keys 只在 E2EE plaintext payload/backup 中出现。
-- 搜索 index 与 plaintext 同一 SQLCipher owner；Station 只可做 opaque metadata 查询。
+> `MP-D23`–`MP-D25` amendment status: accepted (Owner accepted 2026-08-10).
+
+### 12.0 Evidence Ledger
+
+| Claim | Class | Evidence | Missing proof |
+|---|---|---|---|
+| AES-GCM fixed-size chunk encryption and whole plaintext/ciphertext hashes exist | verified_fact | Desktop `oss.rs` and `client-media-security` | cross-language canonical vectors |
+| Generic OSS persists opaque bytes and storage backends expose byte-range ports | verified_fact | Station OSS service/storage interfaces | HTTP Range route parity |
+| Canonical send/event proto already references `EncryptedObjectDescriptor` | verified_fact | `attachment.proto`, `command.proto`, `event.proto` | runtime validation and projection |
+| Current upload/download is whole-file and Messaging Engine never persists attachment metadata | verified_fact | Desktop OSS/cache and Messaging send/store paths | none |
+| Current chat object ACL depends on legacy friend-chat state | verified_fact | Station OSS permission adapter | none |
+| Authority-hosted object sessions eliminate duplicate ACL truth | accepted_decision | MP-D23 | native cross-Station gate |
+| Per-chunk commitments are sufficient for bounded resumable integrity | accepted_decision | MP-D24 | known-answer, conflict and corruption gates |
+| SQLCipher FTS can remain atomic with message/attachment projection | accepted_decision | MP-D25 | crash/restore and query gates |
+
+### 12.1 Ownership And Topology
+
+- Conversation Authority Station 拥有 attachment transfer session、opaque object、
+  committed event grant 和 retention；generic OSS 只作为其 byte-store adapter。
+- Device Messaging Engine 拥有 plaintext、filename、object key、base nonce、chunk
+  crypto、transfer checkpoint、local decrypted cache 和 SQLCipher projection。
+- Home Station 只做代理：验证本地 actor session，把远端 upload/download stream 转为
+  signed federation data-plane request；不得缓存 key 或 plaintext。
+- command/event 只携带 Station-visible `EncryptedObjectDescriptor`。`object_key`、
+  `base_nonce`、filename 和 plaintext hash 只存在于 Direct/OpenMLS encrypted
+  `MessagePrivateContent` 与 recovery archive。
+
+```text
+UI typed intent
+  -> Engine encrypts chunks + persists checkpoint
+  -> Home Station proxy (when remote)
+  -> Authority attachment transfer session
+  -> opaque OSS byte store
+  -> Authority validates descriptor and atomically grants object with message event
+  -> recipient Home proxy
+  -> recipient Engine range-resumes, verifies, decrypts and atomically promotes cache
+```
+
+### 12.2 Upload Contract
+
+- `begin` 绑定 `(conversation_id, message_id, attachment_id, uploader endpoint,
+  descriptor commitment)`，返回 `upload_id`、part size、expiry 和已提交 part bitmap。
+- part identity 为 `(upload_id, chunk_index)`。相同 bytes/hash 重放成功；相同 index
+  不同 hash 返回 conflict，禁止覆盖。
+- 每 part 同时验证 offset、ciphertext size 和 chunk SHA-256。`complete` 只有在全部
+  chunks 到齐、whole ciphertext size/hash 匹配时成功，并返回 immutable descriptor。
+- 完成前 object 只对 uploader 可见；message authority transaction 成功后，object 与
+  `event_id` 和 committed recipient PTIDs 原子绑定。未引用 object 按 bounded orphan
+  TTL 回收。
+- upload session、part count、part size、总 bytes、并发数和 expiry 都有硬上限；
+  overload 返回 typed retry policy，不接收无界临时数据。
+
+### 12.3 Download Contract
+
+- 下载授权基于 message commit 时固化的 recipient PTID grant，不基于“当前仍在群里”。
+  因此被移除成员可继续读取其已接收历史附件，但不能读取移除后的 object。
+- remote download 经 recipient Home Station 使用 signed federation request 代理到
+  Authority Station；data bytes 不进入 durable messaging federation outbox。
+- object immutable ETag 等于 descriptor whole ciphertext hash。客户端使用
+  `Range + If-Match` 按 ciphertext chunk 拉取；合法范围返回 `206`，越界返回 `416`，
+  descriptor/ETag 变化 fail closed。
+- Engine 只在每个 chunk hash、whole ciphertext hash、AEAD tag、whole plaintext hash
+  全部通过后，把 `.part` 原子提升为可见 cache。失败保留可重试 checkpoint，不暴露
+  partial plaintext。
+
+### 12.4 Local Projection And Search
+
+- sender 在 durable draft transaction 中持久化 attachment metadata 与 upload
+  checkpoint；command prepare 只消费 `complete` descriptor。
+- receiver 在 message receive transaction 中原子写 plaintext、attachment metadata、
+  FTS row、consumption marker、lane cursor 和 receipt outbox；任一失败不 ACK。
+- FTS 与 plaintext 同属 SQLCipher，索引 text 与 filename，不索引 object key、nonce、
+  ciphertext URL 或 transfer token。restore 从 validated archive 重建 FTS。
+- transfer checkpoint 和 decrypted cache 不进入 recovery；descriptor、private metadata、
+  plaintext hash 和 trust 进入 recovery。fresh device 按需重新下载 ciphertext。
+
+### 12.5 Forbidden Relationships
+
+- UI 直接生成 attachment key、提交 part、判断 hash success 或维护 resume cursor。
+- generic OSS 根据 legacy friend/group tables 判定 canonical Messaging authorization。
+- Home Station 或 Authority Station 记录 filename、plaintext hash、key、nonce 或
+  decrypted bytes。
+- whole-file fetch 后才声称“resumable”、直接写 final cache、hash mismatch 后继续解密。
+- command commit 引用未 complete、非本 conversation、非本 uploader 的 object。
+
+### 12.6 Bounded Policy And Evidence
+
+默认 policy：
+
+- attachment plaintext 单文件不超过 2 GiB；每消息不超过 10 个、合计不超过 2 GiB；
+- AES-256-GCM fixed chunk 为 1 MiB、tag 16 bytes、最大 2048 chunks；
+- 每 actor 同时不超过 4 个 active transfer sessions，每 session 同时不超过 4 parts；
+- incomplete upload 和 unattached complete object TTL 为 24 hours；
+- retry 使用 jittered exponential backoff，1 second 起、5 minutes 封顶；terminal
+  integrity/auth errors 不重试；
+- Engine transfer memory 上限为 `2 * chunk_size + 16 MiB`，禁止 whole-file buffering。
+
+Architecture gate 除 MP-G13/MP-G14 外还必须证明：
+
+- 100 MiB object 在 25%/50%/75% upload 与 download interruption 后只传 missing chunks；
+- duplicate part exact replay、conflicting part、wrong ETag/range、whole/chunk hash、AEAD
+  和 plaintext hash 分别有 terminal evidence；
+- local LAN profile 的 resumed first-byte P95 小于 2 seconds，统计至少 30 次；网络吞吐不
+  作为实现正确性门，但必须报告 P50/P95；
+- slow recipient、cancel、Station restart 和 client `SIGKILL` 下 memory/session/part
+  admission 保持 bounded；
+- native high-chat/group-chat 记录 exact source/output SHA-256、message/event/object IDs、
+  transfer bitmap、Station grants 和 receiver-visible result。
+
+### 12.7 APIs And Typed Errors
+
+Control metadata 使用 protobuf；chunk body 使用 bounded `application/octet-stream`：
+
+```text
+POST /messaging/attachments/uploads:begin
+GET  /messaging/attachments/uploads/{upload_id}
+PUT  /messaging/attachments/uploads/{upload_id}/chunks/{chunk_index}
+POST /messaging/attachments/uploads/{upload_id}:complete
+POST /messaging/attachments/uploads/{upload_id}:cancel
+GET  /messaging/attachments/objects/{object_id}
+```
+
+Chunk PUT headers 绑定 `Content-Range`、`Digest: sha-256`、upload generation 和
+idempotency key；download GET 使用 `Range`、`If-Match`。Home Station proxy 不改变这些
+字段，只附加 peer JWT、caller PTID assertion、target Authority Station 和 request
+signature。
+
+Typed errors 至少包含：
+
+```text
+ATTACHMENT_UPLOAD_EXPIRED
+ATTACHMENT_PART_CONFLICT
+ATTACHMENT_RANGE_INVALID
+ATTACHMENT_DESCRIPTOR_MISMATCH
+ATTACHMENT_INTEGRITY_FAILED
+ATTACHMENT_NOT_GRANTED
+ATTACHMENT_QUOTA_EXCEEDED
+ATTACHMENT_RETRY_LATER(retry_after)
+```
+
+client cancel 终止当前 stream，但不自动 cancel durable session；只有显式 user cancel
+或 expiry 才进入 `ABORTED`。Process shutdown 停止新 part admission，已完成 checkpoint
+保留给下次启动。
 
 ## 13. Forbidden Relationships
 

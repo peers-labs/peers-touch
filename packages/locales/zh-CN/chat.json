@@ -549,6 +549,8 @@
   "chat.social.messageArea.voicePlay": "播放语音",
   "chat.social.messageArea.attachmentOpen": "打开",
   "chat.social.messageArea.attachmentOpenOrDownload": "打开或下载附件",
+  "chat.social.messageArea.attachmentStateUploading": "正在上传...",
+  "chat.social.messageArea.attachmentStateFailed": "附件发送失败",
   "chat.social.messageArea.actionReply": "回复",
   "chat.social.messageArea.actionReact": "回应",
   "chat.social.messageArea.actionEdit": "编辑",

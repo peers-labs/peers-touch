@@ -1,7 +1,7 @@
 # Messaging Platform — 数据模型
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-08-08 | **Updated**: 2026-08-10
 > **Owner**: Messaging Platform Team
 
@@ -23,6 +23,10 @@
 | `consumer_epoch` | inbox consumer fencing generation |
 | `session_generation` | Direct endpoint-pair session generation |
 | `mls_epoch` | MLS group cryptographic epoch |
+| `attachment_id` | message-local logical attachment identity |
+| `object_id` | Authority-owned immutable ciphertext object |
+| `upload_id` | resumable upload session |
+| `chunk_index` | encrypted object chunk ordinal |
 
 Identity invariant：
 
@@ -474,3 +478,185 @@ checkpoint并提交marker/cursor/receipt。任何普通非连续event、无retir
 - ACKED items 在审计窗口后 GC；
 - dead-letter 保留 redacted metadata，不保留额外 plaintext；
 - overload 在 command admission 处 fail closed，并返回 typed retry policy。
+
+## 8. Attachment Transfer And Local Search
+
+> `MP-D23`–`MP-D25` amendment status: accepted (Owner accepted 2026-08-10).
+
+### 8.1 Message Private Content
+
+```protobuf
+message MessagePrivateContent {
+  uint32 format_version = 1;
+  string text = 2;
+  repeated AttachmentPlaintextMetadata attachments = 3;
+}
+
+message EncryptedObjectDescriptor {
+  string object_id = 1;
+  string storage_ref = 2;
+  uint64 ciphertext_size = 3;
+  bytes ciphertext_sha256 = 4;
+  string media_type = 5;
+  uint32 chunk_size = 6;
+  uint32 chunk_count = 7;
+  AttachmentEncryptionSuite encryption_suite = 8;
+  uint32 tag_size = 9;
+  AttachmentNonceStrategy nonce_strategy = 10;
+  repeated bytes chunk_ciphertext_sha256 = 11;
+}
+```
+
+`MessagePrivateContent` 完整 protobuf bytes 才进入 Double Ratchet/OpenMLS。Authority
+event 只保存 descriptor；filename、plaintext hash、key、nonce 不可进入 public fact。
+
+Descriptor validation：
+
+- `object_id/storage_ref/media_type` 非空；
+- whole hash 和每个 chunk hash 均为 32 bytes；
+- `chunk_count > 0` 且等于 chunk hash 数量；
+- `chunk_size`、`tag_size`、suite、nonce strategy 属于已注册值；
+- `ciphertext_size` 等于各 chunk ciphertext size 之和；
+- object 已 complete、属于同 conversation/uploader/message/attachment commitment；
+- attachment count、descriptor bytes、chunk count 和 total bytes 不超过 policy。
+
+### 8.2 Upload State
+
+```text
+CREATED
+  -> RECEIVING_PARTS
+  -> VERIFYING
+  -> COMPLETE_UNATTACHED
+  -> ATTACHED(event_id)
+
+CREATED/RECEIVING_PARTS -- expiry/cancel --> ABORTED
+VERIFYING -- missing/hash/size mismatch --> RECEIVING_PARTS | TERMINAL_CORRUPT
+COMPLETE_UNATTACHED -- orphan TTL --> GC
+```
+
+Authority 持久化：
+
+```text
+messaging_attachment_uploads(
+  upload_id PK,
+  conversation_id,
+  message_id,
+  attachment_id,
+  uploader_ptid,
+  uploader_device_id,
+  descriptor_commitment,
+  expected_ciphertext_size,
+  expected_ciphertext_sha256,
+  chunk_size,
+  chunk_count,
+  received_bitmap,
+  state,
+  expires_at,
+  object_id NULL,
+  generation
+)
+
+messaging_attachment_upload_parts(
+  upload_id,
+  chunk_index,
+  byte_offset,
+  ciphertext_size,
+  ciphertext_sha256,
+  storage_part_ref,
+  PRIMARY KEY(upload_id, chunk_index)
+)
+
+messaging_attachment_objects(
+  object_id PK,
+  conversation_id,
+  message_id,
+  attachment_id,
+  uploader_ptid,
+  storage_ref,
+  ciphertext_size,
+  ciphertext_sha256,
+  descriptor_bytes,
+  event_id NULL,
+  state,
+  created_at
+)
+
+messaging_attachment_grants(
+  object_id,
+  recipient_ptid,
+  event_id,
+  PRIMARY KEY(object_id, recipient_ptid)
+)
+```
+
+`complete` 只把 upload 变为 `COMPLETE_UNATTACHED`。Authority message transaction 同时：
+
+```text
+ConversationEvent + device queue/federation outbox
++ object ATTACHED(event_id)
++ immutable recipient PTID grants
+```
+
+任何一步失败全部 rollback。
+
+### 8.3 Device Transfer Checkpoint
+
+```text
+messaging_attachment_projections(
+  message_id,
+  attachment_id,
+  object_id,
+  storage_ref,
+  filename,
+  mime_type,
+  plaintext_size,
+  plaintext_sha256,
+  object_key,
+  base_nonce,
+  descriptor_bytes,
+  availability_state,
+  local_cache_path NULL,
+  PRIMARY KEY(message_id, attachment_id)
+)
+
+messaging_attachment_transfers(
+  attachment_id,
+  direction,
+  upload_id NULL,
+  descriptor_hash,
+  completed_chunk_bitmap,
+  partial_path,
+  attempt_count,
+  next_attempt_at,
+  last_error_code,
+  state,
+  PRIMARY KEY(attachment_id, direction)
+)
+```
+
+checkpoint 与 descriptor hash 绑定。hash 变化、partial size 不匹配或 chunk hash 不匹配时
+删除 partial bytes 并 fail closed，不复用 cursor。
+
+### 8.4 Download Range Semantics
+
+- request 必须携带 `conversation_id/object_id`、caller PTID auth 和 expected ETag；
+- `Range: bytes=start-end` 成功返回 `206`、`Content-Range`、immutable ETag；
+- 无 Range 的 bounded whole request 返回 `200`；非法或越界 range 返回 `416`；
+- `If-Match` 不匹配返回 `412`，禁止返回新 object bytes；
+- Home-to-Authority proxy 透传 backpressure/cancellation，不把 bytes 写入 federation outbox。
+
+### 8.5 Search Index
+
+```text
+messaging_message_search_fts(
+  conversation_id UNINDEXED,
+  message_id UNINDEXED,
+  plaintext,
+  attachment_filenames,
+  tokenize = unicode61
+)
+```
+
+FTS row 与 message/attachment projection 同 transaction 创建或删除。Restore staging
+从 archive projection 重建，禁止备份 SQLite FTS internal pages。查询必须以
+`conversation_id` 限定，并使用 bounded result count/cursor。
