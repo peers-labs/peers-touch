@@ -138,7 +138,7 @@ impl MessagingEngine {
     }
 
     #[cfg(test)]
-    fn in_memory(profile_id: String, endpoint: EngineEndpoint) -> Result<Self, String> {
+    pub(super) fn in_memory(profile_id: String, endpoint: EngineEndpoint) -> Result<Self, String> {
         validate_identity(&profile_id, &endpoint)?;
         Self::from_store(profile_id, endpoint, Arc::new(MessagingStore::in_memory()?))
     }
