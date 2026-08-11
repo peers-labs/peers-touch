@@ -360,6 +360,8 @@ func (s *AttachmentService) Complete(
 		UploaderPTID:   upload.Uploader.Ptid,
 		ConversationID: upload.ConversationID,
 		MessageID:      upload.MessageID,
+		AttachmentID:   upload.AttachmentID,
+		State:          messaging.AttachmentObjectStateCompleteUnattached,
 		CreatedAt:      s.clock().UTC(),
 	}
 	err = s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {

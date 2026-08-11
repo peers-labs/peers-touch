@@ -274,6 +274,23 @@ func TestAuthorityCommitAtomicallyFansOutAndReplays(t *testing.T) {
 	if grantCount != 2 {
 		t.Fatalf("attachment grants = %d, want 2 actor grants", grantCount)
 	}
+	var object infrastructure.AttachmentObjectModel
+	if err := db.First(&object, "object_id = ?", descriptor.ObjectId).Error; err != nil {
+		t.Fatal(err)
+	}
+	if object.State != messaging.AttachmentObjectStateAttached ||
+		object.EventID != event.EventId {
+		t.Fatalf("attached object lifecycle = %+v, event=%s", object, event.EventId)
+	}
+	var grants []infrastructure.AttachmentGrantModel
+	if err := db.Where("object_id = ?", descriptor.ObjectId).Find(&grants).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, grant := range grants {
+		if grant.EventID != event.EventId {
+			t.Fatalf("grant event binding = %+v, event=%s", grant, event.EventId)
+		}
+	}
 	granted, err := infrastructure.NewAttachmentRepository(db).GetGrantedObject(
 		ctx,
 		command.ConversationId,
