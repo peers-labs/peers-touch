@@ -1,22 +1,14 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, Tag, Dropdown, TextArea, toast } from '@lobehub/ui';
-import type { MenuProps } from '@lobehub/ui';
+import { ActionIcon, Tag, TextArea, toast } from '@lobehub/ui';
 import { theme, Button } from 'antd';
 import {
   Wrench,
   Loader2,
   Copy,
   Check,
-  RotateCcw,
-  Edit,
   Trash2,
-  ListRestart,
-  GitBranch,
-  ChevronsDownUp,
-  ChevronsUpDown,
-  MoreHorizontal,
   ChevronRight,
   ChevronDown,
   CheckCircle2,
@@ -46,6 +38,7 @@ import { parseDeepLink } from '../utils/deeplink';
 import { EVENT, eventBus } from '../kernel/events';
 import { useTranslation } from 'react-i18next';
 import { ProviderIcon } from './settings/ProviderIcon';
+import { MessageActionBar } from './messages';
 
 interface Props {
   message: ChatMessage;
@@ -771,7 +764,6 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [collapsed, setCollapsed] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const editRef = useRef<any>(null);
 
   const branchFromMessage = useChatStore(s => s.branchFromMessage);
@@ -865,34 +857,6 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
       language: language || t('chat.message.code.plainText'),
     }));
   }, [sendMessage, t]);
-
-  const assistantMoreMenu: MenuProps['items'] = [
-    { key: 'edit', icon: <Edit size={14} />, label: t('chat.message.action.edit'), onClick: handleStartEdit },
-    { key: 'copy', icon: <Copy size={14} />, label: t('chat.message.action.copy'), onClick: handleCopy },
-    {
-      key: 'collapse',
-      icon: collapsed ? <ChevronsUpDown size={14} /> : <ChevronsDownUp size={14} />,
-      label: collapsed ? t('chat.message.action.expandMessage') : t('chat.message.action.collapseMessage'),
-      onClick: () => setCollapsed(!collapsed),
-    },
-    { type: 'divider' },
-    { key: 'branch', icon: <GitBranch size={14} />, label: t('chat.message.action.branch'), onClick: handleBranch },
-    { type: 'divider' },
-    ...(message.error ? [{ key: 'retry', icon: <RotateCcw size={14} />, label: t('chat.message.action.retry'), onClick: handleRetry }] : []),
-    { key: 'regenerate', icon: <RotateCcw size={14} />, label: t('chat.message.action.regenerate'), onClick: handleRegenerate },
-    { key: 'del-regen', icon: <ListRestart size={14} />, label: t('chat.message.action.delAndRegenerate'), onClick: handleDelAndRegenerate },
-    { key: 'delete', icon: <Trash2 size={14} />, label: t('chat.message.action.delete'), danger: true, onClick: handleDelete },
-  ];
-
-  const userMoreMenu: MenuProps['items'] = [
-    { key: 'edit', icon: <Edit size={14} />, label: t('chat.message.action.edit'), onClick: handleStartEdit },
-    { key: 'copy', icon: <Copy size={14} />, label: t('chat.message.action.copy'), onClick: handleCopy },
-    { key: 'branch', icon: <GitBranch size={14} />, label: t('chat.message.action.branch'), onClick: handleBranch },
-    { type: 'divider' },
-    ...(message.error ? [{ key: 'retry', icon: <RotateCcw size={14} />, label: t('chat.message.action.retry'), onClick: handleRetry }] : []),
-    { key: 'regenerate', icon: <RotateCcw size={14} />, label: t('chat.message.action.regenerate'), onClick: handleRegenerate },
-    { key: 'delete', icon: <Trash2 size={14} />, label: t('chat.message.action.delete'), danger: true, onClick: handleDelete },
-  ];
 
   // Card-type messages: schema-driven rendering
   const cardData = useMemo<CardData | null>(() => {
@@ -1300,35 +1264,28 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
         Revealed on parent hover and kept visible while the more menu is open.
       */}
       {!message.loading && !editing && (
-        <div
-          data-message-actions
+        <MessageActionBar
+          context={{
+            message,
+            isStreaming: !!message.loading,
+            isCurrentSession: true,
+            operation: undefined,
+            onCopy: handleCopy,
+            onEdit: handleStartEdit,
+            onDelete: handleDelete,
+            onRegenerate: handleRegenerate,
+            onRetry: handleRetry,
+            onBranch: handleBranch,
+            onContinue: handleRegenerate,
+            onDeleteAndRegenerate: handleDelAndRegenerate,
+          }}
           style={{
-            display: 'flex',
-            gap: 2,
-            alignItems: 'center',
             alignSelf: isUser ? 'flex-end' : 'flex-start',
-            opacity: hovered || menuOpen ? 1 : 0,
-            pointerEvents: hovered || menuOpen ? 'auto' : 'none',
+            opacity: hovered ? 1 : 0,
+            pointerEvents: hovered ? 'auto' : 'none',
             transition: 'opacity 0.2s',
           }}
-        >
-          {message.error && (
-            <MiniButton icon={<RotateCcw size={14} />} title={t('chat.message.action.retry')} onClick={handleRetry} />
-          )}
-          <MiniButton icon={<RotateCcw size={14} />} title={t('chat.message.action.regenerate')} onClick={handleRegenerate} />
-          <MiniButton icon={<Edit size={14} />} title={t('chat.message.action.edit')} onClick={handleStartEdit} />
-          <MiniButton icon={copied ? <Check size={14} /> : <Copy size={14} />} title={t('chat.message.action.copy')} onClick={handleCopy} />
-          <Dropdown
-            menu={{ items: isUser ? userMoreMenu : assistantMoreMenu }}
-            trigger={['click']}
-            placement={isUser ? 'bottomRight' : 'bottomLeft'}
-            onOpenChange={setMenuOpen}
-          >
-            <div>
-              <MiniButton icon={<MoreHorizontal size={14} />} title={t('chat.message.action.more')} onClick={() => {}} />
-            </div>
-          </Dropdown>
-        </div>
+        />
       )}
     </Flexbox>
   );

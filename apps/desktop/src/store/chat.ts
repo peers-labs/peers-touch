@@ -15,6 +15,16 @@ import { useAgentStore } from './agent';
 import { useAgentTopicStore } from './agentTopics';
 import { getDesktopAgentChatCache } from '../storage/desktopAgentChatCache';
 import type { CachedAgentConversation, CachedAgentMessage } from '@peers-touch/client-chat-core';
+import {
+  reduceStreamEvent,
+  createOperation,
+  completeOperation,
+  failOperation,
+  cancelOperation,
+  isActiveOperation,
+  type Operation,
+  type TurnStreamEvent,
+} from './streaming';
 
 export { useAgentStore } from './agent';
 export type { Session } from '../services/desktop_api';
@@ -379,13 +389,7 @@ export function extractMessageArtifacts(message: Pick<ChatMessage, 'id' | 'role'
   return artifacts;
 }
 
-export interface ChatOperation {
-  sessionKey: string;
-  startedAt: number;
-  status: 'running';
-  assistantId: string;
-  abortController: AbortController;
-}
+export type ChatOperation = Operation;
 
 interface ChatState {
   sessions: Session[];
@@ -442,170 +446,7 @@ function presentChatRuntimeError(message: string): string {
 }
 
 export function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
-  const s = (v: unknown): string => typeof v === 'string' ? v : v != null ? String(v) : '';
-  const d = event.data;
-  switch (event.event) {
-    case 'text':
-      return { ...msg, content: msg.content + s(d.content), loading: true, lastEventAt: Date.now() };
-
-    case 'tool_call': {
-      const existing = msg.toolCalls || [];
-      return {
-        ...msg,
-        toolCalls: [...existing, {
-          id: s(d.id) || tempId(),
-          name: s(d.name),
-          args: s(d.args),
-          pending: true,
-          status: 'pending' as ToolCallStatus,
-        }],
-        lastEventAt: Date.now(),
-      };
-    }
-
-    case 'tool_result': {
-      const isDelegate = s(d.name) === 'delegate_task';
-      const delegationResults = isDelegate
-        ? parseDelegationResults(s(d.content) || s(d.result))
-        : [];
-      const calls = (msg.toolCalls || []).map((tc) =>
-        (tc.id === s(d.id) || tc.name === s(d.name)) && tc.pending
-          ? {
-            ...tc,
-            result: s(d.content),
-            pending: false,
-            status: 'success' as ToolCallStatus,
-            delegationResults: delegationResults.length > 0 ? delegationResults : tc.delegationResults,
-          }
-          : tc,
-      );
-      return {
-        ...msg,
-        toolCalls: calls,
-        delegationResults: delegationResults.length > 0 ? delegationResults : msg.delegationResults,
-        lastEventAt: Date.now(),
-      };
-    }
-
-    case 'tool_approval_required': {
-      const existing = msg.toolCalls || [];
-      const approvalId = s(d.approvalId) || s(d.id) || tempId();
-      const nextCall: ToolCallInfo = {
-        id: s(d.id) || s(d.toolCallId) || approvalId,
-        name: s(d.name) || s(d.toolName) || 'local_mcp',
-        args: s(d.args) || s(d.arguments),
-        pending: true,
-        status: 'approval_required',
-        approvalId,
-        serverName: s(d.serverName),
-        source: s(d.source),
-      };
-      const replaced = existing.some((tc) => tc.id === nextCall.id || tc.approvalId === approvalId);
-      return {
-        ...msg,
-        toolCalls: replaced
-          ? existing.map((tc) => (tc.id === nextCall.id || tc.approvalId === approvalId ? { ...tc, ...nextCall } : tc))
-          : [...existing, nextCall],
-        lastEventAt: Date.now(),
-      };
-    }
-
-    case 'tool_approval_decision': {
-      const approved = s(d.approved) === 'true' || s(d.approved) === '1';
-      const calls = (msg.toolCalls || []).map((tc) =>
-        tc.approvalId === s(d.approvalId) || tc.id === s(d.id)
-          ? {
-            ...tc,
-            pending: approved,
-            status: approved ? 'approved' as ToolCallStatus : 'denied' as ToolCallStatus,
-            approvalActor: s(d.actor),
-            approvedAt: s(d.decidedAt),
-          }
-          : tc,
-      );
-      return { ...msg, toolCalls: calls, lastEventAt: Date.now() };
-    }
-
-    case 'image': {
-      const imgs = msg.images || [];
-      return { ...msg, images: [...imgs, s(d.url)] };
-    }
-
-    case 'thinking':
-      return {
-        ...msg,
-        thinking: (msg.thinking || '') + s(d.content),
-        thinkingDone: !!d.done,
-        lastEventAt: Date.now(),
-      };
-
-    case 'progress': {
-      if (s(d.stage) === 'knowledge_retrieved' && d.result) {
-        return {
-          ...msg,
-          knowledgeChunks: parseKnowledgeChunks(s(d.result)),
-          lastEventAt: Date.now(),
-        };
-      }
-      const progCalls = (msg.toolCalls || []).map((tc) =>
-        tc.pending
-          ? { ...tc, progress: s(d.message) || tc.progress, progressPct: d.pct != null ? Number(d.pct) : tc.progressPct }
-          : tc,
-      );
-      return { ...msg, toolCalls: progCalls, lastEventAt: Date.now() };
-    }
-
-    case 'error': {
-      log.error('chat', 'Stream error', { event: d });
-      const errMsg = s(d.error) || 'Unknown error';
-      const errCalls = (msg.toolCalls || []).map((tc) =>
-        tc.pending ? { ...tc, result: `Error: ${errMsg}`, pending: false, status: 'error' as ToolCallStatus } : tc,
-      );
-      return {
-        ...msg,
-        toolCalls: errCalls,
-        error: errMsg,
-        errorDetail: s(d.detail),
-        resolution: (d.resolution && typeof d.resolution === 'object' ? d.resolution as ErrorResolutionAction : null),
-        providerId: s(d.providerId),
-        loading: false,
-      };
-    }
-
-    case 'done': {
-      const doneCalls = (msg.toolCalls || []).map((tc) =>
-        tc.pending ? { ...tc, pending: false, status: 'success' as ToolCallStatus } : tc,
-      );
-      return {
-        ...msg,
-        toolCalls: doneCalls,
-        loading: false,
-        model: s(d.model) || msg.model,
-        processDuration: Math.round((Date.now() - msg.timestamp) / 1000),
-      };
-    }
-
-    default:
-      return msg;
-  }
-}
-
-function parseKnowledgeChunks(value: string): KnowledgeChunkInfo[] {
-  try {
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map((item) => ({
-      chunkId: String(item.ChunkID || item.chunkId || ''),
-      resourceId: String(item.ResourceID || item.resourceId || ''),
-      resourceTitle: String(item.ResourceTitle || item.resourceTitle || ''),
-      source: String(item.Source || item.source || ''),
-      chunkIndex: Number(item.ChunkIndex ?? item.chunkIndex ?? 0),
-      score: Number(item.Score ?? item.score ?? 0),
-      contentPreview: String(item.ContentPreview || item.contentPreview || ''),
-    })).filter((item) => item.chunkId && item.resourceId);
-  } catch {
-    return [];
-  }
+  return reduceStreamEvent(msg, event as TurnStreamEvent);
 }
 
 function finalizeToolCalls(msg: ChatMessage, status: ToolCallStatus = 'success'): ChatMessage {
@@ -792,10 +633,15 @@ function findRegenerationPrompt(messages: ChatMessage[], messageId: string): {
 }
 
 function clearOperation(operations: Record<string, ChatOperation>, sessionKey: string): Record<string, ChatOperation> {
-  if (!operations[sessionKey]) return operations;
-  const next = { ...operations };
-  delete next[sessionKey];
-  return next;
+  const op = operations[sessionKey];
+  if (!op) return operations;
+  return { ...operations, [sessionKey]: completeOperation(op) };
+}
+
+function failOperationInMap(operations: Record<string, ChatOperation>, sessionKey: string, error: string): Record<string, ChatOperation> {
+  const op = operations[sessionKey];
+  if (!op) return operations;
+  return { ...operations, [sessionKey]: failOperation(op, { message: error }) };
 }
 
 function setBuffer(
@@ -927,11 +773,11 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     // Only adopt a buffered message list while a stream is actively running for
     // this session. A buffer with no live operation is stale (e.g. left behind
     // after an error) and must not short-circuit loading persisted history.
-    const liveBuffer = liveOp ? get().sessionBuffers[key] : undefined;
+    const liveBuffer = isActiveOperation(liveOp) ? get().sessionBuffers[key] : undefined;
     set({
       currentSessionKey: key,
       messages: liveBuffer ?? [],
-      isStreaming: !!liveOp,
+      isStreaming: isActiveOperation(liveOp),
       streamingStartedAt: liveOp?.startedAt ?? null,
       abortController: liveOp?.abortController ?? null,
     });
@@ -951,7 +797,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       return;
     }
     const liveOp = get().operations[key];
-    if (liveOp) return;
+    if (isActiveOperation(liveOp)) return;
     await loadSessionMessages(key, get, set);
   },
 
@@ -1189,7 +1035,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             isStreaming: isCurrent ? false : state.isStreaming,
             streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
             abortController: isCurrent ? null : state.abortController,
-            operations: clearOperation(state.operations, resolvedSessionKey),
+            operations: failOperationInMap(state.operations, resolvedSessionKey, err.message),
           };
         });
         reconcileTopicsAfterTurn(resolvedSessionKey);
@@ -1205,7 +1051,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         abortController: controller,
         operations: {
           ...state.operations,
-          [currentSessionKey]: { sessionKey: currentSessionKey, startedAt, status: 'running', assistantId, abortController: controller },
+          [currentSessionKey]: createOperation({ sessionKey: currentSessionKey, type: 'sendMessage', assistantMessageId: assistantId, abortController: controller }),
         },
         sessionBuffers: { ...state.sessionBuffers, [currentSessionKey]: baseMessages },
       };
@@ -1305,7 +1151,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             isStreaming: isCurrent ? false : state.isStreaming,
             streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
             abortController: isCurrent ? null : state.abortController,
-            operations: clearOperation(state.operations, currentSessionKey),
+            operations: failOperationInMap(state.operations, currentSessionKey, err.message),
           };
         });
         reconcileTopicsAfterTurn(currentSessionKey);
@@ -1323,7 +1169,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         abortController: controller,
         operations: {
           ...state.operations,
-          [currentSessionKey]: { sessionKey: currentSessionKey, startedAt, status: 'running', assistantId, abortController: controller },
+          [currentSessionKey]: createOperation({ sessionKey: currentSessionKey, type: 'regenerate', assistantMessageId: assistantId, abortController: controller }),
         },
         sessionBuffers: { ...state.sessionBuffers, [currentSessionKey]: baseMessages },
       };
@@ -1421,7 +1267,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             isStreaming: isCurrent ? false : state.isStreaming,
             streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
             abortController: isCurrent ? null : state.abortController,
-            operations: clearOperation(state.operations, currentSessionKey),
+            operations: failOperationInMap(state.operations, currentSessionKey, err.message),
           };
         });
         reconcileTopicsAfterTurn(currentSessionKey);
@@ -1439,7 +1285,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         abortController: controller,
         operations: {
           ...state.operations,
-          [currentSessionKey]: { sessionKey: currentSessionKey, startedAt, status: 'running', assistantId, abortController: controller },
+          [currentSessionKey]: createOperation({ sessionKey: currentSessionKey, type: 'retry', assistantMessageId: assistantId, abortController: controller }),
         },
         sessionBuffers: { ...state.sessionBuffers, [currentSessionKey]: baseMessages },
       };
@@ -1554,8 +1400,8 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   stopOperation: (sessionKey: string) => {
     log.info('chat', 'Streaming stopped', { sessionKey });
     const op = get().operations[sessionKey];
-    if (!op) return;
-    op.abortController.abort();
+    if (!op || !isActiveOperation(op)) return;
+    const cancelled = cancelOperation(op);
     api.stopChat(sessionKey).catch(() => {});
     set((state) => {
       const isCurrent = state.currentSessionKey === sessionKey;
@@ -1567,7 +1413,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         isStreaming: isCurrent ? false : state.isStreaming,
         streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
         abortController: isCurrent ? null : state.abortController,
-        operations: clearOperation(state.operations, sessionKey),
+        operations: { ...state.operations, [sessionKey]: cancelled },
       };
     });
   },
