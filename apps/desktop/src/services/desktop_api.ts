@@ -815,6 +815,8 @@ export interface Session {
   model_override?: string;
   created_at: string;
   updated_at: string;
+  pinned?: boolean;
+  favorite?: boolean;
 }
 
 export interface MessageAttachment {
@@ -3403,6 +3405,18 @@ export const api = {
       { conversation_id: key },
     ),
 
+  pinSession: (key: string, pinned: boolean) =>
+    invokeRustDataFromStatus<{ conversation_id: string; pinned: boolean }, { ok: boolean }>(
+      'chat_pin_conversation',
+      { conversation_id: key, pinned },
+    ),
+
+  favoriteSession: (key: string, favorite: boolean) =>
+    invokeRustDataFromStatus<{ conversation_id: string; favorite: boolean }, { ok: boolean }>(
+      'chat_favorite_conversation',
+      { conversation_id: key, favorite },
+    ),
+
   setSessionModel: (key: string, model: string) =>
     invokeRustDataFromStatus<ChatSetConversationModelInput, { ok: boolean; model: string }>(
       'chat_set_conversation_model',
@@ -5243,6 +5257,8 @@ function mapAIChatSessionToSession(item: any): Session {
     model_override: item.model_name || item.modelName || undefined,
     created_at: millisToISO(createdMillis),
     updated_at: millisToISO(updatedMillis),
+    pinned: item.pinned ?? false,
+    favorite: item.favorite ?? false,
   };
 }
 
