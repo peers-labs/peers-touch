@@ -1,0 +1,209 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "domain/chat/endpoint.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+enum AttachmentEncryptionSuite {
+  ATTACHMENT_ENCRYPTION_SUITE_UNSPECIFIED = 0;
+  ATTACHMENT_ENCRYPTION_SUITE_AES_256_GCM_CHUNKED = 1;
+}
+
+enum AttachmentNonceStrategy {
+  ATTACHMENT_NONCE_STRATEGY_UNSPECIFIED = 0;
+  ATTACHMENT_NONCE_STRATEGY_COUNTER32_BE = 1;
+}
+
+enum AttachmentTransferDirection {
+  ATTACHMENT_TRANSFER_DIRECTION_UNSPECIFIED = 0;
+  ATTACHMENT_TRANSFER_DIRECTION_UPLOAD = 1;
+  ATTACHMENT_TRANSFER_DIRECTION_DOWNLOAD = 2;
+}
+
+enum AttachmentTransferState {
+  ATTACHMENT_TRANSFER_STATE_UNSPECIFIED = 0;
+  ATTACHMENT_TRANSFER_STATE_QUEUED = 1;
+  ATTACHMENT_TRANSFER_STATE_TRANSFERRING = 2;
+  ATTACHMENT_TRANSFER_STATE_VERIFYING = 3;
+  ATTACHMENT_TRANSFER_STATE_COMPLETE = 4;
+  ATTACHMENT_TRANSFER_STATE_RETRY_WAIT = 5;
+  ATTACHMENT_TRANSFER_STATE_CANCELLED = 6;
+  ATTACHMENT_TRANSFER_STATE_TERMINAL = 7;
+}
+
+enum AttachmentTransferErrorCode {
+  ATTACHMENT_TRANSFER_ERROR_CODE_UNSPECIFIED = 0;
+  ATTACHMENT_TRANSFER_ERROR_CODE_UPLOAD_EXPIRED = 1;
+  ATTACHMENT_TRANSFER_ERROR_CODE_PART_CONFLICT = 2;
+  ATTACHMENT_TRANSFER_ERROR_CODE_RANGE_INVALID = 3;
+  ATTACHMENT_TRANSFER_ERROR_CODE_DESCRIPTOR_MISMATCH = 4;
+  ATTACHMENT_TRANSFER_ERROR_CODE_INTEGRITY_FAILED = 5;
+  ATTACHMENT_TRANSFER_ERROR_CODE_NOT_GRANTED = 6;
+  ATTACHMENT_TRANSFER_ERROR_CODE_QUOTA_EXCEEDED = 7;
+  ATTACHMENT_TRANSFER_ERROR_CODE_RETRY_LATER = 8;
+}
+
+message AttachmentTransferError {
+  AttachmentTransferErrorCode code = 1;
+  google.protobuf.Duration retry_after = 2;
+}
+
+// Immutable ciphertext commitment supplied before Authority allocates object
+// identity/storage. Every hash is raw SHA-256 bytes.
+message EncryptedObjectUploadSpec {
+  uint64 ciphertext_size = 1;
+  bytes ciphertext_sha256 = 2;
+  string media_type = 3;
+  uint32 chunk_size = 4;
+  uint32 chunk_count = 5;
+  AttachmentEncryptionSuite encryption_suite = 6;
+  uint32 tag_size = 7;
+  AttachmentNonceStrategy nonce_strategy = 8;
+  repeated bytes chunk_ciphertext_sha256 = 9;
+}
+
+// Station-visible descriptor. Encryption keys and plaintext metadata remain
+// inside the end-to-end encrypted message payload.
+message EncryptedObjectDescriptor {
+  string object_id = 1;
+  string storage_ref = 2;
+  uint64 ciphertext_size = 3;
+  bytes ciphertext_sha256 = 4;
+  string media_type = 5;
+  uint32 chunk_size = 6;
+  uint32 chunk_count = 7;
+  AttachmentEncryptionSuite encryption_suite = 8;
+  uint32 tag_size = 9;
+  AttachmentNonceStrategy nonce_strategy = 10;
+  repeated bytes chunk_ciphertext_sha256 = 11;
+}
+
+message AttachmentPlaintextMetadata {
+  string attachment_id = 1;
+  string filename = 2;
+  string mime_type = 3;
+  uint64 plaintext_size = 4;
+  bytes plaintext_sha256 = 5;
+  bytes object_key = 6;
+  bytes base_nonce = 7;
+  EncryptedObjectDescriptor object = 8;
+}
+
+// The complete private message body encrypted by Double Ratchet or OpenMLS.
+// Station never receives these bytes in plaintext.
+message MessagePrivateContent {
+  uint32 format_version = 1;
+  string text = 2;
+  repeated AttachmentPlaintextMetadata attachments = 3;
+}
+
+message BeginAttachmentUploadRequest {
+  string conversation_id = 1;
+  string message_id = 2;
+  string attachment_id = 3;
+  CryptoEndpoint uploader = 4;
+  EncryptedObjectUploadSpec object = 5;
+  bytes descriptor_commitment_sha256 = 6;
+  string idempotency_key = 7;
+  string authority_station_id = 8;
+}
+
+message BeginAttachmentUploadResponse {
+  string upload_id = 1;
+  uint64 generation = 2;
+  uint32 accepted_chunk_size = 3;
+  bytes received_chunk_bitmap = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  string authority_station_id = 6;
+}
+
+message GetAttachmentUploadRequest {
+  string upload_id = 1;
+  uint64 generation = 2;
+  string authority_station_id = 3;
+  string conversation_id = 4;
+}
+
+message GetAttachmentUploadResponse {
+  string upload_id = 1;
+  uint64 generation = 2;
+  AttachmentTransferState state = 3;
+  bytes received_chunk_bitmap = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  EncryptedObjectDescriptor object = 6;
+}
+
+// Metadata for one raw application/octet-stream chunk PUT.
+message PutAttachmentChunkRequest {
+  string upload_id = 1;
+  uint64 generation = 2;
+  uint32 chunk_index = 3;
+  uint64 byte_offset = 4;
+  uint64 ciphertext_size = 5;
+  bytes ciphertext_sha256 = 6;
+  string idempotency_key = 7;
+  string authority_station_id = 8;
+  string conversation_id = 9;
+}
+
+message PutAttachmentChunkResponse {
+  uint32 chunk_index = 1;
+  bool duplicate = 2;
+  bytes received_chunk_bitmap = 3;
+}
+
+message CompleteAttachmentUploadRequest {
+  string upload_id = 1;
+  uint64 generation = 2;
+  bytes descriptor_commitment_sha256 = 3;
+  string authority_station_id = 4;
+  string conversation_id = 5;
+}
+
+message CompleteAttachmentUploadResponse {
+  EncryptedObjectDescriptor object = 1;
+  bool duplicate = 2;
+}
+
+message CancelAttachmentUploadRequest {
+  string upload_id = 1;
+  uint64 generation = 2;
+  string authority_station_id = 3;
+  string conversation_id = 4;
+}
+
+message CancelAttachmentUploadResponse {
+  AttachmentTransferState state = 1;
+}
+
+message GetAttachmentObjectRequest {
+  string conversation_id = 1;
+  string object_id = 2;
+  bytes expected_etag_sha256 = 3;
+  string authority_station_id = 4;
+}
+
+// Range bytes use the HTTP body; this message supplies authenticated metadata.
+message GetAttachmentObjectResponse {
+  EncryptedObjectDescriptor object = 1;
+  bytes etag_sha256 = 2;
+  uint64 total_ciphertext_size = 3;
+}
+
+message AttachmentTransferCheckpoint {
+  string attachment_id = 1;
+  AttachmentTransferDirection direction = 2;
+  AttachmentTransferState state = 3;
+  string upload_id = 4;
+  uint64 generation = 5;
+  bytes descriptor_sha256 = 6;
+  bytes completed_chunk_bitmap = 7;
+  string partial_local_ref = 8;
+  uint32 attempt_count = 9;
+  int64 next_attempt_at_unix_ms = 10;
+  AttachmentTransferErrorCode last_error_code = 11;
+}

@@ -17,6 +17,8 @@ pub struct AuthSessionPayload {
     pub command: String,
     pub status: String,
     pub actor_id: Option<String>,
+    #[serde(default)]
+    pub ptid: Option<String>,
     pub name: Option<String>,
     pub email: Option<String>,
     pub avatar_url: Option<String>,
@@ -213,21 +215,6 @@ pub struct AttachmentInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatSendInput {
-    pub session_ulid: String,
-    pub receiver_did: String,
-    pub content: String,
-    /// Base64-encoded ciphertext when sending E2E encrypted messages (optional).
-    pub encrypted_payload: Option<String>,
-    /// Client-generated idempotency key. Shared by direct + relay send attempts.
-    pub client_ulid: Option<String>,
-    pub r#type: Option<i32>,
-    pub reply_to_ulid: Option<String>,
-    pub thread_root_ulid: Option<String>,
-    pub attachments: Option<Vec<AttachmentInput>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatSendFriendRequestInput {
     pub receiver_did: String,
     pub message: Option<String>,
@@ -278,12 +265,6 @@ pub struct KeyExchangeFetchInput {
     pub did: String,
     pub device_id: Option<String>,
     pub home_station_peer_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatAckInput {
-    pub ulids: Vec<String>,
-    pub status: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -376,36 +357,6 @@ pub struct GroupChatSyncInput {
 pub struct ChatLocalSearchInput {
     pub query: String,
     pub limit: Option<u32>,
-}
-
-/// Unified local FTS search (friend + group), with optional scope and conversation filters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ChatSearchLocalInput {
-    pub query: String,
-    #[serde(default)]
-    pub scope: String,
-    pub conversation_id: Option<String>,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ChatIndexLocalInput {
-    pub messages: Vec<ChatIndexLocalMessageInput>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ChatIndexLocalMessageInput {
-    pub scope: String,
-    pub conversation_id: String,
-    pub message_id: String,
-    pub sender_did: String,
-    pub content: String,
-    pub reply_to_ulid: Option<String>,
-    pub thread_root_ulid: Option<String>,
-    pub sent_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

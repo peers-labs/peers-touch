@@ -3550,7 +3550,8 @@ func (*DeleteFriendMessageResponse) Descriptor() ([]byte, []int) {
 }
 
 // Friend-chat E2EE ciphertext frame (serialized inside `encrypted_payload`).
-// Field numbers follow docs/architecture/encryption/chat-ratchet-upgrade.md §4.2.
+// This compatibility-only frame is scheduled for deletion by the canonical
+// Conversation device-payload cutover in docs/architecture/encryption/.
 type EncryptedMessage struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	Ciphertext   []byte                 `protobuf:"bytes,1,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`

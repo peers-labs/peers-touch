@@ -90,7 +90,7 @@
 ### 4.6 Chat Media Transfer / Draft（附件上传）⚠️ 内嵌精简设计
 
 - **状态**：`queued` → `uploading` → `ready` / `failed`（草稿态 `ChatDraftStatus` 去掉 `queued`）
-- **触发**：创建草稿→`uploading`；`uploadChatAttachment*` 成功→`ready`；失败→`failed`
+- **触发**：创建草稿→`uploading`；Messaging Engine source staging（Social IM）或 `uploadAgentAttachmentFile`（Agent）成功→`ready`；失败→`failed`
 - **Owner**：类型 [client-chat-core/src/index.ts](file://packages/client-chat-core/src/index.ts#L33)（`ChatMediaTransferStatus`）；草稿 [useChatAttachmentDrafts.ts](file://apps/desktop/src/components/chat/composer/useChatAttachmentDrafts.ts#L11)
 
 ### 4.7 Peer Trust（TOFU 对端信任）⚠️ 内嵌精简设计

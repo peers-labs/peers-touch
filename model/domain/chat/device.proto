@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "domain/chat/endpoint.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+enum MessagingDeviceStatus {
+  MESSAGING_DEVICE_STATUS_UNSPECIFIED = 0;
+  MESSAGING_DEVICE_STATUS_ENROLLING = 1;
+  MESSAGING_DEVICE_STATUS_ACTIVE = 2;
+  MESSAGING_DEVICE_STATUS_REVOKE_PENDING = 3;
+  MESSAGING_DEVICE_STATUS_REVOKED = 4;
+}
+
+// Deterministic actor-signed authorization for one fresh device.
+message MessagingDeviceCertificate {
+  uint32 format_version = 1;
+  string ptid = 2;
+  string device_id = 3;
+  bytes actor_identity_public_key = 4;
+  bytes actor_identity_key_fingerprint = 5;
+  bytes device_signing_public_key = 6;
+  string signing_key_id = 7;
+  uint64 observed_profile_version = 8;
+}
+
+message MessagingDevice {
+  CryptoEndpoint endpoint = 1;
+  MessagingDeviceStatus status = 2;
+  string label = 3;
+  bytes actor_identity_key_fingerprint = 4;
+  string signing_key_id = 5;
+  uint64 profile_version = 6;
+  int64 activation_sequence = 7;
+  google.protobuf.Timestamp enrolled_at = 8;
+  google.protobuf.Timestamp revoked_at = 9;
+}
+
+message EnrollMessagingDeviceRequest {
+  MessagingDeviceCertificate certificate = 1;
+  string label = 2;
+  bytes actor_cross_signature = 3;
+}
+
+message EnrollMessagingDeviceResponse {
+  MessagingDevice device = 1;
+}
+
+message ListMessagingDevicesRequest {}
+
+message ListMessagingDevicesResponse {
+  repeated MessagingDevice devices = 1;
+}
+
+message RevokeMessagingDeviceRequest {
+  string device_id = 1;
+  uint64 observed_profile_version = 2;
+}
+
+message RevokeMessagingDeviceResponse {
+  MessagingDevice device = 1;
+}

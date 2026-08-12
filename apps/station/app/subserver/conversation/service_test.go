@@ -411,6 +411,15 @@ func seedGroup(t *testing.T, repo *memConvRepo, members ...*chat.ConversationMem
 	return conv
 }
 
+func directPayload(ptid, deviceID, ciphertext string) *chat.DeviceEncryptedPayload {
+	return &chat.DeviceEncryptedPayload{
+		RecipientPtid:     ptid,
+		RecipientDeviceId: deviceID,
+		SessionId:         "session:" + ptid + ":" + deviceID,
+		EncryptedEnvelope: []byte(ciphertext),
+	}
+}
+
 func TestCreateDirect_DeterministicID(t *testing.T) {
 	repo := newMemConvRepo()
 	spy := &spyEnvelope{}
@@ -463,8 +472,10 @@ func TestSubmitCommand_SendMessage(t *testing.T) {
 		ClientTs:       timestamppb.New(time.Now()),
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
-				EncryptedPayload: []byte("hello bob"),
-				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+				DevicePayloads: []*chat.DeviceEncryptedPayload{
+					directPayload("did:bob", "bob-device", "hello bob"),
+				},
+				ContentType: chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
 			},
 		},
 	}
@@ -484,7 +495,8 @@ func TestSubmitCommand_SendMessage(t *testing.T) {
 	if msgEvent.SenderPtid != "did:alice" {
 		t.Fatalf("expected sender did:alice, got %s", msgEvent.SenderPtid)
 	}
-	if string(msgEvent.EncryptedPayload) != "hello bob" {
+	if len(msgEvent.DevicePayloads) != 1 ||
+		string(msgEvent.DevicePayloads[0].EncryptedEnvelope) != "hello bob" {
 		t.Fatalf("payload mismatch")
 	}
 	if len(event.EventHash) != 32 {
@@ -494,12 +506,157 @@ func TestSubmitCommand_SendMessage(t *testing.T) {
 		t.Fatalf("previous event hash length = %d, want 32", len(event.PrevEventHash))
 	}
 
-	if len(spy.events) != 1 || len(spy.inbox) != 2 {
+	if len(spy.events) != 1 || len(spy.inbox) != 1 {
 		t.Fatalf(
-			"delivery facts = events:%d inbox:%d, want create event:1 command inbox:2",
+			"delivery facts = events:%d inbox:%d, want create event:1 command inbox:1",
 			len(spy.events),
 			len(spy.inbox),
 		)
+	}
+	if spy.inbox[0].RecipientPtid != "did:bob" ||
+		spy.inbox[0].RecipientDeviceId != "bob-device" {
+		t.Fatalf("direct delivery target = %s/%s", spy.inbox[0].RecipientPtid, spy.inbox[0].RecipientDeviceId)
+	}
+}
+
+func TestSubmitCommand_DirectRejectsIncompleteDevicePayloads(t *testing.T) {
+	tests := map[string][]*chat.DeviceEncryptedPayload{
+		"empty": nil,
+		"blank recipient device": {{
+			RecipientPtid:     "did:bob",
+			SessionId:         "session-1",
+			EncryptedEnvelope: []byte("ciphertext"),
+		}},
+		"non-member recipient": {
+			directPayload("did:mallory", "mallory-device", "ciphertext"),
+		},
+		"sending endpoint": {
+			directPayload("did:alice", "alice-device", "ciphertext"),
+		},
+		"duplicate target": {
+			directPayload("did:bob", "bob-device", "ciphertext-1"),
+			directPayload("did:bob", "bob-device", "ciphertext-2"),
+		},
+	}
+	for name, payloads := range tests {
+		t.Run(name, func(t *testing.T) {
+			repo := newMemConvRepo()
+			spy := &spyEnvelope{}
+			svc := newMemService(repo, spy)
+			_, err := svc.CreateDirect(
+				context.Background(),
+				"did:alice",
+				"did:bob",
+				"station-A",
+				"station-A",
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			convID := conversation.DeterministicDirectID("did:alice", "did:bob")
+			eventCount := len(repo.events[convID])
+			_, err = svc.SubmitCommand(context.Background(), &chat.ConversationCommand{
+				CommandId:      uuid.NewString(),
+				ConversationId: convID,
+				SenderPtid:     "did:alice",
+				SenderDeviceId: "alice-device",
+				Payload: &chat.ConversationCommand_SendMessage{
+					SendMessage: &chat.SendMessageCommand{
+						DevicePayloads: payloads,
+					},
+				},
+			})
+			if err == nil {
+				t.Fatal("expected incomplete direct payload rejection")
+			}
+			if len(repo.events[convID]) != eventCount || len(spy.inbox) != 0 {
+				t.Fatal("invalid direct payload mutated authority or inbox state")
+			}
+		})
+	}
+}
+
+func TestSubmitCommand_GroupRequiresOnlyGroupCiphertext(t *testing.T) {
+	for name, send := range map[string]*chat.SendMessageCommand{
+		"missing group ciphertext": {},
+		"device payload on group": {
+			DevicePayloads: []*chat.DeviceEncryptedPayload{
+				directPayload("did:bob", "bob-device", "ciphertext"),
+			},
+			GroupEncryptedPayload: []byte("group-ciphertext"),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := newMemConvRepo()
+			spy := &spyEnvelope{}
+			svc := newMemService(repo, spy)
+			conv := seedGroup(t, repo, &chat.ConversationMember{
+				Ptid:         "did:alice",
+				Role:         chat.MemberRole_MEMBER_ROLE_OWNER,
+				MemberStatus: chat.MemberStatus_MEMBER_STATUS_ACTIVE,
+			})
+			_, err := svc.SubmitCommand(context.Background(), &chat.ConversationCommand{
+				CommandId:      uuid.NewString(),
+				ConversationId: conv.ConversationId,
+				SenderPtid:     "did:alice",
+				SenderDeviceId: "alice-device",
+				Payload: &chat.ConversationCommand_SendMessage{
+					SendMessage: send,
+				},
+			})
+			if err == nil {
+				t.Fatal("expected invalid group ciphertext shape rejection")
+			}
+			if len(repo.events[conv.ConversationId]) != 0 ||
+				len(spy.inbox) != 0 ||
+				len(spy.outbox) != 0 {
+				t.Fatal("invalid group payload mutated authority or delivery state")
+			}
+		})
+	}
+}
+
+func TestSubmitCommand_DirectEditCommitsAndDeliversDevicePayload(t *testing.T) {
+	repo := newMemConvRepo()
+	spy := &spyEnvelope{}
+	svc := newMemService(repo, spy)
+	_, err := svc.CreateDirect(
+		context.Background(),
+		"did:alice",
+		"did:bob",
+		"station-A",
+		"station-A",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := svc.SubmitCommand(context.Background(), &chat.ConversationCommand{
+		CommandId:      uuid.NewString(),
+		ConversationId: conversation.DeterministicDirectID("did:alice", "did:bob"),
+		SenderPtid:     "did:alice",
+		SenderDeviceId: "alice-device",
+		Payload: &chat.ConversationCommand_EditMessage{
+			EditMessage: &chat.EditMessageCommand{
+				TargetMessageId: "message-1",
+				DevicePayloads: []*chat.DeviceEncryptedPayload{
+					directPayload("did:bob", "bob-device", "edited-ciphertext"),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit direct edit: %v", err)
+	}
+	edited := event.GetMessageEdited()
+	if edited == nil ||
+		len(edited.DevicePayloads) != 1 ||
+		string(edited.DevicePayloads[0].EncryptedEnvelope) != "edited-ciphertext" {
+		t.Fatalf("unexpected committed edit: %+v", edited)
+	}
+	if len(spy.inbox) != 1 ||
+		spy.inbox[0].RecipientPtid != "did:bob" ||
+		spy.inbox[0].RecipientDeviceId != "bob-device" {
+		t.Fatalf("unexpected direct edit delivery: %+v", spy.inbox)
 	}
 }
 
@@ -515,8 +672,10 @@ func TestSubmitCommand_ExactReplayReturnsCanonicalEvent(t *testing.T) {
 		SenderDeviceId: "alice-device",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
-				EncryptedPayload: []byte("ciphertext"),
-				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+				DevicePayloads: []*chat.DeviceEncryptedPayload{
+					directPayload("did:bob", "bob-device", "ciphertext"),
+				},
+				ContentType: chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
 			},
 		},
 	}
@@ -549,8 +708,10 @@ func TestSubmitCommand_CommandHashConflictRejectsBeforeMutation(t *testing.T) {
 		SenderDeviceId: "alice-device",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
-				EncryptedPayload: []byte("ciphertext-a"),
-				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+				DevicePayloads: []*chat.DeviceEncryptedPayload{
+					directPayload("did:bob", "bob-device", "ciphertext-a"),
+				},
+				ContentType: chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
 			},
 		},
 	}
@@ -558,7 +719,7 @@ func TestSubmitCommand_CommandHashConflictRejectsBeforeMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	conflict := proto.Clone(command).(*chat.ConversationCommand)
-	conflict.GetSendMessage().EncryptedPayload = []byte("ciphertext-b")
+	conflict.GetSendMessage().DevicePayloads[0].EncryptedEnvelope = []byte("ciphertext-b")
 	eventCount := len(repo.events[command.ConversationId])
 	if _, err := svc.SubmitCommand(context.Background(), conflict); err == nil {
 		t.Fatal("expected command hash conflict")
@@ -580,10 +741,13 @@ func TestSubmitCommand_NonMember_Rejected(t *testing.T) {
 		CommandId:      uuid.NewString(),
 		ConversationId: convID,
 		SenderPtid:     "did:charlie",
+		SenderDeviceId: "charlie-device",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
-				EncryptedPayload: []byte("intrusion"),
-				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+				DevicePayloads: []*chat.DeviceEncryptedPayload{
+					directPayload("did:bob", "bob-device", "intrusion"),
+				},
+				ContentType: chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
 			},
 		},
 	}
@@ -650,8 +814,10 @@ func TestListEvents_PaginatedHistory(t *testing.T) {
 			SenderDeviceId: "device-1",
 			Payload: &chat.ConversationCommand_SendMessage{
 				SendMessage: &chat.SendMessageCommand{
-					EncryptedPayload: []byte("msg"),
-					ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+					DevicePayloads: []*chat.DeviceEncryptedPayload{
+						directPayload("did:bob", "bob-device", "msg"),
+					},
+					ContentType: chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
 				},
 			},
 		}
@@ -697,10 +863,11 @@ func TestRemovedMember_CannotSendMessage(t *testing.T) {
 		CommandId:      uuid.NewString(),
 		ConversationId: conv.ConversationId,
 		SenderPtid:     "did:bob",
+		SenderDeviceId: "bob-device",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
-				EncryptedPayload: []byte("should fail"),
-				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+				GroupEncryptedPayload: []byte("should fail"),
+				ContentType:           chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
 			},
 		},
 	}
@@ -732,10 +899,11 @@ func TestLeftMember_CannotSendMessage(t *testing.T) {
 		CommandId:      uuid.NewString(),
 		ConversationId: conv.ConversationId,
 		SenderPtid:     "did:bob",
+		SenderDeviceId: "bob-device",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
-				EncryptedPayload: []byte("should fail"),
-				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+				GroupEncryptedPayload: []byte("should fail"),
+				ContentType:           chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
 			},
 		},
 	}
@@ -758,10 +926,11 @@ func TestNonMembershipCommandDoesNotChangeEpoch(t *testing.T) {
 		CommandId:      uuid.NewString(),
 		ConversationId: conv.ConversationId,
 		SenderPtid:     "did:alice",
+		SenderDeviceId: "alice-device",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
-				EncryptedPayload: []byte("hello"),
-				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+				GroupEncryptedPayload: []byte("hello"),
+				ContentType:           chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
 			},
 		},
 	}
@@ -827,10 +996,11 @@ func TestEnvelopeFanout_OnlyActiveMembers(t *testing.T) {
 		CommandId:      uuid.NewString(),
 		ConversationId: conv.ConversationId,
 		SenderPtid:     "did:alice",
+		SenderDeviceId: "alice-device",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
-				EncryptedPayload: []byte("private post-removal"),
-				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+				GroupEncryptedPayload: []byte("private post-removal"),
+				ContentType:           chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
 			},
 		},
 	}
@@ -897,10 +1067,14 @@ func TestCrossStation_DirectMessage_E2E(t *testing.T) {
 		CommandId:      uuid.NewString(),
 		ConversationId: conv.ConversationId,
 		SenderPtid:     "did:alice",
+		SenderDeviceId: "alice-device",
 		Payload: &chat.ConversationCommand_SendMessage{
 			SendMessage: &chat.SendMessageCommand{
-				EncryptedPayload: []byte("encrypted-dm-payload"),
-				ContentType:      chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+				DevicePayloads: []*chat.DeviceEncryptedPayload{
+					directPayload("did:alice", "alice-device-2", "encrypted-dm-payload"),
+					directPayload("did:bob", "bob-device", "encrypted-dm-payload"),
+				},
+				ContentType: chat.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
 			},
 		},
 	}
@@ -921,12 +1095,23 @@ func TestCrossStation_DirectMessage_E2E(t *testing.T) {
 			len(spy.outbox),
 		)
 	}
+	localEvent := &chat.CommittedConversationEvent{}
+	if err := proto.Unmarshal(spy.inbox[0].Envelope.PayloadBytes, localEvent); err != nil {
+		t.Fatalf("decode local delivery event: %v", err)
+	}
+	remoteEvent := &chat.CommittedConversationEvent{}
+	if err := proto.Unmarshal(spy.outbox[0].Envelope.PayloadBytes, remoteEvent); err != nil {
+		t.Fatalf("decode remote delivery event: %v", err)
+	}
+	if !proto.Equal(event, localEvent) || !proto.Equal(event, remoteEvent) {
+		t.Fatal("direct payload deliveries must carry the same canonical authority event")
+	}
 	msgEvt := event.GetMessageCommitted()
 	if msgEvt == nil {
 		t.Fatal("expected MessageCommittedEvent payload")
 	}
-	if string(msgEvt.EncryptedPayload) != "encrypted-dm-payload" {
-		t.Fatalf("payload mismatch: %s", string(msgEvt.EncryptedPayload))
+	if len(msgEvt.DevicePayloads) != 2 {
+		t.Fatalf("device payload count = %d, want 2", len(msgEvt.DevicePayloads))
 	}
 	if msgEvt.SenderPtid != "did:alice" {
 		t.Fatalf("sender expected did:alice, got %s", msgEvt.SenderPtid)

@@ -29,6 +29,23 @@ describe('FrontendScheduler', () => {
       expect(fn).toHaveBeenCalledTimes(1);
     });
 
+    it('does not starve work when the native window is hidden', async () => {
+      const requestAnimationFrame = vi.fn();
+      vi.stubGlobal('window', {
+        document: { visibilityState: 'hidden' },
+        requestAnimationFrame,
+        cancelAnimationFrame: vi.fn(),
+      });
+      const fn = vi.fn();
+
+      scheduler.afterFirstPaint(fn);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(requestAnimationFrame).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    });
+
     it('returns cancel function that prevents execution', async () => {
       const fn = vi.fn();
       const cancel = scheduler.afterFirstPaint(fn);

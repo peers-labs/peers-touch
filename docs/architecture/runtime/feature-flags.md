@@ -7,19 +7,17 @@
 > A future RFC may add server-pushed flags — that work is explicitly
 > out of scope for this document.
 
-Companion to `docs/architecture/encryption/chat-ratchet-upgrade.md`, which
-ties several migration phases (M0–M5) to flag-gated behavior for the
-Double Ratchet cutover.
+Cryptographic correctness is not feature-flagged. The canonical Chat encryption
+contract is `docs/architecture/encryption/README.md` and requires a hard
+single-path implementation.
 
 ---
 
 ## 1. Purpose
 
-Runtime feature flags let us ship latent code paths (for example Double
-Ratchet) behind **local, reversible** switches before changing wire
-defaults. They decouple "code is in the tree" from "users hit the new
-path," which is required for phased migrations with production telemetry
-and rollback stories.
+Runtime feature flags control non-security product experiments and diagnostic
+telemetry. They must not select encryption, identity, persistence, or delivery
+semantics.
 
 ---
 
@@ -86,26 +84,13 @@ does not collide with unrelated product keys.
 - **Effect (when false):** Those client-side snapshots are not
   scheduled; native counters may still increment when decrypt runs.
 
-### 4.3 (Reserved) crypto.dr_strict
-
-- **Reserved for:** **M4** hard cutover semantics (`chat-ratchet-upgrade.md`
-  §6 Phase M4) — publishing only `supported_versions = [1]` and
-  failing session creation when negotiation would otherwise yield an
-  empty intersection.
-- **Status:** Not read by shipping code until M4; do not reuse this
-  dotted name for unrelated experiments.
-
----
-
 ## 5. Lifecycle (Add / Promote-to-default / Retire)
 
 1. **Add:** Document the flag in this file (new §4.x), implement the
    TypeScript accessor with a conservative default, and land code paths
    that are inert until the flag is toggled or the default changes.
-2. **Promote:** Changing the coded default is a **product/architecture
-   decision** — update this file and the relevant phase section in
-   `chat-ratchet-upgrade.md` in the same change when possible so release
-   notes stay coherent.
+2. **Promote:** Changing the coded default is a product/architecture decision;
+   update the owning design in the same change.
 3. **Retire:** After ≥1 release with no overrides, remove dead branches
    and delete the flag entry (or mark deprecated with a removal
    milestone). Prefer removing `localStorage` keys only in migration
@@ -127,8 +112,8 @@ does not collide with unrelated product keys.
 
 ## 7. References
 
-- `docs/architecture/encryption/chat-ratchet-upgrade.md` — phased plan
-  M0–M5, telemetry gate, and storage schema (§8).
+- `docs/architecture/encryption/README.md` — non-flagged Chat encryption
+  contract.
 - `apps/desktop/src/modules/settings/featureFlags.ts` — canonical
   TypeScript accessors for flags listed above.
 - `apps/desktop/src-tauri/src/domain/crypto/telemetry.rs` — in-process

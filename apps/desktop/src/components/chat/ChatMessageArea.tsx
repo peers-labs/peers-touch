@@ -14,13 +14,14 @@ import {
 import {
   socialThreadKey,
 } from '../../store/socialChat';
+import { useCryptoStore } from '../../store/cryptoStore';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
-import { presentError } from '../../services/errorPresenter';
+import { presentError, type PresentedError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
 import {
   type ChatMessage,
@@ -34,6 +35,7 @@ import {
 } from './message/ChatMessageTimeline';
 import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
 import { ForwardPickerModal } from './ForwardPickerModal';
+import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
 const { Text } = Typography;
@@ -68,7 +70,7 @@ export function ChatMessageArea() {
   const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
-    loadMessages, loadOlderMessages, sendFriendMessage, retryFriendMessage, sendGroupMessage, toggleDetail,
+    loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
     deleteMessage, recallFriendMessage, editFriendMessage,
     recallGroupMessage, editGroupMessage, openThread,
     conversationLocalState,
@@ -83,7 +85,6 @@ export function ChatMessageArea() {
     scrollToMessageUlid,
     setScrollToMessageUlid,
     encryptionEnabled,
-    sessionSecurityState,
     groupSecurityState,
     friendP2pStatus,
     peerOnline,
@@ -97,7 +98,6 @@ export function ChatMessageArea() {
     loadMessages: s.loadMessages,
     loadOlderMessages: s.loadOlderMessages,
     sendFriendMessage: s.sendFriendMessage,
-    retryFriendMessage: s.retryFriendMessage,
     sendGroupMessage: s.sendGroupMessage,
     toggleDetail: s.toggleDetail,
     deleteMessage: s.deleteMessage,
@@ -118,7 +118,6 @@ export function ChatMessageArea() {
     scrollToMessageUlid: s.scrollToMessageUlid,
     setScrollToMessageUlid: s.setScrollToMessageUlid,
     encryptionEnabled: s.encryptionEnabled,
-    sessionSecurityState: s.sessionSecurityState,
     groupSecurityState: s.groupSecurityState,
     friendP2pStatus: s.friendP2pStatus,
     peerOnline: s.peerOnline,
@@ -139,11 +138,15 @@ export function ChatMessageArea() {
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
   const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null);
+  const [composerError, setComposerError] = useState<PresentedError | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
+  const directSecurityState = useCryptoStore((state) => (
+    activeUlid ? state.conversationSecurity[activeUlid]?.aggregateLevel ?? 'idle' : 'idle'
+  ));
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
   const activeConversation = activeUlid
     ? getIMConversations().find((conversation) => conversation.kind === activeKind && conversation.id === activeUlid)
@@ -183,6 +186,7 @@ export function ChatMessageArea() {
     const color = online ? token.colorSuccess : token.colorTextQuaternary;
     return (
       <span
+        data-chat-presence-tag={label}
         aria-label={label}
         style={{
           display: 'inline-flex',
@@ -232,6 +236,7 @@ export function ChatMessageArea() {
     setReplyToUlid(null);
     setDeleteTarget(null);
     setDeletingMessage(false);
+    setComposerError(null);
   }, [activeUlid]);
 
   useEffect(() => {
@@ -409,6 +414,7 @@ export function ChatMessageArea() {
     setInputValue('');
     setReplyToUlid(null);
     setEditingUlid(null);
+    setComposerError(null);
     setSending(true);
     // Sending implies "stopped composing" — flip the bubble for the
     // peer immediately rather than waiting on the 4s idle timer.
@@ -453,15 +459,14 @@ export function ChatMessageArea() {
       }
     } catch (err) {
       log.error('chat', 'composer send failed', err);
-      if (activeTab === 'group') {
-        setInputValue(content);
-        setReplyToUlid(replyRef ?? null);
-      }
-      presentError(err, {
+      setInputValue(content);
+      setReplyToUlid(replyRef ?? null);
+      const presentedError = presentError(err, {
         mode: 'toast',
         mapper: mapChatError,
         context: { operation: 'send' },
       });
+      setComposerError(presentedError);
     } finally {
       setSending(false);
     }
@@ -583,10 +588,8 @@ export function ChatMessageArea() {
     activeBackgroundImageUrl || undefined,
   );
   const headerSubtitle = activeTab === 'friend'
-    ? sessionSecurityState[activeUlid] === 'establishing'
+    ? directSecurityState === 'establishing'
       ? t('chat.social.encryption.establishing')
-      : sessionSecurityState[activeUlid] === 'error'
-        ? t('chat.social.encryption.unavailable')
       : peerIsTyping
       ? t('chat.social.messageArea.typing')
       : ''
@@ -596,11 +599,13 @@ export function ChatMessageArea() {
         ? t('chat.social.encryption.cryptoDesynced')
         : subtitle;
   const conversationEncrypted = activeTab === 'friend'
-    ? sessionSecurityState[activeUlid] === 'ready'
+    ? directSecurityState === 'ready'
     : groupSecurityState[activeUlid] === 'ready';
 
   return (
     <Flexbox
+      data-session-security={activeTab === 'friend' ? directSecurityState : undefined}
+      data-group-security={activeTab === 'group' ? groupSecurityState[activeUlid] || 'unknown' : undefined}
       flex={1}
       gap={0}
       style={{
@@ -704,7 +709,13 @@ export function ChatMessageArea() {
               onClick={() => handleStartCall('video')}
             />
           </Tooltip>
-          <Button type="text" icon={<MoreHorizontal size={16} />} style={{ width: 32, height: 32, borderRadius: 10 }} onClick={toggleDetail} />
+          <Button
+            data-chat-detail-toggle
+            type="text"
+            icon={<MoreHorizontal size={16} />}
+            style={{ width: 32, height: 32, borderRadius: 10 }}
+            onClick={toggleDetail}
+          />
         </Flexbox>
       </Flexbox>
 
@@ -752,20 +763,6 @@ export function ChatMessageArea() {
               setEditingUlid(null);
               setReplyToUlid(messageUlid);
             }}
-            onRetry={(message) => {
-              if (activeTab !== 'friend' || !activeConversation?.peerDid) return;
-              void retryFriendMessage(
-                activeUlid,
-                message.ulid,
-                activeConversation.peerDid,
-              ).catch((error) => {
-                presentError(error, {
-                  mode: 'toast',
-                  mapper: mapChatError,
-                  context: { operation: 'send' },
-                });
-              });
-            }}
             resolveThreadStats={(message) => {
               const threadKey = socialThreadKey(activeKind, activeUlid, message.ulid);
               const threadSummary = threadCounts[threadKey];
@@ -779,6 +776,15 @@ export function ChatMessageArea() {
         )}
         <div ref={bottomRef} />
       </Flexbox>
+
+      {composerError && (
+        <Flexbox
+          data-chat-error={composerError.code || composerError.severity}
+          style={{ padding: '0 16px 12px', background: conversationSurfaceBackground }}
+        >
+          <PresentedErrorAlert error={composerError} onClose={() => setComposerError(null)} />
+        </Flexbox>
+      )}
 
       <ChatComposer
         activeConversationId={activeUlid}

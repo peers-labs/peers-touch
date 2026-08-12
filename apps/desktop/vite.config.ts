@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url'
 
 const configDir = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
+const lynxClientPath = require.resolve('@lynx-js/web-core/client.prod.js')
+const lynxStaticSourceDir = path.resolve(path.dirname(lynxClientPath), '..')
 
 function getWorktreeInfo() {
   try {
@@ -24,8 +26,6 @@ function getWorktreeInfo() {
 function appletDistPlugin() {
   const sourceDir = path.resolve(configDir, 'applets-dist')
   const targetDir = path.resolve(configDir, 'dist/applets-dist')
-  const lynxClientPath = require.resolve('@lynx-js/web-core/client.prod.js')
-  const lynxStaticSourceDir = path.resolve(path.dirname(lynxClientPath), '..')
   const lynxStaticTargetDir = path.resolve(configDir, 'dist/lynx-web-core/static')
   return {
     name: 'peers-touch-applet-dist',
@@ -44,12 +44,17 @@ function appletDistPlugin() {
 // https://vitejs.dev/config/
 const worktreeInfo = getWorktreeInfo()
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react(), wasm(), appletDistPlugin()],
   base: './',
   define: {
     __PT_DEV_WORKTREE__: JSON.stringify(worktreeInfo.worktreeName),
     __PT_DEV_BRANCH__: JSON.stringify(worktreeInfo.branch),
+    'import.meta.env.VITE_LYNX_WEB_RUNTIME_BASE': JSON.stringify(
+      command === 'serve'
+        ? `/@fs/${lynxStaticSourceDir}`
+        : './lynx-web-core/static',
+    ),
   },
   resolve: {
     alias: {
@@ -59,6 +64,8 @@ export default defineConfig({
   server: {
     port: 3210,
     strictPort: true,
+    hmr: process.env.VITE_RUNTIME_EVIDENCE_HARNESS ? false : undefined,
+    watch: process.env.VITE_RUNTIME_EVIDENCE_HARNESS ? { ignored: ['**/*'] } : undefined,
     proxy: {
       '/api': {
         target: process.env.PEERS_STATION_URL || 'http://127.0.0.1:18080',
@@ -117,4 +124,4 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['tiktoken', '@lynx-js/web-core', '@lynx-js/web-elements'],
   },
-})
+}))
