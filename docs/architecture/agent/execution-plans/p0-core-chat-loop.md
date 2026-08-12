@@ -25,10 +25,10 @@ P0 delivers a complete, end-to-end single-agent chat experience:
 |---|--------|----------------------|---------|---------|---------|---------|---------|-----|
 | 1 | **Streaming Runtime** | store/chat/agentRun (entries, controls, lifecycle, state, transports) | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | #86 |
 | 2 | **Message & Actions** | store/chat/message + Messages/ components + MessageActionBar | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | #86 |
-| 3 | **Chat Input & Composer** | features/ChatInput (ActionBar, InputEditor, ControlBar, Desktop variant) | ✅ | ✅ | ✅ | ✅ deterministic | — | — |
-| 4 | **Agent Config & Profile** | store/agent + features/AgentSetting | ✅ | ✅ | ✅ | ✅ deterministic | — | — |
-| 5 | **Provider & Model Infra** | store/aiInfra + features/ModelSwitchPanel | ✅ | ✅ | ✅ | ✅ deterministic | — | — |
-| 6 | **Session & Topic** | store/session + store/chat/topic + features/AgentSidebar/Topic | ✅ | ✅ | ✅ | ✅ deterministic | — | — |
+| 3 | **Chat Input & Composer** | features/ChatInput (ActionBar, InputEditor, ControlBar, Desktop variant) | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | #86 |
+| 4 | **Agent Config & Profile** | store/agent + features/AgentSetting | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | #86 |
+| 5 | **Provider & Model Infra** | store/aiInfra + features/ModelSwitchPanel | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | #86 |
+| 6 | **Session & Topic** | store/session + store/chat/topic + features/AgentSidebar/Topic | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | #86 |
 
 ## Module Dependency Order
 
