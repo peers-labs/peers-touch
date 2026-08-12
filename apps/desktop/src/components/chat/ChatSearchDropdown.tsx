@@ -102,13 +102,21 @@ function ResultRow({
 }) {
   const name = conversation.title || 'Unknown';
   return (
-    <Flexbox
-      horizontal
-      align="center"
-      gap={10}
+    <button
+      type="button"
+      aria-label={name}
       onClick={() => onSelect(conversation)}
       style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        width: '100%',
         padding: '8px 14px',
+        border: 'none',
+        background: 'transparent',
+        color: 'inherit',
+        font: 'inherit',
+        textAlign: 'left',
         cursor: 'pointer',
         transition: 'background 0.12s',
       }}
@@ -129,6 +137,6 @@ function ResultRow({
       >
         {name}
       </span>
-    </Flexbox>
+    </button>
   );
 }

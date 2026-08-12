@@ -73,6 +73,19 @@ pub struct MlsPreparedReceive {
     pub provider_pool_state: Option<Vec<u8>>,
 }
 
+#[derive(Clone, Debug)]
+pub struct MlsPreparedApplication {
+    pub plaintext: Vec<u8>,
+    pub session_state: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MlsPreparedOutboundApplication {
+    pub ciphertext: Vec<u8>,
+    pub session_state: Vec<u8>,
+    pub mls_epoch: u64,
+}
+
 pub struct MlsGroupSession {
     provider: PeersMLSProvider,
     signer: SignatureKeyPair,
@@ -305,34 +318,117 @@ impl MlsGroupManager {
         Ok(())
     }
 
-    pub fn encrypt(
+    pub fn encrypt_at_epoch(
+        &self,
+        conversation_id: &str,
+        expected_epoch: u64,
+        plaintext: &[u8],
+    ) -> Result<MlsGroupEncryptResult, String> {
+        let prepared =
+            self.prepare_outbound_application(conversation_id, expected_epoch, plaintext)?;
+        self.install_prepared_outbound_application(conversation_id, &prepared)?;
+        Ok(MlsGroupEncryptResult {
+            ciphertext: prepared.ciphertext,
+        })
+    }
+
+    pub fn prepare_outbound_application(
+        &self,
+        conversation_id: &str,
+        expected_epoch: u64,
+        plaintext: &[u8],
+    ) -> Result<MlsPreparedOutboundApplication, String> {
+        if plaintext.is_empty() {
+            return Err("MLS application plaintext is empty".to_string());
+        }
+        let sessions = self.sessions.lock().unwrap();
+        let pending = self.pending_transitions.lock().unwrap();
+        if pending.contains_key(conversation_id) {
+            return Err("MLS membership transition is awaiting authority acceptance".to_string());
+        }
+        let session = sessions
+            .get(conversation_id)
+            .ok_or("no MLS session for this conversation")?;
+        let actual_epoch = session.group.epoch().as_u64();
+        if actual_epoch != expected_epoch {
+            return Err(format!(
+                "MLS epoch mismatch: authority expects {expected_epoch}, local group is {actual_epoch}"
+            ));
+        }
+        let mut prepared = restore_session(conversation_id, &serialize_session(session)?)?;
+        drop(pending);
+        drop(sessions);
+        let (_, local_credential) = self.actor_identity.snapshot()?;
+        let local_identity = local_credential.credential.serialized_content();
+        let local_leaf_active = prepared
+            .group
+            .members()
+            .any(|member| member.credential.serialized_content() == local_identity);
+        if !local_leaf_active {
+            return Err("local actor-device MLS leaf is not active".to_string());
+        }
+
+        let mls_out = prepared
+            .group
+            .create_message(&prepared.provider, &prepared.signer, plaintext)
+            .map_err(|e| format!("encrypt: {e:?}"))?;
+        let ciphertext = mls_out
+            .tls_serialize_detached()
+            .map_err(|e| format!("serialize message: {e:?}"))?;
+        let mls_epoch = prepared.group.epoch().as_u64();
+        Ok(MlsPreparedOutboundApplication {
+            ciphertext,
+            session_state: serialize_session(&prepared)?,
+            mls_epoch,
+        })
+    }
+
+    pub fn install_prepared_outbound_application(
+        &self,
+        conversation_id: &str,
+        prepared: &MlsPreparedOutboundApplication,
+    ) -> Result<(), String> {
+        if prepared.session_state.is_empty() || prepared.ciphertext.is_empty() {
+            return Err("prepared MLS outbound application is incomplete".to_string());
+        }
+        self.import_session_state(conversation_id, &prepared.session_state)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn encrypt(
         &self,
         conversation_id: &str,
         plaintext: &[u8],
     ) -> Result<MlsGroupEncryptResult, String> {
+        let epoch = self.group_epoch(conversation_id)?;
+        self.encrypt_at_epoch(conversation_id, epoch, plaintext)
+    }
+
+    pub fn is_local_leaf_active_at_epoch(
+        &self,
+        conversation_id: &str,
+        expected_epoch: u64,
+    ) -> Result<bool, String> {
         if self
             .pending_transitions
             .lock()
             .unwrap()
             .contains_key(conversation_id)
         {
-            return Err("MLS membership transition is awaiting authority acceptance".to_string());
+            return Ok(false);
         }
-        let mut sessions = self.sessions.lock().unwrap();
-        let session = sessions
-            .get_mut(conversation_id)
-            .ok_or("no MLS session for this conversation")?;
-
-        let mls_out = session
-            .group
-            .create_message(&session.provider, &session.signer, plaintext)
-            .map_err(|e| format!("encrypt: {e:?}"))?;
-
-        let ciphertext = mls_out
-            .tls_serialize_detached()
-            .map_err(|e| format!("serialize message: {e:?}"))?;
-
-        Ok(MlsGroupEncryptResult { ciphertext })
+        let (_, local_credential) = self.actor_identity.snapshot()?;
+        let local_identity = local_credential.credential.serialized_content();
+        let sessions = self.sessions.lock().unwrap();
+        let session = match sessions.get(conversation_id) {
+            Some(session) => session,
+            None => return Ok(false),
+        };
+        Ok(session.group.epoch().as_u64() == expected_epoch
+            && session
+                .group
+                .members()
+                .any(|member| member.credential.serialized_content() == local_identity))
     }
 
     pub fn decrypt(&self, conversation_id: &str, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
@@ -340,29 +436,33 @@ impl MlsGroupManager {
         let session = sessions
             .get_mut(conversation_id)
             .ok_or("no MLS session for this conversation")?;
+        process_application_message(session, ciphertext)
+    }
 
-        let mls_msg = MlsMessageIn::tls_deserialize(&mut Cursor::new(ciphertext))
-            .map_err(|e| format!("deserialize message: {e:?}"))?;
+    pub fn prepare_application_message(
+        &self,
+        conversation_id: &str,
+        ciphertext: &[u8],
+    ) -> Result<MlsPreparedApplication, String> {
+        let sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get(conversation_id)
+            .ok_or("no MLS session for this conversation")?;
+        let mut prepared = restore_session(conversation_id, &serialize_session(session)?)?;
+        drop(sessions);
+        let plaintext = process_application_message(&mut prepared, ciphertext)?;
+        Ok(MlsPreparedApplication {
+            plaintext,
+            session_state: serialize_session(&prepared)?,
+        })
+    }
 
-        let protocol_msg = mls_msg
-            .into_protocol_message()
-            .ok_or("not a protocol message")?;
-
-        let protocol_msg = session
-            .group
-            .process_message(&session.provider, protocol_msg)
-            .map_err(|e| format!("process message: {e:?}"))?;
-
-        match protocol_msg.into_content() {
-            ProcessedMessageContent::ApplicationMessage(app_msg) => Ok(app_msg.into_bytes()),
-            ProcessedMessageContent::StagedCommitMessage(_) => {
-                Err("unexpected commit message in decrypt path".to_string())
-            }
-            ProcessedMessageContent::ProposalMessage(_) => {
-                Err("unexpected proposal in decrypt path".to_string())
-            }
-            _ => Err("unknown message content type".to_string()),
-        }
+    pub fn install_prepared_application(
+        &self,
+        conversation_id: &str,
+        prepared: &MlsPreparedApplication,
+    ) -> Result<(), String> {
+        self.import_session_state(conversation_id, &prepared.session_state)
     }
 
     pub fn process_commit(&self, conversation_id: &str, commit_bytes: &[u8]) -> Result<(), String> {
@@ -464,6 +564,17 @@ impl MlsGroupManager {
         conversation_id: &str,
         member: &MlsMemberKeyPackage,
     ) -> Result<MlsPreparedTransition, String> {
+        self.add_members(conversation_id, std::slice::from_ref(member))
+    }
+
+    pub fn add_members(
+        &self,
+        conversation_id: &str,
+        members: &[MlsMemberKeyPackage],
+    ) -> Result<MlsPreparedTransition, String> {
+        if members.is_empty() {
+            return Err("MLS add transition requires at least one member device".to_string());
+        }
         let sessions = self.sessions.lock().unwrap();
         let session = sessions
             .get(conversation_id)
@@ -471,12 +582,15 @@ impl MlsGroupManager {
         let mut prepared = restore_session(conversation_id, &serialize_session(session)?)?;
         drop(sessions);
 
-        let kp = validate_member_key_package(&prepared.provider, member)?;
+        let key_packages = members
+            .iter()
+            .map(|member| validate_member_key_package(&prepared.provider, member))
+            .collect::<Result<Vec<_>, _>>()?;
 
         let (mls_out, welcome, _group_info) = prepared
             .group
-            .add_members(&prepared.provider, &prepared.signer, &[kp])
-            .map_err(|e| format!("add member: {e:?}"))?;
+            .add_members(&prepared.provider, &prepared.signer, &key_packages)
+            .map_err(|e| format!("add members: {e:?}"))?;
 
         let commit_bytes = mls_out
             .tls_serialize_detached()
@@ -773,6 +887,31 @@ fn restore_join_provider_pool(state_bytes: &[u8]) -> Result<Vec<PeersMLSProvider
         restored.push(provider);
     }
     Ok(restored)
+}
+
+fn process_application_message(
+    session: &mut MlsGroupSession,
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, String> {
+    let mls_msg = MlsMessageIn::tls_deserialize(&mut Cursor::new(ciphertext))
+        .map_err(|e| format!("deserialize message: {e:?}"))?;
+    let protocol_msg = mls_msg
+        .into_protocol_message()
+        .ok_or("not a protocol message")?;
+    let processed = session
+        .group
+        .process_message(&session.provider, protocol_msg)
+        .map_err(|e| format!("process message: {e:?}"))?;
+    match processed.into_content() {
+        ProcessedMessageContent::ApplicationMessage(message) => Ok(message.into_bytes()),
+        ProcessedMessageContent::StagedCommitMessage(_) => {
+            Err("unexpected commit message in application path".to_string())
+        }
+        ProcessedMessageContent::ProposalMessage(_) => {
+            Err("unexpected proposal in application path".to_string())
+        }
+        _ => Err("unknown MLS message content type".to_string()),
+    }
 }
 
 fn process_commit_on_session(
@@ -1079,6 +1218,9 @@ mod tests {
         alice
             .accept_pending_transition("conv-remove-device", &removed.transition_id)
             .unwrap();
+        bob_device_1
+            .process_commit("conv-remove-device", &removed.commit_bytes)
+            .unwrap();
         bob_device_2
             .process_commit("conv-remove-device", &removed.commit_bytes)
             .unwrap();
@@ -1094,6 +1236,26 @@ mod tests {
             alice_head.member_credentials_sha256,
             bob_head.member_credentials_sha256
         );
+        assert!(!bob_device_1
+            .is_local_leaf_active_at_epoch("conv-remove-device", removed.to_mls_epoch)
+            .unwrap());
+        assert!(bob_device_1
+            .encrypt_at_epoch(
+                "conv-remove-device",
+                removed.to_mls_epoch,
+                b"revoked device must not send",
+            )
+            .is_err());
+        assert!(bob_device_2
+            .is_local_leaf_active_at_epoch("conv-remove-device", removed.to_mls_epoch)
+            .unwrap());
+        assert!(bob_device_2
+            .encrypt_at_epoch(
+                "conv-remove-device",
+                removed.from_mls_epoch,
+                b"stale epoch must not send",
+            )
+            .is_err());
         let ciphertext = alice
             .encrypt("conv-remove-device", b"sibling survives")
             .unwrap();
@@ -1277,6 +1439,113 @@ mod tests {
             .expect("decrypt");
 
         assert_eq!(plaintext, b"hello group p3");
+    }
+
+    #[test]
+    fn application_receive_does_not_advance_live_state_before_install() {
+        let alice = MlsGroupManager::new();
+        let bob = MlsGroupManager::new();
+        alice
+            .actor_identity()
+            .init("ptid:test:alice", "alice-device")
+            .unwrap();
+        bob.actor_identity()
+            .init("ptid:test:bob", "bob-device")
+            .unwrap();
+        let bob_kp = bob.generate_key_package().unwrap();
+        let created = alice
+            .create_group(
+                "conv-atomic-application",
+                &[member_key_package("ptid:test:bob", "bob-device", bob_kp)],
+            )
+            .unwrap();
+        accept_genesis(&alice, "conv-atomic-application", &created);
+        bob.join_group("conv-atomic-application", &created.welcome_bytes)
+            .unwrap();
+        let ciphertext = alice
+            .encrypt("conv-atomic-application", b"atomic plaintext")
+            .unwrap()
+            .ciphertext;
+
+        let head_before = bob.public_head("conv-atomic-application").unwrap();
+        let first = bob
+            .prepare_application_message("conv-atomic-application", &ciphertext)
+            .unwrap();
+        bob.prepare_application_message("conv-atomic-application", &ciphertext)
+            .unwrap();
+        let head_after_prepare = bob.public_head("conv-atomic-application").unwrap();
+        assert_eq!(first.plaintext, b"atomic plaintext");
+        assert_eq!(head_before.mls_epoch, head_after_prepare.mls_epoch);
+        assert_eq!(
+            head_before.group_context_sha256,
+            head_after_prepare.group_context_sha256
+        );
+        assert_eq!(
+            head_before.ratchet_tree_sha256,
+            head_after_prepare.ratchet_tree_sha256
+        );
+        assert_eq!(
+            head_before.member_credentials_sha256,
+            head_after_prepare.member_credentials_sha256
+        );
+
+        bob.install_prepared_application("conv-atomic-application", &first)
+            .unwrap();
+        assert!(bob
+            .prepare_application_message("conv-atomic-application", &ciphertext)
+            .is_err());
+    }
+
+    #[test]
+    fn application_send_does_not_advance_live_state_before_install() {
+        let alice = MlsGroupManager::new();
+        let bob = MlsGroupManager::new();
+        alice
+            .actor_identity()
+            .init("ptid:test:alice", "alice-device")
+            .unwrap();
+        bob.actor_identity()
+            .init("ptid:test:bob", "bob-device")
+            .unwrap();
+        let created = alice
+            .create_group(
+                "conv-atomic-send",
+                &[member_key_package(
+                    "ptid:test:bob",
+                    "bob-device",
+                    bob.generate_key_package().unwrap(),
+                )],
+            )
+            .unwrap();
+        accept_genesis(&alice, "conv-atomic-send", &created);
+        bob.join_group("conv-atomic-send", &created.welcome_bytes)
+            .unwrap();
+
+        let first = alice
+            .prepare_outbound_application("conv-atomic-send", 1, b"first")
+            .unwrap();
+        let same_generation = alice
+            .prepare_outbound_application("conv-atomic-send", 1, b"same generation")
+            .unwrap();
+        let received = bob
+            .prepare_application_message("conv-atomic-send", &first.ciphertext)
+            .unwrap();
+        bob.install_prepared_application("conv-atomic-send", &received)
+            .unwrap();
+        assert!(bob
+            .prepare_application_message("conv-atomic-send", &same_generation.ciphertext)
+            .is_err());
+
+        alice
+            .install_prepared_outbound_application("conv-atomic-send", &first)
+            .unwrap();
+        let next = alice
+            .prepare_outbound_application("conv-atomic-send", 1, b"next generation")
+            .unwrap();
+        let next_received = bob
+            .prepare_application_message("conv-atomic-send", &next.ciphertext)
+            .unwrap();
+        assert_eq!(next_received.plaintext, b"next generation");
     }
 
     #[test]
@@ -1701,6 +1970,10 @@ mod tests {
             .expect("export pending genesis");
 
         let restored = MlsGroupManager::new();
+        restored
+            .actor_identity()
+            .init("ptid:test:alice", "alice-device")
+            .unwrap();
         let recovered = restored
             .import_pending_transition("conv-genesis-restart", &pending)
             .expect("restore pending genesis");
@@ -1782,8 +2055,14 @@ mod tests {
             .import_session_state("conv-cold-start", &bob_state)
             .expect("restore bob");
 
+        assert!(restored_alice
+            .is_local_leaf_active_at_epoch("conv-cold-start", 1)
+            .unwrap());
+        assert!(restored_alice
+            .encrypt_at_epoch("conv-cold-start", 0, b"stale after restart")
+            .is_err());
         let encrypted = restored_alice
-            .encrypt("conv-cold-start", b"after cold start")
+            .encrypt_at_epoch("conv-cold-start", 1, b"after cold start")
             .expect("encrypt");
         let plaintext = restored_bob
             .decrypt("conv-cold-start", &encrypted.ciphertext)

@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -13,12 +14,13 @@ import (
 // KeyPackages are one-time-use: they are consumed (deleted) when fetched
 // for group creation or member addition.
 type KeyPackage struct {
-	ID        uint      `gorm:"column:id;primaryKey"`
-	Ptid      string    `gorm:"column:ptid;size:255;index:idx_kp_ptid"`
-	DeviceID  string    `gorm:"column:device_id;size:255;index:idx_kp_device"`
-	StationID string    `gorm:"column:station_id;size:255"`
-	Data      []byte    `gorm:"column:data;type:bytea"`
-	CreatedAt time.Time `gorm:"column:created_at"`
+	ID         uint      `gorm:"column:id;primaryKey"`
+	Ptid       string    `gorm:"column:ptid;size:255;index:idx_kp_ptid;uniqueIndex:uidx_mls_kp_payload"`
+	DeviceID   string    `gorm:"column:device_id;size:255;index:idx_kp_device;uniqueIndex:uidx_mls_kp_payload"`
+	StationID  string    `gorm:"column:station_id;size:255"`
+	Data       []byte    `gorm:"column:data;type:bytea"`
+	DataSHA256 []byte    `gorm:"column:data_sha256;type:bytea;uniqueIndex:uidx_mls_kp_payload"`
+	CreatedAt  time.Time `gorm:"column:created_at"`
 }
 
 func (*KeyPackage) TableName() string { return "mls_key_packages" }
@@ -33,19 +35,74 @@ func NewKeyPackageStore(db *gorm.DB) *KeyPackageStore {
 }
 
 func (s *KeyPackageStore) AutoMigrate() error {
-	return s.db.AutoMigrate(&KeyPackage{})
+	if err := s.db.AutoMigrate(&KeyPackage{}); err != nil {
+		return err
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var keyPackages []KeyPackage
+		if err := tx.
+			Where("data_sha256 IS NULL OR length(data_sha256) <> ?", sha256.Size).
+			Order("id ASC").
+			Find(&keyPackages).Error; err != nil {
+			return err
+		}
+		for _, keyPackage := range keyPackages {
+			if len(keyPackage.Data) == 0 {
+				if err := tx.Delete(&KeyPackage{}, keyPackage.ID).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			hash := sha256.Sum256(keyPackage.Data)
+			var duplicateCount int64
+			if err := tx.Model(&KeyPackage{}).
+				Where(
+					"id <> ? AND ptid = ? AND device_id = ? AND data_sha256 = ?",
+					keyPackage.ID,
+					keyPackage.Ptid,
+					keyPackage.DeviceID,
+					hash[:],
+				).
+				Count(&duplicateCount).Error; err != nil {
+				return err
+			}
+			if duplicateCount > 0 {
+				if err := tx.Delete(&KeyPackage{}, keyPackage.ID).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if err := tx.Model(&KeyPackage{}).
+				Where("id = ?", keyPackage.ID).
+				Update("data_sha256", hash[:]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Upload stores a new KeyPackage for the given actor/device.
 func (s *KeyPackageStore) Upload(ctx context.Context, ptid, deviceID, stationID string, data []byte) error {
+	hash := sha256.Sum256(data)
 	kp := &KeyPackage{
-		Ptid:      ptid,
-		DeviceID:  deviceID,
-		StationID: stationID,
-		Data:      data,
-		CreatedAt: time.Now(),
+		Ptid:       ptid,
+		DeviceID:   deviceID,
+		StationID:  stationID,
+		Data:       data,
+		DataSHA256: hash[:],
+		CreatedAt:  time.Now(),
 	}
-	return s.db.WithContext(ctx).Create(kp).Error
+	return s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "ptid"},
+				{Name: "device_id"},
+				{Name: "data_sha256"},
+			},
+			DoNothing: true,
+		}).
+		Create(kp).Error
 }
 
 // FetchAndConsume atomically retrieves and deletes one KeyPackage for the actor.

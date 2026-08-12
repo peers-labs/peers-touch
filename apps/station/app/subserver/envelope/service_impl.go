@@ -38,6 +38,9 @@ func NewService(
 }
 
 func (s *DefaultService) Submit(ctx context.Context, env *chat.StationEnvelope) (string, error) {
+	if err := validateEnvelopeAddressing(env); err != nil {
+		return "", err
+	}
 	if env.EnvelopeId == "" {
 		env.EnvelopeId = uuid.NewString()
 	}
@@ -60,6 +63,9 @@ func (s *DefaultService) Submit(ctx context.Context, env *chat.StationEnvelope) 
 }
 
 func (s *DefaultService) Deliver(ctx context.Context, env *chat.StationEnvelope, claims *FederationClaims) error {
+	if err := validateEnvelopeAddressing(env); err != nil {
+		return err
+	}
 	if err := s.validateFederationClaims(env, claims); err != nil {
 		return fmt.Errorf("envelope: federation validation failed: %w", err)
 	}
@@ -129,6 +135,10 @@ func (s *DefaultService) NotifyPersisted(ctx context.Context, item *chat.DeviceI
 		return
 	}
 	env := item.Envelope
+	if env.PayloadType == chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE &&
+		env.RecipientDeviceId == "" {
+		return
+	}
 	inboxID := item.InboxItemId
 	if env.RecipientDeviceId != "" {
 		delivered := s.bus.PublishToDevice(ctx, env.RecipientPtid, env.RecipientDeviceId, inboxID, env)
@@ -141,6 +151,26 @@ func (s *DefaultService) NotifyPersisted(ctx context.Context, item *chat.DeviceI
 			_ = s.repo.MarkInboxDelivered(ctx, inboxID, time.Now())
 		}
 	}
+}
+
+func validateEnvelopeAddressing(env *chat.StationEnvelope) error {
+	if env == nil {
+		return fmt.Errorf("envelope: envelope is required")
+	}
+	if env.PayloadType != chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE {
+		return nil
+	}
+	if env.SenderPtid == "" ||
+		env.SenderDeviceId == "" ||
+		env.RecipientPtid == "" ||
+		env.RecipientDeviceId == "" {
+		return fmt.Errorf("envelope: DKX requires complete sender and recipient device tuples")
+	}
+	if env.SenderPtid == env.RecipientPtid &&
+		env.SenderDeviceId == env.RecipientDeviceId {
+		return fmt.Errorf("envelope: DKX sender and recipient endpoints must differ")
+	}
+	return nil
 }
 
 func (s *DefaultService) enqueueForFederation(ctx context.Context, env *chat.StationEnvelope) (string, error) {
