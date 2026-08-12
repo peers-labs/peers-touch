@@ -23,8 +23,8 @@ P0 delivers a complete, end-to-end single-agent chat experience:
 
 | # | Module | Scope (from topology) | S1 分析 | S2 设计 | S3 实现 | S4 验收 | S5 交付 | PR |
 |---|--------|----------------------|---------|---------|---------|---------|---------|-----|
-| 1 | **Streaming Runtime** | store/chat/agentRun (entries, controls, lifecycle, state, transports) | ✅ | ✅ | ✅ | ✅ deterministic | — | — |
-| 2 | **Message & Actions** | store/chat/message + Messages/ components + MessageActionBar | ✅ | ✅ | ✅ | ✅ deterministic | — | — |
+| 1 | **Streaming Runtime** | store/chat/agentRun (entries, controls, lifecycle, state, transports) | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | #86 |
+| 2 | **Message & Actions** | store/chat/message + Messages/ components + MessageActionBar | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | #86 |
 | 3 | **Chat Input & Composer** | features/ChatInput (ActionBar, InputEditor, ControlBar, Desktop variant) | — | — | — | — | — | — |
 | 4 | **Agent Config & Profile** | store/agent + features/AgentSetting | — | — | — | — | — | — |
 | 5 | **Provider & Model Infra** | store/aiInfra + features/ModelSwitchPanel | — | — | — | — | — | — |
