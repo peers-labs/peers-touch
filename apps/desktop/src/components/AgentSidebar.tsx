@@ -138,6 +138,8 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     smartRenameTopic,
     revertGeneratedTitle,
     duplicateTopic,
+    pinTopic,
+    favoriteTopic,
   } = useActiveAgentTopicSlice((s) => ({
     activeAgentId: s.activeAgentId,
     topicsByAgentId: s.topicsByAgentId,
@@ -149,6 +151,8 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     smartRenameTopic: s.smartRenameTopic,
     revertGeneratedTitle: s.revertGeneratedTitle,
     duplicateTopic: s.duplicateTopic,
+    pinTopic: s.pinTopic,
+    favoriteTopic: s.favoriteTopic,
   }));
   const {
     searching: messageSearching,
@@ -335,6 +339,11 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     [agentTopics, storeSessions, selectSession, onNavigateChat],
   );
 
+  const pinnedTopics = useMemo(
+    () => agentTopics.filter((t) => t.pinned || t.favorite),
+    [agentTopics],
+  );
+
   const topicGroups = useMemo(() => {
     let filtered = agentTopics;
     if (topicSearch) {
@@ -460,23 +469,65 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
             style={{ margin: '0 4px' }}
           />
         ) : (
-          topicGroups.map((group) => (
-            <TopicGroup
-              key={`${currentAgent?.id || 'agent'}:${group.key}`}
-              label={group.label}
-              topics={group.items}
-              currentSessionKey={currentSessionKey}
-              onSelectTopic={handleSelectTopic}
-              onDeleteTopic={handleDeleteTopic}
-              onReload={loadAgentTopics}
-              onRenameTopic={renameTopic}
-              onSmartRenameTopic={smartRenameTopic}
-              onRevertGeneratedTitle={revertGeneratedTitle}
-              onDuplicateTopic={duplicateTopic}
-              token={token}
-              t={t}
-            />
-          ))
+          <>
+            {pinnedTopics.length > 0 && !topicSearch && (
+              <div style={{ marginBottom: 4 }}>
+                <Flexbox
+                  horizontal
+                  align="center"
+                  gap={4}
+                  style={{
+                    minHeight: 28,
+                    padding: '0 8px',
+                  }}
+                >
+                  <Pin size={12} style={{ color: token.colorTextQuaternary }} />
+                  <span style={{ fontSize: 12, color: token.colorTextSecondary, fontWeight: 500 }}>
+                    {t('agent.sidebar.pinnedSection')}
+                  </span>
+                </Flexbox>
+                <Flexbox gap={1}>
+                  {pinnedTopics.map((topic) => (
+                    <TopicItem
+                      key={`pinned-${topic.key}`}
+                      topic={topic}
+                      isActive={topic.key === currentSessionKey}
+                      onSelect={() => handleSelectTopic(topic.key)}
+                      onDelete={() => handleDeleteTopic(topic.key)}
+                      onReload={loadAgentTopics}
+                      onRenameTopic={renameTopic}
+                      onSmartRenameTopic={smartRenameTopic}
+                      onRevertGeneratedTitle={revertGeneratedTitle}
+                      onDuplicateTopic={duplicateTopic}
+                      onPinTopic={pinTopic}
+                      onFavoriteTopic={favoriteTopic}
+                      token={token}
+                      t={t}
+                    />
+                  ))}
+                </Flexbox>
+              </div>
+            )}
+            {topicGroups.map((group) => (
+              <TopicGroup
+                key={`${currentAgent?.id || 'agent'}:${group.key}`}
+                label={group.label}
+                topics={group.items}
+                currentSessionKey={currentSessionKey}
+                onSelectTopic={handleSelectTopic}
+                onDeleteTopic={handleDeleteTopic}
+                onReload={loadAgentTopics}
+                onRenameTopic={renameTopic}
+                onSmartRenameTopic={smartRenameTopic}
+                onRevertGeneratedTitle={revertGeneratedTitle}
+                onDuplicateTopic={duplicateTopic}
+                onPinTopic={pinTopic}
+                onFavoriteTopic={favoriteTopic}
+                token={token}
+                t={t}
+              />
+            ))}
+          </>
         )}
       </Flexbox>
     </Flexbox>
@@ -645,6 +696,8 @@ function TopicGroup({
   onSmartRenameTopic,
   onRevertGeneratedTitle,
   onDuplicateTopic,
+  onPinTopic,
+  onFavoriteTopic,
   token,
   t,
 }: {
@@ -658,6 +711,8 @@ function TopicGroup({
   onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
   onRevertGeneratedTitle: (key: string) => Promise<void>;
   onDuplicateTopic: (key: string) => Promise<void>;
+  onPinTopic: (key: string, pinned: boolean) => Promise<void>;
+  onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
   token: any;
   t: (key: string, options?: Record<string, any>) => string;
 }) {
@@ -703,6 +758,8 @@ function TopicGroup({
               onSmartRenameTopic={onSmartRenameTopic}
               onRevertGeneratedTitle={onRevertGeneratedTitle}
               onDuplicateTopic={onDuplicateTopic}
+              onPinTopic={onPinTopic}
+              onFavoriteTopic={onFavoriteTopic}
               token={token}
               t={t}
             />
@@ -729,6 +786,8 @@ function TopicItem({
   onSmartRenameTopic,
   onRevertGeneratedTitle,
   onDuplicateTopic,
+  onPinTopic,
+  onFavoriteTopic,
   token,
   t,
 }: {
@@ -741,6 +800,8 @@ function TopicItem({
   onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
   onRevertGeneratedTitle: (key: string) => Promise<void>;
   onDuplicateTopic: (key: string) => Promise<void>;
+  onPinTopic: (key: string, pinned: boolean) => Promise<void>;
+  onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
   token: any;
   t: (key: string, options?: Record<string, any>) => string;
 }) {
@@ -820,8 +881,17 @@ function TopicItem({
     });
   }, [onDelete]);
 
+  const handlePin = useCallback(async () => {
+    await onPinTopic(topic.key, !topic.pinned);
+  }, [topic.key, topic.pinned, onPinTopic]);
+
+  const handleFavorite = useCallback(async () => {
+    await onFavoriteTopic(topic.key, !topic.favorite);
+  }, [topic.key, topic.favorite, onFavoriteTopic]);
+
   const menuItems: MenuProps['items'] = [
-    { key: 'favorite', icon: <Star size={14} />, label: t('agent.sidebar.menu.favorite'), disabled: true },
+    { key: 'pin', icon: <Pin size={14} />, label: topic.pinned ? t('agent.sidebar.menu.unpin') : t('agent.sidebar.menu.pin'), onClick: handlePin },
+    { key: 'favorite', icon: <Star size={14} />, label: topic.favorite ? t('agent.sidebar.menu.unfavorite') : t('agent.sidebar.menu.favorite'), onClick: handleFavorite },
     { type: 'divider' },
     { key: 'smart-rename', icon: <Sparkles size={14} />, label: t('agent.sidebar.menu.smartRename'), onClick: handleSmartRename },
     { key: 'rename', icon: <Pencil size={14} />, label: t('agent.sidebar.menu.rename'), onClick: handleRename },
