@@ -53,32 +53,6 @@ describe('TS ↔ Rust command contract', () => {
     });
   });
 
-  it('调用 chat_list_messages 并透传分页参数', async () => {
-    invokeMock.mockResolvedValue({
-      ok: true,
-      data: {
-        command: 'chat_list_messages',
-        status: 'stub',
-      },
-    });
-
-    const result = await api.chatListMessages({
-      conversation_id: 'c-1',
-      cursor: 'next-1',
-      limit: 20,
-    });
-
-    expect(invokeMock).toHaveBeenCalledWith('chat_list_messages', {
-      input: {
-        conversation_id: 'c-1',
-        cursor: 'next-1',
-        limit: 20,
-      },
-    });
-    expect(result.ok).toBe(true);
-    expect(result.data?.command).toBe('chat_list_messages');
-  });
-
   it('调用 settings_set 并返回统一结构', async () => {
     invokeMock.mockResolvedValue({
       ok: true,

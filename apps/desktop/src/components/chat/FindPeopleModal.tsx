@@ -20,7 +20,6 @@ const { Text } = Typography;
 
 interface ActorSearchResult {
   id: string;
-  actorId: string;
   username: string;
   displayName: string;
   avatar: string;
@@ -94,7 +93,6 @@ function profileToResult(view: FederationResolveView): ActorSearchResult | null 
   const avatar = String(profile.avatar ?? '');
   return {
     id,
-    actorId: id,
     username,
     displayName,
     avatar,
@@ -116,7 +114,6 @@ function catalogEntryToResult(entry: FederationCatalogEntry): ActorSearchResult 
 
   return {
     id: entry.actorId,
-    actorId: entry.actorId,
     username: localPart,
     displayName: entry.displayName || localPart,
     avatar: entry.avatarUrl || '',
@@ -209,9 +206,8 @@ export function FindPeopleModal({ open, onClose }: Props) {
       setResults(
         resp.items.map((a) => ({
           id: String(a.id ?? ''),
-          actorId: String(a.actorId ?? a.actor_id ?? a.id ?? ''),
           username: String(a.username ?? ''),
-          displayName: String(a.displayName ?? a.display_name ?? ''),
+          displayName: String(a.displayName ?? ''),
           avatar: String(a.avatar ?? ''),
         })),
       );
@@ -228,7 +224,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
 
   const handleSendRequest = async (target: ActorSearchResult) => {
     if (addingId) return;
-    const receiverDid = target.actorId || target.id;
+    const receiverDid = target.id;
     if (!receiverDid || receiverDid === currentUserDid) return;
     setAddingId(receiverDid);
     try {
@@ -389,7 +385,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
             </Text>
           ) : (
             results.map((r) => {
-              const receiverDid = r.actorId || r.id;
+              const receiverDid = r.id;
               const isPending = pendingReceiverIds.has(receiverDid) || sentIds.has(receiverDid);
               const sentAt = sentTimestamps.current.get(receiverDid);
               const cooldownActive = isPending && (!sentAt || Date.now() - sentAt < RESEND_COOLDOWN_MS);
