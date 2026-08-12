@@ -7,8 +7,10 @@ import {
   type Agent,
   type AgentChatConfig,
   type AgentCreate,
+  type AgentKnowledgeResource,
   type AppletInfo,
   parseAgentChatConfig,
+  parseAgentKnowledgeResources,
 } from '../services/desktop_api';
 import { beginMutation, endMutation, toStoreError, type RevalidationState } from './revalidation';
 
@@ -40,6 +42,8 @@ interface AgentState extends RevalidationState {
   updateAgentProfile: (agentId: string, updates: Partial<AgentCreate>) => Promise<Agent>;
   updateAgentConfig: (agentName: string, updates: { chatConfig?: Partial<AgentChatConfig> }) => Promise<void>;
   getCurrentAgentChatConfig: () => AgentChatConfig;
+  updateKnowledgeResources: (agentId: string, resources: AgentKnowledgeResource[]) => Promise<void>;
+  getAgentKnowledgeResources: (agentId: string) => AgentKnowledgeResource[];
 }
 
 export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) => ({
@@ -368,5 +372,44 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
     const agent = agents.find((a) => a.name === selectedAgent);
     if (!agent) return {};
     return parseAgentChatConfig(agent);
+  },
+
+  updateKnowledgeResources: async (agentId: string, resources: AgentKnowledgeResource[]) => {
+    const { agents } = get();
+    const agent = agents.find((a) => a.id === agentId);
+    if (!agent) return;
+
+    const previousAgents = agents;
+    const mutationKey = `knowledge:${agentId}`;
+    const serialized = JSON.stringify(resources);
+    const optimisticAgent = { ...agent, knowledgeResources: serialized };
+
+    set((state) => ({
+      agents: state.agents.map((item) => (item.id === agentId ? optimisticAgent : item)),
+      error: null,
+      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
+    }));
+
+    try {
+      const updated = await api.updateAgent(agentId, { knowledgeResources: serialized });
+      set((s) => ({
+        agents: s.agents.map((a) => (a.id === updated.id ? updated : a)),
+        lastLoadedAt: Date.now(),
+      }));
+    } catch (error) {
+      const message = toStoreError(error);
+      log.error('agent', 'Failed to update knowledge resources', { agentId, error: message });
+      set({ agents: previousAgents, error: message });
+      throw error;
+    } finally {
+      set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
+    }
+  },
+
+  getAgentKnowledgeResources: (agentId: string) => {
+    const { agents } = get();
+    const agent = agents.find((a) => a.id === agentId);
+    if (!agent) return [];
+    return parseAgentKnowledgeResources(agent);
   },
 }));

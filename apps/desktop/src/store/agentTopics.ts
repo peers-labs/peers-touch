@@ -1,5 +1,6 @@
 import { createDesktopStore } from './createDesktopStore';
 import { chatService, type Session } from '../services/chat-service';
+import { api } from '../services/desktop_api';
 import { useAgentStore } from './agent';
 import { log } from '../utils/logger';
 import { resolveI18nValue } from '../i18n/index';
@@ -26,6 +27,7 @@ interface AgentTopicState {
   generatingTitleKeys: Record<string, boolean>;
   titleHistoryByKey: Record<string, TopicTitleHistory>;
   lastError?: string;
+  searchQuery: string;
 
   getTopicsForAgent: (agentId: string) => AgentTopic[];
   loadTopicsForAgent: (agentId: string, reason?: string) => Promise<AgentTopic[]>;
@@ -37,6 +39,9 @@ interface AgentTopicState {
   smartRenameTopic: (key: string) => Promise<{ title: string }>;
   revertGeneratedTitle: (key: string) => Promise<void>;
   duplicateTopic: (key: string) => Promise<void>;
+  pinTopic: (key: string, pinned: boolean) => Promise<void>;
+  favoriteTopic: (key: string, favorite: boolean) => Promise<void>;
+  setSearchQuery: (query: string) => void;
 }
 
 function toISODate(value: string): string {
@@ -56,6 +61,8 @@ function normalizeTopic(session: Session, previous?: AgentTopic): AgentTopic {
     previousTitle: previous?.previousTitle,
     titleError: previous?.titleError,
     titleUpdatedAt: previous?.titleUpdatedAt,
+    pinned: session.pinned ?? previous?.pinned ?? false,
+    favorite: session.favorite ?? previous?.favorite ?? false,
   };
 }
 
@@ -98,6 +105,7 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
   loadingAgentIds: {},
   generatingTitleKeys: {},
   titleHistoryByKey: {},
+  searchQuery: '',
 
   getTopicsForAgent: (agentId: string) => get().topicsByAgentId[agentId] || [],
 
@@ -263,5 +271,41 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
     await chatService.duplicateSession(key);
     const agentId = get().activeAgentId || findSelectedAgentId();
     if (agentId) await get().loadTopicsForAgent(agentId, 'duplicate');
+  },
+
+  pinTopic: async (key: string, pinned: boolean) => {
+    const before = get().topicsByAgentId;
+    set((state) => ({
+      topicsByAgentId: replaceTopic(state.topicsByAgentId, key, (topic) => ({
+        ...topic,
+        pinned,
+      })),
+    }));
+    try {
+      await api.pinSession(key, pinned);
+    } catch (error) {
+      log.warn('agentTopics', 'Failed to persist pin state, rolling back', { key, pinned, error: String(error) });
+      set({ topicsByAgentId: before });
+    }
+  },
+
+  favoriteTopic: async (key: string, favorite: boolean) => {
+    const before = get().topicsByAgentId;
+    set((state) => ({
+      topicsByAgentId: replaceTopic(state.topicsByAgentId, key, (topic) => ({
+        ...topic,
+        favorite,
+      })),
+    }));
+    try {
+      await api.favoriteSession(key, favorite);
+    } catch (error) {
+      log.warn('agentTopics', 'Failed to persist favorite state, rolling back', { key, favorite, error: String(error) });
+      set({ topicsByAgentId: before });
+    }
+  },
+
+  setSearchQuery: (query: string) => {
+    set({ searchQuery: query });
   },
 }));
