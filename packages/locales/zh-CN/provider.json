@@ -110,6 +110,7 @@
   "provider.modelSelect.searchPlaceholder": "搜索模型……",
   "provider.modelSelect.noMatch": "没有匹配的模型",
   "provider.modelSelect.noModels": "暂无可用模型，请先配置服务商。",
+  "provider.modelSelect.configureProviders": "配置服务商",
   "provider.modelSelect.manageProvider": "管理服务商",
   "provider.modelSelect.vision": "视觉",
   "provider.modelService.title": "模型服务",

@@ -29,6 +29,10 @@ import {
   Search,
   Plus,
   Workflow,
+  FileText,
+  Globe,
+  X,
+  BookOpen,
 } from 'lucide-react';
 import { useAgentStore } from '../store/agent';
 import {
@@ -42,7 +46,10 @@ import {
   api,
   executeAgentTurn,
   type Agent,
+  type AgentKnowledgeResource,
+  type AgentKnowledgeResourceType,
   parseAgentChatConfig,
+  parseAgentKnowledgeResources,
 } from '../services/desktop_api';
 import { ModelSelect } from '../components/ModelSelect';
 import { AgentSettingsModal } from '../components/AgentSettingsModal';
@@ -941,6 +948,7 @@ export function AgentProfilePage({
   const availableModels = useAgentStore(s => s.availableModels);
   const loadAgents = useAgentStore(s => s.loadAgents);
   const updateAgentProfile = useAgentStore(s => s.updateAgentProfile);
+  const updateKnowledgeResources = useAgentStore(s => s.updateKnowledgeResources);
   const loadModels = useAgentStore(s => s.loadModels);
   const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
   const setAgentSurface = useAgentStore(s => s.setAgentSurface);
@@ -956,6 +964,8 @@ export function AgentProfilePage({
   const [soulMdDirty, setSoulMdDirty] = useState(false);
   const [agentsMd, setAgentsMd] = useState('');
   const [agentsMdDirty, setAgentsMdDirty] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [systemPromptDirty, setSystemPromptDirty] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [activeTab, setActiveTab] = useState<ProfileTab>('soul');
@@ -970,6 +980,7 @@ export function AgentProfilePage({
   const [persistedTraceCount, setPersistedTraceCount] = useState(0);
   const soulSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const agentsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const systemPromptSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const skills = useSkillStore(s => s.skills);
   const builtins = useSkillStore(s => s.builtins);
   const loadSkills = useSkillStore(s => s.loadSkills);
@@ -1047,6 +1058,8 @@ export function AgentProfilePage({
       setSoulMdDirty(false);
       setAgentsMd(found.agentsMd || '');
       setAgentsMdDirty(false);
+      setSystemPrompt(found.systemPrompt || '');
+      setSystemPromptDirty(false);
       setAllowedRootsText(parseAllowedRootsForDisplay(found.allowedRoots));
     }
   }, [agents, profileAgentName]);
@@ -1055,6 +1068,7 @@ export function AgentProfilePage({
     return () => {
       if (soulSaveTimerRef.current) clearTimeout(soulSaveTimerRef.current);
       if (agentsSaveTimerRef.current) clearTimeout(agentsSaveTimerRef.current);
+      if (systemPromptSaveTimerRef.current) clearTimeout(systemPromptSaveTimerRef.current);
     };
   }, []);
 
@@ -1123,6 +1137,38 @@ export function AgentProfilePage({
       saveAgentsMd(agentsMd);
     }
   }, [agentsMdDirty, agentsMd, saveAgentsMd]);
+
+  const saveSystemPrompt = useCallback(
+    async (value: string) => {
+      if (!agent) return;
+      try {
+        await api.updateAgent(agent.id, { systemPrompt: value });
+        setSystemPromptDirty(false);
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleSystemPromptChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setSystemPrompt(value);
+      setSystemPromptDirty(true);
+      if (systemPromptSaveTimerRef.current) clearTimeout(systemPromptSaveTimerRef.current);
+      systemPromptSaveTimerRef.current = setTimeout(() => saveSystemPrompt(value), 1500);
+    },
+    [saveSystemPrompt],
+  );
+
+  const handleSystemPromptBlur = useCallback(() => {
+    if (systemPromptDirty) {
+      if (systemPromptSaveTimerRef.current) clearTimeout(systemPromptSaveTimerRef.current);
+      saveSystemPrompt(systemPrompt);
+    }
+  }, [systemPromptDirty, systemPrompt, saveSystemPrompt]);
 
   const handleEffortChange = useCallback(
     async (value: string) => {
@@ -1337,13 +1383,79 @@ export function AgentProfilePage({
     [agent, loadAgents, t],
   );
 
+  const knowledgeResources = useMemo(() => {
+    if (!agent) return [];
+    return parseAgentKnowledgeResources(agent);
+  }, [agent]);
 
+  const handleAddKnowledgeResource = useCallback(
+    async (type: AgentKnowledgeResourceType, source: string, title?: string) => {
+      if (!agent || !source.trim()) return;
+      const newResource: AgentKnowledgeResource = {
+        id: `knowledge:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+        type,
+        title: title?.trim() || source.trim().split('/').pop() || source.trim(),
+        source: source.trim(),
+        policy: 'manual',
+        status: 'bound',
+      };
+      const updated = [...knowledgeResources, newResource];
+      try {
+        await updateKnowledgeResources(agent.id, updated);
+        antMessage.success(t('agent.profile.knowledge.added'));
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, knowledgeResources, updateKnowledgeResources, t],
+  );
 
+  const handleRemoveKnowledgeResource = useCallback(
+    async (resourceId: string) => {
+      if (!agent) return;
+      const updated = knowledgeResources.filter((r) => r.id !== resourceId);
+      try {
+        await updateKnowledgeResources(agent.id, updated);
+        antMessage.success(t('agent.profile.knowledge.removed'));
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, knowledgeResources, updateKnowledgeResources, t],
+  );
 
+  const handleToggleKnowledgeResource = useCallback(
+    async (resourceId: string) => {
+      if (!agent) return;
+      const updated = knowledgeResources.map((r) =>
+        r.id === resourceId
+          ? { ...r, policy: (r.policy === 'disabled' ? 'manual' : 'disabled') as typeof r.policy }
+          : r,
+      );
+      try {
+        await updateKnowledgeResources(agent.id, updated);
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, knowledgeResources, updateKnowledgeResources, t],
+  );
 
+  const [knowledgeAddOpen, setKnowledgeAddOpen] = useState(false);
+  const [knowledgeAddType, setKnowledgeAddType] = useState<AgentKnowledgeResourceType>('document');
+  const [knowledgeAddSource, setKnowledgeAddSource] = useState('');
+  const [knowledgeAddTitle, setKnowledgeAddTitle] = useState('');
 
-
-
+  const handleKnowledgeAddSubmit = useCallback(() => {
+    if (!knowledgeAddSource.trim()) {
+      antMessage.error(t('agent.profile.knowledge.sourceRequired'));
+      return;
+    }
+    handleAddKnowledgeResource(knowledgeAddType, knowledgeAddSource, knowledgeAddTitle);
+    setKnowledgeAddSource('');
+    setKnowledgeAddTitle('');
+    setKnowledgeAddOpen(false);
+  }, [knowledgeAddType, knowledgeAddSource, knowledgeAddTitle, handleAddKnowledgeResource, t]);
 
   const handleInlineRewriteDescription = useCallback(async () => {
     if (!agent) return;
@@ -1513,7 +1625,7 @@ export function AgentProfilePage({
         tools: boundTools.length,
         skills: boundSkills.length,
         mcp: mcpServers.length,
-        knowledge: 0,
+        knowledge: knowledgeResources.length,
       }),
       ready: hasLocalToolBindings,
       targetTab: 'capabilities' as ProfileTab,
@@ -2080,6 +2192,37 @@ export function AgentProfilePage({
                       />
                     </ProfileCard>
                   </div>
+                  <ProfileCard
+                    title={t('agent.profile.section.systemPrompt')}
+                    description={t('agent.profile.section.systemPromptDesc')}
+                  >
+                    <textarea
+                      value={systemPrompt}
+                      onChange={handleSystemPromptChange}
+                      onBlur={handleSystemPromptBlur}
+                      placeholder={t('agent.profile.systemPromptPlaceholder')}
+                      style={{
+                        width: '100%',
+                        minHeight: 160,
+                        padding: '12px 16px',
+                        borderRadius: 8,
+                        border: `1px solid ${token.colorBorderSecondary}`,
+                        background: token.colorBgContainer,
+                        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                        fontSize: 13,
+                        lineHeight: 1.7,
+                        resize: 'vertical',
+                        outline: 'none',
+                        color: token.colorText,
+                      }}
+                      onFocus={(e) => {
+                        (e.target as HTMLElement).style.borderColor = token.colorPrimary;
+                      }}
+                      onBlurCapture={(e) => {
+                        (e.target as HTMLElement).style.borderColor = token.colorBorderSecondary;
+                      }}
+                    />
+                  </ProfileCard>
                 </div>
               )}
 
@@ -2146,9 +2289,9 @@ export function AgentProfilePage({
                   style={{
                     overflow: 'auto',
                     display: 'grid',
-                    gridTemplateRows: '1fr 1fr',
                     gap: 12,
                     minHeight: 0,
+                    alignContent: 'start',
                   }}
                 >
                   <ProfileCard
@@ -2249,6 +2392,151 @@ export function AgentProfilePage({
                           <Tag style={{ margin: 0 }}>{t('agent.profile.tag.mcp')}</Tag>
                         </Flexbox>
                       ))}
+                    </Flexbox>
+                  </ProfileCard>
+
+                  <ProfileCard
+                    title={t('agent.profile.section.knowledge')}
+                    description={t('agent.profile.section.knowledgeDesc')}
+                    action={(
+                      <Button
+                        size="small"
+                        icon={<Plus size={14} />}
+                        onClick={() => setKnowledgeAddOpen(!knowledgeAddOpen)}
+                        title={t('agent.profile.knowledge.add')}
+                        aria-label={t('agent.profile.knowledge.add')}
+                        style={{ height: 32, padding: '0 12px' }}
+                      >
+                        {t('agent.profile.knowledge.add')}
+                      </Button>
+                    )}
+                  >
+                    {knowledgeAddOpen && (
+                      <Flexbox
+                        gap={8}
+                        style={{
+                          padding: 12,
+                          borderRadius: 10,
+                          border: `1px solid ${token.colorBorderSecondary}`,
+                          background: token.colorFillQuaternary,
+                          marginBottom: 8,
+                        }}
+                      >
+                        <Flexbox horizontal gap={8} align="center">
+                          <Select
+                            value={knowledgeAddType}
+                            onChange={(value) => setKnowledgeAddType(value)}
+                            style={{ width: 130 }}
+                            size="small"
+                            options={[
+                              { value: 'document', label: t('agent.profile.knowledge.type.document') },
+                              { value: 'folder', label: t('agent.profile.knowledge.type.folder') },
+                              { value: 'project', label: t('agent.profile.knowledge.type.project') },
+                              { value: 'url', label: t('agent.profile.knowledge.type.url') },
+                              { value: 'notebook', label: t('agent.profile.knowledge.type.notebook') },
+                              { value: 'workspace', label: t('agent.profile.knowledge.type.workspace') },
+                            ]}
+                          />
+                          <Input
+                            value={knowledgeAddSource}
+                            onChange={(e) => setKnowledgeAddSource(e.target.value)}
+                            placeholder={t('agent.profile.knowledge.sourcePlaceholder')}
+                            size="small"
+                            style={{ flex: 1 }}
+                            onPressEnter={handleKnowledgeAddSubmit}
+                          />
+                        </Flexbox>
+                        <Flexbox horizontal gap={8} align="center">
+                          <Input
+                            value={knowledgeAddTitle}
+                            onChange={(e) => setKnowledgeAddTitle(e.target.value)}
+                            placeholder={t('agent.profile.knowledge.titlePlaceholder')}
+                            size="small"
+                            style={{ flex: 1 }}
+                            onPressEnter={handleKnowledgeAddSubmit}
+                          />
+                          <Button size="small" type="primary" onClick={handleKnowledgeAddSubmit}>
+                            {t('agent.profile.knowledge.add')}
+                          </Button>
+                        </Flexbox>
+                      </Flexbox>
+                    )}
+                    <Flexbox gap={6} style={{ minHeight: 0, overflow: 'auto' }}>
+                      {knowledgeResources.length === 0 ? (
+                        <Empty description={t('agent.profile.knowledge.empty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                      ) : (
+                        knowledgeResources.map((resource) => {
+                          const isDisabled = resource.policy === 'disabled';
+                          const ResourceIcon = resource.type === 'url' ? Globe
+                            : resource.type === 'folder' || resource.type === 'project' || resource.type === 'workspace' ? FolderOpen
+                            : resource.type === 'notebook' ? BookOpen
+                            : FileText;
+                          return (
+                            <Flexbox
+                              key={resource.id}
+                              horizontal
+                              align="center"
+                              gap={10}
+                              style={{
+                                minHeight: 40,
+                                padding: '7px 10px',
+                                borderRadius: 12,
+                                border: `1px solid ${token.colorBorderSecondary}`,
+                                background: token.colorBgContainer,
+                                opacity: isDisabled ? 0.5 : 1,
+                              }}
+                            >
+                              <ResourceIcon size={15} color={token.colorTextTertiary} />
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {resource.title}
+                              </span>
+                              <Tag style={{ margin: 0 }}>
+                                {t(`agent.profile.knowledge.type.${resource.type}`)}
+                              </Tag>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleKnowledgeResource(resource.id)}
+                                title={isDisabled ? t('agent.profile.knowledge.policy.manual') : t('agent.profile.knowledge.policy.disabled')}
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  border: 0,
+                                  borderRadius: 6,
+                                  background: 'transparent',
+                                  color: isDisabled ? token.colorTextQuaternary : token.colorSuccess,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {isDisabled ? t('agent.profile.knowledge.policy.disabled') : t('agent.profile.knowledge.status.bound')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveKnowledgeResource(resource.id)}
+                                title={t('agent.profile.knowledge.remove')}
+                                style={{
+                                  width: 24,
+                                  height: 24,
+                                  border: 0,
+                                  borderRadius: 6,
+                                  background: 'transparent',
+                                  color: token.colorTextTertiary,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <X size={14} />
+                              </button>
+                            </Flexbox>
+                          );
+                        })
+                      )}
                     </Flexbox>
                   </ProfileCard>
                 </div>

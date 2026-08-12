@@ -110,6 +110,7 @@
   "provider.modelSelect.searchPlaceholder": "Search models...",
   "provider.modelSelect.noMatch": "No models match your search",
   "provider.modelSelect.noModels": "No models available. Configure a provider first.",
+  "provider.modelSelect.configureProviders": "Configure Providers",
   "provider.modelSelect.manageProvider": "Manage Provider",
   "provider.modelSelect.vision": "vision",
   "provider.modelService.title": "Model Service",
