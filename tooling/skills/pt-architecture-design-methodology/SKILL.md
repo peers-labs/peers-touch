@@ -106,6 +106,46 @@ Output:
 Architecture defines allowed relationships and target-state truth. Platform
 documents refine implementation without redefining those boundaries.
 
+### Step 1b. Reference Implementation Analysis (when benchmarking)
+
+**Trigger**: The design targets parity with, or is benchmarked against, an
+external reference implementation (e.g. LobeHub, Signal, Matrix).
+
+When triggered, before establishing the evidence ledger:
+
+1. **Locate reference source** — Identify the canonical source paths in the
+   reference codebase for the capability in scope.
+2. **Extract data flow** — Trace how data moves: entry point → store/state →
+   service → transport → UI render. Record function names and file paths.
+3. **Extract state machine** — Identify all states, transitions, and user
+   actions for the capability. Document as a state diagram or table.
+4. **Extract API contract** — Record request/response shapes, event types,
+   error codes, and stream protocols.
+5. **Produce `reference-analysis.md`** (named after the reference, e.g. `lobehub-analysis.md`) containing:
+   - Data flow diagram (text or mermaid)
+   - State machine (all states + transitions)
+   - Key function signatures and their responsibilities
+   - Architectural patterns used (and why)
+
+This analysis is classified as `verified_fact` evidence (source code is ground
+truth for "how they do it"). It feeds directly into the evidence ledger and
+informs scope, ownership, and contract decisions in subsequent steps.
+
+The analysis must NOT become the design. It is input, not output. The Peers
+architecture may diverge where our constraints (Station ownership, proto-first,
+E2EE, three-layer split) require different solutions.
+
+**Completion criteria (self-judged, no user gate)**:
+- Data flow diagram produced.
+- State machine with all states and transitions documented.
+- Architecture mapping table produced (reference approach → Peers approach → divergence rationale).
+- Key function/contract signatures listed.
+
+When these four artifacts exist, proceed to Step 2 without waiting for user
+confirmation. Escalate to the user only when the analysis reveals a product-level
+ambiguity (e.g. "the reference has two incompatible approaches and it's unclear
+which fits our product intent").
+
 ### Step 2. Establish The Evidence Ledger
 
 Before selecting a topology, create a compact ledger:

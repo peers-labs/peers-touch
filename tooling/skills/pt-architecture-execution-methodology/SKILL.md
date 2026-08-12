@@ -3,7 +3,7 @@ name: "pt-architecture-execution-methodology"
 description: "Transforms an accepted architecture into an ordered, dependency-backed execution plan with atomic cutovers, deliverables, gates, and evidence. Invoke for planning only; it must not redesign or execute."
 stage: "PLAN"
 requires: ["accepted product contract when applicable", "accepted architecture docs"]
-produces: ["dependency graph", "execution closures", "ordered step list"]
+produces: ["dependency graph", "execution closures", "ordered step list", "acceptance scenarios per closure"]
 next: "pt-plan-and-document"
 ---
 
@@ -201,6 +201,53 @@ Every plan item requires:
 
 Quality gates come from the accepted architecture. The plan may make them
 executable; it may not weaken thresholds or substitute a smoke test.
+
+### Step 7b. Define Acceptance Scenarios (mandatory)
+
+Every execution closure must produce an `acceptance.md` (or acceptance section
+within the plan) containing end-to-end scenarios that:
+
+1. **Are user-perspective** — Written as "User does X → System shows Y → User
+   can then Z". Not internal implementation checks.
+2. **Cover happy path and failure path** — At minimum: success, network error,
+   timeout, invalid input, cancellation.
+3. **Have binary pass/fail criteria** — Each scenario has an explicit expected
+   behavior that can be verified with runtime evidence (screenshot, curl
+   response, log line, DOM state).
+4. **Are executable before S5 (delivery)** — The implementer must run every
+   scenario and record pass/fail with evidence. A scenario without evidence is
+   unproven, not passed.
+
+Acceptance scenarios are authored during PLAN, not after implementation. They
+define what "done" means before code is written. Implementation that passes all
+scenarios is complete; implementation that fails any scenario is incomplete
+regardless of code coverage or build status.
+
+**Self-judgment rules (no user gate between steps)**:
+- Agent verifies scenario coverage against the state machine: every transition
+  must appear in at least one scenario. If coverage is complete, proceed.
+- Agent does NOT ask the user to "confirm scenarios are correct" — scenarios
+  derive mechanically from the design's state machine and contracts.
+- Escalate to user ONLY when: (a) the design has an ambiguous product behavior
+  that affects what "expected result" means, or (b) two valid UX patterns exist
+  and the choice is a product preference.
+- During implementation (S3/S4), run each scenario as soon as the code supports
+  it. Do not wait until all code is written. A scenario that passes early stays
+  passed; a scenario that fails gets fixed immediately.
+
+Format:
+
+```markdown
+## Acceptance Scenarios
+
+### AS-01: <scenario name>
+- **Precondition**: <setup state>
+- **Action**: <what the user does>
+- **Expected**: <observable result>
+- **Failure variant**: <what happens when X fails>
+- **Evidence**: <how to prove it — screenshot / curl / log / DOM>
+- **Status**: pending | pass | fail
+```
 
 ### Step 8. Define Risk And Anti-Regression Work
 
