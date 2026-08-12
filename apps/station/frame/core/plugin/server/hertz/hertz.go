@@ -292,7 +292,7 @@ func RequestLoggerMiddleware() app.HandlerFunc {
 
 		start := time.Now()
 		method := string(c.Method())
-		path := string(c.Path())
+		path := requestLogPath(c)
 
 		log.Infof(ctx, "[HTTP] → %s %s", method, path)
 
@@ -303,6 +303,13 @@ func RequestLoggerMiddleware() app.HandlerFunc {
 
 		log.Infof(ctx, "[HTTP] ← %s %s %d %s", method, path, statusCode, latency)
 	}
+}
+
+func requestLogPath(c *app.RequestContext) string {
+	if path := c.FullPath(); path != "" {
+		return path
+	}
+	return string(c.Path())
 }
 
 // hertzRequest adapts Hertz RequestContext to server.Request

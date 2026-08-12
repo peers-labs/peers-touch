@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "domain/chat/attachment.proto";
+import "domain/chat/endpoint.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+enum MessagingContentKind {
+  MESSAGING_CONTENT_KIND_UNSPECIFIED = 0;
+  MESSAGING_CONTENT_KIND_TEXT = 1;
+  MESSAGING_CONTENT_KIND_IMAGE = 2;
+  MESSAGING_CONTENT_KIND_FILE = 3;
+  MESSAGING_CONTENT_KIND_AUDIO = 4;
+  MESSAGING_CONTENT_KIND_VIDEO = 5;
+  MESSAGING_CONTENT_KIND_SYSTEM = 6;
+}
+
+enum PreparedEndpointPayloadKind {
+  PREPARED_ENDPOINT_PAYLOAD_KIND_UNSPECIFIED = 0;
+  PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_CIPHERTEXT = 1;
+  PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_APPLICATION = 2;
+  PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_COMMIT = 3;
+  PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_WELCOME = 4;
+  PREPARED_ENDPOINT_PAYLOAD_KIND_PUBLIC_EVENT = 5;
+  PREPARED_ENDPOINT_PAYLOAD_KIND_CONVERSATION_STATE = 6;
+  PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_RETIREMENT = 7;
+}
+
+// A command payload prepared for exactly one endpoint. The authority validates
+// the complete required endpoint set before committing the command.
+message PreparedEndpointPayload {
+  CryptoEndpoint recipient = 1;
+  PreparedEndpointPayloadKind kind = 2;
+  bytes opaque_payload = 3;
+  bytes payload_sha256 = 4;
+}
+
+message SendMessageIntent {
+  string message_id = 1;
+  MessagingContentKind content_kind = 2;
+  string reply_to_message_id = 3;
+  string thread_root_message_id = 4;
+  repeated EncryptedObjectDescriptor attachments = 5;
+  repeated PreparedEndpointPayload direct_payloads = 6;
+  bytes mls_application_payload = 7;
+  bytes mls_application_payload_sha256 = 8;
+}
+
+message EditMessageIntent {
+  string message_id = 1;
+  repeated PreparedEndpointPayload direct_payloads = 2;
+  bytes mls_application_payload = 3;
+  bytes mls_application_payload_sha256 = 4;
+}
+
+message RetractMessageIntent {
+  string message_id = 1;
+}
+
+message ReactionIntent {
+  string message_id = 1;
+  string reaction = 2;
+  bool remove = 3;
+}
+
+message PinMessageIntent {
+  string message_id = 1;
+  bool remove = 2;
+}
+
+message UpdateConversationIntent {
+  optional string name = 1;
+  optional string description = 2;
+  optional string avatar_object_id = 3;
+  optional uint32 disappear_timer_seconds = 4;
+}
+
+enum MessagingMembershipAction {
+  MESSAGING_MEMBERSHIP_ACTION_UNSPECIFIED = 0;
+  MESSAGING_MEMBERSHIP_ACTION_ADD_ACTOR = 1;
+  MESSAGING_MEMBERSHIP_ACTION_REMOVE_ACTOR = 2;
+  MESSAGING_MEMBERSHIP_ACTION_LEAVE = 3;
+  MESSAGING_MEMBERSHIP_ACTION_CHANGE_ROLE = 4;
+  MESSAGING_MEMBERSHIP_ACTION_ADD_DEVICE = 5;
+  MESSAGING_MEMBERSHIP_ACTION_REMOVE_DEVICE = 6;
+}
+
+message MessagingMembershipChangeIntent {
+  MessagingMembershipAction action = 1;
+  string ptid = 2;
+  string device_id = 3;
+  string home_station_id = 4;
+  string role = 5;
+}
+
+message MembershipTransitionIntent {
+  string transition_id = 1;
+  int64 from_membership_epoch = 2;
+  int64 from_mls_epoch = 3;
+  int64 to_mls_epoch = 4;
+  repeated MessagingMembershipChangeIntent changes = 5;
+  bytes mls_commit = 6;
+  bytes mls_commit_sha256 = 7;
+  repeated PreparedEndpointPayload welcome_payloads = 8;
+  string leave_intent_id = 9;
+  string authority_plan_id = 10;
+  bytes authority_plan_sha256 = 11;
+}
+
+// Durable client intent. The exact deterministic bytes are replayed until the
+// authority returns a terminal result.
+message ChatCommand {
+  string command_id = 1;
+  string conversation_id = 2;
+  CryptoEndpoint sender = 3;
+  int64 observed_membership_epoch = 4;
+  int64 observed_mls_epoch = 5;
+  google.protobuf.Timestamp client_timestamp = 6;
+  bytes delivery_plan_sha256 = 7;
+  string authority_station_id = 8;
+
+  oneof payload {
+    SendMessageIntent send_message = 20;
+    EditMessageIntent edit_message = 21;
+    RetractMessageIntent retract_message = 22;
+    ReactionIntent reaction = 23;
+    PinMessageIntent pin_message = 24;
+    UpdateConversationIntent update_conversation = 25;
+    MembershipTransitionIntent membership_transition = 26;
+  }
+}

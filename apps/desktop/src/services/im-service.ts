@@ -15,6 +15,7 @@ import type {
   MemberSettingsResult,
   CreateGroupConversationResult,
   MlsLeaveIntentView,
+  MessagingServiceContract,
 } from './im-service-contract'
 import { DirectKeyExchangeKind } from './im-service-contract'
 import type {
@@ -642,15 +643,6 @@ const conversationService: ConversationServiceContract = {
     })
   },
 
-  async searchMessages(conversationId, query, limit) {
-    const resp = await cmd<any, { events: unknown[]; has_more: boolean }>('conversation_search_messages', {
-      conversation_id: conversationId,
-      query,
-      limit: limit ?? 20,
-    })
-    return { events: normalizeConversationEvents(resp.events), hasMore: resp.has_more ?? false }
-  },
-
   async syncFromStation(conversationId, limit) {
     const resp = await cmd<any, { events: unknown[]; has_more: boolean }>('conversation_sync_from_station', {
       conversation_id: conversationId,
@@ -877,56 +869,6 @@ const mlsGroupService: MlsGroupServiceContract = {
     return accepted
   },
 
-  async addAuthorizedMember(input) {
-    const prepared = await mlsGroupService.addMember(
-      input.conversationId,
-      input.member,
-    )
-    const welcomeSha256 = await sha256(prepared.welcomeBytes)
-    const transition = create(MembershipTransitionCommandSchema, {
-      transitionId: prepared.transitionId,
-      fromMembershipEpoch: BigInt(input.observedMembershipEpoch),
-      fromMlsEpoch: BigInt(prepared.fromMlsEpoch),
-      toMlsEpoch: BigInt(prepared.toMlsEpoch),
-      changes: [create(MembershipTransitionChangeSchema, {
-        ptid: input.member.ptid,
-        actorHomeStationPeerId: input.member.homeStationPeerId,
-        action: MembershipTransitionAction.ADD,
-        role: MemberRole.MEMBER,
-        deviceId: input.member.deviceId,
-      })],
-      opaqueMlsCommitBytes: prepared.commitBytes,
-      commitSha256: prepared.commitSha256,
-      welcomeDeliveries: [create(MlsWelcomeDeliverySchema, {
-        recipientPtid: input.member.ptid,
-        recipientDeviceId: input.member.deviceId,
-        recipientHomeStationPeerId: input.member.homeStationPeerId,
-        opaqueWelcomeBytes: prepared.welcomeBytes,
-        welcomeSha256,
-      })],
-      idempotencyKey: `membership:${prepared.transitionId}`,
-    })
-    let event: CommittedConversationEvent
-    try {
-      event = await submitAuthorizedMembershipTransition(
-        input.conversationId,
-        input.senderPtid,
-        input.senderDeviceId,
-        input.observedMembershipEpoch,
-        transition,
-      )
-    } catch (error) {
-      await discardRejectedTransition(input.conversationId, error)
-      throw error
-    }
-    await mlsGroupService.acceptPending(input.conversationId, prepared.transitionId)
-    await mlsGroupService.recordAuthorityEvent(
-      toBinary(CommittedConversationEventSchema, event),
-      input.senderDeviceId,
-    )
-    return event
-  },
-
   async addAuthorizedDevice(input) {
     const prepared = await mlsGroupService.addMember(
       input.conversationId,
@@ -953,45 +895,6 @@ const mlsGroupService: MlsGroupServiceContract = {
         opaqueWelcomeBytes: prepared.welcomeBytes,
         welcomeSha256,
       })],
-      idempotencyKey: `membership:${prepared.transitionId}`,
-    })
-    let event: CommittedConversationEvent
-    try {
-      event = await submitAuthorizedMembershipTransition(
-        input.conversationId,
-        input.senderPtid,
-        input.senderDeviceId,
-        input.observedMembershipEpoch,
-        transition,
-      )
-    } catch (error) {
-      await discardRejectedTransition(input.conversationId, error)
-      throw error
-    }
-    await mlsGroupService.acceptPending(input.conversationId, prepared.transitionId)
-    await mlsGroupService.recordAuthorityEvent(
-      toBinary(CommittedConversationEventSchema, event),
-      input.senderDeviceId,
-    )
-    return event
-  },
-
-  async removeAuthorizedMember(input) {
-    const prepared = await mlsGroupService.removeMember(
-      input.conversationId,
-      input.memberPtid,
-    )
-    const transition = create(MembershipTransitionCommandSchema, {
-      transitionId: prepared.transitionId,
-      fromMembershipEpoch: BigInt(input.observedMembershipEpoch),
-      fromMlsEpoch: BigInt(prepared.fromMlsEpoch),
-      toMlsEpoch: BigInt(prepared.toMlsEpoch),
-      changes: [create(MembershipTransitionChangeSchema, {
-        ptid: input.memberPtid,
-        action: MembershipTransitionAction.REMOVE,
-      })],
-      opaqueMlsCommitBytes: prepared.commitBytes,
-      commitSha256: prepared.commitSha256,
       idempotencyKey: `membership:${prepared.transitionId}`,
     })
     let event: CommittedConversationEvent
@@ -1300,12 +1203,6 @@ const mlsGroupService: MlsGroupServiceContract = {
     }
   },
 
-  async status(conversationId) {
-    return cmd<any, { ready: boolean }>('mls_group_status', {
-      conversation_id: conversationId,
-    })
-  },
-
   async publicHead(conversationId) {
     const head = await cmd<any, {
       conversation_id: string
@@ -1338,15 +1235,300 @@ const mlsGroupService: MlsGroupServiceContract = {
 }
 
 const dkxService: DirectKeyExchangeServiceContract = {
-  async send(recipientPtid, sessionId, kind, opaqueKeyMaterial, recipientStationPeerId) {
+  async send(
+    recipientPtid,
+    recipientDeviceId,
+    conversationId,
+    sessionId,
+    kind,
+    opaqueKeyMaterial,
+    recipientStationPeerId,
+  ) {
+    if (!recipientPtid || !recipientDeviceId) {
+      throw new Error('direct key exchange requires a recipient endpoint');
+    }
     const resp = await cmd<any, { envelope_id: string }>('dkx_send', {
       recipient_ptid: recipientPtid,
+      recipient_device_id: recipientDeviceId,
       recipient_station_peer_id: recipientStationPeerId ?? '',
+      conversation_id: conversationId,
       session_id: sessionId,
       kind: kind as number,
       opaque_key_material: bytesToBase64(opaqueKeyMaterial),
     })
     return resp.envelope_id
+  },
+}
+
+const messagingService: MessagingServiceContract = {
+  async createDirect(peerPtid) {
+    const response = await cmd<
+      { peer_ptid: string },
+      { conversation_id: string; state: 'projected' }
+    >('messaging_create_direct', { peer_ptid: peerPtid })
+    return {
+      conversationId: response.conversation_id,
+      state: response.state,
+    }
+  },
+
+  async createGroup(conversationId, name, memberPtids) {
+    const response = await cmd<
+      { conversation_id: string; name: string; member_ptids: string[] },
+      { conversation_id: string; state: 'projected' }
+    >('messaging_create_group', {
+      conversation_id: conversationId,
+      name,
+      member_ptids: memberPtids,
+    })
+    return {
+      conversationId: response.conversation_id,
+      state: response.state,
+    }
+  },
+
+  async submitMembershipIntent(intent) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        action: 'add_actor' | 'remove_actor'
+        target_ptid: string
+      },
+      { command_id: string; state: 'pending' }
+    >('messaging_membership_transition', {
+      conversation_id: intent.conversationId,
+      action: intent.action,
+      target_ptid: intent.targetPtid,
+    })
+    return {
+      commandId: response.command_id,
+      state: response.state,
+    }
+  },
+
+  async listConversations() {
+    const response = await cmd<
+      void,
+      {
+        conversations: Array<{
+          conversation_id: string
+          kind: number
+          name: string
+          owner_ptid: string
+          member_ptids: string[]
+          membership_epoch: number
+          mls_epoch: number
+          active: boolean
+          updated_at_unix_ms: number
+        }>
+      }
+    >('messaging_list_conversations')
+    return response.conversations.map(conversation => ({
+      conversationId: conversation.conversation_id,
+      kind: conversation.kind as 1 | 2,
+      name: conversation.name,
+      ownerPtid: conversation.owner_ptid,
+      memberPtids: conversation.member_ptids,
+      membershipEpoch: conversation.membership_epoch,
+      mlsEpoch: conversation.mls_epoch,
+      active: conversation.active,
+      updatedAtUnixMs: conversation.updated_at_unix_ms,
+    }))
+  },
+
+  async pickAttachmentSource() {
+    const response = await cmd<
+      void,
+      { file_path: string; filename: string; mime_type: string; size: number }
+    >('messaging_pick_attachment_source')
+    return {
+      filePath: response.file_path,
+      filename: response.filename,
+      mimeType: response.mime_type,
+      size: response.size,
+    }
+  },
+
+  async stageAttachmentSource(filename, bytes) {
+    const response = await cmd<
+      { filename: string; bytes: number[] },
+      { local_path: string }
+    >('messaging_stage_attachment_source', {
+      filename,
+      bytes: Array.from(bytes),
+    })
+    return response.local_path
+  },
+
+  async discardAttachmentSource(filePath) {
+    await cmd<
+      { file_path: string },
+      { discarded: boolean }
+    >('messaging_discard_attachment_source', { file_path: filePath })
+  },
+
+  async captureAttachmentSource() {
+    const response = await cmd<
+      void,
+      { file_path: string; filename: string; mime_type: string }
+    >('messaging_capture_attachment_source')
+    return {
+      filePath: response.file_path,
+      filename: response.filename,
+      mimeType: response.mime_type,
+    }
+  },
+
+  async sendMessage(conversationId, conversationKind, plaintext, attachments = []) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        conversation_kind: 'direct' | 'group'
+        plaintext: string
+        attachments: Array<{
+          file_path: string
+          filename: string
+          mime_type: string
+        }>
+      },
+      {
+        command_id: string
+        message_id: string
+        attachment_ids: string[]
+        state: 'draft' | 'pending' | 'attachment_failed'
+      }
+    >('messaging_send_message', {
+      conversation_id: conversationId,
+      conversation_kind: conversationKind,
+      plaintext,
+      attachments: attachments.map(attachment => ({
+        file_path: attachment.filePath,
+        filename: attachment.filename,
+        mime_type: attachment.mimeType,
+      })),
+    })
+    return {
+      commandId: response.command_id || undefined,
+      messageId: response.message_id,
+      attachmentIds: response.attachment_ids,
+      state: response.state,
+    }
+  },
+
+  async listMessages(conversationId) {
+    const response = await cmd<
+      { conversation_id: string },
+      {
+        messages: Array<{
+          event_id?: string
+          event_sequence?: number
+          message_id: string
+          sender_ptid: string
+          sender_device_id: string
+          plaintext: string
+          attachments: Array<{
+            attachment_id: string
+            filename: string
+            mime_type: string
+            plaintext_size: number
+            object_id: string
+            storage_ref: string
+            ciphertext_size: number
+            availability_state: 'uploading' | 'remote' | 'local' | 'failed'
+          }>
+          state: string
+          timestamp_unix_ms: number
+        }>
+      }
+    >('messaging_list_messages', { conversation_id: conversationId })
+    return response.messages.map(message => ({
+      eventId: message.event_id,
+      eventSequence: message.event_sequence,
+      messageId: message.message_id,
+      senderPtid: message.sender_ptid,
+      senderDeviceId: message.sender_device_id,
+      plaintext: message.plaintext,
+      attachments: message.attachments.map(attachment => ({
+        attachmentId: attachment.attachment_id,
+        filename: attachment.filename,
+        mimeType: attachment.mime_type,
+        plaintextSize: attachment.plaintext_size,
+        objectId: attachment.object_id,
+        storageRef: attachment.storage_ref,
+        ciphertextSize: attachment.ciphertext_size,
+        availabilityState: attachment.availability_state,
+      })),
+      state: message.state,
+      timestampUnixMs: message.timestamp_unix_ms,
+    }))
+  },
+
+  async searchMessages(conversationId, query, options = {}) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        query: string
+        before_timestamp_unix_ms?: number
+        before_message_id?: string
+        limit: number
+      },
+      {
+        messages: Array<{
+          event_id?: string
+          event_sequence?: number
+          message_id: string
+          sender_ptid: string
+          sender_device_id: string
+          plaintext: string
+          attachments: Array<{
+            attachment_id: string
+            filename: string
+            mime_type: string
+            plaintext_size: number
+            object_id: string
+            storage_ref: string
+            ciphertext_size: number
+            availability_state: 'uploading' | 'remote' | 'local' | 'failed'
+          }>
+          state: string
+          timestamp_unix_ms: number
+        }>
+      }
+    >('messaging_search_messages', {
+      conversation_id: conversationId,
+      query,
+      before_timestamp_unix_ms: options.beforeTimestampUnixMs,
+      before_message_id: options.beforeMessageId,
+      limit: options.limit ?? 50,
+    })
+    return response.messages.map(message => ({
+      eventId: message.event_id,
+      eventSequence: message.event_sequence,
+      messageId: message.message_id,
+      senderPtid: message.sender_ptid,
+      senderDeviceId: message.sender_device_id,
+      plaintext: message.plaintext,
+      attachments: message.attachments.map(attachment => ({
+        attachmentId: attachment.attachment_id,
+        filename: attachment.filename,
+        mimeType: attachment.mime_type,
+        plaintextSize: attachment.plaintext_size,
+        objectId: attachment.object_id,
+        storageRef: attachment.storage_ref,
+        ciphertextSize: attachment.ciphertext_size,
+        availabilityState: attachment.availability_state,
+      })),
+      state: message.state,
+      timestampUnixMs: message.timestamp_unix_ms,
+    }))
+  },
+
+  async openAttachment(attachmentId) {
+    const response = await cmd<
+      { attachment_id: string },
+      { local_path: string }
+    >('messaging_open_attachment', { attachment_id: attachmentId })
+    return response.local_path
   },
 }
 
@@ -1357,6 +1539,7 @@ export const imServiceV1: IMServiceV1 = {
   device: deviceService,
   mlsGroup: mlsGroupService,
   dkx: dkxService,
+  messaging: messagingService,
 }
 
 export { DirectKeyExchangeKind }

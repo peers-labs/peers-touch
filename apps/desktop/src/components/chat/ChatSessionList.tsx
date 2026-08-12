@@ -130,7 +130,7 @@ export function ChatSessionList() {
 
     if (c.kind === 'friend' && c.peerDid) {
       try {
-        await imServiceV1.conversation.createDirect(c.peerDid);
+        await imServiceV1.messaging.createDirect(c.peerDid);
         await loadSessions();
         const created = getIMConversations().find((conv) => conv.peerDid === c.peerDid);
         if (created) {
@@ -195,7 +195,7 @@ export function ChatSessionList() {
     {
       key: 'create-group',
       icon: <UsersRound size={14} />,
-      label: t('chat.social.sessionList.createGroup'),
+      label: <span data-chat-create-group-menu>{t('chat.social.sessionList.createGroup')}</span>,
       onClick: () => setShowCreateGroup(true),
     },
   ];
@@ -317,6 +317,7 @@ export function ChatSessionList() {
             />
             <Dropdown menu={{ items: plusMenuItems }} trigger={['click']} placement="bottomRight">
               <Button
+                data-chat-new-menu
                 size="small"
                 type="text"
                 icon={<Plus size={16} />}

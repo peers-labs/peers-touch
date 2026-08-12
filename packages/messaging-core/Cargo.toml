@@ -1,0 +1,26 @@
+[package]
+name = "messaging-core"
+version = "0.1.0"
+edition = "2021"
+description = "Portable Rust Messaging Core — protocol, crypto, and transaction logic shared by Desktop and Mobile"
+
+[dependencies]
+aes-gcm = "0.10"
+curve25519-dalek = "4"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+hex = "0.4"
+prost = "0.14"
+prost-types = "0.14"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "1"
+ulid = "1"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+zeroize = "1"
+
+[build-dependencies]
+prost-build = "0.14"
+
+[dev-dependencies]

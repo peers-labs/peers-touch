@@ -329,7 +329,7 @@ function UploadDialog({ open, onClose, onUploaded, defaultBucket }: UploadDialog
 
   const onPick = useCallback(async () => {
     try {
-      const path = await api.ossPickAttachmentChat();
+      const path = await api.ossPickLocalFile();
       if (path) {
         setFilePath(path);
       }
@@ -359,7 +359,7 @@ function UploadDialog({ open, onClose, onUploaded, defaultBucket }: UploadDialog
     }
     setSubmitting(true);
     try {
-      const resp = await api.ossUploadAttachmentChat({
+      const resp = await api.ossUploadLocalFile({
         file_path: filePath,
         bucket: bucket.trim(),
         visibility,

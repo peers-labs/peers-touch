@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "domain/chat/endpoint.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+// Device-targeted initiator material required for the recipient to complete
+// X3DH and initialize one endpoint-pair Double Ratchet session.
+message DirectSessionInit {
+  string session_id = 1;
+  string conversation_id = 2;
+  CryptoEndpoint sender = 3;
+  CryptoEndpoint recipient = 4;
+  bytes sender_identity_key = 5;
+  bytes sender_ephemeral_key = 6;
+  uint32 recipient_signed_prekey_id = 7;
+  optional uint32 recipient_one_time_prekey_id = 8;
+  uint32 protocol_version = 9;
+  uint64 session_generation = 10;
+}
+
+// Complete Double Ratchet wire value. The receiver must validate exact field
+// lengths before invoking the ratchet.
+message DoubleRatchetCiphertext {
+  uint32 wire_version = 1;
+  bytes sender_ratchet_public_key = 2;
+  uint32 message_counter = 3;
+  uint32 previous_chain_length = 4;
+  bytes nonce = 5;
+  bytes ciphertext = 6;
+}
+
+// Deterministically encoded AEAD additional data shared by sender and receiver.
+message DirectCiphertextAad {
+  string command_id = 1;
+  string message_id = 2;
+  string conversation_id = 3;
+  CryptoEndpoint sender = 4;
+  CryptoEndpoint recipient = 5;
+  string session_id = 6;
+  uint64 session_generation = 7;
+  uint32 protocol_version = 8;
+}
+
+// One command-prepared ciphertext for exactly one recipient endpoint.
+// DeviceEventDelivery binds it to the authority event after commit.
+message DirectDeviceCiphertext {
+  string command_id = 1;
+  string message_id = 2;
+  CryptoEndpoint sender = 3;
+  CryptoEndpoint recipient = 4;
+  string session_id = 5;
+  uint64 session_generation = 6;
+  uint32 protocol_version = 7;
+  DoubleRatchetCiphertext ratchet_ciphertext = 8;
+  // SHA-256 of deterministic DoubleRatchetCiphertext protobuf bytes.
+  bytes ciphertext_sha256 = 9;
+  // Present only on the first message of a new endpoint-pair generation.
+  // The recipient creates the X3DH/Double Ratchet session and decrypts this
+  // ciphertext in the same durable transaction.
+  DirectSessionInit session_init = 10;
+}

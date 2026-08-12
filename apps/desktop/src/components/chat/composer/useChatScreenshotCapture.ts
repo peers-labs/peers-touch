@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { captureChatScreenshot } from '../../../services/chatAttachments';
-import { RustCommandException, type ChatAttachmentInput } from '../../../services/desktop_api';
+import { imServiceV1 } from '../../../services/im-service';
+import type { MessagingLocalAttachmentIntent } from '../../../services/im-service-contract';
+import { RustCommandException } from '../../../services/desktop_api';
 import { chatScreenshotShortcutMatches } from '../../../utils/chatScreenshotShortcut';
 import { log } from '../../../utils/logger';
 import { useActiveChatSettingsSlice } from '../useActiveSocialChatStore';
@@ -13,12 +14,11 @@ interface UseChatScreenshotCaptureOptions {
   disabled: boolean;
   editing: boolean;
   enabled: boolean;
-  onCaptured: (attachment: ChatAttachmentInput) => void;
+  onCaptured: (attachment: MessagingLocalAttachmentIntent) => void;
   onFailed: (reason?: string) => void;
 }
 
 export function useChatScreenshotCapture({
-  conversationId,
   disabled,
   editing,
   enabled,
@@ -34,7 +34,7 @@ export function useChatScreenshotCapture({
     capturingRef.current = true;
     setCapturing(true);
     try {
-      onCaptured(await captureChatScreenshot({ conversationId }));
+      onCaptured(await imServiceV1.messaging.captureAttachmentSource());
     } catch (error) {
       const reason = error instanceof RustCommandException
         ? String(error.details?.reason ?? '')
@@ -45,7 +45,7 @@ export function useChatScreenshotCapture({
       capturingRef.current = false;
       setCapturing(false);
     }
-  }, [conversationId, disabled, editing, enabled, onCaptured, onFailed]);
+  }, [disabled, editing, enabled, onCaptured, onFailed]);
 
   useEffect(() => {
     if (!enabled) return undefined;
