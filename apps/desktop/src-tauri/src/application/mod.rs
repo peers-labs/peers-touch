@@ -37,6 +37,7 @@ pub mod session_resolver;
 pub mod settings;
 pub mod skills;
 pub mod skills_market;
+pub mod station_binding;
 pub mod station_client;
 pub mod system;
 pub mod tools;

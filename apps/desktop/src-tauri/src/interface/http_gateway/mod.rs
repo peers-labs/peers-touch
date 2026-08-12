@@ -62,8 +62,7 @@ use crate::application::tts as app_tts;
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
 use crate::interface::tauri_commands::oss::{
-    capture_screenshot_to_temp_file, safe_temp_filename, validate_chat_upload_scope,
-    OssCaptureScreenshotInput, OssUploadAttachmentBytesInput,
+    safe_temp_filename, validate_oss_upload_scope, OssUploadAttachmentBytesInput,
 };
 use crate::model;
 use prost::Message;
@@ -661,7 +660,7 @@ fn authenticated_crypto_context(state: &AppState) -> Result<(String, String), Va
     Ok((actor_id, user_scope_from_state(state)))
 }
 
-fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> Value {
+fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> Value {
     let input = match parse_args::<OssUploadAttachmentBytesInput>(args) {
         Ok(v) => v,
         Err(e) => return e,
@@ -679,7 +678,7 @@ fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> V
     }
 
     let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
+    let (bucket, visibility, chat_sid) = match validate_oss_upload_scope(
         input.bucket.as_str(),
         vis.as_str(),
         &input.chat_session_id,
@@ -692,21 +691,21 @@ fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> V
     let chat_sid = chat_sid.map(str::to_string);
     let filename = safe_temp_filename(input.filename.as_str());
     let mime_override = input.mime_type.trim().to_string();
-    let temp_path = std::env::temp_dir().join(format!("peers-chat-{}-{}", Ulid::new(), filename));
+    let temp_path = std::env::temp_dir().join(format!("peers-agent-{}-{}", Ulid::new(), filename));
 
     if let Err(error) = std::fs::write(&temp_path, input.bytes) {
         return to_json(AppResult::<StubPayload>::fail(
             ErrorCode::InternalError,
-            format!("write temp chat attachment: {error}"),
+            format!("write temp Agent attachment: {error}"),
             None,
         ));
     }
-    let cleanup = app_oss::TempFileCleanup::new(temp_path.clone(), "http chat attachment");
+    let cleanup = app_oss::TempFileCleanup::new(temp_path.clone(), "HTTP Agent attachment");
 
     let result = app_oss::upload_attachment_with_mime(
         temp_path.to_string_lossy().as_ref(),
         &token,
-        "chat",
+        "agent",
         bucket.as_str(),
         visibility.as_str(),
         chat_sid.as_deref(),
@@ -715,47 +714,6 @@ fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> V
         } else {
             Some(mime_override.as_str())
         },
-    );
-    cleanup.remove_now();
-    to_json(result)
-}
-
-fn dispatch_oss_capture_screenshot_chat(args: Value, state: &AppState) -> Value {
-    let input = match parse_args::<OssCaptureScreenshotInput>(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-
-    let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
-        input.bucket.as_str(),
-        vis.as_str(),
-        &input.chat_session_id,
-    ) {
-        Ok(scope) => scope,
-        Err(error) => return to_json(error),
-    };
-    let bucket = bucket.to_string();
-    let visibility = visibility.to_string();
-    let chat_sid = chat_sid.map(str::to_string);
-
-    let path = match capture_screenshot_to_temp_file() {
-        Ok(path) => path,
-        Err(error) => return to_json(error),
-    };
-    let cleanup = app_oss::TempFileCleanup::new(path.clone(), "http chat screenshot");
-    let result = app_oss::upload_attachment_with_mime(
-        path.to_string_lossy().as_ref(),
-        &token,
-        "chat",
-        bucket.as_str(),
-        visibility.as_str(),
-        chat_sid.as_deref(),
-        Some("image/png"),
     );
     cleanup.remove_now();
     to_json(result)
@@ -972,7 +930,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 }),
             ))
         }
-        "crypto_get_key_bundle" => {
+        "crypto_generate_key_bundle" => {
             let actor_id = match actor_id_from_state(state) {
                 Some(id) if !id.trim().is_empty() => id,
                 _ => {
@@ -1037,14 +995,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 };
 
             to_json(to_stub(
-                "crypto_get_key_bundle",
+                "crypto_generate_key_bundle",
                 json!({
-                    "ik_pub": B64.encode(ik.verifying_key.to_bytes()),
-                    "spk_id": spk_id,
-                    "spk_pub": B64.encode(spk_pub_bytes),
-                    "spk_sig": B64.encode(spk_sig.to_bytes()),
-                    "opk_ids": opk_ids,
-                    "opk_pubs": opk_pubs.iter().map(|b| B64.encode(b)).collect::<Vec<String>>(),
+                    "identityPublicKey": B64.encode(ik.verifying_key.to_bytes()),
+                    "signedPreKey": {
+                        "keyId": spk_id.to_string(),
+                        "publicKey": B64.encode(spk_pub_bytes),
+                        "signature": B64.encode(spk_sig.to_bytes()),
+                        "createdAtUnixMs": i64::from(spk_id) * 1000,
+                    },
+                    "oneTimePreKeys": opk_ids.iter().zip(opk_pubs.iter()).map(|(id, key)| json!({
+                        "keyId": id.to_string(),
+                        "publicKey": B64.encode(key),
+                    })).collect::<Vec<Value>>(),
+                    "supportedVersions": [1],
                 }),
             ))
         }
@@ -1053,16 +1017,35 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            let negotiated_version = u32_arg(&args, "negotiated_version", "negotiatedVersion");
+            let supported_versions = args
+                .get("supported_versions")
+                .or_else(|| args.get("supportedVersions"))
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_u64)
+                        .filter_map(|value| u32::try_from(value).ok())
+                        .collect()
+                })
+                .unwrap_or_default();
             to_json(
                 crate::interface::tauri_commands::crypto::crypto_init_session_for_context(
                     string_arg(&args, "session_id", "sessionId"),
-                    string_arg(&args, "peer_did", "peerDid"),
-                    string_arg(&args, "peer_ik_pub", "peerIkPub"),
-                    string_arg(&args, "peer_spk_pub", "peerSpkPub"),
-                    string_arg(&args, "peer_spk_sig", "peerSpkSig"),
-                    optional_string_arg(&args, "peer_opk_pub", "peerOpkPub"),
-                    negotiated_version,
+                    string_arg(&args, "conversation_id", "conversationId"),
+                    args.get("session_generation")
+                        .or_else(|| args.get("sessionGeneration"))
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0),
+                    string_arg(&args, "peer_ptid", "peerPtid"),
+                    string_arg(&args, "peer_device_id", "peerDeviceId"),
+                    string_arg(&args, "peer_identity_public_key", "peerIdentityPublicKey"),
+                    string_arg(&args, "peer_signed_pre_key_id", "peerSignedPreKeyId"),
+                    string_arg(&args, "peer_signed_pre_key", "peerSignedPreKey"),
+                    string_arg(&args, "peer_signed_pre_key_sig", "peerSignedPreKeySig"),
+                    optional_string_arg(&args, "peer_one_time_pre_key_id", "peerOneTimePreKeyId"),
+                    optional_string_arg(&args, "peer_one_time_pre_key", "peerOneTimePreKey"),
+                    supported_versions,
                     actor_id,
                     user_scope,
                 ),
@@ -1076,14 +1059,24 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(
                 crate::interface::tauri_commands::crypto::crypto_accept_session_for_context(
                     string_arg(&args, "session_id", "sessionId"),
-                    string_arg(&args, "peer_did", "peerDid"),
+                    string_arg(&args, "conversation_id", "conversationId"),
+                    args.get("session_generation")
+                        .or_else(|| args.get("sessionGeneration"))
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0),
+                    string_arg(&args, "peer_ptid", "peerPtid"),
+                    string_arg(&args, "peer_device_id", "peerDeviceId"),
                     string_arg(&args, "sender_identity_key", "senderIdentityKey"),
                     string_arg(&args, "sender_ephemeral_key", "senderEphemeralKey"),
-                    string_arg(&args, "recipient_signed_prekey", "recipientSignedPrekey"),
+                    string_arg(
+                        &args,
+                        "recipient_signed_pre_key_id",
+                        "recipientSignedPreKeyId",
+                    ),
                     optional_string_arg(
                         &args,
-                        "recipient_one_time_prekey",
-                        "recipientOneTimePrekey",
+                        "recipient_one_time_pre_key_id",
+                        "recipientOneTimePreKeyId",
                     ),
                     u32_arg(&args, "negotiated_version", "negotiatedVersion"),
                     actor_id,
@@ -1099,6 +1092,52 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(
                 crate::interface::tauri_commands::crypto::crypto_session_status_for_scope(
                     string_arg(&args, "session_id", "sessionId"),
+                    user_scope,
+                ),
+            )
+        }
+        "crypto_list_sessions" => to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::InvalidArgument,
+            "crypto_list_sessions is available through the native Tauri boundary",
+            None,
+        )),
+        "crypto_list_sessions_for_peer" => to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::InvalidArgument,
+            format!(
+                "crypto_list_sessions_for_peer requires native endpoint context for {}",
+                string_arg(&args, "peer_ptid", "peerPtid")
+            ),
+            None,
+        )),
+        "crypto_encrypt" => {
+            let (_, user_scope) = match authenticated_crypto_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let session_ids = args
+                .get("session_ids")
+                .or_else(|| args.get("sessionIds"))
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            to_json(
+                crate::interface::tauri_commands::crypto::crypto_encrypt_for_scope(
+                    session_ids,
+                    string_arg(&args, "plaintext", "plaintext"),
+                    string_arg(&args, "command_id", "commandId"),
+                    args.get("content_type")
+                        .or_else(|| args.get("contentType"))
+                        .and_then(Value::as_i64)
+                        .and_then(|value| i32::try_from(value).ok())
+                        .unwrap_or(0),
+                    optional_string_arg(&args, "reply_to_message_id", "replyToMessageId"),
+                    optional_string_arg(&args, "thread_root_message_id", "threadRootMessageId"),
                     user_scope,
                 ),
             )
@@ -1841,10 +1880,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // =================================================================
         // OSS (state-dependent)
         // =================================================================
-        "oss_upload_attachment_bytes_chat" => {
-            dispatch_oss_upload_attachment_bytes_chat(args, state)
+        "oss_upload_agent_attachment_bytes" => {
+            dispatch_oss_upload_agent_attachment_bytes(args, state)
         }
-        "oss_capture_screenshot_chat" => dispatch_oss_capture_screenshot_chat(args, state),
 
         // =================================================================
         // Actor (state-dependent, proto-based)
@@ -4163,6 +4201,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     command: "account_unlock".to_string(),
                     status: "authenticated".to_string(),
                     actor_id: Some(session.actor_id),
+                    ptid: crate::application::auth::service::canonical_ptid_for_token(&token),
                     name: p_name,
                     email: p_email,
                     avatar_url: p_avatar,
@@ -4575,57 +4614,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ) {
                 Ok(data) => to_json(to_stub("friend_chat_thread_mark_read", data)),
                 Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
-            }
-        }
-        "friend_chat_send_message" => {
-            let input = match parse_args::<FriendChatSendInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let data = match station_request_json(
-                Method::POST,
-                "/friend-chat/message/send",
-                &token,
-                None,
-                Some(json!({
-                    "session_ulid": input.session_ulid, "receiver_did": input.receiver_did,
-                    "content": input.content,
-                    "encrypted_payload": input.encrypted_payload.unwrap_or_default(),
-                    "type": input.r#type.unwrap_or(1),
-                    "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
-                    "thread_root_ulid": input.thread_root_ulid.unwrap_or_default(),
-                    "attachments": input.attachments.unwrap_or_default(),
-                })),
-            ) {
-                Ok(d) => d,
-                Err(e) => return e,
-            };
-            let user_scope = user_scope_from_state(state);
-            let _ = chat_storage::ingest_friend_messages(user_scope.as_str(), &data);
-            to_json(to_stub("friend_chat_send_message", data))
-        }
-        "friend_chat_ack_messages" => {
-            let input = match parse_args::<FriendChatAckInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            match station_request_json(
-                Method::POST,
-                "/friend-chat/message/ack",
-                &token,
-                None,
-                Some(json!({"ulids": input.ulids, "status": input.status})),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_ack_messages", data)),
-                Err(e) => e,
             }
         }
         "friend_chat_sync_messages" => {
@@ -6889,22 +6877,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     &scope,
                 ),
             )
-        }
-        "mls_group_status" => {
-            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupStatusInput>(
-                args,
-            ) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_status") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            to_json(AppResult::success(
-                json!({ "ready": mls.has_session(&input.conversation_id) }),
-            ))
         }
         "mls_group_public_head" => {
             let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupStatusInput>(

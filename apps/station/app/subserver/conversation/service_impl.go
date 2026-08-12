@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -372,6 +373,9 @@ func (s *DefaultService) SubmitCommand(ctx context.Context, cmd *chat.Conversati
 		if member.MemberStatus != chat.MemberStatus_MEMBER_STATUS_ACTIVE {
 			return fmt.Errorf("conversation: sender membership not active")
 		}
+		if err := validateEncryptedCommand(ctx, repos.Conversation, locked, cmd); err != nil {
+			return err
+		}
 		committed, err := s.processCommand(ctx, repos.Conversation, locked, cmd)
 		if err != nil {
 			return err
@@ -433,6 +437,133 @@ func (s *DefaultService) SubmitCommand(ctx context.Context, cmd *chat.Conversati
 	return event, nil
 }
 
+func validateEncryptedCommand(
+	ctx context.Context,
+	repo Repository,
+	conv *chat.Conversation,
+	cmd *chat.ConversationCommand,
+) error {
+	var (
+		devicePayloads        []*chat.DeviceEncryptedPayload
+		groupEncryptedPayload []byte
+	)
+	switch payload := cmd.Payload.(type) {
+	case *chat.ConversationCommand_SendMessage:
+		if payload.SendMessage == nil {
+			return invalidEncryptedCommand("send_message is required")
+		}
+		devicePayloads = payload.SendMessage.DevicePayloads
+		groupEncryptedPayload = payload.SendMessage.GroupEncryptedPayload
+	case *chat.ConversationCommand_EditMessage:
+		if payload.EditMessage == nil {
+			return invalidEncryptedCommand("edit_message is required")
+		}
+		if payload.EditMessage.TargetMessageId == "" {
+			return invalidEncryptedCommand("edit_message requires target_message_id")
+		}
+		devicePayloads = payload.EditMessage.DevicePayloads
+		groupEncryptedPayload = payload.EditMessage.GroupEncryptedPayload
+	default:
+		return nil
+	}
+
+	if strings.TrimSpace(cmd.SenderDeviceId) == "" {
+		return invalidEncryptedCommand("sender_device_id is required for encrypted commands")
+	}
+	if conv.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
+		if len(groupEncryptedPayload) == 0 {
+			return invalidEncryptedCommand("group_encrypted_payload is required for group commands")
+		}
+		if len(devicePayloads) != 0 {
+			return invalidEncryptedCommand("device_payloads are not valid for group commands")
+		}
+		return nil
+	}
+	if conv.Kind != chat.ConversationKind_CONVERSATION_KIND_DIRECT {
+		return invalidEncryptedCommand("encrypted command has unsupported conversation kind")
+	}
+	if len(groupEncryptedPayload) != 0 {
+		return invalidEncryptedCommand("group_encrypted_payload is not valid for direct commands")
+	}
+	if len(devicePayloads) == 0 {
+		return invalidEncryptedCommand("device_payloads are required for direct commands")
+	}
+
+	members, err := repo.GetMembers(ctx, conv.ConversationId)
+	if err != nil {
+		return fmt.Errorf("conversation: load direct payload recipients: %w", err)
+	}
+	activeMembers := make(map[string]struct{}, len(members))
+	for _, member := range members {
+		if member.MemberStatus == chat.MemberStatus_MEMBER_STATUS_ACTIVE {
+			activeMembers[member.Ptid] = struct{}{}
+		}
+	}
+	seen := make(map[string]struct{}, len(devicePayloads))
+	for index, payload := range devicePayloads {
+		if payload == nil ||
+			strings.TrimSpace(payload.RecipientPtid) == "" ||
+			strings.TrimSpace(payload.RecipientDeviceId) == "" ||
+			strings.TrimSpace(payload.SessionId) == "" ||
+			len(payload.EncryptedEnvelope) == 0 {
+			return invalidEncryptedCommand(
+				"device_payloads[%d] requires recipient_ptid, recipient_device_id, session_id, and encrypted_envelope",
+				index,
+			)
+		}
+		if _, ok := activeMembers[payload.RecipientPtid]; !ok {
+			return invalidEncryptedCommand(
+				"device_payloads[%d] recipient is not an active conversation member",
+				index,
+			)
+		}
+		if payload.RecipientPtid == cmd.SenderPtid &&
+			payload.RecipientDeviceId == cmd.SenderDeviceId {
+			return invalidEncryptedCommand(
+				"device_payloads[%d] cannot target the sending endpoint",
+				index,
+			)
+		}
+		key := payload.RecipientPtid + "\x00" + payload.RecipientDeviceId
+		if _, duplicate := seen[key]; duplicate {
+			return invalidEncryptedCommand(
+				"duplicate device payload target %s/%s",
+				payload.RecipientPtid,
+				payload.RecipientDeviceId,
+			)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
+func invalidEncryptedCommand(format string, args ...any) error {
+	return transitionError("INVALID_COMMAND", fmt.Sprintf(format, args...))
+}
+
+func cloneDevicePayloads(payloads []*chat.DeviceEncryptedPayload) []*chat.DeviceEncryptedPayload {
+	if len(payloads) == 0 {
+		return nil
+	}
+	cloned := make([]*chat.DeviceEncryptedPayload, 0, len(payloads))
+	for _, payload := range payloads {
+		cloned = append(cloned, proto.Clone(payload).(*chat.DeviceEncryptedPayload))
+	}
+	return cloned
+}
+
+func directEventDevicePayloads(
+	event *chat.CommittedConversationEvent,
+) ([]*chat.DeviceEncryptedPayload, bool) {
+	if committed := event.GetMessageCommitted(); committed != nil {
+		return committed.DevicePayloads, true
+	}
+	if edited := event.GetMessageEdited(); edited != nil {
+		return edited.DevicePayloads, true
+	}
+	return nil, false
+}
+
 func persistCommandEventDeliveries(
 	ctx context.Context,
 	repos TransitionRepositories,
@@ -486,6 +617,53 @@ func persistCommandEventDeliveries(
 				RecipientPtid:              device.Ptid,
 				RecipientDeviceId:          device.DeviceID,
 				RecipientHomeStationPeerId: device.HomeStationPeerID,
+				IdempotencyKey:             key,
+				MembershipEpoch:            event.MembershipEpoch,
+				PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT,
+				PayloadBytes:               eventBytes,
+				IssuedAt:                   timestamppb.New(time.Now()),
+				GroupSeq:                   event.GroupSeq,
+				PayloadSha256:              event.EventHash,
+				AuthorityStationPeerId:     localStationID,
+				FederationId:               conv.FederationId,
+				AuthorityEpoch:             conv.AuthorityEpoch,
+			}
+			if err := enqueueTransitionEnvelope(
+				ctx,
+				repos,
+				localStationID,
+				env,
+				localDeliveries,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if payloads, targeted := directEventDevicePayloads(event); targeted {
+		memberByPtid := make(map[string]*chat.ConversationMember, len(activeMembers))
+		for _, member := range activeMembers {
+			memberByPtid[member.Ptid] = member
+		}
+		for _, payload := range payloads {
+			member := memberByPtid[payload.RecipientPtid]
+			if member == nil {
+				return fmt.Errorf(
+					"conversation: direct payload recipient %q is not an active member",
+					payload.RecipientPtid,
+				)
+			}
+			key := "command:" + cmd.CommandId + ":event:" +
+				payload.RecipientPtid + ":" + payload.RecipientDeviceId
+			env := &chat.StationEnvelope{
+				EnvelopeId:                 deterministicTransitionID("envelope:" + key),
+				ConversationId:             conv.ConversationId,
+				SenderPtid:                 cmd.SenderPtid,
+				SenderDeviceId:             cmd.SenderDeviceId,
+				SenderHomeStationPeerId:    localStationID,
+				RecipientPtid:              payload.RecipientPtid,
+				RecipientDeviceId:          payload.RecipientDeviceId,
+				RecipientHomeStationPeerId: member.ActorHomeStationPeerId,
 				IdempotencyKey:             key,
 				MembershipEpoch:            event.MembershipEpoch,
 				PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_COMMITTED_EVENT,
@@ -614,24 +792,26 @@ func (s *DefaultService) processCommand(ctx context.Context, repo Repository, co
 	case *chat.ConversationCommand_SendMessage:
 		event.Payload = &chat.CommittedConversationEvent_MessageCommitted{
 			MessageCommitted: &chat.MessageCommittedEvent{
-				MessageId:           uuid.NewString(),
-				SenderPtid:          cmd.SenderPtid,
-				SenderDeviceId:      cmd.SenderDeviceId,
-				EncryptedPayload:    p.SendMessage.EncryptedPayload,
-				ContentType:         p.SendMessage.ContentType,
-				ReplyToMessageId:    p.SendMessage.ReplyToMessageId,
-				ThreadRootMessageId: p.SendMessage.ThreadRootMessageId,
-				Attachments:         p.SendMessage.Attachments,
-				ClientTs:            cmd.ClientTs,
+				MessageId:             uuid.NewString(),
+				SenderPtid:            cmd.SenderPtid,
+				SenderDeviceId:        cmd.SenderDeviceId,
+				DevicePayloads:        cloneDevicePayloads(p.SendMessage.DevicePayloads),
+				ContentType:           p.SendMessage.ContentType,
+				ReplyToMessageId:      p.SendMessage.ReplyToMessageId,
+				ThreadRootMessageId:   p.SendMessage.ThreadRootMessageId,
+				Attachments:           p.SendMessage.Attachments,
+				ClientTs:              cmd.ClientTs,
+				GroupEncryptedPayload: append([]byte(nil), p.SendMessage.GroupEncryptedPayload...),
 			},
 		}
 	case *chat.ConversationCommand_EditMessage:
 		event.Payload = &chat.CommittedConversationEvent_MessageEdited{
 			MessageEdited: &chat.MessageEditedEvent{
-				MessageId:        p.EditMessage.TargetMessageId,
-				EditorPtid:       cmd.SenderPtid,
-				EncryptedPayload: p.EditMessage.EncryptedPayload,
-				EditedAt:         timestamppb.New(now),
+				MessageId:             p.EditMessage.TargetMessageId,
+				EditorPtid:            cmd.SenderPtid,
+				DevicePayloads:        cloneDevicePayloads(p.EditMessage.DevicePayloads),
+				EditedAt:              timestamppb.New(now),
+				GroupEncryptedPayload: append([]byte(nil), p.EditMessage.GroupEncryptedPayload...),
 			},
 		}
 	case *chat.ConversationCommand_RetractMessage:

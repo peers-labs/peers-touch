@@ -137,17 +137,10 @@ liveDescribe('C6 MLS three-Station convergence', () => {
 
     await requestControl('charlie', 'stop')
     await activate(alice)
-    await imServiceV1.mlsGroup.addAuthorizedMember({
+    await imServiceV1.messaging.submitMembershipIntent({
       conversationId,
-      senderPtid: alice.ptid,
-      senderDeviceId: alice.deviceId,
-      observedMembershipEpoch: 1,
-      member: {
-        ptid: charlie.ptid,
-        deviceId: charlie.deviceId,
-        homeStationPeerId: charlie.homeStationPeerId,
-        keyPackage: charlie.keyPackage,
-      },
+      action: 'add_actor',
+      targetPtid: charlie.ptid,
     })
     await pumpMls(bob, conversationId, 2)
     await sleep(1_500)
@@ -173,7 +166,7 @@ liveDescribe('C6 MLS three-Station convergence', () => {
       sender_device_id: bob.deviceId,
       observed_membership_epoch: 2,
       send_message: {
-        encrypted_payload: Buffer.from(remoteCiphertext).toString('base64'),
+        group_encrypted_payload: Buffer.from(remoteCiphertext).toString('base64'),
         content_type: 1,
       },
     } as any)
@@ -184,7 +177,7 @@ liveDescribe('C6 MLS three-Station convergence', () => {
     await expect(
       imServiceV1.mlsGroup.decrypt(
         conversationId,
-        remoteEvent.payload.value.encryptedPayload,
+        remoteEvent.payload.value.groupEncryptedPayload,
       ),
     ).resolves.toEqual(remotePlaintext)
 
