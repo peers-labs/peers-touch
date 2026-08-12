@@ -20,8 +20,8 @@ This document defines the business source of truth for Peers-Touch group chat li
 
 This document does not define:
 
-- friend chat ratchet internals; see `docs/architecture/encryption/chat-ratchet-upgrade.md`;
-- group message ciphertext internals; see `docs/architecture/encryption/group-sender-keys.md`;
+- direct-message ratchet and group MLS internals; see
+  `docs/architecture/encryption/README.md`;
 - the unified SSE transport contract; see `docs/architecture/realtime/event-stream.md`;
 - Desktop or Mobile visual layout; see `docs/client/chat/chat-ux-contract.md`.
 
@@ -506,4 +506,3 @@ Before this lifecycle is considered complete:
 | Recall/edit/delete | Mutation events converge across devices |
 | Stale epoch send | Station rejects; client refreshes and retries |
 | Multi-device | New device receives current keys without exposing old unauthorized history |
-

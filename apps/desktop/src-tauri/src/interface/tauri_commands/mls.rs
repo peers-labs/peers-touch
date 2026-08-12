@@ -450,21 +450,29 @@ pub(crate) fn mls_group_encrypt_for_scope(
         Ok(buffers) => buffers,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, &error, None),
     };
-    if head
-        .as_ref()
-        .is_some_and(|head| head.status == "establishing" || head.status == "crypto_desynced")
-        || buffers.0 > 0
-        || buffers.1 > 0
-    {
+    let Some(head) = head else {
+        return AppResult::fail(
+            ErrorCode::Conflict,
+            "MLS authority state is not established for sends",
+            None,
+        );
+    };
+    if head.status != "active" || buffers.0 > 0 || buffers.1 > 0 {
         return AppResult::fail(
             ErrorCode::Conflict,
             "MLS recipient state is not ready for sends",
             None,
         );
     }
-    match mls.encrypt(&input.conversation_id, &input.plaintext) {
+    let expected_epoch = match u64::try_from(head.mls_epoch) {
+        Ok(epoch) => epoch,
+        Err(_) => {
+            return AppResult::fail(ErrorCode::Conflict, "MLS authority epoch is invalid", None)
+        }
+    };
+    match mls.encrypt_at_epoch(&input.conversation_id, expected_epoch, &input.plaintext) {
         Ok(result) => AppResult::success(json!({ "ciphertext": result.ciphertext })),
-        Err(e) => AppResult::fail(ErrorCode::InternalError, &e, None),
+        Err(e) => AppResult::fail(ErrorCode::Conflict, &e, None),
     }
 }
 
@@ -1280,12 +1288,29 @@ pub(crate) fn mls_recipient_status_for_scope(
         Ok(counts) => counts,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, &error, None),
     };
+    let active_head_matches_local_leaf = head
+        .as_ref()
+        .filter(|head| head.status == "active")
+        .and_then(|head| u64::try_from(head.mls_epoch).ok())
+        .is_some_and(|epoch| {
+            mls.is_local_leaf_active_at_epoch(&input.conversation_id, epoch)
+                .unwrap_or(false)
+        });
     let status = match head.as_ref().map(|head| head.status.as_str()) {
         Some("crypto_desynced") => "crypto_desynced",
         Some("establishing") => "establishing",
         _ if events > 0 || deliveries > 0 => "establishing",
-        _ if mls.has_session(&input.conversation_id) => "active",
+        Some("active") if active_head_matches_local_leaf => "active",
+        Some("active") => "crypto_desynced",
+        _ if mls.has_session(&input.conversation_id) => "establishing",
         _ => "idle",
+    };
+    let last_error = if status == "crypto_desynced"
+        && head.as_ref().is_some_and(|head| head.status == "active")
+    {
+        "local MLS leaf or epoch does not match authority state"
+    } else {
+        head.as_ref().map_or("", |head| head.last_error.as_str())
     };
     AppResult::success(json!({
         "status": status,
@@ -1293,21 +1318,13 @@ pub(crate) fn mls_recipient_status_for_scope(
         "membership_epoch": head.as_ref().map_or(0, |head| head.membership_epoch),
         "mls_epoch": head.as_ref().map_or(0, |head| head.mls_epoch),
         "buffered": events + deliveries,
-        "last_error": head.as_ref().map_or("", |head| head.last_error.as_str()),
+        "last_error": last_error,
     }))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MlsGroupStatusInput {
     pub conversation_id: String,
-}
-
-#[tauri::command]
-pub fn mls_group_status(
-    input: MlsGroupStatusInput,
-    mls: State<'_, Arc<MlsGroupManager>>,
-) -> AppResult<Value> {
-    AppResult::success(json!({ "ready": mls.has_session(&input.conversation_id) }))
 }
 
 #[tauri::command]
@@ -1495,6 +1512,15 @@ mod recipient_transition_tests {
             &sender_scope,
         );
         assert!(accepted.ok);
+        let blocked_without_authority_head = mls_group_encrypt_for_scope(
+            MlsGroupEncryptInput {
+                conversation_id: "conversation-recipient".to_string(),
+                plaintext: b"must not send before authority head".to_vec(),
+            },
+            &alice,
+            &sender_scope,
+        );
+        assert!(!blocked_without_authority_head.ok);
 
         let created_event = CommittedConversationEvent {
             event_id: "created-event".to_string(),
@@ -1660,6 +1686,15 @@ mod recipient_transition_tests {
             sender_transition.data.unwrap()["status"],
             serde_json::Value::String("active".to_string())
         );
+        let active_send = mls_group_encrypt_for_scope(
+            MlsGroupEncryptInput {
+                conversation_id: "conversation-recipient".to_string(),
+                plaintext: b"active current epoch".to_vec(),
+            },
+            &alice,
+            &sender_scope,
+        );
+        assert!(active_send.ok);
 
         let future_event = CommittedConversationEvent {
             event_id: "future-event".to_string(),

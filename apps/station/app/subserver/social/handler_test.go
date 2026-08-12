@@ -332,6 +332,22 @@ func TestHandler_SearchUsers_RejectsAnonymous(t *testing.T) {
 	}
 }
 
+func TestActorSearchResultExposesPTIDWithoutInternalActorID(t *testing.T) {
+	result := actorSearchResult(&db.Actor{
+		ID:                347760575104679938,
+		PTID:              "ptid:v1:actor:peers:p:alice:fingerprint",
+		PreferredUsername: "alice",
+		Name:              "Alice",
+	})
+
+	if result.Id != "ptid:v1:actor:peers:p:alice:fingerprint" {
+		t.Fatalf("id = %q, want canonical PTID", result.Id)
+	}
+	if result.ActorId != 0 {
+		t.Fatalf("internal actor ID crossed the search boundary: %d", result.ActorId)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Bad-request shape
 // ---------------------------------------------------------------------------

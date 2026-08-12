@@ -72,7 +72,17 @@ func NewTypedHandler[Req, Resp any](
 		if err != nil {
 			// Check if it's a HandlerError
 			if handlerErr, ok := err.(*HandlerError); ok {
-				resp.WriteHeader(handlerErr.Code)
+				for name, value := range handlerErr.Headers {
+					resp.SetHeader(name, value)
+				}
+				if len(handlerErr.Body) > 0 {
+					if handlerErr.ContentType != "" {
+						resp.SetHeader("Content-Type", handlerErr.ContentType)
+					}
+					resp.WriteHeader(handlerErr.Code)
+					_, _ = resp.Write(handlerErr.Body)
+					return nil
+				}
 
 				// Write error message in the same format as request
 				respSerializer := negotiator.GetResponseSerializer(contentType, responseSerializer)
@@ -83,7 +93,8 @@ func NewTypedHandler[Req, Resp any](
 
 				errorData, _ := respSerializer.Marshal(errorResp)
 				resp.SetHeader("Content-Type", respSerializer.ContentType())
-				resp.Write(errorData)
+				resp.WriteHeader(handlerErr.Code)
+				_, _ = resp.Write(errorData)
 				return nil
 			}
 
@@ -157,7 +168,17 @@ func NewSimpleHandler(
 		err := handler(ctx, req, resp)
 		if err != nil {
 			if handlerErr, ok := err.(*HandlerError); ok {
-				resp.WriteHeader(handlerErr.Code)
+				for name, value := range handlerErr.Headers {
+					resp.SetHeader(name, value)
+				}
+				if len(handlerErr.Body) > 0 {
+					if handlerErr.ContentType != "" {
+						resp.SetHeader("Content-Type", handlerErr.ContentType)
+					}
+					resp.WriteHeader(handlerErr.Code)
+					_, _ = resp.Write(handlerErr.Body)
+					return nil
+				}
 
 				errorResp := map[string]interface{}{
 					"error": handlerErr.Message,
@@ -167,7 +188,8 @@ func NewSimpleHandler(
 				serializer := &JSONSerializer{}
 				errorData, _ := serializer.Marshal(errorResp)
 				resp.SetHeader("Content-Type", "application/json")
-				resp.Write(errorData)
+				resp.WriteHeader(handlerErr.Code)
+				_, _ = resp.Write(errorData)
 				return nil
 			}
 

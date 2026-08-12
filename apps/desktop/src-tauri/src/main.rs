@@ -7,6 +7,7 @@ mod domain;
 mod error;
 mod infrastructure;
 mod interface;
+mod messaging;
 mod model;
 mod state;
 
@@ -26,13 +27,15 @@ use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
     applets, auth, channels, chat, conversation, cron, crypto, desktop_capture, federation,
     friend_chat, frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice,
-    key_exchange, mcp, memory, mls, model_config, notebook, notification, oauth2, oss, presence,
-    profile, provider, realtime, search, settings, skills, skills_market, social, station, system,
-    tools, tts,
+    key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery, mls,
+    model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
+    search, settings, skills, skills_market, social, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
 fn main() {
     let ctx = bootstrap::run();
@@ -52,7 +55,13 @@ fn main() {
         .plugin(desktop_capture::global_shortcut_plugin());
 
     #[cfg(feature = "e2e-testing")]
-    let builder = builder.plugin(tauri_plugin_playwright::init());
+    let builder = {
+        let socket_path = std::env::var("PT_PLAYWRIGHT_SOCKET")
+            .unwrap_or_else(|_| "/tmp/tauri-playwright.sock".to_string());
+        builder.plugin(tauri_plugin_playwright::init_with_config(
+            tauri_plugin_playwright::PluginConfig::new().socket_path(socket_path),
+        ))
+    };
 
     builder
         .manage(app_state)
@@ -76,6 +85,39 @@ fn main() {
                     panic!("[setup] Failed to resolve resource directory: {e}");
                 });
             let state = app.state::<Arc<state::AppState>>();
+            let weak_state = Arc::downgrade(state.inner());
+            let projection_app = app.handle().clone();
+            state
+                .messaging_engines
+                .set_projection_notifier(Arc::new(move |change| {
+                    let Some(state) = weak_state.upgrade() else {
+                        return;
+                    };
+                    let payload = serde_json::json!({
+                        "conversationId": change.conversation_id,
+                        "eventId": change.event_id,
+                        "laneSequence": change.lane_sequence,
+                    });
+                    for session in state
+                        .sessions
+                        .snapshot_all()
+                        .into_iter()
+                        .filter(|session| session.account_id == change.profile_id)
+                    {
+                        if let Err(error) = projection_app.emit_to(
+                            &session.window_label,
+                            MESSAGING_PROJECTION_CHANGED_EVENT,
+                            &payload,
+                        ) {
+                            tracing::warn!(
+                                window = %session.window_label,
+                                error = %error,
+                                "messaging: failed to emit projection change"
+                            );
+                        }
+                    }
+                }))
+                .expect("messaging projection notifier must initialize");
             #[cfg(debug_assertions)]
             interface::http_gateway::start(Arc::clone(state.inner()), app.handle().clone());
             application::desktop_executor_worker::start(Arc::clone(state.inner()));
@@ -405,11 +447,9 @@ fn main() {
             account::account_reset_pin,
             account::account_get_device_id,
             presence::presence_notify,
-            oss::oss_pick_attachment_chat,
-            oss::oss_upload_attachment_chat,
-            oss::oss_upload_attachment_bytes_chat,
-            oss::oss_upload_encrypted_attachment_chat,
-            oss::oss_capture_screenshot_chat,
+            oss::oss_pick_local_file,
+            oss::oss_upload_local_file,
+            oss::oss_upload_agent_attachment_bytes,
             oss::oss_pick_image_social,
             oss::oss_upload_attachment_social,
             oss::oss_upload_encrypted_attachment_social,
@@ -440,8 +480,6 @@ fn main() {
             friend_chat::friend_chat_list_thread_messages,
             friend_chat::friend_chat_thread_counts,
             friend_chat::friend_chat_thread_mark_read,
-            friend_chat::friend_chat_send_message,
-            friend_chat::friend_chat_ack_messages,
             friend_chat::friend_chat_recall_message,
             friend_chat::friend_chat_edit_message,
             friend_chat::friend_chat_delete_message,
@@ -455,20 +493,28 @@ fn main() {
             friend_chat::friend_chat_local_search,
             key_exchange::key_exchange_upload_bundle,
             key_exchange::key_exchange_fetch_bundle,
-            crypto::chat_search_local,
-            crypto::chat_index_local_messages,
             crypto::crypto_generate_identity,
+            crypto::crypto_get_identity,
             crypto::crypto_get_fingerprint,
             crypto::crypto_ratchet_telemetry_snapshot,
-            crypto::crypto_get_key_bundle,
+            crypto::crypto_generate_key_bundle,
             crypto::crypto_init_session,
             crypto::crypto_accept_session,
             crypto::crypto_session_status,
             crypto::crypto_mark_session_ready,
+            crypto::crypto_list_sessions,
+            crypto::crypto_list_sessions_for_peer,
+            crypto::crypto_encrypt,
+            crypto::crypto_decrypt,
             crypto::dr_encrypt,
             crypto::dr_decrypt,
             crypto::signaling_envelope_seal,
             crypto::signaling_envelope_open,
+            messaging_recovery::messaging_recovery_generate_phrase,
+            messaging_recovery::messaging_recovery_create_revision,
+            messaging_recovery::messaging_recovery_restore_latest,
+            messaging_recovery::messaging_recovery_status,
+            messaging_recovery::messaging_recovery_list_revisions,
             friend_chat::friend_chat_local_search_scoped,
             friend_chat::friend_chat_set_cursor_scoped,
             friend_chat::friend_chat_get_cursor_scoped,
@@ -538,9 +584,22 @@ fn main() {
             host_events::desktop_native_event_emit,
             station::station_list,
             station::station_set_active,
+            station::station_binding_complete,
             station::station_add,
             station::station_remove,
             station::station_probe,
+            messaging_commands::messaging_create_direct,
+            messaging_commands::messaging_create_group,
+            messaging_commands::messaging_membership_transition,
+            messaging_commands::messaging_list_conversations,
+            messaging_commands::messaging_pick_attachment_source,
+            messaging_commands::messaging_stage_attachment_source,
+            messaging_commands::messaging_discard_attachment_source,
+            messaging_commands::messaging_capture_attachment_source,
+            messaging_commands::messaging_send_message,
+            messaging_commands::messaging_list_messages,
+            messaging_commands::messaging_open_attachment,
+            messaging_commands::messaging_search_messages,
             // v1 conversation commands (P2)
             conversation::conversation_create_direct,
             conversation::conversation_create_group,
@@ -559,7 +618,6 @@ fn main() {
             conversation::conversation_get_unread,
             conversation::conversation_get_member_settings,
             conversation::conversation_update_member_settings,
-            conversation::conversation_search_messages,
             conversation::conversation_sync_from_station,
             conversation::envelope_submit,
             conversation::envelope_ack,
@@ -590,7 +648,6 @@ fn main() {
             mls::mls_recipient_record_authority_event,
             mls::mls_recipient_apply_delivery,
             mls::mls_recipient_status,
-            mls::mls_group_status,
             mls::mls_group_public_head,
             mls::mls_group_save,
             mls::mls_group_load,
@@ -619,6 +676,12 @@ fn main() {
             }
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
                 let state = app.state::<Arc<state::AppState>>();
+                if let Err(error) = state.messaging_engines.deactivate_all() {
+                    tracing::warn!(
+                        error = %error,
+                        "messaging: failed to stop all profile workers during shutdown"
+                    );
+                }
                 let supervisor = app.state::<Arc<application::presence::PresenceSupervisor>>();
                 let sessions = state.sessions.snapshot_all();
                 tracing::info!(

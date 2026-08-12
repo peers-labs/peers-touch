@@ -352,7 +352,7 @@ Current status:
 - P0-5 implementation complete for the current Desktop composer foundation slice.
 - Agent `ChatInput` now uses the shared `useChatAttachmentDrafts` composer model instead of the old image-only `/upload` path.
 - Image, PDF, text, Markdown, JSON, and CSV attachments can be added through picker, paste, or drag/drop.
-- Attachment upload runs through the existing encrypted chat attachment / OSS path (`services/chatAttachments.ts`) instead of direct component-owned binary handling.
+- Agent attachment upload runs through the Agent-owned encrypted OSS adapter (`services/agentAttachments.ts`) instead of Social IM or component-owned binary handling.
 - Attachment drafts render upload, retry, remove, image preview, and file-card states before send.
 - Outgoing user messages preserve attachment projection locally, including across post-turn `syncMessages` merges when the durable owner has not yet returned attachment metadata.
 - Agent turn bridge accepts and forwards attachment metadata in `AgentExecuteTurnInput`; Station durable multimodal ingestion remains future proto/domain work.
@@ -365,7 +365,7 @@ Architecture gate:
 | Runtime projection owner | `chat.ts` owns current message projection; composer attachment drafts are local view state and are cleared on send/session change |
 | Local executor | Desktop Rust / OSS attachment commands handle file picking/path upload and storage-side upload |
 | Station owner | Future Station Agent conversation/multimodal turn service once attachment fields are promoted into proto/domain contracts |
-| Protocol | Desktop Web `chatAttachments` → Tauri OSS commands; Agent turn metadata travels through Tauri `agent_execute_turn_stream` request body |
+| Protocol | Desktop Web `agentAttachments` → `oss_upload_agent_attachment_bytes`; Agent turn metadata travels through Tauri `agent_execute_turn_stream` request body |
 | Policy path | Unsupported file types are rejected in UI with localized errors; privileged local file path upload remains Desktop Rust mediated |
 | Trace path | Attachment metadata is visible in the user message projection; future Station trace attachment persistence is tracked by P4/P5 persistence work |
 | Reconciliation path | Local message attachment projection is preserved during `syncMessages`; uploaded objects are reconciled through OSS metadata |

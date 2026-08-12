@@ -38,7 +38,6 @@ export interface ConversationServiceContract {
   getUnread(conversationId: string): Promise<number>
   getMemberSettings(conversationId: string): Promise<MemberSettingsResult>
   updateMemberSettings(conversationId: string, settings: Partial<MemberSettingsResult>): Promise<void>
-  searchMessages(conversationId: string, query: string, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
   syncFromStation(conversationId: string, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
 }
 
@@ -111,9 +110,7 @@ export interface MlsGroupServiceContract {
   generateKeyPackage(): Promise<Uint8Array>
   createGroup(conversationId: string, members: MlsGroupGenesisMember[]): Promise<MlsGroupCreateResult>
   createAuthorizedGroup(input: CreateAuthorizedMlsGroupInput): Promise<CreateGroupConversationResult>
-  addAuthorizedMember(input: AddAuthorizedMlsMemberInput): Promise<CommittedConversationEvent>
-  addAuthorizedDevice(input: AddAuthorizedMlsMemberInput): Promise<CommittedConversationEvent>
-  removeAuthorizedMember(input: RemoveAuthorizedMlsMemberInput): Promise<CommittedConversationEvent>
+  addAuthorizedDevice(input: AddAuthorizedMlsDeviceInput): Promise<CommittedConversationEvent>
   removeAuthorizedDevice(input: RemoveAuthorizedMlsDeviceInput): Promise<CommittedConversationEvent>
   requestLeaveIntent(input: RequestMlsLeaveIntentInput): Promise<MlsLeaveIntentView>
   listLeaveIntents(conversationId: string): Promise<MlsLeaveIntentView[]>
@@ -141,7 +138,6 @@ export interface MlsGroupServiceContract {
     recipientDeviceId: string,
   ): Promise<MlsRecipientApplyResult>
   recipientStatus(conversationId: string): Promise<MlsRecipientStatusResult>
-  status(conversationId: string): Promise<{ ready: boolean }>
   publicHead(conversationId: string): Promise<MlsPublicHead>
   save(conversationId: string): Promise<void>
   load(conversationId: string): Promise<void>
@@ -170,12 +166,8 @@ export interface AuthorizedMlsTransitionInput {
   observedMembershipEpoch: number
 }
 
-export interface AddAuthorizedMlsMemberInput extends AuthorizedMlsTransitionInput {
+export interface AddAuthorizedMlsDeviceInput extends AuthorizedMlsTransitionInput {
   member: MlsGroupGenesisMember
-}
-
-export interface RemoveAuthorizedMlsMemberInput extends AuthorizedMlsTransitionInput {
-  memberPtid: string
 }
 
 export interface RemoveAuthorizedMlsDeviceInput extends AuthorizedMlsTransitionInput {
@@ -271,8 +263,109 @@ export interface MlsMemberChangeResult {
 // --- Direct Key Exchange Service Contract (v1, P2) ---
 
 export interface DirectKeyExchangeServiceContract {
-  send(recipientPtid: string, sessionId: string, kind: DirectKeyExchangeKind, opaqueKeyMaterial: Uint8Array, recipientStationPeerId?: string): Promise<string>
+  send(
+    recipientPtid: string,
+    recipientDeviceId: string,
+    conversationId: string,
+    sessionId: string,
+    kind: DirectKeyExchangeKind,
+    opaqueKeyMaterial: Uint8Array,
+    recipientStationPeerId?: string,
+  ): Promise<string>
 }
+
+export interface MessagingProjection {
+  eventId?: string
+  eventSequence?: number
+  messageId: string
+  senderPtid: string
+  senderDeviceId: string
+  plaintext: string
+  attachments: MessagingAttachmentProjection[]
+  state: string
+  timestampUnixMs: number
+}
+
+export interface MessagingAttachmentProjection {
+  attachmentId: string
+  filename: string
+  mimeType: string
+  plaintextSize: number
+  objectId: string
+  storageRef: string
+  ciphertextSize: number
+  availabilityState: 'uploading' | 'remote' | 'local' | 'failed'
+}
+
+export interface MessagingLocalAttachmentIntent {
+  filePath: string
+  filename: string
+  mimeType: string
+  size?: number
+}
+
+export interface MessagingConversationProjection {
+  conversationId: string
+  kind: 1 | 2
+  name: string
+  ownerPtid: string
+  memberPtids: string[]
+  membershipEpoch: number
+  mlsEpoch: number
+  active: boolean
+  updatedAtUnixMs: number
+}
+
+export interface MessagingServiceContract {
+  createDirect(peerPtid: string): Promise<{ conversationId: string; state: 'projected' }>
+  createGroup(
+    conversationId: string,
+    name: string,
+    memberPtids: string[],
+  ): Promise<{ conversationId: string; state: 'projected' }>
+  submitMembershipIntent(
+    intent: MessagingActorMembershipIntent,
+  ): Promise<{ commandId: string; state: 'pending' }>
+  listConversations(): Promise<MessagingConversationProjection[]>
+  pickAttachmentSource(): Promise<MessagingLocalAttachmentIntent>
+  stageAttachmentSource(filename: string, bytes: Uint8Array): Promise<string>
+  discardAttachmentSource(filePath: string): Promise<void>
+  captureAttachmentSource(): Promise<MessagingLocalAttachmentIntent>
+  sendMessage(
+    conversationId: string,
+    conversationKind: 'direct' | 'group',
+    plaintext: string,
+    attachments?: readonly MessagingLocalAttachmentIntent[],
+  ): Promise<{
+    commandId?: string
+    messageId: string
+    attachmentIds: string[]
+    state: 'draft' | 'pending' | 'attachment_failed'
+  }>
+  listMessages(conversationId: string): Promise<MessagingProjection[]>
+  searchMessages(
+    conversationId: string,
+    query: string,
+    options?: {
+      beforeTimestampUnixMs?: number
+      beforeMessageId?: string
+      limit?: number
+    },
+  ): Promise<MessagingProjection[]>
+  openAttachment(attachmentId: string): Promise<string>
+}
+
+export type MessagingActorMembershipIntent =
+  | {
+      conversationId: string
+      action: 'add_actor'
+      targetPtid: string
+    }
+  | {
+      conversationId: string
+      action: 'remove_actor'
+      targetPtid: string
+    }
 
 // --- Unified IM Service (aggregates above contracts) ---
 
@@ -283,4 +376,5 @@ export interface IMServiceV1 {
   device: DeviceServiceContract
   mlsGroup: MlsGroupServiceContract
   dkx: DirectKeyExchangeServiceContract
+  messaging: MessagingServiceContract
 }

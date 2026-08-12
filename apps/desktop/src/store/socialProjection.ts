@@ -87,7 +87,9 @@ export function projectConversationMessageEvents(
           sentAt: payload.clientTs ?? event.committedAt,
           createdAt: event.committedAt,
           updatedAt: event.committedAt,
-          encryptedPayload: payload.encryptedPayload,
+          encryptedPayload: kind === 'group'
+            ? payload.groupEncryptedPayload
+            : new Uint8Array(),
           recalled: false,
           editedAt: undefined,
           groupSeq: event.groupSeq,
@@ -119,7 +121,9 @@ export function projectConversationMessageEvents(
           messages.set(payload.messageId, {
             ...current,
             content: '',
-            encryptedPayload: payload.encryptedPayload,
+            encryptedPayload: kind === 'group'
+              ? payload.groupEncryptedPayload
+              : new Uint8Array(),
             editedAt: payload.editedAt ?? event.committedAt,
             updatedAt: payload.editedAt ?? event.committedAt,
           } as SequencedSocialMessage);
@@ -222,6 +226,24 @@ export function filterClearedMessages(
 export function mergeConversationMessages(existing: SocialMessage[], incoming: SocialMessage): SocialMessage[] {
   return mergeChatMessages(existing, incoming, {
     resolveTimestampMs: messageSentMs,
+  });
+}
+
+export function preserveMessageReceiptStatuses(
+  existing: SocialMessage[],
+  reconciled: SocialMessage[],
+): SocialMessage[] {
+  const existingByUlid = new Map(existing.map((message) => [message.ulid, message]));
+  return reconciled.map((message) => {
+    if (!('status' in message)) return message;
+    const current = existingByUlid.get(message.ulid);
+    if (!current || !('status' in current) || current.status <= message.status) return message;
+    return {
+      ...message,
+      status: current.status,
+      deliveredAt: current.deliveredAt,
+      readAt: current.readAt,
+    };
   });
 }
 

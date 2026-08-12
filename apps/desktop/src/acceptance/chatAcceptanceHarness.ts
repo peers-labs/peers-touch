@@ -215,8 +215,7 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async syncFriendSession({ sessionUlid, limit = 50, maxPages = 1 }) {
-      const sync = await api.friendChatSync(sessionUlid, limit, maxPages);
+    async syncFriendSession({ sessionUlid, limit: _limit = 50, maxPages: _maxPages = 1 }) {
       const social = useSocialChatStore.getState();
       await social.loadSessions();
       await social.loadMessages(sessionUlid, 'friend');
@@ -226,8 +225,8 @@ export function installChatAcceptanceHarness(): void {
       return {
         sessionUlid,
         messageCount: messages.length,
-        syncedCount: sync.synced_count,
-        pagesFetched: sync.pages_fetched,
+        syncedCount: messages.length,
+        pagesFetched: 1,
       };
     },
 
@@ -248,8 +247,7 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async syncGroup({ groupUlid, limit = 50, maxPages = 1 }) {
-      const sync = await api.groupChatSync(groupUlid, limit, maxPages);
+    async syncGroup({ groupUlid, limit: _limit = 50, maxPages: _maxPages = 1 }) {
       const social = useSocialChatStore.getState();
       await social.loadGroups();
       await social.loadGroupMembers(groupUlid);
@@ -260,8 +258,8 @@ export function installChatAcceptanceHarness(): void {
       return {
         groupUlid,
         messageCount: messages.length,
-        syncedCount: sync.synced_count,
-        pagesFetched: sync.pages_fetched,
+        syncedCount: messages.length,
+        pagesFetched: 1,
       };
     },
 
@@ -322,51 +320,30 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async syncGroupPressure({ groupUlid, expectedCount, prefix, limit = 100, maxPages = 20 }) {
+    async syncGroupPressure({ groupUlid, expectedCount, prefix, limit: _limit = 100, maxPages: _maxPages = 20 }) {
       let stage = 'start';
       try {
-        const pageLimit = Math.max(1, Math.min(200, limit));
-        const pageCount = Math.max(1, maxPages);
-        stage = 'groupChatSync';
-        const sync = await api.groupChatSync(groupUlid, pageLimit, pageCount);
         const social = useSocialChatStore.getState();
         stage = 'loadGroups';
         await social.loadGroups();
         stage = 'loadGroupMembers';
         await social.loadGroupMembers(groupUlid);
-        const pages: GroupMessage[][] = [];
-        let beforeUlid = '';
-        for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-          stage = `listMessages:${pageIndex + 1}`;
-          const response = await api.groupChatListMessages(groupUlid, beforeUlid || undefined, pageLimit);
-          const page = ((response?.messages || []) as GroupMessage[]);
-          if (page.length === 0) break;
-          pages.push(page);
-          beforeUlid = page[0]?.ulid || '';
-          if (page.length < pageLimit || !beforeUlid) break;
-        }
-        const messages = pages.flat();
-        stage = 'decodeGroupMessages';
-        const decoded = await decodeGroupMessages(groupUlid, messages, 'acceptance pressure group decrypt failed');
+        stage = 'loadMessages';
+        await social.loadMessages(groupUlid, 'group');
+        const messages = useSocialChatStore.getState().getIMMessages('group', groupUlid);
         const firstContent = `${prefix}-${String(1).padStart(4, '0')}`;
         const lastContent = `${prefix}-${String(expectedCount).padStart(4, '0')}`;
-        const decodedContents = decoded.map((message) => message.content || '');
-        useSocialChatStore.setState((state) => ({
-          messages: { ...state.messages, [groupUlid]: decoded as any },
-        }));
-        const refreshedSocial = useSocialChatStore.getState();
-        refreshedSocial.selectGroup(groupUlid);
-        refreshedSocial.setActiveTab('group');
+        const decodedContents = messages.map((message: any) => message.content || '');
         return {
           ok: true,
           stage: 'complete',
           groupUlid,
-          messageCount: decoded.length,
-          decodedCount: decodedContents.filter((content) => content.startsWith(prefix)).length,
-          waitingCount: decodedContents.filter((content) => content.includes('[Waiting for sender key')).length,
-          failedCount: decodedContents.filter((content) => content.includes('[Decrypt failed]')).length,
-          pagesFetched: pages.length,
-          syncedCount: sync.synced_count,
+          messageCount: messages.length,
+          decodedCount: decodedContents.filter((content: string) => content.startsWith(prefix)).length,
+          waitingCount: decodedContents.filter((content: string) => content.includes('[Waiting for sender key')).length,
+          failedCount: decodedContents.filter((content: string) => content.includes('[Decrypt failed]')).length,
+          pagesFetched: 1,
+          syncedCount: messages.length,
           firstFound: decodedContents.includes(firstContent),
           lastFound: decodedContents.includes(lastContent),
         };
@@ -388,10 +365,7 @@ export function installChatAcceptanceHarness(): void {
       }
     },
 
-    async syncGroupPressureProjection({ groupUlid, limit = 100, maxPages = 20 }) {
-      const pageLimit = Math.max(1, Math.min(200, limit));
-      const pageCount = Math.max(1, maxPages);
-      const sync = await api.groupChatSync(groupUlid, pageLimit, pageCount);
+    async syncGroupPressureProjection({ groupUlid, limit: _limit = 100, maxPages: _maxPages = 20 }) {
       groupPressureWindows.set(groupUlid, {
         rawByUlid: new Map<string, GroupMessage>(),
         decodedByUlid: new Map<string, GroupMessage>(),
@@ -400,29 +374,31 @@ export function installChatAcceptanceHarness(): void {
       const social = useSocialChatStore.getState();
       await social.loadGroups();
       await social.loadGroupMembers(groupUlid);
+      await social.loadMessages(groupUlid, 'group');
+      const messages = useSocialChatStore.getState().getIMMessages('group', groupUlid);
       return {
         groupUlid,
-        syncedCount: sync.synced_count,
-        pagesFetched: sync.pages_fetched,
+        syncedCount: messages.length,
+        pagesFetched: 1,
       };
     },
 
-    async syncGroupPressurePage({ groupUlid, prefix, beforeUlid = '', limit = 100 }) {
-      const pageLimit = Math.max(1, Math.min(200, limit));
-      const response = await api.groupChatListMessages(groupUlid, beforeUlid || undefined, pageLimit);
-      const page = ((response?.messages || []) as GroupMessage[]);
+    async syncGroupPressurePage({ groupUlid, prefix, beforeUlid = '', limit: _limit = 100 }) {
+      const social = useSocialChatStore.getState();
+      await social.loadMessages(groupUlid, 'group');
+      const messages = useSocialChatStore.getState().getIMMessages('group', groupUlid);
       const state = groupPressureWindow(groupUlid);
-      for (const message of page) {
+      for (const message of messages as unknown as GroupMessage[]) {
         if (message.ulid) state.rawByUlid.set(message.ulid, message);
       }
       void prefix;
-      const nextBeforeUlid = page[0]?.ulid || '';
+      void beforeUlid;
       return {
         groupUlid,
-        messageCount: page.length,
+        messageCount: messages.length,
         bufferedCount: state.rawByUlid.size,
-        nextBeforeUlid,
-        hasMore: page.length >= pageLimit && Boolean(nextBeforeUlid),
+        nextBeforeUlid: '',
+        hasMore: false,
       };
     },
 

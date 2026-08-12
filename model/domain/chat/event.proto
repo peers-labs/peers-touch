@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "domain/chat/attachment.proto";
+import "domain/chat/command.proto";
+import "domain/chat/conversation.proto";
+import "domain/chat/endpoint.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+message MessageCommittedFact {
+  string message_id = 1;
+  CryptoEndpoint sender = 2;
+  MessagingContentKind content_kind = 3;
+  string reply_to_message_id = 4;
+  string thread_root_message_id = 5;
+  repeated EncryptedObjectDescriptor attachments = 6;
+  google.protobuf.Timestamp client_timestamp = 7;
+}
+
+message MessageEditedFact {
+  string message_id = 1;
+  CryptoEndpoint editor = 2;
+  google.protobuf.Timestamp edited_at = 3;
+}
+
+message MessageRetractedFact {
+  string message_id = 1;
+  CryptoEndpoint retractor = 2;
+  google.protobuf.Timestamp retracted_at = 3;
+}
+
+message ReactionCommittedFact {
+  string message_id = 1;
+  CryptoEndpoint actor = 2;
+  string reaction = 3;
+  bool removed = 4;
+}
+
+message MessagePinCommittedFact {
+  string message_id = 1;
+  CryptoEndpoint actor = 2;
+  bool removed = 3;
+}
+
+message ConversationUpdatedFact {
+  optional string name = 1;
+  optional string description = 2;
+  optional string avatar_object_id = 3;
+  optional uint32 disappear_timer_seconds = 4;
+}
+
+message ConversationCreatedFact {
+  ConversationKind kind = 1;
+  string name = 2;
+  string owner_ptid = 3;
+  repeated string member_ptids = 4;
+}
+
+message MessagingMembershipChangeCommitted {
+  MessagingMembershipAction action = 1;
+  string ptid = 2;
+  string device_id = 3;
+  string home_station_id = 4;
+  string role = 5;
+}
+
+message ConversationAuthorityMember {
+  string ptid = 1;
+  string role = 2;
+}
+
+// Complete public state after one membership transition. It is embedded in
+// the authority event hash so a freshly added MLS endpoint can atomically
+// establish its first local projection and future hash-chain checkpoint.
+message ConversationAuthoritySnapshot {
+  ConversationKind kind = 1;
+  string name = 2;
+  string owner_ptid = 3;
+  repeated ConversationAuthorityMember active_members = 4;
+  repeated CryptoEndpoint active_endpoints = 5;
+  int64 membership_epoch = 6;
+  int64 mls_epoch = 7;
+}
+
+message MembershipTransitionCommittedFact {
+  string transition_id = 1;
+  int64 from_membership_epoch = 2;
+  int64 to_membership_epoch = 3;
+  int64 from_mls_epoch = 4;
+  int64 to_mls_epoch = 5;
+  repeated MessagingMembershipChangeCommitted changes = 6;
+  bytes mls_commit_sha256 = 7;
+  string leave_intent_id = 8;
+  ConversationAuthoritySnapshot post_state = 9;
+}
+
+// Sending-endpoint lane payload. It advances the same authority chain without
+// carrying ciphertext or duplicating the sender plaintext.
+message PublicEventMarker {
+  string conversation_id = 1;
+  string event_id = 2;
+  string command_id = 3;
+  CryptoEndpoint sending_endpoint = 4;
+}
+
+// Ordered endpoint payload that retires local MLS state after this endpoint
+// leaves the post-transition leaf set. Rejoin is only possible through a
+// later, fully bound MLS Welcome checkpoint.
+message MlsRetirementMarker {
+  string conversation_id = 1;
+  string event_id = 2;
+  string transition_id = 3;
+  CryptoEndpoint removed_endpoint = 4;
+}
+
+message ConversationStateMarker {
+  string conversation_id = 1;
+  string event_id = 2;
+}
+
+// Public authority fact. delivery_commitments are bytewise-sorted SHA-256
+// values and do not expose endpoint identity or endpoint-private ciphertext.
+message ConversationEvent {
+  string event_id = 1;
+  string conversation_id = 2;
+  int64 sequence = 3;
+  string command_id = 4;
+  CryptoEndpoint actor = 5;
+  bytes previous_hash = 6;
+  bytes event_hash = 7;
+  google.protobuf.Timestamp committed_at = 8;
+  repeated bytes delivery_commitments = 9;
+  int64 membership_epoch = 10;
+  int64 mls_epoch = 11;
+  string authority_station_id = 12;
+
+  oneof payload {
+    MessageCommittedFact message_committed = 20;
+    MessageEditedFact message_edited = 21;
+    MessageRetractedFact message_retracted = 22;
+    ReactionCommittedFact reaction_committed = 23;
+    MessagePinCommittedFact message_pin_committed = 24;
+    ConversationUpdatedFact conversation_updated = 25;
+    MembershipTransitionCommittedFact membership_transition_committed = 26;
+    ConversationCreatedFact conversation_created = 27;
+  }
+}
+
+// One authority event plus exactly one endpoint-private payload. The queue
+// payload hash binds the deterministic bytes of this complete message.
+message DeviceEventDelivery {
+  ConversationEvent event = 1;
+  CryptoEndpoint recipient = 2;
+  PreparedEndpointPayloadKind payload_kind = 3;
+  bytes endpoint_payload = 4;
+  bytes endpoint_payload_sha256 = 5;
+  bytes delivery_commitment = 6;
+  // Station-verified actor IK pinned during cross-signed device enrollment.
+  // Direct session initialization must bind its sender identity key to this.
+  bytes sender_actor_identity_public_key = 7;
+}

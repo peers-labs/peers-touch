@@ -5,7 +5,7 @@ import "time"
 // KeyBundle is one device-scoped publish for a DID.
 type KeyBundle struct {
 	ActorDID          string
-	DeviceID          string // storage key ("legacy" denotes empty client device_id)
+	DeviceID          string // authenticated, non-empty device address
 	IdentityKeyPub    []byte // Ed25519 public key (32 bytes)
 	KeyFingerprint    string // hex-encoded fingerprint
 	SignedPreKey      SignedPreKey

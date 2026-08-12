@@ -800,18 +800,6 @@ pub struct AttachmentInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatSendInput {
-    pub session_ulid: String,
-    pub receiver_did: String,
-    pub content: String,
-    pub encrypted_payload: Option<String>,
-    pub r#type: Option<i32>,
-    pub reply_to_ulid: Option<String>,
-    pub thread_root_ulid: Option<String>,
-    pub attachments: Option<Vec<AttachmentInput>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyExchangeUploadInput {
     pub ik_pub: String,
     pub spk_id: i32,
@@ -826,12 +814,6 @@ pub struct KeyExchangeFetchInput {
     pub did: String,
     pub device_id: Option<String>,
     pub home_station_peer_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatAckInput {
-    pub ulids: Vec<String>,
-    pub status: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -884,16 +866,6 @@ pub struct ChatKeyRotateInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatLocalSearchInput {
     pub query: String,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ChatSearchLocalInput {
-    pub query: String,
-    #[serde(default)]
-    pub scope: String,
-    pub conversation_id: Option<String>,
     pub limit: Option<u32>,
 }
 

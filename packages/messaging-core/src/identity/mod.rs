@@ -1,0 +1,12 @@
+pub mod keys;
+pub mod enrollment;
+
+pub use keys::{
+    ed25519_verifying_to_x25519_public, fingerprint_hex, fingerprint_numeric, DeviceSigningKey,
+    IdentityKeyPair, X25519KeyPair,
+};
+pub use enrollment::{
+    generate_fresh_device_identity, validate_enrollment_actor, FreshDeviceEnrollment,
+    FreshDeviceIdentityState, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+    MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
+};

@@ -42,7 +42,6 @@ interface ChatMessageTimelineProps {
   onReact: (message: ChatMessage) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
-  onRetry: (message: ChatMessage) => void;
   resolveThreadStats: (message: ChatMessage) => ChatThreadStats;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
@@ -110,7 +109,6 @@ export function ChatMessageTimeline({
   onReact,
   onRecall,
   onReply,
-  onRetry,
   resolveThreadStats,
   scrollContainerRef,
 }: ChatMessageTimelineProps) {
@@ -192,7 +190,6 @@ export function ChatMessageTimeline({
                 onReact={onReact}
                 onRecall={onRecall}
                 onReply={onReply}
-                onRetry={onRetry}
                 threadReplyCount={threadStats.replyCount}
                 threadUnreadCount={threadStats.unreadCount}
                 threadPreviewMessages={threadStats.previewMessages}

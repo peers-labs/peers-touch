@@ -286,28 +286,22 @@ pub fn account_remove_pin(input: AccountRemovePinInput) -> AppResult<StubPayload
 pub fn account_authorize_pin_recovery(
     recovery_id: &str,
     window_label: &str,
+    authenticated_account_id: &str,
+    fresh_token: &str,
 ) -> AppResult<StubPayload> {
-    if recovery_id.trim().is_empty() {
-        return invalid_argument("recovery_id is required");
-    }
-
-    let active_id = match session_vault::active_account_id() {
-        Some(id) => id,
-        None => return AppResult::fail(ErrorCode::Unauthorized, "no active account", None),
+    if recovery_id.trim().is_empty()
+        || authenticated_account_id.trim().is_empty()
+        || fresh_token.trim().is_empty()
+    {
+        return invalid_argument("PIN recovery authorization is incomplete");
     };
 
-    let fresh_token = match session_vault::load_raw_token_for_recovery(&active_id) {
-        Some(t) => t,
-        None => {
-            return AppResult::fail(
-                ErrorCode::NotFound,
-                "no session token found after re-auth",
-                None,
-            );
-        }
-    };
-
-    match pin_recovery::authorize_grant(recovery_id, window_label, &active_id, &fresh_token) {
+    match pin_recovery::authorize_grant(
+        recovery_id,
+        window_label,
+        authenticated_account_id,
+        fresh_token,
+    ) {
         Ok(()) => success_payload("account_authorize_pin_recovery", json!({ "ok": true })),
         Err(pin_recovery::RecoveryGrantError::AccountMismatch) => AppResult::fail(
             ErrorCode::Forbidden,

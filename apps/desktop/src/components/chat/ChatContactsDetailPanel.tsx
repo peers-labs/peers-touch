@@ -119,7 +119,7 @@ export function ChatContactsDetailPanel({
       let conversation = findContactConversation(selectedContact, getIMConversations());
 
       if (!conversation) {
-        await imServiceV1.conversation.createDirect(selectedContact.peerDid);
+        await imServiceV1.messaging.createDirect(selectedContact.peerDid);
         await loadSessions();
         conversation = findContactConversation(selectedContact, getIMConversations());
       }

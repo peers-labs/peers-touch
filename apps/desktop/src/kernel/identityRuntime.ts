@@ -1,6 +1,7 @@
 import { useAccountIdentityStore } from '../store/accountIdentity';
 import { useOAuth2Store } from '../store/oauth2';
 import { useSessionStore } from '../store/session';
+import { useSocialChatStore } from '../store/socialChat';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
 import { readDesktopPreferenceSync, removeDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
@@ -394,6 +395,7 @@ class IdentityRuntime {
     } catch {
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_FAILED' });
     }
+    await useSocialChatStore.getState().loadCurrentUserProfile();
   };
 
   revokeSession = async (): Promise<void> => {

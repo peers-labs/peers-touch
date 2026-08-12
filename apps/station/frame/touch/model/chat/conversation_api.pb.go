@@ -2212,10 +2212,12 @@ func (*RevokeDeviceResponse) Descriptor() ([]byte, []int) {
 type SendDkxRequest struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	RecipientPtid          string                 `protobuf:"bytes,1,opt,name=recipient_ptid,json=recipientPtid,proto3" json:"recipient_ptid,omitempty"`
-	RecipientStationPeerId string                 `protobuf:"bytes,2,opt,name=recipient_station_peer_id,json=recipientStationPeerId,proto3" json:"recipient_station_peer_id,omitempty"`
-	SessionId              string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Kind                   DirectKeyExchangeKind  `protobuf:"varint,4,opt,name=kind,proto3,enum=peers_touch.model.chat.v1.DirectKeyExchangeKind" json:"kind,omitempty"`
-	OpaqueKeyMaterial      []byte                 `protobuf:"bytes,5,opt,name=opaque_key_material,json=opaqueKeyMaterial,proto3" json:"opaque_key_material,omitempty"`
+	RecipientDeviceId      string                 `protobuf:"bytes,2,opt,name=recipient_device_id,json=recipientDeviceId,proto3" json:"recipient_device_id,omitempty"`
+	RecipientStationPeerId string                 `protobuf:"bytes,3,opt,name=recipient_station_peer_id,json=recipientStationPeerId,proto3" json:"recipient_station_peer_id,omitempty"`
+	SessionId              string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Kind                   DirectKeyExchangeKind  `protobuf:"varint,5,opt,name=kind,proto3,enum=peers_touch.model.chat.v1.DirectKeyExchangeKind" json:"kind,omitempty"`
+	OpaqueKeyMaterial      []byte                 `protobuf:"bytes,6,opt,name=opaque_key_material,json=opaqueKeyMaterial,proto3" json:"opaque_key_material,omitempty"`
+	ConversationId         string                 `protobuf:"bytes,7,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -2257,6 +2259,13 @@ func (x *SendDkxRequest) GetRecipientPtid() string {
 	return ""
 }
 
+func (x *SendDkxRequest) GetRecipientDeviceId() string {
+	if x != nil {
+		return x.RecipientDeviceId
+	}
+	return ""
+}
+
 func (x *SendDkxRequest) GetRecipientStationPeerId() string {
 	if x != nil {
 		return x.RecipientStationPeerId
@@ -2283,6 +2292,13 @@ func (x *SendDkxRequest) GetOpaqueKeyMaterial() []byte {
 		return x.OpaqueKeyMaterial
 	}
 	return nil
+}
+
+func (x *SendDkxRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
 }
 
 type SendDkxResponse struct {
@@ -3535,14 +3551,16 @@ const file_domain_chat_conversation_api_proto_rawDesc = "" +
 	"\adevices\x18\x01 \x03(\v2).peers_touch.model.chat.v1.DeviceInfoViewR\adevices\"2\n" +
 	"\x13RevokeDeviceRequest\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\"\x16\n" +
-	"\x14RevokeDeviceResponse\"\x87\x02\n" +
+	"\x14RevokeDeviceResponse\"\xe0\x02\n" +
 	"\x0eSendDkxRequest\x12%\n" +
-	"\x0erecipient_ptid\x18\x01 \x01(\tR\rrecipientPtid\x129\n" +
-	"\x19recipient_station_peer_id\x18\x02 \x01(\tR\x16recipientStationPeerId\x12\x1d\n" +
+	"\x0erecipient_ptid\x18\x01 \x01(\tR\rrecipientPtid\x12.\n" +
+	"\x13recipient_device_id\x18\x02 \x01(\tR\x11recipientDeviceId\x129\n" +
+	"\x19recipient_station_peer_id\x18\x03 \x01(\tR\x16recipientStationPeerId\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId\x12D\n" +
-	"\x04kind\x18\x04 \x01(\x0e20.peers_touch.model.chat.v1.DirectKeyExchangeKindR\x04kind\x12.\n" +
-	"\x13opaque_key_material\x18\x05 \x01(\fR\x11opaqueKeyMaterial\"2\n" +
+	"session_id\x18\x04 \x01(\tR\tsessionId\x12D\n" +
+	"\x04kind\x18\x05 \x01(\x0e20.peers_touch.model.chat.v1.DirectKeyExchangeKindR\x04kind\x12.\n" +
+	"\x13opaque_key_material\x18\x06 \x01(\fR\x11opaqueKeyMaterial\x12'\n" +
+	"\x0fconversation_id\x18\a \x01(\tR\x0econversationId\"2\n" +
 	"\x0fSendDkxResponse\x12\x1f\n" +
 	"\venvelope_id\x18\x01 \x01(\tR\n" +
 	"envelopeId\"}\n" +

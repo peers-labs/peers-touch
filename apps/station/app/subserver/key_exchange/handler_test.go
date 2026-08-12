@@ -95,6 +95,21 @@ func TestCurrentLocalStationIDPrefersLateRuntimeIdentityOverInitFallback(t *test
 	}
 }
 
+func TestSelectAuthenticatedDeviceID(t *testing.T) {
+	if _, err := selectAuthenticatedDeviceID("", "device-1"); err == nil {
+		t.Fatal("missing authenticated X-Device-ID must be rejected")
+	}
+	if _, err := selectAuthenticatedDeviceID("device-1", "device-2"); err == nil {
+		t.Fatal("mismatched request device must be rejected")
+	}
+	if got, err := selectAuthenticatedDeviceID(" device-1 ", "device-1"); err != nil || got != "device-1" {
+		t.Fatalf("authenticated device = %q, err = %v", got, err)
+	}
+	if got, err := selectAuthenticatedDeviceID("device-1", ""); err != nil || got != "device-1" {
+		t.Fatalf("header-only authenticated device = %q, err = %v", got, err)
+	}
+}
+
 type keyExchangeTestRelayClient struct {
 	baseURL string
 	token   string

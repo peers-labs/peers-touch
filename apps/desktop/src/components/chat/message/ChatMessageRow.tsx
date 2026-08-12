@@ -7,7 +7,6 @@ import {
   Check,
   CheckCheck,
   CornerUpRight,
-  LoaderCircle,
   MessageSquareReply,
   MessagesSquare,
   Pencil,
@@ -71,7 +70,6 @@ interface ChatMessageRowProps {
   onReact: (message: ChatMessage) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
-  onRetry: (message: ChatMessage) => void;
   reactions?: { actorId: string; emoji: string }[];
   showHoverActions?: boolean;
   showThreadSummary?: boolean;
@@ -87,49 +85,25 @@ function formatMsgTime(sentAtMs: number): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function ReadReceipt({
-  status,
-  onRetry,
-}: {
-  status: FriendMessageStatus;
-  onRetry: () => void;
-}) {
+function ReadReceipt({ status }: { status: FriendMessageStatus }) {
   const { token } = theme.useToken();
-  const { t } = useTranslation('common');
-  if (status === FMS.SENDING) {
-    return <LoaderCircle size={14} className="chat-composer-spin" style={{ color: token.colorTextQuaternary }} />;
-  }
-  if (status === FMS.FAILED) {
-    return (
-      <Tooltip title={t('common.action.retry')}>
-        <button
-          type="button"
-          aria-label={t('common.action.retry')}
-          onClick={onRetry}
-          style={{
-            display: 'inline-flex',
-            padding: 0,
-            border: 0,
-            background: 'transparent',
-            color: token.colorError,
-            cursor: 'pointer',
-          }}
-        >
-          <RotateCcw size={14} />
-        </button>
-      </Tooltip>
-    );
-  }
   if (status === FMS.READ) {
     return <CheckCheck size={14} style={{ color: token.colorPrimary }} />;
   }
   if (status === FMS.DELIVERED) {
-    return <Check size={14} style={{ color: token.colorTextQuaternary }} />;
+    return <CheckCheck size={14} style={{ color: token.colorTextQuaternary }} />;
   }
   if (status === FMS.SENT) {
     return <Check size={14} style={{ color: token.colorTextQuaternary }} />;
   }
   return null;
+}
+
+function receiptEvidenceStatus(status: FriendMessageStatus): string {
+  if (status === FMS.READ) return 'read';
+  if (status === FMS.DELIVERED) return 'delivered';
+  if (status === FMS.SENT) return 'sent';
+  return 'unknown';
 }
 
 interface HoverActionsProps {
@@ -216,7 +190,7 @@ function HoverActions({
           />
         </Tooltip>
       )}
-      <Tooltip title={t('chat.social.messageArea.actionReact')}>
+      <Tooltip title="React">
         <Button
           type="text"
           size="small"
@@ -531,7 +505,6 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   onReact,
   onRecall,
   onReply,
-  onRetry,
   reactions,
   showHoverActions = true,
   showThreadSummary = true,
@@ -616,7 +589,11 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           trigger="click"
           placement="rightTop"
         >
-          <div style={{ cursor: 'pointer', flexShrink: 0 }}>
+          <div
+            data-chat-avatar-ptid={message.senderId}
+            data-chat-avatar-src={senderAvatar || ''}
+            style={{ cursor: 'pointer', flexShrink: 0 }}
+          >
             <UserSquareAvatar
               remoteUrl={senderAvatar}
               name={senderName}
@@ -786,21 +763,26 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             </Tooltip>
           )}
           {isOwn && isFriendMessage(message) && !isRecalled && (
-            <ReadReceipt
-              status={message.status as FriendMessageStatus}
-              onRetry={() => onRetry(message)}
-            />
+            <span data-message-receipt={receiptEvidenceStatus(message.status as FriendMessageStatus)}>
+              <ReadReceipt status={message.status as FriendMessageStatus} />
+            </span>
           )}
         </Flexbox>
       </Flexbox>
 
       {isOwn && (
-        <UserSquareAvatar
-          remoteUrl={senderAvatar}
-          name={senderName}
-          size={avatarSize}
-          style={{ flexShrink: 0 }}
-        />
+        <span
+          data-chat-avatar-ptid={currentUserDid || message.senderId}
+          data-chat-avatar-src={senderAvatar || ''}
+          style={{ display: 'contents' }}
+        >
+          <UserSquareAvatar
+            remoteUrl={senderAvatar}
+            name={senderName}
+            size={avatarSize}
+            style={{ flexShrink: 0 }}
+          />
+        </span>
       )}
     </Flexbox>
   );

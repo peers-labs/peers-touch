@@ -8,6 +8,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
 )
 
 // memRepo is an in-memory Repository for contract testing.
@@ -244,6 +245,45 @@ func TestSubmit_CrossStation_EnqueuesOutbox(t *testing.T) {
 	}
 }
 
+func TestSubmit_DKXRequiresCompleteDeviceTuples(t *testing.T) {
+	repo := newMemRepo()
+	bus := &spyBus{}
+	svc := envelope.NewService(repo, bus, func() string { return "station-A" })
+
+	base := &chat.StationEnvelope{
+		IdempotencyKey:             "dkx-1",
+		SenderPtid:                 "did:alice",
+		SenderDeviceId:             "alice-device",
+		RecipientPtid:              "did:bob",
+		RecipientDeviceId:          "bob-device",
+		RecipientHomeStationPeerId: "station-A",
+		PayloadType:                chat.EnvelopePayloadType_ENVELOPE_PAYLOAD_TYPE_DIRECT_KEY_EXCHANGE,
+		PayloadBytes:               []byte("opaque-dkx"),
+	}
+	for name, mutate := range map[string]func(*chat.StationEnvelope){
+		"blank sender device":    func(env *chat.StationEnvelope) { env.SenderDeviceId = "" },
+		"blank recipient device": func(env *chat.StationEnvelope) { env.RecipientDeviceId = "" },
+		"same endpoint": func(env *chat.StationEnvelope) {
+			env.RecipientPtid = env.SenderPtid
+			env.RecipientDeviceId = env.SenderDeviceId
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := proto.Clone(base).(*chat.StationEnvelope)
+			mutate(env)
+			if _, err := svc.Submit(context.Background(), env); err == nil {
+				t.Fatal("expected DKX addressing rejection")
+			}
+		})
+	}
+	if _, err := svc.Submit(context.Background(), base); err != nil {
+		t.Fatalf("complete DKX tuple rejected: %v", err)
+	}
+	if len(bus.published) != 1 {
+		t.Fatalf("DKX publishes = %d, want one device delivery", len(bus.published))
+	}
+}
+
 func TestSubmit_Idempotency(t *testing.T) {
 	repo := newMemRepo()
 	bus := &spyBus{}
@@ -423,6 +463,7 @@ func TestSubmit_DirectKeyExchange_LocalRouting(t *testing.T) {
 	env := &chat.StationEnvelope{
 		IdempotencyKey:             "dkx-session-1:did:alice:PREKEY_BUNDLE",
 		SenderPtid:                 "did:alice",
+		SenderDeviceId:             "alice-device",
 		RecipientPtid:              "did:bob",
 		RecipientDeviceId:          "device-1",
 		RecipientHomeStationPeerId: "station-A",

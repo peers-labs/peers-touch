@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+// Canonical device-addressed crypto endpoint.
+// Both fields are required at every crypto and device-delivery boundary.
+message CryptoEndpoint {
+  string ptid = 1;
+  string device_id = 2;
+}

@@ -4,6 +4,9 @@ export const CLIENT_MEDIA_CHUNKED_ENCRYPTION_VERSION = 2;
 export const CLIENT_MEDIA_CHUNKED_ENCRYPTION_SUITE = 'AES-256-GCM-CHUNKED' as const;
 export const CLIENT_MEDIA_CHUNKING_FIXED_V1 = 'fixed-v1' as const;
 export const CLIENT_MEDIA_NONCE_STRATEGY_COUNTER32_BE = 'prefix-counter32-be' as const;
+export const CLIENT_MEDIA_CHUNK_AAD_DOMAIN = 'peers-touch:attachment:aes-256-gcm-chunked:1' as const;
+export const CLIENT_MEDIA_MAX_CHUNK_COUNT = 2048;
+export const CLIENT_MEDIA_MAX_PLAINTEXT_SIZE = 2 * 1024 * 1024 * 1024;
 
 export interface ClientMediaEncryptionDescriptor {
   readonly encrypted: true;
@@ -18,6 +21,7 @@ export interface ClientMediaEncryptionDescriptor {
   readonly chunking?: string;
   readonly chunkSize?: number;
   readonly chunkCount?: number;
+  readonly chunkCiphertextSha256B64?: readonly string[];
   readonly tagSize?: number;
   readonly nonceStrategy?: string;
 }
@@ -56,7 +60,6 @@ const AES_GCM_KEY_BITS = 256;
 const AES_GCM_NONCE_BYTES = 12;
 const AES_GCM_TAG_BYTES = 16;
 const DEFAULT_CHUNK_SIZE = 1024 * 1024;
-const MAX_CHUNK_COUNT = 0xffffffff;
 
 export async function encryptClientMediaBlob(
   blob: Blob,
@@ -107,7 +110,8 @@ export async function encryptClientMediaBlobChunked(
 ): Promise<ClientEncryptedMediaAsset> {
   const chunkSize = Math.max(1, options.chunkSize ?? DEFAULT_CHUNK_SIZE);
   const chunkCount = Math.max(1, Math.ceil(blob.size / chunkSize));
-  if (chunkCount > MAX_CHUNK_COUNT) throw new Error('client-media:chunk-count-exceeded');
+  if (blob.size > CLIENT_MEDIA_MAX_PLAINTEXT_SIZE) throw new Error('client-media:plaintext-size-exceeded');
+  if (chunkCount > CLIENT_MEDIA_MAX_CHUNK_COUNT) throw new Error('client-media:chunk-count-exceeded');
 
   const keyBytes = crypto.getRandomValues(new Uint8Array(AES_GCM_KEY_BITS / 8));
   const noncePrefix = crypto.getRandomValues(new Uint8Array(AES_GCM_NONCE_BYTES));
@@ -116,6 +120,7 @@ export async function encryptClientMediaBlobChunked(
   const plaintextHash = new Sha256();
   const ciphertextHash = new Sha256();
   const encryptedParts: BlobPart[] = [];
+  const chunkCiphertextSha256B64: string[] = [];
   let loaded = 0;
   let ciphertextSize = 0;
 
@@ -132,6 +137,9 @@ export async function encryptClientMediaBlobChunked(
       arrayBufferFromBytes(plaintext),
     ));
     ciphertextHash.update(ciphertext);
+    const chunkHash = new Sha256();
+    chunkHash.update(ciphertext);
+    chunkCiphertextSha256B64.push(base64FromBytes(chunkHash.digest()));
     encryptedParts.push(arrayBufferFromBytes(ciphertext));
     ciphertextSize += ciphertext.byteLength;
     loaded += plaintext.byteLength;
@@ -151,6 +159,7 @@ export async function encryptClientMediaBlobChunked(
     chunking: CLIENT_MEDIA_CHUNKING_FIXED_V1,
     chunkSize,
     chunkCount,
+    chunkCiphertextSha256B64,
     tagSize: AES_GCM_TAG_BYTES,
     nonceStrategy: CLIENT_MEDIA_NONCE_STRATEGY_COUNTER32_BE,
   };
@@ -190,6 +199,14 @@ export async function decryptClientMediaBlob({
       const ciphertextChunkSize = plaintextChunkSize + descriptor.tagSize;
       const ciphertextChunk = ciphertextBytes.subarray(ciphertextOffset, ciphertextOffset + ciphertextChunkSize);
       if (ciphertextChunk.byteLength !== ciphertextChunkSize) throw new Error('client-media:chunk-size-mismatch');
+      const expectedChunkHash = descriptor.chunkCiphertextSha256B64?.[chunkIndex];
+      if (expectedChunkHash) {
+        const chunkHash = new Sha256();
+        chunkHash.update(ciphertextChunk);
+        if (base64FromBytes(chunkHash.digest()) !== expectedChunkHash) {
+          throw new Error('client-media:chunk-hash-mismatch');
+        }
+      }
       const plaintextBuffer = await crypto.subtle.decrypt(
         {
           name: 'AES-GCM',
@@ -285,6 +302,8 @@ export function clientMediaEncryptionDescriptorFromAttachment(
     readonly chunk_size?: number | string | bigint;
     readonly chunkCount?: number | string | bigint;
     readonly chunk_count?: number | string | bigint;
+    readonly chunkCiphertextSha256B64?: readonly string[];
+    readonly chunk_ciphertext_sha256_b64?: readonly string[];
     readonly tagSize?: number | string | bigint;
     readonly tag_size?: number | string | bigint;
     readonly nonceStrategy?: string;
@@ -311,6 +330,8 @@ export function clientMediaEncryptionDescriptorFromAttachment(
     chunking: attachment.chunking,
     chunkSize: numberFromDescriptorValue(attachment.chunkSize ?? attachment.chunk_size),
     chunkCount: numberFromDescriptorValue(attachment.chunkCount ?? attachment.chunk_count),
+    chunkCiphertextSha256B64: attachment.chunkCiphertextSha256B64
+      ?? attachment.chunk_ciphertext_sha256_b64,
     tagSize: numberFromDescriptorValue(attachment.tagSize ?? attachment.tag_size),
     nonceStrategy: attachment.nonceStrategy ?? attachment.nonce_strategy,
   });
@@ -353,6 +374,7 @@ function normalizeDescriptor(
     chunking: descriptor.chunking,
     chunkSize: numberFromDescriptorValue(descriptor.chunkSize),
     chunkCount: numberFromDescriptorValue(descriptor.chunkCount),
+    chunkCiphertextSha256B64: descriptor.chunkCiphertextSha256B64,
     tagSize: numberFromDescriptorValue(descriptor.tagSize),
     nonceStrategy: descriptor.nonceStrategy,
   };
@@ -386,7 +408,7 @@ function bytesFromBase64(value: string): Uint8Array {
 
 function nonceForChunk(baseNonce: Uint8Array, chunkIndex: number): Uint8Array {
   if (baseNonce.byteLength !== AES_GCM_NONCE_BYTES) throw new Error('client-media:invalid-nonce');
-  if (!Number.isSafeInteger(chunkIndex) || chunkIndex < 0 || chunkIndex > MAX_CHUNK_COUNT) {
+  if (!Number.isSafeInteger(chunkIndex) || chunkIndex < 0 || chunkIndex >= CLIENT_MEDIA_MAX_CHUNK_COUNT) {
     throw new Error('client-media:invalid-chunk-index');
   }
   const nonce = new Uint8Array(baseNonce);
@@ -396,7 +418,9 @@ function nonceForChunk(baseNonce: Uint8Array, chunkIndex: number): Uint8Array {
 }
 
 function aadForChunk(chunkIndex: number, plaintextSize: number, chunkSize: number): Uint8Array {
-  return new TextEncoder().encode(`peers-touch-media:v2:${chunkIndex}:${plaintextSize}:${chunkSize}`);
+  return new TextEncoder().encode(
+    `${CLIENT_MEDIA_CHUNK_AAD_DOMAIN}:${chunkIndex}:${plaintextSize}:${chunkSize}`,
+  );
 }
 
 class Sha256 {

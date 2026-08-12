@@ -8,7 +8,7 @@ import { ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Squ
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
-import { useChatAttachmentDrafts } from './chat/composer/useChatAttachmentDrafts';
+import { useAgentAttachmentDrafts } from './composer/useAgentAttachmentDrafts';
 import type { AvailableModel } from '../services/desktop_api';
 import { ProviderIcon } from './settings/ProviderIcon';
 
@@ -60,12 +60,10 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     addFiles,
     clearDrafts,
     removeDraft,
-  } = useChatAttachmentDrafts({
+  } = useAgentAttachmentDrafts({
     conversationId: currentSessionKey,
     disabled: isStreaming,
-    editing: false,
     fallbackName: t('chat.input.attachmentFallbackName'),
-    onUploadFailed: () => {},
   });
 
   useEffect(() => {

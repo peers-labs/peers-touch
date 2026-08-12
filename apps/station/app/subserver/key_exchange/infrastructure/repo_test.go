@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	"gorm.io/driver/sqlite"
@@ -112,5 +113,60 @@ func TestUploadOneTimePreKeys_IsIdempotentForDuplicateIDs(t *testing.T) {
 	}
 	if !consumed {
 		t.Fatalf("duplicate upload must not resurrect a consumed OPK")
+	}
+}
+
+func TestAutoMigrateDeletesUnaddressedLegacyBundles(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&IdentityKeyModel{}, &SignedPreKeyModel{}, &OneTimePreKeyModel{}); err != nil {
+		t.Fatalf("migrate fixture: %v", err)
+	}
+	now := time.Now()
+	if err := db.Create(&IdentityKeyModel{
+		ActorDID:       "did:legacy",
+		DeviceID:       "legacy",
+		IdentityKeyPub: []byte("legacy-key"),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed legacy identity: %v", err)
+	}
+	if err := db.Create(&SignedPreKeyModel{
+		ActorDID:  "did:legacy",
+		DeviceID:  "legacy",
+		SPKID:     1,
+		PublicKey: []byte("legacy-spk"),
+		CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed legacy SPK: %v", err)
+	}
+	if err := db.Create(&OneTimePreKeyModel{
+		ActorDID:  "did:legacy",
+		DeviceID:  "legacy",
+		OPKID:     1,
+		PublicKey: []byte("legacy-opk"),
+		CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed legacy OPK: %v", err)
+	}
+
+	if err := NewGormRepo(db).AutoMigrate(); err != nil {
+		t.Fatalf("hard-cut migration: %v", err)
+	}
+	for _, model := range []any{
+		&IdentityKeyModel{},
+		&SignedPreKeyModel{},
+		&OneTimePreKeyModel{},
+	} {
+		var count int64
+		if err := db.Model(model).Where("device_id = ?", "legacy").Count(&count).Error; err != nil {
+			t.Fatalf("count legacy rows: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("legacy rows remain in %T: %d", model, count)
+		}
 	}
 }

@@ -31,7 +31,12 @@ describe('normalizeConversationEvents', () => {
           message_id: 'message-1',
           sender_ptid: 'alice',
           sender_device_id: 'desktop',
-          encrypted_payload: 'AQID',
+          device_payloads: [{
+            recipient_ptid: 'bob',
+            recipient_device_id: 'mobile',
+            session_id: 'session-1',
+            encrypted_envelope: 'AQID',
+          }],
           content_type: 1,
         },
       },
@@ -42,7 +47,9 @@ describe('normalizeConversationEvents', () => {
     expect(event.committedAt?.seconds).toBe(1_785_634_845n)
     expect(event.payload.case).toBe('messageCommitted')
     if (event.payload.case !== 'messageCommitted') throw new Error('unexpected payload')
-    expect(event.payload.value.encryptedPayload).toEqual(new Uint8Array([1, 2, 3]))
+    expect(event.payload.value.devicePayloads).toHaveLength(1)
+    expect(event.payload.value.devicePayloads[0]?.encryptedEnvelope)
+      .toEqual(new Uint8Array([1, 2, 3]))
   })
 
   it('decodes canonical membership transition evidence', () => {
@@ -126,7 +133,7 @@ describe('conversation command submission', () => {
                   message_id: 'message-1',
                   sender_ptid: 'alice',
                   sender_device_id: 'desktop',
-                  encrypted_payload: 'BwgJ',
+                  group_encrypted_payload: 'BwgJ',
                   content_type: 1,
                 },
               },
@@ -142,7 +149,7 @@ describe('conversation command submission', () => {
       sender_ptid: 'alice',
       sender_device_id: 'desktop',
       send_message: {
-        encrypted_payload: 'BwgJ',
+        group_encrypted_payload: 'BwgJ',
         content_type: 1,
       },
     } as any)
@@ -825,5 +832,39 @@ describe('recipient MLS runtime boundary', () => {
     expect(invokeMock).toHaveBeenCalledWith('mls_group_public_head', {
       input: { conversation_id: 'conversation-1' },
     })
+  })
+})
+
+describe('Messaging membership intent boundary', () => {
+  it.each([
+    ['add_actor', 'ptid:test:carol'],
+    ['remove_actor', 'ptid:test:bob'],
+  ] as const)('submits %s without exposing crypto or epoch fields', async (action, targetPtid) => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: { command_id: `command-${action}`, state: 'pending' },
+    })
+
+    await expect(imServiceV1.messaging.submitMembershipIntent({
+      conversationId: 'group-1',
+      action,
+      targetPtid,
+    })).resolves.toEqual({
+      commandId: `command-${action}`,
+      state: 'pending',
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith('messaging_membership_transition', {
+      input: {
+        conversation_id: 'group-1',
+        action,
+        target_ptid: targetPtid,
+      },
+    })
+    const input = invokeMock.mock.calls[0]?.[1]?.input
+    expect(input).not.toHaveProperty('sender_device_id')
+    expect(input).not.toHaveProperty('observed_membership_epoch')
+    expect(input).not.toHaveProperty('key_package')
+    expect(input).not.toHaveProperty('mls_commit')
   })
 })

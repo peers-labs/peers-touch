@@ -1,30 +1,15 @@
 //! Tauri command layer for OSS attachment workflows.
 //!
-//! Naming convention — `oss_<verb>_<consumer>` (主模块_动作_消费方):
-//! the OSS subserver is the cohesive home for these commands; the
-//! suffix advertises which feature module consumes the command at a
-//! glance.
-//!
-//! Exposed surface (P3, 2026-04-29):
-//!
-//! ## Chat consumer
-//! * `oss_pick_attachment_chat` — opens the native file picker (no MIME
-//!   restriction) and returns the absolute path of the selected file.
-//! * `oss_upload_attachment_chat` — pushes a local file to the bound
-//!   Station's OSS subserver and returns the canonical attachment
-//!   payload. The frontend embeds the returned `cid` in the friend or
-//!   group `MessageAttachment.cid`.
-//! * `oss_upload_attachment_bytes_chat` — writes pasted / recorded
-//!   renderer bytes to a scoped temp file, preserving the renderer MIME
-//!   type before uploading through the same chat attachment path.
+//! Generic OSS tools own local file selection/upload. Agent owns its
+//! encrypted attachment-byte upload. Messaging Engine owns Social IM
+//! attachment transfer and does not use this module.
 //!
 //! ## Social consumer (Moments)
 //! * `oss_pick_image_social` — picker scoped to image MIME types,
 //!   supports multi-select up to a caller-supplied cap (Moments uses
 //!   9). Returns the absolute paths.
-//! * `oss_upload_attachment_social` — same wire as the chat variant;
-//!   kept separate so we can evolve quotas / log labels per consumer
-//!   without coupling the two domains.
+//! * `oss_upload_attachment_social` — uploads Moments media through
+//!   the Social-owned OSS path.
 //!
 //! ## Generic
 //! * `oss_resolve_url` — given a stored `cid` (federated URI or bare
@@ -83,16 +68,6 @@ pub struct OssUploadAttachmentBytesInput {
     #[serde(default)]
     pub mime_type: String,
     pub bytes: Vec<u8>,
-    #[serde(default)]
-    pub bucket: String,
-    #[serde(default)]
-    pub visibility: String,
-    #[serde(default)]
-    pub chat_session_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct OssCaptureScreenshotInput {
     #[serde(default)]
     pub bucket: String,
     #[serde(default)]
@@ -178,7 +153,7 @@ fn require_token(state: &Arc<AppState>, window: &Window) -> Result<String, AppRe
     Ok(token)
 }
 
-pub(crate) fn validate_chat_upload_scope<'a>(
+pub(crate) fn validate_oss_upload_scope<'a>(
     bucket: &'a str,
     visibility: &'a str,
     chat_session_id: &'a Option<String>,
@@ -249,19 +224,19 @@ fn media_chunk_aad(chunk_index: u32, plaintext_size: u64, chunk_size: usize) -> 
     format!("peers-touch-media:v2:{chunk_index}:{plaintext_size}:{chunk_size}").into_bytes()
 }
 
-// ── Chat consumer ──────────────────────────────────────────────────
+// ── Generic OSS and Agent consumers ────────────────────────────────
 
 #[tauri::command]
-pub async fn oss_pick_attachment_chat(window: Window) -> AppResult<StubPayload> {
+pub async fn oss_pick_local_file(window: Window) -> AppResult<StubPayload> {
     let _ = window;
-    tracing::info!("Opening file picker dialog for chat attachment");
+    tracing::info!("Opening local file picker for OSS");
     let dialog = rfd::AsyncFileDialog::new().set_title("Select File");
     match dialog.pick_file().await {
         Some(handle) => {
             let path_str = handle.path().to_string_lossy().to_string();
-            tracing::info!(path = %path_str, "Chat attachment selected");
+            tracing::info!(path = %path_str, "OSS local file selected");
             AppResult::success(StubPayload {
-                command: "oss_pick_attachment_chat".to_string(),
+                command: "oss_pick_local_file".to_string(),
                 status: path_str,
             })
         }
@@ -273,7 +248,7 @@ pub async fn oss_pick_attachment_chat(window: Window) -> AppResult<StubPayload> 
 }
 
 #[tauri::command]
-pub fn oss_upload_attachment_chat(
+pub fn oss_upload_local_file(
     input: OssUploadAttachmentInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
@@ -286,7 +261,7 @@ pub fn oss_upload_attachment_chat(
         return AppResult::fail(ErrorCode::InvalidArgument, "file_path is required", None);
     }
     let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
+    let (bucket, visibility, chat_sid) = match validate_oss_upload_scope(
         input.bucket.as_str(),
         vis.as_str(),
         &input.chat_session_id,
@@ -297,7 +272,7 @@ pub fn oss_upload_attachment_chat(
     application_oss::upload_attachment(
         &input.file_path,
         &token,
-        "chat",
+        "local_file",
         bucket,
         visibility,
         chat_sid,
@@ -305,7 +280,7 @@ pub fn oss_upload_attachment_chat(
 }
 
 #[tauri::command]
-pub fn oss_upload_attachment_bytes_chat(
+pub fn oss_upload_agent_attachment_bytes(
     input: OssUploadAttachmentBytesInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
@@ -318,7 +293,7 @@ pub fn oss_upload_attachment_bytes_chat(
         return AppResult::fail(ErrorCode::InvalidArgument, "bytes is required", None);
     }
     let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
+    let (bucket, visibility, chat_sid) = match validate_oss_upload_scope(
         input.bucket.as_str(),
         vis.as_str(),
         &input.chat_session_id,
@@ -328,21 +303,21 @@ pub fn oss_upload_attachment_bytes_chat(
     };
 
     let filename = safe_temp_filename(input.filename.as_str());
-    let temp_path = std::env::temp_dir().join(format!("peers-chat-{}-{}", Ulid::new(), filename));
+    let temp_path = std::env::temp_dir().join(format!("peers-agent-{}-{}", Ulid::new(), filename));
     if let Err(error) = std::fs::write(&temp_path, input.bytes) {
         return AppResult::fail(
             ErrorCode::InternalError,
-            format!("write temp chat attachment: {error}"),
+            format!("write temp Agent attachment: {error}"),
             None,
         );
     }
-    let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "chat attachment");
+    let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "Agent attachment");
 
     let mime_override = input.mime_type.trim();
     let result = application_oss::upload_attachment_with_mime(
         temp_path.to_string_lossy().as_ref(),
         &token,
-        "chat",
+        "agent",
         bucket,
         visibility,
         chat_sid,
@@ -408,7 +383,7 @@ pub(crate) fn capture_screenshot_to_temp_file() -> Result<std::path::PathBuf, Ap
 }
 
 #[cfg(target_os = "macos")]
-fn capture_screenshot_with_window_hidden(
+pub(crate) fn capture_screenshot_with_window_hidden(
     window: &Window,
 ) -> Result<std::path::PathBuf, AppResult<StubPayload>> {
     let was_visible = window.is_visible().unwrap_or(true);
@@ -434,7 +409,7 @@ fn capture_screenshot_with_window_hidden(
 }
 
 #[cfg(not(target_os = "macos"))]
-fn capture_screenshot_with_window_hidden(
+pub(crate) fn capture_screenshot_with_window_hidden(
     window: &Window,
 ) -> Result<std::path::PathBuf, AppResult<StubPayload>> {
     let _ = window;
@@ -449,45 +424,6 @@ pub(crate) fn capture_screenshot_to_temp_file() -> Result<std::path::PathBuf, Ap
         "native screenshot selection is not available on this platform",
         None,
     ))
-}
-
-#[tauri::command]
-pub fn oss_capture_screenshot_chat(
-    input: OssCaptureScreenshotInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let token = match require_token(state.inner(), &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
-        input.bucket.as_str(),
-        vis.as_str(),
-        &input.chat_session_id,
-    ) {
-        Ok(scope) => scope,
-        Err(error) => return error,
-    };
-
-    let path = match capture_screenshot_with_window_hidden(&window) {
-        Ok(path) => path,
-        Err(error) => return error,
-    };
-    let cleanup = application_oss::TempFileCleanup::new(path.clone(), "chat screenshot");
-
-    let result = application_oss::upload_attachment_with_mime(
-        path.to_string_lossy().as_ref(),
-        &token,
-        "chat",
-        bucket,
-        visibility,
-        chat_sid,
-        Some("image/png"),
-    );
-    cleanup.remove_now();
-    result
 }
 
 // ── Social consumer (Moments) ──────────────────────────────────────
@@ -792,40 +728,6 @@ fn upload_encrypted_attachment(
         command: command.to_string(),
         status: serde_json::Value::Object(payload).to_string(),
     })
-}
-
-#[tauri::command]
-pub fn oss_upload_encrypted_attachment_chat(
-    input: OssUploadAttachmentInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let token = match require_token(state.inner(), &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
-        input.bucket.as_str(),
-        vis.as_str(),
-        &input.chat_session_id,
-    ) {
-        Ok(scope) => scope,
-        Err(error) => return error,
-    };
-    let bucket = bucket.to_string();
-    let visibility = visibility.to_string();
-    let chat_sid = chat_sid.map(str::to_string);
-    upload_encrypted_attachment(
-        input,
-        &token,
-        "chat",
-        bucket.as_str(),
-        visibility.as_str(),
-        chat_sid.as_deref(),
-        "attachment.bin",
-        "oss_upload_encrypted_attachment_chat",
-    )
 }
 
 #[tauri::command]

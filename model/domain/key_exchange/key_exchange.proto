@@ -35,6 +35,8 @@ message KeyBundle {
   repeated string opks = 6;
   int64 published_at_unix_ms = 7; // server stamp (identity upsert time)
   repeated uint32 supported_versions = 8;
+  int32 spk_id = 9;
+  repeated int32 opk_ids = 10;
 }
 
 // Fetch another actor's key bundles by DID.

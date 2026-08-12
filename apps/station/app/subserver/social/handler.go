@@ -13,6 +13,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
 // Route constants. The legacy `/api/v1/social/posts*` routes are
@@ -622,19 +623,22 @@ func (s *subServer) handleSearchUsers(ctx context.Context, req *model.SearchUser
 		if blocked {
 			continue
 		}
-		items = append(items, &model.Actor{
-			Id:                fmt.Sprintf("%d", a.ID),
-			Username:          a.PreferredUsername,
-			DisplayName:       a.Name,
-			Email:             a.Email,
-			ActorId:           a.ID,
-			Avatar:            a.Icon,
-			FederatedHandle:   a.FederatedHandle,
-			HomeStationPeerId: a.HomeStationPeerID,
-			HomeStationDomain: a.HomeStationDomain,
-		})
+		items = append(items, actorSearchResult(a))
 	}
 	return &model.ActorList{Items: items, Total: int64(len(items))}, nil
+}
+
+func actorSearchResult(a *db.Actor) *model.Actor {
+	return &model.Actor{
+		Id:                a.PTID,
+		Username:          a.PreferredUsername,
+		DisplayName:       a.Name,
+		Email:             a.Email,
+		Avatar:            a.Icon,
+		FederatedHandle:   a.FederatedHandle,
+		HomeStationPeerId: a.HomeStationPeerID,
+		HomeStationDomain: a.HomeStationDomain,
+	}
 }
 
 func (s *subServer) handleGetMe(ctx context.Context, _ *model.GetMeRequest) (*model.ActorProfile, error) {
@@ -835,11 +839,14 @@ func (s *subServer) handleSendFriendRequest(ctx context.Context, req *chat.SendF
 	if req.ReceiverDid == "" {
 		return nil, server.BadRequest("receiver_did is required")
 	}
-	receiverID, err := strconv.ParseUint(req.ReceiverDid, 10, 64)
+	receiver, err := actor.GetActorByPTID(ctx, req.ReceiverDid)
 	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to resolve receiver PTID", err)
+	}
+	if receiver == nil {
 		return nil, server.BadRequest("invalid receiver_did")
 	}
-	fr, err := s.friendRequestSvc.SendFriendRequest(ctx, userID, receiverID, req.Message)
+	fr, err := s.friendRequestSvc.SendFriendRequest(ctx, userID, receiver.ID, req.Message)
 	if err != nil {
 		switch err {
 		case application.ErrFriendRequestSelf:

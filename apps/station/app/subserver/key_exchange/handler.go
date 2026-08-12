@@ -19,36 +19,22 @@ import (
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"google.golang.org/protobuf/encoding/protojson"
 	"gorm.io/gorm"
 )
 
 // Fetch uses POST /key-exchange/keys/bundle/fetch (proto body) because upload already uses POST /key-exchange/keys/bundle; the mux cannot register two POST handlers on the same path.
 
-func normalizeDeviceID(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return "legacy"
-	}
-	return s
-}
-
-// protoDeviceID turns a DB device key into the wire form (legacy -> "").
-func protoDeviceID(stored string) string {
-	if stored == "legacy" {
-		return ""
-	}
-	return stored
-}
-
 func (s *subServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
+	deviceIDWrapper := serverwrapper.DeviceID()
 	return []server.Handler{
-		server.NewTypedHandler("ke-upload-bundle", "/key-exchange/keys/bundle", server.POST, s.handleUploadKeyBundle, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("ke-upload-bundle", "/key-exchange/keys/bundle", server.POST, s.handleUploadKeyBundle, logIDWrapper, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("ke-fetch-bundle", "/key-exchange/keys/bundle/fetch", server.POST, s.handleFetchKeyBundle, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("ke-federated-fetch-bundle", "/key-exchange/keys/bundle/federated-fetch", server.POST, s.handleFederatedFetchKeyBundle, logIDWrapper, s.federationFetchWrapper),
-		server.NewTypedHandler("ke-replenish", "/key-exchange/keys/replenish", server.POST, s.handleReplenishOPKs, logIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("ke-opk-count", "/key-exchange/keys/count", server.GET, s.handleOPKCount, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("ke-replenish", "/key-exchange/keys/replenish", server.POST, s.handleReplenishOPKs, logIDWrapper, deviceIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("ke-opk-count", "/key-exchange/keys/count", server.GET, s.handleOPKCount, logIDWrapper, deviceIDWrapper, s.jwtWrapper),
 	}
 }
 
@@ -82,7 +68,13 @@ func (s *subServer) handleUploadKeyBundle(ctx context.Context, req *kemodel.Uplo
 		}
 		opks = append(opks, domain.OneTimePreKey{ID: opkIDs[i], PublicKey: pk, Consumed: false})
 	}
-	devID := normalizeDeviceID(req.GetDeviceId())
+	devID, err := selectAuthenticatedDeviceID(serverwrapper.GetDeviceID(ctx), req.GetDeviceId())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireVerifiedActiveDevice(ctx, subject.ID, devID); err != nil {
+		return nil, err
+	}
 	if err := s.service.UploadKeyBundle(subject.ID, devID, ikPub, req.GetSpkId(), spkPub, spkSig, opks, req.GetSupportedVersions()); err != nil {
 		return nil, server.InternalErrorWithCause("failed to upload key bundle", err)
 	}
@@ -97,6 +89,15 @@ func (s *subServer) handleFetchKeyBundle(ctx context.Context, req *kemodel.Fetch
 		return nil, server.BadRequest("did is required")
 	}
 	homeStationPeerID := strings.TrimSpace(req.GetHomeStationPeerId())
+	if homeStationPeerID == "" {
+		actorRecord, resolveErr := touchactor.GetActorByPTID(ctx, req.GetDid())
+		if resolveErr != nil {
+			return nil, server.InternalErrorWithCause("resolve actor Home Station failed", resolveErr)
+		}
+		if actorRecord != nil {
+			homeStationPeerID = strings.TrimSpace(actorRecord.HomeStationPeerID)
+		}
+	}
 	if homeStationPeerID != "" && homeStationPeerID != strings.TrimSpace(s.currentLocalStationID()) {
 		resp, err := s.fetchFederatedKeyBundle(ctx, homeStationPeerID, req)
 		if err != nil {
@@ -105,7 +106,7 @@ func (s *subServer) handleFetchKeyBundle(ctx context.Context, req *kemodel.Fetch
 		return resp, nil
 	}
 
-	return s.fetchLocalKeyBundle(req)
+	return s.fetchLocalKeyBundle(ctx, req)
 }
 
 func (s *subServer) handleFederatedFetchKeyBundle(ctx context.Context, req *kemodel.FetchKeyBundleRequest) (*kemodel.FetchKeyBundleResponse, error) {
@@ -115,7 +116,7 @@ func (s *subServer) handleFederatedFetchKeyBundle(ctx context.Context, req *kemo
 	if err := validateFederatedFetchClaims(ctx, req); err != nil {
 		return nil, err
 	}
-	return s.fetchLocalKeyBundle(req)
+	return s.fetchLocalKeyBundle(ctx, req)
 }
 
 func validateFederatedFetchClaims(ctx context.Context, req *kemodel.FetchKeyBundleRequest) error {
@@ -135,10 +136,13 @@ func validateFederatedFetchClaims(ctx context.Context, req *kemodel.FetchKeyBund
 	return nil
 }
 
-func (s *subServer) fetchLocalKeyBundle(req *kemodel.FetchKeyBundleRequest) (*kemodel.FetchKeyBundleResponse, error) {
+func (s *subServer) fetchLocalKeyBundle(
+	ctx context.Context,
+	req *kemodel.FetchKeyBundleRequest,
+) (*kemodel.FetchKeyBundleResponse, error) {
 	filter := ""
 	if strings.TrimSpace(req.GetDeviceId()) != "" {
-		filter = normalizeDeviceID(req.GetDeviceId())
+		filter = strings.TrimSpace(req.GetDeviceId())
 	}
 
 	bundles, err := s.service.FetchKeyBundles(req.GetDid(), filter)
@@ -151,23 +155,41 @@ func (s *subServer) fetchLocalKeyBundle(req *kemodel.FetchKeyBundleRequest) (*ke
 	if len(bundles) == 0 {
 		return nil, server.NotFound("key bundle not found")
 	}
+	activeDevices, err := s.deviceStore.ListActive(ctx, req.GetDid())
+	if err != nil {
+		return nil, server.InternalErrorWithCause("resolve active devices failed", err)
+	}
+	activeDeviceIDs := make(map[string]struct{}, len(activeDevices))
+	for _, device := range activeDevices {
+		activeDeviceIDs[device.DeviceID] = struct{}{}
+	}
 
 	out := make([]*kemodel.KeyBundle, 0, len(bundles))
 	for _, b := range bundles {
+		if _, active := activeDeviceIDs[b.DeviceID]; !active {
+			continue
+		}
 		opkStrs := make([]string, 0, len(b.OneTimePreKeys))
+		opkIDs := make([]int32, 0, len(b.OneTimePreKeys))
 		for _, opk := range b.OneTimePreKeys {
 			opkStrs = append(opkStrs, base64.StdEncoding.EncodeToString(opk.PublicKey))
+			opkIDs = append(opkIDs, opk.ID)
 		}
 		out = append(out, &kemodel.KeyBundle{
 			Did:               b.ActorDID,
-			DeviceId:          protoDeviceID(b.DeviceID),
+			DeviceId:          b.DeviceID,
 			IkPub:             base64.StdEncoding.EncodeToString(b.IdentityKeyPub),
+			SpkId:             b.SignedPreKey.ID,
 			SpkPub:            base64.StdEncoding.EncodeToString(b.SignedPreKey.PublicKey),
 			SpkSig:            base64.StdEncoding.EncodeToString(b.SignedPreKey.Signature),
 			Opks:              opkStrs,
+			OpkIds:            opkIDs,
 			PublishedAtUnixMs: b.PublishedAtUnixMs,
 			SupportedVersions: b.SupportedVersions,
 		})
+	}
+	if len(out) == 0 {
+		return nil, server.NotFound("no active device key bundle found")
 	}
 
 	return &kemodel.FetchKeyBundleResponse{Bundles: out}, nil
@@ -270,7 +292,13 @@ func (s *subServer) handleReplenishOPKs(ctx context.Context, req *kemodel.Replen
 		}
 		opks = append(opks, domain.OneTimePreKey{ID: opkIDs[i], PublicKey: pk, Consumed: false})
 	}
-	devID := normalizeDeviceID(req.GetDeviceId())
+	devID, err := selectAuthenticatedDeviceID(serverwrapper.GetDeviceID(ctx), req.GetDeviceId())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireVerifiedActiveDevice(ctx, subject.ID, devID); err != nil {
+		return nil, err
+	}
 	if err := s.service.ReplenishOPKs(subject.ID, devID, opks); err != nil {
 		return nil, server.InternalErrorWithCause("failed to replenish one-time prekeys", err)
 	}
@@ -282,7 +310,13 @@ func (s *subServer) handleOPKCount(ctx context.Context, req *kemodel.OpkCountReq
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	devID := normalizeDeviceID(req.GetDeviceId())
+	devID, err := selectAuthenticatedDeviceID(serverwrapper.GetDeviceID(ctx), req.GetDeviceId())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireVerifiedActiveDevice(ctx, subject.ID, devID); err != nil {
+		return nil, err
+	}
 	n, err := s.service.CountOPKs(subject.ID, devID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to count one-time prekeys", err)
@@ -290,9 +324,36 @@ func (s *subServer) handleOPKCount(ctx context.Context, req *kemodel.OpkCountReq
 	return &kemodel.OpkCountResponse{Count: n}, nil
 }
 
+func (s *subServer) requireVerifiedActiveDevice(
+	ctx context.Context,
+	ptid string,
+	deviceID string,
+) error {
+	active, err := s.deviceStore.IsVerifiedActive(ctx, ptid, deviceID)
+	if err != nil {
+		return server.InternalErrorWithCause("failed to verify messaging device", err)
+	}
+	if !active {
+		return server.Forbidden("verified active messaging device required")
+	}
+	return nil
+}
+
 func decodeBase64Field(field, value string) ([]byte, error) {
 	if strings.TrimSpace(value) == "" {
 		return nil, errors.New(field + " is empty")
 	}
 	return base64.StdEncoding.DecodeString(value)
+}
+
+func selectAuthenticatedDeviceID(authenticatedDeviceID, requestedDeviceID string) (string, error) {
+	authenticatedDeviceID = strings.TrimSpace(authenticatedDeviceID)
+	requestedDeviceID = strings.TrimSpace(requestedDeviceID)
+	if authenticatedDeviceID == "" {
+		return "", server.BadRequest("X-Device-ID is required")
+	}
+	if requestedDeviceID != "" && requestedDeviceID != authenticatedDeviceID {
+		return "", server.BadRequest("device_id does not match authenticated X-Device-ID")
+	}
+	return authenticatedDeviceID, nil
 }

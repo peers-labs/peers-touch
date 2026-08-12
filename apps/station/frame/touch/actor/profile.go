@@ -104,6 +104,23 @@ func GetWebProfileByID(c context.Context, actorID uint64, baseURL string) (*Prof
 	return getWebProfileFromActor(c, rds, &actor, baseURL)
 }
 
+func GetWebProfileByPTID(c context.Context, ptid, baseURL string) (*ProfileResponse, error) {
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		return nil, err
+	}
+
+	var actor db.Actor
+	if err := rds.Where("ptid = ?", ptid).First(&actor).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return nil, err
+	}
+
+	return getWebProfileFromActor(c, rds, &actor, baseURL)
+}
+
 func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, baseURL string) (*ProfileResponse, error) {
 	var meta db.ActorTouchMeta
 	err := rds.Where("actor_id = ?", actor.ID).First(&meta).Error

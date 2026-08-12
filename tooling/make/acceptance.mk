@@ -4,6 +4,9 @@
         acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-desktop-gateway acceptance-chat-desktop-dom \
+        acceptance-chat-native-static acceptance-chat-native-two-client \
+        acceptance-chat-native-multi-device acceptance-chat-native-recovery \
+        acceptance-chat-native-group-mls acceptance-chat-native-w8 \
         acceptance-station-dashboard acceptance-station-dashboard-domain-validation \
         acceptance-federation acceptance-federation-mutual-validation acceptance-federation-report \
         acceptance-desktop-performance-preflight-static acceptance-desktop-performance-preflight \
@@ -87,6 +90,28 @@ acceptance-chat-desktop-dom:
 	CHAT_DESKTOP_DOM_URL='$(CHAT_DESKTOP_DOM_URL)' \
 	CHAT_DESKTOP_DOM_GATEWAY_URL='$(CHAT_DESKTOP_DOM_GATEWAY_URL)' \
 	python3 tooling/scripts/acceptance-run.py --gate chat-desktop-dom-message-visible
+
+acceptance-chat-native-static:
+	python3 tooling/scripts/acceptance-run.py --gate chat-native-visible-static
+
+acceptance-chat-native-two-client:
+	python3 tooling/scripts/acceptance-run.py --gate chat-native-two-client-e2e
+
+acceptance-chat-native-multi-device:
+	python3 tooling/scripts/acceptance-run.py --gate chat-native-multi-device-e2e
+
+acceptance-chat-native-recovery:
+	python3 tooling/scripts/acceptance-run.py --gate chat-native-recovery-e2e
+
+acceptance-chat-native-group-mls:
+	python3 tooling/scripts/acceptance-run.py --gate chat-native-group-mls-e2e
+
+acceptance-chat-native-w8:
+	python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-two-client-e2e \
+		--gate chat-native-multi-device-e2e \
+		--gate chat-native-recovery-e2e \
+		--gate chat-native-group-mls-e2e
 
 acceptance-desktop-anchor-inventory:
 	python3 tooling/scripts/acceptance-run.py --gate desktop-anchor-inventory-gate
