@@ -1092,6 +1092,7 @@ pub struct AgentExecuteTurnInput {
     pub context_window_size: Option<u32>,
     pub max_retries: Option<u32>,
     pub knowledge_resources: Option<Vec<Value>>,
+    pub available_tools: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
