@@ -96,10 +96,14 @@ type PromptAssemblyService struct {
 }
 
 func NewPromptAssemblyService(memSvc *MemoryService, skillSvc *SkillService) *PromptAssemblyService {
+	var embeddingProvider MemoryEmbeddingProvider
+	if memSvc != nil {
+		embeddingProvider = memSvc.MemoryEmbeddingProvider()
+	}
 	return &PromptAssemblyService{
 		memoryService:      memSvc,
 		skillService:       skillSvc,
-		knowledgeRetrieval: NewKnowledgeRetrievalService(),
+		knowledgeRetrieval: NewKnowledgeRetrievalService(embeddingProvider),
 	}
 }
 

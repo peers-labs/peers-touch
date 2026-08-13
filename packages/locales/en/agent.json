@@ -291,6 +291,8 @@
   "agent.profile.degradation.voiceUnavailable": "No Agent-specific voice behavior is configured.",
   "agent.profile.knowledge.add": "Bind resource",
   "agent.profile.knowledge.added": "Knowledge resource bound",
+  "agent.profile.knowledge.pickFile": "Add file",
+  "agent.profile.knowledge.pickFolder": "Add folder",
   "agent.profile.knowledge.bindTitle": "Bind resource",
   "agent.profile.knowledge.bindDesc": "Attach documents, folders, projects, URLs, notebooks, or workspace resources to this Agent. Indexing and injection are handled by the next knowledge phase.",
   "agent.profile.knowledge.boundTitle": "Bound resources",

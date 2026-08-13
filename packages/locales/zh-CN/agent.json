@@ -291,6 +291,8 @@
   "agent.profile.degradation.voiceUnavailable": "该 Agent 未配置专属语音行为。",
   "agent.profile.knowledge.add": "绑定资源",
   "agent.profile.knowledge.added": "知识资源已绑定",
+  "agent.profile.knowledge.pickFile": "添加文件",
+  "agent.profile.knowledge.pickFolder": "添加文件夹",
   "agent.profile.knowledge.bindTitle": "绑定资源",
   "agent.profile.knowledge.bindDesc": "将文档、目录、项目、URL、笔记或工作区资源附加到该智能体。索引和注入由下一阶段知识能力处理。",
   "agent.profile.knowledge.boundTitle": "已绑定资源",

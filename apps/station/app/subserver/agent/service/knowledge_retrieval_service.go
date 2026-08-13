@@ -40,12 +40,17 @@ type knowledgeChunk struct {
 }
 
 type KnowledgeRetrievalService struct {
-	httpClient *http.Client
+	httpClient        *http.Client
+	embeddingProvider MemoryEmbeddingProvider
 }
 
-func NewKnowledgeRetrievalService() *KnowledgeRetrievalService {
+func NewKnowledgeRetrievalService(embeddingProvider MemoryEmbeddingProvider) *KnowledgeRetrievalService {
+	if embeddingProvider == nil {
+		embeddingProvider = NewHashMemoryEmbeddingProvider(knowledgeEmbeddingDims)
+	}
 	return &KnowledgeRetrievalService{
-		httpClient: &http.Client{Timeout: 8 * time.Second},
+		httpClient:        &http.Client{Timeout: 8 * time.Second},
+		embeddingProvider: embeddingProvider,
 	}
 }
 
@@ -58,7 +63,7 @@ func (s *KnowledgeRetrievalService) Retrieve(
 		return &KnowledgeRetrievalResult{}, nil
 	}
 
-	queryVector := embedKnowledgeText(query)
+	queryVector := s.embedText(ctx, query)
 	var candidates []knowledgeChunk
 	for _, resource := range resources {
 		if resource.Source == "" || resource.Policy == domain.KnowledgeResourcePolicyDisabled {
@@ -69,7 +74,7 @@ func (s *KnowledgeRetrievalService) Retrieve(
 			logger.Warnf(ctx, "knowledge retrieval: failed to load resource %s: %v", resource.ResourceID, err)
 			continue
 		}
-		for _, chunk := range splitKnowledgeChunks(resource, content) {
+		for _, chunk := range s.splitKnowledgeChunks(ctx, resource, content) {
 			chunk.score = cosineSimilarity(queryVector, chunk.vector) + keywordOverlapScore(query, chunk.content)
 			candidates = append(candidates, chunk)
 		}
@@ -172,7 +177,15 @@ func isKnowledgeTextFile(path string) bool {
 	}
 }
 
-func splitKnowledgeChunks(resource domain.KnowledgeResource, content string) []knowledgeChunk {
+func (s *KnowledgeRetrievalService) embedText(ctx context.Context, text string) []float64 {
+	vec, err := s.embeddingProvider.Embed(ctx, text)
+	if err != nil {
+		return embedKnowledgeTextFallback(text)
+	}
+	return vec
+}
+
+func (s *KnowledgeRetrievalService) splitKnowledgeChunks(ctx context.Context, resource domain.KnowledgeResource, content string) []knowledgeChunk {
 	content = strings.TrimSpace(truncateKnowledgeContent(content))
 	if content == "" {
 		return nil
@@ -201,7 +214,7 @@ func splitKnowledgeChunks(resource domain.KnowledgeResource, content string) []k
 					ContentPreview: previewKnowledgeText(text),
 				},
 				content: text,
-				vector:  embedKnowledgeText(text),
+				vector:  s.embedText(ctx, text),
 			})
 		}
 		if end == len(content) {
@@ -215,7 +228,7 @@ func splitKnowledgeChunks(resource domain.KnowledgeResource, content string) []k
 	return chunks
 }
 
-func embedKnowledgeText(text string) []float64 {
+func embedKnowledgeTextFallback(text string) []float64 {
 	vector := make([]float64, knowledgeEmbeddingDims)
 	for _, token := range tokenizeKnowledge(text) {
 		sum := sha256.Sum256([]byte(token))
