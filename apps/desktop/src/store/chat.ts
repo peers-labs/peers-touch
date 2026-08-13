@@ -400,6 +400,7 @@ interface ChatState {
   operations: Record<string, ChatOperation>;
   sessionBuffers: Record<string, ChatMessage[]>;
   abortController: AbortController | null;
+  memoryDisabledSessions: Record<string, boolean>;
 
 
   wideScreen: boolean;
@@ -428,6 +429,8 @@ interface ChatState {
 
 
   setWideScreen: (wide: boolean) => void;
+  toggleSessionMemory: (sessionKey?: string) => void;
+  isMemoryDisabled: (sessionKey?: string) => boolean;
   loadPreferences: () => Promise<void>;
 }
 
@@ -484,6 +487,7 @@ function buildAgentTurnInput(
     rootfsPath?: string;
     allowedRoots?: string[];
   },
+  memoryDisabled?: boolean,
 ) {
   return {
     conversation_id: conversationId,
@@ -505,6 +509,7 @@ function buildAgentTurnInput(
     context_window_size: runtimeConfig?.contextWindowSize,
     max_retries: runtimeConfig?.maxRetries,
     knowledge_resources: runtimeConfig?.knowledgeResources,
+    memory_disabled: memoryDisabled || undefined,
   };
 }
 
@@ -695,6 +700,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   operations: {},
   sessionBuffers: {},
   abortController: null,
+  memoryDisabledSessions: {},
 
 
   wideScreen: false,
@@ -930,6 +936,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         effectiveProvider,
         effectiveModel,
         runtimeConfig,
+        get().isMemoryDisabled(currentSessionKey),
       ),
       (event: StreamEvent) => {
         if (typeof event.data?.task_id === 'string') capturedTaskId = event.data.task_id;
@@ -1448,6 +1455,22 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   setWideScreen: (wide: boolean) => {
     set({ wideScreen: wide });
     api.setPreferences({ wide_screen: wide }).catch(() => {});
+  },
+
+  toggleSessionMemory: (sessionKey?: string) => {
+    const key = sessionKey || get().currentSessionKey;
+    const { memoryDisabledSessions } = get();
+    set({
+      memoryDisabledSessions: {
+        ...memoryDisabledSessions,
+        [key]: !memoryDisabledSessions[key],
+      },
+    });
+  },
+
+  isMemoryDisabled: (sessionKey?: string) => {
+    const key = sessionKey || get().currentSessionKey;
+    return get().memoryDisabledSessions[key] || false;
   },
 
   loadPreferences: async () => {

@@ -122,6 +122,7 @@ func (s *PromptAssemblyService) Assemble(
 	workspaceRoot string,
 	userInput string,
 	knowledgeResources []domain.KnowledgeResource,
+	memoryDisabled bool,
 ) (*PromptAssemblyResult, error) {
 
 	var layers []string
@@ -134,14 +135,17 @@ func (s *PromptAssemblyService) Assemble(
 		layers = append(layers, guidance)
 	}
 
-	// L3 — Memory Snapshot
-	snapshot, err := s.memoryService.BuildRelevantSnapshot(ctx, agentID, userInput)
-	if err != nil {
-		logger.Errorf(ctx, "prompt assembly: failed to build memory snapshot for agent %s: %v", agentID, err)
-		return nil, fmt.Errorf("build memory snapshot: %w", err)
+	// L3 — Memory Snapshot (skipped when client disables memory for this turn)
+	var memoryBlock string
+	if !memoryDisabled {
+		snapshot, err := s.memoryService.BuildRelevantSnapshot(ctx, agentID, userInput)
+		if err != nil {
+			logger.Errorf(ctx, "prompt assembly: failed to build memory snapshot for agent %s: %v", agentID, err)
+			return nil, fmt.Errorf("build memory snapshot: %w", err)
+		}
+		memoryBlock = formatMemorySnapshot(snapshot)
+		layers = append(layers, memoryBlock)
 	}
-	memoryBlock := formatMemorySnapshot(snapshot)
-	layers = append(layers, memoryBlock)
 
 	// L4 — Skills Index
 	skillIndex, skillCount, err := s.skillService.BuildSkillIndex(ctx, agentID, platform, availableTools)
