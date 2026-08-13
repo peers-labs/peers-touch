@@ -728,6 +728,62 @@ func (s *MemoryService) Replace(ctx context.Context, agentID, target, oldText, n
 }
 
 // ---------------------------------------------------------------------------
+// UpdateMemoryByID — direct update of a memory item's content by ID.
+// ---------------------------------------------------------------------------
+
+func (s *MemoryService) UpdateMemoryByID(ctx context.Context, memoryID, newContent string) (*domain.MemoryItem, error) {
+	if memoryID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "memory ID is required", nil)
+	}
+	if newContent == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "content is required", nil)
+	}
+	if err := scanContent(newContent); err != nil {
+		logger.Warnf(ctx, "memory update rejected for %s: %v", memoryID, err)
+		return nil, err
+	}
+
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var entry persistence.Memory
+	if err := db.Where("id = ?", memoryID).First(&entry).Error; err != nil {
+		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,
+			fmt.Sprintf("memory %s not found", memoryID), err)
+	}
+
+	if entry.IsFrozen {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusForbidden,
+			fmt.Sprintf("memory %s is frozen and cannot be updated", memoryID), nil)
+	}
+
+	s.takeSnapshotQuiet(ctx, entry.AgentID, "mutation", nil)
+
+	now := time.Now()
+	summary := summarizeMemoryContent(newContent)
+	if err := db.Model(&entry).Updates(map[string]interface{}{
+		"content":    newContent,
+		"summary":    summary,
+		"updated_at": now,
+	}).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to update memory entry", err)
+	}
+	s.updateMemoryEmbedding(ctx, db, entry.ID, summary, newContent)
+
+	logger.Infof(ctx, "memory updated by ID: agent=%s id=%s", entry.AgentID, entry.ID)
+	s.recordGrowthEvent(ctx, entry.AgentID, EventMemoryReplaced, entry.Target, entry.ID)
+
+	entry.Content = newContent
+	entry.Summary = summary
+	entry.UpdatedAt = now
+	result := memoryRowToDomain(entry)
+	return &result, nil
+}
+
+// ---------------------------------------------------------------------------
 // Remove — fuzzy-match an existing entry by oldText and delete it.
 // ---------------------------------------------------------------------------
 
