@@ -1490,7 +1490,7 @@ export function AgentProfilePage({
 
   const handleKnowledgePickFolder = useCallback(async () => {
     try {
-      const path = await api.ossPickLocalFile();
+      const path = await api.ossPickLocalFolder();
       if (path) {
         const dirname = path.split('/').pop() || path;
         handleAddKnowledgeResource('folder', path, dirname);

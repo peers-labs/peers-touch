@@ -248,6 +248,24 @@ pub async fn oss_pick_local_file(window: Window) -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
+pub async fn oss_pick_local_folder(window: Window) -> AppResult<StubPayload> {
+    let _ = window;
+    tracing::info!("Opening local folder picker");
+    let dialog = rfd::AsyncFileDialog::new().set_title("Select Folder");
+    match dialog.pick_folder().await {
+        Some(handle) => {
+            let path_str = handle.path().to_string_lossy().to_string();
+            tracing::info!(path = %path_str, "Local folder selected");
+            AppResult::success(StubPayload {
+                command: "oss_pick_local_folder".to_string(),
+                status: path_str,
+            })
+        }
+        None => AppResult::fail(ErrorCode::InvalidArgument, "No folder selected", None),
+    }
+}
+
+#[tauri::command]
 pub fn oss_upload_local_file(
     input: OssUploadAttachmentInput,
     state: State<'_, Arc<AppState>>,

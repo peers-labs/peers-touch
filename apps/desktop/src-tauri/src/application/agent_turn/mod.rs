@@ -671,6 +671,9 @@ fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value 
     if let Some(tools) = input.available_tools.filter(|v| !v.is_empty()) {
         body["available_tools"] = json!(tools);
     }
+    if let Some(true) = input.memory_disabled {
+        body["memory_disabled"] = json!(true);
+    }
     body
 }
 
