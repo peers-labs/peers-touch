@@ -2492,6 +2492,14 @@ export interface AgentLocalToolResultEvent {
   };
 }
 
+export interface McpToolSchemaEntry {
+  name: string;
+  description: string;
+  parameters_schema: string;
+  server_name: string;
+  source: 'mcp';
+}
+
 export interface AgentExecuteTurnInput {
   stream_id?: string;
   conversation_id: string;
@@ -2513,6 +2521,7 @@ export interface AgentExecuteTurnInput {
   context_window_size?: number;
   max_retries?: number;
   knowledge_resources?: AgentExecuteTurnKnowledgeResource[];
+  available_tools?: McpToolSchemaEntry[];
 }
 
 function createAgentTurnStreamId(): string {

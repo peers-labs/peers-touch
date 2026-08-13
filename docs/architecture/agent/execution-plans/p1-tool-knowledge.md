@@ -22,8 +22,8 @@ P1 makes the agent _intelligent_ beyond text generation:
 
 | # | Module | Scope (from topology) | S1 分析 | S2 设计 | S3 实现 | S4 验收 | S5 交付 | PR |
 |---|--------|----------------------|---------|---------|---------|---------|---------|-----|
-| 1 | **Tool Execution Runtime** | store/tool/slices/builtin + store/chat/slices/builtinTool + local_tool_broker | ✅ | ✅ | ✅ | ✅ deterministic (E2E blocked: provider) | — | — |
-| 2 | **MCP Plugin System** | store/tool/slices/mcpStore + features/MCP (server list, tool list, modal) | — | — | — | — | — | — |
+| 1 | **Tool Execution Runtime** | store/tool/slices/builtin + store/chat/slices/builtinTool + local_tool_broker | ✅ | ✅ | ✅ | ✅ deterministic (E2E blocked: provider) | ✅ | 2c0375 |
+| 2 | **MCP Plugin System** | store/tool/slices/mcpStore + features/MCP (server list, tool list, modal) | ✅ | ✅ | ✅ | — | — | — |
 | 3 | **Knowledge Base & RAG** | store/library + store/file (upload, chunking) + knowledge_retrieval_service | — | — | — | — | — | — |
 | 4 | **User Memory** | store/userMemory (identity, activity, context, experience, preference) + memory_service | — | — | — | — | — | — |
 | 5 | **Portal / Side Panel** | store/chat/slices/portal + features/Portal (ToolUI, Artifacts, Thread, AgentInfo) | — | — | — | — | — | — |

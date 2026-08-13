@@ -467,6 +467,11 @@ pub fn agent_execute_turn_stream(
     }
 
     let agent_allowed_roots = input.allowed_roots.clone();
+    if input.available_tools.is_none() {
+        if let Ok(tool_entries) = tools::tools_list_entries() {
+            input.available_tools = Some(tool_entries);
+        }
+    }
     let body = build_turn_request_body(input, true);
     let result = stream_station_turn(
         &app,
@@ -662,6 +667,9 @@ fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value 
     }
     if let Some(ws_root) = input.workspace_root.filter(|v| !v.trim().is_empty()) {
         body["workspace_root"] = json!(ws_root);
+    }
+    if let Some(tools) = input.available_tools.filter(|v| !v.is_empty()) {
+        body["available_tools"] = json!(tools);
     }
     body
 }

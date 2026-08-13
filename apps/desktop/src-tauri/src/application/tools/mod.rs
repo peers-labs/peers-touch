@@ -17,6 +17,17 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::InvalidArgument, message, None)
 }
 
+pub fn tools_list_entries() -> Result<Vec<Value>, String> {
+    let mut tools = builtin_tool_registry_entries();
+    if let Ok(mut mcp_tools) = mcp::mcp_tool_registry_entries() {
+        tools.append(&mut mcp_tools);
+    }
+    if let Ok(mut plugin_tools) = plugins::plugin_tool_registry_entries() {
+        tools.append(&mut plugin_tools);
+    }
+    Ok(tools)
+}
+
 pub fn tools_list() -> AppResult<StubPayload> {
     let mut tools = builtin_tool_registry_entries();
     match mcp::mcp_tool_registry_entries() {
