@@ -419,6 +419,7 @@ interface ChatState {
   decideToolApproval: (approvalId: string, approved: boolean) => Promise<void>;
   stopStreaming: () => void;
   stopOperation: (sessionKey: string) => void;
+  continueGeneration: (messageId: string) => void;
   deleteMessage: (id: string) => Promise<void>;
   editMessage: (id: string, content: string) => Promise<void>;
 
@@ -868,7 +869,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     if (messages.length === 0) return;
 
     const firstUserMsg = messages.find((m) => m.role === 'user');
-    const title = firstUserMsg?.content.slice(0, 40) || 'New topic';
+    const title = firstUserMsg?.content.slice(0, 40) || i18n.t('chat.session.newTopicFallback', { ns: 'chat' });
 
     const newKey = `session-${Date.now()}`;
     set({ currentSessionKey: newKey, messages: [] });
@@ -1434,6 +1435,13 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     if (!id.startsWith('temp-')) {
       try { await api.updateMessage(id, content); } catch { /* already updated in UI */ }
     }
+  },
+
+  continueGeneration: (messageId: string) => {
+    const { messages } = get();
+    const target = messages.find((m) => m.id === messageId);
+    if (!target || target.role !== 'assistant') return;
+    get().sendMessage(i18n.t('chat.message.continuePrompt', { ns: 'chat' }));
   },
 
 
