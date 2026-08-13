@@ -134,12 +134,16 @@ pub fn conversation_create_direct(
 ) -> AppResult<Value> {
     let token = match get_token(&state, &window) {
         Ok(t) => t,
-        Err(e) => return e,
+        Err(e) => {
+            tracing::warn!("conversation_create_direct: no token");
+            return e;
+        }
     };
     let body = json!({
         "peer_ptid": input.peer_ptid,
         "peer_station_peer_id": input.peer_station_peer_id.unwrap_or_default(),
     });
+    tracing::info!(peer_ptid = %input.peer_ptid, "conversation_create_direct: calling station");
     match station_client::request_json_auth(
         Method::POST,
         "/conversation/direct",
@@ -147,8 +151,15 @@ pub fn conversation_create_direct(
         None,
         Some(&body),
     ) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => station_err(e, "create direct failed"),
+        Ok(resp) => {
+            let conv_id = resp.get("conversation").and_then(|c| c.get("conversation_id")).and_then(|v| v.as_str()).unwrap_or("?");
+            tracing::info!(conversation_id = %conv_id, "conversation_create_direct: success");
+            AppResult::success(resp)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "conversation_create_direct: failed");
+            station_err(e, "create direct failed")
+        }
     }
 }
 
@@ -517,11 +528,24 @@ pub fn conversation_submit_receipt(
 pub fn conversation_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Value> {
     let token = match get_token(&state, &window) {
         Ok(t) => t,
-        Err(e) => return e,
+        Err(e) => {
+            tracing::warn!(window = %window.label(), "conversation_list: no token available");
+            return e;
+        }
     };
     match station_client::request_json_auth(Method::GET, "/conversation/list", &token, None, None) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => station_err(e, "list conversations failed"),
+        Ok(resp) => {
+            let count = resp.get("conversations")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            tracing::info!(count, "conversation_list: success");
+            AppResult::success(resp)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "conversation_list: station request failed");
+            station_err(e, "list conversations failed")
+        }
     }
 }
 

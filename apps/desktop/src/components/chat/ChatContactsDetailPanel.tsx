@@ -9,6 +9,7 @@ import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicPro
 import { presentError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { imServiceV1 } from '../../services/im-service';
+import { log } from '../../utils/logger';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import {
   findContactConversation,
@@ -116,22 +117,33 @@ export function ChatContactsDetailPanel({
 
     setOpeningConversation(true);
     try {
-      let conversation = findContactConversation(selectedContact, getIMConversations());
+      const allConversations = getIMConversations();
+      log.info('chatContactsDetail', 'handleMessage start', {
+        peerDid: selectedContact.peerDid,
+        conversationsCount: allConversations.length,
+      });
+      let conversation = findContactConversation(selectedContact, allConversations);
 
       if (!conversation) {
-        await imServiceV1.messaging.createDirect(selectedContact.peerDid);
+        log.info('chatContactsDetail', 'creating direct conversation', {
+          peerDid: selectedContact.peerDid,
+        });
+        await imServiceV1.conversation.createDirect(selectedContact.peerDid);
         await loadSessions();
         conversation = findContactConversation(selectedContact, getIMConversations());
       }
 
       if (!conversation) {
+        log.error('chatContactsDetail', 'conversation not found after creation');
         throw new Error('Direct conversation was not available after creation');
       }
 
+      log.info('chatContactsDetail', 'selecting conversation', { id: conversation.id });
       selectSession(conversation.id);
       restoreConversation('friend', conversation.id);
       onMessage();
     } catch (error) {
+      log.error('chatContactsDetail', 'handleMessage failed', error);
       presentError(error, {
         mapper: mapChatError,
         context: { operation: 'conversationAction' },
