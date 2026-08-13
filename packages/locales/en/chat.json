@@ -756,5 +756,10 @@
   "chat.welcome.capability.memoryDisabledShort": "Memory",
   "chat.welcome.capability.workspaceOptional": "Workspace",
   "chat.model.select": "Select model",
-  "chat.input.slashCommand": "Slash command"
+  "chat.input.slashCommand": "Slash command",
+  "chat.message.resolution.authOpened": "Authentication opened. Complete sign-in then retry.",
+  "chat.message.resolution.settingsOpened": "Settings opened. Configure your credentials.",
+  "chat.message.resolution.actionFailed": "Failed to perform action",
+  "chat.message.continuePrompt": "Continue from where you left off.",
+  "chat.session.newTopicFallback": "New topic"
 }

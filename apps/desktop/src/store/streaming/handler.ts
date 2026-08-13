@@ -172,6 +172,8 @@ export function createStreamingAccumulator(): StreamingAccumulator {
     content: '',
     thinking: '',
     thinkingDone: false,
+    thinkingStartedAt: null,
+    thinkingDurationMs: null,
     toolCallCount: 0,
     images: [],
     model: '',
@@ -186,8 +188,13 @@ export function accumulateEvent(acc: StreamingAccumulator, event: TurnStreamEven
   switch (event.event) {
     case 'text':
       return { ...acc, content: acc.content + s(d.content), lastEventAt: Date.now() };
-    case 'thinking':
-      return { ...acc, thinking: acc.thinking + s(d.content), thinkingDone: !!d.done, lastEventAt: Date.now() };
+    case 'thinking': {
+      const now = Date.now();
+      const startedAt = acc.thinkingStartedAt ?? now;
+      const done = !!d.done;
+      const durationMs = done ? now - startedAt : null;
+      return { ...acc, thinking: acc.thinking + s(d.content), thinkingDone: done, thinkingStartedAt: startedAt, thinkingDurationMs: durationMs, lastEventAt: now };
+    }
     case 'tool_call':
       return { ...acc, toolCallCount: acc.toolCallCount + 1, lastEventAt: Date.now() };
     case 'image':

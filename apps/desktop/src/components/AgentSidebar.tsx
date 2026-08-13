@@ -23,6 +23,8 @@ import {
   Settings2,
 } from 'lucide-react';
 import { theme, Modal, Popover } from 'antd';
+import type { GlobalToken } from 'antd';
+import type { InputRef } from 'antd';
 import { Dropdown, Input, toast } from '@lobehub/ui';
 import type { MenuProps } from '@lobehub/ui';
 import { useTranslation } from 'react-i18next';
@@ -251,8 +253,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       anchor.click();
       URL.revokeObjectURL(url);
       toast.success(t('agent.sidebar.toast.agentExported'));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.agentExportFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.agentExportFailed'));
     }
   }, [currentAgent, t]);
 
@@ -264,8 +267,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       await loadAgents();
       void openAgentChatSession(imported, { reason: 'import-agent-package' });
       toast.success(t('agent.sidebar.toast.agentImported', { name: imported.title || imported.name }));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.agentImportFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.agentImportFailed'));
     }
   }, [loadAgents, t]);
 
@@ -276,8 +280,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       await loadAgents();
       void openAgentChatSession(cloned, { reason: 'clone-agent' });
       toast.success(t('agent.sidebar.toast.agentCloned', { name: cloned.title || cloned.name }));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.agentCloneFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.agentCloneFailed'));
     }
   }, [currentAgent, loadAgents, t]);
 
@@ -285,8 +290,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     try {
       await setDefaultAgent(agent.id);
       toast.success(t('agent.sidebar.toast.defaultAgentUpdated', { name: agent.title || agent.name }));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.defaultAgentUpdateFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.defaultAgentUpdateFailed'));
     }
   }, [setDefaultAgent, t]);
 
@@ -295,8 +301,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       await api.updateAgent(agent.id, { pinned: !agent.pinned });
       await loadAgents();
       toast.success(t(agent.pinned ? 'agent.sidebar.toast.agentUnpinned' : 'agent.sidebar.toast.agentPinned', { name: agent.title || agent.name }));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.agentPinUpdateFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.agentPinUpdateFailed'));
     }
   }, [loadAgents, t]);
 
@@ -305,8 +312,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       await api.updateAgent(agent.id, { favorite: !agent.favorite });
       await loadAgents();
       toast.success(t(agent.favorite ? 'agent.sidebar.toast.agentUnfavorited' : 'agent.sidebar.toast.agentFavorited', { name: agent.title || agent.name }));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.agentFavoriteUpdateFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.agentFavoriteUpdateFailed'));
     }
   }, [loadAgents, t]);
 
@@ -540,8 +548,8 @@ function AgentContextCard({
   t,
 }: {
   agent?: Agent;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   if (!agent) {
     return (
@@ -589,8 +597,8 @@ function MessageSearchResults({
   results: AgentMessageSearchResult[];
   searching: boolean;
   onSelectResult: (key: string) => void;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   if (searching) {
     return (
@@ -650,7 +658,7 @@ function NavItem({
   label: string;
   onClick?: () => void;
   active?: boolean;
-  token: any;
+  token: GlobalToken;
   style?: React.CSSProperties;
 }) {
   return (
@@ -713,8 +721,8 @@ function TopicGroup({
   onDuplicateTopic: (key: string) => Promise<void>;
   onPinTopic: (key: string, pinned: boolean) => Promise<void>;
   onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -802,13 +810,13 @@ function TopicItem({
   onDuplicateTopic: (key: string) => Promise<void>;
   onPinTopic: (key: string, pinned: boolean) => Promise<void>;
   onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [hovered, setHovered] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameTitle, setRenameTitle] = useState('');
-  const renameInputRef = useRef<any>(null);
+  const renameInputRef = useRef<InputRef>(null);
 
   useEffect(() => {
     if (renaming) {
@@ -833,8 +841,9 @@ function TopicItem({
     try {
       await onRenameTopic(topic.key, newTitle);
       onReload();
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.renameFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.renameFailed'));
     }
   }, [renameTitle, topic.title, topic.key, onRenameTopic, onReload, t]);
 
@@ -844,8 +853,9 @@ function TopicItem({
       const res = await onSmartRenameTopic(topic.key);
       toast.success(t('agent.sidebar.toast.renamedTo', { title: res.title }));
       onReload();
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.smartRenameFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.smartRenameFailed'));
     }
   }, [topic.key, onSmartRenameTopic, onReload, t]);
 
@@ -855,8 +865,9 @@ function TopicItem({
       await onRevertGeneratedTitle(topic.key);
       toast.success(t('agent.sidebar.toast.titleReverted'));
       onReload();
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.renameFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.renameFailed'));
     }
   }, [topic.key, onRevertGeneratedTitle, onReload, t]);
 
@@ -865,8 +876,9 @@ function TopicItem({
       await onDuplicateTopic(topic.key);
       toast.success(t('agent.sidebar.toast.topicDuplicated'));
       onReload();
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.duplicateFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.duplicateFailed'));
     }
   }, [topic.key, onDuplicateTopic, onReload, t]);
 
@@ -1044,8 +1056,8 @@ function AgentPicker({
   onExport: () => void;
   onImportClick: () => void;
   onNavigateMarketplace?: () => void;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const filtered = searchText
     ? agents.filter(
@@ -1226,8 +1238,8 @@ function AgentPickerItem({
   onSetDefault: () => void;
   onTogglePin: () => void;
   onToggleFavorite: () => void;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [hovered, setHovered] = useState(false);
   const chatConfig = parseAgentChatConfig(agent);

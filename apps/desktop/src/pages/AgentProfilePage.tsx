@@ -48,6 +48,7 @@ import {
   type Agent,
   type AgentKnowledgeResource,
   type AgentKnowledgeResourceType,
+  type Memory,
   parseAgentChatConfig,
   parseAgentKnowledgeResources,
 } from '../services/desktop_api';
@@ -87,7 +88,7 @@ const LAYER_COLORS: Record<string, string> = {
 function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string }) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const [memories, setMemories] = useState<any[]>([]);
+  const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLayer, setSelectedLayer] = useState<string>('');
   const [loadError, setLoadError] = useState('');
@@ -96,25 +97,30 @@ function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string 
     setLoading(true);
     setLoadError('');
     Promise.all([
-      api.listMemories({ agent_id: agentId, page_size: 50 } as any).catch(() => ({ memories: [] })),
-      api.listMemories({ agent_id: agentName, page_size: 50 } as any).catch(() => ({ memories: [] })),
+      api.listMemories({ agent_id: agentId, page_size: 50 }).catch(() => ({ memories: [] })),
+      api.listMemories({ agent_id: agentName, page_size: 50 }).catch(() => ({ memories: [] })),
     ])
-      .then(([byID, byName]: any[]) => {
-        const merged = [...(byID?.memories || byID || []), ...(byName?.memories || byName || [])];
-        const dedup = new Map<string, any>();
+      .then(([byID, byName]) => {
+        const byIDResult = byID as { memories?: Memory[] };
+        const byNameResult = byName as { memories?: Memory[] };
+        const byIDMemories = byIDResult?.memories || (byID as unknown as Memory[]) || [];
+        const byNameMemories = byNameResult?.memories || (byName as unknown as Memory[]) || [];
+        const merged = [...byIDMemories, ...byNameMemories];
+        const dedup = new Map<string, Memory>();
         for (const m of merged) dedup.set(m.id, m);
         setMemories(Array.from(dedup.values()));
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         setMemories([]);
-        setLoadError(err?.message || t('agent.memory.loadFailed'));
+        const message = err instanceof Error ? err.message : t('agent.memory.loadFailed');
+        setLoadError(message);
       })
       .finally(() => setLoading(false));
   }, [agentName, agentId]);
 
   const filteredMemories = useMemo(() => {
     if (!selectedLayer) return memories;
-    return memories.filter((m: any) => m.layer === selectedLayer);
+    return memories.filter((m) => m.layer === selectedLayer);
   }, [memories, selectedLayer]);
 
   const layerCounts = useMemo(() => {
@@ -169,7 +175,7 @@ function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string 
           </Flexbox>
         ) : (
           <Flexbox gap={6}>
-            {filteredMemories.map((m: any) => (
+            {filteredMemories.map((m) => (
               <Flexbox
                 key={m.id}
                 gap={4}
@@ -1081,8 +1087,9 @@ export function AgentProfilePage({
         await api.updateAgent(agent.id, { soulMd: value });
         setSoulMdDirty(false);
         loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
       }
     },
     [agent, loadAgents, t],
@@ -1113,8 +1120,9 @@ export function AgentProfilePage({
         await api.updateAgent(agent.id, { agentsMd: value });
         setAgentsMdDirty(false);
         loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
       }
     },
     [agent, loadAgents, t],
@@ -1145,8 +1153,9 @@ export function AgentProfilePage({
         await api.updateAgent(agent.id, { systemPrompt: value });
         setSystemPromptDirty(false);
         loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
       }
     },
     [agent, loadAgents, t],
@@ -1176,8 +1185,9 @@ export function AgentProfilePage({
       try {
         await api.updateAgent(agent.id, { effort: value });
         loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
       }
     },
     [agent, loadAgents, t],
@@ -1191,8 +1201,9 @@ export function AgentProfilePage({
       try {
         await api.updateAgent(agent.id, { isolationRetentionDays: value ?? 7 });
         loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
       }
     },
     [agent, loadAgents, t],
@@ -1204,8 +1215,9 @@ export function AgentProfilePage({
       try {
         await api.updateAgent(agent.id, { workspaceMode: value });
         loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
       }
     },
     [agent, loadAgents, t],
@@ -1227,8 +1239,9 @@ export function AgentProfilePage({
       try {
         await api.updateAgent(agent.id, { allowedRoots: value });
         loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
       }
     },
     [agent, loadAgents, t],
@@ -1249,8 +1262,9 @@ export function AgentProfilePage({
         } else {
           await api.deleteModelConfig(`agent:${agent.name}`);
         }
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToUpdateModel'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToUpdateModel');
+        antMessage.error(message);
       }
     },
     [agent, availableModels, updateAgentProfile, t],
@@ -1270,8 +1284,9 @@ export function AgentProfilePage({
         if (shouldClearModel) {
           await api.deleteModelConfig(`agent:${agent.name}`);
         }
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToUpdateModel'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToUpdateModel');
+        antMessage.error(message);
       }
     },
     [agent, availableModels, updateAgentProfile, t],
@@ -1403,8 +1418,9 @@ export function AgentProfilePage({
       try {
         await updateKnowledgeResources(agent.id, updated);
         antMessage.success(t('agent.profile.knowledge.added'));
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
       }
     },
     [agent, knowledgeResources, updateKnowledgeResources, t],
@@ -1417,8 +1433,9 @@ export function AgentProfilePage({
       try {
         await updateKnowledgeResources(agent.id, updated);
         antMessage.success(t('agent.profile.knowledge.removed'));
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
       }
     },
     [agent, knowledgeResources, updateKnowledgeResources, t],
@@ -1434,8 +1451,9 @@ export function AgentProfilePage({
       );
       try {
         await updateKnowledgeResources(agent.id, updated);
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
       }
     },
     [agent, knowledgeResources, updateKnowledgeResources, t],

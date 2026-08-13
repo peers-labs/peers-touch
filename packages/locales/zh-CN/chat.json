@@ -754,5 +754,10 @@
   "chat.welcome.capability.memoryDisabledShort": "记忆",
   "chat.welcome.capability.workspaceOptional": "工作区",
   "chat.model.select": "选择模型",
-  "chat.input.slashCommand": "斜杠命令"
+  "chat.input.slashCommand": "斜杠命令",
+  "chat.message.resolution.authOpened": "已打开身份验证，请完成登录后重试。",
+  "chat.message.resolution.settingsOpened": "已打开设置，请配置您的凭据。",
+  "chat.message.resolution.actionFailed": "操作失败",
+  "chat.message.continuePrompt": "从上次中断处继续。",
+  "chat.session.newTopicFallback": "新话题"
 }
