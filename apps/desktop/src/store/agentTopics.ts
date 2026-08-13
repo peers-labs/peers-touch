@@ -20,6 +20,9 @@ interface TopicTitleHistory {
   generatedAt: string;
 }
 
+export type TopicSearchMode = 'title' | 'content';
+export type TopicSortBy = 'updated_at' | 'created_at';
+
 interface AgentTopicState {
   topicsByAgentId: Record<string, AgentTopic[]>;
   activeAgentId: string;
@@ -28,6 +31,8 @@ interface AgentTopicState {
   titleHistoryByKey: Record<string, TopicTitleHistory>;
   lastError?: string;
   searchQuery: string;
+  searchMode: TopicSearchMode;
+  sortBy: TopicSortBy;
 
   getTopicsForAgent: (agentId: string) => AgentTopic[];
   loadTopicsForAgent: (agentId: string, reason?: string) => Promise<AgentTopic[]>;
@@ -42,6 +47,8 @@ interface AgentTopicState {
   pinTopic: (key: string, pinned: boolean) => Promise<void>;
   favoriteTopic: (key: string, favorite: boolean) => Promise<void>;
   setSearchQuery: (query: string) => void;
+  setSearchMode: (mode: TopicSearchMode) => void;
+  setSortBy: (sortBy: TopicSortBy) => void;
 }
 
 function toISODate(value: string): string {
@@ -106,6 +113,8 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
   generatingTitleKeys: {},
   titleHistoryByKey: {},
   searchQuery: '',
+  searchMode: 'title',
+  sortBy: 'updated_at',
 
   getTopicsForAgent: (agentId: string) => get().topicsByAgentId[agentId] || [],
 
@@ -307,5 +316,13 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
 
   setSearchQuery: (query: string) => {
     set({ searchQuery: query });
+  },
+
+  setSearchMode: (mode: TopicSearchMode) => {
+    set({ searchMode: mode });
+  },
+
+  setSortBy: (sortBy: TopicSortBy) => {
+    set({ sortBy });
   },
 }));
