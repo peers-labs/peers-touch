@@ -33,6 +33,7 @@ import {
   Globe,
   X,
   BookOpen,
+  Upload,
 } from 'lucide-react';
 import { useAgentStore } from '../store/agent';
 import {
@@ -1475,6 +1476,30 @@ export function AgentProfilePage({
     setKnowledgeAddOpen(false);
   }, [knowledgeAddType, knowledgeAddSource, knowledgeAddTitle, handleAddKnowledgeResource, t]);
 
+  const handleKnowledgePickFile = useCallback(async () => {
+    try {
+      const path = await api.ossPickLocalFile();
+      if (path) {
+        const filename = path.split('/').pop() || path;
+        handleAddKnowledgeResource('document', path, filename);
+      }
+    } catch {
+      // user cancelled
+    }
+  }, [handleAddKnowledgeResource]);
+
+  const handleKnowledgePickFolder = useCallback(async () => {
+    try {
+      const path = await api.ossPickLocalFile();
+      if (path) {
+        const dirname = path.split('/').pop() || path;
+        handleAddKnowledgeResource('folder', path, dirname);
+      }
+    } catch {
+      // user cancelled
+    }
+  }, [handleAddKnowledgeResource]);
+
   const handleInlineRewriteDescription = useCallback(async () => {
     if (!agent) return;
     const intent = agent.description?.trim() || agent.title || agent.name;
@@ -2417,16 +2442,36 @@ export function AgentProfilePage({
                     title={t('agent.profile.section.knowledge')}
                     description={t('agent.profile.section.knowledgeDesc')}
                     action={(
-                      <Button
-                        size="small"
-                        icon={<Plus size={14} />}
-                        onClick={() => setKnowledgeAddOpen(!knowledgeAddOpen)}
-                        title={t('agent.profile.knowledge.add')}
-                        aria-label={t('agent.profile.knowledge.add')}
-                        style={{ height: 32, padding: '0 12px' }}
-                      >
-                        {t('agent.profile.knowledge.add')}
-                      </Button>
+                      <Flexbox horizontal gap={6} align="center">
+                        <Button
+                          size="small"
+                          icon={<Upload size={14} />}
+                          onClick={handleKnowledgePickFile}
+                          title={t('agent.profile.knowledge.pickFile')}
+                          style={{ height: 32, padding: '0 12px' }}
+                        >
+                          {t('agent.profile.knowledge.pickFile')}
+                        </Button>
+                        <Button
+                          size="small"
+                          icon={<FolderOpen size={14} />}
+                          onClick={handleKnowledgePickFolder}
+                          title={t('agent.profile.knowledge.pickFolder')}
+                          style={{ height: 32, padding: '0 12px' }}
+                        >
+                          {t('agent.profile.knowledge.pickFolder')}
+                        </Button>
+                        <Button
+                          size="small"
+                          icon={<Plus size={14} />}
+                          onClick={() => setKnowledgeAddOpen(!knowledgeAddOpen)}
+                          title={t('agent.profile.knowledge.add')}
+                          aria-label={t('agent.profile.knowledge.add')}
+                          style={{ height: 32, padding: '0 12px' }}
+                        >
+                          {t('agent.profile.knowledge.add')}
+                        </Button>
+                      </Flexbox>
                     )}
                   >
                     {knowledgeAddOpen && (
