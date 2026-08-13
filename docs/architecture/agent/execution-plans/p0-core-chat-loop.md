@@ -1,6 +1,6 @@
 # P0: Core Chat Loop — Execution Tracking
 
-> **Status**: active
+> **Status**: complete
 > **Created**: 2026-08-12
 > **Batch**: P0 — One user, one agent, complete conversation loop
 > **Architecture source**: `docs/architecture/agent/lobehub-feature-topology.md`
@@ -23,12 +23,12 @@ P0 delivers a complete, end-to-end single-agent chat experience:
 
 | # | Module | Scope (from topology) | S1 分析 | S2 设计 | S3 实现 | S4 验收 | S5 交付 | PR |
 |---|--------|----------------------|---------|---------|---------|---------|---------|-----|
-| 1 | **Streaming Runtime** | store/chat/agentRun (entries, controls, lifecycle, state, transports) | ✅ | ✅ | ✅ | ✅ curl+deterministic | — | #86 |
-| 2 | **Message & Actions** | store/chat/message + Messages/ components + MessageActionBar | ✅ | ✅ | ✅ | ✅ deterministic+E2E | — | #86 |
+| 1 | **Streaming Runtime** | store/chat/agentRun (entries, controls, lifecycle, state, transports) | ✅ | ✅ | ✅ | ✅ curl+deterministic | ✅ | #86 |
+| 2 | **Message & Actions** | store/chat/message + Messages/ components + MessageActionBar | ✅ | ✅ | ✅ | ✅ deterministic+E2E | ✅ | #86 |
 | 3 | **Chat Input & Composer** | features/ChatInput (ActionBar, InputEditor, ControlBar, Desktop variant) | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | #86 |
 | 4 | **Agent Config & Profile** | store/agent + features/AgentSetting | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | #86 |
 | 5 | **Provider & Model Infra** | store/aiInfra + features/ModelSwitchPanel | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | #86 |
-| 6 | **Session & Topic** | store/session + store/chat/topic + features/AgentSidebar/Topic | ✅ | ✅ | ✅ | ✅ deterministic+E2E | — | #86 |
+| 6 | **Session & Topic** | store/session + store/chat/topic + features/AgentSidebar/Topic | ✅ | ✅ | ✅ | ✅ deterministic+E2E | ✅ | #86 |
 
 ## Module Dependency Order
 
