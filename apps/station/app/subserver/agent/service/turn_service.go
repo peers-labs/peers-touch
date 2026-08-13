@@ -93,6 +93,8 @@ type TurnConfig struct {
 	CliCommand     string   // Full CLI command (e.g. "trae", "codex", "claude")
 	RuntimeBackend string   // Backend identifier for the CLI runtime
 	AllowedRoots   []string // Filesystem roots the CLI process may access
+
+	MemoryDisabled bool // When true, L3 memory snapshot is skipped in prompt assembly.
 }
 
 type TurnEventSink func(ctx context.Context, event TurnEvent)
@@ -349,6 +351,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		config.WorkspaceRoot,
 		processedInput,
 		config.KnowledgeResources,
+		config.MemoryDisabled,
 	)
 	if err != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "prompt assembly failed")
@@ -613,6 +616,7 @@ func (s *TurnService) runCompression(
 		config.WorkspaceRoot,
 		messages[len(messages)-1].Content,
 		config.KnowledgeResources,
+		config.MemoryDisabled,
 	)
 	if freshErr != nil {
 		logger.Warnf(ctx, "post-compression prompt reassembly failed: turn_id=%s err=%v", turnID, freshErr)

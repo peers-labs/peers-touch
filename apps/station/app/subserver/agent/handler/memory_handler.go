@@ -139,6 +139,26 @@ func (h *MemoryHandlers) HandleDeleteMemory(ctx context.Context, req *model.Dele
 	return &model.DeleteMemoryResponse{Ok: true}, nil
 }
 
+func (h *MemoryHandlers) HandleUpdateMemory(ctx context.Context, req *model.WriteMemoryRequest) (*model.WriteMemoryResponse, error) {
+	memoryID := req.GetOldContent()
+	if memoryID == "" {
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "old_content field used as memory_id is required", nil))
+	}
+	newContent := req.GetContent()
+	if newContent == "" {
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "content is required", nil))
+	}
+	item, err := h.memoryService.UpdateMemoryByID(ctx, memoryID, newContent)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.WriteMemoryResponse{
+		Item:    memoryItemToProto(item),
+		Success: true,
+		Message: "updated",
+	}, nil
+}
+
 func (h *MemoryHandlers) HandleSearchMemories(ctx context.Context, req *model.SearchMemoriesRequest) (*model.SearchMemoriesResponse, error) {
 	since, until, err := resolveMemoryTimeRange(req.GetSince(), req.GetUntil(), req.GetPeriod())
 	if err != nil {

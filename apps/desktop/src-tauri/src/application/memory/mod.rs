@@ -1,6 +1,6 @@
 use crate::contracts::{
     MemoryEventsInput, MemoryExportInput, MemoryIdInput, MemoryImportInput, MemoryListInput,
-    MemoryPersonaInput, MemorySearchInput, StubPayload,
+    MemoryPersonaInput, MemorySearchInput, MemoryUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -185,6 +185,40 @@ pub fn memory_delete(input: MemoryIdInput, token: &str) -> AppResult<StubPayload
     ) {
         Ok(resp) => success_payload("memory_delete", json!({ "ok": resp.ok })),
         Err(err) => station_error("memory_delete", err),
+    }
+}
+
+pub fn memory_update(input: MemoryUpdateInput, token: &str) -> AppResult<StubPayload> {
+    if input.id.trim().is_empty() {
+        return invalid_argument("id is required");
+    }
+    if input.content.trim().is_empty() {
+        return invalid_argument("content is required");
+    }
+    let req = agent::WriteMemoryRequest {
+        old_content: input.id,
+        content: input.content,
+        action: "update".to_string(),
+        ..Default::default()
+    };
+    match station_client::request_peers_proto::<
+        agent::WriteMemoryRequest,
+        agent::WriteMemoryResponse,
+    >(
+        Method::POST,
+        "/agent/memory/update",
+        token,
+        None,
+        Some(&req),
+    ) {
+        Ok(resp) => success_payload(
+            "memory_update",
+            json!({
+                "ok": resp.success,
+                "item": resp.item.as_ref().map(memory_item_json).unwrap_or(Value::Null),
+            }),
+        ),
+        Err(err) => station_error("memory_update", err),
     }
 }
 
