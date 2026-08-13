@@ -203,6 +203,7 @@ fn claim_and_execute(session: &WorkerSession) -> Result<(), String> {
             context_window_size: Some(128_000),
             max_retries: Some(3),
             knowledge_resources: None,
+            available_tools: None,
         },
         &session.token,
         &session.actor_id,
