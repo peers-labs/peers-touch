@@ -2522,6 +2522,7 @@ export interface AgentExecuteTurnInput {
   max_retries?: number;
   knowledge_resources?: AgentExecuteTurnKnowledgeResource[];
   available_tools?: McpToolSchemaEntry[];
+  memory_disabled?: boolean;
 }
 
 function createAgentTurnStreamId(): string {
@@ -3211,6 +3212,18 @@ export const api = {
     }
     throw new Error(
       response.error?.message || 'oss_pick_local_file failed',
+    );
+  },
+
+  ossPickLocalFolder: async (): Promise<string> => {
+    const response = await invokeRustCommand<void, TauriStubPayload>(
+      'oss_pick_local_folder',
+    );
+    if (response.ok && response.data?.status) {
+      return response.data.status;
+    }
+    throw new Error(
+      response.error?.message || 'oss_pick_local_folder failed',
     );
   },
 
@@ -4492,6 +4505,9 @@ export const api = {
   getMemory: (id: string) => invokeRustDataFromStatus<MemoryIdInput, Memory>('memory_get', { id }),
 
   deleteMemory: (id: string) => invokeRustDataFromStatus<MemoryIdInput, { ok: boolean }>('memory_delete', { id }),
+
+  updateMemory: (id: string, content: string) =>
+    invokeRustDataFromStatus<{ id: string; content: string }, { ok: boolean; item: Memory | null }>('memory_update', { id, content }),
 
   searchMemories: (
     query: string,

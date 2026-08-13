@@ -323,6 +323,7 @@ func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.Exe
 		CliCommand:     req.GetCliCommand(),
 		RuntimeBackend: req.GetRuntimeBackend(),
 		AllowedRoots:   req.GetAllowedRoots(),
+		MemoryDisabled: req.GetMemoryDisabled(),
 	}
 }
 

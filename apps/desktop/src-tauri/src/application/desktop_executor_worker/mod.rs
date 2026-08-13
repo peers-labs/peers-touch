@@ -204,6 +204,7 @@ fn claim_and_execute(session: &WorkerSession) -> Result<(), String> {
             max_retries: Some(3),
             knowledge_resources: None,
             available_tools: None,
+            memory_disabled: None,
         },
         &session.token,
         &session.actor_id,

@@ -314,6 +314,7 @@ message ExecuteTurnRequest {
   optional string cli_command = 15;
   optional string runtime_backend = 16;
   repeated string allowed_roots = 17;
+  optional bool memory_disabled = 18;
 }
 
 message ExecuteTurnResponse {
