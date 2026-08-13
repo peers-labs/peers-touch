@@ -1,0 +1,308 @@
+import { useState } from 'react';
+import { Flexbox } from 'react-layout-kit';
+import { Tag } from '@lobehub/ui';
+import { theme } from 'antd';
+import {
+  Wrench,
+  Loader2,
+  ChevronRight,
+  ChevronDown,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Workflow,
+} from 'lucide-react';
+import type { ToolCallInfo, DelegationTaskInfo } from '../../store/chat';
+import { useChatStore } from '../../store/chat';
+import { useTranslation } from 'react-i18next';
+
+// --- Delegation helpers ---
+
+function delegationStatusColor(status: DelegationTaskInfo['status']) {
+  if (status === 'completed') return 'success';
+  if (status === 'failed') return 'error';
+  if (status === 'timeout') return 'warning';
+  return 'default';
+}
+
+export function DelegationResultsBlock({ results }: { results: DelegationTaskInfo[] }) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+
+  return (
+    <Flexbox gap={6} style={{ marginBottom: 8 }}>
+      <Flexbox horizontal align="center" gap={6}>
+        <Workflow size={13} style={{ color: token.colorTextSecondary }} />
+        <span style={{ fontWeight: 500, color: token.colorTextSecondary }}>
+          {t('chat.message.delegation.title')}
+        </span>
+        <Tag bordered={false} style={{ margin: 0, fontSize: 11 }}>
+          {t('chat.message.delegation.summary', { count: results.length })}
+        </Tag>
+      </Flexbox>
+      <Flexbox gap={6}>
+        {results.map((result) => (
+          <div
+            key={result.taskId}
+            style={{
+              border: `1px solid ${token.colorBorderSecondary}`,
+              borderRadius: 6,
+              background: token.colorBgContainer,
+              padding: '6px 8px',
+            }}
+          >
+            <Flexbox horizontal align="center" gap={6} style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: token.colorText }}>
+                {result.taskDescription}
+              </span>
+              <Tag bordered={false} color={delegationStatusColor(result.status)} style={{ margin: 0, fontSize: 11 }}>
+                {t(`chat.message.delegation.status.${result.status}`)}
+              </Tag>
+            </Flexbox>
+            {result.childToolset.length > 0 && (
+              <div style={{ fontSize: 11, color: token.colorTextTertiary, marginBottom: 4 }}>
+                {t('chat.message.delegation.tools', { tools: result.childToolset.join(', ') })}
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: token.colorTextTertiary, marginBottom: 4 }}>
+              {t('chat.message.delegation.iterations', { count: result.toolIterations })}
+            </div>
+            {result.resultSummary && (
+              <pre style={{
+                margin: 0,
+                padding: '4px 6px',
+                borderRadius: 4,
+                background: token.colorFillQuaternary,
+                color: result.status === 'failed' ? token.colorErrorText : token.colorTextSecondary,
+                fontSize: 11,
+                overflow: 'auto',
+                maxHeight: 140,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}>{result.resultSummary}</pre>
+            )}
+          </div>
+        ))}
+      </Flexbox>
+    </Flexbox>
+  );
+}
+
+// --- Single tool call row ---
+
+export function ToolCallItem({ tool }: { tool: ToolCallInfo }) {
+  const [expanded, setExpanded] = useState(false);
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const decideToolApproval = useChatStore((state) => state.decideToolApproval);
+  const approvalRequired = tool.status === 'approval_required' && !!tool.approvalId;
+  const denied = tool.status === 'denied' || tool.status === 'error';
+  const status = tool.status || (tool.pending ? 'pending' : 'success');
+  const statusColor = status === 'success' || status === 'approved'
+    ? 'success'
+    : status === 'error' || status === 'denied'
+      ? 'error'
+      : status === 'cancelled'
+        ? 'default'
+        : status === 'approval_required'
+          ? 'warning'
+          : 'processing';
+
+  const delegationResults = tool.delegationResults || [];
+
+  return (
+    <div style={{ borderRadius: 6, overflow: 'hidden' }}>
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '4px 8px',
+          cursor: 'pointer',
+          borderRadius: 6,
+          fontSize: 12,
+          color: token.colorTextSecondary,
+          background: 'transparent',
+          transition: 'background 0.15s',
+        }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = token.colorFillQuaternary; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+      >
+        {expanded
+          ? <ChevronDown size={12} style={{ flexShrink: 0 }} />
+          : <ChevronRight size={12} style={{ flexShrink: 0 }} />
+        }
+        {approvalRequired
+          ? <AlertTriangle size={12} style={{ color: token.colorWarning, flexShrink: 0 }} />
+          : denied
+            ? <XCircle size={12} style={{ color: token.colorError, flexShrink: 0 }} />
+            : tool.pending
+          ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', color: token.colorPrimary, flexShrink: 0 }} />
+          : <CheckCircle2 size={12} style={{ color: token.colorSuccess, flexShrink: 0 }} />
+        }
+        <span style={{ fontWeight: 500 }}>{tool.name}</span>
+        <Tag bordered={false} color={statusColor} style={{ margin: 0, fontSize: 11 }}>
+          {t(`chat.message.toolCall.status.${status}`)}
+        </Tag>
+        {tool.args && !expanded && (
+          <span style={{ color: token.colorTextQuaternary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
+            {tool.args.length > 60 ? tool.args.slice(0, 60) + '…' : tool.args}
+          </span>
+        )}
+      </div>
+      {expanded && (
+        <div style={{
+          padding: '4px 8px 8px 26px',
+          fontSize: 12,
+          color: token.colorTextTertiary,
+        }}>
+          {tool.args && (
+            <div style={{ marginBottom: 4 }}>
+              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.arguments')}</div>
+              <pre style={{
+                margin: 0,
+                padding: '4px 8px',
+                borderRadius: 4,
+                background: token.colorFillQuaternary,
+                fontSize: 11,
+                overflow: 'auto',
+                maxHeight: 120,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+              }}>{tool.args}</pre>
+            </div>
+          )}
+          {tool.serverName && (
+            <div style={{ marginBottom: 4 }}>
+              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.server')}</div>
+              <span>{tool.serverName}</span>
+            </div>
+          )}
+          {tool.approvalActor && (
+            <div style={{ marginBottom: 4 }}>
+              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.approval')}</div>
+              <span>
+                {tool.status === 'denied'
+                  ? t('chat.message.toolCall.deniedBy', { actor: tool.approvalActor })
+                  : t('chat.message.toolCall.approvedBy', { actor: tool.approvalActor })}
+              </span>
+            </div>
+          )}
+          {approvalRequired && tool.approvalId && (
+            <Flexbox horizontal gap={8} style={{ marginBottom: 8 }}>
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void decideToolApproval(tool.approvalId!, true);
+                }}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  border: 'none',
+                  background: token.colorPrimary,
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                }}
+              >
+                {t('chat.message.toolCall.approve')}
+              </button>
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void decideToolApproval(tool.approvalId!, false);
+                }}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  border: `1px solid ${token.colorErrorBorder}`,
+                  background: token.colorErrorBg,
+                  color: token.colorErrorText,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                }}
+              >
+                {t('chat.message.toolCall.deny')}
+              </button>
+            </Flexbox>
+          )}
+          {delegationResults.length > 0 && (
+            <DelegationResultsBlock results={delegationResults} />
+          )}
+          {tool.result && (
+            <div>
+              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.result')}</div>
+              <pre style={{
+                margin: 0,
+                padding: '4px 8px',
+                borderRadius: 4,
+                background: token.colorFillQuaternary,
+                fontSize: 11,
+                overflow: 'auto',
+                maxHeight: 160,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+              }}>{tool.result}</pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Collapsed tool calls block ---
+
+export function ToolCallsBlock({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const pendingCount = toolCalls.filter((tc) => tc.pending).length;
+  const doneCount = toolCalls.length - pendingCount;
+
+  const summary = pendingCount > 0
+    ? t('chat.message.toolCall.using', { count: toolCalls.length })
+    : t('chat.message.toolCall.used', { count: doneCount });
+
+  return (
+    <div style={{
+      borderRadius: 8,
+      border: `1px solid ${token.colorBorderSecondary}`,
+      background: token.colorFillQuaternary,
+      marginBottom: 8,
+      overflow: 'hidden',
+    }}>
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 10px',
+          cursor: 'pointer',
+          fontSize: 12,
+          fontWeight: 500,
+          color: token.colorTextSecondary,
+        }}
+      >
+        {expanded
+          ? <ChevronDown size={13} style={{ flexShrink: 0 }} />
+          : <ChevronRight size={13} style={{ flexShrink: 0 }} />
+        }
+        <Wrench size={13} style={{ flexShrink: 0, color: token.colorTextTertiary }} />
+        <span>{summary}</span>
+        {pendingCount > 0 && (
+          <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', color: token.colorPrimary, marginLeft: 'auto' }} />
+        )}
+      </div>
+      {expanded && (
+        <div style={{ padding: '0 4px 4px', borderTop: `1px solid ${token.colorBorderSecondary}` }}>
+          {toolCalls.map((tc) => (
+            <ToolCallItem key={tc.id} tool={tc} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

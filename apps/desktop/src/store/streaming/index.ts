@@ -7,7 +7,20 @@ export type {
   PendingApproval,
   TurnStreamEvent,
   TurnStreamEventType,
+  TurnStreamEventPayload,
+  TextEventPayload,
+  ThinkingEventPayload,
+  ToolCallEventPayload,
+  ToolResultEventPayload,
+  ToolApprovalRequiredPayload,
+  ProgressEventPayload,
+  ImageEventPayload,
+  ConversationCreatedPayload,
+  ErrorEventPayload,
+  DoneEventPayload,
   StreamingAccumulator,
+  StreamingHandlerOptions,
+  RunLifecycleHooks,
 } from './types';
 
 export {
