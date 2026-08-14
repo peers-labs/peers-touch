@@ -110,6 +110,8 @@
   "chat.input.attachmentUnsupported": "不支持的文件类型。请添加图片、PDF、文本、Markdown、JSON 或 CSV 文件。",
   "chat.input.attachmentRetry": "重试",
   "chat.input.attachmentRemove": "移除附件",
+  "chat.input.attachmentDownload": "下载文件",
+  "chat.input.attachmentCompleted": "已上传",
   "chat.input.command.search": "搜索命令",
   "chat.input.command.searchDesc": "要求智能体在本轮使用网页搜索。",
   "chat.input.command.memory": "记忆命令",

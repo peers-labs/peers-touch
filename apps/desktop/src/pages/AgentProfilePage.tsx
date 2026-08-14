@@ -58,6 +58,7 @@ import { AgentSettingsModal } from '../components/AgentSettingsModal';
 import { BuilderPanel } from '../components/BuilderPanel';
 import { AgentIconTile } from '../components/agent/AgentIconTile';
 import { useSkillStore } from '../store/skill';
+import { AgentConnectorsPanel } from '../components/agent/AgentConnectorsPanel';
 import { EVENT, eventBus } from '../kernel/events';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
 import type { AgentTurnStreamEventPayload } from '../kernel/events/types';
@@ -2601,6 +2602,16 @@ export function AgentProfilePage({
                         })
                       )}
                     </Flexbox>
+                  </ProfileCard>
+
+                  <ProfileCard
+                    title={t('agent.connectors.title')}
+                    description={t('agent.connectors.description')}
+                  >
+                    <AgentConnectorsPanel
+                      agentId={agent.id}
+                      onNavigateToSettings={() => setSettingsOpen(true)}
+                    />
                   </ProfileCard>
                 </div>
               )}

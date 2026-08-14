@@ -2,15 +2,15 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { TextArea, Tag, toast } from '@lobehub/ui';
 import { theme } from 'antd';
-import { FileText } from 'lucide-react';
 import type { ChatMessage } from '../../store/chat';
 import { useChatStore } from '../../store/chat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
 import { chatMarkdownProps } from './markdownConfig';
 import { MessageActionBar } from '../messages';
+import { MessageAttachments } from './MessageAttachments';
 import { useTranslation } from 'react-i18next';
-import { timeAgo, fullTime, formatAttachmentSize } from './shared';
+import { timeAgo, fullTime } from './shared';
 
 interface UserMessageProps {
   message: ChatMessage;
@@ -141,37 +141,11 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
           )}
 
           {/* Non-image attachments */}
-          {message.attachments && message.attachments.filter((item) => !item.mime_type.startsWith('image/')).length > 0 && (
-            <Flexbox gap={6} style={{ marginBottom: message.content ? 8 : 0 }}>
-              {message.attachments
-                .filter((item) => !item.mime_type.startsWith('image/'))
-                .map((item) => (
-                  <Flexbox
-                    key={item.cid}
-                    horizontal
-                    align="center"
-                    gap={8}
-                    style={{
-                      border: `1px solid ${token.colorBorderSecondary}`,
-                      borderRadius: 8,
-                      padding: '8px 10px',
-                      background: token.colorFillQuaternary,
-                      minWidth: 180,
-                      maxWidth: 280,
-                    }}
-                  >
-                    <FileText size={18} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
-                    <Flexbox style={{ minWidth: 0 }}>
-                      <span style={{ fontSize: 13, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.filename || t('chat.input.attachmentFallbackName')}
-                      </span>
-                      <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
-                        {formatAttachmentSize(item.size)}
-                      </span>
-                    </Flexbox>
-                  </Flexbox>
-                ))}
-            </Flexbox>
+          {message.attachments && message.attachments.length > 0 && (
+            <MessageAttachments
+              attachments={message.attachments}
+              marginBottom={Boolean(message.content)}
+            />
           )}
 
           {/* Edit mode / content */}

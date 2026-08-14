@@ -24,6 +24,7 @@ import type { ChatMessage, DelegationTaskInfo, MessageArtifact } from '../../sto
 import { extractMessageArtifacts, useChatStore } from '../../store/chat';
 import { useAgentStore } from '../../store/agent';
 import { usePortalStore } from '../../store/portal';
+import { useTTSStore } from '../../store/tts';
 import { parseAgentChatConfig, api } from '../../services/desktop_api';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
 import { AgentIconTile } from '../agent/AgentIconTile';
@@ -34,6 +35,7 @@ import { ToolCallsBlock } from './ToolCallCard';
 import { ThinkingIndicator } from './ThinkingBlock';
 import { chatMarkdownProps } from './markdownConfig';
 import { timeAgo, fullTime, downloadCodeBlock, downloadArtifact } from './shared';
+import { TTSControls } from '../chat/TTSControls';
 
 // --- Collect delegation results from message + tool calls ---
 
@@ -510,6 +512,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             </div>
           ) : null}
 
+          {/* TTS inline controls */}
+          <TTSControls messageId={message.id} />
+
           {/* Inline translation */}
           {message.translation && (
             <div
@@ -624,7 +629,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             onThread: () => openThread(currentSessionKey, message.id),
             onReadAloud: () => {
               if (message.content) {
-                void api.tts(message.content);
+                useTTSStore.getState().speak(message.id, message.content);
               }
             },
             onExport: () => {

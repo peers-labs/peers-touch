@@ -1,5 +1,7 @@
 import type { ChatMessage, ToolCallInfo, ToolCallStatus, KnowledgeChunkInfo, DelegationTaskInfo, ErrorResolutionAction } from '../chat';
 import type { TurnStreamEvent, StreamingAccumulator } from './types';
+import { useInterventionStore } from '../intervention';
+import type { InterventionType } from '../intervention';
 
 let tempCounter = 0;
 function tempId(): string {
@@ -99,6 +101,24 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
     case 'image': {
       const imgs = msg.images || [];
       return { ...msg, images: [...imgs, s(d.url)] };
+    }
+
+    case 'intervention_request': {
+      const interventionType = (s(d.type) || 'text') as InterventionType;
+      const choices = Array.isArray(d.choices) ? d.choices.map((c: unknown) => String(c)) : undefined;
+      // Lazy require to avoid circular dependency chain: chat -> streaming -> handler -> chat
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const chatModule = require('../chat') as { useChatStore: { getState: () => { currentSessionKey: string } } };
+      const sessionKey = chatModule.useChatStore.getState().currentSessionKey;
+      useInterventionStore.getState().requestIntervention({
+        sessionKey,
+        messageId: msg.id,
+        prompt: s(d.prompt),
+        type: interventionType,
+        choices,
+        defaultValue: d.defaultValue != null ? s(d.defaultValue) : undefined,
+      });
+      return { ...msg, lastEventAt: Date.now() };
     }
 
     case 'thinking':
