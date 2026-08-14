@@ -11,6 +11,9 @@ import { ArtifactDetailView } from './views/ArtifactDetailView';
 import { ToolDetailView } from './views/ToolDetailView';
 import { ThreadView } from './views/ThreadView';
 import { TopicCommentsView } from './views/TopicCommentsView';
+import { WorkingFilesView } from './views/WorkingFilesView';
+import { WorkingProgressView } from './views/WorkingProgressView';
+import { AgentOverviewView } from './views/AgentOverviewView';
 
 export function PortalPanel() {
   const { token } = theme.useToken();
@@ -45,6 +48,15 @@ export function PortalPanel() {
     }
     if (activeView.type === 'topicComments') {
       return <TopicCommentsView topicKey={activeView.topicKey} />;
+    }
+    if (activeView.type === 'workingFiles') {
+      return <WorkingFilesView sessionKey={activeView.sessionKey} />;
+    }
+    if (activeView.type === 'workingProgress') {
+      return <WorkingProgressView />;
+    }
+    if (activeView.type === 'agentOverview') {
+      return <AgentOverviewView agentId={activeView.agentId} />;
     }
     return null;
   };

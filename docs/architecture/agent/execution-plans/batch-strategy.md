@@ -16,6 +16,7 @@
 | **P1** | Tool & Knowledge | Agent uses tools, retrieves knowledge, retains memory | ✅ complete |
 | **P2** | Rich Rendering & Productivity | Markdown, code blocks, TTS, image gen, export, templates | ✅ complete |
 | **P3** | Multi-Agent & Ecosystem | Agent groups, marketplace, plugins, evaluation | ✅ complete |
+| **P4** | Infrastructure Deepening & Power Features | Task system, TTS, session groups, file integration, connectors, command menu, terminal, intervention, multi-transport, localStorage→Station | — |
 
 ---
 

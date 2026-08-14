@@ -54,6 +54,7 @@ export type TurnStreamEventType =
   | 'local_tool_request'
   | 'tool_approval_required'
   | 'tool_approval_decision'
+  | 'intervention_request'
   | 'progress'
   | 'image'
   | 'conversation_created'
@@ -92,6 +93,14 @@ export interface ToolApprovalRequiredPayload {
   source?: string;
 }
 
+export interface InterventionRequestPayload {
+  messageId: string;
+  prompt: string;
+  type: 'text' | 'choice' | 'confirm';
+  choices?: string[];
+  defaultValue?: string;
+}
+
 export interface ProgressEventPayload {
   stage: string;
   turnId?: string;
@@ -128,6 +137,7 @@ export type TurnStreamEventPayload =
   | ToolCallEventPayload
   | ToolResultEventPayload
   | ToolApprovalRequiredPayload
+  | InterventionRequestPayload
   | ProgressEventPayload
   | ImageEventPayload
   | ConversationCreatedPayload

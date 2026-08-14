@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useChatStore, type ChatComposerAttachment } from '../../store/chat';
 import { useAgentStore } from '../../store/agent';
-import { useAgentAttachmentDrafts } from './useAgentAttachmentDrafts';
+import { useAgentAttachmentDrafts, AGENT_ATTACHMENT_ACCEPT } from './useAgentAttachmentDrafts';
 import { AttachmentStage } from './AttachmentStage';
 import { ComposerTextarea } from './ComposerTextarea';
 import { ComposerFooter } from './ComposerFooter';
@@ -50,6 +50,7 @@ export function ChatComposer({
     drafts,
     readyAttachments,
     uploading,
+    failed,
     addFiles,
     clearDrafts,
     removeDraft,
@@ -95,7 +96,7 @@ export function ChatComposer({
     })),
   [readyAttachments]);
 
-  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading;
+  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading || failed;
 
   const handleSend = useCallback(() => {
     const text = input.trim();
@@ -169,7 +170,7 @@ export function ChatComposer({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={AGENT_ATTACHMENT_ACCEPT}
         multiple
         style={{ display: 'none' }}
         onChange={handleFilesSelected}
