@@ -179,16 +179,16 @@ fn build_error_for_status(status: u16, path: &str, body: &str) -> StationClientE
 }
 
 pub(crate) fn station_base_url() -> String {
-    // Prefer the registry if already initialized (normal runtime path).
-    // Falls back to env var before bootstrap completes or if registry
-    // was never set up (e.g. unit tests running without full bootstrap).
-    match STATION_REGISTRY.get() {
-        Some(reg) => reg.active_url().unwrap_or_default(),
-        None => std::env::var("PEERS_STATION_URL")
+    // Prefer the registry's active URL if initialized and set.
+    // Falls back to PEERS_STATION_URL env var when registry has no active
+    // station (fresh install, or user hasn't selected one yet).
+    let from_registry = STATION_REGISTRY.get().and_then(|reg| reg.active_url());
+    from_registry.unwrap_or_else(|| {
+        std::env::var("PEERS_STATION_URL")
             .unwrap_or_default()
             .trim_end_matches('/')
-            .to_string(),
-    }
+            .to_string()
+    })
 }
 
 pub(crate) fn active_station_peer_id() -> Option<String> {

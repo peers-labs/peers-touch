@@ -32,6 +32,7 @@ import { api, type NotebookDocumentWithTopic } from '../services/desktop_api';
 import { useAgentStore } from '../store/agent';
 import { BuilderPanel } from '../components/BuilderPanel';
 import { LazyMarkdown as Markdown } from '../components/LazyMarkdown';
+import { chatMarkdownProps } from '../components/messages/markdownConfig';
 
 interface NotesPageProps {
   onNavigateChat?: (sessionKey: string) => void;
@@ -744,7 +745,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               {previewMode ? (
                 <div style={{ flex: 1, overflow: 'auto', padding: '12px 24px 24px' }}>
-                  <Markdown fontSize={14}>{editContent || t('notes.editor.noContent')}</Markdown>
+                  <Markdown {...chatMarkdownProps} fontSize={14}>{editContent || t('notes.editor.noContent')}</Markdown>
                 </div>
               ) : (
                 <>
