@@ -2,13 +2,17 @@ import { useEffect, useRef } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tag } from '@lobehub/ui';
 import { theme } from 'antd';
-import { CheckCircle2, Compass, Settings2 } from 'lucide-react';
+import { CheckCircle2, Compass, Settings2, PanelRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
 import { useAgentStore } from '../store/agent';
+import { usePortalStore } from '../store/portal';
 import { ChatInput } from '../components/ChatInput';
 import { MessageList } from '../components/MessageList';
 import { OpStatusTray } from '../components/OpStatusTray';
+import { InterventionBar } from '../components/chat/InterventionBar';
+import { ChatTerminalPanel } from '../components/chat/ChatTerminalPanel';
+import { TerminalToggleButton } from '../components/chat/TerminalToggleButton';
 
 export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void; narrow?: boolean }) {
   const { t } = useTranslation('agent');
@@ -46,11 +50,6 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
   useEffect(() => {
     loadSessions();
   }, [loadSessions, selectedAgent]);
-
-  useEffect(() => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
 
   const contentWidth = isNarrow ? 'calc(100% - 28px)' : 'min(620px, calc(100% - 36px))';
   const hasMessages = messages.length > 0;
@@ -105,6 +104,7 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
               </div>
             </div>
             <Flexbox horizontal align="center" gap={6} style={{ flexShrink: 0 }}>
+              <TerminalToggleButton />
               {!isNarrow && (
                 <button
                   type="button"
@@ -113,6 +113,16 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
                   style={{ border: 0, background: 'transparent', color: token.colorTextTertiary, cursor: 'pointer', padding: 2, display: 'inline-flex', alignItems: 'center', borderRadius: 6 }}
                 >
                   <Settings2 size={15} />
+                </button>
+              )}
+              {!isNarrow && (
+                <button
+                  type="button"
+                  title="Toggle panel"
+                  onClick={() => usePortalStore.getState().toggle()}
+                  style={{ border: 0, background: 'transparent', color: token.colorTextTertiary, cursor: 'pointer', padding: 2, display: 'inline-flex', alignItems: 'center', borderRadius: 6 }}
+                >
+                  <PanelRight size={15} />
                 </button>
               )}
             </Flexbox>
@@ -184,7 +194,7 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
               </>
             ) : (
               <div style={{ width: contentWidth, boxSizing: 'border-box' }}>
-                <MessageList />
+                <MessageList scrollRef={scrollRef} />
               </div>
             )}
           </div>
@@ -193,7 +203,9 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
             <div style={{ marginBottom: 8 }}>
               <OpStatusTray />
             </div>
+            <InterventionBar />
             <ChatInput />
+            <ChatTerminalPanel />
           </div>
         </>
       ) : (
