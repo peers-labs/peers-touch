@@ -1,36 +1,188 @@
 ---
 name: pt-dev-runtime-handoff
 description: >
-  Use after code changes when the user wants the agent to prepare a dev
-  runtime for acceptance testing. Guides profile-based startup, service
-  restart decisions, local/remote Station selection, Desktop app/web launch,
-  dual-client verification, and reporting what the user can validate.
+  Use after code changes when the user wants to prepare a dev runtime and run
+  acceptance testing. Guides profile-based startup, restart decisions, and
+  execution of Playwright-based acceptance specs against the native Tauri app.
 ---
 
 # Dev Runtime Handoff
 
 > **Source of truth for environment spec**: `docs/global/local-dev-environment.md`
-> This skill defines behavior (when to restart, what to run). The doc above defines semantics (what modes mean, what fields do, what deploy does).
+> This skill defines behavior (when to restart, what to run, how to test).
 
 ## Goal
 
-After finishing code, the agent should prepare the right dev runtime so the
-user only needs to verify behavior. Do not leave the user to guess whether
-Station, Docker services, Desktop Rust BFF, Vite, or dual clients need to be
-started or restarted.
+After finishing code, the agent:
+1. Prepares the dev runtime (start/restart services).
+2. Runs **standardized Playwright acceptance specs** against the native Tauri
+   WebView via `@srsholmes/tauri-playwright`.
+3. Reports structured results with evidence.
 
-**Prerequisite**: The `pt-local-dev-env` skill must have been applied first — a
-profile must be active. If no profile exists, apply `pt-local-dev-env` first.
+The user does NOT click anything. The agent does NOT guess pixel coordinates.
 
-## Entry Points (New Profile System)
+## Prerequisites
 
-All commands from the repository root. No flags needed if a profile is active:
+1. A profile must be active (`pt-local-dev-env` applied).
+2. For dual-client acceptance, the user MUST provide:
+   - Two worktree paths (e.g. `peers-chat-high-chat`, `peers-group-chat`)
+   - Profile name (e.g. `two`)
+   - Target module (e.g. `chat`, `contacts`, `notifications`)
+3. If any prerequisite is missing, **STOP and ask**. Do NOT assume or proceed.
+
+---
+
+## Module Injection Protocol
+
+When adding acceptance for a new module, the agent MUST provide:
+
+1. **`<module>.contract.ts`** — Declares: depends, setup (human-readable), entryRoute,
+   readySelector, and the full verification matrix.
+2. **`<module>.spec.ts`** — Implements: setup in `beforeAll`, each matrix point as a
+   `test()`, using helpers from `helpers.ts`.
+3. **Update to `helpers.ts`** — If the module needs shared utilities not yet present
+   (e.g. a new gateway command wrapper), add them to helpers.
+
+**Structure of every spec file**:
+```ts
+import { test, expect } from '../fixtures';
+import { MODULE_CONTRACT } from './<module>.contract';
+import { login, waitForAuth, ... } from './helpers';
+
+test.describe(MODULE_CONTRACT.module, () => {
+  test.beforeAll(async ({ tauriPage }) => {
+    // 1. Run depends: ensure auth (and other dependencies) are set up
+    // 2. Module-specific setup: create data, navigate to entryRoute
+  });
+
+  // One test per matrix entry
+  test(MODULE_CONTRACT.matrix[N].name, async ({ tauriPage }) => {
+    // Implement action + assert passCondition
+  });
+});
+```
+
+**Rules**:
+- Contract matrix is the single source of "what gets tested". If it's not in the
+  matrix, it doesn't get a test. If it needs a test, add it to the matrix first.
+- Helpers must be idempotent — calling `login()` when already logged in is a no-op.
+- Specs must be independently runnable: `pnpm exec playwright test e2e/acceptance/chat.spec.ts`
+- Never hardcode ports/URLs — always read from env vars via helpers.
+
+---
+
+## Acceptance Testing Method
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│  WebdriverIO Test Runner (npx wdio run wdio.conf.ts)│
+│    ↕ WebDriver protocol (port 4444)                 │
+│  tauri-driver (cargo install tauri-driver)           │
+│    ↕ native WebView bridge                          │
+│  Tauri Native App (make desktop)                    │
+│    ↕ Tauri IPC                                      │
+│  Rust BFF (gateway, messaging, storage)             │
+│    ↕ HTTP                                           │
+│  Station (remote or local)                          │
+└─────────────────────────────────────────────────────┘
+```
+
+### How It Works
+
+1. `make desktop` starts the native Tauri app.
+2. `tauri-driver` starts a WebDriver server connected to the app's WebView.
+3. WebdriverIO connects to the WebDriver server and drives DOM interactions.
+4. Specs also call the HTTP gateway directly for backend operations.
+5. Both combined = full E2E covering UI + backend.
+
+### Spec Location (Fixed Paths)
+
+```
+apps/desktop/e2e/
+├── acceptance/                    # Module acceptance specs
+│   ├── chat.spec.ts              # Chat module: login, send, receive, multi-round
+│   ├── contacts.spec.ts          # Contacts: add, search, block, presence
+│   ├── notifications.spec.ts     # Badges, push, realtime updates
+│   ├── group-chat.spec.ts        # Group: create, invite, messaging
+│   └── ...
+├── accounts.ts                   # Standard test accounts (SINGLE SOURCE)
+├── fixtures.ts                   # tauri-playwright connection config
+├── dual-client.fixtures.ts       # Dual-client fixtures (two sockets)
+├── playwright.config.ts          # Playwright config
+└── tests/                        # Performance specs (existing)
+```
+
+### Standard Test Accounts (`accounts.ts`)
+
+All acceptance specs use these accounts. Never invent new credentials.
+
+```ts
+export const TEST_ACCOUNTS = {
+  alice: {
+    email: 'alice@p.t',
+    password: 'Test1234!',
+    name: 'Alice two',
+    role: 'primary-sender',
+  },
+  bob: {
+    email: 'bob@p.t',
+    password: 'Test1234!',
+    name: 'Bob two',
+    role: 'primary-receiver',
+  },
+  carol: {
+    email: 'carol@p.t',
+    password: 'Test1234!',
+    name: 'Carol two',
+    role: 'group-member',
+  },
+} as const;
+```
+
+### Connection Method
+
+Each Tauri app (started via `make desktop`) exposes a Playwright MCP socket.
+The socket path is deterministic per worktree:
+
+```
+/tmp/tauri-playwright-<worktree-name>.sock
+```
+
+For dual-client tests, two sockets are available simultaneously:
+- Socket A: `/tmp/tauri-playwright-peers-chat-high-chat.sock`
+- Socket B: `/tmp/tauri-playwright-peers-group-chat.sock`
+
+### How The Agent Runs Acceptance
+
+```bash
+# Single client
+cd <worktree> && pnpm exec playwright test e2e/acceptance/<module>.spec.ts
+
+# Dual client (both worktrees must be running)
+cd <worktree-A> && PEER_SOCKET=/tmp/tauri-playwright-<worktree-B>.sock \
+  pnpm exec playwright test e2e/acceptance/<module>.spec.ts
+```
+
+The agent MUST:
+1. Ensure both `make desktop` instances are running and healthy.
+2. Verify gateway ports respond (`curl -s localhost:<port>/api/gateway`).
+3. Run the spec file — NOT ad-hoc curl commands, NOT pixel clicking.
+4. Read the Playwright JSON report from `tooling/acceptance/reports/`.
+5. Report results using the template below.
+
+---
+
+## Entry Points (Profile System)
+
+All commands from the repository root:
 
 ```bash
 # Core dev commands
-make station                # Start/verify Station (local or remote per profile)
-make desktop                # Desktop Tauri app
-make desktop-web            # Desktop in browser
+make station                # Start/verify Station
+make desktop                # Desktop Tauri app (native)
+make desktop-web            # Desktop in browser (debugging only)
 make mobile                 # Mobile iOS Simulator
 
 # Lifecycle
@@ -39,17 +191,9 @@ make stop                   # Stop all
 make restart                # Restart all
 make station-restart        # Restart Station only
 make desktop-restart        # Restart Desktop only
-make mobile-restart         # Restart Mobile only
-
-# Docker (unchanged)
-make docker-station         # Build & deploy Station container
-make docker-relay           # Build & deploy Relay container
-make docker-all             # Build & deploy all
-make docker-logs            # Tail container logs
-make docker-ps              # Show running containers
 ```
 
-Docker remote variants (unchanged):
+Docker remote variants:
 
 ```bash
 make docker-station REMOTE=pt-station-1
@@ -59,129 +203,137 @@ make docker-relay REMOTE=pt-relay
 
 ## Runtime Selection
 
-Choose runtime by acceptance need:
+- `make desktop`: single native Tauri app verification.
+- `make desktop-web`: browser-mode (debugging only, NOT for acceptance).
+- **Dual-client acceptance**: `make desktop` in **two separate worktrees**.
+- `make station`: Station code changed, local mode.
+- `make mobile`: Mobile iOS verification.
 
-- `make desktop`: native Tauri app verification.
-- `make desktop-web`: browser-mode Desktop verification.
-- `make desktop` + `make desktop-web` in two terminals: two-account dual-client
-  flows (chat realtime, typing, badges, notifications, presence, friend/group).
-- `make station`: Station code changed, local mode compiles and runs.
-- `make station-restart`: Station code changed while already running.
-- `make mobile`: Mobile iOS verification against profile's Station.
+### Dual-Client Setup (Two Worktrees)
+
+Each worktree produces an independent Tauri app with a unique bundle identifier,
+allowing macOS to run both simultaneously.
+
+```
+Worktree A (e.g. peers-chat-high-chat):
+  cd <worktree-A-path> && make desktop
+  → Gateway: PT_DESKTOP_APP_GATEWAY_PORT from profile
+  → Socket: /tmp/tauri-playwright-peers-chat-high-chat.sock
+
+Worktree B (e.g. peers-group-chat):
+  cd <worktree-B-path> && make desktop
+  → Gateway: PT_DESKTOP_APP_GATEWAY_PORT from profile (different port)
+  → Socket: /tmp/tauri-playwright-peers-group-chat.sock
+```
+
+Both share the same Station. Each has its own Rust BFF, Vite, and storage.
+
+---
 
 ## Restart And Deploy Decisions
 
 ### Station
 
 Restart when changes touch:
-
 - `apps/station/**`
 - `model/domain/**` plus regenerated proto output
-- database models, bootstrap, migrations, auth/session, SSE/realtime,
-  notification fan-out, OSS upload/serve/cache contracts, friend chat, group
-  chat, relay-facing Station APIs, federation
+- database models, migrations, auth, SSE/realtime, notification, chat, federation
 
-Use: `make station-restart` (local mode) or `make docker-station REMOTE=<ctx>`
-
-### Relay
-
-Restart when changes touch relay service/config, broadcast protocol, WebRTC/TURN
-routing, call signaling infrastructure, or Docker relay env.
-
-Use: `make docker-relay REMOTE=pt-relay`
+Use: `make station-restart` or `make docker-station REMOTE=<ctx>`
 
 ### Desktop Rust BFF / Tauri
 
 Restart when changes touch:
-
 - `apps/desktop/src-tauri/**`
-- Tauri command signatures
-- gateway ports, local HTTP gateway, auth/session resolver, event stream,
-  presence, OSS cache, local storage, identity bridge
+- Tauri command signatures, gateway, auth, event stream, storage
 
 Use: `make desktop-restart`
 
 ### Desktop Web
 
-For `apps/desktop/src/**` UI/runtime/store changes, first rely on Vite HMR.
-Use `make desktop-restart` if the page is stale, the runtime was installed
-before the code existed, or the change affects app boot/runtime installation.
+For `apps/desktop/src/**` UI changes, rely on Vite HMR first.
+Use `make desktop-restart` if HMR is insufficient.
 
 ### Proto
 
-If proto changes are part of the task, run `make model-gen` before runtime
-verification, then restart affected Station/Desktop runtimes.
+Run `make model-gen` before runtime verification, then restart affected services.
 
-## Before Starting
-
-1. Run `make status` to see what's already running.
-2. Check whether the task changed Station, Desktop Rust, Desktop Web, proto,
-   Docker config, relay, or only docs/tests.
-3. Choose the smallest runtime that can verify the behavior.
-4. If Station URL needs to change (local vs remote), switch profile first:
-   `make profile PROFILE=<name>` (see `pt-local-dev-env` skill).
-5. Tell the user what will be started/restarted and why.
+---
 
 ## Dev Handoff Workflow
 
-1. Run focused checks for the files changed by the task.
-2. Decide deploy/restart scope using the rules above.
-3. If Station is `remote` mode and deploy is needed: run `git status` to check
-   for uncommitted changes in the deploy scope. If uncommitted changes exist,
-   commit them first (use `pt-github-commit` skill) — remote deploy pushes
-   HEAD, so uncommitted code will NOT reach the remote host.
+1. Check what changed (Station, Desktop Rust, Desktop Web, proto).
+2. Decide restart scope.
+3. If remote deploy needed and uncommitted changes exist, commit first.
 4. Start/deploy with `make`, not direct scripts.
-5. Wait until the relevant ports/services are ready.
-6. Run the minimal smoke verification the agent can perform.
-7. Report exactly what is ready for user acceptance.
+5. Wait until gateway ports respond.
+6. **Run acceptance spec**: `pnpm exec playwright test e2e/acceptance/<module>.spec.ts`
+7. Read report from `tooling/acceptance/reports/`.
+8. Report results to user.
+
+---
 
 ## Dual Client Acceptance
 
-Run `make desktop` in one terminal and `make desktop-web` in another.
+**Required inputs** (agent must ask if missing):
+- Worktree A path (account A)
+- Worktree B path (account B)
+- Profile name
+- Target module
 
-Expected topology:
+**Execution**:
+1. `make desktop` in both worktrees (background).
+2. Wait for both gateways to respond.
+3. Run the dual-client spec from worktree A with `PEER_SOCKET` pointing to B.
+4. Collect results.
 
-- App client: native Tauri window, gateway on profile's `PT_DESKTOP_APP_GATEWAY_PORT`.
-- Web client: browser client, gateway on profile's `PT_DESKTOP_WEB_GATEWAY_PORT`.
-- Both clients share one Station (from profile).
-- Each client has isolated Rust BFF/session profile.
+### Verification Criteria (Chat Module)
 
-Verify:
-
-1. A sends message to B; B sees it without sending a message and without
-   clicking the Chat sidebar.
+1. A sends message to B; B sees it without manual refresh.
 2. Chat badge updates immediately when B is not viewing the conversation.
-3. Badge stays clear when B is viewing the conversation.
-4. Typing indicator appears above the composer and clears after idle/send/blur.
-5. Image messages show sender-side local thumbnail and receiver-side resolved
-   thumbnail.
-6. Presence and notification state update without manual page remount.
+3. Badge clears when B views the conversation.
+4. Typing indicator appears and clears after idle/send/blur.
+5. Multi-round messaging is stable (no state drift).
+6. Presence updates without page remount.
 
-If verification fails, inspect in this order:
+### Failure Inspection Order
 
 1. Station logs (`make status` shows log path).
 2. Rust BFF event stream and Tauri event names.
 3. `eventStream.ts` protobuf frame decode.
-4. Runtime owner (`socialRealtime`, `notification`, `navigationBadges`,
-   `mediaRuntime`).
+4. Runtime owner (`socialRealtime`, `notification`, `navigationBadges`).
 5. Store projection.
 6. Component rendering.
 
-Do not make page-level `useEffect(...load...)` the primary fix for runtime
-state. Components can fallback-load, but the owning runtime must consume events
-and reconcile.
+Do not patch page-level `useEffect` as the primary fix. The owning runtime must
+consume events and reconcile.
+
+---
 
 ## Reporting Template
 
-Report in this shape:
-
 ```markdown
-Dev runtime ready:
-- Profile: <active profile name and key settings>
-- Checks: <commands and result>
-- Deployment/restart: <what was reused/restarted/deployed and why>
-- Runtime: <make target(s) started>
-- Verification: <what the agent smoke-tested>
-- User acceptance: <exact scenario the user should try>
-- Open risk: <only if something could not be verified>
+Acceptance test results:
+- Profile: <name>
+- Worktrees: <A (account)> + <B (account)>
+- Module: <target module>
+- Spec file: apps/desktop/e2e/acceptance/<module>.spec.ts
+- Runtime: make desktop × 2 worktrees
+- Results:
+  | Test Case | Result | Duration |
+  |-----------|--------|----------|
+  | ... | PASS/FAIL | Xms |
+- Failures: <details with root cause>
+- Evidence: tooling/acceptance/reports/<module>-<timestamp>.json
+- Open risk: <if any>
 ```
+
+---
+
+## What This Skill Does NOT Do
+
+- Does NOT use Computer Use / pixel coordinate guessing.
+- Does NOT open a browser to test (unless `make desktop-web` mode explicitly).
+- Does NOT invent test accounts — uses `apps/desktop/e2e/accounts.ts` only.
+- Does NOT run ad-hoc curl commands as "acceptance" — runs spec files.
+- Does NOT claim acceptance passed without a Playwright report artifact.
