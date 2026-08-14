@@ -86,8 +86,14 @@ pub fn ensure_local(remote_url: &str) -> Result<PathBuf, AvatarCacheError> {
 
     let dest = dir.join(user_profile::avatar_local_filename(&url));
 
-    let response =
-        reqwest::blocking::get(&url).map_err(|e| AvatarCacheError::Download(e.to_string()))?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| AvatarCacheError::Download(e.to_string()))?;
+    let response = client
+        .get(&url)
+        .send()
+        .map_err(|e| AvatarCacheError::Download(e.to_string()))?;
     if !response.status().is_success() {
         return Err(AvatarCacheError::Download(format!(
             "status {}",
