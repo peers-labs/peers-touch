@@ -65,6 +65,7 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | [domain-onboarding.md](./domain-onboarding.md) | 产品域接入标准、状态模型和验收标准 |
 | [execution-plans/phase-2-station-dashboard-domain-onboarding.md](./execution-plans/phase-2-station-dashboard-domain-onboarding.md) | Station Dashboard managed domain 接入计划 |
 | [execution-plans/phase-3-chat-domain-onboarding.md](./execution-plans/phase-3-chat-domain-onboarding.md) | Chat managed domain 接入计划与设计落地反思 |
+| [execution-plans/20260815-tauri-driver-desktop-ui-gate.md](./execution-plans/20260815-tauri-driver-desktop-ui-gate.md) | Desktop UI DOM gate 引入 tauri-driver 执行计划 |
 
 ---
 

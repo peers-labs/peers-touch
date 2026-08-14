@@ -3,7 +3,7 @@
 > Single authoritative source for all AI coding agents.
 > `docs/.agent/<platform>.md` is the agent entry layer: use it to find the real source documents, hard constraints, and verification commands.
 >
-> Last updated: 2026-07-30
+> Last updated: 2026-04-12
 
 ---
 
@@ -129,14 +129,13 @@ Example:
 
 1. **Rationality over minimalism** — Architectural soundness is the goal, not minimum change.
 2. **Run scripts first** — Prefer `tooling/scripts/` (`dev-desktop-app.sh`, `dev-desktop-web.sh`, `pt.sh`, etc.).
-3. **Product design methodology** — For a new product, module, major capability, workflow redesign, or benchmark-driven rebuild, **MUST** use `pt-product-design-methodology` before architecture design. It freezes users, outcomes, capability scope, journeys, visible states, prototype requirements, and product acceptance.
-4. **Architecture design methodology** — For architecture design / system boundaries / ownership / contracts / topology / design decisions, **MUST** use `pt-architecture-design-methodology` skill before execution planning.
-5. **Architecture execution methodology** — For architecture landing / migration / domain decomposition, **MUST** use `pt-architecture-execution-methodology` skill: `Domain Responsibility → Execution Closure → Dependency Order → Verifiable Delivery`.
-6. **Runtime projection first** — For Desktop bugs involving chat, contacts, notifications, badges, realtime, or store freshness, first identify the owning runtime and its projection contract. Do not patch stale state only with page/component refreshes; read `docs/client/desktop/runtime-projections.md`.
-7. **Page / Runtime / Boot contracts** — When adding or refactoring a Desktop page, projection owner, or startup step, conform to the Page / Runtime / Boot kernel contracts in `docs/client/desktop/runtime-projections.md §6`. Pages are pure renderers (no mount-time fetches); long-lived projections live in `RuntimeDescriptor`s; one-shot section data uses `kernel/usePrefetch`; startup is observable through `kernel/boot.ts` phases.
-8. **Desktop debug uses Make** — During investigation, lifecycle debugging, browser/app E2E, applet runtime debugging, or acceptance triage, start Desktop through `make desktop` (or `make desktop-web` only when the task explicitly needs the browser shell). Do **not** switch to hard packaged `.app` / `tauri build` / release bundle flows unless the user explicitly asks for packaging, release validation, installer validation, or a package-only acceptance gate. See `docs/knowledge/playbooks/desktop-debug-runtime.md`.
-9. **UI Identity first** — For any UI/UX design, visual refactor, screenshot review, layout issue, button/style issue, or client UI code change, first read `docs/client/common/ux-design-methodology.md`, `docs/client/common/ui-identity/README.md`, and the closest module contract under `docs/client/common/ui-identity/modules/`. Do not rely on ad-hoc component-library defaults.
-10. **Service coordination first** — For cross-service issues (relay mount, DHT bootstrap, federation resolve failures, Station↔Relay↔Desktop connectivity), consult `docs/architecture/service-coordination.md` before debugging. It defines the dependency DAG, credential lifecycle, and troubleshooting index.
+3. **Architecture design methodology** — For architecture design / system boundaries / ownership / contracts / topology / design decisions, **MUST** use `pt-architecture-design-methodology` skill before execution planning.
+4. **Architecture execution methodology** — For architecture landing / migration / domain decomposition, **MUST** use `pt-architecture-execution-methodology` skill: `Domain Responsibility → Execution Closure → Dependency Order → Verifiable Delivery`.
+5. **Runtime projection first** — For Desktop bugs involving chat, contacts, notifications, badges, realtime, or store freshness, first identify the owning runtime and its projection contract. Do not patch stale state only with page/component refreshes; read `docs/client/desktop/runtime-projections.md`.
+6. **Page / Runtime / Boot contracts** — When adding or refactoring a Desktop page, projection owner, or startup step, conform to the Page / Runtime / Boot kernel contracts in `docs/client/desktop/runtime-projections.md §6`. Pages are pure renderers (no mount-time fetches); long-lived projections live in `RuntimeDescriptor`s; one-shot section data uses `kernel/usePrefetch`; startup is observable through `kernel/boot.ts` phases.
+7. **Desktop debug uses Make** — During investigation, lifecycle debugging, browser/app E2E, applet runtime debugging, or acceptance triage, start Desktop through `make desktop` (or `make desktop-web` only when the task explicitly needs the browser shell). Do **not** switch to hard packaged `.app` / `tauri build` / release bundle flows unless the user explicitly asks for packaging, release validation, installer validation, or a package-only acceptance gate. See `docs/knowledge/playbooks/desktop-debug-runtime.md`.
+8. **UI Identity first** — For any UI/UX design, visual refactor, screenshot review, layout issue, button/style issue, or client UI code change, first read `docs/client/common/ux-design-methodology.md`, `docs/client/common/ui-identity/README.md`, and the closest module contract under `docs/client/common/ui-identity/modules/`. Do not rely on ad-hoc component-library defaults.
+9. **Service coordination first** — For cross-service issues (relay mount, DHT bootstrap, federation resolve failures, Station↔Relay↔Desktop connectivity), consult `docs/architecture/service-coordination.md` before debugging. It defines the dependency DAG, credential lifecycle, and troubleshooting index.
 
 ---
 
@@ -186,6 +185,17 @@ All user-facing text **MUST** go through the i18n system (`packages/locales/`).
 Never embed raw Chinese, English, or any natural-language string literals in components, services, or utility modules.
 Fallback/error messages use **locale keys**, not literal text.
 Non-React modules that cannot use hooks should throw errors with locale key identifiers; the UI layer translates them via `t()`.
+
+### No Compliance Drift
+
+When the user challenges, questions, or pushes back on an agent's output, the agent MUST NOT reflexively agree and change course just to appear cooperative. Instead:
+
+1. **Evaluate independently** — Does the user's challenge expose a real flaw, or is the original reasoning actually sound?
+2. **Defend when correct** — If the original output was right, explain why concisely and hold the position.
+3. **Concede when wrong** — If the challenge reveals a genuine error, acknowledge it, explain what was wrong, and fix it.
+4. **Never fabricate agreement** — Do not add items to a plan, remove items from a plan, or change a technical decision solely because the user questioned it. Every change must have a technical justification independent of the social pressure to agree.
+
+This rule exists because compliance drift produces worse outcomes than honest disagreement: it introduces unnecessary work, masks real problems, and trains the user to distrust agent output.
 
 ---
 
@@ -317,9 +327,8 @@ Current project skills:
 | `pt-dev-workflow` | Drive a complete development task from planning to PR |
 | `pt-god-view` | God view: explicitly invoked to show global work status, route to correct stage skill, manage work lifecycle |
 | `pt-dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
-| `pt-product-design-methodology` | Turn product goals and benchmark evidence into accepted capability scope, journeys, visible states, prototype requirements, and product acceptance before architecture (referenced from §4.3) |
-| `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.4) |
-| `pt-architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.5) |
+| `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
+| `pt-architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
 | `pt-branch-conflict-guardian` | Guide semantic conflict resolution across parallel branches: separate mechanical conflicts from ownership/behavior divergence, escalate unclear intent, and verify integrated behavior |
 | `pt-execution-plan-guardian` | Keep execution, continuation, merge, and readiness reports tied to plan sources, scope boundaries, gates, and evidence |
 | `pt-official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
@@ -374,9 +383,8 @@ Any non-trivial development task (cross-module, new feature, architecture change
 
 | Stage | Entry condition | Skill(s) to invoke | Gate (exit condition) | Artifact |
 |-------|----------------|--------------------|-----------------------|----------|
-| **PRODUCT** | New product/module/capability, workflow redesign, or benchmark-driven rebuild | `pt-product-design-methodology` → `pt-prototype-design` when UI is material | Product review passes; required prototype confirmed or explicitly blocked | Product definition, experience/state contracts, acceptance matrix, optional prototype |
-| **DESIGN** | Product contract accepted and new architecture / boundary / ownership decision needed | `pt-architecture-design-methodology` | Architecture review prompt generated → user initiates review → review passes | `docs/architecture/<module>/` |
-| **PLAN** | Product and architecture accepted (or task is explicitly non-product/infrastructure-only) | `pt-architecture-execution-methodology` (analysis) → `pt-plan-and-document` (落盘 + review prompt) | Plan review prompt generated → user initiates review → review passes | `execution-plans/<plan>.md` |
+| **DESIGN** | New architecture / boundary / ownership decision needed | `pt-architecture-design-methodology` | Architecture review prompt generated → user initiates review → review passes | `docs/architecture/<module>/` |
+| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (analysis) → `pt-plan-and-document` (落盘 + review prompt) | Plan review prompt generated → user initiates review → review passes | `execution-plans/<plan>.md` |
 | **EXECUTE** | Plan accepted | `pt-execution-plan-guardian` | `pt-completion-auditor` passes OR completion criteria in plan all checked | Code + tests + evidence |
 | **DELIVER** | Code complete, tests pass | `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
@@ -384,9 +392,9 @@ Any non-trivial development task (cross-module, new feature, architecture change
 
 1. Each stage MUST pass its gate before entering the next. No skipping gates.
 2. Review pattern is uniform across stages: generate structured review prompt → user decides whether to send → iterate if needed → pass.
-3. **Small fixes** (single-file bug fix, cosmetic tweak) skip PRODUCT + DESIGN + PLAN, entering directly at EXECUTE via `pt-small-fix-discipline`.
+3. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN, enter directly at EXECUTE via `pt-small-fix-discipline`.
 4. **Stage detection**: check `active_work` in project memory → read the referenced execution plan status table → determine current stage.
-5. If no active work exists and the request is ambiguous, ask whether it is a new product/capability, a new architecture decision, or implementation of an accepted plan.
+5. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?"
 
 ### 13.6 Session Continuity Protocol
 

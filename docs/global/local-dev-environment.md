@@ -210,7 +210,48 @@ make desktop
 
 ---
 
-## 7. Conventions
+## 7. Station DB Access (Debug / Read-Only)
+
+For debugging and data inspection, agents can query Station's PostgreSQL directly.
+
+**Connection via SSH tunnel** (remote Station):
+
+```bash
+# From profile env: PT_STATION_URL tells the host, DB name is peers_touch_<profile>
+ssh <station-host> -L 15432:localhost:5432 -N &
+psql -h localhost -p 15432 -U peers -d peers_touch_<profile_name>
+```
+
+**Connection via MCP** (if PostgreSQL MCP server is configured):
+
+```
+postgresql://peers:peers123@localhost:15432/peers_touch_<profile_name>
+```
+
+**Useful debug queries**:
+
+```sql
+-- Check registered actors
+SELECT ptid, created_at FROM actor_identity_keys;
+
+-- Check active conversations
+SELECT conversation_id, kind, current_sequence FROM messaging_conversations;
+
+-- Check enrolled devices per conversation
+SELECT conversation_id, ptid, device_id, active FROM messaging_conversation_member_devices;
+
+-- Check message queue
+SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_at DESC LIMIT 10;
+```
+
+**Rules**:
+- Read-only for debugging and acceptance diagnostics.
+- Never use direct DB writes as a standard recovery path — implement admin commands instead.
+- Connection details (host, port, DB name) come from the active profile, not hardcoded.
+
+---
+
+## 8. Conventions
 
 1. **Never SSH manually to deploy** — always use `make station` or `make deploy ENV=x`.
 2. **Never edit code on remote hosts** — deploy env discipline (AGENTS.md §12).
