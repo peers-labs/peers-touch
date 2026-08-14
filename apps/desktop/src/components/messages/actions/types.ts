@@ -25,4 +25,8 @@ export interface MessageActionContext {
   onBranch: () => void;
   onContinue: () => void;
   onDeleteAndRegenerate: () => void;
+  onTranslate: () => void;
+  onThread: () => void;
+  onReadAloud: () => void;
+  onExport: () => void;
 }
