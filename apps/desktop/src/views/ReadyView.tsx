@@ -10,9 +10,11 @@ import { listen } from '@tauri-apps/api/event';
 import { GlobalLayout } from '../components/GlobalLayout';
 import { AppSideNav } from '../components/AppSideNav';
 import { PageRouter } from '../components/PageRouter';
+import { CommandMenu } from '../components/CommandMenu';
 import { useHashRouter } from '../hooks/useHashRouter';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAppletPins } from '../hooks/useAppletPins';
+import { useCommandMenuShortcut } from '../hooks/useCommandMenuShortcut';
 import { notifyActiveAppletPage } from '../runtimes/appletsRuntime';
 import { PageHost } from '../kernel/PageHost';
 import { PageContextProvider } from '../kernel/PageContext';
@@ -35,6 +37,8 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
   const appletPins = useAppletPins();
   const setChatSurfaceVisible = useNavigationBadgeStore((s) => s.setChatSurfaceVisible);
   const standaloneApplet = isStandaloneAppletShell() && router.page.startsWith('applet:');
+
+  useCommandMenuShortcut();
 
   useEffect(() => {
     markPhaseStart('firstPaint');
@@ -110,6 +114,11 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
           />
         </ShellCommitProfiler>
       </GlobalLayout>
+      <CommandMenu
+        navigateTo={navigation.navigateTo}
+        navigateToAgentSurface={navigation.navigateToAgentSurface}
+        navigateToSettings={navigation.navigateToSettings}
+      />
     </PageContextProvider>,
   );
 }

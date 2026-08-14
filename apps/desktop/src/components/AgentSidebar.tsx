@@ -21,8 +21,14 @@ import {
   Upload,
   Loader2,
   Settings2,
+  MessageCircle,
+  FolderPlus,
+  FolderOpen,
+  FolderMinus,
 } from 'lucide-react';
 import { theme, Modal, Popover } from 'antd';
+import type { GlobalToken } from 'antd';
+import type { InputRef } from 'antd';
 import { Dropdown, Input, toast } from '@lobehub/ui';
 import type { MenuProps } from '@lobehub/ui';
 import { useTranslation } from 'react-i18next';
@@ -37,6 +43,9 @@ import {
   useActiveChatSlice,
 } from './agent/useActiveAgentStores';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
+import { usePortalStore } from '../store/portal';
+import { useSessionGroupStore } from '../store/sessionGroups';
+import type { SessionGroup } from '../store/sessionGroups';
 import { resolveI18nValue } from '../i18n';
 
 interface AgentSidebarProps {
@@ -138,6 +147,8 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     smartRenameTopic,
     revertGeneratedTitle,
     duplicateTopic,
+    pinTopic,
+    favoriteTopic,
   } = useActiveAgentTopicSlice((s) => ({
     activeAgentId: s.activeAgentId,
     topicsByAgentId: s.topicsByAgentId,
@@ -149,6 +160,8 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     smartRenameTopic: s.smartRenameTopic,
     revertGeneratedTitle: s.revertGeneratedTitle,
     duplicateTopic: s.duplicateTopic,
+    pinTopic: s.pinTopic,
+    favoriteTopic: s.favoriteTopic,
   }));
   const {
     searching: messageSearching,
@@ -168,6 +181,27 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   const importInputRef = useRef<HTMLInputElement>(null);
   const { token } = theme.useToken();
 
+  // Session groups
+  const {
+    groups: allSessionGroups,
+    loadGroups: loadSessionGroups,
+    createGroup: createSessionGroup,
+    renameGroup: renameSessionGroup,
+    deleteGroup: deleteSessionGroup,
+    moveTopicToGroup,
+    getGroupsForAgent,
+    getGroupForTopic,
+  } = useSessionGroupStore((s) => ({
+    groups: s.groups,
+    loadGroups: s.loadGroups,
+    createGroup: s.createGroup,
+    renameGroup: s.renameGroup,
+    deleteGroup: s.deleteGroup,
+    moveTopicToGroup: s.moveTopicToGroup,
+    getGroupsForAgent: s.getGroupsForAgent,
+    getGroupForTopic: s.getGroupForTopic,
+  }));
+
   const currentAgent = useMemo(
     () => agents.find((a) => a.name === selectedAgent),
     [agents, selectedAgent],
@@ -181,6 +215,10 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   useEffect(() => {
     loadAgents();
   }, [loadAgents]);
+
+  useEffect(() => {
+    loadSessionGroups();
+  }, [loadSessionGroups]);
 
   const loadAgentTopics = useCallback(() => {
     if (!currentAgent) {
@@ -247,8 +285,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       anchor.click();
       URL.revokeObjectURL(url);
       toast.success(t('agent.sidebar.toast.agentExported'));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.agentExportFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.agentExportFailed'));
     }
   }, [currentAgent, t]);
 
@@ -260,8 +299,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       await loadAgents();
       void openAgentChatSession(imported, { reason: 'import-agent-package' });
       toast.success(t('agent.sidebar.toast.agentImported', { name: imported.title || imported.name }));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.agentImportFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.agentImportFailed'));
     }
   }, [loadAgents, t]);
 
@@ -272,8 +312,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       await loadAgents();
       void openAgentChatSession(cloned, { reason: 'clone-agent' });
       toast.success(t('agent.sidebar.toast.agentCloned', { name: cloned.title || cloned.name }));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.agentCloneFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.agentCloneFailed'));
     }
   }, [currentAgent, loadAgents, t]);
 
@@ -281,8 +322,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     try {
       await setDefaultAgent(agent.id);
       toast.success(t('agent.sidebar.toast.defaultAgentUpdated', { name: agent.title || agent.name }));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.defaultAgentUpdateFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.defaultAgentUpdateFailed'));
     }
   }, [setDefaultAgent, t]);
 
@@ -291,8 +333,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       await api.updateAgent(agent.id, { pinned: !agent.pinned });
       await loadAgents();
       toast.success(t(agent.pinned ? 'agent.sidebar.toast.agentUnpinned' : 'agent.sidebar.toast.agentPinned', { name: agent.title || agent.name }));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.agentPinUpdateFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.agentPinUpdateFailed'));
     }
   }, [loadAgents, t]);
 
@@ -301,8 +344,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       await api.updateAgent(agent.id, { favorite: !agent.favorite });
       await loadAgents();
       toast.success(t(agent.favorite ? 'agent.sidebar.toast.agentUnfavorited' : 'agent.sidebar.toast.agentFavorited', { name: agent.title || agent.name }));
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.agentFavoriteUpdateFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.agentFavoriteUpdateFailed'));
     }
   }, [loadAgents, t]);
 
@@ -335,6 +379,11 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     [agentTopics, storeSessions, selectSession, onNavigateChat],
   );
 
+  const pinnedTopics = useMemo(
+    () => agentTopics.filter((t) => t.pinned || t.favorite),
+    [agentTopics],
+  );
+
   const topicGroups = useMemo(() => {
     let filtered = agentTopics;
     if (topicSearch) {
@@ -345,6 +394,28 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     }
     return groupTopicsByDate(filtered, t);
   }, [agentTopics, topicSearch, t]);
+
+  // Session groups for current agent
+  const agentSessionGroups = useMemo(
+    () => (currentAgent ? getGroupsForAgent(currentAgent.id) : []),
+    [currentAgent, getGroupsForAgent, allSessionGroups],
+  );
+
+  // Topics that belong to a session group (keys)
+  const groupedTopicKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const g of agentSessionGroups) {
+      for (const k of g.topicKeys) keys.add(k);
+    }
+    return keys;
+  }, [agentSessionGroups]);
+
+  const handleCreateSessionGroup = useCallback(() => {
+    if (!currentAgent) return;
+    const name = window.prompt(t('agent.sidebar.groups.namePlaceholder'));
+    if (!name?.trim()) return;
+    createSessionGroup(currentAgent.id, name.trim());
+  }, [currentAgent, createSessionGroup, t]);
 
   const totalTopics = agentTopics.length;
   const loadingTopics = currentAgent ? !!loadingAgentIds[currentAgent.id] : false;
@@ -460,23 +531,126 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
             style={{ margin: '0 4px' }}
           />
         ) : (
-          topicGroups.map((group) => (
-            <TopicGroup
-              key={`${currentAgent?.id || 'agent'}:${group.key}`}
-              label={group.label}
-              topics={group.items}
-              currentSessionKey={currentSessionKey}
-              onSelectTopic={handleSelectTopic}
-              onDeleteTopic={handleDeleteTopic}
-              onReload={loadAgentTopics}
-              onRenameTopic={renameTopic}
-              onSmartRenameTopic={smartRenameTopic}
-              onRevertGeneratedTitle={revertGeneratedTitle}
-              onDuplicateTopic={duplicateTopic}
-              token={token}
-              t={t}
-            />
-          ))
+          <>
+            {pinnedTopics.length > 0 && !topicSearch && (
+              <div style={{ marginBottom: 4 }}>
+                <Flexbox
+                  horizontal
+                  align="center"
+                  gap={4}
+                  style={{
+                    minHeight: 28,
+                    padding: '0 8px',
+                  }}
+                >
+                  <Pin size={12} style={{ color: token.colorTextQuaternary }} />
+                  <span style={{ fontSize: 12, color: token.colorTextSecondary, fontWeight: 500 }}>
+                    {t('agent.sidebar.pinnedSection')}
+                  </span>
+                </Flexbox>
+                <Flexbox gap={1}>
+                  {pinnedTopics.map((topic) => (
+                    <TopicItem
+                      key={`pinned-${topic.key}`}
+                      topic={topic}
+                      isActive={topic.key === currentSessionKey}
+                      onSelect={() => handleSelectTopic(topic.key)}
+                      onDelete={() => handleDeleteTopic(topic.key)}
+                      onReload={loadAgentTopics}
+                      onRenameTopic={renameTopic}
+                      onSmartRenameTopic={smartRenameTopic}
+                      onRevertGeneratedTitle={revertGeneratedTitle}
+                      onDuplicateTopic={duplicateTopic}
+                      onPinTopic={pinTopic}
+                      onFavoriteTopic={favoriteTopic}
+                      sessionGroups={agentSessionGroups}
+                      onMoveToGroup={moveTopicToGroup}
+                      currentGroupId={getGroupForTopic(topic.key)?.id}
+                      token={token}
+                      t={t}
+                    />
+                  ))}
+                </Flexbox>
+              </div>
+            )}
+
+            {/* Session Groups */}
+            {agentSessionGroups.length > 0 && !topicSearch && (
+              <>
+                {agentSessionGroups.map((sg) => {
+                  const groupTopics = agentTopics.filter((tp) => sg.topicKeys.includes(tp.key));
+                  return (
+                    <SessionGroupSection
+                      key={sg.id}
+                      group={sg}
+                      topics={groupTopics}
+                      currentSessionKey={currentSessionKey}
+                      onSelectTopic={handleSelectTopic}
+                      onDeleteTopic={handleDeleteTopic}
+                      onReload={loadAgentTopics}
+                      onRenameTopic={renameTopic}
+                      onSmartRenameTopic={smartRenameTopic}
+                      onRevertGeneratedTitle={revertGeneratedTitle}
+                      onDuplicateTopic={duplicateTopic}
+                      onPinTopic={pinTopic}
+                      onFavoriteTopic={favoriteTopic}
+                      onRenameGroup={renameSessionGroup}
+                      onDeleteGroup={deleteSessionGroup}
+                      sessionGroups={agentSessionGroups}
+                      onMoveToGroup={moveTopicToGroup}
+                      getGroupForTopic={getGroupForTopic}
+                      token={token}
+                      t={t}
+                    />
+                  );
+                })}
+              </>
+            )}
+
+            {/* Create Group action */}
+            {!topicSearch && (
+              <Flexbox
+                horizontal
+                align="center"
+                gap={4}
+                onClick={handleCreateSessionGroup}
+                style={{
+                  minHeight: 28,
+                  padding: '0 8px',
+                  cursor: 'pointer',
+                  marginBottom: 4,
+                }}
+              >
+                <FolderPlus size={12} style={{ color: token.colorTextQuaternary }} />
+                <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+                  {t('agent.sidebar.groups.create')}
+                </span>
+              </Flexbox>
+            )}
+
+            {topicGroups.map((group) => (
+              <TopicGroup
+                key={`${currentAgent?.id || 'agent'}:${group.key}`}
+                label={group.label}
+                topics={group.items.filter((tp) => !groupedTopicKeys.has(tp.key))}
+                currentSessionKey={currentSessionKey}
+                onSelectTopic={handleSelectTopic}
+                onDeleteTopic={handleDeleteTopic}
+                onReload={loadAgentTopics}
+                onRenameTopic={renameTopic}
+                onSmartRenameTopic={smartRenameTopic}
+                onRevertGeneratedTitle={revertGeneratedTitle}
+                onDuplicateTopic={duplicateTopic}
+                onPinTopic={pinTopic}
+                onFavoriteTopic={favoriteTopic}
+                sessionGroups={agentSessionGroups}
+                onMoveToGroup={moveTopicToGroup}
+                getGroupForTopic={getGroupForTopic}
+                token={token}
+                t={t}
+              />
+            ))}
+          </>
         )}
       </Flexbox>
     </Flexbox>
@@ -489,8 +663,8 @@ function AgentContextCard({
   t,
 }: {
   agent?: Agent;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   if (!agent) {
     return (
@@ -538,8 +712,8 @@ function MessageSearchResults({
   results: AgentMessageSearchResult[];
   searching: boolean;
   onSelectResult: (key: string) => void;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   if (searching) {
     return (
@@ -599,7 +773,7 @@ function NavItem({
   label: string;
   onClick?: () => void;
   active?: boolean;
-  token: any;
+  token: GlobalToken;
   style?: React.CSSProperties;
 }) {
   return (
@@ -634,6 +808,182 @@ function NavItem({
   );
 }
 
+function SessionGroupSection({
+  group,
+  topics,
+  currentSessionKey,
+  onSelectTopic,
+  onDeleteTopic,
+  onReload,
+  onRenameTopic,
+  onSmartRenameTopic,
+  onRevertGeneratedTitle,
+  onDuplicateTopic,
+  onPinTopic,
+  onFavoriteTopic,
+  onRenameGroup,
+  onDeleteGroup,
+  sessionGroups,
+  onMoveToGroup,
+  getGroupForTopic,
+  token,
+  t,
+}: {
+  group: SessionGroup;
+  topics: AgentTopic[];
+  currentSessionKey: string;
+  onSelectTopic: (key: string) => void;
+  onDeleteTopic: (key: string) => void;
+  onReload: () => void;
+  onRenameTopic: (key: string, title: string) => Promise<void>;
+  onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
+  onRevertGeneratedTitle: (key: string) => Promise<void>;
+  onDuplicateTopic: (key: string) => Promise<void>;
+  onPinTopic: (key: string, pinned: boolean) => Promise<void>;
+  onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
+  onRenameGroup: (groupId: string, name: string) => void;
+  onDeleteGroup: (groupId: string) => void;
+  sessionGroups: SessionGroup[];
+  onMoveToGroup: (topicKey: string, targetGroupId: string | null) => void;
+  getGroupForTopic: (topicKey: string) => SessionGroup | undefined;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(group.name);
+  const renameRef = useRef<InputRef>(null);
+
+  useEffect(() => {
+    if (renaming) {
+      setTimeout(() => renameRef.current?.focus({ cursor: 'end' }), 50);
+    }
+  }, [renaming]);
+
+  const handleRenameStart = useCallback(() => {
+    setRenameValue(group.name);
+    setRenaming(true);
+  }, [group.name]);
+
+  const handleRenameSave = useCallback(() => {
+    setRenaming(false);
+    const trimmed = renameValue.trim();
+    if (!trimmed || trimmed === group.name) return;
+    onRenameGroup(group.id, trimmed);
+  }, [renameValue, group.id, group.name, onRenameGroup]);
+
+  const handleDelete = useCallback(() => {
+    Modal.confirm({
+      title: t('agent.sidebar.groups.delete'),
+      content: t('agent.sidebar.groups.deleteConfirm'),
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: () => onDeleteGroup(group.id),
+    });
+  }, [group.id, onDeleteGroup, t]);
+
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <Flexbox
+        horizontal
+        align="center"
+        gap={4}
+        style={{
+          minHeight: 28,
+          padding: '0 8px',
+          cursor: 'pointer',
+        }}
+      >
+        <ChevronRight
+          size={12}
+          onClick={() => setCollapsed(!collapsed)}
+          style={{
+            color: token.colorTextQuaternary,
+            transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+            transition: 'transform 0.15s',
+          }}
+        />
+        <FolderOpen size={12} style={{ color: token.colorPrimary, flexShrink: 0 }} />
+        {renaming ? (
+          <Input
+            ref={renameRef}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onPressEnter={handleRenameSave}
+            onBlur={handleRenameSave}
+            onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setRenaming(false); } }}
+            onClick={(e) => e.stopPropagation()}
+            size="small"
+            style={{ flex: 1, fontSize: 12 }}
+          />
+        ) : (
+          <span
+            onClick={() => setCollapsed(!collapsed)}
+            style={{ flex: 1, fontSize: 12, color: token.colorTextSecondary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {group.name}
+            <span style={{ marginLeft: 4, color: token.colorTextQuaternary, fontWeight: 400 }}>
+              {topics.length}
+            </span>
+          </span>
+        )}
+        {!renaming && (
+          <Dropdown
+            menu={{
+              items: [
+                { key: 'rename', icon: <Pencil size={14} />, label: t('agent.sidebar.groups.rename'), onClick: handleRenameStart },
+                { type: 'divider' },
+                { key: 'delete', icon: <Trash2 size={14} />, label: t('agent.sidebar.groups.delete'), danger: true, onClick: handleDelete },
+              ],
+            }}
+            trigger={['click']}
+            placement="bottomRight"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: 'pointer', color: token.colorTextTertiary }}
+            >
+              <MoreHorizontal size={12} />
+            </div>
+          </Dropdown>
+        )}
+      </Flexbox>
+
+      {!collapsed && (
+        <Flexbox gap={1}>
+          {topics.length === 0 ? (
+            <span style={{ padding: '4px 24px', fontSize: 11, color: token.colorTextQuaternary }}>
+              {t('agent.sidebar.groups.empty')}
+            </span>
+          ) : (
+            topics.map((topic) => (
+              <TopicItem
+                key={topic.key}
+                topic={topic}
+                isActive={topic.key === currentSessionKey}
+                onSelect={() => onSelectTopic(topic.key)}
+                onDelete={() => onDeleteTopic(topic.key)}
+                onReload={onReload}
+                onRenameTopic={onRenameTopic}
+                onSmartRenameTopic={onSmartRenameTopic}
+                onRevertGeneratedTitle={onRevertGeneratedTitle}
+                onDuplicateTopic={onDuplicateTopic}
+                onPinTopic={onPinTopic}
+                onFavoriteTopic={onFavoriteTopic}
+                sessionGroups={sessionGroups}
+                onMoveToGroup={onMoveToGroup}
+                currentGroupId={getGroupForTopic(topic.key)?.id}
+                token={token}
+                t={t}
+              />
+            ))
+          )}
+        </Flexbox>
+      )}
+    </div>
+  );
+}
+
 function TopicGroup({
   label,
   topics,
@@ -645,6 +995,11 @@ function TopicGroup({
   onSmartRenameTopic,
   onRevertGeneratedTitle,
   onDuplicateTopic,
+  onPinTopic,
+  onFavoriteTopic,
+  sessionGroups,
+  onMoveToGroup,
+  getGroupForTopic,
   token,
   t,
 }: {
@@ -658,8 +1013,13 @@ function TopicGroup({
   onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
   onRevertGeneratedTitle: (key: string) => Promise<void>;
   onDuplicateTopic: (key: string) => Promise<void>;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  onPinTopic: (key: string, pinned: boolean) => Promise<void>;
+  onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
+  sessionGroups: SessionGroup[];
+  onMoveToGroup: (topicKey: string, targetGroupId: string | null) => void;
+  getGroupForTopic: (topicKey: string) => SessionGroup | undefined;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -703,6 +1063,11 @@ function TopicGroup({
               onSmartRenameTopic={onSmartRenameTopic}
               onRevertGeneratedTitle={onRevertGeneratedTitle}
               onDuplicateTopic={onDuplicateTopic}
+              onPinTopic={onPinTopic}
+              onFavoriteTopic={onFavoriteTopic}
+              sessionGroups={sessionGroups}
+              onMoveToGroup={onMoveToGroup}
+              currentGroupId={getGroupForTopic(topic.key)?.id}
               token={token}
               t={t}
             />
@@ -729,6 +1094,11 @@ function TopicItem({
   onSmartRenameTopic,
   onRevertGeneratedTitle,
   onDuplicateTopic,
+  onPinTopic,
+  onFavoriteTopic,
+  sessionGroups,
+  onMoveToGroup,
+  currentGroupId,
   token,
   t,
 }: {
@@ -741,13 +1111,18 @@ function TopicItem({
   onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
   onRevertGeneratedTitle: (key: string) => Promise<void>;
   onDuplicateTopic: (key: string) => Promise<void>;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  onPinTopic: (key: string, pinned: boolean) => Promise<void>;
+  onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
+  sessionGroups?: SessionGroup[];
+  onMoveToGroup?: (topicKey: string, targetGroupId: string | null) => void;
+  currentGroupId?: string;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [hovered, setHovered] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameTitle, setRenameTitle] = useState('');
-  const renameInputRef = useRef<any>(null);
+  const renameInputRef = useRef<InputRef>(null);
 
   useEffect(() => {
     if (renaming) {
@@ -772,8 +1147,9 @@ function TopicItem({
     try {
       await onRenameTopic(topic.key, newTitle);
       onReload();
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.renameFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.renameFailed'));
     }
   }, [renameTitle, topic.title, topic.key, onRenameTopic, onReload, t]);
 
@@ -783,8 +1159,9 @@ function TopicItem({
       const res = await onSmartRenameTopic(topic.key);
       toast.success(t('agent.sidebar.toast.renamedTo', { title: res.title }));
       onReload();
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.smartRenameFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.smartRenameFailed'));
     }
   }, [topic.key, onSmartRenameTopic, onReload, t]);
 
@@ -794,8 +1171,9 @@ function TopicItem({
       await onRevertGeneratedTitle(topic.key);
       toast.success(t('agent.sidebar.toast.titleReverted'));
       onReload();
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.renameFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.renameFailed'));
     }
   }, [topic.key, onRevertGeneratedTitle, onReload, t]);
 
@@ -804,8 +1182,9 @@ function TopicItem({
       await onDuplicateTopic(topic.key);
       toast.success(t('agent.sidebar.toast.topicDuplicated'));
       onReload();
-    } catch (e: any) {
-      toast.error(e.message || t('agent.sidebar.toast.duplicateFailed'));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(message || t('agent.sidebar.toast.duplicateFailed'));
     }
   }, [topic.key, onDuplicateTopic, onReload, t]);
 
@@ -820,12 +1199,54 @@ function TopicItem({
     });
   }, [onDelete]);
 
+  const handlePin = useCallback(async () => {
+    await onPinTopic(topic.key, !topic.pinned);
+  }, [topic.key, topic.pinned, onPinTopic]);
+
+  const handleFavorite = useCallback(async () => {
+    await onFavoriteTopic(topic.key, !topic.favorite);
+  }, [topic.key, topic.favorite, onFavoriteTopic]);
+
+  const handleOpenComments = useCallback(() => {
+    usePortalStore.getState().openTopicComments(topic.key);
+  }, [topic.key]);
+
+  // Build "Move to group" submenu items
+  const moveToGroupItems: MenuProps['items'] = useMemo(() => {
+    if (!sessionGroups || !onMoveToGroup) return [];
+    const items: MenuProps['items'] = [];
+    for (const sg of sessionGroups) {
+      if (sg.id === currentGroupId) continue;
+      items.push({
+        key: `move-to-${sg.id}`,
+        icon: <FolderOpen size={14} />,
+        label: sg.name,
+        onClick: () => onMoveToGroup(topic.key, sg.id),
+      });
+    }
+    if (currentGroupId) {
+      if (items.length > 0) items.push({ type: 'divider' });
+      items.push({
+        key: 'remove-from-group',
+        icon: <FolderMinus size={14} />,
+        label: t('agent.sidebar.menu.removeFromGroup'),
+        onClick: () => onMoveToGroup(topic.key, null),
+      });
+    }
+    return items;
+  }, [sessionGroups, onMoveToGroup, currentGroupId, topic.key, t]);
+
   const menuItems: MenuProps['items'] = [
-    { key: 'favorite', icon: <Star size={14} />, label: t('agent.sidebar.menu.favorite'), disabled: true },
+    { key: 'pin', icon: <Pin size={14} />, label: topic.pinned ? t('agent.sidebar.menu.unpin') : t('agent.sidebar.menu.pin'), onClick: handlePin },
+    { key: 'favorite', icon: <Star size={14} />, label: topic.favorite ? t('agent.sidebar.menu.unfavorite') : t('agent.sidebar.menu.favorite'), onClick: handleFavorite },
     { type: 'divider' },
+    ...(moveToGroupItems.length > 0
+      ? [{ key: 'move-to-group', icon: <FolderOpen size={14} />, label: t('agent.sidebar.menu.moveToGroup'), children: moveToGroupItems }, { type: 'divider' as const }]
+      : []),
     { key: 'smart-rename', icon: <Sparkles size={14} />, label: t('agent.sidebar.menu.smartRename'), onClick: handleSmartRename },
     { key: 'rename', icon: <Pencil size={14} />, label: t('agent.sidebar.menu.rename'), onClick: handleRename },
     { key: 'duplicate', icon: <Copy size={14} />, label: t('agent.sidebar.menu.duplicate'), onClick: handleDuplicate },
+    { key: 'comments', icon: <MessageCircle size={14} />, label: t('agent.sidebar.menu.comments'), onClick: handleOpenComments },
     { type: 'divider' },
     { key: 'delete', icon: <Trash2 size={14} />, label: t('agent.sidebar.menu.delete'), danger: true, onClick: handleDeleteConfirm },
   ];
@@ -974,8 +1395,8 @@ function AgentPicker({
   onExport: () => void;
   onImportClick: () => void;
   onNavigateMarketplace?: () => void;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const filtered = searchText
     ? agents.filter(
@@ -1156,8 +1577,8 @@ function AgentPickerItem({
   onSetDefault: () => void;
   onTogglePin: () => void;
   onToggleFavorite: () => void;
-  token: any;
-  t: (key: string, options?: Record<string, any>) => string;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [hovered, setHovered] = useState(false);
   const chatConfig = parseAgentChatConfig(agent);

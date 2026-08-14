@@ -98,6 +98,36 @@ an isolated, non-architectural task as ad hoc with a temporary acceptance
 checklist. Architecture migrations and cross-layer refactors must stop with
 `EXECUTION_BLOCKED_BY_PLAN`; they may not proceed ad hoc.
 
+## Escalation Decision Logic
+
+The agent self-drives execution. It escalates to the user only when the decision
+requires product judgment that cannot be derived from existing sources.
+
+Decision tree for any choice point during execution:
+
+```text
+Can the answer be derived from docs/architecture, AGENTS.md, proto, or code?
+  └─ YES → Agent decides, proceeds.
+
+Multiple valid approaches exist — does the difference affect user-visible behavior?
+  └─ NO (pure implementation detail) → Agent picks the architecturally cleaner option.
+  └─ YES (user can perceive the difference) → ASK USER (product decision).
+
+Information is missing:
+  ├─ Missing technical info → Agent investigates (read code, run experiment).
+  └─ Missing product intent → ASK USER.
+
+Architecture constraint forces a UX difference vs. the reference implementation:
+  └─ Forced by constraint (no alternative) → Agent proceeds with constraint-driven design.
+  └─ Constraint allows two UX patterns (choice is preference) → ASK USER.
+```
+
+Rules:
+- Never ask "can I proceed to the next step?" — proceed if completion criteria are met.
+- Never ask "is this design OK?" as a blanket confirmation — validate it yourself against architecture sources.
+- When escalating, ask ONE specific question with concrete options, not an open-ended "what do you think?"
+- The only natural external gate is PR review (git workflow). All other stage transitions are self-judged.
+
 ## Standing Directive
 
 Treat this as the default operating contract for every execution turn, even when

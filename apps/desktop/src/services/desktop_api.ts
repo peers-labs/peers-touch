@@ -815,6 +815,8 @@ export interface Session {
   model_override?: string;
   created_at: string;
   updated_at: string;
+  pinned?: boolean;
+  favorite?: boolean;
 }
 
 export interface MessageAttachment {
@@ -2490,6 +2492,14 @@ export interface AgentLocalToolResultEvent {
   };
 }
 
+export interface McpToolSchemaEntry {
+  name: string;
+  description: string;
+  parameters_schema: string;
+  server_name: string;
+  source: 'mcp';
+}
+
 export interface AgentExecuteTurnInput {
   stream_id?: string;
   conversation_id: string;
@@ -2511,6 +2521,8 @@ export interface AgentExecuteTurnInput {
   context_window_size?: number;
   max_retries?: number;
   knowledge_resources?: AgentExecuteTurnKnowledgeResource[];
+  available_tools?: McpToolSchemaEntry[];
+  memory_disabled?: boolean;
 }
 
 function createAgentTurnStreamId(): string {
@@ -3203,6 +3215,18 @@ export const api = {
     );
   },
 
+  ossPickLocalFolder: async (): Promise<string> => {
+    const response = await invokeRustCommand<void, TauriStubPayload>(
+      'oss_pick_local_folder',
+    );
+    if (response.ok && response.data?.status) {
+      return response.data.status;
+    }
+    throw new Error(
+      response.error?.message || 'oss_pick_local_folder failed',
+    );
+  },
+
   /**
    * Chat consumer — push the local file to the bound Station's OSS
    * subserver and return the canonical attachment payload (`cid`,
@@ -3401,6 +3425,18 @@ export const api = {
     invokeRustDataFromStatus<ChatConversationInput, { ok: boolean; title: string }>(
       'chat_smart_rename_conversation',
       { conversation_id: key },
+    ),
+
+  pinSession: (key: string, pinned: boolean) =>
+    invokeRustDataFromStatus<{ conversation_id: string; pinned: boolean }, { ok: boolean }>(
+      'chat_pin_conversation',
+      { conversation_id: key, pinned },
+    ),
+
+  favoriteSession: (key: string, favorite: boolean) =>
+    invokeRustDataFromStatus<{ conversation_id: string; favorite: boolean }, { ok: boolean }>(
+      'chat_favorite_conversation',
+      { conversation_id: key, favorite },
     ),
 
   setSessionModel: (key: string, model: string) =>
@@ -4470,6 +4506,9 @@ export const api = {
 
   deleteMemory: (id: string) => invokeRustDataFromStatus<MemoryIdInput, { ok: boolean }>('memory_delete', { id }),
 
+  updateMemory: (id: string, content: string) =>
+    invokeRustDataFromStatus<{ id: string; content: string }, { ok: boolean; item: Memory | null }>('memory_update', { id, content }),
+
   searchMemories: (
     query: string,
     layers?: string[],
@@ -5063,6 +5102,12 @@ export const api = {
 
   resolveErrorAction: (action: { type: string; cliId?: string; providerId?: string; label: string }) =>
     invoke<{ ok: boolean; reauth?: boolean; message?: string; opened?: boolean }>('resolve_error_action', { action }),
+
+  quickCompletion: (agentId: string, prompt: string) =>
+    invokeRustDataFromStatus<
+      { agent_id: string; prompt: string },
+      { ok: boolean; content: string }
+    >('agent_quick_completion', { agent_id: agentId, prompt }).then((r) => r.content ?? ''),
 };
 
 export interface ConfigFieldMeta {
@@ -5243,6 +5288,8 @@ function mapAIChatSessionToSession(item: any): Session {
     model_override: item.model_name || item.modelName || undefined,
     created_at: millisToISO(createdMillis),
     updated_at: millisToISO(updatedMillis),
+    pinned: item.pinned ?? false,
+    favorite: item.favorite ?? false,
   };
 }
 
@@ -5731,6 +5778,14 @@ export async function submitAgentFeedback(
     signal,
     comment: comment ?? null,
   });
+}
+
+export async function agentQuickCompletion(agentId: string, prompt: string): Promise<string> {
+  const result = await invokeRustDataFromStatus<
+    { agent_id: string; prompt: string },
+    { ok: boolean; content: string }
+  >('agent_quick_completion', { agent_id: agentId, prompt });
+  return result.content ?? '';
 }
 
 // ---------------------------------------------------------------------------

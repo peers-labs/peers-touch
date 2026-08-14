@@ -4,11 +4,17 @@ import { uploadAgentAttachmentFile } from '../../services/agentAttachments';
 import type { ChatAttachmentInput } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 
+export type AgentDraftStatus = 'uploading' | 'ready' | 'failed';
+
 export interface AgentAttachmentDraft {
   id: string;
   name: string;
+  mimeType: string;
+  size: number;
   previewUrl: string | null;
-  status: 'uploading' | 'ready' | 'failed';
+  status: AgentDraftStatus;
+  progress: number;
+  error?: string;
   attachment?: ChatAttachmentInput;
 }
 
@@ -26,6 +32,10 @@ function revokePreviewUrl(draft: AgentAttachmentDraft): void {
   if (draft.previewUrl) URL.revokeObjectURL(draft.previewUrl);
 }
 
+/** File types accepted by the agent attachment flow. */
+export const AGENT_ATTACHMENT_ACCEPT =
+  'image/*,application/pdf,.txt,.md,.json,.csv,.zip,.tar.gz,.docx,.xlsx,.pptx,audio/*,video/*';
+
 export function useAgentAttachmentDrafts({
   conversationId,
   disabled,
@@ -33,6 +43,10 @@ export function useAgentAttachmentDrafts({
 }: UseAgentAttachmentDraftsOptions) {
   const draftsRef = useRef<AgentAttachmentDraft[]>([]);
   const [drafts, setDrafts] = useState<AgentAttachmentDraft[]>([]);
+
+  const patchDraft = useCallback((id: string, patch: Partial<AgentAttachmentDraft>) => {
+    setDrafts((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }, []);
 
   const clearDrafts = useCallback(() => {
     setDrafts((current) => {
@@ -49,31 +63,40 @@ export function useAgentAttachmentDrafts({
     });
   }, []);
 
+  const uploadDraft = useCallback((draft: AgentAttachmentDraft, file: File) => {
+    patchDraft(draft.id, { status: 'uploading', progress: 10, error: undefined });
+    uploadAgentAttachmentFile({ conversationId }, file)
+      .then((attachment) => {
+        patchDraft(draft.id, { status: 'ready', progress: 100, attachment });
+      })
+      .catch((error) => {
+        log.error('agentChat', 'attachment upload failed', error);
+        const errorMessage = error instanceof Error ? error.message : 'upload_failed';
+        patchDraft(draft.id, { status: 'failed', progress: 0, error: errorMessage });
+      });
+  }, [conversationId, patchDraft]);
+
   const addFiles = useCallback((files: File[]) => {
     if (disabled || files.length === 0) return;
     const added = files.map<AgentAttachmentDraft>((file) => ({
       id: nextDraftId(),
       name: file.name || fallbackName,
+      mimeType: file.type || 'application/octet-stream',
+      size: file.size,
       previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
       status: 'uploading',
+      progress: 0,
     }));
     setDrafts((current) => [...current, ...added]);
     files.forEach((file, index) => {
-      const draft = added[index];
-      uploadAgentAttachmentFile({ conversationId }, file)
-        .then((attachment) => {
-          setDrafts((current) => current.map((item) => (
-            item.id === draft.id ? { ...item, status: 'ready', attachment } : item
-          )));
-        })
-        .catch((error) => {
-          log.error('agentChat', 'attachment upload failed', error);
-          setDrafts((current) => current.map((item) => (
-            item.id === draft.id ? { ...item, status: 'failed' } : item
-          )));
-        });
+      uploadDraft(added[index], file);
     });
-  }, [conversationId, disabled, fallbackName]);
+  }, [disabled, fallbackName, uploadDraft]);
+
+  const retryDraft = useCallback((id: string, file: File) => {
+    const draft = draftsRef.current.find((item) => item.id === id);
+    if (draft) uploadDraft(draft, file);
+  }, [uploadDraft]);
 
   useEffect(() => {
     draftsRef.current = drafts;
@@ -93,8 +116,10 @@ export function useAgentAttachmentDrafts({
       .map((draft) => draft.attachment)
       .filter((attachment): attachment is ChatAttachmentInput => Boolean(attachment)),
     uploading: drafts.some((draft) => draft.status === 'uploading'),
+    failed: drafts.some((draft) => draft.status === 'failed'),
     addFiles,
     clearDrafts,
     removeDraft,
+    retryDraft,
   };
 }

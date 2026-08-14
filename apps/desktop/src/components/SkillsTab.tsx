@@ -11,8 +11,8 @@ import {
   FolderOpen, History, Link as LinkIcon, Plus, RefreshCw, RotateCcw, Search,
   Trash2, Upload as UploadIcon,
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { LazyMarkdown } from './LazyMarkdown';
+import { chatMarkdownProps } from './messages/markdownConfig';
 import { useTranslation } from 'react-i18next';
 import {
   api,
@@ -877,7 +877,7 @@ function MarketSkillOverview({ detail }: { detail: MarketSkillDetail | null; tok
       {/* Markdown content */}
       {sections.body && (
         <div style={{ maxHeight: 400, overflow: 'auto' }}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{sections.body}</ReactMarkdown>
+          <LazyMarkdown {...chatMarkdownProps} fontSize={14}>{sections.body}</LazyMarkdown>
         </div>
       )}
 
@@ -1444,7 +1444,7 @@ function SkillProtocolPreview({ skill, content, token }: { skill: SkillRecord | 
       <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
         <Text strong>{t('provider.skills.detail.content')}</Text>
         <div className="selectable" style={{ marginTop: 8, maxHeight: 360, overflow: 'auto' }}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{sections.body || ''}</ReactMarkdown>
+          <LazyMarkdown {...chatMarkdownProps} fontSize={14}>{sections.body || ''}</LazyMarkdown>
         </div>
       </Card>
       <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>

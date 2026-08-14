@@ -1,0 +1,192 @@
+syntax = "proto3";
+
+package domain.agent;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model";
+
+// ─── Agent Groups ────────────────────────────────────────────
+
+message AgentGroup {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  repeated string member_agent_ids = 4;
+  string orchestration_mode = 5; // "sequential" | "parallel" | "router"
+  string created_at = 6;
+  string updated_at = 7;
+}
+
+message CreateAgentGroupRequest {
+  string name = 1;
+  string description = 2;
+  string orchestration_mode = 3;
+}
+
+message CreateAgentGroupResponse {
+  AgentGroup group = 1;
+}
+
+message UpdateAgentGroupRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string orchestration_mode = 4;
+  repeated string member_agent_ids = 5;
+}
+
+message UpdateAgentGroupResponse {
+  AgentGroup group = 1;
+}
+
+message DeleteAgentGroupRequest {
+  string id = 1;
+}
+
+message DeleteAgentGroupResponse {}
+
+message ListAgentGroupsRequest {}
+
+message ListAgentGroupsResponse {
+  repeated AgentGroup groups = 1;
+}
+
+// ─── Topic Comments ──────────────────────────────────────────
+
+message TopicComment {
+  string id = 1;
+  string topic_key = 2;
+  string content = 3;
+  string created_at = 4;
+  string author_id = 5;
+}
+
+message CreateTopicCommentRequest {
+  string topic_key = 1;
+  string content = 2;
+}
+
+message CreateTopicCommentResponse {
+  TopicComment comment = 1;
+}
+
+message DeleteTopicCommentRequest {
+  string topic_key = 1;
+  string comment_id = 2;
+}
+
+message DeleteTopicCommentResponse {}
+
+message ListTopicCommentsRequest {
+  string topic_key = 1;
+}
+
+message ListTopicCommentsResponse {
+  repeated TopicComment comments = 1;
+}
+
+// ─── Evaluation ──────────────────────────────────────────────
+
+message EvalDatasetItem {
+  string id = 1;
+  string input = 2;
+  string expected_output = 3;
+  repeated string tags = 4;
+}
+
+message EvalDataset {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  repeated EvalDatasetItem items = 4;
+  string created_at = 5;
+}
+
+message CreateEvalDatasetRequest {
+  string name = 1;
+  string description = 2;
+  repeated EvalDatasetItem items = 3;
+}
+
+message CreateEvalDatasetResponse {
+  EvalDataset dataset = 1;
+}
+
+message UpdateEvalDatasetRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  repeated EvalDatasetItem items = 4;
+}
+
+message UpdateEvalDatasetResponse {
+  EvalDataset dataset = 1;
+}
+
+message DeleteEvalDatasetRequest {
+  string id = 1;
+}
+
+message DeleteEvalDatasetResponse {}
+
+message ListEvalDatasetsRequest {}
+
+message ListEvalDatasetsResponse {
+  repeated EvalDataset datasets = 1;
+}
+
+// ─── Custom Plugins ──────────────────────────────────────────
+
+message CustomPlugin {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string endpoint = 4;
+  string method = 5; // "GET" | "POST"
+  string auth_type = 6; // "none" | "bearer" | "api-key"
+  string input_schema = 7; // JSON Schema string
+  string output_schema = 8;
+  bool enabled = 9;
+  string created_at = 10;
+}
+
+message CreateCustomPluginRequest {
+  string name = 1;
+  string description = 2;
+  string endpoint = 3;
+  string method = 4;
+  string auth_type = 5;
+  string input_schema = 6;
+  string output_schema = 7;
+}
+
+message CreateCustomPluginResponse {
+  CustomPlugin plugin = 1;
+}
+
+message UpdateCustomPluginRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string endpoint = 4;
+  string method = 5;
+  string auth_type = 6;
+  string input_schema = 7;
+  string output_schema = 8;
+  bool enabled = 9;
+}
+
+message UpdateCustomPluginResponse {
+  CustomPlugin plugin = 1;
+}
+
+message DeleteCustomPluginRequest {
+  string id = 1;
+}
+
+message DeleteCustomPluginResponse {}
+
+message ListCustomPluginsRequest {}
+
+message ListCustomPluginsResponse {
+  repeated CustomPlugin plugins = 1;
+}

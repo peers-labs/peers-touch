@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import type { SearchResultItem, SearchSourceGroup } from '../services/desktop_api';
 import { useActiveSearchSlice } from './useActiveSearchStore';
+import { LazyMarkdown } from '../components/LazyMarkdown';
+import { chatMarkdownProps } from '../components/messages/markdownConfig';
 
 function useDebounce(callback: (value: string) => void, delay: number) {
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -550,8 +552,11 @@ function AIAnswerPanel({
         </Flexbox>
         <div
           style={{ fontSize: 14, lineHeight: 1.7, color: token.colorText }}
-          dangerouslySetInnerHTML={{ __html: simpleMarkdown(answer) }}
-        />
+        >
+          <LazyMarkdown {...chatMarkdownProps} variant="chat" fontSize={14}>
+            {answer}
+          </LazyMarkdown>
+        </div>
       </div>
 
       {sources.length > 0 && (
@@ -582,13 +587,4 @@ function AIAnswerPanel({
   );
 }
 
-function simpleMarkdown(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/`(.*?)`/g, '<code>$1</code>')
-    .replace(/\n/g, '<br/>');
-}
+

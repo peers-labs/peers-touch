@@ -223,7 +223,11 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 				_ = h.chatTaskService.FinishChatStep(ctx, taskID, stepID, turnID, "")
 			}
 		}
-		done <- turnStreamResult{turn: domainTurnToProto(turn), taskID: taskID, err: err}
+		var suggestions []string
+		if err == nil && turn != nil {
+			suggestions = h.turnService.GenerateFollowUpSuggestions(ctx, config, input.GetUserInput(), turn.FinalResponse)
+		}
+		done <- turnStreamResult{turn: domainTurnToProto(turn), taskID: taskID, err: err, suggestions: suggestions}
 		close(events)
 	}()
 
@@ -244,9 +248,10 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 				return nil
 			}
 			_ = writeTurnStreamEvent(resp, "done", map[string]any{
-				"type":    "done",
-				"turn":    result.turn,
-				"task_id": result.taskID,
+				"type":        "done",
+				"turn":        result.turn,
+				"task_id":     result.taskID,
+				"suggestions": result.suggestions,
 			})
 			return nil
 		case <-ctx.Done():
@@ -284,10 +289,43 @@ func (h *TurnHandlers) HandleLocalToolResult(ctx context.Context, req server.Req
 	return nil
 }
 
+// HandleQuickCompletion performs a one-shot LLM call using the agent's provider.
+// Used for lightweight tasks like translation that don't need conversation history.
+func (h *TurnHandlers) HandleQuickCompletion(ctx context.Context, req server.Request, resp server.Response) error {
+	resp.SetHeader("Content-Type", "application/json")
+
+	var input struct {
+		AgentID string `json:"agent_id"`
+		Prompt  string `json:"prompt"`
+	}
+	if err := json.Unmarshal(req.Body(), &input); err != nil || input.AgentID == "" || input.Prompt == "" {
+		resp.WriteHeader(400)
+		_, _ = resp.Write([]byte(`{"ok":false,"error":"agent_id and prompt are required"}`))
+		return nil
+	}
+
+	config := h.turnConfigFromRequest(ctx, &model.ExecuteTurnRequest{
+		AgentId: input.AgentID,
+	}, nil)
+
+	content, err := h.turnService.QuickCompletion(ctx, config, input.Prompt)
+	if err != nil {
+		resp.WriteHeader(500)
+		out, _ := json.Marshal(map[string]any{"ok": false, "error": err.Error()})
+		_, _ = resp.Write(out)
+		return nil
+	}
+
+	out, _ := json.Marshal(map[string]any{"ok": true, "content": content})
+	_, _ = resp.Write(out)
+	return nil
+}
+
 type turnStreamResult struct {
-	turn   *model.Turn
-	taskID string
-	err    error
+	turn        *model.Turn
+	taskID      string
+	err         error
+	suggestions []string
 }
 
 func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.ExecuteTurnRequest, sink service.TurnEventSink) *service.TurnConfig {
@@ -323,6 +361,7 @@ func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.Exe
 		CliCommand:     req.GetCliCommand(),
 		RuntimeBackend: req.GetRuntimeBackend(),
 		AllowedRoots:   req.GetAllowedRoots(),
+		MemoryDisabled: req.GetMemoryDisabled(),
 	}
 }
 
