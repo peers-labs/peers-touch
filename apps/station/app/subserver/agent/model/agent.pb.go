@@ -2583,6 +2583,7 @@ type ExecuteTurnRequest struct {
 	CliCommand     *string  `protobuf:"bytes,15,opt,name=cli_command,json=cliCommand,proto3,oneof" json:"cli_command,omitempty"`
 	RuntimeBackend *string  `protobuf:"bytes,16,opt,name=runtime_backend,json=runtimeBackend,proto3,oneof" json:"runtime_backend,omitempty"`
 	AllowedRoots   []string `protobuf:"bytes,17,rep,name=allowed_roots,json=allowedRoots,proto3" json:"allowed_roots,omitempty"`
+	MemoryDisabled *bool    `protobuf:"varint,18,opt,name=memory_disabled,json=memoryDisabled,proto3,oneof" json:"memory_disabled,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2734,6 +2735,13 @@ func (x *ExecuteTurnRequest) GetAllowedRoots() []string {
 		return x.AllowedRoots
 	}
 	return nil
+}
+
+func (x *ExecuteTurnRequest) GetMemoryDisabled() bool {
+	if x != nil && x.MemoryDisabled != nil {
+		return *x.MemoryDisabled
+	}
+	return false
 }
 
 type ExecuteTurnResponse struct {
@@ -5209,7 +5217,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x03seq\x18\x0f \x01(\x03R\x03seqB\f\n" +
 	"\n" +
 	"_branch_idB\x16\n" +
-	"\x14_replaces_message_id\"\xf2\x06\n" +
+	"\x14_replaces_message_id\"\xb4\a\n" +
 	"\x12ExecuteTurnRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1d\n" +
@@ -5232,7 +5240,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"cliCommand\x88\x01\x01\x12,\n" +
 	"\x0fruntime_backend\x18\x10 \x01(\tH\n" +
 	"R\x0eruntimeBackend\x88\x01\x01\x12#\n" +
-	"\rallowed_roots\x18\x11 \x03(\tR\fallowedRootsB\b\n" +
+	"\rallowed_roots\x18\x11 \x03(\tR\fallowedRoots\x12,\n" +
+	"\x0fmemory_disabled\x18\x12 \x01(\bH\vR\x0ememoryDisabled\x88\x01\x01B\b\n" +
 	"\x06_modelB\v\n" +
 	"\t_providerB\v\n" +
 	"\t_identityB\x16\n" +
@@ -5243,7 +5252,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\f_max_retriesB\t\n" +
 	"\a_effortB\x0e\n" +
 	"\f_cli_commandB\x12\n" +
-	"\x10_runtime_backend\"\xf6\x01\n" +
+	"\x10_runtime_backendB\x12\n" +
+	"\x10_memory_disabled\"\xf6\x01\n" +
 	"\x13ExecuteTurnResponse\x124\n" +
 	"\x04turn\x18\x01 \x01(\v2 .peers_touch.model.agent.v1.TurnR\x04turn\x12;\n" +
 	"\x05trace\x18\x02 \x01(\v2%.peers_touch.model.agent.v1.TurnTraceR\x05trace\x12S\n" +

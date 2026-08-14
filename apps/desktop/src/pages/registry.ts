@@ -8,6 +8,7 @@
 // descriptor module owns its own `runtimes/*Runtime.ts` registration
 // (so the boot pipeline can install + bootstrap them in order).
 
+import { registerHomePage } from './HomePage.descriptor';
 import { registerSearchPage } from './SearchPage.descriptor';
 import { registerSocialChatPage } from './SocialChatPage.descriptor';
 import { registerSettingsPage } from './SettingsPage.descriptor';
@@ -15,6 +16,10 @@ import { registerAppletsPage } from './AppletsPage.descriptor';
 import { registerAppletRuntimePage } from './AppletRuntimePage.descriptor';
 import { registerMomentsPage } from './moments/MomentsApp.descriptor';
 import { registerAgentChatPage } from './AgentChatPage.descriptor';
+import { registerMarketplacePage } from './MarketplacePage.descriptor';
+import { registerAgentGroupsPage } from './AgentGroupsPage.descriptor';
+import { registerCustomPluginsPage } from './CustomPluginsPage.descriptor';
+import { registerTasksPage } from './TasksPage.descriptor';
 
 let registered = false;
 
@@ -22,6 +27,7 @@ let registered = false;
 export function registerKernelPages(): void {
   if (registered) return;
   registered = true;
+  registerHomePage();
   registerSearchPage();
   registerSocialChatPage();
   registerAgentChatPage();
@@ -29,4 +35,8 @@ export function registerKernelPages(): void {
   registerAppletsPage();
   registerAppletRuntimePage();
   registerMomentsPage();
+  registerMarketplacePage();
+  registerAgentGroupsPage();
+  registerCustomPluginsPage();
+  registerTasksPage();
 }

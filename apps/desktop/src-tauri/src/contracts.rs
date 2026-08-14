@@ -756,6 +756,12 @@ pub struct MemoryIdInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryUpdateInput {
+    pub id: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryListInput {
     pub params: Option<serde_json::Value>,
 }
@@ -1092,6 +1098,8 @@ pub struct AgentExecuteTurnInput {
     pub context_window_size: Option<u32>,
     pub max_retries: Option<u32>,
     pub knowledge_resources: Option<Vec<Value>>,
+    pub available_tools: Option<Vec<Value>>,
+    pub memory_disabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
