@@ -452,7 +452,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
 
           {/* Tool calls block */}
           {message.toolCalls && message.toolCalls.length > 0 && (
-            <ToolCallsBlock toolCalls={message.toolCalls} />
+            <ToolCallsBlock toolCalls={message.toolCalls} messageId={message.id} />
           )}
 
           {/* Artifacts */}
