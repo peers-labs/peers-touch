@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { ToolCallInfo, DelegationTaskInfo } from '../../store/chat';
 import { useChatStore } from '../../store/chat';
+import { usePortalStore } from '../../store/portal';
 import { useTranslation } from 'react-i18next';
 
 // --- Delegation helpers ---
@@ -90,7 +91,7 @@ export function DelegationResultsBlock({ results }: { results: DelegationTaskInf
 
 // --- Single tool call row ---
 
-export function ToolCallItem({ tool }: { tool: ToolCallInfo }) {
+export function ToolCallItem({ tool, messageId }: { tool: ToolCallInfo; messageId?: string }) {
   const [expanded, setExpanded] = useState(false);
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -148,6 +149,20 @@ export function ToolCallItem({ tool }: { tool: ToolCallInfo }) {
         {tool.args && !expanded && (
           <span style={{ color: token.colorTextQuaternary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
             {tool.args.length > 60 ? tool.args.slice(0, 60) + '…' : tool.args}
+          </span>
+        )}
+        {messageId && (
+          <span
+            role="button"
+            tabIndex={0}
+            style={{ marginLeft: 'auto', cursor: 'pointer', color: token.colorTextQuaternary, flexShrink: 0 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              usePortalStore.getState().openToolDetail(messageId, tool.id);
+            }}
+            title="Open in panel"
+          >
+            ⋯
           </span>
         )}
       </div>
@@ -254,7 +269,7 @@ export function ToolCallItem({ tool }: { tool: ToolCallInfo }) {
 
 // --- Collapsed tool calls block ---
 
-export function ToolCallsBlock({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
+export function ToolCallsBlock({ toolCalls, messageId }: { toolCalls: ToolCallInfo[]; messageId?: string }) {
   const [expanded, setExpanded] = useState(false);
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -299,7 +314,7 @@ export function ToolCallsBlock({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
       {expanded && (
         <div style={{ padding: '0 4px 4px', borderTop: `1px solid ${token.colorBorderSecondary}` }}>
           {toolCalls.map((tc) => (
-            <ToolCallItem key={tc.id} tool={tc} />
+            <ToolCallItem key={tc.id} tool={tc} messageId={messageId} />
           ))}
         </div>
       )}
