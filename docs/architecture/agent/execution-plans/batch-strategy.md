@@ -13,9 +13,9 @@
 | Batch | Name | Theme | Gate |
 |-------|------|-------|------|
 | **P0** | Core Chat Loop | One user, one agent, complete conversation cycle | ✅ complete |
-| **P1** | Tool & Knowledge | Agent uses tools, retrieves knowledge, retains memory | — |
-| **P2** | Rich Rendering & Productivity | Markdown, code blocks, TTS, image gen, export, templates | — |
-| **P3** | Multi-Agent & Ecosystem | Agent groups, marketplace, plugins, evaluation | — |
+| **P1** | Tool & Knowledge | Agent uses tools, retrieves knowledge, retains memory | ✅ complete |
+| **P2** | Rich Rendering & Productivity | Markdown, code blocks, TTS, image gen, export, templates | ✅ complete |
+| **P3** | Multi-Agent & Ecosystem | Agent groups, marketplace, plugins, evaluation | ✅ complete |
 
 ---
 
@@ -113,8 +113,8 @@ Multi-agent and marketplace are the ecosystem play — they make the platform ex
 | Batch | Modules | Status | Execution Plan |
 |-------|---------|--------|----------------|
 | P0 | 6 | ✅ complete | `execution-plans/p0-core-chat-loop.md` |
-| P1 | 5 | — not started | `execution-plans/p1-tool-knowledge.md` (to create) |
-| P2 | 10 | — not started | `execution-plans/p2-rich-rendering.md` (to create) |
+| P1 | 5 | ✅ complete | `execution-plans/p1-tool-knowledge.md` |
+| P2 | 10 | ✅ complete | `execution-plans/p2-rich-rendering.md` |
 | P3 | 8 | — not started | `execution-plans/p3-ecosystem.md` (to create) |
 
 ---

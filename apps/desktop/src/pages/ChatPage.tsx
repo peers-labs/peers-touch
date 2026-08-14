@@ -48,11 +48,6 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
     loadSessions();
   }, [loadSessions, selectedAgent]);
 
-  useEffect(() => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
-
   const contentWidth = isNarrow ? 'calc(100% - 28px)' : 'min(620px, calc(100% - 36px))';
   const hasMessages = messages.length > 0;
 
@@ -195,7 +190,7 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
               </>
             ) : (
               <div style={{ width: contentWidth, boxSizing: 'border-box' }}>
-                <MessageList />
+                <MessageList scrollRef={scrollRef} />
               </div>
             )}
           </div>
