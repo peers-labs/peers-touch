@@ -126,6 +126,8 @@ export interface ChatMessage {
   thinking?: string;
   thinkingDone?: boolean;
   processDuration?: number;
+  followUpSuggestions?: string[];
+  translation?: string;
   lastEventAt?: number;
   operation?: 'regenerate' | 'retry' | 'branch';
   replacementOf?: string;
@@ -423,6 +425,7 @@ interface ChatState {
   continueGeneration: (messageId: string) => void;
   deleteMessage: (id: string) => Promise<void>;
   editMessage: (id: string, content: string) => Promise<void>;
+  translateMessage: (id: string) => Promise<void>;
 
   syncMessages: () => Promise<void>;
   saveCurrentTopic: () => Promise<void>;
@@ -1442,6 +1445,28 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     if (!id.startsWith('temp-')) {
       try { await api.updateMessage(id, content); } catch { /* already updated in UI */ }
     }
+  },
+
+  translateMessage: async (id: string) => {
+    const { messages } = get();
+    const target = messages.find((m) => m.id === id);
+    if (!target || !target.content) return;
+    if (target.translation) {
+      set((s) => ({
+        messages: s.messages.map((m) => m.id === id ? { ...m, translation: undefined } : m),
+      }));
+      return;
+    }
+    const agentId = useAgentStore.getState().selectedAgent;
+    if (!agentId) return;
+    const userLang = navigator.language.startsWith('zh') ? 'English' : '中文';
+    const prompt = `Translate the following text to ${userLang}. Return ONLY the translation, no explanation.\n\n${target.content}`;
+    try {
+      const result = await api.quickCompletion(agentId, prompt);
+      set((s) => ({
+        messages: s.messages.map((m) => m.id === id ? { ...m, translation: result } : m),
+      }));
+    } catch { /* translation unavailable */ }
   },
 
   continueGeneration: (messageId: string) => {

@@ -13,6 +13,7 @@ import { EVENT, eventBus } from '../kernel/events';
 import { useTranslation } from 'react-i18next';
 import { AssistantMessage } from './messages/AssistantMessage';
 import { UserMessage } from './messages/UserMessage';
+import { chatMarkdownProps } from './messages/markdownConfig';
 import { MiniButton, timeAgo, fullTime } from './messages/shared';
 import { usePortalStore } from '../store/portal';
 
@@ -134,7 +135,7 @@ export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
               </Tag>
             </Flexbox>
           )}
-          <Markdown variant="chat">{message.content}</Markdown>
+          <Markdown {...chatMarkdownProps} variant="chat">{message.content}</Markdown>
         </Flexbox>
       </Flexbox>
     );
