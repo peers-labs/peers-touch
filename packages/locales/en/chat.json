@@ -185,6 +185,11 @@
   "chat.message.action.branch": "Branch from here",
   "chat.message.action.regenerate": "Regenerate",
   "chat.message.action.delAndRegenerate": "Del & Regenerate",
+  "chat.message.action.translate": "Translate",
+  "chat.message.action.thread": "Open Thread",
+  "chat.message.action.export": "Export as Markdown",
+  "chat.message.translation.label": "Translation",
+  "chat.thread.title": "Thread",
   "chat.message.action.share": "Share",
   "chat.message.action.expandMessage": "Expand Message",
   "chat.message.action.collapseMessage": "Collapse Message",
@@ -761,5 +766,9 @@
   "chat.message.resolution.settingsOpened": "Settings opened. Configure your credentials.",
   "chat.message.resolution.actionFailed": "Failed to perform action",
   "chat.message.continuePrompt": "Continue from where you left off.",
-  "chat.session.newTopicFallback": "New topic"
+  "chat.session.newTopicFallback": "New topic",
+  "chat.followUp.title": "Suggested follow-ups",
+  "chat.topicComments.title": "Comments",
+  "chat.topicComments.empty": "No comments yet. Add a note about this topic.",
+  "chat.topicComments.placeholder": "Write a comment..."
 }

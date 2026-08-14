@@ -151,6 +151,7 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
         loading: false,
         model: s(d.model) || msg.model,
         processDuration: Math.round((Date.now() - msg.timestamp) / 1000),
+        followUpSuggestions: Array.isArray(d.suggestions) ? d.suggestions as string[] : undefined,
       };
     }
 
