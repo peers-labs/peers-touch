@@ -13,6 +13,7 @@ export type {
   ToolCallEventPayload,
   ToolResultEventPayload,
   ToolApprovalRequiredPayload,
+  InterventionRequestPayload,
   ProgressEventPayload,
   ImageEventPayload,
   ConversationCreatedPayload,
