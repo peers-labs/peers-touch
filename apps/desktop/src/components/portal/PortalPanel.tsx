@@ -9,6 +9,8 @@ import { PortalHeader } from './PortalHeader';
 import { ArtifactListView } from './views/ArtifactListView';
 import { ArtifactDetailView } from './views/ArtifactDetailView';
 import { ToolDetailView } from './views/ToolDetailView';
+import { ThreadView } from './views/ThreadView';
+import { TopicCommentsView } from './views/TopicCommentsView';
 
 export function PortalPanel() {
   const { token } = theme.useToken();
@@ -23,6 +25,8 @@ export function PortalPanel() {
 
   if (!expanded) return null;
 
+  const isFullHeightView = activeView?.type === 'thread' || activeView?.type === 'topicComments';
+
   const renderView = () => {
     if (!activeView || activeView.type === 'artifacts') {
       return <ArtifactListView artifacts={allArtifacts} />;
@@ -35,6 +39,12 @@ export function PortalPanel() {
       const toolCall = msg?.toolCalls?.find((tc) => tc.id === activeView.toolCallId);
       if (!toolCall) return <ArtifactListView artifacts={allArtifacts} />;
       return <ToolDetailView toolCall={toolCall} />;
+    }
+    if (activeView.type === 'thread') {
+      return <ThreadView sessionKey={activeView.sessionKey} sourceMessageId={activeView.sourceMessageId} />;
+    }
+    if (activeView.type === 'topicComments') {
+      return <TopicCommentsView topicKey={activeView.topicKey} />;
     }
     return null;
   };
@@ -59,7 +69,7 @@ export function PortalPanel() {
         }}
       >
         <PortalHeader activeView={activeView} />
-        <Flexbox style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+        <Flexbox style={{ flex: 1, overflow: isFullHeightView ? 'hidden' : 'auto', padding: isFullHeightView ? 0 : 16 }}>
           {renderView()}
         </Flexbox>
       </Flexbox>
