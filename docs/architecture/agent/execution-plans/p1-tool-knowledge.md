@@ -26,7 +26,7 @@ P1 makes the agent _intelligent_ beyond text generation:
 | 2 | **MCP Plugin System** | store/tool/slices/mcpStore + features/MCP (server list, tool list, modal) | ✅ | ✅ | ✅ | ✅ deterministic | ✅ | eec5675 |
 | 3 | **Knowledge Base & RAG** | store/library + store/file (upload, chunking) + knowledge_retrieval_service | ✅ | ✅ | ✅ | ✅ deterministic (F1-F6: needs GUI) | ✅ | 34dcf3f |
 | 4 | **User Memory** | store/userMemory (identity, activity, context, experience, preference) + memory_service | ✅ | ✅ | ✅ | ✅ deterministic (F1-F7: needs GUI) | ✅ | ea00ae5 |
-| 5 | **Portal / Side Panel** | store/chat/slices/portal + features/Portal (ToolUI, Artifacts, Thread, AgentInfo) | — | — | — | — | — | — |
+| 5 | **Portal / Side Panel** | store/chat/slices/portal + features/Portal (ToolUI, Artifacts, Thread, AgentInfo) | ✅ | ✅ | ✅ | ✅ deterministic (F1-F8: needs GUI) | ✅ | 4754e44 |
 
 ## Module Dependency Order
 
