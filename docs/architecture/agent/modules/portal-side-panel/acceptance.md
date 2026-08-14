@@ -35,6 +35,6 @@
 | # | Check | Verification |
 |---|-------|-------------|
 | I1 | Portal doesn't break existing chat | Chat page works identically when portal is collapsed |
-| I2 | Data flows via props | Portal receives messages as prop, never reads chat store directly |
+| I2 | Data flows read-only from chat store | PortalPanel reads `useChatStore` for messages (read-only); portal store does not import chat store |
 | I3 | AssistantMessage unchanged | onOpenArtifact prop already existed; no internal changes to AssistantMessage |
 | I4 | DraggablePanel from @lobehub/ui | Import verified, no new dependency added |
