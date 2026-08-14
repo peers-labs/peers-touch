@@ -47,5 +47,16 @@
   "notes.toast.loadDocFailed": "加载文档失败",
   "notes.toast.saveFailed": "保存失败",
   "notes.toast.createFailed": "创建文档失败",
-  "notes.toast.deleteFailed": "删除失败"
+  "notes.toast.deleteFailed": "删除失败",
+
+  "notes.notebook.title": "笔记本",
+  "notes.notebook.newPage": "新建页面",
+  "notes.notebook.untitled": "无标题页面",
+  "notes.notebook.empty": "暂无页面。创建第一个页面开始使用。",
+  "notes.notebook.search": "搜索页面...",
+  "notes.notebook.delete": "删除",
+  "notes.notebook.deleteConfirm": "确定要删除此页面？此操作不可撤销。",
+  "notes.notebook.linkedAgent": "关联智能体",
+  "notes.notebook.linkedTopic": "关联话题",
+  "notes.notebook.lastEdited": "最后编辑"
 }

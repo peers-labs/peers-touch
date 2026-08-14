@@ -185,6 +185,11 @@
   "chat.message.action.branch": "从这里分支",
   "chat.message.action.regenerate": "重新生成",
   "chat.message.action.delAndRegenerate": "删除并重新生成",
+  "chat.message.action.translate": "翻译",
+  "chat.message.action.thread": "打开线程",
+  "chat.message.action.export": "导出为 Markdown",
+  "chat.message.translation.label": "译文",
+  "chat.thread.title": "线程",
   "chat.message.action.share": "分享",
   "chat.message.action.expandMessage": "展开消息",
   "chat.message.action.collapseMessage": "折叠消息",
@@ -759,5 +764,9 @@
   "chat.message.resolution.settingsOpened": "已打开设置，请配置您的凭据。",
   "chat.message.resolution.actionFailed": "操作失败",
   "chat.message.continuePrompt": "从上次中断处继续。",
-  "chat.session.newTopicFallback": "新话题"
+  "chat.session.newTopicFallback": "新话题",
+  "chat.followUp.title": "推荐追问",
+  "chat.topicComments.title": "评论",
+  "chat.topicComments.empty": "暂无评论，为这个话题添加备注。",
+  "chat.topicComments.placeholder": "写一条评论…"
 }

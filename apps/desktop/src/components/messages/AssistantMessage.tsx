@@ -23,6 +23,7 @@ import {
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact } from '../../store/chat';
 import { extractMessageArtifacts, useChatStore } from '../../store/chat';
 import { useAgentStore } from '../../store/agent';
+import { usePortalStore } from '../../store/portal';
 import { parseAgentChatConfig, api } from '../../services/desktop_api';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
 import { AgentIconTile } from '../agent/AgentIconTile';
@@ -31,6 +32,7 @@ import { useTranslation } from 'react-i18next';
 import { MessageActionBar } from '../messages';
 import { ToolCallsBlock } from './ToolCallCard';
 import { ThinkingIndicator } from './ThinkingBlock';
+import { chatMarkdownProps } from './markdownConfig';
 import { timeAgo, fullTime, downloadCodeBlock, downloadArtifact } from './shared';
 
 // --- Collect delegation results from message + tool calls ---
@@ -318,6 +320,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const regenerateMessage = useChatStore(s => s.regenerateMessage);
   const retryMessage = useChatStore(s => s.retryMessage);
   const sendMessage = useChatStore(s => s.sendMessage);
+  const translateMessage = useChatStore(s => s.translateMessage);
+  const openThread = usePortalStore(s => s.openThread);
+  const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const agents = useAgentStore(s => s.agents);
   const availableModels = useAgentStore(s => s.availableModels);
   const selectedAgent = useAgentStore(s => s.selectedAgent);
@@ -473,6 +478,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           ) : message.content ? (
             <div className="selectable">
               <Markdown
+                {...chatMarkdownProps}
                 variant="chat"
                 animated={message.loading}
                 fontSize={14}
@@ -503,6 +509,28 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
               </Markdown>
             </div>
           ) : null}
+
+          {/* Inline translation */}
+          {message.translation && (
+            <div
+              style={{
+                borderTop: `1px solid ${token.colorBorderSecondary}`,
+                paddingTop: 8,
+                marginTop: 8,
+              }}
+            >
+              <div style={{ fontSize: 11, color: token.colorTextSecondary, marginBottom: 4 }}>
+                {t('chat.message.translation.label')}
+              </div>
+              <Markdown
+                {...chatMarkdownProps}
+                variant="chat"
+                fontSize={14}
+              >
+                {message.translation}
+              </Markdown>
+            </div>
+          )}
 
           {/* Error block */}
           {message.error && (
@@ -592,6 +620,19 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             onBranch: handleBranch,
             onContinue: () => continueGeneration(message.id),
             onDeleteAndRegenerate: handleDelAndRegenerate,
+            onTranslate: () => translateMessage(message.id),
+            onThread: () => openThread(currentSessionKey, message.id),
+            onReadAloud: () => {
+              if (message.content) {
+                void api.tts(message.content);
+              }
+            },
+            onExport: () => {
+              if (message.content) {
+                const exported = `# Assistant Response\n\n${message.content}`;
+                void navigator.clipboard.writeText(exported);
+              }
+            },
           }}
           style={{
             alignSelf: 'flex-start',

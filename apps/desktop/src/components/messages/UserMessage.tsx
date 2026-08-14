@@ -7,6 +7,7 @@ import type { ChatMessage } from '../../store/chat';
 import { useChatStore } from '../../store/chat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
+import { chatMarkdownProps } from './markdownConfig';
 import { MessageActionBar } from '../messages';
 import { useTranslation } from 'react-i18next';
 import { timeAgo, fullTime, formatAttachmentSize } from './shared';
@@ -213,7 +214,7 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
             </Flexbox>
           ) : message.content ? (
             <div className="selectable">
-              <Markdown variant="chat" fontSize={14}>
+              <Markdown {...chatMarkdownProps} variant="chat" fontSize={14}>
                 {message.content}
               </Markdown>
             </div>
@@ -258,6 +259,10 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
             onBranch: handleBranch,
             onContinue: () => { /* Not applicable for user messages */ },
             onDeleteAndRegenerate: () => { /* Not applicable for user messages */ },
+            onTranslate: () => { /* Not applicable for user messages */ },
+            onThread: () => { /* Not applicable for user messages */ },
+            onReadAloud: () => { /* Not applicable for user messages */ },
+            onExport: () => { /* Not applicable for user messages */ },
           }}
           style={{
             alignSelf: 'flex-end',

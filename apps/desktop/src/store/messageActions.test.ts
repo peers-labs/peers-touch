@@ -18,6 +18,10 @@ function createContext(overrides: Partial<MessageActionContext> = {}): MessageAc
     onBranch: noop,
     onContinue: noop,
     onDeleteAndRegenerate: noop,
+    onTranslate: noop,
+    onThread: noop,
+    onReadAloud: noop,
+    onExport: noop,
     ...overrides,
   };
 }

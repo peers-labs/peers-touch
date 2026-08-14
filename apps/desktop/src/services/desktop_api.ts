@@ -5102,6 +5102,12 @@ export const api = {
 
   resolveErrorAction: (action: { type: string; cliId?: string; providerId?: string; label: string }) =>
     invoke<{ ok: boolean; reauth?: boolean; message?: string; opened?: boolean }>('resolve_error_action', { action }),
+
+  quickCompletion: (agentId: string, prompt: string) =>
+    invokeRustDataFromStatus<
+      { agent_id: string; prompt: string },
+      { ok: boolean; content: string }
+    >('agent_quick_completion', { agent_id: agentId, prompt }).then((r) => r.content ?? ''),
 };
 
 export interface ConfigFieldMeta {
@@ -5772,6 +5778,14 @@ export async function submitAgentFeedback(
     signal,
     comment: comment ?? null,
   });
+}
+
+export async function agentQuickCompletion(agentId: string, prompt: string): Promise<string> {
+  const result = await invokeRustDataFromStatus<
+    { agent_id: string; prompt: string },
+    { ok: boolean; content: string }
+  >('agent_quick_completion', { agent_id: agentId, prompt });
+  return result.content ?? '';
 }
 
 // ---------------------------------------------------------------------------

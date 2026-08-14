@@ -4,6 +4,8 @@ package peers_touch.model.agent.v1;
 
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
 
+import "domain/agent/agent.proto";
+
 enum TurnStreamEventType {
   TURN_STREAM_EVENT_TYPE_UNSPECIFIED = 0;
   TURN_STREAM_EVENT_TYPE_TEXT = 1;
@@ -88,6 +90,7 @@ message ErrorPayload {
 message DonePayload {
   string task_id = 1;
   TurnSummary turn_summary = 2;
+  repeated string follow_up_suggestions = 3;
 }
 
 message TurnSummary {

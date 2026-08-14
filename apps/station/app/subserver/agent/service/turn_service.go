@@ -2194,3 +2194,76 @@ func sha256Short(data string) string {
 	h := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(h[:8])
 }
+
+// QuickCompletion performs a one-shot LLM call without conversation context.
+// Used for lightweight tasks like translation.
+func (s *TurnService) QuickCompletion(ctx context.Context, config *TurnConfig, prompt string) (string, error) {
+	if config.Provider == "" || config.Model == "" {
+		return "", fmt.Errorf("provider and model are required for quick completion")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	resp, err := s.providerService.Call(ctx, &ProviderCallRequest{
+		ProviderID: config.Provider,
+		Model:      config.Model,
+		Messages:   []domain.Message{{Role: "user", Content: prompt}},
+		UserID:     config.ActorID,
+		Effort:     "low",
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.Content, nil
+}
+
+// GenerateFollowUpSuggestions uses the same provider/model as the agent to
+// produce a short list of follow-up questions the user might ask next.
+// Returns nil on any failure (graceful degradation — done event still sends).
+func (s *TurnService) GenerateFollowUpSuggestions(ctx context.Context, config *TurnConfig, userInput string, assistantResponse string) []string {
+	if config.Provider == "" || config.Model == "" {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	prompt := fmt.Sprintf(
+		"Based on this conversation, suggest exactly 3 brief follow-up questions the user might ask next. "+
+			"Return ONLY a JSON array of 3 strings, no other text.\n\n"+
+			"User: %s\n\nAssistant: %s",
+		truncate(userInput, 500),
+		truncate(assistantResponse, 1000),
+	)
+
+	resp, err := s.providerService.Call(ctx, &ProviderCallRequest{
+		ProviderID:   config.Provider,
+		Model:        config.Model,
+		SystemPrompt: "You generate follow-up question suggestions. Always respond with a JSON array of exactly 3 short questions.",
+		Messages:     []domain.Message{{Role: "user", Content: prompt}},
+		UserID:       config.ActorID,
+		Effort:       "low",
+	})
+	if err != nil {
+		logger.Warnf(ctx, "follow-up suggestion generation failed: %v", err)
+		return nil
+	}
+
+	var suggestions []string
+	content := strings.TrimSpace(resp.Content)
+	if idx := strings.Index(content, "["); idx >= 0 {
+		content = content[idx:]
+	}
+	if idx := strings.LastIndex(content, "]"); idx >= 0 {
+		content = content[:idx+1]
+	}
+	if err := json.Unmarshal([]byte(content), &suggestions); err != nil {
+		logger.Warnf(ctx, "follow-up suggestion parse failed: %v", err)
+		return nil
+	}
+	if len(suggestions) > 3 {
+		suggestions = suggestions[:3]
+	}
+	return suggestions
+}

@@ -119,6 +119,7 @@ export interface DoneEventPayload {
   task_id?: string;
   turn?: Record<string, unknown>;
   type?: string;
+  suggestions?: string[];
 }
 
 export type TurnStreamEventPayload =

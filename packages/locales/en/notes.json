@@ -47,5 +47,16 @@
   "notes.toast.loadDocFailed": "Failed to load document",
   "notes.toast.saveFailed": "Failed to save",
   "notes.toast.createFailed": "Failed to create document",
-  "notes.toast.deleteFailed": "Failed to delete"
+  "notes.toast.deleteFailed": "Failed to delete",
+
+  "notes.notebook.title": "Notebook",
+  "notes.notebook.newPage": "New Page",
+  "notes.notebook.untitled": "Untitled Page",
+  "notes.notebook.empty": "No pages yet. Create your first page to get started.",
+  "notes.notebook.search": "Search pages...",
+  "notes.notebook.delete": "Delete",
+  "notes.notebook.deleteConfirm": "Are you sure you want to delete this page? This action cannot be undone.",
+  "notes.notebook.linkedAgent": "Linked Agent",
+  "notes.notebook.linkedTopic": "Linked Topic",
+  "notes.notebook.lastEdited": "Last edited"
 }

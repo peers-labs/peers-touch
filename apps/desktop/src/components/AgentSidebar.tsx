@@ -21,6 +21,7 @@ import {
   Upload,
   Loader2,
   Settings2,
+  MessageCircle,
 } from 'lucide-react';
 import { theme, Modal, Popover } from 'antd';
 import type { GlobalToken } from 'antd';
@@ -39,6 +40,7 @@ import {
   useActiveChatSlice,
 } from './agent/useActiveAgentStores';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
+import { usePortalStore } from '../store/portal';
 import { resolveI18nValue } from '../i18n';
 
 interface AgentSidebarProps {
@@ -901,6 +903,10 @@ function TopicItem({
     await onFavoriteTopic(topic.key, !topic.favorite);
   }, [topic.key, topic.favorite, onFavoriteTopic]);
 
+  const handleOpenComments = useCallback(() => {
+    usePortalStore.getState().openTopicComments(topic.key);
+  }, [topic.key]);
+
   const menuItems: MenuProps['items'] = [
     { key: 'pin', icon: <Pin size={14} />, label: topic.pinned ? t('agent.sidebar.menu.unpin') : t('agent.sidebar.menu.pin'), onClick: handlePin },
     { key: 'favorite', icon: <Star size={14} />, label: topic.favorite ? t('agent.sidebar.menu.unfavorite') : t('agent.sidebar.menu.favorite'), onClick: handleFavorite },
@@ -908,6 +914,7 @@ function TopicItem({
     { key: 'smart-rename', icon: <Sparkles size={14} />, label: t('agent.sidebar.menu.smartRename'), onClick: handleSmartRename },
     { key: 'rename', icon: <Pencil size={14} />, label: t('agent.sidebar.menu.rename'), onClick: handleRename },
     { key: 'duplicate', icon: <Copy size={14} />, label: t('agent.sidebar.menu.duplicate'), onClick: handleDuplicate },
+    { key: 'comments', icon: <MessageCircle size={14} />, label: t('agent.sidebar.menu.comments'), onClick: handleOpenComments },
     { type: 'divider' },
     { key: 'delete', icon: <Trash2 size={14} />, label: t('agent.sidebar.menu.delete'), danger: true, onClick: handleDeleteConfirm },
   ];
