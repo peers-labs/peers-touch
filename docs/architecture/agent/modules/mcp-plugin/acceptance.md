@@ -1,58 +1,37 @@
-# P1-M2: MCP Plugin System — Acceptance Scenarios
+# P1-M2: MCP Plugin System — Acceptance (S2/S4)
 
 > **Module**: P1-M2 MCP Plugin System
-> **Coverage**: Tool schema expansion gap (G1)
+> **Status**: complete (deterministic pass, functional pending GUI)
 
 ---
 
-## AM-01: MCP tool schemas sent to Station on turn start
+## Deterministic Checks (automated)
 
-**Precondition**: Agent has 1+ MCP servers bound and enabled
-**Steps**:
-1. User sends a message in a conversation
-2. Desktop fetches `mcp_tool_registry_entries()` for bound servers
-3. Tool schemas are included in the turn request to Station
-4. Station includes MCP tool definitions in the LLM prompt
+| # | Check | Command / Verification |
+|---|-------|----------------------|
+| D1 | TypeScript compiles | `cd apps/desktop && pnpm run check` — 0 errors |
+| D2 | Rust compiles | `cd apps/desktop && cargo check --manifest-path src-tauri/Cargo.toml` |
+| D3 | Station compiles | `cd apps/station && go build ./app/subserver/agent/...` |
+| D4 | No `any` types in MCP components | `grep -r ': any' apps/desktop/src/components/mcp/ apps/desktop/src/store/mcp*.ts` → 0 hits |
+| D5 | No hardcoded strings | All MCP UI text uses `t()` from i18n |
+| D6 | No console.log | `grep -r 'console.log' apps/desktop/src/components/mcp/ apps/desktop/src/store/mcp*.ts` → 0 hits |
+| D7 | MCP tool schemas in turn request | Code path exists: `mcp_tool_registry_entries()` → `available_tools` field in `AgentExecuteTurnInput` |
 
-**Acceptance**:
-- Turn request body contains `available_tools` array with MCP tool schemas
-- LLM can see and reference the MCP tools in its response
-- **Status**: pending
+## Functional Scenarios (manual, S4)
 
----
+| # | Scenario | Steps | Expected |
+|---|----------|-------|----------|
+| F1 | MCP schemas sent on turn | Agent has MCP server bound → send message | Turn request body contains `available_tools` with MCP tool schemas |
+| F2 | LLM calls MCP tool | MCP server has tool → user prompt triggers it → LLM emits tool_call → Desktop routes to MCP → result | ToolCallCard shows MCP tool name; result in conversation |
+| F3 | MCP server CRUD | Add server → test connection → enable → disable → delete | All operations succeed; list updates reactively |
+| F4 | Per-agent MCP binding | Agent profile → bind server → verify only bound tools sent | Unbound server tools not in turn request |
+| F5 | Multi-server same tool name | Two servers both expose `search` tool → LLM calls `search` | Routed to correct server via namespace prefix (server.tool) |
+| F6 | MCP server offline | Bound server unreachable → user sends message | Turn proceeds without those tools; no crash; warning in tool list UI |
 
-## AM-02: LLM calls an MCP tool successfully
+## Integration Checks
 
-**Precondition**: GitHub MCP server bound with `create_issue` tool
-**Steps**:
-1. User says "Create a GitHub issue titled 'test'"
-2. LLM emits tool_call for `mcp.github.create_issue`
-3. Station emits `local_tool_request` to Desktop
-4. Desktop routes to GitHub MCP server via `mcp_execute_tool`
-5. Result submitted back
-
-**Acceptance**:
-- ToolCallCard shows MCP tool name and arguments
-- Result appears in conversation
-- **Status**: pending
-
----
-
-## AM-03: MCP server CRUD still works (regression)
-
-**Acceptance**:
-- Can add a new MCP server via MCPTab
-- Can test connection
-- Can enable/disable
-- Can delete
-- **Status**: pending (verify existing UI)
-
----
-
-## AM-04: Per-agent MCP binding still works (regression)
-
-**Acceptance**:
-- Agent profile shows MCP servers section
-- Can bind/unbind servers to agent
-- Only bound servers' tools are sent on turn start
-- **Status**: pending
+| # | Check | Verification |
+|---|-------|-------------|
+| I1 | MCP extends tool runtime | MCP tools use same ToolCallInfo/ToolCallCard rendering as built-in tools |
+| I2 | Server auth credentials secure | API keys stored in Rust keychain, not in frontend state |
+| I3 | Turn request backward-compatible | `available_tools` field is optional; turns without MCP still work |
