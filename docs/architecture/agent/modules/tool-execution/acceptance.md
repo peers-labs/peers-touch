@@ -1,128 +1,40 @@
-# P1-M1: Tool Execution Runtime — Acceptance Scenarios
+# P1-M1: Tool Execution Runtime — Acceptance (S2/S4)
 
 > **Module**: P1-M1 Tool Execution Runtime
-> **Step**: S2 (acceptance definition)
-> **Coverage**: Every tool execution path + approval variant
+> **Status**: complete (deterministic pass, functional pending GUI)
 
 ---
 
-## AT-01: Auto-approved tool execution (file_read)
+## Deterministic Checks (automated)
 
-**Precondition**: Agent has file_read tool enabled with `approval: auto`
-**Steps**:
-1. User sends "Read the file at /tmp/test.txt" (file exists with known content)
-2. LLM emits tool_call for `file_read` with `{ "path": "/tmp/test.txt" }`
-3. Station emits `local_tool_request` event to client
-4. Client auto-executes (no user prompt)
-5. Client submits result back to Station
-6. LLM sees file content, responds to user
+| # | Check | Command / Verification |
+|---|-------|----------------------|
+| D1 | TypeScript compiles | `cd apps/desktop && pnpm run check` — 0 errors |
+| D2 | Rust compiles | `cd apps/desktop && cargo check --manifest-path src-tauri/Cargo.toml` |
+| D3 | Station compiles | `cd apps/station && go build ./app/subserver/agent/...` |
+| D4 | Station tests pass | `cd apps/station && go test ./app/subserver/agent/...` |
+| D5 | No `any` types in tool store | `grep -r ': any' apps/desktop/src/store/tool*.ts` → 0 hits |
+| D6 | No hardcoded strings | All user-facing text uses `t()` from i18n |
+| D7 | No console.log | `grep -r 'console.log' apps/desktop/src/store/tool*.ts apps/desktop/src/services/agent-service.ts` → 0 hits |
 
-**Acceptance**:
-- No approval prompt shown in UI
-- ToolCallCard shows: tool name, arguments, loading state, then result
-- Assistant response references the file content
-- **Status**: pending
+## Functional Scenarios (manual, S4)
 
----
+| # | Scenario | Steps | Expected |
+|---|----------|-------|----------|
+| F1 | Auto-approved tool execution | Agent has file_read (approval:auto) → user asks to read a file → LLM emits tool_call → client auto-executes → result submitted | No approval prompt; ToolCallCard shows name/args/loading/result; assistant uses file content |
+| F2 | Tool requiring approval | Agent has shell (approval:ask) → user asks to run command → approval prompt shown | Approve/Deny buttons visible; Approve triggers execution; result in ToolCallCard |
+| F3 | Tool denied by user | Same as F2 → user clicks Deny | Result submitted as error; LLM responds gracefully; ToolCallCard shows "Denied" |
+| F4 | Approval timeout | Same as F2 → 110s pass without action | Auto-deny fires; ToolCallCard shows "Timed out"; stream continues |
+| F5 | Unknown tool | LLM hallucinates tool not in registry | Error result submitted ("not available"); no crash |
+| F6 | Sequential tool calls | LLM emits tool_call A → result → tool_call B → result → final response | Both ToolCallCards rendered; final response uses both results |
+| F7 | Parallel tool calls | LLM emits multiple tool_calls in single response | All executed (auto) or all prompted (ask); results submitted together |
+| F8 | Tool executor error | file_read on nonexistent path | Error result; ToolCallCard shows red status; LLM handles gracefully |
+| F9 | Tool progress stream | Tool emits progress events during execution | ToolCallCard shows progress bar / text update |
 
-## AT-02: Tool requiring approval (shell)
+## Integration Checks
 
-**Precondition**: Agent has shell tool enabled with `approval: ask`
-**Steps**:
-1. User sends "Run `ls -la /tmp`"
-2. LLM emits tool_call for `shell` with `{ "command": "ls -la /tmp" }`
-3. Station emits `local_tool_request`
-4. Client shows approval prompt: tool name, command preview, Approve/Deny buttons
-5. User clicks Approve
-6. Command executes, result submitted
-
-**Acceptance**:
-- Approval prompt visible with tool name and arguments
-- Approve button triggers execution
-- Result displayed in ToolCallCard
-- **Status**: pending
-
----
-
-## AT-03: Tool denied by user
-
-**Precondition**: Same as AT-02
-**Steps**:
-1-4. Same as AT-02
-5. User clicks Deny
-
-**Acceptance**:
-- Result submitted as `{ content: "Tool execution denied by user", isError: true }`
-- LLM receives denial, responds appropriately (e.g., "I can't execute that command")
-- ToolCallCard shows "Denied" status
-- **Status**: pending
-
----
-
-## AT-04: Tool timeout (user doesn't respond)
-
-**Precondition**: Tool with `approval: ask`, user doesn't respond
-**Steps**:
-1-4. Same as AT-02
-5. 110 seconds pass without user action
-
-**Acceptance**:
-- Auto-deny fires with timeout message
-- ToolCallCard shows "Timed out" status
-- Stream continues with LLM handling the timeout
-- **Status**: pending
-
----
-
-## AT-05: Unknown tool (not in registry)
-
-**Precondition**: LLM hallucinates a tool name not in registry
-**Steps**:
-1. Station emits `local_tool_request` for unknown tool `foo_bar`
-2. Client looks up registry → not found
-
-**Acceptance**:
-- Client submits `{ content: "Tool 'foo_bar' is not available", isError: true }`
-- No crash, no unhandled promise rejection
-- **Status**: pending
-
----
-
-## AT-06: Multiple tool calls in sequence
-
-**Precondition**: Agent has file_read + list_dir both auto-approved
-**Steps**:
-1. User sends "List the files in /tmp then read the first one"
-2. LLM emits tool_call for `list_dir` → result → tool_call for `file_read` → result → final response
-
-**Acceptance**:
-- Both tool calls rendered in sequence in the message
-- Each shows its own ToolCallCard with name/args/result
-- Final assistant response uses both results
-- **Status**: pending
-
----
-
-## AT-07: Tool executor error (file not found)
-
-**Precondition**: file_read tool, file doesn't exist
-**Steps**:
-1. User sends "Read /tmp/nonexistent.txt"
-2. LLM emits tool_call
-3. Executor tries to read → file not found
-
-**Acceptance**:
-- Result submitted as `{ content: "File not found: /tmp/nonexistent.txt", isError: true }`
-- ToolCallCard shows error status (red indicator)
-- LLM handles gracefully ("The file doesn't exist")
-- **Status**: pending
-
----
-
-## AT-08: Tool store state management
-
-**Acceptance** (unit test):
-- `ToolExecutorRegistry.get(name)` returns executor for registered tools
-- `ToolExecutorRegistry.get(unknown)` returns undefined
-- Approval service respects per-tool policy from agent config
-- **Status**: pending
+| # | Check | Verification |
+|---|-------|-------------|
+| I1 | Tool registry isolated from chat store | `store/tool*.ts` does not import from `store/chat.ts` |
+| I2 | Streaming FSM handles tool events | `tool_call` and `tool_result` stream events processed without breaking message flow |
+| I3 | Approval service respects agent config | Per-tool policy (auto/ask/deny) from agent config drives behavior |
