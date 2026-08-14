@@ -30,6 +30,7 @@ import { useAgentStore } from '../store/agent';
 import { api, type Agent } from '../services/desktop_api';
 import { ChatPage } from './ChatPage';
 import { AgentProfilePage } from './AgentProfilePage';
+import { PortalPanel } from '../components/portal';
 
 const SIDEBAR_COLORS = {
   asideBg: '#fbfbfb',
@@ -682,17 +683,20 @@ export function AgentChatPage({ onNavigateAgentCanvas }: { onNavigateAgentProfil
       </aside>
       )}
 
-      <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', background: '#fff', display: 'flex', flexDirection: 'column' }}>
-        {currentSurface === 'profile' ? (
-          <AgentProfilePage
-            agentName={selectedAgent}
-            onBack={() => setAgentSurface(selectedAgent, 'chat')}
-            onOpenOrchestration={onNavigateAgentCanvas}
-            embedded
-          />
-        ) : (
-          <ChatPage onOpenProfile={handleOpenProfile} narrow={narrow} />
-        )}
+      <main style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', background: '#fff', display: 'flex', flexDirection: 'row' }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          {currentSurface === 'profile' ? (
+            <AgentProfilePage
+              agentName={selectedAgent}
+              onBack={() => setAgentSurface(selectedAgent, 'chat')}
+              onOpenOrchestration={onNavigateAgentCanvas}
+              embedded
+            />
+          ) : (
+            <ChatPage onOpenProfile={handleOpenProfile} narrow={narrow} />
+          )}
+        </div>
+        {!narrow && currentSurface === 'chat' && <PortalPanel />}
       </main>
 
       {contextMenu && (
