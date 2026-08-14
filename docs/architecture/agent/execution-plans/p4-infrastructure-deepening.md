@@ -239,7 +239,7 @@ Rationale: Quick wins first (TTS, SessionGroups, CommandMenu, Intervention), the
 | M4 | File Integration | ✅ S5 交付 | 2026-08-14 | Enhanced attachment drafts, progress, retry, MessageAttachments |
 | M6 | WorkingSidebar | ✅ S5 交付 | 2026-08-14 | Portal: WorkingFiles + WorkingProgress + AgentOverview views |
 | M8 | ChatTerminal | ✅ S5 交付 | 2026-08-14 | Terminal panel, command history, v1 /run forward mode |
-| M11 | localStorage→Station | 🔵 S2 设计完成 | 2026-08-14 | Proto + API routes + Rust BFF signatures defined. Pending Go impl |
+| M11 | localStorage→Station | ✅ S5 交付 | 2026-08-14 | Go CRUD (16 endpoints), GORM models, ecosystem.proto |
 | M5 | Connectors for Agent | ✅ S5 交付 | 2026-08-14 | Reuse OAuth2Store, binding panel in AgentProfile capabilities |
 | M1 | Task System | ✅ S5 交付 | 2026-08-14 | Full CRUD + lifecycle + subtasks + TasksPage + TaskIndicator |
-| M10 | Multi-transport | — | — | Architecture refactor, deferred |
+| M10 | Multi-transport | 🔵 S2 设计完成 | 2026-08-14 | Architecture design doc, deferred to P5 |
