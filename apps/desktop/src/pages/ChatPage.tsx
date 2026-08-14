@@ -10,6 +10,9 @@ import { usePortalStore } from '../store/portal';
 import { ChatInput } from '../components/ChatInput';
 import { MessageList } from '../components/MessageList';
 import { OpStatusTray } from '../components/OpStatusTray';
+import { InterventionBar } from '../components/chat/InterventionBar';
+import { ChatTerminalPanel } from '../components/chat/ChatTerminalPanel';
+import { TerminalToggleButton } from '../components/chat/TerminalToggleButton';
 
 export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void; narrow?: boolean }) {
   const { t } = useTranslation('agent');
@@ -101,6 +104,7 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
               </div>
             </div>
             <Flexbox horizontal align="center" gap={6} style={{ flexShrink: 0 }}>
+              <TerminalToggleButton />
               {!isNarrow && (
                 <button
                   type="button"
@@ -199,7 +203,9 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
             <div style={{ marginBottom: 8 }}>
               <OpStatusTray />
             </div>
+            <InterventionBar />
             <ChatInput />
+            <ChatTerminalPanel />
           </div>
         </>
       ) : (

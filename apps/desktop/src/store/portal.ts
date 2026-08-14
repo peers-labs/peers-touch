@@ -6,7 +6,10 @@ export type PortalView =
   | { type: 'artifactDetail'; artifact: MessageArtifact }
   | { type: 'toolDetail'; messageId: string; toolCallId: string }
   | { type: 'thread'; sessionKey: string; sourceMessageId: string }
-  | { type: 'topicComments'; topicKey: string };
+  | { type: 'topicComments'; topicKey: string }
+  | { type: 'workingFiles'; sessionKey: string }
+  | { type: 'workingProgress' }
+  | { type: 'agentOverview'; agentId: string };
 
 interface PortalState {
   expanded: boolean;
@@ -19,6 +22,9 @@ interface PortalActions {
   openToolDetail: (messageId: string, toolCallId: string) => void;
   openThread: (sessionKey: string, sourceMessageId: string) => void;
   openTopicComments: (topicKey: string) => void;
+  openWorkingFiles: (sessionKey: string) => void;
+  openWorkingProgress: () => void;
+  openAgentOverview: (agentId: string) => void;
   close: () => void;
   toggle: () => void;
 }
@@ -47,6 +53,18 @@ export const usePortalStore = createDesktopStore<PortalState & PortalActions>(
 
     openTopicComments: (topicKey: string) => {
       set({ expanded: true, activeView: { type: 'topicComments', topicKey } });
+    },
+
+    openWorkingFiles: (sessionKey: string) => {
+      set({ expanded: true, activeView: { type: 'workingFiles', sessionKey } });
+    },
+
+    openWorkingProgress: () => {
+      set({ expanded: true, activeView: { type: 'workingProgress' } });
+    },
+
+    openAgentOverview: (agentId: string) => {
+      set({ expanded: true, activeView: { type: 'agentOverview', agentId } });
     },
 
     close: () => {

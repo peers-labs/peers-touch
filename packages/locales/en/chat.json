@@ -110,6 +110,8 @@
   "chat.input.attachmentUnsupported": "Unsupported file type. Attach images, PDFs, text, Markdown, JSON, or CSV files.",
   "chat.input.attachmentRetry": "Retry",
   "chat.input.attachmentRemove": "Remove attachment",
+  "chat.input.attachmentDownload": "Download file",
+  "chat.input.attachmentCompleted": "Uploaded",
   "chat.input.command.search": "Search command",
   "chat.input.command.searchDesc": "Ask the Agent to use web search for this turn.",
   "chat.input.command.memory": "Memory command",

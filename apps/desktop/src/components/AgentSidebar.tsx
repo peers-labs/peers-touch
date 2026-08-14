@@ -22,6 +22,9 @@ import {
   Loader2,
   Settings2,
   MessageCircle,
+  FolderPlus,
+  FolderOpen,
+  FolderMinus,
 } from 'lucide-react';
 import { theme, Modal, Popover } from 'antd';
 import type { GlobalToken } from 'antd';
@@ -41,6 +44,8 @@ import {
 } from './agent/useActiveAgentStores';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
 import { usePortalStore } from '../store/portal';
+import { useSessionGroupStore } from '../store/sessionGroups';
+import type { SessionGroup } from '../store/sessionGroups';
 import { resolveI18nValue } from '../i18n';
 
 interface AgentSidebarProps {
@@ -176,6 +181,27 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   const importInputRef = useRef<HTMLInputElement>(null);
   const { token } = theme.useToken();
 
+  // Session groups
+  const {
+    groups: allSessionGroups,
+    loadGroups: loadSessionGroups,
+    createGroup: createSessionGroup,
+    renameGroup: renameSessionGroup,
+    deleteGroup: deleteSessionGroup,
+    moveTopicToGroup,
+    getGroupsForAgent,
+    getGroupForTopic,
+  } = useSessionGroupStore((s) => ({
+    groups: s.groups,
+    loadGroups: s.loadGroups,
+    createGroup: s.createGroup,
+    renameGroup: s.renameGroup,
+    deleteGroup: s.deleteGroup,
+    moveTopicToGroup: s.moveTopicToGroup,
+    getGroupsForAgent: s.getGroupsForAgent,
+    getGroupForTopic: s.getGroupForTopic,
+  }));
+
   const currentAgent = useMemo(
     () => agents.find((a) => a.name === selectedAgent),
     [agents, selectedAgent],
@@ -189,6 +215,10 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   useEffect(() => {
     loadAgents();
   }, [loadAgents]);
+
+  useEffect(() => {
+    loadSessionGroups();
+  }, [loadSessionGroups]);
 
   const loadAgentTopics = useCallback(() => {
     if (!currentAgent) {
@@ -365,6 +395,28 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     return groupTopicsByDate(filtered, t);
   }, [agentTopics, topicSearch, t]);
 
+  // Session groups for current agent
+  const agentSessionGroups = useMemo(
+    () => (currentAgent ? getGroupsForAgent(currentAgent.id) : []),
+    [currentAgent, getGroupsForAgent, allSessionGroups],
+  );
+
+  // Topics that belong to a session group (keys)
+  const groupedTopicKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const g of agentSessionGroups) {
+      for (const k of g.topicKeys) keys.add(k);
+    }
+    return keys;
+  }, [agentSessionGroups]);
+
+  const handleCreateSessionGroup = useCallback(() => {
+    if (!currentAgent) return;
+    const name = window.prompt(t('agent.sidebar.groups.namePlaceholder'));
+    if (!name?.trim()) return;
+    createSessionGroup(currentAgent.id, name.trim());
+  }, [currentAgent, createSessionGroup, t]);
+
   const totalTopics = agentTopics.length;
   const loadingTopics = currentAgent ? !!loadingAgentIds[currentAgent.id] : false;
   const showMessageResults = showSearch && topicSearch.trim().length >= 2;
@@ -511,6 +563,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
                       onDuplicateTopic={duplicateTopic}
                       onPinTopic={pinTopic}
                       onFavoriteTopic={favoriteTopic}
+                      sessionGroups={agentSessionGroups}
+                      onMoveToGroup={moveTopicToGroup}
+                      currentGroupId={getGroupForTopic(topic.key)?.id}
                       token={token}
                       t={t}
                     />
@@ -518,11 +573,66 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
                 </Flexbox>
               </div>
             )}
+
+            {/* Session Groups */}
+            {agentSessionGroups.length > 0 && !topicSearch && (
+              <>
+                {agentSessionGroups.map((sg) => {
+                  const groupTopics = agentTopics.filter((tp) => sg.topicKeys.includes(tp.key));
+                  return (
+                    <SessionGroupSection
+                      key={sg.id}
+                      group={sg}
+                      topics={groupTopics}
+                      currentSessionKey={currentSessionKey}
+                      onSelectTopic={handleSelectTopic}
+                      onDeleteTopic={handleDeleteTopic}
+                      onReload={loadAgentTopics}
+                      onRenameTopic={renameTopic}
+                      onSmartRenameTopic={smartRenameTopic}
+                      onRevertGeneratedTitle={revertGeneratedTitle}
+                      onDuplicateTopic={duplicateTopic}
+                      onPinTopic={pinTopic}
+                      onFavoriteTopic={favoriteTopic}
+                      onRenameGroup={renameSessionGroup}
+                      onDeleteGroup={deleteSessionGroup}
+                      sessionGroups={agentSessionGroups}
+                      onMoveToGroup={moveTopicToGroup}
+                      getGroupForTopic={getGroupForTopic}
+                      token={token}
+                      t={t}
+                    />
+                  );
+                })}
+              </>
+            )}
+
+            {/* Create Group action */}
+            {!topicSearch && (
+              <Flexbox
+                horizontal
+                align="center"
+                gap={4}
+                onClick={handleCreateSessionGroup}
+                style={{
+                  minHeight: 28,
+                  padding: '0 8px',
+                  cursor: 'pointer',
+                  marginBottom: 4,
+                }}
+              >
+                <FolderPlus size={12} style={{ color: token.colorTextQuaternary }} />
+                <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+                  {t('agent.sidebar.groups.create')}
+                </span>
+              </Flexbox>
+            )}
+
             {topicGroups.map((group) => (
               <TopicGroup
                 key={`${currentAgent?.id || 'agent'}:${group.key}`}
                 label={group.label}
-                topics={group.items}
+                topics={group.items.filter((tp) => !groupedTopicKeys.has(tp.key))}
                 currentSessionKey={currentSessionKey}
                 onSelectTopic={handleSelectTopic}
                 onDeleteTopic={handleDeleteTopic}
@@ -533,6 +643,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
                 onDuplicateTopic={duplicateTopic}
                 onPinTopic={pinTopic}
                 onFavoriteTopic={favoriteTopic}
+                sessionGroups={agentSessionGroups}
+                onMoveToGroup={moveTopicToGroup}
+                getGroupForTopic={getGroupForTopic}
                 token={token}
                 t={t}
               />
@@ -695,6 +808,182 @@ function NavItem({
   );
 }
 
+function SessionGroupSection({
+  group,
+  topics,
+  currentSessionKey,
+  onSelectTopic,
+  onDeleteTopic,
+  onReload,
+  onRenameTopic,
+  onSmartRenameTopic,
+  onRevertGeneratedTitle,
+  onDuplicateTopic,
+  onPinTopic,
+  onFavoriteTopic,
+  onRenameGroup,
+  onDeleteGroup,
+  sessionGroups,
+  onMoveToGroup,
+  getGroupForTopic,
+  token,
+  t,
+}: {
+  group: SessionGroup;
+  topics: AgentTopic[];
+  currentSessionKey: string;
+  onSelectTopic: (key: string) => void;
+  onDeleteTopic: (key: string) => void;
+  onReload: () => void;
+  onRenameTopic: (key: string, title: string) => Promise<void>;
+  onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
+  onRevertGeneratedTitle: (key: string) => Promise<void>;
+  onDuplicateTopic: (key: string) => Promise<void>;
+  onPinTopic: (key: string, pinned: boolean) => Promise<void>;
+  onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
+  onRenameGroup: (groupId: string, name: string) => void;
+  onDeleteGroup: (groupId: string) => void;
+  sessionGroups: SessionGroup[];
+  onMoveToGroup: (topicKey: string, targetGroupId: string | null) => void;
+  getGroupForTopic: (topicKey: string) => SessionGroup | undefined;
+  token: GlobalToken;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(group.name);
+  const renameRef = useRef<InputRef>(null);
+
+  useEffect(() => {
+    if (renaming) {
+      setTimeout(() => renameRef.current?.focus({ cursor: 'end' }), 50);
+    }
+  }, [renaming]);
+
+  const handleRenameStart = useCallback(() => {
+    setRenameValue(group.name);
+    setRenaming(true);
+  }, [group.name]);
+
+  const handleRenameSave = useCallback(() => {
+    setRenaming(false);
+    const trimmed = renameValue.trim();
+    if (!trimmed || trimmed === group.name) return;
+    onRenameGroup(group.id, trimmed);
+  }, [renameValue, group.id, group.name, onRenameGroup]);
+
+  const handleDelete = useCallback(() => {
+    Modal.confirm({
+      title: t('agent.sidebar.groups.delete'),
+      content: t('agent.sidebar.groups.deleteConfirm'),
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: () => onDeleteGroup(group.id),
+    });
+  }, [group.id, onDeleteGroup, t]);
+
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <Flexbox
+        horizontal
+        align="center"
+        gap={4}
+        style={{
+          minHeight: 28,
+          padding: '0 8px',
+          cursor: 'pointer',
+        }}
+      >
+        <ChevronRight
+          size={12}
+          onClick={() => setCollapsed(!collapsed)}
+          style={{
+            color: token.colorTextQuaternary,
+            transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+            transition: 'transform 0.15s',
+          }}
+        />
+        <FolderOpen size={12} style={{ color: token.colorPrimary, flexShrink: 0 }} />
+        {renaming ? (
+          <Input
+            ref={renameRef}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onPressEnter={handleRenameSave}
+            onBlur={handleRenameSave}
+            onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setRenaming(false); } }}
+            onClick={(e) => e.stopPropagation()}
+            size="small"
+            style={{ flex: 1, fontSize: 12 }}
+          />
+        ) : (
+          <span
+            onClick={() => setCollapsed(!collapsed)}
+            style={{ flex: 1, fontSize: 12, color: token.colorTextSecondary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {group.name}
+            <span style={{ marginLeft: 4, color: token.colorTextQuaternary, fontWeight: 400 }}>
+              {topics.length}
+            </span>
+          </span>
+        )}
+        {!renaming && (
+          <Dropdown
+            menu={{
+              items: [
+                { key: 'rename', icon: <Pencil size={14} />, label: t('agent.sidebar.groups.rename'), onClick: handleRenameStart },
+                { type: 'divider' },
+                { key: 'delete', icon: <Trash2 size={14} />, label: t('agent.sidebar.groups.delete'), danger: true, onClick: handleDelete },
+              ],
+            }}
+            trigger={['click']}
+            placement="bottomRight"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: 'pointer', color: token.colorTextTertiary }}
+            >
+              <MoreHorizontal size={12} />
+            </div>
+          </Dropdown>
+        )}
+      </Flexbox>
+
+      {!collapsed && (
+        <Flexbox gap={1}>
+          {topics.length === 0 ? (
+            <span style={{ padding: '4px 24px', fontSize: 11, color: token.colorTextQuaternary }}>
+              {t('agent.sidebar.groups.empty')}
+            </span>
+          ) : (
+            topics.map((topic) => (
+              <TopicItem
+                key={topic.key}
+                topic={topic}
+                isActive={topic.key === currentSessionKey}
+                onSelect={() => onSelectTopic(topic.key)}
+                onDelete={() => onDeleteTopic(topic.key)}
+                onReload={onReload}
+                onRenameTopic={onRenameTopic}
+                onSmartRenameTopic={onSmartRenameTopic}
+                onRevertGeneratedTitle={onRevertGeneratedTitle}
+                onDuplicateTopic={onDuplicateTopic}
+                onPinTopic={onPinTopic}
+                onFavoriteTopic={onFavoriteTopic}
+                sessionGroups={sessionGroups}
+                onMoveToGroup={onMoveToGroup}
+                currentGroupId={getGroupForTopic(topic.key)?.id}
+                token={token}
+                t={t}
+              />
+            ))
+          )}
+        </Flexbox>
+      )}
+    </div>
+  );
+}
+
 function TopicGroup({
   label,
   topics,
@@ -708,6 +997,9 @@ function TopicGroup({
   onDuplicateTopic,
   onPinTopic,
   onFavoriteTopic,
+  sessionGroups,
+  onMoveToGroup,
+  getGroupForTopic,
   token,
   t,
 }: {
@@ -723,6 +1015,9 @@ function TopicGroup({
   onDuplicateTopic: (key: string) => Promise<void>;
   onPinTopic: (key: string, pinned: boolean) => Promise<void>;
   onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
+  sessionGroups: SessionGroup[];
+  onMoveToGroup: (topicKey: string, targetGroupId: string | null) => void;
+  getGroupForTopic: (topicKey: string) => SessionGroup | undefined;
   token: GlobalToken;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
@@ -770,6 +1065,9 @@ function TopicGroup({
               onDuplicateTopic={onDuplicateTopic}
               onPinTopic={onPinTopic}
               onFavoriteTopic={onFavoriteTopic}
+              sessionGroups={sessionGroups}
+              onMoveToGroup={onMoveToGroup}
+              currentGroupId={getGroupForTopic(topic.key)?.id}
               token={token}
               t={t}
             />
@@ -798,6 +1096,9 @@ function TopicItem({
   onDuplicateTopic,
   onPinTopic,
   onFavoriteTopic,
+  sessionGroups,
+  onMoveToGroup,
+  currentGroupId,
   token,
   t,
 }: {
@@ -812,6 +1113,9 @@ function TopicItem({
   onDuplicateTopic: (key: string) => Promise<void>;
   onPinTopic: (key: string, pinned: boolean) => Promise<void>;
   onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
+  sessionGroups?: SessionGroup[];
+  onMoveToGroup?: (topicKey: string, targetGroupId: string | null) => void;
+  currentGroupId?: string;
   token: GlobalToken;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
@@ -907,10 +1211,38 @@ function TopicItem({
     usePortalStore.getState().openTopicComments(topic.key);
   }, [topic.key]);
 
+  // Build "Move to group" submenu items
+  const moveToGroupItems: MenuProps['items'] = useMemo(() => {
+    if (!sessionGroups || !onMoveToGroup) return [];
+    const items: MenuProps['items'] = [];
+    for (const sg of sessionGroups) {
+      if (sg.id === currentGroupId) continue;
+      items.push({
+        key: `move-to-${sg.id}`,
+        icon: <FolderOpen size={14} />,
+        label: sg.name,
+        onClick: () => onMoveToGroup(topic.key, sg.id),
+      });
+    }
+    if (currentGroupId) {
+      if (items.length > 0) items.push({ type: 'divider' });
+      items.push({
+        key: 'remove-from-group',
+        icon: <FolderMinus size={14} />,
+        label: t('agent.sidebar.menu.removeFromGroup'),
+        onClick: () => onMoveToGroup(topic.key, null),
+      });
+    }
+    return items;
+  }, [sessionGroups, onMoveToGroup, currentGroupId, topic.key, t]);
+
   const menuItems: MenuProps['items'] = [
     { key: 'pin', icon: <Pin size={14} />, label: topic.pinned ? t('agent.sidebar.menu.unpin') : t('agent.sidebar.menu.pin'), onClick: handlePin },
     { key: 'favorite', icon: <Star size={14} />, label: topic.favorite ? t('agent.sidebar.menu.unfavorite') : t('agent.sidebar.menu.favorite'), onClick: handleFavorite },
     { type: 'divider' },
+    ...(moveToGroupItems.length > 0
+      ? [{ key: 'move-to-group', icon: <FolderOpen size={14} />, label: t('agent.sidebar.menu.moveToGroup'), children: moveToGroupItems }, { type: 'divider' as const }]
+      : []),
     { key: 'smart-rename', icon: <Sparkles size={14} />, label: t('agent.sidebar.menu.smartRename'), onClick: handleSmartRename },
     { key: 'rename', icon: <Pencil size={14} />, label: t('agent.sidebar.menu.rename'), onClick: handleRename },
     { key: 'duplicate', icon: <Copy size={14} />, label: t('agent.sidebar.menu.duplicate'), onClick: handleDuplicate },
