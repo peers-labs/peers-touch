@@ -17,7 +17,7 @@ func TestKnowledgeRetrievalChunksEmbedsAndRanksBoundResources(t *testing.T) {
 		t.Fatalf("write knowledge file: %v", err)
 	}
 
-	svc := NewKnowledgeRetrievalService()
+	svc := NewKnowledgeRetrievalService(nil)
 	result, err := svc.Retrieve(context.Background(), []domain.KnowledgeResource{{
 		ResourceID: "kr_1",
 		Type:       domain.KnowledgeResourceTypeDocument,
@@ -43,7 +43,7 @@ func TestKnowledgeRetrievalChunksEmbedsAndRanksBoundResources(t *testing.T) {
 }
 
 func TestKnowledgeRetrievalSkipsDisabledResources(t *testing.T) {
-	svc := NewKnowledgeRetrievalService()
+	svc := NewKnowledgeRetrievalService(nil)
 	result, err := svc.Retrieve(context.Background(), []domain.KnowledgeResource{{
 		ResourceID: "kr_disabled",
 		Type:       domain.KnowledgeResourceTypeDocument,
