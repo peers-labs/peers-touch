@@ -1,0 +1,30 @@
+{
+  "id": "chat-realtime-sse-delivery",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "apps/station/app/subserver/events/handler.go"
+  ],
+  "truth_sources": [
+    "running Station /events/stream SSE endpoint",
+    "friend_chat_messages table"
+  ],
+  "visible_surfaces": [
+    {"type": "sse", "route": "/events/stream"}
+  ],
+  "required_gates": ["chat-realtime-sse-e2e"],
+  "acceptance": {
+    "service": [
+      "an actor can open an SSE stream and receive push events",
+      "when another actor sends a friend-chat message, the receiver's SSE stream delivers an event within 10 seconds",
+      "SSE events include identifiable event IDs for resume support"
+    ],
+    "visible": [
+      "SSE delivery proves the Station realtime pipeline independent of Desktop gateway or UI"
+    ]
+  },
+  "negative": [
+    "SSE proof of delivery must not be reported as Desktop UI real-time rendering proof",
+    "single-direction delivery must not be reported as bidirectional realtime proof"
+  ]
+}
