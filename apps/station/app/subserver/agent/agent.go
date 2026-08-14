@@ -201,6 +201,10 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 	growthHandlers := handler.NewGrowthHandlers(growthMetricsSvc, memorySvc, skillSvc, diagnosticSvc)
 
+	// M11: Ecosystem handlers — localStorage→Station migration.
+	ecosystemSvc := service.NewEcosystemService()
+	ecosystemHandlers := handler.NewEcosystemHandlers(ecosystemSvc)
+
 	providerHandlers := handler.NewProviderHandlers(
 		service.NewProviderConfigService(service.NewCLIAdapterRegistry()),
 		service.NewModelConfigService(),
@@ -354,6 +358,29 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-scheduler-stop", "/agent/scheduler/stop", server.POST, schedulerHandlers.HandleStop, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-scheduler-status", "/agent/scheduler/status", server.GET, schedulerHandlers.HandleStatus, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-scheduler-add-job", "/agent/scheduler/add-job", server.POST, schedulerHandlers.HandleAddJob, logIDWrapper, jwtWrapper),
+
+		// Ecosystem: Agent Groups (M11 localStorage→Station migration).
+		server.NewHTTPHandler("ecosystem-group-create", "/agent/ecosystem/group/create", server.POST, ecosystemHandlers.HandleCreateAgentGroup, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("ecosystem-group-update", "/agent/ecosystem/group/update", server.POST, ecosystemHandlers.HandleUpdateAgentGroup, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("ecosystem-group-delete", "/agent/ecosystem/group/delete", server.POST, ecosystemHandlers.HandleDeleteAgentGroup, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("ecosystem-group-list", "/agent/ecosystem/group/list", server.POST, ecosystemHandlers.HandleListAgentGroups, logIDWrapper, jwtWrapper),
+
+		// Ecosystem: Topic Comments.
+		server.NewHTTPHandler("ecosystem-comment-create", "/agent/ecosystem/comment/create", server.POST, ecosystemHandlers.HandleCreateTopicComment, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("ecosystem-comment-delete", "/agent/ecosystem/comment/delete", server.POST, ecosystemHandlers.HandleDeleteTopicComment, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("ecosystem-comment-list", "/agent/ecosystem/comment/list", server.POST, ecosystemHandlers.HandleListTopicComments, logIDWrapper, jwtWrapper),
+
+		// Ecosystem: Eval Datasets.
+		server.NewHTTPHandler("ecosystem-eval-create", "/agent/ecosystem/eval/create", server.POST, ecosystemHandlers.HandleCreateEvalDataset, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("ecosystem-eval-update", "/agent/ecosystem/eval/update", server.POST, ecosystemHandlers.HandleUpdateEvalDataset, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("ecosystem-eval-delete", "/agent/ecosystem/eval/delete", server.POST, ecosystemHandlers.HandleDeleteEvalDataset, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("ecosystem-eval-list", "/agent/ecosystem/eval/list", server.POST, ecosystemHandlers.HandleListEvalDatasets, logIDWrapper, jwtWrapper),
+
+		// Ecosystem: Custom Plugins.
+		server.NewHTTPHandler("ecosystem-plugin-create", "/agent/ecosystem/plugin/create", server.POST, ecosystemHandlers.HandleCreateCustomPlugin, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("ecosystem-plugin-update", "/agent/ecosystem/plugin/update", server.POST, ecosystemHandlers.HandleUpdateCustomPlugin, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("ecosystem-plugin-delete", "/agent/ecosystem/plugin/delete", server.POST, ecosystemHandlers.HandleDeleteCustomPlugin, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("ecosystem-plugin-list", "/agent/ecosystem/plugin/list", server.POST, ecosystemHandlers.HandleListCustomPlugins, logIDWrapper, jwtWrapper),
 	}
 	return prefixHandlers(s.opts.Path, handlers)
 }
