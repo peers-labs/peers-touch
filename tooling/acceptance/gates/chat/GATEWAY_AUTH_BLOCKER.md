@@ -27,21 +27,37 @@ flow (`/actor/access/start` returns 404). It only supports the legacy direct
 | `realtime_sse_e2e.py` (new) | ✅ PASS — no gateway needed |
 | `runtime_e2e.py` (existing) | ✅ PASS — Station direct |
 
+## Root Cause Analysis (2026-08-15 update)
+
+Neither available Station has the complete feature set needed:
+
+| Station | access-gate | friend-chat | group-chat | SSE |
+|---------|-------------|-------------|------------|-----|
+| `10.37.94.156:18180` | ❌ 404 | ✅ | ✅ | ✅ |
+| `10.37.118.48:18080` | ✅ | ❌ 404 | ❌ 404 | ❓ |
+| Local (any worktree) | ❌ not in code | ✅ | ✅ | ✅ |
+
+The access gate subserver **does not exist in any local worktree** (peers-touch,
+peers-ai-agent, peers-group-chat). It only exists on the deployed Station at
+`10.37.118.48:18080`, suggesting it's in a separate deployment artifact or
+behind a feature gate not present in the main branch.
+
 ## Resolution Options
 
-1. **Upgrade remote Station** to include the access gate subserver (requires deployment)
-2. **Start a local Station** from this worktree that includes the access gate flow
-3. **Add a test-only gateway auth bypass** (not recommended for production binary)
-4. **Use the Station at 10.37.118.48:18080** which does support access gate (currently unreachable/slow from this machine)
+1. **Merge access-gate code into Station** — locate where the access gate
+   subserver lives and merge it into the main branch Station code
+2. **Add a direct-login fallback** to the Desktop gateway for Stations that
+   don't support access-gate (backwards compatibility)
+3. **Deploy a unified Station** that includes both access-gate AND chat APIs
+4. **Test-only auth bypass** — add `PT_GATEWAY_TEST_TOKEN` env var support
+   to the gateway binary (test builds only)
 
 ## Recommended Resolution
 
-Start a **local Station** from the `peers-group-chat` worktree:
-```bash
-cd apps/station && go run . --config config/local.yaml
-```
-This would have both the access gate flow AND all group-chat/friend-chat APIs,
-enabling full gateway E2E testing.
+Option 2 (direct-login fallback) provides the most value: it makes the gateway
+work with any Station version, not just ones with access-gate. Implementation:
+in `auth_login`, if `/actor/access/start` returns 404, fall back to direct
+`/actor/login` and extract the token from that response.
 
 ## Workaround (current)
 
