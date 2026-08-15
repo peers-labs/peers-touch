@@ -1,4 +1,6 @@
-use super::{CommandRetryPolicy, MessagingEngine};
+use super::{CommandRetryPolicy, ConversationProjection, MessagingEngine};
+use crate::infrastructure::station_client;
+use reqwest::Method;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -200,6 +202,9 @@ fn run_cycle(engine: &MessagingEngine, token: &str) -> Result<(), String> {
     ) {
         failures.push(format!("command dispatch: {error}"));
     }
+    if let Err(error) = hydrate_projections_from_station(engine, token) {
+        failures.push(format!("projection hydration: {error}"));
+    }
     if let Err(error) = engine.drain_once(token, DRAIN_BATCH_LIMIT) {
         failures.push(format!("queue drain: {error}"));
     }
@@ -208,6 +213,104 @@ fn run_cycle(engine: &MessagingEngine, token: &str) -> Result<(), String> {
     } else {
         Err(failures.join("; "))
     }
+}
+
+fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Result<(), String> {
+    if !engine.store().conversation_projections()?.is_empty() {
+        return Ok(());
+    }
+    let resp = station_client::request_json_auth_with_device_id(
+        Method::GET,
+        "/messaging/conversation/list",
+        token,
+        None,
+        None,
+        &engine.endpoint().device_id,
+    )
+    .map_err(|error| format!("fetch conversation list: {error}"))?;
+    let empty_vec = Vec::new();
+    let conversations = resp
+        .get("conversations")
+        .and_then(|c| c.as_array())
+        .unwrap_or(&empty_vec);
+    if conversations.is_empty() {
+        return Ok(());
+    }
+    let now = super::engine::now_unix_ms();
+    let mut projections = Vec::new();
+    for conv in conversations {
+        let conversation_id = conv
+            .get("conversation_id")
+            .or_else(|| conv.get("conversationId"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if conversation_id.is_empty() {
+            continue;
+        }
+        let authority_station_id = conv
+            .get("authority_station_id")
+            .or_else(|| conv.get("authorityStationId"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("local")
+            .to_string();
+        let kind = match conv
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+        {
+            "CONVERSATION_KIND_DIRECT" => 1,
+            "CONVERSATION_KIND_GROUP" => 2,
+            _ => conv.get("kind").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+        };
+        let name = conv
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let owner_ptid = conv
+            .get("owner_ptid")
+            .or_else(|| conv.get("ownerPtid"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let membership_epoch = conv
+            .get("membership_epoch")
+            .or_else(|| conv.get("membershipEpoch"))
+            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .unwrap_or(1);
+        let mls_epoch = conv
+            .get("mls_epoch")
+            .or_else(|| conv.get("mlsEpoch"))
+            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .unwrap_or(0);
+        let member_ptids = conv
+            .get("member_ptids")
+            .or_else(|| conv.get("memberPtids"))
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        projections.push(ConversationProjection {
+            conversation_id: conversation_id.to_string(),
+            authority_station_id,
+            kind,
+            name,
+            owner_ptid,
+            member_ptids,
+            membership_epoch,
+            mls_epoch,
+            active: true,
+            updated_at_unix_ms: now,
+        });
+    }
+    let count = engine.hydrate_conversation_projections(&projections)?;
+    if count > 0 {
+        tracing::info!(count, "messaging conversation projections bootstrapped from Station");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
