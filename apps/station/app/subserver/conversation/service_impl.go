@@ -49,24 +49,27 @@ func (s *DefaultService) CreateDirect(ctx context.Context, actorA, actorB string
 
 	existing, err := s.repo.GetConversation(ctx, convID)
 	if err == nil && existing != nil {
-		// Ensure both members are active — handles stale/missing member records.
 		now := s.clock()
-		_ = s.repo.UpsertMember(ctx, &chat.ConversationMember{
+		if err := s.repo.UpsertMember(ctx, &chat.ConversationMember{
 			ConversationId:         convID,
 			Ptid:                   actorA,
 			Role:                   chat.MemberRole_MEMBER_ROLE_MEMBER,
 			MemberStatus:           chat.MemberStatus_MEMBER_STATUS_ACTIVE,
 			ActorHomeStationPeerId: actorAStation,
 			JoinedAt:               timestamppb.New(now),
-		})
-		_ = s.repo.UpsertMember(ctx, &chat.ConversationMember{
+		}); err != nil {
+			return nil, fmt.Errorf("conversation: ensure member A active failed: %w", err)
+		}
+		if err := s.repo.UpsertMember(ctx, &chat.ConversationMember{
 			ConversationId:         convID,
 			Ptid:                   actorB,
 			Role:                   chat.MemberRole_MEMBER_ROLE_MEMBER,
 			MemberStatus:           chat.MemberStatus_MEMBER_STATUS_ACTIVE,
 			ActorHomeStationPeerId: actorBStation,
 			JoinedAt:              timestamppb.New(now),
-		})
+		}); err != nil {
+			return nil, fmt.Errorf("conversation: ensure member B active failed: %w", err)
+		}
 		return existing, nil
 	}
 
