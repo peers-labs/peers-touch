@@ -94,7 +94,6 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
             batch_limit: self.batch_limit,
         })?;
         if response.consumer_epoch == 0
-            || response.acked_through_sequence > cursor
             || response.lane_head_sequence < response.acked_through_sequence
         {
             return Err("messaging claim response lane state is invalid".to_string());
@@ -103,7 +102,9 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
             observer(response.consumer_epoch);
         }
 
-        let mut next_cursor = cursor;
+        // Adopt server's acked_through as baseline when local cursor is behind
+        // (happens after local DB rebuild while server retains acknowledgment state).
+        let mut next_cursor = cursor.max(response.acked_through_sequence);
         let mut processed = 0;
         for item in &response.items {
             if item.lane_sequence != next_cursor + 1 {

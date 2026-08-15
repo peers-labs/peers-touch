@@ -985,6 +985,22 @@ impl MessagingEngine {
             )?,
         )
     }
+
+    pub fn hydrate_conversation_projections(
+        &self,
+        projections: &[super::ConversationProjection],
+    ) -> Result<usize, String> {
+        if !self.store.conversation_projections()?.is_empty() {
+            return Ok(0);
+        }
+        let mut bootstrapped = 0;
+        for projection in projections {
+            if self.store.bootstrap_conversation_projection(projection)? {
+                bootstrapped += 1;
+            }
+        }
+        Ok(bootstrapped)
+    }
 }
 
 impl Drop for MessagingEngine {

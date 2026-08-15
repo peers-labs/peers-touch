@@ -84,16 +84,41 @@ fn string_field(value: &Value, snake_case: &str, camel_case: &str) -> String {
 }
 
 pub(crate) fn canonical_ptid_for_token(token: &str) -> Option<String> {
-    station_client::request_proto::<(), ActorProfile>(
+    if let Ok(profile) = station_client::request_proto::<(), ActorProfile>(
         reqwest::Method::GET,
         "/api/v1/social/users/me",
         token,
         None,
         None::<&()>,
-    )
-    .ok()
-    .map(|profile| profile.id)
-    .filter(|ptid| ptid.starts_with("ptid:"))
+    ) {
+        if profile.id.starts_with("ptid:") {
+            return Some(profile.id);
+        }
+    }
+    if let Ok(resp) = station_client::request_json(
+        reqwest::Method::GET,
+        "/actor/profile",
+        token,
+        None,
+        None,
+    ) {
+        if let Some(network_id) = resp
+            .get("data")
+            .and_then(|d| d.get("peers_touch"))
+            .and_then(|p| p.get("network_id"))
+            .and_then(|n| n.as_str())
+        {
+            if network_id.starts_with("ptid:") {
+                return Some(network_id.to_string());
+            }
+        }
+        if let Some(id) = resp.get("data").and_then(|d| d.get("id")).and_then(|v| v.as_str()) {
+            if id.starts_with("ptid:") {
+                return Some(id.to_string());
+            }
+        }
+    }
+    None
 }
 
 pub(crate) fn activate_messaging_profile(
@@ -139,8 +164,23 @@ fn access_post<T: serde::Serialize>(
     err_code: ErrorCode,
     context: &str,
 ) -> Result<Value, AppResult<T>> {
-    let resp = station_client::post_json_no_auth(path, body)
-        .map_err(|error| AppResult::fail(err_code, format!("{}: {}", context, error), None))?;
+    let resp = station_client::post_json_no_auth(path, body).map_err(|error| {
+        use station_client::StationClientErrorKind;
+        match error.kind {
+            StationClientErrorKind::HttpStatus(status) => {
+                let code = match status {
+                    400 => ErrorCode::InvalidArgument,
+                    401 => ErrorCode::Unauthorized,
+                    403 => ErrorCode::Forbidden,
+                    404 => ErrorCode::NotFound,
+                    409 => ErrorCode::Conflict,
+                    _ => ErrorCode::InternalError,
+                };
+                AppResult::fail(code, format!("{}: {}", context, error.message), error.details)
+            }
+            _ => AppResult::fail(err_code, format!("{}: {}", context, error.message), error.details),
+        }
+    })?;
     resp.get("data").cloned().ok_or_else(|| {
         AppResult::fail(
             err_code,
@@ -325,8 +365,15 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
 
     let attempt = match start_access_attempt::<AuthSessionPayload>() {
         Ok(decision) => decision,
-        Err(_) => {
-            return direct_login_fallback(&input.account, &input.password, state);
+        Err(error) => {
+            let should_fallback = error.error.as_ref().is_some_and(|e| e.code == ErrorCode::NotFound);
+            if should_fallback {
+                tracing::info!(
+                    "access-gate endpoint not found (404), falling back to direct /actor/login"
+                );
+                return direct_login_fallback(&input.account, &input.password, state);
+            }
+            return error;
         }
     };
     let attempt_id = string_field(&attempt, "attempt_id", "attemptId");
@@ -459,6 +506,9 @@ fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthS
             )
         }
     };
+    if let Ok(mut guard) = state.session.lock() {
+        guard.account_id = Some(account_id.clone());
+    }
     if let Err(error) =
         persist_session_if_unprotected(&account_id, &session, SessionSource::Password)
     {
@@ -476,16 +526,22 @@ fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthS
 
     // Mark session as restorable (will be encrypted once PIN is set)
     mark_account_has_session(&account_id, &session.token);
-
-    // TODO(e2e): Messaging activation and canonical_ptid_for_token are
-    // temporarily skipped — one of them hangs when the messaging relay is
-    // unreachable. Will add proper timeout/background handling post-E2E.
+    if let Err(error) =
+        activate_messaging_profile(state, &account_id, &session.actor_id, &session.token)
+    {
+        tracing::warn!(
+            account_id = %account_id,
+            actor_id = %session.actor_id,
+            error = %error,
+            "authenticated session retained while durable messaging activation awaits retry"
+        );
+    }
 
     AppResult::success(AuthSessionPayload {
         command: command.to_string(),
         status: "authenticated".to_string(),
         actor_id: Some(actor_id),
-        ptid: None,
+        ptid: canonical_ptid_for_token(&access_token),
         name: Some(name),
         email: Some(email_str),
         avatar_url: Some(avatar),
