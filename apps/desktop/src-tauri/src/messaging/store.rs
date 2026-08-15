@@ -1614,6 +1614,47 @@ impl MessagingStore {
         Ok(authority_station_id)
     }
 
+    pub fn bootstrap_conversation_projection(
+        &self,
+        projection: &super::ConversationProjection,
+    ) -> Result<bool, String> {
+        let changed = self
+            .connection()?
+            .execute(
+                "INSERT INTO messaging_conversations(
+                    conversation_id, authority_station_id, kind, name, owner_ptid,
+                    membership_epoch, mls_epoch, active, updated_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)
+                 ON CONFLICT(conversation_id) DO NOTHING",
+                params![
+                    projection.conversation_id,
+                    projection.authority_station_id,
+                    projection.kind,
+                    projection.name,
+                    projection.owner_ptid,
+                    projection.membership_epoch,
+                    projection.mls_epoch,
+                    projection.updated_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed == 1 {
+            let connection = self.connection()?;
+            for ptid in &projection.member_ptids {
+                connection
+                    .execute(
+                        "INSERT INTO messaging_conversation_members(
+                            conversation_id, ptid, active
+                         ) VALUES (?1, ?2, 1)
+                         ON CONFLICT(conversation_id, ptid) DO NOTHING",
+                        params![projection.conversation_id, ptid],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        Ok(changed == 1)
+    }
+
     #[cfg(test)]
     pub fn install_test_conversation_projection(
         &self,

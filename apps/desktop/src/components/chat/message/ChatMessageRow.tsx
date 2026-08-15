@@ -561,6 +561,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   return (
     <Flexbox
       data-message-ulid={message.ulid}
+      data-pt-message-item={message.ulid}
       className={`msg-row ${highlighted ? 'highlighted' : ''}`}
       horizontal
       align="flex-start"

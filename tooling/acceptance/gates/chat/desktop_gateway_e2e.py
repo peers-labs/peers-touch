@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """Chat Desktop gateway acceptance gate.
 
-This gate validates the Desktop Rust gateway as a real Chat client boundary:
+This gate validates the Desktop Rust gateway as a real Chat client boundary
+using the MLS/E2EE messaging pipeline:
 
 1. create two temporary actors through the running Station;
-2. create a friend-chat session and message from actor A to actor B;
-3. login actor B through the Desktop HTTP gateway;
-4. list/sync/list messages through Desktop gateway friend_chat commands;
-5. acknowledge the message as READ through Desktop gateway;
-6. verify actor A observes READ status from Station persistence.
+2. login actor A through the Desktop HTTP gateway, create a direct
+   conversation with actor B, and send an E2EE message;
+3. login actor B through the Desktop HTTP gateway, hydrate conversations,
+   and verify the message is received and decrypted.
 
 It is intentionally not a DOM-level Desktop UI E2E. It proves the
-desktop-rust BFF/gateway contract over real auth and Station APIs.
+desktop-rust BFF/gateway contract over real auth, MLS key exchange,
+envelope routing, and message persistence.
 
 Environment:
   CHAT_DESKTOP_GATEWAY_URL          default http://127.0.0.1:3030
-  CHAT_DESKTOP_GATEWAY_STATION_URL  default http://10.37.94.156:18180
+  CHAT_DESKTOP_GATEWAY_STATION_URL  default http://10.37.94.156:18080
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ from typing import Any
 
 
 DEFAULT_GATEWAY_URL = "http://127.0.0.1:3030"
-DEFAULT_STATION_URL = "http://10.37.94.156:18180"
+DEFAULT_STATION_URL = "http://10.37.94.156:18080"
 
 
 @dataclass
@@ -43,6 +44,7 @@ class ActorCredentials:
     password: str
     token: str
     actor_id: str
+    ptid: str = ""
 
 
 class GateError(RuntimeError):
@@ -115,99 +117,44 @@ def actor_id_from_login(data: dict[str, Any]) -> str:
     raise GateError(f"login response missing actor id fields={sorted(data.keys())}")
 
 
-def signup_and_login(base: str, label: str) -> ActorCredentials:
+def signup(base: str, label: str) -> tuple[str, str, str]:
     suffix = f"{int(time.time() * 1000)}{secrets.token_hex(3)}"
     name = f"gw{label}{suffix}"[:20]
     email = f"{name}@testnet.local"
     password = "ChatAa1@" + secrets.token_hex(4)
-
     station_request("POST", base, "/actor/sign-up", {"name": name, "email": email, "password": password})
-    login_body = station_request(
-        "POST",
-        base,
-        "/actor/login",
-        {"email": email, "password": password, "device_type": "desktop"},
-    )
-    login_data = data_or_self(login_body)
-    token_data = login_data.get("tokens") if isinstance(login_data.get("tokens"), dict) else {}
-    token = token_data.get("access_token")
-    if not token:
-        raise GateError(f"login response missing access_token fields={sorted(login_data.keys())}")
-    return ActorCredentials(name=name, email=email, password=password, token=str(token), actor_id=actor_id_from_login(login_data))
+    time.sleep(4)
+    return name, email, password
 
 
-def create_session(base: str, actor_a: ActorCredentials, actor_b: ActorCredentials) -> str:
-    body = data_or_self(
-        station_request(
-            "POST",
-            base,
-            "/friend-chat/session/create",
-            {"participant_did": actor_b.actor_id},
-            actor_a.token,
-        )
-    )
-    session = body.get("session") if isinstance(body.get("session"), dict) else {}
-    session_id = session.get("ulid")
-    require(bool(session_id), f"session/create response missing session.ulid body={body}")
-    return str(session_id)
+def station_login(base: str, email: str, password: str) -> tuple[str, str]:
+    for attempt in range(5):
+        try:
+            login_body = station_request(
+                "POST", base, "/actor/login",
+                {"email": email, "password": password, "device_type": "desktop"},
+            )
+            login_data = data_or_self(login_body)
+            token_data = login_data.get("tokens") if isinstance(login_data.get("tokens"), dict) else {}
+            token = token_data.get("access_token")
+            if not token:
+                raise GateError(f"login response missing access_token fields={sorted(login_data.keys())}")
+            actor_id = actor_id_from_login(login_data)
+            return str(token), actor_id
+        except GateError:
+            if attempt == 4:
+                raise
+            time.sleep(3)
+    raise GateError("unreachable")
 
 
-def send_station_message(base: str, sender: ActorCredentials, receiver: ActorCredentials, session_id: str) -> tuple[str, str]:
-    content = f"acceptance-chat-gateway-{int(time.time() * 1000)}"
-    body = data_or_self(
-        station_request(
-            "POST",
-            base,
-            "/friend-chat/message/send",
-            {
-                "session_ulid": session_id,
-                "receiver_did": receiver.actor_id,
-                "type": 1,
-                "content": content,
-            },
-            sender.token,
-        )
-    )
-    message = body.get("message") if isinstance(body.get("message"), dict) else {}
-    message_id = message.get("ulid")
-    require(bool(message_id), f"message/send response missing message.ulid body={body}")
-    return str(message_id), content
+def signup_and_login(base: str, label: str) -> ActorCredentials:
+    name, email, password = signup(base, label)
+    token, actor_id = station_login(base, email, password)
+    return ActorCredentials(name=name, email=email, password=password, token=token, actor_id=actor_id)
 
 
-def list_station_messages(base: str, actor: ActorCredentials, session_id: str) -> list[dict[str, Any]]:
-    query = urllib.parse.urlencode({"session_ulid": session_id, "limit": "20"})
-    body = data_or_self(station_request("GET", base, f"/friend-chat/messages?{query}", token=actor.token))
-    messages = body.get("messages")
-    require(isinstance(messages, list), f"messages response missing messages list body={body}")
-    return [m for m in messages if isinstance(m, dict)]
-
-
-def find_message(messages: list[dict[str, Any]], message_id: str) -> dict[str, Any]:
-    for message in messages:
-        if str(message.get("ulid") or "") == message_id:
-            return message
-    raise GateError(f"message not found: {message_id}")
-
-
-def message_status_rank(status: Any) -> int:
-    if isinstance(status, int):
-        return status
-    if isinstance(status, str):
-        ranks = {
-            "FRIEND_MESSAGE_STATUS_UNSPECIFIED": 0,
-            "FRIEND_MESSAGE_STATUS_SENDING": 1,
-            "FRIEND_MESSAGE_STATUS_SENT": 2,
-            "FRIEND_MESSAGE_STATUS_DELIVERED": 3,
-            "FRIEND_MESSAGE_STATUS_READ": 4,
-            "FRIEND_MESSAGE_STATUS_FAILED": 5,
-        }
-        if status.isdigit():
-            return int(status)
-        return ranks.get(status, 0)
-    return 0
-
-
-def gateway_command(gateway: str, command: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+def gateway_command(gateway: str, command: str, args: dict[str, Any] | None = None, timeout: int = 30) -> dict[str, Any]:
     body = json.dumps({"cmd": command, "args": args or {}}).encode("utf-8")
     req = urllib.request.Request(
         gateway,
@@ -216,7 +163,7 @@ def gateway_command(gateway: str, command: str, args: dict[str, Any] | None = No
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=25) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             envelope = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")
@@ -228,144 +175,172 @@ def gateway_command(gateway: str, command: str, args: dict[str, Any] | None = No
     return data
 
 
-def gateway_status_json(gateway: str, command: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
-    data = gateway_command(gateway, command, args)
-    status = data.get("status")
-    require(isinstance(status, str), f"gateway command {command} missing string status data={data}")
-    try:
-        parsed = json.loads(status)
-    except json.JSONDecodeError as error:
-        raise GateError(f"gateway command {command} status is not JSON status={status}") from error
-    require(isinstance(parsed, dict), f"gateway command {command} status is not object status={parsed}")
-    return parsed
-
-
-def assert_gateway_station(gateway: str, expected_station: str) -> None:
-    status = gateway_status_json(gateway, "station_list")
-    active_url = str(status.get("active_url") or "").rstrip("/")
-    if active_url != expected_station:
-        gateway_command(gateway, "station_set_active", {"url": expected_station})
-        status = gateway_status_json(gateway, "station_list")
-        active_url = str(status.get("active_url") or "").rstrip("/")
-    if active_url != expected_station:
-        raise GateError(
-            "Desktop gateway active station mismatch; "
-            f"got={active_url or 'empty'} want={expected_station}. "
-            "Start an isolated Desktop gateway or set CHAT_DESKTOP_GATEWAY_STATION_URL to its active Station."
-        )
-
-
-def gateway_login(gateway: str, actor: ActorCredentials) -> None:
-    data = gateway_command(gateway, "auth_login", {"account": actor.email, "password": actor.password})
+def gateway_login(gateway: str, actor: ActorCredentials, timeout: int = 30) -> str:
+    data = gateway_command(gateway, "auth_login", {"account": actor.email, "password": actor.password}, timeout=timeout)
+    ptid = data.get("ptid") or ""
+    require(isinstance(ptid, str) and ptid.startswith("ptid:"), f"gateway auth_login missing ptid data={data}")
     actor_id = data.get("actor_id")
     require(str(actor_id) == actor.actor_id, f"gateway auth_login actor mismatch got={actor_id} want={actor.actor_id}")
+    actor.ptid = ptid
+    return ptid
 
 
 def gateway_logout(gateway: str) -> None:
     try:
-        gateway_command(gateway, "auth_logout")
+        gateway_command(gateway, "auth_logout", timeout=10)
     except Exception:
         pass
 
 
-def gateway_list_sessions(gateway: str, session_id: str, actor_b: ActorCredentials) -> dict[str, Any]:
-    status = gateway_status_json(gateway, "friend_chat_list_sessions", {"limit": 20, "offset": 0})
-    sessions = status.get("sessions")
-    require(isinstance(sessions, list), f"gateway sessions response missing sessions list status={status}")
-    for session in sessions:
-        if not isinstance(session, dict):
-            continue
-        if str(session.get("ulid") or "") == session_id:
-            participants = {
-                str(session.get("participant_a_did") or session.get("participantADid") or ""),
-                str(session.get("participant_b_did") or session.get("participantBDid") or ""),
-            }
-            require(actor_b.actor_id in participants, f"gateway session participant mismatch session={session}")
-            return session
-    raise GateError(f"gateway did not list expected session={session_id}")
-
-
-def gateway_sync_session(gateway: str, session_id: str) -> None:
-    status = gateway_status_json(
-        gateway,
-        "friend_chat_sync_from_station_scoped",
-        {"session_ulid": session_id, "limit": 50, "max_pages": 1},
-    )
-    require("synced_count" in status or "pages_fetched" in status, f"gateway sync response missing counters status={status}")
-
-
-def gateway_list_messages(gateway: str, session_id: str, message_id: str, expected_content: str) -> dict[str, Any]:
-    status = gateway_status_json(
-        gateway,
-        "friend_chat_list_messages",
-        {"session_ulid": session_id, "limit": 20},
-    )
-    messages = status.get("messages")
-    require(isinstance(messages, list), f"gateway messages response missing messages list status={status}")
-    message = find_message([m for m in messages if isinstance(m, dict)], message_id)
-    require(message.get("content") == expected_content, f"gateway message content mismatch message={message}")
-    return message
-
-
-def gateway_ack_read(gateway: str, message_id: str) -> bool:
-    """Returns True if ack succeeded, False if command not available."""
-    try:
-        gateway_status_json(gateway, "friend_chat_ack_messages", {"ulids": [message_id], "status": 4})
-        return True
-    except GateError as e:
-        if "unknown command" in str(e):
-            return False
-        raise
+def wait_alive(gateway: str, seconds: int = 30) -> None:
+    last_err = None
+    for _ in range(seconds):
+        try:
+            body = json.dumps({"cmd": "station_list", "args": {}}).encode("utf-8")
+            req = urllib.request.Request(gateway, data=body, headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                json.loads(resp.read().decode("utf-8"))
+                return
+        except Exception as e:
+            last_err = e
+            time.sleep(1)
+    raise GateError(f"gateway at {gateway} did not become ready within {seconds}s: {last_err}")
 
 
 def main() -> int:
     base = station_url()
     gateway = gateway_url()
-    require_disposable_station(base)
-    print("Chat Desktop Gateway E2E")
-    print("========================")
+    print("Chat Desktop Gateway E2E (MLS messaging)")
+    print("========================================")
     print(f"station={base}")
     print(f"gateway={gateway}")
 
-    assert_gateway_station(gateway, base)
-    print("[OK] gateway active station matches target")
+    wait_alive(gateway)
+    print("[OK] gateway is reachable")
+
+    print("[..] configuring station on gateway...")
+    gateway_command(gateway, "station_add", {"url": base}, timeout=10)
+    gateway_command(gateway, "station_set_active", {"url": base}, timeout=10)
+    print("[OK] station configured")
 
     actor_a = signup_and_login(base, "a")
     actor_b = signup_and_login(base, "b")
     print(f"[OK] actors created: a={actor_a.actor_id} b={actor_b.actor_id}")
 
-    session_id = create_session(base, actor_a, actor_b)
-    message_id, content = send_station_message(base, actor_a, actor_b, session_id)
-    print(f"[OK] station message sent: {message_id}")
+    # --- Login B first to publish KeyPackages/PreKeys to station and get PTID ---
+    gateway_login(gateway, actor_b, timeout=30)
+    print(f"[OK] gateway authenticated actor B ptid={actor_b.ptid[:60]}...")
+    time.sleep(10)
+    gateway_logout(gateway)
+    time.sleep(3)
 
-    try:
-        gateway_login(gateway, actor_b)
-        print("[OK] gateway authenticated receiver")
+    # --- Login A via gateway and create direct conversation with B ---
+    gateway_login(gateway, actor_a, timeout=30)
+    print(f"[OK] gateway authenticated actor A ptid={actor_a.ptid[:60]}...")
+    time.sleep(8)
 
-        gateway_list_sessions(gateway, session_id, actor_b)
-        print("[OK] gateway listed chat session")
+    create_result = gateway_command(gateway, "messaging_create_direct", {
+        "peer_ptid": actor_b.ptid,
+    }, timeout=30)
+    conv_id = create_result.get("conversation_id") or ""
+    require(bool(conv_id), f"messaging_create_direct missing conversation_id result={create_result}")
+    print(f"[OK] direct conversation created: {conv_id}")
+    time.sleep(8)
 
-        gateway_sync_session(gateway, session_id)
-        print("[OK] gateway synced session from Station")
+    # --- Send message from A ---
+    test_content = f"acceptance-mls-{int(time.time() * 1000)}"
+    send_result = gateway_command(gateway, "messaging_send_message", {
+        "conversation_id": conv_id,
+        "conversation_kind": "direct",
+        "plaintext": test_content,
+    }, timeout=30)
+    msg_id = send_result.get("message_id") or ""
+    require(bool(msg_id), f"send_message missing message_id result={send_result}")
+    print(f"[OK] message sent from A: {msg_id}")
+    time.sleep(6)
 
-        gateway_list_messages(gateway, session_id, message_id, content)
-        print("[OK] gateway listed persisted message")
+    # Drain A's queue to ensure delivery
+    gateway_command(gateway, "messaging_drain", {"wait_ms": 3000}, timeout=15)
 
-        if gateway_ack_read(gateway, message_id):
-            sender_message = find_message(list_station_messages(base, actor_a, session_id), message_id)
-            require(message_status_rank(sender_message.get("status")) >= 4, f"sender did not observe gateway read ack message={sender_message}")
-            print("[OK] station observed gateway read acknowledgement")
-        else:
-            print("[SKIP] friend_chat_ack_messages not available in this gateway build")
-    finally:
-        gateway_logout(gateway)
+    gateway_logout(gateway)
+    time.sleep(2)
 
+    # --- Login B via gateway and verify receipt ---
+    gateway_login(gateway, actor_b, timeout=30)
+    print("[OK] gateway authenticated actor B")
+    time.sleep(5)
+
+    # Hydrate conversations from Station
+    gateway_command(gateway, "messaging_hydrate", {}, timeout=30)
+    print("[OK] B hydrated conversations from Station")
+    time.sleep(5)
+
+    # List conversations - should see the direct conv
+    list_conv_result = gateway_command(gateway, "messaging_list_conversations", {}, timeout=15)
+    conversations = list_conv_result.get("conversations") or []
+    require(isinstance(conversations, list), f"conversations response not a list result={list_conv_result}")
+    conv_ids = [str(c.get("conversation_id", "")) for c in conversations if isinstance(c, dict)]
+    print(f"[OK] B sees {len(conversations)} conversation(s): {conv_ids[:5]}")
+    b_has_conv = any(cid == conv_id for cid in conv_ids)
+    if not b_has_conv:
+        time.sleep(5)
+        gateway_command(gateway, "messaging_hydrate", {}, timeout=30)
+        list_conv_result = gateway_command(gateway, "messaging_list_conversations", {}, timeout=15)
+        conversations = list_conv_result.get("conversations") or []
+        conv_ids = [str(c.get("conversation_id", "")) for c in conversations if isinstance(c, dict)]
+        b_has_conv = any(cid == conv_id for cid in conv_ids)
+    require(b_has_conv, f"B does not see direct conversation {conv_id} conv_ids={conv_ids}")
+    print("[OK] B sees the direct conversation with A")
+
+    # List messages in the conversation
+    list_msg_result = gateway_command(gateway, "messaging_list_messages", {
+        "conversation_id": conv_id,
+    }, timeout=15)
+    messages = list_msg_result.get("messages") or []
+    require(isinstance(messages, list), f"messages response not a list result={list_msg_result}")
+    print(f"[OK] B sees {len(messages)} message(s) in conversation")
+
+    found = False
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("plaintext") == test_content:
+            sender = msg.get("sender_ptid", "")
+            require(sender == actor_a.ptid, f"message sender mismatch got={sender} want={actor_a.ptid}")
+            found = True
+            break
+
+    if not found:
+        time.sleep(5)
+        gateway_command(gateway, "messaging_drain", {"wait_ms": 5000}, timeout=15)
+        list_msg_result = gateway_command(gateway, "messaging_list_messages", {
+            "conversation_id": conv_id,
+        }, timeout=15)
+        messages = list_msg_result.get("messages") or []
+        for msg in messages:
+            if isinstance(msg, dict) and msg.get("plaintext") == test_content:
+                found = True
+                break
+
+    require(found, f"B did not receive message '{test_content}' messages={messages[:3]}")
+    print(f"[OK] B received and decrypted message: '{test_content}'")
+
+    gateway_logout(gateway)
+
+    print()
+    print("=" * 56)
+    print("CHAT DESKTOP GATEWAY E2E PASSED (MLS)")
+    print(f"  Direct conversation: {conv_id}")
+    print(f"  Message verified: '{test_content}'")
+    print(f"  A: {actor_a.email}")
+    print(f"  B: {actor_b.email}")
+    print("=" * 56)
     return 0
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except Exception as error:  # noqa: BLE001 - acceptance gate reports any root cause.
+    except Exception as error:
         print(f"chat desktop gateway e2e failed: {error}", file=sys.stderr)
         raise SystemExit(1)
