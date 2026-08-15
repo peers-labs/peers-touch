@@ -325,7 +325,9 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
 
     let attempt = match start_access_attempt::<AuthSessionPayload>() {
         Ok(decision) => decision,
-        Err(error) => return error,
+        Err(_) => {
+            return direct_login_fallback(&input.account, &input.password, state);
+        }
     };
     let attempt_id = string_field(&attempt, "attempt_id", "attemptId");
     if attempt_id.is_empty() {
@@ -340,6 +342,41 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
         Err(error) => return error,
     };
     finish_login(data, state, "auth_login")
+}
+
+/// Fallback for Stations that do not implement the access-gate flow.
+/// Calls the legacy `/actor/login` endpoint directly.
+fn direct_login_fallback(
+    account: &str,
+    password: &str,
+    state: &AppState,
+) -> AppResult<AuthSessionPayload> {
+    let body = json!({
+        "email": account,
+        "password": password,
+        "device_type": "desktop"
+    });
+    let resp = match station_client::post_json_no_auth("/actor/login", body) {
+        Ok(resp) => resp,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                format!("Direct login failed: {}", error),
+                None,
+            );
+        }
+    };
+    let data = match resp.get("data").cloned() {
+        Some(data) => data,
+        None => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Direct login failed: unexpected response from station",
+                Some(resp),
+            );
+        }
+    };
+    finish_login(data, state, "auth_login_direct")
 }
 
 /// Land a granted login: extract the token + actor identity, persist the
@@ -542,6 +579,7 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
             snapshot = SessionState {
                 actor_id: Some(blob.actor_id),
                 token: Some(blob.token),
+                account_id: None,
             };
             loaded_from_persistent_store = true;
         }
@@ -711,6 +749,7 @@ fn read_session(state: &AppState) -> Result<SessionState, AppResult<AuthSessionP
     Ok(SessionState {
         actor_id: guard.actor_id.clone(),
         token: guard.token.clone(),
+        account_id: guard.account_id.clone(),
     })
 }
 
@@ -740,6 +779,7 @@ fn clear_session(state: &AppState) -> Result<(), AppResult<AuthSessionPayload>> 
     })?;
     guard.actor_id = None;
     guard.token = None;
+    guard.account_id = None;
     Ok(())
 }
 

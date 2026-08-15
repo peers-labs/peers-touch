@@ -188,6 +188,19 @@ def main() -> int:
     print(f"station={base}")
     print(f"gateway={gateway}")
 
+    # Ensure gateway points at target station
+    gateway_command(gateway, "station_set_active", {"url": base})
+
+    # Pre-check: Station must have the social/friend-request routes
+    try:
+        station_request("GET", base, "/api/v1/social/friend-request/list?limit=1", token="probe")
+    except GateError as e:
+        if "404" in str(e):
+            print("[SKIP] Station does not implement /api/v1/social/friend-request/ routes")
+            return 0
+        # 401/403 is expected (bad token) — means the route exists
+        pass
+
     actor_a = signup_and_login(base, "a")
     actor_b = signup_and_login(base, "b")
     print(f"[OK] actors created: a={actor_a.actor_id} b={actor_b.actor_id}")

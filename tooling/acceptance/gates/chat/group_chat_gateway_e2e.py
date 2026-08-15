@@ -187,6 +187,9 @@ def main() -> int:
     print(f"station={base}")
     print(f"gateway={gateway}")
 
+    # Ensure gateway points at target station
+    gateway_command(gateway, "station_set_active", {"url": base})
+
     alice = signup_and_login(base, "alice")
     bob = signup_and_login(base, "bob")
     carol = signup_and_login(base, "carol")
