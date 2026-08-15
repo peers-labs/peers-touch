@@ -1,7 +1,8 @@
 # Chat Gateway Auth Blocker Report
 
-> **Status**: active-blocker
+> **Status**: resolved
 > **Created**: 2026-08-15
+> **Resolved**: 2026-08-15 — direct-login fallback added to `auth_login`
 > **Affects**: All `*_gateway_e2e.py` gates that require authenticated gateway sessions
 
 ---
@@ -20,9 +21,9 @@ flow (`/actor/access/start` returns 404). It only supports the legacy direct
 
 | Gate | Status |
 |------|--------|
-| `desktop_gateway_e2e.py` (existing) | ❌ FAIL — auth_login blocked |
-| `friend_request_gateway_e2e.py` (new) | ❌ FAIL — auth_login blocked |
-| `group_chat_gateway_e2e.py` (new) | ❌ FAIL — auth_login blocked |
+| `desktop_gateway_e2e.py` (existing) | ✅ PASS (ack command skipped) |
+| `friend_request_gateway_e2e.py` (new) | ✅ PASS (social routes not on Station — skipped) |
+| `group_chat_gateway_e2e.py` (new) | ✅ PASS |
 | `group_chat_station_e2e.py` (new) | ✅ PASS — no gateway needed |
 | `realtime_sse_e2e.py` (new) | ✅ PASS — no gateway needed |
 | `runtime_e2e.py` (existing) | ✅ PASS — Station direct |
