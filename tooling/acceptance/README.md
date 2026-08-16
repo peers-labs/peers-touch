@@ -38,8 +38,11 @@ This creates a two-way proof:
 - `make acceptance-validate DOMAIN=federation` validates one domain profile structure.
 - `make acceptance-validate DOMAIN=station-dashboard` validates the Station Dashboard managed-domain profile structure.
 - `python3 tooling/scripts/acceptance-validate.py --domain federation --require-proven` additionally requires latest gate evidence; this is what the Federation mutual-validation gate uses.
-- `make acceptance-chat-domain-validation` runs the Chat gates, including Station runtime message flow and Desktop DOM synced-message visibility, and then requires latest evidence for the managed domain profile.
-- `make acceptance-chat-desktop-dom` requires a running Desktop web (`CHAT_DESKTOP_DOM_URL`, default `http://127.0.0.1:3210/#/chat`) and Desktop HTTP gateway (`CHAT_DESKTOP_DOM_GATEWAY_URL`, default `http://127.0.0.1:3030`).
+- `make acceptance-chat-domain-validation` runs the Messaging Platform contract,
+  Station messaging packages, native selector contract, and Desktop gateway E2E
+  gates before requiring latest evidence for the managed domain profile.
+- `make acceptance-chat-desktop-gateway` requires a running Desktop HTTP gateway
+  and proves the client-owned E2EE create, send, hydrate, and decrypt flow.
 - `make acceptance-station-dashboard-domain-validation` runs the Station Dashboard gates and then requires latest evidence for the managed domain profile.
 - `make acceptance-coverage-report` writes `tooling/acceptance/reports/project-coverage-report.md` and summarizes active, candidate, planned, and not-onboarded domains.
 
