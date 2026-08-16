@@ -59,6 +59,10 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
         return {
             "artifactKind": f"chat-native-{journey}-run",
             "producer": "chat-native-visible-runner",
+            "phase": "W8",
+            "bom": [f"CHAT-NATIVE-{journey.upper()}"],
+            "spec": ["chat-native-visible-clients"],
+            "gate": f"chat-native-{journey}-e2e",
             "automated": True,
             "runtime": "visible-native-desktop",
             "status": "pass",
