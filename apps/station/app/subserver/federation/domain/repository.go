@@ -21,13 +21,13 @@ type FederationRecord struct {
 }
 
 type MembershipRecord struct {
-	FederationID   string
-	StationPeerID  string
-	StationName    string
-	StationURL     string
-	Role           string
-	Status         string
-	JoinedAt       string
+	FederationID      string
+	StationPeerID     string
+	StationName       string
+	StationURL        string
+	Role              string
+	Status            string
+	JoinedAt          string
 	ApprovedByEventID string
 }
 
@@ -41,12 +41,12 @@ type ActorRoleRecord struct {
 }
 
 type SyncCursorRecord struct {
-	FederationID         string
-	RemoteStationPeerID  string
-	LastSeenHeadHash     []byte
-	LastSeenHeadSeq      uint64
-	LastAppliedSeq       uint64
-	Status               string
+	FederationID        string
+	RemoteStationPeerID string
+	LastSeenHeadHash    []byte
+	LastSeenHeadSeq     uint64
+	LastAppliedSeq      uint64
+	Status              string
 }
 
 type FederationRepository interface {

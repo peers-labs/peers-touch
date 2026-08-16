@@ -66,7 +66,7 @@ func (s *DefaultService) CreateDirect(ctx context.Context, actorA, actorB string
 			Role:                   chat.MemberRole_MEMBER_ROLE_MEMBER,
 			MemberStatus:           chat.MemberStatus_MEMBER_STATUS_ACTIVE,
 			ActorHomeStationPeerId: actorBStation,
-			JoinedAt:              timestamppb.New(now),
+			JoinedAt:               timestamppb.New(now),
 		}); err != nil {
 			return nil, fmt.Errorf("conversation: ensure member B active failed: %w", err)
 		}
