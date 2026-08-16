@@ -41,7 +41,7 @@ type stubObsMeta struct {
 	getErr error
 }
 
-func (s *stubObsMeta) Get(context.Context, string) (string, error)  { return "", s.getErr }
+func (s *stubObsMeta) Get(context.Context, string) (string, error)          { return "", s.getErr }
 func (s *stubObsMeta) Set(context.Context, string, string, time.Time) error { return nil }
 func (s *stubObsMeta) Delete(context.Context, ...string) (int64, error)     { return 0, nil }
 func (s *stubObsMeta) SetCapabilityVersion(context.Context, time.Time) (string, error) {
@@ -253,9 +253,9 @@ type fakeObsWorker struct {
 	interval time.Duration
 }
 
-func (w *fakeObsWorker) Name() string                       { return w.name }
-func (w *fakeObsWorker) Interval() time.Duration            { return w.interval }
-func (w *fakeObsWorker) RunOnce(_ context.Context) error    { return nil }
+func (w *fakeObsWorker) Name() string                    { return w.name }
+func (w *fakeObsWorker) Interval() time.Duration         { return w.interval }
+func (w *fakeObsWorker) RunOnce(_ context.Context) error { return nil }
 
 // TestEscapeHelpers locks down the small text-format escaping
 // helpers — tiny but security-sensitive in that a malformed help

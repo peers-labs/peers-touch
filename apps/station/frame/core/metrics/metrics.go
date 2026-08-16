@@ -60,10 +60,10 @@ func Get() Provider {
 
 type noopProvider struct{}
 
-func (noopProvider) Counter(string, string, ...string) Counter             { return noopCounter{} }
-func (noopProvider) Gauge(string, string, ...string) Gauge                 { return noopGauge{} }
+func (noopProvider) Counter(string, string, ...string) Counter                { return noopCounter{} }
+func (noopProvider) Gauge(string, string, ...string) Gauge                    { return noopGauge{} }
 func (noopProvider) Histogram(string, string, []float64, ...string) Histogram { return noopHistogram{} }
-func (noopProvider) Handler() http.Handler                                  { return http.NotFoundHandler() }
+func (noopProvider) Handler() http.Handler                                    { return http.NotFoundHandler() }
 
 type noopCounter struct{}
 

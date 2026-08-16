@@ -5,18 +5,18 @@
 //
 // Two paths:
 //
-//   1. Local fast-path
-//      Handle's host == local station's domain → bypass the network and
-//      build the envelope directly from the touch DB. The envelope is
-//      still signed so callers see a uniform return shape; clients that
-//      cache locally and remotely can use the same code path.
+//  1. Local fast-path
+//     Handle's host == local station's domain → bypass the network and
+//     build the envelope directly from the touch DB. The envelope is
+//     still signed so callers see a uniform return shape; clients that
+//     cache locally and remotely can use the same code path.
 //
-//   2. Remote path
-//      Handle's host != local station's domain → look up the locator
-//      record in the federation DHT, find a relay we can forward
-//      through, GET /actor/federation/profile?handle=... via
-//      /relay/forward/<peer_id>/..., and verify the returned envelope
-//      against the signing_key_pem the locator record pinned (TOFU).
+//  2. Remote path
+//     Handle's host != local station's domain → look up the locator
+//     record in the federation DHT, find a relay we can forward
+//     through, GET /actor/federation/profile?handle=... via
+//     /relay/forward/<peer_id>/..., and verify the returned envelope
+//     against the signing_key_pem the locator record pinned (TOFU).
 //
 // The resolver does NOT cache verified envelopes today (that is Phase D
 // when remote_cached actor rows land). It is intentionally a pure

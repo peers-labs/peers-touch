@@ -96,10 +96,10 @@ func TestProtoSerializer(t *testing.T) {
 
 func TestGetSerializerForType(t *testing.T) {
 	tests := []struct {
-		name          string
-		typ           reflect.Type
-		wantProto     bool
-		wantJSON      bool
+		name      string
+		typ       reflect.Type
+		wantProto bool
+		wantJSON  bool
 	}{
 		{
 			name:      "Proto message type",
@@ -121,13 +121,13 @@ func TestGetSerializerForType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			serializer := GetSerializerForType(tt.typ)
-			
+
 			if tt.wantProto {
 				if _, ok := serializer.(*ProtoSerializer); !ok {
 					t.Errorf("Expected ProtoSerializer, got %T", serializer)
 				}
 			}
-			
+
 			if tt.wantJSON {
 				if _, ok := serializer.(*JSONSerializer); !ok {
 					t.Errorf("Expected JSONSerializer, got %T", serializer)

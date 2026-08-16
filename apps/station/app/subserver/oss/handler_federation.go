@@ -20,20 +20,20 @@ import (
 // one place so dashboards and clients can switch on the value
 // without parsing English error strings.
 const (
-	federationReasonAuthRequired        = "auth_required"
-	federationReasonBadRequest          = "bad_request"
-	federationReasonNotFound            = "not_found"
-	federationReasonForbidden           = "forbidden"
-	federationReasonInternal            = "internal_error"
-	federationReasonUnsupported         = "federation_unsupported"
-	federationReasonUserOK              = "ok"
-	federationReasonUnknownVisibility   = "unknown_visibility"
-	federationReasonNotInSession        = "not_in_session"
-	federationReasonSessionMissing      = "session_missing"
-	federationReasonResolverError       = "resolver_error"
-	federationReasonResolverMissing     = "resolver_missing"
-	federationReasonNotOwner            = "not_owner"
-	federationReasonNoSubject           = "subject_required"
+	federationReasonAuthRequired      = "auth_required"
+	federationReasonBadRequest        = "bad_request"
+	federationReasonNotFound          = "not_found"
+	federationReasonForbidden         = "forbidden"
+	federationReasonInternal          = "internal_error"
+	federationReasonUnsupported       = "federation_unsupported"
+	federationReasonUserOK            = "ok"
+	federationReasonUnknownVisibility = "unknown_visibility"
+	federationReasonNotInSession      = "not_in_session"
+	federationReasonSessionMissing    = "session_missing"
+	federationReasonResolverError     = "resolver_error"
+	federationReasonResolverMissing   = "resolver_missing"
+	federationReasonNotOwner          = "not_owner"
+	federationReasonNoSubject         = "subject_required"
 )
 
 // federationMintRequest is the JSON body of `POST /sub-oss/federation/token`.
