@@ -21,15 +21,15 @@
 | Branch | `design/acceptance-runtime-provisioning-contract` |
 | Stage | `EXECUTE` |
 | Current workstream | `WS8: Chat Native Two-Client Validation` |
-| Current step | Make Quality/Review evidence fail closed on gaps and keep explicit git ranges isolated from unrelated worktree files. |
+| Current step | Hold Draft PR #91 with explicit product, lease, Native Gate, and AS-04 evidence blockers. |
 | Progress | WS1, WS5, and WS7 DONE; WS2, WS3, WS4, and WS6 PARTIAL; WS8 BLOCKED. AS-03 and AS-05 PASSED; AS-01 and AS-02 PARTIAL; AS-04 BLOCKED/UNPROVEN; Direct Chat DELIVERED UNPROVEN. |
-| Last completed | Commit `a0ff6368a` made Quality Evidence gap-aware and isolated explicit ranges from untracked files. Review found and fixed the remaining empty-explicit-range fallback to staged worktree files. |
-| Current action | Finish agent-led review and completion evidence after closing all deterministic Quality/Review fail-open paths found in this audit. |
-| Next action | Commit the empty-range regression, regenerate Gap/Quality evidence, update PR #91, and keep it Draft with exact blockers. |
+| Last completed | Commits `a0ff6368a` and `ce564cb95` made Quality/Review fail closed on evidence gaps and isolated both non-empty and empty explicit ranges. Gap, Quality, submit-pipeline, and review-skill audits now reject readiness honestly. |
+| Current action | Update the Draft PR and hand off exact closure requirements; no framework-side P0/P1 fix remains that can legitimately bypass the product or shared-environment blockers. |
+| Next action | Product/identity owners resolve the post-login account transition and environment owners provide an enforceable Profile Three lease plus a discriminating credential; then rerun all four Native Gates and audits. |
 | Blockers | `PRODUCT_AMENDMENT_REQUIRED`: source-matched run `412bb356ae476869` returns Bob to visible `Choose Account` after password login and logs a numeric-actor/canonical-PTID mismatch. `ENVIRONMENT_BLOCKED`: Profile Three has no enforceable shared provisioning lease; run `6fc14b7010c35190` was overwritten mid-Gate by Station commit `4383dfc1`. |
 | Decisions required | Product/identity owners must define and fix the post-login account-gate transition in the governing Desktop identity lifecycle plan. The Runtime Provisioning plan must not bypass it with text selectors or Store injection. |
-| Evidence | `PASSED`: local static/runtime Gates, final-source guard tests, source identity, Fixture, dual TauriDriver sessions, Station selection, password submission, failure traceability, cleanup, and six Quality/Review range/readiness regressions. `FAILED/UNPROVEN`: v9 stops at source-matched `bob:shell.ready`; v10 is invalid product evidence because Station drifted. `BLOCKED/UNPROVEN`: AS-04 exact-value scan and all four Native journeys. |
-| Last updated | 2026-08-17 03:15 CST |
+| Evidence | `PASSED`: local static/runtime Gates, four-domain structural validation, coverage generation, final-source guard tests, Fixture/TauriDriver startup, failure traceability, cleanup, six Quality/Review regressions, and review skill freshness. `FAILED/UNPROVEN`: v9 stops at source-matched `bob:shell.ready`; v10 is invalid because Station drifted. `BLOCKED/UNPROVEN`: Gap Detector lists four Native Gates; Quality and review-submit return nonzero; AS-04 exact-value scan is non-discriminating. |
+| Last updated | 2026-08-17 03:17 CST |
 
 ---
 
@@ -365,5 +365,5 @@ Once this gate passes, the framework is ready to be used to validate actual prod
 | WS4: Credential Redaction | PARTIAL | — | `9d05335e1`, `f9bcead42` | CredentialRef and structured/key-aware redaction tests pass; live artifacts contain references/redaction only, but exact-value AS-04 is UNPROVEN because the preset value is one character. |
 | WS5: Registry Behavior Rules | DONE | 2026-08-16 | `9d05335e1` | Receipt owner selects two-client Gate; unrelated messaging and proto paths do not over-select it. |
 | WS6: Runner Integration | PARTIAL | — | `9d05335e1`, `f9bcead42`, `8f88bb038`, `b274e68c1`, `034bd725b`, `7b6938982`, `ba1d799ba` | Provision-before-run, manifest-only input, TauriDriver, cleanup, failed-result traceability, and final live commit guard are implemented; final guard live evidence and a successful complete product Gate remain unproven. |
-| WS7: Gap Detector Skill | DONE | 2026-08-17 | `9d05335e1` | Detector and submit wiring fail closed. Quality/Review range isolation and gap-aware readiness regressions close the discovered completion-path silent pass. |
+| WS7: Gap Detector Skill | DONE | 2026-08-17 | `9d05335e1`, `a0ff6368a`, `ce564cb95` | Detector and submit wiring fail closed. Quality/Review range isolation and gap-aware readiness regressions close the discovered completion-path silent pass. |
 | WS8: Chat Native Validation | BLOCKED | — | `8f88bb038`, `b274e68c1`, `570dfd514`, `f826199bf`, `034bd725b` | Source-matched dual Native execution reaches Bob password login and then fails at `shell.ready`: the product returns to `Choose Account` with a numeric-actor/canonical-PTID profile-sync mismatch. Product amendment is out of scope; Direct Chat remains UNPROVEN. |
