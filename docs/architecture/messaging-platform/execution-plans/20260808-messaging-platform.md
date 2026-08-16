@@ -1,11 +1,32 @@
 # Messaging Platform — 执行计划
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-08-10
+> **Version**: v1.3
+> **Created**: 2026-08-08 | **Updated**: 2026-08-16
 > **Owner**: Messaging Platform Team
 
 ---
+
+## Context Anchor
+
+| Field | Current value |
+|---|---|
+| Main task | Complete Messaging Platform across Desktop and Mobile with source-bound Native evidence |
+| Plan source | `docs/architecture/messaging-platform/execution-plans/20260808-messaging-platform.md` |
+| Tracking source | `docs/architecture/messaging-platform/acceptance-matrix.md` |
+| Worktree | `peers-group-chat` |
+| Branch | `refactor/chat-acceptance-cutover` |
+| Stage | `EXECUTE` |
+| Current workstream | `MP-W12` |
+| Current step | Build exact-source checkpoint, deploy Profile Three, then run MP-G15/G16 |
+| Progress | 16/19 ledger workstreams completed; W09 in-progress, W12 implemented-unproven, W11 reopened |
+| Last completed | MP-W05-R Direct DELIVERED 7-Gate bundle `DONE/PROVEN` |
+| Current action | Validate dedicated Native interaction/typing Gates and source-bound Engine/Station/DOM evidence contracts before deployment |
+| Next action | Commit the MP-W12 source checkpoint, deploy that exact commit to Profile Three and execute MP-G15 then MP-G16 |
+| Blockers | W09 Mobile parity remains incomplete; G15/G16 Native proof is NOT RUN; runtime requires exact committed/deployed source and authorized Profile Three reset/restart |
+| Decisions required | none; 2026-08-16 Goal accepts interaction product and architecture amendments |
+| Evidence | Desktop typecheck PASS and `src/**` Vitest 291 PASS/1 environment E2E skipped; Rust Messaging 92 PASS/1 Native-only ignored; Station Messaging/Conversation/Envelope PASS; Acceptance contract/runner tests 42 PASS; acceptance-webdriver Rust build PASS; Chat Domain 8 capabilities STRUCTURALLY_VALID. Full unscoped Vitest is FAIL because optional Playwright performance packages are absent. G15/G16 Native proof remains UNPROVEN |
+| Last updated | 2026-08-16 |
 
 ## 1. Plan Sources And Gate
 
@@ -26,14 +47,16 @@
 - `../integration.md`
 
 当前状态：base plan `PLAN_APPROVED`（Owner approved 2026-08-08）；
-MP-W10 attachment amendment `PLAN_APPROVED`（Owner approved 2026-08-10）。
+MP-W10 attachment amendment `PLAN_APPROVED`（Owner approved 2026-08-10）；
+MP-W12 interaction amendment `PLAN_APPROVED`（Goal owner approved 2026-08-16）。
 
 ## 2. Scope And Non-Scope
 
 范围：
 
 - Model proto、Station Messaging Platform、Desktop/Mobile Messaging Engine。
-- Direct、Group MLS、multi-device、recovery、receipts、attachments、search。
+- Direct、Group MLS、multi-device、recovery、receipts、attachments、search、
+  reply/thread、edit/retract、reaction、pin、typing。
 - durable authority/queue/federation、native acceptance、旧路径删除和文档归并。
 
 非范围：
@@ -72,9 +95,10 @@ MP-W10 attachment amendment `PLAN_APPROVED`（Owner approved 2026-08-10）。
 | MP-W06 Federation | C02/C03/C11/C12 | A02-A04/A06/A10 | D02-D05/D19 | G02/G03/G11/G12 |
 | MP-W07 Multi-device/OpenMLS | C05/C06/C09 | A01-A08 | D06-D07/D18 | G03/G05/G06/G09 |
 | MP-W08 Backup/recovery | C07/C08 | A05/A07 | D08 | G07/G08/G12 |
-| MP-W09 Mobile parity | C01-C14 | A01-A12 | D01-D12 | contract/native mobile cells |
+| MP-W09 Mobile parity | C01-C16 | A01-A18 | D01-D27 | contract/native mobile cells |
 | MP-W10 Attachments/search | C13/C14 | A05/A11/A12 | D11/D23-D25 | G13/G14 |
-| MP-W11 Cutover/deletion/final audit | all | A01-A12 | D10/D12 | G01-G14 |
+| MP-W12 Message interactions/typing | C10/C15/C16 | A02-A05/A09/A17/A18 | D09/D12/D26/D27 | G10/G15/G16 |
+| MP-W11 Cutover/deletion/final audit | all | A01-A18 | D10/D12/D26/D27 | G01-G16 |
 
 ## 5. Dependency DAG
 
@@ -96,16 +120,18 @@ MP-W10-B + MP-W10-C ─────────────────> MP-W10-
 MP-W05 + MP-W10-D ───────────────────> MP-W10-E
 MP-W11-R + MP-W10-D ─────────────────> MP-W08
 
-MP-W01 + MP-W03 + MP-W04 ──> MP-W09
+MP-W04 + MP-W05 + MP-W07 ─────────────────> MP-W12
+MP-W01 + MP-W03 + MP-W04 + MP-W12 ───────> MP-W09
 
-W02/W05/W06/W07/W08/W09/W10-E + W11-R ──> MP-W11 final closure
+W02/W05/W06/W07/W08/W09/W10-E/W12 + W11-R ──> MP-W11 final closure
 ```
 
 可并行：
 
 - W02 Station substrate 与 W03 Device Engine substrate。
 - W06 federation、W07 MLS、W08 recovery 在 W04 稳定后并行。
-- W09 Mobile adapter 可在 shared contracts/engine semantics 稳定后并行。
+- W09 的 proto/core extraction 可并行；Mobile interaction parity 必须等待 W12 semantics
+  与 Desktop Gate 稳定。
 - W10-B Authority transfer 与 W10-C Engine transfer 在 W10-A contracts 完成后并行。
 
 禁止并行：
@@ -543,6 +569,154 @@ Non-claim：
 - W10-A through W10-D are internal closures, not attachment product readiness；
 - one-shot upload、whole-file fetch、API-only or browser-only evidence cannot close MP-W10。
 
+### MP-W12: Message Interactions And Typing
+
+#### Acceptance Scope Inventory
+
+| Field | Current value |
+|---|---|
+| Mode | `COMPLETE` |
+| Domain | existing `chat` managed domain |
+| Capability IDs | existing C10 plus new C15/C16; Acceptance capabilities `chat-message-interactions` and `chat-typing-presence` |
+| Feature IDs | `chat-message-interactions`, `chat-typing-presence` |
+| Truth owner | Station Messaging Authority/read cursor for durable facts; authenticated ephemeral runtime for typing; Device Engine SQLCipher for local projection |
+| Receiver/surface | Direct and Group users in Native Desktop/Mobile message rows, thread panel, reaction/pin/read state and typing indicator |
+| Runtime cells | same/cross-Station Desktop, three-member Group, offline/restart/replay/deny paths, Desktop/Mobile parity |
+| Existing Gates | G10 plus dedicated `chat-native-interactions-e2e` (G15) and `chat-native-typing-e2e` (G16); G15/G16 not yet run |
+| Latest evidence | W12 static/unit evidence only; `tooling/acceptance/capabilities/chat.yaml` marks visible interaction workflow unproven |
+
+Lifecycle checkpoints:
+
+- `ACCEPTANCE_REQUEST_CLASSIFIED`: COMPLETE / existing Chat domain / new Capability scope.
+- `ACCEPTANCE_SCOPE_INVENTORIED`: truth owners, receivers, surfaces and runtime cells above.
+- `ACCEPTANCE_GAP_MATRIX_READY`: matrix below.
+- `ACCEPTANCE_STAGE_DISPATCHED`: PRODUCT amendment for C15/C16/J13/J14/S30-S42,
+  then PLAN amendment for W12 and G15/G16.
+
+#### Coverage Gap Matrix
+
+| Journey/assertion | Runtime cell | Truth/surface | Existing state | Missing closure | Stage |
+|---|---|---|---|---|---|
+| Direct reply/thread relation | Desktop Native pair | authority message fact / row + thread panel | `IMPLEMENTED_UNPROVEN` | execute G15 receiver DOM, restart and unavailable-target proof | EXECUTE |
+| Direct edit/retract | Desktop Native pair | authority event / both message rows | `IMPLEMENTED_UNPROVEN` | execute G15 author-only, timeout/duplicate/restart proof | EXECUTE |
+| Direct reaction/pin/read | Desktop Native pair | authority/read cursor / both message rows | `IMPLEMENTED_UNPROVEN` | execute G15 add/remove/unpin/read Native and durable readback | EXECUTE |
+| Group durable interactions | three-member Desktop Native | authority + MLS/device lanes / three UIs | `IMPLEMENTED_UNPROVEN` | execute G15 all operations, removed-member, restart and ordered convergence | EXECUTE |
+| Direct typing | Desktop Native pair | ephemeral pulse / typing indicator | `IMPLEMENTED_UNPROVEN` | execute G16 start/stop/session-switch/disconnect/TTL proof | EXECUTE |
+| Group typing | three-member Desktop Native | ephemeral member fan-out / three indicators | `IMPLEMENTED_UNPROVEN` | execute G16 Group fan-out, removed-member and zero-durable-write proof | EXECUTE |
+| Interaction parity | Mobile Native | Core + Mobile adapter / Mobile Chat UI | `UNPROVEN` | W09 adapter, Harness/Driver/runtime and C10/C15/C16 Native evidence | EXECUTE after Desktop W12 |
+
+责任：
+
+- Close MP-C10、MP-C15 和 MP-C16 through MP-J13/J14 and MP-G10/G15/G16.
+- Reconcile existing proto/Station/Engine/UI code into one receiver-proven lifecycle.
+- Replace the prior static/unit-only completion claim with dedicated source-bound Native
+  evidence.
+
+交付物：
+
+- author-only Direct/Group edit and retract admission；
+- immutable reply target/thread root on committed messages；
+- actor-scoped idempotent reaction add/remove；
+- conversation-scoped pin/unpin convergence；
+- monotonic actor read cursor and sender-visible read projection；
+- Direct/Group ephemeral typing fan-out with throttle、stop and receiver TTL；
+- Engine atomic interaction consumption：projection + marker + lane cursor + post-commit ACK；
+- Desktop and Mobile projection/actions with stable Acceptance selectors；
+- `chat-message-interactions` and `chat-typing-presence` Feature/Capability contracts；
+- dedicated Native Gate reports with source, runtime, actor, message/event and durable readback
+  identity.
+
+删除义务：
+
+- legacy friend/group interaction mutation paths that bypass Messaging Authority；
+- UI-only terminal edit/retract/reaction/pin/read mutation；
+- durable device-queue typing payload and any restart/recovery replay of typing；
+- duplicate Desktop/Mobile interaction state machines after W09 cutover。
+
+失败行为：
+
+- non-author edit/retract、non-member、removed/revoked endpoint、unknown target message：
+  typed reject and zero authority mutation；
+- duplicate command/event/replay：one authority fact and one visible effect；
+- offline receiver：durable interactions apply once after resume in authority order；
+- Station/client restart：content、retracted state、reaction、pin、reply/thread and read cursor
+  do not regress；
+- edit/reply timeout before authority accept：pending intent remains cancellable and original
+  message remains visible；
+- lost typing stop/disconnect：receiver TTL clears state；typing never blocks durable lane。
+
+Gate：
+
+- MP-G10 Direct/Group read progression and receipt distinction；
+- MP-G15 Direct/Group reply/edit/retract/reaction/pin/read Native lifecycle；
+- MP-G16 Direct/Group typing start/stop/session-switch/disconnect/TTL Native lifecycle；
+- Station authority event/device queue readback and Engine SQLCipher projection readback；
+- exact source commit, deployed Station commit, isolated client profiles/devices/storage and
+  receiver DOM evidence；
+- restart、offline、duplicate、unauthorized、removed/revoked negative variants。
+
+Non-claim：
+
+- compile、unit、process startup、API-only、screenshot-only or inherited W10-E pipeline evidence
+  cannot close W12；
+- existence of a UI menu/control does not prove its command is wired；
+- Direct typing does not prove Group typing；
+- W12 cannot become `completed` until all G10/G15/G16 claimed runtime cells pass。
+
+#### MP-W12 Acceptance Scenarios
+
+##### AS-W12-01: Direct reply and thread
+- **Precondition**: Alice/Bob isolated Native clients share a committed Direct root message.
+- **Action**: Bob replies inline, opens the thread, and sends a nested reply.
+- **Expected**: Both clients show identical reply target, thread root, reply order and count.
+- **Failure variant**: Missing local target renders `reply_target_unavailable`; it is not
+  silently flattened into an ordinary message.
+- **Evidence**: Native DOM + Station message event + Engine projection/readback.
+- **Status**: pending
+
+##### AS-W12-02: Direct edit and retract authorization
+- **Precondition**: Alice owns one committed message; Bob is an active member.
+- **Action**: Alice edits then retracts it; Bob attempts edit/retract on Alice's message.
+- **Expected**: Alice's accepted events converge on both clients under one `message_id`; Bob's
+  attempts fail with zero authority event.
+- **Failure variant**: timeout before accept preserves original content and cancellable intent.
+- **Evidence**: Native DOM + authority sequence/event + queue + Engine transaction.
+- **Status**: pending
+
+##### AS-W12-03: Direct reaction, pin and read
+- **Precondition**: Both clients display the same Direct message.
+- **Action**: Bob add/removes reaction; Alice pin and Bob unpin; Bob reads beyond sequence.
+- **Expected**: one reaction tuple, one current pin state and monotonic read projection converge.
+- **Failure variant**: duplicate replay and older read cursor do not duplicate or regress state.
+- **Evidence**: Native DOM + Station authority/read cursor + Engine SQLCipher projection.
+- **Status**: pending
+
+##### AS-W12-04: Group durable interactions
+- **Precondition**: Alice/Bob/Carol isolated Native clients are active MLS members.
+- **Action**: Execute reply/thread, edit/retract, reaction, pin and read across three actors.
+- **Expected**: All active leaves converge in authority order and survive client/Station restart.
+- **Failure variant**: removed member/device receives no future interaction event and cannot
+  submit one.
+- **Evidence**: Three Native DOMs + MLS/authority sequence + per-device lanes + projections.
+- **Status**: pending
+
+##### AS-W12-05: Offline and replay recovery
+- **Precondition**: Bob is offline after the base message is committed.
+- **Action**: Alice performs edit, reaction and pin; Bob reconnects, then client restarts.
+- **Expected**: Bob consumes each interaction once in sequence and restart preserves result.
+- **Failure variant**: duplicate queue delivery is acknowledged without duplicate visible state.
+- **Evidence**: queue item/attempt/ACK + consumption marker + Native DOM before/after restart.
+- **Status**: pending
+
+##### AS-W12-06: Direct and Group typing presence
+- **Precondition**: active Direct pair and active three-member Group.
+- **Action**: sender types, stops, switches conversation, disconnects, and lets TTL expire.
+- **Expected**: receivers show only fresh active-member typing and clear it on every stop path.
+- **Failure variant**: non-member/removed endpoint is rejected; dropped stop clears by TTL.
+- **Evidence**: Native DOM timing + authenticated ephemeral fan-out trace + durable lane/history
+  zero-item scan.
+- **Status**: pending
+
 ### MP-W11: Atomic Cutover And Completion Audit
 
 交付物：
@@ -550,7 +724,7 @@ Non-claim：
 - 所有 old owners、routes、commands、schemas、docs 删除或 superseded；
 - docs/README 与 knowledge 更新；
 - tree-wide forbidden scans；
-- G01-G14 evidence bundle；
+- G01-G16 evidence bundle；
 - `pt-completion-auditor` 和 independent review。
 
 完成标准：
@@ -575,14 +749,14 @@ Non-claim：
 | MP-W07 | completed | W02/W03/W04 + accepted MP-D18/MP-D20/MP-D21 | Hidden genesis, actor/device add/remove, one-device-one-leaf, removal isolation, safe rejoin, bidirectional exact plaintext and cold restart pass. Native transition crash gate kills Alice during REMOVE_DEVICE at sequence 23; durable recovery commits sequence 24 exactly once with one event/receipt/item per endpoint. Legacy owner deletion is tracked separately by MP-W11 |
 | MP-W11-R | completed | W03/W04 | Recovery Settings now reads only the session-scoped Messaging Engine recovery projection; canonical create/status/restore commands resolve the active Engine and old `cryptoRuntime` backup/recovery ownership has zero live references. Native high-chat created revision `01KZNF6YXN5WS7R8WVM1R5JSW9`. Valid wrong phrase, fetched-copy corruption and injected pre-replace SQLCipher failure each preserved the exact device/fingerprint, 8 conversations and 29 messages. The failed-replace path restored the prior Engine, notifier and lifecycle worker; cross-Station Direct then delivered Alice message `01KZNH8KMM4N82P2CTHACFR2YJ` and Bob reply `01KZNHJC553N9P70P9QE42BMXC` with exact plaintext. |
 | MP-W08 | completed | W03/W04 + accepted MP-D15/MP-D22 + W11-R + W10-D | Canonical Messaging archive hard-cut replaces active legacy command path. Native 24-word revision, fresh-profile Actor IK recovery, atomic SQLCipher history restore, fresh cross-signed device enrollment, 5 KeyPackages, ADD_DEVICE Welcome reconciliation, bidirectional exact plaintext and cold-restart continuity pass through sequence 23. Native wrong-phrase, corrupt fetched revision and local pre-replace failure now prove zero partial restore and post-failure messaging continuity. Attachment/trust product recovery journeys wait for W10-D. W10-D completed — attachment recovery journeys verified via native E2E (SHA-256 byte-exact Direct+Group attachments restored through format v2 recovery). Trust product recovery verified via wrong-phrase/corrupt-revision/pre-replace failure gates. |
-| MP-W09 | in-progress | W01/W03/W04 + accepted MP-D16 | Phase 1 (ports/contracts skeleton) complete. Phase 2 partial: 6 pure-logic modules extracted to `packages/messaging-core/` (27 files, 2352 LOC, 19 tests, zero platform deps). Desktop depends on Core (Cargo.toml wired, compiles). Proto-unification prerequisite documented — Desktop/Core generate separate prost types from same .proto files; Phase 3 requires Desktop to import chat types from Core before module deletion can proceed. Store-dependent modules (direct, mls, engine, recovery orchestration) remain in Desktop pending proto unification. |
+| MP-W09 | in-progress | W01/W03/W04/W12 + accepted MP-D16 | Phase 1 (ports/contracts skeleton) complete. Phase 2 partial: 6 pure-logic modules extracted to `packages/messaging-core/` (27 files, 2352 LOC, 19 tests, zero platform deps). Desktop depends on Core (Cargo.toml wired, compiles). Proto-unification prerequisite documented — Desktop/Core generate separate prost types from same .proto files; Phase 3 requires Desktop to import chat types from Core before module deletion can proceed. Store-dependent modules (direct, mls, engine, recovery orchestration) remain in Desktop pending proto unification. Mobile C01-C16 Native parity remains unproven. |
 | MP-W10-A | completed | W01 + accepted MP-D23/MP-D24 | `attachment.proto` now owns typed private content, encryption/nonce enums, whole/per-chunk commitments, authority/conversation-bound upload/status/part/complete/cancel/download metadata, transfer checkpoint states and typed errors. `model/build.sh` plus Mobile Web TS generation produced matching Go/Desktop TS/Mobile TS outputs in both worktrees; Desktop prost generation compiled the Rust bindings. Go/Rust descriptor limit vectors, TS/Rust fixed-material AES-GCM vector, contract gate and generated digest comparison pass. The obsolete Kotlin/Swift branches of `proto-gen-mobile.sh` target directories that no longer exist in the Tauri Mobile tree and are not counted as generated evidence. |
 | MP-W10-B | completed | W02/W06/W10-A | Authority upload/session/part/object/grant UOW, replay/conflict/expiry/cancel/finalize/orphan-GC, event-bound grants, ranged download, signed Home-to-Authority proxy, bounded admission, durable audit, redacted logs and Prometheus metrics pass. SQLite and deployed PostgreSQL competing part/finalize/grant gates pass; removed-member historical grant and later denial pass. Native `group-chat` Home Station #2 -> Authority Station #1 upload persisted bitmap `01` and its 1,048,592-byte encrypted chunk through `make station-restart`, reopened the same SQLCipher profile, resumed to bitmap `03`, and finalized exactly once. Both deployed Stations expose the privacy-safe 14-column audit schema and runtime scans show zero filename/key/nonce/plaintext-hash/decrypted-byte, resource-ID, or SQL-text leakage. |
 | MP-W10-C | completed | W03/W04/W10-A | Engine encrypt/upload/download workers now own bounded two-chunk memory, SQLCipher checkpoints, descriptor commitments, partial-file re-encryption binding, chunk/whole ciphertext hash + AEAD + whole plaintext hash verification, atomic cache promotion, typed retry/cancel/shutdown/overload states, capped jittered backoff and finite Station deadlines. The 15-test worker suite covers every position in a three-chunk upload/download interruption vector, corrupt chunk, wrong ETag, short/same-length corrupt partials, retry, cancellation, shutdown, overload, and 100 MiB upload/download resume at 25%/50%/75%. Separate native live runs completed a two-chunk Engine upload through Station #1, reopened an isolated on-disk SQLCipher checkpoint in a second OS process from bitmap `0b01` to `0b11`, and completed Bob Home Station #2 -> Authority Station #1 proxy upload. Non-generated Desktop/Mobile UI scan found zero key/nonce/hash/bitmap/resume-cursor ownership. This is Engine closure only; attachment product readiness remains W10-E. |
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
 | MP-W10-E | completed | W05/W10-D | Native bidirectional Direct text+attachment (SHA-256 verified), OpenMLS group text+attachment (byte-exact), FTS5 local encrypted search (Direct+Group), Station restart continuity (post-restart delivery), fresh-device recovery round-trip (Bob: 3 conv/19 msg/3 att, Alice: 4 conv/19 msg/3 att, format v2), per-attachment admission control fixing concurrency race, startup reconciliation for descriptor-backed terminal uploads. Evidence from `peers-group-chat` and `peers-chat-high-chat` native Tauri apps against remote Stations #1 and #2. Legacy chat OSS and plaintext search owners deleted. |
-| MP-W11 | completed | W02-W10 | Legacy `backup.proto`, KeyExchange backup repository/domain/tests, Desktop old transport and all three `/key-exchange/backup/crypto*` routes deleted; deployed route probes return 404 while canonical `/messaging/recovery/latest` remains registered (401 without auth). Tree-wide forbidden scan: zero `KeyExchange`, `ChatOss`, `plaintext_search`, `backup.proto`, `console.log`, `println!`, `TODO/FIXME` references in messaging domain. Zero compatibility shims, dual runtimes, or dead code. Single `messaging_engines` state container, single Engine per profile. Source hashes identical across `peers-group-chat` and `peers-chat-high-chat` (engine.rs: `00e92099`, store.rs: `a26a4cd7`, attachment_transfer.rs: `1c2cc931`). G13/G14 evidence: native E2E object IDs, event IDs, message ULIDs, attachment IDs, and SHA-256 byte verification collected from both worktrees. |
-| MP-W12 | completed | W04/W05/W10-E + design.md §5 | Interaction-layer command implementation for capabilities defined in design.md §5 canonical contracts. Station: `buildEditMessageEventAndPayloads`, `buildRetractMessageEventAndPayloads`, `buildReactionEventAndPayloads`, `buildPinMessageEventAndPayloads`, `buildMetadataOnlyPayloads` in authority_service.go; `TypingService` + `ReceiptService` with HTTP handlers and PostgreSQL read_cursor persistence. Engine: PublicEventProcessor extended for 5 event types (MessageCommitted/Edited/Retracted/ReactionCommitted/PinCommitted); DirectMessageProcessor edit path with atomic `DirectEditCommit`; MlsApplicationProcessor edit path with MLS state advance; Store schema: `message_reactions`, `message_pins`, `read_cursors` tables + `reply_to_message_id`/`edited_text`/`edited_at_unix_ms`/`retracted` columns + 6 store methods. **Evidence**: Cargo check 0 errors; Cargo test messaging 84 pass; Go build + go test messaging 6 packages pass; Station deployed (commit 6c16f621) health OK; Native Desktop binary running (PID 93125) against live Station at 10.37.118.48:18080. Command pipeline shares verified W10-E infrastructure (prepare→submit→fan-out→engine receive); new handlers add variant dispatch only. |
+| MP-W12 | implemented-unproven | W04/W05/W07 + accepted MP-D26/MP-D27 | Feature/Capability/G15/G16 contracts, canonical encrypted edit/metadata/read/typing paths, atomic Engine consumption, sender-visible Direct/Group read projection, stable DOM selectors, isolated Native runners and acceptance-only durable readback are implemented. Static evidence: Desktop typecheck PASS and `src/**` Vitest 291 PASS/1 environment E2E skipped; Rust Messaging 92 PASS/1 Native-only ignored; Station Messaging/Conversation/Envelope PASS; Acceptance contract/runner tests 42 PASS; acceptance-webdriver Rust build PASS; Chat Domain 8 capabilities STRUCTURALLY_VALID. Missing: source-bound Profile Three G10/G15/G16 Native PASS, offline/replay/timeout/cancellation/removed-device completeness and Mobile parity through W09. |
+| MP-W11 | in-progress | W02-W10/W12 | Previous cutover/deletion evidence remains useful but cannot close the final audit while W09 and W12 are open. Rerun only after W09/W12: G01-G16 required cells, tree-wide old-owner/duplicate-contract scans, independent review and completion audit. |
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
@@ -628,7 +802,7 @@ browser/API-only/screenshot-only evidence 替代。
 
 ## 10. Final Claim Rule
 
-只有 MP-W00 至 MP-W11 全部完成、MP-G01 至 MP-G14 全部通过、old-path scans 为零、
+只有 MP-W00 至 MP-W12 全部完成、MP-G01 至 MP-G16 全部通过、old-path scans 为零、
 independent review 与 completion audit 通过后，才允许声明：
 
 > Messaging Platform 在已列 runtime/platform cells 上可用。

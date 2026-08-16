@@ -794,24 +794,6 @@ pub fn group_thread_counts(
     )
 }
 
-pub fn mark_group_thread_read(
-    token: &str,
-    group_ulid: &str,
-    _root_ulid: &str,
-    _last_read_ulid: Option<&str>,
-) -> StationResult<Value> {
-    station_client::request_json(
-        Method::POST,
-        "/conversation/read-cursor",
-        token,
-        None,
-        Some(json!({
-            "conversation_id": group_ulid,
-            "last_read_seq": 0,
-        })),
-    )
-}
-
 pub fn send_group_message(
     token: &str,
     group_ulid: &str,

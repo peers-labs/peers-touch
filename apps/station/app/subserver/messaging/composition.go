@@ -81,7 +81,6 @@ type Composition struct {
 	federationOutbox    *infrastructure.FederationRepository
 	recoveryRepository  *infrastructure.RecoveryRepository
 	mlsClaimRepository  *infrastructure.FederatedMlsKeyPackageClaimStore
-	readCursorRepo      *infrastructure.ReadCursorRepository
 }
 
 func NewComposition(config CompositionConfig) (*Composition, error) {
@@ -342,19 +341,13 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 
 	typingService, err := application.NewTypingService(
 		authorityUnitOfWork,
-		config.LocalStationID,
-		config.Clock,
+		eventBusTypingPublisher{},
 	)
-	if err != nil {
-		return nil, err
-	}
-	readCursorRepo, err := infrastructure.NewReadCursorRepository(config.Database)
 	if err != nil {
 		return nil, err
 	}
 	receiptService, err := application.NewReceiptService(
 		authorityUnitOfWork,
-		readCursorRepo,
 		config.LocalStationID,
 		config.Clock,
 	)
@@ -429,7 +422,6 @@ func NewComposition(config CompositionConfig) (*Composition, error) {
 		federationOutbox:     federationOutbox,
 		recoveryRepository:   recoveryRepository,
 		mlsClaimRepository:   mlsClaimRepository,
-		readCursorRepo:       readCursorRepo,
 	}, nil
 }
 
@@ -455,5 +447,5 @@ func (c *Composition) Migrate() error {
 	if err := c.recoveryRepository.AutoMigrate(); err != nil {
 		return err
 	}
-	return c.readCursorRepo.AutoMigrate()
+	return nil
 }

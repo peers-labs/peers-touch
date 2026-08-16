@@ -1,5 +1,10 @@
-use super::{ClaimedItemConsumer, DeliveryReceiptReceiveCommit, EngineEndpoint, MessagingStore};
-use crate::model::chat::{DeviceQueueItem, DeviceQueuePayloadType, MessageReceipt, ReceiptType};
+use super::{
+    ActorReadReceiveCommit, ClaimedItemConsumer, DeliveryReceiptReceiveCommit, EngineEndpoint,
+    MessagingStore,
+};
+use crate::model::chat::{
+    ActorReadCursor, DeviceQueueItem, DeviceQueuePayloadType, MessageReceipt, ReceiptType,
+};
 use prost::Message;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -58,13 +63,40 @@ impl DeliveryReceiptProcessor {
         if recipient.ptid != self.endpoint.ptid || recipient.device_id != self.endpoint.device_id {
             return Err("messaging delivery receipt endpoint mismatch".to_string());
         }
-        let receipt = MessageReceipt::decode(item.opaque_payload.as_slice())
-            .map_err(|error| format!("decode messaging delivery receipt: {error}"))?;
         if item.payload_sha256.len() != 32
             || Sha256::digest(&item.opaque_payload).as_slice() != item.payload_sha256
         {
             return Err("messaging delivery receipt payload hash mismatch".to_string());
         }
+        if item.event_id.starts_with("read:") {
+            let cursor = ActorReadCursor::decode(item.opaque_payload.as_slice())
+                .map_err(|error| format!("decode messaging actor read cursor: {error}"))?;
+            let expected_event_id =
+                format!("read:{}:{}", cursor.reader_ptid, cursor.last_read_sequence);
+            if cursor.conversation_id != item.conversation_id
+                || cursor.reader_ptid.is_empty()
+                || cursor.reader_ptid == self.endpoint.ptid
+                || cursor.last_read_sequence <= 0
+                || item.event_id != expected_event_id
+            {
+                return Err("messaging actor read cursor payload is invalid".to_string());
+            }
+            self.store
+                .commit_actor_read_cursor(&ActorReadReceiveCommit {
+                    item_id: &item.item_id,
+                    event_id: &item.event_id,
+                    conversation_id: &cursor.conversation_id,
+                    reader_ptid: &cursor.reader_ptid,
+                    last_read_sequence: cursor.last_read_sequence,
+                    lane_sequence: item.lane_sequence,
+                    consumer_epoch,
+                    payload_sha256: &item.payload_sha256,
+                    consumed_at_unix_ms: now,
+                })?;
+            return Ok(());
+        }
+        let receipt = MessageReceipt::decode(item.opaque_payload.as_slice())
+            .map_err(|error| format!("decode messaging delivery receipt: {error}"))?;
         if receipt.receipt_type != ReceiptType::Delivered as i32
             || receipt.conversation_id != item.conversation_id
             || receipt.message_id != item.event_id
@@ -146,6 +178,30 @@ mod tests {
         }
     }
 
+    fn actor_read_item(reader_ptid: &str, sequence: i64) -> DeviceQueueItem {
+        let cursor = ActorReadCursor {
+            conversation_id: "conversation-1".to_string(),
+            reader_ptid: reader_ptid.to_string(),
+            last_read_sequence: sequence,
+            updated_at: None,
+        };
+        let payload = cursor.encode_to_vec();
+        DeviceQueueItem {
+            item_id: "read-item-1".to_string(),
+            recipient: Some(CryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            }),
+            lane_sequence: 1,
+            event_id: format!("read:{reader_ptid}:{sequence}"),
+            conversation_id: "conversation-1".to_string(),
+            payload_type: DeviceQueuePayloadType::DeviceReceipt as i32,
+            payload_sha256: Sha256::digest(&payload).to_vec(),
+            opaque_payload: payload,
+            ..DeviceQueueItem::default()
+        }
+    }
+
     fn insert_projection(store: &MessagingStore, state: &str) {
         store
             .insert_test_message_projection("conversation-1", "message-1", state)
@@ -194,6 +250,31 @@ mod tests {
             "read"
         );
         assert_eq!(store.lane_checkpoint().unwrap(), (1, 3));
+    }
+
+    #[test]
+    fn actor_read_cursor_commits_cursor_marker_and_lane_atomically() {
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        insert_projection(&store, "delivered");
+        let processor = processor(store.clone());
+        let item = actor_read_item("ptid:bob", 7);
+
+        processor.consume(&item, 3).unwrap();
+
+        assert_eq!(
+            store.read_cursor("conversation-1", "ptid:bob").unwrap(),
+            Some(7)
+        );
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 3));
+        let messages = store
+            .conversation_message_projections("conversation-1")
+            .unwrap();
+        assert_eq!(messages[0].state, "read");
+        assert_eq!(messages[0].read_by_ptids, vec!["ptid:bob"]);
+        assert!(store
+            .consumption_marker_matches(&item.item_id, &item.payload_sha256)
+            .unwrap());
+        processor.consume(&item, 3).unwrap();
     }
 
     #[test]

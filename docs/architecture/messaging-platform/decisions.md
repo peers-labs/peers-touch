@@ -1,8 +1,8 @@
 # Messaging Platform — 设计决策
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-08-10
+> **Version**: v1.2
+> **Created**: 2026-08-08 | **Updated**: 2026-08-16
 > **Owner**: Messaging Platform Team
 
 ---
@@ -36,6 +36,8 @@
 | MP-D23 | Attachment object 与 transfer session 由 Conversation Authority 拥有 | accepted |
 | MP-D24 | Attachment resume 使用 immutable chunk commitments | accepted |
 | MP-D25 | Attachment projection 与 plaintext FTS 由 Engine SQLCipher 拥有 | accepted |
+| MP-D26 | Durable message interactions 共用 authority sequence 与 atomic device consumption | accepted |
+| MP-D27 | Typing 使用独立 ephemeral QoS，不进入 durable message lane | accepted |
 
 ---
 
@@ -277,6 +279,71 @@ Command response 只更新 durable command submission state，不改变 authorit
 ### Acceptance
 
 Owner accepted on 2026-08-09.
+
+## MP-D26: Durable Message Interactions 共用 Authority Sequence
+
+**Status**: accepted
+**Date**: 2026-08-16
+
+### Context
+
+Reply/thread、edit、retract、reaction、pin 和 read 已存在 typed contracts 与局部实现，
+但若 UI、legacy store 或独立 handler 直接更新终态，会绕过 conversation ordering、
+device replay、authorization 和 restart convergence。
+
+### Decision
+
+- Reply/thread relation 在原 message commit 中固定。
+- Edit/retract/reaction/pin 作为 typed authority events，使用相同 event hash、sequence、
+  per-device delivery、local consumption marker 和 post-commit ACK。
+- Edit/retract 只允许原 message author；reaction 只能 add/remove actor 自己的 tuple；
+  pin/unpin 允许 active conversation member；read cursor actor-scoped 且单调。
+- Device Engine 在同一 local transaction 中应用 interaction projection、marker 和 cursor。
+- UI 只能提交 intent 和读取 projection，不得把 optimistic state 当作 accepted state。
+
+### Consequences
+
+- Metadata-only event 仍必须经过 ordered device consumption，不能经 Web event shortcut。
+- Edit 的 replacement content 必须继续使用 Direct/MLS encrypted endpoint payload。
+- 缺少 target message、authorization 失败或 stale membership 时 authority 零 mutation。
+
+### Acceptance
+
+Direct/Group Native clients 必须逐项证明 sender/receiver visible result、Station event、
+device queue、Engine durable projection、duplicate/restart 和 deny paths。
+
+Owner accepted through the 2026-08-16 completion Goal.
+
+## MP-D27: Typing 使用独立 Ephemeral QoS
+
+**Status**: accepted
+**Date**: 2026-08-16
+
+### Context
+
+Typing 是短暂 presence，不是 conversation fact。将 typing pulse 写入 ordered durable
+device lane 会让丢失或积压的 presence 阻塞 message/MLS/receipt，并在恢复后重放过期状态。
+
+### Decision
+
+- Typing 使用 authenticated、bounded、best-effort ephemeral fan-out。
+- Direct 与 Group 都按 active membership fan-out，但不写 authority event、
+  `DeviceQueueItem`、history、receipt、recovery 或 read cursor。
+- Sender throttles pulses；receiver 以 `(conversation_id, sender endpoint)` 幂等刷新 TTL。
+- stop、session switch、disconnect 或 TTL expiry 均清除 visible typing。
+
+### Consequences
+
+- Typing 可在网络故障时短暂丢失；这是允许的降级。
+- Group typing 需要 Station ephemeral member fan-out，不能复用 durable queue。
+- Call signaling 继续由 Realtime architecture 单独定义。
+
+### Acceptance
+
+Native Direct/Group sender/receiver evidence必须证明 start/stop/TTL、membership deny、
+disconnect cleanup，并证明 durable lane/history 中无 typing item。
+
+Owner accepted through the 2026-08-16 completion Goal.
 
 ## MP-D23: Attachment Object 与 Transfer Session 由 Conversation Authority 拥有
 

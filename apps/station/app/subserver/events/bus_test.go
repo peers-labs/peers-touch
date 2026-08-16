@@ -76,6 +76,43 @@ func TestPublish_StampsEventIDAndTimestamp(t *testing.T) {
 	}
 }
 
+func TestPublishEphemeral_DeliversLiveWithoutReplay(t *testing.T) {
+	bus := newTestBus(t)
+	liveContext, cancelLive := context.WithCancel(context.Background())
+	defer cancelLive()
+	live, _, err := bus.Subscribe(liveContext, "alice", "dev-live", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	eventID, err := bus.PublishEphemeral("alice", msg("typing"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	delivered := drainN(t, live, 1, 50*time.Millisecond)
+	if len(delivered) != 1 || delivered[0].GetEventId() != eventID {
+		t.Fatalf("live delivery = %#v, want event_id %q", delivered, eventID)
+	}
+
+	replayContext, cancelReplay := context.WithCancel(context.Background())
+	defer cancelReplay()
+	replay, _, err := bus.Subscribe(replayContext, "alice", "dev-replay", "ev-000000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	timeout := time.After(20 * time.Millisecond)
+	for {
+		select {
+		case replayed := <-replay.Events:
+			if replayed.GetMessage().GetUlid() == "typing" {
+				t.Fatalf("ephemeral event entered replay: %#v", replayed)
+			}
+		case <-timeout:
+			return
+		}
+	}
+}
+
 func TestSubscribe_FirstConnect_NoReplay(t *testing.T) {
 	bus := newTestBus(t)
 	if _, err := bus.Publish("alice", msg("a")); err != nil {

@@ -1,8 +1,8 @@
 # Messaging Platform — 架构设计
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-08-10
+> **Version**: v1.2
+> **Created**: 2026-08-08 | **Updated**: 2026-08-16
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/`, `apps/desktop/`, `apps/mobile/`
 
@@ -28,6 +28,8 @@
 | MP-A14 | 每个相关 active device 都通过自己的 lane 观察完整 authority sequence；sending endpoint 使用无 ciphertext 的 public-event marker |
 | MP-A15 | Device enrollment 只有在 Station 验证 actor-cross-signed fresh DSK proof 后才可 ACTIVE |
 | MP-A16 | Fresh MLS endpoint 只能以明确添加自己的 Welcome event + hashed post-state snapshot 建立首个 authority checkpoint |
+| MP-A17 | Reply/edit/retract/reaction/pin/read 使用同一 authority sequence 和 per-device consumption boundary；UI optimistic state 不能成为 terminal truth |
+| MP-A18 | Typing 是独立 bounded ephemeral QoS；不得进入 durable message lane、history、receipt 或 recovery |
 
 ### 1.1 Delivery Commitment Amendment
 
@@ -77,7 +79,149 @@ clock、randomness、queue transport 和 projection sink。Desktop/Mobile adapte
 这些 ports，不得复制 Direct、OpenMLS、dedup、cursor、ACK、recovery codec 或 receipt
 state machine。
 
-## 2. 系统架构
+## 2. 当前能力与系统架构
+
+本节是当前实现快照，不改变后续章节定义的 accepted target architecture。状态必须同时由
+源码、执行账本和 Acceptance evidence 支撑；存在组件或单元测试不等于产品能力已经证明。
+
+### 2.1 状态图例
+
+| 状态 | 含义 |
+|---|---|
+| `PROVEN` | 当前 source-bound Gate 已证明真实发送端、接收端和用户可见结果 |
+| `IMPLEMENTED_UNPROVEN` | 已有 canonical source path，但缺少该能力要求的完整 Native/runtime evidence |
+| `TARGET` | accepted architecture 的目标关系；尚未完成实现或切换 |
+
+### 2.2 产品架构
+
+```mermaid
+flowchart LR
+    I["Identity / Contacts<br/>PTID · device trust"] --> E
+
+    subgraph E["Chat entry"]
+        D["Direct Chat<br/>PROVEN"]
+        G["Group Chat / MLS<br/>PROVEN on Desktop"]
+    end
+
+    E --> C["Compose & interaction<br/>text PROVEN<br/>rich actions IMPLEMENTED_UNPROVEN"]
+    C --> L["Message lifecycle<br/>draft → queued → accepted<br/>consumed → delivered → read"]
+    L --> H["History & retrieval<br/>history · search · attachments<br/>PROVEN on Desktop"]
+
+    E --> S["Security & continuity<br/>Direct ratchet · MLS · multi-device<br/>device revoke · recovery"]
+    S --> F["Federation<br/>Home Station · Authority Station<br/>PROVEN on Desktop"]
+
+    D -. "source-bound Native proof" .-> P["Proven slice<br/>Desktop Direct E2EE<br/>durable receive + DELIVERED"]
+    G -.-> U["Proven capability bundles<br/>MLS transitions · multi-device<br/>recovery · attachments · search"]
+    C -.-> X["Proof incomplete<br/>edit/retract · reaction/pin<br/>reply/thread · typing/read lifecycle"]
+    F -.-> T["Target cutover<br/>Mobile parity · portable core"]
+```
+
+产品表面由 `apps/desktop/src/components/chat/` 与 `apps/desktop/src/store/socialChat.ts`
+呈现，但 UI 可见组件不是独立 truth owner。Direct、Group、附件、恢复和 federation
+最终都必须通过相同的 message lifecycle 与 receiver-perspective Acceptance contract。
+
+### 2.3 当前技术架构
+
+```mermaid
+flowchart TB
+    subgraph UI["Client presentation"]
+        DU["Desktop Chat UI<br/>PROVEN capability bundles"]
+        MU["Mobile Chat UI<br/>TARGET parity"]
+        PR["Projection runtime / socialChat<br/>typed intents + durable projections"]
+        DU --> PR
+        MU -.-> PR
+    end
+
+    subgraph DE["Device Messaging Engine"]
+        ENG["Rust lifecycle owner<br/>inbox · outbox · workers"]
+        DC["Direct X3DH / Double Ratchet"]
+        MLS["OpenMLS group state"]
+        RC["Receipt processor / outbox"]
+        AR["Attachment · recovery · local search"]
+        DB[("SQLCipher<br/>crypto state · plaintext · markers<br/>cursor · projections")]
+        ENG --> DC
+        ENG --> MLS
+        ENG --> RC
+        ENG --> AR
+        DC --> DB
+        MLS --> DB
+        RC --> DB
+        AR --> DB
+    end
+
+    subgraph MC["Canonical model contracts"]
+        PB["model/domain/chat/*.proto<br/>endpoint · command · event · queue<br/>receipt · recovery · attachment"]
+    end
+
+    subgraph ST["Station Messaging Platform"]
+        AU["Conversation Authority<br/>membership · sequence · hash · idempotency"]
+        DD["Device / key directory"]
+        Q["Ordered device queues<br/>lease · fencing · retry · ACK"]
+        RS["Receipt / read cursor / typing"]
+        AO["Attachment grants / opaque object"]
+        BR["Opaque recovery repository"]
+        FI["Federation outbox / inbox"]
+        AU --> Q
+        DD --> AU
+        RS --> Q
+        AO --> AU
+        BR --> AU
+        AU --> FI
+    end
+
+    subgraph REM["Remote Home / Authority Station"]
+        RQ["Verified federation frame<br/>remote inbox + local device lanes"]
+    end
+
+    PR -->|"typed command / local event"| ENG
+    ENG -->|"HTTPS commands"| PB
+    PB --> AU
+    Q -->|"claim ordered item"| ENG
+    ENG -->|"ACK after local commit"| Q
+    ENG -->|"projection-changed"| PR
+    FI -->|"signed durable frame"| RQ
+    RQ -->|"durable return path"| FI
+
+    RT["SSE / push wake only<br/>never durable truth"] -.-> ENG
+    LEG["Legacy envelope / imRuntime<br/>forbidden second owner"] -. "must not own messaging" .-> PR
+```
+
+当前 Direct `DELIVERED` 的 canonical hot path 是：
+
+```text
+Bob ordered queue item
+  -> Rust decrypt + atomic SQLCipher receive commit
+  -> durable MessageReceipt outbox
+  -> POST /messaging/receipt/delivery
+  -> Station DEVICE_RECEIPT fan-out
+  -> Alice Rust receipt processor atomic commit
+  -> messaging:projection-changed
+  -> socialChat projection
+  -> native message row: sent -> delivered
+```
+
+### 2.4 当前能力证据矩阵
+
+| 能力区域 | 当前状态 | Canonical owner/path | 当前证明边界 |
+|---|---|---|---|
+| Desktop Direct send/receive + E2EE | `PROVEN` | Rust Device Messaging Engine + Station Messaging Authority | Native 双客户端双向 exact plaintext |
+| Direct `DELIVERED` | `PROVEN` | durable receipt outbox + `DEVICE_RECEIPT` + atomic receipt processor | Alice/Bob 双向 native row 前向推进 |
+| Ordered queue、dedup、post-commit ACK | `PROVEN` for Direct slice | Station Device Queue + Rust SQLCipher transaction | Direct Gate bundle；不外推到全部 payload class |
+| Group MLS 与 membership transition | `PROVEN` on Desktop | OpenMLS + Station authority plans | W07: add/remove/rejoin/restart/crash recovery Native evidence |
+| Multi-device fan-out / revoke | `PROVEN` on Desktop | Device Directory + per-device lanes | W07: one-device-one-leaf、remove isolation 与 transition recovery |
+| Recovery / fresh device continuation | `PROVEN` on Desktop | Rust recovery + Station opaque repository | W08/W11-R: fresh restore、fresh enrollment、继续通信与失败原子性 |
+| Attachments / resumable transfer | `PROVEN` on Desktop | Rust attachment runtime + Station object/grant | W10-E: Direct/MLS byte-exact、restart、recovery 与跨 Station Native evidence |
+| Local history / SQLCipher search | `PROVEN` on Desktop | Device SQLCipher projection / FTS | W10-E: Direct/Group FTS 与 recovery round-trip |
+| Edit/retract/reaction/pin/reply/typing/read | `IMPLEMENTED_UNPROVEN` | Chat command/event/projection paths | UI 与 source path 存在；各 receiver-visible Gate 未统一闭环 |
+| Cross-Station federation | `PROVEN` on Desktop | durable federation outbox/inbox | W06: outage retry、幂等 ingest、ordered delivery 与 cold restart |
+| Mobile parity / portable Messaging Core | `TARGET` | `packages/messaging-core` + platform adapters | `MP-W09` 未完成 |
+
+能力状态的正式完成判定仍以
+[`acceptance-matrix.md`](./acceptance-matrix.md) 和
+[`execution-plans/20260808-messaging-platform.md`](./execution-plans/20260808-messaging-platform.md)
+为准。此矩阵禁止把 Direct slice 的证明外推为整个 Chat domain 已证明。
+
+### 2.5 Accepted target topology
 
 ```text
 ┌──────────────── Client Presentation ────────────────┐
@@ -120,6 +264,8 @@ state machine。
 | Plaintext history/search | Device SQLCipher | Station |
 | Device consumption dedup | Device SQLCipher | frontend `Set` |
 | Recovery revisions | Station opaque repository | localStorage |
+| Reply/edit/retract/reaction/pin/read | Conversation Authority event/read cursor + Device SQLCipher projection | UI-only mutation、legacy conversation store |
+| Typing presence | Fresh authenticated ephemeral pulse with receiver TTL | authority log、device durable lane、history |
 | Draft/selection/scroll | UI | Station |
 
 ## 4. Runtime Units
@@ -412,6 +558,31 @@ SSE/push wake
 - 一个 lane 不允许越过未消费 item。
 - Independent devices、conversations 和 federation targets 可并行。
 - Typing/call signaling 使用独立 ephemeral channel，不得阻塞 durable lane。
+
+### 8.1 Message Interaction Semantics
+
+- Reply/thread identity 在 `SendMessageIntent` 中绑定并随 committed message projection
+  持久化；它不是后续可变 metadata。
+- Edit 与 retract 只允许原 message author。Edit 保持 `message_id`，新 encrypted
+  content 随 Direct/MLS endpoint payload 交付；retract 保留 row 和 authority history。
+- Reaction add/remove 以 `(message_id, actor_ptid, reaction)` 幂等；actor 只能移除自己的
+  reaction。
+- Pin/unpin 是 conversation-scoped authority fact；active member 可操作，所有 endpoint
+  按 sequence 收敛到一个当前结果。
+- Read cursor 是 actor-scoped monotonic fact；任何旧 cursor、duplicate 或 delivered
+  receipt 都不能使其回退或伪造 read。
+- 所有 durable interaction event 必须与普通 message 共用 authority admission、
+  event hash、device queue、local consumption marker、cursor 和 post-commit ACK。
+
+### 8.2 Typing Presence Semantics
+
+- Typing pulse 只接受 authenticated active conversation member，绑定
+  `(conversation_id, sender endpoint, pulse generation, expires_at)`。
+- Direct 与 Group fan-out 使用独立 ephemeral delivery path；不得写
+  `DeviceQueueItem`、authority event、recovery archive 或 message projection。
+- Sender pulse bounded/throttled；receiver 按 sender + conversation 幂等刷新 TTL。
+- stop、session switch、disconnect 或 TTL expiry 都投影为 idle。丢失 stop pulse
+  只能造成 bounded 短暂显示，不能形成 durable phantom state。
 
 ## 9. Delivery And Receipt Semantics
 
