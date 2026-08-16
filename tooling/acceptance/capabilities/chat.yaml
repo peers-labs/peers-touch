@@ -191,6 +191,87 @@
           "W8 remains unproven until all four environment-evidence gates pass"
         ]
       }
+    },
+    {
+      "id": "chat-message-interactions",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-message-interactions"],
+      "required_gates": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-interactions-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/chat/command.proto",
+        "apps/station/app/subserver/messaging/application/authority_service.go",
+        "apps/desktop/src-tauri/src/messaging/public_event.rs",
+        "apps/desktop/src/store/socialChat.ts",
+        "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Messaging conversation authority events",
+          "Station actor read cursor",
+          "per-device ordered messaging queue",
+          "Device Messaging Engine SQLCipher interaction projection"
+        ],
+        "surfaces": [
+          "Direct native message rows and thread panel",
+          "Group native message rows and thread panel",
+          "reaction, pin and read projections"
+        ],
+        "proven_by": ["chat-native-interactions-e2e"],
+        "proven_scope": [
+          "Proto, Station, Engine and Desktop interaction contracts compile and pass their declared structural gates",
+          "Registry changes select the dedicated interaction Native Gate"
+        ],
+        "unproven_scope": [
+          "Direct and Group reply, thread, edit, retract, reaction, pin and read remain unproven until the dedicated source-bound Native Gate passes",
+          "Mobile interaction parity remains unproven until MP-W09 Native cells pass"
+        ]
+      }
+    },
+    {
+      "id": "chat-typing-presence",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-typing-presence"],
+      "required_gates": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-typing-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/messaging/application/typing_service.go",
+        "apps/desktop/src/components/chat/ChatMessageArea.tsx",
+        "apps/desktop/src/store/socialChat.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "authenticated active conversation membership",
+          "fresh ephemeral typing pulse",
+          "receiver process-local typing TTL projection"
+        ],
+        "surfaces": [
+          "Direct native typing indicator",
+          "Group native typing indicator"
+        ],
+        "proven_by": ["chat-native-typing-e2e"],
+        "proven_scope": [
+          "Station and Desktop typing contracts compile and pass their declared structural gates",
+          "Registry changes select the dedicated typing Native Gate"
+        ],
+        "unproven_scope": [
+          "Direct start, stop, session-switch, disconnect and TTL behavior remains unproven",
+          "Group ephemeral member fan-out remains unimplemented and unproven",
+          "Mobile typing parity remains unproven until MP-W09 Native cells pass"
+        ]
+      }
     }
   ]
 }
