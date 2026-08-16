@@ -6,8 +6,10 @@ import unittest
 from unittest.mock import patch
 
 from tooling.acceptance.fixtures.chat_native_reset import (
+    CHAT_TABLES,
     profile_three_environment,
     reset_local_client_storage,
+    reset_station_messaging_state,
 )
 
 
@@ -75,6 +77,39 @@ class ProfileThreeTargetTest(unittest.TestCase):
                 "unsupported native Chat fixture account",
             ):
                 reset_local_client_storage(["../outside"], Path(directory))
+
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset.subprocess.run"
+    )
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
+        return_value={
+            "PT_DEPLOY_HOST": "10.37.94.156",
+            "PT_DEPLOY_USER": "acceptance",
+        },
+    )
+    def test_station_reset_clears_sessions_and_restores_preset_credentials(
+        self,
+        _environment,
+        run,
+    ) -> None:
+        reset_station_messaging_state("station-three")
+        sql = run.call_args.kwargs["input"]
+        self.assertIn("actor_sessions", CHAT_TABLES)
+        self.assertIn("TRUNCATE TABLE", sql)
+        self.assertIn("SELECT password_hash INTO STRICT preset_hash", sql)
+        self.assertIn(
+            "WHERE email IN ('alice@p.t', 'bob@p.t', 'carol@p.t')",
+            sql,
+        )
+        self.assertIn("updated_count <> 3", sql)
+
+    def test_station_reset_rejects_other_deploy_environments(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "restricted to station-three",
+        ):
+            reset_station_messaging_state("station-1")
 
 
 if __name__ == "__main__":

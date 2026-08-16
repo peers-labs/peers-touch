@@ -21,6 +21,7 @@ PROFILE_THREE_STATION_CONTAINER = "pt-station-a-station-1"
 CHAT_TABLES = (
     "actor_devices",
     "actor_identity_keys",
+    "actor_sessions",
     "device_queue_items",
     "device_queue_lanes",
     "federated_endpoint_manifests",
@@ -363,6 +364,10 @@ def reset_local_client_storage(
 
 
 def reset_station_messaging_state(environment_name: str) -> None:
+    if environment_name != PROFILE_THREE_ENVIRONMENT:
+        raise RuntimeError(
+            "native Chat fixture reset is restricted to station-three"
+        )
     environment = deploy_environment(environment_name)
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     user = environment.get("PT_DEPLOY_USER", "").strip()
@@ -373,7 +378,33 @@ def reset_station_messaging_state(environment_name: str) -> None:
     container = os.environ.get(
         "CHAT_ACCEPTANCE_POSTGRES_CONTAINER", "pt-station-a-postgres-1"
     )
-    sql = f"TRUNCATE TABLE {', '.join(CHAT_TABLES)} CASCADE;\n"
+    if container != "pt-station-a-postgres-1":
+        raise RuntimeError(
+            "Profile Three PostgreSQL container must be pt-station-a-postgres-1"
+        )
+    sql = f"""
+BEGIN;
+TRUNCATE TABLE {', '.join(CHAT_TABLES)} CASCADE;
+DO $acceptance$
+DECLARE
+  preset_hash text;
+  updated_count integer;
+BEGIN
+  SELECT password_hash INTO STRICT preset_hash
+  FROM touch_actor
+  WHERE email = 'alice@p.t';
+
+  UPDATE touch_actor
+  SET password_hash = preset_hash
+  WHERE email IN ('alice@p.t', 'bob@p.t', 'carol@p.t');
+  GET DIAGNOSTICS updated_count = ROW_COUNT;
+  IF updated_count <> 3 THEN
+    RAISE EXCEPTION 'native Chat preset actor set is incomplete';
+  END IF;
+END
+$acceptance$;
+COMMIT;
+"""
     remote = (
         f"docker exec -i {container} sh -lc "
         "'psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'"
