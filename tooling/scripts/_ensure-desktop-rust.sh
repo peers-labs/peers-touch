@@ -284,6 +284,7 @@ ensure_desktop_rust_ready() {
     export PT_PROFILE="$profile"
     export PEERS_STATION_URL="${PEERS_STATION_URL:-}"
     export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+    unset MAKEFLAGS MFLAGS
     pnpm tauri dev ${tauri_feature_args[@]+"${tauri_feature_args[@]}"} --config "$tauri_config"
   ) &
   TAURI_PID=$!

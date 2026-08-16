@@ -127,7 +127,7 @@ fn latest_revision(
         None::<&GetLatestRecoveryRevisionRequest>,
         device_id,
     )?;
-    #[cfg(feature = "e2e-testing")]
+    #[cfg(feature = "acceptance-webdriver")]
     if std::env::var_os("PT_MESSAGING_RECOVERY_CORRUPT_LATEST_FILE")
         .map(std::path::PathBuf::from)
         .is_some_and(|path| path.is_file())

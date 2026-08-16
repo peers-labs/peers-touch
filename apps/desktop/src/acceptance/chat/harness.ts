@@ -1,11 +1,13 @@
-import { identityRuntime } from '../kernel/identityRuntime';
-import { api } from '../services/desktop_api';
-import type { GroupChatFederatedActorInput } from '../services/desktop_api';
-import { dispatchRealtimeFrameForAcceptance } from '../services/eventStream';
-import { imServiceV1 } from '../services/im-service';
-import { useSessionStore } from '../store/session';
-import { createEncryptedChatPayloadBytes, decodeGroupMessages, useSocialChatStore } from '../store/socialChat';
-import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
+import { identityRuntime } from '../../kernel/identityRuntime';
+import { installDeferredAppRuntimeProjections } from '../../services/appRuntime';
+import { api } from '../../services/desktop_api';
+import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
+import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
+import { imServiceV1 } from '../../services/im-service';
+import { useSessionStore } from '../../store/session';
+import { createEncryptedChatPayloadBytes, decodeGroupMessages, useSocialChatStore } from '../../store/socialChat';
+import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import { registerAcceptanceHarness } from '../registry';
 
 interface LoginInput {
   account: string;
@@ -83,80 +85,6 @@ interface AddFederatedGroupMemberInput {
   member: GroupChatFederatedActorInput;
 }
 
-declare global {
-  interface Window {
-    __PT_ACCEPTANCE__?: {
-      loginWithPassword(input: LoginInput): Promise<{ authenticated: boolean; actorId: string | null }>;
-      syncFriendSession(input: SyncFriendInput): Promise<{
-        sessionUlid: string;
-        messageCount: number;
-        syncedCount: number;
-        pagesFetched: number;
-      }>;
-      createGroup(input: CreateGroupInput): Promise<{ groupUlid: string; memberCount: number }>;
-      syncGroup(input: SyncGroupInput): Promise<{
-        groupUlid: string;
-        messageCount: number;
-        syncedCount: number;
-        pagesFetched: number;
-      }>;
-      sendGroupMessage(input: SendGroupMessageInput): Promise<{ groupUlid: string; messageCount: number }>;
-      sendGroupMessages(input: SendGroupMessagesInput): Promise<{
-        groupUlid: string;
-        sentCount: number;
-        firstContent: string;
-        lastContent: string;
-        durationMs: number;
-      }>;
-      syncGroupPressure(input: SyncGroupPressureInput): Promise<{
-        ok: boolean;
-        error?: string;
-        stage?: string;
-        groupUlid: string;
-        messageCount: number;
-        decodedCount: number;
-        waitingCount: number;
-        failedCount: number;
-        pagesFetched: number;
-        syncedCount: number;
-        firstFound: boolean;
-        lastFound: boolean;
-      }>;
-      syncGroupPressureProjection(input: SyncGroupPressureProjectionInput): Promise<{
-        groupUlid: string;
-        syncedCount: number;
-        pagesFetched: number;
-      }>;
-      syncGroupPressurePage(input: SyncGroupPressurePageInput): Promise<{
-        groupUlid: string;
-        messageCount: number;
-        bufferedCount: number;
-        nextBeforeUlid: string;
-        hasMore: boolean;
-      }>;
-      decodeGroupPressure(input: DecodeGroupPressureInput): Promise<{
-        groupUlid: string;
-        messageCount: number;
-        decodedCount: number;
-        waitingCount: number;
-        failedCount: number;
-        firstFound: boolean;
-        lastFound: boolean;
-        completed: boolean;
-        decodedWindowCount: number;
-      }>;
-      addFederatedGroupMember(input: AddFederatedGroupMemberInput): Promise<{
-        groupUlid: string;
-        success: boolean;
-        memberCount: number;
-      }>;
-      removeGroupMember(input: RemoveGroupMemberInput): Promise<{ groupUlid: string; success: boolean; memberCount: number }>;
-      getRealtimeDevice(): Promise<{ actorId: string | null; deviceId: string }>;
-      dispatchRealtimeFrame(input: { eventId?: string; dataB64: string }): Promise<{ accepted: boolean }>;
-    };
-  }
-}
-
 function activeActorId(): string | null {
   return useSessionStore.getState().currentUser?.actorId ?? null;
 }
@@ -200,13 +128,12 @@ async function hydrateSocialForActiveActor(): Promise<void> {
   }
 }
 
-export function installChatAcceptanceHarness(): void {
-  if (window.__PT_ACCEPTANCE__) return;
-
-  window.__PT_ACCEPTANCE__ = {
-    async loginWithPassword({ account, password }) {
+export function installAcceptanceHarness(): void {
+  registerAcceptanceHarness('chat', {
+    async loginWithPassword({ account, password }: LoginInput) {
       await identityRuntime.loginWithPassword(account, password);
       await identityRuntime.completeCurrentSession();
+      await installDeferredAppRuntimeProjections();
       await hydrateSocialForActiveActor();
       const user = useSessionStore.getState().currentUser;
       return {
@@ -215,7 +142,13 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async syncFriendSession({ sessionUlid, limit: _limit = 50, maxPages: _maxPages = 1 }) {
+    async createDirectConversation({ peerPtid }: { peerPtid: string }) {
+      const conversation = await imServiceV1.messaging.createDirect(peerPtid);
+      await useSocialChatStore.getState().loadSessions();
+      return { conversationId: conversation.conversationId };
+    },
+
+    async syncFriendSession({ sessionUlid, limit: _limit = 50, maxPages: _maxPages = 1 }: SyncFriendInput) {
       const social = useSocialChatStore.getState();
       await social.loadSessions();
       await social.loadMessages(sessionUlid, 'friend');
@@ -230,7 +163,7 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async createGroup({ name, description, memberDids = [], initialFederatedMembers = [] }) {
+    async createGroup({ name, description, memberDids = [], initialFederatedMembers = [] }: CreateGroupInput) {
       const response = await api.groupChatCreateGroup(name, description, memberDids, initialFederatedMembers);
       const groupUlid = response.group?.ulid || '';
       if (!groupUlid) {
@@ -247,7 +180,7 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async syncGroup({ groupUlid, limit: _limit = 50, maxPages: _maxPages = 1 }) {
+    async syncGroup({ groupUlid, limit: _limit = 50, maxPages: _maxPages = 1 }: SyncGroupInput) {
       const social = useSocialChatStore.getState();
       await social.loadGroups();
       await social.loadGroupMembers(groupUlid);
@@ -263,7 +196,7 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async sendGroupMessage({ groupUlid, content, type = 1 }) {
+    async sendGroupMessage({ groupUlid, content, type = 1 }: SendGroupMessageInput) {
       const social = useSocialChatStore.getState();
       await social.loadGroupMembers(groupUlid);
       await social.sendGroupMessage(groupUlid, content, type);
@@ -278,7 +211,7 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async sendGroupMessages({ groupUlid, prefix, count, startIndex = 1, type = 1 }) {
+    async sendGroupMessages({ groupUlid, prefix, count, startIndex = 1, type = 1 }: SendGroupMessagesInput) {
       if (count < 1) {
         throw new Error('count must be >= 1');
       }
@@ -300,7 +233,7 @@ export function installChatAcceptanceHarness(): void {
         const plaintextBytes = createEncryptedChatPayloadBytes(content, [], type);
         const ciphertext = await imServiceV1.mlsGroup.encrypt(groupUlid, plaintextBytes);
         const { create: createProto } = await import('@bufbuild/protobuf');
-        const { StationEnvelopeSchema, EnvelopePayloadType } = await import('../gen/proto/domain/chat/envelope_pb');
+        const { StationEnvelopeSchema, EnvelopePayloadType } = await import('../../gen/proto/domain/chat/envelope_pb');
         const envelope = createProto(StationEnvelopeSchema, {
           conversationId: groupUlid,
           senderPtid: did,
@@ -320,7 +253,7 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async syncGroupPressure({ groupUlid, expectedCount, prefix, limit: _limit = 100, maxPages: _maxPages = 20 }) {
+    async syncGroupPressure({ groupUlid, expectedCount, prefix, limit: _limit = 100, maxPages: _maxPages = 20 }: SyncGroupPressureInput) {
       let stage = 'start';
       try {
         const social = useSocialChatStore.getState();
@@ -365,7 +298,7 @@ export function installChatAcceptanceHarness(): void {
       }
     },
 
-    async syncGroupPressureProjection({ groupUlid, limit: _limit = 100, maxPages: _maxPages = 20 }) {
+    async syncGroupPressureProjection({ groupUlid }: SyncGroupPressureProjectionInput) {
       groupPressureWindows.set(groupUlid, {
         rawByUlid: new Map<string, GroupMessage>(),
         decodedByUlid: new Map<string, GroupMessage>(),
@@ -383,7 +316,7 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async syncGroupPressurePage({ groupUlid, prefix, beforeUlid = '', limit: _limit = 100 }) {
+    async syncGroupPressurePage({ groupUlid, prefix, beforeUlid = '', limit: _limit = 100 }: SyncGroupPressurePageInput) {
       const social = useSocialChatStore.getState();
       await social.loadMessages(groupUlid, 'group');
       const messages = useSocialChatStore.getState().getIMMessages('group', groupUlid);
@@ -402,7 +335,7 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async decodeGroupPressure({ groupUlid, prefix, expectedCount, chunkSize = 100 }) {
+    async decodeGroupPressure({ groupUlid, prefix, expectedCount, chunkSize = 100 }: DecodeGroupPressureInput) {
       const state = groupPressureWindow(groupUlid);
       const ordered = orderedPressureMessages(state);
       const decodeSize = Math.max(1, Math.min(200, chunkSize));
@@ -451,7 +384,7 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async addFederatedGroupMember({ groupUlid, member }) {
+    async addFederatedGroupMember({ groupUlid, member }: AddFederatedGroupMemberInput) {
       const response = await api.groupChatAddFederatedMember(groupUlid, member);
       const social = useSocialChatStore.getState();
       await social.loadGroups();
@@ -465,7 +398,7 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async removeGroupMember({ groupUlid, memberDid }) {
+    async removeGroupMember({ groupUlid, memberDid }: RemoveGroupMemberInput) {
       const response = await api.groupChatRemoveMember(groupUlid, memberDid);
       const social = useSocialChatStore.getState();
       await social.loadGroups();
@@ -485,9 +418,9 @@ export function installChatAcceptanceHarness(): void {
       };
     },
 
-    async dispatchRealtimeFrame({ eventId = '', dataB64 }) {
+    async dispatchRealtimeFrame({ eventId = '', dataB64 }: { eventId?: string; dataB64: string }) {
       dispatchRealtimeFrameForAcceptance({ event_id: eventId, data_b64: dataB64 });
       return { accepted: Boolean(dataB64) };
     },
-  };
+  });
 }

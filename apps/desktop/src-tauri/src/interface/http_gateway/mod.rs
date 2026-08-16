@@ -7509,6 +7509,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             results.insert("enroll_pending_device".into(), json!(format!("{:?}", enroll_result)));
             let prekey_result = engine.publish_prekeys(&token);
             results.insert("publish_prekeys".into(), json!(format!("{:?}", prekey_result)));
+            let mls_key_package_result = engine.publish_mls_key_packages(&token);
+            results.insert(
+                "publish_mls_key_packages".into(),
+                json!(format!("{:?}", mls_key_package_result)),
+            );
             if !conversation_id.is_empty() {
                 let plan_result = engine.prepare_send_plan(&token, &conversation_id);
                 results.insert("prepare_send_plan".into(), json!(format!("{:?}", plan_result)));

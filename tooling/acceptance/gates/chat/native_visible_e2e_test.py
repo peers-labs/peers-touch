@@ -105,6 +105,16 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
             with self.subTest(journey=journey):
                 gate.validate_report(self.report(journey), journey)
 
+    def test_accepts_short_live_commit_for_full_attestation(self) -> None:
+        report = self.report("two-client")
+        full_commit = "e09ac01b59f4956d901c8edc9420d48339599fc3"
+        report["station"]["commit"] = full_commit
+        report["station"]["live"]["build_commit"] = full_commit[:12]
+        for client in report["clients"]:
+            client["commit"] = full_commit
+        gate.validate_report(report, "two-client")
+        self.assertFalse(runner.commits_match("e09", full_commit))
+
     def test_rejects_partial_stale_or_unbounded_evidence(self) -> None:
         mutations = (
             ("status", "failed", "source report must pass"),
@@ -118,6 +128,10 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
                 gate.validate_report(report, "two-client")
         report = self.report("two-client")
         report["steps"][0]["timeoutMs"] = 0
+        with self.assertRaisesRegex(gate.GateError, "bounded timeout"):
+            gate.validate_report(report, "two-client")
+        report = self.report("two-client")
+        report["steps"][0]["timeoutMs"] = gate.MAX_STEP_TIMEOUT_MS + 1
         with self.assertRaisesRegex(gate.GateError, "bounded timeout"):
             gate.validate_report(report, "two-client")
 
@@ -168,7 +182,67 @@ class ComposerCleanupTest(unittest.TestCase):
         self.assertEqual(client.observer.fills, ["injected text", ""])
 
 
+class ShellReadinessTest(unittest.TestCase):
+    def test_existing_chat_navigation_does_not_repeat_plugin_wait(self) -> None:
+        class Observer:
+            def count(self, selector: str) -> int:
+                return int(selector == runner.SELECTORS["chat_nav"])
+
+            def click(self, selector: str, timeout: float = 0) -> None:
+                raise AssertionError(f"unexpected click: {selector}")
+
+            def wait_for(self, selector: str, timeout: float = 0) -> None:
+                raise AssertionError(f"unexpected plugin wait: {selector}")
+
+        client = object.__new__(runner.NativeClient)
+        client.observer = Observer()
+        client.spec = runner.ClientSpec("alice", "alice@p.t", "ptid:alice", Path("."), 0)
+        client.wait_shell()
+
+
+class DeviceReadinessTest(unittest.TestCase):
+    def test_device_identity_comes_from_active_messaging_engine(self) -> None:
+        client = object.__new__(runner.NativeClient)
+        client.spec = runner.ClientSpec("alice", "alice@p.t", "ptid:alice", Path("."), 0)
+        client.gateway_command = lambda command: {
+            "endpoint_device_id": "device-alice"
+        }
+        self.assertEqual(client.read_device_id(), "device-alice")
+        self.assertEqual(client.device_id, "device-alice")
+
+    def test_key_bundle_readiness_uses_runtime_publication_results(self) -> None:
+        client = object.__new__(runner.NativeClient)
+        client.spec = runner.ClientSpec("alice", "alice@p.t", "ptid:alice", Path("."), 0)
+        client.gateway_command = lambda command: {
+            "publish_prekeys": "Ok(None)",
+            "publish_mls_key_packages": "Ok(())",
+        }
+        client.wait_bundle_published()
+
+    def test_direct_session_readiness_uses_messaging_send_plan(self) -> None:
+        client = object.__new__(runner.NativeClient)
+        client.spec = runner.ClientSpec("alice", "alice@p.t", "ptid:alice", Path("."), 0)
+        client.active_conversation_id = "direct-1"
+        client.gateway_command = lambda command, args=None: {
+            "prepare_send_plan": "Ok(PreparedMessagingSendPlan)"
+        }
+        client.wait_session_ready()
+
+
 class NativeObserverFillTest(unittest.TestCase):
+    def test_click_dispatches_inside_the_native_webview(self) -> None:
+        observer = object.__new__(runner.NativeObserver)
+        scripts: list[str] = []
+
+        def evaluate(script: str) -> Any:
+            scripts.append(script)
+            return True
+
+        observer.eval = evaluate
+        observer.click("[data-chat-send]")
+        self.assertIn("element.click()", scripts[0])
+        self.assertIn("[data-chat-send]", scripts[0])
+
     def test_textarea_fill_uses_the_textarea_setter_and_input_event(self) -> None:
         observer = object.__new__(runner.NativeObserver)
         scripts: list[str] = []

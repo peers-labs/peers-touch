@@ -175,6 +175,7 @@ export function ChatContactsDetailPanel({
         ) : undefined}
         actions={(
           <Button
+            data-chat-contact-message
             block
             size="large"
             type="primary"

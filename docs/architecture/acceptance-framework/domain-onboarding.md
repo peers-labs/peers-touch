@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-06-03 | **Updated**: 2026-06-04
+> **Created**: 2026-06-03 | **Updated**: 2026-08-16
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -19,6 +19,22 @@ Acceptance Domain Onboarding 的目标是让任何产品域以统一方式接入
 - 哪些用户 / 运维可见面需要被验收。
 - 哪些 gates 能稳定产生 evidence。
 - 哪些范围仍然没有 stable gate，必须显式标记为 unproven。
+
+### 1.1 Agent 执行入口
+
+Agent 收到“新增、补齐、升级或审计 Acceptance”的请求时，必须先调用
+[`pt-acceptance-engineering`](../../../tooling/skills/pt-acceptance-engineering/SKILL.md)。
+该 Skill 负责：
+
+- 区分 `ADD`、`COMPLETE`、`UPGRADE`、`AUDIT` 四种工作模式。
+- 盘点现有 Domain / Capability / Feature / Registry / Gate / Evidence。
+- 生成 Coverage Gap Matrix，区分 `PROVEN`、`STRUCTURAL_ONLY`、`PARTIAL`、
+  `UNPROVEN`、`STALE` 和 `BLOCKED`。
+- 根据缺口确定性调度 PRODUCT、DESIGN、PLAN、EXECUTE 或 REVIEW 阶段。
+- 强制按 Feature → Capability → Domain → Registry → Gate → Evidence 的依赖顺序接入。
+
+`pt-god-view` 只负责识别 Acceptance 意图并转发给该 Skill，不得自行推导
+接入流程或直接从 Gate 实现开始。
 
 ---
 
@@ -109,4 +125,4 @@ Acceptance Domain Onboarding 的目标是让任何产品域以统一方式接入
 | `station-dashboard` | `active` | `managed_domain` | 首个普通产品域，验证 onboarding 标准可泛化 |
 | `chat` | `active` | `managed_domain` | 首个用户主路径 domain，覆盖 persistence / Station runtime message flow / live realtime delivery / realtime typed contract / Desktop typed surface |
 | `mobile` | `planned` | `not_onboarded` | 待补 mobile-web / Tauri mobile / native plugin boundaries |
-| `applet` | `planned` | `not_onboarded` | 待补 applet SDK / runtime capability contracts |
+| `applet` | `active` | `managed_domain` | Domain 契约和 local lifecycle Gate 已接入；Python Core wrapper、原生可见流程和 Mobile 仍为未完成/未证明范围 |
