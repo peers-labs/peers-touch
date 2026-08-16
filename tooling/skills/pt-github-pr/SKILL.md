@@ -48,7 +48,8 @@ make review-submit REVIEW_BASE=origin/master
 
 This pipeline generates quality evidence, runs strict review framework checks,
 validates acceptance structure, plans acceptance gates, runs selected `ci-*`
-acceptance gates, and renders an acceptance report.
+acceptance gates, invokes `pt-acceptance-gap-detector`, and renders an
+acceptance report.
 
 If the pipeline fails:
 

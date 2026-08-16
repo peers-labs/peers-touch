@@ -10,6 +10,9 @@
 
 ## 目标目录树
 
+> Runtime Provisioning 相关的 `core/provisioning.py`、`environments/`、
+> `provisioners/` 和 Actor Fixture 由已接受的 D-07 ~ D-10 约束。
+
 ```
 tooling/acceptance/
 ├── core/                           # [NEW] 通用核心抽象（domain-neutral）
@@ -19,6 +22,9 @@ tooling/acceptance/
 │   ├── errors.py                   # GateError 统一异常
 │   ├── redaction.py                # 结构化报告和文本证据统一脱敏
 │   ├── harness.py                  # 通用 JS harness 桥接 helper
+│   ├── provisioning.py             # Environment contract、runtime manifest 与生命周期接口
+│   ├── provisioner.py              # EnvironmentProvisioner 生命周期与 fail-closed 公共逻辑
+│   ├── attestation.py              # Station deployment/runtime attestation producer
 │   ├── drivers/
 │   │   ├── __init__.py
 │   │   └── base.py                 # BaseDriver 生命周期 + DomDriver DOM 能力
@@ -32,7 +38,17 @@ tooling/acceptance/
 │   ├── station.py                  # [NEW] Station HTTP API driver
 │   └── mobile.py                   # [Phase 4] Mobile Tauri driver
 ├── fixtures/                       # 具体 Fixture 实现
-│   └── chat_native_reset.py        # Chat 环境重置（保持，待重构继承 BaseFixture）
+│   ├── chat_native_reset.py        # Chat 环境重置
+│   └── chat_native_actors.py       # Chat account/PTID actor manifest producer
+├── environments/                   # 非 local Gate 的机器可读 provisioning contracts
+│   ├── local-desktop-gateway.yaml
+│   └── home-station.yaml
+├── provisioners/                   # 环境生命周期实现，不承载产品断言
+│   ├── __init__.py
+│   ├── local_desktop_gateway.py
+│   └── home_station.py
+├── behavior-rules/
+│   └── chat-receipts.yaml          # receiver-visible receipt/badge Gate 选择
 ├── gates/                          # 各域 Gate 实现（重构为继承 AcceptanceGate）
 │   ├── chat/
 │   │   ├── desktop_dom_message_visible.py
@@ -92,24 +108,34 @@ tooling/acceptance/
 | `core/errors.py` | GateError 统一异常，其他通用异常类型 |
 | `core/redaction.py` | 敏感字段、Bearer token、private key 和文本证据统一脱敏 |
 | `core/harness.py` | async_harness 通用 JS 桥接，支持命名空间调用 |
+| `core/provisioning.py` | 定义 EnvironmentProvisioner 生命周期、Runtime Resource Manifest、blocked artifact 和 cleanup result |
+| `core/provisioner.py` | 解析并验证 worktree Profile、管理 Provisioner 状态和 reverse-order cleanup |
+| `core/attestation.py` | 从 live Station 和 deployment worktree 生产 commit/workspace/proto attestation |
 | `core/drivers/base.py` | BaseDriver 定义生命周期；DomDriver 定义 DOM/JS/截图能力 |
 | `core/fixtures/base.py` | BaseFixture 抽象基类，定义 setup/teardown/reset 接口 |
 | `drivers/tauri.py` | macOS Tauri 原生应用驱动，embedded WebDriver 连接，进程/端口/storage 隔离 |
 | `drivers/chrome.py` | Selenium Chrome/Chromium headless 驱动，支持 CDP command bridge；Dashboard 消费迁移由 WS5 完成 |
 | `drivers/station.py` | Station HTTP API 客户端，封装网关命令、认证、错误处理 |
 | `drivers/mobile.py` | Android/iOS Tauri Mobile 驱动（Phase 4 实现） |
+| `environments/*.yaml` | 把 Gate environment id 映射为 Profile、service、Fixture、credential reference、attestation 和 cleanup contract |
+| `provisioners/*.py` | 执行环境 contract，生成 runtime manifest；不得定义或修改 Gate 产品成功条件 |
+| `fixtures/chat_native_actors.py` | 发现/准备测试账号并产出 role、account reference、canonical PTID，不写入凭据值 |
 | `gates/<domain>/*.py` | 各域验收场景实现，继承 AcceptanceGate，只包含业务编排逻辑 |
 
 ## 依赖关系
 
 ```
 core/gate.py → core/evidence.py → core/errors.py
+core/provisioning.py → core/errors.py + core/redaction.py
+core/provisioner.py → core/provisioning.py
+core/attestation.py → core/provisioning.py
 core/harness.py → core/drivers/base.py
 core/drivers/base.py → core/errors.py
 core/fixtures/base.py → core/errors.py
 drivers/tauri.py → core/drivers/base.py
 drivers/chrome.py → core/drivers/base.py
 drivers/station.py → core/drivers/base.py
+provisioners/*.py → core/provisioning.py + drivers/* + fixtures/*
 gates/**/*.py → core/gate.py + 具体 Driver + core/harness.py
 fixtures/*.py → core/fixtures/base.py
 ```
@@ -118,3 +144,7 @@ fixtures/*.py → core/fixtures/base.py
 - core/ 下的任何模块不得导入 gates/、drivers/（具体实现）或 fixtures/
 - drivers/ 不得导入 gates/ 或 fixtures/
 - gates/ 之间不得互相导入（场景独立）
+- gates/ 不得导入 `.local` Profile 或 deployment 实现
+- fixtures/ 不得调用 Gate 或修改 Gate 成功条件
+- provisioners/ 不得包含产品断言、DOM selector 或消息内容判断
+- attestation 不得由消费它的 Gate 或 validator 生产

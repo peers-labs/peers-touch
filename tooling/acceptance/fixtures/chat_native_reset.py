@@ -7,6 +7,7 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -101,11 +102,15 @@ def main() -> int:
     parser.add_argument("--accounts", nargs="+", default=["alice", "bob"])
     args = parser.parse_args()
 
+    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
+        raise RuntimeError(
+            "native Chat fixture reset requires CHAT_ACCEPTANCE_RESET=1"
+        )
     removed = reset_local_messaging_databases(args.accounts)
     reset_station_messaging_state(args.environment)
-    print(
+    sys.stdout.write(
         f"native Chat fixture reset: environment={args.environment} "
-        f"local_databases={removed}"
+        f"local_databases={removed}\n"
     )
     return 0
 

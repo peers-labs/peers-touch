@@ -181,6 +181,29 @@ def validate_assertions(report: dict[str, Any], journey: str) -> None:
         )
 
 
+def validate_cleanup(report: dict[str, Any]) -> None:
+    cleanup = report.get("cleanup")
+    require(isinstance(cleanup, dict), "cleanup evidence is required")
+    require(cleanup.get("status") == "pass", "native cleanup must pass")
+    require(cleanup.get("storageReleased") is True, "native storage must be released")
+    require(not cleanup.get("failures"), "native cleanup cannot contain failures")
+    clients = cleanup.get("clients")
+    require(isinstance(clients, list) and clients, "per-client cleanup is required")
+    for client in clients:
+        require(isinstance(client, dict), "cleanup client entry must be an object")
+        require(
+            client.get("observerSocketReleased") is True,
+            f"{client.get('client')}: observer socket must be released",
+        )
+        ports = client.get("ports")
+        require(isinstance(ports, dict) and ports, "cleanup port evidence is required")
+        for name, port in ports.items():
+            require(
+                isinstance(port, dict) and port.get("released") is True,
+                f"{client.get('client')}: {name} port must be released",
+            )
+
+
 def validate_report(report: dict[str, Any], journey: str) -> None:
     require(report.get("artifactKind") == f"chat-native-{journey}-run", "unexpected artifactKind")
     require(report.get("producer") == "chat-native-visible-runner", "unexpected producer")
@@ -198,10 +221,19 @@ def validate_report(report: dict[str, Any], journey: str) -> None:
     launch_order = report.get("launchOrder")
     require(isinstance(launch_order, list), "launch order is required")
     require(len(launch_order) == len(set(launch_order)), "launch order contains duplicates")
+    runtime_manifest = report.get("runtimeManifest")
+    require(isinstance(runtime_manifest, dict), "runtime manifest evidence is required")
+    require(nonempty(runtime_manifest.get("path")), "runtime manifest path is required")
+    require(nonempty(runtime_manifest.get("runId")), "runtime manifest runId is required")
+    require(
+        runtime_manifest.get("state") == "FIXTURE_READY",
+        "runtime manifest must be FIXTURE_READY",
+    )
     validate_station(report)
     validate_clients(report, journey)
     validate_steps(report)
     validate_assertions(report, journey)
+    validate_cleanup(report)
 
 
 def write_validation(path: Path, source: Path, report: dict[str, Any], journey: str) -> None:

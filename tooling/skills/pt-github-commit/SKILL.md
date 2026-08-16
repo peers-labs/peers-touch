@@ -109,15 +109,17 @@ Refs #789
 
 ## Workflow
 
-1. Run `git diff --cached --stat` to see staged changes
-2. Run `git diff --cached` to understand the actual changes
-3. Determine `type` from the nature of the change
-4. Determine `scope` from the file paths changed
-5. Write a concise `subject` describing the intent
-6. Add `body` if the change needs explanation
-7. Add `Made-with` footer (you are an AI agent)
-8. Add issue references if applicable
-9. Execute the commit using the HEREDOC format:
+1. Invoke `pt-acceptance-gap-detector` for any completion or proof claim. Do
+   not commit a completion claim while the detector reports a blocking gap.
+2. Run `git diff --cached --stat` to see staged changes.
+3. Run `git diff --cached` to understand the actual changes.
+4. Determine `type` from the nature of the change.
+5. Determine `scope` from the file paths changed.
+6. Write a concise `subject` describing the intent.
+7. Add `body` if the change needs explanation.
+8. Add `Made-with` footer (you are an AI agent).
+9. Add issue references if applicable.
+10. Execute the commit using the HEREDOC format:
 
 ```bash
 git commit -m "$(cat <<'EOF'

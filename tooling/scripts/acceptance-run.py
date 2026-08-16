@@ -5,17 +5,141 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 JSON_REPORT_PATTERN = re.compile(r"tooling/acceptance/reports/[^\s`'\"]+\.json")
 RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
 RESULT_TRACEABILITY_FIELDS = ("sourceArtifact", "sourceArtifactKind", "sourcePhase", "sourceBom", "sourceSpec", "sourceGate")
 DEFAULT_PLAN_PATH = Path("tooling/acceptance/reports/latest-plan.json")
+
+
+def provision_environment(
+    environment_id: str,
+    gate_id: str,
+) -> tuple[Any | None, dict[str, Any] | None, Path | None]:
+    if environment_id == "local":
+        return None, None, None
+
+    from tooling.acceptance.core import (
+        ENVIRONMENTS_DIR,
+        MANIFESTS_DIR,
+        EnvironmentContract,
+        blocked_manifest,
+        new_manifest,
+    )
+    from tooling.acceptance.provisioners import get_provisioner
+
+    contract_path = ENVIRONMENTS_DIR / f"{environment_id}.yaml"
+    if not contract_path.exists():
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip() or "unknown"
+        base = new_manifest(
+            environment_id=environment_id,
+            gate_id=gate_id,
+            requested_profile="unknown",
+            resolved_profile="unknown",
+            slot=0,
+            commit=commit,
+            worktree=str(REPO_ROOT),
+        )
+        manifest = blocked_manifest(
+            base,
+            reason=(
+                f"Environment {environment_id!r} has no provisioning contract "
+                f"at {contract_path}"
+            ),
+            resource=f"environment-contract:{environment_id}",
+        )
+        manifest_path = MANIFESTS_DIR / f"{environment_id}-{manifest.run_id}.json"
+        manifest.write(manifest_path)
+        manifest_dict = manifest.to_dict()
+        manifest_dict["_manifest_path"] = str(
+            manifest_path.relative_to(REPO_ROOT)
+        )
+        return None, manifest_dict, manifest_path
+
+    contract = EnvironmentContract.from_yaml(contract_path)
+    provisioner = get_provisioner(contract)
+    manifest = provisioner.provision(gate_id)
+    manifest_dict = manifest.to_dict()
+    manifest_path = provisioner.write_manifest()
+    manifest_dict["_manifest_path"] = str(manifest_path.relative_to(REPO_ROOT))
+    return provisioner, manifest_dict, manifest_path
+
+
+def credential_values(manifest: dict[str, Any] | None) -> tuple[str, ...]:
+    if not manifest:
+        return ()
+    from tooling.acceptance.core import CredentialRef
+
+    values: list[str] = []
+    refs = manifest.get("credentialRefs")
+    if not isinstance(refs, list):
+        return ()
+    for index, source_ref in enumerate(refs):
+        if not isinstance(source_ref, str):
+            continue
+        try:
+            value = CredentialRef(
+                id=f"runtime-{index}",
+                source_ref=source_ref,
+            ).resolve()
+        except Exception:
+            continue
+        if value:
+            values.append(value)
+    return tuple(values)
+
+
+def redact_runtime_text(
+    text: str,
+    secret_values: tuple[str, ...],
+) -> str:
+    from tooling.acceptance.core.redaction import REDACTED, redact_text
+
+    redacted = redact_text(text)
+    for value in secret_values:
+        redacted = redacted.replace(value, REDACTED)
+    return redacted
+
+
+def redact_runtime_artifacts(
+    log_text: str,
+    secret_values: tuple[str, ...],
+) -> list[str]:
+    redacted_paths: list[str] = []
+    repo_root = REPO_ROOT.resolve()
+    reports_root = (
+        repo_root / "tooling" / "acceptance" / "reports"
+    ).resolve()
+    for relative_path in artifact_paths_from_log(log_text):
+        path = (repo_root / relative_path).resolve()
+        if reports_root not in path.parents or not path.is_file():
+            continue
+        try:
+            original = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        redacted = redact_runtime_text(original, secret_values)
+        if redacted != original:
+            path.write_text(redacted, encoding="utf-8")
+            redacted_paths.append(str(path.relative_to(repo_root)))
+    return redacted_paths
 
 
 def load_plan(path: Path) -> dict[str, Any]:
@@ -36,6 +160,7 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
         "command": definition["command"],
         "timeout_seconds": definition.get("timeout_seconds", 600),
         "environment": definition.get("environment", "local"),
+        "provisioner": definition.get("provisioner", ""),
         "tier": definition.get("tier", "local-evidence"),
         "description": definition.get("description", ""),
         "required_by": ["manual"],
@@ -379,7 +504,8 @@ def result_traceability_state(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 def build_run_report(plan_path: str, results: list[dict[str, Any]]) -> dict[str, Any]:
     results = [standardize_result(result, plan_path) for result in results]
-    failed = [result for result in results if result.get("status") not in {"passed", "dry-run"}]
+    blocked = [result for result in results if result.get("status") == "blocked"]
+    failed = [result for result in results if result.get("status") not in {"passed", "dry-run", "blocked"}]
     dry_run = [result for result in results if result.get("status") == "dry-run"]
     partial = [result for result in results if result.get("completionStatus") == "PARTIAL"]
     unproven = [result for result in results if result.get("proofStatus") == "UNPROVEN"]
@@ -391,6 +517,7 @@ def build_run_report(plan_path: str, results: list[dict[str, Any]]) -> dict[str,
     sample_emission_allowed = (
         bool(results)
         and not failed
+        and not blocked
         and not dry_run
         and not partial
         and not unproven
@@ -405,6 +532,7 @@ def build_run_report(plan_path: str, results: list[dict[str, Any]]) -> dict[str,
             "total": len(results),
             "passed": len([result for result in results if result.get("status") == "passed"]),
             "failed": len(failed),
+            "blocked": len(blocked),
             "dryRun": len(dry_run),
             "partial": len(partial),
             "unproven": len(unproven),
@@ -413,8 +541,8 @@ def build_run_report(plan_path: str, results: list[dict[str, Any]]) -> dict[str,
             "missingResultTraceability": missing_traceability,
             "sampleEmissionAllowed": sample_emission_allowed,
         },
-        "completionStatus": "DONE" if not incomplete else "PARTIAL",
-        "proofStatus": "PROVEN" if not failed and not unproven else "UNPROVEN",
+        "completionStatus": "BLOCKED" if blocked else ("DONE" if not incomplete else "PARTIAL"),
+        "proofStatus": "PROVEN" if not failed and not blocked and not unproven else "UNPROVEN",
         "sampleEmissionAllowed": sample_emission_allowed,
         "resultTraceabilityState": result_traceability_state(results),
         "results": results,
@@ -480,13 +608,12 @@ def write_run_report(output: Path, report: dict[str, Any]) -> None:
 
 
 def acceptance_exit_code(report: dict[str, Any]) -> int:
+    if report.get("completionStatus") == "BLOCKED":
+        return 2
     if report.get("completionStatus") != "DONE":
         return 1
     if report.get("proofStatus") != "PROVEN":
         return 1
-    summary = report.get("summary", {})
-    if summary.get("total", 0) > 0 and summary.get("dryRun", 0) == summary.get("total", 0):
-        return 0
     if report.get("sampleEmissionAllowed") is not True:
         return 1
     return 0
@@ -536,6 +663,7 @@ def main() -> int:
         tier = gate.get("tier", "local-evidence")
         print(f"[RUN] {gate_id} [{tier}/{environment}]: {command}")
         started = time.time()
+
         if args.dry_run:
             results.append(
                 {
@@ -549,19 +677,126 @@ def main() -> int:
             )
             write_run_report(output, build_run_report(args.plan, results))
             continue
-        completed = subprocess.run(
-            command,
-            shell=True,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
+
+        provisioner = None
+        manifest = None
+        manifest_path = None
+        provisioner_id = str(gate.get("provisioner") or "")
+        if provisioner_id:
+            if provisioner_id != environment:
+                raise SystemExit(
+                    f"gate {gate_id!r} provisioner {provisioner_id!r} does not "
+                    f"match environment {environment!r}"
+                )
+            print(f"[PROVISION] {provisioner_id}")
+            provisioner, manifest, manifest_path = provision_environment(
+                provisioner_id,
+                gate_id,
+            )
+            if manifest and manifest.get("state") == "BLOCKED":
+                cleanup_status = "not-required"
+                cleanup_error = ""
+                if provisioner is not None:
+                    try:
+                        provisioner.cleanup()
+                        cleanup_status = "passed"
+                    except Exception as error:
+                        cleanup_status = "failed"
+                        cleanup_error = str(error)
+                duration = round(time.time() - started, 3)
+                reason = manifest.get("blockedReason", "unknown")
+                resource = manifest.get("blockedResource", "")
+                print(f"[BLOCKED] {gate_id} reason={reason} resource={resource}")
+                result = {
+                    "id": gate_id,
+                    "command": command,
+                    "environment": environment,
+                    "tier": tier,
+                    "status": (
+                        "blocked" if cleanup_status != "failed" else "failed"
+                    ),
+                    "exit_code": None,
+                    "duration_seconds": duration,
+                    "blockedReason": reason,
+                    "blockedResource": resource,
+                    "manifest": manifest,
+                    "completionStatus": "BLOCKED",
+                    "proofStatus": "UNPROVEN",
+                    "sourceArtifact": manifest.get("_manifest_path", ""),
+                    "sourceArtifactKind": "acceptance-runtime-manifest",
+                    "sourcePhase": "Runtime Provisioning",
+                    "sourceBom": ["WS2", "WS6"],
+                    "sourceSpec": ["D-07", "D-08"],
+                    "sourceGate": (
+                        "Environment must reach FIXTURE_READY before product "
+                        "Gate execution"
+                    ),
+                    "cleanupStatus": cleanup_status,
+                }
+                if cleanup_error:
+                    result["cleanupError"] = cleanup_error
+                results.append(result)
+                write_run_report(output, build_run_report(args.plan, results))
+                continue
+            if manifest:
+                print(f"[PROVISIONED] {environment} state={manifest.get('state')} manifest={manifest.get('_manifest_path')}")
+
+        gate_env = os.environ.copy()
+        if manifest_path is not None:
+            gate_env["PT_ACCEPTANCE_RUNTIME_MANIFEST"] = str(manifest_path)
+        runtime_secrets = credential_values(manifest)
+
+        output_text = ""
+        exit_code: int | None = None
+        timed_out = False
+        cleanup_status = "not-required"
+        cleanup_error = ""
+        try:
+            completed = subprocess.run(
+                command,
+                shell=True,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                env=gate_env,
+            )
+            output_text = completed.stdout + completed.stderr
+            exit_code = completed.returncode
+        except subprocess.TimeoutExpired as error:
+            timed_out = True
+            stdout = error.stdout or ""
+            stderr = error.stderr or ""
+            output_text = (
+                stdout.decode() if isinstance(stdout, bytes) else stdout
+            ) + (
+                stderr.decode() if isinstance(stderr, bytes) else stderr
+            )
+            output_text += f"\nGate timed out after {timeout} seconds\n"
+        finally:
+            if provisioner is not None:
+                try:
+                    provisioner.cleanup()
+                    cleanup_status = "passed"
+                except Exception as error:
+                    cleanup_status = "failed"
+                    cleanup_error = str(error)
+                    output_text += f"\nProvisioning cleanup failed: {error}\n"
+
+        redacted_artifacts = redact_runtime_artifacts(
+            output_text,
+            runtime_secrets,
         )
+        output_text = redact_runtime_text(output_text, runtime_secrets)
         duration = round(time.time() - started, 3)
-        status = "passed" if completed.returncode == 0 else "failed"
+        status = (
+            "passed"
+            if exit_code == 0 and cleanup_status != "failed"
+            else "failed"
+        )
         log_dir = Path("tooling/acceptance/reports/logs")
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / f"{gate_id}.log"
-        log_path.write_text(completed.stdout + completed.stderr, encoding="utf-8")
+        log_path.write_text(output_text, encoding="utf-8")
         print(f"[{status.upper()}] {gate_id} duration={duration}s log={log_path}")
         result = {
             "id": gate_id,
@@ -569,11 +804,19 @@ def main() -> int:
             "environment": environment,
             "tier": tier,
             "status": status,
-            "exit_code": completed.returncode,
+            "exit_code": exit_code,
             "duration_seconds": duration,
             "log": str(log_path),
+            "timedOut": timed_out,
+            "cleanupStatus": cleanup_status,
         }
-        results.append(enrich_result_with_evidence(result, completed.stdout + completed.stderr))
+        if cleanup_error:
+            result["cleanupError"] = cleanup_error
+        if manifest:
+            result["manifest"] = manifest
+        if redacted_artifacts:
+            result["redactedArtifacts"] = redacted_artifacts
+        results.append(enrich_result_with_evidence(result, output_text))
         write_run_report(output, build_run_report(args.plan, results))
 
     report = build_run_report(args.plan, results)

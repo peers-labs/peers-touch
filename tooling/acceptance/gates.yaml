@@ -26,6 +26,7 @@
       "command": "python3 tooling/acceptance/gates/chat/native_two_client_runner.py && python3 tooling/acceptance/gates/chat/native_visible_e2e.py --journey two-client",
       "timeout_seconds": 1800,
       "environment": "home-station",
+      "provisioner": "home-station",
       "tier": "env-evidence",
       "description": "Run visible native Alice/Bob concurrent startup and bidirectional direct-message acceptance."
     },
@@ -33,6 +34,7 @@
       "command": "python3 tooling/acceptance/gates/chat/native_multi_device_runner.py && python3 tooling/acceptance/gates/chat/native_visible_e2e.py --journey multi-device",
       "timeout_seconds": 1800,
       "environment": "home-station",
+      "provisioner": "home-station",
       "tier": "env-evidence",
       "description": "Run visible native direct-message acceptance with one recipient actor on two isolated devices."
     },
@@ -40,6 +42,7 @@
       "command": "python3 tooling/acceptance/gates/chat/native_recovery_runner.py && python3 tooling/acceptance/gates/chat/native_visible_e2e.py --journey recovery",
       "timeout_seconds": 2400,
       "environment": "home-station",
+      "provisioner": "home-station",
       "tier": "env-evidence",
       "description": "Run visible native reinstall and 24-word recovery history-restore acceptance."
     },
@@ -47,6 +50,7 @@
       "command": "python3 tooling/acceptance/gates/chat/native_group_mls_runner.py && python3 tooling/acceptance/gates/chat/native_visible_e2e.py --journey group-mls",
       "timeout_seconds": 2400,
       "environment": "home-station",
+      "provisioner": "home-station",
       "tier": "env-evidence",
       "description": "Run visible native three-device MLS add, send, remove, restart, and recovery acceptance."
     },
@@ -61,6 +65,7 @@
       "command": "python3 tooling/scripts/desktop-performance-preflight.py",
       "timeout_seconds": 120,
       "environment": "local-desktop-gateway",
+      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Generate the fail-closed P0c-1/P0c-2 Desktop performance preflight evidence before runtime sample emission."
     },
@@ -110,6 +115,7 @@
       "command": "python3 tooling/acceptance/gates/chat/desktop_gateway_e2e.py",
       "timeout_seconds": 600,
       "environment": "local-desktop-gateway",
+      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Run a real Desktop HTTP gateway flow proving MLS/E2EE direct conversation creation, message delivery, hydration, and decryption."
     },
@@ -166,6 +172,7 @@
       "command": "python3 tooling/acceptance/gates/desktop/gateway_smoke.py",
       "timeout_seconds": 600,
       "environment": "local-desktop-gateway",
+      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Validate Desktop gateway active Station and collect render diagnostics."
     },
@@ -250,6 +257,7 @@
       "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py",
       "timeout_seconds": 120,
       "environment": "local-desktop-gateway",
+      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Validate the fail-closed P0a Desktop Gateway -> Station ingest -> raw/rollup query -> Dev mirror telemetry loop."
     },

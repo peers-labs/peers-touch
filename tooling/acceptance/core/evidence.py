@@ -47,6 +47,7 @@ class EvidenceReport:
     station_url: Optional[str] = None
     error: Optional[str] = None
     error_type: Optional[str] = None
+    manifest: Optional[dict[str, Any]] = None
 
     def add_evidence_file(self, key: str, path: Path) -> str:
         if not path.exists():
@@ -99,6 +100,7 @@ class EvidenceReport:
             "evidence": self.evidence,
             "error": self.error,
             "error_type": self.error_type,
+            "manifest": self.manifest,
         }
         return redact_value(report)
 

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-06-03 | **Updated**: 2026-06-04
+> **Created**: 2026-06-03 | **Updated**: 2026-08-16
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -15,6 +15,22 @@
 3. **Stable gates only** — 临时探针可以帮助诊断，但不能成为完成标准，除非沉淀为 stable gate。
 4. **Bounded intelligence** — AI 负责影响分析、解释与风险复盘；流程负责可重复选择、执行和报告。
 5. **Truth-source aware** — 验收必须知道能力的事实源，不得把 transport、cache、UI、hint 当成业务真源。
+6. **Provision before proof** — 环境、凭据、Fixture 和 source identity 必须先形成机器可验证的 runtime manifest，Gate 才能执行。
+7. **No silent gap** — 缺少 Acceptance contract、runtime resource、evidence 或责任边界时必须输出结构化 gap 并保持 `UNPROVEN`，不得临场绕过。
+
+### 1.1 Runtime Provisioning 扩展证据账本
+
+| Claim | Class | Evidence | Confidence | Missing proof |
+|---|---|---|---|---|
+| Gate Catalog 可为 environment 声明 Provisioner | `verified_fact` | `tooling/acceptance/gates.yaml` | high | non-scope environments remain unchanged |
+| `acceptance-run.py` 在产品 Gate 前执行 Provisioner | `verified_fact` | `tooling/scripts/acceptance-run.py::main` | high | successful native runtime proof |
+| Native runner 只消费 Runtime Manifest 与 CredentialRef | `verified_fact` | `native_visible_runner.py::NativeVisibleJourney` | high | successful native runtime proof |
+| Chat Fixture 产出 source-bound actor manifest | `verified_fact` | `tooling/acceptance/fixtures/chat_native_actors.py` | high | authorized live Fixture run |
+| Profile activate 校验文件名与 `PT_DEV_PROFILE` | `verified_fact` | `tooling/scripts/local-dev/profile.sh::activate` | high | none |
+| Direct receipt source path 自动选择 Native two-client Gate | `verified_fact` | `acceptance-plan-test.py::BehaviorRuleTests` | high | none |
+| 新 Agent 可从稳定 Make target 获得结构化 preflight | `verified_fact` | `tooling/acceptance/README.md` + runtime BLOCKED report | high | successful AS-02 live run |
+| 独立 Provisioner + immutable manifest 可关闭责任缺口 | `verified_fact` | `core/provisioning.py` + `core/provisioner.py` + runtime BLOCKED evidence | high | successful native runtime proof |
+| 独立 Gap Detector 可覆盖普通任务中的 silent pass | `verified_fact` | `acceptance-gap-detect-test.py` + submit pipeline | high | PR submit evidence |
 
 ---
 
@@ -178,6 +194,44 @@ Gate Contract 的职责：
 - 输出 log 和结构化 run result。
 - 不声明业务完成标准；业务完成标准由 feature/capability contract 解释。
 
+### 3.6 Runtime Provisioning Contract
+
+Runtime Provisioning Contract 是 Gate 运行前的机器可读资源契约。它由
+Acceptance runtime orchestration 消费，不由业务 Gate 自行解释。
+
+契约规则：
+
+- `gates.yaml.environment` 必须解析到一个 provisioning contract。
+- Profile 文件名与 `PT_DEV_PROFILE` 必须一致；Station label 可以不同，但必须在 manifest 中显式记录。
+- 具体凭据值不得写入 contract、manifest、命令、日志或 evidence；只记录变量名或 secret reference。
+- Provisioner 输出 runtime manifest；Gate 只读取 manifest 和非敏感输入，不自行部署服务或创建环境。
+- Provisioning 失败输出 `BLOCKED/UNPROVEN` 的结构化 artifact，不能退化为 connection refused 文本日志。
+- 完整字段定义见 [data-model.md §2](./data-model.md#2-environment-provisioning-contract)。
+
+### 3.7 Runtime Resource Manifest
+
+Provisioner 成功后必须输出一次运行的不可变 manifest。Manifest 是运行资源事实，
+不是产品业务真源。它必须：
+
+- 由实际 provisioning 结果生成，禁止手工伪造。
+- 绑定当前 worktree commit、workspace digest、proto digest 和 live Station metadata。
+- 包含 actor role 到 canonical PTID 的解析结果，但不包含密码、token、PIN 或私钥。
+- 作为 Gate evidence 的 source artifact，并由 validator 校验 freshness。
+- 完整 schema 见 [data-model.md §3](./data-model.md#3-runtime-resource-manifest)。
+
+### 3.8 Acceptance Gap Contract
+
+当 Agent 发现产品承诺存在但 Acceptance 路径不完整时，必须生成结构化 Gap
+Artifact，包含 status、claim、gap type、evidence、owner、required closure 和
+`UNPROVEN` proof state。完整 schema 见
+[data-model.md §6](./data-model.md#6-gap-artifact)。
+
+Gap Detector 与 Acceptance Engineering 职责不同：
+
+- Gap Detector 是跨阶段只读守卫，发现遗漏、禁止 silent pass、输出责任边界。
+- Acceptance Engineering 是修复入口，负责 `ADD/COMPLETE/UPGRADE/AUDIT` 和阶段调度。
+- Gap Detector 不创建 Gate、不修改产品代码、不生成伪证据，也不替代 completion audit。
+
 ---
 
 ## 4. 组件关系
@@ -293,6 +347,91 @@ tooling/acceptance/reports/chat-validation.json
 - **Unproven**：当前无 stable gate 或 gate 未运行。
 - **Risk**：能力可能成立但缺少 evidence，必须显式交给人审。
 
+### 4.7 Provisioning 生命周期与所有权
+
+```text
+Acceptance Plan
+      │ selected gate + environment id
+      ▼
+Environment Provisioner ──► Runtime Resource Manifest
+      │ profile / service / attestation / fixture / credential refs
+      ▼
+Gate Runner ──► Product Gate ──► Source-bound Evidence
+      │
+      ▼
+Cleanup + release audit
+```
+
+| 资源 | Owner | 输出 | 禁止 |
+|------|-------|------|------|
+| Profile 解析与一致性 | Local Dev Environment | resolved profile identity | 文件名与 `PT_DEV_PROFILE` 静默不一致 |
+| Station ready closure | Station deployment/runtime | health + live metadata | Gate 内自行部署 Station |
+| Station attestation | Station deployment/runtime | commit/workspace/proto artifact | Gate 或 Agent 手写 attestation |
+| Actor/account/PTID | Domain Fixture | actor manifest | 硬编码 PTID 或从聊天历史复制 |
+| Credential acquisition | Profile/approved secret source | credential reference | 默认密码、日志输出明文 |
+| Client isolation | Environment Provisioner + Driver | ports/profile/storage manifest | 共享 storage 或隐式固定端口 |
+| Product assertion | Gate | receiver-visible evidence | 用 preflight、API 200 或 static check 替代 |
+| Cleanup | Provisioner + Driver | release audit | Gate 失败后跳过 teardown |
+
+状态机：
+
+```text
+DISCOVERED
+  -> PREFLIGHTED
+  -> PROVISIONED
+  -> FIXTURE_READY
+  -> GATE_RUNNING
+  -> EVIDENCE_JUDGED
+  -> CLEANED
+
+Any missing requirement
+  -> BLOCKED
+  -> structured gap artifact
+  -> UNPROVEN
+```
+
+运行语义：
+
+- Provisioning action 必须幂等；重复执行不得创建第二套账号、端口租约或服务实例。
+- destructive Fixture 不自动重试；授权或 target verification 失败立即 `BLOCKED`。
+- 所有 wait/retry 都有 contract timeout；超时进入 cleanup，不允许无限等待。
+- cancellation、Gate failure 和进程异常都必须执行同一 reverse-order cleanup。
+- 同一 Profile 同时只允许一个 provisioning lease；并行运行必须使用不同 slot/run ID。
+- Manifest 一旦进入 `FIXTURE_READY` 不可原地修改；资源变化必须创建新 run。
+
+### 4.8 允许与禁止的关系
+
+允许：
+
+- `acceptance-run` 根据 Gate environment 调用对应 Provisioner。
+- Provisioner 调用 profile、deployment、Fixture 和 Driver 的公开入口。
+- Gate 读取 runtime manifest 并验证与 live runtime 一致。
+- Registry 为一个行为变更选择多个 Feature 和 receiver-proof Gates。
+
+禁止：
+
+- Gate 自行猜测 Profile、Station URL、actor PTID 或 credential。
+- Provisioner修改产品断言或降低 Gate 成功条件。
+- Profile 名称不一致时继续运行。
+- 失败后改用 browser shell、mock、API-only、截图或旧 evidence。
+- 将 provisioning 成功报告为产品能力 `PROVEN`。
+
+### 4.9 行为导向的影响映射
+
+Registry 必须按受影响产品断言选择 Gate，而不是只按实现目录选择最便宜的
+检查。对于 Direct Chat receipt：
+
+```text
+Desktop Rust receipt/decrypt path
+  -> chat-realtime-delivery
+  -> chat-native-visible-clients
+  -> chat-native-two-client-e2e
+```
+
+目录级 broad rule 可以保留 cheap gates；receiver-visible 状态转换必须有更窄
+的 behavior rule 追加 native Gate。`acceptance-plan` 必须通过 synthetic path
+测试证明该规则能被新 Agent 自动发现。
+
 ---
 
 ## 5. 端点 / API
@@ -334,3 +473,16 @@ make acceptance-federation-mutual-validation
 `acceptance-station-dashboard-domain-validation` 运行 Station Dashboard managed-domain gates，然后要求该 domain 的 latest evidence 通过；它不验证 Federation，也不承担 acceptance core 自证。
 
 `acceptance-coverage-report` 输出项目域接入覆盖状态，用来回答哪些 domain 已纳入 acceptance 管理、哪些仍未接入。
+
+## 6. Runtime Provisioning 架构质量门
+
+实现只有在以下证据同时成立时才可声明 Runtime Provisioning ready：
+
+- 任一非 `local` Gate 的 environment id 都能解析到 provisioning contract。
+- Profile identity mismatch 在启动服务前 fail closed。
+- Chat actor Fixture 可重复产出 canonical PTID manifest，且不泄露凭据。
+- Station attestation 由实际 deployment/runtime owner 产出并通过 live commit/proto 校验。
+- Direct receipt source path 的 acceptance plan 自动包含 `chat-native-two-client-e2e`。
+- 缺少任一资源时产生结构化 `BLOCKED/UNPROVEN` artifact，而非继续运行或静默降级。
+- Gateway、Native clients、ports、storage 和 sessions 在成功与失败路径均完成 cleanup audit。
+- Gap Detector 在 completion/quality/commit/PR 声明前发现缺失 Acceptance 责任并分派到 Acceptance Engineering。

@@ -49,6 +49,10 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
         self.assertIn("random.SystemRandom().shuffle(order)", source)
         self.assertIn('["make", "desktop"]', source)
         self.assertIn('self.observer.fill(SELECTORS["composer"], "")', source)
+        self.assertIn("PT_ACCEPTANCE_RUNTIME_MANIFEST", source)
+        self.assertNotIn("CHAT_NATIVE_DEMO_PASSWORD", source)
+        self.assertNotIn("CHAT_NATIVE_ALICE_PTID", source)
+        self.assertNotIn("CHAT_NATIVE_BOB_PTID", source)
 
     def test_all_visible_journey_entrypoints_exist(self) -> None:
         expected = (

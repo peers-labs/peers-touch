@@ -89,6 +89,12 @@ else
 fi
 
 echo
+echo "== Acceptance gap detector =="
+python3 tooling/scripts/acceptance-gap-detect.py \
+  --claim "Change range $diff_range is ready for PR review" \
+  --range "$diff_range"
+
+echo
 echo "submit-pipeline: pass"
 echo "quality evidence: tooling/acceptance/reports/latest-quality-evidence.md"
 echo "acceptance report: tooling/acceptance/reports/latest-report.md"

@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 
 def load_module() -> Any:
@@ -482,6 +483,94 @@ class AcceptanceRunTest(unittest.TestCase):
 
         self.assertEqual(module.acceptance_exit_code(proven_report), 0)
         self.assertEqual(module.acceptance_exit_code(unproven_report), 1)
+
+    def test_blocked_result_is_distinct_from_failed_and_exits_two(self) -> None:
+        module = load_module()
+        report = module.build_run_report(
+            "tooling/acceptance/reports/latest-plan.json",
+            [
+                {
+                    "id": "environment-gate",
+                    "status": "blocked",
+                    "blockedReason": "credential missing",
+                    "blockedResource": "credential-ref:env:TEST_PASSWORD",
+                }
+            ],
+        )
+
+        self.assertEqual(report["summary"]["blocked"], 1)
+        self.assertEqual(report["summary"]["failed"], 0)
+        self.assertEqual(report["completionStatus"], "BLOCKED")
+        self.assertEqual(report["proofStatus"], "UNPROVEN")
+        self.assertEqual(module.acceptance_exit_code(report), 2)
+
+    def test_missing_environment_contract_produces_blocked_manifest(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environments = root / "environments"
+            manifests = root / "reports" / "manifests"
+            environments.mkdir()
+            with mock.patch.object(module, "REPO_ROOT", root), mock.patch(
+                "tooling.acceptance.core.ENVIRONMENTS_DIR",
+                environments,
+            ), mock.patch(
+                "tooling.acceptance.core.MANIFESTS_DIR",
+                manifests,
+            ):
+                provisioner, manifest, path = module.provision_environment(
+                    "missing-environment",
+                    "test-gate",
+                )
+
+        self.assertIsNone(provisioner)
+        self.assertEqual(manifest["state"], "BLOCKED")
+        self.assertEqual(
+            manifest["blockedResource"],
+            "environment-contract:missing-environment",
+        )
+        self.assertIsNotNone(path)
+
+    def test_runtime_log_redaction_removes_resolved_secret_values(self) -> None:
+        module = load_module()
+        secret = "acceptance-secret-value"
+        redacted = module.redact_runtime_text(
+            f"raw output contained {secret}",
+            (secret,),
+        )
+        self.assertNotIn(secret, redacted)
+        self.assertIn("[REDACTED]", redacted)
+
+    def test_runtime_artifact_redaction_removes_resolved_secret_values(self) -> None:
+        module = load_module()
+        secret = "artifact-secret-value"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = (
+                root
+                / "tooling"
+                / "acceptance"
+                / "reports"
+                / "gate.json"
+            )
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(
+                json.dumps({"message": f"leaked {secret}"}),
+                encoding="utf-8",
+            )
+            with mock.patch.object(module, "REPO_ROOT", root):
+                redacted_paths = module.redact_runtime_artifacts(
+                    "artifact: tooling/acceptance/reports/gate.json",
+                    (secret,),
+                )
+            serialized = artifact.read_text(encoding="utf-8")
+
+        self.assertEqual(
+            redacted_paths,
+            ["tooling/acceptance/reports/gate.json"],
+        )
+        self.assertNotIn(secret, serialized)
+        self.assertIn("[REDACTED]", serialized)
 
     def test_build_run_report_deduplicates_review_commands_by_command_text(self) -> None:
         module = load_module()
