@@ -200,7 +200,7 @@ func SearchActors(ctx context.Context, query string, excludeActorID uint64) ([]*
 	searchQuery := "%" + escaped + "%"
 	dbQuery := rds.Where("id != ?", excludeActorID).
 		Where("preferred_username LIKE ? OR name LIKE ?", searchQuery, searchQuery)
-	
+
 	if err := dbQuery.Find(&actors).Error; err != nil {
 		logger.Errorf(ctx, "Failed to search actors: %v", err)
 		return nil, fmt.Errorf("search actors failed: %w", err)
