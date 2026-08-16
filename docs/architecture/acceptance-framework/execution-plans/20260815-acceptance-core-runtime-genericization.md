@@ -113,7 +113,7 @@
 | WS1 | done | 30 个 Core tests 与含 actors/redaction 的 Chrome E2E 通过 | 不代表任何业务 Domain receiver proof |
 | WS2 | done | TauriDriver 继承 DomDriver；旧入口删除；native build 与连续 3 次 smoke 通过；端口/进程释放通过 | 不代表 Chat 登录/消息流程通过 |
 | WS3 | partial | ChromeDriver、StationDriver 类已存在 | Dashboard/Desktop 无真实消费者；Chrome CDP 迁移未完成 |
-| WS4 | partial / frozen | 仅 `desktop_dom_message_visible.py` 作为样板迁移 | 其余 Chat Gates 未迁移；Core 与样板通过真实证据前禁止继续迁移 |
+| WS4 | partial | `native_two_client_runner.py` 已切换到 AcceptanceGate + Core TauriDriver；Direct DELIVERED Feature/Registry/Gate trace 与 validator 已补齐；Driver build/smoke PASS | multi-device、recovery、group-MLS 与其它 Chat Gates 尚未迁移 |
 | WS5 | pending | 无 | Dashboard/Desktop Gates 未迁移 |
 | WS6 | partial | Harness Registry 与 Chat namespace 通过 TypeScript check | 原生 Tauri Harness readiness 未证明 |
 | WS7 | pending | 现有 Applet Domain 契约和 MJS Gate 独立存在 | Python AcceptanceGate wrapper 未实现 |

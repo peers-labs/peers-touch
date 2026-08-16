@@ -98,6 +98,10 @@ class TauriDriver(DomDriver):
             raise RuntimeError("TauriDriver not started — use as context manager or call start()")
         return self._driver
 
+    @property
+    def process_id(self) -> int | None:
+        return self._process.pid if self._process is not None else None
+
     def start(self) -> WebDriver:
         try:
             self._launch_app()

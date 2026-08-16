@@ -139,6 +139,24 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue((ROOT / "tooling/acceptance/gates/chat" / name).is_file())
 
+    def test_two_client_entrypoint_uses_core_tauri_driver(self) -> None:
+        source = (
+            ROOT / "tooling/acceptance/gates/chat/native_two_client_runner.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("class NativeTwoClientGate(AcceptanceGate)", source)
+        self.assertIn("start_authenticated_client", source)
+        self.assertIn("native-tauri-embedded-webdriver", source)
+        self.assertNotIn("native_visible_runner", source)
+        self.assertNotIn("observerSocket", source)
+
+    def test_embedded_webdriver_make_entrypoints_exist(self) -> None:
+        source = (ROOT / "tooling/make/acceptance.mk").read_text(encoding="utf-8")
+        self.assertIn("acceptance-driver-build:", source)
+        self.assertIn("VITE_ACCEPTANCE_HARNESS=1", source)
+        self.assertIn("cargo build --features acceptance-webdriver", source)
+        self.assertIn("acceptance-driver-smoke:", source)
+        self.assertIn("-m tooling.acceptance.drivers.tauri", source)
+
     def test_stable_selectors_are_bound_in_product_source(self) -> None:
         required = {
             "apps/desktop/src/components/common/StationPicker.tsx": (
