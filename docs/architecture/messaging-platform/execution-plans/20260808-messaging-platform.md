@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W12` |
-| Current step | Commit, push and deploy the source-bound G15 timeout/exact-retry Gate |
+| Current step | Execute source-aligned Profile Three G15/G16 Native Gates |
 | Progress | 16/19 ledger workstreams completed; W09 in-progress, W12 implemented-unproven, W11 reopened |
-| Last completed | MP-D28 product/design/data-model/Acceptance sources are synchronized; G15 now has Profile Three-only Direct and Group submit connection-loss injection, SQLCipher retry/outbox/hash readback, original-content assertion, exact retry, single Authority fact and single receiver DOM result. Local static/contract/Go/Desktop/Rust gates pass; Native proof is NOT RUN |
-| Current action | Review the bounded fault Fixture and evidence contract, rerun the full local source suite, then commit and push the amendment before deploying exact source |
-| Next action | Deploy the pushed commit to Profile Three, verify Station/client source identity, then run G15/G16 with approved credentials |
-| Blockers | G15/G16 runtime execution still lacks approved `CHAT_ACCEPTANCE_PASSWORD`, `CHAT_ACCEPTANCE_RESET=1` and `CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1`. W09 Phase 3 remains dependency-blocked by W12; W11 remains reopened |
+| Last completed | Commit `8a2a4ea10` synchronized MP-D28 and added Direct/Group G15 timeout/exact-retry proof; branch is pushed, Profile Three is healthy at live commit `8a2a4ea10c17`, and the source-aligned native Acceptance binary build/smoke plus WebDriver/Gateway port release passed |
+| Current action | Keep G15/G16 fail closed while recording the missing credential and submit-review skill-freshness failure in PR #90; do not reuse smoke or structural evidence as Native proof |
+| Next action | Provide the approved `CHAT_ACCEPTANCE_PASSWORD`, run G15/G16 with explicit reset/restart authorization, and judge receiver-visible evidence before advancing W12 |
+| Blockers | `ACCEPTANCE_CREDENTIAL_MISSING`: no approved `CHAT_ACCEPTANCE_PASSWORD` source exists in the environment or Profile Three files. Submit-time review also fails on pre-existing review-skill checksum drift (`9a7d...` expected, `3661...` current). W09 Phase 3 remains dependency-blocked by W12; W11 remains reopened |
 | Decisions required | none; MP-D28 industry-aligned pending/retry + post-accept retract semantics accepted 2026-08-17 |
-| Evidence | Profile Three remains `23c9d4ec5`, so current Native execution is not source-aligned and was NOT RUN. Current source evidence: Chat Python 51/51 PASS; Messaging contract 13/13 PASS; Desktop source Vitest 291/291 PASS with one environment E2E skipped; Station Messaging/Conversation/Envelope PASS; Desktop social-wire/runtime-boundary/TypeScript check PASS; Rust command-outbox 3/3 and `cargo check --features acceptance-webdriver` PASS with pre-existing warnings; Acceptance plan self-check PASS and maps the fault Fixture to G15; Chat Domain 8 capabilities STRUCTURALLY_VALID; `rustfmt --check store.rs` and `git diff --check` PASS. G15/G16 Native reports remain FAIL/UNPROVEN |
+| Evidence | Current source: Chat Python 51/51 PASS; Messaging contract 13/13 PASS; Desktop source Vitest 291/291 PASS with one environment E2E skipped; Station Messaging/Conversation/Envelope PASS; Desktop check PASS; Rust command-outbox 3/3 and acceptance-feature check PASS; Acceptance plan self-check PASS; Chat Domain 8 capabilities STRUCTURALLY_VALID. Runtime preflight: Profile Three status/health/live metadata `8a2a4ea10c17` PASS; `make acceptance-driver-build` PASS with existing warnings; embedded WebDriver smoke PASS at `tauri://localhost`; ports 4445/63676 released. Submit-time review FAIL on review-skill freshness. G15/G16 Native product runs remain NOT RUN/UNPROVEN because the password is missing |
 | Last updated | 2026-08-17 |
 
 ## 1. Plan Sources And Gate
