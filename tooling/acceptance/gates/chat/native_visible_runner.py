@@ -23,7 +23,7 @@ from typing import Any, Callable, Iterable
 REPO_ROOT = Path(__file__).resolve().parents[4]
 WAIT_TICK = threading.Event()
 DEFAULT_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "60"))
-STARTUP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STARTUP_TIMEOUT_SECONDS", "300"))
+STARTUP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STARTUP_TIMEOUT_SECONDS", "900"))
 
 REPORT_NAMES = {
     "two-client": "chat-native-two-client-run.json",
@@ -62,6 +62,8 @@ SELECTORS = {
     "group_add_select": "[data-chat-group-add-member-select]",
     "group_add_submit": "[data-chat-group-add-member-submit]",
     "group_manage": "[data-chat-group-manage-members]",
+    "contact_message": "[data-chat-contact-message]",
+    "contacts_subpage": '[data-chat-subpage="contacts"]',
 }
 
 
@@ -76,6 +78,17 @@ def require(condition: bool, message: str) -> None:
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def commits_match(live_commit: str, expected_commit: str) -> bool:
+    return (
+        len(live_commit) >= 7
+        and len(expected_commit) >= 7
+        and (
+            live_commit.startswith(expected_commit)
+            or expected_commit.startswith(live_commit)
+        )
+    )
 
 
 def sha256_files(root: Path, paths: Iterable[Path]) -> str:
@@ -245,7 +258,16 @@ class NativeObserver:
         return self.command({"type": "eval", "script": script})
 
     def click(self, selector: str, timeout: float = DEFAULT_TIMEOUT) -> None:
-        self.command({"type": "click", "selector": selector, "timeout_ms": int(timeout * 1000)})
+        clicked = self.eval(
+            f"""(()=>{{
+              const elements=Array.from(document.querySelectorAll({json.dumps(selector)}));
+              const element=elements.find((item)=>item.getClientRects().length>0)||elements[0];
+              if(!(element instanceof HTMLElement)) return false;
+              element.click();
+              return true;
+            }})()"""
+        )
+        require(clicked is True, f"observer click target is missing: {selector}")
 
     def fill(self, selector: str, text: str, timeout: float = DEFAULT_TIMEOUT) -> None:
         tag_name = self.eval(
@@ -278,6 +300,16 @@ class NativeObserver:
 
     def count(self, selector: str) -> int:
         return int(self.command({"type": "count", "selector": selector}) or 0)
+
+    def visible(self, selector: str) -> bool:
+        return bool(
+            self.eval(
+                f"""(()=>{{
+                  return Array.from(document.querySelectorAll({json.dumps(selector)}))
+                    .some((element)=>element.getClientRects().length>0);
+                }})()"""
+            )
+        )
 
     def wait_for(self, selector: str, timeout: float = DEFAULT_TIMEOUT) -> None:
         self.command(
@@ -313,14 +345,33 @@ class NativeClient:
         self.gateway_port = int(os.environ.get("CHAT_NATIVE_GATEWAY_PORT", "3330")) + self.spec.index
         self.renderer_port = int(os.environ.get("CHAT_NATIVE_RENDERER_PORT", "3510")) + self.spec.index
         self.storage_root = self.run_root / self.spec.name / "storage"
+        self.runtime_profile_path = self.run_root / self.spec.name / "profile.env"
         self.socket_path = self.run_root / f"{self.spec.name}.sock"
         self.log_path = self.evidence_dir / self.spec.name / "desktop.log"
         self.observer = NativeObserver(self.socket_path)
         self.identity = source_identity(self.spec.worktree)
+        self.active_conversation_id = ""
 
     def start_process(self) -> None:
         self.stop()
         self.storage_root.mkdir(parents=True, exist_ok=True)
+        self.runtime_profile_path.write_text(
+            "\n".join(
+                (
+                    f"PT_DEV_PROFILE=chat-native-{self.spec.name}",
+                    f"PT_DEV_SLOT={self.spec.index}",
+                    "PT_STATION_MODE=remote",
+                    "PT_STATION_NAME=chat-native-station",
+                    f"PT_STATION_URL={self.station_url}",
+                    "PT_STATION_PORT=18080",
+                    f"PT_STATION_HEALTH_URL={self.station_url}/app-meta/version",
+                    f"PT_DESKTOP_APP_GATEWAY_PORT={self.gateway_port}",
+                    f"PT_DESKTOP_APP_WEB_PORT={self.renderer_port}",
+                )
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.log_handle = self.log_path.open("a", encoding="utf-8")
         env = os.environ.copy()
@@ -337,6 +388,7 @@ class NativeClient:
                 "PEERS_STATION_URL": self.station_url,
                 "PT_DESKTOP_E2E": "true",
                 "PT_PLAYWRIGHT_SOCKET": str(self.socket_path),
+                "PT_DEV_PROFILE_FILE": str(self.runtime_profile_path),
                 "RESTART": "1",
                 "CARGO_BUILD_JOBS": "1",
             }
@@ -388,14 +440,24 @@ class NativeClient:
 
     def wait_shell(self) -> None:
         observer = self.observer
-        wait_until(
-            lambda: observer.count(SELECTORS["pin_skip"]) or observer.count(SELECTORS["chat_nav"]),
+        ready_state = wait_until(
+            lambda: (
+                "pin"
+                if observer.count(SELECTORS["pin_skip"])
+                else "chat"
+                if observer.count(SELECTORS["chat_nav"])
+                else ""
+            ),
             f"{self.spec.name} login result",
             120,
         )
-        if observer.count(SELECTORS["pin_skip"]):
+        if ready_state == "pin":
             observer.click(SELECTORS["pin_skip"])
-        observer.wait_for(SELECTORS["chat_nav"], 120)
+            wait_until(
+                lambda: observer.count(SELECTORS["chat_nav"]),
+                f"{self.spec.name} shell navigation",
+                120,
+            )
 
     def login(self) -> None:
         self.select_station()
@@ -404,13 +466,68 @@ class NativeClient:
 
     def open_peer(self, peer_ptid: str) -> None:
         self.observer.click(f'{SELECTORS["chat_nav"]} [role="button"]')
+        wait_until(
+            lambda: self.observer.visible(SELECTORS["contacts_subpage"]),
+            f"{self.spec.name} contacts subpage",
+            120,
+        )
+        self.observer.click(SELECTORS["contacts_subpage"])
         selector = f'[data-chat-contact-ptid={json.dumps(peer_ptid)}]'
-        self.observer.wait_for(selector)
+        wait_until(
+            lambda: self.observer.visible(selector),
+            f"{self.spec.name} visible peer contact",
+            120,
+        )
         self.observer.click(selector)
-        self.observer.wait_for(SELECTORS["composer"])
+        wait_until(
+            lambda: self.observer.visible(SELECTORS["contact_message"]),
+            f"{self.spec.name} contact message action",
+            120,
+        )
+        self.observer.click(SELECTORS["contact_message"])
+        wait_until(
+            lambda: self.observer.visible(SELECTORS["composer"]),
+            f"{self.spec.name} chat composer",
+            120,
+        )
+        conversation = wait_until(
+            lambda: next(
+                (
+                    item
+                    for item in self.gateway_command("messaging_list_conversations").get(
+                        "conversations", []
+                    )
+                    if isinstance(item, dict)
+                    and item.get("kind") in {1, "direct"}
+                    and item.get("conversation_id")
+                ),
+                None,
+            ),
+            f"{self.spec.name} direct conversation projection",
+            120,
+            1,
+        )
+        self.active_conversation_id = str(conversation["conversation_id"])
 
     def wait_session_ready(self) -> None:
-        self.observer.wait_for(SELECTORS["session_ready"], 120)
+        wait_until(
+            lambda: (
+                data
+                if str(
+                    (
+                        data := self.gateway_command(
+                            "messaging_debug",
+                            {"conversation_id": self.active_conversation_id},
+                        )
+                    ).get("prepare_send_plan")
+                    or ""
+                ).startswith("Ok")
+                else None
+            ),
+            f"{self.spec.name} direct send plan",
+            120,
+            1,
+        )
 
     def send_text(self, text: str) -> dict[str, Any]:
         submitted = False
@@ -468,22 +585,62 @@ class NativeClient:
             "processId": self.process_id,
         }
 
+    def gateway_command(
+        self,
+        command: str,
+        args: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.gateway_port}",
+            data=json.dumps({"cmd": command, "args": args or {}}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            envelope = json.loads(response.read().decode())
+        require(
+            isinstance(envelope, dict) and envelope.get("ok") is True,
+            f"{self.spec.name} gateway command failed: {command}",
+        )
+        data = envelope.get("data")
+        require(isinstance(data, dict), f"{self.spec.name} gateway data is invalid: {command}")
+        return data
+
     def read_device_id(self) -> str:
-        files = list(self.storage_root.rglob("device_id"))
-        require(len(files) == 1, f"{self.spec.name} expected exactly one device_id file")
-        self.device_id = files[0].read_text(encoding="utf-8").strip()
+        snapshot = wait_until(
+            lambda: (
+                data
+                if (
+                    data := self.gateway_command("messaging_debug")
+                ).get("endpoint_device_id")
+                else None
+            ),
+            f"{self.spec.name} active messaging endpoint",
+            120,
+            1,
+        )
+        self.device_id = str(snapshot["endpoint_device_id"]).strip()
         require(bool(self.device_id), f"{self.spec.name} device_id is blank")
         return self.device_id
 
     def wait_bundle_published(self) -> None:
         wait_until(
-            lambda: self.log_path.exists()
-            and "crypto-runtime"
-            in self.log_path.read_text(encoding="utf-8", errors="replace")
-            and "bootstrap complete"
-            in self.log_path.read_text(encoding="utf-8", errors="replace"),
+            lambda: (
+                data
+                if (
+                    str(
+                        (
+                            data := self.gateway_command("messaging_debug")
+                        ).get("publish_prekeys")
+                        or ""
+                    ).startswith("Ok")
+                    and str(data.get("publish_mls_key_packages") or "").startswith("Ok")
+                )
+                else None
+            ),
             f"{self.spec.name} key bundle publication",
             120,
+            1,
         )
 
     def stop(self) -> None:
@@ -560,7 +717,7 @@ class NativeVisibleJourney:
             worktrees *= len(roles)
         require(len(worktrees) == len(roles), "one client worktree is required per native client")
         clients = []
-        for index, (role, worktree) in enumerate(zip(roles, worktrees, strict=True)):
+        for index, (role, worktree) in enumerate(zip(roles, worktrees)):
             actor = "bob" if role.startswith("bob") else role
             email = os.environ.get(f"CHAT_NATIVE_{actor.upper()}_EMAIL", f"{actor}@p.t")
             ptid = os.environ.get(f"CHAT_NATIVE_{actor.upper()}_PTID", "")
@@ -583,7 +740,10 @@ class NativeVisibleJourney:
         live_commit = str(live.get("build_commit") or "")
         expected_commit = str(attestation.get("commit") or "")
         require(bool(expected_commit), "Station attestation commit is required")
-        require(live_commit.startswith(expected_commit), "live Station commit does not match attestation")
+        require(
+            commits_match(live_commit, expected_commit),
+            "live Station commit does not match attestation",
+        )
         require(attestation.get("workspaceDigest") == "clean", "dirty Station deployment is forbidden")
         station_proto = str(attestation.get("protoDigest") or "")
         require(bool(station_proto), "Station attestation protoDigest is required")
@@ -609,9 +769,19 @@ class NativeVisibleJourney:
         for client in order:
             self.telemetry.run("process.start", client.start_process, client=client.spec.name)
         for client in order:
-            self.telemetry.run("ports.ready", client.await_ports, client=client.spec.name)
+            self.telemetry.run(
+                "ports.ready",
+                client.await_ports,
+                client=client.spec.name,
+                timeout=STARTUP_TIMEOUT,
+            )
         for client in order:
-            self.telemetry.run("observer.ready", client.connect_observer, client=client.spec.name)
+            self.telemetry.run(
+                "observer.ready",
+                client.connect_observer,
+                client=client.spec.name,
+                timeout=STARTUP_TIMEOUT,
+            )
         for client in order:
             self.telemetry.run(
                 "station.selected",

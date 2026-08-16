@@ -16,7 +16,7 @@ WORKTREE_ID="$(basename "$PROJECT_ROOT")"
 export WORKTREE_ID
 
 ACTIVE_DIR="$LOCAL_DEV_DIR/active"
-PROFILE_FILE="$ACTIVE_DIR/$WORKTREE_ID.env"
+PROFILE_FILE="${PT_DEV_PROFILE_FILE:-$ACTIVE_DIR/$WORKTREE_ID.env}"
 
 if [[ ! -f "$PROFILE_FILE" ]]; then
   echo "[ERROR] No active profile for worktree '$WORKTREE_ID'."

@@ -1,3 +1,4 @@
+// Performance-only Playwright transport. Never use this fixture for Acceptance.
 import {
   createTauriTest,
   type TauriTestConfig,

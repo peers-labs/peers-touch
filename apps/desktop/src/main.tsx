@@ -42,8 +42,8 @@ if (import.meta.hot) {
 }
 
 if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
-  void import('./acceptance/chatAcceptanceHarness').then(({ installChatAcceptanceHarness }) => {
-    installChatAcceptanceHarness();
+  void import('./acceptance/registry').then(({ installAcceptanceHarnesses }) => {
+    void installAcceptanceHarnesses();
   });
 }
 

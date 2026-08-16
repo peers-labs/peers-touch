@@ -1,3 +1,4 @@
+// Performance-only Playwright helpers. Product Acceptance uses embedded WebDriver.
 import type {
   BrowserPageAdapter,
   TauriPage,
