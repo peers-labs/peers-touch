@@ -2,6 +2,8 @@ package conversation_test
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -298,12 +300,13 @@ func (r *memConvRepo) CountUnread(_ context.Context, conversationID, ptid string
 }
 
 type spyEnvelope struct {
-	mu       sync.Mutex
-	events   []*chat.CommittedConversationEvent
-	receipts []*chat.MessageReceipt
-	inbox    []*chat.DeviceInboxItem
-	outbox   []*chat.OutboxItem
-	notified []*chat.DeviceInboxItem
+	mu         sync.Mutex
+	events     []*chat.CommittedConversationEvent
+	receipts   []*chat.MessageReceipt
+	receiptErr error
+	inbox      []*chat.DeviceInboxItem
+	outbox     []*chat.OutboxItem
+	notified   []*chat.DeviceInboxItem
 }
 
 func (s *spyEnvelope) SubmitEvent(_ context.Context, _ *chat.Conversation, _ []*chat.ConversationMember, event *chat.CommittedConversationEvent) error {
@@ -317,7 +320,7 @@ func (s *spyEnvelope) SubmitReceipt(_ context.Context, receipt *chat.MessageRece
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.receipts = append(s.receipts, receipt)
-	return nil
+	return s.receiptErr
 }
 
 func (s *spyEnvelope) NotifyPersisted(_ context.Context, item *chat.DeviceInboxItem) {
@@ -795,6 +798,26 @@ func TestSubmitReceipt_RoutesToOtherMembers(t *testing.T) {
 	}
 	if spy.receipts[0].MessageId != "msg-001" {
 		t.Fatalf("expected message_id msg-001, got %s", spy.receipts[0].MessageId)
+	}
+}
+
+func TestSubmitReceipt_PropagatesDeliveryFailure(t *testing.T) {
+	repo := newMemConvRepo()
+	spy := &spyEnvelope{receiptErr: errors.New("delivery unavailable")}
+	svc := newMemService(repo, spy)
+
+	svc.CreateDirect(context.Background(), "did:alice", "did:bob", "station-A", "station-A")
+	convID := conversation.DeterministicDirectID("did:alice", "did:bob")
+
+	err := svc.SubmitReceipt(context.Background(), &chat.MessageReceipt{
+		ConversationId: convID,
+		MessageId:      "msg-001",
+		Ptid:           "did:bob",
+		DeviceId:       "device-1",
+		ReceiptType:    chat.ReceiptType_RECEIPT_TYPE_DELIVERED,
+	})
+	if err == nil || !strings.Contains(err.Error(), "route receipt failed") {
+		t.Fatalf("expected routed receipt failure, got %v", err)
 	}
 }
 

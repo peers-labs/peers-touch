@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
@@ -521,6 +522,7 @@ func (s *subServer) handleSubmitReceipt(ctx context.Context, req *chat.SubmitCon
 		Ptid:           subject.ID,
 		DeviceId:       req.DeviceId,
 		ReceiptType:    req.ReceiptType,
+		Ts:             timestamppb.Now(),
 	}
 
 	if err := s.service.SubmitReceipt(ctx, receipt); err != nil {
