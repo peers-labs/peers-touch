@@ -28,7 +28,11 @@ from tooling.acceptance.core import (
     blocked_manifest,
     new_manifest,
 )
-from tooling.acceptance.core.redaction import REDACTED
+from tooling.acceptance.core.redaction import (
+    REDACTED,
+    is_sensitive_key,
+    redact_value,
+)
 
 
 class ProvisioningStateTests(unittest.TestCase):
@@ -77,6 +81,19 @@ class CredentialRefTests(unittest.TestCase):
         with self.assertRaises(ProvisioningError) as ctx:
             ref.resolve()
         self.assertIn("unsupported credential source", str(ctx.exception))
+
+    def test_reference_suffix_is_safe_but_reference_secret_is_redacted(self):
+        self.assertFalse(is_sensitive_key("credentialRefs"))
+        self.assertFalse(is_sensitive_key("credential_reference"))
+        self.assertTrue(is_sensitive_key("credential_reference_secret"))
+        value = redact_value(
+            {
+                "credentialRefs": ["env:TEST_PASSWORD"],
+                "credentialReferenceSecret": "must-not-survive",
+            }
+        )
+        self.assertEqual(value["credentialRefs"], ["env:TEST_PASSWORD"])
+        self.assertEqual(value["credentialReferenceSecret"], REDACTED)
 
 
 class EnvironmentContractTests(unittest.TestCase):

@@ -39,7 +39,9 @@ def _camel_to_snake(name: str) -> str:
 
 def is_sensitive_key(key: object) -> bool:
     normalized = _camel_to_snake(str(key).strip().replace("-", "_"))
-    if normalized.endswith("_ref") or normalized.endswith("_refs") or "reference" in normalized:
+    if normalized.endswith(
+        ("_ref", "_refs", "_reference", "_references")
+    ):
         return False
     return any(part in normalized for part in SENSITIVE_KEY_PARTS)
 

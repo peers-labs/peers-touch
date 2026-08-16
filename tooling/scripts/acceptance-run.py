@@ -114,7 +114,8 @@ def redact_runtime_text(
 
     redacted = redact_text(text)
     for value in secret_values:
-        redacted = redacted.replace(value, REDACTED)
+        if len(value) >= 4:
+            redacted = redacted.replace(value, REDACTED)
     return redacted
 
 
@@ -135,11 +136,61 @@ def redact_runtime_artifacts(
             original = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        redacted = redact_runtime_text(original, secret_values)
+        try:
+            payload = json.loads(original)
+        except json.JSONDecodeError:
+            redacted = redact_runtime_text(original, secret_values)
+        else:
+            from tooling.acceptance.core.redaction import redact_value
+
+            redacted = (
+                json.dumps(
+                    redact_value(payload),
+                    indent=2,
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            redacted = redact_runtime_text(redacted, secret_values)
         if redacted != original:
             path.write_text(redacted, encoding="utf-8")
             redacted_paths.append(str(path.relative_to(repo_root)))
     return redacted_paths
+
+
+def provisioning_failure_result(
+    *,
+    gate_id: str,
+    command: str,
+    environment: str,
+    tier: str,
+    error: Exception,
+    duration_seconds: float,
+) -> dict[str, Any]:
+    from tooling.acceptance.core.redaction import redact_text
+
+    return {
+        "id": gate_id,
+        "command": command,
+        "environment": environment,
+        "tier": tier,
+        "status": "failed",
+        "exit_code": None,
+        "duration_seconds": duration_seconds,
+        "completionStatus": "PARTIAL",
+        "proofStatus": "UNPROVEN",
+        "reason": redact_text(str(error)),
+        "errorType": type(error).__name__,
+        "sourceArtifact": "tooling/acceptance/gates.yaml",
+        "sourceArtifactKind": "acceptance-gate-catalog",
+        "sourcePhase": "Runtime Provisioning",
+        "sourceBom": ["WS2", "WS6"],
+        "sourceSpec": ["D-07", "D-08"],
+        "sourceGate": (
+            "Provisioner errors must fail structurally before product Gate "
+            "execution"
+        ),
+    }
 
 
 def load_plan(path: Path) -> dict[str, Any]:
@@ -689,10 +740,24 @@ def main() -> int:
                     f"match environment {environment!r}"
                 )
             print(f"[PROVISION] {provisioner_id}")
-            provisioner, manifest, manifest_path = provision_environment(
-                provisioner_id,
-                gate_id,
-            )
+            try:
+                provisioner, manifest, manifest_path = provision_environment(
+                    provisioner_id,
+                    gate_id,
+                )
+            except Exception as error:
+                result = provisioning_failure_result(
+                    gate_id=gate_id,
+                    command=command,
+                    environment=environment,
+                    tier=tier,
+                    error=error,
+                    duration_seconds=round(time.time() - started, 3),
+                )
+                results.append(result)
+                write_run_report(output, build_run_report(args.plan, results))
+                print(f"[FAILED] {gate_id} provisioning error={type(error).__name__}")
+                continue
             if manifest and manifest.get("state") == "BLOCKED":
                 cleanup_status = "not-required"
                 cleanup_error = ""
