@@ -28,6 +28,7 @@ from tooling.acceptance.core import (
     load_json_artifact,
     load_runtime_manifest,
 )
+from tooling.acceptance.drivers.tauri import TauriDriver
 
 WAIT_TICK = threading.Event()
 DEFAULT_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "60"))
@@ -230,42 +231,17 @@ class StepTelemetry:
 
 
 class NativeObserver:
-    def __init__(self, socket_path: Path):
-        self.socket_path = socket_path
-        self.connection: socket.socket | None = None
-        self.reader: Any = None
+    def __init__(self, driver: TauriDriver):
+        self.driver = driver
 
     def connect(self) -> None:
-        self.close()
-        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        connection.settimeout(DEFAULT_TIMEOUT)
-        connection.connect(str(self.socket_path))
-        self.connection = connection
-        self.reader = connection.makefile("r", encoding="utf-8")
-        require(self.command({"type": "ping"}) == "pong", "native observer ping failed")
+        self.driver.connect(DEFAULT_TIMEOUT)
 
     def close(self) -> None:
-        if self.reader is not None:
-            self.reader.close()
-        if self.connection is not None:
-            self.connection.close()
-        self.reader = None
-        self.connection = None
-
-    def command(self, payload: dict[str, Any]) -> Any:
-        require(self.connection is not None and self.reader is not None, "observer is not connected")
-        self.connection.sendall((json.dumps(payload, separators=(",", ":")) + "\n").encode())
-        line = self.reader.readline()
-        require(bool(line), "native observer closed the connection")
-        response = json.loads(line)
-        require(
-            response.get("ok") is True,
-            f"observer {payload.get('type')} failed for {payload.get('selector', '')}: {response.get('error')}",
-        )
-        return response.get("data")
+        self.driver.stop()
 
     def eval(self, script: str) -> Any:
-        return self.command({"type": "eval", "script": script})
+        return self.driver.execute_script(f"return ({script})")
 
     def click(self, selector: str, timeout: float = DEFAULT_TIMEOUT) -> None:
         clicked = self.eval(
@@ -304,12 +280,33 @@ class NativeObserver:
             )
             require(result is True, f"observer textarea fill failed for {selector}")
             return
-        self.command(
-            {"type": "fill", "selector": selector, "text": text, "timeout_ms": int(timeout * 1000)}
+        result = self.eval(
+            f"""(()=>{{
+              const element=document.querySelector({json.dumps(selector)});
+              if(!(element instanceof HTMLInputElement)) return false;
+              const setter=Object.getOwnPropertyDescriptor(
+                HTMLInputElement.prototype,'value'
+              )?.set;
+              if(!setter) return false;
+              setter.call(element,{json.dumps(text)});
+              element.dispatchEvent(new InputEvent('input',{{
+                bubbles:true,
+                inputType:'insertText',
+                data:{json.dumps(text)}
+              }}));
+              element.dispatchEvent(new Event('change',{{bubbles:true}}));
+              return element.value==={json.dumps(text)};
+            }})()"""
         )
+        require(result is True, f"observer input fill failed for {selector}")
 
     def count(self, selector: str) -> int:
-        return int(self.command({"type": "count", "selector": selector}) or 0)
+        return int(
+            self.eval(
+                f"document.querySelectorAll({json.dumps(selector)}).length"
+            )
+            or 0
+        )
 
     def visible(self, selector: str) -> bool:
         return bool(
@@ -322,12 +319,14 @@ class NativeObserver:
         )
 
     def wait_for(self, selector: str, timeout: float = DEFAULT_TIMEOUT) -> None:
-        self.command(
-            {"type": "wait_for_selector", "selector": selector, "timeout_ms": int(timeout * 1000)}
+        wait_until(
+            lambda: self.count(selector),
+            f"observer selector {selector}",
+            timeout,
         )
 
     def content(self) -> str:
-        return str(self.command({"type": "content"}) or "")
+        return self.driver.get_page_source()
 
 
 @dataclass
@@ -339,9 +338,9 @@ class ClientSpec:
     index: int
     gateway_port: int = 0
     renderer_port: int = 0
+    webdriver_port: int = 0
     profile: str = ""
     storage_root: Path | None = None
-    observer_socket: Path | None = None
 
 
 @dataclass
@@ -359,15 +358,22 @@ class NativeClient:
     def __post_init__(self) -> None:
         require(self.spec.gateway_port > 0, f"{self.spec.name} gateway port is required")
         require(self.spec.renderer_port > 0, f"{self.spec.name} renderer port is required")
+        require(self.spec.webdriver_port > 0, f"{self.spec.name} WebDriver port is required")
         require(self.spec.storage_root is not None, f"{self.spec.name} storage root is required")
-        require(self.spec.observer_socket is not None, f"{self.spec.name} observer socket is required")
         self.gateway_port = self.spec.gateway_port
         self.renderer_port = self.spec.renderer_port
+        self.webdriver_port = self.spec.webdriver_port
         self.storage_root = self.spec.storage_root
         self.runtime_profile_path = self.run_root / self.spec.name / "profile.env"
-        self.socket_path = self.spec.observer_socket
         self.log_path = self.evidence_dir / self.spec.name / "desktop.log"
-        self.observer = NativeObserver(self.socket_path)
+        self.driver = TauriDriver(
+            port=self.webdriver_port,
+            gateway_port=self.gateway_port,
+            profile=self.spec.profile,
+            storage_root=str(self.storage_root),
+        )
+        self.driver.log_path = self.log_path
+        self.observer = NativeObserver(self.driver)
         self.identity = source_identity(self.spec.worktree)
         self.active_conversation_id = ""
 
@@ -406,7 +412,7 @@ class NativeClient:
                 "PT_STATION_URL": self.station_url,
                 "PEERS_STATION_URL": self.station_url,
                 "PT_DESKTOP_E2E": "true",
-                "PT_PLAYWRIGHT_SOCKET": str(self.socket_path),
+                "TAURI_WEBDRIVER_PORT": str(self.webdriver_port),
                 "PT_DEV_PROFILE_FILE": str(self.runtime_profile_path),
                 "RESTART": "1",
                 "CARGO_BUILD_JOBS": "1",
@@ -443,9 +449,16 @@ class NativeClient:
                 raise JourneyError(
                     f"{self.spec.name} Desktop exited with {self.process.returncode}"
                 )
-            return self.socket_path.exists()
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{self.webdriver_port}/status",
+                    timeout=1,
+                ):
+                    return True
+            except Exception:
+                return False
 
-        wait_until(ready, f"{self.spec.name} observer socket", STARTUP_TIMEOUT)
+        wait_until(ready, f"{self.spec.name} WebDriver", STARTUP_TIMEOUT)
         self.observer.connect()
 
     def select_station(self) -> None:
@@ -672,23 +685,23 @@ class NativeClient:
     def stop(self) -> None:
         self.observer.close()
         if self.process is not None:
-            try:
-                os.killpg(self.process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                self.process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
+            if self.process.poll() is None:
                 try:
-                    os.killpg(self.process.pid, signal.SIGKILL)
+                    os.killpg(self.process.pid, signal.SIGTERM)
                 except ProcessLookupError:
                     pass
-                self.process.wait(timeout=5)
+                try:
+                    self.process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(self.process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    self.process.wait(timeout=5)
         self.process = None
         if self.log_handle is not None:
             self.log_handle.close()
             self.log_handle = None
-        self.socket_path.unlink(missing_ok=True)
 
 
 class NativeVisibleJourney:
@@ -813,9 +826,9 @@ class NativeVisibleJourney:
                         index,
                         gateway_port=int(runtime.get("gateway_port") or 0),
                         renderer_port=int(runtime.get("renderer_port") or 0),
+                        webdriver_port=int(runtime.get("webdriver_port") or 0),
                         profile=str(runtime.get("profile") or ""),
                         storage_root=Path(str(runtime.get("storage_root") or "")),
-                        observer_socket=Path(str(runtime.get("observer_socket") or "")),
                     ),
                     self.station_url,
                     self.password,
@@ -1122,8 +1135,8 @@ class NativeVisibleJourney:
                     "profile": client.spec.profile,
                     "gatewayPort": client.gateway_port,
                     "rendererPort": client.renderer_port,
+                    "webdriverPort": client.webdriver_port,
                     "storageRoot": str(client.storage_root),
-                    "observerSocket": str(client.socket_path),
                     **client.identity,
                 }
                 for client in self.clients
@@ -1150,6 +1163,7 @@ class NativeVisibleJourney:
             for label, port in (
                 ("gateway", client.gateway_port),
                 ("renderer", client.renderer_port),
+                ("webdriver", client.webdriver_port),
             ):
                 with socket.socket() as probe:
                     released = probe.connect_ex(("127.0.0.1", port)) != 0
@@ -1158,16 +1172,10 @@ class NativeVisibleJourney:
                     failures.append(
                         f"{client.spec.name}: {label} port {port} still listening"
                     )
-            socket_released = not client.socket_path.exists()
-            if not socket_released:
-                failures.append(
-                    f"{client.spec.name}: observer socket still exists"
-                )
             client_cleanup.append(
                 {
                     "client": client.spec.name,
                     "ports": ports,
-                    "observerSocketReleased": socket_released,
                 }
             )
         shutil.rmtree(self.run_root, ignore_errors=True)

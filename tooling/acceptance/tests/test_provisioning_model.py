@@ -283,9 +283,9 @@ class RuntimeManifestTests(unittest.TestCase):
             worktree="/tmp/client",
             gateway_port=3030,
             renderer_port=3210,
+            webdriver_port=4445,
             profile="acceptance-alice",
             storage_root="/tmp/client/storage",
-            observer_socket="/tmp/client.sock",
         )
         m = dataclasses.replace(
             self._base_manifest(),
@@ -298,6 +298,7 @@ class RuntimeManifestTests(unittest.TestCase):
         self.assertEqual(len(d["clients"]), 1)
         self.assertEqual(d["clients"][0]["actor"], "alice")
         self.assertEqual(d["clients"][0]["gateway_port"], 3030)
+        self.assertEqual(d["clients"][0]["webdriver_port"], 4445)
         self.assertEqual(d["credentialRefs"], ["env:CHAT_NATIVE_DEMO_PASSWORD"])
         self.assertTrue(d["cleanup"]["registered"])
 

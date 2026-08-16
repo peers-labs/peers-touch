@@ -90,8 +90,8 @@ def validate_clients(report: dict[str, Any], journey: str) -> None:
         "profile",
         "gatewayPort",
         "rendererPort",
+        "webdriverPort",
         "storageRoot",
-        "observerSocket",
     )
     for field in unique_fields:
         values = {
@@ -191,10 +191,6 @@ def validate_cleanup(report: dict[str, Any]) -> None:
     require(isinstance(clients, list) and clients, "per-client cleanup is required")
     for client in clients:
         require(isinstance(client, dict), "cleanup client entry must be an object")
-        require(
-            client.get("observerSocketReleased") is True,
-            f"{client.get('client')}: observer socket must be released",
-        )
         ports = client.get("ports")
         require(isinstance(ports, dict) and ports, "cleanup port evidence is required")
         for name, port in ports.items():
