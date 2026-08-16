@@ -8,14 +8,18 @@
     "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
     "apps/desktop/src-tauri/src/messaging/store.rs",
     "apps/desktop/src-tauri/src/messaging/transport.rs",
-    "apps/desktop/src/runtimes/imRuntime.ts",
-    "apps/station/app/subserver/conversation/service_impl.go",
-    "apps/station/app/subserver/conversation/subserver.go"
+    "apps/desktop/src-tauri/src/messaging/consumer.rs",
+    "apps/desktop/src-tauri/src/messaging/receipt.rs",
+    "apps/desktop/src/store/socialChat.ts",
+    "apps/station/app/subserver/messaging/application/receipt_service.go",
+    "apps/station/app/subserver/messaging/interface/http/receipt_handler.go",
+    "apps/station/app/subserver/messaging/subserver.go"
   ],
   "truth_sources": [
     "Desktop Rust messaging receive transaction",
     "Desktop durable receipt outbox",
-    "Station conversation receipt routing",
+    "Station Messaging per-device receipt queue",
+    "Desktop Rust delivery receipt processor",
     "Desktop social chat receipt projection"
   ],
   "visible_surfaces": [

@@ -72,6 +72,123 @@ func (s *ReceiptService) SubmitReceipt(
 	}
 }
 
+// SubmitDeliveryReceipt routes a typed DELIVERED receipt through the canonical
+// per-device messaging queue to every active device of the other Direct member.
+func (s *ReceiptService) SubmitDeliveryReceipt(
+	ctx context.Context,
+	sender *chat.CryptoEndpoint,
+	request *chat.SubmitConversationReceiptRequest,
+) (*chat.SubmitConversationReceiptResponse, error) {
+	if sender == nil || sender.Ptid == "" || sender.DeviceId == "" {
+		return nil, fmt.Errorf("messaging: delivery receipt sender endpoint is required")
+	}
+	if request == nil ||
+		request.ConversationId == "" ||
+		request.MessageId == "" ||
+		request.DeviceId != sender.DeviceId ||
+		request.ReceiptType != chat.ReceiptType_RECEIPT_TYPE_DELIVERED {
+		return nil, fmt.Errorf("messaging: valid DELIVERED receipt fields are required")
+	}
+
+	now := s.clock().UTC()
+	receipt := &chat.MessageReceipt{
+		ConversationId: request.ConversationId,
+		MessageId:      request.MessageId,
+		Ptid:           sender.Ptid,
+		DeviceId:       sender.DeviceId,
+		ReceiptType:    request.ReceiptType,
+		Ts:             timestamppb.New(now),
+	}
+	receiptBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(receipt)
+	if err != nil {
+		return nil, fmt.Errorf("messaging: marshal delivery receipt: %w", err)
+	}
+	receiptHash := sha256.Sum256(receiptBytes)
+
+	err = s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
+		active, err := repositories.Devices.IsActive(ctx, sender)
+		if err != nil {
+			return err
+		}
+		if !active {
+			return messaging.ErrSenderUnauthorized
+		}
+		conversation, err := repositories.Authority.LockConversation(
+			ctx,
+			request.ConversationId,
+		)
+		if err != nil {
+			return err
+		}
+		if !conversation.Active ||
+			conversation.Kind != messaging.AuthorityConversationKindDirect {
+			return messaging.ErrConversationState
+		}
+		devices, err := repositories.Authority.ListActiveMemberDevices(
+			ctx,
+			request.ConversationId,
+		)
+		if err != nil {
+			return err
+		}
+		senderIsMember := false
+		for _, device := range devices {
+			if device.Active && device.Endpoint != nil &&
+				device.Endpoint.Ptid == sender.Ptid &&
+				device.Endpoint.DeviceId == sender.DeviceId {
+				senderIsMember = true
+				break
+			}
+		}
+		if !senderIsMember {
+			return messaging.ErrSenderUnauthorized
+		}
+		for _, device := range devices {
+			if !device.Active || device.Endpoint == nil || device.Endpoint.Ptid == sender.Ptid {
+				continue
+			}
+			homeStation, err := repositories.EndpointManifests.HomeStationForEndpoint(
+				ctx,
+				device.Endpoint,
+				now,
+			)
+			if err != nil {
+				return fmt.Errorf("messaging: resolve delivery receipt target: %w", err)
+			}
+			if homeStation != s.localStationID {
+				return fmt.Errorf(
+					"messaging: delivery receipt target %s/%s is not local",
+					device.Endpoint.Ptid,
+					device.Endpoint.DeviceId,
+				)
+			}
+			if _, err := repositories.Queue.Enqueue(ctx, &chat.DeviceQueueItem{
+				Recipient:      device.Endpoint,
+				EventId:        request.MessageId,
+				ConversationId: request.ConversationId,
+				IdempotencyKey: fmt.Sprintf(
+					"delivered:%s:%s:%s:%s:%s",
+					request.ConversationId,
+					request.MessageId,
+					sender.Ptid,
+					sender.DeviceId,
+					device.Endpoint.DeviceId,
+				),
+				PayloadType:   chat.DeviceQueuePayloadType_DEVICE_QUEUE_PAYLOAD_TYPE_DEVICE_RECEIPT,
+				OpaquePayload: receiptBytes,
+				PayloadSha256: receiptHash[:],
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &chat.SubmitConversationReceiptResponse{}, nil
+}
+
 // handleActorRead persists the read cursor and broadcasts to other members.
 func (s *ReceiptService) handleActorRead(
 	ctx context.Context,

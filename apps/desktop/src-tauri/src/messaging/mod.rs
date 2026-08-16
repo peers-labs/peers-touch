@@ -19,6 +19,7 @@ mod mls_sender;
 mod prekeys;
 mod private_content;
 mod public_event;
+mod receipt;
 mod recovery;
 mod send;
 mod store;
@@ -76,6 +77,7 @@ pub use private_content::{
     MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
 };
 pub use public_event::PublicEventProcessor;
+pub use receipt::DeliveryReceiptProcessor;
 pub use recovery::{
     decode_recovery_revision, encode_recovery_revision, EncodedRecoveryRevision,
     MessagingRecoveryArchive, RecoveryAttachmentMetadata, RecoveryConversationProjection,
@@ -85,12 +87,12 @@ pub use send::{DirectSessionBootstrap, SendPreparer, SendTextIntent};
 pub use store::{
     AttachmentDownloadProjection, AttachmentTransferRecord, CommandOutboxEntry,
     ConversationMessageProjection, ConversationProjection, ConversationStateReceiveCommit,
-    DeliveryReceiptOutboxEntry, DirectEditCommit, DirectReceiveCommit, DirectSendCommit,
-    MessageProjection, MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
-    MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, MlsTransitionSendCommit,
-    PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft, PendingMlsKeyPackage,
-    PendingMlsTransitionState, PendingPreKeyBundle, PendingSenderProjection,
-    PublicEventReceiveCommit, ReceiveCommitResult,
+    DeliveryReceiptOutboxEntry, DeliveryReceiptReceiveCommit, DirectEditCommit,
+    DirectReceiveCommit, DirectSendCommit, MessageProjection, MessagingStore, MlsReceiveCommit,
+    MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
+    MlsTransitionReceiveCommit, MlsTransitionSendCommit, PendingAttachmentUpload,
+    PendingMembershipIntent, PendingMessageDraft, PendingMlsKeyPackage, PendingMlsTransitionState,
+    PendingPreKeyBundle, PendingSenderProjection, PublicEventReceiveCommit, ReceiveCommitResult,
 };
 pub use transport::{
     StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,

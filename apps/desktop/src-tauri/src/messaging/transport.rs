@@ -63,7 +63,7 @@ impl StationDeliveryReceiptTransport {
             SubmitConversationReceiptResponse,
         >(
             Method::POST,
-            "/conversation/receipt",
+            "/messaging/receipt/delivery",
             &self.token,
             None,
             Some(&SubmitConversationReceiptRequest {

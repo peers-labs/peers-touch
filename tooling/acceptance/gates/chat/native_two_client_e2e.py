@@ -35,7 +35,6 @@ REQUIRED_STEPS = {
     "message.received",
     "message.decrypted",
     "receipt.delivered",
-    "receipt.read",
 }
 
 

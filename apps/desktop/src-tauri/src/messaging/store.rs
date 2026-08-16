@@ -293,6 +293,17 @@ pub struct DirectReceiveCommit<'a> {
     pub consumed_at_unix_ms: i64,
 }
 
+pub struct DeliveryReceiptReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub message_id: &'a str,
+    pub conversation_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub delivery_state: &'a str,
+    pub consumed_at_unix_ms: i64,
+}
+
 /// Atomic commit for a Direct-encrypted message edit.
 /// Persists session advancement, skipped keys, consumption marker, and the
 /// edit UPDATE in one transaction — same atomicity guarantee as
@@ -1432,6 +1443,194 @@ impl MessagingStore {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| error.to_string())?;
         Ok(Some((projection, delivery_state)))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert_test_message_projection(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        delivery_state: &str,
+    ) -> Result<(), String> {
+        self.connection()?
+            .execute(
+                "INSERT INTO messaging_message_projections(
+                    conversation_id, event_id, event_sequence, message_id,
+                    sender_ptid, sender_device_id, plaintext,
+                    delivery_state, committed_at_unix_ms
+                 ) VALUES (?1, ?2, 1, ?3, 'ptid:alice', 'alice-device', 'hello', ?4, 100)",
+                params![
+                    conversation_id,
+                    format!("event:{message_id}"),
+                    message_id,
+                    delivery_state
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    pub fn commit_delivery_receipt(
+        &self,
+        input: &DeliveryReceiptReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        let target_rank = match input.delivery_state {
+            "delivered" => 1,
+            "read" => 2,
+            _ => return Err("messaging delivery state is invalid".to_string()),
+        };
+        if input.item_id.trim().is_empty()
+            || input.message_id.trim().is_empty()
+            || input.conversation_id.trim().is_empty()
+            || input.lane_sequence <= 0
+            || input.consumer_epoch == 0
+            || input.payload_sha256.len() != 32
+            || input.consumed_at_unix_ms <= 0
+        {
+            return Err("messaging delivery receipt commit is incomplete".to_string());
+        }
+
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let existing_hash = transaction
+            .query_row(
+                "SELECT payload_sha256 FROM messaging_consumption_markers WHERE item_id = ?1",
+                params![input.item_id],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if let Some(existing_hash) = existing_hash {
+            if existing_hash == input.payload_sha256 {
+                return Ok(ReceiveCommitResult::AlreadyCommitted);
+            }
+            return Err("messaging consumption marker payload hash mismatch".to_string());
+        }
+
+        let claimed = transaction
+            .query_row(
+                "SELECT event_id, conversation_id, lane_sequence, consumer_epoch, payload_sha256
+                 FROM messaging_inbox_items WHERE item_id = ?1 AND state = 'claimed'",
+                params![input.item_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging claimed inbox item is unavailable".to_string())?;
+        if claimed.0 != input.message_id
+            || claimed.1 != input.conversation_id
+            || claimed.2 != input.lane_sequence
+            || claimed.3
+                != i64::try_from(input.consumer_epoch).map_err(|_| "consumer epoch exceeds i64")?
+            || claimed.4 != input.payload_sha256
+        {
+            return Err("messaging claimed inbox item binding mismatch".to_string());
+        }
+
+        let cursor = transaction
+            .query_row(
+                "SELECT lane_sequence, consumer_epoch FROM messaging_lane_cursor WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let expected_sequence = cursor.map(|value| value.0 + 1).unwrap_or(1);
+        if input.lane_sequence != expected_sequence
+            || cursor
+                .map(|value| i64::try_from(input.consumer_epoch).unwrap_or(i64::MAX) < value.1)
+                .unwrap_or(false)
+        {
+            return Err("messaging receive is not the next fenced lane item".to_string());
+        }
+
+        let changed = transaction
+            .execute(
+                "UPDATE messaging_message_projections
+                 SET delivery_state = ?1
+                 WHERE conversation_id = ?2
+                   AND message_id = ?3
+                   AND CASE delivery_state
+                         WHEN 'read' THEN 2
+                         WHEN 'delivered' THEN 1
+                         ELSE 0
+                       END < ?4",
+                params![
+                    input.delivery_state,
+                    input.conversation_id,
+                    input.message_id,
+                    target_rank
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed == 0 {
+            let exists = transaction
+                .query_row(
+                    "SELECT 1
+                     FROM messaging_message_projections
+                     WHERE conversation_id = ?1 AND message_id = ?2",
+                    params![input.conversation_id, input.message_id],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .is_some();
+            if !exists {
+                return Err("messaging delivery receipt references an unknown message".to_string());
+            }
+        }
+
+        transaction
+            .execute(
+                "INSERT INTO messaging_consumption_markers(
+                    item_id, event_id, conversation_id, payload_sha256, consumed_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    input.item_id,
+                    input.message_id,
+                    input.conversation_id,
+                    input.payload_sha256,
+                    input.consumed_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_lane_cursor(id, lane_sequence, consumer_epoch, updated_at_unix_ms)
+                 VALUES (1, ?1, ?2, ?3)
+                 ON CONFLICT(id) DO UPDATE SET
+                    lane_sequence=excluded.lane_sequence,
+                    consumer_epoch=excluded.consumer_epoch,
+                    updated_at_unix_ms=excluded.updated_at_unix_ms",
+                params![
+                    input.lane_sequence,
+                    i64::try_from(input.consumer_epoch).map_err(|_| "consumer epoch exceeds i64")?,
+                    input.consumed_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let consumed = transaction
+            .execute(
+                "UPDATE messaging_inbox_items SET state = 'consumed'
+                 WHERE item_id = ?1 AND state = 'claimed'",
+                params![input.item_id],
+            )
+            .map_err(|error| error.to_string())?;
+        if consumed != 1 {
+            return Err("messaging delivery receipt inbox transition mismatch".to_string());
+        }
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(ReceiveCommitResult::Committed)
     }
 
     pub fn conversation_message_projections(
