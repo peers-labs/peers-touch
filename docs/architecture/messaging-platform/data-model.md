@@ -225,6 +225,10 @@ transaction 提交。
 必须先做 length-prefixed canonical encoding，再存储固定长度 SHA-256 digest。禁止把
 完整 identity tuple 直接拼接进 bounded varchar，也禁止截断 identity。
 
+不对应 Authority committed fact 的 synthetic receipt/read queue reference 也必须
+使用 length-prefixed canonical tuple 的固定 64 字符 SHA-256 hex 作为 `event_id`。
+它只提供 bounded transport correlation，不得伪装或替换真正的 Authority event ID。
+
 ### 3.3 Federation
 
 ```sql
