@@ -1,8 +1,8 @@
 # Messaging Platform — 体验合同
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-08-16
+> **Version**: v1.2
+> **Created**: 2026-08-08 | **Updated**: 2026-08-17
 > **Owner**: Messaging Platform Team
 
 ---
@@ -148,7 +148,11 @@ Group 变体增加 Carol，并使用相同 authority sequence 语义。
   authority sequence 应用一次。
 - Station/client restart 或 duplicate replay 后，message content、retracted state、
   reactions、pins、reply/thread relation 和 read cursor 不回退、不重复。
-- 提交超时保留 pending intent；用户可取消尚未 authority accepted 的 edit/reply draft。
+- 用户在触发网络发送前可取消 composer 中的本地 edit/reply draft。
+- command 进入 durable outbox 后，提交超时保留 pending/retrying intent 和原始可见
+  content；不得提供“取消发送”或本地伪终态，worker 使用 exact command bytes 重试。
+- command accepted 后的纠错通过新的 Authority edit/retract event 完成；retract 留下
+  可见撤回状态，不把历史伪装成从未发送。
 
 ## 11. MP-J14: Typing Presence
 
