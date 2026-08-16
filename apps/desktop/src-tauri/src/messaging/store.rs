@@ -28,6 +28,12 @@ pub struct CommandOutboxEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeliveryReceiptOutboxEntry {
+    pub receipt_id: String,
+    pub receipt_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageProjection {
     pub conversation_id: String,
     pub event_id: String,
@@ -282,6 +288,8 @@ pub struct DirectReceiveCommit<'a> {
     pub reply_to_message_id: Option<&'a str>,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
+    pub delivery_receipt_id: &'a str,
+    pub delivery_receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
 }
 
@@ -308,6 +316,8 @@ pub struct DirectEditCommit<'a> {
     pub edited_at_unix_ms: i64,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
+    pub delivery_receipt_id: &'a str,
+    pub delivery_receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
 }
 
@@ -731,6 +741,49 @@ impl MessagingStore {
             )
             .optional()
             .map_err(|error| error.to_string())
+    }
+
+    pub fn next_delivery_receipt(&self) -> Result<Option<DeliveryReceiptOutboxEntry>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT receipt_id, receipt_bytes
+                 FROM messaging_receipt_outbox
+                 WHERE state = 'pending'
+                   AND receipt_id LIKE 'message-delivered:%'
+                 ORDER BY created_at_unix_ms ASC, receipt_id ASC
+                 LIMIT 1",
+                [],
+                |row| {
+                    Ok(DeliveryReceiptOutboxEntry {
+                        receipt_id: row.get(0)?,
+                        receipt_bytes: row.get(1)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn mark_delivery_receipt_submitted(
+        &self,
+        receipt_id: &str,
+        receipt_bytes: &[u8],
+    ) -> Result<(), String> {
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE messaging_receipt_outbox
+                 SET state = 'submitted'
+                 WHERE receipt_id = ?1
+                   AND receipt_bytes = ?2
+                   AND state = 'pending'",
+                params![receipt_id, receipt_bytes],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging delivery receipt transition mismatch".to_string());
+        }
+        Ok(())
     }
 
     pub fn mark_command_submitted(
@@ -3207,6 +3260,13 @@ impl MessagingStore {
                     )
                     .map_err(|error| error.to_string())?;
             }
+            insert_delivery_receipt(
+                transaction,
+                input.delivery_receipt_id,
+                input.event_id,
+                input.delivery_receipt_bytes,
+                input.consumed_at_unix_ms,
+            )?;
             Ok(())
         })
     }
@@ -3219,7 +3279,9 @@ impl MessagingStore {
         input: &DirectEditCommit<'_>,
     ) -> Result<ReceiveCommitResult, String> {
         if input.message_id.trim().is_empty() || input.edited_at_unix_ms <= 0 {
-            return Err("messaging direct edit requires message_id and valid timestamp".to_string());
+            return Err(
+                "messaging direct edit requires message_id and valid timestamp".to_string(),
+            );
         }
         let core = ReceiveCommitCore {
             item_id: input.item_id,
@@ -3293,6 +3355,13 @@ impl MessagingStore {
             if changed == 0 {
                 return Err("messaging direct edit target message not found".to_string());
             }
+            insert_delivery_receipt(
+                transaction,
+                input.delivery_receipt_id,
+                input.event_id,
+                input.delivery_receipt_bytes,
+                input.consumed_at_unix_ms,
+            )?;
             Ok(())
         })
     }
@@ -5026,6 +5095,31 @@ fn direct_receive_core<'a>(input: &'a DirectReceiveCommit<'a>) -> ReceiveCommitC
         receipt_bytes: input.receipt_bytes,
         consumed_at_unix_ms: input.consumed_at_unix_ms,
     }
+}
+
+fn insert_delivery_receipt(
+    transaction: &Transaction<'_>,
+    receipt_id: &str,
+    event_id: &str,
+    receipt_bytes: &[u8],
+    created_at_unix_ms: i64,
+) -> Result<(), String> {
+    if !receipt_id.starts_with("message-delivered:")
+        || event_id.trim().is_empty()
+        || receipt_bytes.is_empty()
+        || created_at_unix_ms <= 0
+    {
+        return Err("messaging delivery receipt is incomplete".to_string());
+    }
+    transaction
+        .execute(
+            "INSERT INTO messaging_receipt_outbox(
+                receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, 'pending', ?4)",
+            params![receipt_id, event_id, receipt_bytes, created_at_unix_ms],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn public_event_receive_core<'a>(input: &'a PublicEventReceiveCommit<'a>) -> ReceiveCommitCore<'a> {
@@ -6924,6 +7018,8 @@ mod tests {
             reply_to_message_id: None,
             receipt_id: "receipt-1",
             receipt_bytes: b"receipt",
+            delivery_receipt_id: "message-delivered:event-1:device-1",
+            delivery_receipt_bytes: b"delivery-receipt",
             consumed_at_unix_ms: 100,
         };
         assert_eq!(
@@ -6951,7 +7047,12 @@ mod tests {
                     row.get(0)
                 })
                 .unwrap();
-            assert_eq!(count, 1, "table {table}");
+            let expected = if table == "messaging_receipt_outbox" {
+                2
+            } else {
+                1
+            };
+            assert_eq!(count, expected, "table {table}");
         }
         let state: String = connection
             .query_row(
@@ -7016,6 +7117,8 @@ mod tests {
                 reply_to_message_id: None,
                 receipt_id: "receipt-1",
                 receipt_bytes: b"receipt",
+                delivery_receipt_id: "message-delivered:event-1:device-1",
+                delivery_receipt_bytes: b"delivery-receipt",
                 consumed_at_unix_ms: 100,
             };
             assert!(store
@@ -7103,6 +7206,8 @@ mod tests {
             reply_to_message_id: None,
             receipt_id: "subsumed-receipt-1",
             receipt_bytes: b"receipt",
+            delivery_receipt_id: "message-delivered:event-1:device-1",
+            delivery_receipt_bytes: b"delivery-receipt",
             consumed_at_unix_ms: 100,
         };
 

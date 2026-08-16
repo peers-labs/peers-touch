@@ -11,7 +11,7 @@ use crate::domain::crypto::{
 use crate::model::chat::{
     conversation_event, CryptoEndpoint, DeviceConsumptionReceipt, DeviceQueueItem,
     DeviceQueuePayloadType, DirectCiphertextAad, DirectDeviceCiphertext, DirectSessionInit,
-    MessagingContentKind, PreparedEndpointPayloadKind,
+    MessageReceipt, MessagingContentKind, PreparedEndpointPayloadKind, ReceiptType,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -103,7 +103,7 @@ impl DirectMessageProcessor {
                     != MessagingContentKind::Text
                 {
                     return Err(
-                        "messaging Direct processor only accepts text projections".to_string(),
+                        "messaging Direct processor only accepts text projections".to_string()
                     );
                 }
                 (message.message_id.as_str(), false, Some(message))
@@ -207,6 +207,22 @@ impl DirectMessageProcessor {
             }),
         };
         let receipt_bytes = receipt.encode_to_vec();
+        let delivery_receipt = MessageReceipt {
+            conversation_id: event.conversation_id.clone(),
+            message_id: message_id.to_string(),
+            ptid: self.endpoint.ptid.clone(),
+            device_id: self.endpoint.device_id.clone(),
+            receipt_type: ReceiptType::Delivered as i32,
+            ts: Some(prost_types::Timestamp {
+                seconds: now.div_euclid(1_000),
+                nanos: (now.rem_euclid(1_000) * 1_000_000) as i32,
+            }),
+        };
+        let delivery_receipt_id = format!(
+            "message-delivered:{}:{}",
+            event.event_id, self.endpoint.device_id
+        );
+        let delivery_receipt_bytes = delivery_receipt.encode_to_vec();
 
         if is_edit {
             // Edit path: decrypt succeeded, apply the edit to the existing
@@ -230,6 +246,8 @@ impl DirectMessageProcessor {
                 edited_at_unix_ms: committed_at_unix_ms,
                 receipt_id: &receipt.receipt_id,
                 receipt_bytes: &receipt_bytes,
+                delivery_receipt_id: &delivery_receipt_id,
+                delivery_receipt_bytes: &delivery_receipt_bytes,
                 consumed_at_unix_ms: now,
             };
             if self.store.commit_direct_edit(&input)? == ReceiveCommitResult::Committed {
@@ -284,6 +302,8 @@ impl DirectMessageProcessor {
                 reply_to_message_id: projection.reply_to_message_id.as_deref(),
                 receipt_id: &receipt.receipt_id,
                 receipt_bytes: &receipt_bytes,
+                delivery_receipt_id: &delivery_receipt_id,
+                delivery_receipt_bytes: &delivery_receipt_bytes,
                 consumed_at_unix_ms: now,
             };
             if self.store.commit_direct_receive(&input)? == ReceiveCommitResult::Committed {
@@ -624,6 +644,21 @@ mod tests {
             .unwrap();
         assert_eq!(archive.messages.len(), 1);
         assert_eq!(archive.messages[0].plaintext, "exact direct plaintext");
+        let pending_receipt = store.next_delivery_receipt().unwrap().unwrap();
+        let delivery_receipt =
+            MessageReceipt::decode(pending_receipt.receipt_bytes.as_slice()).unwrap();
+        assert_eq!(delivery_receipt.conversation_id, "conversation-1");
+        assert_eq!(delivery_receipt.message_id, "message-1");
+        assert_eq!(delivery_receipt.ptid, "ptid:bob");
+        assert_eq!(delivery_receipt.device_id, "bob-device");
+        assert_eq!(delivery_receipt.receipt_type, ReceiptType::Delivered as i32);
+        assert!(delivery_receipt.ts.is_some());
+        store
+            .mark_delivery_receipt_submitted(
+                &pending_receipt.receipt_id,
+                &pending_receipt.receipt_bytes,
+            )
+            .unwrap();
 
         processor.consume(&item, 3).unwrap();
         let replayed = store.load_direct_session(session_id).unwrap().unwrap();
@@ -636,5 +671,6 @@ mod tests {
                 .len(),
             1
         );
+        assert!(store.next_delivery_receipt().unwrap().is_none());
     }
 }

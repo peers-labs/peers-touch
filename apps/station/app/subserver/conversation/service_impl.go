@@ -787,7 +787,14 @@ func (s *DefaultService) SubmitReceipt(ctx context.Context, receipt *chat.Messag
 			continue
 		}
 		if s.envelope != nil {
-			_ = s.envelope.SubmitReceipt(ctx, receipt, member.Ptid, member.ActorHomeStationPeerId)
+			if err := s.envelope.SubmitReceipt(
+				ctx,
+				receipt,
+				member.Ptid,
+				member.ActorHomeStationPeerId,
+			); err != nil {
+				return fmt.Errorf("conversation: route receipt failed: %w", err)
+			}
 		}
 	}
 	return nil
