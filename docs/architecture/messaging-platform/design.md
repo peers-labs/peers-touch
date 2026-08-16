@@ -1,8 +1,8 @@
 # Messaging Platform — 架构设计
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-08-16
+> **Version**: v1.3
+> **Created**: 2026-08-08 | **Updated**: 2026-08-17
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/`, `apps/desktop/`, `apps/mobile/`
 
@@ -30,6 +30,7 @@
 | MP-A16 | Fresh MLS endpoint 只能以明确添加自己的 Welcome event + hashed post-state snapshot 建立首个 authority checkpoint |
 | MP-A17 | Reply/edit/retract/reaction/pin/read 使用同一 authority sequence 和 per-device consumption boundary；UI optimistic state 不能成为 terminal truth |
 | MP-A18 | Typing 是独立 bounded ephemeral QoS；不得进入 durable message lane、history、receipt 或 recovery |
+| MP-A19 | 只有网络提交前的本地 draft 可取消；durable outbox admission 后 timeout 保持 pending/retrying，accepted 内容只通过新的 Authority edit/retract fact 变更 |
 
 ### 1.1 Delivery Commitment Amendment
 
@@ -529,6 +530,41 @@ Engine只接受logical membership intent。它持久化intent、exact attempt by
 OpenMLS state；authority stale时discard尚未merge的pending commit并生成新attempt。
 UI不得读取epoch、枚举devices、claim KeyPackage、组装transition或accept MLS state。
 
+### 6.4 Industry-Aligned Send Uncertainty And Retract
+
+> **Decision status**: accepted (`MP-D28`, Owner accepted industry-aligned scope
+> 2026-08-17)
+
+Messaging 不承诺取消结果未知的 in-flight command。边界如下：
+
+```text
+local composer draft --cancel--> discarded locally
+          |
+          +--durable outbox admission--> queued/submitting
+                                          |
+                                          +--timeout--> retry_wait
+                                          |              |
+                                          |              +--exact bytes retry
+                                          |
+                                          +--authority accept--> committed event
+                                                                  |
+                                                                  +--new edit/retract event
+```
+
+- local draft cancel 只能发生在 crypto advance、exact command 和 outbox transaction
+  之前；
+- outbox admission 后，timeout 不能证明 Authority 未接受，客户端必须保留
+  pending/retrying，并重放 exact command bytes；
+- 不新增 `CancelPendingMessagingCommand`、Authority cancellation tombstone 或
+  `cancel_pending` durable state；
+- 不回滚 Direct ratchet、MLS state 或复用 key/nonce；
+- accepted message 的“撤回”是新的 ordered Authority fact，receiver 保留
+  retracted marker；它不是 transport rollback，也不保证抹除通知、截图或外部副本。
+
+该边界采用主流 IM 的可观察产品语义：发送前可以放弃草稿；发送结果未知时等待或重试；
+发送成功后通过留痕撤回纠错。外部产品行为只作为 disposition evidence，不反推其内部
+实现。
+
 ## 7. End-To-End Receive
 
 ```text
@@ -573,6 +609,8 @@ SSE/push wake
   receipt 都不能使其回退或伪造 read。
 - 所有 durable interaction event 必须与普通 message 共用 authority admission、
   event hash、device queue、local consumption marker、cursor 和 post-commit ACK。
+- edit/reply 在本地 composer 阶段可放弃；一旦对应 command 进入 durable outbox，
+  timeout 只允许 pending/retry，accepted 后使用新的 edit/retract authority event。
 
 ### 8.2 Typing Presence Semantics
 
@@ -605,6 +643,8 @@ SSE/push wake
 - Queue full：command admission fail closed，sender durable draft/outbox 保留。
 - Storage locked/full：receiver 不 ACK；UI 显示 actionable state。
 - Duplicate：consumption marker/readback 后 ACK，不推进 crypto。
+- Command submit timeout：保留 exact command、intent 和原始 visible content，进入
+  bounded retry；不暴露 post-dispatch cancel，不回滚 crypto。
 - Shutdown：停止 admission，等待 in-flight local transaction，释放 lease。
 - Station failover：authority/queue operations 依赖数据库 transaction 和 fencing。
 
@@ -794,6 +834,6 @@ client cancel 终止当前 stream，但不自动 cancel durable session；只有
 
 ## 14. Architecture Gates
 
-架构完成只由 `acceptance-matrix.md` 的 MP-G01 至 MP-G14 证明。所有 native claim
+架构完成只由 `acceptance-matrix.md` 的 MP-G01 至 MP-G16 证明。所有 native claim
 必须记录 runtime profile、commit/digest、device IDs、Station rows、Engine transaction
 evidence 和 exact UI plaintext。

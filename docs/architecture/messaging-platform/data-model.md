@@ -1,8 +1,8 @@
 # Messaging Platform — 数据模型
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-08-10
+> **Version**: v1.2
+> **Created**: 2026-08-08 | **Updated**: 2026-08-17
 > **Owner**: Messaging Platform Team
 
 ---
@@ -344,6 +344,27 @@ command_attempt(command_id, message_id, delivery_plan_sha256, state, exact_bytes
 
 stale attempt转`SUPERSEDED`；logical message保持 pending并创建新 attempt。已推进的
 ratchet/MLS state不回滚。
+
+### 3.6 Outbound Timeout And Cancellation Boundary
+
+> **Status**: accepted by `MP-D28`
+
+```text
+local draft --cancel before prepare--> discarded
+
+local_commands / command_outbox
+  pending -> retry_wait -> pending
+  pending/retry_wait -> submitted -> committed
+  pending/retry_wait -> failed
+```
+
+- `cancelled` 不属于 durable command/outbox/interaction intent 状态。
+- Station 不持久化 command cancellation tombstone；Model 不定义 pending-command
+  cancellation request/response。
+- transport timeout 只进入 `retry_wait`，并保留 exact command bytes、logical intent
+  和原始 visible content。
+- accepted 之后的撤回由新的 `RetractMessage` command 与 Authority event 表达。
+- ratchet/MLS state在任何 timeout、retry 或 terminal failure中都不回滚。
 
 ## 4. Device SQLCipher Persistence
 

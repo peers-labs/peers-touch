@@ -230,7 +230,7 @@
         ],
         "unproven_scope": [
           "Direct and Group reply, thread, edit, retract, reaction, pin and read remain unproven until the dedicated source-bound Native Gate passes",
-          "Pending edit/reply timeout, retry and cancellation remains unproven while MP-D28 is proposed and the dedicated G15 assertion is intentionally unsatisfied",
+          "Pending edit/reply timeout and exact retry convergence remains unproven until the dedicated G15 assertion passes",
           "Mobile interaction parity remains unproven until MP-W09 Native cells pass"
         ]
       }

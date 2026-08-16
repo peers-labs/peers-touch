@@ -1,8 +1,8 @@
 # Messaging Platform — 产品状态模型
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-08-16
+> **Version**: v1.2
+> **Created**: 2026-08-08 | **Updated**: 2026-08-17
 > **Owner**: Messaging Platform Team
 
 ---
@@ -25,14 +25,21 @@ queued/submitting -> failed_actionable
 | ID | 状态 | 用户含义 | 允许动作 |
 |---|---|---|---|
 | MP-S01 | draft | 尚未被系统接受 | 编辑、取消、发送 |
-| MP-S02 | queued | 已持久化，等待提交 | 取消、查看原因 |
+| MP-S02 | queued | 已持久化，等待首次提交 | 查看状态 |
 | MP-S03 | submitting | 正在提交 authority | 等待 |
-| MP-S04 | retrying | 临时失败，系统重试 | 查看、取消 |
+| MP-S04 | retrying | 临时失败，系统以 exact command 重试 | 查看状态 |
 | MP-S05 | accepted | authority 已提交 | 查看详情 |
 | MP-S06 | consumed | 目标设备已安全保存 | 查看 receipt |
 | MP-S07 | delivered | 至少一个目标 active device consumed | 查看设备状态 |
 | MP-S08 | read | 目标 actor 已阅读 | 无 |
 | MP-S09 | failed_actionable | 未接受或终态失败 | 修复、重试、保留 draft |
+
+Cancellation boundary：
+
+- 只有 `MP-S01 draft`、且尚未进入 durable command outbox 的本地 composer 内容可以取消。
+- `queued/submitting/retrying` 不提供“取消发送”；transport timeout 不能证明 Authority
+  未接受。
+- accepted message 的后续删除语义是新的 Authority retract fact，并保留撤回痕迹。
 
 ## 2. Receive State
 
@@ -121,9 +128,9 @@ idle -> validating -> restoring -> enrolling_fresh_device -> reconciling -> comp
 | ID | State | User-visible meaning | Transition rule |
 |---|---|---|---|
 | MP-S30 | original | committed message has no accepted edit/retract event | only authority event may mutate |
-| MP-S31 | edit_pending | local edit intent is durable but not accepted | cancel or retry; original remains visible |
+| MP-S31 | edit_pending | local edit intent is durable but not accepted | wait or retry; original remains visible |
 | MP-S32 | edited | same message identity projects accepted replacement content | duplicate/restart stays edited |
-| MP-S33 | retract_pending | local retract intent is durable but not accepted | cancel or retry; original remains visible |
+| MP-S33 | retract_pending | local retract intent is durable but not accepted | wait or retry; original remains visible |
 | MP-S34 | retracted | row remains but plaintext is hidden | terminal for content display |
 | MP-S35 | reaction_present | actor's reaction is projected once | exact duplicate is idempotent |
 | MP-S36 | pinned | conversation points to the accepted pinned message | later authority unpin removes it |
@@ -132,6 +139,8 @@ idle -> validating -> restoring -> enrolling_fresh_device -> reconciling -> comp
 
 Edit/retract/reaction/pin projections must not apply before the corresponding authority event
 is durably consumed. A rejected or timed-out command cannot optimistically become terminal.
+Pending intent 进入 outbox 后不得本地取消或回滚 ratchet/MLS；只允许 exact retry、
+terminal actionable failure，或消费 accepted Authority event。
 
 ## 10. Typing Presence State
 

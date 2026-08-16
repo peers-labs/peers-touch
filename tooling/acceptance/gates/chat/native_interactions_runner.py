@@ -21,9 +21,13 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     profile_three_environment,
     restart_profile_three_station,
 )
+from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
+    ProfileThreeSubmitFaultProxy,
+)
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     async_harness,
+    configure_station,
     enter_chat_page,
     reset_fixture,
     start_authenticated_client,
@@ -77,7 +81,7 @@ REQUIRED_ASSERTIONS = {
     "group_duplicate_queue_replay",
     "group_removed_member_denied",
     "revoked_device_denied",
-    "pending_interaction_timeout_retry_cancel",
+    "pending_interaction_timeout_retry",
     "station_restart_convergence",
     "station_authority_readback",
     "engine_durable_readback",
@@ -290,6 +294,7 @@ class NativeInteractionsGate(AcceptanceGate):
         self.station_evidence: dict[str, Any] = {}
         self.engine_evidence: dict[str, Any] = {}
         self.restart_evidence: dict[str, str] = {}
+        self.timeout_retry_evidence: dict[str, Any] = {}
         self.cleanup_evidence: dict[str, Any] = {}
 
     def step(self, name: str, action: Callable[[], Any], client: str = "") -> Any:
@@ -1246,6 +1251,260 @@ class NativeInteractionsGate(AcceptanceGate):
         self.engine_evidence[f"{claim_kind}.duplicate"] = after_engine
         self.assert_condition(f"{claim_kind}_duplicate_queue_replay", True)
 
+    def prove_pending_timeout_retry(
+        self,
+        kind: str,
+        conversation_id: str,
+    ) -> None:
+        claim_kind = "direct" if kind == "friend" else "group"
+        prefix = f"{claim_kind}-timeout-{time.time_ns()}"
+        original_text = f"{prefix}-original"
+        edited_text = f"{prefix}-edited"
+        base = self.send(
+            "alice",
+            kind,
+            conversation_id,
+            original_text,
+        )
+        message_id = str(base["messageId"])
+        for actor in ("alice", "bob"):
+            self.sync(actor, kind, conversation_id)
+            wait_until(
+                lambda actor=actor: message_dom_snapshot(
+                    self.clients[actor],
+                    message_id,
+                ),
+                f"{actor} {claim_kind} timeout seed DOM",
+                STEP_TIMEOUT,
+            )
+
+        before_station = station_readback(conversation_id, message_id)
+        proxy = ProfileThreeSubmitFaultProxy(self.station_url)
+        proxy.start()
+        proxy_port = proxy.port
+        command_id = ""
+        pending_engine: dict[str, Any] = {}
+        final_engine: dict[str, Any] = {}
+        proxy_evidence: dict[str, Any] = {}
+        try:
+            configure_station(self.clients["alice"], proxy.url)
+            proxy.arm_connection_loss()
+            edit = async_harness(
+                self.clients["alice"],
+                "editInteractionMessage",
+                {
+                    "conversationId": conversation_id,
+                    "kind": kind,
+                    "messageId": message_id,
+                    "plaintext": edited_text,
+                },
+            )
+            command_id = str(
+                (edit or {}).get("command_id")
+                or (edit or {}).get("commandId")
+                or ""
+            )
+            if not command_id:
+                raise GateError("timeout edit returned no command ID")
+
+            pending_engine = wait_until(
+                lambda: (
+                    snapshot
+                    if (
+                        (snapshot := self.engine_snapshot(
+                            "alice",
+                            conversation_id,
+                            message_id,
+                            command_id,
+                        ))
+                        and (snapshot.get("intent") or {}).get("state")
+                        == "retry_wait"
+                        and (snapshot.get("outbox") or {}).get("state")
+                        == "retry_wait"
+                        and int(
+                            (snapshot.get("outbox") or {}).get("attemptCount")
+                            or 0
+                        )
+                        >= 1
+                    )
+                    else None
+                ),
+                f"Alice {claim_kind} interaction retry_wait after connection loss",
+                STEP_TIMEOUT,
+            )
+            intent = pending_engine.get("intent") or {}
+            outbox = pending_engine.get("outbox") or {}
+            command_sha = str(intent.get("commandSha256") or "")
+            if (
+                not command_sha
+                or outbox.get("commandSha256") != command_sha
+                or outbox.get("lastErrorCode") != "network"
+            ):
+                raise GateError(
+                    "timeout retry did not preserve one exact network-failed command"
+                )
+            sender_projection = self.projection(
+                "alice",
+                kind,
+                conversation_id,
+                message_id,
+            )
+            sender_dom = message_dom_snapshot(
+                self.clients["alice"],
+                message_id,
+            )
+            if (
+                not sender_projection
+                or sender_projection.get("content") != original_text
+                or sender_projection.get("edited") is True
+                or not sender_dom
+                or original_text not in str(sender_dom.get("text") or "")
+                or sender_dom.get("edited") == "true"
+            ):
+                raise GateError(
+                    "timeout changed the original sender-visible message"
+                )
+            during_station = station_readback(conversation_id, message_id)
+            if any(
+                event.get("commandId") == command_id
+                for event in during_station.get("events") or []
+            ):
+                raise GateError(
+                    "connection-loss submit reached Authority before retry"
+                )
+            proxy_evidence = proxy.evidence()
+            command_hashes = proxy_evidence.get("commandSha256") or []
+            if (
+                int(proxy_evidence.get("connectionLossCount") or 0) < 1
+                or not command_hashes
+                or any(value != command_sha for value in command_hashes)
+            ):
+                raise GateError(
+                    "fault proxy did not observe only the exact command bytes"
+                )
+
+            configure_station(self.clients["alice"], self.station_url)
+            proxy.disarm()
+
+            def dispatch_until_submitted() -> dict[str, Any] | None:
+                gateway_command(
+                    self.clients["alice"],
+                    "messaging_dispatch",
+                    {},
+                )
+                snapshot = self.engine_snapshot(
+                    "alice",
+                    conversation_id,
+                    message_id,
+                    command_id,
+                )
+                state = str((snapshot.get("outbox") or {}).get("state") or "")
+                return snapshot if state in {"submitted", "committed"} else None
+
+            final_engine = wait_until(
+                dispatch_until_submitted,
+                "Alice exact interaction retry submission",
+                STEP_TIMEOUT,
+            )
+            if (
+                (final_engine.get("outbox") or {}).get("commandSha256")
+                != command_sha
+            ):
+                raise GateError("interaction retry changed exact command bytes")
+            wait_until(
+                lambda: (
+                    snapshot
+                    if (
+                        (snapshot := self.projection(
+                            "bob",
+                            kind,
+                            conversation_id,
+                            message_id,
+                        ))
+                        and snapshot.get("content") == edited_text
+                        and snapshot.get("edited") is True
+                    )
+                    else None
+                ),
+                f"Bob {claim_kind} timeout retry edited projection",
+                STEP_TIMEOUT,
+            )
+            receiver_dom = wait_until(
+                lambda: (
+                    snapshot
+                    if (
+                        (snapshot := message_dom_snapshot(
+                            self.clients["bob"],
+                            message_id,
+                        ))
+                        and snapshot.get("edited") == "true"
+                        and edited_text in str(snapshot.get("text") or "")
+                    )
+                    else None
+                ),
+                f"Bob {claim_kind} timeout retry edited DOM",
+                STEP_TIMEOUT,
+            )
+            visible_count = int(
+                self.clients["bob"].execute_script(
+                    """
+                    return document.querySelectorAll(
+                      `[data-message-ulid="${CSS.escape(arguments[0])}"]`
+                    ).length;
+                    """,
+                    message_id,
+                )
+                or 0
+            )
+            after_station = station_readback(conversation_id, message_id)
+            command_events = [
+                event
+                for event in after_station.get("events") or []
+                if event.get("commandId") == command_id
+            ]
+            if len(command_events) != 1 or visible_count != 1:
+                raise GateError(
+                    "exact retry did not converge to one Authority fact and "
+                    "one receiver-visible result"
+                )
+            self.timeout_retry_evidence[claim_kind] = {
+                "conversationId": conversation_id,
+                "messageId": message_id,
+                "commandId": command_id,
+                "commandSha256": command_sha,
+                "beforeStation": before_station,
+                "pendingEngine": pending_engine,
+                "finalEngine": final_engine,
+                "finalStation": after_station,
+                "receiverDom": receiver_dom,
+                "receiverVisibleCount": visible_count,
+                "faultProxy": proxy_evidence,
+            }
+            self.command_ids[f"{claim_kind}.timeout-edit"] = command_id
+        finally:
+            try:
+                configure_station(self.clients["alice"], self.station_url)
+            finally:
+                proxy.disarm()
+                if not proxy_evidence:
+                    proxy_evidence = proxy.evidence()
+                proxy.stop()
+                scenario_evidence = self.timeout_retry_evidence.setdefault(
+                    claim_kind,
+                    {},
+                )
+                scenario_evidence.setdefault(
+                    "faultProxy",
+                    proxy_evidence,
+                )
+                scenario_evidence["proxyPort"] = proxy_port
+                scenario_evidence["proxyPortReleased"] = wait_until(
+                    lambda: self.port_is_free(proxy_port),
+                    f"{claim_kind} Chat submit fault proxy port release",
+                    10,
+                    0.1,
+                )
+
     def restart_client(
         self,
         actor: str,
@@ -1623,6 +1882,7 @@ class NativeInteractionsGate(AcceptanceGate):
             for actor in ("alice", "bob"):
                 self.sync(actor, "friend", direct_id)
             self.prove_lifecycle("friend", direct_id, ("alice", "bob"))
+            self.prove_pending_timeout_retry("friend", direct_id)
             self.prove_offline_recovery("friend", direct_id, ())
 
             self.step(
@@ -1664,6 +1924,8 @@ class NativeInteractionsGate(AcceptanceGate):
             for actor in ACTORS:
                 self.sync(actor, "group", group_id)
             self.prove_lifecycle("group", group_id, ACTORS)
+            self.prove_pending_timeout_retry("group", group_id)
+            self.assert_condition("pending_interaction_timeout_retry", True)
             self.prove_offline_recovery("group", group_id, ("charlie",))
 
             self.step("station.restart", self.restart_station)
@@ -1742,6 +2004,7 @@ class NativeInteractionsGate(AcceptanceGate):
             "commandIds": self.command_ids,
             "stationReadback": self.station_evidence,
             "engineReadback": self.engine_evidence,
+            "timeoutRetry": self.timeout_retry_evidence,
             "stationRestart": self.restart_evidence,
             "cleanup": self.cleanup_evidence,
             "steps": self.steps,

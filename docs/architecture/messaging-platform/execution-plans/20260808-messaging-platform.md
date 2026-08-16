@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W12` |
-| Current step | Review MP-D28 authority-serialized cancellation, then implement its typed contract before MP-G15 |
+| Current step | Commit, push and deploy the source-bound G15 timeout/exact-retry Gate |
 | Progress | 16/19 ledger workstreams completed; W09 in-progress, W12 implemented-unproven, W11 reopened |
-| Last completed | Commit `46070d089`: G15/G16 fail-closed repair with real Profile Three restart boundary, Direct-kind correction, thread/missing-target DOM, offline/replay/removed/revoked variants, full Group typing lifecycle, device continuity and cleanup assertions |
-| Current action | Keep `pending_interaction_timeout_retry_cancel` absent from G15 results and required by the fail-closed assertion set while MP-D28 is `proposed`; commit `46070d089` is structural evidence only and is not deployed Native proof |
-| Next action | Obtain owner review for MP-D28; if accepted, add Model/Authority/Engine/UI cancellation contract and Gate race scenarios, then rebuild/deploy exact source and run G15/G16 with approved credentials |
-| Blockers | `DESIGN_AMENDMENT_REQUIRED`: MP-D28 is not owner-accepted. G15/G16 also lack approved `CHAT_ACCEPTANCE_PASSWORD`, `CHAT_ACCEPTANCE_RESET=1` and `CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1`. W09 Phase 3 is dependency-blocked by W12; W11 remains reopened |
-| Decisions required | Accept or reject MP-D28: Authority-serialized submit/cancel with durable tombstone and typed `CANCELLED / ALREADY_ACCEPTED / ALREADY_CANCELLED`; local-only cancellation and crypto rollback remain forbidden |
-| Evidence | Implementation source commit `46070d089`; Profile Three remains `23c9d4ec5`, so current Native execution is not source-aligned and was NOT RUN. Structural evidence: Python compile PASS; Chat Acceptance tests 47/47 PASS; Station Messaging/Conversation/Envelope PASS; Desktop source Vitest 291/291 PASS with one environment E2E skipped; Desktop social-wire/runtime-boundary/TypeScript check PASS; Acceptance plan self-check PASS and selects G15/G16 as environment evidence; Chat Domain 8 capabilities STRUCTURALLY_VALID; `git diff --check` PASS. G15/G16 Native reports remain FAIL/UNPROVEN |
+| Last completed | MP-D28 product/design/data-model/Acceptance sources are synchronized; G15 now has Profile Three-only Direct and Group submit connection-loss injection, SQLCipher retry/outbox/hash readback, original-content assertion, exact retry, single Authority fact and single receiver DOM result. Local static/contract/Go/Desktop/Rust gates pass; Native proof is NOT RUN |
+| Current action | Review the bounded fault Fixture and evidence contract, rerun the full local source suite, then commit and push the amendment before deploying exact source |
+| Next action | Deploy the pushed commit to Profile Three, verify Station/client source identity, then run G15/G16 with approved credentials |
+| Blockers | G15/G16 runtime execution still lacks approved `CHAT_ACCEPTANCE_PASSWORD`, `CHAT_ACCEPTANCE_RESET=1` and `CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1`. W09 Phase 3 remains dependency-blocked by W12; W11 remains reopened |
+| Decisions required | none; MP-D28 industry-aligned pending/retry + post-accept retract semantics accepted 2026-08-17 |
+| Evidence | Profile Three remains `23c9d4ec5`, so current Native execution is not source-aligned and was NOT RUN. Current source evidence: Chat Python 51/51 PASS; Messaging contract 13/13 PASS; Desktop source Vitest 291/291 PASS with one environment E2E skipped; Station Messaging/Conversation/Envelope PASS; Desktop social-wire/runtime-boundary/TypeScript check PASS; Rust command-outbox 3/3 and `cargo check --features acceptance-webdriver` PASS with pre-existing warnings; Acceptance plan self-check PASS and maps the fault Fixture to G15; Chat Domain 8 capabilities STRUCTURALLY_VALID; `rustfmt --check store.rs` and `git diff --check` PASS. G15/G16 Native reports remain FAIL/UNPROVEN |
 | Last updated | 2026-08-17 |
 
 ## 1. Plan Sources And Gate
@@ -49,8 +49,8 @@
 当前状态：base plan `PLAN_APPROVED`（Owner approved 2026-08-08）；
 MP-W10 attachment amendment `PLAN_APPROVED`（Owner approved 2026-08-10）；
 MP-W12 interaction amendment `PLAN_APPROVED`（Goal owner approved 2026-08-16）。
-MP-D28 cancellation amendment is `DESIGN_READY_FOR_REVIEW` and is not yet an accepted
-execution source.
+MP-D28 industry-aligned pending/retry + post-accept retract amendment is accepted
+（Goal owner approved 2026-08-17）。
 
 ## 2. Scope And Non-Scope
 
@@ -594,7 +594,8 @@ Lifecycle checkpoints:
 - `ACCEPTANCE_GAP_MATRIX_READY`: matrix below.
 - `ACCEPTANCE_STAGE_DISPATCHED`: PRODUCT amendment for C15/C16/J13/J14/S30-S42,
   then PLAN amendment for W12 and G15/G16; execution later exposed undefined
-  submit-timeout cancellation race semantics and dispatched MP-D28 to DESIGN.
+  submit-timeout semantics; owner accepted MP-D28 industry baseline and returned the
+  timeout/exact-retry closure to EXECUTE.
 
 #### Coverage Gap Matrix
 
@@ -606,7 +607,7 @@ Lifecycle checkpoints:
 | Group durable interactions | three-member Desktop Native | authority + MLS/device lanes / three UIs | `IMPLEMENTED_UNPROVEN` | execute G15 all operations, removed-member, restart and ordered convergence | EXECUTE |
 | Direct typing | Desktop Native pair | ephemeral pulse / typing indicator | `IMPLEMENTED_UNPROVEN` | execute G16 start/stop/session-switch/disconnect/TTL proof | EXECUTE |
 | Group typing | three-member Desktop Native | ephemeral member fan-out / three indicators | `IMPLEMENTED_UNPROVEN` | execute G16 Group fan-out, removed-member and zero-durable-write proof | EXECUTE |
-| Pending edit/reply timeout, retry and cancel | Desktop Native Direct/Group | Authority command disposition + Engine intent / pending UI | `DESIGN_AMENDMENT_REQUIRED` | owner review MP-D28, then typed Model/Authority/Engine/UI implementation and G15 race proof | DESIGN |
+| Pending edit/reply timeout and exact retry | Desktop Native Direct/Group | Engine durable intent/outbox + Authority idempotency / pending UI | `IMPLEMENTED_UNPROVEN` | execute G15 timeout injection, pending-state readback and exact retry single-result proof | EXECUTE |
 | Interaction parity | Mobile Native | Core + Mobile adapter / Mobile Chat UI | `UNPROVEN` | W09 adapter, Harness/Driver/runtime and C10/C15/C16 Native evidence | EXECUTE after Desktop W12 |
 
 责任：
@@ -645,8 +646,8 @@ Lifecycle checkpoints:
 - offline receiver：durable interactions apply once after resume in authority order；
 - Station/client restart：content、retracted state、reaction、pin、reply/thread and read cursor
   do not regress；
-- edit/reply timeout before authority accept：pending intent remains cancellable and original
-  message remains visible；
+- edit/reply submit timeout：pending/retrying intent、exact command bytes 和 original visible
+  content 保留；不得 post-dispatch cancel 或回滚 crypto；exact retry 只产生一个 result；
 - lost typing stop/disconnect：receiver TTL clears state；typing never blocks durable lane。
 
 Gate：
@@ -683,7 +684,8 @@ Non-claim：
 - **Action**: Alice edits then retracts it; Bob attempts edit/retract on Alice's message.
 - **Expected**: Alice's accepted events converge on both clients under one `message_id`; Bob's
   attempts fail with zero authority event.
-- **Failure variant**: timeout before accept preserves original content and cancellable intent.
+- **Failure variant**: submit timeout preserves original content and pending/retrying intent;
+  exact retry converges to one authority fact and one receiver-visible result.
 - **Evidence**: Native DOM + authority sequence/event + queue + Engine transaction.
 - **Status**: pending
 
@@ -759,7 +761,7 @@ Non-claim：
 | MP-W10-C | completed | W03/W04/W10-A | Engine encrypt/upload/download workers now own bounded two-chunk memory, SQLCipher checkpoints, descriptor commitments, partial-file re-encryption binding, chunk/whole ciphertext hash + AEAD + whole plaintext hash verification, atomic cache promotion, typed retry/cancel/shutdown/overload states, capped jittered backoff and finite Station deadlines. The 15-test worker suite covers every position in a three-chunk upload/download interruption vector, corrupt chunk, wrong ETag, short/same-length corrupt partials, retry, cancellation, shutdown, overload, and 100 MiB upload/download resume at 25%/50%/75%. Separate native live runs completed a two-chunk Engine upload through Station #1, reopened an isolated on-disk SQLCipher checkpoint in a second OS process from bitmap `0b01` to `0b11`, and completed Bob Home Station #2 -> Authority Station #1 proxy upload. Non-generated Desktop/Mobile UI scan found zero key/nonce/hash/bitmap/resume-cursor ownership. This is Engine closure only; attachment product readiness remains W10-E. |
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
 | MP-W10-E | completed | W05/W10-D | Native bidirectional Direct text+attachment (SHA-256 verified), OpenMLS group text+attachment (byte-exact), FTS5 local encrypted search (Direct+Group), Station restart continuity (post-restart delivery), fresh-device recovery round-trip (Bob: 3 conv/19 msg/3 att, Alice: 4 conv/19 msg/3 att, format v2), per-attachment admission control fixing concurrency race, startup reconciliation for descriptor-backed terminal uploads. Evidence from `peers-group-chat` and `peers-chat-high-chat` native Tauri apps against remote Stations #1 and #2. Legacy chat OSS and plaintext search owners deleted. |
-| MP-W12 | implemented-unproven | W04/W05/W07 + accepted MP-D26/MP-D27; proposed MP-D28 | Feature/Capability/G15/G16 contracts, canonical encrypted edit/metadata/read/typing paths, atomic Engine consumption, sender-visible Direct/Group read projection, stable DOM selectors, isolated Native runners and acceptance-only durable readback are implemented. Current working-tree Gate repair adds real Profile Three restart, correct Direct routing, thread/count/order and missing-target DOM, offline replay, duplicate delivery ACK, non-author zero-mutation, removed/revoked denial, full Group typing lifecycle and cleanup assertions; Chat Acceptance tests 47/47, Station Messaging/Conversation/Envelope, Desktop source Vitest 291/291 with one environment E2E skipped, and Desktop check pass. These edits are not deployed Native proof. Missing: accepted MP-D28 and timeout/retry/cancel implementation, source-bound Profile Three G10/G15/G16 Native PASS, and Mobile parity through W09. |
+| MP-W12 | implemented-unproven | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | Feature/Capability/G15/G16 contracts, canonical encrypted edit/metadata/read/typing paths, atomic Engine consumption, sender-visible Direct/Group read projection, stable DOM selectors, isolated Native runners and acceptance-only durable readback are implemented. Commit `46070d089` adds real Profile Three restart, correct Direct routing, thread/count/order and missing-target DOM, offline replay, duplicate delivery ACK, non-author zero-mutation, removed/revoked denial, full Group typing lifecycle and cleanup assertions; Chat Acceptance tests 47/47, Station Messaging/Conversation/Envelope, Desktop source Vitest 291/291 with one environment E2E skipped, and Desktop check pass. MP-D28 now rejects post-dispatch cancellation tombstones in favor of industry-aligned pending/retry plus post-accept retract. Missing: G15 timeout/exact-retry proof, source-bound Profile Three G10/G15/G16 Native PASS, and Mobile parity through W09. |
 | MP-W11 | in-progress | W02-W10/W12 | Previous cutover/deletion evidence remains useful but cannot close the final audit while W09 and W12 are open. Rerun only after W09/W12: G01-G16 required cells, tree-wide old-owner/duplicate-contract scans, independent review and completion audit. |
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
