@@ -16,19 +16,19 @@ import (
 // ============================================================================
 
 type NotificationModel struct {
-	ID          uint      `gorm:"primaryKey"`
-	NotifID     string    `gorm:"column:notif_id;size:64;uniqueIndex"`
-	RecipientID string    `gorm:"size:255;index:idx_recipient_created"`
-	ActorID     string    `gorm:"size:255;index"`
-	Type        int32     `gorm:"index"`
-	Category    int32     `gorm:"index"`
-	Status      int32     `gorm:"index"`
-	TargetType  string    `gorm:"size:64"`
-	TargetID    string    `gorm:"size:255"`
-	Title       string    `gorm:"size:512"`
-	Body        string    `gorm:"type:text"`
-	Metadata    string    `gorm:"type:text"`
-	GroupKey    string    `gorm:"size:255;index"`
+	ID          uint   `gorm:"primaryKey"`
+	NotifID     string `gorm:"column:notif_id;size:64;uniqueIndex"`
+	RecipientID string `gorm:"size:255;index:idx_recipient_created"`
+	ActorID     string `gorm:"size:255;index"`
+	Type        int32  `gorm:"index"`
+	Category    int32  `gorm:"index"`
+	Status      int32  `gorm:"index"`
+	TargetType  string `gorm:"size:64"`
+	TargetID    string `gorm:"size:255"`
+	Title       string `gorm:"size:512"`
+	Body        string `gorm:"type:text"`
+	Metadata    string `gorm:"type:text"`
+	GroupKey    string `gorm:"size:255;index"`
 	ReadAt      *time.Time
 	CreatedAt   time.Time `gorm:"index:idx_recipient_created"`
 	UpdatedAt   time.Time
@@ -97,7 +97,7 @@ func (r *GormRepo) Create(n domain.Notification) (domain.Notification, error) {
 		Title:       n.Title,
 		Body:        n.Body,
 		Metadata:    metaJSON,
-		GroupKey:     n.GroupKey,
+		GroupKey:    n.GroupKey,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -373,7 +373,7 @@ func toDomain(m NotificationModel) domain.Notification {
 		Title:       m.Title,
 		Body:        m.Body,
 		Metadata:    metadata,
-		GroupKey:     m.GroupKey,
+		GroupKey:    m.GroupKey,
 		CreatedAt:   m.CreatedAt,
 		ReadAt:      m.ReadAt,
 	}
