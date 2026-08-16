@@ -282,7 +282,11 @@ export const LoginFormView = memo(function LoginFormView({
         <button style={tabStyle(tab === 'quick')} onClick={() => onTabChange('quick')}>
           {t('auth.login.tab.quick')}
         </button>
-        <button style={tabStyle(tab === 'email')} onClick={() => onTabChange('email')}>
+        <button
+          data-login-tab="password"
+          style={tabStyle(tab === 'email')}
+          onClick={() => onTabChange('email')}
+        >
           {t('auth.login.tab.email')}
         </button>
       </div>
@@ -346,6 +350,7 @@ export const LoginFormView = memo(function LoginFormView({
             />
             <Flexbox horizontal gap={8} align="center">
               <Input
+                data-login-email
                 size="large"
                 autoFocus
                 prefix={<Lock size={16} style={{ color: token.colorTextQuaternary }} />}
@@ -405,6 +410,7 @@ export const LoginFormView = memo(function LoginFormView({
               />
               <Flexbox horizontal gap={8} align="center">
                 <Input
+                  data-login-password
                   size="large"
                   prefix={<Lock size={16} style={{ color: token.colorTextQuaternary }} />}
                   suffix={
@@ -423,6 +429,7 @@ export const LoginFormView = memo(function LoginFormView({
                   required
                 />
                 <Button
+                  data-login-submit
                   type="primary"
                   htmlType="submit"
                   disabled={loading}
