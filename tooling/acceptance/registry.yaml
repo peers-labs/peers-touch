@@ -64,7 +64,10 @@
           "apps/desktop/src/store/socialChat.ts",
           "apps/desktop/src/components/chat/**",
           "apps/desktop/src/acceptance/chat/**",
-          "tooling/acceptance/gates/chat/native_interactions_runner.py"
+          "tooling/acceptance/fixtures/chat_submit_fault_proxy.py",
+          "tooling/acceptance/gates/chat/chat_submit_fault_proxy_test.py",
+          "tooling/acceptance/gates/chat/native_interactions_runner.py",
+          "tooling/acceptance/gates/chat/native_interactions_static_test.py"
         ]
       },
       "require": [
