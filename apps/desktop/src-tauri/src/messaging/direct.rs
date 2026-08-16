@@ -262,6 +262,13 @@ impl DirectMessageProcessor {
                     Some(fact.reply_to_message_id.clone())
                 }
             });
+            let thread_root = committed_fact.and_then(|fact| {
+                if fact.thread_root_message_id.is_empty() {
+                    None
+                } else {
+                    Some(fact.thread_root_message_id.clone())
+                }
+            });
             let projection = MessageProjection {
                 conversation_id: event.conversation_id.clone(),
                 event_id: event.event_id.clone(),
@@ -281,6 +288,7 @@ impl DirectMessageProcessor {
                 attachments: private_content.attachments,
                 committed_at_unix_ms,
                 reply_to_message_id: reply_to,
+                thread_root_message_id: thread_root,
                 edited_text: None,
                 edited_at_unix_ms: None,
                 retracted: false,
@@ -300,6 +308,7 @@ impl DirectMessageProcessor {
                 consumed_one_time_prekey_id,
                 projection: &projection,
                 reply_to_message_id: projection.reply_to_message_id.as_deref(),
+                thread_root_message_id: projection.thread_root_message_id.as_deref(),
                 receipt_id: &receipt.receipt_id,
                 receipt_bytes: &receipt_bytes,
                 delivery_receipt_id: &delivery_receipt_id,

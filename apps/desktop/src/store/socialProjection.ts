@@ -171,6 +171,7 @@ export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike>
   senderDid: string;
   replyToUlid?: string;
   threadRootUlid?: string;
+  readByPtids: string[];
 };
 
 export interface DesktopIMSenderProfileProjection {
@@ -311,6 +312,7 @@ export function projectDesktopIMMessage(
     senderDid: projection.senderId,
     replyToUlid: projection.replyToId,
     threadRootUlid: projection.threadRootId,
+    readByPtids: (message as { readByPtids?: string[] }).readByPtids ?? [],
   };
 }
 
