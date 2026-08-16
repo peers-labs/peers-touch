@@ -83,9 +83,11 @@ func (f *fakeFiles) MarkDeleted(_ context.Context, id string, now time.Time) err
 
 // Unused interface methods — TTLSweeper does not call them. We
 // implement no-ops so fakeFiles satisfies ossrepo.FileRepository.
-func (f *fakeFiles) Create(context.Context, *ossmodel.FileMeta) error                           { return nil }
-func (f *fakeFiles) FindByKey(context.Context, string) (*ossmodel.FileMeta, error)              { return nil, nil }
-func (f *fakeFiles) FindByOwnerKey(context.Context, string, string) (*ossmodel.FileMeta, error) { return nil, nil }
+func (f *fakeFiles) Create(context.Context, *ossmodel.FileMeta) error              { return nil }
+func (f *fakeFiles) FindByKey(context.Context, string) (*ossmodel.FileMeta, error) { return nil, nil }
+func (f *fakeFiles) FindByOwnerKey(context.Context, string, string) (*ossmodel.FileMeta, error) {
+	return nil, nil
+}
 func (f *fakeFiles) FindByOwnerKeyIncludeDeleted(context.Context, string, string) (*ossmodel.FileMeta, error) {
 	return nil, nil
 }
@@ -119,8 +121,8 @@ func (b *fakeBuckets) FindByOwnerName(context.Context, string, string) (*ossmode
 func (b *fakeBuckets) ListByOwner(context.Context, string) ([]ossmodel.Bucket, error) {
 	return nil, nil
 }
-func (b *fakeBuckets) ListAll(context.Context) ([]ossmodel.Bucket, error)      { return nil, nil }
-func (b *fakeBuckets) Create(context.Context, *ossmodel.Bucket) error          { return nil }
+func (b *fakeBuckets) ListAll(context.Context) ([]ossmodel.Bucket, error) { return nil, nil }
+func (b *fakeBuckets) Create(context.Context, *ossmodel.Bucket) error     { return nil }
 func (b *fakeBuckets) EnsureSystem(context.Context, string, ossmodel.SystemBucketSpec) (*ossmodel.Bucket, error) {
 	return nil, nil
 }
@@ -131,7 +133,7 @@ func (b *fakeBuckets) Delete(context.Context, string, bool) error           { re
 func (b *fakeBuckets) SetUsage(context.Context, string, int64, int64) error { return nil }
 
 type fakeBlobs struct {
-	releases map[string]int
+	releases   map[string]int
 	releaseErr error
 }
 

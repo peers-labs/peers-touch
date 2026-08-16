@@ -113,6 +113,7 @@ export const SetPinView = memo(function SetPinView({
 
       {canSkip && (
         <Button
+          data-login-pin-skip
           type="link"
           size="small"
           onClick={onSkip}

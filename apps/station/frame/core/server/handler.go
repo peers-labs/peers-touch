@@ -160,7 +160,7 @@ type HertzMiddleware func(ctx context.Context, c interface{}) bool
 func NewHertzHandler(name, path string, method Method, h interface{}, middlewares ...interface{}) Handler {
 	// Wrap the Hertz handler with middlewares
 	hertzHandler := HertzHandlerFunc(h)
-	
+
 	// Create middleware wrapper that chains Hertz middlewares
 	if len(middlewares) > 0 {
 		originalHandler := hertzHandler
@@ -169,12 +169,12 @@ func NewHertzHandler(name, path string, method Method, h interface{}, middleware
 			type hertzContextGetter interface {
 				GetHertzContext() interface{}
 			}
-			
+
 			var hertzCtx interface{}
 			if getter, ok := req.(hertzContextGetter); ok {
 				hertzCtx = getter.GetHertzContext()
 			}
-			
+
 			// Apply middlewares if we have Hertz context
 			if hertzCtx != nil {
 				for _, mw := range middlewares {
@@ -186,7 +186,7 @@ func NewHertzHandler(name, path string, method Method, h interface{}, middleware
 							reflect.ValueOf(hertzCtx),
 						}
 						mwv.Call(args)
-						
+
 						// Check if request was aborted (Hertz sets IsAborted flag)
 						if checkAborted(hertzCtx) {
 							return nil // Middleware aborted, don't call handler
@@ -194,11 +194,11 @@ func NewHertzHandler(name, path string, method Method, h interface{}, middleware
 					}
 				}
 			}
-			
+
 			return originalHandler(ctx, req, resp)
 		}
 	}
-	
+
 	return &handler{
 		name:     name,
 		path:     path,
@@ -234,7 +234,7 @@ func HTTPHandlerFunc(h http.HandlerFunc) EndpointHandler {
 
 		// Parse the full path which may include query string
 		fullPath := req.Path()
-		
+
 		// Split path and query string manually
 		path := fullPath
 		rawQuery := ""
@@ -314,7 +314,7 @@ func HTTPWrapperAdapter(httpWrapper func(ctx context.Context, next http.Handler)
 
 			wrapped := httpWrapper(ctx, httpHandler)
 			bodyReader := io.NopCloser(bytes.NewReader(req.Body()))
-			
+
 			// Parse the full path which may include query string
 			fullPath := req.Path()
 			path := fullPath
@@ -323,12 +323,12 @@ func HTTPWrapperAdapter(httpWrapper func(ctx context.Context, next http.Handler)
 				path = fullPath[:idx]
 				rawQuery = fullPath[idx+1:]
 			}
-			
+
 			r, err := http.NewRequestWithContext(ctx, string(req.Method()), path, bodyReader)
 			if err != nil {
 				return err
 			}
-			
+
 			// Set the query string
 			r.URL.RawQuery = rawQuery
 
@@ -483,8 +483,8 @@ func HertzHandlerFunc(h interface{}) EndpointHandler {
 }
 
 type hertzContextAdapter struct {
-	ctx  context.Context
-	req  Request
+	ctx context.Context
+	req Request
 	// Headers need to be set through a different mechanism
 }
 

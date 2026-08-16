@@ -213,19 +213,19 @@ var ErrPeerNotFound = errors.New("dashboard: oss: peer not found")
 // (oss/db/repo/bucket_repo.go) so dashboard callers get the same
 // failure categories without having to import the OSS package.
 var (
-	ErrBucketNotFound  = errors.New("dashboard: oss: bucket not found")
-	ErrBucketExists    = errors.New("dashboard: oss: bucket already exists")
-	ErrBucketNotEmpty  = errors.New("dashboard: oss: bucket not empty (use force=true)")
-	ErrBucketSystem    = errors.New("dashboard: oss: system buckets cannot be mutated")
-	ErrBucketBadInput  = errors.New("dashboard: oss: bucket input invalid")
+	ErrBucketNotFound = errors.New("dashboard: oss: bucket not found")
+	ErrBucketExists   = errors.New("dashboard: oss: bucket already exists")
+	ErrBucketNotEmpty = errors.New("dashboard: oss: bucket not empty (use force=true)")
+	ErrBucketSystem   = errors.New("dashboard: oss: system buckets cannot be mutated")
+	ErrBucketBadInput = errors.New("dashboard: oss: bucket input invalid")
 )
 
 // Object admin-mutate errors. Closed set so handler error mapping
 // is exhaustive without string sniffing.
 var (
-	ErrFileNotFound        = errors.New("dashboard: oss: file not found")
-	ErrFileAlreadyDeleted  = errors.New("dashboard: oss: file already deleted")
-	ErrFileBadInput        = errors.New("dashboard: oss: file input invalid")
+	ErrFileNotFound         = errors.New("dashboard: oss: file not found")
+	ErrFileAlreadyDeleted   = errors.New("dashboard: oss: file already deleted")
+	ErrFileBadInput         = errors.New("dashboard: oss: file input invalid")
 	ErrFileChatNeedsSession = errors.New("dashboard: oss: chat visibility requires chat_session_id")
 )
 
@@ -1280,10 +1280,10 @@ func (r *ossRepository) bumpCapabilityVersion(ctx context.Context) error {
 // Visibility constants — duplicated here so the repo does not
 // import the domain or oss subserver model.
 const (
-	visibilityPublicConst   = "public"
-	visibilityChatConst     = "chat"
-	visibilityPrivateConst  = "private"
-	metaKeyCapVersion       = "capability_version"
+	visibilityPublicConst  = "public"
+	visibilityChatConst    = "chat"
+	visibilityPrivateConst = "private"
+	metaKeyCapVersion      = "capability_version"
 )
 
 // ---------------------------------------------------------------------------
