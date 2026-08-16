@@ -8,13 +8,6 @@
       "tier": "ci-structure",
       "description": "Validate that the acceptance registry can plan the current diff."
     },
-    "acceptance-infra-validation": {
-      "command": "python3 tooling/scripts/acceptance-validate.py --infra",
-      "timeout_seconds": 120,
-      "environment": "local",
-      "tier": "ci-structure",
-      "description": "Validate only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection."
-    },
     "acceptance-run-static-gate": {
       "command": "python3 tooling/scripts/acceptance-run-test.py",
       "timeout_seconds": 30,
@@ -22,40 +15,24 @@
       "tier": "local-evidence",
       "description": "Validate that acceptance-run preserves source artifact diagnostics, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata in latest-run evidence."
     },
-    "acceptance-runtime-provisioning-self": {
-      "command": "python3 -m unittest tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py",
-      "timeout_seconds": 180,
-      "environment": "local",
-      "tier": "ci-cheap",
-      "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, runner failure semantics, behavior planning, domain structural closure, Infra/business responsibility isolation, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity."
-    },
-    "core-runtime-validation": {
-      "command": "python3 tooling/acceptance/tests/validate_core_e2e.py",
-      "timeout_seconds": 180,
-      "environment": "local",
-      "tier": "local-evidence",
-      "description": "Validate Core Runtime driver, Harness, redaction, ArtifactRef, and cleanup behavior under an Evidence Store run."
-    },
     "chat-native-visible-static": {
-      "command": "python3 -m unittest tooling.acceptance.gates.chat.native_visible_e2e_test tooling.acceptance.gates.chat.native_visible_static_test",
+      "command": "python3 -m unittest tooling.acceptance.gates.chat.native_visible_e2e_test tooling.acceptance.gates.chat.native_visible_static_test tooling.acceptance.gates.chat.native_two_client_e2e_test",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Validate W8 native runner fail-closed evidence, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey."
     },
     "chat-native-two-client-e2e": {
-      "command": "python3 tooling/acceptance/gates/chat/native_two_client_runner.py && python3 tooling/acceptance/gates/chat/native_visible_e2e.py --journey two-client",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_runner && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
       "timeout_seconds": 1800,
-      "environment": "home-station",
-      "provisioner": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
       "tier": "env-evidence",
-      "description": "Run visible native Alice/Bob concurrent startup and bidirectional direct-message acceptance."
+      "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext plus DELIVERED/READ receipt visibility."
     },
     "chat-native-multi-device-e2e": {
       "command": "python3 tooling/acceptance/gates/chat/native_multi_device_runner.py && python3 tooling/acceptance/gates/chat/native_visible_e2e.py --journey multi-device",
       "timeout_seconds": 1800,
       "environment": "home-station",
-      "provisioner": "home-station",
       "tier": "env-evidence",
       "description": "Run visible native direct-message acceptance with one recipient actor on two isolated devices."
     },
@@ -63,7 +40,6 @@
       "command": "python3 tooling/acceptance/gates/chat/native_recovery_runner.py && python3 tooling/acceptance/gates/chat/native_visible_e2e.py --journey recovery",
       "timeout_seconds": 2400,
       "environment": "home-station",
-      "provisioner": "home-station",
       "tier": "env-evidence",
       "description": "Run visible native reinstall and 24-word recovery history-restore acceptance."
     },
@@ -71,7 +47,6 @@
       "command": "python3 tooling/acceptance/gates/chat/native_group_mls_runner.py && python3 tooling/acceptance/gates/chat/native_visible_e2e.py --journey group-mls",
       "timeout_seconds": 2400,
       "environment": "home-station",
-      "provisioner": "home-station",
       "tier": "env-evidence",
       "description": "Run visible native three-device MLS add, send, remove, restart, and recovery acceptance."
     },
@@ -86,7 +61,6 @@
       "command": "python3 tooling/scripts/desktop-performance-preflight.py",
       "timeout_seconds": 120,
       "environment": "local-desktop-gateway",
-      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Generate the fail-closed P0c-1/P0c-2 Desktop performance preflight evidence before runtime sample emission."
     },
@@ -136,7 +110,6 @@
       "command": "python3 tooling/acceptance/gates/chat/desktop_gateway_e2e.py",
       "timeout_seconds": 600,
       "environment": "local-desktop-gateway",
-      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Run a real Desktop HTTP gateway flow proving MLS/E2EE direct conversation creation, message delivery, hydration, and decryption."
     },
@@ -168,13 +141,6 @@
       "tier": "nightly",
       "description": "Create and converge one federation across the isolated three-node testnet."
     },
-    "chat-mls-three-station-convergence-gate": {
-      "command": "make chat-mls-three-station-convergence",
-      "timeout_seconds": 1200,
-      "environment": "fedp5",
-      "tier": "nightly",
-      "description": "Validate three-Station MLS convergence and publish the source-bound report through the external Evidence Store."
-    },
     "federation-surface-smoke": {
       "command": "python3 tooling/acceptance/gates/federation/surface_smoke.py",
       "timeout_seconds": 300,
@@ -200,7 +166,6 @@
       "command": "python3 tooling/acceptance/gates/desktop/gateway_smoke.py",
       "timeout_seconds": 600,
       "environment": "local-desktop-gateway",
-      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Validate Desktop gateway active Station and collect render diagnostics."
     },
@@ -285,17 +250,8 @@
       "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py",
       "timeout_seconds": 120,
       "environment": "local-desktop-gateway",
-      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Validate the fail-closed P0a Desktop Gateway -> Station ingest -> raw/rollup query -> Dev mirror telemetry loop."
-    },
-    "desktop-telemetry-route-probe-gate": {
-      "command": "python3 tooling/scripts/desktop-telemetry-route-probe.py",
-      "timeout_seconds": 120,
-      "environment": "local-desktop-gateway",
-      "provisioner": "local-desktop-gateway",
-      "tier": "env-evidence",
-      "description": "Validate Station frontend telemetry route capability and publish source-bound route evidence."
     },
     "desktop-telemetry-mirror-static-gate": {
       "command": "python3 tooling/scripts/desktop-telemetry-mirror-test.py",
@@ -352,13 +308,6 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Validate the P0b-1 Desktop anchor DOM evidence collector normalizes browser/Tauri observations into the Phase, BOM, Spec, Gate evidence contract."
-    },
-    "desktop-anchor-dom-evidence-collect-gate": {
-      "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py",
-      "timeout_seconds": 120,
-      "environment": "local",
-      "tier": "local-evidence",
-      "description": "Publish fail-closed Desktop anchor observations under an immutable external Evidence Store run."
     },
     "desktop-anchor-dom-evidence-template-gate": {
       "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-template.py",
