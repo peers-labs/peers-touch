@@ -129,6 +129,13 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertNotIn("chat-native-two-client-e2e", selected)
         self.assertIn("chat-desktop-gateway-e2e", selected)
 
+    def test_acceptance_framework_change_selects_provisioning_self_gate(self) -> None:
+        selected = self.selected_ids(
+            "tooling/acceptance/core/provisioning.py"
+        )
+        self.assertIn("acceptance-plan-self", selected)
+        self.assertIn("acceptance-runtime-provisioning-self", selected)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
