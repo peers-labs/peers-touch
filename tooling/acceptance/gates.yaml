@@ -16,11 +16,11 @@
       "description": "Validate that acceptance-run preserves source artifact diagnostics, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata in latest-run evidence."
     },
     "acceptance-runtime-provisioning-self": {
-      "command": "python3 -m unittest tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py",
+      "command": "python3 -m unittest tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate Runtime Provisioning contracts, owners, runner failure semantics, behavior planning, redaction, freshness, and Gap Detector fail-closed behavior."
+      "description": "Validate Runtime Provisioning contracts, owners, runner failure semantics, behavior planning, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity."
     },
     "chat-native-visible-static": {
       "command": "python3 -m unittest tooling.acceptance.gates.chat.native_visible_e2e_test tooling.acceptance.gates.chat.native_visible_static_test",

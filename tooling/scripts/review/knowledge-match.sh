@@ -57,7 +57,9 @@ else
   if [[ ! -s "$tmp_changed" ]]; then
     git diff --name-only --cached -- > "$tmp_changed"
   fi
-  git ls-files --others --exclude-standard >> "$tmp_changed"
+  if [[ "$diff_range" == "HEAD" ]]; then
+    git ls-files --others --exclude-standard >> "$tmp_changed"
+  fi
   sort -u "$tmp_changed" -o "$tmp_changed"
 fi
 

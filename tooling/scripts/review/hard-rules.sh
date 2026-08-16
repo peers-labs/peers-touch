@@ -51,7 +51,9 @@ else
   if [[ ! -s "$tmp_files" ]]; then
     git diff --name-only --cached -- > "$tmp_files"
   fi
-  git ls-files --others --exclude-standard >> "$tmp_files"
+  if [[ "$diff_range" == "HEAD" ]]; then
+    git ls-files --others --exclude-standard >> "$tmp_files"
+  fi
   sort -u "$tmp_files" -o "$tmp_files"
 fi
 

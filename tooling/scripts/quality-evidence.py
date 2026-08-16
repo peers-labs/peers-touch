@@ -42,16 +42,19 @@ def collect_changed_paths(repo_root: Path, diff_range: str) -> list[str]:
         text=True,
         capture_output=True,
     )
-    untracked = subprocess.run(
-        ["git", "ls-files", "--others", "--exclude-standard"],
-        cwd=repo_root,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
+    outputs = [tracked.stdout]
+    if diff_range == "HEAD":
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=repo_root,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        outputs.append(untracked.stdout)
     paths = {
         line.strip()
-        for line in f"{tracked.stdout}\n{untracked.stdout}".splitlines()
+        for line in "\n".join(outputs).splitlines()
         if line.strip()
     }
     return sorted(paths)
@@ -277,6 +280,20 @@ def render_markdown(evidence: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def is_ready_for_github_review(
+    route: dict[str, Any],
+    knowledge: dict[str, Any],
+    plan_result: dict[str, Any],
+    gaps: list[dict[str, str]],
+) -> bool:
+    return (
+        route["ok"]
+        and knowledge["ok"]
+        and plan_result["ok"]
+        and not gaps
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--range", dest="diff_range", default="HEAD")
@@ -320,8 +337,13 @@ def main() -> int:
             **capability_evidence,
         },
     }
-    evidence["ready_for_github_review"] = route["ok"] and knowledge["ok"] and plan_result["ok"]
     evidence["evidence_gaps"] = evidence_gaps(evidence)
+    evidence["ready_for_github_review"] = is_ready_for_github_review(
+        route,
+        knowledge,
+        plan_result,
+        evidence["evidence_gaps"],
+    )
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
