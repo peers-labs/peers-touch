@@ -149,6 +149,19 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
         self.assertNotIn("native_visible_runner", source)
         self.assertNotIn("observerSocket", source)
 
+    def test_chat_harness_returns_canonical_ptid(self) -> None:
+        harness = (
+            ROOT / "apps/desktop/src/acceptance/chat/harness.ts"
+        ).read_text(encoding="utf-8")
+        identity = (
+            ROOT / "apps/desktop/src/acceptance/chat/identity.ts"
+        ).read_text(encoding="utf-8")
+        self.assertIn("const actorPtid = activeActorPtid()", harness)
+        self.assertIn("actorId: actorPtid", harness)
+        self.assertIn("currentUserDid", harness)
+        self.assertNotIn("authenticated: Boolean(user?.actorId)", harness)
+        self.assertIn("ptid.startsWith('ptid:')", identity)
+
     def test_embedded_webdriver_make_entrypoints_exist(self) -> None:
         source = (ROOT / "tooling/make/acceptance.mk").read_text(encoding="utf-8")
         self.assertIn("acceptance-driver-build:", source)
