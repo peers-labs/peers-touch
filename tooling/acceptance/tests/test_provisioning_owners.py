@@ -15,7 +15,10 @@ from tooling.acceptance.core.attestation import (
     source_workspace_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
-from tooling.acceptance.fixtures.chat_native_actors import produce_actor_manifest
+from tooling.acceptance.fixtures.chat_native_actors import (
+    _login_session,
+    produce_actor_manifest,
+)
 
 
 class StationAttestationOwnerTests(unittest.TestCase):
@@ -155,6 +158,32 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
 
 class ActorFixtureOwnerTests(unittest.TestCase):
+    def test_login_session_requires_ptid_token_and_session(self) -> None:
+        session = _login_session(
+            {
+                "data": {
+                    "actor_ref": {"ptid": "ptid:alice"},
+                    "tokens": {"access_token": "runtime-token"},
+                    "session_id": "runtime-session",
+                }
+            },
+            "alice",
+        )
+        self.assertEqual(
+            session,
+            ("ptid:alice", "runtime-token", "runtime-session"),
+        )
+        with self.assertRaisesRegex(BlockedError, "releasable session"):
+            _login_session(
+                {
+                    "data": {
+                        "actorRef": {"ptid": "ptid:alice"},
+                        "tokens": {},
+                    }
+                },
+                "alice",
+            )
+
     def test_reset_requires_explicit_authorization(self) -> None:
         with self.assertRaisesRegex(BlockedError, "CHAT_ACCEPTANCE_RESET=1"):
             produce_actor_manifest(
