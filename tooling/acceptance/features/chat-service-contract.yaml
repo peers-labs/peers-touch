@@ -4,31 +4,37 @@
   "product_area": "chat",
   "owners": [
     "model/domain/chat/**",
-    "apps/station/app/subserver/friend_chat/**"
+    "apps/station/app/subserver/messaging/**",
+    "apps/station/app/subserver/conversation/**",
+    "apps/station/app/subserver/envelope/**"
   ],
   "truth_sources": [
     "model/domain/chat/*.proto",
-    "friend_chat_sessions",
-    "friend_chat_messages",
-    "friend_requests"
+    "messaging device registry",
+    "conversation event log",
+    "per-device messaging queue"
   ],
   "visible_surfaces": [
-    {"type": "api", "route": "/friend-chat/sessions"},
-    {"type": "api", "route": "/friend-chat/messages"},
-    {"type": "api", "route": "/friend-chat/friend-requests"}
+    {"type": "api", "route": "/messaging/conversation/direct"},
+    {"type": "api", "route": "/messaging/conversation/list"},
+    {"type": "api", "route": "/messaging/command/submit"},
+    {"type": "api", "route": "/messaging/queue/claim"},
+    {"type": "api", "route": "/messaging/queue/ack"}
   ],
-  "required_gates": ["proto-build", "station-chat-unit"],
+  "required_gates": ["proto-build", "station-messaging-unit", "messaging-platform-contract"],
   "acceptance": {
     "service": [
       "chat proto sources regenerate derived contracts",
-      "friend_chat service and repository package tests pass",
-      "friend request session and message persistence remain owned by friend_chat"
+      "messaging, conversation, and envelope package tests pass",
+      "the messaging platform contract preserves device, queue, conversation, and crypto ownership"
     ],
     "visible": [
-      "chat API contracts remain compatible with Desktop typed clients"
+      "chat API contracts remain compatible with the Desktop messaging engine"
     ]
   },
   "negative": [
+    "removed friend-chat and group-chat Station routes must not reappear",
+    "Station must not accept plaintext as a substitute for client-prepared encrypted payloads",
     "chat messages must not be stored as Federation governance truth",
     "notification or realtime transport must not become chat persistence truth"
   ]

@@ -165,6 +165,9 @@ W5: Deletion & Cleanup
 | W5.4 | Remove old proto types (`FriendChatMessage`, `GroupMessage`) from client if unused | TypeScript builds clean |
 | W5.5 | Delete legacy BFF functions that are no longer called | `cargo check` passes, no dead code warnings for these |
 | W5.6 | `grep -r "friend-chat\|group-chat" apps/` → only test fixtures or docs | No live code references legacy paths |
+| W5.7 | Migrate or delete acceptance gates that call removed `/friend-chat/*` Station routes | Acceptance gates use `/conversation/*` or the Desktop messaging gateway; tree search finds no executable legacy route calls |
+| W5.8 | Normalize Station Go formatting after the cutover | `gofmt -l apps/station` returns no files and `./tooling/scripts/check-go-style.sh` passes |
+| W5.9 | Audit dependency vulnerabilities and remove actionable findings within the approved dependency versions | Package-manager audit evidence records zero actionable findings, or each remaining finding is explicitly blocked on an approved version bump |
 
 ---
 
@@ -194,6 +197,10 @@ All must pass before marking the plan complete:
 - [ ] `cd apps/desktop && pnpm run check` — TypeScript clean
 - [ ] `find . -path "*compat_chat*"` — returns nothing
 - [ ] `grep -r "friend-chat\|group-chat" apps/station/` — no handler code
+- [ ] executable acceptance gates contain no `/friend-chat/*` Station route calls
+- [ ] `gofmt -l apps/station` — no output
+- [ ] `./tooling/scripts/check-go-style.sh` — passes
+- [ ] dependency audit records current findings, patched versions, and any version-bump approval blockers
 - [ ] Two-worktree E2E: DM send/receive, group create/send/receive, thread reply+count, unread badge
 - [ ] `EXPLAIN ANALYZE` on thread query shows index scan, not seq scan
 
