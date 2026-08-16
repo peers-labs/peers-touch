@@ -307,7 +307,7 @@ pub fn restore_profile_database_atomically(
         staging.validate_integrity()?;
         staging.prepare_for_atomic_replace()?;
         drop(staging);
-        #[cfg(feature = "e2e-testing")]
+        #[cfg(feature = "acceptance-webdriver")]
         if std::env::var_os("PT_MESSAGING_RECOVERY_FAIL_BEFORE_REPLACE_FILE")
             .map(PathBuf::from)
             .is_some_and(|path| path.is_file())
