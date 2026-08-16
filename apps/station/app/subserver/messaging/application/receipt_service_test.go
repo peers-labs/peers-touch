@@ -124,7 +124,11 @@ func TestSubmitActorReadAtomicallyPersistsAndQueuesCursor(t *testing.T) {
 	}
 	var queued []infrastructure.DeviceQueueItemModel
 	if err := db.
-		Where("event_id = ?", "read:ptid:bob:3").
+		Where(
+			"conversation_id = ? AND payload_type = ?",
+			cursor.ConversationId,
+			chat.DeviceQueuePayloadType_DEVICE_QUEUE_PAYLOAD_TYPE_DEVICE_RECEIPT,
+		).
 		Order("recipient_device_id ASC").
 		Find(&queued).Error; err != nil {
 		t.Fatal(err)
@@ -133,6 +137,9 @@ func TestSubmitActorReadAtomicallyPersistsAndQueuesCursor(t *testing.T) {
 		t.Fatalf("queued read cursor items = %d, want 2", len(queued))
 	}
 	for _, item := range queued {
+		if len(item.EventID) != 64 || item.EventID != queued[0].EventID {
+			t.Fatalf("queued event ID = %q, want shared 64-character digest %q", item.EventID, queued[0].EventID)
+		}
 		var received chat.ActorReadCursor
 		if err := proto.Unmarshal(item.OpaquePayload, &received); err != nil {
 			t.Fatal(err)
