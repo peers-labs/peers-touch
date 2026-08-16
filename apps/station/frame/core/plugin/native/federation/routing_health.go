@@ -37,21 +37,22 @@ type RoutingHealth interface {
 // rendered to the public /actor/federation/health endpoint.
 //
 // Field semantics:
-//   Ready                 - true when PeersInRoutingTable >= MinDHTPeers
-//                           AND the bootstrap subserver has started.
-//                           Resolver gates remote lookups on this.
-//   PeersInRoutingTable   - kad-DHT routing table size (peers usable
-//                           for GetValue/PutValue).
-//   ConnectedPeers        - libp2p host total connected peers (broader
-//                           than DHT — includes direct dials, relay
-//                           connections, etc.).
-//   SeedsConfigured       - configured peers in federation.bootstrap-nodes
-//                           after self-filter.
-//   SeedsConnected        - subset of seeds currently libp2p-connected.
-//   BootStartedAt         - time bootstrap.Start() began. Pre-Start
-//                           returns the zero value, which Ready=false
-//                           treats as "not yet running".
-//   MinDHTPeers           - effective threshold (post policy clamp).
+//
+//	Ready                 - true when PeersInRoutingTable >= MinDHTPeers
+//	                        AND the bootstrap subserver has started.
+//	                        Resolver gates remote lookups on this.
+//	PeersInRoutingTable   - kad-DHT routing table size (peers usable
+//	                        for GetValue/PutValue).
+//	ConnectedPeers        - libp2p host total connected peers (broader
+//	                        than DHT — includes direct dials, relay
+//	                        connections, etc.).
+//	SeedsConfigured       - configured peers in federation.bootstrap-nodes
+//	                        after self-filter.
+//	SeedsConnected        - subset of seeds currently libp2p-connected.
+//	BootStartedAt         - time bootstrap.Start() began. Pre-Start
+//	                        returns the zero value, which Ready=false
+//	                        treats as "not yet running".
+//	MinDHTPeers           - effective threshold (post policy clamp).
 type RoutingHealthSnapshot struct {
 	Ready               bool
 	PeersInRoutingTable int

@@ -66,7 +66,7 @@ func TestP3_CustomAllow_DegradesToAuthorOnly(t *testing.T) {
 			"to assert the friend can read.")
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, /*stranger*/ 999); got != nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id /*stranger*/, 999); got != nil {
 		t.Fatal("strangers must never see CUSTOM_ALLOW post")
 	}
 }

@@ -6,9 +6,9 @@ import (
 )
 
 var (
-	ErrNotSequencer      = errors.New("station is not the active sequencer")
-	ErrNotActiveMember   = errors.New("station is not an active member")
-	ErrHandoverDenied    = errors.New("only current sequencer can initiate handover under single_admin policy")
+	ErrNotSequencer    = errors.New("station is not the active sequencer")
+	ErrNotActiveMember = errors.New("station is not an active member")
+	ErrHandoverDenied  = errors.New("only current sequencer can initiate handover under single_admin policy")
 )
 
 type singleAdminPolicy struct{}

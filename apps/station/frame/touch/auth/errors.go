@@ -24,9 +24,9 @@ var (
 	ErrJWTSecretNotSet  = errors.New("JWT secret not configured")
 
 	// OAuth2 specific errors (for future use)
-	ErrOAuth2InvalidGrant  = errors.New("invalid OAuth2 grant")
-	ErrOAuth2InvalidClient = errors.New("invalid OAuth2 client")
-	ErrOAuth2InvalidScope  = errors.New("invalid OAuth2 scope")
-	ErrOAuth2ProviderError = errors.New("OAuth2 provider error")
+	ErrOAuth2InvalidGrant   = errors.New("invalid OAuth2 grant")
+	ErrOAuth2InvalidClient  = errors.New("invalid OAuth2 client")
+	ErrOAuth2InvalidScope   = errors.New("invalid OAuth2 scope")
+	ErrOAuth2ProviderError  = errors.New("OAuth2 provider error")
 	ErrOAuth2ReauthRequired = errors.New("OAuth2 re-authentication required")
 )

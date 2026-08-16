@@ -11,9 +11,9 @@ type Endpoint struct {
 
 // FailedResponse 定义失败响应结构
 type FailedResponse struct {
-	Code    StatusCode      `json:"code"`
-	Message string          `json:"message"`
-	Error   *ErrorResponse  `json:"error,omitempty"`
+	Code    StatusCode     `json:"code"`
+	Message string         `json:"message"`
+	Error   *ErrorResponse `json:"error,omitempty"`
 }
 
 // NewFailedResponse 创建失败响应
