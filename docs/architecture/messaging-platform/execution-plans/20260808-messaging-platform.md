@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W12` |
-| Current step | Build exact-source checkpoint, deploy Profile Three, then run MP-G15/G16 |
+| Current step | Resolve approved Native credential/reset authorization, then run MP-G15/G16 |
 | Progress | 16/19 ledger workstreams completed; W09 in-progress, W12 implemented-unproven, W11 reopened |
-| Last completed | MP-W05-R Direct DELIVERED 7-Gate bundle `DONE/PROVEN` |
-| Current action | Validate dedicated Native interaction/typing Gates and source-bound Engine/Station/DOM evidence contracts before deployment |
-| Next action | Commit the MP-W12 source checkpoint, deploy that exact commit to Profile Three and execute MP-G15 then MP-G16 |
-| Blockers | W09 Mobile parity remains incomplete; G15/G16 Native proof is NOT RUN; runtime requires exact committed/deployed source and authorized Profile Three reset/restart |
+| Last completed | MP-W12 exact-source runtime preflight: commit `d5d2289c8`, Profile Three live commit match, Acceptance binary build/smoke PASS |
+| Current action | Hold G15/G16 at FAIL/UNPROVEN because no approved `CHAT_ACCEPTANCE_PASSWORD` source or reset/restart authorization is present |
+| Next action | Inject approved credential plus `CHAT_ACCEPTANCE_RESET=1` and `CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1`, then execute G15 and G16 against Profile Three |
+| Blockers | G15/G16 preflight FAIL: `CHAT_ACCEPTANCE_PASSWORD` missing; reset/restart authorization absent. W09 Phase 3 is dependency-blocked by W12; W11 remains reopened |
 | Decisions required | none; 2026-08-16 Goal accepts interaction product and architecture amendments |
-| Evidence | Desktop typecheck PASS and `src/**` Vitest 291 PASS/1 environment E2E skipped; Rust Messaging 92 PASS/1 Native-only ignored; Station Messaging/Conversation/Envelope PASS; Acceptance contract/runner tests 42 PASS; acceptance-webdriver Rust build PASS; Chat Domain 8 capabilities STRUCTURALLY_VALID. Full unscoped Vitest is FAIL because optional Playwright performance packages are absent. G15/G16 Native proof remains UNPROVEN |
+| Evidence | Desktop typecheck PASS and `src/**` Vitest 291 PASS/1 environment E2E skipped; Rust Messaging 92 PASS/1 Native-only ignored; Station Messaging/Conversation/Envelope PASS; Acceptance contract/runner tests 42 PASS; Chat Domain 8 capabilities STRUCTURALLY_VALID; Profile Three and client source `d5d2289c8` matched; Acceptance binary SHA-256 `11dc2a657465ba1edcdb89319bdc0a676a944e664f976f6655e135483c94def9`; embedded WebDriver smoke PASS. G15/G16 reports FAIL at credential preflight with zero actors/assertions; Native proof remains UNPROVEN |
 | Last updated | 2026-08-16 |
 
 ## 1. Plan Sources And Gate
