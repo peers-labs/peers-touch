@@ -96,6 +96,26 @@ function activeActorPtid(): string {
   );
 }
 
+async function waitForIdentityState(
+  predicate: (snapshot: ReturnType<typeof identityRuntime.getSnapshot>) => boolean,
+  description: string,
+  timeoutMs = 30_000,
+): Promise<void> {
+  if (predicate(identityRuntime.getSnapshot())) return;
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      unsubscribe();
+      reject(new Error(`timed out waiting for ${description}`));
+    }, timeoutMs);
+    const unsubscribe = identityRuntime.subscribe(() => {
+      if (!predicate(identityRuntime.getSnapshot())) return;
+      window.clearTimeout(timeout);
+      unsubscribe();
+      resolve();
+    });
+  });
+}
+
 interface PressureWindowState {
   rawByUlid: Map<string, GroupMessage>;
   decodedByUlid: Map<string, GroupMessage>;
@@ -138,8 +158,16 @@ async function hydrateSocialForActiveActor(): Promise<void> {
 export function installAcceptanceHarness(): void {
   registerAcceptanceHarness('chat', {
     async loginWithPassword({ account, password }: LoginInput) {
+      await waitForIdentityState(
+        ({ phase, lifecycle }) => phase.kind === 'accountGate' && lifecycle.dataReady,
+        'identity account gate',
+      );
       await identityRuntime.loginWithPassword(account, password);
       await identityRuntime.completeCurrentSession();
+      await waitForIdentityState(
+        ({ lifecycle }) => lifecycle.state === 'ready' && lifecycle.authenticated,
+        'authenticated identity lifecycle',
+      );
       await installDeferredAppRuntimeProjections();
       await hydrateSocialForActiveActor();
       const actorPtid = activeActorPtid();
