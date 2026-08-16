@@ -429,6 +429,7 @@ function StationPickerTrigger(props: {
   return (
     <button
       type="button"
+      data-station-picker-trigger
       onClick={onToggle}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -552,6 +553,7 @@ function StationRow(props: {
   return (
     <div
       role="button"
+      data-station-url={entry.url}
       tabIndex={0}
       onClick={onClick}
       onKeyDown={onKeyDown}
