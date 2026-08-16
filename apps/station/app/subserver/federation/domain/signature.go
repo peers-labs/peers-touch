@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	ErrInvalidActorSignature    = errors.New("invalid actor signature")
-	ErrInvalidStationSignature  = errors.New("invalid station signature")
+	ErrInvalidActorSignature     = errors.New("invalid actor signature")
+	ErrInvalidStationSignature   = errors.New("invalid station signature")
 	ErrInvalidSequencerSignature = errors.New("invalid sequencer signature")
 )
 

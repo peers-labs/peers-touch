@@ -19,8 +19,8 @@ const (
 // SocialComment is a single-level threaded comment on a Moment. v1 enforces
 // at most one level of nesting:
 //
-//   * a top-level comment has `ParentCommentID == nil`
-//   * a reply has `ParentCommentID != nil` and the *parent* comment must
+//   - a top-level comment has `ParentCommentID == nil`
+//   - a reply has `ParentCommentID != nil` and the *parent* comment must
 //     have `ParentCommentID == nil` (enforced in CommentService.Create, not
 //     in DB constraints — SQLite recursive checks are not portable)
 //

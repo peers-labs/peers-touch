@@ -20,12 +20,12 @@ import "time"
 //   - events broker (SSE/WebSocket push to followers in the audience)
 //   - outbox dispatcher (P3+, ActivityPub fan-out for IsPublic posts)
 type MomentCreated struct {
-	PostID      uint64
-	AuthorID    uint64
-	IsPublic    bool
-	AudienceTag string // e.g. "PUBLIC" / "FOLLOWERS" / "CIRCLE:42"
+	PostID        uint64
+	AuthorID      uint64
+	IsPublic      bool
+	AudienceTag   string // e.g. "PUBLIC" / "FOLLOWERS" / "CIRCLE:42"
 	MentionedDIDs []string
-	CreatedAt   time.Time
+	CreatedAt     time.Time
 }
 
 // MomentDeleted fires after a soft-delete (DeletedAt set). Comments,
@@ -43,12 +43,12 @@ type MomentDeleted struct {
 // Reacted fires when an actor adds a reaction. Toggling-off (Unreact)
 // fires a Reacted event with `Removed: true`.
 type Reacted struct {
-	PostID    uint64
+	PostID       uint64
 	PostAuthorID uint64
-	ActorID   uint64
-	Kind      string // ReactionKind String() form
-	Removed   bool
-	At        time.Time
+	ActorID      uint64
+	Kind         string // ReactionKind String() form
+	Removed      bool
+	At           time.Time
 }
 
 // Commented fires when a top-level comment or 1-level reply is created.

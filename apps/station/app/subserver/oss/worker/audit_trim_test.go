@@ -16,13 +16,13 @@ import (
 // controllable so we can exercise both the no-op and "rows
 // removed" branches of AuditTrim.
 type trimFakeAudit struct {
-	mu          sync.Mutex
-	rows        []ossmodel.Audit
-	trimErr     error
-	appendErr   error
-	trimCount   int64
-	gotCutoff   time.Time
-	trimCalled  int
+	mu         sync.Mutex
+	rows       []ossmodel.Audit
+	trimErr    error
+	appendErr  error
+	trimCount  int64
+	gotCutoff  time.Time
+	trimCalled int
 }
 
 func (a *trimFakeAudit) Append(_ context.Context, evt ossmodel.Audit) error {
