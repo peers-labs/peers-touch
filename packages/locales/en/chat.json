@@ -536,6 +536,7 @@
   "chat.social.messageArea.noMessages": "No messages yet",
   "chat.social.messageArea.typing": "Typing…",
   "chat.social.messageArea.replyingTo": "Replying to",
+  "chat.social.messageArea.replyTargetUnavailable": "Original message unavailable",
   "chat.social.messageArea.cancel": "Cancel",
   "chat.social.messageArea.placeholder": "Type a message...",
   "chat.social.messageArea.comingSoon": "Coming soon",

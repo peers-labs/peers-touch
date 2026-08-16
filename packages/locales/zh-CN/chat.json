@@ -536,6 +536,7 @@
   "chat.social.messageArea.noMessages": "暂无消息",
   "chat.social.messageArea.typing": "正在输入…",
   "chat.social.messageArea.replyingTo": "回复",
+  "chat.social.messageArea.replyTargetUnavailable": "原消息不可用",
   "chat.social.messageArea.cancel": "取消",
   "chat.social.messageArea.placeholder": "输入消息...",
   "chat.social.messageArea.comingSoon": "即将推出",

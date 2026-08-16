@@ -6,15 +6,21 @@ from __future__ import annotations
 import json
 import os
 import random
+import socket
 import subprocess
 import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPO_ROOT
+from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError
 from tooling.acceptance.drivers.tauri import TauriDriver
-from tooling.acceptance.fixtures.chat_native_reset import deploy_environment
+from tooling.acceptance.fixtures.chat_native_reset import (
+    deploy_environment,
+    duplicate_profile_three_queue_delivery,
+    profile_three_environment,
+    restart_profile_three_station,
+)
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     async_harness,
@@ -45,21 +51,37 @@ REQUIRED_ASSERTIONS = {
     "native_runtime",
     "actor_isolation",
     "direct_reply_thread",
+    "direct_reply_thread_panel",
+    "direct_reply_target_unavailable",
     "direct_author_only_edit",
+    "direct_author_only_retract",
     "direct_reaction_idempotency",
+    "direct_reaction_remove_convergence",
     "direct_pin_convergence",
     "direct_read_progression",
     "direct_retract_convergence",
     "direct_client_restart",
+    "direct_offline_recovery",
+    "direct_duplicate_queue_replay",
     "group_reply_thread",
+    "group_reply_thread_panel",
+    "group_reply_target_unavailable",
     "group_author_only_edit",
+    "group_author_only_retract",
     "group_reaction_idempotency",
+    "group_reaction_remove_convergence",
     "group_pin_convergence",
     "group_read_progression",
     "group_retract_convergence",
+    "group_offline_recovery",
+    "group_duplicate_queue_replay",
+    "group_removed_member_denied",
+    "revoked_device_denied",
+    "pending_interaction_timeout_retry_cancel",
     "station_restart_convergence",
     "station_authority_readback",
     "engine_durable_readback",
+    "resources_released",
 }
 
 
@@ -96,6 +118,8 @@ def message_dom_snapshot(client: TauriDriver, message_id: str) -> dict[str, Any]
           edited: row.getAttribute('data-message-edited') || '',
           retracted: row.getAttribute('data-message-retracted') || '',
           replyTo: row.getAttribute('data-message-reply-to') || '',
+          replyTargetState: row.querySelector('[data-message-reply-target-state]')
+            ?.getAttribute('data-message-reply-target-state') || '',
           threadRoot: row.getAttribute('data-message-thread-root') || '',
           threadReplyCount: Number(row.getAttribute('data-message-thread-reply-count') || '0'),
           pinned: Boolean(row.querySelector('[data-message-pinned="true"]')),
@@ -114,8 +138,58 @@ def message_dom_snapshot(client: TauriDriver, message_id: str) -> dict[str, Any]
     return value if isinstance(value, dict) else None
 
 
+def thread_dom_snapshot(client: TauriDriver) -> dict[str, Any] | None:
+    value = client.execute_script(
+        """
+        const panel = document.querySelector('[data-chat-thread-panel="open"]');
+        if (!panel) return null;
+        return {
+          rootMessageId: panel.getAttribute('data-chat-thread-root') || '',
+          replyCount: Number(
+            panel.getAttribute('data-chat-thread-reply-count') || '0'
+          ),
+          replyMessageIds: Array.from(
+            panel.querySelectorAll('[data-thread-message-role="reply"]')
+          ).map((row) => row.getAttribute('data-thread-message-id') || ''),
+          orders: Array.from(
+            panel.querySelectorAll('[data-thread-message-order]')
+          ).map((row) => Number(
+            row.getAttribute('data-thread-message-order') || '-1'
+          )),
+        };
+        """
+    )
+    return value if isinstance(value, dict) else None
+
+
 def sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def station_mutation_fingerprint(evidence: dict[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    return (
+        tuple(
+            str(event.get("eventId") or "")
+            for event in evidence.get("events") or []
+        ),
+        tuple(
+            str(item.get("itemId") or "")
+            for item in evidence.get("queue") or []
+        ),
+    )
+
+
+def recipient_queue_item_ids(
+    evidence: dict[str, Any],
+    ptid: str,
+    device_id: str,
+) -> tuple[str, ...]:
+    return tuple(
+        str(item.get("itemId") or "")
+        for item in evidence.get("queue") or []
+        if item.get("recipientPtid") == ptid
+        and item.get("recipientDeviceId") == device_id
+    )
 
 
 def station_readback(conversation_id: str, message_id: str) -> dict[str, Any]:
@@ -150,7 +224,9 @@ SELECT json_build_object(
       'recipientPtid', recipient_ptid,
       'recipientDeviceId', recipient_device_id,
       'laneSequence', lane_sequence,
-      'state', state
+      'state', state,
+      'attemptCount', attempt_count,
+      'payloadSha256', encode(payload_sha256, 'hex')
     ) ORDER BY recipient_ptid, recipient_device_id, lane_sequence)
     FROM device_queue_items
     WHERE conversation_id = {conversation}
@@ -213,6 +289,8 @@ class NativeInteractionsGate(AcceptanceGate):
         self.command_ids: dict[str, str] = {}
         self.station_evidence: dict[str, Any] = {}
         self.engine_evidence: dict[str, Any] = {}
+        self.restart_evidence: dict[str, str] = {}
+        self.cleanup_evidence: dict[str, Any] = {}
 
     def step(self, name: str, action: Callable[[], Any], client: str = "") -> Any:
         started = time.monotonic()
@@ -344,30 +422,31 @@ class NativeInteractionsGate(AcceptanceGate):
         conversation_id: str,
         members: tuple[str, ...],
     ) -> None:
-        prefix = f"{kind}-{time.time_ns()}"
+        claim_kind = "direct" if kind == "friend" else "group"
+        prefix = f"{claim_kind}-{time.time_ns()}"
         base = self.step(
-            f"{kind}.message.send",
+            f"{claim_kind}.message.send",
             lambda: self.send("alice", kind, conversation_id, f"{prefix}-base"),
             "alice",
         )
         message_id = str(base["messageId"])
-        self.message_ids[f"{kind}.base"] = message_id
+        self.message_ids[f"{claim_kind}.base"] = message_id
         for actor in members:
             self.step(
-                f"{kind}.message.visible",
+                f"{claim_kind}.message.visible",
                 lambda actor=actor: wait_until(
                     lambda: (
                         self.sync(actor, kind, conversation_id)
                         or message_dom_snapshot(self.clients[actor], message_id)
                     ),
-                    f"{actor} {kind} base DOM",
+                    f"{actor} {claim_kind} base DOM",
                     STEP_TIMEOUT,
                 ),
                 actor,
             )
 
         reply = self.step(
-            f"{kind}.reply.send",
+            f"{claim_kind}.reply.send",
             lambda: self.send(
                 "bob",
                 kind,
@@ -379,7 +458,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         reply_id = str(reply["messageId"])
         thread = self.step(
-            f"{kind}.thread.send",
+            f"{claim_kind}.thread.send",
             lambda: self.send(
                 "bob",
                 kind,
@@ -390,6 +469,21 @@ class NativeInteractionsGate(AcceptanceGate):
             "bob",
         )
         thread_id = str(thread["messageId"])
+        nested = self.step(
+            f"{claim_kind}.thread.nested.send",
+            lambda: self.send(
+                "bob",
+                kind,
+                conversation_id,
+                f"{prefix}-thread-nested",
+                reply_to=thread_id,
+                thread_root=message_id,
+            ),
+            "bob",
+        )
+        nested_id = str(nested["messageId"])
+        self.message_ids[f"{claim_kind}.thread.first"] = thread_id
+        self.message_ids[f"{claim_kind}.thread.nested"] = nested_id
         for actor in members:
             reply_projection = wait_until(
                 lambda actor=actor: self.projection(
@@ -398,7 +492,7 @@ class NativeInteractionsGate(AcceptanceGate):
                     conversation_id,
                     reply_id,
                 ),
-                f"{actor} {kind} reply projection",
+                f"{actor} {claim_kind} reply projection",
                 STEP_TIMEOUT,
             )
             thread_projection = wait_until(
@@ -408,18 +502,129 @@ class NativeInteractionsGate(AcceptanceGate):
                     conversation_id,
                     thread_id,
                 ),
-                f"{actor} {kind} thread projection",
+                f"{actor} {claim_kind} thread projection",
                 STEP_TIMEOUT,
             )
             if reply_projection.get("replyToMessageId") != message_id:
-                raise GateError(f"{actor} {kind} reply linkage mismatch")
+                raise GateError(f"{actor} {claim_kind} reply linkage mismatch")
             if thread_projection.get("threadRootMessageId") != message_id:
-                raise GateError(f"{actor} {kind} thread linkage mismatch")
-        self.assert_condition(f"{kind}_reply_thread", True)
+                raise GateError(f"{actor} {claim_kind} thread linkage mismatch")
+            nested_projection = wait_until(
+                lambda actor=actor: self.projection(
+                    actor,
+                    kind,
+                    conversation_id,
+                    nested_id,
+                ),
+                f"{actor} {claim_kind} nested thread projection",
+                STEP_TIMEOUT,
+            )
+            if (
+                nested_projection.get("replyToMessageId") != thread_id
+                or nested_projection.get("threadRootMessageId") != message_id
+            ):
+                raise GateError(
+                    f"{actor} {claim_kind} nested thread linkage mismatch"
+                )
+            async_harness(
+                self.clients[actor],
+                "openInteractionThread",
+                {
+                    "conversationId": conversation_id,
+                    "kind": kind,
+                    "messageId": message_id,
+                },
+            )
+            panel = wait_until(
+                lambda actor=actor: (
+                    snapshot
+                    if (
+                        snapshot := thread_dom_snapshot(self.clients[actor])
+                    )
+                    and snapshot.get("rootMessageId") == message_id
+                    and snapshot.get("replyCount") == 2
+                    and snapshot.get("replyMessageIds") == [thread_id, nested_id]
+                    and snapshot.get("orders") == [0, 1, 2]
+                    else None
+                ),
+                f"{actor} {claim_kind} thread panel count and order",
+                STEP_TIMEOUT,
+            )
+            if panel.get("replyMessageIds") != [thread_id, nested_id]:
+                raise GateError(
+                    f"{actor} {claim_kind} thread panel order mismatch"
+                )
+        self.assert_condition(f"{claim_kind}_reply_thread", True)
+        self.assert_condition(f"{claim_kind}_reply_thread_panel", True)
+
+        unavailable_base = self.step(
+            f"{claim_kind}.missing-target.base.send",
+            lambda: self.send(
+                "alice",
+                kind,
+                conversation_id,
+                f"{prefix}-missing-target-base",
+            ),
+            "alice",
+        )
+        unavailable_base_id = str(unavailable_base["messageId"])
+        unavailable_reply = self.step(
+            f"{claim_kind}.missing-target.reply.send",
+            lambda: self.send(
+                "bob",
+                kind,
+                conversation_id,
+                f"{prefix}-missing-target-reply",
+                reply_to=unavailable_base_id,
+            ),
+            "bob",
+        )
+        unavailable_reply_id = str(unavailable_reply["messageId"])
+        target_actor = "bob"
+        wait_until(
+            lambda: (
+                self.sync(target_actor, kind, conversation_id)
+                or message_dom_snapshot(
+                    self.clients[target_actor],
+                    unavailable_reply_id,
+                )
+            ),
+            f"{target_actor} {claim_kind} reply before local target deletion",
+            STEP_TIMEOUT,
+        )
+        deleted = async_harness(
+            self.clients[target_actor],
+            "deleteLocalInteractionMessage",
+            {
+                "conversationId": conversation_id,
+                "kind": kind,
+                "messageId": unavailable_base_id,
+            },
+        )
+        if (deleted or {}).get("present") is not False:
+            raise GateError(
+                f"{target_actor} {claim_kind} local target deletion failed"
+            )
+        wait_until(
+            lambda: (
+                snapshot
+                if (
+                    snapshot := message_dom_snapshot(
+                        self.clients[target_actor],
+                        unavailable_reply_id,
+                    )
+                )
+                and snapshot.get("replyTargetState") == "unavailable"
+                else None
+            ),
+            f"{target_actor} {claim_kind} unavailable reply target DOM",
+            STEP_TIMEOUT,
+        )
+        self.assert_condition(f"{claim_kind}_reply_target_unavailable", True)
 
         edited_text = f"{prefix}-edited"
         edit = self.step(
-            f"{kind}.edit.submit",
+            f"{claim_kind}.edit.submit",
             lambda: async_harness(
                 self.clients["alice"],
                 "editInteractionMessage",
@@ -434,8 +639,8 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         edit_command = str((edit or {}).get("command_id") or (edit or {}).get("commandId") or "")
         if not edit_command:
-            raise GateError(f"{kind} edit returned no command ID")
-        self.command_ids[f"{kind}.edit"] = edit_command
+            raise GateError(f"{claim_kind} edit returned no command ID")
+        self.command_ids[f"{claim_kind}.edit"] = edit_command
         for actor in members:
             wait_until(
                 lambda actor=actor: (
@@ -452,7 +657,7 @@ class NativeInteractionsGate(AcceptanceGate):
                     and snapshot.get("edited") is True
                     else None
                 ),
-                f"{actor} {kind} edited projection",
+                f"{actor} {claim_kind} edited projection",
                 STEP_TIMEOUT,
             )
             wait_until(
@@ -468,9 +673,10 @@ class NativeInteractionsGate(AcceptanceGate):
                     and edited_text in str(snapshot.get("text") or "")
                     else None
                 ),
-                f"{actor} {kind} edited DOM",
+                f"{actor} {claim_kind} edited DOM",
                 STEP_TIMEOUT,
             )
+        before_unauthorized_edit = station_readback(conversation_id, message_id)
         self.expect_rejected(
             lambda: async_harness(
                 self.clients["bob"],
@@ -482,9 +688,16 @@ class NativeInteractionsGate(AcceptanceGate):
                     "plaintext": f"{prefix}-unauthorized",
                 },
             ),
-            f"bob edits alice {kind} message",
+            f"bob edits alice {claim_kind} message",
         )
-        self.assert_condition(f"{kind}_author_only_edit", True)
+        after_unauthorized_edit = station_readback(conversation_id, message_id)
+        if station_mutation_fingerprint(before_unauthorized_edit) != station_mutation_fingerprint(
+            after_unauthorized_edit
+        ):
+            raise GateError(
+                f"unauthorized {claim_kind} edit mutated authority or queue"
+            )
+        self.assert_condition(f"{claim_kind}_author_only_edit", True)
 
         for _ in range(2):
             async_harness(
@@ -514,10 +727,10 @@ class NativeInteractionsGate(AcceptanceGate):
                     and len(snapshot.get("reactions") or []) == 1
                     else None
                 ),
-                f"{actor} {kind} idempotent reaction",
+                f"{actor} {claim_kind} idempotent reaction",
                 STEP_TIMEOUT,
             )
-        self.assert_condition(f"{kind}_reaction_idempotency", True)
+        self.assert_condition(f"{claim_kind}_reaction_idempotency", True)
         async_harness(
             self.clients["bob"],
             "submitMetadataInteraction",
@@ -530,6 +743,40 @@ class NativeInteractionsGate(AcceptanceGate):
                 "remove": True,
             },
         )
+        for actor in members:
+            wait_until(
+                lambda actor=actor: (
+                    snapshot
+                    if (
+                        snapshot := self.projection(
+                            actor,
+                            kind,
+                            conversation_id,
+                            message_id,
+                        )
+                    )
+                    and len(snapshot.get("reactions") or []) == 0
+                    else None
+                ),
+                f"{actor} {claim_kind} reaction removal projection",
+                STEP_TIMEOUT,
+            )
+            wait_until(
+                lambda actor=actor: (
+                    snapshot
+                    if (
+                        snapshot := message_dom_snapshot(
+                            self.clients[actor],
+                            message_id,
+                        )
+                    )
+                    and len(snapshot.get("reactions") or []) == 0
+                    else None
+                ),
+                f"{actor} {claim_kind} reaction removal DOM",
+                STEP_TIMEOUT,
+            )
+        self.assert_condition(f"{claim_kind}_reaction_remove_convergence", True)
 
         pin = async_harness(
             self.clients["alice"],
@@ -558,11 +805,11 @@ class NativeInteractionsGate(AcceptanceGate):
                     and snapshot.get("pinned") is True
                     else None
                 ),
-                f"{actor} {kind} pin",
+                f"{actor} {claim_kind} pin",
                 STEP_TIMEOUT,
             )
         async_harness(
-            self.clients["alice"],
+            self.clients["bob"],
             "submitMetadataInteraction",
             {
                 "conversationId": conversation_id,
@@ -587,10 +834,10 @@ class NativeInteractionsGate(AcceptanceGate):
                     and snapshot.get("pinned") is False
                     else None
                 ),
-                f"{actor} {kind} unpin",
+                f"{actor} {claim_kind} unpin",
                 STEP_TIMEOUT,
             )
-        self.assert_condition(f"{kind}_pin_convergence", True)
+        self.assert_condition(f"{claim_kind}_pin_convergence", True)
 
         read = async_harness(
             self.clients["bob"],
@@ -599,7 +846,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         read_sequence = int((read or {}).get("lastReadSequence") or 0)
         if read_sequence <= 0:
-            raise GateError(f"{kind} read cursor returned no sequence")
+            raise GateError(f"{claim_kind} read cursor returned no sequence")
         alice_engine = wait_until(
             lambda: (
                 snapshot
@@ -618,10 +865,10 @@ class NativeInteractionsGate(AcceptanceGate):
                 )
                 else None
             ),
-            f"alice {kind} read cursor projection",
+            f"alice {claim_kind} read cursor projection",
             STEP_TIMEOUT,
         )
-        self.engine_evidence[f"{kind}.alice"] = alice_engine
+        self.engine_evidence[f"{claim_kind}.alice"] = alice_engine
         wait_until(
             lambda: (
                 snapshot
@@ -633,7 +880,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 )
                 and (
                     snapshot.get("receipt") == "read"
-                    if kind == "direct"
+                    if kind == "friend"
                     else (
                         self.ptids["bob"] in (snapshot.get("readBy") or [])
                         and snapshot.get("readState") == "read"
@@ -641,10 +888,34 @@ class NativeInteractionsGate(AcceptanceGate):
                 )
                 else None
             ),
-            f"alice {kind} sender-visible read state",
+            f"alice {claim_kind} sender-visible read state",
             STEP_TIMEOUT,
         )
-        self.assert_condition(f"{kind}_read_progression", True)
+        self.assert_condition(f"{claim_kind}_read_progression", True)
+
+        before_unauthorized_retract = station_readback(conversation_id, message_id)
+        self.expect_rejected(
+            lambda: async_harness(
+                self.clients["bob"],
+                "submitMetadataInteraction",
+                {
+                    "conversationId": conversation_id,
+                    "kind": kind,
+                    "messageId": message_id,
+                    "interaction": "retract",
+                    "remove": False,
+                },
+            ),
+            f"bob retracts alice {claim_kind} message",
+        )
+        after_unauthorized_retract = station_readback(conversation_id, message_id)
+        if station_mutation_fingerprint(
+            before_unauthorized_retract
+        ) != station_mutation_fingerprint(after_unauthorized_retract):
+            raise GateError(
+                f"unauthorized {claim_kind} retract mutated authority or queue"
+            )
+        self.assert_condition(f"{claim_kind}_author_only_retract", True)
 
         retract = async_harness(
             self.clients["alice"],
@@ -675,10 +946,10 @@ class NativeInteractionsGate(AcceptanceGate):
                     and snapshot.get("retracted") == "true"
                     else None
                 ),
-                f"{actor} {kind} retracted DOM",
+                f"{actor} {claim_kind} retracted DOM",
                 STEP_TIMEOUT,
             )
-        self.assert_condition(f"{kind}_retract_convergence", True)
+        self.assert_condition(f"{claim_kind}_retract_convergence", True)
         engine = self.engine_snapshot(
             "alice",
             conversation_id,
@@ -691,16 +962,301 @@ class NativeInteractionsGate(AcceptanceGate):
             or int(engine.get("consumptionCount") or 0) <= 0
             or int(engine.get("laneSequence") or 0) <= 0
         ):
-            raise GateError(f"{kind} Engine durable interaction evidence is incomplete")
-        self.engine_evidence[f"{kind}.terminal"] = engine
+            raise GateError(
+                f"{claim_kind} Engine durable interaction evidence is incomplete"
+            )
+        self.engine_evidence[f"{claim_kind}.terminal"] = engine
         station = station_readback(conversation_id, message_id)
         if not station.get("events") or not station.get("queue"):
-            raise GateError(f"{kind} Station authority/queue evidence is incomplete")
-        self.station_evidence[kind] = station
+            raise GateError(
+                f"{claim_kind} Station authority/queue evidence is incomplete"
+            )
+        self.station_evidence[claim_kind] = station
 
-    def restart_client(self, actor: str, kind: str, conversation_id: str) -> None:
+    def prove_offline_recovery(
+        self,
+        kind: str,
+        conversation_id: str,
+        online_members: tuple[str, ...],
+    ) -> None:
+        claim_kind = "direct" if kind == "friend" else "group"
+        prefix = f"{claim_kind}-offline-{time.time_ns()}"
+        base = self.send(
+            "alice",
+            kind,
+            conversation_id,
+            f"{prefix}-base",
+        )
+        message_id = str(base["messageId"])
+        for actor in ("alice", "bob", *online_members):
+            self.sync(actor, kind, conversation_id)
+            wait_until(
+                lambda actor=actor: message_dom_snapshot(
+                    self.clients[actor],
+                    message_id,
+                ),
+                f"{actor} {claim_kind} offline seed DOM",
+                STEP_TIMEOUT,
+            )
+
+        stop_client(self.clients["bob"])
+        edited_text = f"{prefix}-edited"
+        edit = async_harness(
+            self.clients["alice"],
+            "editInteractionMessage",
+            {
+                "conversationId": conversation_id,
+                "kind": kind,
+                "messageId": message_id,
+                "plaintext": edited_text,
+            },
+        )
+        edit_command = str(
+            (edit or {}).get("command_id")
+            or (edit or {}).get("commandId")
+            or ""
+        )
+        if not edit_command:
+            raise GateError(f"{claim_kind} offline edit returned no command ID")
+        async_harness(
+            self.clients["alice"],
+            "submitMetadataInteraction",
+            {
+                "conversationId": conversation_id,
+                "kind": kind,
+                "messageId": message_id,
+                "interaction": "reaction",
+                "reaction": "👍",
+                "remove": False,
+            },
+        )
+        async_harness(
+            self.clients["alice"],
+            "submitMetadataInteraction",
+            {
+                "conversationId": conversation_id,
+                "kind": kind,
+                "messageId": message_id,
+                "interaction": "pin",
+                "remove": False,
+            },
+        )
+        for actor in ("alice", *online_members):
+            wait_until(
+                lambda actor=actor: (
+                    snapshot
+                    if (
+                        snapshot := self.projection(
+                            actor,
+                            kind,
+                            conversation_id,
+                            message_id,
+                        )
+                    )
+                    and snapshot.get("content") == edited_text
+                    and snapshot.get("edited") is True
+                    and snapshot.get("pinned") is True
+                    and len(snapshot.get("reactions") or []) == 1
+                    else None
+                ),
+                f"{actor} {claim_kind} offline mutation convergence",
+                STEP_TIMEOUT,
+            )
+
+        self.restart_client(
+            "bob",
+            kind,
+            conversation_id,
+            stop_existing=False,
+        )
+        wait_until(
+            lambda: (
+                snapshot
+                if (
+                    snapshot := self.projection(
+                        "bob",
+                        kind,
+                        conversation_id,
+                        message_id,
+                    )
+                )
+                and snapshot.get("content") == edited_text
+                and snapshot.get("edited") is True
+                and snapshot.get("pinned") is True
+                and len(snapshot.get("reactions") or []) == 1
+                else None
+            ),
+            f"bob {claim_kind} offline queue recovery",
+            STEP_TIMEOUT,
+        )
+        wait_until(
+            lambda: (
+                snapshot
+                if (
+                    snapshot := message_dom_snapshot(
+                        self.clients["bob"],
+                        message_id,
+                    )
+                )
+                and snapshot.get("edited") == "true"
+                and snapshot.get("pinned") is True
+                and len(snapshot.get("reactions") or []) == 1
+                and edited_text in str(snapshot.get("text") or "")
+                else None
+            ),
+            f"bob {claim_kind} offline recovery DOM",
+            STEP_TIMEOUT,
+        )
+        before_restart = self.engine_snapshot(
+            "bob",
+            conversation_id,
+            message_id,
+            edit_command,
+        )
+        self.restart_client("bob", kind, conversation_id)
+        after_restart = wait_until(
+            lambda: (
+                snapshot
+                if (
+                    snapshot := self.engine_snapshot(
+                        "bob",
+                        conversation_id,
+                        message_id,
+                        edit_command,
+                    )
+                )
+                and len(snapshot.get("reactions") or []) == 1
+                and len(snapshot.get("pins") or []) == 1
+                else None
+            ),
+            f"bob {claim_kind} offline recovery after client restart",
+            STEP_TIMEOUT,
+        )
+        if before_restart.get("consumptionCount") != after_restart.get(
+            "consumptionCount"
+        ):
+            raise GateError(
+                f"{claim_kind} offline recovery duplicated consumption after restart"
+            )
+        self.engine_evidence[f"{claim_kind}.offline"] = after_restart
+        self.station_evidence[f"{claim_kind}.offline"] = station_readback(
+            conversation_id,
+            message_id,
+        )
+        self.assert_condition(f"{claim_kind}_offline_recovery", True)
+        self.prove_duplicate_queue_replay(
+            claim_kind,
+            conversation_id,
+            message_id,
+            "bob",
+        )
+
+    def prove_duplicate_queue_replay(
+        self,
+        claim_kind: str,
+        conversation_id: str,
+        message_id: str,
+        actor: str,
+    ) -> None:
+        before_station = station_readback(conversation_id, message_id)
+        event_ids = {
+            str(event.get("eventId") or "")
+            for event in before_station.get("events") or []
+        }
+        candidates = [
+            item
+            for item in before_station.get("queue") or []
+            if item.get("recipientPtid") == self.ptids[actor]
+            and item.get("recipientDeviceId") == self.device_ids[actor]
+            and item.get("eventId") in event_ids
+            and int(item.get("state") or 0) == 5
+        ]
+        if not candidates:
+            raise GateError(
+                f"{claim_kind} duplicate replay has no ACKed source delivery"
+            )
+        source = max(
+            candidates,
+            key=lambda item: int(item.get("laneSequence") or 0),
+        )
+        before_engine = self.engine_snapshot(
+            actor,
+            conversation_id,
+            message_id,
+        )
+        before_dom = message_dom_snapshot(self.clients[actor], message_id)
+        try:
+            injected = duplicate_profile_three_queue_delivery(
+                self.station_url,
+                str(source.get("itemId") or ""),
+                self.ptids[actor],
+                self.device_ids[actor],
+            )
+        except RuntimeError as error:
+            raise GateError(str(error)) from error
+        duplicate_item_id = str(injected.get("duplicateItemId") or "")
+        duplicate_lane = int(injected.get("laneSequence") or 0)
+        if not duplicate_item_id or duplicate_lane <= 0:
+            raise GateError(
+                f"{claim_kind} duplicate replay injection returned invalid evidence"
+            )
+
+        def acked_duplicate() -> dict[str, Any] | None:
+            evidence = station_readback(conversation_id, message_id)
+            acknowledged = any(
+                item.get("itemId") == duplicate_item_id
+                and int(item.get("state") or 0) == 5
+                and int(item.get("attemptCount") or 0) >= 1
+                for item in evidence.get("queue") or []
+            )
+            return evidence if acknowledged else None
+
+        after_station = wait_until(
+            acked_duplicate,
+            f"{actor} {claim_kind} duplicate queue delivery ACK",
+            STEP_TIMEOUT,
+        )
+        after_engine = wait_until(
+            lambda: (
+                snapshot
+                if (
+                    snapshot := self.engine_snapshot(
+                        actor,
+                        conversation_id,
+                        message_id,
+                    )
+                )
+                and int(snapshot.get("laneSequence") or 0) >= duplicate_lane
+                else None
+            ),
+            f"{actor} {claim_kind} duplicate queue replay Engine cursor",
+            STEP_TIMEOUT,
+        )
+        after_dom = message_dom_snapshot(self.clients[actor], message_id)
+        for field in ("projection", "reactions", "pins", "consumptionCount"):
+            if before_engine.get(field) != after_engine.get(field):
+                raise GateError(
+                    f"{claim_kind} duplicate replay changed Engine {field}"
+                )
+        if before_dom != after_dom:
+            raise GateError(
+                f"{claim_kind} duplicate replay changed receiver-visible DOM"
+            )
+        self.station_evidence[f"{claim_kind}.duplicate"] = after_station
+        self.engine_evidence[f"{claim_kind}.duplicate"] = after_engine
+        self.assert_condition(f"{claim_kind}_duplicate_queue_replay", True)
+
+    def restart_client(
+        self,
+        actor: str,
+        kind: str,
+        conversation_id: str,
+        *,
+        stop_existing: bool = True,
+    ) -> None:
         old = self.clients[actor]
-        stop_client(old)
+        if stop_existing:
+            stop_client(old)
         client, ptid = start_authenticated_client(
             actor,
             CLIENT_PORTS[actor],
@@ -709,38 +1265,312 @@ class NativeInteractionsGate(AcceptanceGate):
         self.register_driver(client)
         if ptid != self.ptids[actor]:
             raise GateError(f"{actor} identity changed across client restart")
+        device = async_harness(client, "getRealtimeDevice", {})
+        device_id = str((device or {}).get("deviceId") or "")
+        if device_id != self.device_ids[actor]:
+            raise GateError(f"{actor} device changed across client restart")
         self.clients[actor] = client
         enter_chat_page(client)
         self.sync(actor, kind, conversation_id)
 
-    def restart_station(self) -> None:
-        if os.environ.get("CHAT_ACCEPTANCE_ALLOW_STATION_RESTART") != "1":
-            raise GateError(
-                "CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1 is required for the "
-                "authorized Profile Three restart scenario"
+    def prove_restart_convergence(
+        self,
+        kind: str,
+        conversation_id: str,
+        members: tuple[str, ...],
+    ) -> None:
+        claim_kind = "direct" if kind == "friend" else "group"
+        message_id = self.message_ids[f"{claim_kind}.base"]
+        thread_ids = [
+            self.message_ids[f"{claim_kind}.thread.first"],
+            self.message_ids[f"{claim_kind}.thread.nested"],
+        ]
+        for actor in members:
+            self.sync(actor, kind, conversation_id)
+            wait_until(
+                lambda actor=actor: (
+                    snapshot
+                    if (
+                        snapshot := self.projection(
+                            actor,
+                            kind,
+                            conversation_id,
+                            message_id,
+                        )
+                    )
+                    and snapshot.get("retracted") is True
+                    and snapshot.get("pinned") is False
+                    and len(snapshot.get("reactions") or []) == 0
+                    else None
+                ),
+                f"{actor} {claim_kind} terminal projection after Station restart",
+                STEP_TIMEOUT,
             )
-        subprocess.run(
-            ["make", "profile", "three"],
-            cwd=REPO_ROOT,
-            check=True,
+            wait_until(
+                lambda actor=actor: (
+                    snapshot
+                    if (
+                        snapshot := message_dom_snapshot(
+                            self.clients[actor],
+                            message_id,
+                        )
+                    )
+                    and snapshot.get("retracted") == "true"
+                    and snapshot.get("pinned") is False
+                    and len(snapshot.get("reactions") or []) == 0
+                    else None
+                ),
+                f"{actor} {claim_kind} terminal DOM after Station restart",
+                STEP_TIMEOUT,
+            )
+            async_harness(
+                self.clients[actor],
+                "openInteractionThread",
+                {
+                    "conversationId": conversation_id,
+                    "kind": kind,
+                    "messageId": message_id,
+                },
+            )
+            wait_until(
+                lambda actor=actor: (
+                    snapshot
+                    if (
+                        snapshot := thread_dom_snapshot(self.clients[actor])
+                    )
+                    and snapshot.get("rootMessageId") == message_id
+                    and snapshot.get("replyMessageIds") == thread_ids
+                    and snapshot.get("orders") == [0, 1, 2]
+                    else None
+                ),
+                f"{actor} {claim_kind} thread panel after Station restart",
+                STEP_TIMEOUT,
+            )
+
+    def prove_removed_group_member(self, conversation_id: str) -> None:
+        prefix = f"group-removed-{time.time_ns()}"
+        base = self.send(
+            "alice",
+            "group",
+            conversation_id,
+            f"{prefix}-base",
         )
-        subprocess.run(
-            ["make", "station-restart"],
-            cwd=REPO_ROOT,
-            check=True,
+        message_id = str(base["messageId"])
+        for actor in ACTORS:
+            self.sync(actor, "group", conversation_id)
+            wait_until(
+                lambda actor=actor: message_dom_snapshot(
+                    self.clients[actor],
+                    message_id,
+                ),
+                f"{actor} Group removal seed DOM",
+                STEP_TIMEOUT,
+            )
+
+        removed = async_harness(
+            self.clients["alice"],
+            "removeGroupMember",
+            {
+                "groupUlid": conversation_id,
+                "memberDid": self.ptids["charlie"],
+            },
+            timeout=120,
+        )
+        if not (removed or {}).get("success"):
+            raise GateError("Charlie Group removal did not succeed")
+        before_denied = station_readback(conversation_id, message_id)
+        self.expect_rejected(
+            lambda: async_harness(
+                self.clients["charlie"],
+                "submitMetadataInteraction",
+                {
+                    "conversationId": conversation_id,
+                    "kind": "group",
+                    "messageId": message_id,
+                    "interaction": "reaction",
+                    "reaction": "🚫",
+                    "remove": False,
+                },
+            ),
+            "removed Group member submits interaction",
+        )
+        after_denied = station_readback(conversation_id, message_id)
+        if station_mutation_fingerprint(before_denied) != station_mutation_fingerprint(
+            after_denied
+        ):
+            raise GateError("removed Group member mutated authority or queue")
+
+        async_harness(
+            self.clients["alice"],
+            "submitMetadataInteraction",
+            {
+                "conversationId": conversation_id,
+                "kind": "group",
+                "messageId": message_id,
+                "interaction": "reaction",
+                "reaction": "✅",
+                "remove": False,
+            },
         )
         wait_until(
-            lambda: read_station_version(self.station_url),
-            "Profile Three Station restart health",
-            180,
-            1,
+            lambda: (
+                snapshot
+                if (
+                    snapshot := self.projection(
+                        "bob",
+                        "group",
+                        conversation_id,
+                        message_id,
+                    )
+                )
+                and len(snapshot.get("reactions") or []) == 1
+                else None
+            ),
+            "Bob receives post-removal Group interaction",
+            STEP_TIMEOUT,
         )
+        after_allowed = station_readback(conversation_id, message_id)
+        charlie_before = recipient_queue_item_ids(
+            before_denied,
+            self.ptids["charlie"],
+            self.device_ids["charlie"],
+        )
+        charlie_after = recipient_queue_item_ids(
+            after_allowed,
+            self.ptids["charlie"],
+            self.device_ids["charlie"],
+        )
+        if charlie_after != charlie_before:
+            raise GateError("removed Group member received a future queue item")
+        charlie_dom = message_dom_snapshot(self.clients["charlie"], message_id)
+        if charlie_dom and charlie_dom.get("reactions"):
+            raise GateError("removed Group member observed a future interaction")
+        self.station_evidence["group.removed"] = after_allowed
+        self.assert_condition("group_removed_member_denied", True)
+
+    def prove_revoked_device(self, conversation_id: str) -> None:
+        prefix = f"direct-revoked-{time.time_ns()}"
+        base = self.send(
+            "alice",
+            "friend",
+            conversation_id,
+            f"{prefix}-base",
+        )
+        message_id = str(base["messageId"])
+        for actor in ("alice", "bob"):
+            self.sync(actor, "friend", conversation_id)
+            wait_until(
+                lambda actor=actor: message_dom_snapshot(
+                    self.clients[actor],
+                    message_id,
+                ),
+                f"{actor} revoked-device seed DOM",
+                STEP_TIMEOUT,
+            )
+
+        revoked = async_harness(
+            self.clients["bob"],
+            "revokeCurrentDevice",
+            {},
+        )
+        if (
+            (revoked or {}).get("revoked") is not True
+            or (revoked or {}).get("deviceId") != self.device_ids["bob"]
+        ):
+            raise GateError("Bob current-device revocation did not succeed")
+        before_denied = station_readback(conversation_id, message_id)
+        self.expect_rejected(
+            lambda: async_harness(
+                self.clients["bob"],
+                "submitMetadataInteraction",
+                {
+                    "conversationId": conversation_id,
+                    "kind": "friend",
+                    "messageId": message_id,
+                    "interaction": "reaction",
+                    "reaction": "🚫",
+                    "remove": False,
+                },
+            ),
+            "revoked device submits interaction",
+        )
+        after_denied = station_readback(conversation_id, message_id)
+        if station_mutation_fingerprint(before_denied) != station_mutation_fingerprint(
+            after_denied
+        ):
+            raise GateError("revoked device mutated authority or queue")
+
+        async_harness(
+            self.clients["alice"],
+            "submitMetadataInteraction",
+            {
+                "conversationId": conversation_id,
+                "kind": "friend",
+                "messageId": message_id,
+                "interaction": "reaction",
+                "reaction": "✅",
+                "remove": False,
+            },
+        )
+        wait_until(
+            lambda: (
+                snapshot
+                if (
+                    snapshot := self.projection(
+                        "alice",
+                        "friend",
+                        conversation_id,
+                        message_id,
+                    )
+                )
+                and len(snapshot.get("reactions") or []) == 1
+                else None
+            ),
+            "Alice post-revocation Direct interaction",
+            STEP_TIMEOUT,
+        )
+        after_allowed = station_readback(conversation_id, message_id)
+        bob_before = recipient_queue_item_ids(
+            before_denied,
+            self.ptids["bob"],
+            self.device_ids["bob"],
+        )
+        bob_after = recipient_queue_item_ids(
+            after_allowed,
+            self.ptids["bob"],
+            self.device_ids["bob"],
+        )
+        if bob_after != bob_before:
+            raise GateError("revoked device received a future queue item")
+        bob_dom = message_dom_snapshot(self.clients["bob"], message_id)
+        if bob_dom and bob_dom.get("reactions"):
+            raise GateError("revoked device observed a future interaction")
+        self.station_evidence["direct.revoked"] = after_allowed
+        self.assert_condition("revoked_device_denied", True)
+
+    def restart_station(self) -> None:
+        try:
+            self.restart_evidence = restart_profile_three_station(
+                self.station_url,
+                self.tested_commit,
+            )
+        except RuntimeError as error:
+            raise GateError(str(error)) from error
+
+    @staticmethod
+    def port_is_free(port: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+            return connection.connect_ex(("127.0.0.1", port)) != 0
 
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
         if not os.environ.get("CHAT_ACCEPTANCE_PASSWORD", ""):
             raise GateError("CHAT_ACCEPTANCE_PASSWORD is required")
+        try:
+            profile_three_environment(self.station_url)
+        except RuntimeError as error:
+            raise GateError(str(error)) from error
         self.report.station_url = self.station_url
         version = self.step(
             "station.identity",
@@ -792,7 +1622,8 @@ class NativeInteractionsGate(AcceptanceGate):
             self.conversations["direct"] = direct_id
             for actor in ("alice", "bob"):
                 self.sync(actor, "friend", direct_id)
-            self.prove_lifecycle("direct", direct_id, ("alice", "bob"))
+            self.prove_lifecycle("friend", direct_id, ("alice", "bob"))
+            self.prove_offline_recovery("friend", direct_id, ())
 
             self.step(
                 "direct.client.restart",
@@ -833,15 +1664,22 @@ class NativeInteractionsGate(AcceptanceGate):
             for actor in ACTORS:
                 self.sync(actor, "group", group_id)
             self.prove_lifecycle("group", group_id, ACTORS)
+            self.prove_offline_recovery("group", group_id, ("charlie",))
 
             self.step("station.restart", self.restart_station)
-            for actor in ACTORS:
-                self.sync(
-                    actor,
-                    "group" if actor == "charlie" else "friend",
-                    group_id if actor == "charlie" else direct_id,
-                )
+            self.prove_restart_convergence(
+                "friend",
+                direct_id,
+                ("alice", "bob"),
+            )
+            self.prove_restart_convergence(
+                "group",
+                group_id,
+                ACTORS,
+            )
             self.assert_condition("station_restart_convergence", True)
+            self.prove_removed_group_member(group_id)
+            self.prove_revoked_device(direct_id)
             self.assert_condition(
                 "station_authority_readback",
                 all(
@@ -866,6 +1704,27 @@ class NativeInteractionsGate(AcceptanceGate):
                     stop_client(client)
                 except Exception:
                     client.stop()
+        ports = sorted(
+            {
+                port
+                for client in self.clients.values()
+                for port in (client.port, client.gateway_port)
+            }
+        )
+        released = bool(
+            wait_until(
+                lambda: all(self.port_is_free(port) for port in ports),
+                "Native interaction client port release",
+                30,
+                0.25,
+            )
+        )
+        self.cleanup_evidence = {
+            "ports": ports,
+            "allPortsReleased": released,
+            "clientsStopped": sorted(self.clients),
+        }
+        self.assert_condition("resources_released", released)
 
         names = {assertion.name for assertion in self.report.assertions}
         missing = REQUIRED_ASSERTIONS - names
@@ -883,6 +1742,8 @@ class NativeInteractionsGate(AcceptanceGate):
             "commandIds": self.command_ids,
             "stationReadback": self.station_evidence,
             "engineReadback": self.engine_evidence,
+            "stationRestart": self.restart_evidence,
+            "cleanup": self.cleanup_evidence,
             "steps": self.steps,
             "clients": {
                 actor: {

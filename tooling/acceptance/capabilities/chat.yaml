@@ -230,6 +230,7 @@
         ],
         "unproven_scope": [
           "Direct and Group reply, thread, edit, retract, reaction, pin and read remain unproven until the dedicated source-bound Native Gate passes",
+          "Pending edit/reply timeout, retry and cancellation remains unproven while MP-D28 is proposed and the dedicated G15 assertion is intentionally unsatisfied",
           "Mobile interaction parity remains unproven until MP-W09 Native cells pass"
         ]
       }
@@ -268,7 +269,7 @@
         ],
         "unproven_scope": [
           "Direct start, stop, session-switch, disconnect and TTL behavior remains unproven",
-          "Group ephemeral member fan-out remains unimplemented and unproven",
+          "Group start, stop, send, blur, session-switch, disconnect, TTL, removed-member and revoked-device behavior remains unproven until G16 passes",
           "Mobile typing parity remains unproven until MP-W09 Native cells pass"
         ]
       }
