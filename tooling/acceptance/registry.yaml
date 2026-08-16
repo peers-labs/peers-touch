@@ -163,7 +163,10 @@
           "Makefile"
         ]
       },
-      "require": ["acceptance-plan-self"]
+      "require": [
+        "acceptance-plan-self",
+        "acceptance-runtime-provisioning-self"
+      ]
     }
   ]
 }
