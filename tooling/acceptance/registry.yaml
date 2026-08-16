@@ -71,7 +71,8 @@
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/gates/chat/chat_submit_fault_proxy_test.py",
           "tooling/acceptance/gates/chat/native_interactions_runner.py",
-          "tooling/acceptance/gates/chat/native_interactions_static_test.py"
+          "tooling/acceptance/gates/chat/native_interactions_static_test.py",
+          "tooling/acceptance/gates/chat/native_support.py"
         ]
       },
       "require": [
@@ -95,6 +96,7 @@
           "apps/desktop/src/acceptance/chat/**",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
+          "tooling/acceptance/gates/chat/native_support.py",
           "tooling/acceptance/gates/chat/native_typing_runner.py"
         ]
       },

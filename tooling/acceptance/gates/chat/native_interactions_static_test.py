@@ -30,6 +30,15 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn("api.messagingReadCursor", source)
         self.assertIn("api.messagingTypingSend", source)
 
+    def test_native_actor_aliases_use_canonical_dev_accounts(self) -> None:
+        support = self.source(
+            "tooling/acceptance/gates/chat/native_support.py"
+        )
+        self.assertIn('"alice": "alice@p.t"', support)
+        self.assertIn('"bob": "bob@p.t"', support)
+        self.assertIn('"charlie": "carol@p.t"', support)
+        self.assertNotIn('"charlie": "charlie@p.t"', support)
+
     def test_native_dom_selectors_cover_interaction_and_typing_state(self) -> None:
         row = self.source(
             "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
