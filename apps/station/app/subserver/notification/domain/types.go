@@ -21,16 +21,16 @@ type Notification struct {
 
 type NotificationGroup struct {
 	GroupKey   string
-	Type      int32
-	Category  int32
+	Type       int32
+	Category   int32
 	TargetType string
-	TargetID  string
-	Title     string
-	Body      string
-	Count     int32
-	ActorIDs  []string
-	Latest    *Notification
-	UpdatedAt time.Time
+	TargetID   string
+	Title      string
+	Body       string
+	Count      int32
+	ActorIDs   []string
+	Latest     *Notification
+	UpdatedAt  time.Time
 }
 
 type NotificationPreference struct {
@@ -50,10 +50,10 @@ type UnreadCounts struct {
 // Category constants matching proto enum values
 const (
 	CategoryUnspecified = 0
-	CategorySocial     = 1
-	CategoryChat       = 2
-	CategorySystem     = 3
-	CategoryTask       = 4
+	CategorySocial      = 1
+	CategoryChat        = 2
+	CategorySystem      = 3
+	CategoryTask        = 4
 )
 
 // Status constants matching proto enum values

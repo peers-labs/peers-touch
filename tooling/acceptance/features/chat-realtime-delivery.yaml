@@ -3,32 +3,35 @@
   "status": "active",
   "product_area": "chat",
   "owners": [
-    "apps/station/app/subserver/friend_chat/presence_sse.go",
-    "apps/station/app/subserver/friend_chat/handler.go",
-    "apps/desktop/src/services/socialChatRealtime.ts",
+    "apps/station/app/subserver/messaging/**",
+    "apps/station/app/subserver/envelope/**",
+    "apps/desktop/src-tauri/src/messaging/**",
+    "apps/desktop/src/runtimes/imRuntime.ts",
     "apps/desktop/src/store/socialChat.ts"
   ],
   "truth_sources": [
-    "friend_chat message mutation result",
-    "presence SSE stream",
-    "Desktop socialChatRealtime runtime"
+    "per-device ordered messaging queue",
+    "Desktop messaging lifecycle worker",
+    "Desktop social chat projection"
   ],
   "visible_surfaces": [
-    {"type": "desktop-runtime", "route": "socialChatRealtime"},
-    {"type": "api", "route": "/friend-chat/presence/events"}
+    {"type": "desktop-runtime", "route": "imRuntime"},
+    {"type": "api", "route": "/messaging/queue/claim"},
+    {"type": "api", "route": "/messaging/queue/ack"}
   ],
-  "required_gates": ["station-chat-unit", "desktop-check"],
+  "required_gates": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"],
   "acceptance": {
     "service": [
-      "friend_chat realtime handler contracts compile and package tests pass",
-      "Desktop realtime client compiles with chat store and service contracts"
+      "messaging queue and envelope contracts compile and package tests pass",
+      "Desktop lifecycle and projection clients compile with messaging service contracts"
     ],
     "visible": [
-      "Desktop chat runtime can be type-checked with realtime event handling"
+      "Desktop chat runtime can be type-checked with queue-driven message projection"
     ]
   },
   "negative": [
-    "SSE stream must not be treated as message persistence truth",
-    "compile-time realtime checks must not be reported as live two-client delivery proof"
+    "legacy friend-chat SSE must not be restored as a second delivery path",
+    "compile-time queue checks must not be reported as live two-client delivery proof",
+    "native multi-client evidence remains required for user-visible delivery claims"
   ]
 }

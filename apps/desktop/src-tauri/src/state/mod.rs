@@ -8,6 +8,7 @@ use std::sync::Mutex;
 pub struct SessionState {
     pub actor_id: Option<String>,
     pub token: Option<String>,
+    pub account_id: Option<String>,
 }
 
 #[derive(Default)]

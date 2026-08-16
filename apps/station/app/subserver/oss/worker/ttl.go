@@ -2,19 +2,19 @@
 // `expires_at` window has lapsed.
 //
 // Each tick:
-//   1. List up to `BatchSize` live rows with `expires_at < now`,
-//      ordered by expires_at ASC so the oldest backlog drains first.
-//   2. For each row, call FileRepository.MarkDeleted to flip
-//      deleted_at = now atomically. Concurrent races (another
-//      worker, or the user-facing DELETE handler) surface as
-//      ErrFileAlreadyDeleted; we treat those as benign successes.
-//   3. Best-effort:
-//        - debit the bucket usage (BucketRepository.AddUsage(-size))
-//        - decrement the blob refcount (BlobRepository.Release)
-//      A failure on either is logged-and-continued — drift is
-//      corrected by the BucketReconciler / BlobGC workers.
-//   4. Append one `oss_audit` row per soft-deleted file with
-//      action=delete, outcome=ok, reason="ttl".
+//  1. List up to `BatchSize` live rows with `expires_at < now`,
+//     ordered by expires_at ASC so the oldest backlog drains first.
+//  2. For each row, call FileRepository.MarkDeleted to flip
+//     deleted_at = now atomically. Concurrent races (another
+//     worker, or the user-facing DELETE handler) surface as
+//     ErrFileAlreadyDeleted; we treat those as benign successes.
+//  3. Best-effort:
+//     - debit the bucket usage (BucketRepository.AddUsage(-size))
+//     - decrement the blob refcount (BlobRepository.Release)
+//     A failure on either is logged-and-continued — drift is
+//     corrected by the BucketReconciler / BlobGC workers.
+//  4. Append one `oss_audit` row per soft-deleted file with
+//     action=delete, outcome=ok, reason="ttl".
 //
 // We deliberately mirror the user-facing DeleteFile invariants
 // (mark first, then debit, then release) so the audit graph
@@ -107,8 +107,8 @@ func NewTTLSweeper(cfg TTLSweeperConfig) (*TTLSweeper, error) {
 	return &TTLSweeper{cfg: cfg, now: now}, nil
 }
 
-func (w *TTLSweeper) Name() string             { return "ttl_sweeper" }
-func (w *TTLSweeper) Interval() time.Duration  { return w.cfg.Interval }
+func (w *TTLSweeper) Name() string            { return "ttl_sweeper" }
+func (w *TTLSweeper) Interval() time.Duration { return w.cfg.Interval }
 
 // RunOnce sweeps one batch of expired files. Returns the first
 // hard error (e.g. ListExpired failed); per-row failures are

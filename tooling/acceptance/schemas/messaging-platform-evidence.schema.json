@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peers.touch/schemas/messaging-platform-evidence.schema.json",
+  "title": "Messaging Platform Runtime Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "workstream",
+    "gate_id",
+    "result",
+    "source",
+    "runtime",
+    "actors",
+    "timeline",
+    "station_readback",
+    "device_readback",
+    "receiver_assertions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "workstream": {
+      "type": "string",
+      "pattern": "^MP-W(0[0-9]|1[01])$"
+    },
+    "gate_id": {
+      "type": "string",
+      "pattern": "^MP-G(0[1-9]|1[0-4])$"
+    },
+    "result": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "PARTIAL",
+        "UNPROVEN",
+        "NOT_RUN"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "station_commit",
+        "client_commits",
+        "proto_digest"
+      ],
+      "properties": {
+        "station_commit": {
+          "type": "string",
+          "minLength": 40
+        },
+        "client_commits": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 40
+          }
+        },
+        "proto_digest": {
+          "type": "string",
+          "minLength": 64
+        },
+        "dirty_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "station_url",
+        "clients"
+      ],
+      "properties": {
+        "station_url": {
+          "type": "string"
+        },
+        "clients": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "profile",
+              "storage_root",
+              "observer_socket"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "profile": {
+                "type": "string"
+              },
+              "storage_root": {
+                "type": "string"
+              },
+              "observer_socket": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "actors": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "ptid",
+          "device_id"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "ptid": {
+            "type": "string",
+            "minLength": 1
+          },
+          "device_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "timeline": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "started_at",
+          "completed_at",
+          "result"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "result": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "PARTIAL",
+              "UNPROVEN"
+            ]
+          }
+        }
+      }
+    },
+    "station_readback": {
+      "type": "object"
+    },
+    "device_readback": {
+      "type": "object"
+    },
+    "receiver_assertions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "client",
+          "event_id",
+          "expected_plaintext",
+          "observed_plaintext",
+          "result"
+        ],
+        "properties": {
+          "client": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "expected_plaintext": {
+            "type": "string"
+          },
+          "observed_plaintext": {
+            "type": "string"
+          },
+          "result": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "UNPROVEN"
+            ]
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

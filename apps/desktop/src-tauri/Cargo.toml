@@ -65,6 +65,9 @@ keyring = { version = "3", features = ["windows-native"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
 
+[profile.dev.package."*"]
+opt-level = 1
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

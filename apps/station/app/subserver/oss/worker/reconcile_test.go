@@ -16,11 +16,11 @@ import (
 // SetUsage; the other methods are no-op stubs to satisfy the
 // interface.
 type reconcileFakeBuckets struct {
-	rows       []ossmodel.Bucket
-	listErr    error
-	setCalls   []reconcileSetCall
-	setErr     error
-	setErrFor  map[string]error
+	rows      []ossmodel.Bucket
+	listErr   error
+	setCalls  []reconcileSetCall
+	setErr    error
+	setErrFor map[string]error
 }
 
 type reconcileSetCall struct {
@@ -80,8 +80,8 @@ func (b *reconcileFakeBuckets) Delete(context.Context, string, bool) error { ret
 // reconcileFakeFiles supplies SumByBucket; the other FileRepository
 // methods are unused stubs.
 type reconcileFakeFiles struct {
-	sumByID  map[string]reconcileSum
-	sumErr   error
+	sumByID    map[string]reconcileSum
+	sumErr     error
 	queriedFor []string
 }
 
@@ -99,16 +99,20 @@ func (f *reconcileFakeFiles) SumByBucket(_ context.Context, id string) (int64, i
 }
 
 // Unused FileRepository methods.
-func (f *reconcileFakeFiles) Create(context.Context, *ossmodel.FileMeta) error          { return nil }
-func (f *reconcileFakeFiles) FindByKey(context.Context, string) (*ossmodel.FileMeta, error) { return nil, nil }
+func (f *reconcileFakeFiles) Create(context.Context, *ossmodel.FileMeta) error { return nil }
+func (f *reconcileFakeFiles) FindByKey(context.Context, string) (*ossmodel.FileMeta, error) {
+	return nil, nil
+}
 func (f *reconcileFakeFiles) FindByOwnerKey(context.Context, string, string) (*ossmodel.FileMeta, error) {
 	return nil, nil
 }
 func (f *reconcileFakeFiles) FindByOwnerKeyIncludeDeleted(context.Context, string, string) (*ossmodel.FileMeta, error) {
 	return nil, nil
 }
-func (f *reconcileFakeFiles) Restore(context.Context, string, time.Time, *time.Time) error { return nil }
-func (f *reconcileFakeFiles) MarkDeleted(context.Context, string, time.Time) error          { return nil }
+func (f *reconcileFakeFiles) Restore(context.Context, string, time.Time, *time.Time) error {
+	return nil
+}
+func (f *reconcileFakeFiles) MarkDeleted(context.Context, string, time.Time) error { return nil }
 func (f *reconcileFakeFiles) Patch(context.Context, string, ossrepo.FilePatch, time.Time) error {
 	return nil
 }
@@ -148,8 +152,8 @@ func TestBucketReconciler_RewritesOnDriftAndAudits(t *testing.T) {
 	}
 	files := &reconcileFakeFiles{
 		sumByID: map[string]reconcileSum{
-			"bk_a": {Bytes: 1100, Count: 6},     // both drift
-			"bk_b": {Bytes: 500, Count: 2},      // exact
+			"bk_a": {Bytes: 1100, Count: 6},       // both drift
+			"bk_b": {Bytes: 500, Count: 2},        // exact
 			"bk_c": {Bytes: 1_000_002, Count: 10}, // 2 bytes < 0.001 * 1e6 + 1
 		},
 	}
@@ -267,7 +271,7 @@ func TestAcceptableByteDrift(t *testing.T) {
 		want     int64
 	}{
 		{"empty bucket", 0, 10, 0},
-		{"tiny bucket", 50, 10, 1},     // ceil to 1 byte
+		{"tiny bucket", 50, 10, 1}, // ceil to 1 byte
 		{"normal bucket", 1_000_000, 10, 10_000},
 		{"high tolerance", 1_000_000, 50, 50_000},
 	}

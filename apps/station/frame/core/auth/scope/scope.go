@@ -7,17 +7,17 @@
 // before any cryptographic signing happens:
 //
 //   - TTLMax           — the longest lifetime any token in this
-//                        scope may carry. Longer mints refuse
-//                        with ErrTTLExceedsPolicy.
+//     scope may carry. Longer mints refuse
+//     with ErrTTLExceedsPolicy.
 //   - AudienceRequired — when true, mints without an audience
-//                        refuse with ErrAudienceRequired.
+//     refuse with ErrAudienceRequired.
 //   - AllowedClaimKeys — when non-empty, the only custom claim
-//                        keys the mint will accept; everything
-//                        else refuses with ErrClaimNotAllowed.
-//                        Empty means "no custom claims at all" —
-//                        callers that legitimately need open
-//                        claim shape must register the wildcard
-//                        sentinel `AnyClaimKey`.
+//     keys the mint will accept; everything
+//     else refuses with ErrClaimNotAllowed.
+//     Empty means "no custom claims at all" —
+//     callers that legitimately need open
+//     claim shape must register the wildcard
+//     sentinel `AnyClaimKey`.
 //
 // The registry is **init-time only**. Subservers register their
 // scopes inside their `Init()` callback; once any subserver has

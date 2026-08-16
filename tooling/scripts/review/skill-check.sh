@@ -277,7 +277,7 @@ rm -f "$quality_json" "$quality_markdown" /tmp/pt-quality-evidence.$$
 tier_run_json="$(mktemp)"
 if ! python3 tooling/scripts/acceptance-run.py \
   --gate acceptance-plan-self \
-  --gate chat-runtime-e2e \
+  --gate chat-desktop-gateway-e2e \
   --tier ci-structure \
   --dry-run \
   --output "$tier_run_json" >/tmp/pt-acceptance-tier.$$ 2>&1; then
