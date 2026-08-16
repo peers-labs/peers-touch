@@ -29,9 +29,15 @@
           "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
           "apps/desktop/src-tauri/src/messaging/store.rs",
           "apps/desktop/src-tauri/src/messaging/transport.rs",
-          "apps/desktop/src/runtimes/imRuntime.ts",
-          "apps/station/app/subserver/conversation/service_impl.go",
-          "apps/station/app/subserver/conversation/subserver.go"
+          "apps/desktop/src-tauri/src/messaging/consumer.rs",
+          "apps/desktop/src-tauri/src/messaging/receipt.rs",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/station/app/subserver/messaging/application/receipt_service.go",
+          "apps/station/app/subserver/messaging/application/receipt_service_test.go",
+          "apps/station/app/subserver/messaging/interface/http/receipt_handler.go",
+          "apps/station/app/subserver/messaging/subserver.go",
+          "tooling/acceptance/gates/chat/native_two_client_runner.py",
+          "tooling/acceptance/gates/chat/native_two_client_e2e.py"
         ]
       },
       "require": [
@@ -64,9 +70,10 @@
       "when": {
         "paths": [
           "tooling/acceptance/gates/chat/native_visible_runner.py",
-          "tooling/acceptance/gates/chat/native_*_runner.py",
+          "tooling/acceptance/gates/chat/native_multi_device_runner.py",
+          "tooling/acceptance/gates/chat/native_recovery_runner.py",
+          "tooling/acceptance/gates/chat/native_group_mls_runner.py",
           "tooling/acceptance/gates/chat/native_support.py",
-          "tooling/acceptance/gates/chat/native_two_client_e2e.py",
           "tooling/acceptance/gates/chat/native_visible_e2e.py",
           "tooling/acceptance/gates/chat/native_visible_*_test.py",
           "tooling/acceptance/playbooks/chat-native-visible-clients.md",

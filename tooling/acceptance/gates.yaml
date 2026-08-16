@@ -27,7 +27,7 @@
       "timeout_seconds": 1800,
       "environment": "native-tauri-embedded-webdriver",
       "tier": "env-evidence",
-      "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext plus DELIVERED/READ receipt visibility."
+      "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext plus DELIVERED receipt visibility."
     },
     "chat-native-multi-device-e2e": {
       "command": "python3 tooling/acceptance/gates/chat/native_multi_device_runner.py && python3 tooling/acceptance/gates/chat/native_visible_e2e.py --journey multi-device",
