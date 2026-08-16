@@ -1,5 +1,9 @@
 # MP-W09: Portable Rust Messaging Core — Execution Plan
 
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-08-11 | **Updated**: 2026-08-16
+> **Owner**: Messaging Platform Team
 > Accepted architecture: MP-D16 (2026-08-09)
 > Module layout: `docs/architecture/messaging-platform/module-layout.md`
 > Parent plan: `20260808-messaging-platform.md`
@@ -20,6 +24,7 @@ Extract the Desktop Messaging Engine (20K LOC, 27 files) into `packages/messagin
 ```
 Phase 1: Ports + Contracts (leaf dependencies)
 Phase 2: Core modules (engine internals)
+Dependency gate: MP-W12 Desktop interaction semantics + G15/G16
 Phase 3: Desktop adapter (thin bridge)
 Phase 4: Mobile adapter (thin bridge + Sender Keys deletion)
 Phase 5: Verification closure
@@ -108,7 +113,8 @@ Steps:
 2. `lifecycle.rs` — unchanged (manages Engine worker lifecycle via Tauri state).
 3. `commands.rs` — thin Tauri command wrappers calling `messaging_core::Engine`.
 4. Add `messaging-core` as workspace dependency in Desktop's `Cargo.toml`.
-5. Gate: `cargo test` in Desktop passes. Native E2E (Direct + Group + attachment + recovery) passes.
+5. Gate: `cargo test` in Desktop passes. Native E2E (Direct + Group + attachment + recovery
+   + receipts + interactions + typing) passes.
 
 ### Phase 4: Mobile Adapter
 
@@ -121,7 +127,8 @@ Steps:
 4. Create `commands.rs` exposing Tauri Mobile commands.
 5. Delete Mobile Sender Keys (`apps/mobile/src-tauri/src/domain/` crypto modules).
 6. Gate: `cargo check` on Mobile. Mobile build succeeds.
-7. Gate: Mobile E2E — send/receive Direct + Group message.
+7. Gate: Mobile Native E2E — Direct + Group text, attachment, recovery, lifecycle,
+   background/foreground, restart, receipt, MP-C15 typing and MP-C16 interactions.
 
 ### Phase 5: Verification Closure
 
@@ -145,6 +152,7 @@ Steps:
 
 - `packages/messaging-core/` compiles independently with no platform dependencies.
 - Desktop and Mobile both pass native E2E (text + attachment + recovery).
+- Desktop and Mobile both pass MP-C01–MP-C16 contract and Native runtime parity.
 - Zero protocol logic in either adapter.
 - Zero Sender Keys code remaining.
 - Shared test suite runs identically against both platform adapters.

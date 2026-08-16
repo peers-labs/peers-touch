@@ -4749,33 +4749,67 @@ export const api = {
     }),
 
   /**
-   * Publish a typing-state pulse onto the recipient's realtime SSE
-   * stream via Station's `POST /realtime/typing` ingress.
-   *
-   * Typing is purely advisory metadata — there is no payload, no
-   * encryption, no persistence. Senders should debounce locally
-   * (fire `typing=true` at most every ~3s while the user is typing,
-   * and fire `typing=false` after ~4s of inactivity / on send / on
-   * blur). Station fan-outs the pulse to the recipient only — no
-   * multi-device sender echo, since typing is about the actor's own
-   * activity that their other devices already know about.
+   * Submit an ephemeral typing pulse through the canonical Messaging
+   * admission path. Station validates active membership and fans the
+   * pulse out without writing it to durable message history.
    */
-  realtimeTypingSend: (
-    recipientActorId: string,
-    sessionUlid: string,
-    typing: boolean,
+  messagingTypingSend: (conversationId: string, typing: boolean) =>
+    invokeRustDataFromStatus<
+      { conversation_id: string; is_typing: boolean },
+      { submitted: boolean }
+    >('messaging_submit_typing', {
+      conversation_id: conversationId,
+      is_typing: typing,
+    }),
+
+  messagingReadCursor: (conversationId: string, lastReadSequence: number) =>
+    invokeRustDataFromStatus<
+      { conversation_id: string; last_read_sequence: number },
+      { submitted: boolean }
+    >('messaging_submit_read_cursor', {
+      conversation_id: conversationId,
+      last_read_sequence: lastReadSequence,
+    }),
+
+  messagingEditMessage: (
+    conversationId: string,
+    messageId: string,
+    plaintext: string,
   ) =>
     invokeRustDataFromStatus<
       {
-        recipient_actor_id: string;
-        session_ulid: string;
-        typing: boolean;
+        conversation_id: string;
+        message_id: string;
+        plaintext: string;
       },
-      Record<string, unknown>
-    >('realtime_typing_send', {
-      recipient_actor_id: recipientActorId,
-      session_ulid: sessionUlid,
-      typing,
+      { command_id: string; state: string }
+    >('messaging_submit_edit', {
+      conversation_id: conversationId,
+      message_id: messageId,
+      plaintext,
+    }),
+
+  messagingMetadataInteraction: (
+    conversationId: string,
+    messageId: string,
+    kind: 'retract' | 'reaction' | 'pin',
+    options: { reaction?: string; remove?: boolean } = {},
+  ) =>
+    invokeRustDataFromStatus<
+      {
+        conversation_id: string;
+        message_id: string;
+        kind: string;
+        reaction: string;
+        remove: boolean;
+      },
+      { command_id: string; state: string }
+    >('messaging_submit_metadata_interaction', {
+      conversation_id: conversationId,
+      message_id: messageId,
+      kind,
+      reaction: options.reaction ?? '',
+      remove: options.remove ?? false,
     }),
 
   /**

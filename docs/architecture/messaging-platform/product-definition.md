@@ -1,8 +1,8 @@
 # Messaging Platform — 产品定义
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-08 | **Updated**: 2026-08-08
+> **Version**: v1.1
+> **Created**: 2026-08-08 | **Updated**: 2026-08-16
 > **Owner**: Messaging Platform Team
 
 ---
@@ -62,7 +62,34 @@
 | MP-C12 | Failure recovery | required | waiting/retrying/corrupt/revoked 状态可行动 |
 | MP-C13 | Attachments | required | opaque encrypted metadata、下载与恢复 |
 | MP-C14 | Search | required | 本地 plaintext search，不泄露给 Station |
-| MP-C15 | Typing/call signaling | optional-advertised | 仅在独立 QoS 路径完整时宣传 |
+| MP-C15 | Typing presence | required | Direct/Group 中只显示当前 active member 的短暂输入状态，断流后自动消失 |
+| MP-C16 | Message interactions | required | reply/thread、edit、retract、reaction、pin 在 Direct/Group 中按同一 authority 顺序收敛 |
+
+### 3.1 Interaction Product Amendment
+
+> **Amendment status**: accepted by Goal owner on 2026-08-16.
+
+- Reply/thread 在发送时绑定不可变的 target/root identity；接收方必须看到相同关联，
+  缺失 target 时显示可行动的 unavailable preview，不能把回复静默降级为普通消息。
+- Edit 只允许原作者；接受后保留原 `message_id`，所有 active endpoints 收敛到相同
+  edited content 与 edited marker。提交失败时原内容保持可见。
+- Retract 只允许原作者；接受后保留消息位置并显示 retracted state，不把 authority
+  history 物理删除。
+- Reaction 允许 active member 添加或移除自己的 reaction；重复 add/remove 幂等。
+- Pin/unpin 允许 active member 操作 conversation pin state；所有 active endpoints
+  收敛到相同结果。
+- Read cursor 只能单调前进，不能把 `delivered` 或旧 cursor 冒充 `read`。
+- Typing 是非持久、best-effort presence。只有 active member 可发送；Direct 与 Group
+  都必须 fan-out，停止输入、切换会话、断流或 TTL 到期后必须自动清除。
+- Voice/video call signaling 继续属于 `docs/architecture/realtime/`，不计入 MP-C15。
+
+### 3.2 Platform Applicability
+
+| Capability | Desktop | Mobile | Browser | Claim rule |
+|---|---|---|---|---|
+| MP-C01–MP-C14 | required | required | not claimed | 各平台 required Native cells 必须独立通过 |
+| MP-C15 Typing presence | required | required | not claimed | Direct 与 Group 均需 sender/receiver visible evidence |
+| MP-C16 Message interactions | required | required | not claimed | Direct 与 Group 的 authority、receiver projection 和 restart evidence 必须一致 |
 
 ## 4. Trust, Privacy, And Portability Promises
 
