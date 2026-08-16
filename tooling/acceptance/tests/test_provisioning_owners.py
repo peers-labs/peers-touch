@@ -19,6 +19,54 @@ from tooling.acceptance.fixtures.chat_native_actors import produce_actor_manifes
 
 
 class StationAttestationOwnerTests(unittest.TestCase):
+    def test_remote_attestation_excludes_only_deployment_bare_repo(self) -> None:
+        from tooling.acceptance.core.attestation import _remote_source_identity
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = (
+                root
+                / ".local"
+                / "deploy"
+                / "envs"
+                / "station-three.env"
+            )
+            environment.parent.mkdir(parents=True)
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=station.example",
+                        "PT_DEPLOY_USER=acceptance",
+                        "PT_DEPLOY_PATH=station-three",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="abcdef123456\nclean\nproto-digest\n",
+                stderr="",
+            )
+            with patch(
+                "tooling.acceptance.core.attestation.REPO_ROOT",
+                root,
+            ), patch(
+                "tooling.acceptance.core.attestation.subprocess.run",
+                return_value=completed,
+            ) as run:
+                identity = _remote_source_identity("station-three")
+
+        self.assertEqual(
+            identity,
+            ("abcdef123456", "clean", "proto-digest"),
+        )
+        remote_command = run.call_args.args[0][-1]
+        self.assertIn("git status --porcelain | sed", remote_command)
+        self.assertIn("\\.bare\\.git\\/", remote_command)
+        self.assertNotIn("apps/mobile/ios", remote_command)
+
     def test_workspace_digest_binds_file_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
