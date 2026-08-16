@@ -176,8 +176,17 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
         self.assertIn("acceptance-driver-build:", source)
         self.assertIn("VITE_ACCEPTANCE_HARNESS=1", source)
         self.assertIn("cargo build --features acceptance-webdriver", source)
+        self.assertIn("ACCEPTANCE_DRIVER_BINARY", source)
         self.assertIn("acceptance-driver-smoke:", source)
         self.assertIn("-m tooling.acceptance.drivers.tauri", source)
+        driver = (ROOT / "tooling/acceptance/drivers/tauri.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(".local/acceptance/bin/peers-touch-desktop", driver)
+        self.assertNotIn(
+            '"apps/desktop/src-tauri/target/debug/peers-touch-desktop"',
+            driver,
+        )
 
     def test_stable_selectors_are_bound_in_product_source(self) -> None:
         required = {

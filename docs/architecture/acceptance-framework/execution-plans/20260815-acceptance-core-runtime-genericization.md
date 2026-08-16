@@ -111,7 +111,7 @@
 |------------|------|--------|---------------|
 | WS0 | done | actors/dataclass+mapping 序列化、结构化/文本脱敏、Driver ISP、cleanup failure、单一路径均有回归测试 | 无 |
 | WS1 | done | 30 个 Core tests 与含 actors/redaction 的 Chrome E2E 通过 | 不代表任何业务 Domain receiver proof |
-| WS2 | done | TauriDriver 继承 DomDriver；旧入口删除；native build 与连续 3 次 smoke 通过；端口/进程释放通过 | 不代表 Chat 登录/消息流程通过 |
+| WS2 | done | TauriDriver 继承 DomDriver；旧入口删除；Acceptance binary 发布到 `.local/acceptance/bin/peers-touch-desktop`，不再与普通 dev build 共用可执行文件；native build 与连续 3 次 smoke 通过；端口/进程释放通过 | 不代表 Chat 登录/消息流程通过 |
 | WS3 | partial | ChromeDriver、StationDriver 类已存在 | Dashboard/Desktop 无真实消费者；Chrome CDP 迁移未完成 |
 | WS4 | partial | `native_two_client_runner.py` 已切换到 AcceptanceGate + Core TauriDriver；Direct DELIVERED Feature/Registry/Gate trace 与 validator 已补齐；Driver build/smoke PASS | multi-device、recovery、group-MLS 与其它 Chat Gates 尚未迁移 |
 | WS5 | pending | 无 | Dashboard/Desktop Gates 未迁移 |

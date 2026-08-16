@@ -27,12 +27,17 @@
 ACCEPTANCE_RANGE ?= HEAD
 ACCEPTANCE_PLAN ?= tooling/acceptance/reports/latest-plan.json
 ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),--plan $(ACCEPTANCE_PLAN))
+ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
 
 acceptance-driver-build:
 	VITE_ACCEPTANCE_HARNESS=1 pnpm --dir apps/desktop run build
 	cd apps/desktop/src-tauri && \
 		TAURI_CONFIG='{"app":{"withGlobalTauri":true}}' \
 		cargo build --features acceptance-webdriver
+	@mkdir -p "$(dir $(ACCEPTANCE_DRIVER_BINARY))"
+	@cp apps/desktop/src-tauri/target/debug/peers-touch-desktop "$(ACCEPTANCE_DRIVER_BINARY).tmp"
+	@chmod 0755 "$(ACCEPTANCE_DRIVER_BINARY).tmp"
+	@mv "$(ACCEPTANCE_DRIVER_BINARY).tmp" "$(ACCEPTANCE_DRIVER_BINARY)"
 
 acceptance-driver-smoke:
 	python3 -m tooling.acceptance.drivers.tauri
