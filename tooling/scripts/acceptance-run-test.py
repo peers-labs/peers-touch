@@ -504,6 +504,26 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(report["proofStatus"], "UNPROVEN")
         self.assertEqual(module.acceptance_exit_code(report), 2)
 
+    def test_unexpected_provisioning_error_is_structured_failed_result(self) -> None:
+        module = load_module()
+        result = module.provisioning_failure_result(
+            gate_id="environment-gate",
+            command="run-gate",
+            environment="home-station",
+            tier="env-evidence",
+            error=RuntimeError("provisioner exploded"),
+            duration_seconds=0.1,
+        )
+        report = module.build_run_report(
+            "tooling/acceptance/reports/latest-plan.json",
+            [result],
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["errorType"], "RuntimeError")
+        self.assertEqual(report["completionStatus"], "PARTIAL")
+        self.assertEqual(module.acceptance_exit_code(report), 1)
+
     def test_missing_environment_contract_produces_blocked_manifest(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:
@@ -541,6 +561,15 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertNotIn(secret, redacted)
         self.assertIn("[REDACTED]", redacted)
 
+    def test_short_secret_uses_key_aware_redaction_without_corrupting_numbers(self) -> None:
+        module = load_module()
+        redacted = module.redact_runtime_text(
+            "count=1 password=1",
+            ("1",),
+        )
+        self.assertIn("count=1", redacted)
+        self.assertIn("password=[REDACTED]", redacted)
+
     def test_runtime_artifact_redaction_removes_resolved_secret_values(self) -> None:
         module = load_module()
         secret = "artifact-secret-value"
@@ -555,7 +584,13 @@ class AcceptanceRunTest(unittest.TestCase):
             )
             artifact.parent.mkdir(parents=True)
             artifact.write_text(
-                json.dumps({"message": f"leaked {secret}"}),
+                json.dumps(
+                    {
+                        "message": f"leaked {secret}",
+                        "password": "1",
+                        "count": 1,
+                    }
+                ),
                 encoding="utf-8",
             )
             with mock.patch.object(module, "REPO_ROOT", root):
@@ -571,6 +606,8 @@ class AcceptanceRunTest(unittest.TestCase):
         )
         self.assertNotIn(secret, serialized)
         self.assertIn("[REDACTED]", serialized)
+        self.assertIn('"count": 1', serialized)
+        self.assertNotIn('"password": "1"', serialized)
 
     def test_build_run_report_deduplicates_review_commands_by_command_text(self) -> None:
         module = load_module()
