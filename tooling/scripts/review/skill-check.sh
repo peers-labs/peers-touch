@@ -10,6 +10,9 @@ freshness_file="tooling/skills/pt-github-review/FRESHNESS.md"
 fixtures_dir="tooling/review-fixtures"
 pr_template=".github/PULL_REQUEST_TEMPLATE.md"
 submit_pipeline="tooling/scripts/review/submit-pipeline.sh"
+gap_skill="tooling/skills/pt-acceptance-gap-detector/SKILL.md"
+gap_procedures="tooling/skills/pt-acceptance-gap-detector/PROCEDURES.md"
+gap_detector="tooling/scripts/acceptance-gap-detect.py"
 
 failures=0
 
@@ -27,6 +30,9 @@ require_file "$pr_skill_file"
 require_file "$freshness_file"
 require_file "$pr_template"
 require_file "$submit_pipeline"
+require_file "$gap_skill"
+require_file "$gap_procedures"
+require_file "$gap_detector"
 
 required_sections=(
   "Review Philosophy"
@@ -113,7 +119,7 @@ for marker in "${submit_markers[@]}"; do
   fi
 done
 
-for marker in "make quality-evidence" "run.sh --range" "--strict-knowledge" "make acceptance-run-ci"; do
+for marker in "make quality-evidence" "run.sh --range" "--strict-knowledge" "make acceptance-run-ci" "acceptance-gap-detect.py"; do
   if ! grep -q -- "$marker" "$submit_pipeline"; then
     fail "$submit_pipeline missing required command marker: $marker"
   fi
@@ -275,14 +281,18 @@ fi
 rm -f "$quality_json" "$quality_markdown" /tmp/pt-quality-evidence.$$
 
 tier_run_json="$(mktemp)"
-if ! python3 tooling/scripts/acceptance-run.py \
+set +e
+python3 tooling/scripts/acceptance-run.py \
   --gate acceptance-plan-self \
   --gate chat-desktop-gateway-e2e \
   --tier ci-structure \
   --dry-run \
-  --output "$tier_run_json" >/tmp/pt-acceptance-tier.$$ 2>&1; then
+  --output "$tier_run_json" >/tmp/pt-acceptance-tier.$$ 2>&1
+tier_run_status=$?
+set -e
+if [[ "$tier_run_status" -ne 1 ]]; then
   cat /tmp/pt-acceptance-tier.$$
-  fail "acceptance-run.py must support tier-filtered dry runs"
+  fail "acceptance-run.py dry runs must select gates but remain unproven with exit 1"
 elif ! python3 - "$tier_run_json" <<'PY'
 import json
 import sys

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "chat-direct-receipt-receiver-visible",
+      "features": ["chat-native-visible-clients"],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/messaging/direct.rs",
+          "apps/desktop/src/runtimes/imRuntime.ts",
+          "apps/desktop/src/services/chatReceipt.ts",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/desktop/src/store/socialProjection.ts",
+          "apps/station/app/subserver/messaging/application/receipt_service.go",
+          "apps/station/app/subserver/messaging/interface/http/receipt_handler.go"
+        ]
+      },
+      "require": ["chat-native-two-client-e2e"]
+    },
+    {
+      "id": "chat-badge-projection-receiver-visible",
+      "features": ["chat-native-visible-clients"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/components/chat/ChatSessionList.tsx",
+          "apps/desktop/src/store/navigationBadges.ts"
+        ]
+      },
+      "require": ["chat-native-two-client-e2e"]
+    }
+  ]
+}

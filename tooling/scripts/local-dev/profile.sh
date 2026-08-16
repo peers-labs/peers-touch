@@ -177,6 +177,18 @@ case "$cmd" in
       fi
       src="$PROFILES_DIR/$name.env"
     fi
+    declared_profile="$(
+      sed -n 's/^PT_DEV_PROFILE=//p' "$src" | tail -n 1
+    )"
+    if [[ -z "$declared_profile" ]]; then
+      echo "[ERROR] Profile '$name' is missing PT_DEV_PROFILE: $src"
+      exit 1
+    fi
+    if [[ "$declared_profile" != "$name" ]]; then
+      echo "[ERROR] Profile identity mismatch: filename=$name.env PT_DEV_PROFILE=$declared_profile"
+      echo "        Regenerate or repair the profile before activation."
+      exit 1
+    fi
     # Symlink: active/<worktree-id>.env → ../profiles/<name>.env
     ln -sfn "../profiles/$name.env" "$ACTIVE_FILE"
     echo "[OK] Active profile: $name (worktree: $WORKTREE_ID)"

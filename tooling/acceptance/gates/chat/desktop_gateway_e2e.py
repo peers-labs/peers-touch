@@ -30,11 +30,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
+from tooling.acceptance.core import ProvisioningError, load_runtime_manifest
 
-DEFAULT_GATEWAY_URL = "http://127.0.0.1:3030"
-DEFAULT_STATION_URL = "http://10.37.94.156:18080"
+GATE_ID = "chat-desktop-gateway-e2e"
 
 
 @dataclass
@@ -51,12 +53,32 @@ class GateError(RuntimeError):
     pass
 
 
+@lru_cache(maxsize=1)
+def runtime_manifest() -> dict[str, Any]:
+    path = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "")
+    if not path:
+        raise GateError("PT_ACCEPTANCE_RUNTIME_MANIFEST is required")
+    try:
+        return load_runtime_manifest(Path(path), GATE_ID)
+    except ProvisioningError as error:
+        raise GateError(str(error)) from error
+
+
 def station_url() -> str:
-    return os.environ.get("CHAT_DESKTOP_GATEWAY_STATION_URL", DEFAULT_STATION_URL).rstrip("/")
+    station = runtime_manifest().get("station")
+    if not isinstance(station, dict) or not station.get("url"):
+        raise GateError("runtime manifest Station URL is required")
+    return str(station["url"]).rstrip("/")
 
 
 def gateway_url() -> str:
-    return os.environ.get("CHAT_DESKTOP_GATEWAY_URL", DEFAULT_GATEWAY_URL).rstrip("/")
+    clients = runtime_manifest().get("clients")
+    if not isinstance(clients, list) or len(clients) != 1:
+        raise GateError("runtime manifest requires one Desktop gateway client")
+    port = clients[0].get("gateway_port")
+    if not isinstance(port, int) or port <= 0:
+        raise GateError("runtime manifest Desktop gateway port is invalid")
+    return f"http://127.0.0.1:{port}"
 
 
 def require_disposable_station(base: str) -> None:
