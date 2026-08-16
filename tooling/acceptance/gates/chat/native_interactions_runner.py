@@ -771,7 +771,8 @@ class NativeInteractionsGate(AcceptanceGate):
                             reaction_command,
                         )
                     )
-                    and (snapshot.get("intent") or {}).get("state") == "submitted"
+                    and (snapshot.get("intent") or {}).get("state")
+                    in {"submitted", "committed"}
                     else None
                 ),
                 f"bob {claim_kind} reaction attempt {attempt + 1} submission",
