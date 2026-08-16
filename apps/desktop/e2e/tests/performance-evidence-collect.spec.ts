@@ -1,3 +1,4 @@
+// PERFORMANCE ONLY. This file is not a product Acceptance Gate.
 import { test, expect } from '../fixtures';
 import {
   runtimePreflight,

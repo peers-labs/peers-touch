@@ -54,14 +54,8 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(desktop_capture::global_shortcut_plugin());
 
-    #[cfg(feature = "e2e-testing")]
-    let builder = {
-        let socket_path = std::env::var("PT_PLAYWRIGHT_SOCKET")
-            .unwrap_or_else(|_| "/tmp/tauri-playwright.sock".to_string());
-        builder.plugin(tauri_plugin_playwright::init_with_config(
-            tauri_plugin_playwright::PluginConfig::new().socket_path(socket_path),
-        ))
-    };
+    #[cfg(feature = "acceptance-webdriver")]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
     builder
         .manage(app_state)

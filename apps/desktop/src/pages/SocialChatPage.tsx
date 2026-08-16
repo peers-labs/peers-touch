@@ -183,6 +183,7 @@ export function SocialChatPage() {
           return (
             <Tooltip key={key} title={label} placement="right">
               <Flexbox
+                data-chat-subpage={key}
                 align="center"
                 justify="center"
                 onClick={() => {

@@ -315,6 +315,17 @@ fn actor_profile_to_value(p: &ActorProfile) -> Value {
     data
 }
 
+fn canonical_profile_ptid(profile: &ActorProfile) -> Option<&str> {
+    if profile.id.starts_with("ptid:") {
+        return Some(profile.id.as_str());
+    }
+    profile
+        .peers_touch
+        .as_ref()
+        .map(|info| info.network_id.as_str())
+        .filter(|ptid| ptid.starts_with("ptid:"))
+}
+
 fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
     let mut r = UpdateProfileRequest::default();
     if let Some(s) = input.display_name.clone() {
@@ -433,14 +444,13 @@ pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> 
         }
     };
 
-    // Cross-check: the profile we just received MUST belong to `actor_id`. If
-    // Station returns a different actor (token mismatch / hijacked session),
-    // refuse to write — silent corruption of identities.json is the worst
-    // possible failure mode here.
-    if !profile.id.is_empty() && profile.id != actor_id {
+    // Cross-check the canonical PTID. Legacy Station profile responses may
+    // still carry their storage ID in `profile.id`; `peers_touch.network_id`
+    // is the canonical identity in that response shape.
+    if canonical_profile_ptid(&profile) != Some(actor_id) {
         tracing::error!(
             caller_actor = %actor_id,
-            station_actor = %profile.id,
+            station_actor = ?canonical_profile_ptid(&profile),
             "sync_user_profile: actor mismatch between caller token and Station response; refusing to write"
         );
         return AppResult::fail(
@@ -559,5 +569,50 @@ pub fn account_sync_avatar(input: &AccountSyncAvatarInput, token: &str) -> AppRe
                 None,
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonical_profile_ptid;
+    use crate::model::actor::{ActorProfile, PeersTouchInfo};
+
+    #[test]
+    fn canonical_profile_ptid_accepts_profile_id_when_it_is_a_ptid() {
+        let profile = ActorProfile {
+            id: "ptid:v1:actor:peers:p:alice:1220abc".to_string(),
+            ..ActorProfile::default()
+        };
+
+        assert_eq!(
+            canonical_profile_ptid(&profile),
+            Some("ptid:v1:actor:peers:p:alice:1220abc")
+        );
+    }
+
+    #[test]
+    fn canonical_profile_ptid_uses_network_id_in_legacy_profile_shape() {
+        let profile = ActorProfile {
+            id: "350519971299721219".to_string(),
+            peers_touch: Some(PeersTouchInfo {
+                network_id: "ptid:v1:actor:peers:p:alice:1220abc".to_string(),
+            }),
+            ..ActorProfile::default()
+        };
+
+        assert_eq!(
+            canonical_profile_ptid(&profile),
+            Some("ptid:v1:actor:peers:p:alice:1220abc")
+        );
+    }
+
+    #[test]
+    fn canonical_profile_ptid_rejects_internal_actor_id_without_ptid() {
+        let profile = ActorProfile {
+            id: "350519971299721219".to_string(),
+            ..ActorProfile::default()
+        };
+
+        assert_eq!(canonical_profile_ptid(&profile), None);
     }
 }

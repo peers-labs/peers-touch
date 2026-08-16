@@ -1,8 +1,8 @@
 # Acceptance Framework
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-06-03 | **Updated**: 2026-06-04
+> **Version**: v2.0
+> **Created**: 2026-06-03 | **Updated**: 2026-08-15
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -60,12 +60,14 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 
 | 文档 | 说明 |
 |------|------|
-| [design.md](./design.md) | 架构原则、分层模型、核心契约和执行闭环 |
-| [decisions.md](./decisions.md) | 关键设计决策与替代方案 |
+| [design.md](./design.md) | 架构原则、分层模型、核心契约、Core Runtime 抽象和执行闭环 |
+| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-12） |
+| [module-layout.md](./module-layout.md) | Core Runtime 重构后的目录结构、文件职责、依赖关系 |
+| [integration.md](./integration.md) | 现有代码迁移路径、影响面分析、增量迁移策略 |
 | [domain-onboarding.md](./domain-onboarding.md) | 产品域接入标准、状态模型和验收标准 |
 | [execution-plans/phase-2-station-dashboard-domain-onboarding.md](./execution-plans/phase-2-station-dashboard-domain-onboarding.md) | Station Dashboard managed domain 接入计划 |
 | [execution-plans/phase-3-chat-domain-onboarding.md](./execution-plans/phase-3-chat-domain-onboarding.md) | Chat managed domain 接入计划与设计落地反思 |
-| [execution-plans/20260815-tauri-driver-desktop-ui-gate.md](./execution-plans/20260815-tauri-driver-desktop-ui-gate.md) | Desktop UI DOM gate 引入 tauri-driver 执行计划 |
+| [execution-plans/20260815-tauri-driver-desktop-ui-gate.md](./execution-plans/20260815-tauri-driver-desktop-ui-gate.md) | macOS native Tauri embedded WebDriver DOM Gate 执行计划 |
 
 ---
 

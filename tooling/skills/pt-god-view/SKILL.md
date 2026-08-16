@@ -139,6 +139,7 @@ The agent must NOT do the work itself when a skill exists for it:
 | Need to break down into steps | List steps from memory | `pt-architecture-execution-methodology` |
 | Need to write plan to file | Just dump markdown | `pt-plan-and-document` |
 | Need to implement planned step | Code without checking plan | `pt-execution-plan-guardian` |
+| Need to add, complete, upgrade, or audit Acceptance | Infer onboarding or start from a Gate | `pt-acceptance-engineering` |
 | Need to commit | `git commit -m "stuff"` | `pt-github-commit` |
 | Need to create PR | `gh pr create` bare | `pt-github-pr` |
 | Need review | Self-approve | `pt-github-review` |
@@ -202,6 +203,8 @@ When starting new work:
 | Signal | Stage | Reasoning |
 |--------|-------|-----------|
 | New product/module/capability, workflow redesign, or benchmark rebuild | PRODUCT | Product outcome and acceptance are not yet defined |
+| Add/complete Acceptance for an existing module | CROSS-STAGE | Invoke `pt-acceptance-engineering`; its gap matrix determines PRODUCT, DESIGN, PLAN, EXECUTE, or REVIEW |
+| Upgrade Acceptance Core, Driver, Fixture, Harness, Evidence, or environment lifecycle | DESIGN | Invoke `pt-acceptance-engineering`, then architecture design unless an accepted design and plan cover the exact upgrade |
 | Product accepted; needs new boundary / ownership / contract decision | DESIGN | Architecture not yet defined |
 | Product and architecture accepted; needs implementation breakdown | PLAN | Accepted contracts need an execution plan |
 | Plan exists and accepted | EXECUTE | Ready to implement |
@@ -270,6 +273,12 @@ When showing status, flag entries with `last_session` >14 days:
 
 ```
 pt-god-view (methodology OS / entry point)
+  │
+  ├── ACCEPTANCE cross-stage entry
+  │     └── pt-acceptance-engineering
+  │           ├── PRODUCT / DESIGN / PLAN / EXECUTE dispatch
+  │           ├── pt-dev-runtime-handoff (runtime evidence)
+  │           └── pt-quality-check (review evidence)
   │
   ├── PRODUCT stage
   │     ├── pt-product-design-methodology

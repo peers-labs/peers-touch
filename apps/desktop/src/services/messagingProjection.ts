@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
+import { useNavigationBadgeStore } from '../store/navigationBadges';
 import { useSocialChatStore } from '../store/socialChat';
 import { log } from '../utils/logger';
 
@@ -38,7 +39,33 @@ async function refreshProjection(payload: MessagingProjectionChangedPayload): Pr
     return;
   }
 
+  const previousMessageIds = new Set(
+    (store.messages[conversationId] ?? []).map((message) => message.ulid),
+  );
+  const badgeState = useNavigationBadgeStore.getState();
+  const isActiveConversation = badgeState.chatSurfaceVisible
+    && (
+      (conversation.kind === 1 && store.activeSessionUlid === conversationId)
+      || (conversation.kind === 2 && store.activeGroupUlid === conversationId)
+    );
+
   await store.loadMessages(conversationId, conversation.kind === 2 ? 'group' : 'friend');
+
+  if (isActiveConversation) {
+    badgeState.clearChatUnread(conversationId);
+    return;
+  }
+
+  const refreshed = useSocialChatStore.getState();
+  const newIncomingMessages = (refreshed.messages[conversationId] ?? []).filter(
+    (message) => (
+      !previousMessageIds.has(message.ulid)
+      && message.senderDid !== refreshed.currentUserDid
+    ),
+  );
+  for (const _message of newIncomingMessages) {
+    badgeState.bumpChatUnread(conversationId);
+  }
 }
 
 export function installMessagingProjectionBridge(): Promise<void> {

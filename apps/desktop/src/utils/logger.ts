@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { redactJsonValue } from '../security/redaction';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -18,22 +19,14 @@ let flushInFlight = false;
 
 function serializeForLog(data: unknown): string | undefined {
   if (data === undefined) return undefined;
-  if (data instanceof Error) {
-    return JSON.stringify({
-      name: data.name,
-      message: data.message,
-      stack: data.stack,
-    });
-  }
-  if (typeof data === 'object' && data !== null) {
-    return JSON.stringify(data, (_k, v) => {
-      if (v instanceof Error) {
-        return { name: v.name, message: v.message, stack: v.stack };
-      }
-      return v;
-    });
-  }
-  return JSON.stringify(data);
+  const serialized = JSON.stringify(data, (_key, value) => {
+    if (value instanceof Error) {
+      return { name: value.name, message: value.message, stack: value.stack };
+    }
+    return value;
+  });
+  if (serialized === undefined) return undefined;
+  return JSON.stringify(redactJsonValue(JSON.parse(serialized)));
 }
 
 function scheduleFlush(): void {
