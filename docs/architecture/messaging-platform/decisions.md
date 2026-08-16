@@ -1,8 +1,8 @@
 # Messaging Platform — 设计决策
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-08-16
+> **Version**: v1.3
+> **Created**: 2026-08-08 | **Updated**: 2026-08-17
 > **Owner**: Messaging Platform Team
 
 ---
@@ -38,6 +38,7 @@
 | MP-D25 | Attachment projection 与 plaintext FTS 由 Engine SQLCipher 拥有 | accepted |
 | MP-D26 | Durable message interactions 共用 authority sequence 与 atomic device consumption | accepted |
 | MP-D27 | Typing 使用独立 ephemeral QoS，不进入 durable message lane | accepted |
+| MP-D28 | Pending encrypted command cancellation 由 Authority 串行裁决 | proposed |
 
 ---
 
@@ -344,6 +345,100 @@ Native Direct/Group sender/receiver evidence必须证明 start/stop/TTL、member
 disconnect cleanup，并证明 durable lane/history 中无 typing item。
 
 Owner accepted through the 2026-08-16 completion Goal.
+
+## MP-D28: Pending Encrypted Command Cancellation 由 Authority 串行裁决
+
+**Status**: proposed
+**Date**: 2026-08-17
+
+### Context
+
+MP-J13 和 MP-S31/MP-S33 要求 edit/reply 在提交超时后保留 pending intent，并允许用户
+取消尚未被 Authority accepted 的 command。当前 Engine 在网络提交前已经把 Direct
+ratchet 或 Group MLS application state、exact encrypted command、intent 和 outbox
+原子持久化。
+
+仅在本地把 outbox 标记为 cancelled 不安全：
+
+- timeout 可能发生在 Authority 已提交 event、但 response 丢失之后；
+- 本地无法从 timeout 判断 command 是否已经 accepted；
+- 如果本地先显示 cancelled、稍后又消费 accepted public event，会产生用户可见反转；
+- 回滚 ratchet/MLS state 会违反 MP-D17，并可能复用 key/nonce；
+- 丢弃 exact command 而不让 Authority 记住 cancellation，迟到或重试的 submit 仍可能
+  被接受。
+
+### Proposed Decision
+
+Model 新增 typed `CancelPendingMessagingCommand` contract。请求绑定
+`conversation_id`、`command_id`、sender `(PTID, device_id)` 和 Authority identity；
+响应只能是：
+
+- `CANCELLED`：Authority 在同一 conversation transaction boundary 内确认 command
+  尚未 accepted，并写入 durable cancellation tombstone；
+- `ALREADY_ACCEPTED`：对应 command receipt/event 已存在，客户端不得转 cancelled；
+- `ALREADY_CANCELLED`：幂等重复取消；
+- typed authorization、stale endpoint 或 unknown-command reject。
+
+Authority 对 submit 与 cancel 使用同一 `(conversation_id, command_id)` 串行边界：
+
+1. submit 先获得边界并提交 event：cancel 返回 `ALREADY_ACCEPTED`；
+2. cancel 先获得边界并写 tombstone：当前及未来 exact submit 返回
+   `COMMAND_CANCELLED`，且零 event、零 queue row；
+3. cancel request 自身 timeout：客户端保持 `retry_wait/cancel_pending`，不得显示
+   terminal cancelled；
+4. Home Station 只做 typed proxy，最终裁决仍由 Conversation Authority 持有。
+
+Device Engine 以 command dispatch lock 串行本地 retry 与 cancel request。只有收到
+`CANCELLED` 或 `ALREADY_CANCELLED` 后，才在一个 SQLCipher transaction 内把
+`local_commands`、`command_outbox`、`command_attempts` 和 logical message/interaction
+intent 转为 `cancelled`：
+
+- edit cancellation 保持原 message content 可见；
+- reply cancellation 移除未接受的 pending reply projection，但不改变被引用消息；
+- cancelled exact bytes 永不重新进入 outbox；
+- 已推进的 Direct ratchet/MLS state不回滚；形成的 bounded gap 由既有 skipped-key /
+  epoch semantics 吸收；
+- `ALREADY_ACCEPTED` 保持 submitted/retry reconciliation，并等待 ordered public-event
+  marker 成为 terminal truth。
+
+Cancellation tombstone 至少保留到 command idempotency/receipt retention horizon 结束，
+不得早于任何可能的网络重试或 federation replay。
+
+### Rationale
+
+- Authority 是唯一能无歧义裁决 accepted 与 cancelled 竞态的 owner；
+- typed outcome 避免 UI 把 transport timeout 误写成业务 cancellation；
+- tombstone 让迟到 exact submit 和跨 Station retry 都 fail closed；
+- 不回滚 crypto state，延续 MP-D17 的 nonce/key safety；
+- local transaction 保证 UI、outbox 和 intent 不出现 split-brain。
+
+### Alternatives Considered
+
+- 只取消本地 outbox：拒绝，无法阻止已在途或跨 Station retry 的 command。
+- timeout 后先查询 command status：拒绝，status read 与迟到 submit 之间仍有 TOCTOU。
+- 回滚 ratchet/MLS state：拒绝，无法证明 crash/retry 下不复用 key/nonce。
+- 把取消限制为首次网络 dispatch 前：拒绝，不满足 MP-J13 的提交超时恢复路径。
+- cancel 后忽略迟到 accepted event：拒绝，会破坏 Authority truth 和 ordered lane。
+
+### Consequences
+
+正面：
+
+- edit/reply timeout、retry、cancel 和 accepted race 有一个可证明的终态；
+- Direct、Group、same/cross-Station 使用同一 cancellation contract；
+- restart 后可从 Authority tombstone 与 SQLCipher intent 状态恢复。
+
+负面：
+
+- Model、Station Authority UOW、federation proxy、Engine store/outbox 和 UI state 都需新增
+  typed cancellation path；
+- Authority 需持久化并清理 cancellation tombstone；
+- G15 必须注入 response timeout，并分别证明 cancel-wins、submit-wins、retry 与 restart。
+
+### Acceptance
+
+`DESIGN_READY_FOR_REVIEW`。Owner 尚未接受；在接受前
+`pending_interaction_timeout_retry_cancel` 必须保持 `UNPROVEN`，MP-G15 不得 PASS。
 
 ## MP-D23: Attachment Object 与 Transfer Session 由 Conversation Authority 拥有
 
