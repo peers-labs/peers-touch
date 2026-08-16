@@ -43,7 +43,8 @@
       "reaction add and remove is idempotent per actor and reaction",
       "pin and unpin converge in authority order",
       "read cursor only advances",
-      "durable interactions use ordered device consumption and post-commit ACK"
+      "durable interactions use ordered device consumption and post-commit ACK",
+      "submit timeout retains the durable intent and exact retry converges to one authority fact"
     ],
     "visible": [
       "Direct peers converge on reply, thread, edited, retracted, reaction, pin and read state",
@@ -56,6 +57,7 @@
     "compile, unit, process startup, API-only or screenshot-only evidence cannot prove the interaction journey",
     "non-author edit or retract must produce zero authority mutation",
     "removed, revoked or non-member endpoints must not submit or receive future interactions",
+    "post-dispatch timeout must not expose local cancellation or roll back Direct or MLS state",
     "UI optimistic mutation must not become terminal product truth"
   ]
 }

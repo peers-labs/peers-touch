@@ -5775,6 +5775,31 @@ impl MessagingStore {
                 .optional()
                 .map_err(|error| error.to_string())?
         };
+        let outbox = if command_id.trim().is_empty() {
+            None
+        } else {
+            connection
+                .query_row(
+                    "SELECT state, attempt_count, next_attempt_at_unix_ms,
+                            last_error_code, command_bytes
+                     FROM messaging_command_outbox
+                     WHERE command_id = ?1",
+                    params![command_id],
+                    |row| {
+                        Ok(serde_json::json!({
+                            "state": row.get::<_, String>(0)?,
+                            "attemptCount": row.get::<_, i64>(1)?,
+                            "nextAttemptAtUnixMs": row.get::<_, i64>(2)?,
+                            "lastErrorCode": row.get::<_, String>(3)?,
+                            "commandSha256": hex::encode(Sha256::digest(
+                                row.get::<_, Vec<u8>>(4)?.as_slice()
+                            )),
+                        }))
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+        };
         let reactions = load_reactions_for_message(&connection, message_id)?
             .into_iter()
             .map(|(actor_ptid, reaction, created_at_unix_ms)| {
@@ -5839,6 +5864,7 @@ impl MessagingStore {
             "messageId": message_id,
             "projection": projection,
             "intent": intent,
+            "outbox": outbox,
             "reactions": reactions,
             "pins": pins,
             "readCursors": read_cursors,

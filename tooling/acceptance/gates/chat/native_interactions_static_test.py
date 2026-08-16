@@ -71,6 +71,9 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn("acceptance_interaction_snapshot", store)
         self.assertIn('#[cfg(feature = "acceptance-webdriver")]', gateway)
         self.assertIn("messaging_acceptance_interaction_snapshot", gateway)
+        self.assertIn('"outbox": outbox', store)
+        self.assertIn('"attemptCount"', store)
+        self.assertIn('"commandSha256"', store)
 
     def test_native_runners_are_observation_bounded_and_source_bound(self) -> None:
         for path in (
@@ -106,13 +109,42 @@ class NativeInteractionContractsTest(unittest.TestCase):
             "group_duplicate_queue_replay",
             "group_removed_member_denied",
             "revoked_device_denied",
-            "pending_interaction_timeout_retry_cancel",
+            "pending_interaction_timeout_retry",
             "station_restart_convergence",
             "resources_released",
         ):
             self.assertIn(f'"{assertion}"', source)
         self.assertIn('self.prove_lifecycle("friend"', source)
+        self.assertIn(
+            'self.prove_pending_timeout_retry("friend", direct_id)',
+            source,
+        )
+        self.assertIn(
+            'self.prove_pending_timeout_retry("group", group_id)',
+            source,
+        )
         self.assertNotIn('self.prove_lifecycle("direct"', source)
+        self.assertNotIn("CancelPendingMessagingCommand", source)
+        self.assertNotIn("cancel_pending", source)
+
+    def test_timeout_retry_uses_profile_three_fault_proxy(self) -> None:
+        runner = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+        proxy = self.source(
+            "tooling/acceptance/fixtures/chat_submit_fault_proxy.py"
+        )
+        self.assertIn("ProfileThreeSubmitFaultProxy", runner)
+        self.assertIn("arm_connection_loss", runner)
+        self.assertIn('"messaging_dispatch"', runner)
+        self.assertIn('"retry_wait"', runner)
+        self.assertIn("receiverVisibleCount", runner)
+        self.assertIn('SUBMIT_PATH = "/messaging/command/submit"', proxy)
+        self.assertIn("profile_three_environment(station_url)", proxy)
+        self.assertIn("requestSha256", proxy)
+        self.assertIn("commandSha256", proxy)
+        self.assertIn("_submit_command_bytes", proxy)
+        self.assertNotIn("localhost:18080", proxy)
 
     def test_profile_three_restart_is_remote_and_source_bound(self) -> None:
         runner = self.source(
@@ -167,6 +199,17 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn(
             "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
             gates,
+        )
+
+    def test_timeout_fault_fixture_selects_interaction_gate(self) -> None:
+        registry = self.source("tooling/acceptance/registry.yaml")
+        self.assertIn(
+            '"tooling/acceptance/fixtures/chat_submit_fault_proxy.py"',
+            registry,
+        )
+        self.assertIn(
+            '"tooling/acceptance/gates/chat/chat_submit_fault_proxy_test.py"',
+            registry,
         )
 
 
