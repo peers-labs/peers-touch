@@ -599,8 +599,8 @@ pnpm run check
 pnpm run test
 pnpm run build
 cd src-tauri
-cargo check --features e2e-testing
-cargo test --features e2e-testing
+cargo check --features acceptance-webdriver
+cargo test --features acceptance-webdriver
 
 cd apps/mobile/android
 ./gradlew build
