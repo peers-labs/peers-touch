@@ -139,18 +139,18 @@ func matchPackage(pkgPath, pattern string) bool {
 	if pkgPath == pattern {
 		return true
 	}
-	
+
 	if len(pkgPath) > len(pattern) {
 		if pkgPath[:len(pattern)] == pattern && (pkgPath[len(pattern)] == '/' || pkgPath[len(pattern)] == '.') {
 			return true
 		}
-		
+
 		suffix := "/" + pattern
 		if len(pkgPath) >= len(suffix) && pkgPath[len(pkgPath)-len(suffix):] == suffix {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

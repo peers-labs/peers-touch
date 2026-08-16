@@ -43,13 +43,13 @@ func TestSubjectContext(t *testing.T) {
 
 	t.Run("MustGetSubject panics when no subject", func(t *testing.T) {
 		ctx := context.Background()
-		
+
 		defer func() {
 			if r := recover(); r == nil {
 				t.Error("MustGetSubject() should panic when no subject found")
 			}
 		}()
-		
+
 		MustGetSubject(ctx)
 	})
 
@@ -68,14 +68,14 @@ func TestSubjectContext(t *testing.T) {
 
 	t.Run("HasSubject", func(t *testing.T) {
 		ctx := context.Background()
-		
+
 		if HasSubject(ctx) {
 			t.Error("HasSubject() = true, want false for empty context")
 		}
-		
+
 		subject := &Subject{ID: "user123"}
 		ctx = WithSubject(ctx, subject)
-		
+
 		if !HasSubject(ctx) {
 			t.Error("HasSubject() = false, want true after WithSubject")
 		}

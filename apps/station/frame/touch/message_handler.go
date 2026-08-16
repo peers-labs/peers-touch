@@ -122,7 +122,7 @@ func HandleUpdateMembers(ctx context.Context, req *pb.UpdateMembersRequest) (*pb
 
 func HandleGetMembers(ctx context.Context, req *pb.GetMembersRequest) (*pb.GetMembersResponse, error) {
 	svc := service.NewConversationService()
-	
+
 	conv, err := svc.Get(ctx, req.ConvId)
 	if err != nil {
 		return nil, server.NotFound("Conversation not found")

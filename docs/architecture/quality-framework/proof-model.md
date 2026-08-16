@@ -8,7 +8,7 @@
 | Category | Meaning | Examples |
 |---|---|---|
 | Machine-proven | checked by scripts and can fail CI/local pipeline | bad range fail-closed, hard-rule fixture, gate tier validation |
-| Evidence-proven | proven by a gate run or report artifact | `station-chat-unit` passed, quality evidence generated |
+| Evidence-proven | proven by a gate run or report artifact | `station-messaging-unit` passed, quality evidence generated |
 | Review-proven | decided by an agent reading code and evidence | source-of-truth correctness, knowledge semantic delta |
 | Owner-approved | requires accountable human decision | security waiver, rollout risk, product tradeoff |
 | Unproven | selected or described but not actually evidenced | env gate not run, DOM behavior not exercised |

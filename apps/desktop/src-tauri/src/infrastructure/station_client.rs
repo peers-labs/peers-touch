@@ -297,7 +297,24 @@ pub(crate) fn post_json_no_auth(path: &str, body: Value) -> Result<Value, Statio
     let status = resp.status();
     let elapsed = start.elapsed().as_millis();
 
-    let result: Value = resp.json().map_err(|e| {
+    let body_text = resp.text().unwrap_or_default();
+
+    if !status.is_success() {
+        tracing::warn!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, body = %body_text, "← station FAIL");
+        let parsed: Value = serde_json::from_str(&body_text).unwrap_or(Value::Null);
+        let msg = parsed
+            .get("message")
+            .or_else(|| parsed.get("msg"))
+            .and_then(|v| v.as_str())
+            .unwrap_or(&body_text);
+        return Err(StationClientError::new(
+            StationClientErrorKind::HttpStatus(status.as_u16()),
+            format!("station returned {}: {}", status.as_u16(), msg),
+            Some(serde_json::json!({ "status": status.as_u16(), "body": parsed })),
+        ));
+    }
+
+    let result: Value = serde_json::from_str(&body_text).map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
         StationClientError::new(
             StationClientErrorKind::Decode,
@@ -305,20 +322,6 @@ pub(crate) fn post_json_no_auth(path: &str, body: Value) -> Result<Value, Statio
             None,
         )
     })?;
-
-    if !status.is_success() {
-        let msg = result
-            .get("message")
-            .or_else(|| result.get("msg"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown error");
-        tracing::warn!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station FAIL");
-        return Err(StationClientError::new(
-            StationClientErrorKind::HttpStatus(status.as_u16()),
-            format!("station returned {}: {}", status.as_u16(), msg),
-            Some(serde_json::json!({ "status": status.as_u16(), "body": result })),
-        ));
-    }
 
     tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, no-auth)");
     Ok(result)

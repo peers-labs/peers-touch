@@ -190,7 +190,7 @@ function HoverActions({
           />
         </Tooltip>
       )}
-      <Tooltip title="React">
+      <Tooltip title={t('chat.social.messageArea.actionReact')}>
         <Button
           type="text"
           size="small"
@@ -561,6 +561,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   return (
     <Flexbox
       data-message-ulid={message.ulid}
+      data-pt-message-item={message.ulid}
       className={`msg-row ${highlighted ? 'highlighted' : ''}`}
       horizontal
       align="flex-start"

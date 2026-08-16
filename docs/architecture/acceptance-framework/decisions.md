@@ -195,17 +195,15 @@ Station Dashboard 证明了普通管理面可以接入 acceptance，但它仍偏
 
 将 `chat` 从 `planned` 升级为 active `managed_domain`。Chat domain 覆盖 Station、realtime、Desktop typed surface 和 Desktop DOM visibility 能力，并保留 app-runtime optional evidence：
 
-- `chat-proto-service-contract`：Proto-first 和 Station friend_chat service/repository contracts。
-- `chat-runtime-message-flow`：运行中 Station 上的两 actor session、send、list、read acknowledgement 链路。
-- `chat-live-realtime-delivery`：运行中 Station 上的 authenticated `/events/stream` 两 actor live message 与 read receipt delivery。
-- `chat-desktop-gateway-message-flow`：optional app-runtime evidence，运行中 Desktop HTTP gateway 上的 receiver auth、session list、message sync/list 和 read acknowledgement。
-- `chat-desktop-dom-message-visible`：optional app-runtime evidence，运行中 Desktop web + Desktop HTTP gateway 上的 receiver auth、scoped sync、session row DOM 和 message DOM visibility。
-- `chat-realtime-contract`：Station realtime handler 与 Desktop realtime client 的 typed contract。
+- `chat-proto-service-contract`：Proto-first 和 Station messaging/conversation/envelope contracts。
+- `chat-desktop-gateway-message-flow`：运行中 Desktop HTTP gateway 上的 actor auth、key publication、direct conversation、E2EE send、hydrate 与 decrypt。
+- `chat-realtime-contract`：Station per-device queue / envelope 与 Desktop messaging lifecycle 的 typed contract。
 - `desktop-chat-typed-surface`：Desktop chat page/components/store 的 typed visible-surface contract。
+- `chat-native-visible-clients`：真实 native Desktop 的 two-client、multi-device、recovery 与 MLS 用户路径。
 
 ### Rationale
 
-Chat 同时具备事实源、传输面和用户可见面，适合验证 acceptance 是否能管理高频用户路径。当前先落稳定 gates，并允许 optional Desktop gateway / DOM visibility evidence，但不把 scoped sync DOM proof 说成 live realtime DOM event consumption、离线恢复或跨 home Station realtime。
+Chat 同时具备事实源、传输面和用户可见面，适合验证 acceptance 是否能管理高频用户路径。Station-direct plaintext-shaped gates cannot prove the client-owned E2EE path, so they are removed instead of translated into a second transport. Gateway and native gates preserve the actual ownership boundary.
 
 ### Alternatives Considered
 
@@ -214,6 +212,6 @@ Chat 同时具备事实源、传输面和用户可见面，适合验证 acceptan
 
 ### Consequences
 
-- Chat 变更会通过 registry 自动选择 `proto-build`、`station-chat-unit`、`chat-runtime-e2e`、`chat-live-realtime-e2e`、`chat-desktop-gateway-e2e`、`chat-desktop-dom-message-visible` 和 / 或 `desktop-check`。
+- Chat 变更会通过 registry 自动选择 `proto-build`、`station-messaging-unit`、`messaging-platform-contract`、`chat-desktop-gateway-e2e`、native gates 和 / 或 `desktop-check`。
 - Acceptance coverage report 现在能显示三个 active domains：Federation、Station Dashboard、Chat。
-- Chat 的未证明范围必须保持显式，不能用 typed checks、Station API runtime E2E、Station SSE E2E、Desktop gateway command E2E 或 scoped sync DOM visibility 代替 live realtime DOM 级用户消息收发体验。
+- Chat 的未证明范围必须保持显式，不能用 typed checks 或 Desktop gateway command E2E 代替 native multi-client 用户消息收发体验。

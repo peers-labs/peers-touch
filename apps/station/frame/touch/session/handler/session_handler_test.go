@@ -10,11 +10,11 @@ import (
 
 func TestHandleVerifySession(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupContext   func() context.Context
-		expectedValid  bool
-		expectedID     string
-		expectNilSubj  bool
+		name          string
+		setupContext  func() context.Context
+		expectedValid bool
+		expectedID    string
+		expectNilSubj bool
 	}{
 		{
 			name: "valid session with subject",

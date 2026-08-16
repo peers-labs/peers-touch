@@ -203,7 +203,7 @@ func notifToProto(n domain.Notification) *pb.Notification {
 		TargetId:    n.TargetID,
 		Title:       n.Title,
 		Body:        n.Body,
-		GroupKey:     n.GroupKey,
+		GroupKey:    n.GroupKey,
 		Metadata:    n.Metadata,
 		CreatedAt:   timestamppb.New(n.CreatedAt),
 	}

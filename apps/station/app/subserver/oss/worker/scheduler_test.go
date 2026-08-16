@@ -21,8 +21,8 @@ type fakeWorker struct {
 	onRun    func()
 }
 
-func (w *fakeWorker) Name() string             { return w.name }
-func (w *fakeWorker) Interval() time.Duration  { return w.interval }
+func (w *fakeWorker) Name() string            { return w.name }
+func (w *fakeWorker) Interval() time.Duration { return w.interval }
 func (w *fakeWorker) RunOnce(_ context.Context) error {
 	atomic.AddInt64(&w.runCount, 1)
 	if w.onRun != nil {
@@ -34,8 +34,8 @@ func (w *fakeWorker) RunOnce(_ context.Context) error {
 // recordingAudit captures audit appends so the heartbeat
 // assertions can read them back without a database.
 type recordingAudit struct {
-	mu      sync.Mutex
-	rows    []ossmodel.Audit
+	mu        sync.Mutex
+	rows      []ossmodel.Audit
 	appendErr error
 }
 

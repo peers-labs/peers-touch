@@ -1,10 +1,21 @@
 # Phase 3: Chat Managed Domain Onboarding
 
-> **Status**: implemented
+> **Status**: superseded
 > **Version**: v1.4
 > **Created**: 2026-06-04 | **Updated**: 2026-06-04
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
+
+> **Superseded 2026-08-15**: This plan records the former `friend_chat`
+> acceptance topology. The unified Messaging Platform removed those Station
+> routes and packages. Current chat acceptance is governed by
+> `docs/architecture/messaging-platform/` and
+> `docs/architecture/federated-im/execution-plans/20260731-compat-chat-elimination.md`.
+> The executable Station-direct gates described below were deleted because they
+> could not exercise the client-owned E2EE preparation path without violating
+> ownership. Current evidence comes from Messaging Platform contract tests,
+> Station messaging/conversation/envelope tests, Desktop gateway E2E, and
+> native multi-client gates.
 
 ---
 

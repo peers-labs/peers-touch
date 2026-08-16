@@ -372,10 +372,10 @@ func TestAuditRepo_AppendQueryTrim(t *testing.T) {
 	now := time.Now()
 	for i := 0; i < 5; i++ {
 		err := r.Append(ctx, ossmodel.Audit{
-			Action:  ossmodel.AuditActionUpload,
-			ActorID: "did:test:logger",
-			TS:      now.Add(-time.Duration(i) * time.Hour),
-			Outcome: ossmodel.AuditOutcomeOK,
+			Action:    ossmodel.AuditActionUpload,
+			ActorID:   "did:test:logger",
+			TS:        now.Add(-time.Duration(i) * time.Hour),
+			Outcome:   ossmodel.AuditOutcomeOK,
 			SizeBytes: int64(i + 1),
 		})
 		if err != nil {

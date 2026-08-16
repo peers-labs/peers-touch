@@ -9,8 +9,8 @@ import (
 var ErrActorKeyNotFound = errors.New("actor signing key not found")
 
 type ActorSigningKeyRecord struct {
-	ActorID         string
-	PublicKey       ed25519.PublicKey
+	ActorID             string
+	PublicKey           ed25519.PublicKey
 	EncryptedPrivateKey []byte
 }
 

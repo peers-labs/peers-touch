@@ -11,11 +11,11 @@
 //
 // Two implementations:
 //
-//	- MemLock          : in-process; the right choice for
-//	                     single-instance deployments and unit tests.
-//	- PgAdvisoryLock   : (S12) cluster-wide via pg_try_advisory_lock.
-//	                     Lives in a follow-up slice so this one stays
-//	                     focused on the worker scaffolding.
+//   - MemLock          : in-process; the right choice for
+//     single-instance deployments and unit tests.
+//   - PgAdvisoryLock   : (S12) cluster-wide via pg_try_advisory_lock.
+//     Lives in a follow-up slice so this one stays
+//     focused on the worker scaffolding.
 //
 // LeaderLock is the one place where multi-instance correctness
 // gets enforced; the workers themselves are stateless and can be

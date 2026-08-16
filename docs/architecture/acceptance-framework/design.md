@@ -258,27 +258,27 @@ tooling/acceptance/reports/station-dashboard-validation.json
 
 Chat managed domain 的边界：
 
-- 事实源来自 `model/domain/chat/*.proto`、`friend_chat` 持久化表、Station friend_chat service/repository，以及 Desktop chat store 对 Station API 的 typed contract。
-- Realtime / SSE 是 delivery contract，不是 message persistence truth。
+- 事实源来自 `model/domain/chat/*.proto`、Station messaging/conversation/envelope subservers、conversation event log、per-device messaging queue，以及 Desktop messaging engine 对 Station API 的 typed contract。
+- Queue / envelope delivery 是 delivery contract，不是 message persistence truth。
 - Desktop typed surface 只能证明页面、store、service API 的编译期契约，不能替代 DOM 级可见性或 live realtime DOM event-consumption proof。
-- 当前 stable gates 是 `proto-build`、`station-chat-unit`、`chat-runtime-e2e`、`chat-live-realtime-e2e` 和 `desktop-check`；`chat-desktop-gateway-e2e` 是 optional app-runtime gate，证明 desktop-rust BFF；`chat-desktop-dom-message-visible` 是 optional app-runtime gate，证明 scoped sync 后 Desktop renderer DOM 可见性；两者都不能替代 live realtime DOM event-consumption、双 Desktop client、离线恢复或跨 home Station realtime proof。
+- 当前 stable gates 是 `proto-build`、`station-messaging-unit`、`messaging-platform-contract`、`desktop-check` 和 `chat-native-visible-static`；`chat-desktop-gateway-e2e` 是 app-runtime gate，证明 desktop-rust messaging engine 的 E2EE direct-message 闭环；native multi-client gates 负责用户可见双客户端、multi-device、recovery 与 MLS 证据。
 
 该 domain 的目标是反思并验证设计落地：acceptance 不能只覆盖管理面和 Federation，还必须能表达高频用户路径的事实源、传输面、可见面和未证明范围。
 
 ```text
-model/domain/chat/** + apps/station/app/subserver/friend_chat/** + apps/desktop/src/**chat**
+model/domain/chat/** + apps/station/app/subserver/{messaging,conversation,envelope}/** + apps/desktop/**messaging**
           │
           ▼
 tooling/acceptance/registry.yaml
           │
           ▼
-chat-service-contract / chat-runtime-message-flow / chat-live-realtime-delivery / chat-desktop-gateway-message-flow / chat-desktop-dom-message-visible / chat-realtime-delivery / desktop-chat-surface
+chat-service-contract / chat-desktop-gateway-message-flow / chat-realtime-delivery / desktop-chat-surface / chat-native-visible-clients
           │
           ▼
-chat-proto-service-contract / chat-runtime-message-flow / chat-live-realtime-delivery / chat-realtime-contract / desktop-chat-typed-surface / chat-desktop-dom-message-visible
+chat-proto-service-contract / chat-realtime-contract / desktop-chat-typed-surface / chat-native-visible-clients
           │
           ▼
-proto-build + station-chat-unit + chat-runtime-e2e + chat-live-realtime-e2e + desktop-check (+ optional chat-desktop-gateway-e2e / chat-desktop-dom-message-visible)
+proto-build + station-messaging-unit + messaging-platform-contract + desktop-check + chat-native-visible-static (+ chat-desktop-gateway-e2e / native environment gates)
           │
           ▼
 tooling/acceptance/reports/chat-validation.json

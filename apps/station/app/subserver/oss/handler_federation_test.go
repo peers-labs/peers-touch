@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -60,7 +59,7 @@ func (s *stubFileRepo) FindByOwnerKeyIncludeDeleted(ctx context.Context, owner, 
 	return s.FindByOwnerKey(ctx, owner, key)
 }
 func (s *stubFileRepo) Restore(context.Context, string, time.Time, *time.Time) error { return nil }
-func (s *stubFileRepo) MarkDeleted(context.Context, string, time.Time) error          { return nil }
+func (s *stubFileRepo) MarkDeleted(context.Context, string, time.Time) error         { return nil }
 func (s *stubFileRepo) Patch(context.Context, string, ossrepo.FilePatch, time.Time) error {
 	return nil
 }
@@ -360,6 +359,3 @@ func TestValidTargetOrigin(t *testing.T) {
 		}
 	}
 }
-
-// quick errors.Is to keep the linter happy on the imported package.
-var _ = errors.Is

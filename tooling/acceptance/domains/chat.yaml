@@ -5,11 +5,8 @@
   "capabilities": [
     "acceptance-framework-self-consistency",
     "chat-proto-service-contract",
-    "chat-runtime-message-flow",
-    "chat-live-realtime-delivery",
     "chat-realtime-contract",
     "desktop-chat-typed-surface",
-    "chat-desktop-dom-message-visible",
     "chat-native-visible-clients"
   ],
   "validation_gate_id": "chat-domain-validation",

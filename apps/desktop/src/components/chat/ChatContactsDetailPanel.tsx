@@ -115,35 +115,30 @@ export function ChatContactsDetailPanel({
       return;
     }
 
-    setOpeningConversation(true);
-    try {
-      const allConversations = getIMConversations();
-      log.info('chatContactsDetail', 'handleMessage start', {
-        peerDid: selectedContact.peerDid,
-        conversationsCount: allConversations.length,
-      });
-      let conversation = findContactConversation(selectedContact, allConversations);
+    const peerDid = selectedContact.peerDid;
+    const existing = findContactConversation(selectedContact, getIMConversations());
 
-      if (!conversation) {
-        log.info('chatContactsDetail', 'creating direct conversation', {
-          peerDid: selectedContact.peerDid,
-        });
-        await imServiceV1.conversation.createDirect(selectedContact.peerDid);
-        await loadSessions();
-        conversation = findContactConversation(selectedContact, getIMConversations());
-      }
-
-      if (!conversation) {
-        log.error('chatContactsDetail', 'conversation not found after creation');
-        throw new Error('Direct conversation was not available after creation');
-      }
-
-      log.info('chatContactsDetail', 'selecting conversation', { id: conversation.id });
-      selectSession(conversation.id);
-      restoreConversation('friend', conversation.id);
+    if (existing) {
+      selectSession(existing.id);
+      restoreConversation('friend', existing.id);
       onMessage();
+      return;
+    }
+
+    setOpeningConversation(true);
+    onMessage();
+
+    try {
+      log.info('chatContactsDetail', 'creating direct conversation', { peerDid });
+      const conversation = await imServiceV1.messaging.createDirect(peerDid);
+      selectSession(conversation.conversationId);
+      restoreConversation('friend', conversation.conversationId);
+      log.info('chatContactsDetail', 'direct conversation created', { id: conversation.conversationId });
+      loadSessions().catch((err) => {
+        log.warn('chatContactsDetail', 'background loadSessions after createDirect failed', err);
+      });
     } catch (error) {
-      log.error('chatContactsDetail', 'handleMessage failed', error);
+      log.error('chatContactsDetail', 'createDirect failed', error);
       presentError(error, {
         mapper: mapChatError,
         context: { operation: 'conversationAction' },

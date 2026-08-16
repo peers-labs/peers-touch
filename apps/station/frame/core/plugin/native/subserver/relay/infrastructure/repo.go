@@ -41,10 +41,10 @@ func (m *mountPO) BeforeCreate(_ *gorm.DB) error {
 }
 
 type invitePO struct {
-	ID             uint64              `gorm:"primaryKey;autoIncrement:false"`
-	Token          string              `gorm:"size:512;uniqueIndex"`
-	StationPeerID  string              `gorm:"size:255;index"`
-	Label          string              `gorm:"size:255"`
+	ID             uint64 `gorm:"primaryKey;autoIncrement:false"`
+	Token          string `gorm:"size:512;uniqueIndex"`
+	StationPeerID  string `gorm:"size:255;index"`
+	Label          string `gorm:"size:255"`
 	MaxClients     int32
 	BandwidthLimit int64
 	Status         domain.InviteStatus `gorm:"index"`

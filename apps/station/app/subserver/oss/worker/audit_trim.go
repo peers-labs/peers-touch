@@ -15,11 +15,11 @@
 //
 // Each tick:
 //
-//	1. Compute cutoff = now - Retention.
-//	2. Call AuditRepository.Trim(cutoff). This is one bulk DELETE.
-//	3. If anything was deleted, append a single
-//	   action=worker_run, reason=audit_trim N=… row so the
-//	   trim itself is auditable.
+//  1. Compute cutoff = now - Retention.
+//  2. Call AuditRepository.Trim(cutoff). This is one bulk DELETE.
+//  3. If anything was deleted, append a single
+//     action=worker_run, reason=audit_trim N=… row so the
+//     trim itself is auditable.
 //
 // We deliberately keep the deletion path inside `audit_repo.Trim`
 // rather than re-implementing the SQL here — the audit repo is the
