@@ -8,6 +8,7 @@ import { useSessionStore } from '../../store/session';
 import { createEncryptedChatPayloadBytes, decodeGroupMessages, useSocialChatStore } from '../../store/socialChat';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { registerAcceptanceHarness } from '../registry';
+import { requireCanonicalAcceptancePtid } from './identity';
 
 interface LoginInput {
   account: string;
@@ -89,6 +90,12 @@ function activeActorId(): string | null {
   return useSessionStore.getState().currentUser?.actorId ?? null;
 }
 
+function activeActorPtid(): string {
+  return requireCanonicalAcceptancePtid(
+    useSocialChatStore.getState().currentUserDid,
+  );
+}
+
 interface PressureWindowState {
   rawByUlid: Map<string, GroupMessage>;
   decodedByUlid: Map<string, GroupMessage>;
@@ -135,10 +142,10 @@ export function installAcceptanceHarness(): void {
       await identityRuntime.completeCurrentSession();
       await installDeferredAppRuntimeProjections();
       await hydrateSocialForActiveActor();
-      const user = useSessionStore.getState().currentUser;
+      const actorPtid = activeActorPtid();
       return {
-        authenticated: Boolean(user?.actorId),
-        actorId: user?.actorId ?? null,
+        authenticated: true,
+        actorId: actorPtid,
       };
     },
 
@@ -413,7 +420,7 @@ export function installAcceptanceHarness(): void {
     async getRealtimeDevice() {
       const device = await api.accountGetDeviceId();
       return {
-        actorId: activeActorId(),
+        actorId: activeActorPtid(),
         deviceId: String(device?.device_id ?? ''),
       };
     },

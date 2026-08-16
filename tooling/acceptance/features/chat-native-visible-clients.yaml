@@ -12,8 +12,7 @@
     "tooling/acceptance/gates/chat/native_visible_e2e.py",
     "tooling/acceptance/gates/chat/native_visible_*_test.py",
     "tooling/acceptance/playbooks/chat-native-visible-clients.md",
-    "apps/desktop/src-tauri/src/application/profile/mod.rs",
-    "apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs",
+    "apps/desktop/src/acceptance/chat/**",
     "apps/desktop/src/components/chat/**",
     "apps/desktop/src/components/settings/RecoverySettings.tsx",
     "apps/desktop/src/components/common/StationPicker.tsx",
@@ -28,7 +27,7 @@
   ],
   "acceptance": {
     "product_truths": [
-      "visible native Desktop clients use isolated profiles, Gateway/renderer/WebDriver ports, and storage roots",
+      "visible native Desktop clients use isolated profiles, ports, storage roots, and observer sockets",
       "Station and every client record matching commit and canonical proto digest with workspace identity",
       "direct multi-device recovery and MLS journeys emit bounded boundary telemetry and stop on first failure",
       "failed message submission clears acceptance-injected composer text"

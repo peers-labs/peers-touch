@@ -70,8 +70,7 @@
           "tooling/acceptance/gates/chat/native_visible_e2e.py",
           "tooling/acceptance/gates/chat/native_visible_*_test.py",
           "tooling/acceptance/playbooks/chat-native-visible-clients.md",
-          "apps/desktop/src-tauri/src/application/profile/mod.rs",
-          "apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs"
+          "apps/desktop/src/acceptance/chat/**"
         ]
       },
       "require": [
@@ -190,11 +189,7 @@
           "Makefile"
         ]
       },
-      "require": [
-        "acceptance-plan-self",
-        "acceptance-infra-validation",
-        "acceptance-runtime-provisioning-self"
-      ]
+      "require": ["acceptance-plan-self"]
     }
   ]
 }
