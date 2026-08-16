@@ -4,6 +4,7 @@ import sys
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 
 HERE = Path(__file__).resolve().parent
@@ -88,6 +89,8 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
                 "protoDigest": "proto-a",
                 "attestation": "/tmp/attestation.json",
                 "live": {"build_commit": "commit-a"},
+                "finalLive": {"build_commit": "commit-a"},
+                "sourceStable": True,
             },
             "clients": [
                 {
@@ -144,10 +147,18 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
         full_commit = "e09ac01b59f4956d901c8edc9420d48339599fc3"
         report["station"]["commit"] = full_commit
         report["station"]["live"]["build_commit"] = full_commit[:12]
+        report["station"]["finalLive"]["build_commit"] = full_commit[:12]
         for client in report["clients"]:
             client["commit"] = full_commit
         gate.validate_report(report, "two-client")
         self.assertFalse(runner.commits_match("e09", full_commit))
+
+    def test_rejects_station_source_drift_during_gate(self) -> None:
+        report = self.report("two-client")
+        report["station"]["sourceStable"] = False
+        report["station"]["finalLive"]["build_commit"] = "other-commit"
+        with self.assertRaisesRegex(gate.GateError, "source changed during Gate"):
+            gate.validate_report(report, "two-client")
 
     def test_rejects_partial_stale_or_unbounded_evidence(self) -> None:
         mutations = (
@@ -261,6 +272,32 @@ class NativeProcessLivenessTest(unittest.TestCase):
             "alice Desktop exited with 2",
         ):
             client.connect_observer()
+
+
+class StationSourceStabilityTest(unittest.TestCase):
+    def test_final_source_revalidation_records_and_rejects_drift(self) -> None:
+        journey = object.__new__(runner.NativeVisibleJourney)
+        journey.station_url = "http://station.example"
+        journey.station_identity = {
+            "commit": "expected-commit",
+            "finalLive": None,
+            "sourceStable": False,
+        }
+        with patch.object(
+            runner,
+            "read_json_url",
+            return_value={"build_commit": "other-commit"},
+        ), self.assertRaisesRegex(
+            runner.JourneyError,
+            "commit drifted during Gate",
+        ):
+            journey.verify_final_station_identity()
+
+        self.assertFalse(journey.station_identity["sourceStable"])
+        self.assertEqual(
+            journey.station_identity["finalLive"]["build_commit"],
+            "other-commit",
+        )
 
 
 class DeviceReadinessTest(unittest.TestCase):

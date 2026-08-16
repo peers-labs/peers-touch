@@ -75,6 +75,16 @@ def validate_station(report: dict[str, Any]) -> None:
         commits_match(str(live.get("build_commit") or ""), station["commit"]),
         "live Station commit does not match attestation",
     )
+    final_live = station.get("finalLive")
+    require(isinstance(final_live, dict), "final live Station metadata is required")
+    require(station.get("sourceStable") is True, "Station source changed during Gate")
+    require(
+        commits_match(
+            str(final_live.get("build_commit") or ""),
+            station["commit"],
+        ),
+        "final live Station commit does not match attestation",
+    )
 
 
 def validate_clients(report: dict[str, Any], journey: str) -> None:

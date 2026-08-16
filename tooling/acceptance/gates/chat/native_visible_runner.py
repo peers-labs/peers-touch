@@ -882,10 +882,29 @@ class NativeVisibleJourney:
             "workspaceDigest": "clean",
             "protoDigest": station_proto,
             "live": live,
+            "finalLive": None,
+            "sourceStable": False,
             "attestation": str(self.station_attestation_path),
             "runtimeManifest": str(self.runtime_manifest_path),
             "actorManifest": str(self.actor_manifest_path),
         }
+
+    def verify_final_station_identity(self) -> None:
+        if not self.station_identity:
+            return
+        expected_commit = str(self.station_identity.get("commit") or "")
+        final_live = read_json_url(f"{self.station_url}/app-meta/version")
+        final_commit = str(final_live.get("build_commit") or "")
+        stable = commits_match(final_commit, expected_commit)
+        self.station_identity["finalLive"] = final_live
+        self.station_identity["sourceStable"] = stable
+        require(
+            stable,
+            (
+                f"live Station commit drifted during Gate: "
+                f"expected {expected_commit}, got {final_commit or 'missing'}"
+            ),
+        )
 
     def start_clients(self) -> None:
         order = list(self.clients)
@@ -1216,6 +1235,15 @@ def run_journey(journey: str) -> int:
                     f"{failure}; cleanup failed: {cleanup_failure}"
                     if failure
                     else f"cleanup failed: {cleanup_failure}"
+                )
+            try:
+                runner.verify_final_station_identity()
+            except Exception as error:  # noqa: BLE001 - source drift invalidates all proof.
+                source_failure = f"final Station source revalidation failed: {error}"
+                failure = (
+                    f"{failure}; {source_failure}"
+                    if failure
+                    else source_failure
                 )
 
     if runner is None:
