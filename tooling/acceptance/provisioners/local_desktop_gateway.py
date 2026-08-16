@@ -214,6 +214,7 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                         worktree=str(REPO_ROOT),
                         gateway_port=gateway_port,
                         renderer_port=renderer_port,
+                        webdriver_port=0,
                         profile=profile_name,
                         storage_root=str(
                             REPO_ROOT

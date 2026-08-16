@@ -24,7 +24,7 @@
   ],
   "acceptance": {
     "product_truths": [
-      "visible native Desktop clients use isolated profiles, ports, storage roots, and observer sockets",
+      "visible native Desktop clients use isolated profiles, Gateway/renderer/WebDriver ports, and storage roots",
       "Station and every client record matching commit and canonical proto digest with workspace identity",
       "direct multi-device recovery and MLS journeys emit bounded boundary telemetry and stop on first failure",
       "failed message submission clears acceptance-injected composer text"

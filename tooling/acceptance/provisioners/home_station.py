@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import shutil
+import socket
 import subprocess
 from pathlib import Path
 
@@ -94,6 +95,9 @@ class HomeStationProvisioner(EnvironmentProvisioner):
 
         gateway_base = int(os.environ.get("CHAT_NATIVE_GATEWAY_PORT", "3330"))
         renderer_base = int(os.environ.get("CHAT_NATIVE_RENDERER_PORT", "3510"))
+        webdriver_base = int(
+            os.environ.get("CHAT_NATIVE_WEBDRIVER_PORT", "4445")
+        )
         run_root = Path(f"/tmp/pt-chat-native-{run_id}-{gate_id}")
         clients = tuple(
             ClientRuntime(
@@ -102,12 +106,27 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 worktree=str(worktree),
                 gateway_port=gateway_base + index,
                 renderer_port=renderer_base + index,
+                webdriver_port=webdriver_base + index,
                 profile=f"chat-native-{role}",
                 storage_root=str(run_root / role / "storage"),
-                observer_socket=str(run_root / f"{role}.sock"),
             )
             for index, (role, worktree) in enumerate(zip(roles, worktrees))
         )
+        for client in clients:
+            for label, port in (
+                ("gateway", client.gateway_port),
+                ("renderer", client.renderer_port),
+                ("webdriver", client.webdriver_port),
+            ):
+                with socket.socket() as probe:
+                    if probe.connect_ex(("127.0.0.1", port)) == 0:
+                        raise BlockedError(
+                            reason=(
+                                f"{client.actor} {label} port {port} is "
+                                "already in use"
+                            ),
+                            resource=f"client-isolation:{label}-port:{port}",
+                        )
         self.register_cleanup(
             f"client-storage:{run_root}",
             lambda: shutil.rmtree(run_root, ignore_errors=True),

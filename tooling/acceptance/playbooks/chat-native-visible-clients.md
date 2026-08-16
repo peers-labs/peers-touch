@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: 1.0.0
-> **Created**: 2026-08-08 | **Updated**: 2026-08-16
+> **Created**: 2026-08-08 | **Updated**: 2026-08-17
 > **Owner**: Acceptance Framework
 
 ## Purpose
@@ -16,8 +16,8 @@ evidence.
 1. Station deployment commit is recorded and contains all Station/proto changes.
 2. Each client records commit and dirty workspace digest.
 3. Generated proto digests match the Station source contract.
-4. Each worktree has a distinct profile, gateway port, Vite port, storage root,
-   and observer socket.
+4. Each worktree has a distinct profile, gateway port, Vite port, WebDriver
+   port, and storage root.
 5. `PT_DESKTOP_E2E=true` is enabled and Vite HMR is disabled.
 6. Native windows are visible and attached to responsive observers.
 7. Fresh-storage and recovery-storage journeys are separate.
@@ -102,8 +102,8 @@ On the first failed boundary, capture:
 Do not continue through later assertions after a prerequisite fails.
 
 Cleanup evidence is mandatory on both success and failure. Every client process
-must stop, gateway/renderer ports must have no listener, observer sockets must
-be removed, and run storage must be released before a report can be `PROVEN`.
+must stop, gateway/renderer/WebDriver ports must have no listener, and run
+storage must be released before a report can be `PROVEN`.
 
 ## Required Journeys
 

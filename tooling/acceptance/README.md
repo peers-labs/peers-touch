@@ -91,7 +91,7 @@ make acceptance-chat-native-two-client
 attestation against `/app-meta/version`, runs the Actor Fixture, allocates
 isolated clients, and passes only `PT_ACCEPTANCE_RUNTIME_MANIFEST` to the Gate.
 Station URL, attestation path, canonical PTIDs, ports, profiles, storage roots,
-and observer sockets must come from that manifest. Missing or mismatched inputs
+and per-client WebDriver ports must come from that manifest. Missing or mismatched inputs
 produce `BLOCKED/UNPROVEN` with exit code `2`; they never fall back to raw
 `CHAT_NATIVE_*` identity variables.
 
