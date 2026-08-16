@@ -12,6 +12,7 @@ import { presentError } from '../../services/errorPresenter';
 import { markOverlayIntent, markOverlayVisible } from '../../kernel/frontendRuntimeProfiler';
 import { OverlayCommitProfiler } from '../../kernel/OverlayCommitProfiler';
 import { imServiceV1 } from '../../services/im-service';
+import { useNavigationBadgeStore } from '../../store/navigationBadges';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
 import { CreateGroupModal } from './CreateGroupModal';
@@ -91,6 +92,7 @@ export function ChatSessionList() {
   const [searchText, setSearchText] = useState('');
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showFindPeople, setShowFindPeople] = useState(false);
+  const clearChatUnread = useNavigationBadgeStore((state) => state.clearChatUnread);
 
   // NOTE: Initial data loading (sessions, groups, previews) is owned by
   // `SocialChatPage`'s `tick()` effect — see comment there. We deliberately
@@ -201,6 +203,7 @@ export function ChatSessionList() {
   ];
 
   const handleSelect = (c: IMConversationProjection) => {
+    clearChatUnread(c.id);
     if (c.kind === 'friend') {
       selectSession(c.id);
     } else {
@@ -476,7 +479,9 @@ export function ChatSessionList() {
                                 {subtitle}
                               </Text>
                               {unread > 0 && (
-                                <Badge count={unread} size="small" style={{ marginLeft: 8 }} />
+                                <span data-chat-session-unread={unread}>
+                                  <Badge count={unread} size="small" style={{ marginLeft: 8 }} />
+                                </span>
                               )}
                           </Flexbox>
                           </Flexbox>
