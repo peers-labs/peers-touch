@@ -163,6 +163,8 @@ def wait_until(
             value = predicate()
             if value:
                 return value
+        except JourneyError:
+            raise
         except Exception as error:  # noqa: BLE001 - retained for boundary diagnostics.
             last_error = error
         WAIT_TICK.wait(min(interval, max(0.0, deadline - time.monotonic())))
@@ -436,7 +438,14 @@ class NativeClient:
         self.process_id = completed.stdout.strip().splitlines()[0]
 
     def connect_observer(self) -> None:
-        wait_until(self.socket_path.exists, f"{self.spec.name} observer socket", STARTUP_TIMEOUT)
+        def ready() -> bool:
+            if self.process is not None and self.process.poll() is not None:
+                raise JourneyError(
+                    f"{self.spec.name} Desktop exited with {self.process.returncode}"
+                )
+            return self.socket_path.exists()
+
+        wait_until(ready, f"{self.spec.name} observer socket", STARTUP_TIMEOUT)
         self.observer.connect()
 
     def select_station(self) -> None:
