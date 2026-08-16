@@ -23,13 +23,13 @@
 | Current workstream | `WS8: Chat Native Two-Client Validation` |
 | Current step | Hold Draft PR #91 with explicit product, lease, Native Gate, and AS-04 evidence blockers. |
 | Progress | WS1, WS5, and WS7 DONE; WS2, WS3, WS4, and WS6 PARTIAL; WS8 BLOCKED. AS-03 and AS-05 PASSED; AS-01 and AS-02 PARTIAL; AS-04 BLOCKED/UNPROVEN; Direct Chat DELIVERED UNPROVEN. |
-| Last completed | Commits `a0ff6368a` and `ce564cb95` made Quality/Review fail closed on evidence gaps and isolated both non-empty and empty explicit ranges. Gap, Quality, submit-pipeline, and review-skill audits now reject readiness honestly. |
-| Current action | Update the Draft PR and hand off exact closure requirements; no framework-side P0/P1 fix remains that can legitimately bypass the product or shared-environment blockers. |
-| Next action | Product/identity owners resolve the post-login account transition and environment owners provide an enforceable Profile Three lease plus a discriminating credential; then rerun all four Native Gates and audits. |
+| Last completed | Agent-led review found Quality would permanently gap every environment Gate even after valid proof. The aggregator now closes an env gap only for current-HEAD `PASSED/DONE/PROVEN`, complete traceability, and `FIXTURE_READY` clean-source manifest evidence. |
+| Current action | Rerun final Gap/Quality/review audits after closing the last framework-side P1 found by code review. |
+| Next action | Update Draft PR #91 with the final hold verdict; product/identity and environment owners then resolve the remaining non-framework blockers before Native reruns. |
 | Blockers | `PRODUCT_AMENDMENT_REQUIRED`: source-matched run `412bb356ae476869` returns Bob to visible `Choose Account` after password login and logs a numeric-actor/canonical-PTID mismatch. `ENVIRONMENT_BLOCKED`: Profile Three has no enforceable shared provisioning lease; run `6fc14b7010c35190` was overwritten mid-Gate by Station commit `4383dfc1`. |
 | Decisions required | Product/identity owners must define and fix the post-login account-gate transition in the governing Desktop identity lifecycle plan. The Runtime Provisioning plan must not bypass it with text selectors or Store injection. |
-| Evidence | `PASSED`: local static/runtime Gates, four-domain structural validation, coverage generation, final-source guard tests, Fixture/TauriDriver startup, failure traceability, cleanup, six Quality/Review regressions, and review skill freshness. `FAILED/UNPROVEN`: v9 stops at source-matched `bob:shell.ready`; v10 is invalid because Station drifted. `BLOCKED/UNPROVEN`: Gap Detector lists four Native Gates; Quality and review-submit return nonzero; AS-04 exact-value scan is non-discriminating. |
-| Last updated | 2026-08-17 03:17 CST |
+| Evidence | `PASSED`: local static/runtime Gates, four-domain structural validation, coverage generation, final-source guard tests, Fixture/TauriDriver startup, failure traceability, cleanup, eight Quality/Review regressions, and review skill freshness. `FAILED/UNPROVEN`: v9 stops at source-matched `bob:shell.ready`; v10 is invalid because Station drifted. `BLOCKED/UNPROVEN`: Gap Detector lists four Native Gates; Quality and review-submit return nonzero; AS-04 exact-value scan is non-discriminating. |
+| Last updated | 2026-08-17 03:20 CST |
 
 ---
 
