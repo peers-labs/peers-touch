@@ -102,6 +102,43 @@ def _response_data(payload: dict[str, object]) -> dict[str, object]:
     return data if isinstance(data, dict) else payload
 
 
+def _login_session(
+    payload: dict[str, object],
+    role: str,
+) -> tuple[str, str, str]:
+    data = _response_data(payload)
+    actor_ref = data.get("actor_ref") or data.get("actorRef")
+    tokens = data.get("tokens")
+    ptid = (
+        str(actor_ref.get("ptid") or "")
+        if isinstance(actor_ref, dict)
+        else ""
+    )
+    access_token = (
+        str(
+            tokens.get("access_token")
+            or tokens.get("accessToken")
+            or ""
+        )
+        if isinstance(tokens, dict)
+        else ""
+    )
+    session_id = str(
+        data.get("session_id") or data.get("sessionId") or ""
+    )
+    if not ptid.startswith("ptid:"):
+        raise BlockedError(
+            reason=f"Station login did not return canonical PTID for fixture role {role}",
+            resource=f"fixture-actor:{role}",
+        )
+    if not access_token or not session_id:
+        raise BlockedError(
+            reason=f"Station login did not return a releasable session for fixture role {role}",
+            resource=f"fixture-session:{role}",
+        )
+    return ptid, access_token, session_id
+
+
 def resolve_actor_identity(
     station_url: str,
     role: str,
@@ -144,23 +181,18 @@ def resolve_actor_identity(
             resource=f"fixture-actor:{role}",
         ) from error
 
-    data = _response_data(payload if isinstance(payload, dict) else {})
-    actor_ref = data.get("actor_ref")
-    ptid = (
-        str(actor_ref.get("ptid") or "")
-        if isinstance(actor_ref, dict)
-        else ""
+    ptid, access_token, session_id = _login_session(
+        payload if isinstance(payload, dict) else {},
+        role,
     )
-    if not ptid.startswith("ptid:"):
-        raise BlockedError(
-            reason=f"Station login did not return canonical PTID for fixture role {role}",
-            resource=f"fixture-actor:{role}",
-        )
 
     logout_request = urllib.request.Request(
         f"{station_url.rstrip('/')}/actor/logout",
-        data=b"{}",
-        headers={"Content-Type": "application/json"},
+        data=json.dumps({"session_id": session_id}).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
         method="POST",
     )
     try:
