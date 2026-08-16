@@ -64,9 +64,13 @@ def configure_station(client: TauriDriver, station_url: str) -> None:
 
 
 def enter_chat_page(client: TauriDriver) -> None:
+    if client.get_current_url().endswith("#/chat"):
+        return
     WebDriverWait(client.driver, 20).until(
         lambda driver: driver.find_element(
-            By.CSS_SELECTOR, '[data-pt-primary-nav="chat"] [role="button"]'
+            By.CSS_SELECTOR,
+            '[data-pt-primary-nav="chat"] button, '
+            '[data-pt-primary-nav="chat"] [role="button"]',
         )
     ).click()
     WebDriverWait(client.driver, 20).until(
