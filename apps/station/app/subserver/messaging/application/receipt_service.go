@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -159,12 +161,13 @@ func (s *ReceiptService) SubmitDeliveryReceipt(
 				Recipient:      device.Endpoint,
 				EventId:        request.MessageId,
 				ConversationId: request.ConversationId,
-				IdempotencyKey: fmt.Sprintf(
-					"delivered:%s:%s:%s:%s:%s",
+				IdempotencyKey: receiptQueueIdempotencyKey(
+					"delivered",
 					request.ConversationId,
 					request.MessageId,
 					sender.Ptid,
 					sender.DeviceId,
+					device.Endpoint.Ptid,
 					device.Endpoint.DeviceId,
 				),
 				PayloadType:   chat.DeviceQueuePayloadType_DEVICE_QUEUE_PAYLOAD_TYPE_DEVICE_RECEIPT,
@@ -251,13 +254,6 @@ func (s *ReceiptService) handleActorRead(
 			return err
 		}
 
-		idempotencyKey := fmt.Sprintf(
-			"read:%s:%s:%d",
-			cursor.ConversationId,
-			cursor.ReaderPtid,
-			cursor.LastReadSequence,
-		)
-
 		for _, device := range devices {
 			if !device.Active || device.Endpoint == nil {
 				continue
@@ -287,10 +283,17 @@ func (s *ReceiptService) handleActorRead(
 				Recipient:      device.Endpoint,
 				EventId:        fmt.Sprintf("read:%s:%d", cursor.ReaderPtid, cursor.LastReadSequence),
 				ConversationId: cursor.ConversationId,
-				IdempotencyKey: idempotencyKey + ":" + device.Endpoint.Ptid + ":" + device.Endpoint.DeviceId,
-				PayloadType:    chat.DeviceQueuePayloadType_DEVICE_QUEUE_PAYLOAD_TYPE_DEVICE_RECEIPT,
-				OpaquePayload:  cursorBytes,
-				PayloadSha256:  cursorHash[:],
+				IdempotencyKey: receiptQueueIdempotencyKey(
+					"read",
+					cursor.ConversationId,
+					cursor.ReaderPtid,
+					fmt.Sprintf("%d", cursor.LastReadSequence),
+					device.Endpoint.Ptid,
+					device.Endpoint.DeviceId,
+				),
+				PayloadType:   chat.DeviceQueuePayloadType_DEVICE_QUEUE_PAYLOAD_TYPE_DEVICE_RECEIPT,
+				OpaquePayload: cursorBytes,
+				PayloadSha256: cursorHash[:],
 			}); err != nil {
 				return err
 			}
@@ -302,4 +305,15 @@ func (s *ReceiptService) handleActorRead(
 		return nil, err
 	}
 	return &chat.SubmitMessagingReceiptResponse{}, nil
+}
+
+func receiptQueueIdempotencyKey(kind string, parts ...string) string {
+	hasher := sha256.New()
+	for _, part := range append([]string{kind}, parts...) {
+		var length [8]byte
+		binary.BigEndian.PutUint64(length[:], uint64(len(part)))
+		hasher.Write(length[:])
+		hasher.Write([]byte(part))
+	}
+	return kind + ":" + hex.EncodeToString(hasher.Sum(nil))
 }
