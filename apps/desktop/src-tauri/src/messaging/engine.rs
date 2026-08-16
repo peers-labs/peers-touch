@@ -40,6 +40,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use ulid::Ulid;
 
+const INTERACTION_PREFLIGHT_DRAIN_LIMIT: u32 = 100;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessagingProjectionChange {
     pub profile_id: String,
@@ -887,6 +889,7 @@ impl MessagingEngine {
         if projection.sender_ptid != self.endpoint.ptid {
             return Err("messaging edit target is not authored by this actor".to_string());
         }
+        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
         let plan = self.prepare_send_plan(token, conversation_id)?;
         let conversation_kind = ConversationKind::try_from(plan.conversation_kind)
             .map_err(|_| "messaging edit conversation kind is invalid".to_string())?;
@@ -952,6 +955,7 @@ impl MessagingEngine {
         {
             return Err("messaging interaction target projection is unavailable".to_string());
         }
+        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
         let plan = self.prepare_send_plan(token, conversation_id)?;
         let (local_sequence, local_hash) = self.store.authority_head(conversation_id)?;
         if local_sequence != plan.authority_sequence || local_hash != plan.authority_hash {

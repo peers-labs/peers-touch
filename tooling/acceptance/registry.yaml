@@ -59,6 +59,7 @@
           "model/domain/chat/event.proto",
           "apps/station/app/subserver/messaging/application/authority_service.go",
           "apps/station/app/subserver/messaging/application/receipt_service.go",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
           "apps/desktop/src-tauri/src/messaging/direct.rs",
           "apps/desktop/src-tauri/src/messaging/mls.rs",
           "apps/desktop/src-tauri/src/messaging/public_event.rs",
