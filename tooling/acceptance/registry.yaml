@@ -63,6 +63,7 @@
           "apps/desktop/src-tauri/src/messaging/mls.rs",
           "apps/desktop/src-tauri/src/messaging/public_event.rs",
           "apps/desktop/src-tauri/src/messaging/store.rs",
+          "apps/desktop/src/services/desktop_api.ts",
           "apps/desktop/src/store/socialChat.ts",
           "apps/desktop/src/components/chat/**",
           "apps/desktop/src/acceptance/chat/**",

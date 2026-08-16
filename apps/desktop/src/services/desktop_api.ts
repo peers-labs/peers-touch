@@ -463,6 +463,22 @@ async function invokeRustDataFromStatus<TInput, TOut>(
   throw err;
 }
 
+async function invokeRustData<TInput, TOut>(
+  command: string,
+  input?: TInput,
+): Promise<TOut> {
+  const response = await invokeRustCommand<TInput, TOut>(command, input);
+  if (response.ok && response.data !== undefined) {
+    return response.data;
+  }
+  if (response.error?.code === 'UNAUTHORIZED') {
+    throw new AuthCommandException(response.error);
+  }
+  const err = new RustCommandException(command, response.error);
+  log.error('api', `Command error: ${command}`, { error: err.message, code: err.code });
+  throw err;
+}
+
 export async function uploadFrontendTelemetryEvents(
   events: DesktopFrontendTelemetryEvent[],
 ): Promise<FrontendTelemetryUploadResult> {
@@ -4754,7 +4770,7 @@ export const api = {
    * pulse out without writing it to durable message history.
    */
   messagingTypingSend: (conversationId: string, typing: boolean) =>
-    invokeRustDataFromStatus<
+    invokeRustData<
       { conversation_id: string; is_typing: boolean },
       { submitted: boolean }
     >('messaging_submit_typing', {
@@ -4763,7 +4779,7 @@ export const api = {
     }),
 
   messagingReadCursor: (conversationId: string, lastReadSequence: number) =>
-    invokeRustDataFromStatus<
+    invokeRustData<
       { conversation_id: string; last_read_sequence: number },
       { submitted: boolean }
     >('messaging_submit_read_cursor', {
@@ -4776,7 +4792,7 @@ export const api = {
     messageId: string,
     plaintext: string,
   ) =>
-    invokeRustDataFromStatus<
+    invokeRustData<
       {
         conversation_id: string;
         message_id: string;
@@ -4795,7 +4811,7 @@ export const api = {
     kind: 'retract' | 'reaction' | 'pin',
     options: { reaction?: string; remove?: boolean } = {},
   ) =>
-    invokeRustDataFromStatus<
+    invokeRustData<
       {
         conversation_id: string;
         message_id: string;
