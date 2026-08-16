@@ -231,6 +231,31 @@ class ShellReadinessTest(unittest.TestCase):
         client.wait_shell()
 
 
+class NativeProcessLivenessTest(unittest.TestCase):
+    def test_observer_wait_fails_immediately_when_desktop_exits(self) -> None:
+        class ExitedProcess:
+            returncode = 2
+
+            def poll(self) -> int:
+                return self.returncode
+
+        client = object.__new__(runner.NativeClient)
+        client.spec = runner.ClientSpec(
+            "alice",
+            "alice@p.t",
+            "ptid:alice",
+            Path("."),
+            0,
+        )
+        client.process = ExitedProcess()
+        client.socket_path = Path("/tmp/observer-that-does-not-exist.sock")
+        with self.assertRaisesRegex(
+            runner.JourneyError,
+            "alice Desktop exited with 2",
+        ):
+            client.connect_observer()
+
+
 class DeviceReadinessTest(unittest.TestCase):
     def test_device_identity_comes_from_active_messaging_engine(self) -> None:
         client = object.__new__(runner.NativeClient)
