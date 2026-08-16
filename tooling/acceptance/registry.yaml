@@ -20,6 +20,29 @@
       "require": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"]
     },
     {
+      "id": "chat-direct-delivered-receipt",
+      "features": ["chat-direct-delivered-receipt"],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/messaging/direct.rs",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
+          "apps/desktop/src-tauri/src/messaging/store.rs",
+          "apps/desktop/src-tauri/src/messaging/transport.rs",
+          "apps/desktop/src/runtimes/imRuntime.ts",
+          "apps/station/app/subserver/conversation/service_impl.go",
+          "apps/station/app/subserver/conversation/subserver.go"
+        ]
+      },
+      "require": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-two-client-e2e"
+      ]
+    },
+    {
       "id": "desktop-chat",
       "features": ["desktop-chat-surface", "chat-realtime-delivery", "chat-desktop-gateway-message-flow", "chat-native-visible-clients"],
       "when": {
@@ -42,6 +65,8 @@
         "paths": [
           "tooling/acceptance/gates/chat/native_visible_runner.py",
           "tooling/acceptance/gates/chat/native_*_runner.py",
+          "tooling/acceptance/gates/chat/native_support.py",
+          "tooling/acceptance/gates/chat/native_two_client_e2e.py",
           "tooling/acceptance/gates/chat/native_visible_e2e.py",
           "tooling/acceptance/gates/chat/native_visible_*_test.py",
           "tooling/acceptance/playbooks/chat-native-visible-clients.md",

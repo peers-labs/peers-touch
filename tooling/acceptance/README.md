@@ -12,28 +12,12 @@ run for a changed path, and which artifacts should be produced for human review.
 - `domains/index.yaml` lists project domains, onboarding status, coverage state, and next candidates.
 - `templates/` contains domain, capability, and feature templates for new product domains.
 - `gates.yaml` defines gate commands, timeouts, environments, tiers, and artifact expectations.
-- `environments/` defines machine-readable contracts for provisioned Gate environments.
-- `provisioners/` resolves profiles, source identity, Fixtures, credentials, and client isolation before Gate execution.
-- `behavior-rules/` maps receiver-visible source owners to receiver-proof Gates.
 - `features/` contains product feature contracts.
 - `gates/` contains stable cross-system acceptance implementations.
 - `playbooks/` explains how agents should run, diagnose, and preserve acceptance flows.
 - `desktop-performance-cohort.json` is the canonical P0c-3 profile, account,
   dataset, window, warmup, build, runtime, and scenario manifest.
-- Runtime artifacts are owned by the external Acceptance Evidence Store.
-  `tooling/acceptance/` retains only code, contracts, schemas, templates, and
-  intentional test fixtures.
-
-Inspect artifacts through the canonical operator interface:
-
-```bash
-python3 tooling/scripts/acceptance-artifact.py root
-python3 tooling/scripts/acceptance-artifact.py cat \
-  --gate <gate-id> --role <role>
-```
-
-`PT_ACCEPTANCE_ARTIFACT_ROOT` is an optional local override and mandatory in
-CI. Writers never fall back to the repository.
+- `reports/` stores local or CI acceptance artifacts and is ignored by git.
 
 ## Federation Bootstrap Loop
 
@@ -43,17 +27,12 @@ This creates a two-way proof:
 
 - Acceptance proves Federation capability by running stable gates against the live `fedp5` environment.
 - Federation proves Acceptance feasibility because the gates exercise real product surfaces instead of mocks.
-- `make acceptance-federation-report` runs the Federation gates and publishes
-  the report under Gate `acceptance-capability-report`, role
-  `capability-report`.
+- `make acceptance-federation-report` runs the Federation gates and writes `tooling/acceptance/reports/federation-acceptance-report.md`.
 - `make acceptance-validate DOMAIN=federation` checks the Federation domain profile against the project-wide capability graph, feature contracts, registry planning, gate definitions, run results, and reports.
 - `make acceptance-federation-mutual-validation` remains a Federation alias, not the acceptance core entry.
 
 ## Project Coverage
 
-- `make acceptance-infra-validate` validates only Acceptance Infra
-  self-consistency and never consumes business Domain injection as a framework
-  completion condition.
 - `make acceptance-validate` validates every active domain structure in `tooling/acceptance/domains/index.yaml`.
 - `make acceptance-validate DOMAIN=chat` validates the Chat managed-domain profile structure.
 - `make acceptance-validate DOMAIN=federation` validates one domain profile structure.
@@ -65,26 +44,20 @@ This creates a two-way proof:
 - `make acceptance-chat-desktop-gateway` requires a running Desktop HTTP gateway
   and proves the client-owned E2EE create, send, hydrate, and decrypt flow.
 - `make acceptance-station-dashboard-domain-validation` runs the Station Dashboard gates and then requires latest evidence for the managed domain profile.
-- `make acceptance-coverage-report` publishes the project coverage report to
-  the external Evidence Store and summarizes active, candidate, planned, and
-  not-onboarded domains.
-- `acceptance-runtime-provisioning-self` is the stable CI Gate for Provisioning
-  models, owners, runner semantics, behavior planning, redaction, freshness,
-  and Gap Detector regressions.
+- `make acceptance-coverage-report` writes `tooling/acceptance/reports/project-coverage-report.md` and summarizes active, candidate, planned, and not-onboarded domains.
 
 ## Agent Workflow
 
 1. Update or add a feature contract when a new product capability is introduced.
 2. Run `make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>` after code changes.
-3. Activate the intended worktree profile, then run `make acceptance PLAN=<plan-path>`. Gates with a declared `provisioner` receive an immutable Runtime Manifest before their command runs.
+3. Run `make acceptance PLAN=<plan-path>` when a workstream needs an explicit gate bundle; the profile/runtime environment must already be active before this command.
 4. Run `make quality-evidence REVIEW_RANGE=<base>...<head>` when the change is entering review.
 5. Run `make acceptance-run-ci` for selected `ci-*` gates, or `make acceptance-run-env-evidence` only when the required environment is available.
-6. Run `python3 tooling/scripts/acceptance-gap-detect.py --range <range>` before any completion, commit, or PR-readiness claim.
-7. Run `make acceptance-report` and include proven / blocked / failed / unproven scope in the handoff.
-8. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
-9. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
-10. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
-11. For native Chat journeys, follow
+6. Run `make acceptance-report` and include proven / unproven scope in the handoff.
+7. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
+8. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
+9. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
+10. For native Chat journeys, follow
     `tooling/acceptance/playbooks/chat-native-visible-clients.md`; visible
     observers, source matching, isolated profiles, bounded steps, and composer
     cleanup are mandatory.
@@ -97,23 +70,20 @@ launching a live journey. Live targets are
 `acceptance-chat-native-recovery`, and `acceptance-chat-native-group-mls`;
 `acceptance-chat-native-w8` runs all four.
 
-Live runs require an active worktree profile, `CHAT_NATIVE_DEMO_PASSWORD`, and
-explicit destructive-reset authorization:
+The two-client Direct journey uses the Core embedded-WebDriver runner. It
+requires `CHAT_NATIVE_STATION_URL`, `CHAT_ACCEPTANCE_RESET=1`, and
+`CHAT_ACCEPTANCE_PASSWORD`; the reset Fixture preserves the pre-created Alice
+and Bob actors, while the login result supplies their canonical PTIDs. The
+runner rejects a live Station whose `/app-meta/version` commit does not match
+the tested client commit.
 
-```bash
-make profile PROFILE=<approved-disposable-profile>
-CHAT_ACCEPTANCE_RESET=1 \
-CHAT_NATIVE_DEMO_PASSWORD="$CHAT_NATIVE_DEMO_PASSWORD" \
-make acceptance-chat-native-two-client
-```
-
-`acceptance-run.py` resolves `home-station`, verifies the deployment
-attestation against `/app-meta/version`, runs the Actor Fixture, allocates
-isolated clients, and passes only `PT_ACCEPTANCE_RUNTIME_MANIFEST` to the Gate.
-Station URL, attestation path, canonical PTIDs, ports, profiles, storage roots,
-and per-client WebDriver ports must come from that manifest. Missing or mismatched inputs
-produce `BLOCKED/UNPROVEN` with exit code `2`; they never fall back to raw
-`CHAT_NATIVE_*` identity variables.
+The remaining multi-device, recovery, and group-MLS runners still require
+`CHAT_NATIVE_STATION_ATTESTATION`, canonical actor PTIDs, pre-created accounts,
+and `CHAT_NATIVE_DEMO_PASSWORD`. Their attestation JSON contains `commit`,
+`"workspaceDigest": "clean"`, and `protoDigest`. The digest covers source
+protos plus Desktop TypeScript and Station Go generated bindings.
+`CHAT_NATIVE_CLIENT_WORKTREES` accepts one worktree path per client, separated
+by commas; one path may be reused for local process-isolation checks.
 
 ## Desktop Performance Acceptance Logic
 
