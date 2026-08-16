@@ -60,7 +60,11 @@ if ! changed_for_skill="$(git diff --name-only "$diff_range" --)"; then
   echo "review run: invalid or unreadable git range: $diff_range" >&2
   exit 1
 fi
-changed="$(printf '%s\n%s\n' "$changed_for_skill" "$(git ls-files --others --exclude-standard)" | sed '/^$/d' | sort -u)"
+if [[ "$diff_range" == "HEAD" ]]; then
+  changed="$(printf '%s\n%s\n' "$changed_for_skill" "$(git ls-files --others --exclude-standard)" | sed '/^$/d' | sort -u)"
+else
+  changed="$(printf '%s\n' "$changed_for_skill" | sed '/^$/d' | sort -u)"
+fi
 if rg -q '^(tooling/skills/pt-github-review/|tooling/review-fixtures/|tooling/scripts/review/|docs/global/code-review-framework.md|AGENTS.md|docs/architecture/|docs/client/|docs/station/|docs/global/coding-guide/|docs/knowledge/)' <<< "$changed"; then
   echo
   echo "== Review skill freshness =="
