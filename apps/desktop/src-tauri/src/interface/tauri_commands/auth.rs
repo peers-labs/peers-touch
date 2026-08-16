@@ -38,13 +38,20 @@ fn bind_window_session(
     }
     let mut actor = ActorRef::new_person(actor_id.clone());
     actor.ptid = payload.ptid.clone().unwrap_or_default();
-    let account_id = crate::infrastructure::session_vault::active_account_id()
-        .filter(|account_id| {
-            crate::infrastructure::session_vault::actor_id_from_account_id(account_id) == actor_id
-        })
+    let account_id = crate::infrastructure::auth_identity::find_account_id_by_actor_id(&actor_id)
         .unwrap_or_else(|| {
             crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
         });
+    if let Err(error) =
+        auth_service::activate_messaging_profile(state, &account_id, &actor_id, &token)
+    {
+        tracing::warn!(
+            account_id = %account_id,
+            actor_id = %actor_id,
+            error = %error,
+            "window session retained while messaging profile activation awaits retry"
+        );
+    }
     let kicked =
         state
             .sessions

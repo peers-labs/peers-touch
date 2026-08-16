@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -8,6 +11,36 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class NativeVisibleStaticContractTest(unittest.TestCase):
+    def test_process_specific_profile_overrides_active_worktree_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            profile = Path(directory) / "native.env"
+            profile.write_text(
+                "\n".join(
+                    (
+                        "PT_DEV_PROFILE=chat-native-test",
+                        "PT_DESKTOP_APP_GATEWAY_PORT=3337",
+                        "PT_DESKTOP_APP_WEB_PORT=3517",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    "source tooling/scripts/local-dev/env.sh; "
+                    'printf "%s %s %s" "$PT_DEV_PROFILE" '
+                    '"$PT_DESKTOP_APP_GATEWAY_PORT" "$PT_DESKTOP_APP_WEB_PORT"',
+                ],
+                cwd=ROOT,
+                env={**os.environ, "PT_DEV_PROFILE_FILE": str(profile)},
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+        self.assertEqual(result.stdout, "chat-native-test 3337 3517")
+
     def test_runner_has_no_fixed_sleep_or_startup_order_contract(self) -> None:
         source = (
             ROOT / "tooling/acceptance/gates/chat/native_visible_runner.py"
@@ -44,6 +77,12 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
             "apps/desktop/src/components/chat/ChatContactsPanel.tsx": (
                 "data-chat-contact-ptid",
             ),
+            "apps/desktop/src/components/chat/ChatContactsDetailPanel.tsx": (
+                "data-chat-contact-message",
+            ),
+            "apps/desktop/src/pages/SocialChatPage.tsx": (
+                "data-chat-subpage",
+            ),
             "apps/desktop/src/components/chat/ChatComposer.tsx": (
                 'data-pt-text-input="chat-composer"',
                 "data-chat-send",
@@ -79,6 +118,16 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
             for selector in selectors:
                 with self.subTest(path=relative, selector=selector):
                     self.assertIn(selector, source)
+
+    def test_login_email_selector_is_bound_to_the_email_control(self) -> None:
+        source = (
+            ROOT / "apps/desktop/src/pages/login/views/LoginFormView.tsx"
+        ).read_text(encoding="utf-8")
+        self.assertRegex(
+            source,
+            r"<Input\s+data-login-email\s+size=\"large\"\s+"
+            r"prefix=\{<Mail[\s\S]+?type=\"email\"",
+        )
 
 
 if __name__ == "__main__":

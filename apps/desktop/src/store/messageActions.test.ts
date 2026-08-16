@@ -34,10 +34,10 @@ describe('message action registry', () => {
     expect(menu).toHaveLength(0);
   });
 
-  it('returns copy + regenerate for completed assistant message', () => {
+  it('returns copy + regenerate + read aloud for completed assistant message', () => {
     const ctx = createContext();
     const { primary, menu } = buildMessageActions(ctx);
-    expect(primary.map((a) => a.key)).toEqual(['copy', 'regenerate']);
+    expect(primary.map((a) => a.key)).toEqual(['copy', 'regenerate', 'readAloud']);
     expect(menu.map((a) => a.key)).toContain('edit');
     expect(menu.map((a) => a.key)).toContain('branch');
     expect(menu.map((a) => a.key)).toContain('continue');

@@ -22,7 +22,24 @@ def changed_paths(diff_range: str) -> list[str]:
         text=True,
         capture_output=True,
     )
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    paths = {
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip()
+    }
+    if diff_range == "HEAD":
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        paths.update(
+            line.strip()
+            for line in untracked.stdout.splitlines()
+            if line.strip()
+        )
+    return sorted(paths)
 
 
 def matches(path: str, pattern: str) -> bool:
