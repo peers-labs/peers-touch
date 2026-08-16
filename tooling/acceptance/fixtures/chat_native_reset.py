@@ -99,7 +99,7 @@ def reset_station_messaging_state(environment_name: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--environment", default="station-three")
-    parser.add_argument("--accounts", nargs="+", default=["alice", "bob"])
+    parser.add_argument("--accounts", nargs="+", default=["alice", "bob", "charlie"])
     args = parser.parse_args()
 
     if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":

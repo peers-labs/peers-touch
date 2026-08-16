@@ -30,12 +30,46 @@ pub struct MessagingSendMessageInput {
     pub conversation_kind: String,
     pub plaintext: String,
     #[serde(default)]
+    pub reply_to_message_id: String,
+    #[serde(default)]
+    pub thread_root_message_id: String,
+    #[serde(default)]
     pub attachments: Vec<MessagingLocalAttachmentInput>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct MessagingListMessagesInput {
     pub conversation_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingTypingInput {
+    pub conversation_id: String,
+    pub is_typing: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingReadCursorInput {
+    pub conversation_id: String,
+    pub last_read_sequence: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingMetadataInteractionInput {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub kind: String,
+    #[serde(default)]
+    pub reaction: String,
+    #[serde(default)]
+    pub remove: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingEditInput {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub plaintext: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -438,6 +472,8 @@ pub async fn messaging_send_message(
     };
     let conversation_id = input.conversation_id;
     let plaintext = input.plaintext;
+    let reply_to_message_id = input.reply_to_message_id;
+    let thread_root_message_id = input.thread_root_message_id;
     let attachment_intents = input
         .attachments
         .into_iter()
@@ -453,6 +489,8 @@ pub async fn messaging_send_message(
             &conversation_id,
             conversation_kind,
             &plaintext,
+            &reply_to_message_id,
+            &thread_root_message_id,
             &attachment_intents,
         )
     })
@@ -477,6 +515,111 @@ pub async fn messaging_send_message(
         "attachment_ids": outcome.attachment_ids,
         "state": outcome.state,
     })))
+}
+
+#[tauri::command]
+pub fn messaging_submit_typing(
+    input: MessagingTypingInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (_, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    match engine.submit_typing(&token, &input.conversation_id, input.is_typing) {
+        Ok(()) => AppResult::success(json!({"submitted": true})),
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
+}
+
+#[tauri::command]
+pub fn messaging_submit_read_cursor(
+    input: MessagingReadCursorInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (_, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    match engine.submit_read_cursor(&token, &input.conversation_id, input.last_read_sequence) {
+        Ok(()) => AppResult::success(json!({"submitted": true})),
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
+}
+
+#[tauri::command]
+pub fn messaging_submit_edit(
+    input: MessagingEditInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let command_id = match engine.submit_edit(
+        &token,
+        &input.conversation_id,
+        &input.message_id,
+        &input.plaintext,
+    ) {
+        Ok(command_id) => command_id,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+        return AppResult::fail(ErrorCode::InternalError, error, None);
+    }
+    AppResult::success(json!({
+        "command_id": command_id,
+        "state": "pending",
+    }))
+}
+
+#[tauri::command]
+pub fn messaging_submit_metadata_interaction(
+    input: MessagingMetadataInteractionInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let interaction = match input.kind.as_str() {
+        "retract" => crate::messaging::MetadataInteraction::Retract,
+        "reaction" => crate::messaging::MetadataInteraction::Reaction {
+            reaction: &input.reaction,
+            remove: input.remove,
+        },
+        "pin" => crate::messaging::MetadataInteraction::Pin {
+            remove: input.remove,
+        },
+        _ => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "unsupported metadata interaction kind",
+                None,
+            )
+        }
+    };
+    let command_id = match engine.submit_metadata_interaction(
+        &token,
+        &input.conversation_id,
+        &input.message_id,
+        interaction,
+    ) {
+        Ok(command_id) => command_id,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+        return AppResult::fail(ErrorCode::InternalError, error, None);
+    }
+    AppResult::success(json!({
+        "command_id": command_id,
+        "state": "pending",
+    }))
 }
 
 #[tauri::command]
@@ -534,18 +677,17 @@ pub fn messaging_capture_attachment_source(
         Ok(value) => value,
         Err(error) => return error,
     };
-    let captured =
-        match super::oss::capture_screenshot_with_window_hidden(&window) {
-            Ok(path) => path,
-            Err(error) => {
-                let error = error.error.unwrap_or(crate::error::AppError {
-                    code: ErrorCode::InternalError,
-                    message: "capture messaging attachment failed".to_string(),
-                    details: None,
-                });
-                return AppResult::fail(error.code, error.message, error.details);
-            }
-        };
+    let captured = match super::oss::capture_screenshot_with_window_hidden(&window) {
+        Ok(path) => path,
+        Err(error) => {
+            let error = error.error.unwrap_or(crate::error::AppError {
+                code: ErrorCode::InternalError,
+                message: "capture messaging attachment failed".to_string(),
+                details: None,
+            });
+            return AppResult::fail(error.code, error.message, error.details);
+        }
+    };
     let bytes = match std::fs::read(&captured) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -563,11 +705,7 @@ pub fn messaging_capture_attachment_source(
                 .err()
                 .map(|cleanup| format!("; cleanup failed: {cleanup}"))
                 .unwrap_or_default();
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("{error}{cleanup}"),
-                None,
-            );
+            return AppResult::fail(ErrorCode::InternalError, format!("{error}{cleanup}"), None);
         }
     };
     if let Err(error) = std::fs::remove_file(&captured) {
@@ -623,6 +761,21 @@ pub fn messaging_list_messages(
                 .collect::<Vec<_>>(),
             "state": message.state,
             "timestamp_unix_ms": message.timestamp_unix_ms,
+            "reply_to_message_id": message.reply_to_message_id,
+            "thread_root_message_id": message.thread_root_message_id,
+            "edited_text": message.edited_text,
+            "edited_at_unix_ms": message.edited_at_unix_ms,
+            "retracted": message.retracted,
+            "reactions": message.reactions.into_iter().map(
+                |(actor_ptid, reaction, created_at_unix_ms)| json!({
+                    "actor_ptid": actor_ptid,
+                    "reaction": reaction,
+                    "created_at_unix_ms": created_at_unix_ms,
+                })
+            ).collect::<Vec<_>>(),
+            "pinned_by_ptid": message.pinned_by_ptid,
+            "pinned_at_unix_ms": message.pinned_at_unix_ms,
+            "read_by_ptids": message.read_by_ptids,
         })).collect::<Vec<_>>()
     }))
 }
@@ -707,6 +860,21 @@ pub fn messaging_search_messages(
                 .collect::<Vec<_>>(),
             "state": message.state,
             "timestamp_unix_ms": message.timestamp_unix_ms,
+            "reply_to_message_id": message.reply_to_message_id,
+            "thread_root_message_id": message.thread_root_message_id,
+            "edited_text": message.edited_text,
+            "edited_at_unix_ms": message.edited_at_unix_ms,
+            "retracted": message.retracted,
+            "reactions": message.reactions.into_iter().map(
+                |(actor_ptid, reaction, created_at_unix_ms)| json!({
+                    "actor_ptid": actor_ptid,
+                    "reaction": reaction,
+                    "created_at_unix_ms": created_at_unix_ms,
+                })
+            ).collect::<Vec<_>>(),
+            "pinned_by_ptid": message.pinned_by_ptid,
+            "pinned_at_unix_ms": message.pinned_at_unix_ms,
+            "read_by_ptids": message.read_by_ptids,
         })).collect::<Vec<_>>()
     }))
 }

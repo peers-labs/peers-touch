@@ -614,20 +614,6 @@ const conversationService: ConversationServiceContract = {
     return { counts: resp.counts ?? [] }
   },
 
-  async setReadCursor(conversationId, lastReadSeq) {
-    await cmd('conversation_set_read_cursor', {
-      conversation_id: conversationId,
-      last_read_seq: lastReadSeq,
-    })
-  },
-
-  async getUnread(conversationId) {
-    const resp = await cmd<any, { unread_count: number }>('conversation_get_unread', {
-      conversation_id: conversationId,
-    })
-    return resp.unread_count ?? 0
-  },
-
   async getMemberSettings(conversationId) {
     const resp = await cmd<any, MemberSettingsResult>('conversation_get_member_settings', {
       conversation_id: conversationId,
@@ -1379,12 +1365,14 @@ const messagingService: MessagingServiceContract = {
     }
   },
 
-  async sendMessage(conversationId, conversationKind, plaintext, attachments = []) {
+  async sendMessage(conversationId, conversationKind, plaintext, attachments = [], relation = {}) {
     const response = await cmd<
       {
         conversation_id: string
         conversation_kind: 'direct' | 'group'
         plaintext: string
+        reply_to_message_id: string
+        thread_root_message_id: string
         attachments: Array<{
           file_path: string
           filename: string
@@ -1401,6 +1389,8 @@ const messagingService: MessagingServiceContract = {
       conversation_id: conversationId,
       conversation_kind: conversationKind,
       plaintext,
+      reply_to_message_id: relation.replyToMessageId ?? '',
+      thread_root_message_id: relation.threadRootMessageId ?? '',
       attachments: attachments.map(attachment => ({
         file_path: attachment.filePath,
         filename: attachment.filename,
@@ -1438,6 +1428,19 @@ const messagingService: MessagingServiceContract = {
           }>
           state: string
           timestamp_unix_ms: number
+          reply_to_message_id?: string
+          thread_root_message_id?: string
+          edited_text?: string
+          edited_at_unix_ms?: number
+          retracted: boolean
+          reactions: Array<{
+            actor_ptid: string
+            reaction: string
+            created_at_unix_ms: number
+          }>
+          pinned_by_ptid?: string
+          pinned_at_unix_ms?: number
+          read_by_ptids: string[]
         }>
       }
     >('messaging_list_messages', { conversation_id: conversationId })
@@ -1460,6 +1463,19 @@ const messagingService: MessagingServiceContract = {
       })),
       state: message.state,
       timestampUnixMs: message.timestamp_unix_ms,
+      replyToMessageId: message.reply_to_message_id,
+      threadRootMessageId: message.thread_root_message_id,
+      editedText: message.edited_text,
+      editedAtUnixMs: message.edited_at_unix_ms,
+      retracted: message.retracted,
+      reactions: message.reactions.map(reaction => ({
+        actorPtid: reaction.actor_ptid,
+        reaction: reaction.reaction,
+        createdAtUnixMs: reaction.created_at_unix_ms,
+      })),
+      pinnedByPtid: message.pinned_by_ptid,
+      pinnedAtUnixMs: message.pinned_at_unix_ms,
+      readByPtids: message.read_by_ptids,
     }))
   },
 
@@ -1492,6 +1508,19 @@ const messagingService: MessagingServiceContract = {
           }>
           state: string
           timestamp_unix_ms: number
+          reply_to_message_id?: string
+          thread_root_message_id?: string
+          edited_text?: string
+          edited_at_unix_ms?: number
+          retracted: boolean
+          reactions: Array<{
+            actor_ptid: string
+            reaction: string
+            created_at_unix_ms: number
+          }>
+          pinned_by_ptid?: string
+          pinned_at_unix_ms?: number
+          read_by_ptids: string[]
         }>
       }
     >('messaging_search_messages', {
@@ -1520,6 +1549,19 @@ const messagingService: MessagingServiceContract = {
       })),
       state: message.state,
       timestampUnixMs: message.timestamp_unix_ms,
+      replyToMessageId: message.reply_to_message_id,
+      threadRootMessageId: message.thread_root_message_id,
+      editedText: message.edited_text,
+      editedAtUnixMs: message.edited_at_unix_ms,
+      retracted: message.retracted,
+      reactions: message.reactions.map(reaction => ({
+        actorPtid: reaction.actor_ptid,
+        reaction: reaction.reaction,
+        createdAtUnixMs: reaction.created_at_unix_ms,
+      })),
+      pinnedByPtid: message.pinned_by_ptid,
+      pinnedAtUnixMs: message.pinned_at_unix_ms,
+      readByPtids: message.read_by_ptids,
     }))
   },
 

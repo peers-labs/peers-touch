@@ -90,6 +90,87 @@ func TestSubmitDeliveryReceiptRejectsNonMemberDevice(t *testing.T) {
 	}
 }
 
+func TestSubmitActorReadAtomicallyPersistsAndQueuesCursor(t *testing.T) {
+	ctx := context.Background()
+	now := time.Unix(1_700_000_000, 0).UTC()
+	db, service := newDeliveryReceiptFixture(t, now)
+	cursor := &chat.ActorReadCursor{
+		ConversationId:   "conversation-1",
+		ReaderPtid:       "ptid:bob",
+		LastReadSequence: 3,
+	}
+	request := &chat.SubmitMessagingReceiptRequest{
+		Kind:      chat.MessagingReceiptKind_MESSAGING_RECEIPT_KIND_ACTOR_READ,
+		ActorRead: cursor,
+	}
+	sender := &chat.CryptoEndpoint{Ptid: "ptid:bob", DeviceId: "bob-1"}
+
+	for range 2 {
+		if _, err := service.SubmitReceipt(ctx, sender, request); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	readCursors, err := infrastructure.NewReadCursorRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := readCursors.GetReadCursor(ctx, "conversation-1", "ptid:bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.LastReadSequence != 3 {
+		t.Fatalf("last read sequence = %d, want 3", persisted.LastReadSequence)
+	}
+	var queued []infrastructure.DeviceQueueItemModel
+	if err := db.
+		Where("idempotency_key LIKE ?", "read:conversation-1:ptid:bob:3:%").
+		Order("recipient_device_id ASC").
+		Find(&queued).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(queued) != 2 {
+		t.Fatalf("queued read cursor items = %d, want 2", len(queued))
+	}
+	for _, item := range queued {
+		var received chat.ActorReadCursor
+		if err := proto.Unmarshal(item.OpaquePayload, &received); err != nil {
+			t.Fatal(err)
+		}
+		if !proto.Equal(&received, cursor) {
+			t.Fatalf("queued cursor = %+v, want %+v", &received, cursor)
+		}
+	}
+}
+
+func TestSubmitActorReadRejectsNonMemberDeviceWithoutMutation(t *testing.T) {
+	ctx := context.Background()
+	now := time.Unix(1_700_000_000, 0).UTC()
+	db, service := newDeliveryReceiptFixture(t, now)
+	_, err := service.SubmitReceipt(
+		ctx,
+		&chat.CryptoEndpoint{Ptid: "ptid:bob", DeviceId: "bob-2"},
+		&chat.SubmitMessagingReceiptRequest{
+			Kind: chat.MessagingReceiptKind_MESSAGING_RECEIPT_KIND_ACTOR_READ,
+			ActorRead: &chat.ActorReadCursor{
+				ConversationId:   "conversation-1",
+				ReaderPtid:       "ptid:bob",
+				LastReadSequence: 3,
+			},
+		},
+	)
+	if !errors.Is(err, messaging.ErrSenderUnauthorized) {
+		t.Fatalf("error = %v, want ErrSenderUnauthorized", err)
+	}
+	var count int64
+	if err := db.Model(&infrastructure.ReadCursorModel{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("read cursor rows = %d, want 0", count)
+	}
+}
+
 func newDeliveryReceiptFixture(
 	t *testing.T,
 	now time.Time,
@@ -193,6 +274,7 @@ func newDeliveryReceiptFixture(
 	if err := db.Create(&infrastructure.AuthorityConversationModel{
 		ConversationID:  "conversation-1",
 		Kind:            int32(messaging.AuthorityConversationKindDirect),
+		CurrentSequence: 10,
 		MembershipEpoch: 1,
 		Active:          true,
 	}).Error; err != nil {
@@ -243,7 +325,6 @@ func newDeliveryReceiptFixture(
 	}
 	service, err := application.NewReceiptService(
 		uow,
-		readCursors,
 		"station:local",
 		func() time.Time { return now },
 	)

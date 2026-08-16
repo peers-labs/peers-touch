@@ -577,6 +577,7 @@
   "chat.social.messageArea.recalledByPeer": "一条消息已被撤回",
   "chat.social.messageArea.editedAtTooltip": "编辑于 {{time}}",
   "chat.social.messageArea.editedTag": "（已编辑）",
+  "chat.social.messageArea.readByCount": "{{count}} 人已读",
   "chat.social.messageArea.send": "发送",
   "chat.social.presence.online": "在线",
   "chat.social.presence.offline": "离线",

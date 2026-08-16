@@ -323,13 +323,6 @@ pub struct GroupChatThreadCountsInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatThreadReadInput {
-    pub group_ulid: String,
-    pub root_ulid: String,
-    pub last_read_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupChatUnreadInput {
     pub group_ulid: Option<String>,
 }

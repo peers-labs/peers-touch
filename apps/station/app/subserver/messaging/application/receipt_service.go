@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"log/slog"
 	"time"
 
 	messaging "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
@@ -18,22 +17,17 @@ import (
 // to other conversation members via their device queues.
 type ReceiptService struct {
 	unitOfWork     messaging.AuthorityUnitOfWork
-	readCursors    messaging.ReadCursorRepository
 	localStationID string
 	clock          func() time.Time
 }
 
 func NewReceiptService(
 	unitOfWork messaging.AuthorityUnitOfWork,
-	readCursors messaging.ReadCursorRepository,
 	localStationID string,
 	clock func() time.Time,
 ) (*ReceiptService, error) {
 	if unitOfWork == nil {
 		return nil, fmt.Errorf("messaging: receipt service requires unit of work")
-	}
-	if readCursors == nil {
-		return nil, fmt.Errorf("messaging: receipt service requires read cursor repository")
 	}
 	if localStationID == "" {
 		return nil, fmt.Errorf("messaging: receipt service requires local station ID")
@@ -43,7 +37,6 @@ func NewReceiptService(
 	}
 	return &ReceiptService{
 		unitOfWork:     unitOfWork,
-		readCursors:    readCursors,
 		localStationID: localStationID,
 		clock:          clock,
 	}, nil
@@ -208,52 +201,53 @@ func (s *ReceiptService) handleActorRead(
 
 	now := s.clock().UTC()
 	cursor.UpdatedAt = timestamppb.New(now)
-
-	// Persist the read cursor (upsert — only advance, never regress).
-	if err := s.readCursors.UpsertReadCursor(ctx, cursor); err != nil {
-		return nil, err
-	}
-
-	// Broadcast the read cursor update to other conversation members via queue.
-	s.broadcastReadCursor(ctx, sender, cursor, now)
-
-	return &chat.SubmitMessagingReceiptResponse{}, nil
-}
-
-// broadcastReadCursor enqueues the read cursor update to other local member
-// devices. This is best-effort; enqueue failures are logged but do not fail
-// the receipt submission.
-func (s *ReceiptService) broadcastReadCursor(
-	ctx context.Context,
-	sender *chat.CryptoEndpoint,
-	cursor *chat.ActorReadCursor,
-	now time.Time,
-) {
 	cursorBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(cursor)
 	if err != nil {
-		slog.ErrorContext(ctx,
-			"messaging: marshal read cursor for broadcast failed",
-			"conversation_id", cursor.ConversationId,
-			"reader_ptid", cursor.ReaderPtid,
-			"error", err,
-		)
-		return
+		return nil, fmt.Errorf("messaging: marshal read cursor: %w", err)
 	}
 	cursorHash := sha256.Sum256(cursorBytes)
 
 	err = s.unitOfWork.Execute(ctx, func(repositories messaging.AuthorityRepositories) error {
-		// Validate sender is still active.
 		active, err := repositories.Devices.IsActive(ctx, sender)
-		if err != nil || !active {
-			return nil
+		if err != nil {
+			return err
 		}
-
-		// List active member devices for broadcast.
+		if !active {
+			return messaging.ErrSenderUnauthorized
+		}
+		conversation, err := repositories.Authority.LockConversation(
+			ctx,
+			cursor.ConversationId,
+		)
+		if err != nil {
+			return err
+		}
+		if !conversation.Active || cursor.LastReadSequence > conversation.CurrentSequence {
+			return messaging.ErrConversationState
+		}
 		devices, err := repositories.Authority.ListActiveMemberDevices(
 			ctx,
 			cursor.ConversationId,
 		)
 		if err != nil {
+			return err
+		}
+		senderIsMember := false
+		for _, device := range devices {
+			if device.Active && device.Endpoint != nil &&
+				device.Endpoint.Ptid == sender.Ptid &&
+				device.Endpoint.DeviceId == sender.DeviceId {
+				senderIsMember = true
+				break
+			}
+		}
+		if !senderIsMember {
+			return messaging.ErrSenderUnauthorized
+		}
+		if repositories.ReadCursors == nil {
+			return fmt.Errorf("messaging: read cursor repository is unavailable")
+		}
+		if err := repositories.ReadCursors.UpsertReadCursor(ctx, cursor); err != nil {
 			return err
 		}
 
@@ -268,8 +262,8 @@ func (s *ReceiptService) broadcastReadCursor(
 			if !device.Active || device.Endpoint == nil {
 				continue
 			}
-			// Skip sender's own devices.
-			if device.Endpoint.Ptid == sender.Ptid {
+			if device.Endpoint.Ptid == sender.Ptid &&
+				device.Endpoint.DeviceId == sender.DeviceId {
 				continue
 			}
 
@@ -279,38 +273,33 @@ func (s *ReceiptService) broadcastReadCursor(
 				now,
 			)
 			if err != nil {
-				continue
+				return err
 			}
 			if homeStation != s.localStationID {
-				continue
+				return fmt.Errorf(
+					"messaging: read cursor target %s/%s is not local",
+					device.Endpoint.Ptid,
+					device.Endpoint.DeviceId,
+				)
 			}
 
 			if _, err := repositories.Queue.Enqueue(ctx, &chat.DeviceQueueItem{
 				Recipient:      device.Endpoint,
+				EventId:        fmt.Sprintf("read:%s:%d", cursor.ReaderPtid, cursor.LastReadSequence),
 				ConversationId: cursor.ConversationId,
 				IdempotencyKey: idempotencyKey + ":" + device.Endpoint.Ptid + ":" + device.Endpoint.DeviceId,
 				PayloadType:    chat.DeviceQueuePayloadType_DEVICE_QUEUE_PAYLOAD_TYPE_DEVICE_RECEIPT,
 				OpaquePayload:  cursorBytes,
 				PayloadSha256:  cursorHash[:],
 			}); err != nil {
-				slog.WarnContext(ctx,
-					"messaging: read cursor enqueue failed for device",
-					"conversation_id", cursor.ConversationId,
-					"recipient_ptid", device.Endpoint.Ptid,
-					"recipient_device_id", device.Endpoint.DeviceId,
-					"error", err,
-				)
+				return err
 			}
 		}
 
 		return nil
 	})
 	if err != nil {
-		slog.WarnContext(ctx,
-			"messaging: read cursor broadcast failed",
-			"conversation_id", cursor.ConversationId,
-			"reader_ptid", cursor.ReaderPtid,
-			"error", err,
-		)
+		return nil, err
 	}
+	return &chat.SubmitMessagingReceiptResponse{}, nil
 }

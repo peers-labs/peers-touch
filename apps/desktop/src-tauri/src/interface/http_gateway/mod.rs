@@ -5270,32 +5270,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
             }
         }
-        "group_chat_thread_mark_read" => {
-            let input = match parse_args::<GroupChatThreadReadInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.group_ulid.trim().is_empty() || input.root_ulid.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "group_ulid and root_ulid are required",
-                    None,
-                ));
-            }
-            match chat_storage::mark_group_thread_read(
-                &token,
-                input.group_ulid.as_str(),
-                input.root_ulid.as_str(),
-                input.last_read_ulid.as_deref(),
-            ) {
-                Ok(data) => to_json(to_stub("group_chat_thread_mark_read", data)),
-                Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
-            }
-        }
         "group_chat_unread_count" => {
             let input = match parse_args::<GroupChatUnreadInput>(args) {
                 Ok(v) => v,
@@ -7288,31 +7262,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             })),
             "conversation thread counts",
         ),
-        "conversation_set_read_cursor" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/conversation/read-cursor",
-            None,
-            Some(json!({
-                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "last_read_seq": args.get("last_read_seq").and_then(|v| v.as_i64()).unwrap_or(0),
-            })),
-            "conversation set read cursor",
-        ),
-        "conversation_get_unread" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::GET,
-            "/conversation/unread",
-            Some(vec![(
-                "conversation_id",
-                args.get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            )]),
-            None,
-            "conversation get unread",
-        ),
         "conversation_get_member_settings" => proxy_authenticated_station_json(
             state,
             reqwest::Method::GET,
@@ -7407,10 +7356,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 _ => crate::model::chat::ConversationKind::Direct,
             };
             let plaintext = args.get("plaintext").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let reply_to_message_id = args.get("reply_to_message_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let thread_root_message_id = args.get("thread_root_message_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
             if conversation_id.is_empty() || plaintext.is_empty() {
                 return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "conversation_id and plaintext required", None));
             }
-            match engine.submit_message(&token, &conversation_id, conversation_kind, &plaintext, &[]) {
+            match engine.submit_message(
+                &token,
+                &conversation_id,
+                conversation_kind,
+                &plaintext,
+                &reply_to_message_id,
+                &thread_root_message_id,
+                &[],
+            ) {
                 Ok(outcome) => {
                     let _ = state.messaging_engines.wake_profile(&account_id);
                     to_json(AppResult::success(json!({
@@ -7506,6 +7465,62 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     "progress": format!("{:?}", progress),
                 }))),
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        #[cfg(feature = "acceptance-webdriver")]
+        "messaging_acceptance_interaction_snapshot" => {
+            let guard = state.session.lock().map_err(|_| ()).ok();
+            let actor_id = guard
+                .as_ref()
+                .and_then(|session| session.actor_id.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|session| session.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
+            drop(guard);
+            if actor_id.is_empty() {
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
+            }
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            let conversation_id = args
+                .get("conversation_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let message_id = args
+                .get("message_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let command_id = args
+                .get("command_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            match engine.acceptance_interaction_snapshot(
+                conversation_id,
+                message_id,
+                command_id,
+            ) {
+                Ok(snapshot) => to_json(AppResult::success(snapshot)),
+                Err(error) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError,
+                    error,
+                    None,
+                )),
             }
         }
         "messaging_debug" => {

@@ -34,14 +34,17 @@ interface ChatMessageTimelineProps {
     senderDid: string,
   ) => DesktopIMSenderProfileProjection;
   highlightedMessageUlid: string | null;
+  isPinned: (message: ChatMessage) => boolean;
   messages: ChatMessage[];
   onDelete: (message: ChatMessage) => void;
   onEdit: (message: ChatMessage) => void;
   onForward: (message: ChatMessage) => void;
   onOpenThread: (rootUlid: string) => void;
+  onPin: (message: ChatMessage) => void;
   onReact: (message: ChatMessage) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
+  resolveReactions: (message: ChatMessage) => { actorId: string; emoji: string }[];
   resolveThreadStats: (message: ChatMessage) => ChatThreadStats;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
@@ -101,14 +104,17 @@ export function ChatMessageTimeline({
   currentUserDid,
   getSenderProfile,
   highlightedMessageUlid,
+  isPinned,
   messages,
   onDelete,
   onEdit,
   onForward,
   onOpenThread,
+  onPin,
   onReact,
   onRecall,
   onReply,
+  resolveReactions,
   resolveThreadStats,
   scrollContainerRef,
 }: ChatMessageTimelineProps) {
@@ -187,9 +193,12 @@ export function ChatMessageTimeline({
                 onEdit={onEdit}
                 onForward={onForward}
                 onOpenThread={onOpenThread}
+                onPin={onPin}
                 onReact={onReact}
                 onRecall={onRecall}
                 onReply={onReply}
+                pinned={isPinned(message)}
+                reactions={resolveReactions(message)}
                 threadReplyCount={threadStats.replyCount}
                 threadUnreadCount={threadStats.unreadCount}
                 threadPreviewMessages={threadStats.previewMessages}

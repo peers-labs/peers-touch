@@ -17,10 +17,11 @@ DEFAULT_STATION = "http://10.37.94.156:18080"
 ACCOUNTS = {
     "alice": "alice@p.t",
     "bob": "bob@p.t",
+    "charlie": "charlie@p.t",
 }
 
 
-def reset_fixture() -> None:
+def reset_fixture(accounts: tuple[str, ...] = ("alice", "bob")) -> None:
     if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
         raise GateError(
             "native Chat gate requires CHAT_ACCEPTANCE_RESET=1 against the "
@@ -36,6 +37,10 @@ def reset_fixture() -> None:
                 / "fixtures"
                 / "chat_native_reset.py"
             ),
+            "--environment",
+            "station-three",
+            "--accounts",
+            *accounts,
         ],
         cwd=REPO_ROOT,
         check=True,

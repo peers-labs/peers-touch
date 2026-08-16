@@ -287,18 +287,6 @@ func (r *memConvRepo) CountThreadReplies(_ context.Context, conversationID strin
 	return make(map[string]conversation.ThreadSummary), nil
 }
 
-func (r *memConvRepo) GetReadCursor(_ context.Context, conversationID, ptid string) (int64, error) {
-	return 0, nil
-}
-
-func (r *memConvRepo) SetReadCursor(_ context.Context, conversationID, ptid string, seq int64) error {
-	return nil
-}
-
-func (r *memConvRepo) CountUnread(_ context.Context, conversationID, ptid string) (int64, error) {
-	return 0, nil
-}
-
 type spyEnvelope struct {
 	mu         sync.Mutex
 	events     []*chat.CommittedConversationEvent

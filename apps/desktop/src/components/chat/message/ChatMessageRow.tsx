@@ -10,6 +10,7 @@ import {
   MessageSquareReply,
   MessagesSquare,
   Pencil,
+  Pin,
   RotateCcw,
   SmilePlus,
   Trash2,
@@ -67,10 +68,12 @@ interface ChatMessageRowProps {
   onEdit: (message: ChatMessage) => void;
   onForward: (message: ChatMessage) => void;
   onOpenThread: (rootUlid: string) => void;
+  onPin: (message: ChatMessage) => void;
   onReact: (message: ChatMessage) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
   reactions?: { actorId: string; emoji: string }[];
+  pinned?: boolean;
   showHoverActions?: boolean;
   showThreadSummary?: boolean;
   threadPreviewMessages: ChatMessage[];
@@ -118,6 +121,7 @@ interface HoverActionsProps {
   onEdit: () => void;
   onForward: () => void;
   onOpenThread: () => void;
+  onPin: () => void;
   onReact: () => void;
   onRecall: () => void;
   onReply: () => void;
@@ -135,6 +139,7 @@ function HoverActions({
   onEdit,
   onForward,
   onOpenThread,
+  onPin,
   onReact,
   onRecall,
   onReply,
@@ -182,6 +187,7 @@ function HoverActions({
       {canOpenThread && (
         <Tooltip title={t('chat.social.thread.open')}>
           <Button
+            data-message-action="thread"
             type="text"
             size="small"
             icon={<MessagesSquare size={14} />}
@@ -192,6 +198,7 @@ function HoverActions({
       )}
       <Tooltip title={t('chat.social.messageArea.actionReact')}>
         <Button
+          data-message-action="reaction"
           type="text"
           size="small"
           icon={<SmilePlus size={14} />}
@@ -199,9 +206,20 @@ function HoverActions({
           style={actionButtonStyle}
         />
       </Tooltip>
+      <Tooltip title={t('chat.social.contextMenu.pin')}>
+        <Button
+          data-message-action="pin"
+          type="text"
+          size="small"
+          icon={<Pin size={14} />}
+          onClick={onPin}
+          style={actionButtonStyle}
+        />
+      </Tooltip>
       {canReply && (
         <Tooltip title={t('chat.social.messageArea.actionReply')}>
           <Button
+            data-message-action="reply"
             type="text"
             size="small"
             icon={<MessageSquareReply size={14} />}
@@ -212,6 +230,7 @@ function HoverActions({
       )}
       <Tooltip title={t('chat.social.messageArea.actionForward')}>
         <Button
+          data-message-action="forward"
           type="text"
           size="small"
           icon={<CornerUpRight size={14} />}
@@ -222,6 +241,7 @@ function HoverActions({
       {canEdit && (
         <Tooltip title={t('chat.social.messageArea.actionEdit')}>
           <Button
+            data-message-action="edit"
             type="text"
             size="small"
             icon={<Pencil size={14} />}
@@ -233,6 +253,7 @@ function HoverActions({
       {canRecall && (
         <Tooltip title={t('chat.social.messageArea.actionRecall')}>
           <Button
+            data-message-action="retract"
             type="text"
             size="small"
             icon={<RotateCcw size={14} />}
@@ -244,6 +265,7 @@ function HoverActions({
       {canDelete && (
         <Tooltip title={t('chat.social.messageArea.actionDelete')}>
           <Button
+            data-message-action="delete"
             type="text"
             size="small"
             icon={<Trash2 size={14} />}
@@ -502,10 +524,12 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   onEdit,
   onForward,
   onOpenThread,
+  onPin,
   onReact,
   onRecall,
   onReply,
   reactions,
+  pinned = false,
   showHoverActions = true,
   showThreadSummary = true,
   threadPreviewMessages,
@@ -524,6 +548,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const encryptedPlaceholder = isEncryptedPlaceholder(message);
   const isRecalled = isRecalledMessage(message);
   const editedAtMs = messageEditedAtMs(message);
+  const readByPtids = message.readByPtids ?? [];
   const attachments = message.attachments || [];
   const mediaOnlyMessage = !isRecalled
     && !encryptedPlaceholder
@@ -562,6 +587,12 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     <Flexbox
       data-message-ulid={message.ulid}
       data-pt-message-item={message.ulid}
+      data-message-edited={editedAtMs ? 'true' : 'false'}
+      data-message-retracted={isRecalled ? 'true' : 'false'}
+      data-message-reply-to={replyToUlid || ''}
+      data-message-thread-root={messageThreadRootUlid(message) || ''}
+      data-message-thread-reply-count={threadReplyCount}
+      data-message-read-by={readByPtids.join(',')}
       className={`msg-row ${highlighted ? 'highlighted' : ''}`}
       horizontal
       align="flex-start"
@@ -623,6 +654,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             canEdit={canEdit}
             layout={layout}
             onOpenThread={() => onOpenThread(threadRootUlid)}
+            onPin={() => onPin(message)}
             onReact={() => onReact(message)}
             onForward={() => onForward(message)}
             onReply={() => onReply(message.ulid)}
@@ -679,6 +711,21 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           />
         </Flexbox>
 
+        {pinned && (
+          <Tooltip title={t('chat.social.contextMenu.unpin')}>
+            <Pin
+              data-message-pinned="true"
+              size={12}
+              style={{
+                marginTop: 3,
+                color: token.colorTextTertiary,
+                cursor: 'pointer',
+              }}
+              onClick={() => onPin(message)}
+            />
+          </Tooltip>
+        )}
+
         {reactions && reactions.length > 0 && (
           <Flexbox
             horizontal
@@ -693,6 +740,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
               }, {}),
             ).map(([emoji, count]) => (
               <span
+                data-message-reaction={emoji}
                 key={emoji}
                 style={{
                   fontSize: 12,
@@ -762,6 +810,18 @@ export const ChatMessageRow = memo(function ChatMessageRow({
                 {t('chat.social.messageArea.editedTag')}
               </Text>
             </Tooltip>
+          )}
+          {isOwn && isGroup && readByPtids.length > 0 && !isRecalled && (
+            <Text
+              data-message-read-state="read"
+              style={{
+                fontSize: 11,
+                color: token.colorTextTertiary,
+                lineHeight: 1.2,
+              }}
+            >
+              {t('chat.social.messageArea.readByCount', { count: readByPtids.length })}
+            </Text>
           )}
           {isOwn && isFriendMessage(message) && !isRecalled && (
             <span data-message-receipt={receiptEvidenceStatus(message.status as FriendMessageStatus)}>

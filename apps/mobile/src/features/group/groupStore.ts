@@ -523,9 +523,9 @@ function mergeGroups(groups: Group[], incoming: Group): Group[] {
 }
 
 function upsertGroupMember(members: GroupMember[], incoming: GroupMember): GroupMember[] {
-  const exists = members.some((member) => member.actorDid === incoming.actorDid);
+  const exists = members.some((member) => member.ptid === incoming.ptid);
   return exists
-    ? members.map((member) => (member.actorDid === incoming.actorDid ? { ...member, ...incoming } : member))
+    ? members.map((member) => (member.ptid === incoming.ptid ? { ...member, ...incoming } : member))
     : [...members, incoming];
 }
 

@@ -994,11 +994,3 @@ func (s *DefaultService) ListThreadMessages(ctx context.Context, conversationID,
 func (s *DefaultService) GetThreadCounts(ctx context.Context, conversationID string, rootIDs []string) (map[string]ThreadSummary, error) {
 	return s.repo.CountThreadReplies(ctx, conversationID, rootIDs)
 }
-
-func (s *DefaultService) SetReadCursor(ctx context.Context, conversationID, ptid string, seq int64) error {
-	return s.repo.SetReadCursor(ctx, conversationID, ptid, seq)
-}
-
-func (s *DefaultService) GetUnreadCount(ctx context.Context, conversationID, ptid string) (int64, error) {
-	return s.repo.CountUnread(ctx, conversationID, ptid)
-}

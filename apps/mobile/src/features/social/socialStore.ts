@@ -762,11 +762,9 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }),
 
   sendTypingState: async (sessionUlid, typing) => {
-    const { api, currentUserDid, sessions } = get();
-    const session = sessions.find((item) => item.ulid === sessionUlid);
-    const recipientActorId = session ? peerDidFromSession(session, currentUserDid) : '';
-    if (!api || !recipientActorId) return;
-    await api.sendTypingState(recipientActorId, sessionUlid, typing).catch(() => {
+    const { api } = get();
+    if (!api || !sessionUlid) return;
+    await api.sendTypingState(sessionUlid, typing).catch(() => {
       // Typing is ephemeral; reconcile and the next pulse heal missed frames.
     });
   },

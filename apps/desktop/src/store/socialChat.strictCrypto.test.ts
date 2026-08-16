@@ -124,7 +124,7 @@ describe('strict chat encryption source contract', () => {
     expect(localChatStoreSource).not.toContain('legacy_group_plaintext_wipe');
   });
 
-  it('exposes one Conversation send and receipt path with no friend-chat fallback', () => {
+  it('exposes one Messaging send and actor-read path with no friend-chat fallback', () => {
     for (const source of [
       desktopApiSource,
       rustFriendChatSource,
@@ -138,7 +138,8 @@ describe('strict chat encryption source contract', () => {
       expect(source).not.toContain('/friend-chat/message/ack');
     }
     expect(socialChatSource).toContain('messaging.sendMessage');
-    expect(socialChatSource).toContain('conversation.submitReceipt');
+    expect(socialChatSource).toContain('messagingReadCursor');
+    expect(socialChatSource).not.toContain('conversation.submitReceipt');
   });
 
   it('retires every Desktop Sender Keys command surface', () => {
@@ -155,7 +156,7 @@ describe('strict chat encryption source contract', () => {
     expect(identityHandlersSource).not.toContain('crypto.sender-key-ledger');
   });
 
-  it('delegates text send to the Engine while legacy group mutations remain device-bound', () => {
+  it('delegates send and every durable message mutation to the Engine', () => {
     const section = (start: string, end: string) => {
       const offset = socialChatSource.indexOf(start);
       return socialChatSource.slice(offset, socialChatSource.indexOf(end, offset));
@@ -163,15 +164,19 @@ describe('strict chat encryption source contract', () => {
     const sendPath = section('sendGroupMessage: async', 'loadGroupMembers: async');
     const recallPath = section('recallGroupMessage: async', 'editGroupMessage: async');
     const editPath = section('editGroupMessage: async', 'applyMessageMutation:');
-    expect(sendPath).toContain("messaging.sendMessage(groupUlid, 'group', content, attachments)");
+    expect(sendPath).toContain("messaging.sendMessage(groupUlid, 'group', content, attachments, {");
     expect(sendPath).not.toContain('mlsGroup.encrypt');
     expect(sendPath).not.toContain('conversation.submitCommand');
     expect(sendPath).not.toContain('getLocalCryptoAddress()');
-    for (const path of [recallPath, editPath]) {
-      expect(path).toContain('const localAddress = getLocalCryptoAddress()');
-      expect(path).toContain('sender_device_id: localAddress.deviceId');
-      expect(path).not.toContain("localStorage.getItem('peers_im_device_id')");
-    }
+    expect(recallPath).toContain("messagingMetadataInteraction(groupUlid, messageUlid, 'retract')");
+    expect(recallPath).not.toContain('conversation.submitCommand');
+    expect(editPath).toContain(
+      'messagingEditMessage(groupUlid, messageUlid, newContent.trim())',
+    );
+    expect(editPath).not.toContain('mlsGroup.encrypt');
+    expect(editPath).not.toContain('conversation.submitCommand');
+    expect(editPath).not.toContain('getLocalCryptoAddress()');
+    expect(editPath).not.toContain('applyMessageMutation(');
     expect(imServiceSource).not.toContain("'mls_group_status'");
   });
 });
