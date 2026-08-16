@@ -72,6 +72,11 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
             "failure": "",
             "failureDiagnostics": [],
             "launchOrder": names,
+            "runtimeManifest": {
+                "path": "/tmp/runtime-manifest.json",
+                "runId": "run-1",
+                "state": "FIXTURE_READY",
+            },
             "station": {
                 "url": "http://station",
                 "commit": "commit-a",
@@ -96,6 +101,28 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
                 }
                 for index, name in enumerate(names)
             ],
+            "cleanup": {
+                "status": "pass",
+                "storageReleased": True,
+                "failures": [],
+                "clients": [
+                    {
+                        "client": name,
+                        "observerSocketReleased": True,
+                        "ports": {
+                            "gateway": {
+                                "port": 3300 + index,
+                                "released": True,
+                            },
+                            "renderer": {
+                                "port": 3500 + index,
+                                "released": True,
+                            },
+                        },
+                    }
+                    for index, name in enumerate(names)
+                ],
+            },
             "steps": steps,
             "assertions": assertions,
         }
@@ -148,6 +175,10 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
         report["clients"][1]["observerSocket"] = report["clients"][0]["observerSocket"]
         with self.assertRaisesRegex(gate.GateError, "distinct observerSocket"):
             gate.validate_report(report, "multi-device")
+        report = self.report("two-client")
+        report["cleanup"]["clients"][0]["ports"]["gateway"]["released"] = False
+        with self.assertRaisesRegex(gate.GateError, "gateway port must be released"):
+            gate.validate_report(report, "two-client")
 
     def test_rejects_missing_steps_and_incomplete_multi_device_delivery(self) -> None:
         report = self.report("two-client")

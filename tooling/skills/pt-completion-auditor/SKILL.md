@@ -209,6 +209,10 @@ Identify:
 
 If the scope is unclear, ask one concise clarification question.
 
+Before building the completion matrix, invoke `pt-acceptance-gap-detector` for
+every product or runtime proof claim. Carry each detector gap into Findings and
+keep the affected requirement `UNPROVEN` or `BLOCKED`.
+
 ### Step 2. Find Authoritative Sources
 
 Prefer:
