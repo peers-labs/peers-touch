@@ -31,8 +31,16 @@ _PRIVATE_KEY = re.compile(
 )
 
 
+def _camel_to_snake(name: str) -> str:
+    import re
+    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
+
+
 def is_sensitive_key(key: object) -> bool:
-    normalized = str(key).strip().lower().replace("-", "_")
+    normalized = _camel_to_snake(str(key).strip().replace("-", "_"))
+    if normalized.endswith("_ref") or normalized.endswith("_refs") or "reference" in normalized:
+        return False
     return any(part in normalized for part in SENSITIVE_KEY_PARTS)
 
 

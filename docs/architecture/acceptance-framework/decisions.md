@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-06-03 | **Updated**: 2026-06-04
+> **Created**: 2026-06-03 | **Updated**: 2026-08-16
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -18,6 +18,10 @@
 | D-04 | Agent 智能必须受 stable gates 和 reports 约束 | accepted |
 | D-05 | Station Dashboard 作为首个 managed domain | accepted |
 | D-06 | Chat 作为首个用户主路径 managed domain | accepted |
+| D-07 | Environment Provisioning 是 Gate 之前的独立运行时边界 | proposed |
+| D-08 | Attestation、Actor Fixture 与 Credential 各有唯一生产 Owner | proposed |
+| D-09 | Registry 按产品行为选择 receiver-proof Gate | proposed |
+| D-10 | Gap Detector 作为跨阶段只读守卫 | proposed |
 
 ---
 
@@ -215,3 +219,178 @@ Chat 同时具备事实源、传输面和用户可见面，适合验证 acceptan
 - Chat 变更会通过 registry 自动选择 `proto-build`、`station-messaging-unit`、`messaging-platform-contract`、`chat-desktop-gateway-e2e`、native gates 和 / 或 `desktop-check`。
 - Acceptance coverage report 现在能显示三个 active domains：Federation、Station Dashboard、Chat。
 - Chat 的未证明范围必须保持显式，不能用 typed checks 或 Desktop gateway command E2E 代替 native multi-client 用户消息收发体验。
+
+---
+
+## D-07: Environment Provisioning 是 Gate 之前的独立运行时边界
+
+**Status**: accepted
+**Date**: 2026-08-16 | **Accepted**: 2026-08-16
+
+### Context
+
+当前 Gate Catalog 声明 `environment`，但环境准备依赖 Agent 手工拼接 Profile、
+Station、Desktop、端口、Fixture 和环境变量。Gateway Gate 在服务未启动时只得到
+connection refused；Native Gate 能校验输入，却无法告诉新 Agent 如何生产输入。
+
+### Decision
+
+在 Gate Runner 与产品 Gate 之间建立独立 Environment Provisioning 边界：
+
+```text
+plan -> provisioner -> runtime manifest -> gate -> evidence -> cleanup
+```
+
+Gate 不自启动环境。Provisioner 根据 environment contract 准备资源、输出不可变
+runtime manifest，并在缺项时生成结构化 `BLOCKED/UNPROVEN` artifact。
+
+### Rationale
+
+环境生命周期与产品断言是不同职责。独立 Provisioner 既保持 Gate 纯粹，也让
+`make acceptance-*` 能形成规范、可发现、可重复的执行路径。
+
+### Alternatives Considered
+
+- Gate 内直接 `make desktop`：混合环境生命周期和产品断言，失败清理不可控。
+- 保持调用方手工准备：依赖上下文记忆，新 Agent 无法稳定复现。
+- 遇到缺项后降级到 static/browser/API：不产生同等级产品证据。
+
+### Consequences
+
+- 非 `local` environment 必须有机器可读 provisioning contract。
+- `acceptance-run` 需要区分 provisioning failure 与 product Gate failure。
+- Provisioning 成功本身不能把产品能力标记为 `PROVEN`。
+- Provisioner 引入新的 cleanup 责任和结构化 preflight artifact。
+
+### Review / Reversal Trigger
+
+若实现证明 Environment Provisioner 无法在不持有产品断言的前提下统一
+`local-desktop-gateway`、`home-station` 和 `fedp5`，应重新评审 contract 粒度；
+不得退回 Agent 手工拼接。
+
+---
+
+## D-08: Attestation、Actor Fixture 与 Credential 各有唯一生产 Owner
+
+**Status**: accepted
+**Date**: 2026-08-16 | **Accepted**: 2026-08-16
+
+### Context
+
+Chat Native runner 当前消费 Station attestation、canonical PTID 和密码，但没有
+权威生成、发现或注入流程。默认值和人工复制会破坏 source identity 与证据可信度。
+
+### Decision
+
+- Station deployment/runtime owner 生产 deployment attestation，并与 live metadata 校验。
+- Domain Fixture 生产 actor manifest，负责账号、canonical PTID、初始状态和 reset。
+- Profile 或批准的 secret source 生产 credential reference；manifest 只记录引用。
+- Gate 只消费这些 artifact，不生成、不猜测、不硬编码。
+
+### Rationale
+
+生产者和验证者必须分离。Gate 自己生产 attestation 或 actor identity 会形成自证，
+而凭据进入 manifest 会造成泄露风险。
+
+### Alternatives Considered
+
+- 在 runner 中硬编码 Station、PTID 和密码：不可移植且违反安全边界。
+- Agent 临时查询后 export：不可审计，无法证明输入 freshness。
+- 将密码写入 actor manifest：降低操作成本但扩大证据泄露面。
+
+### Consequences
+
+- Fixture 输出必须脱敏且可重复。
+- Attestation 必须绑定实际部署，而不是只绑定本地 git HEAD。
+- 缺少生产 artifact 时 Gate 保持 `UNPROVEN`。
+
+### Review / Reversal Trigger
+
+若 Station runtime 无法提供可核验 live commit 或 proto identity，应先设计新的
+runtime identity endpoint；不得由 Gate 自行签发或伪造 attestation。
+
+---
+
+## D-09: Registry 按产品行为选择 receiver-proof Gate
+
+**Status**: accepted
+**Date**: 2026-08-16 | **Accepted**: 2026-08-16
+
+### Context
+
+`apps/desktop/src-tauri/src/messaging/**` 当前只选择 Gateway E2E。Direct receipt
+状态虽然属于 Native receiver-visible 行为，但 receipt 代码变更不会自动选择
+`chat-native-two-client-e2e`。
+
+### Decision
+
+Registry 保留目录级 cheap Gate 规则，并为 receiver-visible 状态转换增加更窄的
+behavior rule。Feature Contract 决定需要哪类 proof，Registry 只把相关源路径映射
+到该 Feature 和 Gate。
+
+### Rationale
+
+目录所有权不能完整表达行为影响。更窄的规则避免所有 messaging 改动都运行全部 W8
+journeys，同时确保 receipt、badge、projection 等用户可见状态不会只跑 API Gate。
+
+### Alternatives Considered
+
+- 所有 messaging 变更运行全部 Native Gates：覆盖充分但成本失控。
+- 继续只运行 Gateway Gate：无法证明 Native sender receipt projection。
+- 由 Agent 看到任务描述后手工追加 Gate：不可发现、不可重复。
+
+### Consequences
+
+- 关键 behavior rule 必须有 synthetic path plan test。
+- Feature source paths 与 Registry rules 必须同步审计。
+- 新 receiver-visible 状态需要显式登记，不能依赖 broad directory rule。
+
+### Review / Reversal Trigger
+
+若 behavior rule 数量导致 Registry 无法维护，应引入机器可读 assertion ownership
+映射；不得退回“Agent 根据任务描述手工选 Gate”。
+
+---
+
+## D-10: Gap Detector 作为跨阶段只读守卫
+
+**Status**: accepted
+**Date**: 2026-08-16 | **Accepted**: 2026-08-16
+
+### Context
+
+`pt-acceptance-engineering` 在明确收到 Acceptance 请求时能够生成 gap matrix，但普通
+产品任务可能在 completion、commit 或 PR 阶段才暴露 Acceptance 遗漏。若没有独立
+触发面，Agent 可能用 build、unit test 或手工检查替代缺失的产品证据。
+
+### Decision
+
+新增 `pt-acceptance-gap-detector`，职责严格限定为：
+
+- 在完成、质量、提交和 PR 声明前只读检查 Acceptance ownership 与 evidence。
+- 输出结构化 gap、proof state、责任 stage 和最小 closure。
+- 发现真实缺口后调用 `pt-acceptance-engineering`。
+
+它不实现 Gate、不修改产品或 Acceptance、不做 completion audit，也不自行批准继续。
+
+### Rationale
+
+Gap detection 与 Acceptance engineering 是不同触发面：前者防止遗漏和 silent pass，
+后者负责补齐与升级。分离后可覆盖没有显式提出 Acceptance 的普通开发任务。
+
+### Alternatives Considered
+
+- 只扩展 `pt-acceptance-engineering`：普通任务未必触发该 Skill。
+- 只依赖 `pt-completion-auditor`：发现时间太晚，且职责过宽。
+- 把检测逻辑复制到 commit/PR/quality skills：规则会漂移。
+
+### Consequences
+
+- Completion、quality、commit、PR 等 Skill 需要引用同一个 Gap Detector。
+- Detector 必须保持短小、只读、fail-closed，避免复制完整 Acceptance procedure。
+- Detector 发现缺口后必须停止产品完成声明，但不能越权实施修复。
+
+### Review / Reversal Trigger
+
+若调用方 Skill 无法稳定触发独立 Detector，应把同一 detector contract 下沉为
+completion pipeline 的统一机器检查；不得复制多份判断规则。

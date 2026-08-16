@@ -35,6 +35,39 @@
 - 前端业务代码（runtime、service、store、components）
 - 所有 Make targets 和对外命令行接口
 
+### 1.3 Runtime Provisioning 目标映射
+
+> 本节与后续 Runtime Provisioning 影响面由已接受的 D-07 ~ D-10 约束。
+
+| 当前输入或行为 | 当前问题 | 目标 Owner | 目标 artifact |
+|---|---|---|---|
+| `gates.yaml.environment` | 只有标签，没有 acquisition contract | Acceptance Provisioning Registry | environment contract |
+| active `.local` Profile | 文件名与内部 identity 可漂移 | Local Dev Environment | validated profile identity |
+| `make station` / `station-status` | 能 ready/check，但不产出 Gate 可消费的完整 attestation | Station deployment/runtime | station attestation |
+| `CHAT_NATIVE_*_PTID` | 由调用方手工提供 | Chat Fixture | actor manifest |
+| `CHAT_NATIVE_DEMO_PASSWORD` | 来源未声明且 runner 有默认值 | approved credential source | credential reference |
+| `CHAT_NATIVE_STATION_ATTESTATION` | runner 只消费，没有生产者 | Station deployment/runtime | source-bound attestation artifact |
+| `CHAT_NATIVE_STATION_URL` | Profile 与 Gate 使用不同变量 | Environment Provisioner | runtime manifest station URL |
+| Gateway/Native ports | runner 局部计算，缺少统一 preflight record | Environment Provisioner + Driver | client isolation manifest |
+| Gate failure text log | 缺少 source-bound preflight identity | Provisioner/Gate Runner | structured blocked artifact |
+
+目标集成入口：
+
+```text
+gates.yaml
+  -> environment contract
+  -> profile validation
+  -> service ready + attestation
+  -> fixture actor manifest + credential references
+  -> runtime resource manifest
+  -> existing Gate command
+  -> existing evidence validation
+  -> cleanup audit
+```
+
+现有 Gate command 和产品断言保持稳定；变更的是 Gate 之前和之后的 runtime
+orchestration。业务 Gate 不获得部署权限，也不读取 `.local` 的实现细节。
+
 ---
 
 ## 2. 影响面分析
@@ -50,6 +83,12 @@
 | `apps/desktop/src/acceptance/` | 重构 | 新增 registry.ts，chatAcceptanceHarness.ts 移动并改为注册模式 |
 | `apps/desktop/src/main.tsx` | 小改 | 改为动态 import registry 而非硬编码 chat harness |
 | `tooling/scripts/applet-*.mjs` | 小改 | 增加 `--json` 输出 flag，核心逻辑不变 |
+| `tooling/scripts/acceptance-run.py` | 架构扩展 | 按 environment contract 调用 Provisioner，区分 blocked 与 product failure |
+| `tooling/scripts/local-dev/profile.sh` | 小改 | 激活前校验文件名与 `PT_DEV_PROFILE`，输出 resolved identity |
+| `tooling/scripts/local-dev/station-status.sh` / deployment tooling | 架构扩展 | 由实际运行时生产 Station attestation |
+| `tooling/acceptance/fixtures/chat_native_reset.py` | 重构 | 产出 actor manifest，声明 reset target、初始状态和 teardown |
+| `tooling/acceptance/registry.yaml` | 契约修正 | receipt 等 receiver-visible 路径选择 Native two-client Gate |
+| `tooling/skills/pt-acceptance-gap-detector/` | 新增只读守卫 | 检测遗漏并分派，不实施修复 |
 
 ### 2.2 不受影响的代码
 
@@ -57,7 +96,21 @@
 - Desktop Rust 代码（`apps/desktop/src-tauri/`）
 - 所有 proto 定义和生成代码（`model/`）
 - Applet 业务代码
-- CI/CD 脚本（只调用 Make targets，接口不变）
+- Chat 产品业务逻辑；本设计不修复 `DELIVERED` receipt
+- Gate 产品成功标准；不得因 provisioning 改造而降低
+- CI/CD 调用的 Make target 名称
+
+### 2.3 必须删除或禁止保留的旧路径
+
+- Native runner 的默认密码。
+- Agent 手工拼接 PTID、Station attestation 和 Station URL 的操作惯例。
+- Profile identity mismatch 仍可激活的 silent path。
+- 失败后仅输出 connection refused 且没有 runtime identity 的 preflight path。
+- Receipt 变更只选择 Gateway Gate、依赖 Agent 手工追加 Native Gate 的 path。
+
+不得以兼容为名保留“旧环境变量直传”和“runtime manifest”两套并行真源。
+Native Chat 目标态只认 provisioning artifact；credential value 仅按 manifest
+中的 CredentialRef 在进程环境中解析。
 
 ---
 
@@ -99,4 +152,14 @@
 - **报告路径保持不变**：`tooling/acceptance/reports/*.json` 输出位置不变
 - **Make targets 保持不变**：所有 `make acceptance-*` 命令继续工作
 - **Driver 单一入口**：统一使用 `tooling.acceptance.drivers.tauri`；不保留兼容 re-export
-- **YAML 契约完全不变**：capability/domain/feature/registry/gates 不需要修改
+- **Core Runtime 已合并基线**：原 Core Runtime 通用化不要求 capability/domain/feature/registry/gates 迁移
+
+以上保证只适用于已合并的 Core Runtime 通用化。Runtime Provisioning 扩展的目标
+兼容边界如下：
+
+- Gate ID、产品断言和 report 主路径保持稳定。
+- Make target 名称保持稳定，但其执行从“只跑命令”升级为“provision → run → cleanup”。
+- `gates.yaml.environment` 从描述字段升级为必须可解析的 contract key。
+- 旧 ad-hoc 环境变量不是长期公共 API；迁移后由 runtime manifest 取代。
+- 缺少 provisioning artifact 时行为从文本失败升级为结构化 `BLOCKED/UNPROVEN`，
+  不得伪装为 Gate 产品失败。
