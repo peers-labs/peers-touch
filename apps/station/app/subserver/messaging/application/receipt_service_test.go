@@ -124,7 +124,7 @@ func TestSubmitActorReadAtomicallyPersistsAndQueuesCursor(t *testing.T) {
 	}
 	var queued []infrastructure.DeviceQueueItemModel
 	if err := db.
-		Where("idempotency_key LIKE ?", "read:conversation-1:ptid:bob:3:%").
+		Where("event_id = ?", "read:ptid:bob:3").
 		Order("recipient_device_id ASC").
 		Find(&queued).Error; err != nil {
 		t.Fatal(err)
