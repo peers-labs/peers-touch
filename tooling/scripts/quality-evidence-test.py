@@ -210,6 +210,19 @@ class RouteRangeTests(unittest.TestCase):
         source = REVIEW_RUN_SCRIPT.read_text(encoding="utf-8")
         self.assertIn('if [[ "$diff_range" == "HEAD" ]]', source)
 
+    def test_review_scripts_only_fallback_to_worktree_for_head(self) -> None:
+        for script in (
+            ROUTE_SCRIPT,
+            KNOWLEDGE_SCRIPT,
+            HARD_RULES_SCRIPT,
+        ):
+            with self.subTest(script=script.name):
+                source = script.read_text(encoding="utf-8")
+                self.assertIn(
+                    '&& "$diff_range" == "HEAD"',
+                    source,
+                )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

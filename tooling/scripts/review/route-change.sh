@@ -42,7 +42,7 @@ if ! changed_files="$(git diff --name-only "$diff_range" --)"; then
   echo "route-change: invalid or unreadable git range: $diff_range" >&2
   exit 1
 fi
-if [[ -z "$changed_files" ]]; then
+if [[ -z "$changed_files" && "$diff_range" == "HEAD" ]]; then
   changed_files="$(git diff --name-only --cached --)"
 fi
 if [[ "$diff_range" == "HEAD" ]]; then
