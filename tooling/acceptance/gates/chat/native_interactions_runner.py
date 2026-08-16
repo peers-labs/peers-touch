@@ -727,8 +727,19 @@ class NativeInteractionsGate(AcceptanceGate):
             )
         self.assert_condition(f"{claim_kind}_author_only_edit", True)
 
-        for _ in range(2):
-            async_harness(
+        for attempt in range(2):
+            before_consumption = {
+                actor: int(
+                    self.engine_snapshot(
+                        actor,
+                        conversation_id,
+                        message_id,
+                    ).get("consumptionCount")
+                    or 0
+                )
+                for actor in members
+            }
+            reaction = async_harness(
                 self.clients["bob"],
                 "submitMetadataInteraction",
                 {
@@ -740,24 +751,68 @@ class NativeInteractionsGate(AcceptanceGate):
                     "remove": False,
                 },
             )
-        for actor in members:
+            reaction_command = str(
+                (reaction or {}).get("command_id")
+                or (reaction or {}).get("commandId")
+                or ""
+            )
+            if not reaction_command:
+                raise GateError(
+                    f"{claim_kind} reaction attempt returned no command ID"
+                )
             wait_until(
-                lambda actor=actor: (
+                lambda: (
                     snapshot
                     if (
-                        snapshot := self.projection(
-                            actor,
-                            kind,
+                        snapshot := self.engine_snapshot(
+                            "bob",
                             conversation_id,
                             message_id,
+                            reaction_command,
                         )
                     )
-                    and len(snapshot.get("reactions") or []) == 1
+                    and (snapshot.get("intent") or {}).get("state") == "submitted"
                     else None
                 ),
-                f"{actor} {claim_kind} idempotent reaction",
+                f"bob {claim_kind} reaction attempt {attempt + 1} submission",
                 STEP_TIMEOUT,
             )
+            for actor in members:
+                wait_until(
+                    lambda actor=actor: (
+                        snapshot
+                        if (
+                            snapshot := self.engine_snapshot(
+                                actor,
+                                conversation_id,
+                                message_id,
+                            )
+                        )
+                        and int(snapshot.get("consumptionCount") or 0)
+                        > before_consumption[actor]
+                        else None
+                    ),
+                    f"{actor} {claim_kind} reaction attempt "
+                    f"{attempt + 1} consumption",
+                    STEP_TIMEOUT,
+                )
+                wait_until(
+                    lambda actor=actor: (
+                        snapshot
+                        if (
+                            snapshot := self.projection(
+                                actor,
+                                kind,
+                                conversation_id,
+                                message_id,
+                            )
+                        )
+                        and len(snapshot.get("reactions") or []) == 1
+                        else None
+                    ),
+                    f"{actor} {claim_kind} idempotent reaction",
+                    STEP_TIMEOUT,
+                )
         self.assert_condition(f"{claim_kind}_reaction_idempotency", True)
         async_harness(
             self.clients["bob"],
