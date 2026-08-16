@@ -47,7 +47,7 @@ func main() {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
-	fmt.Println("\n=== New connection ===")
+	log.Print("=== New connection ===")
 
 	// Read multistream header
 	header := make([]byte, 1024)
@@ -167,7 +167,7 @@ func runNoiseHandshake(conn net.Conn) {
 	fmt.Printf("Decrypted payload: %s\n", hex.EncodeToString(decrypted))
 
 	if cs1 != nil && cs2 != nil {
-		fmt.Println("Handshake complete!")
+		log.Print("Handshake complete!")
 	}
 }
 
