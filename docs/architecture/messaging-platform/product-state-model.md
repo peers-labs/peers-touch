@@ -1,8 +1,8 @@
 # Messaging Platform — 产品状态模型
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-08 | **Updated**: 2026-08-08
+> **Version**: v1.1
+> **Created**: 2026-08-08 | **Updated**: 2026-08-16
 > **Owner**: Messaging Platform Team
 
 ---
@@ -115,3 +115,37 @@ idle -> validating -> restoring -> enrolling_fresh_device -> reconciling -> comp
 - send API 失败后清空未被 durable accepted 的 draft。
 - 将 SSE frame 写出显示为 delivered。
 - 将“部分设备收到”隐藏成完整 multi-device success。
+
+## 9. Message Interaction State
+
+| ID | State | User-visible meaning | Transition rule |
+|---|---|---|---|
+| MP-S30 | original | committed message has no accepted edit/retract event | only authority event may mutate |
+| MP-S31 | edit_pending | local edit intent is durable but not accepted | cancel or retry; original remains visible |
+| MP-S32 | edited | same message identity projects accepted replacement content | duplicate/restart stays edited |
+| MP-S33 | retract_pending | local retract intent is durable but not accepted | cancel or retry; original remains visible |
+| MP-S34 | retracted | row remains but plaintext is hidden | terminal for content display |
+| MP-S35 | reaction_present | actor's reaction is projected once | exact duplicate is idempotent |
+| MP-S36 | pinned | conversation points to the accepted pinned message | later authority unpin removes it |
+| MP-S37 | reply_linked | immutable reply target/thread root is available | restart preserves relation |
+| MP-S38 | reply_target_unavailable | referenced target is unavailable locally | show typed unavailable preview |
+
+Edit/retract/reaction/pin projections must not apply before the corresponding authority event
+is durably consumed. A rejected or timed-out command cannot optimistically become terminal.
+
+## 10. Typing Presence State
+
+```text
+idle -> typing -> idle
+          |
+          +-> expired -> idle
+```
+
+| ID | State | User-visible meaning | Transition rule |
+|---|---|---|---|
+| MP-S40 | idle | no current peer typing signal | default and terminal cleanup |
+| MP-S41 | typing | an active member emitted a fresh typing pulse | refresh only within the same conversation |
+| MP-S42 | expired | stop pulse was absent but TTL elapsed | immediately project idle |
+
+Typing state is ephemeral and process-local. It must never survive restart, advance a durable
+cursor, block an ordered lane, or appear for a removed/revoked/non-member endpoint.

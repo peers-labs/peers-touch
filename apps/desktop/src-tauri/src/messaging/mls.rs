@@ -1,3 +1,4 @@
+use super::store::{InteractionMutation, InteractionReceiveCommit};
 use super::{
     decode_message_private_content, verify_device_event_delivery, ClaimedItemConsumer,
     ConversationProjection, EngineEndpoint, MessageProjection, MessagingStore, MlsReceiveCommit,
@@ -106,12 +107,52 @@ impl MlsApplicationProcessor {
             .unwrap_or(now);
 
         if is_edit {
-            self.store
-                .apply_message_edit(message_id, &private_content.text, committed_at_unix_ms)?;
-            self.store
-                .mark_consumed(&item.item_id, &event.event_id, &event.conversation_id, &item.payload_sha256, now)?;
-            self.manager
-                .install_prepared_application(&event.conversation_id, &prepared)?;
+            let receipt = DeviceConsumptionReceipt {
+                receipt_id: format!("device-consumed:{}", item.item_id),
+                conversation_id: event.conversation_id.clone(),
+                event_id: event.event_id.clone(),
+                consumer: Some(CryptoEndpoint {
+                    ptid: self.endpoint.ptid.clone(),
+                    device_id: self.endpoint.device_id.clone(),
+                }),
+                event_sequence: event.sequence,
+                lane_sequence: item.lane_sequence,
+                payload_sha256: item.payload_sha256.clone(),
+                consumed_at: Some(prost_types::Timestamp {
+                    seconds: now.div_euclid(1_000),
+                    nanos: (now.rem_euclid(1_000) * 1_000_000) as i32,
+                }),
+            };
+            let receipt_bytes = receipt.encode_to_vec();
+            let result = self
+                .store
+                .commit_interaction_event(&InteractionReceiveCommit {
+                    item_id: &item.item_id,
+                    event_id: &event.event_id,
+                    command_id: &event.command_id,
+                    conversation_id: &event.conversation_id,
+                    event_sequence: event.sequence,
+                    lane_sequence: item.lane_sequence,
+                    consumer_epoch,
+                    payload_sha256: &item.payload_sha256,
+                    event_hash: &event.event_hash,
+                    previous_event_hash: &event.previous_hash,
+                    message_id,
+                    mutation: InteractionMutation::Edit {
+                        edited_text: &private_content.text,
+                        edited_at_unix_ms: committed_at_unix_ms,
+                    },
+                    mls_session_state: Some(&prepared.session_state),
+                    membership_epoch: event.membership_epoch,
+                    mls_epoch: event.mls_epoch,
+                    receipt_id: &receipt.receipt_id,
+                    receipt_bytes: &receipt_bytes,
+                    consumed_at_unix_ms: now,
+                })?;
+            if result == ReceiveCommitResult::Committed {
+                self.manager
+                    .install_prepared_application(&event.conversation_id, &prepared)?;
+            }
             return Ok(());
         }
 
@@ -139,6 +180,11 @@ impl MlsApplicationProcessor {
                 None
             } else {
                 Some(message.reply_to_message_id.clone())
+            },
+            thread_root_message_id: if message.thread_root_message_id.is_empty() {
+                None
+            } else {
+                Some(message.thread_root_message_id.clone())
             },
             edited_text: None,
             edited_at_unix_ms: None,
@@ -175,6 +221,7 @@ impl MlsApplicationProcessor {
             mls_epoch: event.mls_epoch,
             projection: &projection,
             reply_to_message_id: projection.reply_to_message_id.as_deref(),
+            thread_root_message_id: projection.thread_root_message_id.as_deref(),
             receipt_id: &receipt.receipt_id,
             receipt_bytes: &receipt_bytes,
             consumed_at_unix_ms: now,

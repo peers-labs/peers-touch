@@ -84,7 +84,6 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		&conversationCommandReceiptModel{},
 		&conversationCommandProposalModel{},
 		&mlsLeaveIntentModel{},
-		&readCursorModel{},
 	); err != nil {
 		return err
 	}
@@ -336,10 +335,6 @@ func (s *subServer) Handlers() []server.Handler {
 			s.handleListThreadMessages, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-thread-counts", "/conversation/thread/counts", server.POST,
 			s.handleGetThreadCounts, logID, s.jwtWrapper),
-		server.NewTypedHandler("conv-read-cursor", "/conversation/read-cursor", server.POST,
-			s.handleSetReadCursor, logID, s.jwtWrapper),
-		server.NewTypedHandler("conv-unread", "/conversation/unread", server.GET,
-			s.handleGetUnread, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-member-settings-get", "/conversation/member/settings", server.GET,
 			s.handleGetMemberSettings, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-member-settings-put", "/conversation/member/settings", server.PUT,

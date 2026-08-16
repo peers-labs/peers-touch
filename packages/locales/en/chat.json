@@ -577,6 +577,7 @@
   "chat.social.messageArea.recalledByPeer": "A message was recalled",
   "chat.social.messageArea.editedAtTooltip": "Edited at {{time}}",
   "chat.social.messageArea.editedTag": "(edited)",
+  "chat.social.messageArea.readByCount": "Read by {{count}}",
   "chat.social.messageArea.send": "Send",
   "chat.social.presence.online": "Online",
   "chat.social.presence.offline": "Offline",

@@ -63,6 +63,14 @@ type AuthorityCommandReceipt struct {
 	CreatedAt      time.Time
 }
 
+type AuthorityMessageIdentity struct {
+	ConversationID string
+	MessageID      string
+	AuthorPTID     string
+	EventID        string
+	Sequence       int64
+}
+
 type AuthorityRepository interface {
 	CreateConversation(ctx context.Context, conversation *AuthorityConversation) (bool, error)
 	AddMember(
@@ -91,6 +99,11 @@ type AuthorityRepository interface {
 	LockConversation(ctx context.Context, conversationID string) (*AuthorityConversation, error)
 	ListActiveMemberDevices(ctx context.Context, conversationID string) ([]AuthorityMemberDevice, error)
 	GetLastEvent(ctx context.Context, conversationID string) (*chat.ConversationEvent, error)
+	GetMessageIdentity(
+		ctx context.Context,
+		conversationID string,
+		messageID string,
+	) (*AuthorityMessageIdentity, error)
 	GetCommandReceipt(
 		ctx context.Context,
 		conversationID string,
@@ -137,6 +150,7 @@ type AuthorityRepositories struct {
 	KeyPackages       MlsKeyPackageRepository
 	Plans             AuthorityPlanRepository
 	Attachments       AttachmentRepository
+	ReadCursors       ReadCursorRepository
 }
 
 type AuthorityUnitOfWork interface {

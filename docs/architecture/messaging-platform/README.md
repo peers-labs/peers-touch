@@ -1,8 +1,8 @@
 # Messaging Platform
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-08-10
+> **Version**: v1.2
+> **Created**: 2026-08-08 | **Updated**: 2026-08-16
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/app/subserver/`, `apps/desktop/`, `apps/mobile/`
 
@@ -74,7 +74,8 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 ## 5. 当前门状态
 
 - Product：`PRODUCT_ACCEPTED`
-- Architecture：`ARCHITECTURE_ACCEPTED`（`MP-D01`–`MP-D25`；Owner accepted
-  attachment transfer amendment on 2026-08-10）
+- Architecture：`ARCHITECTURE_ACCEPTED`（`MP-D01`–`MP-D27`；interaction/typing
+  amendment accepted through the 2026-08-16 completion Goal）
 - Plan：`PLAN_APPROVED`
-- Execution：`MP-W11-R` completed；`MP-W10` 等待 plan amendment。
+- Execution：`MP-W09` in-progress；`MP-W12` implemented-unproven；`MP-W11`
+  reopened until W09/W12 and MP-G01–MP-G16 close。

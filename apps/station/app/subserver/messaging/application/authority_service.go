@@ -1677,6 +1677,24 @@ func buildEventAndPayloads(
 	if send == nil || send.MessageId == "" {
 		return nil, nil, messaging.ErrUnsupportedCommand
 	}
+	if send.ReplyToMessageId == send.MessageId || send.ThreadRootMessageId == send.MessageId {
+		return nil, nil, messaging.ErrUnsupportedCommand
+	}
+	for _, targetMessageID := range []string{
+		send.ReplyToMessageId,
+		send.ThreadRootMessageId,
+	} {
+		if targetMessageID == "" {
+			continue
+		}
+		if _, err := repositories.Authority.GetMessageIdentity(
+			ctx,
+			command.ConversationId,
+			targetMessageID,
+		); err != nil {
+			return nil, nil, err
+		}
+	}
 	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
 	if err != nil {
 		return nil, nil, err
@@ -1937,6 +1955,17 @@ func buildEditMessageEventAndPayloads(
 	if edit.MessageId == "" {
 		return nil, nil, messaging.ErrUnsupportedCommand
 	}
+	message, err := repositories.Authority.GetMessageIdentity(
+		ctx,
+		command.ConversationId,
+		edit.MessageId,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	if command.Sender == nil || message.AuthorPTID != command.Sender.Ptid {
+		return nil, nil, messaging.ErrSenderUnauthorized
+	}
 	if len(edit.DirectPayloads) == 0 && len(edit.MlsApplicationPayload) == 0 {
 		return nil, nil, messaging.ErrDeliverySet
 	}
@@ -2041,6 +2070,17 @@ func buildRetractMessageEventAndPayloads(
 	if retract.MessageId == "" {
 		return nil, nil, messaging.ErrUnsupportedCommand
 	}
+	message, err := repositories.Authority.GetMessageIdentity(
+		ctx,
+		command.ConversationId,
+		retract.MessageId,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	if command.Sender == nil || message.AuthorPTID != command.Sender.Ptid {
+		return nil, nil, messaging.ErrSenderUnauthorized
+	}
 
 	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
 	if err != nil {
@@ -2097,6 +2137,13 @@ func buildReactionEventAndPayloads(
 ) (*chat.ConversationEvent, []*chat.PreparedEndpointPayload, error) {
 	if reaction.MessageId == "" || reaction.Reaction == "" {
 		return nil, nil, messaging.ErrUnsupportedCommand
+	}
+	if _, err := repositories.Authority.GetMessageIdentity(
+		ctx,
+		command.ConversationId,
+		reaction.MessageId,
+	); err != nil {
+		return nil, nil, err
 	}
 
 	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
@@ -2155,6 +2202,13 @@ func buildPinMessageEventAndPayloads(
 ) (*chat.ConversationEvent, []*chat.PreparedEndpointPayload, error) {
 	if pin.MessageId == "" {
 		return nil, nil, messaging.ErrUnsupportedCommand
+	}
+	if _, err := repositories.Authority.GetMessageIdentity(
+		ctx,
+		command.ConversationId,
+		pin.MessageId,
+	); err != nil {
+		return nil, nil, err
 	}
 
 	endpoints, err := listRequiredEndpoints(ctx, repositories, command.ConversationId)
