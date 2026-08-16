@@ -162,6 +162,13 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
         self.assertNotIn("authenticated: Boolean(user?.actorId)", harness)
         self.assertIn("ptid.startsWith('ptid:')", identity)
 
+    def test_chat_navigation_accepts_already_active_narrow_layout(self) -> None:
+        source = (
+            ROOT / "tooling/acceptance/gates/chat/native_support.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('get_current_url().endswith("#/chat")', source)
+        self.assertIn('[data-pt-primary-nav="chat"] button', source)
+
     def test_embedded_webdriver_make_entrypoints_exist(self) -> None:
         source = (ROOT / "tooling/make/acceptance.mk").read_text(encoding="utf-8")
         self.assertIn("acceptance-driver-build:", source)
