@@ -1,8 +1,8 @@
 # Messaging Platform — 产品验收矩阵
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-08-16
+> **Version**: v1.3
+> **Created**: 2026-08-08 | **Updated**: 2026-08-17
 > **Owner**: Messaging Platform Team
 
 ---
@@ -76,7 +76,7 @@ native UI、Station truth 和 Device Engine durable evidence。
 | MP-G12 | storage full/locked、bad ciphertext、lease expiry、poison item 均 fail closed |
 | MP-G13 | Direct/MLS encrypted attachment exact bytes；upload/download 在每个 chunk 边界中断后从 durable checkpoint 恢复；duplicate/conflicting part、ETag/range、ciphertext/plaintext hash 和 AEAD failure fail closed；Desktop/Station restart与fresh recovery后可用；removed actor 只能读取其已获 grant 的历史 object；Station rows/logs 无 filename/key/nonce/plaintext hash |
 | MP-G14 | SQLCipher FTS 对 text/filename 精确命中；offline/restart/recovery 后结果一致；bounded query/cursor；Station 请求/存储/log 中无 query 或 plaintext corpus |
-| MP-G15 | Direct/Group Native clients 逐项执行 reply/thread、author-only edit/retract、reaction add/remove、pin/unpin 和 read；receiver DOM、Station authority event、device queue、Engine durable projection 一致；offline/restart/duplicate/unauthorized/removed-device 均符合 J13 |
+| MP-G15 | Direct/Group Native clients 逐项执行 reply/thread、author-only edit/retract、reaction add/remove、pin/unpin 和 read；receiver DOM、Station authority event、device queue、Engine durable projection 一致；submit timeout 保持 pending/retrying，exact retry 只收敛为一个 Authority fact 和一个 visible result；offline/restart/duplicate/unauthorized/removed-device 均符合 J13 |
 | MP-G16 | Direct/Group Native clients 执行 typing start/stop/session-switch/disconnect/TTL；只显示 active member fresh pulse，removed/non-member 被拒绝，durable lane 和 history 无 typing item |
 
 ## 5. Crash Matrix
