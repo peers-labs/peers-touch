@@ -171,14 +171,17 @@ def sql_literal(value: str) -> str:
 
 
 def station_mutation_fingerprint(evidence: dict[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    authority_events = evidence.get("authorityEvents") or evidence.get("events") or []
+    authority_event_ids = tuple(
+        str(event.get("eventId") or "") for event in authority_events
+    )
+    authority_event_id_set = set(authority_event_ids)
     return (
-        tuple(
-            str(event.get("eventId") or "")
-            for event in evidence.get("events") or []
-        ),
+        authority_event_ids,
         tuple(
             str(item.get("itemId") or "")
             for item in evidence.get("queue") or []
+            if str(item.get("eventId") or "") in authority_event_id_set
         ),
     )
 
@@ -220,6 +223,15 @@ SELECT json_build_object(
     ) ORDER BY sequence)
     FROM messaging_events
     WHERE conversation_id = {conversation} AND message_id = {message}
+  ), '[]'::json),
+  'authorityEvents', COALESCE((
+    SELECT json_agg(json_build_object(
+      'eventId', event_id,
+      'sequence', sequence,
+      'commandId', command_id
+    ) ORDER BY sequence)
+    FROM messaging_events
+    WHERE conversation_id = {conversation}
   ), '[]'::json),
   'queue', COALESCE((
     SELECT json_agg(json_build_object(
@@ -585,18 +597,29 @@ class NativeInteractionsGate(AcceptanceGate):
             "bob",
         )
         unavailable_reply_id = str(unavailable_reply["messageId"])
-        target_actor = "bob"
-        wait_until(
-            lambda: (
-                self.sync(target_actor, kind, conversation_id)
-                or message_dom_snapshot(
-                    self.clients[target_actor],
+        for actor in members:
+            wait_until(
+                lambda actor=actor: (
+                    self.sync(actor, kind, conversation_id)
+                    or self.projection(
+                        actor,
+                        kind,
+                        conversation_id,
+                        unavailable_reply_id,
+                    )
+                ),
+                f"{actor} {claim_kind} reply before local target deletion",
+                STEP_TIMEOUT,
+            )
+            wait_until(
+                lambda actor=actor: message_dom_snapshot(
+                    self.clients[actor],
                     unavailable_reply_id,
-                )
-            ),
-            f"{target_actor} {claim_kind} reply before local target deletion",
-            STEP_TIMEOUT,
-        )
+                ),
+                f"{actor} {claim_kind} reply DOM before local target deletion",
+                STEP_TIMEOUT,
+            )
+        target_actor = "bob"
         deleted = async_harness(
             self.clients[target_actor],
             "deleteLocalInteractionMessage",
