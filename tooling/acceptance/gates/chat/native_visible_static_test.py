@@ -160,6 +160,8 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
         self.assertIn("actorId: actorPtid", harness)
         self.assertIn("currentUserDid", harness)
         self.assertNotIn("authenticated: Boolean(user?.actorId)", harness)
+        self.assertIn("phase.kind === 'accountGate'", harness)
+        self.assertIn("lifecycle.state === 'ready'", harness)
         self.assertIn("ptid.startsWith('ptid:')", identity)
 
     def test_chat_navigation_accepts_already_active_narrow_layout(self) -> None:
