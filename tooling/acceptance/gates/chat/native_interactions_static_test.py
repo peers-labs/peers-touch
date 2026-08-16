@@ -164,6 +164,9 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn("afterCommit", fixture)
         self.assertIn("lane_row.next_sequence + 1", fixture)
         self.assertIn("SET next_sequence = next_sequence + 1", fixture)
+        self.assertIn("reset_local_client_storage", fixture)
+        self.assertIn("shutil.rmtree(storage)", fixture)
+        self.assertNotIn("reset_local_messaging_databases", fixture)
         self.assertIn("self.station_url,", runner)
         self.assertIn('"cleanup": self.cleanup_evidence', runner)
         self.assertIn("device changed across client restart", runner)
@@ -198,6 +201,10 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn('"chat-native-typing-e2e"', gates)
         self.assertIn(
             "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
+            gates,
+        )
+        self.assertIn(
+            "tooling.acceptance.gates.chat.chat_native_reset_test",
             gates,
         )
 
