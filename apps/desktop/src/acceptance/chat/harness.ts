@@ -421,6 +421,45 @@ export function installAcceptanceHarness(): void {
       return interactionProjection(kind, conversationId, messageId);
     },
 
+    async openInteractionThread({
+      conversationId,
+      kind,
+      messageId,
+    }: MessageInteractionInput) {
+      await refreshConversation(kind, conversationId);
+      const social = useSocialChatStore.getState();
+      await social.loadThreadMessages(conversationId, messageId, kind);
+      useSocialChatStore.getState().openThread(messageId);
+      const thread = useSocialChatStore.getState()
+        .getIMThreadMessages(kind, conversationId, messageId);
+      return {
+        conversationId,
+        kind,
+        rootMessageId: messageId,
+        replyMessageIds: thread
+          .filter((message) => message.ulid !== messageId)
+          .map((message) => message.ulid),
+      };
+    },
+
+    async deleteLocalInteractionMessage({
+      conversationId,
+      kind,
+      messageId,
+    }: MessageInteractionInput) {
+      await useSocialChatStore.getState().deleteMessage(
+        conversationId,
+        messageId,
+        kind,
+      );
+      return {
+        conversationId,
+        kind,
+        messageId,
+        present: Boolean(interactionProjection(kind, conversationId, messageId)),
+      };
+    },
+
     async typingProjection({ conversationId }: { conversationId: string }) {
       const peers = useSocialChatStore.getState().typingPeers[conversationId] ?? {};
       return {
@@ -649,6 +688,20 @@ export function installAcceptanceHarness(): void {
       return {
         actorId: activeActorPtid(),
         deviceId: String(device?.device_id ?? ''),
+      };
+    },
+
+    async revokeCurrentDevice() {
+      const device = await api.accountGetDeviceId();
+      const deviceId = String(device?.device_id ?? '');
+      if (!deviceId) {
+        throw new Error('No active device is available for revocation');
+      }
+      await imServiceV1.device.revoke(deviceId);
+      return {
+        actorId: activeActorPtid(),
+        deviceId,
+        revoked: true,
       };
     },
 
