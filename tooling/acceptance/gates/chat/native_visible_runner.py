@@ -11,6 +11,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -19,14 +20,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(REPO_ROOT))
+
 from tooling.acceptance.core import (
     ProvisioningError,
     load_json_artifact,
     load_runtime_manifest,
 )
 
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
 WAIT_TICK = threading.Event()
 DEFAULT_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "60"))
 STARTUP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STARTUP_TIMEOUT_SECONDS", "900"))

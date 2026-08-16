@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,31 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class NativeVisibleStaticContractTest(unittest.TestCase):
+    def test_journey_entrypoint_bootstraps_repo_imports_from_any_cwd(self) -> None:
+        runner = (
+            ROOT
+            / "tooling"
+            / "acceptance"
+            / "gates"
+            / "chat"
+            / "native_two_client_runner.py"
+        )
+        environment = os.environ.copy()
+        environment.pop("PT_ACCEPTANCE_RUNTIME_MANIFEST", None)
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [sys.executable, str(runner)],
+                cwd=directory,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("ModuleNotFoundError", output)
+        self.assertIn("PT_ACCEPTANCE_RUNTIME_MANIFEST is required", output)
+
     def test_process_specific_profile_overrides_active_worktree_profile(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             profile = Path(directory) / "native.env"
