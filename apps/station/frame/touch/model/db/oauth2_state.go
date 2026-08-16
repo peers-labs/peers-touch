@@ -8,16 +8,16 @@ import (
 )
 
 type OAuth2IdentityBinding struct {
-	ID             uint64 `gorm:"column:id;primaryKey;autoIncrement:false"`
-	ActorID        uint64 `gorm:"column:actor_id;index;not null"`
-	ProviderID     string `gorm:"column:provider_id;size:64;not null;uniqueIndex:idx_oauth2_provider_user,priority:1;index:idx_oauth2_actor_provider,priority:2"`
-	ProviderUserID string `gorm:"column:provider_user_id;size:255;not null;uniqueIndex:idx_oauth2_provider_user,priority:2;index:idx_oauth2_actor_provider,priority:3"`
-	ProviderUnion  string `gorm:"column:provider_union;size:255"`
-	Username       string `gorm:"column:username;size:128"`
-	DisplayName    string `gorm:"column:display_name;size:255"`
-	AvatarURL      string `gorm:"column:avatar_url;size:512"`
-	Email          string `gorm:"column:email;size:255"`
-	IsPrimary      bool   `gorm:"column:is_primary;not null;default:false;index:idx_oauth2_actor_provider,priority:1"`
+	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement:false"`
+	ActorID        uint64    `gorm:"column:actor_id;index;not null"`
+	ProviderID     string    `gorm:"column:provider_id;size:64;not null;uniqueIndex:idx_oauth2_provider_user,priority:1;index:idx_oauth2_actor_provider,priority:2"`
+	ProviderUserID string    `gorm:"column:provider_user_id;size:255;not null;uniqueIndex:idx_oauth2_provider_user,priority:2;index:idx_oauth2_actor_provider,priority:3"`
+	ProviderUnion  string    `gorm:"column:provider_union;size:255"`
+	Username       string    `gorm:"column:username;size:128"`
+	DisplayName    string    `gorm:"column:display_name;size:255"`
+	AvatarURL      string    `gorm:"column:avatar_url;size:512"`
+	Email          string    `gorm:"column:email;size:255"`
+	IsPrimary      bool      `gorm:"column:is_primary;not null;default:false;index:idx_oauth2_actor_provider,priority:1"`
 	CreatedAt      time.Time `gorm:"column:created_at"`
 	UpdatedAt      time.Time `gorm:"column:updated_at"`
 }

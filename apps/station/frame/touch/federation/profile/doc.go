@@ -2,12 +2,12 @@
 // federated actor profile envelopes. It is the content-side counterpart of
 // the locator package:
 //
-//   locator (frame/core/plugin/native/federation/locator)
-//      stores DHT pointers — "which station owns this handle?"
+//	locator (frame/core/plugin/native/federation/locator)
+//	   stores DHT pointers — "which station owns this handle?"
 //
-//   profile (frame/touch/federation/profile)
-//      transports signed profile snapshots — "what does this actor look
-//      like right now?"
+//	profile (frame/touch/federation/profile)
+//	   transports signed profile snapshots — "what does this actor look
+//	   like right now?"
 //
 // Layered responsibility:
 //
