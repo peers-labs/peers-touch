@@ -5842,6 +5842,47 @@ impl MessagingStore {
                 .map_err(|error| error.to_string())?;
             sessions
         };
+        let command_ledger = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT attempt.command_id, attempt.message_id, attempt.state,
+                            local.state, outbox.state, outbox.attempt_count,
+                            outbox.last_error_code, pending.state,
+                            pending.attempt_count, pending.last_error_code,
+                            pending.next_attempt_at_unix_ms
+                     FROM messaging_command_attempts attempt
+                     JOIN messaging_local_commands local USING(command_id)
+                     JOIN messaging_command_outbox outbox USING(command_id)
+                     LEFT JOIN messaging_pending_messages pending
+                       ON pending.conversation_id = attempt.conversation_id
+                      AND pending.message_id = attempt.message_id
+                     WHERE attempt.conversation_id = ?1
+                     ORDER BY attempt.created_at_unix_ms, attempt.command_id",
+                )
+                .map_err(|error| error.to_string())?;
+            let commands = statement
+                .query_map(params![conversation_id], |row| {
+                    Ok(serde_json::json!({
+                        "commandId": row.get::<_, String>(0)?,
+                        "messageId": row.get::<_, String>(1)?,
+                        "attemptState": row.get::<_, String>(2)?,
+                        "localState": row.get::<_, String>(3)?,
+                        "outboxState": row.get::<_, String>(4)?,
+                        "outboxAttemptCount": row.get::<_, i64>(5)?,
+                        "outboxErrorCode": row.get::<_, String>(6)?,
+                        "draftState": row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+                        "draftAttemptCount": row.get::<_, Option<i64>>(8)?.unwrap_or_default(),
+                        "draftErrorCode": row.get::<_, Option<String>>(9)?.unwrap_or_default(),
+                        "draftNextAttemptAtUnixMs": row
+                            .get::<_, Option<i64>>(10)?
+                            .unwrap_or_default(),
+                    }))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            commands
+        };
         let reactions = load_reactions_for_message(&connection, message_id)?
             .into_iter()
             .map(|(actor_ptid, reaction, created_at_unix_ms)| {
@@ -5908,6 +5949,7 @@ impl MessagingStore {
             "intent": intent,
             "outbox": outbox,
             "directSessions": direct_sessions,
+            "commandLedger": command_ledger,
             "reactions": reactions,
             "pins": pins,
             "readCursors": read_cursors,
