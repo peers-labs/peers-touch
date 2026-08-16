@@ -15,6 +15,11 @@ type ReceiptSubmitter interface {
 		sender *chat.CryptoEndpoint,
 		request *chat.SubmitMessagingReceiptRequest,
 	) (*chat.SubmitMessagingReceiptResponse, error)
+	SubmitDeliveryReceipt(
+		ctx context.Context,
+		sender *chat.CryptoEndpoint,
+		request *chat.SubmitConversationReceiptRequest,
+	) (*chat.SubmitConversationReceiptResponse, error)
 }
 
 // ReceiptHandler handles HTTP receipt submissions (read cursors, device
@@ -49,6 +54,22 @@ func (h *ReceiptHandler) Submit(
 		DeviceId: authenticatedDeviceID,
 	}
 	return h.service.SubmitReceipt(ctx, sender, request)
+}
+
+func (h *ReceiptHandler) SubmitDelivery(
+	ctx context.Context,
+	authenticatedPTID string,
+	authenticatedDeviceID string,
+	request *chat.SubmitConversationReceiptRequest,
+) (*chat.SubmitConversationReceiptResponse, error) {
+	if authenticatedPTID == "" || authenticatedDeviceID == "" || request == nil {
+		return nil, ErrEndpointBinding
+	}
+	sender := &chat.CryptoEndpoint{
+		Ptid:     authenticatedPTID,
+		DeviceId: authenticatedDeviceID,
+	}
+	return h.service.SubmitDeliveryReceipt(ctx, sender, request)
 }
 
 // Compile-time interface compliance.

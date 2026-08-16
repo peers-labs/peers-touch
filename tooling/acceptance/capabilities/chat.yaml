@@ -120,14 +120,16 @@
       ],
       "synthetic_paths": [
         "apps/desktop/src-tauri/src/messaging/direct.rs",
-        "apps/desktop/src/runtimes/imRuntime.ts",
-        "apps/station/app/subserver/conversation/service_impl.go"
+        "apps/desktop/src-tauri/src/messaging/receipt.rs",
+        "apps/desktop/src/store/socialChat.ts",
+        "apps/station/app/subserver/messaging/application/receipt_service.go"
       ],
       "evidence": {
         "truth_sources": [
           "Desktop Rust messaging receive transaction",
           "Desktop durable receipt outbox",
-          "Station conversation receipt routing",
+          "Station Messaging per-device receipt queue",
+          "Desktop Rust delivery receipt processor",
           "Desktop social chat receipt projection"
         ],
         "surfaces": [
