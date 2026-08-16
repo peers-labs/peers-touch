@@ -203,6 +203,10 @@ def validate_cleanup(report: dict[str, Any]) -> None:
 def validate_report(report: dict[str, Any], journey: str) -> None:
     require(report.get("artifactKind") == f"chat-native-{journey}-run", "unexpected artifactKind")
     require(report.get("producer") == "chat-native-visible-runner", "unexpected producer")
+    require(report.get("phase") == "W8", "source phase traceability is required")
+    require(report.get("bom") == [f"CHAT-NATIVE-{journey.upper()}"], "source BOM traceability is required")
+    require(report.get("spec") == ["chat-native-visible-clients"], "source spec traceability is required")
+    require(report.get("gate") == f"chat-native-{journey}-e2e", "source Gate traceability is required")
     require(report.get("automated") is True, "automated evidence is required")
     require(report.get("runtime") == "visible-native-desktop", "visible native runtime is required")
     require(report.get("status") == "pass", "source report must pass")
