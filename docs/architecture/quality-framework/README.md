@@ -68,18 +68,18 @@ This writes:
   "range": "<base>...<head>",
   "review_profiles": ["station", "desktop"],
   "acceptance": {
-    "impacted_features": ["chat-runtime-message-flow"],
-    "selected_gates": ["station-chat-unit", "chat-runtime-e2e"],
-    "run": ["station-chat-unit"],
-    "not_run": ["chat-runtime-e2e"],
-    "unproven_scope": ["live Desktop DOM event consumption"]
+    "impacted_features": ["chat-service-contract"],
+    "selected_gates": ["station-messaging-unit", "chat-desktop-gateway-e2e"],
+    "run": ["station-messaging-unit"],
+    "not_run": ["chat-desktop-gateway-e2e"],
+    "unproven_scope": ["native multi-client message delivery"]
   },
   "knowledge": {
     "matched": ["docs/knowledge/invariants/..."],
     "delta_review": "no invariant violation found"
   },
   "tests": {
-    "run": ["go test ./app/subserver/friend_chat/..."],
+    "run": ["go test ./app/subserver/messaging/..."],
     "not_run": ["Desktop Tauri build"]
   }
 }

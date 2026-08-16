@@ -3,7 +3,7 @@
 .PHONY: acceptance-plan acceptance-run acceptance-run-ci acceptance-run-local-evidence \
         acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
-        acceptance-chat-desktop-gateway acceptance-chat-desktop-dom \
+        acceptance-chat-desktop-gateway \
         acceptance-chat-native-static acceptance-chat-native-two-client \
         acceptance-chat-native-multi-device acceptance-chat-native-recovery \
         acceptance-chat-native-group-mls acceptance-chat-native-w8 \
@@ -23,8 +23,6 @@
         federation-surface-smoke federation-dashboard-visible-surface \
         federation-dashboard-operational-drilldown federation-desktop-gateway-smoke
 
-CHAT_DESKTOP_DOM_URL ?= http://127.0.0.1:3210/#/chat
-CHAT_DESKTOP_DOM_GATEWAY_URL ?= http://127.0.0.1:3030
 ACCEPTANCE_RANGE ?= HEAD
 ACCEPTANCE_PLAN ?= tooling/acceptance/reports/latest-plan.json
 ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),--plan $(ACCEPTANCE_PLAN))
@@ -65,31 +63,25 @@ acceptance-chat:
 	python3 tooling/scripts/acceptance-run.py \
 		--gate acceptance-plan-self \
 		--gate proto-build \
-		--gate station-chat-unit \
-		--gate chat-runtime-e2e \
-		--gate chat-live-realtime-e2e \
-		--gate desktop-check
+		--gate station-messaging-unit \
+		--gate messaging-platform-contract \
+		--gate desktop-check \
+		--gate chat-native-visible-static \
+		--gate chat-desktop-gateway-e2e
 
 acceptance-chat-domain-validation:
-	CHAT_DESKTOP_DOM_URL='$(CHAT_DESKTOP_DOM_URL)' \
-	CHAT_DESKTOP_DOM_GATEWAY_URL='$(CHAT_DESKTOP_DOM_GATEWAY_URL)' \
 	python3 tooling/scripts/acceptance-run.py \
 		--gate acceptance-plan-self \
 		--gate proto-build \
-		--gate station-chat-unit \
-		--gate chat-runtime-e2e \
-		--gate chat-live-realtime-e2e \
+		--gate station-messaging-unit \
+		--gate messaging-platform-contract \
 		--gate desktop-check \
-		--gate chat-desktop-dom-message-visible
+		--gate chat-native-visible-static \
+		--gate chat-desktop-gateway-e2e
 	python3 tooling/scripts/acceptance-run.py --gate chat-domain-validation
 
 acceptance-chat-desktop-gateway:
 	python3 tooling/scripts/acceptance-run.py --gate chat-desktop-gateway-e2e
-
-acceptance-chat-desktop-dom:
-	CHAT_DESKTOP_DOM_URL='$(CHAT_DESKTOP_DOM_URL)' \
-	CHAT_DESKTOP_DOM_GATEWAY_URL='$(CHAT_DESKTOP_DOM_GATEWAY_URL)' \
-	python3 tooling/scripts/acceptance-run.py --gate chat-desktop-dom-message-visible
 
 acceptance-chat-native-static:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-visible-static
