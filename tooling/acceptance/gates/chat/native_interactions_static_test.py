@@ -220,6 +220,10 @@ class NativeInteractionContractsTest(unittest.TestCase):
     def test_timeout_fault_fixture_selects_interaction_gate(self) -> None:
         registry = self.source("tooling/acceptance/registry.yaml")
         self.assertIn(
+            '"apps/desktop/src/services/desktop_api.ts"',
+            registry,
+        )
+        self.assertIn(
             '"tooling/acceptance/fixtures/chat_submit_fault_proxy.py"',
             registry,
         )
