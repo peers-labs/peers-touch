@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: 1.0.0
-> **Created**: 2026-08-08 | **Updated**: 2026-08-08
+> **Created**: 2026-08-08 | **Updated**: 2026-08-16
 > **Owner**: Acceptance Framework
 
 ## Purpose
@@ -21,11 +21,37 @@ evidence.
 5. `PT_DESKTOP_E2E=true` is enabled and Vite HMR is disabled.
 6. Native windows are visible and attached to responsive observers.
 7. Fresh-storage and recovery-storage journeys are separate.
+8. Runtime Manifest, Station Attestation, and Actor Manifest share one run ID.
 
 ## Launch
 
-Use `make station` and `make desktop`. Do not invoke lower-level scripts as the
-acceptance entrypoint.
+Activate an approved disposable profile and use the stable Acceptance target:
+
+```bash
+make profile PROFILE=<approved-disposable-profile>
+make station-check
+
+CHAT_ACCEPTANCE_RESET=1 \
+CHAT_NATIVE_DEMO_PASSWORD="$CHAT_NATIVE_DEMO_PASSWORD" \
+make acceptance-chat-native-two-client
+```
+
+Do not export Station URLs, attestation paths, PTIDs, ports, profiles, or
+storage roots. The Environment Provisioner derives them and writes an immutable
+Runtime Manifest. The Gate receives only `PT_ACCEPTANCE_RUNTIME_MANIFEST` plus
+the credential value resolved from its declared reference.
+
+Provisioning must stop before Fixture reset or client launch when:
+
+- profile filename and `PT_DEV_PROFILE` differ;
+- Station is unreachable;
+- live/deployed/client commit or proto digest differs;
+- deployment workspace is dirty;
+- reset authorization is absent;
+- the credential reference is unresolved;
+- canonical actor PTIDs cannot be produced.
+
+These are `BLOCKED/UNPROVEN` environment outcomes, not product Gate failures.
 
 For every client, emit these bounded steps:
 
@@ -74,6 +100,10 @@ On the first failed boundary, capture:
 - composer value and visible error.
 
 Do not continue through later assertions after a prerequisite fails.
+
+Cleanup evidence is mandatory on both success and failure. Every client process
+must stop, gateway/renderer ports must have no listener, observer sockets must
+be removed, and run storage must be released before a report can be `PROVEN`.
 
 ## Required Journeys
 

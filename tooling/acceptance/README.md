@@ -12,6 +12,9 @@ run for a changed path, and which artifacts should be produced for human review.
 - `domains/index.yaml` lists project domains, onboarding status, coverage state, and next candidates.
 - `templates/` contains domain, capability, and feature templates for new product domains.
 - `gates.yaml` defines gate commands, timeouts, environments, tiers, and artifact expectations.
+- `environments/` defines machine-readable contracts for provisioned Gate environments.
+- `provisioners/` resolves profiles, source identity, Fixtures, credentials, and client isolation before Gate execution.
+- `behavior-rules/` maps receiver-visible source owners to receiver-proof Gates.
 - `features/` contains product feature contracts.
 - `gates/` contains stable cross-system acceptance implementations.
 - `playbooks/` explains how agents should run, diagnose, and preserve acceptance flows.
@@ -50,14 +53,15 @@ This creates a two-way proof:
 
 1. Update or add a feature contract when a new product capability is introduced.
 2. Run `make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>` after code changes.
-3. Run `make acceptance PLAN=<plan-path>` when a workstream needs an explicit gate bundle; the profile/runtime environment must already be active before this command.
+3. Activate the intended worktree profile, then run `make acceptance PLAN=<plan-path>`. Gates with a declared `provisioner` receive an immutable Runtime Manifest before their command runs.
 4. Run `make quality-evidence REVIEW_RANGE=<base>...<head>` when the change is entering review.
 5. Run `make acceptance-run-ci` for selected `ci-*` gates, or `make acceptance-run-env-evidence` only when the required environment is available.
-6. Run `make acceptance-report` and include proven / unproven scope in the handoff.
-7. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
-8. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
-9. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
-10. For native Chat journeys, follow
+6. Run `python3 tooling/scripts/acceptance-gap-detect.py --range <range>` before any completion, commit, or PR-readiness claim.
+7. Run `make acceptance-report` and include proven / blocked / failed / unproven scope in the handoff.
+8. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
+9. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
+10. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
+11. For native Chat journeys, follow
     `tooling/acceptance/playbooks/chat-native-visible-clients.md`; visible
     observers, source matching, isolated profiles, bounded steps, and composer
     cleanup are mandatory.
@@ -70,13 +74,23 @@ launching a live journey. Live targets are
 `acceptance-chat-native-recovery`, and `acceptance-chat-native-group-mls`;
 `acceptance-chat-native-w8` runs all four.
 
-Live runs require `CHAT_NATIVE_STATION_URL`,
-`CHAT_NATIVE_STATION_ATTESTATION`, canonical actor PTIDs, pre-created accounts,
-and `CHAT_NATIVE_DEMO_PASSWORD`. The attestation JSON contains `commit`,
-`"workspaceDigest": "clean"`, and `protoDigest`. The digest covers source
-protos plus Desktop TypeScript and Station Go generated bindings.
-`CHAT_NATIVE_CLIENT_WORKTREES` accepts one worktree path per client, separated
-by commas; one path may be reused for local process-isolation checks.
+Live runs require an active worktree profile, `CHAT_NATIVE_DEMO_PASSWORD`, and
+explicit destructive-reset authorization:
+
+```bash
+make profile PROFILE=<approved-disposable-profile>
+CHAT_ACCEPTANCE_RESET=1 \
+CHAT_NATIVE_DEMO_PASSWORD="$CHAT_NATIVE_DEMO_PASSWORD" \
+make acceptance-chat-native-two-client
+```
+
+`acceptance-run.py` resolves `home-station`, verifies the deployment
+attestation against `/app-meta/version`, runs the Actor Fixture, allocates
+isolated clients, and passes only `PT_ACCEPTANCE_RUNTIME_MANIFEST` to the Gate.
+Station URL, attestation path, canonical PTIDs, ports, profiles, storage roots,
+and observer sockets must come from that manifest. Missing or mismatched inputs
+produce `BLOCKED/UNPROVEN` with exit code `2`; they never fall back to raw
+`CHAT_NATIVE_*` identity variables.
 
 ## Desktop Performance Acceptance Logic
 
