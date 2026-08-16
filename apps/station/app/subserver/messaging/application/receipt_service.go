@@ -280,8 +280,13 @@ func (s *ReceiptService) handleActorRead(
 			}
 
 			if _, err := repositories.Queue.Enqueue(ctx, &chat.DeviceQueueItem{
-				Recipient:      device.Endpoint,
-				EventId:        fmt.Sprintf("read:%s:%d", cursor.ReaderPtid, cursor.LastReadSequence),
+				Recipient: device.Endpoint,
+				EventId: receiptTupleDigest(
+					"read-event",
+					cursor.ConversationId,
+					cursor.ReaderPtid,
+					fmt.Sprintf("%d", cursor.LastReadSequence),
+				),
 				ConversationId: cursor.ConversationId,
 				IdempotencyKey: receiptQueueIdempotencyKey(
 					"read",
@@ -308,6 +313,10 @@ func (s *ReceiptService) handleActorRead(
 }
 
 func receiptQueueIdempotencyKey(kind string, parts ...string) string {
+	return kind + ":" + receiptTupleDigest(kind, parts...)
+}
+
+func receiptTupleDigest(kind string, parts ...string) string {
 	hasher := sha256.New()
 	for _, part := range append([]string{kind}, parts...) {
 		var length [8]byte
@@ -315,5 +324,5 @@ func receiptQueueIdempotencyKey(kind string, parts ...string) string {
 		hasher.Write(length[:])
 		hasher.Write([]byte(part))
 	}
-	return kind + ":" + hex.EncodeToString(hasher.Sum(nil))
+	return hex.EncodeToString(hasher.Sum(nil))
 }
