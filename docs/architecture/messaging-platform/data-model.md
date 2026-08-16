@@ -221,6 +221,10 @@ device_queue_items(
 `conversation_events` 与全部 required `device_queue_items` 必须由同一 Station database
 transaction 提交。
 
+包含 PTID、device ID 或其他可变长度 identity tuple 的 queue `idempotency_key`
+必须先做 length-prefixed canonical encoding，再存储固定长度 SHA-256 digest。禁止把
+完整 identity tuple 直接拼接进 bounded varchar，也禁止截断 identity。
+
 ### 3.3 Federation
 
 ```sql
