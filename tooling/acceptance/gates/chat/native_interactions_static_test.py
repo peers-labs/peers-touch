@@ -3,6 +3,10 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from tooling.acceptance.gates.chat.native_interactions_runner import (
+    station_mutation_fingerprint,
+)
+
 
 ROOT = Path(__file__).resolve().parents[4]
 
@@ -98,6 +102,43 @@ class NativeInteractionContractsTest(unittest.TestCase):
             self.assertIn("profile_three_environment(self.station_url)", source)
             self.assertNotIn("time.sleep(", source)
             self.assertNotIn("localhost:18080", source)
+
+    def test_mutation_fingerprint_ignores_receipts_but_tracks_authority_fanout(
+        self,
+    ) -> None:
+        before = {
+            "authorityEvents": [{"eventId": "event-1"}],
+            "queue": [
+                {"itemId": "fanout-1", "eventId": "event-1"},
+                {"itemId": "receipt-1", "eventId": "message-1"},
+            ],
+        }
+        receipt_only = {
+            **before,
+            "queue": [
+                *before["queue"],
+                {"itemId": "receipt-2", "eventId": "message-2"},
+            ],
+        }
+        authority_mutation = {
+            "authorityEvents": [
+                *before["authorityEvents"],
+                {"eventId": "event-2"},
+            ],
+            "queue": [
+                *receipt_only["queue"],
+                {"itemId": "fanout-2", "eventId": "event-2"},
+            ],
+        }
+
+        self.assertEqual(
+            station_mutation_fingerprint(before),
+            station_mutation_fingerprint(receipt_only),
+        )
+        self.assertNotEqual(
+            station_mutation_fingerprint(before),
+            station_mutation_fingerprint(authority_mutation),
+        )
 
     def test_interaction_gate_fails_closed_on_every_w12_variant(self) -> None:
         source = self.source(
