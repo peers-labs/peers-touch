@@ -80,6 +80,20 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
         self.assertNotIn("CHAT_NATIVE_ALICE_PTID", source)
         self.assertNotIn("CHAT_NATIVE_BOB_PTID", source)
 
+    def test_native_launcher_uses_declared_cargo_feature(self) -> None:
+        launcher = (
+            ROOT / "tooling" / "scripts" / "_ensure-desktop-rust.sh"
+        ).read_text(encoding="utf-8")
+        cargo = (
+            ROOT / "apps" / "desktop" / "src-tauri" / "Cargo.toml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "acceptance-webdriver = [\"dep:tauri-plugin-wdio-webdriver\"]",
+            cargo,
+        )
+        self.assertIn("--features acceptance-webdriver", launcher)
+        self.assertNotIn("--features e2e-testing", launcher)
+
     def test_all_visible_journey_entrypoints_exist(self) -> None:
         expected = (
             "native_two_client_runner.py",

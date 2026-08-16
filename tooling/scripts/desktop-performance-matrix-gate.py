@@ -109,7 +109,7 @@ DEFAULT_CELLS = (
     MatrixCellSpec(
         cell_id="tauri-webview-packaged",
         runtime="tauri-webview-packaged",
-        entrypoint="pnpm --dir apps/desktop tauri build --features e2e-testing",
+        entrypoint="pnpm --dir apps/desktop tauri build --features acceptance-webdriver",
         startup_mode="packaged-tauri-webview",
         bom=("BOM-GATE-02", "BOM-CAP-04"),
         spec=("SPEC-GATE-02", "SPEC-RUN-01"),

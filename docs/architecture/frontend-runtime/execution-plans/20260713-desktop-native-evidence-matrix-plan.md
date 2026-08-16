@@ -43,7 +43,7 @@ interaction-linked raw samples。packaged native 是 shipped Desktop 结论的�
 ### 已证明
 
 - 可选 `tauri-plugin-playwright` observer 已能 attach 到真实 macOS WKWebView。
-- native observer capability 仅在 `e2e-testing` feature 下启用。
+- native observer capability 仅在 `acceptance-webdriver` feature 下启用。
 - Station build `17ff50f4` 已部署并通过 Gateway upload、raw query、rollup query、
   dev mirror 和 PostgreSQL 交叉验证。
 - synthetic native overlay smoke 已产生同一 `interactionId` 的
@@ -126,7 +126,7 @@ R1 -> R2 -> R3 -> R4 -> R5 -> R6 -> R7 -> R8 -> R9
 python3 tooling/scripts/desktop-performance-*-test.py
 pnpm --dir apps/desktop test
 cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --features e2e-testing
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --features acceptance-webdriver
 python3 tooling/scripts/desktop-performance-matrix-gate.py
 make desktop
 make desktop-web

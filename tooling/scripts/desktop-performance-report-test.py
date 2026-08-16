@@ -1586,7 +1586,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                                         "telemetry sample evidence is not proven",
                                     ],
                                     "sourceCellId": "tauri-webview-packaged",
-                                    "sourceEntrypoint": "pnpm --dir apps/desktop tauri build --features e2e-testing",
+                                    "sourceEntrypoint": "pnpm --dir apps/desktop tauri build --features acceptance-webdriver",
                                     "sourceStartupMode": "packaged-tauri-webview",
                                     "summary": {
                                         "observationSourceStatus": "loaded",
@@ -2014,7 +2014,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                                         "telemetry sample evidence is not proven",
                                     ],
                                     "sourceCellId": "tauri-webview-packaged",
-                                    "sourceEntrypoint": "pnpm --dir apps/desktop tauri build --features e2e-testing",
+                                    "sourceEntrypoint": "pnpm --dir apps/desktop tauri build --features acceptance-webdriver",
                                     "sourceStartupMode": "packaged-tauri-webview",
                                     "summary": {
                                         "observationSourceStatus": "loaded",
