@@ -125,9 +125,13 @@ function projectMessagingProjection(
   if (kind === 'friend') {
     const status = projection.state === 'failed'
       ? FriendMessageStatus.FAILED
-      : projection.eventId
-        ? FriendMessageStatus.SENT
-        : FriendMessageStatus.SENDING;
+      : projection.state === 'read'
+        ? FriendMessageStatus.READ
+        : projection.state === 'delivered'
+          ? FriendMessageStatus.DELIVERED
+          : projection.eventId
+            ? FriendMessageStatus.SENT
+            : FriendMessageStatus.SENDING;
     return {
       ...common,
       $typeName: 'peers_touch.model.chat.v1.FriendChatMessage',

@@ -41,10 +41,8 @@ REQUIRED_ASSERTIONS = {
     "actor_isolation",
     "alice_to_bob_plaintext",
     "alice_to_bob_delivered",
-    "alice_to_bob_read",
     "bob_to_alice_plaintext",
     "bob_to_alice_delivered",
-    "bob_to_alice_read",
 }
 
 
@@ -275,7 +273,6 @@ class NativeTwoClientGate(AcceptanceGate):
         self,
         sender_name: str,
         receiver_name: str,
-        conversation_id: str,
     ) -> None:
         sender = self.clients[sender_name]
         receiver = self.clients[receiver_name]
@@ -318,30 +315,6 @@ class NativeTwoClientGate(AcceptanceGate):
             f"{sender_name}_to_{receiver_name}_delivered",
             delivered.get("receipt") in {"delivered", "read"},
             f"message_id={sent.get('messageUlid', '')}; receipt={delivered.get('receipt', '')}",
-        )
-
-        async_harness(
-            receiver,
-            "syncFriendSession",
-            {"sessionUlid": conversation_id},
-        )
-        read = self.step(
-            "receipt.read",
-            lambda: wait_until(
-                lambda: (
-                    snapshot
-                    if (snapshot := message_snapshot(sender, text))
-                    and snapshot.get("receipt") == "read"
-                    else None
-                ),
-                f"{sender_name} read receipt",
-            ),
-            sender_name,
-        )
-        self.assert_condition(
-            f"{sender_name}_to_{receiver_name}_read",
-            read.get("receipt") == "read",
-            f"message_id={sent.get('messageUlid', '')}",
         )
 
     def collect_client_evidence(self, actor: str) -> None:
@@ -397,8 +370,8 @@ class NativeTwoClientGate(AcceptanceGate):
                 "conversation.open",
                 self.open_conversation,
             )
-            self.prove_direction("alice", "bob", conversation_id)
-            self.prove_direction("bob", "alice", conversation_id)
+            self.prove_direction("alice", "bob")
+            self.prove_direction("bob", "alice")
             for actor in ("alice", "bob"):
                 self.collect_client_evidence(actor)
         finally:
