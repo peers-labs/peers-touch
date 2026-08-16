@@ -153,6 +153,8 @@ mod tests {
             reply_to_message_id: None,
             receipt_id: "receipt-1",
             receipt_bytes: b"receipt",
+            delivery_receipt_id: "message-delivered:event-1:bob-device",
+            delivery_receipt_bytes: b"delivery-receipt",
             consumed_at_unix_ms: 100,
         };
         let worker = InboxWorker::new(store, AckSpy::default());
@@ -217,6 +219,8 @@ mod tests {
             reply_to_message_id: None,
             receipt_id: "receipt-2",
             receipt_bytes: b"receipt",
+            delivery_receipt_id: "message-delivered:event-2:bob-device",
+            delivery_receipt_bytes: b"delivery-receipt",
             consumed_at_unix_ms: 100,
         };
         let worker = InboxWorker::new(store, AckSpy::default());

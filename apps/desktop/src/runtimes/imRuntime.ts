@@ -4,6 +4,7 @@ import {
   imServiceV1,
   reconcilePendingConversationCommands,
 } from '../services/im-service'
+import { decodeChatReceipt } from '../services/chatReceipt'
 import { DirectKeyExchangeKind } from '../services/im-service-contract'
 import { DirectKeyExchangePayloadSchema } from '../gen/proto/domain/chat/envelope_pb'
 import { DirectSessionInitSchema } from '../gen/proto/domain/chat/direct_crypto_pb'
@@ -408,8 +409,22 @@ async function processEnvelopePayload(
       })
       break
     }
-    case 4: // RECEIPT
+    case 4: { // RECEIPT
+      try {
+        const receipt = decodeChatReceipt(payloadBytes)
+        if (!receipt) break
+        eventBus.publish(EVENT.REALTIME_MESSAGE_RECEIPT, {
+          eventId: '',
+          sessionUlid: receipt.conversationId,
+          messageUlid: receipt.messageId,
+          fromActorId: senderPtid,
+          kind: receipt.kind,
+        })
+      } catch (err) {
+        log.warn('im-runtime', 'receipt envelope processing failed', { err })
+      }
       break
+    }
     case 7: { // CONVERSATION_COMMAND_RESULT
       if (payloadBytes.length === 0) break
       const event = await consumeCommandResultDelivery(payloadBytes)
