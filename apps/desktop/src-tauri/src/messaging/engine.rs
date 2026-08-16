@@ -11,9 +11,9 @@ use super::{
     MembershipTransitionPreparer, MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore,
     MlsKeyPackagePublisher, PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft,
     PreKeyPublisher, QueueDrain, SendPreparer, SendTextIntent, StationAttachmentTransferTransport,
-    StationCommandTransport, StationDeviceTransport, StationGroupGenesisTransport,
-    StationKeyBundleTransport, StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
-    StationPreKeyTransport, StationQueueTransport,
+    StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,
+    StationGroupGenesisTransport, StationKeyBundleTransport, StationMembershipTransitionTransport,
+    StationMlsKeyPackageTransport, StationPreKeyTransport, StationQueueTransport,
 };
 use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::domain::crypto::IdentityKeyPair;
@@ -21,9 +21,11 @@ use crate::domain::mls_group::MlsGroupManager;
 use crate::model::chat::{
     AttachmentTransferState, ChatCommand, ConversationKind,
     CreateMessagingDirectConversationRequest, CreateMessagingDirectConversationResponse,
-    CryptoEndpoint, EnrollMessagingDeviceRequest, MessagingDevice, MessagingDeviceStatus,
-    MessagingMembershipAction, PrepareMessagingSendRequest, PrepareMessagingSendResponse,
+    CryptoEndpoint, EnrollMessagingDeviceRequest, MessageReceipt, MessagingDevice,
+    MessagingDeviceStatus, MessagingMembershipAction, PrepareMessagingSendRequest,
+    PrepareMessagingSendResponse, ReceiptType,
 };
+use prost::Message;
 use reqwest::Method;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -450,6 +452,27 @@ impl MessagingEngine {
             }));
         }
         drain.drain_once(cursor, consumer_epoch)
+    }
+
+    pub fn dispatch_delivery_receipt_once(&self, token: &str) -> Result<bool, String> {
+        let Some(entry) = self.store.next_delivery_receipt()? else {
+            return Ok(false);
+        };
+        let receipt = MessageReceipt::decode(entry.receipt_bytes.as_slice())
+            .map_err(|error| format!("decode messaging delivery receipt: {error}"))?;
+        if receipt.receipt_type != ReceiptType::Delivered as i32 {
+            return Err("messaging delivery receipt has invalid type".to_string());
+        }
+        StationDeliveryReceiptTransport::new(token.to_string(), self.endpoint.device_id.clone())?
+            .submit(&receipt)?;
+        self.store
+            .mark_delivery_receipt_submitted(&entry.receipt_id, &entry.receipt_bytes)?;
+        tracing::info!(
+            message_id = %receipt.message_id,
+            receipt_type = receipt.receipt_type,
+            "messaging delivery receipt submitted"
+        );
+        Ok(true)
     }
 
     pub fn set_projection_notifier(
