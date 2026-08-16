@@ -92,54 +92,26 @@
       "tier": "ci-cheap",
       "description": "Run Station Dashboard web TypeScript checks."
     },
-    "station-chat-unit": {
-      "command": "cd apps/station && go test ./app/subserver/friend_chat/...",
+    "station-messaging-unit": {
+      "command": "go test ./apps/station/app/subserver/messaging/... ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/envelope/...",
       "timeout_seconds": 600,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Run Station friend_chat package tests."
+      "description": "Run Station messaging, conversation, and envelope package tests."
     },
-    "chat-runtime-e2e": {
-      "command": "python3 tooling/acceptance/gates/chat/runtime_e2e.py",
-      "timeout_seconds": 600,
-      "environment": "fedp5",
-      "tier": "env-evidence",
-      "description": "Run a real Station Chat API flow with two temporary actors, persisted message delivery, and read acknowledgement."
-    },
-    "chat-live-realtime-e2e": {
-      "command": "python3 tooling/acceptance/gates/chat/live_realtime_e2e.py",
-      "timeout_seconds": 600,
-      "environment": "fedp5",
-      "tier": "env-evidence",
-      "description": "Run a real Station SSE flow proving live chat message and read receipt delivery between two temporary actors."
+    "messaging-platform-contract": {
+      "command": "python3 -m unittest tooling.acceptance.gates.chat.messaging_platform_contract_test",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the unified messaging platform ownership, protocol, queue, and crypto contracts."
     },
     "chat-desktop-gateway-e2e": {
       "command": "python3 tooling/acceptance/gates/chat/desktop_gateway_e2e.py",
       "timeout_seconds": 600,
       "environment": "local-desktop-gateway",
       "tier": "env-evidence",
-      "description": "Run a real Desktop HTTP gateway Chat flow proving desktop-rust auth, session listing, message sync, and read acknowledgement."
-    },
-    "chat-desktop-dom-message-visible": {
-      "command": "python3 tooling/acceptance/gates/chat/desktop_dom_message_visible.py",
-      "timeout_seconds": 600,
-      "environment": "local-desktop-web-gateway",
-      "tier": "env-evidence",
-      "description": "Run a real Desktop renderer DOM flow proving a Station-backed chat message is visible after Desktop gateway sync."
-    },
-    "chat-group-pressure-security": {
-      "command": "python3 tooling/acceptance/gates/chat/group_pressure_security.py",
-      "timeout_seconds": 1800,
-      "environment": "home-station",
-      "tier": "env-evidence",
-      "description": "Run a parameterized Station group-chat pressure and security gate; set CHAT_GROUP_PRESSURE_ACTORS=100 and CHAT_GROUP_PRESSURE_MESSAGES=1000 for the Foundation full run."
-    },
-    "chat-private-pressure-security": {
-      "command": "python3 tooling/acceptance/gates/chat/private_pressure_security.py",
-      "timeout_seconds": 1800,
-      "environment": "home-station",
-      "tier": "env-evidence",
-      "description": "Run a parameterized Station private-chat pressure and security gate; set CHAT_PRIVATE_PRESSURE_ACTORS=100 and CHAT_PRIVATE_PRESSURE_MESSAGES=1000 for the Foundation full run."
+      "description": "Run a real Desktop HTTP gateway flow proving MLS/E2EE direct conversation creation, message delivery, hydration, and decryption."
     },
     "chat-federated-browser-prereq": {
       "command": "python3 tooling/acceptance/gates/chat/federated_browser_prereq.py",

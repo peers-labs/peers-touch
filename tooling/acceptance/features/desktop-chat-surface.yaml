@@ -7,11 +7,12 @@
     "apps/desktop/src/pages/SocialChatPage.descriptor.tsx",
     "apps/desktop/src/components/chat/**",
     "apps/desktop/src/store/socialChat.ts",
-    "apps/desktop/src/services/socialChatRealtime.ts"
+    "apps/desktop/src/runtimes/imRuntime.ts",
+    "apps/desktop/src/services/im-service.ts"
   ],
   "truth_sources": [
     "Desktop socialChat store",
-    "Station friend_chat API responses"
+    "Desktop messaging service projections"
   ],
   "visible_surfaces": [
     {"type": "desktop", "route": "SocialChatPage"},
