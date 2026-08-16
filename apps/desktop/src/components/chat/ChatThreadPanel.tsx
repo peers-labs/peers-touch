@@ -63,6 +63,7 @@ interface ThreadMessageItemProps {
   ) => DesktopIMSenderProfileProjection;
   message: ChatMessage;
   messages: ChatMessage[];
+  order: number;
   onDelete?: (message: ChatMessage) => void;
   onRecall?: (message: ChatMessage) => void;
   onReply?: (message: ChatMessage) => void;
@@ -77,6 +78,7 @@ function ThreadMessageItem({
   getSenderProfile,
   message,
   messages,
+  order,
   onDelete,
   onRecall,
   onReply,
@@ -107,6 +109,9 @@ function ThreadMessageItem({
 
   return (
     <Flexbox
+      data-thread-message-id={message.ulid}
+      data-thread-message-order={order}
+      data-thread-message-role={root ? 'root' : 'reply'}
       horizontal
       align="flex-start"
       gap={10}
@@ -416,6 +421,9 @@ export function ChatThreadPanel() {
 
   return (
     <Flexbox
+      data-chat-thread-panel="open"
+      data-chat-thread-reply-count={replies.length}
+      data-chat-thread-root={openThreadRootUlid}
       style={{
         width: 360,
         height: '100%',
@@ -535,6 +543,7 @@ export function ChatThreadPanel() {
                 getSenderProfile={getIMSenderProfile}
                 message={rootMessage}
                 messages={displayMessages}
+                order={0}
                 onDelete={setDeleteTarget}
                 onRecall={handleRecall}
                 root
@@ -561,7 +570,7 @@ export function ChatThreadPanel() {
                   </Text>
                 </Flexbox>
               ) : (
-                replies.map((reply) => (
+                replies.map((reply, index) => (
                   <ThreadMessageItem
                     key={reply.ulid}
                     activeConversationId={activeUlid || ''}
@@ -570,6 +579,7 @@ export function ChatThreadPanel() {
                     getSenderProfile={getIMSenderProfile}
                     message={reply}
                     messages={displayMessages}
+                    order={index + 1}
                     onDelete={setDeleteTarget}
                     onRecall={handleRecall}
                     onReply={setReplyTarget}

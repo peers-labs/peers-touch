@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import os
 import random
+import socket
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
 
 from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError
 from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.fixtures.chat_native_reset import profile_three_environment
 from tooling.acceptance.gates.chat.native_interactions_runner import (
     gateway_command,
     station_readback,
@@ -50,8 +53,14 @@ REQUIRED_ASSERTIONS = {
     "direct_typing_switch_clear",
     "direct_typing_disconnect_ttl_clear",
     "group_typing_start_stop",
+    "group_typing_send_clear",
+    "group_typing_blur_clear",
+    "group_typing_switch_clear",
+    "group_typing_disconnect_ttl_clear",
     "group_removed_member_rejected",
+    "typing_revoked_device_rejected",
     "typing_has_zero_durable_writes",
+    "resources_released",
 }
 
 
@@ -111,6 +120,7 @@ class NativeTypingGate(AcceptanceGate):
         self.conversations: dict[str, str] = {}
         self.message_ids: dict[str, str] = {}
         self.durable_evidence: dict[str, Any] = {}
+        self.cleanup_evidence: dict[str, Any] = {}
 
     def step(self, name: str, action: Callable[[], Any], client: str = "") -> Any:
         started = time.monotonic()
@@ -214,6 +224,18 @@ class NativeTypingGate(AcceptanceGate):
             0.25,
         )
 
+    def assert_typing_inactive_for(
+        self,
+        actor: str,
+        duration_seconds: float,
+        description: str,
+    ) -> None:
+        deadline = time.monotonic() + duration_seconds
+        while time.monotonic() < deadline:
+            if typing_dom(self.clients[actor]) != "inactive":
+                raise GateError(description)
+            threading.Event().wait(0.1)
+
     def prove_direct(self, conversation_id: str) -> None:
         alice = self.clients["alice"]
         self.step(
@@ -284,12 +306,19 @@ class NativeTypingGate(AcceptanceGate):
         self.register_driver(replacement)
         if ptid != self.ptids["alice"]:
             raise GateError("Alice identity changed after disconnect restart")
+        device = async_harness(replacement, "getRealtimeDevice", {})
+        if str((device or {}).get("deviceId") or "") != self.device_ids["alice"]:
+            raise GateError("Alice device changed after disconnect restart")
         self.clients["alice"] = replacement
         enter_chat_page(replacement)
         self.sync("alice", "friend", conversation_id)
         self.assert_condition("direct_typing_disconnect_ttl_clear", True)
 
-    def prove_group(self, conversation_id: str) -> None:
+    def prove_group(
+        self,
+        conversation_id: str,
+        alternate_direct_id: str,
+    ) -> None:
         alice = self.clients["alice"]
         self.sync("alice", "group", conversation_id)
         set_composer(alice, f"group-typing-{time.time_ns()}")
@@ -299,6 +328,64 @@ class NativeTypingGate(AcceptanceGate):
         for actor in ("bob", "charlie"):
             self.wait_typing(actor, False, f"{actor} Group typing stopped")
         self.assert_condition("group_typing_start_stop", True)
+
+        send_text = f"group-send-clear-{time.time_ns()}"
+        set_composer(alice, send_text)
+        for actor in ("bob", "charlie"):
+            self.wait_typing(actor, True, f"{actor} Group typing before send")
+        alice.find_element("[data-chat-send]", 10).click()
+        for actor in ("bob", "charlie"):
+            self.wait_typing(actor, False, f"{actor} Group typing cleared by send")
+        self.assert_condition("group_typing_send_clear", True)
+
+        set_composer(alice, f"group-blur-{time.time_ns()}")
+        for actor in ("bob", "charlie"):
+            self.wait_typing(actor, True, f"{actor} Group typing before blur")
+        set_composer(alice, "", blur=True)
+        for actor in ("bob", "charlie"):
+            self.wait_typing(actor, False, f"{actor} Group typing cleared by blur")
+        self.assert_condition("group_typing_blur_clear", True)
+
+        self.sync("alice", "group", conversation_id)
+        set_composer(alice, f"group-switch-{time.time_ns()}")
+        for actor in ("bob", "charlie"):
+            self.wait_typing(actor, True, f"{actor} Group typing before switch")
+        self.sync("alice", "friend", alternate_direct_id)
+        for actor in ("bob", "charlie"):
+            self.wait_typing(actor, False, f"{actor} Group typing cleared by switch")
+        self.assert_condition("group_typing_switch_clear", True)
+
+        self.sync("alice", "group", conversation_id)
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": True},
+        )
+        for actor in ("bob", "charlie"):
+            self.wait_typing(actor, True, f"{actor} Group typing before disconnect")
+        stop_client(alice)
+        for actor in ("bob", "charlie"):
+            self.wait_typing(
+                actor,
+                False,
+                f"{actor} Group phantom typing cleared by observed TTL",
+            )
+        replacement, ptid = start_authenticated_client(
+            "alice",
+            CLIENT_PORTS["alice"],
+            self.station_url,
+        )
+        self.register_driver(replacement)
+        if ptid != self.ptids["alice"]:
+            raise GateError("Alice identity changed after Group disconnect restart")
+        device = async_harness(replacement, "getRealtimeDevice", {})
+        if str((device or {}).get("deviceId") or "") != self.device_ids["alice"]:
+            raise GateError("Alice device changed after Group disconnect restart")
+        self.clients["alice"] = replacement
+        enter_chat_page(replacement)
+        self.sync("alice", "group", conversation_id)
+        alice = replacement
+        self.assert_condition("group_typing_disconnect_ttl_clear", True)
 
         removed = async_harness(
             alice,
@@ -324,11 +411,60 @@ class NativeTypingGate(AcceptanceGate):
         self.wait_typing("bob", False, "removed member produced no Group typing")
         self.assert_condition("group_removed_member_rejected", True)
 
+    def prove_revoked_device(self, conversation_id: str) -> None:
+        self.sync("alice", "friend", conversation_id)
+        self.sync("bob", "friend", conversation_id)
+        revoked = async_harness(
+            self.clients["bob"],
+            "revokeCurrentDevice",
+            {},
+        )
+        if (
+            (revoked or {}).get("revoked") is not True
+            or (revoked or {}).get("deviceId") != self.device_ids["bob"]
+        ):
+            raise GateError("Bob current-device revocation did not succeed")
+        try:
+            async_harness(
+                self.clients["bob"],
+                "submitTyping",
+                {"conversationId": conversation_id, "typing": True},
+            )
+        except Exception:
+            pass
+        else:
+            raise GateError("revoked device submitted typing successfully")
+        async_harness(
+            self.clients["alice"],
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": True},
+        )
+        self.assert_typing_inactive_for(
+            "bob",
+            2,
+            "revoked device produced visible typing",
+        )
+        async_harness(
+            self.clients["alice"],
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": False},
+        )
+        self.assert_condition("typing_revoked_device_rejected", True)
+
+    @staticmethod
+    def port_is_free(port: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+            return connection.connect_ex(("127.0.0.1", port)) != 0
+
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
         if not os.environ.get("CHAT_ACCEPTANCE_PASSWORD", ""):
             raise GateError("CHAT_ACCEPTANCE_PASSWORD is required")
+        try:
+            profile_three_environment(self.station_url)
+        except RuntimeError as error:
+            raise GateError(str(error)) from error
         self.report.station_url = self.station_url
         version = self.step(
             "station.identity",
@@ -416,7 +552,7 @@ class NativeTypingGate(AcceptanceGate):
             self.message_ids["group"] = group_seed
             for actor in ACTORS:
                 self.sync(actor, "group", group_id)
-            self.prove_group(group_id)
+            self.prove_group(group_id, direct_id)
             group_before_station = station_readback(group_id, group_seed)
             group_before_engine = self.engine_snapshot("bob", group_id, group_seed)
             async_harness(
@@ -475,6 +611,7 @@ class NativeTypingGate(AcceptanceGate):
                     "engineAfter": engine_after,
                 }
             self.assert_condition("typing_has_zero_durable_writes", True)
+            self.prove_revoked_device(direct_id)
             for actor, client in self.clients.items():
                 self.save_screenshot(client, actor)
                 self.save_dom(client, actor)
@@ -485,6 +622,27 @@ class NativeTypingGate(AcceptanceGate):
                     stop_client(client)
                 except Exception:
                     client.stop()
+        ports = sorted(
+            {
+                port
+                for client in self.clients.values()
+                for port in (client.port, client.gateway_port)
+            }
+        )
+        released = bool(
+            wait_until(
+                lambda: all(self.port_is_free(port) for port in ports),
+                "Native typing client port release",
+                30,
+                0.25,
+            )
+        )
+        self.cleanup_evidence = {
+            "ports": ports,
+            "allPortsReleased": released,
+            "clientsStopped": sorted(self.clients),
+        }
+        self.assert_condition("resources_released", released)
 
         names = {assertion.name for assertion in self.report.assertions}
         missing = REQUIRED_ASSERTIONS - names
@@ -500,6 +658,7 @@ class NativeTypingGate(AcceptanceGate):
             "conversations": self.conversations,
             "messageIds": self.message_ids,
             "durableReadback": self.durable_evidence,
+            "cleanup": self.cleanup_evidence,
             "steps": self.steps,
             "clients": {
                 actor: {

@@ -288,11 +288,12 @@ function ReplyBlock({
   replyToUlid: string;
 }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const replyMsg = messages.find((m) => m.ulid === replyToUlid);
-  if (!replyMsg) return null;
 
   return (
     <Flexbox
+      data-message-reply-target-state={replyMsg ? 'available' : 'unavailable'}
       style={{
         padding: '6px 9px',
         marginBottom: 8,
@@ -312,7 +313,7 @@ function ReplyBlock({
           color: isOwn ? 'rgba(255,255,255,0.8)' : token.colorTextSecondary,
         }}
       >
-        {replyMsg.content}
+        {replyMsg?.content ?? t('chat.social.messageArea.replyTargetUnavailable')}
       </Text>
     </Flexbox>
   );
