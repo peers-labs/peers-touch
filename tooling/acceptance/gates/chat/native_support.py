@@ -17,7 +17,7 @@ DEFAULT_STATION = "http://10.37.94.156:18080"
 ACCOUNTS = {
     "alice": "alice@p.t",
     "bob": "bob@p.t",
-    "charlie": "charlie@p.t",
+    "charlie": "carol@p.t",
 }
 
 
