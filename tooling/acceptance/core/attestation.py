@@ -140,7 +140,9 @@ def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
     remote_command = (
         f"cd \"$HOME\"/{shlex.quote(deploy_path)} && "
         "printf '%s\\n' \"$(git rev-parse HEAD)\" && "
-        "if test -z \"$(git status --porcelain)\"; then echo clean; else echo dirty; fi && "
+        "status=\"$(git status --porcelain | "
+        "sed '/^?? \\.bare\\.git\\/$/d')\" && "
+        "if test -z \"$status\"; then echo clean; else echo dirty; fi && "
         f"python3 -c {shlex.quote(digest_script)}"
     )
     completed = subprocess.run(
