@@ -11,11 +11,11 @@
 //
 // The reconciler runs once a day (configurable). For each bucket it:
 //
-//	1. Recomputes (sum_bytes, count) from oss_files where deleted_at IS NULL.
-//	2. If the count differs at all OR the byte-drift exceeds the
-//	   per-mille threshold, `BucketRepository.SetUsage(sum, count)`.
-//	3. Audits the correction with action=worker_run, reason=reconcile_*.
-//	4. Skips and logs if either query fails.
+//  1. Recomputes (sum_bytes, count) from oss_files where deleted_at IS NULL.
+//  2. If the count differs at all OR the byte-drift exceeds the
+//     per-mille threshold, `BucketRepository.SetUsage(sum, count)`.
+//  3. Audits the correction with action=worker_run, reason=reconcile_*.
+//  4. Skips and logs if either query fails.
 //
 // We deliberately do not mutate quota policy here — the reconciler
 // reports reality, not policy. A bucket whose real usage exceeds the

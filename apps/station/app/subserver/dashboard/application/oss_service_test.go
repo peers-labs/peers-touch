@@ -30,11 +30,11 @@ import (
 type fakeOSSRepo struct {
 	buckets []domain.OSSBucketSummary
 
-	objectsCalled  bool
-	objectsLastQ   infrastructure.OSSObjectQuery
-	objectsRows    []domain.OSSObjectSummary
-	objectsTotal   int64
-	objectsErr     error
+	objectsCalled bool
+	objectsLastQ  infrastructure.OSSObjectQuery
+	objectsRows   []domain.OSSObjectSummary
+	objectsTotal  int64
+	objectsErr    error
 
 	auditCalled bool
 	auditLastQ  infrastructure.OSSAuditQuery
@@ -70,7 +70,7 @@ type fakeOSSRepo struct {
 	}
 	deleteErr error
 
-	auditAppends []infrastructure.OSSAuditAppend
+	auditAppends   []infrastructure.OSSAuditAppend
 	auditAppendErr error
 
 	adminObjects []domain.OSSObjectAdminDetail
@@ -801,10 +801,10 @@ func (s *stubProvider) MaxFileSize() int64                  { return s.max }
 // since the service rejects nil there.
 type nopMultipartFile struct{}
 
-func (nopMultipartFile) Read(_ []byte) (int, error)                 { return 0, io.EOF }
-func (nopMultipartFile) Close() error                               { return nil }
-func (nopMultipartFile) Seek(_ int64, _ int) (int64, error)         { return 0, nil }
-func (nopMultipartFile) ReadAt(_ []byte, _ int64) (int, error)      { return 0, io.EOF }
+func (nopMultipartFile) Read(_ []byte) (int, error)            { return 0, io.EOF }
+func (nopMultipartFile) Close() error                          { return nil }
+func (nopMultipartFile) Seek(_ int64, _ int) (int64, error)    { return 0, nil }
+func (nopMultipartFile) ReadAt(_ []byte, _ int64) (int, error) { return 0, io.EOF }
 
 func newAdminUploadFixture(t *testing.T, bucket domain.OSSBucketSummary, fileMeta *ossmodel.FileMeta) (*OSSService, *stubFileService, *fakeOSSRepo) {
 	t.Helper()

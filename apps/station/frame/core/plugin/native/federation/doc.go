@@ -6,12 +6,12 @@
 //
 // What lives here today:
 //   - bootstrap-nodes   : the seed list every libp2p host (and every DHT in
-//                         the process) trusts as a federation entry point.
+//     the process) trusts as a federation entry point.
 //   - public-addrs      : the multiaddrs this node announces to the world.
 //   - direct-outbound   : ConnectionGater outbound rule. False ⇒ libp2p
-//                         dials are restricted to bootstrap-nodes.
+//     dials are restricted to bootstrap-nodes.
 //   - direct-inbound    : ConnectionGater inbound rule. False ⇒ libp2p
-//                         accepts are restricted to bootstrap-nodes.
+//     accepts are restricted to bootstrap-nodes.
 //
 // The package exposes two consumer-facing APIs:
 //   - LibP2PHostOptions(): []libp2p.Option, splatted into every libp2p.New()

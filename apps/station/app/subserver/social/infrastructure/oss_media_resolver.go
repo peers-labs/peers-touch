@@ -40,8 +40,8 @@ import (
 	"fmt"
 	"strings"
 
-	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"gorm.io/gorm"
 )
 

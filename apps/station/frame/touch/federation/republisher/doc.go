@@ -8,10 +8,10 @@
 // authoritative. The republisher is the freshness-keeper that closes
 // that loop:
 //
-//   * On Start, immediately republish every visible local actor so a
+//   - On Start, immediately republish every visible local actor so a
 //     freshly-restarted station does not wait an hour for its records
 //     to reappear in peer DHT replicas.
-//   * Every Interval (default 12h, half the DHT TTL), repeat the same
+//   - Every Interval (default 12h, half the DHT TTL), repeat the same
 //     scan so live records never approach expiration.
 //
 // Failure mode: any individual PublishVisibility error is logged and

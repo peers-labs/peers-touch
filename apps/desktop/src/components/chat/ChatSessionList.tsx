@@ -411,6 +411,7 @@ export function ChatSessionList() {
                     horizontal
                     align="center"
                     gap={10}
+                    data-pt-conversation-item={c.id}
                     data-chat-conversation-kind={c.kind}
                     data-chat-session-ulid={c.kind === 'friend' ? c.id : undefined}
                     data-chat-group-ulid={c.kind === 'group' ? c.id : undefined}

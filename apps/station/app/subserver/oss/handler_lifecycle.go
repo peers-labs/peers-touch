@@ -21,22 +21,22 @@ import (
 // these in one place so the dashboard can graph mutation patterns
 // without having to chase free-form strings across handlers.
 const (
-	lifecycleReasonUser              = "user"
-	lifecycleReasonUserIdempotent    = "user_idempotent"
-	lifecycleReasonNotOwner          = "not_owner"
-	lifecycleReasonAuthRequired      = "auth_required"
-	lifecycleReasonNotFound          = "not_found"
-	lifecycleReasonRestoreExpired    = "restore_window_expired"
-	lifecycleReasonAlreadyLive       = "already_live"
-	lifecycleReasonInternal          = "internal_error"
-	lifecycleReasonBadRequest        = "bad_request"
-	lifecycleReasonQuotaExceeded     = "quota_exceeded"
-	lifecycleReasonInvalidVisibility = "invalid_visibility"
+	lifecycleReasonUser               = "user"
+	lifecycleReasonUserIdempotent     = "user_idempotent"
+	lifecycleReasonNotOwner           = "not_owner"
+	lifecycleReasonAuthRequired       = "auth_required"
+	lifecycleReasonNotFound           = "not_found"
+	lifecycleReasonRestoreExpired     = "restore_window_expired"
+	lifecycleReasonAlreadyLive        = "already_live"
+	lifecycleReasonInternal           = "internal_error"
+	lifecycleReasonBadRequest         = "bad_request"
+	lifecycleReasonQuotaExceeded      = "quota_exceeded"
+	lifecycleReasonInvalidVisibility  = "invalid_visibility"
 	lifecycleReasonChatSessionMissing = "chat_session_required"
-	lifecycleReasonBucketUnknown     = "bucket_unknown"
-	lifecycleReasonBucketCrossActor  = "bucket_cross_actor"
-	lifecycleReasonPatchEmpty        = "patch_empty"
-	lifecycleReasonPatchOnDeleted    = "patch_on_deleted"
+	lifecycleReasonBucketUnknown      = "bucket_unknown"
+	lifecycleReasonBucketCrossActor   = "bucket_cross_actor"
+	lifecycleReasonPatchEmpty         = "patch_empty"
+	lifecycleReasonPatchOnDeleted     = "patch_on_deleted"
 )
 
 // handleFileDelete soft-deletes the (subject, key) row.

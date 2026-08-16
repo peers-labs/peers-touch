@@ -74,15 +74,15 @@ type ledgerEventModel struct {
 func (ledgerEventModel) TableName() string { return "federation_ledger_event" }
 
 type membershipModel struct {
-	ID               int64     `gorm:"primaryKey;autoIncrement"`
-	FederationID     string    `gorm:"type:varchar(30);not null;uniqueIndex:idx_membership_fed_station"`
-	StationPeerID    string    `gorm:"type:varchar(128);not null;uniqueIndex:idx_membership_fed_station;index"`
-	StationName      string    `gorm:"type:varchar(255);not null;default:''"`
-	StationURL       string    `gorm:"type:varchar(512);not null;default:''"`
-	Role             string    `gorm:"type:varchar(30);not null;default:'member_station'"`
-	Status           string    `gorm:"type:varchar(20);not null;default:'active'"`
-	JoinedAt         time.Time `gorm:"not null;autoCreateTime"`
-	ApprovedByEventID string  `gorm:"type:varchar(30);not null;default:''"`
+	ID                int64     `gorm:"primaryKey;autoIncrement"`
+	FederationID      string    `gorm:"type:varchar(30);not null;uniqueIndex:idx_membership_fed_station"`
+	StationPeerID     string    `gorm:"type:varchar(128);not null;uniqueIndex:idx_membership_fed_station;index"`
+	StationName       string    `gorm:"type:varchar(255);not null;default:''"`
+	StationURL        string    `gorm:"type:varchar(512);not null;default:''"`
+	Role              string    `gorm:"type:varchar(30);not null;default:'member_station'"`
+	Status            string    `gorm:"type:varchar(20);not null;default:'active'"`
+	JoinedAt          time.Time `gorm:"not null;autoCreateTime"`
+	ApprovedByEventID string    `gorm:"type:varchar(30);not null;default:''"`
 }
 
 func (membershipModel) TableName() string { return "federation_station_membership" }
