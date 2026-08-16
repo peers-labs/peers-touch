@@ -23,13 +23,13 @@
 | Current workstream | `WS8: Chat Native Two-Client Validation` |
 | Current step | Make Quality/Review evidence fail closed on gaps and keep explicit git ranges isolated from unrelated worktree files. |
 | Progress | WS1, WS5, and WS7 DONE; WS2, WS3, WS4, and WS6 PARTIAL; WS8 BLOCKED. AS-03 and AS-05 PASSED; AS-01 and AS-02 PARTIAL; AS-04 BLOCKED/UNPROVEN; Direct Chat DELIVERED UNPROVEN. |
-| Last completed | Commit `ba1d799ba` added final Station commit revalidation with static/unit proof. Gap audit then found Quality Evidence incorrectly reported `Ready=yes` with seven gaps and included unrelated untracked files despite an explicit range. |
-| Current action | Fix Quality/Review range semantics and readiness judgment because D-10 must block completion and PR readiness without scope pollution. |
-| Next action | Commit the Quality guard fix, regenerate Gap/Quality evidence, run completion and submit-pipeline audits, and keep PR #91 Draft. |
+| Last completed | Commit `a0ff6368a` made Quality Evidence gap-aware and isolated explicit ranges from untracked files. Review found and fixed the remaining empty-explicit-range fallback to staged worktree files. |
+| Current action | Finish agent-led review and completion evidence after closing all deterministic Quality/Review fail-open paths found in this audit. |
+| Next action | Commit the empty-range regression, regenerate Gap/Quality evidence, update PR #91, and keep it Draft with exact blockers. |
 | Blockers | `PRODUCT_AMENDMENT_REQUIRED`: source-matched run `412bb356ae476869` returns Bob to visible `Choose Account` after password login and logs a numeric-actor/canonical-PTID mismatch. `ENVIRONMENT_BLOCKED`: Profile Three has no enforceable shared provisioning lease; run `6fc14b7010c35190` was overwritten mid-Gate by Station commit `4383dfc1`. |
 | Decisions required | Product/identity owners must define and fix the post-login account-gate transition in the governing Desktop identity lifecycle plan. The Runtime Provisioning plan must not bypass it with text selectors or Store injection. |
-| Evidence | `PASSED`: local static/runtime Gates, final-source guard tests, source identity, Fixture, dual TauriDriver sessions, Station selection, password submission, failure traceability, cleanup, and five Quality range/readiness regressions. `FAILED/UNPROVEN`: `/tmp/native-two-client-live-run-v9.json` stops at source-matched `bob:shell.ready`; v10 is invalid product evidence because Station drifted. `BLOCKED/UNPROVEN`: AS-04 exact-value scan and all four Native journeys. |
-| Last updated | 2026-08-17 03:11 CST |
+| Evidence | `PASSED`: local static/runtime Gates, final-source guard tests, source identity, Fixture, dual TauriDriver sessions, Station selection, password submission, failure traceability, cleanup, and six Quality/Review range/readiness regressions. `FAILED/UNPROVEN`: v9 stops at source-matched `bob:shell.ready`; v10 is invalid product evidence because Station drifted. `BLOCKED/UNPROVEN`: AS-04 exact-value scan and all four Native journeys. |
+| Last updated | 2026-08-17 03:15 CST |
 
 ---
 
