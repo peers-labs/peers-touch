@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -360,6 +359,3 @@ func TestValidTargetOrigin(t *testing.T) {
 		}
 	}
 }
-
-// quick errors.Is to keep the linter happy on the imported package.
-var _ = errors.Is
