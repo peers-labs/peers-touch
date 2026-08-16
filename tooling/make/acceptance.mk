@@ -1,7 +1,8 @@
 # ─── Acceptance Framework ───────────────────────────────────────
 
-.PHONY: acceptance-plan acceptance-plan-self acceptance-run acceptance-run-ci acceptance-run-local-evidence \
-        acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate acceptance-infra-validate \
+.PHONY: acceptance-plan acceptance-run acceptance-run-ci acceptance-run-local-evidence \
+        acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate \
+        acceptance-driver-build acceptance-driver-smoke \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-desktop-gateway \
         acceptance-chat-native-static acceptance-chat-native-two-client \
@@ -24,14 +25,20 @@
         federation-dashboard-operational-drilldown federation-desktop-gateway-smoke
 
 ACCEPTANCE_RANGE ?= HEAD
-ACCEPTANCE_PLAN_ARG = $(if $(ACCEPTANCE_PLAN),--output "$(ACCEPTANCE_PLAN)",)
-ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),$(if $(ACCEPTANCE_PLAN),--plan $(ACCEPTANCE_PLAN),))
+ACCEPTANCE_PLAN ?= tooling/acceptance/reports/latest-plan.json
+ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),--plan $(ACCEPTANCE_PLAN))
+
+acceptance-driver-build:
+	VITE_ACCEPTANCE_HARNESS=1 pnpm --dir apps/desktop run build
+	cd apps/desktop/src-tauri && \
+		TAURI_CONFIG='{"app":{"withGlobalTauri":true}}' \
+		cargo build --features acceptance-webdriver
+
+acceptance-driver-smoke:
+	python3 -m tooling.acceptance.drivers.tauri
 
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" $(ACCEPTANCE_PLAN_ARG)
-
-acceptance-plan-self:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)"
 
 acceptance-run:
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
@@ -52,15 +59,12 @@ acceptance-report:
 	python3 tooling/scripts/acceptance-report.py
 
 acceptance:
-	$(if $(PLAN),,$(if $(ACCEPTANCE_PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)"))
+	$(if $(PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)")
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 	python3 tooling/scripts/acceptance-report.py
 
 acceptance-validate:
 	python3 tooling/scripts/acceptance-validate.py $(if $(DOMAIN),--domain $(DOMAIN),)
-
-acceptance-infra-validate:
-	python3 tooling/scripts/acceptance-validate.py --infra
 
 acceptance-coverage-report:
 	python3 tooling/scripts/acceptance-coverage-report.py
@@ -208,7 +212,8 @@ acceptance-federation-report: acceptance-federation-mutual-validation
 		--feature federation-dashboard-operations \
 		--feature federation-operational-observability \
 		--feature desktop-federation-surfaces \
-		--mutual-validation-gate federation-mutual-validation
+		--mutual-validation tooling/acceptance/reports/federation-mutual-validation.json \
+		--output tooling/acceptance/reports/federation-acceptance-report.md
 
 federation-surface-smoke:
 	python3 tooling/acceptance/gates/federation/surface_smoke.py

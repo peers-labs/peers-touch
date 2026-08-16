@@ -107,6 +107,45 @@
       }
     },
     {
+      "id": "chat-direct-delivery-receipt",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-direct-delivered-receipt"],
+      "required_gates": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-two-client-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src-tauri/src/messaging/direct.rs",
+        "apps/desktop/src/runtimes/imRuntime.ts",
+        "apps/station/app/subserver/conversation/service_impl.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Desktop Rust messaging receive transaction",
+          "Desktop durable receipt outbox",
+          "Station conversation receipt routing",
+          "Desktop social chat receipt projection"
+        ],
+        "surfaces": [
+          "Alice native Direct message row",
+          "Bob native Direct message row",
+          "DELIVERED receipt projection"
+        ],
+        "proven_by": ["chat-native-two-client-e2e"],
+        "proven_scope": [
+          "Direct decrypt produces a durable DELIVERED receipt and the sender observes it in a native Desktop message row"
+        ],
+        "unproven_scope": [
+          "Multi-device DELIVERED aggregation",
+          "MLS group receipts"
+        ]
+      }
+    },
+    {
       "id": "chat-native-visible-clients",
       "domain": "chat",
       "direction": "acceptance_validates_product",
