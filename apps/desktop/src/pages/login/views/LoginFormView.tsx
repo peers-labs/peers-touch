@@ -350,7 +350,6 @@ export const LoginFormView = memo(function LoginFormView({
             />
             <Flexbox horizontal gap={8} align="center">
               <Input
-                data-login-email
                 size="large"
                 autoFocus
                 prefix={<Lock size={16} style={{ color: token.colorTextQuaternary }} />}
@@ -399,6 +398,7 @@ export const LoginFormView = memo(function LoginFormView({
           <form onSubmit={handleEmailSubmit}>
             <Flexbox gap={10}>
               <Input
+                data-login-email
                 size="large"
                 prefix={<Mail size={16} style={{ color: token.colorTextQuaternary }} />}
                 placeholder={t('auth.login.email.placeholder')}

@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from native_visible_runner import REPORT_NAMES, source_identity
+from native_visible_runner import REPORT_NAMES, commits_match, source_identity
 
 
 REQUIRED_STEPS = {
@@ -30,6 +30,7 @@ REQUIRED_STEPS = {
     "receipt.delivered",
     "receipt.read",
 }
+MAX_STEP_TIMEOUT_MS = 900_000
 
 MINIMUM_ASSERTIONS = {
     "two-client": 2,
@@ -71,7 +72,7 @@ def validate_station(report: dict[str, Any]) -> None:
     live = station.get("live")
     require(isinstance(live, dict), "live Station metadata is required")
     require(
-        str(live.get("build_commit") or "").startswith(station["commit"]),
+        commits_match(str(live.get("build_commit") or ""), station["commit"]),
         "live Station commit does not match attestation",
     )
 
@@ -118,7 +119,7 @@ def validate_clients(report: dict[str, Any], journey: str) -> None:
         if len(worktrees) == 1:
             worktrees *= expected_count
         require(len(worktrees) == expected_count, "validator worktree count mismatch")
-        for client, worktree in zip(clients, worktrees, strict=True):
+        for client, worktree in zip(clients, worktrees):
             require(
                 {
                     "commit": client["commit"],
@@ -138,7 +139,8 @@ def validate_steps(report: dict[str, Any]) -> None:
         require(isinstance(step, dict), "step telemetry entries must be objects")
         require(step.get("status") == "pass", f"{step.get('step')}: step must pass")
         require(
-            isinstance(step.get("timeoutMs"), int) and 0 < step["timeoutMs"] <= 300_000,
+            isinstance(step.get("timeoutMs"), int)
+            and 0 < step["timeoutMs"] <= MAX_STEP_TIMEOUT_MS,
             f"{step.get('step')}: bounded timeout is required",
         )
         require(

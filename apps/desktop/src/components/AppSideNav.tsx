@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionIcon, SideNav } from '@lobehub/ui';
-import { Input, Modal, theme } from 'antd';
+import { Badge, Input, Modal, theme } from 'antd';
 import {
   Bot,
   MessageCircle,
@@ -22,6 +22,7 @@ import AppletManager from '../applet/AppletManager';
 import { getModulesWithSidebar } from '../modules/registry';
 import { useAgentStore } from '../store/agent';
 import { useChatStore } from '../store/chat';
+import { useNavigationBadgeStore } from '../store/navigationBadges';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
 import { useAppletsStore } from '../store/applets';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
@@ -71,6 +72,7 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
   const selectedAgent = useAgentStore((state) => state.selectedAgent);
   const setAgentSurface = useAgentStore((state) => state.setAgentSurface);
   const newSession = useChatStore((state) => state.newSession);
+  const chatUnreadTotal = useNavigationBadgeStore((state) => state.chatUnreadTotal);
   const installedApplets = useAppletsStore((state) => state.applets);
   const installedAppletById = useMemo(
     () => new Map(installedApplets.map((info) => [info.manifest.id, info.manifest])),
@@ -298,13 +300,21 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
               );
             })}
             <PrimaryNavAnchor pageId="chat">
-              <ActionIcon
-                icon={MessageCircle}
-                size="large"
-                active={page === 'chat'}
-                onClick={() => navigatePrimary('chat')}
-                title={t('layout.nav.chat')}
-              />
+              <span
+                data-pt-navigation-badge="chat"
+                data-pt-unread-count={chatUnreadTotal}
+                style={{ display: 'contents' }}
+              >
+                <Badge count={chatUnreadTotal} size="small" offset={[-2, 2]}>
+                  <ActionIcon
+                    icon={MessageCircle}
+                    size="large"
+                    active={page === 'chat'}
+                    onClick={() => navigatePrimary('chat')}
+                    title={t('layout.nav.chat')}
+                  />
+                </Badge>
+              </span>
             </PrimaryNavAnchor>
             <PrimaryNavAnchor pageId="agent">
               <ActionIcon
