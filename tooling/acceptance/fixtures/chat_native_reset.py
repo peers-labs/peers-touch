@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import threading
 import time
@@ -342,16 +343,23 @@ def restart_profile_three_station(
     }
 
 
-def reset_local_messaging_databases(accounts: list[str]) -> int:
-    removed = 0
-    root = REPO_ROOT / ".local" / "acceptance" / "embedded-webdriver"
+def reset_local_client_storage(
+    accounts: list[str],
+    root: Path | None = None,
+) -> int:
+    reset = 0
+    storage_root = root or (
+        REPO_ROOT / ".local" / "acceptance" / "embedded-webdriver"
+    )
     for account in accounts:
-        storage = root / account / "storage"
+        if account not in {"alice", "bob", "charlie"}:
+            raise RuntimeError(f"unsupported native Chat fixture account: {account}")
+        storage = storage_root / account / "storage"
+        if storage.exists():
+            shutil.rmtree(storage)
+            reset += 1
         storage.mkdir(parents=True, exist_ok=True)
-        for database in storage.glob("**/data/db/users/*/chat.main.db*"):
-            database.unlink()
-            removed += 1
-    return removed
+    return reset
 
 
 def reset_station_messaging_state(environment_name: str) -> None:
@@ -394,11 +402,11 @@ def main() -> int:
     parser.add_argument("--accounts", nargs="+", default=["alice", "bob", "charlie"])
     args = parser.parse_args()
 
-    removed = reset_local_messaging_databases(args.accounts)
+    reset_roots = reset_local_client_storage(args.accounts)
     reset_station_messaging_state(args.environment)
     print(
         f"native Chat fixture reset: environment={args.environment} "
-        f"local_databases={removed}"
+        f"local_storage_roots={reset_roots}"
     )
     return 0
 
