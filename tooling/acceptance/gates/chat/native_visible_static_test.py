@@ -92,7 +92,9 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
             cargo,
         )
         self.assertIn("--features acceptance-webdriver", launcher)
+        self.assertIn('"permissions\\":[\\"wdio-webdriver:default\\"]', launcher)
         self.assertNotIn("--features e2e-testing", launcher)
+        self.assertNotIn("playwright:default", launcher)
 
     def test_all_visible_journey_entrypoints_exist(self) -> None:
         expected = (
