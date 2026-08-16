@@ -29,10 +29,11 @@
         "proven_scope": [
           "A-to-B applet runtime lease switch does not unload hidden LRU applet A",
           "explicit close returns to launcher before runtime release work",
-          "`make desktop` development app shell shows two installed applet launch targets and completes A-to-B-to-close-to-wakeup lifecycle evidence",
           "launcher refresh and wakeup preserve existing content instead of fullscreen loading"
         ],
         "unproven_scope": [
+          "native `make desktop` visible A-to-B-to-close-to-wakeup lifecycle with two installed applets",
+          "Python AcceptanceGate wrapper and unified Core Evidence report for the existing MJS gate",
           "cross-platform mobile applet lifecycle smoothness"
         ]
       }

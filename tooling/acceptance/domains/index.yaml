@@ -31,7 +31,7 @@
       "profile": "tooling/acceptance/domains/applet.yaml",
       "capabilities": "tooling/acceptance/capabilities/applet.yaml",
       "coverage": "managed_domain",
-      "notes": "Managed domain for applet Desktop lifecycle smoothness and runtime gates. Current proven coverage includes runtime lease smoothness; `make desktop` A-to-B-to-close-to-wakeup lifecycle evidence is required before production-ready claims. Cross-platform mobile remains out of scope."
+      "notes": "Managed domain with a local Desktop lifecycle contract and Gate. Python Core wrapper, native visible A-to-B-to-close-to-wakeup proof, and cross-platform Mobile remain incomplete or unproven; active means structurally onboarded, not product-ready."
     },
     {
       "id": "station-dashboard",
