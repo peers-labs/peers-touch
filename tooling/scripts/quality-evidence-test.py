@@ -86,6 +86,65 @@ class ReadinessTests(unittest.TestCase):
             )
         )
 
+    def test_current_provisioned_gate_result_closes_environment_gap(self) -> None:
+        gate = {"id": "native", "provisioner": "home-station"}
+        result = {
+            "id": "native",
+            "status": "passed",
+            "completionStatus": "DONE",
+            "proofStatus": "PROVEN",
+            "timedOut": False,
+            "traceability": {"status": "complete"},
+            "manifest": {
+                "state": "FIXTURE_READY",
+                "source": {
+                    "commit": "current-head",
+                    "workspaceDigest": "clean",
+                },
+            },
+        }
+        self.assertTrue(
+            MODULE.gate_result_is_proven(
+                gate,
+                result,
+                "current-head",
+            )
+        )
+
+    def test_stale_or_failed_environment_result_remains_unproven(self) -> None:
+        gate = {"id": "native", "provisioner": "home-station"}
+        result = {
+            "id": "native",
+            "status": "passed",
+            "completionStatus": "DONE",
+            "proofStatus": "PROVEN",
+            "timedOut": False,
+            "traceability": {"status": "complete"},
+            "manifest": {
+                "state": "FIXTURE_READY",
+                "source": {
+                    "commit": "old-head",
+                    "workspaceDigest": "clean",
+                },
+            },
+        }
+        self.assertFalse(
+            MODULE.gate_result_is_proven(
+                gate,
+                result,
+                "current-head",
+            )
+        )
+        result["status"] = "failed"
+        result["manifest"]["source"]["commit"] = "current-head"
+        self.assertFalse(
+            MODULE.gate_result_is_proven(
+                gate,
+                result,
+                "current-head",
+            )
+        )
+
 
 class RouteRangeTests(unittest.TestCase):
     def test_explicit_range_excludes_untracked_cross_scope_paths(self) -> None:

@@ -149,6 +149,7 @@ def classify_gates(gates: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]
             "id": gate.get("id", ""),
             "tier": tier,
             "environment": gate.get("environment", "local"),
+            "provisioner": gate.get("provisioner", ""),
             "command": gate.get("command", ""),
             "required_by": gate.get("required_by", []),
         }
@@ -161,6 +162,34 @@ def classify_gates(gates: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]
         else:
             buckets["nightly_or_release_gates"].append(summary)
     return buckets
+
+
+def gate_result_is_proven(
+    gate: dict[str, Any],
+    result: dict[str, Any],
+    head_commit: str,
+) -> bool:
+    if not (
+        result.get("status") == "passed"
+        and result.get("completionStatus") == "DONE"
+        and result.get("proofStatus") == "PROVEN"
+        and result.get("timedOut") is not True
+    ):
+        return False
+    traceability = result.get("traceability")
+    if not isinstance(traceability, dict) or traceability.get("status") != "complete":
+        return False
+    if not gate.get("provisioner"):
+        return True
+    manifest = result.get("manifest")
+    if not isinstance(manifest, dict) or manifest.get("state") != "FIXTURE_READY":
+        return False
+    source = manifest.get("source")
+    return (
+        isinstance(source, dict)
+        and source.get("commit") == head_commit
+        and source.get("workspaceDigest") == "clean"
+    )
 
 
 def evidence_gaps(evidence: dict[str, Any]) -> list[dict[str, str]]:
@@ -199,7 +228,15 @@ def evidence_gaps(evidence: dict[str, Any]) -> list[dict[str, str]]:
             }
         )
 
+    results = {
+        result.get("id"): result
+        for result in evidence["acceptance"]["latest_run"].get("results", [])
+        if isinstance(result, dict) and result.get("id")
+    }
     for gate in evidence["acceptance"]["gate_buckets"]["environment_evidence_gates"]:
+        result = results.get(gate["id"], {})
+        if gate_result_is_proven(gate, result, evidence["head_commit"]):
+            continue
         gaps.append(
             {
                 "kind": f"environment-gate:{gate['id']}",
@@ -208,6 +245,9 @@ def evidence_gaps(evidence: dict[str, Any]) -> list[dict[str, str]]:
             }
         )
     for gate in evidence["acceptance"]["gate_buckets"]["nightly_or_release_gates"]:
+        result = results.get(gate["id"], {})
+        if gate_result_is_proven(gate, result, evidence["head_commit"]):
+            continue
         gaps.append(
             {
                 "kind": f"deferred-gate:{gate['id']}",
@@ -305,6 +345,13 @@ def main() -> int:
     repo_root = Path.cwd()
     acceptance_root = repo_root / args.root
     changed_paths = collect_changed_paths(repo_root, args.diff_range)
+    head_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
 
     route = run_command(["tooling/scripts/review/route-change.sh", "--range", args.diff_range], repo_root)
     knowledge = run_command(["tooling/scripts/review/knowledge-match.sh", "--range", args.diff_range, "--strict"], repo_root)
@@ -313,6 +360,7 @@ def main() -> int:
 
     evidence: dict[str, Any] = {
         "range": args.diff_range,
+        "head_commit": head_commit,
         "changed_paths": changed_paths,
         "route": {
             "ok": route["ok"],
@@ -334,6 +382,9 @@ def main() -> int:
             "impacted_features": plan.get("impacted_features", []),
             "selected_gates": plan.get("selected_gates", []),
             "gate_buckets": classify_gates(plan.get("selected_gates", [])),
+            "latest_run": load(
+                acceptance_root / "reports" / "latest-run.json"
+            ),
             **capability_evidence,
         },
     }
