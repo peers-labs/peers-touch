@@ -5800,6 +5800,48 @@ impl MessagingStore {
                 .optional()
                 .map_err(|error| error.to_string())?
         };
+        let direct_sessions = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT session_id, generation, self_public_key,
+                            peer_ratchet_public_key, root_key,
+                            send_chain_key, receive_chain_key,
+                            send_counter, receive_counter, previous_counter,
+                            updated_at_unix_ms
+                     FROM direct_sessions
+                     WHERE conversation_id = ?1
+                     ORDER BY generation DESC, session_id",
+                )
+                .map_err(|error| error.to_string())?;
+            let sessions = statement
+                .query_map(params![conversation_id], |row| {
+                    let digest = |value: Option<Vec<u8>>| {
+                        value
+                            .map(|bytes| hex::encode(Sha256::digest(bytes)))
+                            .unwrap_or_default()
+                    };
+                    Ok(serde_json::json!({
+                        "sessionId": row.get::<_, String>(0)?,
+                        "generation": row.get::<_, i64>(1)?,
+                        "selfPublicKey": hex::encode(row.get::<_, Vec<u8>>(2)?),
+                        "peerPublicKey": row
+                            .get::<_, Option<Vec<u8>>>(3)?
+                            .map(hex::encode)
+                            .unwrap_or_default(),
+                        "rootKeySha256": digest(Some(row.get::<_, Vec<u8>>(4)?)),
+                        "sendChainSha256": digest(row.get::<_, Option<Vec<u8>>>(5)?),
+                        "receiveChainSha256": digest(row.get::<_, Option<Vec<u8>>>(6)?),
+                        "sendCounter": row.get::<_, i64>(7)?,
+                        "receiveCounter": row.get::<_, i64>(8)?,
+                        "previousCounter": row.get::<_, i64>(9)?,
+                        "updatedAtUnixMs": row.get::<_, i64>(10)?,
+                    }))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            sessions
+        };
         let reactions = load_reactions_for_message(&connection, message_id)?
             .into_iter()
             .map(|(actor_ptid, reaction, created_at_unix_ms)| {
@@ -5865,6 +5907,7 @@ impl MessagingStore {
             "projection": projection,
             "intent": intent,
             "outbox": outbox,
+            "directSessions": direct_sessions,
             "reactions": reactions,
             "pins": pins,
             "readCursors": read_cursors,
