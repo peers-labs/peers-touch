@@ -14,10 +14,10 @@ import "time"
 // table and stores chat-message reactions. Two distinct domains, two distinct
 // tables.
 type SocialReaction struct {
-	PostID    uint64 `gorm:"column:post_id;primaryKey;autoIncrement:false"`
-	ActorID   uint64 `gorm:"column:actor_id;primaryKey;autoIncrement:false;index:idx_sreaction_actor"`
-	Kind      string `gorm:"column:kind;primaryKey;type:varchar(16)"`
-	PostClass string `gorm:"column:post_class;type:varchar(8);not null"`
+	PostID    uint64    `gorm:"column:post_id;primaryKey;autoIncrement:false"`
+	ActorID   uint64    `gorm:"column:actor_id;primaryKey;autoIncrement:false;index:idx_sreaction_actor"`
+	Kind      string    `gorm:"column:kind;primaryKey;type:varchar(16)"`
+	PostClass string    `gorm:"column:post_class;type:varchar(8);not null"`
 	CreatedAt time.Time `gorm:"column:created_at;index:idx_sreaction_post_created"`
 }
 

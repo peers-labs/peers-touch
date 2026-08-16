@@ -12,32 +12,32 @@
 // federation collapses that to one shared implementation:
 //
 //   - LocalKey   — the station's signing keypair (Ed25519). One
-//                  pair per station, regardless of which subserver
-//                  mints. Receivers identify the station, not the
-//                  subserver.
+//     pair per station, regardless of which subserver
+//     mints. Receivers identify the station, not the
+//     subserver.
 //   - KeyStore   — persistence + lifecycle for LocalKey. Two
-//                  slots: `current` (used to mint) and `prev`
-//                  (preserved across rotation for receivers that
-//                  cached the old kid). Atomic rotation lives
-//                  here.
+//     slots: `current` (used to mint) and `prev`
+//     (preserved across rotation for receivers that
+//     cached the old kid). Atomic rotation lives
+//     here.
 //   - KeyCache   — process-local in-memory cache wrapping
-//                  KeyStore. Periodically peeks the persisted
-//                  current-kid so dashboard-driven rotation is
-//                  observed within `recheckTTL`.
+//     KeyStore. Periodically peeks the persisted
+//     current-kid so dashboard-driven rotation is
+//     observed within `recheckTTL`.
 //   - PeerKey    — cached public key of a remote peer station,
-//                  with TOFU/pin semantics.
+//     with TOFU/pin semantics.
 //   - PeerKeyStore — persistence for the peer-key cache. Strict:
-//                    a kid mismatch always rejects, pinned or
-//                    not. Operators rotate trust by explicitly
-//                    forgetting + re-TOFUing.
+//     a kid mismatch always rejects, pinned or
+//     not. Operators rotate trust by explicitly
+//     forgetting + re-TOFUing.
 //   - Mint       — `Mint(ctx, MintRequest{scope, iss, aud, sub,
-//                  claims, ttl})`. Routes through the scope
-//                  registry (TTL clamp + audience check + claim
-//                  allow-list) before signing.
+//     claims, ttl})`. Routes through the scope
+//     registry (TTL clamp + audience check + claim
+//     allow-list) before signing.
 //   - Verify     — `Verify(ctx, token, ExpectedAud)`. Parses
-//                  header, runs PeerKey TOFU, verifies signature,
-//                  validates registered claims, returns typed
-//                  VerifiedClaims to the caller.
+//     header, runs PeerKey TOFU, verifies signature,
+//     validates registered claims, returns typed
+//     VerifiedClaims to the caller.
 //
 // Each subserver's only obligation is:
 //

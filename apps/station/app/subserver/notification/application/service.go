@@ -52,7 +52,7 @@ func (s *Service) Produce(recipientID, actorID string, notifType, category int32
 		TargetID:    targetID,
 		Title:       title,
 		Body:        body,
-		GroupKey:     groupKey,
+		GroupKey:    groupKey,
 		Metadata:    metadata,
 	}
 

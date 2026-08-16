@@ -11,14 +11,14 @@
 // instead.
 //
 // Each tick:
-//   1. List up to BatchSize blobs with `ref_count = 0` and
-//      `last_seen_at < now - grace`.
-//   2. For each, call `Backend.Delete(key)` to remove the bytes.
-//      A backend miss (already gone) is treated as success — the
-//      goal is "no row, no bytes", not "exactly one delete".
-//   3. Drop the `oss_blobs` row via `BlobRepository.Delete`.
-//   4. Append one `oss_audit` row per cleaned blob with
-//      action=blob_gc, outcome=ok, reason="ref_zero".
+//  1. List up to BatchSize blobs with `ref_count = 0` and
+//     `last_seen_at < now - grace`.
+//  2. For each, call `Backend.Delete(key)` to remove the bytes.
+//     A backend miss (already gone) is treated as success — the
+//     goal is "no row, no bytes", not "exactly one delete".
+//  3. Drop the `oss_blobs` row via `BlobRepository.Delete`.
+//  4. Append one `oss_audit` row per cleaned blob with
+//     action=blob_gc, outcome=ok, reason="ref_zero".
 package worker
 
 import (
@@ -103,8 +103,8 @@ func NewBlobGC(cfg BlobGCConfig) (*BlobGC, error) {
 	return &BlobGC{cfg: cfg, now: now}, nil
 }
 
-func (w *BlobGC) Name() string             { return "blob_gc" }
-func (w *BlobGC) Interval() time.Duration  { return w.cfg.Interval }
+func (w *BlobGC) Name() string            { return "blob_gc" }
+func (w *BlobGC) Interval() time.Duration { return w.cfg.Interval }
 
 // RunOnce sweeps one batch of orphaned blobs.
 func (w *BlobGC) RunOnce(ctx context.Context) error {

@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrForkDetected   = errors.New("fork detected: prev_hash mismatch")
+	ErrForkDetected     = errors.New("fork detected: prev_hash mismatch")
 	ErrSeqDiscontinuity = errors.New("sequence discontinuity")
 )
 
@@ -25,13 +25,13 @@ func NewReplayService(eventRepo LedgerEventRepository, hashSvc *HashService, sig
 }
 
 type MaterializedState struct {
-	FederationID            string
-	HeadHash                []byte
-	HeadSeq                 uint64
-	SequencerStationPeerID  string
-	PolicyType              string
-	ActiveMemberStations    []string
-	Status                  string
+	FederationID           string
+	HeadHash               []byte
+	HeadSeq                uint64
+	SequencerStationPeerID string
+	PolicyType             string
+	ActiveMemberStations   []string
+	Status                 string
 }
 
 func (r *ReplayService) ReplayFromGenesis(ctx context.Context, federationID string) (*MaterializedState, error) {

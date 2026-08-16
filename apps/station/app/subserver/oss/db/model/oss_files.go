@@ -15,20 +15,20 @@ import "time"
 // is enforced at the service layer where a bucket lookup precedes
 // every Create.
 type FileMeta struct {
-	ID  string `json:"id"  gorm:"primaryKey;type:varchar(64)"`
+	ID string `json:"id"  gorm:"primaryKey;type:varchar(64)"`
 	// Key is the storage-backend key (e.g. `cas/aa/abc…`). It is
 	// *not* unique by itself: two actors uploading identical CAS
 	// bytes converge on the same key but each gets their own row
 	// (different visibility / bucket / quota). Uniqueness is
 	// enforced via the composite index `idx_oss_files_owner_key`
 	// declared on `OwnerActorID`.
-	Key string `json:"key" gorm:"uniqueIndex:idx_oss_files_owner_key;index;type:varchar(255)"`
-	Name      string `json:"name"    gorm:"type:varchar(255)"`
-	Size      int64  `json:"size"    gorm:"type:bigint;not null"`
-	Mime      string `json:"mime"    gorm:"type:varchar(100)"`
-	Backend   string `json:"backend" gorm:"type:varchar(50);not null"`
-	Path      string `json:"path"    gorm:"type:varchar(1000)"`
-	Sha256    string `json:"sha256,omitempty" gorm:"index;type:varchar(64)"`
+	Key     string `json:"key" gorm:"uniqueIndex:idx_oss_files_owner_key;index;type:varchar(255)"`
+	Name    string `json:"name"    gorm:"type:varchar(255)"`
+	Size    int64  `json:"size"    gorm:"type:bigint;not null"`
+	Mime    string `json:"mime"    gorm:"type:varchar(100)"`
+	Backend string `json:"backend" gorm:"type:varchar(50);not null"`
+	Path    string `json:"path"    gorm:"type:varchar(1000)"`
+	Sha256  string `json:"sha256,omitempty" gorm:"index;type:varchar(64)"`
 
 	// BucketID points at the owning oss_buckets row. Required; the
 	// service layer EnsureSystems the bucket inline if the actor

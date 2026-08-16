@@ -61,9 +61,9 @@ func (s *subServer) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (s *subServer) Name() string                { return "notification" }
-func (s *subServer) Type() server.SubserverType  { return server.SubserverTypeHTTP }
-func (s *subServer) Status() server.Status        { return s.status }
+func (s *subServer) Name() string               { return "notification" }
+func (s *subServer) Type() server.SubserverType { return server.SubserverTypeHTTP }
+func (s *subServer) Status() server.Status      { return s.status }
 func (s *subServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{Address: s.addrs}
 }

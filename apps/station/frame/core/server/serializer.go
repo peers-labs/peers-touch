@@ -59,7 +59,7 @@ func isProtoMessage(t reflect.Type) bool {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
-	
+
 	// Check if the type implements proto.Message interface
 	protoMessageType := reflect.TypeOf((*proto.Message)(nil)).Elem()
 	return reflect.PtrTo(t).Implements(protoMessageType)

@@ -181,11 +181,11 @@ type OSSAuditListResponse struct {
 // OSSUsageSummary is the headline numbers for `GET /usage` — one
 // payload feeds the OSS overview card on the dashboard home.
 type OSSUsageSummary struct {
-	TotalBytes      int64                `json:"total_bytes"`
-	TotalFiles      int64                `json:"total_files"`
-	BucketCount     int                  `json:"bucket_count"`
-	TopOwners       []OSSOwnerUsage      `json:"top_owners,omitempty"`
-	VisibilityMix   []OSSVisibilityCount `json:"visibility_mix,omitempty"`
+	TotalBytes    int64                `json:"total_bytes"`
+	TotalFiles    int64                `json:"total_files"`
+	BucketCount   int                  `json:"bucket_count"`
+	TopOwners     []OSSOwnerUsage      `json:"top_owners,omitempty"`
+	VisibilityMix []OSSVisibilityCount `json:"visibility_mix,omitempty"`
 }
 
 // OSSOwnerUsage is one row in TopOwners — descending by Bytes.

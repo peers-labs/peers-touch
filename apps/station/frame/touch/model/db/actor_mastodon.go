@@ -27,8 +27,8 @@ type ActorTouchMeta struct {
 	// Extended Profile Fields (Peers-Touch specific)
 	Region            string `gorm:"column:region;size:100"`
 	Timezone          string `gorm:"column:timezone;size:50"`
-	Tags              string `gorm:"column:tags;type:text"`                          // JSON list of strings (Feature tags)
-	Links             string `gorm:"column:links;type:text"`                         // JSON list of UserLink objects
+	Tags              string `gorm:"column:tags;type:text"`                              // JSON list of strings (Feature tags)
+	Links             string `gorm:"column:links;type:text"`                             // JSON list of UserLink objects
 	DefaultVisibility string `gorm:"column:default_visibility;size:20;default:'public'"` // public, unlisted, followers, private
 	MessagePermission string `gorm:"column:message_permission;size:20;default:'everyone'"`
 	AutoExpireDays    int    `gorm:"column:auto_expire_days;default:0"`

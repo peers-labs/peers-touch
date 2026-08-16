@@ -288,7 +288,7 @@ func TestGroup_B1_CreateAndList(t *testing.T) {
 
 	// A creates group with B and C
 	createResp := httpPost(t, "/group-chat/create", &a.token, map[string]interface{}{
-		"name":               "Test Group ABC",
+		"name":                "Test Group ABC",
 		"initial_member_dids": []string{b.actorID, c.actorID},
 	})
 	assertSuccess(t, createResp, "create group")
@@ -511,7 +511,7 @@ func setupFriendship(t *testing.T, a, b *testClient) string {
 func setupGroup(t *testing.T, a, b, c *testClient) string {
 	t.Helper()
 	createResp := httpPost(t, "/group-chat/create", &a.token, map[string]interface{}{
-		"name":               fmt.Sprintf("TestGroup-%d", time.Now().UnixMilli()),
+		"name":                fmt.Sprintf("TestGroup-%d", time.Now().UnixMilli()),
 		"initial_member_dids": []string{b.actorID, c.actorID},
 	})
 	group, _ := createResp["group"].(map[string]interface{})

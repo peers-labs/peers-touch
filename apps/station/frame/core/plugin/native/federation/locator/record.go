@@ -96,15 +96,15 @@ func Sign(in SignInput) (*pb.ActorLocatorRecord, []byte, error) {
 	}
 
 	rec := &pb.ActorLocatorRecord{
-		FederatedHandle:    canonHandle,
-		HomeStationPeerId:  in.HomeStationPeerID,
-		HomeStationDomain:  in.HomeStationDomain,
-		InboxRelayMounts:   append([]string(nil), in.InboxRelayMounts...),
-		Tombstone:          in.Tombstone,
-		Seq:                in.Seq,
-		UpdatedAtUnixMs:    in.Now.UnixMilli(),
-		SigningKeyPem:      in.LocalKey.PubPEM,
-		SigningKeyKid:      in.LocalKey.Kid,
+		FederatedHandle:   canonHandle,
+		HomeStationPeerId: in.HomeStationPeerID,
+		HomeStationDomain: in.HomeStationDomain,
+		InboxRelayMounts:  append([]string(nil), in.InboxRelayMounts...),
+		Tombstone:         in.Tombstone,
+		Seq:               in.Seq,
+		UpdatedAtUnixMs:   in.Now.UnixMilli(),
+		SigningKeyPem:     in.LocalKey.PubPEM,
+		SigningKeyKid:     in.LocalKey.Kid,
 	}
 
 	digest, err := canonicalDigest(rec)
