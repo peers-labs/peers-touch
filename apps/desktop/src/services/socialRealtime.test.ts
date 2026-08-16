@@ -40,8 +40,6 @@ const mocks = vi.hoisted(() => ({
   bumpChatUnread: vi.fn(),
   clearChatUnread: vi.fn(),
   friendChatAckMessages: vi.fn(),
-  friendChatSync: vi.fn(),
-  groupChatSync: vi.fn(),
 }));
 
 const originalWindow = globalThis.window;
@@ -77,7 +75,6 @@ vi.mock('../store/socialChat', () => ({
       bumpChatUnread: mocks.bumpChatUnread,
       clearChatUnread: mocks.clearChatUnread,
       friendChatAckMessages: mocks.friendChatAckMessages,
-      friendChatSync: mocks.friendChatSync,
       sweepTypingPeers: vi.fn(),
     }),
   },
@@ -121,8 +118,6 @@ vi.mock('./desktop_api', () => ({
   api: {
     accountGetDeviceId: vi.fn(() => Promise.resolve({ device_id: 'self-device-1' })),
     friendChatAckMessages: mocks.friendChatAckMessages,
-    friendChatSync: mocks.friendChatSync,
-    groupChatSync: mocks.groupChatSync,
   },
 }));
 
@@ -142,8 +137,6 @@ describe('social realtime group membership side effects', () => {
     vi.clearAllMocks();
     mocks.ingestRealtimeMessage.mockResolvedValue(undefined);
     mocks.friendChatAckMessages.mockResolvedValue(undefined);
-    mocks.friendChatSync.mockResolvedValue(undefined);
-    mocks.groupChatSync.mockResolvedValue(undefined);
     mocks.loadSessions.mockResolvedValue(undefined);
     mocks.loadGroups.mockResolvedValue(undefined);
     mocks.loadFriendRequests.mockResolvedValue(undefined);
@@ -152,7 +145,6 @@ describe('social realtime group membership side effects', () => {
     mocks.loadConversationPreviews.mockResolvedValue(undefined);
     mocks.loadMessages.mockResolvedValue(undefined);
     mocks.markGroupRead.mockResolvedValue(undefined);
-    mocks.groupChatSync.mockResolvedValue(undefined);
     teardownSocialRealtimeBridge();
     installSocialRealtimeBridge();
   });
@@ -196,7 +188,6 @@ describe('social realtime group membership side effects', () => {
     });
 
     await vi.waitFor(() => {
-      expect(mocks.groupChatSync).toHaveBeenCalledWith('group-1', 50, 1);
       expect(mocks.loadMessages).toHaveBeenCalledWith('group-1', 'group');
       expect(mocks.markGroupRead).toHaveBeenCalled();
       expect(mocks.loadGroups).toHaveBeenCalled();
