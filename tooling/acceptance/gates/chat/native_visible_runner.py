@@ -1108,6 +1108,10 @@ class NativeVisibleJourney:
         report = {
             "artifactKind": f"chat-native-{self.journey}-run",
             "producer": "chat-native-visible-runner",
+            "phase": "W8",
+            "bom": [f"CHAT-NATIVE-{self.journey.upper()}"],
+            "spec": ["chat-native-visible-clients"],
+            "gate": self.gate_id,
             "automated": True,
             "runtime": "visible-native-desktop",
             "status": status,
