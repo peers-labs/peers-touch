@@ -1,6 +1,6 @@
 # Runtime Provisioning Contract Implementation Plan
 
-> **Status**: active — EXECUTE
+> **Status**: active — EXECUTE (WS8 BLOCKED)
 > **Version**: v1.0
 > **Created**: 2026-08-16 | **Updated**: 2026-08-16
 > **Owner**: Architecture Team
@@ -331,11 +331,11 @@ Once this gate passes, the framework is ready to be used to validate actual prod
 
 | Workstream | Status | Completion Date | Commit | Notes |
 |------------|--------|-----------------|--------|-------|
-| WS1: Core Data Model | DONE | 2026-08-16 | pending | Immutable contract/manifest models and schema tests pass. |
-| WS2: Provisioner Runtime | PARTIAL | — | pending | Profile/service preflight and structured BLOCKED are implemented; successful acquired-runtime cleanup remains unproven. |
-| WS3: Attestation & Actors | PARTIAL | — | pending | Producers and tests exist; live actor manifest is blocked before reset because deployed Station workspace is dirty. |
-| WS4: Credential Redaction | PARTIAL | — | pending | CredentialRef and resolved-value log redaction tests pass; live AS-04 scan remains pending. |
-| WS5: Registry Behavior Rules | DONE | 2026-08-16 | pending | Receipt owner selects two-client Gate; unrelated messaging and proto paths do not over-select it. |
-| WS6: Runner Integration | PARTIAL | — | pending | Provision-before-run and exit code 2 are proven; successful FIXTURE_READY Gate execution remains unproven. |
-| WS7: Gap Detector Skill | DONE | 2026-08-16 | pending | Read-only detector, 25-pattern procedure, tests, and submit-pipeline integration are present; AS-05 reports UNPROVEN. |
-| WS8: Chat Native Validation | BLOCKED | — | pending | Station deployment attestation reports dirty workspace; no Fixture reset or native client launch occurred. |
+| WS1: Core Data Model | DONE | 2026-08-16 | `9d05335e1` | Immutable contract/manifest models and schema tests pass. |
+| WS2: Provisioner Runtime | PARTIAL | — | `9d05335e1` | Profile/service preflight and structured BLOCKED are implemented; successful acquired-runtime cleanup remains unproven. |
+| WS3: Attestation & Actors | PARTIAL | — | `9d05335e1` | Producers and tests exist; live actor manifest is blocked before reset because deployed Station workspace is dirty. |
+| WS4: Credential Redaction | PARTIAL | — | `9d05335e1`, `f9bcead42` | CredentialRef and structured/key-aware redaction tests pass; live AS-04 scan remains pending. |
+| WS5: Registry Behavior Rules | DONE | 2026-08-16 | `9d05335e1` | Receipt owner selects two-client Gate; unrelated messaging and proto paths do not over-select it. |
+| WS6: Runner Integration | PARTIAL | — | `9d05335e1`, `f9bcead42` | Provision-before-run and exit code 2 are proven; successful FIXTURE_READY Gate execution remains unproven. |
+| WS7: Gap Detector Skill | DONE | 2026-08-16 | `9d05335e1` | Read-only detector, 25-pattern procedure, tests, and submit-pipeline integration are present; AS-05 reports UNPROVEN. |
+| WS8: Chat Native Validation | BLOCKED | — | — | Station deployment attestation reports dirty workspace; no Fixture reset or native client launch occurred. |
