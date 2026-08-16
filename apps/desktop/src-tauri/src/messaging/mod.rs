@@ -85,12 +85,15 @@ pub use send::{DirectSessionBootstrap, SendPreparer, SendTextIntent};
 pub use store::{
     AttachmentDownloadProjection, AttachmentTransferRecord, CommandOutboxEntry,
     ConversationMessageProjection, ConversationProjection, ConversationStateReceiveCommit,
-    DirectEditCommit, DirectReceiveCommit, DirectSendCommit, MessageProjection, MessagingStore,
-    MlsReceiveCommit,
-    MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
-    MlsTransitionReceiveCommit, MlsTransitionSendCommit, PendingAttachmentUpload,
-    PendingMembershipIntent, PendingMessageDraft, PendingMlsKeyPackage, PendingMlsTransitionState,
-    PendingPreKeyBundle, PendingSenderProjection, PublicEventReceiveCommit, ReceiveCommitResult,
+    DeliveryReceiptOutboxEntry, DirectEditCommit, DirectReceiveCommit, DirectSendCommit,
+    MessageProjection, MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
+    MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, MlsTransitionSendCommit,
+    PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft, PendingMlsKeyPackage,
+    PendingMlsTransitionState, PendingPreKeyBundle, PendingSenderProjection,
+    PublicEventReceiveCommit, ReceiveCommitResult,
 };
-pub use transport::{StationCommandTransport, StationDeviceTransport, StationQueueTransport};
+pub use transport::{
+    StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,
+    StationQueueTransport,
+};
 pub use verification::verify_device_event_delivery;
