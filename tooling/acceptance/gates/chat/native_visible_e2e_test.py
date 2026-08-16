@@ -93,8 +93,8 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
                     "profile": f"profile-{index}",
                     "gatewayPort": 3300 + index,
                     "rendererPort": 3500 + index,
+                    "webdriverPort": 4400 + index,
                     "storageRoot": f"/tmp/storage-{index}",
-                    "observerSocket": f"/tmp/observer-{index}.sock",
                     "commit": "commit-a",
                     "workspaceDigest": f"workspace-{index}",
                     "protoDigest": "proto-a",
@@ -108,7 +108,6 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
                 "clients": [
                     {
                         "client": name,
-                        "observerSocketReleased": True,
                         "ports": {
                             "gateway": {
                                 "port": 3300 + index,
@@ -116,6 +115,10 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
                             },
                             "renderer": {
                                 "port": 3500 + index,
+                                "released": True,
+                            },
+                            "webdriver": {
+                                "port": 4400 + index,
                                 "released": True,
                             },
                         },
@@ -172,8 +175,8 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(gate.GateError, "proto digests"):
             gate.validate_report(report, "multi-device")
         report = self.report("multi-device")
-        report["clients"][1]["observerSocket"] = report["clients"][0]["observerSocket"]
-        with self.assertRaisesRegex(gate.GateError, "distinct observerSocket"):
+        report["clients"][1]["webdriverPort"] = report["clients"][0]["webdriverPort"]
+        with self.assertRaisesRegex(gate.GateError, "distinct webdriverPort"):
             gate.validate_report(report, "multi-device")
         report = self.report("two-client")
         report["cleanup"]["clients"][0]["ports"]["gateway"]["released"] = False
@@ -248,7 +251,7 @@ class NativeProcessLivenessTest(unittest.TestCase):
             0,
         )
         client.process = ExitedProcess()
-        client.socket_path = Path("/tmp/observer-that-does-not-exist.sock")
+        client.webdriver_port = 65534
         with self.assertRaisesRegex(
             runner.JourneyError,
             "alice Desktop exited with 2",

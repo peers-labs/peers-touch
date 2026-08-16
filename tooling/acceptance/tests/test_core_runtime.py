@@ -33,6 +33,7 @@ from tooling.acceptance.core import (
     EVIDENCE_DIR,
 )
 from tooling.acceptance.core.redaction import REDACTED
+from tooling.acceptance.drivers.tauri import TauriDriver
 
 
 class MockDriver(DomDriver):
@@ -401,6 +402,33 @@ class BaseDriverAbstractInterfaceTests(unittest.TestCase):
         with d as drv:
             self.assertTrue(drv.is_alive())
         self.assertTrue(d._stopped)
+
+
+class TauriDriverAttachTests(unittest.TestCase):
+    def test_connect_attaches_without_launching_or_owning_a_process(self):
+        driver = TauriDriver(
+            app_binary="/tmp/not-launched",
+            port=4555,
+            storage_root="/tmp/external-storage",
+        )
+        session = MagicMock()
+
+        def connect_session() -> None:
+            driver._driver = session
+
+        with patch(
+            "tooling.acceptance.drivers.tauri._wait_for_webdriver"
+        ) as wait, patch.object(
+            driver,
+            "_connect_session",
+            side_effect=connect_session,
+        ):
+            self.assertIs(driver.connect(timeout=7), session)
+
+        wait.assert_called_once_with(4555, 7)
+        self.assertIsNone(driver._process)
+        driver.stop()
+        session.quit.assert_called_once()
 
 
 class FixtureInterfaceTests(unittest.TestCase):
