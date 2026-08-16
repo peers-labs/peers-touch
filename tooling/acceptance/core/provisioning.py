@@ -324,9 +324,9 @@ class ClientRuntime:
     worktree: str
     gateway_port: int
     renderer_port: int
+    webdriver_port: int
     profile: str
     storage_root: str
-    observer_socket: str = ""
 
 
 @dataclass(frozen=True)

@@ -1,12 +1,35 @@
 # Runtime Provisioning Contract Implementation Plan
 
-> **Status**: active — EXECUTE (WS8 BLOCKED)
+> **Status**: active — EXECUTE (WS8 in progress)
 > **Version**: v1.0
-> **Created**: 2026-08-16 | **Updated**: 2026-08-16
+> **Created**: 2026-08-16 | **Updated**: 2026-08-17
 > **Owner**: Architecture Team
 > **Branch**: design/acceptance-runtime-provisioning-contract
 > **Parent Design**: [../design.md](../design.md)
 > **Approved Decisions**: D-07, D-08, D-09, D-10
+
+---
+
+## Context Anchor
+
+| Field | Current value |
+|---|---|
+| Main task | Complete the Runtime Provisioning Contract from EXECUTE through truthful Native proof, independent audit, PR review, and merge. |
+| Plan source | `docs/architecture/acceptance-framework/execution-plans/20260816-runtime-provisioning-contract-implementation.md` |
+| Tracking source | This plan's workstream table, acceptance scenarios, and Final Readiness Gate |
+| Worktree | `<workspace-root>/peers-oss` |
+| Branch | `design/acceptance-runtime-provisioning-contract` |
+| Stage | `EXECUTE` |
+| Current workstream | `WS8: Chat Native Two-Client Validation` |
+| Current step | Migrate the stale socket-based Native runner consumer to the accepted `tooling.acceptance.drivers.tauri.TauriDriver` entry and allocate one WebDriver port per client. |
+| Progress | WS1, WS5, and WS7 DONE; WS2, WS3, WS4, and WS6 PARTIAL; WS8 in progress. AS-03 and AS-05 PASSED; AS-01 PARTIAL; AS-02 and Direct Chat DELIVERED UNPROVEN; AS-04 PARTIAL. |
+| Last completed | Source-matched run `6c51f36155f52bec` reached `FIXTURE_READY` and launched two real Native clients with isolated Gateway/renderer ports; it then exposed that the runner still waits for the removed `PT_PLAYWRIGHT_SOCKET` path. |
+| Current action | Complete the architecture-defined TauriDriver consumer cutover because Core Runtime commit `068ef8602` replaced the Playwright socket plugin with WDIO but left the Native Chat runner on the deleted socket protocol. |
+| Next action | Rerun unit/static Gates, deploy the resulting source-matched commit, and execute `chat-native-two-client-e2e` with isolated WebDriver ports. |
+| Blockers | Implementation gap: the current Native runner cannot reach `observer.ready` because `PT_PLAYWRIGHT_SOCKET` has no producer after the accepted TauriDriver migration. Shared Profile Three deployment contention remains an external runtime risk for the rerun. |
+| Decisions required | None; the existing architecture requires fail-closed source identity and forbids accepting a mismatched shared Station. |
+| Evidence | `PASSED`: live Station attestation, actor reset/login/logout, `FIXTURE_READY`, and dual Native Gateway/renderer startup in run `6c51f36155f52bec`; actual ports and run storage released after diagnosis. `FAILED/UNPROVEN`: `/tmp/native-two-client-live-run-v8.json` and `tooling/acceptance/reports/chat-native-two-client-run.json` stop at `observer.ready`. `UNPROVEN`: full two-client receiver journey and Direct Chat DELIVERED. |
+| Last updated | 2026-08-17 02:38 CST |
 
 ---
 
@@ -37,7 +60,9 @@ This plan implements the accepted Runtime Provisioning architecture for the Acce
 
 ### Non-Scope
 - Fixing Direct Chat DELIVERED receipt product logic itself (this remains a product bug to be fixed separately after framework lands)
-- Modifying existing Gate test logic beyond consuming provisioning manifests
+- Changing existing Gate product assertions or journey semantics; runtime Driver
+  consumers must still migrate to the accepted single TauriDriver entry when a
+  stale pre-Core-Runtime transport is discovered
 - CI/CD platform integration (local developer environment only in this phase)
 - Remote testnet provisioning (home-station local environment only)
 
@@ -115,7 +140,7 @@ Workstreams that may run in parallel after WS1: WS3, WS4, WS5.
 - [x] Provisioner fails closed with BLOCKED and structured reason when Station is not running
 - [x] Provisioner fails closed with BLOCKED when profile `three.env` content mismatches identity
 - [ ] All processes started by provisioner are cleaned up on failure or completion
-- [ ] No port leaks after provisioning run (verified via port scan before/after)
+- [x] No port leaks after failed provisioning/native runs (verified via port scan before/after)
 
 ---
 
@@ -133,8 +158,8 @@ Workstreams that may run in parallel after WS1: WS3, WS4, WS5.
 - Actor fixture produces canonical PTIDs per profile, accounts exist, initial conversation state is reset
 - Destructive fixture reset requires explicit authorization flag
 **Acceptance Criteria**:
-- [ ] Runner rejects mismatched attestation (wrong commit, dirty workspace, wrong proto digest)
-- [ ] Actor manifest contains valid, reachable PTIDs for Alice and Bob
+- [x] Runner rejects mismatched attestation (wrong commit, dirty workspace, wrong proto digest)
+- [x] Actor manifest contains valid, reachable PTIDs for Alice and Bob
 - [x] No hardcoded PTIDs or account credentials in gate code or runner logic
 - [x] Reset without authorization flag fails closed
 
@@ -234,6 +259,9 @@ Workstreams that may run in parallel after WS1: WS3, WS4, WS5.
 - New agent following documented steps can provision environment and run two-client E2E without manual tribal knowledge
 - All required inputs are produced by the framework, no manual copying of PTIDs, URLs, or credentials
 - Evidence report contains full manifest, attestation, actor runtime data, and clear pass/fail state
+- Native clients consume the single `tooling.acceptance.drivers.tauri.TauriDriver`
+  entry with one provisioned WebDriver port per client; the deleted
+  `PT_PLAYWRIGHT_SOCKET` transport is not retained as a fallback
 **Acceptance Criteria**:
 - [ ] Fresh agent can follow documented steps to run `chat-native-two-client-e2e` without asking for missing information
 - [ ] Successful run produces verifiable evidence with all manifest fields populated
@@ -332,10 +360,10 @@ Once this gate passes, the framework is ready to be used to validate actual prod
 | Workstream | Status | Completion Date | Commit | Notes |
 |------------|--------|-----------------|--------|-------|
 | WS1: Core Data Model | DONE | 2026-08-16 | `9d05335e1` | Immutable contract/manifest models and schema tests pass. |
-| WS2: Provisioner Runtime | PARTIAL | — | `9d05335e1` | Profile/service preflight and structured BLOCKED are implemented; successful acquired-runtime cleanup remains unproven. |
-| WS3: Attestation & Actors | PARTIAL | — | `9d05335e1` | Producers and tests exist; live actor manifest is blocked before reset because deployed Station workspace is dirty. |
+| WS2: Provisioner Runtime | PARTIAL | — | `9d05335e1`, `b274e68c1` | Profile/service preflight, structured BLOCKED, and failed-run process/port/socket/storage cleanup are proven; cleanup after a successful complete Gate remains unproven. |
+| WS3: Attestation & Actors | PARTIAL | — | `9d05335e1`, `d0af86743`, `1fc55890f` | Live attestation, reset, canonical Alice/Bob PTIDs, and authenticated login/logout are proven. The latest run correctly blocked when a concurrent deployment replaced the Station commit. |
 | WS4: Credential Redaction | PARTIAL | — | `9d05335e1`, `f9bcead42` | CredentialRef and structured/key-aware redaction tests pass; live AS-04 scan remains pending. |
 | WS5: Registry Behavior Rules | DONE | 2026-08-16 | `9d05335e1` | Receipt owner selects two-client Gate; unrelated messaging and proto paths do not over-select it. |
-| WS6: Runner Integration | PARTIAL | — | `9d05335e1`, `f9bcead42` | Provision-before-run and exit code 2 are proven; successful FIXTURE_READY Gate execution remains unproven. |
+| WS6: Runner Integration | PARTIAL | — | `9d05335e1`, `f9bcead42`, `8f88bb038`, `b274e68c1` | Provision-before-run, exit code 2, manifest-only native input, `FIXTURE_READY`, and immediate process-exit failure are proven; a successful complete Gate report remains unproven. |
 | WS7: Gap Detector Skill | DONE | 2026-08-16 | `9d05335e1` | Read-only detector, 25-pattern procedure, tests, and submit-pipeline integration are present; AS-05 reports UNPROVEN. |
-| WS8: Chat Native Validation | BLOCKED | — | — | Station deployment attestation reports dirty workspace; no Fixture reset or native client launch occurred. |
+| WS8: Chat Native Validation | IN PROGRESS | — | `8f88bb038`, `b274e68c1`, `570dfd514`, `f826199bf` | Native clients reached real Tauri build after live fixture preparation. The latest rerun is BLOCKED because another branch replaced shared Station commit `f826199bf` with `880128bd...` before Gate execution. |
