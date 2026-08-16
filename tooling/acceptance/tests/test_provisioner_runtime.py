@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import socket
 import tempfile
 import unittest
 from pathlib import Path
@@ -96,6 +97,57 @@ class ProfileResolutionTests(unittest.TestCase):
 
 
 class ProvisionerBlockingTests(unittest.TestCase):
+    def test_native_clients_receive_distinct_webdriver_ports(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "CHAT_NATIVE_CLIENT_WORKTREES": "/tmp/client",
+                "CHAT_NATIVE_GATEWAY_PORT": "13330",
+                "CHAT_NATIVE_RENDERER_PORT": "13510",
+                "CHAT_NATIVE_WEBDRIVER_PORT": "14445",
+            },
+            clear=True,
+        ):
+            clients = provisioner._clients(
+                "chat-native-two-client-e2e",
+                "run-webdriver-ports",
+            )
+
+        self.assertEqual(
+            [client.webdriver_port for client in clients],
+            [14445, 14446],
+        )
+
+    def test_native_webdriver_port_conflict_blocks(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            port = listener.getsockname()[1]
+            with patch.dict(
+                "os.environ",
+                {
+                    "CHAT_NATIVE_CLIENT_WORKTREES": "/tmp/client",
+                    "CHAT_NATIVE_GATEWAY_PORT": "13330",
+                    "CHAT_NATIVE_RENDERER_PORT": "13510",
+                    "CHAT_NATIVE_WEBDRIVER_PORT": str(port),
+                },
+                clear=True,
+            ):
+                with self.assertRaisesRegex(
+                    BlockedError,
+                    f"webdriver port {port} is already in use",
+                ):
+                    provisioner._clients(
+                        "chat-native-two-client-e2e",
+                        "run-webdriver-conflict",
+                    )
+
     def test_unreachable_station_returns_blocked_manifest(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"

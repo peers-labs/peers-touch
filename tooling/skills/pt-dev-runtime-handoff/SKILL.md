@@ -64,7 +64,7 @@ make acceptance-chat-native-two-client
 
 The native two-client target invokes the environment Provisioner first.
 Station URL, deployment attestation, canonical PTIDs, client ports/profiles,
-storage, and observer sockets come only from
+storage, and per-client WebDriver ports come only from
 `PT_ACCEPTANCE_RUNTIME_MANIFEST`; do not export those values manually.
 
 Provisioning failures are `BLOCKED/UNPROVEN` with exit code `2`. Product Gate
