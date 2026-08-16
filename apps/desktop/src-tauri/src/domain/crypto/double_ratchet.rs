@@ -265,16 +265,14 @@ pub fn encrypt(
         let new_priv = StaticSecret::random_from_rng(&mut OsRng);
         let new_pub = PublicKey::from(&new_priv);
         let dh_out = new_priv.diffie_hellman(&PublicKey::from(peer)).to_bytes();
-        let (rk, recv_ck, send_ck) = kdf_rk(&state.root_key, &dh_out);
+        let (rk, _recv_ck, send_ck) = kdf_rk(&state.root_key, &dh_out);
 
         state.root_key = rk;
         state.self_priv = new_priv.to_bytes();
         state.self_pub = new_pub.to_bytes();
-        state.recv_chain_key = Some(recv_ck);
         state.send_chain_key = Some(send_ck);
         state.n_prev = state.n_send;
         state.n_send = 0;
-        state.n_recv = 0;
     }
 
     let send_ck = state
@@ -602,6 +600,34 @@ mod tests {
         let w3 = encrypt(&mut alice, b"again", b"").expect("a encrypt 2");
         let o3 = decrypt(&bob, &w3, &[], b"").expect("b decrypt 2");
         assert_eq!(o3.plaintext, b"again");
+    }
+
+    #[test]
+    fn sending_does_not_discard_the_current_receive_chain() {
+        let sk = random_sk();
+        let bob_priv = StaticSecret::random_from_rng(&mut OsRng);
+        let bob_pub = PublicKey::from(&bob_priv).to_bytes();
+        let sid = make_session_id();
+
+        let mut alice = init_initiator(&sid, &sk, bob_pub);
+        let mut bob = init_responder(&sid, &sk, bob_priv.to_bytes());
+
+        let first_from_alice = encrypt(&mut alice, b"alice-1", b"").unwrap();
+        bob = decrypt(&bob, &first_from_alice, &[], b"")
+            .unwrap()
+            .advanced_state;
+
+        let pending_from_bob = encrypt(&mut bob, b"bob-1", b"").unwrap();
+
+        // Alice has not consumed Bob's pending message, so her next message
+        // continues the same sending chain Bob was already receiving.
+        let second_from_alice = encrypt(&mut alice, b"alice-2", b"").unwrap();
+        let second_at_bob = decrypt(&bob, &second_from_alice, &[], b"").unwrap();
+        assert_eq!(second_at_bob.plaintext, b"alice-2");
+        assert_eq!(second_at_bob.advanced_state.n_recv, 2);
+
+        let pending_at_alice = decrypt(&alice, &pending_from_bob, &[], b"").unwrap();
+        assert_eq!(pending_at_alice.plaintext, b"bob-1");
     }
 
     #[test]
