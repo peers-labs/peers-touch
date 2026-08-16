@@ -1,3 +1,4 @@
+// PERFORMANCE ONLY. This file is not a product Acceptance Gate.
 import { test, expect, chromium } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
