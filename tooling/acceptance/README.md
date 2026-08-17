@@ -20,7 +20,20 @@ run for a changed path, and which artifacts should be produced for human review.
 - `playbooks/` explains how agents should run, diagnose, and preserve acceptance flows.
 - `desktop-performance-cohort.json` is the canonical P0c-3 profile, account,
   dataset, window, warmup, build, runtime, and scenario manifest.
-- `reports/` stores local or CI acceptance artifacts and is ignored by git.
+- Runtime artifacts are owned by the external Acceptance Evidence Store.
+  `tooling/acceptance/` retains only code, contracts, schemas, templates, and
+  intentional test fixtures.
+
+Inspect artifacts through the canonical operator interface:
+
+```bash
+python3 tooling/scripts/acceptance-artifact.py root
+python3 tooling/scripts/acceptance-artifact.py cat \
+  --gate <gate-id> --role <role>
+```
+
+`PT_ACCEPTANCE_ARTIFACT_ROOT` is an optional local override and mandatory in
+CI. Writers never fall back to the repository.
 
 ## Federation Bootstrap Loop
 
@@ -30,7 +43,9 @@ This creates a two-way proof:
 
 - Acceptance proves Federation capability by running stable gates against the live `fedp5` environment.
 - Federation proves Acceptance feasibility because the gates exercise real product surfaces instead of mocks.
-- `make acceptance-federation-report` runs the Federation gates and writes `tooling/acceptance/reports/federation-acceptance-report.md`.
+- `make acceptance-federation-report` runs the Federation gates and publishes
+  the report under Gate `acceptance-capability-report`, role
+  `capability-report`.
 - `make acceptance-validate DOMAIN=federation` checks the Federation domain profile against the project-wide capability graph, feature contracts, registry planning, gate definitions, run results, and reports.
 - `make acceptance-federation-mutual-validation` remains a Federation alias, not the acceptance core entry.
 
@@ -47,7 +62,9 @@ This creates a two-way proof:
 - `make acceptance-chat-desktop-gateway` requires a running Desktop HTTP gateway
   and proves the client-owned E2EE create, send, hydrate, and decrypt flow.
 - `make acceptance-station-dashboard-domain-validation` runs the Station Dashboard gates and then requires latest evidence for the managed domain profile.
-- `make acceptance-coverage-report` writes `tooling/acceptance/reports/project-coverage-report.md` and summarizes active, candidate, planned, and not-onboarded domains.
+- `make acceptance-coverage-report` publishes the project coverage report to
+  the external Evidence Store and summarizes active, candidate, planned, and
+  not-onboarded domains.
 - `acceptance-runtime-provisioning-self` is the stable CI Gate for Provisioning
   models, owners, runner semantics, behavior planning, redaction, freshness,
   and Gap Detector regressions.

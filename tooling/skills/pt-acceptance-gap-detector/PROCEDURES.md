@@ -4,8 +4,8 @@
 
 - Exact completion or proof claim.
 - Git range or explicit changed paths.
-- `tooling/acceptance/reports/latest-plan.json`.
-- `tooling/acceptance/reports/latest-run.json`.
+- External Evidence Store role `acceptance-plan` / `plan`.
+- External Evidence Store role `acceptance-run` / `run`.
 - Feature, Capability, Domain, Registry, Gate, Runtime Manifest, and source
   evidence referenced by the claim.
 

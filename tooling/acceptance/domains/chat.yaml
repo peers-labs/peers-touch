@@ -9,6 +9,5 @@
     "desktop-chat-typed-surface",
     "chat-native-visible-clients"
   ],
-  "validation_gate_id": "chat-domain-validation",
-  "report": "tooling/acceptance/reports/chat-validation.json"
+  "validation_gate_id": "chat-domain-validation"
 }

@@ -561,6 +561,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -595,6 +596,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -643,6 +645,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -665,6 +668,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -690,6 +694,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -718,6 +723,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -756,6 +762,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(evidence_dir),
                 )
             )
