@@ -20,13 +20,13 @@
 | Current workstream | `ES-W4: Standalone And Domain Writer Cutover` |
 | Current step | Migrate remaining standalone writers and cross-Gate readers to logical artifact roles |
 | Progress | 7/8 workstreams evidence-complete; ES-W8 delivery remains blocked; Chat G15 remains out of scope and `FAILED/UNPROVEN` |
-| Last completed | Second review closed root-symlink ancestry, Native output bypass, and atomic latest path/ref pairing |
-| Current action | Commit the Acceptance-only migration and update Draft PR #91 with exact evidence/non-claims |
-| Next action | Resolve or waive the Desktop Gateway Gate plus four product-owned Chat Native Gate gaps |
+| Last completed | Agent-led review 2/2 found no remaining Acceptance Core P0/P1; commits pushed and Draft PR #91 updated |
+| Current action | Hold PR #91 as Draft because required Messaging product evidence remains UNPROVEN |
+| Next action | Product owner must provide exact-source Desktop Gateway/Native proof or an explicit reviewed waiver |
 | Blockers | AS-ES-09 is `BLOCKED/UNPROVEN` by Station/source commit mismatch; Gap Detector requires five Messaging product Gates that this Acceptance-only change does not claim |
 | Decisions required | Product/owner waiver or future product-owned proof is required before the Gap Detector can permit ready-to-merge |
-| Evidence | Evidence + Native static: PASS 56/56; artifact helper: PASS 3/3; Core/Provisioning: PASS 116/116; Desktop scripts: PASS 179/179; CI bundle: PASS 3/3; skill-check: PASS; external chain: PASS; representative env Gate: `BLOCKED/UNPROVEN`; Chat G15: `FAILED/UNPROVEN` |
-| Last updated | 2026-08-17 15:08 CST |
+| Evidence | Evidence + Native static: PASS 56/56; helper: PASS 3/3; Core/Provisioning: PASS 116/116; Desktop scripts: PASS 179/179; final CI bundle: PASS 5/5; PR checks except expected Review Framework/Vercel: PASS; representative env Gate: `BLOCKED/UNPROVEN`; Gap Detector: 5 blocking env Gates |
+| Last updated | 2026-08-17 15:22 CST |
 
 ---
 
