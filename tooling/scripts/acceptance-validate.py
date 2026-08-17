@@ -5,10 +5,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from tooling.acceptance.core import ArtifactSession, EvidenceStore, RUN_GATE_ENV
+from tooling.acceptance.core.errors import EvidenceManifestInvalid
 
 ALLOWED_GATE_TIERS = {
     "ci-structure",
@@ -99,16 +106,38 @@ def validate_gate_catalog(gate_defs: dict[str, Any]) -> None:
             require(environment == "local", f"{gate_id}: CI tier gates must use local environment")
 
 
-def latest_passed_gates(reports_dir: Path, current_gate_id: str, require_run: bool) -> set[str]:
-    run_path = reports_dir / "latest-run.json"
-    if not run_path.exists() and not require_run:
-        return set()
-    run = load(run_path)
+def latest_passed_gates(
+    store: EvidenceStore,
+    current_gate_id: str,
+    require_run: bool,
+) -> set[str]:
+    latest_missing = False
+    try:
+        run = store.read_json(
+            store.latest_artifact_ref("acceptance-run", "run")
+        )
+    except EvidenceManifestInvalid:
+        latest_missing = True
+        run = {}
     passed = {
         result.get("id", "")
         for result in run.get("results", [])
         if result.get("status") in {"passed", "dry-run"}
     }
+    current_results = os.environ.get("PT_ACCEPTANCE_CURRENT_RESULTS", "")
+    if current_results:
+        try:
+            in_progress_results = json.loads(current_results)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("invalid current Acceptance results") from error
+        passed.update(
+            result.get("id", "")
+            for result in in_progress_results
+            if isinstance(result, dict)
+            and result.get("status") in {"passed", "dry-run"}
+        )
+    if require_run and latest_missing and not current_results:
+        raise EvidenceManifestInvalid("Acceptance run evidence is required")
     if current_gate_id:
         # The current process produces this gate's evidence and can only appear
         # in latest-run.json after the process exits.
@@ -179,11 +208,6 @@ def validate_capability(
     }
 
 
-def write_report(path: Path, domain_id: str, results: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"domain": domain_id, "capabilities": results}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
 def active_domain_ids(acceptance_root: Path) -> list[str]:
     index = load(acceptance_root / "domains" / "index.yaml")
     domains = [
@@ -195,14 +219,24 @@ def active_domain_ids(acceptance_root: Path) -> list[str]:
     return domains
 
 
-def validate_domain(repo_root: Path, acceptance_root: Path, domain_id: str, require_proven: bool) -> tuple[Path, list[dict[str, Any]]]:
+def validate_domain(
+    repo_root: Path,
+    acceptance_root: Path,
+    domain_id: str,
+    require_proven: bool,
+    store: EvidenceStore,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     domain = load(acceptance_root / "domains" / f"{domain_id}.yaml")
     require(domain.get("id") == domain_id, f"domain profile id mismatch: {domain_id}")
     capabilities = load_capabilities(acceptance_root)
     features = [load(path) for path in sorted((acceptance_root / "features").glob("*.yaml"))]
     gate_defs = load(acceptance_root / "gates.yaml").get("gates", {})
     validate_gate_catalog(gate_defs)
-    passed_gates = latest_passed_gates(acceptance_root / "reports", domain.get("validation_gate_id", ""), require_proven)
+    passed_gates = latest_passed_gates(
+        store,
+        domain.get("validation_gate_id", ""),
+        require_proven,
+    )
 
     selected = []
     for capability_id in domain.get("capabilities", []):
@@ -214,9 +248,7 @@ def validate_domain(repo_root: Path, acceptance_root: Path, domain_id: str, requ
         validate_capability(repo_root, acceptance_root, capability, features, gate_defs, passed_gates, require_proven)
         for capability in selected
     ]
-    output = repo_root / domain.get("report", f"tooling/acceptance/reports/{domain_id}-validation.json")
-    write_report(output, domain_id, results)
-    return output, results
+    return {"domain": domain_id, "capabilities": results}, results
 
 
 def main() -> int:
@@ -226,24 +258,56 @@ def main() -> int:
     parser.add_argument("--require-proven", action="store_true")
     args = parser.parse_args()
 
-    repo_root = Path.cwd()
+    repo_root = REPO_ROOT
     acceptance_root = repo_root / args.root
     domain_ids = [args.domain] if args.domain else active_domain_ids(acceptance_root)
+    store = EvidenceStore.from_environment(
+        repo_root=repo_root,
+        worktree=repo_root,
+    )
+    if os.environ.get(RUN_GATE_ENV):
+        gate_id = os.environ[RUN_GATE_ENV]
+    elif len(domain_ids) == 1:
+        profile = load(acceptance_root / "domains" / f"{domain_ids[0]}.yaml")
+        gate_id = str(profile.get("validation_gate_id") or "acceptance-validate")
+    else:
+        gate_id = "acceptance-validate"
 
     print("Acceptance Domain Validation")
     print("============================")
     unproven: list[dict[str, Any]] = []
-    for domain_id in domain_ids:
-        output, results = validate_domain(repo_root, acceptance_root, domain_id, args.require_proven)
-        print(f"[OK] domain: {domain_id}")
-        print(f"[OK] capabilities: {len(results)}")
-        print(f"[OK] report: {output}")
-        for result in results:
-            print(f"[{result['status'].upper()}] {result['id']}")
-            if args.require_proven and result["missing_run_gates"]:
-                print(f"  missing_run_gates: {', '.join(result['missing_run_gates'])}")
-        if args.require_proven:
-            unproven.extend(result for result in results if result["status"] != "proven")
+    with ArtifactSession(repo_root=repo_root, gate_id=gate_id) as session:
+        for domain_id in domain_ids:
+            report, results = validate_domain(
+                repo_root,
+                acceptance_root,
+                domain_id,
+                args.require_proven,
+                store,
+            )
+            role = "validation" if len(domain_ids) == 1 else f"validation:{domain_id}"
+            reference = session.write_json(
+                f"reports/{domain_id}-validation.json",
+                report,
+                role=role,
+            )
+            print(f"[OK] domain: {domain_id}")
+            print(f"[OK] capabilities: {len(results)}")
+            print(f"[OK] report: {json.dumps(reference.to_dict(), sort_keys=True)}")
+            for result in results:
+                print(f"[{result['status'].upper()}] {result['id']}")
+                if args.require_proven and result["missing_run_gates"]:
+                    print(f"  missing_run_gates: {', '.join(result['missing_run_gates'])}")
+            if args.require_proven:
+                unproven.extend(
+                    result for result in results if result["status"] != "proven"
+                )
+        status = "passed" if not unproven else "failed"
+        session.complete(
+            status=status,
+            completion_status="DONE" if not unproven else "PARTIAL",
+            proof_status="PROVEN" if not unproven else "UNPROVEN",
+        )
 
     return 0 if not unproven else 1
 

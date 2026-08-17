@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
-import shutil
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from ._paths import REPO_ROOT, REPORTS_DIR, EVIDENCE_DIR
+from ._paths import REPO_ROOT
+from .evidence_store import (
+    current_artifact_ref,
+    current_artifact_path,
+    write_current_artifact,
+)
 from .errors import EvidenceError
 from .redaction import redact_text, redact_value
 
@@ -43,31 +47,52 @@ class EvidenceReport:
     runtime: dict[str, Any] = field(default_factory=dict)
     actors: dict[str, ActorRuntime] = field(default_factory=dict)
     assertions: list[AssertionResult] = field(default_factory=list)
-    evidence: dict[str, str] = field(default_factory=dict)
+    evidence: dict[str, Any] = field(default_factory=dict)
     station_url: Optional[str] = None
     error: Optional[str] = None
     error_type: Optional[str] = None
+    manifest: Optional[dict[str, Any]] = None
 
-    def add_evidence_file(self, key: str, path: Path) -> str:
+    def add_evidence_file(
+        self,
+        key: str,
+        path: Path,
+        *,
+        destination_dir: Path | None = None,
+    ) -> Any:
         if not path.exists():
             return ""
         if path.is_dir():
             raise EvidenceError(f"evidence path must be a file: {path}")
 
-        dest = EVIDENCE_DIR / f"{self.gate_id}-{key}{path.suffix}"
-        EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+        filename = f"{self.gate_id}-{key}{path.suffix}"
+        relative_path = f"evidence/{filename}"
+        dest = (
+            destination_dir / filename
+            if destination_dir is not None
+            else current_artifact_path(relative_path, repo_root=REPO_ROOT)
+        )
+        dest.parent.mkdir(parents=True, exist_ok=True)
         if path.suffix.lower() in TEXT_EVIDENCE_SUFFIXES:
             text = path.read_text(encoding="utf-8", errors="replace")
-            dest.write_text(redact_text(text), encoding="utf-8")
+            value = redact_text(text).encode("utf-8")
         else:
-            shutil.copyfile(path, dest)
-
-        try:
-            stored_path = str(dest.relative_to(REPO_ROOT))
-        except ValueError:
-            stored_path = str(dest)
-        self.evidence[key] = stored_path
-        return stored_path
+            value = path.read_bytes()
+        if destination_dir is not None:
+            dest.write_bytes(value)
+            stored: Any = str(dest)
+        else:
+            write_current_artifact(
+                relative_path,
+                value,
+                repo_root=REPO_ROOT,
+            )
+            stored = current_artifact_ref(
+                relative_path,
+                repo_root=REPO_ROOT,
+            ).to_dict()
+        self.evidence[key] = stored
+        return stored
 
     def add_actor(self, actor: ActorRuntime) -> None:
         self.actors[actor.name] = actor
@@ -99,18 +124,23 @@ class EvidenceReport:
             "evidence": self.evidence,
             "error": self.error,
             "error_type": self.error_type,
+            "manifest": self.manifest,
         }
         return redact_value(report)
 
     def write(self, report_path: Optional[Path] = None) -> Path:
+        encoded = (
+            json.dumps(self.to_dict(), indent=2, sort_keys=True, default=str) + "\n"
+        ).encode("utf-8")
         if report_path is None:
-            report_path = REPORTS_DIR / f"{self.gate_id}.json"
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(
-            json.dumps(self.to_dict(), indent=2, sort_keys=True, default=str) + "\n",
-            encoding="utf-8",
-        )
+            report_path = write_current_artifact(
+                f"reports/{self.gate_id}.json",
+                encoded,
+                repo_root=REPO_ROOT,
+            )
+        else:
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_bytes(encoded)
         return report_path
 
 

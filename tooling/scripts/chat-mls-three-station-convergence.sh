@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+: "${PT_C6_TOPOLOGY_PATH:?PT_C6_TOPOLOGY_PATH is required}"
+: "${PT_C6_REPORT_DRAFT_PATH:?PT_C6_REPORT_DRAFT_PATH is required}"
 BASE_PORT="${PT_C6_GATEWAY_BASE_PORT:-3340}"
 DEPLOYED_COMMIT="${PT_C6_DEPLOYED_COMMIT:-be75f3789bf0}"
 RUN_ID="$(date +%s)"
@@ -204,12 +206,14 @@ done
   PT_C6_GATEWAY_THREE="http://127.0.0.1:$((BASE_PORT + 2))" \
   PT_C6_GATEWAY_BOB2="http://127.0.0.1:$((BASE_PORT + 3))" \
   PT_C6_CONTROL_DIR="$CONTROL_DIR" \
+  PT_C6_TOPOLOGY_PATH="$PT_C6_TOPOLOGY_PATH" \
+  PT_C6_REPORT_DRAFT_PATH="$PT_C6_REPORT_DRAFT_PATH" \
     pnpm exec vitest run \
       src/services/im-service.three-station.e2e.test.ts \
       --reporter=verbose
 )
 
-REPORT="$ROOT/tooling/acceptance/reports/chat-mls-three-station-convergence.json"
+REPORT="$PT_C6_REPORT_DRAFT_PATH"
 CONVERSATION_ID="$(jq -er '.conversation_id' "$REPORT")"
 
 collect_station_head() {

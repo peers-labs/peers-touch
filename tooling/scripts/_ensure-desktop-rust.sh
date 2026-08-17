@@ -228,11 +228,11 @@ ensure_desktop_rust_ready() {
   local tauri_config
   local e2e_testing="${PT_DESKTOP_E2E:-false}"
   if [[ "$headless" == "--headless" && "$e2e_testing" == "true" ]]; then
-    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}],\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-playwright\",\"windows\":[\"*\"],\"permissions\":[\"playwright:default\"]}]}}}"
+    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}],\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
   elif [[ "$headless" == "--headless" ]]; then
     tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}]}}"
   elif [[ "$e2e_testing" == "true" ]]; then
-    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-playwright\",\"windows\":[\"*\"],\"permissions\":[\"playwright:default\"]}]}}}"
+    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
   else
     tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"}}"
   fi
@@ -275,8 +275,8 @@ ensure_desktop_rust_ready() {
   # See docs/architecture/runtime/desktop-runtime-architecture.md §6.4.
   local tauri_feature_args=()
   if [[ "${PT_DESKTOP_E2E:-false}" == "true" ]]; then
-    tauri_feature_args=(--features e2e-testing)
-    echo "[INFO] Native Playwright observer enabled (e2e-testing feature)"
+    tauri_feature_args=(--features acceptance-webdriver)
+    echo "[INFO] Native Playwright observer enabled (acceptance-webdriver feature)"
   fi
   (
     cd "$desktop_dir"

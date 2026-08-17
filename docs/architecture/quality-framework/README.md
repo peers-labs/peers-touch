@@ -58,10 +58,13 @@ Every non-trivial review should produce or reconstruct the same evidence model:
 make quality-evidence REVIEW_RANGE=<base>...<head>
 ```
 
-This writes:
+This publishes immutable external Evidence Store roles:
 
-- `tooling/acceptance/reports/latest-quality-evidence.json`
-- `tooling/acceptance/reports/latest-quality-evidence.md`
+- `quality-evidence` / `quality-json`
+- `quality-evidence` / `quality-markdown`
+
+Inspect them through `tooling/scripts/acceptance-artifact.py`; runtime evidence
+never belongs in the repository source tree.
 
 ```json
 {

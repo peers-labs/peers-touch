@@ -11,6 +11,5 @@
     "desktop-federation-context-surface",
     "federation-validates-acceptance-framework"
   ],
-  "validation_gate_id": "federation-mutual-validation",
-  "report": "tooling/acceptance/reports/federation-mutual-validation.json"
+  "validation_gate_id": "federation-mutual-validation"
 }

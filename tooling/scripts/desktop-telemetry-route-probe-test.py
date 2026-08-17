@@ -24,6 +24,53 @@ def load_module() -> Any:
 
 
 class DesktopTelemetryRouteProbeTest(unittest.TestCase):
+    def test_default_runtime_closure_persists_typed_ref_without_artifact_root_path(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifact-root"
+            runtime_closure = root / "runtime-closure.json"
+            output = Path(tmp) / "route.json"
+            artifact_ref = {
+                "workspaceId": "workspace",
+                "gateId": "desktop-telemetry-runtime-closure-gate",
+                "runId": "run",
+                "path": "report",
+            }
+
+            def fake_build_report(*args, **kwargs) -> dict:
+                return {
+                    "status": "diagnostic incomplete",
+                    "completionStatus": "PARTIAL",
+                    "proofStatus": "UNPROVEN",
+                    "runtimeClosureEvidence": {"path": str(runtime_closure)},
+                }
+
+            old_argv = sys.argv
+            try:
+                sys.argv = [
+                    "desktop-telemetry-route-probe.py",
+                    "--output",
+                    str(output),
+                ]
+                with mock.patch.object(
+                    module,
+                    "latest_artifact",
+                    return_value=(runtime_closure, artifact_ref),
+                ), mock.patch.object(module, "build_report", side_effect=fake_build_report), mock.patch.object(
+                    module,
+                    "render_markdown",
+                    return_value="route\n",
+                ):
+                    module.main()
+            finally:
+                sys.argv = old_argv
+
+            persisted = output.read_text(encoding="utf-8")
+
+        self.assertNotIn(str(root), persisted)
+        self.assertIn('"runtimeClosureArtifactRef"', persisted)
+        self.assertIn('"workspaceId": "workspace"', persisted)
+
     def write_runtime_closure_report(self, root: Path, status: str = "diagnostic incomplete") -> Path:
         path = root / "desktop-telemetry-runtime-closure-gate.json"
         path.write_text(

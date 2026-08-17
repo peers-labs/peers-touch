@@ -18,6 +18,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure Acceptance artifact root
+        run: |
+          echo "PT_ACCEPTANCE_ARTIFACT_ROOT=$RUNNER_TEMP/peers-touch-acceptance" >> "$GITHUB_ENV"
+
       - name: Run review framework gates
         run: |
           tooling/scripts/review/run.sh --range "$REVIEW_RANGE" --strict-knowledge
@@ -36,8 +40,9 @@ jobs:
             echo
             tooling/scripts/review/knowledge-match.sh --range "$REVIEW_RANGE" || true
             echo
-            if [[ -f tooling/acceptance/reports/latest-quality-evidence.md ]]; then
-              cat tooling/acceptance/reports/latest-quality-evidence.md
+            if python3 tooling/scripts/acceptance-artifact.py cat \
+              --gate quality-evidence --role quality-markdown; then
+              true
             else
               echo "Quality evidence report was not generated."
             fi
@@ -48,8 +53,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: quality-evidence
-          path: |
-            tooling/acceptance/reports/latest-quality-evidence.json
-            tooling/acceptance/reports/latest-quality-evidence.md
+          path: ${{ runner.temp }}/peers-touch-acceptance
           if-no-files-found: warn
           retention-days: 14
