@@ -289,7 +289,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
             if "desktop-telemetry-live-gate.py" in item["command"]
         )
         self.assertIn("--create-temp-account", live_gate_command)
-        self.assertIn("--mirror-prefix tooling/acceptance/reports/desktop-performance-runtime-attempt", live_gate_command)
+        self.assertNotIn("--mirror-prefix", live_gate_command)
         self.assertEqual(report["completionStatus"], "PARTIAL")
         self.assertEqual(report["proofStatus"], "UNPROVEN")
 
@@ -579,7 +579,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         self.assertIn("PARTIAL/UNPROVEN", report["issueBreakdown"][0]["proofImpact"])
         self.assertEqual(
             report["issueBreakdown"][0]["sourceArtifact"],
-            "tooling/acceptance/reports/desktop-telemetry-live-gate.json",
+            "evidence-store:current:report",
         )
         self.assertEqual(report["issueBreakdown"][0]["sourceArtifactKind"], "desktop-telemetry-live-gate")
         self.assertEqual(report["issueBreakdown"][0]["sourcePhase"], module.PHASE)
@@ -642,7 +642,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         self.assertFalse(report["issueBreakdown"][0]["sampleEmissionAllowed"])
         self.assertEqual(
             report["issueBreakdown"][0]["sourceArtifact"],
-            "tooling/acceptance/reports/desktop-telemetry-live-gate.json",
+            "evidence-store:current:report",
         )
         self.assertEqual(report["issueBreakdown"][0]["sourceArtifactKind"], "desktop-telemetry-live-gate")
         self.assertEqual(report["issueBreakdown"][0]["sourcePhase"], module.PHASE)

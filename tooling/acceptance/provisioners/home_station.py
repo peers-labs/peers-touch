@@ -288,7 +288,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     reason=f"home-station does not support gate {gate_id}",
                     resource=f"gate-environment:{gate_id}",
                 )
-            _, actor_path = produce_actor_manifest(
+            _, _, actor_ref = produce_actor_manifest(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
                 station_url=station_url,
@@ -301,7 +301,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             clients = self._clients(gate_id, manifest.run_id)
             manifest = dataclasses.replace(
                 manifest,
-                actor_manifest_path=str(actor_path.relative_to(REPO_ROOT)),
+                actor_manifest_ref=actor_ref,
                 credential_refs=credential_refs,
                 clients=clients,
                 cleanup_resources=self.contract.cleanup.resources,

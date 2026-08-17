@@ -5,12 +5,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from tooling.acceptance.core.errors import EvidenceManifestInvalid
 
 
 REVIEW_PROFILE_RE = re.compile(r"^\[([A-Za-z0-9_-]+)\]$")
@@ -335,14 +341,18 @@ def is_ready_for_github_review(
 
 
 def main() -> int:
+    from tooling.acceptance.core import (
+        RUN_GATE_ENV,
+        ArtifactSession,
+        EvidenceStore,
+    )
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--range", dest="diff_range", default="HEAD")
     parser.add_argument("--root", default="tooling/acceptance")
-    parser.add_argument("--output", default="tooling/acceptance/reports/latest-quality-evidence.json")
-    parser.add_argument("--markdown-output", default="tooling/acceptance/reports/latest-quality-evidence.md")
     args = parser.parse_args()
 
-    repo_root = Path.cwd()
+    repo_root = REPO_ROOT
     acceptance_root = repo_root / args.root
     changed_paths = collect_changed_paths(repo_root, args.diff_range)
     head_commit = subprocess.run(
@@ -357,6 +367,23 @@ def main() -> int:
     knowledge = run_command(["tooling/scripts/review/knowledge-match.sh", "--range", args.diff_range, "--strict"], repo_root)
     plan_result, plan = run_acceptance_plan(repo_root, Path(args.root), args.diff_range, changed_paths)
     capability_evidence = selected_capability_evidence(acceptance_root, plan.get("impacted_features", []))
+
+    store = EvidenceStore.from_environment(
+        repo_root=repo_root,
+        worktree=repo_root,
+    )
+    try:
+        latest_run = store.read_json(
+            store.latest_artifact_ref("acceptance-run", "run")
+        )
+    except EvidenceManifestInvalid as error:
+        latest_run = {
+            "artifactKind": "acceptance-run",
+            "completionStatus": "PARTIAL",
+            "proofStatus": "UNPROVEN",
+            "results": [],
+            "evidenceReadError": f"{type(error).__name__}: {error}",
+        }
 
     evidence: dict[str, Any] = {
         "range": args.diff_range,
@@ -382,9 +409,7 @@ def main() -> int:
             "impacted_features": plan.get("impacted_features", []),
             "selected_gates": plan.get("selected_gates", []),
             "gate_buckets": classify_gates(plan.get("selected_gates", [])),
-            "latest_run": load(
-                acceptance_root / "reports" / "latest-run.json"
-            ),
+            "latest_run": latest_run,
             **capability_evidence,
         },
     }
@@ -396,13 +421,25 @@ def main() -> int:
         evidence["evidence_gaps"],
     )
 
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(evidence, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    markdown_output = Path(args.markdown_output)
-    markdown_output.parent.mkdir(parents=True, exist_ok=True)
-    markdown_output.write_text(render_markdown(evidence), encoding="utf-8")
+    gate_id = os.environ.get(RUN_GATE_ENV) or "quality-evidence"
+    with ArtifactSession(repo_root=repo_root, gate_id=gate_id) as session:
+        json_ref = session.write_json(
+            "reports/quality-evidence.json",
+            evidence,
+            role="quality-json",
+        )
+        markdown_ref = session.write_bytes(
+            "reports/quality-evidence.md",
+            render_markdown(evidence).encode("utf-8"),
+            media_type="text/markdown",
+            role="quality-markdown",
+        )
+        ready = evidence["ready_for_github_review"]
+        session.complete(
+            status="passed" if ready else "failed",
+            completion_status="DONE" if ready else "PARTIAL",
+            proof_status="PROVEN" if ready else "UNPROVEN",
+        )
 
     print("Quality Evidence")
     print("================")
@@ -411,8 +448,8 @@ def main() -> int:
     print(f"review_profiles: {', '.join(evidence['route']['profiles']) or 'none'}")
     print(f"impacted_features: {', '.join(evidence['acceptance']['impacted_features']) or 'none'}")
     print(f"evidence_gaps: {len(evidence['evidence_gaps'])}")
-    print(f"json: {output}")
-    print(f"markdown: {markdown_output}")
+    print(f"json: {json.dumps(json_ref.to_dict(), sort_keys=True)}")
+    print(f"markdown: {json.dumps(markdown_ref.to_dict(), sort_keys=True)}")
     return 0 if evidence["ready_for_github_review"] else 1
 
 

@@ -57,8 +57,8 @@ class DesktopPerformanceReportTest(unittest.TestCase):
         self.assertEqual(
             command_texts.count(
                 "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py "
-                "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json "
-                "--output tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
+                "--observations <desktop-anchor-dom-observations.json> "
+                "--output <desktop-anchor-dom-evidence.json>"
             ),
             1,
         )
@@ -1775,7 +1775,10 @@ class DesktopPerformanceReportTest(unittest.TestCase):
         self.assertEqual(len(anchor_dom_reasons), 1)
         self.assertEqual(anchor_dom_reasons[0]["proofStatus"], "UNPROVEN")
         self.assertEqual(anchor_dom_reasons[0]["evidenceStatus"], "missing")
-        self.assertTrue(anchor_dom_reasons[0]["evidencePath"].endswith("desktop-anchor-dom-evidence-gate-latest.json"))
+        self.assertEqual(
+            anchor_dom_reasons[0]["evidencePath"],
+            "evidence-store:latest:desktop-anchor-dom-evidence-gate:report",
+        )
         expected_aggregation_scopes = {
             "react-commit-aggregation": "P0b-3/P0c-5",
             "store-update-aggregation": "P0b-4/P0c-5",

@@ -6,6 +6,5 @@
     "acceptance-framework-self-consistency",
     "applet-desktop-lifecycle-smoothness"
   ],
-  "validation_gate_id": "applet-domain-validation",
-  "report": "tooling/acceptance/reports/applet-validation.json"
+  "validation_gate_id": "applet-domain-validation"
 }

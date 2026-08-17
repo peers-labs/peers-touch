@@ -13,12 +13,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session
+
 ARTIFACT_KIND = "desktop-performance-browser-preflight"
 PHASE = "P0b-2/P0b-7/P0c-5"
 BOM = ["BOM-CON-02", "BOM-SMP-06", "BOM-GATE-03"]
 SPEC = ["SPEC-INT-01", "SPEC-SMP-MAIN-01", "SPEC-GATE-03"]
 GATE = "Browser-gateway runtime samples may be emitted only from a clean ready shell without blocking UI overlays"
-DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-performance-browser-preflight.json"
+DEFAULT_OUTPUT = "reports/desktop-performance-browser-preflight.json"
 
 REQUIRED_ANCHORS = ("primary", "context")
 BLOCKING_TEXT_PATTERNS = (
@@ -298,17 +300,28 @@ def main() -> int:
     parser.add_argument("--cdp-host", default="127.0.0.1")
     parser.add_argument("--target-url", help="Required substring for selecting the CDP page target")
     parser.add_argument("--wait-seconds", type=float, default=8.0)
-    parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument("--output")
     args = parser.parse_args()
 
-    output = Path(args.output)
     if args.snapshot:
         raw_snapshot = load_snapshot(Path(args.snapshot))
     else:
         raw_snapshot = evaluate_snapshot_from_cdp(args.cdp_host, args.cdp_port, args.wait_seconds, args.target_url)
-    report = evaluate_snapshot(raw_snapshot, str(output))
-    write_report(output, report)
-    print(f"desktop browser performance preflight: {output}")
+    report = evaluate_snapshot(raw_snapshot, DEFAULT_OUTPUT)
+    if args.output:
+        output = Path(args.output)
+        write_report(output, report)
+        display_output = str(output)
+    else:
+        with artifact_session(ARTIFACT_KIND) as session:
+            session.write_json(DEFAULT_OUTPUT, report, role="report")
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_output = DEFAULT_OUTPUT
+    print(f"desktop browser performance preflight: {display_output}")
     print(f"status: {report['status']}")
     return 0 if report["proofStatus"] == "PROVEN" else 1
 
