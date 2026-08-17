@@ -11,11 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+from _acceptance_artifacts import artifact_session, explicit_output_path
+
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT = (
-    ROOT / "tooling/acceptance/reports/messaging-platform-baseline.json"
-)
+DEFAULT_OUTPUT = "reports/messaging-platform-baseline.json"
 OWNERSHIP_PATH = (
     ROOT / "tooling/acceptance/plans/messaging-platform-ownership.json"
 )
@@ -260,7 +260,7 @@ def traceability_inventory() -> dict[str, object]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--strict",
         action="store_true",
@@ -297,15 +297,27 @@ def main() -> int:
         ),
     }
 
-    output = args.output
-    if not output.is_absolute():
-        output = ROOT / output
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    print(output.relative_to(ROOT))
+    if args.output is not None:
+        output = explicit_output_path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(output)
+    else:
+        with artifact_session("messaging-platform-baseline") as session:
+            session.write_json(DEFAULT_OUTPUT, report, role="baseline")
+            session.complete(
+                status="pass" if report["plan_ready"] else "fail",
+                completion_status=(
+                    "DONE" if report["plan_ready"] else "PARTIAL"
+                ),
+                proof_status=(
+                    "PROVEN" if report["plan_ready"] else "UNPROVEN"
+                ),
+            )
+        print(DEFAULT_OUTPUT)
     print(
         json.dumps(
             {

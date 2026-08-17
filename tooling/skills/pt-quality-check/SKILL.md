@@ -35,8 +35,15 @@ If no target is available, ask for one. Do not produce a generic checklist.
    make quality-evidence REVIEW_RANGE=<base>...<head>
    ```
 
-3. Read `tooling/acceptance/reports/latest-quality-evidence.md` and the JSON
-   peer artifact when exact fields are needed.
+3. Read the external Evidence Store artifacts through the canonical operator
+   interface:
+
+   ```bash
+   python3 tooling/scripts/acceptance-artifact.py cat \
+     --gate quality-evidence --role quality-markdown
+   python3 tooling/scripts/acceptance-artifact.py cat \
+     --gate quality-evidence --role quality-json
+   ```
 4. If the aggregator is unavailable, reconstruct the evidence manually:
 
    ```bash
@@ -50,6 +57,8 @@ If no target is available, ask for one. Do not produce a generic checklist.
 6. Record every selected gate that was not run and why.
 7. Read acceptance feature/capability contracts for selected features and copy
    their proven/unproven scope into the report.
+8. Invoke `pt-acceptance-gap-detector` for the exact readiness claim. A
+   detector gap makes `Ready for pt-github-review: no`.
 
 ## Evidence Rules
 

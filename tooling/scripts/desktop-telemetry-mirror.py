@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 from urllib import error, request
 
+from _acceptance_artifacts import explicit_output_path
+
 
 DEFAULT_STATION_URL = "http://127.0.0.1:18080"
 PHASE = "P0a-6/P0c-5"
@@ -176,7 +178,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--station-url", default=os.environ.get("PT_STATION_URL", DEFAULT_STATION_URL))
     parser.add_argument("--token", default=os.environ.get("PT_STATION_ACCESS_TOKEN") or os.environ.get("PT_ACCESS_TOKEN"))
-    parser.add_argument("--output-prefix", default="tooling/acceptance/reports/desktop-performance-latest")
+    parser.add_argument(
+        "--output-prefix",
+        required=True,
+        help="Explicit output prefix supplied by desktop-telemetry-live-gate or a test.",
+    )
     parser.add_argument("--device-id")
     parser.add_argument("--session-id")
     parser.add_argument("--module")
@@ -195,7 +201,7 @@ def main() -> int:
     rollups = rollups_response.get("rollups", [])
     report = build_report(args.station_url, filters, events, rollups)
 
-    output_prefix = Path(args.output_prefix)
+    output_prefix = explicit_output_path(args.output_prefix)
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = output_prefix.with_suffix(".json")
     md_path = output_prefix.with_suffix(".md")

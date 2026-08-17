@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import os
 import sys
@@ -7,6 +8,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+from _acceptance_artifacts import artifact_session, explicit_output_path
 
 
 NODES = {
@@ -20,12 +23,8 @@ DEMO_ACCOUNTS = {
     "three": "carol@p.t",
 }
 DEMO_PASSWORD = "1"
-REPORT_PATH = Path(
-    os.environ.get(
-        "TESTNET_FEDERATION_REPORT",
-        "tooling/acceptance/reports/testnet-p5-federation-e2e.json",
-    )
-)
+GATE_ID = "federation-three-node-e2e"
+REPORT_ROLE = "reports/testnet-p5-federation-e2e.json"
 
 
 def request(method, url, payload=None, token=None):
@@ -201,7 +200,7 @@ def run():
 
     report = {
         "schema_version": 1,
-        "gate": "testnet-p5-federation-e2e",
+        "gate": GATE_ID,
         "generated_at_unix_ms": int(time.time() * 1000),
         "status": "pass",
         "federation_id": federation_id,
@@ -223,14 +222,53 @@ def run():
         "distinct_station_peer_ids": True,
         "access_tokens_present": False,
     }
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(report, indent=2) + "\n")
-    print(f"federation_e2e_ok report={REPORT_PATH}")
+    return report
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+
+    if args.output is not None:
+        report = run()
+        output = explicit_output_path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, indent=2) + "\n")
+        print(f"federation_e2e_ok report={output}")
+        return 0
+
+    with artifact_session(GATE_ID) as session:
+        try:
+            report = run()
+        except Exception as error:
+            session.write_json(
+                REPORT_ROLE,
+                {
+                    "schema_version": 1,
+                    "gate": GATE_ID,
+                    "status": "fail",
+                    "error_type": type(error).__name__,
+                    "access_tokens_present": False,
+                },
+                role="report",
+            )
+            session.complete(
+                status="fail",
+                completion_status="PARTIAL",
+                proof_status="UNPROVEN",
+            )
+            print(f"federation_e2e_failed: {error}", file=sys.stderr)
+            return 1
+        session.write_json(REPORT_ROLE, report, role="report")
+        session.complete(
+            status="pass",
+            completion_status="DONE",
+            proof_status="PROVEN",
+        )
+    print(f"federation_e2e_ok report={REPORT_ROLE}")
+    return 0
 
 
 if __name__ == "__main__":
-    try:
-        run()
-    except Exception as error:
-        print(f"federation_e2e_failed: {error}", file=sys.stderr)
-        sys.exit(1)
+    raise SystemExit(main())

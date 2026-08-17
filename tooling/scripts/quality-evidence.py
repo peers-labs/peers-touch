@@ -5,12 +5,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from tooling.acceptance.core.errors import EvidenceManifestInvalid
 
 
 REVIEW_PROFILE_RE = re.compile(r"^\[([A-Za-z0-9_-]+)\]$")
@@ -42,16 +48,19 @@ def collect_changed_paths(repo_root: Path, diff_range: str) -> list[str]:
         text=True,
         capture_output=True,
     )
-    untracked = subprocess.run(
-        ["git", "ls-files", "--others", "--exclude-standard"],
-        cwd=repo_root,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
+    outputs = [tracked.stdout]
+    if diff_range == "HEAD":
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=repo_root,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        outputs.append(untracked.stdout)
     paths = {
         line.strip()
-        for line in f"{tracked.stdout}\n{untracked.stdout}".splitlines()
+        for line in "\n".join(outputs).splitlines()
         if line.strip()
     }
     return sorted(paths)
@@ -146,6 +155,7 @@ def classify_gates(gates: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]
             "id": gate.get("id", ""),
             "tier": tier,
             "environment": gate.get("environment", "local"),
+            "provisioner": gate.get("provisioner", ""),
             "command": gate.get("command", ""),
             "required_by": gate.get("required_by", []),
         }
@@ -158,6 +168,34 @@ def classify_gates(gates: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]
         else:
             buckets["nightly_or_release_gates"].append(summary)
     return buckets
+
+
+def gate_result_is_proven(
+    gate: dict[str, Any],
+    result: dict[str, Any],
+    head_commit: str,
+) -> bool:
+    if not (
+        result.get("status") == "passed"
+        and result.get("completionStatus") == "DONE"
+        and result.get("proofStatus") == "PROVEN"
+        and result.get("timedOut") is not True
+    ):
+        return False
+    traceability = result.get("traceability")
+    if not isinstance(traceability, dict) or traceability.get("status") != "complete":
+        return False
+    if not gate.get("provisioner"):
+        return True
+    manifest = result.get("manifest")
+    if not isinstance(manifest, dict) or manifest.get("state") != "FIXTURE_READY":
+        return False
+    source = manifest.get("source")
+    return (
+        isinstance(source, dict)
+        and source.get("commit") == head_commit
+        and source.get("workspaceDigest") == "clean"
+    )
 
 
 def evidence_gaps(evidence: dict[str, Any]) -> list[dict[str, str]]:
@@ -196,7 +234,15 @@ def evidence_gaps(evidence: dict[str, Any]) -> list[dict[str, str]]:
             }
         )
 
+    results = {
+        result.get("id"): result
+        for result in evidence["acceptance"]["latest_run"].get("results", [])
+        if isinstance(result, dict) and result.get("id")
+    }
     for gate in evidence["acceptance"]["gate_buckets"]["environment_evidence_gates"]:
+        result = results.get(gate["id"], {})
+        if gate_result_is_proven(gate, result, evidence["head_commit"]):
+            continue
         gaps.append(
             {
                 "kind": f"environment-gate:{gate['id']}",
@@ -205,6 +251,9 @@ def evidence_gaps(evidence: dict[str, Any]) -> list[dict[str, str]]:
             }
         )
     for gate in evidence["acceptance"]["gate_buckets"]["nightly_or_release_gates"]:
+        result = results.get(gate["id"], {})
+        if gate_result_is_proven(gate, result, evidence["head_commit"]):
+            continue
         gaps.append(
             {
                 "kind": f"deferred-gate:{gate['id']}",
@@ -277,25 +326,68 @@ def render_markdown(evidence: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def is_ready_for_github_review(
+    route: dict[str, Any],
+    knowledge: dict[str, Any],
+    plan_result: dict[str, Any],
+    gaps: list[dict[str, str]],
+) -> bool:
+    return (
+        route["ok"]
+        and knowledge["ok"]
+        and plan_result["ok"]
+        and not gaps
+    )
+
+
 def main() -> int:
+    from tooling.acceptance.core import (
+        RUN_GATE_ENV,
+        ArtifactSession,
+        EvidenceStore,
+    )
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--range", dest="diff_range", default="HEAD")
     parser.add_argument("--root", default="tooling/acceptance")
-    parser.add_argument("--output", default="tooling/acceptance/reports/latest-quality-evidence.json")
-    parser.add_argument("--markdown-output", default="tooling/acceptance/reports/latest-quality-evidence.md")
     args = parser.parse_args()
 
-    repo_root = Path.cwd()
+    repo_root = REPO_ROOT
     acceptance_root = repo_root / args.root
     changed_paths = collect_changed_paths(repo_root, args.diff_range)
+    head_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
 
     route = run_command(["tooling/scripts/review/route-change.sh", "--range", args.diff_range], repo_root)
     knowledge = run_command(["tooling/scripts/review/knowledge-match.sh", "--range", args.diff_range, "--strict"], repo_root)
     plan_result, plan = run_acceptance_plan(repo_root, Path(args.root), args.diff_range, changed_paths)
     capability_evidence = selected_capability_evidence(acceptance_root, plan.get("impacted_features", []))
 
+    store = EvidenceStore.from_environment(
+        repo_root=repo_root,
+        worktree=repo_root,
+    )
+    try:
+        latest_run = store.read_json(
+            store.latest_artifact_ref("acceptance-run", "run")
+        )
+    except EvidenceManifestInvalid as error:
+        latest_run = {
+            "artifactKind": "acceptance-run",
+            "completionStatus": "PARTIAL",
+            "proofStatus": "UNPROVEN",
+            "results": [],
+            "evidenceReadError": f"{type(error).__name__}: {error}",
+        }
+
     evidence: dict[str, Any] = {
         "range": args.diff_range,
+        "head_commit": head_commit,
         "changed_paths": changed_paths,
         "route": {
             "ok": route["ok"],
@@ -317,19 +409,37 @@ def main() -> int:
             "impacted_features": plan.get("impacted_features", []),
             "selected_gates": plan.get("selected_gates", []),
             "gate_buckets": classify_gates(plan.get("selected_gates", [])),
+            "latest_run": latest_run,
             **capability_evidence,
         },
     }
-    evidence["ready_for_github_review"] = route["ok"] and knowledge["ok"] and plan_result["ok"]
     evidence["evidence_gaps"] = evidence_gaps(evidence)
+    evidence["ready_for_github_review"] = is_ready_for_github_review(
+        route,
+        knowledge,
+        plan_result,
+        evidence["evidence_gaps"],
+    )
 
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(evidence, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    markdown_output = Path(args.markdown_output)
-    markdown_output.parent.mkdir(parents=True, exist_ok=True)
-    markdown_output.write_text(render_markdown(evidence), encoding="utf-8")
+    gate_id = os.environ.get(RUN_GATE_ENV) or "quality-evidence"
+    with ArtifactSession(repo_root=repo_root, gate_id=gate_id) as session:
+        json_ref = session.write_json(
+            "reports/quality-evidence.json",
+            evidence,
+            role="quality-json",
+        )
+        markdown_ref = session.write_bytes(
+            "reports/quality-evidence.md",
+            render_markdown(evidence).encode("utf-8"),
+            media_type="text/markdown",
+            role="quality-markdown",
+        )
+        ready = evidence["ready_for_github_review"]
+        session.complete(
+            status="passed" if ready else "failed",
+            completion_status="DONE" if ready else "PARTIAL",
+            proof_status="PROVEN" if ready else "UNPROVEN",
+        )
 
     print("Quality Evidence")
     print("================")
@@ -338,8 +448,8 @@ def main() -> int:
     print(f"review_profiles: {', '.join(evidence['route']['profiles']) or 'none'}")
     print(f"impacted_features: {', '.join(evidence['acceptance']['impacted_features']) or 'none'}")
     print(f"evidence_gaps: {len(evidence['evidence_gaps'])}")
-    print(f"json: {output}")
-    print(f"markdown: {markdown_output}")
+    print(f"json: {json.dumps(json_ref.to_dict(), sort_keys=True)}")
+    print(f"markdown: {json.dumps(markdown_ref.to_dict(), sort_keys=True)}")
     return 0 if evidence["ready_for_github_review"] else 1
 
 

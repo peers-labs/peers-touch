@@ -9,6 +9,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    latest_artifact,
+    replace_resolved_artifact_paths,
+)
+
+
+PRODUCER_GATE_ID = "desktop-performance-report-gate"
+DEFAULT_OUTPUT_PREFIX = "reports/desktop-performance-report-latest"
 MIRROR_REQUIRED_PHASE = "P0a-6/P0c-5"
 MIRROR_REQUIRED_BOM = ("BOM-CAP-05", "BOM-RUN-05")
 MIRROR_REQUIRED_SPEC = ("SPEC-STA-03", "SPEC-MIRROR-01")
@@ -1250,12 +1260,10 @@ def report_issue_breakdown(blocked: list[dict[str, Any]]) -> list[dict[str, Any]
 
 def normalize_review_command_text(command_text: str) -> str:
     collect = "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py"
-    observations = "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json"
-    output = "--output tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
-    if command_text == collect:
+    observations = "--observations <desktop-anchor-dom-observations.json>"
+    output = "--output <desktop-anchor-dom-evidence.json>"
+    if command_text.startswith(collect):
         return f"{collect} {observations} {output}"
-    if command_text.startswith(collect) and observations in command_text and output not in command_text:
-        return f"{command_text} {output}"
     return command_text
 
 
@@ -3123,23 +3131,37 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
     matrix_report, matrix_evidence = read_json_if_present(Path(args.matrix_report))
     preflight_path = getattr(args, "preflight_report", None)
     if preflight_path is None:
-        preflight_path = str(Path(args.matrix_report).with_name("desktop-performance-preflight.json"))
-    preflight_report, preflight_evidence = read_json_if_present(Path(preflight_path))
+        preflight_report, preflight_evidence = None, {
+            "status": "missing",
+            "path": "evidence-store:latest:desktop-performance-preflight-gate:report",
+        }
+    else:
+        preflight_report, preflight_evidence = read_json_if_present(Path(preflight_path))
     anchor_report, anchor_evidence = read_json_if_present(Path(args.anchor_inventory_report))
     anchor_dom_gate_path = getattr(args, "anchor_dom_evidence_gate_report", None)
     if anchor_dom_gate_path is None:
-        anchor_dom_gate_path = str(
-            Path(args.anchor_inventory_report).with_name("desktop-anchor-dom-evidence-gate-latest.json")
-        )
-    anchor_dom_gate_report, anchor_dom_gate_evidence = read_json_if_present(Path(anchor_dom_gate_path))
+        anchor_dom_gate_report, anchor_dom_gate_evidence = None, {
+            "status": "missing",
+            "path": "evidence-store:latest:desktop-anchor-dom-evidence-gate:report",
+        }
+    else:
+        anchor_dom_gate_report, anchor_dom_gate_evidence = read_json_if_present(Path(anchor_dom_gate_path))
     anchor_source_gate_path = getattr(args, "anchor_source_gate_report", None)
     if anchor_source_gate_path is None:
-        anchor_source_gate_path = str(Path(args.anchor_inventory_report).with_name("desktop-anchor-source-gate-latest.json"))
-    anchor_source_gate_report, anchor_source_gate_evidence = read_json_if_present(Path(anchor_source_gate_path))
+        anchor_source_gate_report, anchor_source_gate_evidence = None, {
+            "status": "missing",
+            "path": "evidence-store:latest:desktop-anchor-source-gate:report",
+        }
+    else:
+        anchor_source_gate_report, anchor_source_gate_evidence = read_json_if_present(Path(anchor_source_gate_path))
     sampler_gate_path = getattr(args, "sampler_gate_report", None)
     if sampler_gate_path is None:
-        sampler_gate_path = str(Path(args.matrix_report).with_name("desktop-performance-sampler-gate-latest.json"))
-    sampler_gate_report, sampler_gate_evidence = read_json_if_present(Path(sampler_gate_path))
+        sampler_gate_report, sampler_gate_evidence = None, {
+            "status": "missing",
+            "path": "evidence-store:latest:desktop-performance-sampler-gate:report",
+        }
+    else:
+        sampler_gate_report, sampler_gate_evidence = read_json_if_present(Path(sampler_gate_path))
     blocked = blocked_reasons(matrix_report, matrix_evidence)
     preflight = preflight_state(preflight_report, preflight_evidence)
     station_mirror_source = station_mirror_source_state(station_report, station_evidence)
@@ -4349,7 +4371,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def write_outputs(report: dict[str, Any], output_prefix: str) -> tuple[Path, Path]:
-    prefix = Path(output_prefix)
+    prefix = explicit_output_path(output_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = prefix.with_suffix(".json")
     md_path = prefix.with_suffix(".md")
@@ -4362,41 +4384,75 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--station-mirror-report",
-        default="tooling/acceptance/reports/desktop-performance-latest.json",
     )
     parser.add_argument(
         "--matrix-report",
-        default="tooling/acceptance/reports/desktop-performance-matrix-latest.json",
     )
     parser.add_argument(
         "--preflight-report",
-        default="tooling/acceptance/reports/desktop-performance-preflight.json",
     )
     parser.add_argument(
         "--anchor-inventory-report",
-        default="tooling/acceptance/reports/desktop-anchor-inventory-latest.json",
     )
     parser.add_argument(
         "--anchor-dom-evidence-gate-report",
-        default="tooling/acceptance/reports/desktop-anchor-dom-evidence-gate-latest.json",
     )
     parser.add_argument(
         "--anchor-source-gate-report",
-        default="tooling/acceptance/reports/desktop-anchor-source-gate-latest.json",
     )
     parser.add_argument(
         "--sampler-gate-report",
-        default="tooling/acceptance/reports/desktop-performance-sampler-gate-latest.json",
     )
     parser.add_argument(
         "--output-prefix",
-        default="tooling/acceptance/reports/desktop-performance-report-latest",
     )
     args = parser.parse_args()
+    defaults = {
+        "station_mirror_report": ("desktop-telemetry-live-gate", "mirror-report"),
+        "matrix_report": ("desktop-performance-matrix-gate", "report"),
+        "preflight_report": ("desktop-performance-preflight-gate", "report"),
+        "anchor_inventory_report": ("desktop-anchor-inventory-gate", "report"),
+        "anchor_dom_evidence_gate_report": (
+            "desktop-anchor-dom-evidence-gate",
+            "report",
+        ),
+        "anchor_source_gate_report": ("desktop-anchor-source-gate", "report"),
+        "sampler_gate_report": ("desktop-performance-sampler-gate", "report"),
+    }
+    input_refs: dict[str, Any] = {}
+    resolved_refs: dict[Path, dict[str, Any]] = {}
+    for attribute, (gate_id, role) in defaults.items():
+        if getattr(args, attribute) is None:
+            resolved_path, artifact_ref = latest_artifact(gate_id, role)
+            setattr(args, attribute, str(resolved_path))
+            input_refs[attribute] = artifact_ref
+            resolved_refs[resolved_path] = artifact_ref
     report = build_report(args)
-    json_path, md_path = write_outputs(report, args.output_prefix)
-    print(f"desktop performance report: {json_path}")
-    print(f"desktop performance report: {md_path}")
+    if input_refs:
+        report["inputArtifactRefs"] = input_refs
+    report = replace_resolved_artifact_paths(report, resolved_refs)
+    if args.output_prefix:
+        json_path, md_path = write_outputs(report, args.output_prefix)
+        display_json = str(json_path)
+        display_markdown = str(md_path)
+    else:
+        with artifact_session(PRODUCER_GATE_ID) as session:
+            session.write_json(DEFAULT_OUTPUT_PREFIX + ".json", report, role="report")
+            session.write_bytes(
+                DEFAULT_OUTPUT_PREFIX + ".md",
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_json = DEFAULT_OUTPUT_PREFIX + ".json"
+        display_markdown = DEFAULT_OUTPUT_PREFIX + ".md"
+    print(f"desktop performance report: {display_json}")
+    print(f"desktop performance report: {display_markdown}")
     print(f"status: {report['status']}")
     return 0 if report["status"] == "pass" else 1
 

@@ -1,6 +1,6 @@
 # ─── Acceptance Framework ───────────────────────────────────────
 
-.PHONY: acceptance-plan acceptance-run acceptance-run-ci acceptance-run-local-evidence \
+.PHONY: acceptance-plan acceptance-plan-self acceptance-run acceptance-run-ci acceptance-run-local-evidence \
         acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-desktop-gateway \
@@ -24,11 +24,14 @@
         federation-dashboard-operational-drilldown federation-desktop-gateway-smoke
 
 ACCEPTANCE_RANGE ?= HEAD
-ACCEPTANCE_PLAN ?= tooling/acceptance/reports/latest-plan.json
-ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),--plan $(ACCEPTANCE_PLAN))
+ACCEPTANCE_PLAN_ARG = $(if $(ACCEPTANCE_PLAN),--output "$(ACCEPTANCE_PLAN)",)
+ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),$(if $(ACCEPTANCE_PLAN),--plan $(ACCEPTANCE_PLAN),))
 
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)"
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" $(ACCEPTANCE_PLAN_ARG)
+
+acceptance-plan-self:
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check
 
 acceptance-run:
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
@@ -49,7 +52,7 @@ acceptance-report:
 	python3 tooling/scripts/acceptance-report.py
 
 acceptance:
-	$(if $(PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)")
+	$(if $(PLAN),,$(if $(ACCEPTANCE_PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)"))
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 	python3 tooling/scripts/acceptance-report.py
 
@@ -202,8 +205,7 @@ acceptance-federation-report: acceptance-federation-mutual-validation
 		--feature federation-dashboard-operations \
 		--feature federation-operational-observability \
 		--feature desktop-federation-surfaces \
-		--mutual-validation tooling/acceptance/reports/federation-mutual-validation.json \
-		--output tooling/acceptance/reports/federation-acceptance-report.md
+		--mutual-validation-gate federation-mutual-validation
 
 federation-surface-smoke:
 	python3 tooling/acceptance/gates/federation/surface_smoke.py

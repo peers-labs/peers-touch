@@ -11,13 +11,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-ARTIFACT_KIND = "desktop-anchor-dom-evidence"
-DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
-COLLECT_COMMAND = (
-    "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py "
-    "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json "
-    f"--output {DEFAULT_OUTPUT}"
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    inspect_command,
 )
+
+ARTIFACT_KIND = "desktop-anchor-dom-evidence"
+PRODUCER_ID = "desktop-anchor-dom-evidence-collect-gate"
+REPORT_PATH = "reports/desktop-anchor-dom-evidence.json"
+REPORT_ROLE = "report"
+CURRENT_REPORT_REF = "evidence-store:current:report"
+COLLECT_COMMAND = "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py"
 
 
 def utc_now() -> str:
@@ -88,7 +93,10 @@ def normalize_runtime(runtime_id: str, runtime: dict[str, Any], required_anchors
     }
 
 
-def issue_breakdown(runtimes: tuple[dict[str, Any], ...], source_artifact: str) -> list[dict[str, Any]]:
+def issue_breakdown(
+    runtimes: tuple[dict[str, Any], ...],
+    source_artifact: Any,
+) -> list[dict[str, Any]]:
     inventory = load_inventory_module()
     issues: list[dict[str, Any]] = []
     for runtime in runtimes:
@@ -132,7 +140,7 @@ def recommended_review_commands() -> list[dict[str, str]]:
         },
         {
             "purpose": "Inspect the DOM evidence source artifact diagnostics.",
-            "command": "jq '{status,proofStatus,issue_breakdown,recommended_review_commands}' tooling/acceptance/reports/desktop-anchor-dom-evidence.json",
+            "command": inspect_command(PRODUCER_ID, REPORT_ROLE),
         },
         {
             "purpose": "Re-run the independent DOM evidence gate.",
@@ -145,7 +153,10 @@ def recommended_review_commands() -> list[dict[str, str]]:
     ]
 
 
-def build_evidence(observations: dict[str, Any], source_artifact: str = DEFAULT_OUTPUT) -> dict[str, Any]:
+def build_evidence(
+    observations: dict[str, Any],
+    source_artifact: Any = CURRENT_REPORT_REF,
+) -> dict[str, Any]:
     inventory = load_inventory_module()
     browser = normalize_runtime(
         "browser-gateway",
@@ -201,20 +212,34 @@ def build_evidence(observations: dict[str, Any], source_artifact: str = DEFAULT_
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--observations", required=True)
-    parser.add_argument(
-        "--output",
-        default=DEFAULT_OUTPUT,
-    )
+    parser.add_argument("--observations")
+    parser.add_argument("--output")
     args = parser.parse_args()
 
-    observations_path = Path(args.observations)
-    output_path = Path(args.output)
-    observations = json.loads(observations_path.read_text(encoding="utf-8"))
-    evidence = build_evidence(observations, args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(evidence, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"desktop anchor DOM evidence: {output_path}")
+    observations = (
+        json.loads(Path(args.observations).read_text(encoding="utf-8"))
+        if args.observations
+        else {}
+    )
+    evidence = build_evidence(observations)
+    if args.output:
+        output_path = explicit_output_path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json.dumps(evidence, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        display_output = str(output_path)
+    else:
+        with artifact_session(PRODUCER_ID) as session:
+            session.write_json(REPORT_PATH, evidence, role=REPORT_ROLE)
+            session.complete(
+                status=evidence["status"],
+                completion_status=evidence["completionStatus"],
+                proof_status=evidence["proofStatus"],
+            )
+        display_output = REPORT_PATH
+    print(f"desktop anchor DOM evidence: {display_output}")
     print(f"status: {evidence['status']}")
     return 0
 

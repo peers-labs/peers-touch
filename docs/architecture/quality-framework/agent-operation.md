@@ -24,8 +24,12 @@ make review-submit REVIEW_BASE=origin/master
 
 Then read:
 
-- `tooling/acceptance/reports/latest-quality-evidence.md`
-- `tooling/acceptance/reports/latest-report.md`
+```bash
+python3 tooling/scripts/acceptance-artifact.py cat \
+  --gate quality-evidence --role quality-markdown
+python3 tooling/scripts/acceptance-artifact.py cat \
+  --gate acceptance-report --role report
+```
 
 Use the reports to fill the PR body. Do not claim a gate passed unless it appears
 in run evidence. Do not hide unproven scope.

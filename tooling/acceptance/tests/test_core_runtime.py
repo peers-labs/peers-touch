@@ -29,10 +29,9 @@ from tooling.acceptance.core import (
     new_report,
     call_async_harness,
     REPO_ROOT as CORE_REPO_ROOT,
-    REPORTS_DIR,
-    EVIDENCE_DIR,
 )
 from tooling.acceptance.core.redaction import REDACTED
+from tooling.acceptance.drivers.tauri import TauriDriver
 
 
 class MockDriver(DomDriver):
@@ -184,11 +183,13 @@ class EvidenceSchemaTests(unittest.TestCase):
             src = Path(tmpdir) / "app.log"
             src.write_text("mock log content", encoding="utf-8")
             report = new_report("ev-test")
-            with patch("tooling.acceptance.core.evidence.EVIDENCE_DIR", Path(tmpdir) / "evidence"):
-                rel = report.add_evidence_file("app-log", src)
-                self.assertTrue(rel.endswith(".log"))
-                dest = REPO_ROOT / rel
-                self.assertTrue(dest.exists() or (Path(tmpdir) / "evidence" / f"ev-test-app-log.log").exists())
+            stored = report.add_evidence_file(
+                "app-log",
+                src,
+                destination_dir=Path(tmpdir) / "evidence",
+            )
+            self.assertTrue(stored.endswith(".log"))
+            self.assertTrue(Path(stored).exists())
 
 
 class AcceptanceGateBaseClassTests(unittest.TestCase):
@@ -299,6 +300,7 @@ class AcceptanceGateBaseClassTests(unittest.TestCase):
             def __init__(self, tmpdir: Path):
                 super().__init__()
                 self.report_path = tmpdir / "redaction.json"
+                self.evidence_dir = tmpdir / "evidence"
                 self.driver = MockDriver()
                 self.driver._page_source = (
                     "<html><body>password=dom-secret "
@@ -403,6 +405,33 @@ class BaseDriverAbstractInterfaceTests(unittest.TestCase):
         self.assertTrue(d._stopped)
 
 
+class TauriDriverAttachTests(unittest.TestCase):
+    def test_connect_attaches_without_launching_or_owning_a_process(self):
+        driver = TauriDriver(
+            app_binary="/tmp/not-launched",
+            port=4555,
+            storage_root="/tmp/external-storage",
+        )
+        session = MagicMock()
+
+        def connect_session() -> None:
+            driver._driver = session
+
+        with patch(
+            "tooling.acceptance.drivers.tauri._wait_for_webdriver"
+        ) as wait, patch.object(
+            driver,
+            "_connect_session",
+            side_effect=connect_session,
+        ):
+            self.assertIs(driver.connect(timeout=7), session)
+
+        wait.assert_called_once_with(4555, 7)
+        self.assertIsNone(driver._process)
+        driver.stop()
+        session.quit.assert_called_once()
+
+
 class FixtureInterfaceTests(unittest.TestCase):
     def test_base_fixture_requires_setup_teardown(self):
         with self.assertRaises(TypeError):
@@ -463,6 +492,10 @@ class TauriDriverContractTests(unittest.TestCase):
         for m in old_api_methods:
             self.assertTrue(hasattr(TauriDriver, m) or hasattr(TauriDriver, m),
                             f"TauriDriver missing legacy method {m}")
+
+    def test_script_timeout_covers_native_renderer_transitions(self):
+        from tooling.acceptance.drivers.tauri import SCRIPT_TIMEOUT
+        self.assertEqual(SCRIPT_TIMEOUT, 10.0)
 
 
 class StationDriverTests(unittest.TestCase):

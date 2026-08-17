@@ -1,8 +1,8 @@
 # Acceptance Framework — 设计决策
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-06-03 | **Updated**: 2026-06-04
+> **Version**: v1.1
+> **Created**: 2026-06-03 | **Updated**: 2026-08-17
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -18,6 +18,11 @@
 | D-04 | Agent 智能必须受 stable gates 和 reports 约束 | accepted |
 | D-05 | Station Dashboard 作为首个 managed domain | accepted |
 | D-06 | Chat 作为首个用户主路径 managed domain | accepted |
+| D-07 | Environment Provisioning 是 Gate 之前的独立运行时边界 | proposed |
+| D-08 | Attestation、Actor Fixture 与 Credential 各有唯一生产 Owner | proposed |
+| D-09 | Registry 按产品行为选择 receiver-proof Gate | proposed |
+| D-10 | Gap Detector 作为跨阶段只读守卫 | proposed |
+| D-11 | Runtime Evidence Store 位于 source tree 之外 | accepted |
 
 ---
 
@@ -215,3 +220,289 @@ Chat 同时具备事实源、传输面和用户可见面，适合验证 acceptan
 - Chat 变更会通过 registry 自动选择 `proto-build`、`station-messaging-unit`、`messaging-platform-contract`、`chat-desktop-gateway-e2e`、native gates 和 / 或 `desktop-check`。
 - Acceptance coverage report 现在能显示三个 active domains：Federation、Station Dashboard、Chat。
 - Chat 的未证明范围必须保持显式，不能用 typed checks 或 Desktop gateway command E2E 代替 native multi-client 用户消息收发体验。
+
+---
+
+## D-07: Environment Provisioning 是 Gate 之前的独立运行时边界
+
+**Status**: accepted
+**Date**: 2026-08-16 | **Accepted**: 2026-08-16
+
+### Context
+
+当前 Gate Catalog 声明 `environment`，但环境准备依赖 Agent 手工拼接 Profile、
+Station、Desktop、端口、Fixture 和环境变量。Gateway Gate 在服务未启动时只得到
+connection refused；Native Gate 能校验输入，却无法告诉新 Agent 如何生产输入。
+
+### Decision
+
+在 Gate Runner 与产品 Gate 之间建立独立 Environment Provisioning 边界：
+
+```text
+plan -> provisioner -> runtime manifest -> gate -> evidence -> cleanup
+```
+
+Gate 不自启动环境。Provisioner 根据 environment contract 准备资源、输出不可变
+runtime manifest，并在缺项时生成结构化 `BLOCKED/UNPROVEN` artifact。
+
+### Rationale
+
+环境生命周期与产品断言是不同职责。独立 Provisioner 既保持 Gate 纯粹，也让
+`make acceptance-*` 能形成规范、可发现、可重复的执行路径。
+
+### Alternatives Considered
+
+- Gate 内直接 `make desktop`：混合环境生命周期和产品断言，失败清理不可控。
+- 保持调用方手工准备：依赖上下文记忆，新 Agent 无法稳定复现。
+- 遇到缺项后降级到 static/browser/API：不产生同等级产品证据。
+
+### Consequences
+
+- 非 `local` environment 必须有机器可读 provisioning contract。
+- `acceptance-run` 需要区分 provisioning failure 与 product Gate failure。
+- Provisioning 成功本身不能把产品能力标记为 `PROVEN`。
+- Provisioner 引入新的 cleanup 责任和结构化 preflight artifact。
+
+### Review / Reversal Trigger
+
+若实现证明 Environment Provisioner 无法在不持有产品断言的前提下统一
+`local-desktop-gateway`、`home-station` 和 `fedp5`，应重新评审 contract 粒度；
+不得退回 Agent 手工拼接。
+
+---
+
+## D-08: Attestation、Actor Fixture 与 Credential 各有唯一生产 Owner
+
+**Status**: accepted
+**Date**: 2026-08-16 | **Accepted**: 2026-08-16
+
+### Context
+
+Chat Native runner 当前消费 Station attestation、canonical PTID 和密码，但没有
+权威生成、发现或注入流程。默认值和人工复制会破坏 source identity 与证据可信度。
+
+### Decision
+
+- Station deployment/runtime owner 生产 deployment attestation，并与 live metadata 校验。
+- Domain Fixture 生产 actor manifest，负责账号、canonical PTID、初始状态和 reset。
+- Profile 或批准的 secret source 生产 credential reference；manifest 只记录引用。
+- Gate 只消费这些 artifact，不生成、不猜测、不硬编码。
+
+### Rationale
+
+生产者和验证者必须分离。Gate 自己生产 attestation 或 actor identity 会形成自证，
+而凭据进入 manifest 会造成泄露风险。
+
+### Alternatives Considered
+
+- 在 runner 中硬编码 Station、PTID 和密码：不可移植且违反安全边界。
+- Agent 临时查询后 export：不可审计，无法证明输入 freshness。
+- 将密码写入 actor manifest：降低操作成本但扩大证据泄露面。
+
+### Consequences
+
+- Fixture 输出必须脱敏且可重复。
+- Attestation 必须绑定实际部署，而不是只绑定本地 git HEAD。
+- 缺少生产 artifact 时 Gate 保持 `UNPROVEN`。
+
+### Review / Reversal Trigger
+
+若 Station runtime 无法提供可核验 live commit 或 proto identity，应先设计新的
+runtime identity endpoint；不得由 Gate 自行签发或伪造 attestation。
+
+---
+
+## D-09: Registry 按产品行为选择 receiver-proof Gate
+
+**Status**: accepted
+**Date**: 2026-08-16 | **Accepted**: 2026-08-16
+
+### Context
+
+`apps/desktop/src-tauri/src/messaging/**` 当前只选择 Gateway E2E。Direct receipt
+状态虽然属于 Native receiver-visible 行为，但 receipt 代码变更不会自动选择
+`chat-native-two-client-e2e`。
+
+### Decision
+
+Registry 保留目录级 cheap Gate 规则，并为 receiver-visible 状态转换增加更窄的
+behavior rule。Feature Contract 决定需要哪类 proof，Registry 只把相关源路径映射
+到该 Feature 和 Gate。
+
+### Rationale
+
+目录所有权不能完整表达行为影响。更窄的规则避免所有 messaging 改动都运行全部 W8
+journeys，同时确保 receipt、badge、projection 等用户可见状态不会只跑 API Gate。
+
+### Alternatives Considered
+
+- 所有 messaging 变更运行全部 Native Gates：覆盖充分但成本失控。
+- 继续只运行 Gateway Gate：无法证明 Native sender receipt projection。
+- 由 Agent 看到任务描述后手工追加 Gate：不可发现、不可重复。
+
+### Consequences
+
+- 关键 behavior rule 必须有 synthetic path plan test。
+- Feature source paths 与 Registry rules 必须同步审计。
+- 新 receiver-visible 状态需要显式登记，不能依赖 broad directory rule。
+
+### Review / Reversal Trigger
+
+若 behavior rule 数量导致 Registry 无法维护，应引入机器可读 assertion ownership
+映射；不得退回“Agent 根据任务描述手工选 Gate”。
+
+---
+
+## D-10: Gap Detector 作为跨阶段只读守卫
+
+**Status**: accepted
+**Date**: 2026-08-16 | **Accepted**: 2026-08-16
+
+### Context
+
+`pt-acceptance-engineering` 在明确收到 Acceptance 请求时能够生成 gap matrix，但普通
+产品任务可能在 completion、commit 或 PR 阶段才暴露 Acceptance 遗漏。若没有独立
+触发面，Agent 可能用 build、unit test 或手工检查替代缺失的产品证据。
+
+### Decision
+
+新增 `pt-acceptance-gap-detector`，职责严格限定为：
+
+- 在完成、质量、提交和 PR 声明前只读检查 Acceptance ownership 与 evidence。
+- 输出结构化 gap、proof state、责任 stage 和最小 closure。
+- 发现真实缺口后调用 `pt-acceptance-engineering`。
+
+它不实现 Gate、不修改产品或 Acceptance、不做 completion audit，也不自行批准继续。
+
+### Rationale
+
+Gap detection 与 Acceptance engineering 是不同触发面：前者防止遗漏和 silent pass，
+后者负责补齐与升级。分离后可覆盖没有显式提出 Acceptance 的普通开发任务。
+
+### Alternatives Considered
+
+- 只扩展 `pt-acceptance-engineering`：普通任务未必触发该 Skill。
+- 只依赖 `pt-completion-auditor`：发现时间太晚，且职责过宽。
+- 把检测逻辑复制到 commit/PR/quality skills：规则会漂移。
+
+### Consequences
+
+- Completion、quality、commit、PR 等 Skill 需要引用同一个 Gap Detector。
+- Detector 必须保持短小、只读、fail-closed，避免复制完整 Acceptance procedure。
+- Detector 发现缺口后必须停止产品完成声明，但不能越权实施修复。
+
+### Review / Reversal Trigger
+
+若调用方 Skill 无法稳定触发独立 Detector，应把同一 detector contract 下沉为
+completion pipeline 的统一机器检查；不得复制多份判断规则。
+
+---
+
+## D-11: Runtime Evidence Store 位于 Source Tree 之外
+
+**Status**: accepted
+**Date**: 2026-08-17 | **Accepted**: 2026-08-17
+
+### Context
+
+Acceptance runtime当前把plan、run、manifest、log、截图和validation report写到
+`tooling/acceptance/reports/`。该目录虽然gitignored，仍位于worktree中。一轮真实
+G15已完成Fixture reset和Native执行，却在写
+`chat-native-interactions-run.json`时遇到macOS `EPERM`。该事件只证明evidence
+emission失败，不能证明G15产品行为通过。
+
+Source-tree输出同时耦合worktree权限、Git观察、workspace digest、清理和并发运行。
+`_paths.py`、Acceptance scripts、Domain profiles、Make targets和operational skills
+均含物理路径假设；仓库内还存在tracked historical runtime reports。
+
+### Decision
+
+Acceptance Core Evidence Store是runtime-generated evidence的唯一owner。所有runtime
+artifact必须写入source tree之外的canonical artifact root：
+
+```text
+<root>/<workspace-id>/<gate-id>/<run-id>/
+```
+
+`PT_ACCEPTANCE_ARTIFACT_ROOT`是可选override。未设置或空白时使用平台默认：
+
+- macOS: `~/Library/Application Support/PeersTouch/acceptance`
+- Linux: `${XDG_STATE_HOME:-~/.local/state}/peers-touch/acceptance`
+- Windows: `%LOCALAPPDATA%\PeersTouch\acceptance`
+
+CI必须显式override到CI artifact workspace。
+
+`workspace-id`是canonical worktree path的SHA-256前16个小写hex字符。`gate-id`使用
+validated slug。`run-id`由UTC microsecond timestamp与128-bit cryptographic random
+suffix组成。
+
+每次run拥有immutable目录和manifest。`latest.json`仅是gate目录下的原子pointer，
+不是primary evidence object；只有run manifest已写入、`fsync`并durable后才能更新。
+并发publisher必须在gate lock下按`completedAt + runId`比较后发布，避免较早run晚完成
+时覆盖较新的pointer。
+
+Repository只保留code、schemas、templates和intentional test fixtures。Runtime writer
+不得写入repo root、`tooling/`、`docs/`或`.git/`。不允许dual-write、symlink
+compatibility、silent fallback或legacy report owner。
+
+Artifact references使用typed `ArtifactRef`，保存workspace、gate、run和run-relative
+path；contract和manifest不得保存source-tree物理report路径。Reader通过同一resolver
+解析并验证containment、manifest identity和content hash。
+
+### Lifecycle And Failure Semantics
+
+```text
+ALLOCATED -> ACTIVE -> FINALIZING -> DURABLE -> PUBLISHED -> CLOSED
+     |          |            |
+     +----------+------------+-> EVIDENCE_FAILED
+```
+
+- root create/write失败使Gate显式失败，proof保持`UNPROVEN`；
+- permission denied、disk full、malformed root、path traversal、symlink escape、
+  manifest conflict和interrupted write均映射typed evidence errors；
+- 任一失败都不得fallback到repository；
+- interrupted manifest/latest write只留下未发布temporary file，旧latest保持有效；
+- active run持有OS advisory lock；cleanup无法取得non-blocking lock时必须跳过；
+- cleanup默认不自动删除。显式retention命令不得删除active run、latest target或仍被
+  manifest引用的artifact；
+- secret redaction在durable write之前执行，不能因迁移被削弱。
+
+### Rationale
+
+- runtime证据生命周期与source lifecycle分离；
+- 每run隔离消除concurrent overwrite；
+- immutable manifest与atomic pointer同时支持审计和ergonomic latest读取；
+- canonical resolver让writer、reader、validator、report和cleanup共享一套边界；
+- typed failure避免EPERM再次退化为产品断言失败或silent missing evidence。
+
+### Alternatives Considered
+
+- 保持gitignored source-tree reports：拒绝，权限/Git/digest/cleanup耦合仍存在。
+- 只迁移Native G15输出：拒绝，保留split ownership和其它writer同类故障。
+- repo外写入同时source-tree dual-write：拒绝，两个latest和两套cleanup会漂移。
+- source-tree symlink到外部root：拒绝，仍受worktree权限与path observation影响。
+- 写失败后fallback到repo：拒绝，会把安全边界变成环境相关行为。
+- 只按gate保存一个latest文件：拒绝，覆盖历史且无法证明并发隔离。
+- 以全局workspace名称代替canonical-path hash：拒绝，同名worktree会冲突。
+
+### Consequences
+
+正面：
+
+- read-only repository仍可运行并产出证据；
+- concurrent Gates和多个worktree不再覆盖；
+- CI artifact collection可通过一个override root完成；
+- source digest不再被runtime写入扰动。
+
+负面：
+
+- 现有scripts、tests、skills、Domain profiles和docs必须原子迁移；
+- 用户需要从artifact root读取本地证据，不能再依赖repo相对路径；
+- default retain-all会增长磁盘，需要显式cleanup policy；
+- canonical path变化会产生新workspace-id，旧run不会自动迁移；
+- existing tracked runtime reports必须删除，不能继续作为产品proof。
+
+### Review / Reversal Trigger
+
+若平台证明无法提供可靠atomic replace、directory durability或active-run locking，
+应设计平台专用backend并保持相同Evidence Store contract；不得回退source-tree写入。

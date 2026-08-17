@@ -5,10 +5,18 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from tooling.acceptance.core import EvidenceStore
 
 
 def load_module() -> Any:
@@ -57,7 +65,12 @@ class AcceptanceRunTest(unittest.TestCase):
     def test_enrich_result_with_evidence_from_log_artifact(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:
-            artifact_path = Path(tmp) / "tooling/acceptance/reports/desktop-performance-report-latest.json"
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("desktop-performance-report-gate", source={})
+            artifact_path = run.run_dir / "reports/desktop-performance-report-latest.json"
             artifact_path.parent.mkdir(parents=True)
             artifact_path.write_text(
                 json.dumps(
@@ -97,26 +110,20 @@ class AcceptanceRunTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            old_cwd = Path.cwd()
-            try:
-                import os
-
-                os.chdir(tmp)
-                result = module.enrich_result_with_evidence(
-                    {
-                        "id": "desktop-performance-report-gate",
-                        "command": "python3 tooling/scripts/desktop-performance-report.py",
-                        "status": "failed",
-                    },
-                    f"desktop performance report: {artifact_path.relative_to(tmp)}\n",
-                )
-            finally:
-                os.chdir(old_cwd)
+            result = module.enrich_result_with_run_artifacts(
+                {
+                    "id": "desktop-performance-report-gate",
+                    "command": "python3 tooling/scripts/desktop-performance-report.py",
+                    "status": "failed",
+                },
+                run,
+            )
+            run.close()
 
         self.assertEqual(result["sourceArtifactKind"], "desktop-performance-report")
         self.assertEqual(
-            result["sourceArtifact"],
-            "tooling/acceptance/reports/desktop-performance-report-latest.json",
+            result["sourceArtifact"]["path"],
+            "reports/desktop-performance-report-latest.json",
         )
         self.assertEqual(result["completionStatus"], "PARTIAL")
         self.assertEqual(result["proofStatus"], "UNPROVEN")
@@ -194,7 +201,13 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertFalse(report["resultTraceabilityState"]["sampleEmissionAllowed"])
         self.assertEqual(report["resultTraceabilityState"]["missingTraceabilityCount"], 0)
         self.assertEqual(report["results"][0]["artifactKind"], "acceptance-gate-result")
-        self.assertEqual(report["results"][0]["artifactPath"], "tooling/acceptance/reports/latest-plan.json#results/static-gate")
+        self.assertEqual(
+            report["results"][0]["artifactPath"],
+            {
+                "plan": "tooling/acceptance/reports/latest-plan.json",
+                "resultGateId": "static-gate",
+            },
+        )
         self.assertEqual(report["results"][0]["traceability"]["status"], "not-required")
         self.assertEqual(report["results"][1]["artifactKind"], "acceptance-gate-result")
         self.assertEqual(
@@ -233,7 +246,12 @@ class AcceptanceRunTest(unittest.TestCase):
     def test_enrich_result_derives_reason_from_source_issue_when_artifact_reason_missing(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:
-            artifact_path = Path(tmp) / "tooling/acceptance/reports/desktop-anchor-inventory.json"
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("desktop-anchor-inventory-gate", source={})
+            artifact_path = run.run_dir / "reports/desktop-anchor-inventory.json"
             artifact_path.parent.mkdir(parents=True)
             artifact_path.write_text(
                 json.dumps(
@@ -258,21 +276,15 @@ class AcceptanceRunTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            old_cwd = Path.cwd()
-            try:
-                import os
-
-                os.chdir(tmp)
-                result = module.enrich_result_with_evidence(
-                    {
-                        "id": "desktop-anchor-inventory-gate",
-                        "command": "python3 tooling/scripts/desktop-anchor-inventory.py",
-                        "status": "failed",
-                    },
-                    f"anchor inventory: {artifact_path.relative_to(tmp)}\n",
-                )
-            finally:
-                os.chdir(old_cwd)
+            result = module.enrich_result_with_run_artifacts(
+                {
+                    "id": "desktop-anchor-inventory-gate",
+                    "command": "python3 tooling/scripts/desktop-anchor-inventory.py",
+                    "status": "failed",
+                },
+                run,
+            )
+            run.close()
 
         self.assertEqual(result["sourceArtifactKind"], "desktop-anchor-inventory")
         self.assertEqual(result["reason"], "DOM evidence loaded but remains UNPROVEN")
@@ -482,6 +494,159 @@ class AcceptanceRunTest(unittest.TestCase):
 
         self.assertEqual(module.acceptance_exit_code(proven_report), 0)
         self.assertEqual(module.acceptance_exit_code(unproven_report), 1)
+
+    def test_blocked_result_is_distinct_from_failed_and_exits_two(self) -> None:
+        module = load_module()
+        report = module.build_run_report(
+            "tooling/acceptance/reports/latest-plan.json",
+            [
+                {
+                    "id": "environment-gate",
+                    "status": "blocked",
+                    "blockedReason": "credential missing",
+                    "blockedResource": "credential-ref:env:TEST_PASSWORD",
+                }
+            ],
+        )
+
+        self.assertEqual(report["summary"]["blocked"], 1)
+        self.assertEqual(report["summary"]["failed"], 0)
+        self.assertEqual(report["completionStatus"], "BLOCKED")
+        self.assertEqual(report["proofStatus"], "UNPROVEN")
+        self.assertEqual(module.acceptance_exit_code(report), 2)
+
+    def test_unexpected_provisioning_error_is_structured_failed_result(self) -> None:
+        module = load_module()
+        result = module.provisioning_failure_result(
+            gate_id="environment-gate",
+            command="run-gate",
+            environment="home-station",
+            tier="env-evidence",
+            error=RuntimeError("provisioner exploded"),
+            duration_seconds=0.1,
+        )
+        report = module.build_run_report(
+            "tooling/acceptance/reports/latest-plan.json",
+            [result],
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["errorType"], "RuntimeError")
+        self.assertEqual(report["completionStatus"], "PARTIAL")
+        self.assertEqual(module.acceptance_exit_code(report), 1)
+
+    def test_missing_environment_contract_produces_blocked_manifest(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            environments = worktree / "environments"
+            environments.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("test-gate", source={})
+            with mock.patch.dict(
+                os.environ,
+                run.subprocess_environment(os.environ),
+            ), mock.patch.object(module, "REPO_ROOT", worktree), mock.patch(
+                "tooling.acceptance.core.ENVIRONMENTS_DIR",
+                environments,
+            ):
+                provisioner, manifest, path = module.provision_environment(
+                    "missing-environment",
+                    "test-gate",
+                )
+            run.close()
+
+        self.assertIsNone(provisioner)
+        self.assertEqual(manifest["state"], "BLOCKED")
+        self.assertEqual(
+            manifest["blockedResource"],
+            "environment-contract:missing-environment",
+        )
+        self.assertIsNotNone(path)
+
+    def test_runtime_log_redaction_removes_resolved_secret_values(self) -> None:
+        module = load_module()
+        secret = "acceptance-secret-value"
+        redacted = module.redact_runtime_text(
+            f"raw output contained {secret}",
+            (secret,),
+        )
+        self.assertNotIn(secret, redacted)
+        self.assertIn("[REDACTED]", redacted)
+
+    def test_short_secret_uses_key_aware_redaction_without_corrupting_numbers(self) -> None:
+        module = load_module()
+        redacted = module.redact_runtime_text(
+            "count=1 password=1",
+            ("1",),
+        )
+        self.assertIn("count=1", redacted)
+        self.assertIn("password=[REDACTED]", redacted)
+
+    def test_runtime_artifact_redaction_removes_resolved_secret_values(self) -> None:
+        module = load_module()
+        secret = "artifact-secret-value"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = root / "reports" / "gate.json"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(
+                json.dumps(
+                    {
+                        "message": f"leaked {secret}",
+                        "password": "1",
+                        "count": 1,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            redacted_paths, leaked_paths = module.redact_runtime_artifacts(
+                root,
+                (secret,),
+            )
+            serialized = artifact.read_text(encoding="utf-8")
+
+        self.assertEqual(
+            redacted_paths,
+            ["reports/gate.json"],
+        )
+        self.assertEqual(leaked_paths, ["reports/gate.json"])
+        self.assertNotIn(secret, serialized)
+        self.assertIn("[REDACTED]", serialized)
+        self.assertIn('"count": 1', serialized)
+        self.assertNotIn('"password": "1"', serialized)
+
+    def test_runtime_secret_scan_redacts_high_entropy_canary_only(self) -> None:
+        module = load_module()
+        canary = "acceptance-canary-value-0123456789"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = root / "reports" / "gate.json"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(
+                json.dumps(
+                    {
+                        "message": f"leaked {canary}",
+                        "count": 1,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            _, leaked_paths = module.redact_runtime_artifacts(
+                root,
+                (canary, "1"),
+            )
+            serialized = artifact.read_text(encoding="utf-8")
+
+        self.assertEqual(
+            leaked_paths,
+            ["reports/gate.json"],
+        )
+        self.assertNotIn(canary, serialized)
+        self.assertIn("[REDACTED]", serialized)
+        self.assertIn('"count": 1', serialized)
 
     def test_build_run_report_deduplicates_review_commands_by_command_text(self) -> None:
         module = load_module()

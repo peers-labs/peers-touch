@@ -10,6 +10,9 @@ freshness_file="tooling/skills/pt-github-review/FRESHNESS.md"
 fixtures_dir="tooling/review-fixtures"
 pr_template=".github/PULL_REQUEST_TEMPLATE.md"
 submit_pipeline="tooling/scripts/review/submit-pipeline.sh"
+gap_skill="tooling/skills/pt-acceptance-gap-detector/SKILL.md"
+gap_procedures="tooling/skills/pt-acceptance-gap-detector/PROCEDURES.md"
+gap_detector="tooling/scripts/acceptance-gap-detect.py"
 
 failures=0
 
@@ -27,6 +30,9 @@ require_file "$pr_skill_file"
 require_file "$freshness_file"
 require_file "$pr_template"
 require_file "$submit_pipeline"
+require_file "$gap_skill"
+require_file "$gap_procedures"
+require_file "$gap_detector"
 
 required_sections=(
   "Review Philosophy"
@@ -113,7 +119,7 @@ for marker in "${submit_markers[@]}"; do
   fi
 done
 
-for marker in "make quality-evidence" "run.sh --range" "--strict-knowledge" "make acceptance-run-ci"; do
+for marker in "make quality-evidence" "run.sh --range" "--strict-knowledge" "make acceptance-run-ci" "acceptance-gap-detect.py"; do
   if ! grep -q -- "$marker" "$submit_pipeline"; then
     fail "$submit_pipeline missing required command marker: $marker"
   fi
@@ -253,12 +259,27 @@ if ! grep -q "republisher-broadcast-spam" <<< "$knowledge_dir_output"; then
   fail "knowledge-match.sh must match owns directories with trailing slashes"
 fi
 
-quality_json="$(mktemp)"
-quality_markdown="$(mktemp)"
-if ! python3 tooling/scripts/quality-evidence.py --range HEAD --output "$quality_json" --markdown-output "$quality_markdown" >/tmp/pt-quality-evidence.$$ 2>&1; then
+quality_root="$(mktemp -d)"
+set +e
+PT_ACCEPTANCE_ARTIFACT_ROOT="$quality_root" \
+  python3 tooling/scripts/quality-evidence.py \
+    --range HEAD >/tmp/pt-quality-evidence.$$ 2>&1
+quality_status=$?
+set -e
+if [[ "$quality_status" -ne 0 && "$quality_status" -ne 1 ]]; then
   cat /tmp/pt-quality-evidence.$$
   fail "quality-evidence.py must produce review-ready evidence for HEAD"
-elif ! python3 - "$quality_json" <<'PY'
+else
+  if ! quality_json="$(
+    PT_ACCEPTANCE_ARTIFACT_ROOT="$quality_root" \
+      python3 tooling/scripts/acceptance-artifact.py latest \
+        --gate quality-evidence \
+        --role quality-json
+  )"; then
+    fail "quality-evidence.py did not publish quality-json"
+  fi
+fi
+if [[ -n "${quality_json:-}" ]] && ! python3 - "$quality_json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -272,18 +293,33 @@ PY
 then
   fail "quality-evidence.py JSON output is missing required keys"
 fi
-rm -f "$quality_json" "$quality_markdown" /tmp/pt-quality-evidence.$$
+rm -rf "$quality_root"
+rm -f /tmp/pt-quality-evidence.$$
 
-tier_run_json="$(mktemp)"
-if ! python3 tooling/scripts/acceptance-run.py \
+tier_run_root="$(mktemp -d)"
+set +e
+PT_ACCEPTANCE_ARTIFACT_ROOT="$tier_run_root" \
+  python3 tooling/scripts/acceptance-run.py \
   --gate acceptance-plan-self \
   --gate chat-desktop-gateway-e2e \
   --tier ci-structure \
-  --dry-run \
-  --output "$tier_run_json" >/tmp/pt-acceptance-tier.$$ 2>&1; then
+  --dry-run >/tmp/pt-acceptance-tier.$$ 2>&1
+tier_run_status=$?
+set -e
+if [[ "$tier_run_status" -ne 1 ]]; then
   cat /tmp/pt-acceptance-tier.$$
-  fail "acceptance-run.py must support tier-filtered dry runs"
-elif ! python3 - "$tier_run_json" <<'PY'
+  fail "acceptance-run.py dry runs must select gates but remain unproven with exit 1"
+else
+  if ! tier_run_json="$(
+    PT_ACCEPTANCE_ARTIFACT_ROOT="$tier_run_root" \
+      python3 tooling/scripts/acceptance-artifact.py latest \
+        --gate acceptance-run \
+        --role run
+  )"; then
+    fail "acceptance-run.py did not publish the aggregate run"
+  fi
+fi
+if [[ -n "${tier_run_json:-}" ]] && ! python3 - "$tier_run_json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -296,7 +332,8 @@ PY
 then
   fail "acceptance-run.py tier filtering selected the wrong gates"
 fi
-rm -f "$tier_run_json" /tmp/pt-acceptance-tier.$$
+rm -rf "$tier_run_root"
+rm -f /tmp/pt-acceptance-tier.$$
 
 if rg -n 'ignore (previous|all) instructions|you are now|system:\s*override|curl .*\| *sh|rm -rf /' "$skill_file" "$freshness_file" >/tmp/pt-skill-danger.$$ 2>/dev/null; then
   cat /tmp/pt-skill-danger.$$

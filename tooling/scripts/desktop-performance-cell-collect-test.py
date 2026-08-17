@@ -138,7 +138,7 @@ class DesktopPerformanceCellCollectTest(unittest.TestCase):
             evidence["issueBreakdown"][0]["failedStep"],
             "tauri-webview-packaged",
         )
-        packaged_entrypoint = "pnpm --dir apps/desktop tauri build --features e2e-testing"
+        packaged_entrypoint = "pnpm --dir apps/desktop tauri build --features acceptance-webdriver"
         self.assertEqual(
             evidence["recommended_review_commands"][0]["command"],
             packaged_entrypoint,

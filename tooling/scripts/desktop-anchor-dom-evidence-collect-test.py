@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from _acceptance_artifacts import latest_path
 
 
 def load_collect_module():
@@ -112,11 +116,7 @@ class DesktopAnchorDomEvidenceCollectTest(unittest.TestCase):
         self.assertTrue(
             any(
                 command["command"]
-                == (
-                    "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py "
-                    "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json "
-                    "--output tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
-                )
+                == "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py"
                 for command in evidence["recommended_review_commands"]
             )
         )
@@ -147,6 +147,38 @@ class DesktopAnchorDomEvidenceCollectTest(unittest.TestCase):
         self.assertEqual(written["source"], "dom-observations")
         self.assertEqual(written["proofStatus"], "PROVEN")
         self.assertTrue(written["sampleEmissionAllowed"])
+
+    def test_main_defaults_to_collector_artifact_session(self) -> None:
+        collect = load_collect_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            observations_path = Path(tmp) / "observations.json"
+            observations_path.write_text(
+                json.dumps(self.complete_observations(collect)),
+                encoding="utf-8",
+            )
+            old_argv = sys.argv
+            try:
+                sys.argv = [
+                    "desktop-anchor-dom-evidence-collect.py",
+                    "--observations",
+                    str(observations_path),
+                ]
+                with patch.dict(
+                    os.environ,
+                    {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(Path(tmp) / "artifacts")},
+                ):
+                    exit_code = collect.main()
+                    written = json.loads(
+                        latest_path(collect.PRODUCER_ID, collect.REPORT_ROLE).read_text(
+                            encoding="utf-8"
+                        )
+                    )
+            finally:
+                sys.argv = old_argv
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(written["proofStatus"], "PROVEN")
+        self.assertNotIn("tooling/acceptance/reports", json.dumps(written))
 
 
 if __name__ == "__main__":

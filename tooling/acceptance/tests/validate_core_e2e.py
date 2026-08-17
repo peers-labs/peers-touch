@@ -21,7 +21,12 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-from tooling.acceptance.core import AcceptanceGate, ActorRuntime, REPORTS_DIR
+from tooling.acceptance.core import (
+    AcceptanceGate,
+    ActorRuntime,
+    ArtifactRef,
+    EvidenceStore,
+)
 from tooling.acceptance.core.redaction import REDACTED
 from tooling.acceptance.drivers import ChromeDriver
 
@@ -56,7 +61,6 @@ class CoreValidationGate(AcceptanceGate):
     def __init__(self, html_path: Path):
         super().__init__()
         self.html_path = html_path
-        self.report_path = REPORTS_DIR / "core-runtime-validation.json"
         self.chrome = ChromeDriver(headless=True, width=1280, height=800)
         self.register_driver(self.chrome)
 
@@ -163,14 +167,23 @@ def main() -> int:
             print("\nREDACTION ERROR: structured runtime secret was not redacted")
             schema_ok = False
 
-        for key, path in report["evidence"].items():
-            full_path = REPO_ROOT / path
+        store = EvidenceStore.from_environment(
+            repo_root=REPO_ROOT,
+            worktree=REPO_ROOT,
+        )
+        for key, raw_reference in report["evidence"].items():
+            reference = ArtifactRef.from_dict(raw_reference)
+            full_path = store.resolve(reference)
             if not full_path.exists():
                 print(f"\nEVIDENCE ERROR: {key} file not found at {full_path}")
                 schema_ok = False
             else:
                 size = full_path.stat().st_size
-                print(f"  evidence {key}: {path} ({size} bytes)")
+                print(
+                    f"  evidence {key}: "
+                    f"{reference.gate_id}/{reference.run_id}/{reference.path} "
+                    f"({size} bytes)"
+                )
                 if full_path.suffix in {".html", ".json", ".log", ".md", ".txt"}:
                     evidence_text = full_path.read_text(encoding="utf-8")
                     if "dom-secret" in evidence_text or "dom-token" in evidence_text:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,31 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class NativeVisibleStaticContractTest(unittest.TestCase):
+    def test_journey_entrypoint_bootstraps_repo_imports_from_any_cwd(self) -> None:
+        runner = (
+            ROOT
+            / "tooling"
+            / "acceptance"
+            / "gates"
+            / "chat"
+            / "native_two_client_runner.py"
+        )
+        environment = os.environ.copy()
+        environment.pop("PT_ACCEPTANCE_RUNTIME_MANIFEST", None)
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [sys.executable, str(runner)],
+                cwd=directory,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("ModuleNotFoundError", output)
+        self.assertIn("PT_ACCEPTANCE_RUNTIME_MANIFEST is required", output)
+
     def test_process_specific_profile_overrides_active_worktree_profile(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             profile = Path(directory) / "native.env"
@@ -48,7 +74,59 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
         self.assertNotIn("time.sleep(", source)
         self.assertIn("random.SystemRandom().shuffle(order)", source)
         self.assertIn('["make", "desktop"]', source)
+        self.assertIn("TauriDriver(", source)
+        self.assertIn('"TAURI_WEBDRIVER_PORT"', source)
         self.assertIn('self.observer.fill(SELECTORS["composer"], "")', source)
+        self.assertIn("PT_ACCEPTANCE_RUNTIME_MANIFEST", source)
+        self.assertNotIn("PT_PLAYWRIGHT_SOCKET", source)
+        self.assertNotIn("socket.AF_UNIX", source)
+        self.assertNotIn("CHAT_NATIVE_DEMO_PASSWORD", source)
+        self.assertNotIn("CHAT_NATIVE_ALICE_PTID", source)
+        self.assertNotIn("CHAT_NATIVE_BOB_PTID", source)
+
+    def test_native_launcher_uses_declared_cargo_feature(self) -> None:
+        launcher = (
+            ROOT / "tooling" / "scripts" / "_ensure-desktop-rust.sh"
+        ).read_text(encoding="utf-8")
+        cargo = (
+            ROOT / "apps" / "desktop" / "src-tauri" / "Cargo.toml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "acceptance-webdriver = [\"dep:tauri-plugin-wdio-webdriver\"]",
+            cargo,
+        )
+        self.assertIn("--features acceptance-webdriver", launcher)
+        self.assertIn('"permissions\\":[\\"wdio-webdriver:default\\"]', launcher)
+        self.assertNotIn("--features e2e-testing", launcher)
+        self.assertNotIn("playwright:default", launcher)
+
+    def test_profile_sync_uses_window_bound_ptid_and_local_account(self) -> None:
+        application = (
+            ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "application"
+            / "profile"
+            / "mod.rs"
+        ).read_text(encoding="utf-8")
+        command = (
+            ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "interface"
+            / "tauri_commands"
+            / "profile.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("profile_matches_ptid", application)
+        self.assertIn("canonical_profile_ptid(profile) == Some(actor_ptid)", application)
+        self.assertNotIn("profile.id == actor_id ||", application)
+        self.assertIn("state.sessions.get(window.label())", command)
+        self.assertIn("&session.account_id", command)
+        self.assertIn("&session.actor.ptid", command)
 
     def test_all_visible_journey_entrypoints_exist(self) -> None:
         expected = (

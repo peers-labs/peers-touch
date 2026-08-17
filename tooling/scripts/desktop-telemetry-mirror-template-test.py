@@ -73,7 +73,7 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
         self.assertEqual(report["issueBreakdown"][0]["category"], "station-mirror-source")
         self.assertEqual(
             report["issue_breakdown"][0]["sourceArtifact"],
-            "tooling/acceptance/reports/desktop-performance-latest.json",
+            "evidence-store:current:report",
         )
         self.assertEqual(report["issue_breakdown"][0]["sourceArtifactKind"], "desktop-performance-station-mirror")
         self.assertEqual(report["issue_breakdown"][0]["sourcePhase"], "P0a-6/P0c-5")
@@ -91,7 +91,7 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
         self.assertIn("- Sample emission allowed: `False`", markdown)
         commands = [command["command"] for command in report["recommendedReviewCommands"]]
         self.assertIn(
-            "python3 tooling/scripts/desktop-telemetry-live-gate.py --mirror-prefix tooling/acceptance/reports/desktop-performance-latest",
+            "python3 tooling/scripts/desktop-telemetry-live-gate.py",
             commands,
         )
         self.assertFalse(
@@ -101,7 +101,7 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
             )
         )
 
-    def test_write_template_preserves_existing_artifact_by_default(self) -> None:
+    def test_write_template_replaces_explicit_output_without_mutable_latest_semantics(self) -> None:
         module = load_template_module()
         with tempfile.TemporaryDirectory() as tmp:
             prefix = Path(tmp) / "desktop-performance-latest"
@@ -111,11 +111,11 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
             md_path.write_text("existing\n", encoding="utf-8")
 
             _, _, written = module.write_template(prefix, module.build_template("http://station.local"))
-            preserved = json.loads(json_path.read_text(encoding="utf-8"))
+            replaced = json.loads(json_path.read_text(encoding="utf-8"))
 
-        self.assertFalse(written)
-        self.assertEqual(preserved["source"], "station-query")
-        self.assertEqual(preserved["proofStatus"], "PROVEN")
+        self.assertTrue(written)
+        self.assertEqual(replaced["source"], "station-query-template")
+        self.assertEqual(replaced["proofStatus"], "UNPROVEN")
 
     def test_write_template_refreshes_existing_legacy_template(self) -> None:
         module = load_template_module()
@@ -178,7 +178,7 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
 
         self.assertTrue(written)
         self.assertIn(
-            "python3 tooling/scripts/desktop-telemetry-live-gate.py --mirror-prefix tooling/acceptance/reports/desktop-performance-latest",
+            "python3 tooling/scripts/desktop-telemetry-live-gate.py",
             commands,
         )
         self.assertFalse(
@@ -309,7 +309,10 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
         self.assertEqual(station_source["details"][0]["step"], "station-query-template")
         self.assertEqual(station_source["issue_breakdown"][0]["failedStep"], "station-query-template")
         self.assertTrue(
-            any("desktop-telemetry-live-gate.py --mirror-prefix" in command["command"] for command in station_source["recommendedReviewCommands"])
+            any(
+                command["command"] == "python3 tooling/scripts/desktop-telemetry-live-gate.py"
+                for command in station_source["recommendedReviewCommands"]
+            )
         )
 
     def test_main_writes_template_when_missing(self) -> None:
@@ -340,7 +343,10 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
         self.assertEqual(written["failedStep"], "station-query-template")
         self.assertEqual(written["issue_breakdown"][0]["category"], "station-mirror-source")
         self.assertFalse(written["issue_breakdown"][0]["sampleEmissionAllowed"])
-        self.assertEqual(written["issue_breakdown"][0]["sourceArtifact"], str(prefix.with_suffix(".json")))
+        self.assertEqual(
+            written["issue_breakdown"][0]["sourceArtifact"],
+            str(prefix.resolve().with_suffix(".json")),
+        )
 
 
 if __name__ == "__main__":

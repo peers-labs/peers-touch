@@ -92,7 +92,7 @@
               "name",
               "profile",
               "storage_root",
-              "observer_socket"
+              "webdriver_port"
             ],
             "properties": {
               "name": {
@@ -104,8 +104,9 @@
               "storage_root": {
                 "type": "string"
               },
-              "observer_socket": {
-                "type": "string"
+              "webdriver_port": {
+                "type": "integer",
+                "minimum": 1
               }
             }
           }

@@ -90,6 +90,9 @@ make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>
 For selected acceptance gates, record which were run, which were not run, and
 why. Unrun gates are unproven, never passed.
 
+Before a ready/approve/merge decision, invoke `pt-acceptance-gap-detector` for
+the PR's exact completion claim. A blocking detector gap prevents approval.
+
 ### 3. Read By Risk
 
 Review in this order:

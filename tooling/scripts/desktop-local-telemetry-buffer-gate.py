@@ -9,7 +9,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    inspect_command,
+)
+
 ARTIFACT_KIND = "desktop-local-telemetry-buffer-gate"
+REPORT_PATH = "reports/desktop-local-telemetry-buffer-gate.json"
+REPORT_MARKDOWN_PATH = "reports/desktop-local-telemetry-buffer-gate.md"
 PHASE = "P0b-2/P0b-3/P0b-4/P0b-5/P0b-6/P0b-7/P0c-5"
 BOM = [
     "BOM-CON-02",
@@ -133,7 +141,7 @@ def issue(
         "sampleEmissionAllowed": False,
         "summary": summary,
         "proofImpact": "P0b sampler gate remains PARTIAL/UNPROVEN and sample emission stays disabled.",
-        "sourceArtifact": "tooling/acceptance/reports/desktop-local-telemetry-buffer-gate.json",
+        "sourceArtifact": "evidence-store:current:report",
         "sourceArtifactKind": ARTIFACT_KIND,
         "sourcePhase": PHASE,
         "sourceBom": BOM,
@@ -154,16 +162,12 @@ def review_commands() -> list[dict[str, str]]:
             "command": (
                 "window.__PT_FRONTEND_TELEMETRY__.clear(); "
                 "/* perform primary-nav, secondary-tab, and context-menu interactions */ "
-                "copy(JSON.stringify(window.__PT_FRONTEND_TELEMETRY__.snapshot(), null, 2)); "
-                "/* write copied JSON to tooling/acceptance/reports/desktop-local-telemetry-buffer-observations.json */"
+                "copy(JSON.stringify(window.__PT_FRONTEND_TELEMETRY__.snapshot(), null, 2));"
             ),
         },
         {
-            "purpose": "Run the local telemetry buffer gate after observations are collected.",
-            "command": (
-                "python3 tooling/scripts/desktop-local-telemetry-buffer-gate.py "
-                "--observations tooling/acceptance/reports/desktop-local-telemetry-buffer-observations.json"
-            ),
+            "purpose": "Inspect the latest local telemetry buffer gate artifact.",
+            "command": inspect_command(ARTIFACT_KIND, "report"),
         },
         {
             "purpose": "Re-run the full Phase 0 bundle.",
@@ -310,7 +314,7 @@ def build_report(observation: dict[str, Any], source: dict[str, Any]) -> dict[st
         "schemaVersion": 1,
         "artifactKind": ARTIFACT_KIND,
         "generatedAt": utc_now(),
-        "sourceArtifact": "tooling/acceptance/reports/desktop-local-telemetry-buffer-gate.json",
+        "sourceArtifact": "evidence-store:current:report",
         "sourceArtifactKind": ARTIFACT_KIND,
         "sourcePhase": PHASE,
         "sourceBom": BOM,
@@ -370,6 +374,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def write_outputs(report: dict[str, Any], output_prefix: Path) -> tuple[Path, Path]:
+    output_prefix = explicit_output_path(output_prefix)
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = output_prefix.with_suffix(".json")
     md_path = output_prefix.with_suffix(".md")
@@ -380,20 +385,40 @@ def write_outputs(report: dict[str, Any], output_prefix: Path) -> tuple[Path, Pa
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--observations",
-        default="tooling/acceptance/reports/desktop-local-telemetry-buffer-observations.json",
-    )
-    parser.add_argument(
-        "--output-prefix",
-        default="tooling/acceptance/reports/desktop-local-telemetry-buffer-gate",
-    )
+    parser.add_argument("--observations")
+    parser.add_argument("--output-prefix")
     args = parser.parse_args()
-    observation, source = read_json(Path(args.observations))
+    if args.observations:
+        observation, source = read_json(Path(args.observations))
+    else:
+        observation = {}
+        source = {
+            "status": "missing",
+            "reason": "runtime telemetry observations were not supplied",
+        }
     report = build_report(observation, source)
-    json_path, md_path = write_outputs(report, Path(args.output_prefix))
-    print(f"desktop local telemetry buffer gate JSON: {json_path}")
-    print(f"desktop local telemetry buffer gate Markdown: {md_path}")
+    if args.output_prefix:
+        json_path, md_path = write_outputs(report, Path(args.output_prefix))
+        json_output = str(json_path)
+        markdown_output = str(md_path)
+    else:
+        with artifact_session(ARTIFACT_KIND) as session:
+            session.write_json(REPORT_PATH, report, role="report")
+            session.write_bytes(
+                REPORT_MARKDOWN_PATH,
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        json_output = REPORT_PATH
+        markdown_output = REPORT_MARKDOWN_PATH
+    print(f"desktop local telemetry buffer gate JSON: {json_output}")
+    print(f"desktop local telemetry buffer gate Markdown: {markdown_output}")
     print(f"status: {report['status']}")
     return 0 if report["status"] == "pass" else 1
 

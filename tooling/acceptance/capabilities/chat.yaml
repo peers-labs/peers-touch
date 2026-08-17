@@ -126,7 +126,7 @@
       "evidence": {
         "truth_sources": [
           "visible native Desktop windows",
-          "native Playwright observer sockets",
+          "per-client embedded Tauri WebDriver sessions",
           "Station deployment attestation and live app metadata",
           "per-client source and workspace identity"
         ],
