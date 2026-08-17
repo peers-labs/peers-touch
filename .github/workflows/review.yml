@@ -13,11 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     env:
       REVIEW_RANGE: ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}
-      PT_ACCEPTANCE_ARTIFACT_ROOT: ${{ runner.temp }}/peers-touch-acceptance
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Configure Acceptance artifact root
+        run: |
+          echo "PT_ACCEPTANCE_ARTIFACT_ROOT=$RUNNER_TEMP/peers-touch-acceptance" >> "$GITHUB_ENV"
 
       - name: Run review framework gates
         run: |
