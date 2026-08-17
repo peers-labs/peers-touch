@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from _acceptance_artifacts import latest_path
+from tooling.acceptance.core.errors import EvidenceRootForbidden
 
 
 def load_template_module():
@@ -117,6 +118,26 @@ class DesktopAnchorDomEvidenceTemplateTest(unittest.TestCase):
         self.assertEqual(observations_written["artifactKind"], "desktop-anchor-dom-observations-template")
         self.assertFalse(observations_written["sampleEmissionAllowed"])
         self.assertFalse(observations_written["summary"]["sampleEmissionAllowed"])
+
+    def test_repo_contained_explicit_output_is_rejected(self) -> None:
+        module = load_template_module()
+        forbidden_output = Path(__file__).parent / "forbidden-dom-evidence.json"
+        external_observations = Path(tempfile.gettempdir()) / "dom-observations.json"
+        old_argv = sys.argv
+        try:
+            sys.argv = [
+                "desktop-anchor-dom-evidence-template.py",
+                "--output",
+                str(forbidden_output),
+                "--observations-template-output",
+                str(external_observations),
+            ]
+            with self.assertRaises(EvidenceRootForbidden):
+                module.main()
+        finally:
+            sys.argv = old_argv
+
+        self.assertFalse(forbidden_output.exists())
 
     def test_default_template_run_does_not_mutate_collected_evidence(self) -> None:
         module = load_template_module()

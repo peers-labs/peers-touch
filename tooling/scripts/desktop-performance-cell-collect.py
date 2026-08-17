@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, inspect_command
+from _acceptance_artifacts import artifact_session, explicit_output_path, inspect_command
 
 
 PRODUCER_GATE_ID = "desktop-performance-cell-collect-gate"
@@ -316,7 +316,7 @@ def main() -> int:
     evidence_by_cell = build_evidence(observations, source, args.cell_ids)
     statuses = sorted({evidence["status"] for evidence in evidence_by_cell.values()})
     if args.output_dir:
-        written = write_evidence(evidence_by_cell, Path(args.output_dir))
+        written = write_evidence(evidence_by_cell, explicit_output_path(args.output_dir))
         display_outputs = [str(path) for path in written]
     else:
         with artifact_session(PRODUCER_GATE_ID) as session:

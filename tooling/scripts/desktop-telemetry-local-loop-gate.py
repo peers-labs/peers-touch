@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session
+from _acceptance_artifacts import artifact_session, explicit_output_path
 
 
 ARTIFACT_KIND = "desktop-telemetry-local-loop-gate"
@@ -332,14 +332,14 @@ def main() -> int:
 
     root = Path(args.root).resolve()
     checks = [run_check(root, spec, args.timeout) for spec in CHECKS]
-    logical_output = Path(args.output) if args.output else Path(DEFAULT_OUTPUT)
+    output = explicit_output_path(args.output) if args.output else None
+    logical_output = output or Path(DEFAULT_OUTPUT)
     report = build_report(
         logical_output,
         checks,
         gateway_upload_source_evidence(root),
     )
-    if args.output:
-        output = Path(args.output)
+    if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         output.with_suffix(".md").write_text(render_markdown(report), encoding="utf-8")
