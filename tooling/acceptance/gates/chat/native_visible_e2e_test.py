@@ -14,6 +14,39 @@ import native_visible_e2e as gate  # noqa: E402
 import native_visible_runner as runner  # noqa: E402
 
 
+class ActorCredentialReferenceTest(unittest.TestCase):
+    def test_resolves_the_actor_manifest_credential(self) -> None:
+        with patch.dict(
+            runner.os.environ,
+            {"CHAT_LOGIN_SECRET": "runtime-only-value"},
+            clear=True,
+        ):
+            credential = runner.resolve_actor_credential(
+                {"credentialRefs": ["env:CHAT_LOGIN_SECRET"]}
+            )
+
+        self.assertEqual(credential, "runtime-only-value")
+
+    def test_rejects_ambiguous_or_unresolved_actor_credentials(self) -> None:
+        invalid = (
+            ({}, "exactly one"),
+            (
+                {"credentialRefs": ["env:ONE", "env:TWO"]},
+                "exactly one",
+            ),
+            ({"credentialRefs": ["file:/tmp/secret"]}, "env: source"),
+            ({"credentialRefs": ["env:MISSING"]}, "unresolved"),
+        )
+        with patch.dict(runner.os.environ, {}, clear=True):
+            for manifest, message in invalid:
+                with self.subTest(manifest=manifest):
+                    with self.assertRaisesRegex(
+                        runner.JourneyError,
+                        message,
+                    ):
+                        runner.resolve_actor_credential(manifest)
+
+
 class NativeVisibleEvidenceTest(unittest.TestCase):
     def report(self, journey: str) -> dict[str, Any]:
         count = {"two-client": 2, "multi-device": 3, "recovery": 2, "group-mls": 3}[journey]
