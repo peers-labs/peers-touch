@@ -100,6 +100,34 @@ class NativeVisibleStaticContractTest(unittest.TestCase):
         self.assertNotIn("--features e2e-testing", launcher)
         self.assertNotIn("playwright:default", launcher)
 
+    def test_profile_sync_uses_window_bound_ptid_and_local_account(self) -> None:
+        application = (
+            ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "application"
+            / "profile"
+            / "mod.rs"
+        ).read_text(encoding="utf-8")
+        command = (
+            ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "interface"
+            / "tauri_commands"
+            / "profile.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("profile_matches_ptid", application)
+        self.assertIn("canonical_profile_ptid(profile) == Some(actor_ptid)", application)
+        self.assertNotIn("profile.id == actor_id ||", application)
+        self.assertIn("state.sessions.get(window.label())", command)
+        self.assertIn("&session.account_id", command)
+        self.assertIn("&session.actor.ptid", command)
+
     def test_all_visible_journey_entrypoints_exist(self) -> None:
         expected = (
             "native_two_client_runner.py",
