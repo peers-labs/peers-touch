@@ -502,6 +502,7 @@ class NativeInteractionsGate(AcceptanceGate):
         self.message_ids[f"{claim_kind}.thread.first"] = thread_id
         self.message_ids[f"{claim_kind}.thread.nested"] = nested_id
         for actor in members:
+            self.sync(actor, kind, conversation_id)
             reply_projection = wait_until(
                 lambda actor=actor: self.projection(
                     actor,
