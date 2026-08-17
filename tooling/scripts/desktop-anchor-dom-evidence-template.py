@@ -11,7 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, inspect_command
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    inspect_command,
+)
 
 ARTIFACT_KIND = "desktop-anchor-dom-evidence"
 OBSERVATIONS_TEMPLATE_ARTIFACT_KIND = "desktop-anchor-dom-observations-template"
@@ -232,13 +236,15 @@ def main() -> int:
     evidence_template = build_template()
     observations_template = build_observations_template()
     if args.output:
-        output_path = Path(args.output)
+        output_path = explicit_output_path(args.output)
+        observations_template_path = explicit_output_path(
+            args.observations_template_output
+        )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
             json.dumps(evidence_template, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-        observations_template_path = Path(args.observations_template_output)
         observations_template_path.parent.mkdir(parents=True, exist_ok=True)
         observations_template_path.write_text(
             json.dumps(observations_template, indent=2, ensure_ascii=False) + "\n",

@@ -169,6 +169,12 @@ def resolve_artifact_root(
             path_role="artifact-root",
         )
 
+    if candidate.is_symlink():
+        raise EvidenceSymlinkRejected(
+            "artifact root cannot be a symlink",
+            operation="resolve-root",
+            path_role="artifact-root",
+        )
     root = Path(os.path.realpath(str(candidate)))
     canonical_repo = Path(os.path.realpath(str(repo_root)))
     if root == canonical_repo or _contains(canonical_repo, root):
@@ -226,6 +232,7 @@ def current_run_directory(
         / _validate_gate_id(gate_id)
         / _validate_run_id(run_id)
     )
+    _ensure_no_symlink(root, run_dir)
     if not run_dir.is_dir():
         raise EvidenceManifestInvalid("run context directory does not exist")
     return run_dir
@@ -388,8 +395,21 @@ def _ensure_no_symlink(base: Path, target: Path) -> None:
 
 
 def _private_directory(path: Path, role: str) -> None:
+    for component in (path, *path.parents):
+        if component.is_symlink():
+            raise EvidenceSymlinkRejected(
+                f"symlink directory is forbidden: {component}",
+                operation="create-directory",
+                path_role=role,
+            )
     try:
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if path.is_symlink() or not path.is_dir():
+            raise EvidenceSymlinkRejected(
+                f"artifact directory is not a real directory: {path}",
+                operation="create-directory",
+                path_role=role,
+            )
         if os.name != "nt":
             path.chmod(0o700)
     except OSError as error:
@@ -428,6 +448,13 @@ def _media_type(path: Path) -> str:
 
 
 def _atomic_write(path: Path, value: bytes, *, path_role: str) -> None:
+    if path.is_symlink():
+        raise EvidenceSymlinkRejected(
+            f"symlink artifact is forbidden: {path}",
+            operation="atomic-write",
+            path_role=path_role,
+        )
+    _private_directory(path.parent, f"{path_role}-parent")
     temporary = path.with_name(f".{path.name}.tmp-{secrets.token_hex(8)}")
     try:
         with temporary.open("xb") as handle:
@@ -459,6 +486,12 @@ class _FileLock:
         if self._handle is not None:
             return True
         _private_directory(self.path.parent, "lock-parent")
+        if self.path.is_symlink():
+            raise EvidenceSymlinkRejected(
+                f"symlink lock is forbidden: {self.path}",
+                operation="lock",
+                path_role="lock",
+            )
         try:
             handle = self.path.open("a+b")
             if os.name != "nt":
@@ -736,6 +769,7 @@ class EvidenceStore:
         normalized_gate = _validate_gate_id(gate_id)
         gate_dir = self.workspace_dir / normalized_gate
         pointer_path = gate_dir / "latest.json"
+        _ensure_no_symlink(self.root, pointer_path)
         if not pointer_path.exists() and not required:
             return None
         try:

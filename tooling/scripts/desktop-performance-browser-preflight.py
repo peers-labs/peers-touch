@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session
+from _acceptance_artifacts import artifact_session, explicit_output_path
 
 ARTIFACT_KIND = "desktop-performance-browser-preflight"
 PHASE = "P0b-2/P0b-7/P0c-5"
@@ -309,7 +309,7 @@ def main() -> int:
         raw_snapshot = evaluate_snapshot_from_cdp(args.cdp_host, args.cdp_port, args.wait_seconds, args.target_url)
     report = evaluate_snapshot(raw_snapshot, DEFAULT_OUTPUT)
     if args.output:
-        output = Path(args.output)
+        output = explicit_output_path(args.output)
         write_report(output, report)
         display_output = str(output)
     else:

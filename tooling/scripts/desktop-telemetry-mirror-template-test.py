@@ -343,7 +343,10 @@ class DesktopTelemetryMirrorTemplateTest(unittest.TestCase):
         self.assertEqual(written["failedStep"], "station-query-template")
         self.assertEqual(written["issue_breakdown"][0]["category"], "station-mirror-source")
         self.assertFalse(written["issue_breakdown"][0]["sampleEmissionAllowed"])
-        self.assertEqual(written["issue_breakdown"][0]["sourceArtifact"], str(prefix.with_suffix(".json")))
+        self.assertEqual(
+            written["issue_breakdown"][0]["sourceArtifact"],
+            str(prefix.resolve().with_suffix(".json")),
+        )
 
 
 if __name__ == "__main__":
