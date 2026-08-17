@@ -294,7 +294,6 @@ cd apps/desktop && pnpm run check && pnpm run test && pnpm run build
 make acceptance-driver-build
 make acceptance-driver-smoke
 CHAT_ACCEPTANCE_RESET=1 \
-  CHAT_ACCEPTANCE_PASSWORD=<test-password> \
   CHAT_DESKTOP_DOM_STATION_URL=http://10.37.94.156:18080 \
   CHAT_NATIVE_STATION_URL=http://10.37.94.156:18080 \
   make acceptance-chat-domain-validation
