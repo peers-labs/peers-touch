@@ -20,16 +20,16 @@
 | Worktree | `/Users/bytedance/Documents/Projects/peers-touch/peers-oss` |
 | Branch | `design/acceptance-runtime-provisioning-contract` |
 | Stage | `EXECUTE` |
-| Current workstream | `WS8: Chat Native Two-Client Validation` |
-| Current step | Hold Draft PR #91 with explicit product, lease, Native Gate, and AS-04 evidence blockers. |
-| Progress | WS1, WS5, and WS7 DONE; WS2, WS3, WS4, and WS6 PARTIAL; WS8 BLOCKED. AS-03 and AS-05 PASSED; AS-01 and AS-02 PARTIAL; AS-04 BLOCKED/UNPROVEN; Direct Chat DELIVERED UNPROVEN. |
-| Last completed | Commit `23b7391be` closed the final framework-side P1 found by agent review. Final local Gates and structure pass; Gap/Quality/review-submit fail closed; PR #91 body and review comment record the hold verdict. |
-| Current action | Handoff in `EXECUTE/BLOCKED`; do not mark Ready, approve, or merge while required evidence is missing. |
-| Next action | Product/identity owners resolve the post-login account transition; environment owners provide an enforceable Profile Three lease and discriminating credential; then rerun all four Native Gates and every final audit. |
-| Blockers | `PRODUCT_AMENDMENT_REQUIRED`: source-matched run `412bb356ae476869` returns Bob to visible `Choose Account` after password login and logs a numeric-actor/canonical-PTID mismatch. `ENVIRONMENT_BLOCKED`: Profile Three has no enforceable shared provisioning lease; run `6fc14b7010c35190` was overwritten mid-Gate by Station commit `4383dfc1`. |
-| Decisions required | Product/identity owners must define and fix the post-login account-gate transition in the governing Desktop identity lifecycle plan. The Runtime Provisioning plan must not bypass it with text selectors or Store injection. |
-| Evidence | `PASSED`: local static/runtime Gates, four-domain structural validation, coverage generation, final-source guard tests, Fixture/TauriDriver startup, failure traceability, cleanup, Quality/Review regressions, review skill freshness, and GitHub pr-build/commitlint/description/title/labeler. `FAILED/UNPROVEN`: v9 stops at source-matched `bob:shell.ready`; v10 is invalid because Station drifted. `BLOCKED/UNPROVEN`: four Native Gates, Quality/review-submit, and AS-04 exact-value scan. |
-| Last updated | 2026-08-17 03:25 CST |
+| Current workstream | `WS8-A: Identity Prerequisite`, `WS8-B: Profile Lease`, `WS8-C: Leak Canary` |
+| Current step | Commit the three locally verified prerequisite implementations, deploy that exact source, and start Native proof. |
+| Progress | WS1, WS5, and WS7 DONE; WS2, WS3, WS4, and WS6 PARTIAL; WS8-A/B/C IMPLEMENTED_UNPROVEN; WS8 BLOCKED until live evidence closes those dependencies. AS-03 and AS-05 PASSED; AS-01 and AS-02 PARTIAL; AS-04 BLOCKED/UNPROVEN; Direct Chat DELIVERED UNPROVEN. |
+| Last completed | Strict PTID/window-account profile sync, cross-worktree `station-three` lease, and generated leak-canary are implemented. Rust profile tests, 285 Desktop tests, Desktop check, 51 provisioning/lease tests, 18 runner tests, 23 Native static tests, Chat structure, and coverage pass. |
+| Current action | Review and commit only task-owned files so Station/client attestation can bind to one source commit. |
+| Next action | Deploy through the leased path, run two-client Native proof, perform exact canary scan, then run the remaining three Native Gates. |
+| Blockers | None for commit/deploy. Native proof remains `UNPROVEN` until the environment-backed Gates execute. |
+| Decisions required | None. The user approved the scope amendment; identity-lifecycle and provisioning-lease semantics already exist in accepted contracts. |
+| Evidence | `PASSED`: local identity, lease, canary, Native static, structure, coverage, cleanup, and review regressions. Historical v9/v10 failures remain diagnostic only. `UNPROVEN`: current-commit four Native Gates and live AS-04 canary scan. |
+| Last updated | 2026-08-17 09:16 CST |
 
 ---
 
@@ -57,6 +57,9 @@ This plan implements the accepted Runtime Provisioning architecture for the Acce
 - Registry behavior rules for receiver-visible state gate selection
 - `pt-acceptance-gap-detector` cross-stage read-only guard skill
 - Chat Native two-client environment end-to-end validation
+- Desktop post-login identity prerequisite required by Native Chat proof
+- Cross-worktree deployment/provisioning lease for the shared Profile Three Station
+- High-entropy leak-canary CredentialRef for discriminating AS-04 value scans
 
 ### Non-Scope
 - Fixing Direct Chat DELIVERED receipt product logic itself (this remains a product bug to be fixed separately after framework lands)
@@ -65,6 +68,7 @@ This plan implements the accepted Runtime Provisioning architecture for the Acce
   stale pre-Core-Runtime transport is discovered
 - CI/CD platform integration (local developer environment only in this phase)
 - Remote testnet provisioning (home-station local environment only)
+- Vercel deployment status, because the private-repository Hobby-plan failure is an external non-product limitation explicitly excluded by the user
 
 ---
 
@@ -79,6 +83,9 @@ This plan implements the accepted Runtime Provisioning architecture for the Acce
 | WS5: Registry Behavior Rules | D-09 | Messaging receipt changes automatically select `chat-native-two-client-e2e`, no over-selection of expensive gates |
 | WS6: Acceptance Runner Integration | D-07 | Provisioning runs before gate, missing provisioning blocks gate execution, manifest attached to evidence |
 | WS7: Gap Detector Skill | D-10 | Gap detector fails closed on missing evidence, outputs structured gaps, does not modify code |
+| WS8-A: Identity Prerequisite | Desktop Identity Lifecycle / D-08 | Password login reaches PIN/shell through canonical PTID validation without numeric-ID boundary fallback |
+| WS8-B: Shared Profile Lease | D-07 | Deploy and Provisioner contend on one crash-safe Profile Three lease; concurrent work is structured BLOCKED |
+| WS8-C: Leak Canary | D-08/D-10 | High-entropy canary traverses CredentialRef/runtime redaction and has zero raw-value artifact matches |
 | WS8: Chat Native Validation | D-07/D-08/D-09 | End-to-end two-client provisioning path is discoverable and reproducible by a new agent |
 
 ---
@@ -87,16 +94,54 @@ This plan implements the accepted Runtime Provisioning architecture for the Acce
 
 ### Dependency DAG
 ```
-WS1 (Core Model) → WS2 (Provisioner Runtime) → WS6 (Runner Integration) → WS8 (Chat Validation)
+WS1 (Core Model) → WS2 (Provisioner Runtime) → WS6 (Runner Integration)
      ↓                     ↓
 WS4 (Credentials)     WS3 (Attestation/Actors)
      ↓                     ↓
 WS5 (Registry Rules) ───────┘
      ↓
 WS7 (Gap Detector)
+
+WS8-A (Identity) ─┐
+WS8-B (Lease) ────┼→ WS8 (Chat Validation)
+WS8-C (Canary) ───┘
 ```
 
 Workstreams that may run in parallel after WS1: WS3, WS4, WS5.
+
+### Approved Blocker Closure Amendment (WS8-A / WS8-B / WS8-C)
+
+**User decision (2026-08-17)**: Ignore the external Vercel plan limitation and
+continue resolving every other blocker.
+
+#### WS8-A: Desktop Identity Prerequisite
+- Remote profile identity MUST be compared with the canonical PTID bound to the
+  originating Tauri window.
+- Local profile writes MUST target the local account ID from that same active
+  window session.
+- Numeric Station storage IDs MUST NOT be accepted as cross-boundary identity
+  substitutes.
+- Required evidence:
+  `cargo test` for profile/session ownership, Desktop identity lifecycle tests,
+  Desktop check, and a source-matched Native login reaching PIN/shell.
+
+#### WS8-B: Shared Profile Lease
+- Deploy and Environment Provisioner MUST acquire the same OS-backed lease key
+  for `station-three`.
+- A competing deploy or Gate MUST return structured BLOCKED before changing the
+  Station.
+- The lease MUST release automatically on process exit and explicitly during
+  cleanup.
+- Required evidence: contention tests, crash/release test, and a live Native run
+  whose final Station commit remains source-matched.
+
+#### WS8-C: High-Entropy Leak Canary
+- Provisioning MUST resolve a per-run high-entropy canary through CredentialRef.
+- The canary value MUST never be serialized; reports retain only its reference.
+- Final evidence scan MUST search every current-run report/evidence artifact for
+  the exact canary and return zero matches.
+- Product login password remains separately covered by structured redaction and
+  reference-only checks.
 
 ---
 
@@ -348,7 +393,7 @@ The plan is complete and ready for production use only when:
 3. AS-01 through AS-04 all pass in local environment
 4. AS-05 correctly reports the existing DELIVERED receipt gap
 5. A fresh agent (no context) can successfully execute AS-02 without human intervention beyond setting the documented credential env var
-6. No product code in `apps/` is modified (framework-only change)
+6. Product code changes are limited to the accepted Desktop identity prerequisite and pass its dedicated tests and Native proof
 7. All existing acceptance gates continue to pass as before (no regression)
 
 Once this gate passes, the framework is ready to be used to validate actual product fixes (like the DELIVERED receipt bug) in subsequent workstreams.
@@ -360,10 +405,13 @@ Once this gate passes, the framework is ready to be used to validate actual prod
 | Workstream | Status | Completion Date | Commit | Notes |
 |------------|--------|-----------------|--------|-------|
 | WS1: Core Data Model | DONE | 2026-08-16 | `9d05335e1` | Immutable contract/manifest models and schema tests pass. |
-| WS2: Provisioner Runtime | PARTIAL | — | `9d05335e1`, `b274e68c1`, `034bd725b` | Profile/service preflight, structured BLOCKED, per-client WebDriver allocation, and failed-run cleanup are proven. The design-required shared Profile lease and cleanup after a successful complete Gate remain unproven. |
+| WS2: Provisioner Runtime | PARTIAL | — | `9d05335e1`, `b274e68c1`, `034bd725b` | Shared deploy/Provisioner `flock` lease is implemented and contention/crash-release tests pass; live contention and successful complete-Gate cleanup remain unproven. |
 | WS3: Attestation & Actors | PARTIAL | — | `9d05335e1`, `d0af86743`, `1fc55890f` | Live attestation, reset, canonical Alice/Bob PTIDs, and authenticated login/logout are proven. The latest run correctly blocked when a concurrent deployment replaced the Station commit. |
-| WS4: Credential Redaction | PARTIAL | — | `9d05335e1`, `f9bcead42` | CredentialRef and structured/key-aware redaction tests pass; live artifacts contain references/redaction only, but exact-value AS-04 is UNPROVEN because the preset value is one character. |
+| WS4: Credential Redaction | PARTIAL | — | `9d05335e1`, `f9bcead42` | Generated high-entropy leak-canary and exact-value artifact redaction are implemented and locally tested; live Gate scan remains unproven. |
 | WS5: Registry Behavior Rules | DONE | 2026-08-16 | `9d05335e1` | Receipt owner selects two-client Gate; unrelated messaging and proto paths do not over-select it. |
 | WS6: Runner Integration | PARTIAL | — | `9d05335e1`, `f9bcead42`, `8f88bb038`, `b274e68c1`, `034bd725b`, `7b6938982`, `ba1d799ba` | Provision-before-run, manifest-only input, TauriDriver, cleanup, failed-result traceability, and final live commit guard are implemented; final guard live evidence and a successful complete product Gate remain unproven. |
 | WS7: Gap Detector Skill | DONE | 2026-08-17 | `9d05335e1`, `a0ff6368a`, `ce564cb95`, `23b7391be` | Detector and submit wiring fail closed. Quality/Review range isolation, gap-aware readiness, and valid environment-proof closure regressions cover the discovered completion-path silent passes. |
+| WS8-A: Identity Prerequisite | PARTIAL | — | — | Strict PTID validation and window-bound account writes pass Rust/Desktop/static tests; Native login evidence pending. |
+| WS8-B: Shared Profile Lease | PARTIAL | — | — | Deploy and Provisioner share one crash-safe `station-three` flock; local contention and process-exit release pass, live proof pending. |
+| WS8-C: Leak Canary | PARTIAL | — | — | Generated high-entropy CredentialRef and exact artifact redaction pass local tests; live zero-match scan pending. |
 | WS8: Chat Native Validation | BLOCKED | — | `8f88bb038`, `b274e68c1`, `570dfd514`, `f826199bf`, `034bd725b`, `7b6938982`, `ba1d799ba` | Source-matched dual Native execution reaches Bob password login and then fails at `shell.ready`; later run proves shared Station drift. Product amendment and environment lease are unresolved; Direct Chat remains UNPROVEN. |

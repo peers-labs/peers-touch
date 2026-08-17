@@ -35,6 +35,7 @@ class CredentialRef:
     id: str
     source_ref: str
     required: bool = True
+    generated_if_missing: bool = False
 
     def resolve(self) -> str:
         import os
@@ -42,6 +43,9 @@ class CredentialRef:
         if self.source_ref.startswith("env:"):
             env_name = self.source_ref[4:]
             value = os.environ.get(env_name, "")
+            if not value and self.generated_if_missing:
+                value = secrets.token_urlsafe(32)
+                os.environ[env_name] = value
             if not value and self.required:
                 raise ProvisioningError(
                     f"required credential {self.id} not found at {self.source_ref}"
@@ -146,6 +150,15 @@ class EnvironmentContract:
             raise ProvisioningError(
                 f"invalid environment contract at {path}: each credential requires id and source_ref"
             )
+        if any(
+            credential.get("generated_if_missing", False)
+            and not str(credential["source_ref"]).startswith("env:")
+            for credential in credentials_data
+        ):
+            raise ProvisioningError(
+                "invalid environment contract at "
+                f"{path}: generated credentials require an env: source_ref"
+            )
         if not isinstance(cleanup_data, dict):
             raise ProvisioningError(
                 f"invalid environment contract at {path}: cleanup must be an object"
@@ -195,6 +208,9 @@ class EnvironmentContract:
                     id=str(credential["id"]),
                     source_ref=str(credential["source_ref"]),
                     required=bool(credential.get("required", True)),
+                    generated_if_missing=bool(
+                        credential.get("generated_if_missing", False)
+                    ),
                 )
                 for credential in credentials_data
             ),
