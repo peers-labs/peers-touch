@@ -178,9 +178,13 @@ class ProvisionerBlockingTests(unittest.TestCase):
             provisioner,
             "_station_ready",
             return_value=False,
-        ):
+        ), patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ) as remote_lease:
             manifest = provisioner.provision("chat-native-two-client-e2e")
 
+        remote_lease.assert_called_once()
         self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
         self.assertEqual(
             manifest.blocked_resource,
@@ -246,6 +250,9 @@ class ProvisionerBlockingTests(unittest.TestCase):
             ), patch(
                 "tooling.acceptance.provisioners.home_station.source_proto_digest",
                 return_value="proto-digest",
+            ), patch.object(
+                provisioner,
+                "acquire_remote_git_source_lease",
             ), patch.dict(
                 "os.environ",
                 {},

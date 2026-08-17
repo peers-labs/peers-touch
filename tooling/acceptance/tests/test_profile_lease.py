@@ -6,12 +6,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.lease import (
     ProfileLease,
     ProfileLeaseUnavailable,
+    RemoteGitSourceLeaseUnavailable,
+    _remote_git_source_lease_script,
 )
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import (
@@ -126,6 +128,219 @@ class ProfileLeaseTests(unittest.TestCase):
         self.assertIn("PT_PROFILE_LEASE_HELD", source)
         self.assertIn("tooling.acceptance.core.lease", source)
         self.assertIn('--resource "$env_name"', source)
+
+
+class RemoteGitSourceLeaseTests(unittest.TestCase):
+    def _start_lease(
+        self,
+        home: str,
+        owner: str,
+    ) -> subprocess.Popen[str]:
+        environment = os.environ.copy()
+        environment["HOME"] = home
+        process = subprocess.Popen(
+            [
+                "/bin/sh",
+                "-c",
+                _remote_git_source_lease_script("station-three", owner),
+            ],
+            env=environment,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertIsNotNone(process.stdout)
+        self.assertEqual(process.stdout.readline().strip(), "READY")
+        return process
+
+    @staticmethod
+    def _release_process(process: subprocess.Popen[str]) -> None:
+        if process.stdin is not None and not process.stdin.closed:
+            process.stdin.close()
+        process.wait(timeout=10)
+        if process.stdout is not None:
+            process.stdout.close()
+        if process.stderr is not None:
+            process.stderr.close()
+
+    def test_remote_script_blocks_competing_git_writer_and_releases(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "station-three"
+            subprocess.run(
+                ["git", "init", str(repo)],
+                check=True,
+                capture_output=True,
+            )
+            first = self._start_lease(directory, "first-owner")
+            try:
+                index_lock = repo / ".git" / "index.lock"
+                self.assertTrue(index_lock.is_file())
+                competing = subprocess.run(
+                    [
+                        "/bin/sh",
+                        "-c",
+                        _remote_git_source_lease_script(
+                            "station-three",
+                            "second-owner",
+                        ),
+                    ],
+                    env={**os.environ, "HOME": directory},
+                    input="",
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                self.assertEqual(competing.returncode, 73)
+                self.assertIn(
+                    "BLOCKED:lease-held:first-owner",
+                    competing.stdout,
+                )
+            finally:
+                self._release_process(first)
+
+            self.assertFalse(index_lock.exists())
+
+    def test_remote_script_process_exit_removes_index_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "station-three"
+            subprocess.run(
+                ["git", "init", str(repo)],
+                check=True,
+                capture_output=True,
+            )
+            process = self._start_lease(directory, "crash-owner")
+            index_lock = repo / ".git" / "index.lock"
+            self.assertTrue(index_lock.is_file())
+            process.terminate()
+            process.wait(timeout=10)
+            if process.stdin is not None:
+                process.stdin.close()
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
+            self.assertFalse(index_lock.exists())
+
+    def test_provisioner_registers_remote_source_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment = (
+                root
+                / ".local"
+                / "deploy"
+                / "envs"
+                / "station-three.env"
+            )
+            environment.parent.mkdir(parents=True)
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=station.example",
+                        "PT_DEPLOY_USER=acceptance",
+                        "PT_DEPLOY_PATH=station-three",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            lease = MagicMock()
+            lease.resource = "station-three"
+            provisioner = DummyProvisioner(
+                EnvironmentContract(id="lease-test")
+            )
+            with patch(
+                "tooling.acceptance.core.provisioner.REPO_ROOT",
+                root,
+            ), patch(
+                "tooling.acceptance.core.provisioner.RemoteGitSourceLease",
+                return_value=lease,
+            ) as lease_type:
+                provisioner.acquire_remote_git_source_lease(
+                    "station-three",
+                    "gate-owner",
+                )
+                completed = provisioner.cleanup()
+
+        lease_type.assert_called_once_with(
+            "station-three",
+            "gate-owner",
+            host="station.example",
+            user="acceptance",
+            deploy_path="station-three",
+        )
+        lease.acquire.assert_called_once_with()
+        lease.release.assert_called_once_with()
+        self.assertEqual(completed, ("source-lease:station-three",))
+
+    def test_provisioner_maps_remote_conflict_to_structured_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment = (
+                root
+                / ".local"
+                / "deploy"
+                / "envs"
+                / "station-three.env"
+            )
+            environment.parent.mkdir(parents=True)
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=station.example",
+                        "PT_DEPLOY_USER=acceptance",
+                        "PT_DEPLOY_PATH=station-three",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            lease = MagicMock()
+            lease.acquire.side_effect = RemoteGitSourceLeaseUnavailable(
+                "station-three",
+                "deployment worktree is held by deploy-owner",
+            )
+            provisioner = DummyProvisioner(
+                EnvironmentContract(id="lease-test")
+            )
+            with patch(
+                "tooling.acceptance.core.provisioner.REPO_ROOT",
+                root,
+            ), patch(
+                "tooling.acceptance.core.provisioner.RemoteGitSourceLease",
+                return_value=lease,
+            ), self.assertRaisesRegex(
+                BlockedError,
+                "deploy-owner",
+            ) as caught:
+                provisioner.acquire_remote_git_source_lease(
+                    "station-three",
+                    "gate-owner",
+                )
+
+        self.assertEqual(
+            caught.exception.resource,
+            "source-lease:station-three",
+        )
+
+    def test_provisioner_rejects_noncanonical_remote_resource(self) -> None:
+        provisioner = DummyProvisioner(
+            EnvironmentContract(id="lease-test")
+        )
+        with self.assertRaisesRegex(
+            BlockedError,
+            "not a canonical lease resource",
+        ) as caught:
+            provisioner.acquire_remote_git_source_lease(
+                "../station-three",
+                "gate-owner",
+            )
+
+        self.assertEqual(
+            caught.exception.resource,
+            "source-lease:invalid-resource",
+        )
 
 
 if __name__ == "__main__":
