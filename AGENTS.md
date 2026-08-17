@@ -162,6 +162,16 @@ Use domain-specific loggers only (see platform docs for specifics).
 - All secrets via environment variables.
 - `.gitignore` must cover: `*.key`, `*.pem`, `*.local.yml`, `*.jks`, `*.keystore`.
 
+### No User-Home Absolute Paths
+
+- Committed docs, plans, prompts, reports, knowledge, skills, fixtures, and
+  configuration must not contain paths rooted in a developer or CI user's home.
+- Use repo-relative paths for repository content.
+- Use `<repo-root>`, `<workspace-root>`, `<runtime-home>`, or `$HOME` only when
+  a portable placeholder is semantically required.
+- Runtime worktree verification may use the real absolute path, but persisted
+  Context Anchors record `<repo-root>` plus the verified branch.
+
 ### No Mocking
 
 Frontend-backend collaborative APIs: **NO MOCK** unless the user explicitly says so. Using mock = cheating.
@@ -332,6 +342,7 @@ Current project skills:
 | `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
 | `pt-architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
 | `pt-branch-conflict-guardian` | Guide semantic conflict resolution across parallel branches: separate mechanical conflicts from ownership/behavior divergence, escalate unclear intent, and verify integrated behavior |
+| `pt-context-anchor` | Maintain the plan-owned Context Anchor and synchronize verified worktree, branch, stage, progress, evidence, blockers, and next action |
 | `pt-execution-plan-guardian` | Keep execution, continuation, merge, and readiness reports tied to plan sources, scope boundaries, gates, and evidence |
 | `pt-official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
 | `pt-desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
@@ -386,8 +397,8 @@ Any non-trivial development task (cross-module, new feature, architecture change
 | Stage | Entry condition | Skill(s) to invoke | Gate (exit condition) | Artifact |
 |-------|----------------|--------------------|-----------------------|----------|
 | **DESIGN** | New architecture / boundary / ownership decision needed | `pt-architecture-design-methodology` | Architecture review prompt generated → user initiates review → review passes | `docs/architecture/<module>/` |
-| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (analysis) → `pt-plan-and-document` (落盘 + review prompt) | Plan review prompt generated → user initiates review → review passes | `execution-plans/<plan>.md` |
-| **EXECUTE** | Plan accepted | `pt-execution-plan-guardian` | `pt-completion-auditor` passes OR completion criteria in plan all checked | Code + tests + evidence |
+| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (analysis) → `pt-plan-and-document` (落盘 + Context Anchor + review prompt) | Plan review prompt generated → user initiates review → review passes | `execution-plans/<plan>.md` |
+| **EXECUTE** | Plan accepted | `pt-context-anchor` → `pt-execution-plan-guardian` | `pt-completion-auditor` passes OR completion criteria in plan all checked | Code + tests + evidence + synchronized Context Anchor |
 | **DELIVER** | Code complete, tests pass | `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
 **Dispatch rules:**
@@ -405,16 +416,17 @@ Any non-trivial development task (cross-module, new feature, architecture change
 When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状态" / "resume" etc.):
 
 1. Read `project_memory.md` → check `active_work` registry.
-2. If one entry with `stage != complete`:
+2. Open the referenced plan and verify its `Context Anchor` through `pt-context-anchor`.
+3. If one entry with `stage != complete`:
    - Report in one sentence: current plan, stage, step.
    - Suggest the next action (which skill to invoke).
    - Wait for user confirmation.
-3. If multiple entries with `stage != complete`:
+4. If multiple entries with `stage != complete`:
    - List all active entries (plan name, stage, branch).
    - Ask: "Which work do you want to continue?"
    - Wait for user selection.
-4. If all entries are `complete` or registry is empty → offer to start new task.
-5. Dispatch to the correct stage skill per §13.5.
+5. If all entries are `complete` or registry is empty → offer to start new task.
+6. Dispatch to the correct stage skill per §13.5.
 
 **active_work registry schema** (maintained in `project_memory.md`):
 
