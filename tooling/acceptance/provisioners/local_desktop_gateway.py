@@ -9,13 +9,14 @@ import time
 import urllib.error
 import urllib.request
 
-from tooling.acceptance.core._paths import REPORTS_DIR, REPO_ROOT
+from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import (
     commits_match,
     produce_station_attestation,
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.evidence_store import current_artifact_path
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import (
     ClientRuntime,
@@ -51,7 +52,10 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
             return False
 
     def _start_gateway(self, gateway_url: str, run_id: str) -> None:
-        log_path = REPORTS_DIR / "logs" / f"provision-{run_id}-desktop.log"
+        log_path = current_artifact_path(
+            "logs/provision-desktop.log",
+            repo_root=REPO_ROOT,
+        )
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_handle = log_path.open("a", encoding="utf-8")
         process = subprocess.Popen(
@@ -87,7 +91,7 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                 raise BlockedError(
                     reason=(
                         f"make desktop exited with {process.returncode}; "
-                        f"inspect {log_path.relative_to(REPO_ROOT)}"
+                        "inspect the provision-desktop log artifact"
                     ),
                     resource=f"desktop-gateway:{gateway_url}",
                 )

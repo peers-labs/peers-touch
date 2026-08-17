@@ -14,6 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session, inspect_command, latest_path, latest_ref
+
+
+PRODUCER_GATE_ID = "desktop-telemetry-route-probe-gate"
+DEFAULT_OUTPUT = "reports/desktop-telemetry-route-probe.json"
 DEFAULT_STATION = "http://10.37.246.80:18080"
 DEFAULT_ACCOUNT = "b@p.t"
 DEFAULT_PASSWORD = "1"
@@ -672,6 +677,10 @@ def probe_routes(station: str, token: str, timeout: float) -> list[dict[str, Any
 def recommended_review_commands(station: str) -> list[dict[str, str]]:
     return [
         {
+            "purpose": "Inspect the latest route probe artifact.",
+            "command": inspect_command(PRODUCER_GATE_ID, "report"),
+        },
+        {
             "purpose": "Prove managed Station+Postgres runtime closure before trusting route proof.",
             "command": "python3 tooling/scripts/desktop-telemetry-runtime-closure-gate.py",
         },
@@ -913,7 +922,7 @@ def build_report(
     account: str,
     password: str,
     timeout: float,
-    output: str = "tooling/acceptance/reports/desktop-telemetry-route-probe.json",
+    output: str = DEFAULT_OUTPUT,
     repo_root: Path | None = None,
     runtime_closure_report: Path | None = None,
 ) -> dict[str, Any]:
@@ -1242,27 +1251,57 @@ def main() -> int:
     parser.add_argument("--account", default=os.environ.get("PT_TEST_ACCOUNT", DEFAULT_ACCOUNT))
     parser.add_argument("--password", default=os.environ.get("PT_TEST_PASSWORD", DEFAULT_PASSWORD))
     parser.add_argument("--timeout", type=float, default=2.0)
-    parser.add_argument("--output", default="tooling/acceptance/reports/desktop-telemetry-route-probe.json")
+    parser.add_argument("--output")
     parser.add_argument(
         "--runtime-closure-report",
-        default="tooling/acceptance/reports/desktop-telemetry-runtime-closure-gate.json",
     )
     args = parser.parse_args()
+    runtime_closure_ref = None
+    if not args.runtime_closure_report:
+        args.runtime_closure_report = str(
+            latest_path("desktop-telemetry-runtime-closure-gate", "report")
+        )
+        runtime_closure_ref = latest_ref(
+            "desktop-telemetry-runtime-closure-gate",
+            "report",
+        )
 
+    logical_output = args.output or DEFAULT_OUTPUT
     report = build_report(
         args.station,
         args.account,
         args.password,
         args.timeout,
-        args.output,
+        logical_output,
         runtime_closure_report=Path(args.runtime_closure_report),
     )
-    output_path = Path(args.output)
-    write_report(output_path, report)
-    md_path = output_path.with_suffix(".md")
-    md_path.write_text(render_markdown(report), encoding="utf-8")
-    print(f"desktop telemetry route probe: {args.output}")
-    print(f"desktop telemetry route probe: {md_path}")
+    if runtime_closure_ref is not None:
+        report["runtimeClosureArtifactRef"] = runtime_closure_ref
+    if args.output:
+        output_path = Path(args.output)
+        write_report(output_path, report)
+        md_path = output_path.with_suffix(".md")
+        md_path.write_text(render_markdown(report), encoding="utf-8")
+        display_output = str(output_path)
+        display_markdown = str(md_path)
+    else:
+        with artifact_session(PRODUCER_GATE_ID) as session:
+            session.write_json(DEFAULT_OUTPUT, report, role="report")
+            session.write_bytes(
+                str(Path(DEFAULT_OUTPUT).with_suffix(".md")),
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_output = DEFAULT_OUTPUT
+        display_markdown = str(Path(DEFAULT_OUTPUT).with_suffix(".md"))
+    print(f"desktop telemetry route probe: {display_output}")
+    print(f"desktop telemetry route probe: {display_markdown}")
     print(f"status: {report['status']}")
     return 0 if report["proofStatus"] == "PROVEN" else 1
 

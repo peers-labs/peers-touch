@@ -120,7 +120,18 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
                 "commit": "commit-a",
                 "workspaceDigest": "clean",
                 "protoDigest": "proto-a",
-                "attestation": "/tmp/attestation.json",
+                "attestation": {
+                    "artifactKind": "acceptance-artifact-ref",
+                    "workspaceId": "0123456789abcdef",
+                    "gateId": f"chat-native-{journey}-e2e",
+                    "runId": (
+                        "20260808T000000000000Z-"
+                        "0123456789abcdef0123456789abcdef"
+                    ),
+                    "path": "runtime/station-attestation.json",
+                    "sha256": "0" * 64,
+                    "mediaType": "application/json",
+                },
                 "live": {"build_commit": "commit-a"},
                 "finalLive": {"build_commit": "commit-a"},
                 "sourceStable": True,

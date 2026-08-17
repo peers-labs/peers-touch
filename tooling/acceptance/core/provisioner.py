@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import subprocess
 import urllib.error
 import urllib.request
@@ -8,9 +9,10 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
 
-from ._paths import MANIFESTS_DIR, REPO_ROOT
+from ._paths import REPO_ROOT
 from .attestation import source_workspace_digest
 from .errors import BlockedError, ProvisioningError
+from .evidence_store import write_current_artifact
 from .lease import (
     ProfileLease,
     ProfileLeaseUnavailable,
@@ -274,8 +276,11 @@ class EnvironmentProvisioner(ABC):
             raise ProvisioningError(
                 "cannot write manifest before provision() is called"
             )
-        path = (
-            MANIFESTS_DIR
-            / f"{self.environment_id}-{self._manifest.run_id}.json"
+        return write_current_artifact(
+            "runtime/environment-manifest.json",
+            (
+                json.dumps(self._manifest.to_dict(), indent=2, sort_keys=True)
+                + "\n"
+            ).encode("utf-8"),
+            repo_root=REPO_ROOT,
         )
-        return self._manifest.write(path)

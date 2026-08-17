@@ -19,7 +19,6 @@ from tooling.acceptance.core import (
     CredentialRef,
     EnvironmentContract,
     GapArtifact,
-    MANIFESTS_DIR,
     ENVIRONMENTS_DIR,
     ProvisioningError,
     ProvisioningState,
@@ -33,6 +32,17 @@ from tooling.acceptance.core.redaction import (
     is_sensitive_key,
     redact_value,
 )
+
+
+TEST_ARTIFACT_REF = {
+    "artifactKind": "acceptance-artifact-ref",
+    "workspaceId": "0" * 16,
+    "gateId": "test-gate",
+    "runId": "20260817T000000000000Z-" + "0" * 32,
+    "path": "runtime/attestation.json",
+    "sha256": "0" * 64,
+    "mediaType": "application/json",
+}
 
 
 class ProvisioningStateTests(unittest.TestCase):
@@ -105,10 +115,12 @@ class CredentialRefTests(unittest.TestCase):
         self.assertTrue(is_sensitive_key("credential_reference_secret"))
         value = redact_value(
             {
+                "accessTokensPresent": False,
                 "credentialRefs": ["env:TEST_PASSWORD"],
                 "credentialReferenceSecret": "must-not-survive",
             }
         )
+        self.assertFalse(value["accessTokensPresent"])
         self.assertEqual(value["credentialRefs"], ["env:TEST_PASSWORD"])
         self.assertEqual(value["credentialReferenceSecret"], REDACTED)
 
@@ -219,7 +231,7 @@ class StationAttestationTests(unittest.TestCase):
             live_commit="abc123def",
             workspace_digest="clean",
             proto_digest="sha256:xyz",
-            artifact_path="reports/attestation.json",
+            artifact_ref=TEST_ARTIFACT_REF,
             produced_at="2026-08-16T12:00:00+00:00",
         )
         self.assertTrue(att.is_clean_workspace)
@@ -231,7 +243,7 @@ class StationAttestationTests(unittest.TestCase):
             live_commit="abc123def",
             workspace_digest="sha256:dirty",
             proto_digest="sha256:xyz",
-            artifact_path="reports/attestation.json",
+            artifact_ref=TEST_ARTIFACT_REF,
             produced_at="2026-08-16T12:00:00+00:00",
         )
         self.assertFalse(att.is_clean_workspace)
@@ -313,7 +325,7 @@ class RuntimeManifestTests(unittest.TestCase):
             live_commit="abc123",
             workspace_digest="clean",
             proto_digest="sha256:proto",
-            artifact_path="reports/attestation.json",
+            artifact_ref=TEST_ARTIFACT_REF,
             produced_at="2026-08-16T12:00:00+00:00",
         )
         import dataclasses
@@ -382,9 +394,6 @@ class RuntimeManifestTests(unittest.TestCase):
 
 
 class PathConstantsTests(unittest.TestCase):
-    def test_manifests_dir_under_reports(self):
-        self.assertTrue(str(MANIFESTS_DIR).endswith("reports/manifests"))
-
     def test_environments_dir_exists(self):
         self.assertTrue(ENVIRONMENTS_DIR.exists())
         self.assertTrue((ENVIRONMENTS_DIR / "home-station.yaml").exists())

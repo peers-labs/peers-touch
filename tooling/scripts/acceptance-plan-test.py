@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -12,12 +13,21 @@ from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).with_name("acceptance-plan.py")
+ROOT = SCRIPT.parents[2]
+sys.path.insert(0, str(ROOT))
+
+from tooling.acceptance.core import (
+    RUN_GATE_ENV,
+    RUN_ID_ENV,
+    RUN_WORKSPACE_ENV,
+    EvidenceStore,
+)
+
 SPEC = importlib.util.spec_from_file_location("acceptance_plan", SCRIPT)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"failed to load {SCRIPT}")
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
-ROOT = SCRIPT.parents[2]
 
 
 class ChangedPathsTests(unittest.TestCase):
@@ -57,14 +67,23 @@ class ChangedPathsTests(unittest.TestCase):
             run.assert_called_once()
 
     def test_self_check_uses_dedicated_output(self) -> None:
-        self.assertEqual(
-            MODULE.default_output_path(True),
-            Path("tooling/acceptance/reports/acceptance-plan-self.json"),
-        )
-        self.assertEqual(
-            MODULE.default_output_path(False),
-            Path("tooling/acceptance/reports/latest-plan.json"),
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            store = EvidenceStore(Path(tmp) / "artifacts", worktree=ROOT)
+            self_run = store.begin_run("acceptance-plan-self", source={})
+            with patch.dict(os.environ, self_run.subprocess_environment({}), clear=True):
+                self.assertEqual(
+                    MODULE.default_output_path(True),
+                    self_run.run_dir / "reports" / "acceptance-plan-self.json",
+                )
+            self_run.close()
+
+            plan_run = store.begin_run("acceptance-plan", source={})
+            with patch.dict(os.environ, plan_run.subprocess_environment({}), clear=True):
+                self.assertEqual(
+                    MODULE.default_output_path(False),
+                    plan_run.run_dir / "reports" / "plan.json",
+                )
+            plan_run.close()
 
     def test_self_check_does_not_overwrite_latest_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -79,24 +98,44 @@ class ChangedPathsTests(unittest.TestCase):
                 '{"version": 1, "gates": {}}',
                 encoding="utf-8",
             )
-            subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "--root",
-                    str(acceptance),
-                    "--self-check",
-                    "--changed-file",
-                    "example.py",
-                ],
-                cwd=root,
-                check=True,
-                capture_output=True,
-                text=True,
+            artifacts = root / "artifacts"
+            environment = os.environ.copy()
+            for variable in (
+                RUN_WORKSPACE_ENV,
+                RUN_GATE_ENV,
+                RUN_ID_ENV,
+            ):
+                environment.pop(variable, None)
+            environment["PT_ACCEPTANCE_ARTIFACT_ROOT"] = str(artifacts)
+            for extra in ([], ["--self-check"]):
+                subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "--root",
+                        str(acceptance),
+                        *extra,
+                        "--changed-file",
+                        "example.py",
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            store = EvidenceStore(artifacts, worktree=ROOT)
+            normal = store.latest("acceptance-plan")
+            self_check = store.latest("acceptance-plan-self")
+            self.assertNotEqual(normal["runId"], self_check["runId"])
+            self.assertEqual(
+                set(normal["artifacts"]),
+                {"plan"},
             )
-            reports = root / "tooling" / "acceptance" / "reports"
-            self.assertTrue((reports / "acceptance-plan-self.json").is_file())
-            self.assertFalse((reports / "latest-plan.json").exists())
+            self.assertEqual(
+                set(self_check["artifacts"]),
+                {"plan"},
+            )
 
 
 class BehaviorRuleTests(unittest.TestCase):

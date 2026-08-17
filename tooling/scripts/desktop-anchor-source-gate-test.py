@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from _acceptance_artifacts import latest_path
 
 
 def load_source_gate_module():
@@ -33,6 +37,7 @@ class DesktopAnchorSourceGateTest(unittest.TestCase):
         <button data-pt-secondary-tab="settings" data-pt-secondary-tab-id={group.key} />
         <button data-pt-section-item="settings" data-pt-section-item-id={section.key} />
         <section data-pt-section-host={descriptor.id} />
+        <textarea data-pt-text-input="chat-composer" />
         <div
           data-pt-context-menu-trigger="chat-conversation"
           data-pt-context-menu-kind={c.kind}
@@ -54,8 +59,8 @@ class DesktopAnchorSourceGateTest(unittest.TestCase):
         self.assertEqual(report["phase"], "P0b-1")
         self.assertEqual(report["bom"], ["BOM-SMP-01"])
         self.assertEqual(report["spec"], ["SPEC-ANCHOR-01"])
-        self.assertEqual(report["requiredCount"], 9)
-        self.assertEqual(report["presentCount"], 9)
+        self.assertEqual(report["requiredCount"], 10)
+        self.assertEqual(report["presentCount"], 10)
         self.assertEqual(report["missing"], [])
 
     def test_missing_source_anchor_fails_without_dom_claim(self) -> None:
@@ -103,6 +108,31 @@ class DesktopAnchorSourceGateTest(unittest.TestCase):
         self.assertEqual(written["status"], "pass")
         self.assertIn("Desktop Anchor Source Gate", markdown)
         self.assertIn("does not inspect runtime DOM", markdown)
+
+    def test_main_defaults_to_external_artifact_session(self) -> None:
+        module = load_source_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            source_root = self.write_source(tmp, self.complete_anchor_source())
+            old_argv = sys.argv
+            try:
+                sys.argv = [
+                    "desktop-anchor-source-gate.py",
+                    "--source-root",
+                    str(source_root),
+                ]
+                with patch.dict(
+                    os.environ,
+                    {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(Path(tmp) / "artifacts")},
+                ):
+                    exit_code = module.main()
+                    report_path = latest_path(module.ARTIFACT_KIND, "report")
+                    written = json.loads(report_path.read_text(encoding="utf-8"))
+            finally:
+                sys.argv = old_argv
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(written["status"], "pass")
+        self.assertTrue(report_path.resolve().is_relative_to(Path(tmp).resolve()))
 
 
 if __name__ == "__main__":

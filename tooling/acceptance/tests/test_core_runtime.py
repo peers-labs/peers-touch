@@ -29,8 +29,6 @@ from tooling.acceptance.core import (
     new_report,
     call_async_harness,
     REPO_ROOT as CORE_REPO_ROOT,
-    REPORTS_DIR,
-    EVIDENCE_DIR,
 )
 from tooling.acceptance.core.redaction import REDACTED
 from tooling.acceptance.drivers.tauri import TauriDriver
@@ -185,11 +183,13 @@ class EvidenceSchemaTests(unittest.TestCase):
             src = Path(tmpdir) / "app.log"
             src.write_text("mock log content", encoding="utf-8")
             report = new_report("ev-test")
-            with patch("tooling.acceptance.core.evidence.EVIDENCE_DIR", Path(tmpdir) / "evidence"):
-                rel = report.add_evidence_file("app-log", src)
-                self.assertTrue(rel.endswith(".log"))
-                dest = REPO_ROOT / rel
-                self.assertTrue(dest.exists() or (Path(tmpdir) / "evidence" / f"ev-test-app-log.log").exists())
+            stored = report.add_evidence_file(
+                "app-log",
+                src,
+                destination_dir=Path(tmpdir) / "evidence",
+            )
+            self.assertTrue(stored.endswith(".log"))
+            self.assertTrue(Path(stored).exists())
 
 
 class AcceptanceGateBaseClassTests(unittest.TestCase):
@@ -300,6 +300,7 @@ class AcceptanceGateBaseClassTests(unittest.TestCase):
             def __init__(self, tmpdir: Path):
                 super().__init__()
                 self.report_path = tmpdir / "redaction.json"
+                self.evidence_dir = tmpdir / "evidence"
                 self.driver = MockDriver()
                 self.driver._page_source = (
                     "<html><body>password=dom-secret "
