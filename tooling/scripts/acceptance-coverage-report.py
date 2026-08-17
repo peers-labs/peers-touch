@@ -5,8 +5,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Any
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from tooling.acceptance.core.errors import EvidenceManifestInvalid
 
 
 def load(path: Path) -> dict[str, Any]:
@@ -25,13 +33,24 @@ def load_capabilities(root: Path) -> dict[str, dict[str, Any]]:
     return capabilities
 
 
-def domain_validation_status(repo_root: Path, root: Path, domain: dict[str, Any]) -> tuple[str, list[str]]:
+def domain_validation_status(
+    root: Path,
+    domain: dict[str, Any],
+    store: Any,
+) -> tuple[str, list[str]]:
     domain_id = domain.get("id", "")
     if domain.get("status") != "active":
         return "not_validated", []
     profile = load(root / "domains" / f"{domain_id}.yaml")
-    report_path = repo_root / profile.get("report", f"tooling/acceptance/reports/{domain_id}-validation.json")
-    report = load(report_path)
+    validation_gate_id = str(profile.get("validation_gate_id") or "")
+    if not validation_gate_id:
+        return "missing_report", []
+    try:
+        report = store.read_json(
+            store.latest_artifact_ref(validation_gate_id, "validation")
+        )
+    except EvidenceManifestInvalid:
+        return "missing_report", []
     statuses = [capability.get("status", "unknown") for capability in report.get("capabilities", [])]
     if not statuses:
         return "missing_report", []
@@ -47,7 +66,7 @@ def domain_validation_status(repo_root: Path, root: Path, domain: dict[str, Any]
     return "partial", missing
 
 
-def render_markdown(repo_root: Path, root: Path, output: Path) -> None:
+def render_markdown(root: Path, store: Any) -> str:
     index = load(root / "domains" / "index.yaml")
     capabilities = load_capabilities(root)
     lines = [
@@ -65,7 +84,7 @@ def render_markdown(repo_root: Path, root: Path, output: Path) -> None:
         domain_id = domain.get("id", "")
         profile = load(root / "domains" / f"{domain_id}.yaml")
         capability_ids = profile.get("capabilities", [])
-        validation, missing = domain_validation_status(repo_root, root, domain)
+        validation, missing = domain_validation_status(root, domain, store)
         notes = domain.get("notes", "")
         if missing:
             notes = f"{notes} Missing proven capabilities: {', '.join(missing)}".strip()
@@ -96,19 +115,39 @@ def render_markdown(repo_root: Path, root: Path, output: Path) -> None:
             "",
         ]
     )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(lines), encoding="utf-8")
+    return "\n".join(lines)
 
 
 def main() -> int:
+    from tooling.acceptance.core import (
+        RUN_GATE_ENV,
+        ArtifactSession,
+        EvidenceStore,
+    )
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default="tooling/acceptance")
-    parser.add_argument("--output", default="tooling/acceptance/reports/project-coverage-report.md")
     args = parser.parse_args()
 
-    repo_root = Path.cwd()
-    render_markdown(repo_root, repo_root / args.root, repo_root / args.output)
-    print(f"[OK] wrote {args.output}")
+    store = EvidenceStore.from_environment(
+        repo_root=REPO_ROOT,
+        worktree=REPO_ROOT,
+    )
+    markdown = render_markdown(REPO_ROOT / args.root, store)
+    gate_id = os.environ.get(RUN_GATE_ENV) or "acceptance-coverage-report"
+    with ArtifactSession(repo_root=REPO_ROOT, gate_id=gate_id) as session:
+        reference = session.write_bytes(
+            "reports/project-coverage-report.md",
+            markdown.encode("utf-8"),
+            media_type="text/markdown",
+            role="coverage",
+        )
+        session.complete(
+            status="passed",
+            completion_status="DONE",
+            proof_status="PROVEN",
+        )
+    print(f"[OK] wrote {json.dumps(reference.to_dict(), sort_keys=True)}")
     return 0
 
 

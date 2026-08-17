@@ -55,11 +55,20 @@ CHAT_ACCEPTANCE_PASSWORD=<test-password> \
 CHAT_DESKTOP_DOM_STATION_URL=http://10.37.94.156:18080 \
 make acceptance-chat-desktop-dom
 
+make profile PROFILE=<approved-disposable-profile>
+
 CHAT_ACCEPTANCE_RESET=1 \
-CHAT_ACCEPTANCE_PASSWORD=<test-password> \
-CHAT_NATIVE_STATION_URL=http://10.37.94.156:18080 \
+CHAT_NATIVE_DEMO_PASSWORD="$CHAT_NATIVE_DEMO_PASSWORD" \
 make acceptance-chat-native-two-client
 ```
+
+The native two-client target invokes the environment Provisioner first.
+Station URL, deployment attestation, canonical PTIDs, client ports/profiles,
+storage, and per-client WebDriver ports come only from
+`PT_ACCEPTANCE_RUNTIME_MANIFEST`; do not export those values manually.
+
+Provisioning failures are `BLOCKED/UNPROVEN` with exit code `2`. Product Gate
+failures are `FAILED/UNPROVEN` with exit code `1`.
 
 The two-client Gate must prove Alice send, Bob receiver DOM with the same
 message ID/body, unread badge increment/clear, and receiver restart recovery.
@@ -68,6 +77,8 @@ message ID/body, unread badge increment/clear, and receiver restart recovery.
 
 Require:
 
+- runtime artifacts under the external Acceptance Evidence Store, never the
+  repository source tree;
 - runner and validator JSON;
 - native screenshots and DOM snapshots;
 - redacted app logs;
@@ -79,6 +90,18 @@ Require:
 
 Do not claim Acceptance from a smoke check, API result, browser render, or
 manual screenshot.
+
+`PT_ACCEPTANCE_ARTIFACT_ROOT` is an optional local override and mandatory in
+CI. Use the canonical operator interface instead of assuming a report path:
+
+```bash
+python3 tooling/scripts/acceptance-artifact.py root
+python3 tooling/scripts/acceptance-artifact.py cat \
+  --gate <gate-id> --role <role>
+```
+
+An Evidence Store creation/write failure is a typed Gate failure. Never fall
+back to `tooling/`, `docs/`, `.git/`, or any repository path.
 
 ## Failure Inspection
 
@@ -99,6 +122,6 @@ Report:
 - Station URL and live commit;
 - exact Gate commands and PASS/FAIL;
 - conversation/message IDs;
-- evidence paths;
+- Gate IDs, run IDs, and typed ArtifactRefs;
 - process/port/storage cleanup result;
 - explicit unproven scope.

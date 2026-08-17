@@ -11,12 +11,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session, explicit_output_path
+
 
 PHASE = "P0b-1"
 BOM = ["BOM-SMP-01"]
 SPEC = ["SPEC-ANCHOR-01"]
 GATE = "Desktop source must expose required stable anchors before DOM automation evidence can be accepted"
 ARTIFACT_KIND = "desktop-anchor-source-gate"
+REPORT_PATH = "reports/desktop-anchor-source-gate.json"
+REPORT_MARKDOWN_PATH = "reports/desktop-anchor-source-gate.md"
 
 
 def utc_now() -> str:
@@ -84,7 +88,7 @@ def build_report(source_root: Path) -> dict[str, Any]:
     }
     if missing:
         issue_context = {
-            "sourceArtifact": "tooling/acceptance/reports/desktop-anchor-source-gate-latest.json",
+            "sourceArtifact": "evidence-store:current:report",
             "sourceArtifactKind": ARTIFACT_KIND,
             "sourcePhase": PHASE,
             "sourceBom": BOM,
@@ -141,6 +145,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def write_outputs(report: dict[str, Any], output_prefix: Path) -> tuple[Path, Path]:
+    output_prefix = explicit_output_path(output_prefix)
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = output_prefix.with_suffix(".json")
     md_path = output_prefix.with_suffix(".md")
@@ -152,16 +157,32 @@ def write_outputs(report: dict[str, Any], output_prefix: Path) -> tuple[Path, Pa
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", default="apps/desktop/src")
-    parser.add_argument(
-        "--output-prefix",
-        default="tooling/acceptance/reports/desktop-anchor-source-gate-latest",
-    )
+    parser.add_argument("--output-prefix")
     args = parser.parse_args()
 
     report = build_report(Path(args.source_root))
-    json_path, md_path = write_outputs(report, Path(args.output_prefix))
-    print(f"desktop anchor source gate JSON: {json_path}")
-    print(f"desktop anchor source gate Markdown: {md_path}")
+    if args.output_prefix:
+        json_path, md_path = write_outputs(report, Path(args.output_prefix))
+        json_output = str(json_path)
+        markdown_output = str(md_path)
+    else:
+        with artifact_session(ARTIFACT_KIND) as session:
+            session.write_json(REPORT_PATH, report, role="report")
+            session.write_bytes(
+                REPORT_MARKDOWN_PATH,
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        json_output = REPORT_PATH
+        markdown_output = REPORT_MARKDOWN_PATH
+    print(f"desktop anchor source gate JSON: {json_output}")
+    print(f"desktop anchor source gate Markdown: {markdown_output}")
     print(f"status: {report['status']}")
     return 0 if report["status"] == "pass" else 1
 
