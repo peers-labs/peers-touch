@@ -19,8 +19,7 @@ from _acceptance_artifacts import (
     artifact_session,
     explicit_output_path,
     inspect_command,
-    latest_path,
-    latest_ref,
+    latest_artifact,
     replace_resolved_artifact_paths,
 )
 
@@ -1451,26 +1450,34 @@ def main() -> int:
     input_refs: dict[str, Any] = {}
     resolved_refs: dict[Path, dict[str, Any]] = {}
     if not args.live_gate_report:
-        resolved_path = latest_path("desktop-telemetry-live-gate", "report")
-        artifact_ref = latest_ref("desktop-telemetry-live-gate", "report")
+        resolved_path, artifact_ref = latest_artifact(
+            "desktop-telemetry-live-gate",
+            "report",
+        )
         args.live_gate_report = str(resolved_path)
         input_refs["liveGate"] = artifact_ref
         resolved_refs[resolved_path] = artifact_ref
     if not args.preflight_report:
-        resolved_path = latest_path("desktop-performance-preflight-gate", "report")
-        artifact_ref = latest_ref("desktop-performance-preflight-gate", "report")
+        resolved_path, artifact_ref = latest_artifact(
+            "desktop-performance-preflight-gate",
+            "report",
+        )
         args.preflight_report = str(resolved_path)
         input_refs["preflight"] = artifact_ref
         resolved_refs[resolved_path] = artifact_ref
     if not args.cohort_report:
-        resolved_path = latest_path("desktop-performance-cohort-gate", "report")
-        artifact_ref = latest_ref("desktop-performance-cohort-gate", "report")
+        resolved_path, artifact_ref = latest_artifact(
+            "desktop-performance-cohort-gate",
+            "report",
+        )
         args.cohort_report = str(resolved_path)
         input_refs["cohort"] = artifact_ref
         resolved_refs[resolved_path] = artifact_ref
     if not args.events_report:
-        resolved_path = latest_path("desktop-telemetry-live-gate", "mirror-report")
-        artifact_ref = latest_ref("desktop-telemetry-live-gate", "mirror-report")
+        resolved_path, artifact_ref = latest_artifact(
+            "desktop-telemetry-live-gate",
+            "mirror-report",
+        )
         args.events_report = str(resolved_path)
         input_refs["events"] = artifact_ref
         resolved_refs[resolved_path] = artifact_ref
@@ -1480,11 +1487,7 @@ def main() -> int:
         for spec in DEFAULT_CELLS:
             if spec.cell_id == "browser-gateway":
                 continue
-            resolved_path = latest_path(
-                "desktop-performance-cell-collect-gate",
-                f"cell-{spec.cell_id}",
-            )
-            artifact_ref = latest_ref(
+            resolved_path, artifact_ref = latest_artifact(
                 "desktop-performance-cell-collect-gate",
                 f"cell-{spec.cell_id}",
             )
