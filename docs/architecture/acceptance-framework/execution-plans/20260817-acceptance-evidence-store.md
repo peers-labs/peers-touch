@@ -22,8 +22,8 @@
 | Progress | 7/8 workstreams evidence-complete; ES-W8 delivery remains blocked; Chat G15 remains out of scope and `FAILED/UNPROVEN` |
 | Last completed | Second review closed root-symlink ancestry, Native output bypass, and atomic latest path/ref pairing |
 | Current action | Commit the Acceptance-only migration and update Draft PR #91 with exact evidence/non-claims |
-| Next action | Re-run quality/review on the committed range and resolve or waive the four product-owned Chat Native Gate gaps |
-| Blockers | AS-ES-09 is `BLOCKED/UNPROVEN` by Station/source commit mismatch; Gap Detector also requires four Chat Native product Gates that this Acceptance-only change does not claim |
+| Next action | Resolve or waive the Desktop Gateway Gate plus four product-owned Chat Native Gate gaps |
+| Blockers | AS-ES-09 is `BLOCKED/UNPROVEN` by Station/source commit mismatch; Gap Detector requires five Messaging product Gates that this Acceptance-only change does not claim |
 | Decisions required | Product/owner waiver or future product-owned proof is required before the Gap Detector can permit ready-to-merge |
 | Evidence | Evidence + Native static: PASS 56/56; artifact helper: PASS 3/3; Core/Provisioning: PASS 116/116; Desktop scripts: PASS 179/179; CI bundle: PASS 3/3; skill-check: PASS; external chain: PASS; representative env Gate: `BLOCKED/UNPROVEN`; Chat G15: `FAILED/UNPROVEN` |
 | Last updated | 2026-08-17 15:08 CST |
@@ -512,7 +512,7 @@ Ready-to-merge requires:
 | ES-W5 Contracts/Operations | done | Make/CI/skills/docs migrated; workflow/catalog parse and skill-check PASS |
 | ES-W6 Atomic Cutover/Delete | done | Legacy constants and reports owner deleted; no recreation after tests |
 | ES-W7 Failure/Isolation | done | AS-ES-02/03/04/05/06/07 PASS; redaction canary and zero fallback covered |
-| ES-W8 End-to-End/Delivery | blocked | Local chain PASS; representative env Gate and four Chat Native product Gates remain UNPROVEN; commit/PR update pending |
+| ES-W8 End-To-End/Delivery | blocked | Local chain PASS; representative env Gate and five Messaging product Gates remain UNPROVEN; PR remains Draft |
 
 ## 14. Review Prompt
 
