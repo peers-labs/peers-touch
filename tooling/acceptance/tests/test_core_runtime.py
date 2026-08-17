@@ -492,6 +492,10 @@ class TauriDriverContractTests(unittest.TestCase):
             self.assertTrue(hasattr(TauriDriver, m) or hasattr(TauriDriver, m),
                             f"TauriDriver missing legacy method {m}")
 
+    def test_script_timeout_covers_native_renderer_transitions(self):
+        from tooling.acceptance.drivers.tauri import SCRIPT_TIMEOUT
+        self.assertEqual(SCRIPT_TIMEOUT, 10.0)
+
 
 class StationDriverTests(unittest.TestCase):
     def test_station_driver_inherits_basedriver(self):
