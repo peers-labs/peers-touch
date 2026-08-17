@@ -27,6 +27,34 @@ def proven_result(gate_id: str) -> dict[str, Any]:
 
 
 class AcceptanceGapDetectorTests(unittest.TestCase):
+    def test_stale_plan_paths_fail_closed(self) -> None:
+        report = MODULE.detect(
+            claim="Runtime provisioning is ready to merge",
+            paths=[
+                "tooling/acceptance/core/provisioner.py",
+                "tooling/acceptance/core/lease.py",
+            ],
+            plan={
+                "changed_paths": [],
+                "selected_gates": [],
+            },
+            run={"results": []},
+            required_gates=[],
+        )
+        self.assertEqual(report["proofState"], "UNPROVEN")
+        self.assertEqual(
+            report["gaps"][0]["gapType"],
+            "ACCEPTANCE_GAP_DETECTOR_INPUT_INVALID",
+        )
+        evidence = report["gaps"][0]["evidence"][0]
+        self.assertEqual(
+            evidence["missingFromPlan"],
+            [
+                "tooling/acceptance/core/lease.py",
+                "tooling/acceptance/core/provisioner.py",
+            ],
+        )
+
     def test_proven_local_gate_has_no_gap(self) -> None:
         report = MODULE.detect(
             claim="Acceptance planner remains valid",
