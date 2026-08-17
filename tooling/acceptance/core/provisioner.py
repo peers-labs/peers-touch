@@ -11,6 +11,7 @@ from pathlib import Path
 from ._paths import MANIFESTS_DIR, REPO_ROOT
 from .attestation import source_workspace_digest
 from .errors import BlockedError, ProvisioningError
+from .lease import ProfileLease, ProfileLeaseUnavailable
 from .provisioning import (
     EnvironmentContract,
     ProvisioningState,
@@ -68,6 +69,20 @@ class EnvironmentProvisioner(ABC):
 
     def register_cleanup(self, name: str, handler: Callable[[], None]) -> None:
         self._cleanup_handlers.append((name, handler))
+
+    def acquire_profile_lease(self, resource: str, owner: str) -> None:
+        lease = ProfileLease(resource, owner)
+        try:
+            lease.acquire()
+        except ProfileLeaseUnavailable as error:
+            raise BlockedError(
+                reason=str(error),
+                resource=f"profile-lease:{error.resource}",
+            ) from error
+        self.register_cleanup(
+            f"profile-lease:{lease.resource}",
+            lease.release,
+        )
 
     def _git_commit(self) -> str:
         completed = subprocess.run(

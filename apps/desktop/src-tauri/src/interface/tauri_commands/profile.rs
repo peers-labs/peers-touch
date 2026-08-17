@@ -221,20 +221,34 @@ pub fn sync_user_profile(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let token = match require_token(state.inner(), &window) {
-        Ok(t) => t,
-        Err(e) => return e,
+    let session = match state.sessions.get(window.label()) {
+        Some(session)
+            if !session.jwt.trim().is_empty()
+                && !session.account_id.trim().is_empty()
+                && session.actor.ptid.starts_with("ptid:") =>
+        {
+            session
+        }
+        _ => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "sync_user_profile: window has no complete bound identity",
+                None,
+            )
+        }
     };
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    if actor_id.is_empty() {
+    if session.actor.actor_id.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::Unauthorized,
-            "sync_user_profile: window has no bound actor",
+            "sync_user_profile: window has no bound local actor",
             None,
         );
     }
-    application_profile::sync_user_profile(&token, &actor_id)
+    application_profile::sync_user_profile(
+        &session.jwt,
+        &session.account_id,
+        &session.actor.ptid,
+    )
 }
 
 /// Resolve a remote avatar URL to a local cache file, downloading it on miss.

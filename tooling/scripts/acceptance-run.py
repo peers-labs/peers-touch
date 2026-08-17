@@ -158,6 +158,38 @@ def redact_runtime_artifacts(
     return redacted_paths
 
 
+def redact_runtime_secret_leaks(
+    secret_values: tuple[str, ...],
+) -> list[str]:
+    high_entropy_values = tuple(
+        value for value in secret_values if len(value) >= 16
+    )
+    if not high_entropy_values:
+        return []
+
+    leaked_paths: list[str] = []
+    roots = (
+        REPO_ROOT / "tooling" / "acceptance" / "reports",
+        REPO_ROOT / "tooling" / "acceptance" / "evidence",
+    )
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                original = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if not any(value in original for value in high_entropy_values):
+                continue
+            redacted = redact_runtime_text(original, high_entropy_values)
+            path.write_text(redacted, encoding="utf-8")
+            leaked_paths.append(str(path.relative_to(REPO_ROOT)))
+    return sorted(leaked_paths)
+
+
 def provisioning_failure_result(
     *,
     gate_id: str,
@@ -862,6 +894,9 @@ def main() -> int:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / f"{gate_id}.log"
         log_path.write_text(output_text, encoding="utf-8")
+        leaked_artifacts = redact_runtime_secret_leaks(runtime_secrets)
+        if leaked_artifacts:
+            status = "failed"
         print(f"[{status.upper()}] {gate_id} duration={duration}s log={log_path}")
         result = {
             "id": gate_id,
@@ -874,6 +909,13 @@ def main() -> int:
             "log": str(log_path),
             "timedOut": timed_out,
             "cleanupStatus": cleanup_status,
+            "secretScan": {
+                "status": "failed" if leaked_artifacts else "passed",
+                "scannedHighEntropyValues": len(
+                    tuple(value for value in runtime_secrets if len(value) >= 16)
+                ),
+                "redactedArtifacts": leaked_artifacts,
+            },
         }
         if cleanup_error:
             result["cleanupError"] = cleanup_error

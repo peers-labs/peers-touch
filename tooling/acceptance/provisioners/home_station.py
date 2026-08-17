@@ -144,6 +144,14 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             )
             station_url = profile_env.get("PT_STATION_URL", "").rstrip("/")
             health_url = profile_env.get("PT_STATION_HEALTH_URL", "")
+            deployment_environment = (
+                profile_env.get("PT_STATION_DEPLOY_ENV", "").strip()
+                or profile_name
+            )
+            self.acquire_profile_lease(
+                deployment_environment,
+                f"acceptance:{gate_id}:{manifest.run_id}",
+            )
             if not station_url:
                 raise BlockedError(
                     reason="Active profile is missing PT_STATION_URL",
@@ -264,11 +272,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 not fixture.authorization_required
                 or os.environ.get(authorization_name) == "1"
             )
-            deployment_environment = profile_env.get(
-                "PT_STATION_DEPLOY_ENV",
-                "",
-            )
-            if not deployment_environment:
+            if not profile_env.get("PT_STATION_DEPLOY_ENV", "").strip():
                 raise BlockedError(
                     reason="Active profile is missing PT_STATION_DEPLOY_ENV",
                     resource="profile:PT_STATION_DEPLOY_ENV",

@@ -2276,16 +2276,38 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "sync_user_profile" => {
-            let token = http_gateway_bearer_token(state);
-            let actor_id = state
+            let session = state
                 .session
                 .lock()
                 .ok()
-                .and_then(|g| g.actor_id.clone())
-                .filter(|s| !s.trim().is_empty());
-            match (token, actor_id) {
-                (Some(t), Some(aid)) => {
-                    to_json(crate::application::profile::sync_user_profile(&t, &aid))
+                .and_then(|guard| {
+                    let token = guard.token.clone().filter(|value| !value.trim().is_empty())?;
+                    let actor_id = guard
+                        .actor_id
+                        .clone()
+                        .filter(|value| !value.trim().is_empty())?;
+                    let account_id = guard.account_id.clone().or_else(|| {
+                        crate::infrastructure::auth_identity::find_account_id_by_actor_id(
+                            &actor_id,
+                        )
+                    })?;
+                    Some((token, account_id))
+                });
+            match session {
+                Some((token, account_id)) => {
+                    let actor_ptid = app_auth::canonical_ptid_for_token(&token);
+                    match actor_ptid {
+                        Some(ptid) => to_json(app_profile::sync_user_profile(
+                            &token,
+                            &account_id,
+                            &ptid,
+                        )),
+                        None => to_json(AppResult::<StubPayload>::fail(
+                            ErrorCode::Unauthorized,
+                            "canonical actor identity unavailable",
+                            None,
+                        )),
+                    }
                 }
                 _ => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,

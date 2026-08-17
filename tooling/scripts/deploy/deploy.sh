@@ -53,6 +53,15 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+if [[ "$cmd" != "status" && "$cmd" != "logs" && "${PT_PROFILE_LEASE_HELD:-0}" != "1" ]]; then
+  cd "$PROJECT_ROOT"
+  exec env PT_PROFILE_LEASE_HELD=1 \
+    python3 -c 'from tooling.acceptance.core.lease import main; raise SystemExit(main())' \
+      --resource "$env_name" \
+      --owner "deploy:$env_name:${BRANCH:-default}" \
+      -- /bin/bash "$SCRIPT_DIR/deploy.sh" "$@"
+fi
+
 # Load deploy env
 # shellcheck disable=SC1090
 source "$ENV_FILE"

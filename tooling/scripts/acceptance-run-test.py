@@ -609,6 +609,42 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertIn('"count": 1', serialized)
         self.assertNotIn('"password": "1"', serialized)
 
+    def test_runtime_secret_scan_redacts_high_entropy_canary_only(self) -> None:
+        module = load_module()
+        canary = "acceptance-canary-value-0123456789"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = (
+                root
+                / "tooling"
+                / "acceptance"
+                / "reports"
+                / "gate.json"
+            )
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(
+                json.dumps(
+                    {
+                        "message": f"leaked {canary}",
+                        "count": 1,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(module, "REPO_ROOT", root):
+                leaked_paths = module.redact_runtime_secret_leaks(
+                    (canary, "1"),
+                )
+            serialized = artifact.read_text(encoding="utf-8")
+
+        self.assertEqual(
+            leaked_paths,
+            ["tooling/acceptance/reports/gate.json"],
+        )
+        self.assertNotIn(canary, serialized)
+        self.assertIn("[REDACTED]", serialized)
+        self.assertIn('"count": 1', serialized)
+
     def test_build_run_report_deduplicates_review_commands_by_command_text(self) -> None:
         module = load_module()
         report = module.build_run_report(

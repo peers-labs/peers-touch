@@ -66,6 +66,23 @@ class CredentialRefTests(unittest.TestCase):
         ref = CredentialRef(id="optional", source_ref="env:PT_NONEXISTENT_VAR_XYZ", required=False)
         self.assertEqual(ref.resolve(), "")
 
+    def test_generated_env_credential_is_high_entropy_and_stable(self):
+        name = "PT_TEST_GENERATED_CREDENTIAL"
+        os.environ.pop(name, None)
+        try:
+            ref = CredentialRef(
+                id="generated",
+                source_ref=f"env:{name}",
+                generated_if_missing=True,
+            )
+            first = ref.resolve()
+            second = ref.resolve()
+            self.assertEqual(first, second)
+            self.assertGreaterEqual(len(first), 32)
+            self.assertEqual(os.environ[name], first)
+        finally:
+            os.environ.pop(name, None)
+
     def test_file_credential_resolves(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("file-secret\n")
@@ -104,9 +121,14 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertTrue(contract.profile.identity_match)
         self.assertIn("station", contract.services)
         self.assertTrue(contract.services["station"].required)
-        self.assertEqual(len(contract.credentials), 1)
+        self.assertEqual(len(contract.credentials), 2)
         self.assertEqual(contract.credentials[0].id, "chat-password")
         self.assertTrue(contract.credentials[0].required)
+        self.assertEqual(
+            contract.credentials[1].id,
+            "evidence-leak-canary",
+        )
+        self.assertTrue(contract.credentials[1].generated_if_missing)
         self.assertIn("processes", contract.cleanup.resources)
 
     def test_load_local_desktop_gateway_contract(self):
@@ -123,6 +145,32 @@ class EnvironmentContractTests(unittest.TestCase):
                 with self.assertRaises(ProvisioningError) as ctx:
                     EnvironmentContract.from_yaml(Path(f.name))
                 self.assertIn("missing id", str(ctx.exception))
+            finally:
+                Path(f.name).unlink()
+
+    def test_generated_credential_requires_env_source(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(
+                json.dumps(
+                    {
+                        "id": "bad-generated",
+                        "credentials": [
+                            {
+                                "id": "canary",
+                                "source_ref": "file:/tmp/canary",
+                                "generated_if_missing": True,
+                            }
+                        ],
+                    }
+                )
+            )
+            f.flush()
+            try:
+                with self.assertRaisesRegex(
+                    ProvisioningError,
+                    "generated credentials require an env: source_ref",
+                ):
+                    EnvironmentContract.from_yaml(Path(f.name))
             finally:
                 Path(f.name).unlink()
 
