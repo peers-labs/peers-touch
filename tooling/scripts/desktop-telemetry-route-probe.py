@@ -14,7 +14,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, inspect_command, latest_path, latest_ref
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    inspect_command,
+    latest_path,
+    latest_ref,
+    replace_resolved_artifact_paths,
+)
 
 
 PRODUCER_GATE_ID = "desktop-telemetry-route-probe-gate"
@@ -1257,16 +1264,18 @@ def main() -> int:
     )
     args = parser.parse_args()
     runtime_closure_ref = None
+    resolved_refs: dict[Path, dict[str, Any]] = {}
     if not args.runtime_closure_report:
-        args.runtime_closure_report = str(
-            latest_path("desktop-telemetry-runtime-closure-gate", "report")
-        )
+        resolved_path = latest_path("desktop-telemetry-runtime-closure-gate", "report")
         runtime_closure_ref = latest_ref(
             "desktop-telemetry-runtime-closure-gate",
             "report",
         )
+        args.runtime_closure_report = str(resolved_path)
+        resolved_refs[resolved_path] = runtime_closure_ref
 
-    logical_output = args.output or DEFAULT_OUTPUT
+    output_path = explicit_output_path(args.output) if args.output else None
+    logical_output = str(output_path) if output_path is not None else DEFAULT_OUTPUT
     report = build_report(
         args.station,
         args.account,
@@ -1277,8 +1286,8 @@ def main() -> int:
     )
     if runtime_closure_ref is not None:
         report["runtimeClosureArtifactRef"] = runtime_closure_ref
-    if args.output:
-        output_path = Path(args.output)
+    report = replace_resolved_artifact_paths(report, resolved_refs)
+    if output_path is not None:
         write_report(output_path, report)
         md_path = output_path.with_suffix(".md")
         md_path.write_text(render_markdown(report), encoding="utf-8")

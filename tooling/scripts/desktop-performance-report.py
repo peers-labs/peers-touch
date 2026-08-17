@@ -9,7 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, latest_path, latest_ref
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    latest_path,
+    latest_ref,
+    replace_resolved_artifact_paths,
+)
 
 
 PRODUCER_GATE_ID = "desktop-performance-report-gate"
@@ -4366,7 +4372,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def write_outputs(report: dict[str, Any], output_prefix: str) -> tuple[Path, Path]:
-    prefix = Path(output_prefix)
+    prefix = explicit_output_path(output_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = prefix.with_suffix(".json")
     md_path = prefix.with_suffix(".md")
@@ -4415,13 +4421,18 @@ def main() -> int:
         "sampler_gate_report": ("desktop-performance-sampler-gate", "report"),
     }
     input_refs: dict[str, Any] = {}
+    resolved_refs: dict[Path, dict[str, Any]] = {}
     for attribute, (gate_id, role) in defaults.items():
         if getattr(args, attribute) is None:
-            setattr(args, attribute, str(latest_path(gate_id, role)))
-            input_refs[attribute] = latest_ref(gate_id, role)
+            resolved_path = latest_path(gate_id, role)
+            artifact_ref = latest_ref(gate_id, role)
+            setattr(args, attribute, str(resolved_path))
+            input_refs[attribute] = artifact_ref
+            resolved_refs[resolved_path] = artifact_ref
     report = build_report(args)
     if input_refs:
         report["inputArtifactRefs"] = input_refs
+    report = replace_resolved_artifact_paths(report, resolved_refs)
     if args.output_prefix:
         json_path, md_path = write_outputs(report, args.output_prefix)
         display_json = str(json_path)
