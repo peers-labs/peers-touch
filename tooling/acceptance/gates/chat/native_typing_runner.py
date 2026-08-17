@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError
+from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
 from tooling.acceptance.drivers.tauri import TauriDriver
 from tooling.acceptance.fixtures.chat_native_reset import profile_three_environment
 from tooling.acceptance.gates.chat.native_interactions_runner import (
@@ -38,7 +38,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
 REPORT_PATH = Path(
     os.environ.get(
         "CHAT_NATIVE_TYPING_REPORT",
-        "tooling/acceptance/reports/chat-native-typing-run.json",
+        str(REPORTS_DIR / "chat-native-typing-run.json"),
     )
 )
 CLIENT_PORTS = {"alice": 4461, "bob": 4462, "charlie": 4463}
