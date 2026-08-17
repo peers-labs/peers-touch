@@ -71,11 +71,13 @@ launching a live journey. Live targets are
 `acceptance-chat-native-w8` runs all four.
 
 The two-client Direct journey uses the Core embedded-WebDriver runner. It
-requires `CHAT_NATIVE_STATION_URL`, `CHAT_ACCEPTANCE_RESET=1`, and
-`CHAT_ACCEPTANCE_PASSWORD`; the reset Fixture preserves the pre-created Alice
-and Bob actors, while the login result supplies their canonical PTIDs. The
-runner rejects a live Station whose `/app-meta/version` commit does not match
-the tested client commit.
+requires `CHAT_NATIVE_STATION_URL` and `CHAT_ACCEPTANCE_RESET=1`. It uses the
+committed disposable dev-account fixture from `apps/station/app/conf/actor.yml`
+(`alice@p.t`, `bob@p.t`, `carol@p.t`, password `1`); these Acceptance-only
+credentials are not part of the production Desktop package. The reset Fixture
+preserves the pre-created actors, while the login result supplies their canonical
+PTIDs. The runner rejects a live Station whose `/app-meta/version` commit does
+not match the tested client commit.
 
 The remaining multi-device, recovery, and group-MLS runners still require
 `CHAT_NATIVE_STATION_ATTESTATION`, canonical actor PTIDs, pre-created accounts,

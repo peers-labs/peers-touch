@@ -326,8 +326,6 @@ class NativeTwoClientGate(AcceptanceGate):
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
-        if not os.environ.get("CHAT_ACCEPTANCE_PASSWORD", ""):
-            raise GateError("CHAT_ACCEPTANCE_PASSWORD is required")
 
         self.report.station_url = self.station_url
         version = self.step(
