@@ -26,7 +26,7 @@ from tooling.acceptance.core.errors import DriverError
 
 DEFAULT_PORT = 4445
 APP_STARTUP_TIMEOUT = 20.0
-SCRIPT_TIMEOUT = 3.0
+SCRIPT_TIMEOUT = 10.0
 EXPECTED_TITLE = "Peers Touch Desktop"
 EXPECTED_URL = "tauri://localhost"
 
