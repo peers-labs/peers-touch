@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 def load_report_module():
@@ -22,6 +23,67 @@ def load_report_module():
 
 
 class DesktopPerformanceReportTest(unittest.TestCase):
+    def test_default_inputs_persist_typed_refs_without_artifact_root_paths(self) -> None:
+        module = load_report_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifact-root"
+            output_prefix = Path(tmp) / "report"
+
+            def fake_latest_path(gate_id: str, role: str) -> Path:
+                return root / gate_id / role.replace("/", "-")
+
+            def fake_latest_ref(gate_id: str, role: str) -> dict:
+                return {"workspaceId": "workspace", "gateId": gate_id, "runId": "run", "path": role}
+
+            def fake_build_report(args: argparse.Namespace) -> dict:
+                return {
+                    "status": "diagnostic incomplete",
+                    "completionStatus": "PARTIAL",
+                    "proofStatus": "UNPROVEN",
+                    "resolvedInputs": [
+                        getattr(args, attribute)
+                        for attribute in (
+                            "station_mirror_report",
+                            "matrix_report",
+                            "preflight_report",
+                            "anchor_inventory_report",
+                            "anchor_dom_evidence_gate_report",
+                            "anchor_source_gate_report",
+                            "sampler_gate_report",
+                        )
+                    ],
+                }
+
+            old_argv = sys.argv
+            try:
+                sys.argv = [
+                    "desktop-performance-report.py",
+                    "--output-prefix",
+                    str(output_prefix),
+                ]
+                with mock.patch.object(module, "latest_path", side_effect=fake_latest_path), mock.patch.object(
+                    module,
+                    "latest_ref",
+                    side_effect=fake_latest_ref,
+                ), mock.patch.object(
+                    module,
+                    "build_report",
+                    side_effect=fake_build_report,
+                ), mock.patch.object(
+                    module,
+                    "render_markdown",
+                    return_value="report\n",
+                ):
+                    module.main()
+            finally:
+                sys.argv = old_argv
+
+            persisted = output_prefix.with_suffix(".json").read_text(encoding="utf-8")
+
+        self.assertNotIn(str(root), persisted)
+        self.assertIn('"inputArtifactRefs"', persisted)
+        self.assertIn('"workspaceId": "workspace"', persisted)
+
     def test_report_recommended_commands_are_normalized_and_deduplicated(self) -> None:
         module = load_report_module()
         commands = module.report_recommended_review_commands(

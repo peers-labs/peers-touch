@@ -11,7 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, latest_path, latest_ref
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    latest_path,
+    latest_ref,
+)
 
 ARTIFACT_KIND = "desktop-anchor-dom-evidence-gate"
 DOM_EVIDENCE_PRODUCER_ID = "desktop-anchor-dom-evidence-collect-gate"
@@ -141,7 +146,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def write_outputs(report: dict[str, Any], output_prefix: str) -> tuple[Path, Path]:
-    prefix = Path(output_prefix)
+    prefix = explicit_output_path(output_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = prefix.with_suffix(".json")
     md_path = prefix.with_suffix(".md")

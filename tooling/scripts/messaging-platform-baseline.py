@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from _acceptance_artifacts import artifact_session
+from _acceptance_artifacts import artifact_session, explicit_output_path
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -298,12 +298,13 @@ def main() -> int:
     }
 
     if args.output is not None:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(
+        output = explicit_output_path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
             json.dumps(report, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        print(args.output)
+        print(output)
     else:
         with artifact_session("messaging-platform-baseline") as session:
             session.write_json(DEFAULT_OUTPUT, report, role="baseline")

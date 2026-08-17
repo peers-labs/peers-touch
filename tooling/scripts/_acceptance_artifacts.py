@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from tooling.acceptance.core import (  # noqa: E402
     current_artifact_path,
     latest_artifact_path,
 )
+from tooling.acceptance.core.errors import EvidenceRootForbidden  # noqa: E402
 
 
 def artifact_session(gate_id: str) -> ArtifactSession:
@@ -23,6 +25,41 @@ def artifact_session(gate_id: str) -> ArtifactSession:
         repo_root=REPO_ROOT,
         gate_id=effective_gate_id or gate_id,
     )
+
+
+def explicit_output_path(value: str | Path) -> Path:
+    candidate = Path(value).expanduser().resolve()
+    repository = REPO_ROOT.resolve()
+    if candidate == repository or repository in candidate.parents:
+        raise EvidenceRootForbidden(
+            "explicit Acceptance output must remain outside the repository",
+            operation="resolve-explicit-output",
+            path_role="test-fixture-output",
+        )
+    return candidate
+
+
+def replace_resolved_artifact_paths(
+    value: Any,
+    resolved_refs: Mapping[str | Path, Mapping[str, Any]],
+) -> Any:
+    replacements = {
+        str(Path(path)): dict(reference)
+        for path, reference in resolved_refs.items()
+    }
+
+    def replace(item: Any) -> Any:
+        if isinstance(item, Mapping):
+            return {str(key): replace(child) for key, child in item.items()}
+        if isinstance(item, list):
+            return [replace(child) for child in item]
+        if isinstance(item, tuple):
+            return [replace(child) for child in item]
+        if isinstance(item, str) and item in replacements:
+            return dict(replacements[item])
+        return item
+
+    return replace(value)
 
 
 def output_path(relative_path: str) -> Path:

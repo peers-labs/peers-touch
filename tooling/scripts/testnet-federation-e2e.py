@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from _acceptance_artifacts import artifact_session
+from _acceptance_artifacts import artifact_session, explicit_output_path
 
 
 NODES = {
@@ -232,9 +232,10 @@ def main() -> int:
 
     if args.output is not None:
         report = run()
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(report, indent=2) + "\n")
-        print(f"federation_e2e_ok report={args.output}")
+        output = explicit_output_path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, indent=2) + "\n")
+        print(f"federation_e2e_ok report={output}")
         return 0
 
     with artifact_session(GATE_ID) as session:

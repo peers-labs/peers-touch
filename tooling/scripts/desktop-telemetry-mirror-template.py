@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, inspect_command
+from _acceptance_artifacts import artifact_session, explicit_output_path, inspect_command
 
 
 PRODUCER_GATE_ID = "desktop-telemetry-mirror-template-gate"
@@ -205,7 +205,10 @@ def main() -> int:
 
     report = build_template(args.station_url)
     if args.output_prefix:
-        json_path, md_path, _ = write_template(Path(args.output_prefix), report)
+        json_path, md_path, _ = write_template(
+            explicit_output_path(args.output_prefix),
+            report,
+        )
         display_json = str(json_path)
         display_markdown = str(md_path)
     else:

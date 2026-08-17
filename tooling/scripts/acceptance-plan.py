@@ -16,6 +16,8 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from _acceptance_artifacts import explicit_output_path  # noqa: E402
+
 
 def load_json_yaml(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -167,7 +169,7 @@ def main() -> int:
     artifact_ref: dict[str, str] | None = None
     run = None
     if args.output:
-        output = Path(args.output)
+        output = explicit_output_path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(
             json.dumps(result, indent=2, ensure_ascii=False) + "\n",

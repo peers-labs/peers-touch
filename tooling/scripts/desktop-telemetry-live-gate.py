@@ -22,7 +22,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, inspect_command, latest_path, latest_ref
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    inspect_command,
+    latest_path,
+    latest_ref,
+    replace_resolved_artifact_paths,
+)
 
 
 DEFAULT_GATEWAY = "http://127.0.0.1:3030"
@@ -1163,7 +1170,11 @@ def run_mirror(
     output_prefix: str | None,
 ) -> tuple[dict[str, Any], str]:
     with tempfile.TemporaryDirectory(prefix="desktop-telemetry-mirror-") as tmp:
-        prefix = Path(output_prefix) if output_prefix else Path(tmp) / "desktop-performance-latest"
+        prefix = (
+            explicit_output_path(output_prefix)
+            if output_prefix
+            else Path(tmp) / "desktop-performance-latest"
+        )
         subprocess.run(
             [
                 sys.executable,
@@ -1204,15 +1215,19 @@ def main() -> int:
     args = parser.parse_args()
     if bool(args.output) != bool(args.mirror_prefix):
         parser.error("--output and --mirror-prefix must be provided together")
+    if args.output:
+        args.output = str(explicit_output_path(args.output))
+        args.mirror_prefix = str(explicit_output_path(args.mirror_prefix))
     runtime_closure_ref = None
+    resolved_refs: dict[Path, dict[str, Any]] = {}
     if not args.runtime_closure_report:
-        args.runtime_closure_report = str(
-            latest_path("desktop-telemetry-runtime-closure-gate", "report")
-        )
+        resolved_path = latest_path("desktop-telemetry-runtime-closure-gate", "report")
         runtime_closure_ref = latest_ref(
             "desktop-telemetry-runtime-closure-gate",
             "report",
         )
+        args.runtime_closure_report = str(resolved_path)
+        resolved_refs[resolved_path] = runtime_closure_ref
 
     report: dict[str, Any] = {
         "schemaVersion": 1,
@@ -1319,8 +1334,9 @@ def main() -> int:
         return 1
     finally:
         apply_status_metadata(report)
+        report = replace_resolved_artifact_paths(report, resolved_refs)
         if args.output:
-            output_path = Path(args.output)
+            output_path = explicit_output_path(args.output)
             write_report(output_path, report)
             md_path = output_path.with_suffix(".md")
             md_path.write_text(render_markdown(report), encoding="utf-8")

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, inspect_command
+from _acceptance_artifacts import artifact_session, explicit_output_path, inspect_command
 
 OBSERVATIONS_TEMPLATE_ARTIFACT_KIND = "desktop-performance-cell-observations-template"
 PRODUCER_GATE_ID = "desktop-performance-cell-template-gate"
@@ -227,8 +227,8 @@ def main() -> int:
     templates = build_templates()
     observations_template = build_observations_template()
     if args.output_dir:
-        written = write_templates(Path(args.output_dir))
-        observations_template_path = Path(args.observations_template_output)
+        written = write_templates(explicit_output_path(args.output_dir))
+        observations_template_path = explicit_output_path(args.observations_template_output)
         observations_template_path.parent.mkdir(parents=True, exist_ok=True)
         observations_template_path.write_text(
             json.dumps(observations_template, indent=2, ensure_ascii=False) + "\n",

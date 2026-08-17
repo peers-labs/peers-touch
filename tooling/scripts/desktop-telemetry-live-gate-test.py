@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 def load_gate_module():
@@ -22,6 +23,46 @@ def load_gate_module():
 
 
 class DesktopTelemetryLiveGateTest(unittest.TestCase):
+    def test_default_runtime_closure_persists_typed_ref_without_artifact_root_path(self) -> None:
+        module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifact-root"
+            runtime_closure = root / "runtime-closure.json"
+            output = Path(tmp) / "live.json"
+            mirror_prefix = Path(tmp) / "mirror"
+            evidence = self.runtime_closure_evidence()
+            evidence["path"] = str(runtime_closure)
+            artifact_ref = {
+                "workspaceId": "workspace",
+                "gateId": "desktop-telemetry-runtime-closure-gate",
+                "runId": "run",
+                "path": "report",
+            }
+
+            old_argv = sys.argv
+            try:
+                sys.argv = [
+                    "desktop-telemetry-live-gate.py",
+                    "--output",
+                    str(output),
+                    "--mirror-prefix",
+                    str(mirror_prefix),
+                ]
+                with mock.patch.object(module, "latest_path", return_value=runtime_closure), mock.patch.object(
+                    module,
+                    "latest_ref",
+                    return_value=artifact_ref,
+                ), mock.patch.object(module, "runtime_closure_evidence", return_value=evidence):
+                    module.main()
+            finally:
+                sys.argv = old_argv
+
+            persisted = output.read_text(encoding="utf-8")
+
+        self.assertNotIn(str(root), persisted)
+        self.assertIn('"runtimeClosureArtifactRef"', persisted)
+        self.assertIn('"workspaceId": "workspace"', persisted)
+
     def runtime_closure_step(self) -> dict:
         return {"name": "runtime.closure", "status": "pass", "detail": {"proofStatus": "PROVEN", "sampleEmissionAllowed": True}}
 

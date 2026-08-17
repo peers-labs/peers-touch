@@ -11,7 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, inspect_command
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    inspect_command,
+)
 
 ARTIFACT_KIND = "desktop-anchor-dom-evidence"
 PRODUCER_ID = "desktop-anchor-dom-evidence-collect-gate"
@@ -219,7 +223,7 @@ def main() -> int:
     )
     evidence = build_evidence(observations)
     if args.output:
-        output_path = Path(args.output)
+        output_path = explicit_output_path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
             json.dumps(evidence, indent=2, ensure_ascii=False) + "\n",

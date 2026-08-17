@@ -430,6 +430,56 @@ class EvidenceStoreTests(unittest.TestCase):
         self.assertFalse((outside / "escaped.txt").exists())
         run.close()
 
+    def test_internal_directory_pointer_and_lock_symlinks_are_rejected(
+        self,
+    ) -> None:
+        external = self.base / "external"
+        external.mkdir()
+
+        root_link = self.base / "root-link"
+        root_link.symlink_to(external, target_is_directory=True)
+        with self.assertRaises(EvidenceSymlinkRejected):
+            resolve_artifact_root(
+                repo_root=self.worktree,
+                environment={ARTIFACT_ROOT_ENV: str(root_link)},
+            )
+
+        linked_root = self.base / "linked-root"
+        linked_root.mkdir()
+        (linked_root / workspace_id(self.worktree)).symlink_to(
+            external,
+            target_is_directory=True,
+        )
+        with self.assertRaises(EvidenceSymlinkRejected):
+            EvidenceStore(linked_root, worktree=self.worktree)
+
+        gate_link = self.store.workspace_dir / "linked-gate"
+        gate_link.symlink_to(external, target_is_directory=True)
+        with self.assertRaises(EvidenceSymlinkRejected):
+            self.store.begin_run("linked-gate", source={})
+
+        latest_run = self.store.begin_run("latest-link-gate", source={})
+        latest_run.finalize(result={"status": "passed"})
+        latest_path = latest_run.publish_latest()
+        external_latest = external / "latest.json"
+        external_latest.write_bytes(latest_path.read_bytes())
+        latest_path.unlink()
+        latest_path.symlink_to(external_latest)
+        with self.assertRaises(EvidenceSymlinkRejected):
+            self.store.latest("latest-link-gate")
+        latest_run.close()
+
+        lock_run = self.store.begin_run("lock-link-gate", source={})
+        lock_run.finalize(result={"status": "passed"})
+        external_lock = external / "publish.lock"
+        external_lock.touch()
+        (lock_run.run_dir.parent / ".publish.lock").symlink_to(
+            external_lock
+        )
+        with self.assertRaises(EvidenceSymlinkRejected):
+            lock_run.publish_latest()
+        lock_run.close()
+
     def test_byte_budget_fails_closed(self) -> None:
         store = EvidenceStore(
             self.base / "budget-artifacts",

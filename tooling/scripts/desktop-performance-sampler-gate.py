@@ -11,7 +11,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, inspect_command, latest_path, latest_ref
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    inspect_command,
+    latest_path,
+    latest_ref,
+    replace_resolved_artifact_paths,
+)
 
 
 PRODUCER_GATE_ID = "desktop-performance-sampler-gate"
@@ -1303,6 +1310,7 @@ def write_local_telemetry_buffer_observations_template(output_dir: Path) -> tupl
 
 
 def write_outputs(report: dict[str, Any], output_prefix: Path) -> tuple[Path, Path]:
+    output_prefix = explicit_output_path(output_prefix)
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = output_prefix.with_suffix(".json")
     md_path = output_prefix.with_suffix(".md")
@@ -1347,10 +1355,14 @@ def main() -> int:
         ),
     }
     input_refs: dict[str, Any] = {}
+    resolved_refs: dict[Path, dict[str, Any]] = {}
     for attribute, (gate_id, role) in defaults.items():
         if getattr(args, attribute) is None:
-            setattr(args, attribute, str(latest_path(gate_id, role)))
-            input_refs[attribute] = latest_ref(gate_id, role)
+            resolved_path = latest_path(gate_id, role)
+            artifact_ref = latest_ref(gate_id, role)
+            setattr(args, attribute, str(resolved_path))
+            input_refs[attribute] = artifact_ref
+            resolved_refs[resolved_path] = artifact_ref
     report = build_report(
         Path(args.station_mirror_report),
         Path(args.anchor_dom_evidence_gate_report),
@@ -1359,6 +1371,7 @@ def main() -> int:
     )
     if input_refs:
         report["inputArtifactRefs"] = input_refs
+    report = replace_resolved_artifact_paths(report, resolved_refs)
     if args.output_prefix:
         json_path, md_path = write_outputs(report, Path(args.output_prefix))
         display_json = str(json_path)

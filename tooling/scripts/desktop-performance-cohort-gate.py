@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session
+from _acceptance_artifacts import artifact_session, explicit_output_path
 
 
 ARTIFACT_KIND = "desktop-performance-cohort-gate"
@@ -243,8 +243,9 @@ def main() -> int:
         Path(logical_output),
     )
     if args.output:
-        write_report(Path(args.output), report)
-        display_output = args.output
+        output = explicit_output_path(args.output)
+        write_report(output, report)
+        display_output = str(output)
     else:
         with artifact_session(PRODUCER_GATE_ID) as session:
             session.write_json(DEFAULT_OUTPUT, report, role="report")

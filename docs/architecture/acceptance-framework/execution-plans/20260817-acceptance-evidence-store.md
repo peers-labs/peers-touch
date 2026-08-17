@@ -20,13 +20,13 @@
 | Current workstream | `ES-W4: Standalone And Domain Writer Cutover` |
 | Current step | Migrate remaining standalone writers and cross-Gate readers to logical artifact roles |
 | Progress | 7/8 workstreams evidence-complete; ES-W8 delivery remains blocked; Chat G15 remains out of scope and `FAILED/UNPROVEN` |
-| Last completed | ES-W7 failure/isolation matrix; 28/28 Evidence Store tests and zero source-tree fallback |
+| Last completed | Agent-led review closed three D-11 blockers: internal symlinks, explicit output bypass, and persisted resolved paths |
 | Current action | Commit the Acceptance-only migration and update Draft PR #91 with exact evidence/non-claims |
 | Next action | Re-run quality/review on the committed range and resolve or waive the four product-owned Chat Native Gate gaps |
 | Blockers | AS-ES-09 is `BLOCKED/UNPROVEN` by Station/source commit mismatch; Gap Detector also requires four Chat Native product Gates that this Acceptance-only change does not claim |
 | Decisions required | Product/owner waiver or future product-owned proof is required before the Gap Detector can permit ready-to-merge |
-| Evidence | `test_evidence_store.py`: PASS 28/28; Core/Provisioning: PASS 115/115; Desktop scripts: PASS 177/177; CI bundle: PASS 3/3; skill-check: PASS; external plan/validate/coverage/report chain: PASS; representative env Gate: `BLOCKED/UNPROVEN`; Chat G15: `FAILED/UNPROVEN` |
-| Last updated | 2026-08-17 14:25 CST |
+| Evidence | `test_evidence_store.py`: PASS 29/29; artifact helper: PASS 2/2; Core/Provisioning: PASS 115/115; Desktop scripts: PASS 179/179; CI bundle: PASS 3/3; skill-check: PASS; external chain: PASS; representative env Gate: `BLOCKED/UNPROVEN`; Chat G15: `FAILED/UNPROVEN` |
+| Last updated | 2026-08-17 14:41 CST |
 
 ---
 
@@ -505,10 +505,10 @@ Ready-to-merge requires:
 
 | Workstream | Status | Evidence |
 |---|---|---|
-| ES-W1 Canonical Store | done | `python3 -m unittest ...test_evidence_store` 28/28; process concurrency/read-only/failure matrix PASS |
+| ES-W1 Canonical Store | done | `python3 -m unittest ...test_evidence_store` 29/29; process concurrency/read-only/failure/symlink matrix PASS |
 | ES-W2 Core Writers | done | Core/provisioning/native writer migration; Core/Provisioning 115/115 PASS |
 | ES-W3 Readers/Reports | done | Plan/run/validate/coverage/report external-root chain PASS |
-| ES-W4 Standalone Writers | done | Production legacy writer scan zero; Desktop scripts 177/177 PASS |
+| ES-W4 Standalone Writers | done | Production legacy writer/output-bypass scan zero; Desktop scripts 179/179 PASS |
 | ES-W5 Contracts/Operations | done | Make/CI/skills/docs migrated; workflow/catalog parse and skill-check PASS |
 | ES-W6 Atomic Cutover/Delete | done | Legacy constants and reports owner deleted; no recreation after tests |
 | ES-W7 Failure/Isolation | done | AS-ES-02/03/04/05/06/07 PASS; redaction canary and zero fallback covered |

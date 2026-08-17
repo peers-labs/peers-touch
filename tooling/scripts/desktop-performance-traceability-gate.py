@@ -9,7 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, latest_path
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    latest_path,
+    latest_ref,
+    replace_resolved_artifact_paths,
+)
 
 
 ARTIFACT_KIND = "desktop-performance-traceability-gate"
@@ -43,22 +49,33 @@ RAW_EVIDENCE_SUMMARY_FIELDS = [
     "rawSourceGate",
 ]
 SOURCE_TRACE_FIELD_SET = set(REQUIRED_ISSUE_FIELDS)
+DEFAULT_INPUT_ROLES = (
+    ("acceptance-run", "run"),
+    (
+        "desktop-performance-report-gate",
+        "reports/desktop-performance-report-latest.json",
+    ),
+    (
+        "desktop-performance-matrix-gate",
+        "reports/desktop-performance-matrix-latest.json",
+    ),
+)
+
+
+def default_inputs_with_refs() -> tuple[list[str], dict[Path, dict[str, Any]]]:
+    inputs: list[str] = []
+    resolved_refs: dict[Path, dict[str, Any]] = {}
+    for gate_id, role in DEFAULT_INPUT_ROLES:
+        resolved_path = latest_path(gate_id, role)
+        artifact_ref = latest_ref(gate_id, role)
+        inputs.append(str(resolved_path))
+        resolved_refs[resolved_path] = artifact_ref
+    return inputs, resolved_refs
+
+
 def default_inputs() -> list[str]:
-    return [
-        str(latest_path("acceptance-run", "run")),
-        str(
-            latest_path(
-                "desktop-performance-report-gate",
-                "reports/desktop-performance-report-latest.json",
-            )
-        ),
-        str(
-            latest_path(
-                "desktop-performance-matrix-gate",
-                "reports/desktop-performance-matrix-latest.json",
-            )
-        ),
-    ]
+    inputs, _ = default_inputs_with_refs()
+    return inputs
 
 
 def utc_now() -> str:
@@ -529,7 +546,7 @@ def build_report(inputs: list[str]) -> dict[str, Any]:
 
 
 def write_report(report: dict[str, Any], output: str) -> Path:
-    path = Path(output)
+    path = explicit_output_path(output)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path
@@ -540,8 +557,15 @@ def main() -> int:
     parser.add_argument("--input", action="append", default=[])
     parser.add_argument("--output")
     args = parser.parse_args()
-    inputs = args.input or default_inputs()
+    if args.input:
+        inputs = args.input
+        resolved_refs: dict[Path, dict[str, Any]] = {}
+    else:
+        inputs, resolved_refs = default_inputs_with_refs()
     report = build_report(inputs)
+    if resolved_refs:
+        report["inputArtifactRefs"] = list(resolved_refs.values())
+    report = replace_resolved_artifact_paths(report, resolved_refs)
     if args.output:
         path = write_report(report, args.output)
         display_output = str(path)

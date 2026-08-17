@@ -15,7 +15,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, inspect_command, latest_path, latest_ref
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    inspect_command,
+    latest_path,
+    latest_ref,
+    replace_resolved_artifact_paths,
+)
 
 
 PRODUCER_GATE_ID = "desktop-performance-matrix-gate"
@@ -1408,7 +1415,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def write_outputs(report: dict[str, Any], output_prefix: str) -> tuple[Path, Path]:
-    prefix = Path(output_prefix)
+    prefix = explicit_output_path(output_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = prefix.with_suffix(".json")
     md_path = prefix.with_suffix(".md")
@@ -1442,39 +1449,57 @@ def main() -> int:
     args = parser.parse_args()
 
     input_refs: dict[str, Any] = {}
+    resolved_refs: dict[Path, dict[str, Any]] = {}
     if not args.live_gate_report:
-        args.live_gate_report = str(latest_path("desktop-telemetry-live-gate", "report"))
-        input_refs["liveGate"] = latest_ref("desktop-telemetry-live-gate", "report")
+        resolved_path = latest_path("desktop-telemetry-live-gate", "report")
+        artifact_ref = latest_ref("desktop-telemetry-live-gate", "report")
+        args.live_gate_report = str(resolved_path)
+        input_refs["liveGate"] = artifact_ref
+        resolved_refs[resolved_path] = artifact_ref
     if not args.preflight_report:
-        args.preflight_report = str(latest_path("desktop-performance-preflight-gate", "report"))
-        input_refs["preflight"] = latest_ref("desktop-performance-preflight-gate", "report")
+        resolved_path = latest_path("desktop-performance-preflight-gate", "report")
+        artifact_ref = latest_ref("desktop-performance-preflight-gate", "report")
+        args.preflight_report = str(resolved_path)
+        input_refs["preflight"] = artifact_ref
+        resolved_refs[resolved_path] = artifact_ref
     if not args.cohort_report:
-        args.cohort_report = str(latest_path("desktop-performance-cohort-gate", "report"))
-        input_refs["cohort"] = latest_ref("desktop-performance-cohort-gate", "report")
+        resolved_path = latest_path("desktop-performance-cohort-gate", "report")
+        artifact_ref = latest_ref("desktop-performance-cohort-gate", "report")
+        args.cohort_report = str(resolved_path)
+        input_refs["cohort"] = artifact_ref
+        resolved_refs[resolved_path] = artifact_ref
     if not args.events_report:
-        args.events_report = str(latest_path("desktop-telemetry-live-gate", "mirror-report"))
-        input_refs["events"] = latest_ref("desktop-telemetry-live-gate", "mirror-report")
+        resolved_path = latest_path("desktop-telemetry-live-gate", "mirror-report")
+        artifact_ref = latest_ref("desktop-telemetry-live-gate", "mirror-report")
+        args.events_report = str(resolved_path)
+        input_refs["events"] = artifact_ref
+        resolved_refs[resolved_path] = artifact_ref
     if not args.cell_evidence_dir:
-        cell_paths = [
-            latest_path("desktop-performance-cell-collect-gate", f"cell-{spec.cell_id}")
-            for spec in DEFAULT_CELLS
-            if spec.cell_id != "browser-gateway"
-        ]
+        cell_paths: list[Path] = []
+        cell_refs: dict[str, dict[str, Any]] = {}
+        for spec in DEFAULT_CELLS:
+            if spec.cell_id == "browser-gateway":
+                continue
+            resolved_path = latest_path(
+                "desktop-performance-cell-collect-gate",
+                f"cell-{spec.cell_id}",
+            )
+            artifact_ref = latest_ref(
+                "desktop-performance-cell-collect-gate",
+                f"cell-{spec.cell_id}",
+            )
+            cell_paths.append(resolved_path)
+            cell_refs[spec.cell_id] = artifact_ref
+            resolved_refs[resolved_path] = artifact_ref
         parents = {path.parent for path in cell_paths}
         if len(parents) != 1:
             raise RuntimeError("latest runtime-cell artifacts do not share one immutable run")
         args.cell_evidence_dir = str(parents.pop())
-        input_refs["cells"] = {
-            spec.cell_id: latest_ref(
-                "desktop-performance-cell-collect-gate",
-                f"cell-{spec.cell_id}",
-            )
-            for spec in DEFAULT_CELLS
-            if spec.cell_id != "browser-gateway"
-        }
+        input_refs["cells"] = cell_refs
     report = build_matrix(args)
     if input_refs:
         report["inputArtifactRefs"] = input_refs
+    report = replace_resolved_artifact_paths(report, resolved_refs)
     if args.output_prefix:
         json_path, md_path = write_outputs(report, args.output_prefix)
         display_json = str(json_path)
