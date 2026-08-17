@@ -92,12 +92,34 @@ is_ui_file() {
   esac
 }
 
+is_documentation_file() {
+  case "$1" in
+    *.md|*.mdx|*.txt|*.yaml|*.yml|*.json|*.jsonl|*.toml) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 while IFS= read -r file; do
   [[ -z "$file" ]] && continue
   [[ ! -f "$file" ]] && continue
   if [[ -z "$fixture_dir" ]]; then
     case "$file" in
-      tooling/review-fixtures/*|tooling/scripts/review/*|tooling/skills/*) continue ;;
+      tooling/review-fixtures/*) continue ;;
+    esac
+  fi
+
+  if is_documentation_file "$file"; then
+    if rg --pcre2 -n '(/Users/(?!Shared(?:/|$))[^/[:space:]`]+(?:/|$)|/home/[^/[:space:]`]+(?:/|$)|[A-Za-z]:\\Users\\[^\\[:space:]`]+(?:\\|$))' "$file" >/tmp/pt-review-match.$$ 2>/dev/null; then
+      while IFS= read -r line; do
+        report_failure "user-home-absolute-path" "$file:$line"
+      done < /tmp/pt-review-match.$$
+      rm -f /tmp/pt-review-match.$$
+    fi
+  fi
+
+  if [[ -z "$fixture_dir" ]]; then
+    case "$file" in
+      tooling/scripts/review/*|tooling/skills/*) continue ;;
     esac
   fi
 

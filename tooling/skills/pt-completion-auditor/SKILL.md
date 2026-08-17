@@ -163,6 +163,10 @@ Check:
   prototype status, architecture, and plan remain mutually consistent.
 - Docs updated where behavior or contract changed.
 - Old docs do not contradict new architecture.
+- The plan-owned Context Anchor matches the actual worktree and branch, status
+  table, tracking source, evidence, blockers, and next action.
+- `active_work`, todos, dashboards, and chat projections do not claim progress
+  stronger than the plan-owned Anchor.
 - "Current state" and "remaining work" are explicit.
 - Terms like `done`, `ready`, `production`, `联调`, `真源`, `mock`,
   `projection`, and `runtime` are used accurately.
