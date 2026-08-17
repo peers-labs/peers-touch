@@ -3,9 +3,13 @@
 
 from __future__ import annotations
 
+import errno
 import json
+import os
+import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -71,33 +75,64 @@ class StationAttestationOwnerTests(unittest.TestCase):
         self.assertNotIn("apps/mobile/ios", remote_command)
 
     def test_workspace_digest_binds_file_content(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
-            subprocess.run(
-                ["git", "config", "user.email", "acceptance@test.invalid"],
-                cwd=root,
-                check=True,
-            )
-            subprocess.run(
-                ["git", "config", "user.name", "Acceptance Test"],
-                cwd=root,
-                check=True,
-            )
-            source = root / "source.txt"
-            source.write_text("base\n", encoding="utf-8")
-            subprocess.run(["git", "add", "source.txt"], cwd=root, check=True)
-            subprocess.run(
-                ["git", "commit", "-m", "base"],
-                cwd=root,
-                check=True,
-                capture_output=True,
-            )
-            self.assertEqual(source_workspace_digest(root), "clean")
-            source.write_text("first\n", encoding="utf-8")
-            first = source_workspace_digest(root)
-            source.write_text("second\n", encoding="utf-8")
-            second = source_workspace_digest(root)
+        # The IDE git wrapper writes .git/ai asynchronously; use native Git so
+        # TemporaryDirectory cleanup is deterministic.
+        native_git_environment = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
+        }
+        native_git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        root = Path(tempfile.mkdtemp())
+        try:
+            with patch.dict(
+                os.environ,
+                native_git_environment,
+                clear=True,
+            ):
+                subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+                subprocess.run(
+                    ["git", "config", "user.email", "acceptance@test.invalid"],
+                    cwd=root,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.name", "Acceptance Test"],
+                    cwd=root,
+                    check=True,
+                )
+                source = root / "source.txt"
+                source.write_text("base\n", encoding="utf-8")
+                subprocess.run(["git", "add", "source.txt"], cwd=root, check=True)
+                subprocess.run(
+                    [
+                        "git",
+                        "-c",
+                        "maintenance.auto=false",
+                        "-c",
+                        "gc.auto=0",
+                        "commit",
+                        "-m",
+                        "base",
+                    ],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
+                self.assertEqual(source_workspace_digest(root), "clean")
+                source.write_text("first\n", encoding="utf-8")
+                first = source_workspace_digest(root)
+                source.write_text("second\n", encoding="utf-8")
+                second = source_workspace_digest(root)
+        finally:
+            for attempt in range(20):
+                try:
+                    shutil.rmtree(root)
+                    break
+                except OSError as error:
+                    if error.errno != errno.ENOTEMPTY or attempt == 19:
+                        raise
+                    time.sleep(0.05)
 
         self.assertTrue(first.startswith("sha256:"))
         self.assertTrue(second.startswith("sha256:"))
