@@ -149,7 +149,7 @@
         "truth_sources": [
           "tooling/acceptance/capabilities/federation.yaml",
           "tooling/acceptance/domains/federation.yaml",
-          "tooling/acceptance/reports/latest-run.json"
+          "evidence-store:acceptance-run:latest:run"
         ],
         "proven_by": [
           "acceptance-plan-self",

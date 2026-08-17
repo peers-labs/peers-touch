@@ -176,7 +176,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--station-url", default=os.environ.get("PT_STATION_URL", DEFAULT_STATION_URL))
     parser.add_argument("--token", default=os.environ.get("PT_STATION_ACCESS_TOKEN") or os.environ.get("PT_ACCESS_TOKEN"))
-    parser.add_argument("--output-prefix", default="tooling/acceptance/reports/desktop-performance-latest")
+    parser.add_argument(
+        "--output-prefix",
+        required=True,
+        help="Explicit output prefix supplied by desktop-telemetry-live-gate or a test.",
+    )
     parser.add_argument("--device-id")
     parser.add_argument("--session-id")
     parser.add_argument("--module")

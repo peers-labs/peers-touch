@@ -1,8 +1,8 @@
 # Acceptance Framework — 架构设计
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-06-03 | **Updated**: 2026-08-16
+> **Version**: v1.1
+> **Created**: 2026-06-03 | **Updated**: 2026-08-17
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -31,6 +31,16 @@
 | 新 Agent 可从稳定 Make target 获得结构化 preflight | `verified_fact` | `tooling/acceptance/README.md` + runtime BLOCKED report | high | successful AS-02 live run |
 | 独立 Provisioner + immutable manifest 可关闭责任缺口 | `verified_fact` | `core/provisioning.py` + `core/provisioner.py` + runtime BLOCKED evidence | high | successful native runtime proof |
 | 独立 Gap Detector 可覆盖普通任务中的 silent pass | `verified_fact` | `acceptance-gap-detect-test.py` + submit pipeline | high | PR submit evidence |
+
+### 1.2 Evidence Store 扩展证据账本
+
+| Claim | Class | Evidence | Confidence | Missing proof |
+|---|---|---|---|---|
+| Runtime reports当前写入source tree | `verified_fact` | `core/_paths.py::REPORTS_DIR` | high | none |
+| G15在Native执行后因report write EPERM失败 | `verified_fact` | current-source Native run artifact and incident record | high | product behavior remains unproven |
+| 物理reports路径存在广泛writer/reader耦合 | `verified_fact` | repository inventory: 366 references before migration | high | final zero-write scan |
+| repository含tracked historical runtime reports | `verified_fact` | `git ls-files tooling/acceptance/reports` | high | classification/deletion |
+| repo外immutable run store可解耦权限和并发 | `accepted_decision` | D-11 owner acceptance | high | implementation gates |
 
 ---
 
@@ -79,7 +89,7 @@ Acceptance Framework 由六层组成：
 | Impact Mapping | `tooling/acceptance/registry.yaml` | 把变更路径映射到 impacted features 和 selected gates |
 | Gate Catalog | `tooling/acceptance/gates.yaml` | 定义稳定 gate 的命令、环境、超时和说明 |
 | Gate Implementation | `tooling/acceptance/gates/**/*.py` | 产生可重复 evidence，不承载业务真源 |
-| Evidence Report | `tooling/acceptance/reports/*` | 汇总 proven / unproven scope，供人审阅 |
+| Evidence Report | D-11 Evidence Store `ArtifactRef` | 汇总 proven / unproven scope，供人审阅 |
 
 ---
 
@@ -123,8 +133,7 @@ Capability Contract 的职责：
     "federation-ledger-convergence",
     "federation-validates-acceptance-framework"
   ],
-  "validation_gate_id": "federation-mutual-validation",
-  "report": "tooling/acceptance/reports/federation-mutual-validation.json"
+  "validation_gate_id": "federation-mutual-validation"
 }
 ```
 
@@ -232,6 +241,99 @@ Gap Detector 与 Acceptance Engineering 职责不同：
 - Acceptance Engineering 是修复入口，负责 `ADD/COMPLETE/UPGRADE/AUDIT` 和阶段调度。
 - Gap Detector 不创建 Gate、不修改产品代码、不生成伪证据，也不替代 completion audit。
 
+### 3.9 Acceptance Evidence Store
+
+Evidence Store是runtime-generated artifact的唯一owner，位于repository之外。它由以下
+domain-neutral contracts组成：
+
+| Contract | Responsibility |
+|---|---|
+| `ArtifactRootResolver` | 解析platform default/override、workspace identity和root containment |
+| `RunAllocator` | 验证gate/run identity，创建隔离run directory并持有active lock |
+| `EvidenceWriter` | redaction、atomic file write、manifest finalize和typed errors |
+| `EvidenceReader` | 从`ArtifactRef`或atomic latest pointer读取并验证identity/hash |
+| `EvidenceCleanup` | 在lock与retention policy下删除eligible closed runs |
+
+```text
+Repository (code/schema/template/fixture only)
+         │ canonical worktree identity
+         ▼
+ArtifactRootResolver
+         │
+         ▼
+<root>/<workspace-id>/<gate-id>/<run-id>/
+         │ active lock + immutable artifacts
+         ▼
+durable manifest.json ──► atomic latest.json pointer
+         │
+         ├──► validators / capability reports / quality evidence
+         └──► CI artifact collector / human review
+```
+
+Writer API：
+
+```text
+begin_run(worktree, gate_id, source_identity) -> RunHandle
+RunHandle.write_json(relative_path, value, redact=true) -> ArtifactRef
+RunHandle.copy_evidence(relative_path, source, redact_policy) -> ArtifactRef
+RunHandle.finalize(status, traceability) -> RunManifest
+RunHandle.publish_latest() -> LatestPointer
+RunHandle.close()
+```
+
+Reader API：
+
+```text
+resolve(ref: ArtifactRef) -> Path
+read_json(ref: ArtifactRef, expected_kind) -> object
+latest(worktree, gate_id) -> RunManifest
+```
+
+`publish_latest`只能在`finalize`成功后调用。Reader不得通过字符串拼接artifact root；
+所有path必须通过resolver，reject absolute child paths、`..`、NUL、symlink escape和
+identity mismatch。
+
+Source traceability：
+
+- `workspaceId`: canonical worktree path SHA-256前16个hex，只负责isolation；
+- `source.commit`: exact Git HEAD；
+- `source.workspaceDigest`: clean/dirty状态及受控digest，语义保持D-07；
+- `gateId`: Gate Catalog identity；
+- `runId`: UTC microsecond timestamp加128-bit cryptographic random suffix；
+- `runtime`: environment/profile/Station/client identity；
+- `artifacts`: typed run-relative references与content SHA-256。
+
+Permissions：
+
+- POSIX root/run directories创建为owner-only，files创建为owner read/write；
+- Windows root位于`LOCALAPPDATA`或显式override，依赖current-user ACL；
+- override若指向relative path、existing file、repository内路径或symlink escape，
+  resolver返回typed invalid-root error；
+- CI必须显式设置override，不能依赖runner home default。
+
+Concurrency与durability：
+
+- run directory通过exclusive create分配，identity冲突重新生成run-id；
+- active lock在RunHandle lifecycle内持有；
+- 同一run内path首次写入成功后immutable；相同path/same hash为idempotent，相同path/
+  different hash返回`EvidenceConflict`；
+- artifact写入same-directory temporary file，flush/fsync后atomic replace；
+- large evidence使用bounded chunk streaming并同步计算hash，不把整文件载入内存；
+- environment/run contract可声明byte budget，超额返回`EvidenceQuotaExceeded`；
+- manifest durable后才允许在gate-level lock下发布latest；
+- concurrent publisher按`completedAt + runId`比较，较旧completion不得覆盖新pointer；
+- latest包含manifest `ArtifactRef`和SHA-256，reader必须复验；
+- interrupted temporary files不是evidence，cleanup仅在run inactive后回收。
+- cancellation/shutdown关闭writer并释放active lock；若manifest未durable，latest保持不变，
+  run保留为inactive incomplete并由显式cleanup处理。
+
+Retention：
+
+- 默认retain all，不在Gate结束时自动删除；
+- explicit cleanup按workspace/gate、age或run count选择候选；
+- active lock、latest target和manifest-referenced artifacts永远受保护；
+- cleanup失败是typed operational error，不得损坏已durable evidence。
+
 ---
 
 ## 4. 组件关系
@@ -303,7 +405,7 @@ station-dashboard-admin-access / station-dashboard-operator-surface
 station-dashboard-unit + station-dashboard-web-check
           │
           ▼
-tooling/acceptance/reports/station-dashboard-validation.json
+Evidence Store latest(`station-dashboard-domain-validation`)
 ```
 
 ### 4.5 报告语义
@@ -335,7 +437,7 @@ chat-proto-service-contract / chat-realtime-contract / desktop-chat-typed-surfac
 proto-build + station-messaging-unit + messaging-platform-contract + desktop-check + chat-native-visible-static (+ chat-desktop-gateway-e2e / native environment gates)
           │
           ▼
-tooling/acceptance/reports/chat-validation.json
+Evidence Store latest(`chat-domain-validation`)
 ```
 
 ### 4.6 报告语义
@@ -432,6 +534,27 @@ Desktop Rust receipt/decrypt path
 的 behavior rule 追加 native Gate。`acceptance-plan` 必须通过 synthetic path
 测试证明该规则能被新 Agent 自动发现。
 
+### 4.10 Evidence Store 允许与禁止关系
+
+允许：
+
+- plan/run/gate/validator/report/quality tooling通过canonical Evidence Store API读写；
+- intentional test fixture位于source tree专用fixture目录；
+- CI通过override root收集完整workspace subtree；
+- reviewed long-lived evidence进入明确的repository archive owner，但runtime writer
+  不得直接写该owner。
+
+禁止：
+
+- runtime writer写repo root、`tooling/`、`docs/`或`.git/`；
+- Core consumer定义第二个artifact-root resolver；
+- contract保存`tooling/acceptance/reports/...`物理路径；
+- latest pointer充当primary evidence或在manifest durable前发布；
+- permission/disk/path错误fallback到repository；
+- cleanup删除active run或latest target；
+- symlink、dual-write或legacy compatibility owner；
+- 迁移旧report作为当前产品proof。
+
 ---
 
 ## 5. 端点 / API
@@ -486,3 +609,19 @@ make acceptance-federation-mutual-validation
 - 缺少任一资源时产生结构化 `BLOCKED/UNPROVEN` artifact，而非继续运行或静默降级。
 - Gateway、Native clients、ports、storage 和 sessions 在成功与失败路径均完成 cleanup audit。
 - Gap Detector 在 completion/quality/commit/PR 声明前发现缺失 Acceptance 责任并分派到 Acceptance Engineering。
+
+## 7. Evidence Store 架构质量门
+
+实现只有在以下证据同时成立时才可声明Evidence Store ready：
+
+- macOS/Linux/Windows default和override resolver tests通过；
+- workspace/gate/run isolation及traversal/symlink rejection通过；
+- 两个concurrent Gates不覆盖artifact或latest；
+- repository read-only且artifact root writable时，Gate仍能emit并validate；
+- artifact root unwritable/disk-full模拟时，Gate typed fail-closed且repo零写入；
+- interrupted manifest/latest write保留上一份valid latest；
+- validators、coverage、quality和report tooling从canonical store读取；
+- source tree scan对runtime write owner为零；
+- tracked reports已分类，stale runtime evidence不再作为proof；
+- cleanup在active lock存在时拒绝删除；
+- secret redaction与source-bound traceability tests保持通过。

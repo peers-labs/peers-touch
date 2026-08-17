@@ -1,8 +1,8 @@
 # Acceptance Framework Core Runtime — 集成与迁移
 
 > **Status**: active
-> **Version**: v2.0
-> **Created**: 2026-08-15 | **Updated**: 2026-08-16
+> **Version**: v2.1
+> **Created**: 2026-08-15 | **Updated**: 2026-08-17
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/core/`
 
@@ -68,6 +68,42 @@ gates.yaml
 现有 Gate command 和产品断言保持稳定；变更的是 Gate 之前和之后的 runtime
 orchestration。业务 Gate 不获得部署权限，也不读取 `.local` 的实现细节。
 
+### 1.4 Evidence Store 目标映射
+
+> 本节由D-11约束。
+
+| Current owner/path | Target owner/contract | Migration rule |
+|---|---|---|
+| `core/_paths.py::REPORTS_DIR` | `ArtifactRootResolver` | hard replace；禁止repo fallback |
+| `core/evidence.py` direct write/copy | `EvidenceWriter` + `RunHandle` | atomic run-relative writes |
+| `AcceptanceGate.report_path` | logical report role | allocator决定physical path |
+| `acceptance-plan.py` latest plan | dedicated plan Gate run + latest pointer | self-check不得覆盖normal plan |
+| `acceptance-run.py` logs/manifests/run | one orchestrator run manifest | child Gate refs normalized |
+| `acceptance-validate.py` domain report | reader/writer API | Domain profile不保存physical path |
+| coverage/report/quality scripts | `EvidenceReader.latest(...)` | CLI explicit input仍可用于fixtures |
+| Native runners | run-scoped writer | no process-local repo paths |
+| Make targets / review scripts | resolver CLI/API | output位置不硬编码 |
+| Domain profiles/capabilities | logical report/gate identity | remove source-tree report values |
+| `tooling/acceptance/reports/` | deleted runtime owner | tracked stale reports removed |
+| intentional test data | `tooling/acceptance/tests/fixtures/` | only reviewed deterministic fixtures |
+
+Source-artifact traceability迁移：
+
+```text
+old: "tooling/acceptance/reports/gate.json"
+new: {
+  "workspaceId": "...",
+  "gateId": "...",
+  "runId": "...",
+  "path": "reports/gate.json",
+  "sha256": "..."
+}
+```
+
+Runtime report中对其它artifact的引用必须normalize为`ArtifactRef`。用于测试的CLI
+`--input/--output`可接受explicit filesystem path，但default必须来自Evidence Store；
+test-only path不能成为production fallback。
+
 ---
 
 ## 2. 影响面分析
@@ -89,6 +125,11 @@ orchestration。业务 Gate 不获得部署权限，也不读取 `.local` 的实
 | `tooling/acceptance/fixtures/chat_native_reset.py` | 重构 | 产出 actor manifest，声明 reset target、初始状态和 teardown |
 | `tooling/acceptance/registry.yaml` | 契约修正 | receipt 等 receiver-visible 路径选择 Native two-client Gate |
 | `tooling/skills/pt-acceptance-gap-detector/` | 新增只读守卫 | 检测遗漏并分派，不实施修复 |
+| `tooling/acceptance/core/_paths.py` | hard replace | 只保留repo/config paths；runtime artifact path迁入Evidence Store |
+| `tooling/acceptance/core/evidence_store.py` | 新增唯一owner | root/run/ref/manifest/latest/cleanup |
+| `tooling/scripts/acceptance-*.py` | 原子迁移 | defaults通过Evidence Store，explicit fixture paths保留 |
+| Domain/capability/feature contracts | schema migration | physical report paths改为logical identities |
+| Make/review/quality/skills/docs | consumer migration | 输出与读取命令解析canonical root |
 
 ### 2.2 不受影响的代码
 
@@ -107,10 +148,17 @@ orchestration。业务 Gate 不获得部署权限，也不读取 `.local` 的实
 - Profile identity mismatch 仍可激活的 silent path。
 - 失败后仅输出 connection refused 且没有 runtime identity 的 preflight path。
 - Receipt 变更只选择 Gateway Gate、依赖 Agent 手工追加 Native Gate 的 path。
+- `tooling/acceptance/reports/` runtime owner及其gitignore-only假设。
+- `_paths.py`中`REPORTS_DIR`、`EVIDENCE_DIR`、`MANIFESTS_DIR` repo constants。
+- Domain profiles和Capability truth source里的source-tree report paths。
+- tracked historical runtime reports；不得迁为current product proof。
 
 不得以兼容为名保留“旧环境变量直传”和“runtime manifest”两套并行真源。
 Native Chat 目标态只认 provisioning artifact；credential value 仅按 manifest
 中的 CredentialRef 在进程环境中解析。
+
+Evidence Store迁移同样禁止dual-write、symlink compatibility、legacy resolver或
+write failure后的source-tree fallback。
 
 ---
 
@@ -149,7 +197,7 @@ Native Chat 目标态只认 provisioning artifact；credential value 仅按 mani
 ## 4. 兼容性保证
 
 - **Gate 命令行接口保持不变**：所有 `python3 tooling/acceptance/gates/<domain>/<scenario>.py` 继续工作
-- **报告路径保持不变**：`tooling/acceptance/reports/*.json` 输出位置不变
+- **报告逻辑角色保持不变**：Gate/report IDs保持稳定，physical path迁到Evidence Store
 - **Make targets 保持不变**：所有 `make acceptance-*` 命令继续工作
 - **Driver 单一入口**：统一使用 `tooling.acceptance.drivers.tauri`；不保留兼容 re-export
 - **Core Runtime 已合并基线**：原 Core Runtime 通用化不要求 capability/domain/feature/registry/gates 迁移
@@ -163,3 +211,13 @@ Native Chat 目标态只认 provisioning artifact；credential value 仅按 mani
 - 旧 ad-hoc 环境变量不是长期公共 API；迁移后由 runtime manifest 取代。
 - 缺少 provisioning artifact 时行为从文本失败升级为结构化 `BLOCKED/UNPROVEN`，
   不得伪装为 Gate 产品失败。
+
+D-11 compatibility boundary：
+
+- Gate IDs、Make target names、product assertions和proof semantics保持不变；
+- `PT_ACCEPTANCE_ARTIFACT_ROOT`可选，local developer无需配置；
+- CI必须override root并从该目录收集artifact；
+- repository-relative runtime report paths不是public API，原子删除；
+- explicit test fixture paths保留，但必须位于temporary directory或
+  `tooling/acceptance/tests/fixtures/`；
+- downstream consumer无法解析ArtifactRef时fail closed，不尝试旧路径。

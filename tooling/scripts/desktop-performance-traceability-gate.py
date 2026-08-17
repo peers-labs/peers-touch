@@ -9,14 +9,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session, latest_path
+
 
 ARTIFACT_KIND = "desktop-performance-traceability-gate"
 PHASE = "P0c-5"
 BOM = ["BOM-RUN-05", "BOM-CAP-05", "BOM-GATE-02"]
 SPEC = ["SPEC-MIRROR-01", "SPEC-STA-03", "SPEC-GATE-02"]
 GATE = "Phase 0 aggregate issue and result evidence must preserve source artifact, phase, BOM, Spec, and Gate traceability"
-DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-performance-traceability-gate.json"
-DEFAULT_LATEST_OUTPUT = "tooling/acceptance/reports/desktop-performance-traceability-gate-latest.json"
+DEFAULT_OUTPUT = "reports/desktop-performance-traceability-gate.json"
 REQUIRED_ISSUE_FIELDS = [
     "sourceArtifact",
     "sourceArtifactKind",
@@ -42,11 +43,22 @@ RAW_EVIDENCE_SUMMARY_FIELDS = [
     "rawSourceGate",
 ]
 SOURCE_TRACE_FIELD_SET = set(REQUIRED_ISSUE_FIELDS)
-DEFAULT_INPUTS = [
-    "tooling/acceptance/reports/latest-run.json",
-    "tooling/acceptance/reports/desktop-performance-report-latest.json",
-    "tooling/acceptance/reports/desktop-performance-matrix-latest.json",
-]
+def default_inputs() -> list[str]:
+    return [
+        str(latest_path("acceptance-run", "run")),
+        str(
+            latest_path(
+                "desktop-performance-report-gate",
+                "reports/desktop-performance-report-latest.json",
+            )
+        ),
+        str(
+            latest_path(
+                "desktop-performance-matrix-gate",
+                "reports/desktop-performance-matrix-latest.json",
+            )
+        ),
+    ]
 
 
 def utc_now() -> str:
@@ -503,7 +515,7 @@ def build_report(inputs: list[str]) -> dict[str, Any]:
             "sampleEmissionAllowed": False,
             "summary": report["reason"],
               "proofImpact": "P0c-5 remains PARTIAL/UNPROVEN until every aggregate issue, nested evidence source, acceptance-run result, and route trust verdict has source artifact, phase, BOM, Spec, Gate binding, and fail-closed consistency.",
-            "sourceArtifact": "tooling/acceptance/reports/desktop-performance-traceability-gate.json",
+            "sourceArtifact": "evidence-store:current:report",
             "sourceArtifactKind": ARTIFACT_KIND,
             "sourcePhase": PHASE,
             "sourceBom": BOM,
@@ -526,15 +538,23 @@ def write_report(report: dict[str, Any], output: str) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", action="append", default=[])
-    parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument("--output")
     args = parser.parse_args()
-    inputs = args.input or DEFAULT_INPUTS
+    inputs = args.input or default_inputs()
     report = build_report(inputs)
-    path = write_report(report, args.output)
-    print(f"desktop performance traceability gate: {path}")
-    if args.output == DEFAULT_OUTPUT:
-        latest_path = write_report(report, DEFAULT_LATEST_OUTPUT)
-        print(f"desktop performance traceability gate: {latest_path}")
+    if args.output:
+        path = write_report(report, args.output)
+        display_output = str(path)
+    else:
+        with artifact_session(ARTIFACT_KIND) as session:
+            session.write_json(DEFAULT_OUTPUT, report, role="report")
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_output = DEFAULT_OUTPUT
+    print(f"desktop performance traceability gate: {display_output}")
     print(f"status: {report['status']}")
     return 0 if report["status"] == "pass" else 1
 

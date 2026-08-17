@@ -24,9 +24,15 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core import (
+    ArtifactRef,
+    EvidenceError,
+    EvidenceStore,
     ProvisioningError,
+    current_artifact_ref,
+    current_artifact_path,
     load_json_artifact,
     load_runtime_manifest,
+    write_current_artifact,
 )
 from tooling.acceptance.drivers.tauri import TauriDriver
 
@@ -727,6 +733,10 @@ class NativeVisibleJourney:
         manifest_value = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "")
         require(bool(manifest_value), "PT_ACCEPTANCE_RUNTIME_MANIFEST is required")
         self.runtime_manifest_path = Path(manifest_value).resolve()
+        self.runtime_manifest_ref = current_artifact_ref(
+            "runtime/environment-manifest.json",
+            repo_root=REPO_ROOT,
+        ).to_dict()
         try:
             self.runtime_manifest = load_runtime_manifest(
                 self.runtime_manifest_path,
@@ -738,17 +748,25 @@ class NativeVisibleJourney:
         require(isinstance(station, dict), "runtime manifest Station is required")
         self.station_url = str(station.get("url") or "").rstrip("/")
         require(bool(self.station_url), "runtime manifest Station URL is required")
-        attestation_value = str(station.get("attestationArtifact") or "")
-        self.station_attestation_path = REPO_ROOT / attestation_value
-        require(
-            self.station_attestation_path.is_file(),
-            "runtime manifest Station attestation is missing",
+        self.evidence_store = EvidenceStore.from_environment(
+            repo_root=REPO_ROOT,
+            worktree=REPO_ROOT,
         )
-        actor_manifest_value = str(
-            self.runtime_manifest.get("actorManifest") or ""
-        )
-        require(bool(actor_manifest_value), "runtime manifest actorManifest is required")
-        self.actor_manifest_path = REPO_ROOT / actor_manifest_value
+        try:
+            attestation_ref = ArtifactRef.from_dict(
+                station.get("attestationArtifact") or {}
+            )
+            actor_manifest_ref = ArtifactRef.from_dict(
+                self.runtime_manifest.get("actorManifest") or {}
+            )
+            self.station_attestation_path = self.evidence_store.resolve(
+                attestation_ref
+            )
+            self.actor_manifest_path = self.evidence_store.resolve(
+                actor_manifest_ref
+            )
+        except EvidenceError as error:
+            raise JourneyError(f"runtime artifact reference is invalid: {error}") from error
         try:
             self.actor_manifest = load_json_artifact(
                 self.actor_manifest_path,
@@ -757,14 +775,13 @@ class NativeVisibleJourney:
         except ProvisioningError as error:
             raise JourneyError(str(error)) from error
         self.password = resolve_actor_credential(self.actor_manifest)
-        self.report_path = Path(
-            os.environ.get(
-                f"CHAT_NATIVE_{journey.upper().replace('-', '_')}_REPORT",
-                f"tooling/acceptance/reports/{REPORT_NAMES[journey]}",
-            )
+        self.report_path = current_artifact_path(
+            f"reports/{REPORT_NAMES[journey]}",
+            repo_root=REPO_ROOT,
         )
-        self.evidence_dir = self.report_path.with_suffix("").with_name(
-            self.report_path.stem + "-evidence"
+        self.evidence_dir = current_artifact_path(
+            f"evidence/{self.report_path.stem}",
+            repo_root=REPO_ROOT,
         )
         clients = self.runtime_manifest.get("clients")
         require(isinstance(clients, list) and clients, "runtime manifest clients are required")
@@ -887,9 +904,9 @@ class NativeVisibleJourney:
             "live": live,
             "finalLive": None,
             "sourceStable": False,
-            "attestation": str(self.station_attestation_path),
-            "runtimeManifest": str(self.runtime_manifest_path),
-            "actorManifest": str(self.actor_manifest_path),
+            "attestation": station.get("attestationArtifact"),
+            "runtimeManifest": self.runtime_manifest_ref,
+            "actorManifest": self.runtime_manifest.get("actorManifest"),
         }
 
     def verify_final_station_identity(self) -> None:
@@ -1174,8 +1191,11 @@ class NativeVisibleJourney:
             ),
             "cleanup": self.cleanup_evidence,
         }
-        self.report_path.parent.mkdir(parents=True, exist_ok=True)
-        self.report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        write_current_artifact(
+            f"reports/{REPORT_NAMES[self.journey]}",
+            (json.dumps(report, indent=2) + "\n").encode("utf-8"),
+            repo_root=REPO_ROOT,
+        )
 
     def close(self) -> list[str]:
         failures: list[str] = []

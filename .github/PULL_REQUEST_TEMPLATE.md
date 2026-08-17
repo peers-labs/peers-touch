@@ -85,7 +85,7 @@
 
 <!-- Submit-Time Review Pipeline -->
 <!-- Run before opening PR: make review-submit REVIEW_BASE=<base> -->
-<!-- Paste or summarize tooling/acceptance/reports/latest-quality-evidence.md -->
+<!-- Inspect: python3 tooling/scripts/acceptance-artifact.py cat --gate quality-evidence --role quality-markdown -->
 
 - Range:
 - Review profiles:

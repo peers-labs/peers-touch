@@ -11,7 +11,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session, latest_path, latest_ref
+
 ARTIFACT_KIND = "desktop-anchor-dom-evidence-gate"
+DOM_EVIDENCE_PRODUCER_ID = "desktop-anchor-dom-evidence-collect-gate"
+DOM_EVIDENCE_ROLE = "report"
+REPORT_PATH = "reports/desktop-anchor-dom-evidence-gate.json"
+REPORT_MARKDOWN_PATH = "reports/desktop-anchor-dom-evidence-gate.md"
 
 
 def utc_now() -> str:
@@ -29,9 +35,15 @@ def load_inventory_module():
     return module
 
 
-def build_report(dom_evidence_path: Path) -> dict[str, Any]:
+def build_report(
+    dom_evidence_path: Path,
+    source_artifact: Any | None = None,
+) -> dict[str, Any]:
     inventory = load_inventory_module()
-    dom_evidence = inventory.load_dom_evidence(dom_evidence_path)
+    dom_evidence = inventory.load_dom_evidence(
+        dom_evidence_path,
+        source_artifact=source_artifact,
+    )
     status = "pass" if dom_evidence["status"] == "pass" else "diagnostic incomplete"
     report = {
         "schemaVersion": 1,
@@ -140,20 +152,42 @@ def write_outputs(report: dict[str, Any], output_prefix: str) -> tuple[Path, Pat
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--dom-evidence",
-        default="tooling/acceptance/reports/desktop-anchor-dom-evidence.json",
-    )
-    parser.add_argument(
-        "--output-prefix",
-        default="tooling/acceptance/reports/desktop-anchor-dom-evidence-gate-latest",
-    )
+    parser.add_argument("--dom-evidence")
+    parser.add_argument("--output-prefix")
     args = parser.parse_args()
 
-    report = build_report(Path(args.dom_evidence))
-    json_path, md_path = write_outputs(report, args.output_prefix)
-    print(f"desktop anchor DOM evidence gate: {json_path}")
-    print(f"desktop anchor DOM evidence gate: {md_path}")
+    if args.dom_evidence:
+        report = build_report(Path(args.dom_evidence))
+    else:
+        report = build_report(
+            latest_path(DOM_EVIDENCE_PRODUCER_ID, DOM_EVIDENCE_ROLE),
+            source_artifact=latest_ref(
+                DOM_EVIDENCE_PRODUCER_ID,
+                DOM_EVIDENCE_ROLE,
+            ),
+        )
+    if args.output_prefix:
+        json_path, md_path = write_outputs(report, args.output_prefix)
+        json_output = str(json_path)
+        markdown_output = str(md_path)
+    else:
+        with artifact_session(ARTIFACT_KIND) as session:
+            session.write_json(REPORT_PATH, report, role="report")
+            session.write_bytes(
+                REPORT_MARKDOWN_PATH,
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        json_output = REPORT_PATH
+        markdown_output = REPORT_MARKDOWN_PATH
+    print(f"desktop anchor DOM evidence gate: {json_output}")
+    print(f"desktop anchor DOM evidence gate: {markdown_output}")
     print(f"status: {report['status']}")
     return 0 if report["status"] == "pass" else 1
 

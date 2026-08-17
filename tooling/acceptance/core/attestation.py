@@ -9,8 +9,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from ._paths import MANIFESTS_DIR, REPO_ROOT
+from ._paths import REPO_ROOT
 from .errors import BlockedError, ProvisioningError
+from .evidence_store import (
+    current_artifact_ref,
+    write_current_artifact,
+)
 from .provisioning import StationAttestation, utc_now
 
 
@@ -239,21 +243,38 @@ def produce_station_attestation(
             resource=f"station-attestation:{station_url}",
         )
 
-    artifact_path = (
-        MANIFESTS_DIR / f"station-attestation-{environment_id}-{run_id}.json"
-    )
-    attestation = StationAttestation(
+    produced_at = utc_now()
+    payload = StationAttestation(
         environment_id=environment_id,
         url=station_url.rstrip("/"),
         live_commit=deployed_commit,
         workspace_digest=workspace_digest,
         proto_digest=proto_digest,
-        artifact_path=str(artifact_path.relative_to(REPO_ROOT)),
-        produced_at=utc_now(),
+        artifact_ref={},
+        produced_at=produced_at,
         build_time=build_time,
-    )
+    ).to_dict()
+    relative_path = "runtime/station-attestation.json"
     try:
-        attestation.write(artifact_path)
+        write_current_artifact(
+            relative_path,
+            (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+            repo_root=REPO_ROOT,
+        )
+        artifact_ref = current_artifact_ref(
+            relative_path,
+            repo_root=REPO_ROOT,
+            media_type="application/json",
+        )
     except ProvisioningError:
         raise
-    return attestation
+    return StationAttestation(
+        environment_id=environment_id,
+        url=station_url.rstrip("/"),
+        live_commit=deployed_commit,
+        workspace_digest=workspace_digest,
+        proto_digest=proto_digest,
+        artifact_ref=artifact_ref.to_dict(),
+        produced_at=produced_at,
+        build_time=build_time,
+    )

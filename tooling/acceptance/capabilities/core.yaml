@@ -19,7 +19,7 @@
           "tooling/acceptance/registry.yaml",
           "tooling/acceptance/gates.yaml",
           "tooling/acceptance/features/*.yaml",
-          "tooling/acceptance/reports/latest-run.json"
+          "evidence-store:acceptance-run:latest:run"
         ],
         "proven_by": ["acceptance-plan-self"],
         "proven_scope": [

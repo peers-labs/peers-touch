@@ -19,6 +19,7 @@ from tooling.acceptance.core.attestation import (
     source_workspace_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore
 from tooling.acceptance.fixtures.chat_native_actors import (
     _login_session,
     produce_actor_manifest,
@@ -141,13 +142,16 @@ class StationAttestationOwnerTests(unittest.TestCase):
     def test_producer_writes_source_bound_attestation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            manifests = root / "tooling" / "acceptance" / "reports" / "manifests"
-            with patch(
-                "tooling.acceptance.core.attestation.REPO_ROOT",
-                root,
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("test-gate", source={})
+            with patch.dict(
+                os.environ,
+                run.subprocess_environment(os.environ),
             ), patch(
-                "tooling.acceptance.core.attestation.MANIFESTS_DIR",
-                manifests,
+                "tooling.acceptance.core.attestation.REPO_ROOT",
+                worktree,
             ), patch(
                 "tooling.acceptance.core.attestation.read_station_version",
                 return_value={
@@ -165,7 +169,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                     profile_env={"PT_STATION_MODE": "local"},
                 )
 
-            path = root / attestation.artifact_path
+            path = store.resolve(ArtifactRef.from_dict(attestation.artifact_ref))
             payload = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(
                 payload["artifactKind"],
@@ -174,6 +178,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
             self.assertEqual(payload["producer"], "station-deployment")
             self.assertEqual(payload["commit"], "abcdef1234567890")
             self.assertEqual(payload["protoDigest"], "proto-digest")
+            run.close()
 
     def test_dirty_station_deployment_blocks(self) -> None:
         with patch(
@@ -236,13 +241,17 @@ class ActorFixtureOwnerTests(unittest.TestCase):
         from tooling.acceptance.core.provisioning import ActorIdentity
 
         with tempfile.TemporaryDirectory() as tmp:
-            manifests = Path(tmp)
-            with patch(
-                "tooling.acceptance.fixtures.chat_native_actors.MANIFESTS_DIR",
-                manifests,
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("test-gate", source={})
+            with patch.dict(
+                os.environ,
+                run.subprocess_environment(os.environ),
             ), patch(
                 "tooling.acceptance.fixtures.chat_native_actors.REPO_ROOT",
-                manifests.parent,
+                worktree,
             ), patch(
                 "tooling.acceptance.fixtures.chat_native_actors.verify_reset_target"
             ), patch(
@@ -255,7 +264,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                     ptid=f"ptid:{role}",
                 ),
             ):
-                manifest, path = produce_actor_manifest(
+                manifest, path, reference = produce_actor_manifest(
                     environment_id="home-station",
                     run_id="run-1",
                     station_url="http://station.example",
@@ -271,6 +280,11 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             self.assertIn("env:CHAT_NATIVE_DEMO_PASSWORD", serialized)
             self.assertEqual(len(manifest.actors), 2)
             self.assertTrue(all(actor.ptid.startswith("ptid:") for actor in manifest.actors))
+            self.assertEqual(
+                store.resolve(ArtifactRef.from_dict(reference)),
+                path,
+            )
+            run.close()
 
 
 class ProfileActivationContractTests(unittest.TestCase):

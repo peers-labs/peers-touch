@@ -1,8 +1,8 @@
 # Acceptance Framework — 模块目录结构
 
 > **Status**: active
-> **Version**: v2.0
-> **Created**: 2026-08-15 | **Updated**: 2026-08-16
+> **Version**: v2.1
+> **Created**: 2026-08-15 | **Updated**: 2026-08-17
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -19,6 +19,7 @@ tooling/acceptance/
 │   ├── __init__.py
 │   ├── gate.py                     # AcceptanceGate 基类
 │   ├── evidence.py                 # Evidence Schema + 报告工具
+│   ├── evidence_store.py           # [D-11] 唯一root/run/ref/manifest/latest/cleanup owner
 │   ├── errors.py                   # GateError 统一异常
 │   ├── redaction.py                # 结构化报告和文本证据统一脱敏
 │   ├── harness.py                  # 通用 JS harness 桥接 helper
@@ -90,9 +91,9 @@ tooling/acceptance/
 │   └── feature.yaml
 ├── plans/                          # 保持不变：plan JSON
 ├── playbooks/                      # 保持不变：操作手册
-├── reports/                        # 保持不变：运行报告输出（gitignored）
-│   └── evidence/                   # 证据文件（截图/DOM/log）
 ├── evidence/                       # 保持不变：历史证据存档
+├── tests/
+│   └── fixtures/                   # reviewed deterministic fixtures only
 ├── gates.yaml                      # 保持不变：Gate catalog
 ├── registry.yaml                   # 保持不变：路径影响映射
 ├── desktop-performance-cohort.json # 保持不变：性能测试 cohort
@@ -105,6 +106,7 @@ tooling/acceptance/
 |------|------|
 | `core/gate.py` | AcceptanceGate 抽象基类，统一 execute() 入口、异常捕获、自动证据保存、报告输出 |
 | `core/evidence.py` | Evidence Schema 定义、证据文件路径管理、JSON 报告写入 |
+| `core/evidence_store.py` | 解析artifact root、分配run、验证ArtifactRef、atomic write/latest、active lock与cleanup |
 | `core/errors.py` | GateError 统一异常，其他通用异常类型 |
 | `core/redaction.py` | 敏感字段、Bearer token、private key 和文本证据统一脱敏 |
 | `core/harness.py` | async_harness 通用 JS 桥接，支持命名空间调用 |
@@ -126,6 +128,7 @@ tooling/acceptance/
 
 ```
 core/gate.py → core/evidence.py → core/errors.py
+core/evidence.py → core/evidence_store.py → core/errors.py + core/redaction.py
 core/provisioning.py → core/errors.py + core/redaction.py
 core/provisioner.py → core/provisioning.py
 core/attestation.py → core/provisioning.py
@@ -148,3 +151,27 @@ fixtures/*.py → core/fixtures/base.py
 - fixtures/ 不得调用 Gate 或修改 Gate 成功条件
 - provisioners/ 不得包含产品断言、DOM selector 或消息内容判断
 - attestation 不得由消费它的 Gate 或 validator 生产
+- `core/_paths.py`不得定义runtime report/evidence/manifest目录
+- 除`core/evidence_store.py`外不得解析`PT_ACCEPTANCE_ARTIFACT_ROOT`或platform default
+- runtime writers不得写repository、`tooling/`、`docs/`或`.git/`
+- readers不得通过字符串拼接解析ArtifactRef
+- cleanup不得删除active run或latest target
+
+## Repository 外 Runtime Layout
+
+该layout不是source module tree，不得在repository中创建：
+
+```text
+<artifact-root>/
+└── <workspace-id>/
+    └── <gate-id>/
+        ├── latest.json
+        ├── .publish.lock
+        └── <run-id>/
+            ├── .active.lock
+            ├── manifest.json
+            ├── reports/
+            ├── evidence/
+            ├── logs/
+            └── runtime/
+```

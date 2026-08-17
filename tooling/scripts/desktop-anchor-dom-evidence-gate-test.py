@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from _acceptance_artifacts import latest_path
 
 
 def load_gate_module():
@@ -40,7 +44,8 @@ class DesktopAnchorDomEvidenceGateTest(unittest.TestCase):
             "completionStatus": "DONE",
             "proofStatus": "PROVEN",
             "browser": {"status": "pass", "anchors": anchors},
-            "tauri": {"status": "pass", "anchors": anchors},
+            "tauriDev": {"status": "pass", "anchors": anchors},
+            "tauriPackaged": {"status": "pass", "anchors": anchors},
         }
 
     def test_missing_dom_evidence_stays_unproven(self) -> None:
@@ -83,10 +88,12 @@ class DesktopAnchorDomEvidenceGateTest(unittest.TestCase):
         self.assertEqual(report["domAutomation"]["evidenceStatus"], "missing-source-metadata")
         self.assertEqual(report["domAutomation"]["issue_breakdown"][0]["category"], "dom-automation-evidence")
         self.assertIn("DOM evidence source metadata is incomplete", report["domAutomation"]["reason"])
-        self.assertIn("browser DOM anchors are not fully proven (0/9 anchors proven)", report["domAutomation"]["reason"])
-        self.assertIn("tauri DOM anchors are not fully proven (0/9 anchors proven)", report["domAutomation"]["reason"])
+        self.assertIn("browser DOM anchors are not fully proven (0/10 anchors proven)", report["domAutomation"]["reason"])
+        self.assertIn("tauriDev DOM anchors are not fully proven (0/10 anchors proven)", report["domAutomation"]["reason"])
+        self.assertIn("tauriPackaged DOM anchors are not fully proven (0/10 anchors proven)", report["domAutomation"]["reason"])
         self.assertEqual(report["domAutomation"]["browser"]["provenCount"], 0)
-        self.assertEqual(report["domAutomation"]["tauri"]["provenCount"], 0)
+        self.assertEqual(report["domAutomation"]["tauriDev"]["provenCount"], 0)
+        self.assertEqual(report["domAutomation"]["tauriPackaged"]["provenCount"], 0)
         markdown = module.render_markdown(report)
         self.assertIn("| Anchor | Browser | Tauri |", markdown)
         self.assertIn("`diagnostic incomplete`", markdown)
@@ -109,7 +116,8 @@ class DesktopAnchorDomEvidenceGateTest(unittest.TestCase):
                 json.dumps(
                     {
                         "browser": {"status": "pass", "anchors": anchors},
-                        "tauri": {"status": "pass", "anchors": anchors},
+                        "tauriDev": {"status": "pass", "anchors": anchors},
+                        "tauriPackaged": {"status": "pass", "anchors": anchors},
                     }
                 ),
                 encoding="utf-8",
@@ -123,8 +131,9 @@ class DesktopAnchorDomEvidenceGateTest(unittest.TestCase):
         self.assertEqual(report["domAutomation"]["evidenceStatus"], "missing-source-metadata")
         self.assertEqual(report["issue_breakdown"][0]["category"], "dom-automation-evidence")
         self.assertEqual(report["domAutomation"]["reason"], "DOM evidence source metadata is incomplete")
-        self.assertEqual(report["domAutomation"]["browser"]["provenCount"], 9)
-        self.assertEqual(report["domAutomation"]["tauri"]["provenCount"], 9)
+        self.assertEqual(report["domAutomation"]["browser"]["provenCount"], 10)
+        self.assertEqual(report["domAutomation"]["tauriDev"]["provenCount"], 10)
+        self.assertEqual(report["domAutomation"]["tauriPackaged"]["provenCount"], 10)
         self.assertIn("missing required DOM evidence BOM binding", report["domAutomation"]["details"])
 
     def test_complete_browser_and_tauri_per_anchor_evidence_passes(self) -> None:
@@ -140,9 +149,50 @@ class DesktopAnchorDomEvidenceGateTest(unittest.TestCase):
         self.assertTrue(report["sampleEmissionAllowed"])
         self.assertTrue(report["summary"]["sampleEmissionAllowed"])
         self.assertEqual(report["domAutomation"]["sourceArtifactKind"], "desktop-anchor-dom-evidence")
-        self.assertEqual(report["domAutomation"]["browser"]["provenCount"], 9)
-        self.assertEqual(report["domAutomation"]["tauri"]["provenCount"], 9)
+        self.assertEqual(report["domAutomation"]["browser"]["provenCount"], 10)
+        self.assertEqual(report["domAutomation"]["tauriDev"]["provenCount"], 10)
+        self.assertEqual(report["domAutomation"]["tauriPackaged"]["provenCount"], 10)
         self.assertNotIn("issue_breakdown", report)
+
+    def test_main_resolves_collector_latest_and_writes_typed_reference(self) -> None:
+        module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            old_argv = sys.argv
+            try:
+                with patch.dict(
+                    os.environ,
+                    {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(Path(tmp) / "artifacts")},
+                ):
+                    evidence = self.complete_dom_evidence(module)
+                    with module.artifact_session(
+                        module.DOM_EVIDENCE_PRODUCER_ID
+                    ) as session:
+                        session.write_json(
+                            "reports/desktop-anchor-dom-evidence.json",
+                            evidence,
+                            role=module.DOM_EVIDENCE_ROLE,
+                        )
+                        session.complete(
+                            status="pass",
+                            completion_status="DONE",
+                            proof_status="PROVEN",
+                        )
+                    sys.argv = ["desktop-anchor-dom-evidence-gate.py"]
+                    exit_code = module.main()
+                    written = json.loads(
+                        latest_path(module.ARTIFACT_KIND, "report").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+            finally:
+                sys.argv = old_argv
+
+        self.assertEqual(exit_code, 0)
+        self.assertIsInstance(written["domAutomation"]["sourceArtifact"], dict)
+        self.assertEqual(
+            written["domAutomation"]["sourceArtifact"]["gateId"],
+            module.DOM_EVIDENCE_PRODUCER_ID,
+        )
 
 
 if __name__ == "__main__":

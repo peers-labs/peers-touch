@@ -259,12 +259,27 @@ if ! grep -q "republisher-broadcast-spam" <<< "$knowledge_dir_output"; then
   fail "knowledge-match.sh must match owns directories with trailing slashes"
 fi
 
-quality_json="$(mktemp)"
-quality_markdown="$(mktemp)"
-if ! python3 tooling/scripts/quality-evidence.py --range HEAD --output "$quality_json" --markdown-output "$quality_markdown" >/tmp/pt-quality-evidence.$$ 2>&1; then
+quality_root="$(mktemp -d)"
+set +e
+PT_ACCEPTANCE_ARTIFACT_ROOT="$quality_root" \
+  python3 tooling/scripts/quality-evidence.py \
+    --range HEAD >/tmp/pt-quality-evidence.$$ 2>&1
+quality_status=$?
+set -e
+if [[ "$quality_status" -ne 0 && "$quality_status" -ne 1 ]]; then
   cat /tmp/pt-quality-evidence.$$
   fail "quality-evidence.py must produce review-ready evidence for HEAD"
-elif ! python3 - "$quality_json" <<'PY'
+else
+  if ! quality_json="$(
+    PT_ACCEPTANCE_ARTIFACT_ROOT="$quality_root" \
+      python3 tooling/scripts/acceptance-artifact.py latest \
+        --gate quality-evidence \
+        --role quality-json
+  )"; then
+    fail "quality-evidence.py did not publish quality-json"
+  fi
+fi
+if [[ -n "${quality_json:-}" ]] && ! python3 - "$quality_json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -278,22 +293,33 @@ PY
 then
   fail "quality-evidence.py JSON output is missing required keys"
 fi
-rm -f "$quality_json" "$quality_markdown" /tmp/pt-quality-evidence.$$
+rm -rf "$quality_root"
+rm -f /tmp/pt-quality-evidence.$$
 
-tier_run_json="$(mktemp)"
+tier_run_root="$(mktemp -d)"
 set +e
-python3 tooling/scripts/acceptance-run.py \
+PT_ACCEPTANCE_ARTIFACT_ROOT="$tier_run_root" \
+  python3 tooling/scripts/acceptance-run.py \
   --gate acceptance-plan-self \
   --gate chat-desktop-gateway-e2e \
   --tier ci-structure \
-  --dry-run \
-  --output "$tier_run_json" >/tmp/pt-acceptance-tier.$$ 2>&1
+  --dry-run >/tmp/pt-acceptance-tier.$$ 2>&1
 tier_run_status=$?
 set -e
 if [[ "$tier_run_status" -ne 1 ]]; then
   cat /tmp/pt-acceptance-tier.$$
   fail "acceptance-run.py dry runs must select gates but remain unproven with exit 1"
-elif ! python3 - "$tier_run_json" <<'PY'
+else
+  if ! tier_run_json="$(
+    PT_ACCEPTANCE_ARTIFACT_ROOT="$tier_run_root" \
+      python3 tooling/scripts/acceptance-artifact.py latest \
+        --gate acceptance-run \
+        --role run
+  )"; then
+    fail "acceptance-run.py did not publish the aggregate run"
+  fi
+fi
+if [[ -n "${tier_run_json:-}" ]] && ! python3 - "$tier_run_json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -306,7 +332,8 @@ PY
 then
   fail "acceptance-run.py tier filtering selected the wrong gates"
 fi
-rm -f "$tier_run_json" /tmp/pt-acceptance-tier.$$
+rm -rf "$tier_run_root"
+rm -f /tmp/pt-acceptance-tier.$$
 
 if rg -n 'ignore (previous|all) instructions|you are now|system:\s*override|curl .*\| *sh|rm -rf /' "$skill_file" "$freshness_file" >/tmp/pt-skill-danger.$$ 2>/dev/null; then
   cat /tmp/pt-skill-danger.$$

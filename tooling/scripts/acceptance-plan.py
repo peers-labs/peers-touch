@@ -6,9 +6,15 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 
 def load_json_yaml(path: Path) -> dict[str, Any]:
@@ -135,8 +141,13 @@ def plan(root: Path, paths: list[str]) -> dict[str, Any]:
 
 
 def default_output_path(self_check: bool) -> Path:
-    name = "acceptance-plan-self.json" if self_check else "latest-plan.json"
-    return Path("tooling/acceptance/reports") / name
+    from tooling.acceptance.core import current_artifact_path
+
+    name = "acceptance-plan-self.json" if self_check else "plan.json"
+    return current_artifact_path(
+        f"reports/{name}",
+        repo_root=REPO_ROOT,
+    )
 
 
 def main() -> int:
@@ -153,9 +164,74 @@ def main() -> int:
     result = plan(root, paths)
     result["range"] = args.diff_range
 
-    output = Path(args.output) if args.output else default_output_path(args.self_check)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    artifact_ref: dict[str, str] | None = None
+    run = None
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(result, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    else:
+        from tooling.acceptance.core import (
+            RUN_GATE_ENV,
+            RUN_ID_ENV,
+            EvidenceManifestInvalid,
+            EvidenceStore,
+            current_artifact_ref,
+            source_identity,
+            write_current_artifact,
+        )
+
+        gate_id = "acceptance-plan-self" if args.self_check else "acceptance-plan"
+        relative_path = (
+            "reports/acceptance-plan-self.json"
+            if args.self_check
+            else "reports/plan.json"
+        )
+        if os.environ.get(RUN_ID_ENV):
+            if os.environ.get(RUN_GATE_ENV) != gate_id:
+                raise EvidenceManifestInvalid(
+                    "acceptance-plan child Gate does not match run context"
+                )
+            output = write_current_artifact(
+                relative_path,
+                (
+                    json.dumps(result, indent=2, ensure_ascii=False) + "\n"
+                ).encode("utf-8"),
+                repo_root=REPO_ROOT,
+            )
+            reference = current_artifact_ref(
+                relative_path,
+                repo_root=REPO_ROOT,
+                media_type="application/json",
+            )
+            artifact_ref = reference.to_dict()
+        else:
+            store = EvidenceStore.from_environment(
+                repo_root=REPO_ROOT,
+                worktree=REPO_ROOT,
+            )
+            run = store.begin_run(gate_id, source=source_identity(REPO_ROOT))
+            try:
+                reference = run.write_json(
+                    relative_path,
+                    result,
+                    role="plan",
+                )
+                run.finalize(
+                    result={
+                        "status": "passed",
+                        "completionStatus": "DONE",
+                        "proofStatus": "PROVEN",
+                    }
+                )
+                run.publish_latest()
+                output = store.resolve(reference)
+                artifact_ref = reference.to_dict()
+            finally:
+                run.close()
 
     print("Acceptance Plan")
     print("===============")
@@ -167,7 +243,14 @@ def main() -> int:
             print(f"[GATE] {gate['id']} [{gate['tier']}/{gate['environment']}]: {gate['command']}")
     else:
         print("[GATE] none")
-    print(f"plan: {output}")
+    print(
+        "plan: "
+        + (
+            json.dumps(artifact_ref, sort_keys=True)
+            if artifact_ref is not None
+            else str(output)
+        )
+    )
     return 0
 
 

@@ -1,8 +1,8 @@
 # Acceptance Framework
 
 > **Status**: active
-> **Version**: v2.0
-> **Created**: 2026-06-03 | **Updated**: 2026-08-16
+> **Version**: v2.1
+> **Created**: 2026-06-03 | **Updated**: 2026-08-17
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -17,6 +17,7 @@
 - AI agent 如何在可控边界内选择、执行和解释验收。
 - 非 local Gate 如何获取 Profile、服务、Fixture、凭据引用和 source attestation。
 - Agent 如何在普通开发任务中发现并上报 Acceptance 责任缺口。
+- Runtime evidence如何在source tree之外隔离、持久化、引用和清理。
 - Federation 与 Acceptance Framework 双边互验证的架构闭环。
 - 新产品域如何按统一标准接入项目级 acceptance。
 
@@ -65,8 +66,8 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | 文档 | 说明 |
 |------|------|
 | [design.md](./design.md) | 架构原则、分层模型、核心契约、Core Runtime 抽象和执行闭环 |
-| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-10） |
-| [data-model.md](./data-model.md) | Provisioning Contract、Runtime Manifest、Attestation、Actor Manifest、Gap Artifact 与状态机 |
+| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-11） |
+| [data-model.md](./data-model.md) | Provisioning、Evidence Store、ArtifactRef、Run Manifest 与状态机 |
 | [module-layout.md](./module-layout.md) | Core Runtime 与 Environment Provisioning 的目标目录、职责和禁止依赖 |
 | [integration.md](./integration.md) | 现有变量/Profile/Fixture/Gate 到 runtime manifest 的映射与影响面 |
 | [domain-onboarding.md](./domain-onboarding.md) | 产品域接入标准、状态模型和验收标准 |
@@ -74,6 +75,15 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | [execution-plans/phase-3-chat-domain-onboarding.md](./execution-plans/phase-3-chat-domain-onboarding.md) | Chat managed domain 接入计划与设计落地反思 |
 | [execution-plans/20260815-tauri-driver-desktop-ui-gate.md](./execution-plans/20260815-tauri-driver-desktop-ui-gate.md) | macOS native Tauri embedded WebDriver DOM Gate 执行计划 |
 | [execution-plans/20260816-runtime-provisioning-contract-implementation.md](./execution-plans/20260816-runtime-provisioning-contract-implementation.md) | Runtime Provisioning Contract 实现计划（No Silent Pass 落地） |
+| [execution-plans/20260817-acceptance-evidence-store.md](./execution-plans/20260817-acceptance-evidence-store.md) | Runtime evidence source-tree外迁与atomic Evidence Store执行计划 |
+
+当前Evidence Store architecture由`D-11`约束：
+
+- Runtime-generated artifacts必须位于repository之外；
+- canonical platform default加可选`PT_ACCEPTANCE_ARTIFACT_ROOT` override；
+- immutable run manifests与atomic `latest.json` pointer；
+- writer/readers/validators/cleanup共享唯一resolver；
+- source tree只保留code、schemas、templates和intentional fixtures。
 
 ---
 

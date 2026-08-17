@@ -10,6 +10,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import (
+    artifact_session,
+    inspect_command,
+    latest_path,
+    latest_ref,
+)
+
 
 @dataclass(frozen=True)
 class AnchorRequirement:
@@ -37,14 +44,19 @@ DOM_EVIDENCE_SPEC = ("SPEC-ANCHOR-01",)
 DOM_EVIDENCE_GATE = "Browser, dev native, and packaged native DOM automation must prove every required anchor by selector and count"
 DOM_EVIDENCE_ARTIFACT_KIND = "desktop-anchor-dom-evidence"
 ANCHOR_INVENTORY_ARTIFACT_KIND = "desktop-anchor-inventory"
+ANCHOR_INVENTORY_PRODUCER_ID = "desktop-anchor-inventory-gate"
 ANCHOR_INVENTORY_GATE = "Browser and Tauri/WebView target the same object identity"
+DOM_EVIDENCE_PRODUCER_ID = "desktop-anchor-dom-evidence-collect-gate"
+DOM_EVIDENCE_ROLE = "report"
+REPORT_PATH = "reports/desktop-anchor-inventory.json"
+REPORT_MARKDOWN_PATH = "reports/desktop-anchor-inventory.md"
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def recommended_review_commands(dom_evidence_path: Path) -> list[dict[str, str]]:
+def recommended_review_commands(_dom_evidence_path: Path) -> list[dict[str, str]]:
     return [
         {
             "purpose": "Start the Desktop development runtime through the project entrypoint.",
@@ -56,15 +68,14 @@ def recommended_review_commands(dom_evidence_path: Path) -> list[dict[str, str]]
         },
         {
             "purpose": "Collect browser/Tauri DOM anchor observations when runtimes are available.",
-            "command": (
-                "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py "
-                "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json "
-                "--output tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
-            ),
+            "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py",
         },
         {
             "purpose": "Inspect the DOM evidence diagnostic artifact.",
-            "command": f"jq '{{status,proofStatus,issue_breakdown,recommended_review_commands}}' {dom_evidence_path}",
+            "command": inspect_command(
+                DOM_EVIDENCE_PRODUCER_ID,
+                DOM_EVIDENCE_ROLE,
+            ),
         },
         {
             "purpose": "Re-run the independent DOM evidence gate.",
@@ -141,7 +152,12 @@ def bind_issue_source(issue: dict[str, Any], payload: dict[str, Any]) -> dict[st
     fill("completionStatus", "PARTIAL")
     fill("proofStatus", "UNPROVEN")
     fill("sampleEmissionAllowed", False)
-    fill("sourceArtifact", payload.get("sourceArtifact") or payload.get("path") or "tooling/acceptance/reports/desktop-anchor-inventory-latest.json")
+    fill(
+        "sourceArtifact",
+        payload.get("sourceArtifact")
+        or payload.get("path")
+        or "evidence-store:current:report",
+    )
     fill("sourceArtifactKind", payload.get("sourceArtifactKind") or payload.get("artifactKind") or ANCHOR_INVENTORY_ARTIFACT_KIND)
     fill("sourcePhase", payload.get("sourcePhase") or payload.get("phase") or DOM_EVIDENCE_PHASE)
     fill("sourceBom", payload.get("sourceBom") or payload.get("bom") or list(DOM_EVIDENCE_BOM))
@@ -252,13 +268,19 @@ def validate_dom_evidence_metadata(evidence: dict[str, Any]) -> list[str]:
     return reasons
 
 
-def load_dom_evidence(path: Path) -> dict[str, Any]:
+def load_dom_evidence(
+    path: Path,
+    *,
+    source_artifact: Any | None = None,
+) -> dict[str, Any]:
+    artifact_ref = source_artifact if source_artifact is not None else str(path)
     if not path.exists():
         return with_diagnostics(
             {
             "status": "missing",
             "proofStatus": "UNPROVEN",
-            "path": str(path),
+            "path": artifact_ref,
+            "sourceArtifact": artifact_ref,
             "evidenceStatus": "missing",
             "browser": {"status": "missing"},
             "tauriDev": {"status": "missing"},
@@ -281,7 +303,8 @@ def load_dom_evidence(path: Path) -> dict[str, Any]:
             {
             "status": "diagnostic incomplete",
             "proofStatus": "UNPROVEN",
-            "path": str(path),
+            "path": artifact_ref,
+            "sourceArtifact": artifact_ref,
             "evidenceStatus": "unreadable",
             "reason": str(exc),
             "browser": {"status": "missing"},
@@ -316,8 +339,8 @@ def load_dom_evidence(path: Path) -> dict[str, Any]:
     dom_payload = {
         "status": "pass" if pass_status else "diagnostic incomplete",
         "proofStatus": "PROVEN" if pass_status else "UNPROVEN",
-        "path": str(path),
-        "sourceArtifact": str(path),
+        "path": artifact_ref,
+        "sourceArtifact": artifact_ref,
         "sourceArtifactKind": evidence.get("artifactKind") or DOM_EVIDENCE_ARTIFACT_KIND,
         "evidenceStatus": "loaded" if not metadata_reasons else "missing-source-metadata",
         "reason": dom_evidence_reason(metadata_reasons, runtimes),
@@ -341,11 +364,19 @@ def load_dom_evidence(path: Path) -> dict[str, Any]:
     return with_diagnostics(dom_payload, dom_issue_breakdown(dom_payload), recommended_review_commands(path))
 
 
-def build_report(source_root: Path, dom_evidence_path: Path) -> dict[str, Any]:
+def build_report(
+    source_root: Path,
+    dom_evidence_path: Path,
+    *,
+    dom_source_artifact: Any | None = None,
+) -> dict[str, Any]:
     matches = find_anchor_matches(source_root)
     missing = [anchor for anchor in REQUIRED_ANCHORS if not matches[anchor.anchor_id]]
     source_status = "loaded" if not missing else "missing"
-    dom_evidence = load_dom_evidence(dom_evidence_path)
+    dom_evidence = load_dom_evidence(
+        dom_evidence_path,
+        source_artifact=dom_source_artifact,
+    )
     status = "pass" if source_status == "loaded" and dom_evidence["status"] == "pass" else "diagnostic incomplete"
     if missing:
         status = "fail"
@@ -496,20 +527,43 @@ def write_outputs(report: dict[str, Any], output_prefix: str) -> tuple[Path, Pat
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", default="apps/desktop/src")
-    parser.add_argument(
-        "--dom-evidence",
-        default="tooling/acceptance/reports/desktop-anchor-dom-evidence.json",
-    )
-    parser.add_argument(
-        "--output-prefix",
-        default="tooling/acceptance/reports/desktop-anchor-inventory-latest",
-    )
+    parser.add_argument("--dom-evidence")
+    parser.add_argument("--output-prefix")
     args = parser.parse_args()
 
-    report = build_report(Path(args.source_root), Path(args.dom_evidence))
-    json_path, md_path = write_outputs(report, args.output_prefix)
-    print(f"desktop anchor inventory: {json_path}")
-    print(f"desktop anchor inventory: {md_path}")
+    if args.dom_evidence:
+        report = build_report(Path(args.source_root), Path(args.dom_evidence))
+    else:
+        report = build_report(
+            Path(args.source_root),
+            latest_path(DOM_EVIDENCE_PRODUCER_ID, DOM_EVIDENCE_ROLE),
+            dom_source_artifact=latest_ref(
+                DOM_EVIDENCE_PRODUCER_ID,
+                DOM_EVIDENCE_ROLE,
+            ),
+        )
+    if args.output_prefix:
+        json_path, md_path = write_outputs(report, args.output_prefix)
+        json_output = str(json_path)
+        markdown_output = str(md_path)
+    else:
+        with artifact_session(ANCHOR_INVENTORY_PRODUCER_ID) as session:
+            session.write_json(REPORT_PATH, report, role="report")
+            session.write_bytes(
+                REPORT_MARKDOWN_PATH,
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        json_output = REPORT_PATH
+        markdown_output = REPORT_MARKDOWN_PATH
+    print(f"desktop anchor inventory: {json_output}")
+    print(f"desktop anchor inventory: {markdown_output}")
     print(f"status: {report['status']}")
     return 0 if report["status"] == "pass" else 1
 

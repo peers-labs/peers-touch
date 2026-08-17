@@ -22,6 +22,13 @@
       "tier": "ci-cheap",
       "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, runner failure semantics, behavior planning, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity."
     },
+    "core-runtime-validation": {
+      "command": "python3 tooling/acceptance/tests/validate_core_e2e.py",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate Core Runtime driver, Harness, redaction, ArtifactRef, and cleanup behavior under an Evidence Store run."
+    },
     "chat-native-visible-static": {
       "command": "python3 -m unittest tooling.acceptance.gates.chat.native_visible_e2e_test tooling.acceptance.gates.chat.native_visible_static_test",
       "timeout_seconds": 120,
@@ -154,6 +161,13 @@
       "tier": "nightly",
       "description": "Create and converge one federation across the isolated three-node testnet."
     },
+    "chat-mls-three-station-convergence-gate": {
+      "command": "make chat-mls-three-station-convergence",
+      "timeout_seconds": 1200,
+      "environment": "fedp5",
+      "tier": "nightly",
+      "description": "Validate three-Station MLS convergence and publish the source-bound report through the external Evidence Store."
+    },
     "federation-surface-smoke": {
       "command": "python3 tooling/acceptance/gates/federation/surface_smoke.py",
       "timeout_seconds": 300,
@@ -268,6 +282,14 @@
       "tier": "env-evidence",
       "description": "Validate the fail-closed P0a Desktop Gateway -> Station ingest -> raw/rollup query -> Dev mirror telemetry loop."
     },
+    "desktop-telemetry-route-probe-gate": {
+      "command": "python3 tooling/scripts/desktop-telemetry-route-probe.py",
+      "timeout_seconds": 120,
+      "environment": "local-desktop-gateway",
+      "provisioner": "local-desktop-gateway",
+      "tier": "env-evidence",
+      "description": "Validate Station frontend telemetry route capability and publish source-bound route evidence."
+    },
     "desktop-telemetry-mirror-static-gate": {
       "command": "python3 tooling/scripts/desktop-telemetry-mirror-test.py",
       "timeout_seconds": 120,
@@ -323,6 +345,13 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Validate the P0b-1 Desktop anchor DOM evidence collector normalizes browser/Tauri observations into the Phase, BOM, Spec, Gate evidence contract."
+    },
+    "desktop-anchor-dom-evidence-collect-gate": {
+      "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Publish fail-closed Desktop anchor observations under an immutable external Evidence Store run."
     },
     "desktop-anchor-dom-evidence-template-gate": {
       "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-template.py",

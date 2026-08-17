@@ -2,10 +2,15 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from _acceptance_artifacts import latest_path
 
 
 def load_module():
@@ -118,6 +123,30 @@ class DesktopLocalTelemetryBufferGateTest(unittest.TestCase):
             self.assertTrue(json_path.exists())
             self.assertTrue(md_path.exists())
             self.assertIn("Desktop Local Telemetry Buffer Gate", md_path.read_text(encoding="utf-8"))
+
+    def test_main_without_runtime_observations_writes_external_unproven_report(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            old_argv = sys.argv
+            try:
+                sys.argv = ["desktop-local-telemetry-buffer-gate.py"]
+                with patch.dict(
+                    os.environ,
+                    {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(Path(tmp) / "artifacts")},
+                ):
+                    exit_code = module.main()
+                    report_path = latest_path(module.ARTIFACT_KIND, "report")
+                    written = json.loads(report_path.read_text(encoding="utf-8"))
+            finally:
+                sys.argv = old_argv
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(written["proofStatus"], "UNPROVEN")
+        self.assertEqual(
+            written["sourceArtifact"],
+            "evidence-store:current:report",
+        )
+        self.assertTrue(report_path.resolve().is_relative_to(Path(tmp).resolve()))
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 # Acceptance Framework — 设计决策
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-06-03 | **Updated**: 2026-08-16
+> **Version**: v1.1
+> **Created**: 2026-06-03 | **Updated**: 2026-08-17
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -22,6 +22,7 @@
 | D-08 | Attestation、Actor Fixture 与 Credential 各有唯一生产 Owner | proposed |
 | D-09 | Registry 按产品行为选择 receiver-proof Gate | proposed |
 | D-10 | Gap Detector 作为跨阶段只读守卫 | proposed |
+| D-11 | Runtime Evidence Store 位于 source tree 之外 | accepted |
 
 ---
 
@@ -394,3 +395,114 @@ Gap detection 与 Acceptance engineering 是不同触发面：前者防止遗漏
 
 若调用方 Skill 无法稳定触发独立 Detector，应把同一 detector contract 下沉为
 completion pipeline 的统一机器检查；不得复制多份判断规则。
+
+---
+
+## D-11: Runtime Evidence Store 位于 Source Tree 之外
+
+**Status**: accepted
+**Date**: 2026-08-17 | **Accepted**: 2026-08-17
+
+### Context
+
+Acceptance runtime当前把plan、run、manifest、log、截图和validation report写到
+`tooling/acceptance/reports/`。该目录虽然gitignored，仍位于worktree中。一轮真实
+G15已完成Fixture reset和Native执行，却在写
+`chat-native-interactions-run.json`时遇到macOS `EPERM`。该事件只证明evidence
+emission失败，不能证明G15产品行为通过。
+
+Source-tree输出同时耦合worktree权限、Git观察、workspace digest、清理和并发运行。
+`_paths.py`、Acceptance scripts、Domain profiles、Make targets和operational skills
+均含物理路径假设；仓库内还存在tracked historical runtime reports。
+
+### Decision
+
+Acceptance Core Evidence Store是runtime-generated evidence的唯一owner。所有runtime
+artifact必须写入source tree之外的canonical artifact root：
+
+```text
+<root>/<workspace-id>/<gate-id>/<run-id>/
+```
+
+`PT_ACCEPTANCE_ARTIFACT_ROOT`是可选override。未设置或空白时使用平台默认：
+
+- macOS: `~/Library/Application Support/PeersTouch/acceptance`
+- Linux: `${XDG_STATE_HOME:-~/.local/state}/peers-touch/acceptance`
+- Windows: `%LOCALAPPDATA%\PeersTouch\acceptance`
+
+CI必须显式override到CI artifact workspace。
+
+`workspace-id`是canonical worktree path的SHA-256前16个小写hex字符。`gate-id`使用
+validated slug。`run-id`由UTC microsecond timestamp与128-bit cryptographic random
+suffix组成。
+
+每次run拥有immutable目录和manifest。`latest.json`仅是gate目录下的原子pointer，
+不是primary evidence object；只有run manifest已写入、`fsync`并durable后才能更新。
+并发publisher必须在gate lock下按`completedAt + runId`比较后发布，避免较早run晚完成
+时覆盖较新的pointer。
+
+Repository只保留code、schemas、templates和intentional test fixtures。Runtime writer
+不得写入repo root、`tooling/`、`docs/`或`.git/`。不允许dual-write、symlink
+compatibility、silent fallback或legacy report owner。
+
+Artifact references使用typed `ArtifactRef`，保存workspace、gate、run和run-relative
+path；contract和manifest不得保存source-tree物理report路径。Reader通过同一resolver
+解析并验证containment、manifest identity和content hash。
+
+### Lifecycle And Failure Semantics
+
+```text
+ALLOCATED -> ACTIVE -> FINALIZING -> DURABLE -> PUBLISHED -> CLOSED
+     |          |            |
+     +----------+------------+-> EVIDENCE_FAILED
+```
+
+- root create/write失败使Gate显式失败，proof保持`UNPROVEN`；
+- permission denied、disk full、malformed root、path traversal、symlink escape、
+  manifest conflict和interrupted write均映射typed evidence errors；
+- 任一失败都不得fallback到repository；
+- interrupted manifest/latest write只留下未发布temporary file，旧latest保持有效；
+- active run持有OS advisory lock；cleanup无法取得non-blocking lock时必须跳过；
+- cleanup默认不自动删除。显式retention命令不得删除active run、latest target或仍被
+  manifest引用的artifact；
+- secret redaction在durable write之前执行，不能因迁移被削弱。
+
+### Rationale
+
+- runtime证据生命周期与source lifecycle分离；
+- 每run隔离消除concurrent overwrite；
+- immutable manifest与atomic pointer同时支持审计和ergonomic latest读取；
+- canonical resolver让writer、reader、validator、report和cleanup共享一套边界；
+- typed failure避免EPERM再次退化为产品断言失败或silent missing evidence。
+
+### Alternatives Considered
+
+- 保持gitignored source-tree reports：拒绝，权限/Git/digest/cleanup耦合仍存在。
+- 只迁移Native G15输出：拒绝，保留split ownership和其它writer同类故障。
+- repo外写入同时source-tree dual-write：拒绝，两个latest和两套cleanup会漂移。
+- source-tree symlink到外部root：拒绝，仍受worktree权限与path observation影响。
+- 写失败后fallback到repo：拒绝，会把安全边界变成环境相关行为。
+- 只按gate保存一个latest文件：拒绝，覆盖历史且无法证明并发隔离。
+- 以全局workspace名称代替canonical-path hash：拒绝，同名worktree会冲突。
+
+### Consequences
+
+正面：
+
+- read-only repository仍可运行并产出证据；
+- concurrent Gates和多个worktree不再覆盖；
+- CI artifact collection可通过一个override root完成；
+- source digest不再被runtime写入扰动。
+
+负面：
+
+- 现有scripts、tests、skills、Domain profiles和docs必须原子迁移；
+- 用户需要从artifact root读取本地证据，不能再依赖repo相对路径；
+- default retain-all会增长磁盘，需要显式cleanup policy；
+- canonical path变化会产生新workspace-id，旧run不会自动迁移；
+- existing tracked runtime reports必须删除，不能继续作为产品proof。
+
+### Review / Reversal Trigger
+
+若平台证明无法提供可靠atomic replace、directory durability或active-run locking，
+应设计平台专用backend并保持相同Evidence Store contract；不得回退source-tree写入。

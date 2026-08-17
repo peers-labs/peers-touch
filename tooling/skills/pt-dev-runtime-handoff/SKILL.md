@@ -77,6 +77,8 @@ message ID/body, unread badge increment/clear, and receiver restart recovery.
 
 Require:
 
+- runtime artifacts under the external Acceptance Evidence Store, never the
+  repository source tree;
 - runner and validator JSON;
 - native screenshots and DOM snapshots;
 - redacted app logs;
@@ -88,6 +90,18 @@ Require:
 
 Do not claim Acceptance from a smoke check, API result, browser render, or
 manual screenshot.
+
+`PT_ACCEPTANCE_ARTIFACT_ROOT` is an optional local override and mandatory in
+CI. Use the canonical operator interface instead of assuming a report path:
+
+```bash
+python3 tooling/scripts/acceptance-artifact.py root
+python3 tooling/scripts/acceptance-artifact.py cat \
+  --gate <gate-id> --role <role>
+```
+
+An Evidence Store creation/write failure is a typed Gate failure. Never fall
+back to `tooling/`, `docs/`, `.git/`, or any repository path.
 
 ## Failure Inspection
 
@@ -108,6 +122,6 @@ Report:
 - Station URL and live commit;
 - exact Gate commands and PASS/FAIL;
 - conversation/message IDs;
-- evidence paths;
+- Gate IDs, run IDs, and typed ArtifactRefs;
 - process/port/storage cleanup result;
 - explicit unproven scope.

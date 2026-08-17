@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session, inspect_command
+
 DEFAULT_GATEWAY = "http://127.0.0.1:3030"
 DEFAULT_STATION = "http://10.37.246.80:18080"
 ARTIFACT_KIND = "desktop-performance-preflight"
@@ -22,7 +24,7 @@ BOM = ["BOM-RUN-01", "BOM-CAP-04", "BOM-GATE-01"]
 SPEC = ["SPEC-RUN-01", "SPEC-GATE-01"]
 GATE = "Make entrypoints, Desktop Gateway, Station health, and Gateway Station binding must pass before runtime samples are emitted"
 ENTRYPOINTS = ["make station", "make desktop-web", "make desktop"]
-DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-performance-preflight.json"
+DEFAULT_OUTPUT = "reports/desktop-performance-preflight.json"
 
 
 def utc_now() -> str:
@@ -168,7 +170,7 @@ def recommended_review_commands(gateway: str, station: str) -> list[dict[str, st
     return [
         {"purpose": "Start or repair the planned Station runtime entrypoint.", "command": "make station"},
         {"purpose": "Start the planned Desktop Tauri runtime entrypoint.", "command": "make desktop"},
-        {"purpose": "Inspect the preflight source artifact.", "command": "jq '{status,proofStatus,issue_breakdown,recommended_review_commands}' tooling/acceptance/reports/desktop-performance-preflight.json"},
+        {"purpose": "Inspect the preflight source artifact.", "command": inspect_command("desktop-performance-preflight-gate", DEFAULT_OUTPUT)},
         {"purpose": "Run the live Gateway -> Station telemetry gate after preflight passes.", "command": f"python3 tooling/scripts/desktop-telemetry-live-gate.py --gateway {gateway} --station {station}"},
         {"purpose": "Re-run the full Phase 0 bundle and keep fail-closed evidence if runtime samples are still missing.", "command": "make acceptance PLAN=tooling/acceptance/plans/desktop-performance-phase0.json"},
     ]
@@ -231,12 +233,24 @@ def main() -> int:
     parser.add_argument("--gateway", default=DEFAULT_GATEWAY)
     parser.add_argument("--station", default=DEFAULT_STATION)
     parser.add_argument("--timeout", type=float, default=2.0)
-    parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument("--output")
     args = parser.parse_args()
 
-    report = build_report(args.gateway, args.station, args.timeout, args.output)
-    write_report(Path(args.output), report)
-    print(f"desktop performance preflight: {args.output}")
+    report = build_report(args.gateway, args.station, args.timeout, DEFAULT_OUTPUT)
+    if args.output:
+        output = Path(args.output)
+        write_report(output, report)
+        display_output = str(output)
+    else:
+        with artifact_session("desktop-performance-preflight-gate") as session:
+            session.write_json(DEFAULT_OUTPUT, report, role="report")
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_output = DEFAULT_OUTPUT
+    print(f"desktop performance preflight: {display_output}")
     print(f"status: {report['status']}")
     return 0 if report["proofStatus"] == "PROVEN" else 1
 

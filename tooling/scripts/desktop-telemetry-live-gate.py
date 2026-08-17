@@ -14,12 +14,15 @@ import os
 import secrets
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from _acceptance_artifacts import artifact_session, inspect_command, latest_path, latest_ref
 
 
 DEFAULT_GATEWAY = "http://127.0.0.1:3030"
@@ -31,6 +34,9 @@ BOM = ["BOM-RUN-03", "BOM-RUN-04", "BOM-CON-03", "BOM-CON-04", "BOM-CAP-05", "BO
 SPEC = ["SPEC-GW-01", "SPEC-STA-01", "SPEC-STA-02", "SPEC-DB-01", "SPEC-DB-02", "SPEC-STA-03", "SPEC-MIRROR-01"]
 GATE = "Desktop Gateway upload, Station ingest, raw/rollup query, and Dev mirror must all pass before live telemetry is proven"
 ARTIFACT_KIND = "desktop-telemetry-live-gate"
+PRODUCER_GATE_ID = "desktop-telemetry-live-gate"
+DEFAULT_OUTPUT = "reports/desktop-telemetry-live-gate.json"
+DEFAULT_MIRROR_OUTPUT = "reports/desktop-performance-latest.json"
 RUNTIME_CLOSURE_ARTIFACT_KIND = "desktop-telemetry-runtime-closure-gate"
 RUNTIME_CLOSURE_PHASE = "P0a-3/P0a-4/P0a-5/P0a-6/P0c-5"
 RUNTIME_CLOSURE_BOM = ["BOM-RUN-03", "BOM-RUN-04", "BOM-CON-03", "BOM-CON-04", "BOM-CAP-05", "BOM-RUN-05"]
@@ -1008,7 +1014,7 @@ def enrich_issue_with_source(
     issue["completionStatus"] = str(issue.get("completionStatus") or "PARTIAL")
     issue["proofStatus"] = str(issue.get("proofStatus") or "UNPROVEN")
     issue["sampleEmissionAllowed"] = False
-    issue["sourceArtifact"] = str(report.get("output") or "tooling/acceptance/reports/desktop-telemetry-live-gate.json")
+    issue["sourceArtifact"] = str(report.get("output") or "evidence-store:current:report")
     issue["sourceArtifactKind"] = ARTIFACT_KIND
     issue["sourcePhase"] = PHASE
     issue["sourceBom"] = BOM
@@ -1058,9 +1064,6 @@ def recommended_review_commands(report: dict[str, Any], failed_step: str) -> lis
     live_gate_command = f"python3 tooling/scripts/desktop-telemetry-live-gate.py --gateway {gateway} --station {station}"
     if report.get("createTempAccount"):
         live_gate_command += " --create-temp-account"
-    mirror_prefix = report.get("mirrorPrefix")
-    if mirror_prefix:
-        live_gate_command += f" --mirror-prefix {mirror_prefix}"
     commands = [
         {
             "purpose": "Re-run runtime closure gate before attempting live Desktop telemetry emission.",
@@ -1088,7 +1091,7 @@ def recommended_review_commands(report: dict[str, Any], failed_step: str) -> lis
             2,
             {
                 "purpose": "Inspect the latest machine-readable preflight failure.",
-                "command": "jq '{status,failedStep,reason,issue_breakdown,recommended_review_commands,issueBreakdown,recommendedReviewCommands}' tooling/acceptance/reports/desktop-telemetry-live-gate.json",
+                "command": inspect_command(PRODUCER_GATE_ID, "report"),
             },
         )
     if failed_step in {"station.telemetry_routes", "gateway.frontend_telemetry_upload"}:
@@ -1153,22 +1156,32 @@ def record_failure(report: dict[str, Any], exc: GateError) -> dict[str, Any]:
     return report
 
 
-def run_mirror(station: str, token: str, interaction_id: str, output_prefix: str) -> None:
-    subprocess.run(
-        [
-            sys.executable,
-            "tooling/scripts/desktop-telemetry-mirror.py",
-            "--station-url",
-            station,
-            "--token",
-            token,
-            "--interaction-id",
-            interaction_id,
-            "--output-prefix",
-            output_prefix,
-        ],
-        check=True,
-    )
+def run_mirror(
+    station: str,
+    token: str,
+    interaction_id: str,
+    output_prefix: str | None,
+) -> tuple[dict[str, Any], str]:
+    with tempfile.TemporaryDirectory(prefix="desktop-telemetry-mirror-") as tmp:
+        prefix = Path(output_prefix) if output_prefix else Path(tmp) / "desktop-performance-latest"
+        subprocess.run(
+            [
+                sys.executable,
+                "tooling/scripts/desktop-telemetry-mirror.py",
+                "--station-url",
+                station,
+                "--token",
+                token,
+                "--interaction-id",
+                interaction_id,
+                "--output-prefix",
+                str(prefix),
+            ],
+            check=True,
+        )
+        mirror_report = json.loads(prefix.with_suffix(".json").read_text(encoding="utf-8"))
+        mirror_markdown = prefix.with_suffix(".md").read_text(encoding="utf-8")
+    return mirror_report, mirror_markdown
 
 
 def main() -> int:
@@ -1183,13 +1196,23 @@ def main() -> int:
         default=os.environ.get("PT_TELEMETRY_GATE_CREATE_ACCOUNT") == "1",
         help="Create a temporary Station account before logging in through Desktop Gateway.",
     )
-    parser.add_argument("--output", default="tooling/acceptance/reports/desktop-telemetry-live-gate.json")
-    parser.add_argument("--mirror-prefix", default="tooling/acceptance/reports/desktop-performance-latest")
+    parser.add_argument("--output")
+    parser.add_argument("--mirror-prefix")
     parser.add_argument(
         "--runtime-closure-report",
-        default="tooling/acceptance/reports/desktop-telemetry-runtime-closure-gate.json",
     )
     args = parser.parse_args()
+    if bool(args.output) != bool(args.mirror_prefix):
+        parser.error("--output and --mirror-prefix must be provided together")
+    runtime_closure_ref = None
+    if not args.runtime_closure_report:
+        args.runtime_closure_report = str(
+            latest_path("desktop-telemetry-runtime-closure-gate", "report")
+        )
+        runtime_closure_ref = latest_ref(
+            "desktop-telemetry-runtime-closure-gate",
+            "report",
+        )
 
     report: dict[str, Any] = {
         "schemaVersion": 1,
@@ -1210,12 +1233,16 @@ def main() -> int:
         "bom": BOM,
         "spec": SPEC,
         "gate": GATE,
-        "output": args.output,
-        "mirrorPrefix": args.mirror_prefix,
+        "output": args.output or DEFAULT_OUTPUT,
+        "mirrorPrefix": args.mirror_prefix or DEFAULT_MIRROR_OUTPUT.removesuffix(".json"),
         "runtimeClosureReport": args.runtime_closure_report,
         "createTempAccount": bool(args.create_temp_account),
         "steps": [],
     }
+    if runtime_closure_ref is not None:
+        report["runtimeClosureArtifactRef"] = runtime_closure_ref
+    mirror_report: dict[str, Any] | None = None
+    mirror_markdown: str | None = None
 
     def step(name: str, status: str, detail: Any = None) -> None:
         report["steps"].append({"name": name, "status": status, "detail": detail})
@@ -1276,8 +1303,13 @@ def main() -> int:
             raise GateError(f"Station rollup query did not return telemetry rollups: {rollups}")
         step("station.rollup_query", "pass", {"count": len(rollups["rollups"])})
 
-        run_mirror(args.station, token, interaction_id, args.mirror_prefix)
-        step("dev_mirror", "pass", {"prefix": args.mirror_prefix})
+        mirror_report, mirror_markdown = run_mirror(
+            args.station,
+            token,
+            interaction_id,
+            args.mirror_prefix,
+        )
+        step("dev_mirror", "pass", {"role": "mirror-report"})
 
         report["status"] = "pass"
         report["interactionId"] = interaction_id
@@ -1287,12 +1319,43 @@ def main() -> int:
         return 1
     finally:
         apply_status_metadata(report)
-        output_path = Path(args.output)
-        write_report(output_path, report)
-        md_path = output_path.with_suffix(".md")
-        md_path.write_text(render_markdown(report), encoding="utf-8")
-        print(f"desktop telemetry live gate: {args.output}")
-        print(f"desktop telemetry live gate: {md_path}")
+        if args.output:
+            output_path = Path(args.output)
+            write_report(output_path, report)
+            md_path = output_path.with_suffix(".md")
+            md_path.write_text(render_markdown(report), encoding="utf-8")
+            display_output = str(output_path)
+            display_markdown = str(md_path)
+        else:
+            with artifact_session(PRODUCER_GATE_ID) as session:
+                session.write_json(DEFAULT_OUTPUT, report, role="report")
+                session.write_bytes(
+                    str(Path(DEFAULT_OUTPUT).with_suffix(".md")),
+                    render_markdown(report).encode("utf-8"),
+                    media_type="text/markdown",
+                    role="report-markdown",
+                )
+                if mirror_report is not None and mirror_markdown is not None:
+                    session.write_json(
+                        DEFAULT_MIRROR_OUTPUT,
+                        mirror_report,
+                        role="mirror-report",
+                    )
+                    session.write_bytes(
+                        str(Path(DEFAULT_MIRROR_OUTPUT).with_suffix(".md")),
+                        mirror_markdown.encode("utf-8"),
+                        media_type="text/markdown",
+                        role="mirror-report-markdown",
+                    )
+                session.complete(
+                    status=report["status"],
+                    completion_status=report["completionStatus"],
+                    proof_status=report["proofStatus"],
+                )
+            display_output = DEFAULT_OUTPUT
+            display_markdown = str(Path(DEFAULT_OUTPUT).with_suffix(".md"))
+        print(f"desktop telemetry live gate: {display_output}")
+        print(f"desktop telemetry live gate: {display_markdown}")
         print(f"status: {report['status']}")
 
 

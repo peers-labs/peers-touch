@@ -72,14 +72,6 @@ const liveDescribe = process.env.PT_C6_MLS_E2E === '1'
   ? describe
   : describe.skip
 
-const topologyPath = resolve(
-  process.cwd(),
-  '../../tooling/acceptance/reports/testnet-p5-federation-e2e.json',
-)
-const reportPath = resolve(
-  process.cwd(),
-  '../../tooling/acceptance/reports/chat-mls-three-station-convergence.json',
-)
 const gatewayOne = process.env.PT_C6_GATEWAY_ONE ?? 'http://127.0.0.1:3330'
 const gatewayTwo = process.env.PT_C6_GATEWAY_TWO ?? 'http://127.0.0.1:3331'
 const gatewayThree = process.env.PT_C6_GATEWAY_THREE ?? 'http://127.0.0.1:3332'
@@ -88,6 +80,8 @@ const controlDir = process.env.PT_C6_CONTROL_DIR ?? ''
 
 liveDescribe('C6 MLS three-Station convergence', () => {
   it('converges device transitions and delegated leave across real Desktop Rust clients', async () => {
+    const topologyPath = requiredRuntimePath('PT_C6_TOPOLOGY_PATH')
+    const reportPath = requiredRuntimePath('PT_C6_REPORT_DRAFT_PATH')
     const topology = JSON.parse(
       readFileSync(topologyPath, 'utf8'),
     ) as TopologyReport
@@ -331,6 +325,12 @@ liveDescribe('C6 MLS three-Station convergence', () => {
     writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`)
   }, 240_000)
 })
+
+function requiredRuntimePath(name: string): string {
+  const value = process.env[name]
+  if (!value) throw new Error(`${name} is required for the live C6 Gate`)
+  return resolve(value)
+}
 
 async function createClient(
   name: string,

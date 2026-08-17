@@ -11,6 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session, inspect_command
+
+
+PRODUCER_GATE_ID = "desktop-performance-cell-collect-gate"
+DEFAULT_OUTPUT_DIR = "reports/desktop-performance-cells"
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -68,7 +74,7 @@ def runtime_cell_review_commands(spec: Any) -> list[dict[str, str]]:
         },
         {
             "purpose": "Inspect this runtime cell evidence artifact.",
-            "command": f"jq '{{status,proofStatus,issue_breakdown,recommended_review_commands}}' tooling/acceptance/reports/desktop-performance-cells/{spec.cell_id}.json",
+            "command": inspect_command(PRODUCER_GATE_ID, f"cell-{spec.cell_id}"),
         },
         {
             "purpose": "Re-run the matrix gate after runtime cell evidence exists.",
@@ -243,7 +249,7 @@ def build_cell_evidence(
         "reason": reason,
     }
     if not proven:
-        source_artifact = f"tooling/acceptance/reports/desktop-performance-cells/{spec.cell_id}.json"
+        source_artifact = f"evidence-store:current:cell-{spec.cell_id}"
         issue_breakdown = runtime_cell_issue_breakdown(matrix, spec, reason, source_artifact)
         review_commands = runtime_cell_review_commands(spec)
         evidence["issue_breakdown"] = issue_breakdown
@@ -285,12 +291,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--observations",
-        default="tooling/acceptance/reports/desktop-performance-cell-observations.json",
-        help="Runtime-cell sampler observations. Missing input writes PARTIAL/UNPROVEN cell evidence.",
+        required=True,
+        help="Explicit runtime-cell sampler observations path.",
     )
     parser.add_argument(
         "--output-dir",
-        default="tooling/acceptance/reports/desktop-performance-cells",
+        help="Explicit output directory. Defaults to a new Evidence Store run.",
     )
     parser.add_argument(
         "--cell-id",
@@ -308,10 +314,28 @@ def main() -> int:
     observations_path = Path(args.observations)
     observations, source = read_observations(observations_path)
     evidence_by_cell = build_evidence(observations, source, args.cell_ids)
-    written = write_evidence(evidence_by_cell, Path(args.output_dir))
-    for path in written:
-        print(f"desktop performance cell evidence: {path}")
     statuses = sorted({evidence["status"] for evidence in evidence_by_cell.values()})
+    if args.output_dir:
+        written = write_evidence(evidence_by_cell, Path(args.output_dir))
+        display_outputs = [str(path) for path in written]
+    else:
+        with artifact_session(PRODUCER_GATE_ID) as session:
+            display_outputs = []
+            for cell_id, evidence in evidence_by_cell.items():
+                relative_path = f"{DEFAULT_OUTPUT_DIR}/{cell_id}.json"
+                session.write_json(relative_path, evidence, role=f"cell-{cell_id}")
+                display_outputs.append(relative_path)
+            proven = all(
+                evidence.get("sampleEmissionAllowed") is True
+                for evidence in evidence_by_cell.values()
+            )
+            session.complete(
+                status="sampled" if proven else "diagnostic incomplete",
+                completion_status="DONE" if proven else "PARTIAL",
+                proof_status="PROVEN" if proven else "UNPROVEN",
+            )
+    for output in display_outputs:
+        print(f"desktop performance cell evidence: {output}")
     print(f"status: {','.join(statuses)}")
     if args.strict_exit and any(evidence.get("sampleEmissionAllowed") is not True for evidence in evidence_by_cell.values()):
         return 1

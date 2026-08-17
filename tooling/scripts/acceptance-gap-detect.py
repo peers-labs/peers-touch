@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -338,28 +339,45 @@ def detect(
 
 
 def main() -> int:
+    from tooling.acceptance.core import (
+        RUN_GATE_ENV,
+        ArtifactSession,
+        EvidenceStore,
+    )
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--claim", default="Current change is acceptance-ready")
     parser.add_argument("--range", dest="diff_range", default="HEAD")
-    parser.add_argument(
-        "--plan",
-        default="tooling/acceptance/reports/latest-plan.json",
-    )
-    parser.add_argument(
-        "--run",
-        default="tooling/acceptance/reports/latest-run.json",
-    )
+    parser.add_argument("--plan")
+    parser.add_argument("--run")
     parser.add_argument("--require-gate", action="append", default=[])
-    parser.add_argument("--output")
     args = parser.parse_args()
 
     try:
+        store = EvidenceStore.from_environment(
+            repo_root=REPO_ROOT,
+            worktree=REPO_ROOT,
+        )
+        plan = (
+            load_json(Path(args.plan))
+            if args.plan
+            else store.read_json(
+                store.latest_artifact_ref("acceptance-plan", "plan")
+            )
+        )
+        run = (
+            load_json(Path(args.run))
+            if args.run
+            else store.read_json(
+                store.latest_artifact_ref("acceptance-run", "run")
+            )
+        )
         source_commit, workspace_digest = current_source_identity()
         report = detect(
             claim=args.claim,
             paths=changed_paths(args.diff_range),
-            plan=load_json(Path(args.plan)),
-            run=load_json(Path(args.run)),
+            plan=plan,
+            run=run,
             required_gates=args.require_gate,
             source_commit=source_commit,
             workspace_digest=workspace_digest,
@@ -369,10 +387,20 @@ def main() -> int:
         return 2
 
     serialized = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
-    if args.output:
-        output = Path(args.output)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(serialized, encoding="utf-8")
+    gate_id = os.environ.get(RUN_GATE_ENV) or "acceptance-gap-detect"
+    with ArtifactSession(repo_root=REPO_ROOT, gate_id=gate_id) as session:
+        session.write_bytes(
+            "reports/gap-report.json",
+            serialized.encode("utf-8"),
+            media_type="application/json",
+            role="gap-report",
+        )
+        proven = report["proofState"] == "PROVEN"
+        session.complete(
+            status="passed" if proven else "failed",
+            completion_status="DONE" if proven else "PARTIAL",
+            proof_status=report["proofState"],
+        )
     sys.stdout.write(serialized)
     return 0 if report["proofState"] == "PROVEN" else 1
 

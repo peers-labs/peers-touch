@@ -230,7 +230,7 @@ class StationAttestation:
     live_commit: str
     workspace_digest: str
     proto_digest: str
-    artifact_path: str
+    artifact_ref: dict[str, Any]
     produced_at: str
     producer: str = "station-deployment"
     build_time: str = ""
@@ -360,7 +360,7 @@ class RuntimeManifest:
     profile_resolved: str
     profile_slot: int
     station: StationAttestation | None = None
-    actor_manifest_path: str | None = None
+    actor_manifest_ref: dict[str, Any] | None = None
     credential_refs: tuple[str, ...] = ()
     clients: tuple[ClientRuntime, ...] = ()
     cleanup_registered: bool = False
@@ -399,10 +399,10 @@ class RuntimeManifest:
                 "liveCommit": self.station.live_commit,
                 "protoDigest": self.station.proto_digest,
                 "workspaceDigest": self.station.workspace_digest,
-                "attestationArtifact": self.station.artifact_path,
+                "attestationArtifact": dict(self.station.artifact_ref),
             }
-        if self.actor_manifest_path:
-            result["actorManifest"] = self.actor_manifest_path
+        if self.actor_manifest_ref:
+            result["actorManifest"] = dict(self.actor_manifest_ref)
         if self.blocked_reason:
             result["blockedReason"] = self.blocked_reason
         if self.blocked_resource:

@@ -58,11 +58,18 @@ If the pipeline fails:
 - or ask the user whether to open a draft PR that explicitly lists evidence gaps;
 - or record an owner-approved waiver in the PR body.
 
-The generated evidence artifacts are:
+The generated evidence artifacts are immutable external Evidence Store roles:
 
-- `tooling/acceptance/reports/latest-quality-evidence.md`
-- `tooling/acceptance/reports/latest-quality-evidence.json`
-- `tooling/acceptance/reports/latest-report.md`
+- `quality-evidence` / `quality-markdown`
+- `quality-evidence` / `quality-json`
+- `acceptance-report` / `report`
+
+Inspect them with:
+
+```bash
+python3 tooling/scripts/acceptance-artifact.py cat \
+  --gate <gate-id> --role <role>
+```
 
 ### 3. Analyze Changes
 

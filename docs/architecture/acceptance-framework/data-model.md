@@ -1,8 +1,8 @@
 # Acceptance Framework — Runtime Provisioning 数据模型
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-16 | **Updated**: 2026-08-16
+> **Version**: v1.1
+> **Created**: 2026-08-16 | **Updated**: 2026-08-17
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -16,6 +16,7 @@
 - Runtime Resource Manifest、Station Attestation、Actor Manifest 和 Gap Artifact。
 - Provisioning 生命周期状态及转换规则。
 - 敏感值与可持久化 evidence 的边界。
+- Evidence Store root、identity、ArtifactRef、run manifest和latest pointer。
 
 本文档不定义：
 
@@ -83,9 +84,25 @@ Manifest 是一次 provisioning 运行的不可变输出。
     "url": "<redacted-safe-url>",
     "liveCommit": "<commit>",
     "protoDigest": "<sha256>",
-    "attestationArtifact": "<repo-relative-report-path>"
+    "attestationArtifact": {
+      "artifactKind": "acceptance-artifact-ref",
+      "workspaceId": "<workspace-id>",
+      "gateId": "<gate-id>",
+      "runId": "<run-id>",
+      "path": "runtime/station-attestation.json",
+      "sha256": "<sha256>",
+      "mediaType": "application/json"
+    }
   },
-  "actorManifest": "<repo-relative-report-path>",
+  "actorManifest": {
+    "artifactKind": "acceptance-artifact-ref",
+    "workspaceId": "<workspace-id>",
+    "gateId": "<gate-id>",
+    "runId": "<run-id>",
+    "path": "runtime/actor-manifest.json",
+    "sha256": "<sha256>",
+    "mediaType": "application/json"
+  },
   "credentialRefs": ["env:CHAT_NATIVE_DEMO_PASSWORD"],
   "clients": [],
   "cleanup": {
@@ -225,9 +242,202 @@ CLEANING
 ## 8. 持久化与脱敏
 
 - Contract 存放在仓库内，必须可 review。
-- Runtime Manifest、Attestation、Actor Manifest 和 Gap Artifact 存放于
-  `tooling/acceptance/reports/`，默认不提交。
+- Runtime Manifest、Attestation、Actor Manifest 和 Gap Artifact存放于D-11
+  Evidence Store，禁止写入source tree。
 - 长期 evidence 只有经过脱敏和人工 review 后才能进入
   `tooling/acceptance/evidence/`。
 - URL 可以保留 scheme/host/port；query、token 和 credential 必须脱敏。
 - cleanup 后 manifest 保留资源 identity 和释放结果，不保留临时 secret。
+
+## 9. Artifact Root And Identity
+
+Root resolution：
+
+```text
+override = trim(PT_ACCEPTANCE_ARTIFACT_ROOT)
+if override != "":
+  root = canonical_absolute(override)
+else if platform == macOS:
+  root = ~/Library/Application Support/PeersTouch/acceptance
+else if platform == Linux:
+  root = ${XDG_STATE_HOME:-~/.local/state}/peers-touch/acceptance
+else if platform == Windows:
+  root = %LOCALAPPDATA%\PeersTouch\acceptance
+else:
+  EvidenceRootUnsupportedPlatform
+```
+
+Resolver验证：
+
+- root必须是absolute directory或可安全创建；
+- root canonical path不得等于repository root或位于其下；
+- existing symlink component、existing non-directory和NUL均拒绝；
+- override设置但无效时fail closed，不改用default；
+- CI检测到CI environment但没有override时fail closed。
+
+Identity：
+
+```text
+canonical_workspace_path =
+  normcase(realpath(abspath(worktree_path)))
+workspace_id =
+  lower_hex(sha256(utf8(canonical_workspace_path)))[0:16]
+gate_id =
+  slug matching [A-Za-z0-9][A-Za-z0-9._-]{0,127}
+run_id =
+  <UTC YYYYMMDDTHHMMSSffffffZ>-<32 lowercase random hex>
+```
+
+Layout：
+
+```text
+<root>/
+└── <workspace-id>/
+    └── <gate-id>/
+        ├── latest.json
+        ├── .publish.lock
+        └── <run-id>/
+            ├── .active.lock
+            ├── manifest.json
+            ├── reports/
+            ├── evidence/
+            ├── logs/
+            └── runtime/
+```
+
+## 10. Artifact Reference
+
+```json
+{
+  "artifactKind": "acceptance-artifact-ref",
+  "workspaceId": "0123456789abcdef",
+  "gateId": "chat-native-two-client-e2e",
+  "runId": "20260817T120102123456Z-0123456789abcdef0123456789abcdef",
+  "path": "reports/run.json",
+  "sha256": "<64-lowercase-hex>",
+  "mediaType": "application/json"
+}
+```
+
+Rules：
+
+- `path`必须是normalized POSIX-style run-relative path；
+- empty segment、`.`、`..`、absolute prefix、drive prefix和backslash traversal拒绝；
+- reader canonicalize后再次验证目标位于exact run directory；
+- symlink leaf/component拒绝；
+- `sha256`在read和latest resolution时复验；
+- contracts、profiles、plans和run manifests只保存`ArtifactRef`或logical
+  artifact role，不保存artifact root absolute path。
+
+## 11. Run Manifest
+
+```json
+{
+  "artifactKind": "acceptance-run-manifest",
+  "schemaVersion": 1,
+  "workspaceId": "0123456789abcdef",
+  "gateId": "chat-native-two-client-e2e",
+  "runId": "20260817T120102123456Z-...",
+  "state": "DURABLE",
+  "createdAt": "<UTC timestamp>",
+  "completedAt": "<UTC timestamp>",
+  "source": {
+    "commit": "<git-commit>",
+    "workspaceDigest": "<existing D-07 digest>",
+    "canonicalWorktreeHash": "0123456789abcdef"
+  },
+  "runtime": {
+    "environmentId": "home-station",
+    "profile": "three",
+    "stationCommit": "<commit>"
+  },
+  "result": {
+    "status": "failed",
+    "completionStatus": "DONE",
+    "proofStatus": "UNPROVEN"
+  },
+  "artifacts": {
+    "report": {"artifactKind": "acceptance-artifact-ref"}
+  },
+  "redaction": {
+    "status": "passed"
+  }
+}
+```
+
+Manifest写入前所有referenced artifacts必须durable。Manifest写入成功后内容immutable；
+补充数据必须创建新run，不得原地修改。
+
+## 12. Latest Pointer
+
+```json
+{
+  "artifactKind": "acceptance-latest-pointer",
+  "schemaVersion": 1,
+  "workspaceId": "0123456789abcdef",
+  "gateId": "chat-native-two-client-e2e",
+  "runId": "20260817T120102123456Z-...",
+  "completedAt": "<UTC timestamp>",
+  "manifest": {"artifactKind": "acceptance-artifact-ref"},
+  "manifestSha256": "<64-lowercase-hex>"
+}
+```
+
+Publish algorithm：
+
+1. acquire gate `.publish.lock`；
+2. load and validate existing pointer when present；
+3. compare `(completedAt, runId)`，older candidate returns without overwrite；
+4. write same-directory temporary pointer；
+5. flush + fsync file；
+6. atomic replace `latest.json`；
+7. fsync gate directory；
+8. release lock。
+
+Missing/corrupt latest不得使reader扫描并猜测primary evidence；reader返回typed error，
+operator可运行显式repair命令从valid manifests重建pointer。
+
+## 13. Lifecycle And Locks
+
+```text
+ALLOCATED
+  -> ACTIVE
+  -> FINALIZING
+  -> DURABLE
+  -> PUBLISHED
+  -> CLOSED
+
+ALLOCATED | ACTIVE | FINALIZING
+  -> EVIDENCE_FAILED
+  -> CLOSED
+```
+
+`RunHandle`创建run directory后立即持有`.active.lock`的OS advisory exclusive lock。
+Cleanup尝试non-blocking lock：
+
+- lock失败：run active，必须跳过；
+- lock成功且无durable manifest：eligible incomplete run；
+- lock成功且manifest durable：按explicit retention policy判断；
+- latest pointer target：始终保护。
+
+默认retention是retain-all。Cleanup只有在显式提供workspace/gate和age/count policy时
+执行；它不得跨workspace扫描后批量删除。
+
+## 14. Typed Evidence Errors
+
+| Error | Trigger | Gate result |
+|---|---|---|
+| `EvidenceRootInvalid` | malformed/relative/file root | failed / unproven |
+| `EvidenceRootForbidden` | root在repository内 | failed / unproven |
+| `EvidencePermissionDenied` | mkdir/open/chmod/replace denied | failed / unproven |
+| `EvidenceNoSpace` | ENOSPC/quota exceeded | failed / unproven |
+| `EvidenceQuotaExceeded` | artifact/run byte budget exceeded | failed / unproven |
+| `EvidencePathTraversal` | child escapes run/root | failed / unproven |
+| `EvidenceSymlinkRejected` | path component/leaf is symlink | failed / unproven |
+| `EvidenceConflict` | identity/hash conflict | failed / unproven |
+| `EvidenceWriteInterrupted` | partial/failed durable write | failed / unproven |
+| `EvidenceManifestInvalid` | malformed identity/schema/hash | failed / unproven |
+| `EvidenceRunActive` | cleanup targets locked run | cleanup skip, not delete |
+
+Typed errors保留safe path role、errno class和remediation，不包含secret value。任何error
+都不得触发source-tree fallback。

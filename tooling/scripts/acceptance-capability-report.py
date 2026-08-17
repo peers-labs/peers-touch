@@ -5,8 +5,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -53,8 +58,7 @@ def render_results(lines: list[str], run: dict[str, Any]) -> bool:
     return all_passed
 
 
-def render_mutual_validation(lines: list[str], path: Path) -> bool:
-    data = load_json(path)
+def render_mutual_validation(lines: list[str], data: dict[str, Any]) -> bool:
     capabilities = data.get("capabilities", [])
     if not capabilities:
         bullet(lines, "No mutual-validation capability evidence was found.")
@@ -74,17 +78,30 @@ def render_mutual_validation(lines: list[str], path: Path) -> bool:
 
 
 def main() -> int:
+    from tooling.acceptance.core import (
+        RUN_GATE_ENV,
+        ArtifactSession,
+        EvidenceStore,
+    )
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default="tooling/acceptance")
-    parser.add_argument("--run", default="tooling/acceptance/reports/latest-run.json")
-    parser.add_argument("--output", default="tooling/acceptance/reports/latest-capability-report.md")
+    parser.add_argument("--run")
     parser.add_argument("--title", default="Acceptance Capability Report")
     parser.add_argument("--feature", action="append", required=True)
-    parser.add_argument("--mutual-validation", default="")
+    parser.add_argument("--mutual-validation-gate", default="")
     args = parser.parse_args()
 
-    root = Path(args.root)
-    run = load_json(Path(args.run))
+    root = REPO_ROOT / args.root
+    store = EvidenceStore.from_environment(
+        repo_root=REPO_ROOT,
+        worktree=REPO_ROOT,
+    )
+    run = (
+        load_json(Path(args.run))
+        if args.run
+        else store.read_json(store.latest_artifact_ref("acceptance-run", "run"))
+    )
     features = [load_feature(root, feature_id) for feature_id in args.feature]
 
     lines = [
@@ -100,9 +117,15 @@ def main() -> int:
     all_passed = render_results(lines, run)
 
     mutual_passed = True
-    if args.mutual_validation:
+    if args.mutual_validation_gate:
         lines.extend(["", "## Mutual Validation", ""])
-        mutual_passed = render_mutual_validation(lines, Path(args.mutual_validation))
+        mutual = store.read_json(
+            store.latest_artifact_ref(
+                args.mutual_validation_gate,
+                "validation",
+            )
+        )
+        mutual_passed = render_mutual_validation(lines, mutual)
 
     lines.extend(
         [
@@ -120,16 +143,30 @@ def main() -> int:
         bullet(lines, "Do not mark the product capability done until failed gates are fixed or explicitly scoped as unproven risk.")
 
     lines.extend(["", "## Unproven Scope", ""])
-    if args.mutual_validation:
+    if args.mutual_validation_gate:
         bullet(lines, "See the Mutual Validation section for domain-specific unproven scope.")
     else:
         bullet(lines, "No mutual-validation evidence was provided, so capability-level unproven scope is not expanded in this report.")
     bullet(lines, "Project-wide coverage requires each product domain to register its own acceptance domain profile and stable gates.")
 
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"acceptance capability report: {output}")
+    gate_id = os.environ.get(RUN_GATE_ENV) or "acceptance-capability-report"
+    with ArtifactSession(repo_root=REPO_ROOT, gate_id=gate_id) as session:
+        reference = session.write_bytes(
+            "reports/capability-report.md",
+            ("\n".join(lines) + "\n").encode("utf-8"),
+            media_type="text/markdown",
+            role="capability-report",
+        )
+        passed = all_passed and mutual_passed
+        session.complete(
+            status="passed" if passed else "failed",
+            completion_status="DONE" if passed else "PARTIAL",
+            proof_status="PROVEN" if passed else "UNPROVEN",
+        )
+    print(
+        "acceptance capability report: "
+        + json.dumps(reference.to_dict(), sort_keys=True)
+    )
     return 0 if all_passed and mutual_passed else 1
 
 

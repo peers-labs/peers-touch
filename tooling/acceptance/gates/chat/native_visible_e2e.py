@@ -10,6 +10,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(REPO_ROOT))
+
+from tooling.acceptance.core import (  # noqa: E402
+    current_artifact_path,
+    current_artifact_ref,
+    write_current_artifact,
+)
 from native_visible_runner import REPORT_NAMES, commits_match, source_identity
 
 
@@ -66,8 +74,12 @@ def load_report(path: Path) -> dict[str, Any]:
 def validate_station(report: dict[str, Any]) -> None:
     station = report.get("station")
     require(isinstance(station, dict), "Station identity is required")
-    for field in ("url", "commit", "workspaceDigest", "protoDigest", "attestation"):
+    for field in ("url", "commit", "workspaceDigest", "protoDigest"):
         require(nonempty(station.get(field)), f"Station {field} is required")
+    require(
+        isinstance(station.get("attestation"), dict),
+        "Station attestation ArtifactRef is required",
+    )
     require(station["workspaceDigest"] == "clean", "dirty Station evidence is forbidden")
     live = station.get("live")
     require(isinstance(live, dict), "live Station metadata is required")
@@ -246,7 +258,14 @@ def validate_report(report: dict[str, Any], journey: str) -> None:
     validate_cleanup(report)
 
 
-def write_validation(path: Path, source: Path, report: dict[str, Any], journey: str) -> None:
+def write_validation(
+    path: Path,
+    source: Any,
+    report: dict[str, Any],
+    journey: str,
+    *,
+    managed_output: bool = False,
+) -> None:
     payload = {
         "artifactKind": f"chat-native-{journey}-validation",
         "status": "pass",
@@ -257,12 +276,20 @@ def write_validation(path: Path, source: Path, report: dict[str, Any], journey: 
         "bom": [f"CHAT-NATIVE-{journey.upper()}"],
         "spec": ["chat-native-visible-clients"],
         "gate": f"chat-native-{journey}-e2e",
-        "sourceArtifact": str(source),
+        "sourceArtifact": source,
         "stationCommit": report["station"]["commit"],
         "protoDigest": report["station"]["protoDigest"],
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    encoded = (json.dumps(payload, indent=2) + "\n").encode("utf-8")
+    if managed_output:
+        write_current_artifact(
+            f"reports/chat-native-{journey}-validation.json",
+            encoded,
+            repo_root=REPO_ROOT,
+        )
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(encoded)
 
 
 def main() -> int:
@@ -271,14 +298,41 @@ def main() -> int:
     parser.add_argument("--source")
     parser.add_argument("--output")
     args = parser.parse_args()
-    source = Path(args.source or f"tooling/acceptance/reports/{REPORT_NAMES[args.journey]}")
-    output = Path(
-        args.output
-        or f"tooling/acceptance/reports/chat-native-{args.journey}-validation.json"
+    managed_source = args.source is None
+    source = (
+        Path(args.source)
+        if args.source
+        else current_artifact_path(
+            f"reports/{REPORT_NAMES[args.journey]}",
+            repo_root=REPO_ROOT,
+        )
+    )
+    managed_output = args.output is None
+    output = (
+        Path(args.output)
+        if args.output
+        else current_artifact_path(
+            f"reports/chat-native-{args.journey}-validation.json",
+            repo_root=REPO_ROOT,
+        )
     )
     report = load_report(source)
     validate_report(report, args.journey)
-    write_validation(output, source, report, args.journey)
+    source_artifact: Any = (
+        current_artifact_ref(
+            f"reports/{REPORT_NAMES[args.journey]}",
+            repo_root=REPO_ROOT,
+        ).to_dict()
+        if managed_source
+        else str(source)
+    )
+    write_validation(
+        output,
+        source_artifact,
+        report,
+        args.journey,
+        managed_output=managed_output,
+    )
     print(f"[OK] {args.journey}: {output}")
     return 0
 
