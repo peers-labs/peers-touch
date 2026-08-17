@@ -14,8 +14,7 @@ from _acceptance_artifacts import (
     artifact_session,
     explicit_output_path,
     inspect_command,
-    latest_path,
-    latest_ref,
+    latest_artifact,
 )
 
 
@@ -535,13 +534,14 @@ def main() -> int:
     if args.dom_evidence:
         report = build_report(Path(args.source_root), Path(args.dom_evidence))
     else:
+        dom_path, dom_ref = latest_artifact(
+            DOM_EVIDENCE_PRODUCER_ID,
+            DOM_EVIDENCE_ROLE,
+        )
         report = build_report(
             Path(args.source_root),
-            latest_path(DOM_EVIDENCE_PRODUCER_ID, DOM_EVIDENCE_ROLE),
-            dom_source_artifact=latest_ref(
-                DOM_EVIDENCE_PRODUCER_ID,
-                DOM_EVIDENCE_ROLE,
-            ),
+            dom_path,
+            dom_source_artifact=dom_ref,
         )
     if args.output_prefix:
         json_path, md_path = write_outputs(report, args.output_prefix)

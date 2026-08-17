@@ -12,8 +12,7 @@ from typing import Any
 from _acceptance_artifacts import (
     artifact_session,
     explicit_output_path,
-    latest_path,
-    latest_ref,
+    latest_artifact,
     replace_resolved_artifact_paths,
 )
 
@@ -4424,8 +4423,7 @@ def main() -> int:
     resolved_refs: dict[Path, dict[str, Any]] = {}
     for attribute, (gate_id, role) in defaults.items():
         if getattr(args, attribute) is None:
-            resolved_path = latest_path(gate_id, role)
-            artifact_ref = latest_ref(gate_id, role)
+            resolved_path, artifact_ref = latest_artifact(gate_id, role)
             setattr(args, attribute, str(resolved_path))
             input_refs[attribute] = artifact_ref
             resolved_refs[resolved_path] = artifact_ref
