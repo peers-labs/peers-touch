@@ -111,6 +111,26 @@ def sha256_files(root: Path, paths: Iterable[Path]) -> str:
     return digest.hexdigest()
 
 
+def resolve_actor_credential(actor_manifest: dict[str, Any]) -> str:
+    credential_refs = actor_manifest.get("credentialRefs")
+    require(
+        isinstance(credential_refs, list) and len(credential_refs) == 1,
+        "actor manifest requires exactly one Chat credential reference",
+    )
+    credential_ref = str(credential_refs[0])
+    require(
+        credential_ref.startswith("env:"),
+        "Chat credential reference must use an env: source",
+    )
+    credential_name = credential_ref[4:]
+    credential = os.environ.get(credential_name, "")
+    require(
+        bool(credential),
+        f"credential reference {credential_ref} is unresolved",
+    )
+    return credential
+
+
 def source_identity(worktree: Path) -> dict[str, str]:
     commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -741,19 +761,7 @@ class NativeVisibleJourney:
             )
         except ProvisioningError as error:
             raise JourneyError(str(error)) from error
-        credential_refs = self.runtime_manifest.get("credentialRefs")
-        require(
-            isinstance(credential_refs, list) and len(credential_refs) == 1,
-            "runtime manifest requires exactly one Chat credential reference",
-        )
-        credential_ref = str(credential_refs[0])
-        require(
-            credential_ref.startswith("env:"),
-            "Chat credential reference must use an env: source",
-        )
-        credential_name = credential_ref[4:]
-        self.password = os.environ.get(credential_name, "")
-        require(bool(self.password), f"credential reference {credential_ref} is unresolved")
+        self.password = resolve_actor_credential(self.actor_manifest)
         self.report_path = Path(
             os.environ.get(
                 f"CHAT_NATIVE_{journey.upper().replace('-', '_')}_REPORT",
