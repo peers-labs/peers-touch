@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session
+from _acceptance_artifacts import artifact_session, explicit_output_path
 
 
 ARTIFACT_KIND = "desktop-telemetry-runtime-closure-gate"
@@ -679,10 +679,10 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
-    logical_output = Path(args.output) if args.output else Path(DEFAULT_OUTPUT)
+    output = explicit_output_path(args.output) if args.output else None
+    logical_output = output or Path(DEFAULT_OUTPUT)
     report = build_report(root, logical_output, args.timeout)
-    if args.output:
-        output = Path(args.output)
+    if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         output.with_suffix(".md").write_text(render_markdown(report), encoding="utf-8")

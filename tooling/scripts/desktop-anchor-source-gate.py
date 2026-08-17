@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session
+from _acceptance_artifacts import artifact_session, explicit_output_path
 
 
 PHASE = "P0b-1"
@@ -145,6 +145,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def write_outputs(report: dict[str, Any], output_prefix: Path) -> tuple[Path, Path]:
+    output_prefix = explicit_output_path(output_prefix)
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = output_prefix.with_suffix(".json")
     md_path = output_prefix.with_suffix(".md")
