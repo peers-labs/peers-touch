@@ -1903,8 +1903,6 @@ class NativeInteractionsGate(AcceptanceGate):
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
-        if not os.environ.get("CHAT_ACCEPTANCE_PASSWORD", ""):
-            raise GateError("CHAT_ACCEPTANCE_PASSWORD is required")
         try:
             profile_three_environment(self.station_url)
         except RuntimeError as error:
