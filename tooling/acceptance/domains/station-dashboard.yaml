@@ -7,6 +7,5 @@
     "station-dashboard-admin-access",
     "station-dashboard-operator-surface"
   ],
-  "validation_gate_id": "station-dashboard-domain-validation",
-  "report": "tooling/acceptance/reports/station-dashboard-validation.json"
+  "validation_gate_id": "station-dashboard-domain-validation"
 }

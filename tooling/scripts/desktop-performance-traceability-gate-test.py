@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 
 def load_module() -> Any:
@@ -22,6 +24,48 @@ def load_module() -> Any:
 
 
 class DesktopPerformanceTraceabilityGateTest(unittest.TestCase):
+    def test_default_inputs_persist_typed_refs_without_artifact_root_paths(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifact-root"
+            output = Path(tmp) / "traceability.json"
+
+            def fake_latest_path(gate_id: str, role: str) -> Path:
+                return root / gate_id / role.replace("/", "-")
+
+            def fake_latest_artifact(
+                gate_id: str,
+                role: str,
+            ) -> tuple[Path, dict]:
+                return fake_latest_path(gate_id, role), {
+                    "workspaceId": "workspace",
+                    "gateId": gate_id,
+                    "runId": "run",
+                    "path": role,
+                }
+
+            old_argv = sys.argv
+            try:
+                sys.argv = [
+                    "desktop-performance-traceability-gate.py",
+                    "--output",
+                    str(output),
+                ]
+                with mock.patch.object(
+                    module,
+                    "latest_artifact",
+                    side_effect=fake_latest_artifact,
+                ):
+                    module.main()
+            finally:
+                sys.argv = old_argv
+
+            persisted = output.read_text(encoding="utf-8")
+
+        self.assertNotIn(str(root), persisted)
+        self.assertIn('"inputArtifactRefs"', persisted)
+        self.assertIn('"workspaceId": "workspace"', persisted)
+
     def write_artifact(self, path: Path, *, missing_source_gate: bool = False) -> None:
         issue = {
             "category": "station-telemetry-route-missing",

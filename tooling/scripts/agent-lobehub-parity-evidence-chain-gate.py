@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session, explicit_output_path
+
 
 ARTIFACT_KIND = "agent-lobehub-parity-evidence-chain-gate"
 PHASE = "PLAN-P2/PLAN-P4 pre-implementation control"
@@ -19,7 +21,7 @@ SPEC = ["SPEC-010", "SPEC-011", "SPEC-012", "SPEC-013", "SPEC-014"]
 GATE = "Prototype and PLAN-P5 entry controls must remain fail-closed until Owner confirmation and EVID-012 authorization exist"
 
 DEFAULT_LEDGER = "tmp/agent-lobehub-fullstack-ledger.md"
-DEFAULT_OUTPUT_PREFIX = "tooling/acceptance/reports/agent-lobehub-parity-evidence-chain-gate-latest"
+DEFAULT_OUTPUT_PREFIX = "reports/agent-lobehub-parity-evidence-chain-gate-latest"
 
 REQUIRED_EVIDENCE = [
     "EVID-011-AA-pre",
@@ -1348,6 +1350,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def write_outputs(report: dict[str, Any], output_prefix: Path) -> tuple[Path, Path]:
+    output_prefix = explicit_output_path(output_prefix)
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = output_prefix.with_suffix(".json")
     md_path = output_prefix.with_suffix(".md")
@@ -1360,15 +1363,37 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--ledger", default=DEFAULT_LEDGER)
-    parser.add_argument("--output-prefix", default=DEFAULT_OUTPUT_PREFIX)
+    parser.add_argument("--output-prefix")
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
     ledger_path = Path(args.ledger)
     report = build_report(repo_root, ledger_path)
-    json_path, md_path = write_outputs(report, Path(args.output_prefix))
-    print(f"agent lobehub parity evidence-chain gate JSON: {json_path}")
-    print(f"agent lobehub parity evidence-chain gate Markdown: {md_path}")
+    if args.output_prefix:
+        json_path, md_path = write_outputs(
+            report,
+            Path(args.output_prefix),
+        )
+        json_output = str(json_path)
+        markdown_output = str(md_path)
+    else:
+        json_output = str(Path(DEFAULT_OUTPUT_PREFIX).with_suffix(".json"))
+        markdown_output = str(Path(DEFAULT_OUTPUT_PREFIX).with_suffix(".md"))
+        with artifact_session(ARTIFACT_KIND) as session:
+            session.write_json(json_output, report, role="report")
+            session.write_bytes(
+                markdown_output,
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+    print(f"agent lobehub parity evidence-chain gate JSON: {json_output}")
+    print(f"agent lobehub parity evidence-chain gate Markdown: {markdown_output}")
     print(f"status: {report['status']}")
     return 0 if report["status"] == "pass" else 1
 

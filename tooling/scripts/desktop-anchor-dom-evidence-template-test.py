@@ -3,10 +3,15 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from _acceptance_artifacts import latest_path
+from tooling.acceptance.core.errors import EvidenceRootForbidden
 
 
 def load_template_module():
@@ -55,11 +60,7 @@ class DesktopAnchorDomEvidenceTemplateTest(unittest.TestCase):
         self.assertTrue(
             any(
                 command["command"]
-                == (
-                    "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py "
-                    "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json "
-                    "--output tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
-                )
+                == "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py"
                 for command in report["recommended_review_commands"]
             )
         )
@@ -118,63 +119,80 @@ class DesktopAnchorDomEvidenceTemplateTest(unittest.TestCase):
         self.assertFalse(observations_written["sampleEmissionAllowed"])
         self.assertFalse(observations_written["summary"]["sampleEmissionAllowed"])
 
-    def test_main_preserves_existing_collected_evidence(self) -> None:
+    def test_repo_contained_explicit_output_is_rejected(self) -> None:
+        module = load_template_module()
+        forbidden_output = Path(__file__).parent / "forbidden-dom-evidence.json"
+        external_observations = Path(tempfile.gettempdir()) / "dom-observations.json"
+        old_argv = sys.argv
+        try:
+            sys.argv = [
+                "desktop-anchor-dom-evidence-template.py",
+                "--output",
+                str(forbidden_output),
+                "--observations-template-output",
+                str(external_observations),
+            ]
+            with self.assertRaises(EvidenceRootForbidden):
+                module.main()
+        finally:
+            sys.argv = old_argv
+
+        self.assertFalse(forbidden_output.exists())
+
+    def test_default_template_run_does_not_mutate_collected_evidence(self) -> None:
         module = load_template_module()
         with tempfile.TemporaryDirectory() as tmp:
-            output = Path(tmp) / "dom-evidence.json"
-            observations_template = Path(tmp) / "dom-observations-template.json"
             existing = {
                 "artifactKind": "desktop-anchor-dom-evidence",
                 "source": "dom-observations",
-                "status": "diagnostic incomplete",
-                "proofStatus": "UNPROVEN",
-                "recommended_review_commands": [
-                    {
-                        "purpose": "Collect browser/Tauri DOM anchor observations when runtimes are available.",
-                        "command": (
-                            "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py "
-                            "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json"
-                        ),
-                    }
-                ],
-                "recommendedReviewCommands": [
-                    {
-                        "purpose": "Collect browser/Tauri DOM anchor observations when runtimes are available.",
-                        "command": "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py",
-                    }
-                ],
+                "status": "pass",
+                "completionStatus": "DONE",
+                "proofStatus": "PROVEN",
             }
-            output.write_text(json.dumps(existing), encoding="utf-8")
             old_argv = sys.argv
             try:
-                sys.argv = [
-                    "desktop-anchor-dom-evidence-template.py",
-                    "--output",
-                    str(output),
-                    "--observations-template-output",
-                    str(observations_template),
-                ]
-                exit_code = module.main()
+                with patch.dict(
+                    os.environ,
+                    {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(Path(tmp) / "artifacts")},
+                ):
+                    with module.artifact_session(
+                        "desktop-anchor-dom-evidence-collect-gate"
+                    ) as session:
+                        session.write_json(
+                            "reports/desktop-anchor-dom-evidence.json",
+                            existing,
+                            role="report",
+                        )
+                        session.complete(
+                            status="pass",
+                            completion_status="DONE",
+                            proof_status="PROVEN",
+                        )
+                    collected_path = latest_path(
+                        "desktop-anchor-dom-evidence-collect-gate",
+                        "report",
+                    )
+                    collected_before = collected_path.read_bytes()
+                    sys.argv = ["desktop-anchor-dom-evidence-template.py"]
+                    exit_code = module.main()
+                    preserved = json.loads(collected_path.read_text(encoding="utf-8"))
+                    template = json.loads(
+                        latest_path(
+                            module.PRODUCER_ID,
+                            "evidence-template",
+                        ).read_text(encoding="utf-8")
+                    )
             finally:
                 sys.argv = old_argv
 
-            self.assertEqual(exit_code, 1)
-            preserved = json.loads(output.read_text(encoding="utf-8"))
-            observations_written = json.loads(observations_template.read_text(encoding="utf-8"))
-
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(collected_before, json.dumps(preserved, indent=2, sort_keys=True).encode("utf-8") + b"\n")
         self.assertEqual(preserved["artifactKind"], existing["artifactKind"])
         self.assertEqual(preserved["source"], existing["source"])
         self.assertEqual(preserved["status"], existing["status"])
         self.assertEqual(preserved["proofStatus"], existing["proofStatus"])
-        expected_command = (
-            "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py "
-            "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json "
-            "--output tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
-        )
-        self.assertEqual(preserved["recommended_review_commands"][0]["command"], expected_command)
-        self.assertEqual(preserved["recommendedReviewCommands"][0]["command"], expected_command)
-        self.assertEqual(observations_written["artifactKind"], "desktop-anchor-dom-observations-template")
-        self.assertFalse(observations_written["sampleEmissionAllowed"])
+        self.assertEqual(template["artifactKind"], "desktop-anchor-dom-evidence")
+        self.assertEqual(template["proofStatus"], "UNPROVEN")
 
 
 if __name__ == "__main__":

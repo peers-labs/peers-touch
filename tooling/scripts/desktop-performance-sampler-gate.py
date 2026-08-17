@@ -11,6 +11,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    inspect_command,
+    latest_artifact,
+    replace_resolved_artifact_paths,
+)
+
+
+PRODUCER_GATE_ID = "desktop-performance-sampler-gate"
+DEFAULT_OUTPUT_PREFIX = "reports/desktop-performance-sampler-gate-latest"
 
 PHASE = "P0b-2/P0b-3/P0b-4/P0b-5/P0b-6/P0b-7/P0c-5"
 BOM = [
@@ -63,13 +74,15 @@ LOCAL_TELEMETRY_BUFFER_GATE = (
     "without replacing Station mirror evidence"
 )
 LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_ARTIFACT_KIND = "desktop-local-telemetry-buffer-observations-template"
-LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_JSON = Path(
-    "tooling/acceptance/reports/desktop-local-telemetry-buffer-observations-template.json"
+LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_JSON = (
+    "reports/desktop-local-telemetry-buffer-observations-template.json"
 )
-LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_MD = Path(
-    "tooling/acceptance/reports/desktop-local-telemetry-buffer-observations-template.md"
+LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_MD = (
+    "reports/desktop-local-telemetry-buffer-observations-template.md"
 )
-LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_PATH = "tooling/acceptance/reports/desktop-local-telemetry-buffer-observations.json"
+LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_PATH = (
+    "<explicit-desktop-local-telemetry-buffer-observations.json>"
+)
 LOCAL_TELEMETRY_BUFFER_REQUIRED_OBSERVATION_FIELDS = [
     "source",
     "runtime",
@@ -165,11 +178,11 @@ def recommended_review_commands(station_mirror_report: Path) -> list[dict[str, s
         },
         {
             "purpose": "Re-run the P0a live telemetry gate so Station mirror input can become live evidence.",
-            "command": f"python3 tooling/scripts/desktop-telemetry-live-gate.py --mirror-prefix {station_mirror_report.with_suffix('')}",
+            "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py",
         },
         {
             "purpose": "Inspect the sampler gate diagnostic artifact.",
-            "command": "jq '{status,proofStatus,issue_breakdown,recommended_review_commands}' tooling/acceptance/reports/desktop-performance-sampler-gate-latest.json",
+            "command": inspect_command(PRODUCER_GATE_ID, "report"),
         },
         {
             "purpose": "Re-run only the sampler gate after Station mirror evidence exists.",
@@ -1279,27 +1292,30 @@ def render_local_telemetry_buffer_observations_template_markdown(template: dict[
     )
 
 
-def write_local_telemetry_buffer_observations_template() -> tuple[Path, Path]:
+def write_local_telemetry_buffer_observations_template(output_dir: Path) -> tuple[Path, Path]:
     template = build_local_telemetry_buffer_observations_template()
-    LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_JSON.parent.mkdir(parents=True, exist_ok=True)
-    LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_JSON.write_text(
+    json_path = output_dir / Path(LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_JSON).name
+    markdown_path = output_dir / Path(LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_MD).name
+    output_dir.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(
         json.dumps(template, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_MD.write_text(
+    markdown_path.write_text(
         render_local_telemetry_buffer_observations_template_markdown(template),
         encoding="utf-8",
     )
-    return LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_JSON, LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_MD
+    return json_path, markdown_path
 
 
 def write_outputs(report: dict[str, Any], output_prefix: Path) -> tuple[Path, Path]:
+    output_prefix = explicit_output_path(output_prefix)
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = output_prefix.with_suffix(".json")
     md_path = output_prefix.with_suffix(".md")
     json_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     md_path.write_text(render_markdown(report), encoding="utf-8")
-    write_local_telemetry_buffer_observations_template()
+    write_local_telemetry_buffer_observations_template(output_prefix.parent)
     return json_path, md_path
 
 
@@ -1307,35 +1323,87 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--station-mirror-report",
-        default="tooling/acceptance/reports/desktop-performance-latest.json",
     )
     parser.add_argument(
         "--anchor-dom-evidence-gate-report",
-        default="tooling/acceptance/reports/desktop-anchor-dom-evidence-gate-latest.json",
     )
     parser.add_argument(
         "--runtime-closure-report",
-        default="tooling/acceptance/reports/desktop-telemetry-runtime-closure-gate.json",
     )
     parser.add_argument(
         "--local-telemetry-buffer-report",
-        default="tooling/acceptance/reports/desktop-local-telemetry-buffer-gate.json",
     )
     parser.add_argument(
         "--output-prefix",
-        default="tooling/acceptance/reports/desktop-performance-sampler-gate-latest",
     )
     args = parser.parse_args()
 
+    defaults = {
+        "station_mirror_report": ("desktop-telemetry-live-gate", "mirror-report"),
+        "anchor_dom_evidence_gate_report": (
+            "desktop-anchor-dom-evidence-gate",
+            "report",
+        ),
+        "runtime_closure_report": (
+            "desktop-telemetry-runtime-closure-gate",
+            "report",
+        ),
+        "local_telemetry_buffer_report": (
+            "desktop-local-telemetry-buffer-gate",
+            "report",
+        ),
+    }
+    input_refs: dict[str, Any] = {}
+    resolved_refs: dict[Path, dict[str, Any]] = {}
+    for attribute, (gate_id, role) in defaults.items():
+        if getattr(args, attribute) is None:
+            resolved_path, artifact_ref = latest_artifact(gate_id, role)
+            setattr(args, attribute, str(resolved_path))
+            input_refs[attribute] = artifact_ref
+            resolved_refs[resolved_path] = artifact_ref
     report = build_report(
         Path(args.station_mirror_report),
         Path(args.anchor_dom_evidence_gate_report),
         Path(args.runtime_closure_report),
         Path(args.local_telemetry_buffer_report),
     )
-    json_path, md_path = write_outputs(report, Path(args.output_prefix))
-    print(f"desktop performance sampler gate JSON: {json_path}")
-    print(f"desktop performance sampler gate Markdown: {md_path}")
+    if input_refs:
+        report["inputArtifactRefs"] = input_refs
+    report = replace_resolved_artifact_paths(report, resolved_refs)
+    if args.output_prefix:
+        json_path, md_path = write_outputs(report, Path(args.output_prefix))
+        display_json = str(json_path)
+        display_markdown = str(md_path)
+    else:
+        template = build_local_telemetry_buffer_observations_template()
+        with artifact_session(PRODUCER_GATE_ID) as session:
+            session.write_json(DEFAULT_OUTPUT_PREFIX + ".json", report, role="report")
+            session.write_bytes(
+                DEFAULT_OUTPUT_PREFIX + ".md",
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.write_json(
+                LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_JSON,
+                template,
+                role="observations-template",
+            )
+            session.write_bytes(
+                LOCAL_TELEMETRY_BUFFER_OBSERVATIONS_TEMPLATE_MD,
+                render_local_telemetry_buffer_observations_template_markdown(template).encode("utf-8"),
+                media_type="text/markdown",
+                role="observations-template-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_json = DEFAULT_OUTPUT_PREFIX + ".json"
+        display_markdown = DEFAULT_OUTPUT_PREFIX + ".md"
+    print(f"desktop performance sampler gate JSON: {display_json}")
+    print(f"desktop performance sampler gate Markdown: {display_markdown}")
     print(f"status: {report['status']}")
     return 0 if report["status"] == "pass" else 1
 
